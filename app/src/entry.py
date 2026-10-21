@@ -194,6 +194,7 @@ _account_users = _LazyModule("account_users")
 # Away flag + custom status (emoji, text, auto-clear): see account_status.py.
 _account_status = _LazyModule("account_status")
 _account_activity = _LazyModule("account_activity")
+_chat_member_stats = _LazyModule("chat_member_stats")
 _public_user_status = _account_status.export("public_user_status")
 _account_chat_retention = _account_status.export("account_chat_retention")
 
@@ -624,6 +625,7 @@ MAX_PULL_BYTES = 100 * 1024 * 1024
 MAX_PENDING_PULLS = 200
 # Discussion inbox: signed open/comment events for read-only contributors.
 MAX_DISCUSSION_BYTES = 64 * 1024
+DISCUSSION_OWNER_EVENT_TYPES = frozenset({"status", "delete"})
 MAX_PENDING_DISCUSSIONS = 500
 # One inbox read hands back a bounded PAGE, never the whole backlog. The caps
 # above bound a single submission, not the queue: MAX_PENDING_PULLS rows of
@@ -893,6 +895,7 @@ NOTIFICATION_KINDS = frozenset({
     # review) landed on a package you maintain, or a maintainer replied to
     # your review (app/src/marketplace_reviews.py).
     "package_review",
+    "reaction",
 })
 # The ping kinds a marketplace package's Worker API may raise.
 PLUGIN_NOTIFICATION_KINDS = frozenset({"plugin_activity"})
@@ -1063,21 +1066,22 @@ _NOTIFICATION_QUEUE_MEMO = {}
 # holds the cron slice inside its phase budget.
 NOTIFICATION_DIGEST_MAX_LOOKUPS = 8
 # A stored notification records the SINGULAR source the signed event used
-# ("issue"/"pull"/"discussion"), while the public web route is plural
-# (/owner/repo/pulls/93). Anything that wants to deep-link the exact record has
-# to map one onto the other rather than interpolating `source` directly, so an
-# email lands on the item instead of the site root (issue #652).
+# ("issue"/"pull"/"discussion"), while the public web route of one record is
+# /owner/repo/issues/12, /owner/repo/pull/93 or /owner/repo/discussions/4.
+# Anything that wants to deep-link the exact record has to map one onto the
+# other rather than interpolating `source` directly, so an email lands on the
+# item instead of the site root (issue #652).
 NOTIFICATION_ITEM_URL_SEGMENTS = {
     "issue": "issues",
     "issue_assigned": "issues",
     "bounty": "issues",
-    "pull": "pulls",
+    "pull": "pull",
     "discussion": "discussions",
 }
 # Human noun per route segment, for the digest's primary action label.
 NOTIFICATION_ITEM_NOUNS = {
     "issues": "issue",
-    "pulls": "pull request",
+    "pull": "pull request",
     "discussions": "discussion",
 }
 # Actor portraits are stored at up to 256 KB and Gmail clips a message past
@@ -1179,7 +1183,8 @@ _URL_EXPORT_NAMES = (
     "REPO_AP_DIGEST_RE", "REPO_AP_POSTS_RE", "REPO_WEBHOOKS_RE",
     "REPO_PROVIDER_MIRROR_RE",
     "REPO_CARD_RE",
-    "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_VIEW_RE", "REPO_VIEWS_RE",
+    "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
+    "REPO_VIEWS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
@@ -2332,6 +2337,17 @@ def repo_web_href(owner, repo):
     # keeps the clean path in the address bar, so links read forkmesh.com/owner/repo
     # rather than the old forkmesh.com/dashboard?repo=owner/repo form.
     return "/" + quote(owner) + "/" + quote(repo)
+
+
+def repo_record_href(owner, repo, section, number=0):
+    base = repo_web_href(owner, repo)
+    try:
+        number = int(number or 0)
+    except (TypeError, ValueError):
+        number = 0
+    if section in ("issues", "pull"):
+        return base + "/" + section + "/" + str(number) if number > 0 else base
+    return base + "/" + section if section else base
 
 
 # The signed-event crypto + canonical-content helpers (b64url_decode,
@@ -7582,6 +7598,16 @@ async def issue_reporter_leaderboard(env):
         {"ok": True, "counts": summary["counts"]},
         cache_seconds=ISSUE_REPORTER_TRACKER_TTL,
     )
+
+
+async def _record_public_contributor(env, owner, repo, author, kind,
+                                    display_name=""):
+    try:
+        private_repo = await _repo_is_private(env, owner, repo)
+    except Exception:
+        private_repo = True
+    if not private_repo:
+        await _record_contributor(env, author, kind, display_name)
 
 
 async def _record_contributor(env, author, kind, display_name=""):
@@ -13509,7 +13535,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "809f8ba0db32b4ca902b82f56c42fc89ccf03eb50dbf54e3b7e509c9cbc1e5da"
+    "3b8bc5e5cb64ddbaf9109154e323fe92b056c032d93415799bae6afe28a8ecbc"
 )
 
 
@@ -16196,6 +16222,7 @@ core_push_pending_tag_moves = _core_push.export("pending_tag_moves")
 record_accepted_push = _core_push.export("record_accepted_push")
 queue_runner_actions = _core_push.export("queue_runner_actions")
 core_push_tag_moves_handler = _core_push.export("tag_moves_handler")
+core_push_grant_tag_move = _core_push.export("grant_tag_move")
 core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
 _recent_pushes = _LazyModule("recent_pushes")
@@ -16203,6 +16230,8 @@ recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
 recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
 recent_pushes_handler = _recent_pushes.export("handler")
+_comment_reactions = _LazyModule("comment_reactions")
+comment_reactions_handler = _comment_reactions.export("handler")
 
 
 def _repo_identity_from_clone_url(value):
@@ -18800,6 +18829,9 @@ _REPO_SCOPED_TABLES = (
     ("pull_batch_sent", "repo_bi"),
     ("pull_submission_receipts", "repo_bi"),
     ("recent_pushes", "repo_bi"),
+    ("comment_reactions", "repo_bi"),
+    ("member_repo_activity", "repo_bi"),
+    ("member_activity_repos", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
@@ -18995,6 +19027,11 @@ async def _delete_account_namespace(env, name_bi, rec):
     await d1_run(env, "DELETE FROM referral_stats WHERE referrer_bi=?", name_bi)
     await d1_run(env, "DELETE FROM notifications WHERE recipient_bi=?", name_bi)
     await d1_run(env, "DELETE FROM recent_pushes WHERE account_bi=?", name_bi)
+    await d1_run(env, "DELETE FROM comment_reactions WHERE account_bi=?", name_bi)
+    await d1_run(
+        env, "DELETE FROM comment_reaction_rate WHERE account_bi=?", name_bi)
+    await d1_run(
+        env, "DELETE FROM member_repo_activity WHERE user_bi=?", name_bi)
     await d1_run(env, "DELETE FROM profile_follows WHERE follower_bi=? OR target_bi=?", name_bi, name_bi)
     await d1_run(env, "DELETE FROM login_attempts WHERE id_bi=?", name_bi)
     await d1_run(
@@ -20272,7 +20309,7 @@ def _apply_browser_security_headers(response, pathname):
     frameable = (
         path in ("/chat", "/chat.html")
         or path.startswith("/dashboard/chat")
-        or re.fullmatch(r"/[^/]+/[^/]+/(?:issues|pulls)/[^/]+", path)
+        or re.fullmatch(r"/[^/]+/[^/]+/(?:issues|pull)/[^/]+", path)
     )
     csp = _BROWSER_CSP.format(
         frame_ancestors="'self'" if frameable else "'none'"
@@ -27714,6 +27751,14 @@ async def _active_public_recipient_bundles(env, account_bis):
     return bundles
 
 
+async def _shares_session_owner(env, request, data, owner):
+    try:
+        actor = await _authed_account_name(env, request, data or {})
+    except Exception:
+        return False
+    return bool(actor) and bool(await _account_owns_node(env, actor, owner))
+
+
 async def shares_handler(env, request, owner, repo):
     # Private-repo collaborator ACL (issue #9). Every operation is authorized by
     # the OWNER account's key — only the owner may grant/revoke/list who a private
@@ -27739,7 +27784,11 @@ async def shares_handler(env, request, owner, repo):
         sig = clean_string(params.get("sig", [""])[0], 200)
         canonical = ("forkmesh-shares-list-v1\n" + owner + "\n" + repo + "\n" +
                      str(ts)).encode()
-        if not (_ts_ok(ts) and await ed25519_verify(owner_pub, sig, canonical)):
+        signed = bool(ts and sig) and _ts_ok(ts) and await ed25519_verify(
+            owner_pub, sig, canonical)
+        session_owner = globals().get("_shares_session_owner")
+        if not signed and not (callable(session_owner) and await session_owner(
+                env, request, {}, owner)):
             return json_response({"error": "unauthorized"}, status=401)
         rows = await d1_all(
             env,
@@ -27809,8 +27858,11 @@ async def shares_handler(env, request, owner, repo):
                      grantee + "\n" + action + "\n" + str(ts)).encode()
         try:
             authorized = (
-                _ts_ok(ts)
+                bool(ts and sig) and _ts_ok(ts)
                 and await ed25519_verify(owner_pub, sig, canonical))
+            session_owner = globals().get("_shares_session_owner")
+            if not authorized and callable(session_owner):
+                authorized = await session_owner(env, request, data, owner)
         except Exception:
             await _audit_sensitive_action(
                 env, owner, audit_action, "repository_collaborator",
@@ -27852,7 +27904,15 @@ async def shares_handler(env, request, owner, repo):
             recipient_bundles = await _active_public_recipient_bundles(
                 env, [grantee_bi])
             recipient = recipient_bundles.get(grantee_bi)
-            if not recipient:
+            core_hosted = False
+            try:
+                core_hosted = bool(await d1_first(
+                    env,
+                    "SELECT 1 AS one FROM hosted_repos "
+                    "WHERE key_bi=? AND deleted_at=0", repo_bi))
+            except Exception:
+                core_hosted = False
+            if not recipient and not core_hosted:
                 # Do not create an ACL that the owner cannot immediately turn
                 # into an exact encrypted recipient set.
                 await _audit_sensitive_action(
@@ -36896,13 +36956,54 @@ async def _promote_hosted_repository_import(env, catalog_record):
     return False
 
 
+async def _private_collaboration_allowed(env, request, owner, repo):
+    method = method_name(request)
+    if method in ("GET", "DELETE"):
+        return bool(await _authorize_owner(env, request, owner))
+    if method != "POST":
+        return False
+    try:
+        return await _repository_access_context(
+            env, request, owner, repo) is not None
+    except Exception:
+        return False
+
+
+async def _private_repo_reader_filter(env, owner, repo):
+    privacy_reader = globals().get("_repo_is_private")
+    try:
+        private = callable(privacy_reader) and await privacy_reader(
+            env, owner, repo)
+    except Exception:
+        private = True
+    if not private:
+        return None
+
+    async def can_read(name):
+        name = str(name or "").strip().lower()
+        if not name:
+            return False
+        try:
+            return bool(
+                await _account_owns_node(env, name, owner)
+                or await _repo_shared_with(env, owner, repo, name))
+        except Exception:
+            return False
+    return can_read
+
+
 async def notify_mentions(env, owner, repo, actor, title, body, href, source,
                           number=0):
     # number is optional (0 = not a numbered item, e.g. a brand-new PR before
     # the owner assigns it) so every existing call site keeps working
     # unchanged; callers that DO know the number pass it as a keyword so the
     # digest email can show "#N" instead of just a bare title.
+    reader_filter = globals().get("_private_repo_reader_filter")
+    readers = (await reader_filter(env, owner, repo)
+               if callable(reader_filter) else None)
     for name in notification_mentions(title, body):
+        if readers is not None and not await readers(name):
+            continue
         await enqueue_notification(
             env, name, "mention", "You were mentioned in " + owner + "/" + repo,
             body=(title or body or "Open the repository item to read the mention."),
@@ -36983,6 +37084,9 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
     if not rows:
         return
     mentioned = set(notification_mentions(title, body))
+    reader_filter = globals().get("_private_repo_reader_filter")
+    readers = (await reader_filter(env, owner, repo)
+               if callable(reader_filter) else None)
     snippet = clean_string(body or title, 80)
     # Say what was actually written. The ping (and the phone banner built from
     # it) used to read "New activity in owner/repo" over the issue title, so
@@ -37002,6 +37106,8 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
             continue
         name = clean_string(rec.get("node", ""), MAX_NODE_NAME).lower()
         if not valid_node_name(name) or name == actor or name in mentioned:
+            continue
+        if readers is not None and not await readers(name):
             continue
         await enqueue_notification(
             env, name, "subscribed", headline + " in " + owner + "/" + repo,
@@ -37213,15 +37319,20 @@ async def notify_catalog_issues_opened(env, owner, repo, repo_bi, prior,
 
 
 async def notify_issue_assignees(env, owner, repo, assignees, actor, title, number=0):
+    reader_filter = globals().get("_private_repo_reader_filter")
+    readers = (await reader_filter(env, owner, repo)
+               if callable(reader_filter) else None)
     for assignee in sorted({clean_string(a, MAX_NODE_NAME).lower() for a in (assignees or [])}):
         if not valid_node_name(assignee):
+            continue
+        if readers is not None and not await readers(assignee):
             continue
         await enqueue_notification(
             env, assignee, "issue_assigned",
             "Issue assigned in " + owner + "/" + repo,
             body=title or "You were assigned to an issue.",
             repo=owner + "/" + repo,
-            href=repo_web_href(owner, repo),
+            href=repo_record_href(owner, repo, "issues", number),
             actor=actor, source="issue_assigned",
             dedupe="issue-assigned:" + owner + "/" + repo + ":" + str(number) +
                    ":" + assignee,
@@ -37241,7 +37352,7 @@ async def notify_bounty_event(env, rec, kind):
         body=("Issue #" + str(number) + " bounty is " +
               ("funded." if kind == "bounty_funded" else "paid.")),
         repo=owner + "/" + repo,
-        href=repo_web_href(owner, repo),
+        href=repo_record_href(owner, repo, "issues", number),
         source="bounty", dedupe=kind + ":" + owner + "/" + repo + ":" + str(number),
         meta={"number": number, "status": rec.get("status", "")},
     )
@@ -37282,7 +37393,9 @@ async def notify_repo_activity(env, owner, repo, event, body="", actor="",
     slug = owner + "/" + repo
     title = label[0] + " in " + slug
     text = clean_string(body, NOTIFICATION_BODY_MAX) or label[1]
-    href = repo_web_href(owner, repo)
+    href = (repo_record_href(owner, repo, "pull", (meta or {}).get("number"))
+            if event == "pull.merged"
+            else repo_record_href(owner, repo, "commits"))
     dedupe = ("repo-activity:" + slug + ":" + event + ":" +
               clean_string(key, 80))
     payload_meta = dict(meta or {})
@@ -37558,7 +37671,7 @@ async def notify_release_published(env, owner, repo, release):
             env, recipient, "release_published", title,
             body=body,
             repo=owner + "/" + repo,
-            href=repo_web_href(owner, repo),
+            href=repo_record_href(owner, repo, "releases"),
             actor=actor, source="release",
             dedupe=dedupe,
             ts=ts,
@@ -40361,7 +40474,8 @@ async def _confirm_fediverse_issue_materializations(env, request):
     return confirmed
 
 
-async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event):
+async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event,
+                                    table="issue_inbox"):
     """The pending inbox item already holding this exact signed event, if any.
 
     Only the submitter's own rows can match, and _inbox_author_over_quota caps
@@ -40371,10 +40485,12 @@ async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event):
     sig = str(event.get("sig", "") or "")
     if not submitter_bi or not sig:
         return None
+    if table not in ("issue_inbox", "discussion_inbox"):
+        return None
     try:
         rows = await d1_all(
             env,
-            "SELECT data FROM issue_inbox WHERE repo_bi=? AND submitter_bi=? "
+            "SELECT data FROM " + table + " WHERE repo_bi=? AND submitter_bi=? "
             "ORDER BY id DESC LIMIT ?",
             repo_bi, submitter_bi, MAX_PENDING_PER_AUTHOR,
         )
@@ -40531,8 +40647,8 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         "INSERT INTO issue_inbox (repo_bi, data, submitter_bi) VALUES (?,?,?)",
         repo_bi, await encrypt_row(env, item), submitter_bi,
     )
-    await _record_contributor(
-        env, event.get("author", ""), "issues",
+    await _record_public_contributor(
+        env, owner, repo, event.get("author", ""), "issues",
         event.get("authorName", ""))
     actor = clean_string(event.get("authorName", "") or event.get("author", ""), MAX_NODE_NAME).lower()
     await _best_effort_inbox_side_effect(
@@ -40864,8 +40980,8 @@ async def pulls_handler(env, request, owner, repo):
                 "VALUES (?,?,?)",
                 repo_bi, await encrypt_row(env, item), submitter_bi,
             )
-            await _record_contributor(
-                env, event.get("author", ""), "pulls",
+            await _record_public_contributor(
+                env, owner, repo, event.get("author", ""), "pulls",
                 event.get("authorName", ""))
             await notify_repo_host(env, owner, repo, "pulls")
             await notify_repo_mirrors(env, owner, repo, "pulls")
@@ -40911,8 +41027,8 @@ async def pulls_handler(env, request, owner, repo):
                 "VALUES (?,?,?)",
                 repo_bi, await encrypt_row(env, item), submitter_bi,
             )
-            await _record_contributor(
-                env, event.get("author", ""), "pulls",
+            await _record_public_contributor(
+                env, owner, repo, event.get("author", ""), "pulls",
                 event.get("authorName", ""))
             if event.get("type") == "review":
                 await _record_pull_review(
@@ -40975,6 +41091,11 @@ async def pulls_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, pull)
         if refused is not None:
             return refused
+        disclosure_check = globals().get("pull_ai_disclosure_check")
+        if disclosure_check is not None:
+            refusal = await disclosure_check(env, owner, repo, pull)
+            if refusal is not None:
+                return json_response(refusal, status=422)
         submission_bi = await blind_index(
             env, "pull-submission:" + pull.get("author", "") + ":" +
             pull.get("sig", ""))
@@ -41064,8 +41185,8 @@ async def pulls_handler(env, request, owner, repo):
         if existing_number:
             return json_response(
                 {"ok": True, "number": number, "duplicate": True}, status=201)
-        await _record_contributor(
-            env, pull.get("author", ""), "pulls",
+        await _record_public_contributor(
+            env, owner, repo, pull.get("author", ""), "pulls",
             pull.get("authorName", ""))
         try:
             await recent_push_mark_pulled(
@@ -41244,7 +41365,8 @@ async def discussions_handler(env, request, owner, repo):
             number = int(data.get("number", 0))
         except (TypeError, ValueError):
             number = 0
-        if event.get("type", "") == "open":
+        event_type = clean_string(event.get("type", ""), 32)
+        if event_type == "open":
             number = 0
         if len(discussion_event_content(event).encode("utf-8")) > MAX_DISCUSSION_BYTES:
             return json_response({"error": "discussion_too_large"}, status=413)
@@ -41255,24 +41377,36 @@ async def discussions_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, event)
         if refused is not None:
             return refused
+        owner_approved = False
+        if event_type in DISCUSSION_OWNER_EVENT_TYPES or event_type == "answer":
+            owner_approved = await _discussion_answer_by_owner(
+                env, request, data, owner, repo)
+            if event_type in DISCUSSION_OWNER_EVENT_TYPES and not owner_approved:
+                return json_response({"error": "not_authorized"}, status=403)
+        submitter_bi = await blind_index(env, event.get("author", ""))
+        queued = await _queued_issue_inbox_event(
+            env, repo_bi, submitter_bi, event, table="discussion_inbox")
+        if queued is not None:
+            return json_response(
+                {"ok": True, "number": queued.get("number", number)},
+                status=201)
         count = await d1_first(
             env, "SELECT COUNT(*) AS c FROM discussion_inbox WHERE repo_bi=?", repo_bi
         )
         if count and count.get("c", 0) >= MAX_PENDING_DISCUSSIONS:
             return json_response({"error": "inbox_full"}, status=429)
-        submitter_bi = await blind_index(env, event.get("author", ""))
         if await _inbox_author_over_quota(
                 env, "discussion_inbox", repo_bi, submitter_bi):
             return json_response({"error": "author_quota"}, status=429)
         item = {
             "number": number,
-            "titleIfNew": clean_string(data.get("titleIfNew", ""), 240),
+            "titleIfNew": clean_string(
+                data.get("titleIfNew", "") or event.get("title", ""), 240),
             "event": event,
             "submitter": clean_string(event.get("author", ""), 120),
             "submittedAt": int(Date.now()),
         }
-        if event.get("type") == "answer" and await _discussion_answer_by_owner(
-                env, request, data, owner, repo):
+        if owner_approved:
             item["meta"] = {"ownerApproved": True}
         await d1_run(
             env,
@@ -41282,26 +41416,42 @@ async def discussions_handler(env, request, owner, repo):
         )
         actor = clean_string(event.get("authorName", "") or event.get("author", ""), MAX_NODE_NAME).lower()
         title = item.get("titleIfNew", "") or "Discussion update"
-        await notify_pending_inbox(env, owner, repo, "discussion", actor, title, number)
-        await notify_mentions(env, owner, repo, actor, title, event.get("body", ""),
-                              repo_web_href(owner, repo), "discussion", number=number)
+        content_event = event_type in ("open", "comment")
+        await _best_effort_inbox_side_effect(notify_pending_inbox(
+            env, owner, repo, "discussion", actor, title, number,
+            opened=event_type == "open",
+            text=event.get("body", "") if content_event else ""))
+        if content_event:
+            await _best_effort_inbox_side_effect(notify_mentions(
+                env, owner, repo, actor, title, event.get("body", ""),
+                repo_web_href(owner, repo), "discussion", number=number))
+        if event_type == "comment":
+            await _best_effort_inbox_side_effect(notify_subscribers(
+                env, owner, repo, "discussion", number, actor, title,
+                event.get("body", ""), repo_web_href(owner, repo)))
+            await _best_effort_inbox_side_effect(subscribe_thread(
+                env, owner, repo, "discussion", number, actor))
         await notify_repo_host(env, owner, repo, "discussions")
         await notify_repo_mirrors(env, owner, repo, "discussions")
-        if event.get("type") == "open":
-            await provider_mirror_note_event(
+        try:
+            private_repo = await _repo_is_private(env, owner, repo)
+        except Exception:
+            private_repo = True
+        if event_type == "open" and not private_repo:
+            await _best_effort_inbox_side_effect(provider_mirror_note_event(
                 env, owner, repo, "discussion.opened",
                 {"number": 0, "title": item.get("titleIfNew", ""),
-                 "author": actor, "body": str(event.get("body", ""))})
-        if event.get("type") in ("open", "comment"):
+                 "author": actor, "body": str(event.get("body", ""))}))
+        if content_event:
             await _best_effort_inbox_side_effect(_ap_publish_repo_event(
-                env, request, owner, repo, "discussion", event.get("type"),
+                env, request, owner, repo, "discussion", event_type,
                 number, item.get("titleIfNew", ""), event.get("body", ""),
                 event.get("authorName", "")))
-        if event.get("type") in ("open", "comment"):
-            await _record_contributor(
-                env, event.get("author", ""), "discussions",
-                event.get("authorName", ""))
-        return json_response({"ok": True}, status=201)
+            if not private_repo:
+                await _best_effort_inbox_side_effect(_record_contributor(
+                    env, event.get("author", ""), "discussions",
+                    event.get("authorName", "")))
+        return json_response({"ok": True, "number": number}, status=201)
 
     if method == "GET":
         mirror_intake = (
@@ -49677,7 +49827,7 @@ def _https_mirror_request_query(url, operation, release_sha=""):
         if params.get("path"):
             output["path"] = _repository_read_path(params["path"][0])
     elif operation == "pulse":
-        for key in ("period", "person"):
+        for key in ("period", "person", "view"):
             if params.get(key):
                 output[key] = params[key][0]
     # Only operations that resolve a ref accept one. compare/merge-preview
@@ -51059,6 +51209,35 @@ async def _organization_owner_can_merge_repo(
     return await _org_role(env, org_bi, actor) == "owner"
 
 
+async def _repository_owner_can_merge_repo(
+        env, request, canonical_owner, repo, actor):
+    if await _organization_owner_can_merge_repo(
+            env, request, canonical_owner, repo, actor):
+        return True
+    if not actor:
+        return False
+    canonical_owner = str(canonical_owner or "").strip().lower()
+    repo = str(repo or "").strip().lower()
+    try:
+        original = urlparse(request.url)
+        match = REPO_API_PREFIX_RE.match(original.path)
+    except Exception:
+        return False
+    if not match:
+        return False
+    if ((safe_segment(match.group(1)) or "").strip().lower() != canonical_owner
+            or (safe_segment(match.group(2)) or "").strip().lower() != repo):
+        return False
+    linked = await d1_first(
+        env,
+        "SELECT 1 AS ok FROM org_repos WHERE repo=? AND node_owner=? LIMIT 1",
+        repo, canonical_owner,
+    )
+    if linked:
+        return False
+    return bool(await _account_owns_node(env, actor, canonical_owner))
+
+
 async def _admit_owner_merge_state(env, context, endpoint, result):
     """Pin the refs state a mirror serves after an owner-authorized mutation.
 
@@ -51270,6 +51449,8 @@ repository_pull_merge_handler = _route_handlers.export("repository_pull_merge_ha
 _pull_rules = _LazyModule("pull_rules")
 _branch_protection = _LazyModule("branch_protection")
 repo_pull_rules_handler = _pull_rules.export("repo_pull_rules_handler")
+_ai_disclosure = _LazyModule("ai_disclosure")
+pull_ai_disclosure_check = _ai_disclosure.export("pull_ai_disclosure_check")
 org_pull_rules_handler = _pull_rules.export("org_pull_rules_handler")
 repository_branch_ops_handler = _route_handlers.export("repository_branch_ops_handler")
 repository_branch_op_results_handler = _route_handlers.export(
@@ -52706,6 +52887,8 @@ def _cron_due_phases(minute_slot):
         phases.append("marketing-email")
     if minute % 5 == 3:
         phases.append("workflow-schedules")
+    if minute % 15 == 6:
+        phases.append("member-activity")
     hourly = minute % 60
     if hourly == 7:
         phases.append("microjob-payouts")
@@ -52889,6 +53072,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _attribution.snapshot_clone_counts(env)
     if phase == "badge-sweep":
         return await run_badge_sweep(env)
+    if phase == "member-activity":
+        return await _chat_member_stats.refresh_member_repo_activity(env)
     if phase == "workflow-schedules":
         return await run_due_workflow_schedules(env)
     if phase == "actions-schedule":

@@ -14,6 +14,10 @@ final class NotificationDeepLinkTests: XCTestCase {
         XCTAssertEqual(pull?.initialTab, .pulls)
         XCTAssertEqual(pull?.number, 7)
 
+        let singular = NotificationDeepLink.parse("/mona/forkmesh/pull/7/files")
+        XCTAssertEqual(singular?.initialTab, .pulls)
+        XCTAssertEqual(singular?.number, 7)
+
         let commit = NotificationDeepLink.parse("/mona/forkmesh/commit/abc123")
         XCTAssertEqual(commit?.initialTab, .commits)
         XCTAssertEqual(commit?.reference, "abc123")

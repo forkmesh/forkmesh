@@ -336,7 +336,16 @@ def discussion_event_content(ev):
         return ev.get("body", "")
     if t == "answer":
         return ev.get("target", "")
+    if t == "status":
+        return ev.get("status", "")
+    if t == "delete":
+        return ev.get("target", "")
     return ""
+
+
+DISCUSSION_OWNER_EVENT_TYPES = ("status", "delete")
+DISCUSSION_EVENT_TYPES = ("open", "comment", "answer") + DISCUSSION_OWNER_EVENT_TYPES
+DISCUSSION_STATUSES = ("open", "closed", "archived")
 
 
 async def verify_discussion_event(number, ev, repo_keys=(), allow_v1=None):
@@ -347,14 +356,28 @@ async def verify_discussion_event(number, ev, repo_keys=(), allow_v1=None):
     author = ev.get("author", "")
     signature = ev.get("sig", "")
     event_type = ev.get("type", "")
-    if not author or not signature or event_type not in (
-            "open", "comment", "answer"):
+    if not author or not signature or event_type not in DISCUSSION_EVENT_TYPES:
         return False
-    if event_type == "answer" and int(number or 0) <= 0:
+    try:
+        number = int(number or 0)
+    except (TypeError, ValueError):
+        return False
+    if event_type == "open":
+        if number != 0:
+            return False
+    elif number <= 0:
         return False
     if event_type == "open" and not normalized_discussion_category(
             ev.get("category", "")):
         return False
+    if event_type == "open" and not str(ev.get("title", "") or "").strip():
+        return False
+    if event_type == "status" and ev.get("status") not in DISCUSSION_STATUSES:
+        return False
+    if event_type == "delete":
+        target = ev.get("target")
+        if not isinstance(target, str) or not target.strip():
+            return False
     try:
         ts = int(ev.get("ts", 0))
     except (TypeError, ValueError):

@@ -20,7 +20,7 @@
   const swap = (value) => value.replace(DESKTOP, "").replace(BRAND, name);
 
   const USER_CONTENT =
-    "[data-instance-powered-by], [class*='readme'], [class*='markdown'], [class*='commit'], " +
+    "[data-user-content], [data-instance-powered-by], [class*='readme'], [class*='markdown'], [class*='commit'], " +
     "[class*='message'], [class*='description'], [data-markdown], [data-repo-detail], " +
     "[data-repo-readme-body], [data-repo-about-description]";
   const CONTENT_PAGES = /^(repo|profile)/;

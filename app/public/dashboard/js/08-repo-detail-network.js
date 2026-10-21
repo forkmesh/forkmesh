@@ -98,11 +98,11 @@
       && repoMatchesKey(repo, routeRepoKey);
     const routeKind = routeMatchesRepo ? routeParts[2] : undefined;
     const routePath = routeMatchesRepo && routeParts.length > 3 ? routeParts.slice(3).map(decodeURIComponent).join("/") : "";
-    // /owner/repo/pulls/<N> is a record deep link (the desktop client's
+    // /owner/repo/pull/<N> is a record deep link (the desktop client's
     // "View on website" button, or a refreshed/shared PR detail URL): keep
     // the number in the address bar and open that record's detail page below.
     // Issues deep-link the same way so a refresh on an open issue stays on it.
-    // A pull may carry its open section too (/pulls/<N>/files), so a link
+    // A pull may carry its open section too (/pull/<N>/files), so a link
     // copied from the Files changed review reopens on that tab.
     const recordNumber = routeMatchesRepo && routeParts.length > 3
       ? safeDecodeURIComponent(routeParts[3])
@@ -146,7 +146,7 @@
             ? `${repoLinkUrl(repo)}/insights${repoInsightsRouteQuery()}`
             : repoTabRoutesFor(repo).includes(routeKind)
               ? `${repoLinkUrl(repo)}/${routeKind}`
-              : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
+              : repoCodeLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
     navigateHistory(detailPath);
     const branch = repoSelectedBranch(repo);
     const issuesCount = repoCount(repo, ["issueCount", "issues", "issuesCount", "openIssues"]);
@@ -192,6 +192,8 @@
     const forkSplitButton = (compact) => websiteForkAvailable
       ? `<div data-repo-fork-split class="flex ${compact ? "h-8" : "h-9"} min-w-0 shrink-0 items-stretch overflow-hidden rounded-md border border-border bg-secondary text-xs font-semibold text-foreground"><button type="button" data-repo-fork-create data-repo-fork-go title="Fork this repository: your own copy, linked to this one" class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 px-3 hover:bg-background disabled:cursor-wait"><i data-lucide="git-fork" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Fork</span></button><button type="button" data-repo-fork-split-count aria-label="See who forked this repository" title="See who forked this repository" style="min-width:2.25rem" class="inline-flex items-center justify-center border-l border-border px-2 font-mono text-[12px] font-medium hover:bg-background"><span data-repo-fork-count>–</span></button></div>`
       : "";
+    const readOnlyMirror = repoReadOnlyMirror(repo);
+    const addFileButton = (height) => `<button type="button" data-repo-file-new${readOnlyMirror ? ` disabled title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}"` : ' title="Create a new file"'} class="inline-flex ${height} items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>`;
     const settingsPanel = canSeeSettingsTab ? `
       <section data-dashboard-repo-tab-panel="settings" class="hidden">
         <div class="mt-4 overflow-hidden rounded-lg border border-border bg-background">
@@ -229,6 +231,7 @@
             </div>
           </form>
         </div>
+        ${renderRepoAccessSettings(repo)}
         ${repo.isPrivate ? "" : `<div data-repo-settings-logo class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="image" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository logo</span>
@@ -374,7 +377,7 @@
 		                ${renderRepoBranchToolbar(repo, branch)}
 		                <button type="button" data-repo-file-finder-open class="inline-flex h-9 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-left text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Go to file</span><span class="ml-auto hidden rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">T</span></button>
 		                ${forkSplitButton(false)}
-		                <button type="button" aria-disabled="true" class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file<i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i></button>
+		                ${addFileButton("h-9")}
 		                <div class="flex min-w-0 items-center gap-2">${mirrorButton(false)}${renderRepoCodeButton(repo, false)}</div>
 		              </div>
 		              <div data-repo-pathbar class="my-3 flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -383,7 +386,7 @@
 		                  <button type="button" data-repo-file-finder-open class="inline-flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-left text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Go to file</span><span class="ml-auto rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">T</span></button>
 		                  <button type="button" data-repo-codemap-open title="See the whole codebase as a zoomable treemap, in 2D or 3D" class="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="layout-grid" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-codemap-label>Code map</span></button>
 		                  ${forkSplitButton(true)}
-		                  <button type="button" aria-disabled="true" class="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>
+		                  ${addFileButton("h-8")}
 		                  ${mirrorButton(true)}
 		                  ${renderRepoCodeButton(repo, true)}
 		                </div>
@@ -438,9 +441,9 @@
 		            </section>
             <section data-dashboard-repo-tab-panel="branches" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-branch" class="h-3.5 w-3.5 text-muted-foreground"></i>Branches<span data-repo-branches-total class="font-mono text-[10px] font-normal text-muted-foreground"></span></span><label class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs text-muted-foreground focus-within:ring-1 focus-within:ring-foreground/20 sm:max-w-64"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><input data-repo-branches-search type="search" autocomplete="off" spellcheck="false" placeholder="Find a branch..." aria-label="Find a branch" class="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" /></label><div data-repo-branches-actions class="flex max-w-full flex-wrap items-center gap-2"></div></div><div data-repo-branches-status role="status" aria-live="polite" hidden class="border-b border-border px-4 py-2 text-xs text-muted-foreground"></div><div data-repo-branches-selection hidden></div><div data-repo-branch-delete-results hidden></div><div data-repo-branch-results hidden></div><div data-repo-branches></div></div></section>
             <section data-dashboard-repo-tab-panel="commits" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits</span><span class="font-mono text-[10px] text-muted-foreground">live mirror history</span></div><div data-repo-commits></div></div></section>
-            <section data-dashboard-repo-tab-panel="releases" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Releases</span><span class="font-mono text-[10px] text-muted-foreground">signed release manifests</span></div><div data-repo-releases></div></div></section>
+            <section data-dashboard-repo-tab-panel="releases" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Releases</span><button type="button" data-repo-release-new hidden class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-2.5 text-[11px] font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>Draft a new release</button></div><div data-repo-releases></div></div></section>
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
-            <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><span class="font-mono text-[10px] text-muted-foreground">linked issues · milestones · gantt</span></div><div data-repo-projects></div></div></section>
+            <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><button type="button" data-repo-project-new hidden class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-2.5 text-[11px] font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>New project</button></div><div data-repo-projects></div></div></section>
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
@@ -558,8 +561,7 @@
     // the requested panel compete with data the visitor could not see.
     if (initialTab === "code") {
       state.loadedRepoTabs.code = true;
-      if (routeKind === "blob" && routePath) loadRepositoryBlob(repo, routePath);
-      else loadRepositoryTree(repo, routeKind === "tree" ? routePath : "");
+      void openRepoCodeRoute(repo, routeKind, routePath, { explicitRef: Boolean(routeRef) });
       scheduleRepoAboutRail(repo);
     }
     // Feature tabs read only their own record folders, while code deep links
@@ -574,7 +576,10 @@
     loadRepoFeaturePanels(repo, recordRoute, compareRoute, commitHash);
     if (initialTab === "security") void loadRepoSecurity(repo);
     hydrateNativeRepositoryLogos(detail.querySelector("[data-repo-title-row]"));
-    if (initialTab === "settings") void loadRepoSettingsLogo(repo);
+    if (initialTab === "settings") {
+      void loadRepoSettingsLogo(repo);
+      void loadRepoCollaborators(repo);
+    }
     loadRepoStarState(repo, $("[data-repo-action-star]"));
     loadRepoForks(repo);
   }
@@ -1163,6 +1168,7 @@
     const icons = {
       mention: "at-sign",
       subscribed: "bell-ring",
+      reaction: "smile-plus",
       issue_opened: "circle-dot",
       pull_submitted: "git-pull-request",
       repo_activity: "git-commit-horizontal",
@@ -1999,6 +2005,120 @@
     if (discussionAnswerButton && state.selectedRepo) {
       event.preventDefault();
       void handleDiscussionAnswerClick(state.selectedRepo, discussionAnswerButton);
+      return;
+    }
+    const projectNew = event.target.closest("[data-repo-project-new], [data-repo-project-edit]");
+    if (projectNew && state.selectedRepo) {
+      event.preventDefault();
+      openProjectForm(Number(projectNew.dataset.repoProjectEdit || 0));
+      return;
+    }
+    if (event.target.closest("[data-repo-project-cancel]") && state.selectedRepo) {
+      event.preventDefault();
+      void loadRepoProjects(state.selectedRepo);
+      return;
+    }
+    const projectStatus = event.target.closest("[data-repo-project-status]");
+    if (projectStatus && state.selectedRepo) {
+      event.preventDefault();
+      void handleProjectQuickAction(state.selectedRepo, Number(projectStatus.dataset.repoProjectNumber || 0),
+        [{ type: "status", status: projectStatus.dataset.repoProjectStatus === "closed" ? "closed" : "open" }]);
+      return;
+    }
+    const projectDelete = event.target.closest("[data-repo-project-delete]");
+    if (projectDelete && state.selectedRepo) {
+      event.preventDefault();
+      const number = Number(projectDelete.dataset.repoProjectDelete || 0);
+      void handleProjectQuickAction(state.selectedRepo, number, [{ type: "delete", target: "self" }],
+        `Delete project #${number}? It disappears for everyone; its history stays in the repository.`);
+      return;
+    }
+    const releaseNewButton = event.target.closest("[data-repo-release-new], [data-repo-release-edit]");
+    if (releaseNewButton && state.selectedRepo) {
+      event.preventDefault();
+      openReleaseForm(state.selectedRepo, releaseNewButton.dataset.repoReleaseEdit || "");
+      return;
+    }
+    const releaseAssetRemove = event.target.closest("[data-repo-release-asset-remove]");
+    if (releaseAssetRemove && state.selectedRepo) {
+      event.preventDefault();
+      void handleReleaseAssetRemove(state.selectedRepo, releaseAssetRemove.dataset.repoReleaseAssetTag || "",
+        releaseAssetRemove.dataset.repoReleaseAssetRemove || "");
+      return;
+    }
+    const releaseDeleteButton = event.target.closest("[data-repo-release-delete]");
+    if (releaseDeleteButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleReleaseDelete(state.selectedRepo, releaseDeleteButton.dataset.repoReleaseDelete || "");
+      return;
+    }
+    if (event.target.closest("[data-repo-release-cancel]") && state.selectedRepo) {
+      event.preventDefault();
+      void loadRepoReleases(state.selectedRepo);
+      return;
+    }
+    const releaseTab = event.target.closest("[data-repo-release-tab]");
+    if (releaseTab) {
+      event.preventDefault();
+      setReleaseFormTab(releaseTab.closest("[data-repo-release-form]"), releaseTab.dataset.repoReleaseTab || "write");
+      return;
+    }
+    const discussionNewButton = event.target.closest("[data-repo-discussion-new]");
+    if (discussionNewButton && state.selectedRepo) {
+      event.preventDefault();
+      if (!state.session?.nodeName) {
+        location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+        return;
+      }
+      openDiscussionCompose(state.selectedRepo);
+      return;
+    }
+    if (event.target.closest("[data-repo-discussion-compose-cancel]") && state.selectedRepo) {
+      event.preventDefault();
+      if (Array.isArray(state.repoCollectionItems.discussions)) {
+        renderRepoDiscussions();
+      } else {
+        const list = $("[data-repo-discussions]");
+        if (list) list.innerHTML = discussionsUnavailableHtml(state.selectedRepo);
+        window.lucide?.createIcons();
+      }
+      return;
+    }
+    const discussionComposeTab = event.target.closest("[data-repo-discussion-compose-tab]");
+    if (discussionComposeTab) {
+      event.preventDefault();
+      setDiscussionComposeTab(discussionComposeTab.closest("[data-repo-discussion-form]"),
+        discussionComposeTab.dataset.repoDiscussionComposeTab || "write");
+      return;
+    }
+    const discussionStatusButton = event.target.closest("[data-repo-discussion-status]");
+    if (discussionStatusButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionStatusClick(state.selectedRepo, discussionStatusButton);
+      return;
+    }
+    const collaboratorRemove = event.target.closest("[data-repo-collaborator-remove]");
+    if (collaboratorRemove && state.selectedRepo) {
+      event.preventDefault();
+      void handleRepoCollaboratorRemove(state.selectedRepo, collaboratorRemove.dataset.repoCollaboratorRemove || "");
+      return;
+    }
+    const visibilityButton = event.target.closest("[data-repo-visibility-change]");
+    if (visibilityButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleRepoVisibilityChange(state.selectedRepo, visibilityButton.dataset.repoVisibilityChange || "");
+      return;
+    }
+    const discussionRemoveButton = event.target.closest("[data-repo-discussion-remove]");
+    if (discussionRemoveButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionRemoveClick(state.selectedRepo, discussionRemoveButton);
+      return;
+    }
+    const discussionDeleteButton = event.target.closest("[data-repo-discussion-delete]");
+    if (discussionDeleteButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionDeleteClick(state.selectedRepo, discussionDeleteButton);
       return;
     }
     if (event.target.closest("[data-repositories-retry]")) {
@@ -2997,6 +3117,16 @@
         issueNewMenu.open = false;
       }
 
+      const fileNewButton = event.target.closest("[data-repo-file-new]");
+      if (fileNewButton && state.selectedRepo && !fileNewButton.disabled) {
+        if (!state.session?.nodeName) {
+          location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+          return;
+        }
+        openRepoNewFile(state.selectedRepo);
+        return;
+      }
+
       const issueNewButton = event.target.closest("[data-repo-issue-new]");
       if (issueNewButton && state.selectedRepo) {
         if (!state.session?.nodeName) {
@@ -3115,7 +3245,7 @@
         const { base, head } = state.repoCompare;
         const title = state.repoCompare.title || state.repoCompare.result?.title || "";
         navigateHistory(`${repoLinkUrl(state.selectedRepo)}/pulls`);
-        openPullCompose(state.selectedRepo, { base, head, title });
+        openPullCompose(state.selectedRepo, { base, head, title, aiModel: state.repoCompare.result?.aiModel || "" });
         return;
       }
 
@@ -3230,7 +3360,7 @@
         }
         const kind = recordButton.dataset.repoRecordKind || "";
         const number = recordButton.dataset.repoRecordNumber || "";
-        // Mirror the opened record into the address bar (/owner/repo/pulls/4)
+        // Mirror the opened record into the address bar (/owner/repo/pull/4)
         // so refresh and the desktop client's "View on website" button land on
         // this same detail page. Pending records have no mirror number yet.
         // Opening a record from the list always starts on Conversation.
@@ -3691,6 +3821,11 @@
   });
 
   document.addEventListener("change", (event) => {
+    const releaseAssetInput = event.target.closest?.("[data-repo-release-asset-upload]");
+    if (releaseAssetInput && state.selectedRepo) {
+      void handleReleaseAssetUpload(state.selectedRepo, releaseAssetInput);
+      return;
+    }
     if (handleRepoForgeMirrorChange(event)) return;
     const discussionFilter = event.target.closest?.("[data-repo-discussion-filter]");
     if (discussionFilter) {
@@ -3820,6 +3955,12 @@
       }
       return;
     }
+    const collaboratorForm = event.target.closest("[data-repo-collaborator-form]");
+    if (collaboratorForm && state.selectedRepo) {
+      event.preventDefault();
+      void handleRepoCollaboratorAdd(state.selectedRepo, collaboratorForm);
+      return;
+    }
     const settingsForm = event.target.closest("[data-repo-settings-form]");
     if (settingsForm && state.selectedRepo) {
       event.preventDefault();
@@ -3904,6 +4045,24 @@
       } finally {
         if (submit) submit.disabled = false;
       }
+      return;
+    }
+    const projectForm = event.target.closest("[data-repo-project-form]");
+    if (projectForm && state.selectedRepo) {
+      event.preventDefault();
+      void handleProjectFormSubmit(state.selectedRepo, projectForm);
+      return;
+    }
+    const releaseForm = event.target.closest("[data-repo-release-form]");
+    if (releaseForm && state.selectedRepo) {
+      event.preventDefault();
+      void handleReleaseFormSubmit(state.selectedRepo, releaseForm);
+      return;
+    }
+    const discussionForm = event.target.closest("[data-repo-discussion-form]");
+    if (discussionForm && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionComposeSubmit(state.selectedRepo, discussionForm);
       return;
     }
     const issueForm = event.target.closest("[data-repo-issue-form]");
@@ -4458,8 +4617,8 @@
               loadRepoCommits(repo);
             }
           }
-          // Step Back/Forward between a record detail (/pulls/4), one of its
-          // sections (/pulls/4/files) and the list.
+          // Step Back/Forward between a record detail (/pull/4), one of its
+          // sections (/pull/4/files) and the list.
           if (["pulls", "discussions", "issues"].includes(kind)) {
             const recordNumber = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
             if (kind === "pulls" && recordNumber === "send") {
@@ -4495,10 +4654,10 @@
               }
             }
           }
-        } else if (kind === "blob" && path) {
-          loadRepositoryBlob(repo, path);
         } else {
-          loadRepositoryTree(repo, kind === "tree" ? path : "");
+          const routeRef = String(new URLSearchParams(location.search).get("ref") || "").trim();
+          applyRepoCodeRef(repo, routeRef || repoDefaultBranch(repo));
+          void openRepoCodeRoute(repo, kind, path, { explicitRef: Boolean(routeRef) });
         }
         return;
       }

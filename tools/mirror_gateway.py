@@ -457,7 +457,7 @@ OPERATION_QUERY_FIELDS = {
     "branches": frozenset(),
     "search": frozenset({"path", "ref"}),
     "stats": frozenset({"ref"}),
-    "pulse": frozenset({"period", "person"}),
+    "pulse": frozenset({"period", "person", "view"}),
     "sizes": frozenset({"ref"}),
     "release-blob": frozenset({"sha256", "path"}),
     "merge-pull": frozenset(),
@@ -3729,6 +3729,94 @@ def pulse_window_end(period: str, now_seconds: int) -> int:
     return -(-max(0, int(now_seconds)) // bucket) * bucket
 
 
+PULSE_PEOPLE_VIEW = "people"
+PULSE_PEOPLE_SECONDS = 365 * 86400
+PULSE_PEOPLE_BUCKET = 3600
+PULSE_PEOPLE_LIMIT = 1000
+PULSE_PEOPLE_KINDS = {"pull": "pulls", "issue": "issues", "review": "reviews"}
+
+
+def pulse_view(query: Mapping[str, str]) -> str:
+    view = str(query.get("view") or "")
+    if "view" in query and view != PULSE_PEOPLE_VIEW:
+        raise GatewayError("invalid pulse view")
+    if view and ("period" in query or "person" in query):
+        raise GatewayError("invalid pulse view")
+    return view
+
+
+def pulse_cache_end(query: Mapping[str, str], now_seconds: int) -> int:
+    if pulse_view(query) == PULSE_PEOPLE_VIEW:
+        bucket = PULSE_PEOPLE_BUCKET
+        return -(-max(0, int(now_seconds)) // bucket) * bucket
+    return pulse_window_end(pulse_period(query), now_seconds)
+
+
+def _pulse_day_mask(days: Iterable[int], first: int, count: int) -> str:
+    mask = bytearray(-(-count // 8))
+    for day in days:
+        offset = day - first
+        if 0 <= offset < count:
+            mask[offset // 8] |= 1 << (offset % 8)
+    return mask.hex()
+
+
+def _pulse_people(
+    ledger: Mapping[str, Any], start: int, end: int
+) -> tuple[list[dict[str, Any]], int]:
+    figures: dict[str, dict[str, Any]] = {}
+
+    def entry(key: str) -> dict[str, Any]:
+        row = figures.get(key)
+        if row is None:
+            row = figures[key] = {
+                "commits": 0, "pulls": 0, "issues": 0, "reviews": 0,
+                "days": set(), "last": 0}
+        return row
+
+    for key, times in ledger["commits"].items():
+        low = bisect.bisect_left(times, start)
+        high = bisect.bisect_left(times, end)
+        if low < high:
+            row = entry(key)
+            row["commits"] += high - low
+            row["days"].update(at // 86400 for at in times[low:high])
+            row["last"] = max(row["last"], times[high - 1])
+    events = ledger["events"]
+    for at, key, kind, _thread, _number, _bug in events[
+            bisect.bisect_left(events, (start,)):
+            bisect.bisect_left(events, (end,))]:
+        field = PULSE_PEOPLE_KINDS.get(kind)
+        if not field:
+            continue
+        row = entry(key)
+        row[field] += 1
+        row["days"].add(at // 86400)
+        row["last"] = max(row["last"], at)
+    first = start // 86400
+    count = (max(start, end - 1) // 86400) - first + 1
+    ordered = sorted(
+        figures.items(),
+        key=lambda item: (
+            -(item[1]["commits"] + item[1]["pulls"] + item[1]["issues"]
+              + item[1]["reviews"]),
+            item[0]))
+    people = []
+    for key, row in ordered[:PULSE_PEOPLE_LIMIT]:
+        people.append({
+            "key": key,
+            "name": ledger["names"].get(key, key),
+            "commits": row["commits"],
+            "pulls": row["pulls"],
+            "issues": row["issues"],
+            "reviews": row["reviews"],
+            "activeDays": len(row["days"]),
+            "dayMask": _pulse_day_mask(row["days"], first, count),
+            "lastAt": row["last"] * 1000,
+        })
+    return people, len(figures)
+
+
 def _pulse_ms(value: Any) -> int:
     try:
         number = int(float(str(value if value is not None else "").strip()
@@ -6423,6 +6511,8 @@ class GitRepository:
         self, query: Mapping[str, str], now_seconds: int,
         rules: tuple[str, ...] = (),
     ) -> dict[str, Any]:
+        if pulse_view(query) == PULSE_PEOPLE_VIEW:
+            return self.pulse_people(now_seconds, rules)
         period = pulse_period(query)
         person = pulse_person(query)
         spec = PULSE_PERIODS[period]
@@ -6553,6 +6643,31 @@ class GitRepository:
             "opened": listing(ledger["issues"], "opened"),
         }
         return response
+
+    def pulse_people(
+        self, now_seconds: int, rules: tuple[str, ...] = ()
+    ) -> dict[str, Any]:
+        now_seconds = max(0, int(now_seconds))
+        end = -(-now_seconds // PULSE_PEOPLE_BUCKET) * PULSE_PEOPLE_BUCKET
+        start = max(0, end - PULSE_PEOPLE_SECONDS)
+        with self._pulse_lock:
+            ledger = self._pulse_index(tuple(rules))
+        people, total = _pulse_people(ledger, start, end)
+        return {
+            "ok": True,
+            "commit": ledger["main"],
+            "branch": self.default_branch_ref()[len("refs/heads/"):],
+            "view": PULSE_PEOPLE_VIEW,
+            "since": _pulse_iso(start),
+            "until": _pulse_iso(min(end, now_seconds)),
+            "generatedAt": _pulse_iso(now_seconds),
+            "refreshSeconds": PULSE_PEOPLE_BUCKET,
+            "dayStart": datetime.fromtimestamp(
+                start - start % 86400, timezone.utc).date().isoformat(),
+            "people": people,
+            "peopleTotal": total,
+            "truncated": total > len(people),
+        }
 
     def sizes(self, query: Mapping[str, str]) -> dict[str, Any]:
         commit = self.resolve_commit(query.get("ref", ""))
@@ -8068,6 +8183,75 @@ def _pull_record_fields(text: str) -> dict[str, str]:
     return fields
 
 
+AI_MODEL_MAX = 80
+AI_DISCLOSURE_MESSAGE = (
+    "This repository asks every pull request to say which AI model "
+    "was used. Send \"aiModel\" with the pull request (for example "
+    "\"Claude Opus 5.5\", or \"None\"), add a line \"AI model: <name>\" "
+    "to the description, or add a Co-Authored-By trailer naming the "
+    "model to the head commit.")
+AI_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+AI_BODY_LINE_RE = re.compile(
+    r"^\s*(?:[-*+>]\s+)?AI[ -]?models?(?:\(s\))?(?:\s+used)?\s*:\s*(.+?)\s*$",
+    re.I)
+AI_COMMIT_SPLIT_RE = re.compile(r"(?=^From [0-9a-f]{7,64} )", re.M | re.I)
+AI_CO_AUTHOR_RE = re.compile(
+    r"^\s*Co-authored-by:\s*([^<\n]+?)\s*(?:<[^>\n]*>)?\s*$", re.I | re.M)
+AI_AGENT_TRAILER_RE = re.compile(
+    r"^\s*ForkMesh-Agent:\s*([A-Za-z0-9._-]{1,40})/([A-Za-z0-9._:-]{1,64})\s*$",
+    re.I | re.M)
+AI_MODEL_NAME_RE = re.compile(
+    r"\b(?:claude|opus|sonnet|haiku|gpt|chatgpt|openai|o[1-9]|gemini|copilot|"
+    r"codex|cursor|llama|mistral|mixtral|deepseek|qwen|grok|devin|aider|"
+    r"windsurf|jules|kimi|phi|glm)\b", re.I)
+
+
+def _clean_ai_model(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = " ".join(AI_CONTROL_RE.sub(
+        " ", value.replace("*", "").replace("`", "")).split())
+    return text[:AI_MODEL_MAX].strip()
+
+
+def _pull_ai_model(pull: Mapping[str, Any]) -> str:
+    model = _clean_ai_model(pull.get("aiModel"))
+    if model:
+        return model
+    description = pull.get("description", pull.get("body", ""))
+    for line in re.split(r"\r\n|[\r\n\u2028\u2029]", str(description or "")):
+        match = AI_BODY_LINE_RE.match(line.replace("*", ""))
+        if match and _clean_ai_model(match.group(1)):
+            return _clean_ai_model(match.group(1))
+    messages = [part for part in AI_COMMIT_SPLIT_RE.split(
+        str(pull.get("commits") or "")) if part.strip()]
+    for message in reversed(messages):
+        attested = AI_AGENT_TRAILER_RE.search(message)
+        if attested:
+            return _clean_ai_model(attested.group(2))
+        for match in AI_CO_AUTHOR_RE.finditer(message):
+            name = _clean_ai_model(match.group(1))
+            if name and AI_MODEL_NAME_RE.search(name):
+                return name
+    return ""
+
+
+def _repository_requires_ai_disclosure(repository: Any, base: str) -> bool:
+    try:
+        payload = repository.blob(
+            {"path": ".forkmesh/pulls.json", "ref": str(base or "")})
+    except (GatewayError, GitError):
+        return False
+    if payload.get("encoding") != "utf8":
+        return False
+    try:
+        settings = json.loads(str(payload.get("content") or ""))
+    except ValueError:
+        return False
+    return isinstance(settings, dict) and settings.get(
+        "requireAiDisclosure") is True
+
+
 def _pull_lifecycle_record(repository: Any, number: int) -> dict[str, str]:
     path = ".forkmesh/pulls/%d/pull.md" % number
     for ref in (
@@ -8160,6 +8344,13 @@ def _verify_dashboard_pull(
     return False
 
 
+DISCUSSION_CATEGORY_KEYS = frozenset({
+    "announcements", "ideas", "q&a", "show and tell", "maintainer notes",
+})
+DISCUSSION_STATUSES = ("open", "closed", "archived")
+DISCUSSION_OWNER_EVENT_TYPES = frozenset({"status", "delete"})
+
+
 def _verify_dashboard_discussion(
     number: int, event: Mapping[str, Any], owner: str = "", name: str = "",
 ) -> bool:
@@ -8173,7 +8364,24 @@ def _verify_dashboard_discussion(
         content = str(event.get("body") or "")
     elif event_type == "answer" and number > 0:
         content = str(event.get("target") or "")
+    elif (
+        event_type == "status" and number > 0
+        and event.get("status") in DISCUSSION_STATUSES
+    ):
+        content = str(event.get("status") or "")
+    elif (
+        event_type == "delete" and number > 0
+        and isinstance(event.get("target"), str)
+        and event.get("target", "").strip()
+    ):
+        content = str(event.get("target") or "")
     else:
+        return False
+    if event_type == "open" and (
+        not str(event.get("title") or "").strip()
+        or str(event.get("category") or "").strip().lower()
+        not in DISCUSSION_CATEGORY_KEYS
+    ):
         return False
     try:
         timestamp = int(event.get("ts") or 0)
@@ -9136,6 +9344,23 @@ class DashboardService:
                     pull.get("description", pull.get("body", "")) or ""
                 )[: 256 * 1024]
                 pull.pop("body", None)
+                ai_model = _pull_ai_model(pull)
+                if ai_model:
+                    pull["aiModel"] = ai_model
+                else:
+                    pull.pop("aiModel", None)
+                    if _repository_requires_ai_disclosure(
+                        repository, str(pull.get("base") or "")
+                    ):
+                        return json_response(
+                            {
+                                "ok": False,
+                                "error": "ai_disclosure_required",
+                                "message": AI_DISCLOSURE_MESSAGE,
+                                "field": "aiModel",
+                            },
+                            422,
+                        )
                 item = {"number": number, "pull": pull}
             else:
                 return json_response(
@@ -9163,11 +9388,17 @@ class DashboardService:
                 "titleIfNew": str(data.get("titleIfNew") or "")[:240],
                 "event": event,
             }
-            if (
-                str(event.get("type") or "") == "answer"
-                and actor
-                and actor == owner
-                and trusted_browser_origin
+            owner_session = bool(
+                actor and actor == owner and trusted_browser_origin
+            )
+            event_type = str(event.get("type") or "")
+            if event_type in DISCUSSION_OWNER_EVENT_TYPES and not owner_session:
+                return json_response(
+                    {"ok": False, "error": "not_authorized"}, 403
+                )
+            if owner_session and (
+                event_type == "answer"
+                or event_type in DISCUSSION_OWNER_EVENT_TYPES
             ):
                 item["meta"] = {"ownerApproved": True}
         item["submittedAt"] = self.application.clock_ms()
@@ -11648,8 +11879,8 @@ class GatewayApplication:
                     repository, operation, query, git_protocol)
             elif method in ("GET", "HEAD") and operation == PULSE_OPERATION:
                 cache_key = self._repository_response_cache_key(
-                    repository, operation, query, "until:%d" % pulse_window_end(
-                        pulse_period(query), int(self.clock_ms()) // 1000))
+                    repository, operation, query, "until:%d" % pulse_cache_end(
+                        query, int(self.clock_ms()) // 1000))
             elif method in ("GET", "HEAD") and operation in (
                 DIRECT_PUBLIC_READ_OPERATIONS - {"raw", "release-blob"}
             ):

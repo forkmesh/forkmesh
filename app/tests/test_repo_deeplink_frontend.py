@@ -181,7 +181,7 @@ def test_boot_only_loads_code_tree_when_code_is_visible():
     ]
     assert 'if (initialTab === "code") {' in render
     assert 'state.loadedRepoTabs.code = true;' in render
-    assert 'else loadRepositoryTree(repo, routeKind === "tree" ? routePath : "");' in render
+    assert 'void openRepoCodeRoute(repo, routeKind, routePath, { explicitRef: Boolean(routeRef) });' in render
     assert '{ background: initialTab !== "code" }' not in render
     tree = DASHBOARD_JS[
         DASHBOARD_JS.index("async function loadRepositoryTree")
@@ -189,5 +189,5 @@ def test_boot_only_loads_code_tree_when_code_is_visible():
     ]
     assert 'if (!background) setRepoTab("code");' in tree
     # Both URL rewrites (empty tree and populated tree) are background-gated.
-    assert tree.count('navigateHistory(repoLinkUrl(repo, "tree", path))') == 2
-    assert tree.count('if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));') == 2
+    assert tree.count('navigateHistory(repoCodeLinkUrl(repo, "tree", path))') == 2
+    assert tree.count('if (!background) navigateHistory(repoCodeLinkUrl(repo, "tree", path));') == 2

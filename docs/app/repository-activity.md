@@ -62,6 +62,15 @@ distinct `authors`, newest 200 `items`), `leaderboard` (top 50 with
 that person's rank, score, `totals` now and `before` (at the window start, or
 a week ago for all time).
 
+`view=people` (no `period` or `person`) returns every human's own figures for
+the trailing 365 days instead: `people` (at most 1000, most active first) with
+`key` (the case-folded identity), `name`, `commits` (default branch, merges
+excluded), `pulls` and `issues` opened, `reviews` of someone else's pull
+request, `activeDays`, `dayMask` (hex, bit 0 is `dayStart`, one bit per UTC
+day) and `lastAt`, plus `peopleTotal` and `truncated`. It is computed from the
+same ledger as the leaderboard, cached per hour, and is what the chat member
+list totals across repositories ([chat-member-stats.md](chat-member-stats.md)).
+
 ### Where the data comes from
 
 - Commits: `git log --no-merges` of the default branch (author name, email,

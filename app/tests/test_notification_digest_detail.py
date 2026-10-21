@@ -174,12 +174,12 @@ def test_digest_title_drops_the_repository_however_it_was_cased():
 
 
 def test_digest_maps_each_source_to_its_public_route_segment():
-    # Stored sources are singular ("pull"); the web route is plural
-    # ("/pulls/93"). Interpolating the source directly would 404.
+    # Stored sources are singular ("issue"); the web route of an issue is
+    # plural ("/issues/93") and of a pull request "/pull/93".
     ns = _load()
     for source, segment, noun in (
         ("issue", "issues", "issue"),
-        ("pull", "pulls", "pull request"),
+        ("pull", "pull", "pull request"),
         ("discussion", "discussions", "discussion"),
         ("issue_assigned", "issues", "issue"),
         ("bounty", "issues", "issue"),
@@ -382,21 +382,21 @@ def test_unaliased_node_repo_keeps_its_own_route():
     # account name and produce a link that resolves nowhere.
     ns = _load()
     _subject, text, html = ns["_notification_digest_email"](
-        "jett",
+        "alice",
         [{
             "kind": "pull_submitted",
-            "title": "Pull request submitted for jetts-box/notes",
+            "title": "Pull request submitted for alices-box/notes",
             "body": "",
-            "repo": "jetts-box/notes",
+            "repo": "alices-box/notes",
             "actor": "bob",
             "ts": 1783607520000,
             "meta": {"number": 3, "source": "pull"},
         }],
-        identity={"repos": {"jetts-box/notes": ""}},
+        identity={"repos": {"alices-box/notes": ""}},
         base_url="https://forkmesh.com")
-    assert text.startswith("Hi jett,")
-    assert "- [jetts-box/notes] #3 Pull request submitted\n" in text
-    assert "https://forkmesh.com/jetts-box/notes/pulls/3" in html
+    assert text.startswith("Hi alice,")
+    assert "- [alices-box/notes] #3 Pull request submitted\n" in text
+    assert "https://forkmesh.com/alices-box/notes/pull/3" in html
 
 
 def test_digest_greets_the_account_that_owns_the_mailbox():
@@ -671,7 +671,7 @@ def test_instant_email_primary_action_opens_the_record_not_the_site_root():
         "meta": {"number": 93, "source": "pull"},
     }, base_url="https://forkmesh.com")
     assert "Open pull request" in html
-    assert "https://forkmesh.com/alice/forkmesh/pulls/93" in html
+    assert "https://forkmesh.com/alice/forkmesh/pull/93" in html
 
 
 def test_instant_email_subject_degrades_when_the_item_has_no_title():

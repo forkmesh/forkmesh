@@ -394,6 +394,14 @@ async def insert(runtime, repo_id, key_bi, owner_bi, creator_bi, visibility,
         created_at)
 
 
+async def set_visibility(runtime, repo_id, visibility):
+    if visibility not in ("public", "private"):
+        raise ValueError("visibility")
+    await runtime.d1_run(
+        "UPDATE hosted_repos SET visibility=? WHERE id=? AND deleted_at=0",
+        visibility, repo_id)
+
+
 async def link_organization(runtime, org_bi, repo, node_owner, now):
     """Link a hosted repository into an organization (org_repos alias)."""
     repo = str(repo or "").lower()

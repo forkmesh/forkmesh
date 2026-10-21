@@ -70,7 +70,9 @@ is ported line for line as `diffHealthReport` and `diffLineFlags`:
   opens a popover with the evidence behind its score and, when added lines are
   flagged for it, a button that steps through them. The web has no Git base or
   conflict check, so Merge is capped at 84, the phone's rule for an unknown Git
-  state.
+  state. Security is a pattern scan, not a security review, so a clean
+  Security score is muted rather than green and its popover says so: a regex
+  finding nothing must not read as a security pass.
 - **Per line**: an added line that trips a rule gets a 3px bar on its left edge
   (red for secrets, TLS bypasses, unsafe calls, open CORS, plain HTTP and
   conflict markers; amber for the rest) and a `⚑ label` tag after the code,

@@ -3910,6 +3910,22 @@ int main(int argc, char *argv[])
               "tombstoning a project succeeds");
         check(projects.loadAll().isEmpty(),
               "a tombstoned project disappears from loadAll");
+        {
+            QDir().mkpath(dir + "/.forkmesh/projects/2");
+            QFile webProject(dir + "/.forkmesh/projects/2/project-2.json");
+            check(webProject.open(QIODevice::WriteOnly) &&
+                      webProject.write(QByteArray("{\n    \"author\": \"WEBPUB\",\n    \"authorName\": \"alice\",\n    \"body\": \"From the browser\",\n    \"createdAt\": 1790000000000,\n    \"endDate\": 0,\n    \"events\": [\n        {\n            \"author\": \"WEBPUB\",\n            \"authorName\": \"alice\",\n            \"body\": \"From the browser\",\n            \"id\": \"open-web-1790000000000\",\n            \"sig\": \"s\",\n            \"title\": \"Web roadmap\",\n            \"ts\": 1790000000000,\n            \"type\": \"open\"\n        },\n        {\n            \"author\": \"WEBPUB\",\n            \"authorName\": \"alice\",\n            \"id\": \"issues-web-1790000000001\",\n            \"issues\": [\n                3,\n                9\n            ],\n            \"sig\": \"s\",\n            \"ts\": 1790000000001,\n            \"type\": \"issues\"\n        },\n        {\n            \"author\": \"WEBPUB\",\n            \"authorName\": \"alice\",\n            \"id\": \"status-web-1790000000002\",\n            \"sig\": \"s\",\n            \"status\": \"closed\",\n            \"ts\": 1790000000002,\n            \"type\": \"status\"\n        }\n    ],\n    \"issues\": [\n        3,\n        9\n    ],\n    \"milestone\": \"\",\n    \"number\": 2,\n    \"schema\": \"forkmesh-project-v1\",\n    \"startDate\": 0,\n    \"status\": \"closed\",\n    \"title\": \"Web roadmap\",\n    \"updatedAt\": 1790000000002\n}\n")) > 0,
+                  "write a web-made project file");
+            webProject.close();
+            const QList<Project> web = projects.loadAll(&err);
+            check(web.size() == 1 && web.first().number == 2 &&
+                      web.first().title == "Web roadmap" &&
+                      web.first().body == "From the browser" &&
+                      web.first().status == "closed" &&
+                      web.first().issues == (QList<int>{3, 9}) &&
+                      web.first().events.size() == 3,
+                  "a web-made project loads with its metadata and events");
+        }
 
         IssueStore issues(dir, QString(), &identity, "tester");
         const int issueNumber =
@@ -6345,6 +6361,59 @@ int main(int argc, char *argv[])
               "discussion archive succeeds");
         check(discussions.setStatus(dn, "open", &err),
               "archived discussion can be reopened");
+        DiscussionEvent webClose;
+        webClose.type = "status";
+        webClose.status = "closed";
+        webClose = discussions.makeSignedEvent(dn, webClose);
+        check(DiscussionEvent::fromJson(webClose.toJson()).status == "closed",
+              "a status event keeps its status through JSON");
+        check(!discussions.applyRemoteEvent(dn, webClose, QString(), &err),
+              "an unapproved remote status change is refused");
+        check(discussions.applyRemoteEvent(dn, webClose, QString(), &err, true),
+              "an owner-approved remote close applies");
+        check(discussions.loadAll().first().status == "closed",
+              "the remote close is written to discussion.md");
+        DiscussionEvent lateReply;
+        lateReply.type = "comment";
+        lateReply.body = "too late";
+        lateReply = discussions.makeSignedEvent(dn, lateReply);
+        const int repliesBeforeLate = discussions.loadAll().first().commentCount();
+        check(discussions.applyRemoteEvent(dn, lateReply, QString(), &err) &&
+                  discussions.loadAll().first().commentCount() == repliesBeforeLate,
+              "a remote reply to a closed discussion is consumed, not written");
+        DiscussionEvent webReopen = webClose;
+        webReopen.status = "open";
+        check(discussions.applyRemoteEvent(dn, webReopen, QString(), &err, true) &&
+                  discussions.loadAll().first().status == "open",
+              "an owner-approved remote reopen applies");
+        DiscussionEvent webDelete;
+        webDelete.type = "delete";
+        webDelete.target = remoteComment.id;
+        webDelete = discussions.makeSignedEvent(dn, webDelete);
+        check(!discussions.applyRemoteEvent(dn, webDelete, QString(), &err),
+              "an unapproved remote reply delete is refused");
+        check(discussions.applyRemoteEvent(dn, webDelete, QString(), &err, true) &&
+                  discussions.loadAll().first().commentCount() == repliesBeforeLate - 1,
+              "an owner-approved remote delete removes that reply");
+        check(discussions.applyRemoteEvent(dn, webDelete, QString(), &err, true),
+              "a redelivered delete is consumed");
+        {
+            const int doomed = discussions.createDiscussion("Doomed", "bye", "Ideas", &err);
+            DiscussionEvent wholeDelete;
+            wholeDelete.type = "delete";
+            wholeDelete.target = "#discussion";
+            wholeDelete = discussions.makeSignedEvent(doomed, wholeDelete);
+            check(!discussions.applyRemoteEvent(doomed, wholeDelete, QString(), &err),
+                  "an unapproved remote discussion delete is refused");
+            const bool applied =
+                discussions.applyRemoteEvent(doomed, wholeDelete, QString(), &err, true);
+            const QList<Discussion> remaining = discussions.loadAll();
+            check(applied && std::none_of(remaining.begin(), remaining.end(),
+                                          [&](const Discussion &d) { return d.number == doomed; }),
+                  "an owner-approved remote delete removes the whole discussion");
+            check(discussions.applyRemoteEvent(doomed, wholeDelete, QString(), &err, true),
+                  "a redelivered discussion delete is consumed");
+        }
         const int qn = discussions.createDiscussion(
             "How?", "question", "Q&A", &err);
         check(discussions.addComment(qn, "an answer", &err),

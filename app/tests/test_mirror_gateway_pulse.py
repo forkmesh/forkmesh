@@ -487,3 +487,59 @@ def test_configured_exclusions_and_the_gateway_node_are_never_ranked(
     finally:
         app.close()
     assert "mirror-a" in gateway.pulse_exclusion_rules("mirror-a", {})
+
+
+def test_people_view_counts_each_human_over_the_past_year(
+        pulse_app, monkeypatch):
+    app, clock, _bare = pulse_app
+    value = payload(app, "view=people")
+    end = -(-NOW_S // 3600) * 3600
+    assert value["view"] == "people"
+    assert value["since"] == gateway._pulse_iso(end - 365 * DAY)
+    assert value["refreshSeconds"] == 3600
+    assert "leaderboard" not in value and "pulls" not in value
+    rows = {row["key"]: row for row in value["people"]}
+    figures = {
+        key: (row["commits"], row["pulls"], row["issues"], row["reviews"])
+        for key, row in rows.items()}
+    assert figures == {
+        "alice": (10, 1, 0, 1), "bob": (1, 1, 0, 1), "carol": (2, 0, 0, 0),
+        "dave": (0, 0, 1, 0), "erin": (0, 1, 0, 0), "frank": (0, 1, 1, 0),
+        "grace": (0, 0, 1, 0)}
+    assert value["peopleTotal"] == 7 and value["truncated"] is False
+    assert [row["key"] for row in value["people"]][:2] == ["alice", "bob"]
+    alice = rows["alice"]
+    assert alice["lastAt"] == (NOW_S - 3 * 3600) * MS
+    first = (end - 365 * DAY) // DAY
+    assert value["dayStart"] == gateway._pulse_iso(first * DAY)[:10]
+    mask = bytes.fromhex(alice["dayMask"])
+    days = {first + index for index in range(len(mask) * 8)
+            if mask[index // 8] >> (index % 8) & 1}
+    expected = {(NOW_S - offset) // DAY for offset in (
+        40 * DAY, 4 * DAY, 2 * DAY, 2 * DAY + 6 * 60, DAY, 12 * 3600,
+        3 * 3600)}
+    assert days == expected and alice["activeDays"] == len(expected)
+    assert all(not gateway._pulse_is_automated(row["name"])
+               for row in value["people"])
+    assert read(app, "view=people").headers[
+        "X-ForkMesh-Memory-Cache"] == "hit"
+    clock[0] = NOW + 3601 * 1000
+    assert read(app, "view=people").headers[
+        "X-ForkMesh-Memory-Cache"] == "miss"
+    for query in ("view=leaderboard", "view=people&period=1w",
+                  "view=people&person=alice", "view="):
+        assert read(app, query).status == 404, query
+    monkeypatch.setattr(gateway, "PULSE_PEOPLE_LIMIT", 2)
+    clock[0] = NOW + 2 * 3601 * 1000
+    limited = payload(app, "view=people")
+    assert len(limited["people"]) == 2 and limited["truncated"] is True
+
+
+def test_the_worker_router_forwards_the_people_view():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    import edge_routing
+    assert edge_routing.masked_target_url(
+        "https://core.example.test", "alice", "project", "pulse",
+        {"view": "people"},
+    ) == ("https://core.example.test/v1/repositories/alice/project/pulse"
+          "?view=people")

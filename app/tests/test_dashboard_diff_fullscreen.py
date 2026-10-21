@@ -1,7 +1,10 @@
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -180,6 +183,8 @@ def test_keyboard_and_controls_are_wired_without_inline_handlers():
 
 
 def _run_node(source):
+    if shutil.which("node") is None:
+        pytest.skip("Node.js is unavailable")
     result = subprocess.run(["node", "-e", source], capture_output=True, text=True, check=True)
     return json.loads(result.stdout)
 
@@ -284,6 +289,7 @@ def test_indicators_render_escaped_and_jump_to_flagged_lines():
           none: renderRepoDiffFileDot(undefined),
           tag: renderDiffLineFlagTag(["tlsBypass", "request"]),
           attrs: diffLineFlagAttributes(["todo", "request"]),
+          clean: renderRepoDiffHealthPills(diffHealthReport([]), new Map()),
         }}));
     """))
     pills = out["pills"]
@@ -292,6 +298,10 @@ def test_indicators_render_escaped_and_jump_to_flagged_lines():
     assert 'data-repo-diff-mark-next="security"' in pills
     assert 'data-repo-diff-mark-next="complexity"' not in pills
     assert "Green 85–100 · orange 60–84 · red 0–59" in pills
+    assert pills.count("not a security review") == 1
+    clean = out["clean"]
+    assert re.search(r'data-repo-diff-health-pill="security" class="fm-diff-menu">\s*<summary class="fm-diff-pill fm-diff-pill-muted"', clean)
+    assert "fm-diff-pill-success" in clean
     assert 'data-repo-diff-mark-file="&lt;x&gt;.py"' in out["fileMarks"]
     assert '<button type="button" data-repo-diff-mark-next="security"' in out["fileMarks"]
     assert re.search(r'data-repo-diff-mark-next="quality"[^>]*data-tone="attention"', out["fileMarks"])

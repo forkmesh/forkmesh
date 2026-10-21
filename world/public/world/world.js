@@ -23066,7 +23066,7 @@ class ForkMeshWorld extends HTMLElement {
     }
     const path = `/${encodeURIComponent(owner)}/${encodeURIComponent(
       name,
-    )}/${recordKind === "pull" ? "pulls" : "issues"}${
+    )}/${recordKind === "pull" ? (number ? "pull" : "pulls") : "issues"}${
       number ? `/${number}` : ""
     }`;
     const detail = this.$("[data-world-detail]");

@@ -2026,6 +2026,16 @@ class Default:
                 security_advisories._bind_runtime(globals())
                 return await security_advisories.repo_route(
                     self.env, request, owner, repo)
+            if action == "project-edit":
+                import repository_projects
+                repository_projects._bind_runtime(globals())
+                return await repository_projects.route(
+                    self.env, request, owner, repo, action)
+            if action == "release-edit":
+                import repository_releases
+                repository_releases._bind_runtime(globals())
+                return await repository_releases.route(
+                    self.env, request, owner, repo, action)
             if action == "file-edit":
                 import repository_file_edits
                 repository_file_edits._bind_runtime(globals())
@@ -3056,6 +3066,10 @@ class Default:
         if url.path in ("/api/chat/activity", "/api/chat/activity/"):
             return await chat_activity_handler(self.env, request)
 
+        if url.path in ("/api/chat/member-stats", "/api/chat/member-stats/"):
+            return await _chat_member_stats.member_stats_route(
+                self.env, request)
+
         # Public AI-agent guestbook. The self-describing GET advertises one
         # narrow query-string GET capability; accepted notes become ordinary
         # encrypted messages in public World #general, never arbitrary room
@@ -3478,9 +3492,8 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             if (await _repo_is_private(self.env, owner, repo)
-                    and not (method_name(request) in ("GET", "DELETE")
-                             and await _authorize_owner(
-                                 self.env, request, owner))):
+                    and not await _private_collaboration_allowed(
+                        self.env, request, owner, repo)):
                 return json_response({"error": "not_found"}, status=404)
             return await issues_handler(self.env, request, owner, repo)
 
@@ -3586,9 +3599,8 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             if (await _repo_is_private(self.env, owner, repo)
-                    and not (method_name(request) in ("GET", "DELETE")
-                             and await _authorize_owner(
-                                 self.env, request, owner))):
+                    and not await _private_collaboration_allowed(
+                        self.env, request, owner, repo)):
                 return json_response({"error": "not_found"}, status=404)
             return await pulls_handler(self.env, request, owner, repo)
 
@@ -3599,9 +3611,8 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             if (await _repo_is_private(self.env, owner, repo)
-                    and not (method_name(request) in ("GET", "DELETE")
-                             and await _authorize_owner(
-                                 self.env, request, owner))):
+                    and not await _private_collaboration_allowed(
+                        self.env, request, owner, repo)):
                 return json_response({"error": "not_found"}, status=404)
             return await discussions_handler(self.env, request, owner, repo)
 
@@ -3700,6 +3711,15 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_star_handler(self.env, request, owner, repo)
+
+        reactions_match = REPO_REACTIONS_RE.match(url.path)
+        if reactions_match:
+            owner = safe_segment(reactions_match.group(1))
+            repo = safe_segment(reactions_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await comment_reactions_handler(
+                self.env, request, owner, repo)
 
         forks_match = REPO_FORKS_RE.match(url.path)
         if forks_match:

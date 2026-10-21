@@ -117,7 +117,7 @@ async function openFiles(page) {
     localStorage.setItem("forkmesh.pull-layout.v1", JSON.stringify({ explorer: "list", diff: "split" }));
   });
   await mockRepoPage(page);
-  await page.goto("/acme/widgets/pulls/94/files");
+  await page.goto("/acme/widgets/pull/94/files");
   const files = page.locator('[data-repo-record-panel="files"]');
   await expect(files).toBeVisible({ timeout: 15_000 });
   await expect(files.locator("[data-repo-pull-diff-file]")).toHaveCount(12);

@@ -233,6 +233,7 @@ def entry(staged_src):
     ("stats", "ref=main"),
     ("pulse", "period=1m&person=alice&ref=main&fmv=3"),
     ("pulse", "period=all&viewer="),
+    ("pulse", "view=people&ref=main"),
     ("sizes", ""),
     ("branches", "ref=main"),
 ])

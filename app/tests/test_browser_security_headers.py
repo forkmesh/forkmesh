@@ -64,7 +64,7 @@ def test_only_explicit_embedded_documents_are_frameable():
         "/chat",
         "/chat.html",
         "/:owner/:repo/issues/:number",
-        "/:owner/:repo/pulls/:number",
+        "/:owner/:repo/pull/:number",
     ):
         rule = _rule(path)
         assert "! Content-Security-Policy" in rule

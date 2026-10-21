@@ -1,5 +1,8 @@
+import base64
+import binascii
 import difflib
 import hashlib
+import zlib
 import re
 import time
 from email.header import Header
@@ -19,6 +22,7 @@ LINE_RE = re.compile(r"[^\n]*\n|[^\n]+\Z")
 QUOTE_RE = re.compile(r'[\x00-\x1f"\\\x7f]')
 QUOTE_ESCAPES = {"\t": "\\t", "\n": "\\n", '"': '\\"', "\\": "\\\\"}
 MODES = frozenset({"", "commit", "probe", "propose"})
+OPS = frozenset({"edit", "delete", "rename"})
 CONTEXT_LINES = 3
 
 
@@ -50,8 +54,12 @@ def valid_path(path):
     if path.startswith("/") or "\\" in path or "\0" in path:
         return False
     return not any(
-        part in ("", ".", "..", ".git")
+        part in ("", ".", "..") or _git_dir_alias(part)
         for part in path.split("/"))
+
+
+def _git_dir_alias(part):
+    return part.rstrip(". ").lower() in (".git", "git~1")
 
 
 def valid_branch(branch):
@@ -188,13 +196,129 @@ def rebuilt_trees(listings, path, blob_oid, create=False):
 
 def build_commit(listings, parent, path, content, name, email, seconds,
                  message, create=False):
-    blob = content.encode("utf-8")
+    blob = content.encode("utf-8") if isinstance(content, str) else bytes(
+        content)
     blob_oid = object_id("blob", blob)
     root, trees = rebuilt_trees(listings, path, blob_oid, create)
     commit = commit_payload(root, parent, name, email, seconds, message)
     commit_oid = object_id("commit", commit)
     objects = [("blob", blob)] + trees + [("commit", commit)]
     return commit_oid, blob_oid, pack(objects)
+
+
+def _entry_rows(entries):
+    rows = {}
+    for entry in entries or []:
+        mode = str(entry.get("mode") or "")
+        oid = str(entry.get("oid") or "").lower()
+        name = str(entry.get("name") or "")
+        if not mode or not OID_RE.match(oid) or not name:
+            raise FileEditError(
+                "gateway_outdated",
+                "The repository host does not report object ids yet.", 503)
+        rows[name] = (mode, oid)
+    return rows
+
+
+def apply_tree_changes(listings, changes):
+    directories = {""}
+    for path in changes:
+        parts = path.split("/")
+        for depth in range(1, len(parts)):
+            directories.add("/".join(parts[:depth]))
+    results = {}
+    objects = []
+    for directory in sorted(
+            directories, key=lambda d: -(d.count("/") + 1 if d else 0)):
+        rows = _entry_rows(listings.get(directory))
+        for path, value in changes.items():
+            parent, _, name = path.rpartition("/")
+            if parent != directory:
+                continue
+            if value is None:
+                rows.pop(name, None)
+            else:
+                rows[name] = value
+        for child, oid in results.items():
+            parent, _, name = child.rpartition("/")
+            if parent != directory:
+                continue
+            if oid is None:
+                rows.pop(name, None)
+            else:
+                rows[name] = ("40000", oid)
+        if not rows and directory:
+            results[directory] = None
+            continue
+        payload = tree_payload(sorted(
+            ((mode, name, oid) for name, (mode, oid) in rows.items()),
+            key=_tree_sort_key))
+        results[directory] = object_id("tree", payload)
+        objects.append(("tree", payload))
+    return results[""], objects
+
+
+def _binary_literal(data):
+    packed = zlib.compress(data, 9)
+    lines = ["literal %d\n" % len(data)]
+    for start in range(0, len(packed), 52):
+        chunk = packed[start:start + 52]
+        size = len(chunk)
+        prefix = chr(ord("A") + size - 1) if size <= 26 else chr(
+            ord("a") + size - 27)
+        lines.append(prefix + base64.b85encode(chunk, pad=True).decode(
+            "ascii") + "\n")
+    lines.append("\n")
+    return "".join(lines)
+
+
+def binary_patch(path, old_bytes, new_bytes, old_oid, new_oid, mode,
+                 created=False):
+    out = ["diff --git %s %s\n" % (_side("a/", path), _side("b/", path))]
+    if created:
+        out.append("new file mode %s\n" % mode)
+        out.append("index %s..%s\n" % (ZERO_OID, new_oid))
+    else:
+        out.append("index %s..%s %s\n" % (old_oid, new_oid, mode))
+    out.append("GIT binary patch\n")
+    out.append(_binary_literal(new_bytes))
+    out.append(_binary_literal(old_bytes))
+    return "".join(out)
+
+
+async def _old_bytes(env, owner, repo, path, parent, current):
+    data = await _blob(env, owner, repo, path, parent)
+    raw = None
+    if isinstance(data, dict) and not data.get("truncated"):
+        content = data.get("content")
+        encoding = str(data.get("encoding") or "utf8")
+        try:
+            if encoding == "base64" and isinstance(content, str):
+                raw = base64.b64decode(content, validate=True)
+            elif isinstance(content, str):
+                raw = content.encode("utf-8")
+        except (binascii.Error, ValueError):
+            raw = None
+    if raw is None or object_id("blob", raw) != current:
+        raise FileEditError(
+            "base_unavailable",
+            "The current file could not be read to build the proposal.", 503)
+    return raw
+
+
+def deleted_patch(path, old_text, old_oid, mode):
+    lines = _lines(old_text)
+    out = [
+        "diff --git %s %s\n" % (_side("a/", path), _side("b/", path)),
+        "deleted file mode %s\n" % mode,
+        "index %s..%s\n" % (old_oid, ZERO_OID),
+        "--- %s\n" % _side("a/", path),
+        "+++ /dev/null\n",
+    ]
+    if lines:
+        out.append("@@ -%s +0,0 @@\n" % _range(0, len(lines)))
+        out.extend(_patch_line("-", line) for line in lines)
+    return "".join(out)
 
 
 def _lines(text):
@@ -293,7 +417,8 @@ def proposal_branch(actor, path, commit_oid):
     return branch if valid_branch(branch) else "web-edit/" + commit_oid[:12]
 
 
-async def _push(env, request, owner, repo, actor, branch, body, alias_owner):
+async def _push(env, request, owner, repo, actor, branch, body, alias_owner,
+                ref=None):
     core_held = owner.lower() in _core_push_nodes(env)
     upstream, _endpoint = await _https_mirror_push_send(
         env, request, owner, repo, actor, "POST", body, None,
@@ -311,7 +436,7 @@ async def _push(env, request, owner, repo, actor, branch, body, alias_owner):
         raise FileEditError(
             "push_refused", "The repository host refused the commit (HTTP %d)."
             % status, 502)
-    ref = "refs/heads/" + branch
+    ref = ref or "refs/heads/" + branch
     ok, reason = report_status(text, ref)
     if not ok:
         stale = any(word in reason for word in (
@@ -383,6 +508,12 @@ async def _save(env, request, owner, repo):
             "forbidden",
             "You need repository write permission to edit files.", 403,
             canPropose=True)
+    op = str(data.get("op") or "edit").strip().lower()
+    if op not in OPS:
+        return _error("invalid_op", "Unknown file operation.", 400)
+    if op != "edit":
+        return await _save_move(
+            env, request, owner, repo, data, actor, propose, op)
     path = str(data.get("path") or "")
     content = data.get("content")
     new_file = data.get("create") is True
@@ -397,8 +528,18 @@ async def _save(env, request, owner, repo):
         return _error("invalid_base", "Choose a valid base branch.", 400)
     if not isinstance(content, str):
         return _error("invalid_content", "The new text is missing.", 400)
-    content = content.replace("\r\n", "\n").replace("\r", "\n")
-    if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
+    binary = str(data.get("encoding") or "") == "base64"
+    if binary:
+        try:
+            content = base64.b64decode(content, validate=True)
+        except (binascii.Error, ValueError):
+            return _error("invalid_content", "The uploaded file is not valid "
+                          "base64.", 400)
+        size = len(content)
+    else:
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
+        size = len(content.encode("utf-8"))
+    if size > MAX_CONTENT_BYTES:
         return _error("too_large", "The file is larger than 2 MB.", 413)
     try:
         parent, listings, create = await _listings(
@@ -427,7 +568,8 @@ async def _save(env, request, owner, repo):
                 "conflict",
                 "Someone changed this file since you opened it; reload to "
                 "see their version.", 409)
-        new_blob = object_id("blob", content.encode("utf-8"))
+        new_blob = object_id(
+            "blob", content if binary else content.encode("utf-8"))
         if current == new_blob:
             return json_response({
                 "ok": True, "unchanged": True, "path": path, "oid": current,
@@ -440,7 +582,16 @@ async def _save(env, request, owner, repo):
         commit_oid, blob_oid, pack_bytes = build_commit(
             listings, parent, path, content, actor, email, seconds, message,
             create=new_file)
-        if propose:
+        if propose and binary:
+            old_bytes = b"" if new_file else await _old_bytes(
+                env, owner, repo, path, parent, current)
+            patch = binary_patch(
+                path, old_bytes, content, current, blob_oid, file_mode,
+                created=new_file)
+            commits = patch_mbox(
+                commit_oid, actor, email, seconds, message, patch)
+            head = proposal_branch(actor, path, commit_oid)
+        elif propose:
             old_text = await _old_text(
                 env, owner, repo, path, parent, current, new_file)
             patch = file_patch(
@@ -497,6 +648,162 @@ async def _save(env, request, owner, repo):
         "commit": commit_oid,
         "oid": blob_oid,
         "author": actor,
+        "subject": message,
+    }, cache_control="no-store")
+
+
+async def commit_paths(env, request, owner, repo, actor, branch, files,
+                       message, listings=None, parent=None):
+    if any(not valid_path(path) for path in files):
+        raise FileEditError("invalid_path", "That file path is not allowed.",
+                            400)
+    if listings is None:
+        listings, parent = {}, None
+        for path in files:
+            commit, found, _create = await _listings(
+                env, owner, repo, branch, path, "", allow_missing=True)
+            if parent is not None and commit != parent:
+                raise FileEditError(
+                    "conflict", "The branch moved; reload and try again.", 409)
+            parent = commit
+            for directory, entries in found.items():
+                listings.setdefault(directory, entries)
+    objects = []
+    changes = {}
+    for path, blob in files.items():
+        if blob is None:
+            if _current(listings, path) is None:
+                raise FileEditError(
+                    "not_found", "The file is no longer in the repository.",
+                    404)
+            changes[path] = None
+            continue
+        oid = object_id("blob", blob)
+        objects.append(("blob", blob))
+        changes[path] = ("100644", oid)
+    root, trees = apply_tree_changes(listings, changes)
+    email = noreply_email(actor, _public_base_url(env))
+    commit = commit_payload(root, parent, actor, email, int(time.time()),
+                            message)
+    commit_oid = object_id("commit", commit)
+    body = receive_pack_body(parent, commit_oid, "refs/heads/" + branch,
+                             pack(objects + trees + [("commit", commit)]))
+    await _push(env, request, owner, repo, actor, branch, body, "")
+    return commit_oid
+
+
+async def _save_move(env, request, owner, repo, data, actor, propose, op):
+    path = str(data.get("path") or "")
+    new_path = str(data.get("newPath") or "") if op == "rename" else ""
+    content = data.get("content")
+    base_oid = str(data.get("oid") or "").lower()
+    branch = str(data.get("branch") or "").strip()
+    base_ref = "" if propose else str(data.get("baseRef") or "").strip()
+    if not valid_path(path) or (op == "rename" and not valid_path(new_path)):
+        return _error("invalid_path", "That file path cannot be used.", 400)
+    if op == "rename" and new_path == path:
+        return _error("invalid_path", "Choose a different name.", 400)
+    if not valid_branch(branch):
+        return _error("invalid_branch", "Choose a valid branch name.", 400)
+    if base_ref and not valid_branch(base_ref) and not OID_RE.match(base_ref):
+        return _error("invalid_base", "Choose a valid base branch.", 400)
+    if content is not None and (op != "rename" or not isinstance(content, str)):
+        return _error("invalid_content", "Only a rename can carry new text.", 400)
+    if isinstance(content, str):
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
+        if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
+            return _error("too_large", "The file is larger than 2 MB.", 413)
+    try:
+        parent, listings, create = await _listings(
+            env, owner, repo, branch, path, base_ref)
+        if op == "rename":
+            moved_parent, moved, _ = await _listings(
+                env, owner, repo, branch, new_path, base_ref,
+                allow_missing=True)
+            if moved_parent != parent:
+                raise FileEditError(
+                    "conflict", "The branch moved; reload and try again.", 409)
+            for directory, entries in moved.items():
+                listings.setdefault(directory, entries)
+        entry = _current(listings, path)
+        if entry is None or entry.get("type") != "blob":
+            raise FileEditError(
+                "not_found", "The file is no longer in the repository.", 404)
+        file_mode = str(entry.get("mode") or "")
+        if file_mode not in FILE_MODES:
+            raise FileEditError(
+                "invalid_path", "That path is not a regular file.", 400)
+        current = str(entry.get("oid") or "").lower()
+        if not OID_RE.match(current):
+            raise FileEditError(
+                "gateway_outdated",
+                "The repository host does not report object ids yet.", 503)
+        if base_oid and base_oid != current:
+            raise FileEditError(
+                "conflict",
+                "Someone changed this file since you opened it; reload to "
+                "see their version.", 409)
+        if op == "rename" and _current(listings, new_path) is not None:
+            raise FileEditError(
+                "conflict", "A file or folder already has that name.", 409)
+        objects = []
+        changes = {path: None}
+        new_blob = current
+        if op == "rename":
+            if isinstance(content, str):
+                blob = content.encode("utf-8")
+                new_blob = object_id("blob", blob)
+                objects.append(("blob", blob))
+            changes[new_path] = (file_mode, new_blob)
+        root, trees = apply_tree_changes(listings, changes)
+        message = clean_message(
+            data.get("message"), path,
+            "Delete %s on the web" if op == "delete"
+            else "Rename %s on the web")
+        email = noreply_email(actor, _public_base_url(env))
+        seconds = int(time.time())
+        commit = commit_payload(root, parent, actor, email, seconds, message)
+        commit_oid = object_id("commit", commit)
+        objects = objects + trees + [("commit", commit)]
+        if propose:
+            old_text = await _old_text(
+                env, owner, repo, path, parent, current, False)
+            patch = deleted_patch(path, old_text, current, file_mode)
+            if op == "rename":
+                patch += file_patch(
+                    new_path, "",
+                    content if isinstance(content, str) else old_text,
+                    ZERO_OID, new_blob, file_mode, created=True)
+            commits = patch_mbox(
+                commit_oid, actor, email, seconds, message, patch)
+            head = proposal_branch(actor, path, commit_oid)
+        else:
+            old = ZERO_OID if create else parent
+            body = receive_pack_body(
+                old, commit_oid, "refs/heads/" + branch, pack(objects))
+            await _push(env, request, owner, repo, actor, branch, body, "")
+    except FileEditError as exc:
+        return _error(exc.code, exc.message, exc.status)
+    action = "repository.file_" + op + ("_proposal" if propose else "")
+    try:
+        await _audit_sensitive_action(
+            env, actor, action, "repository", owner + "/" + repo, "success", {
+                "path": path, "newPath": new_path, "branch": branch,
+                "commit": commit_oid, "parent": parent,
+            })
+    except Exception:
+        pass
+    if propose:
+        return json_response({
+            "ok": True, "proposal": True, "op": op, "path": path,
+            "newPath": new_path, "base": branch, "baseOid": parent,
+            "head": head, "headOid": commit_oid, "author": actor,
+            "subject": message, "patch": patch, "commits": commits,
+        }, cache_control="no-store")
+    return json_response({
+        "ok": True, "op": op, "path": path, "newPath": new_path,
+        "branch": branch, "createdBranch": create, "commit": commit_oid,
+        "oid": new_blob if op == "rename" else "", "author": actor,
         "subject": message,
     }, cache_control="no-store")
 

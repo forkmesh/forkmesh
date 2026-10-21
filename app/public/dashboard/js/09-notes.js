@@ -334,8 +334,8 @@
     const canEdit = noteCanEdit(note);
     const kindIcon = { issue: "circle-dot", pull: "git-pull-request", discussion: "message-square" };
     const chips = (note.links || []).map((link) => {
-      const section = link.kind === "pull" ? "pulls" : `${link.kind}s`;
-      const href = `${repoPathUrl({ owner: link.owner, name: link.repo })}?tab=${section}#${link.number}`;
+      const section = { pull: "pull", discussion: "discussions" }[link.kind] || "issues";
+      const href = `${repoPathUrl({ owner: link.owner, name: link.repo })}/${section}/${encodeURIComponent(link.number)}`;
       return `<span class="notes-chip"><span data-kind="${escapeHtml(link.kind)}">${noteIcon(kindIcon[link.kind] || "link")}</span><a href="${href}" title="${escapeHtml(link.owner)}/${escapeHtml(link.repo)} ${escapeHtml(link.kind)} #${link.number}">${escapeHtml(link.repo)}#${link.number}</a>${canEdit ? `<button type="button" class="notes-chip-x" data-note-unlink='${escapeHtml(JSON.stringify(link))}' aria-label="Unlink ${escapeHtml(link.repo)}#${link.number}">${noteIcon("x")}</button>` : ""}</span>`;
     }).join("");
     const adder = !canEdit ? ""

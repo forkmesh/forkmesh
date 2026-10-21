@@ -385,11 +385,21 @@ async def tag_moves_handler(env, request):
     if not account:
         return json_response(
             {"error": "unauthorized"}, status=401, cache_control="no-store")
+    granted, problem = await grant_tag_move(
+        env, account, owner, repo, ref, target)
+    if problem is not None:
+        return problem
+    return json_response(
+        {"ok": True, "ref": ref, "target": target, "expiresAt": granted},
+        cache_control="no-store")
+
+
+async def grant_tag_move(env, account, owner, repo, ref, target):
     await ensure_schema(env)
     node = await _org_repo_node(env, owner, repo) or owner
     audit_target = node + "/" + repo
     if node not in _core_push_nodes(env):
-        return json_response(
+        return 0, json_response(
             {"error": "tag_moves_unavailable",
              "message": "Tags move only on repositories the core nodes "
                         "hold."},
@@ -398,7 +408,7 @@ async def tag_moves_handler(env, request):
         await _audit_sensitive_action(
             env, account, "git.tag_move_authorize", "repository",
             audit_target, "denied", {"ref": ref, "target": target})
-        return json_response(
+        return 0, json_response(
             {"error": "forbidden"}, status=403, cache_control="no-store")
     now = int(Date.now())
     expires_at = now + TAG_MOVE_TTL_MS
@@ -414,9 +424,7 @@ async def tag_moves_handler(env, request):
     await _audit_sensitive_action(
         env, account, "git.tag_move_authorize", "repository", audit_target,
         "success", {"ref": ref, "target": target, "expiresAt": expires_at})
-    return json_response(
-        {"ok": True, "ref": ref, "target": target, "expiresAt": expires_at},
-        cache_control="no-store")
+    return expires_at, None
 
 
 async def branch_deletes_handler(env, request):

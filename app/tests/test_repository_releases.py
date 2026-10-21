@@ -1,0 +1,213 @@
+
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
+
+import repository_file_edits  # noqa: E402
+import repository_releases  # noqa: E402
+from test_repository_file_edits import (  # noqa: E402,F401
+    FakeRequest, bare_repo, git, git_out, harness)
+
+SHARED = ("json_response", "method_name", "bounded_json_request",
+          "_authed_account_name", "_audit_sensitive_action",
+          "_public_base_url")
+
+
+def releases_harness(bare, **kwargs):
+    calls = harness(bare, **kwargs)
+    for name in SHARED:
+        setattr(repository_releases, name, getattr(repository_file_edits, name))
+    notified = []
+
+    async def notify(env, owner, repo, release):
+        notified.append(release)
+    repository_releases.notify_release_published = notify
+    calls["notified"] = notified
+    return calls
+
+
+def release(body):
+    return asyncio.run(repository_releases.route(
+        object(), FakeRequest(body=body), "alice", "project", "release-edit"))
+
+
+def manifest(bare, tag):
+    return json.loads(git_out(
+        bare, "show", "main:.forkmesh/releases/%s/release.json" % tag))
+
+
+def test_a_release_creates_its_tag_and_notes(bare_repo):
+    calls = releases_harness(bare_repo)
+    head = git_out(bare_repo, "rev-parse", "main").strip()
+    result = release({"op": "save", "tag": "v1.0.0", "branch": "main",
+                      "title": "First release", "notes": "## Changes\n- all",
+                      "prerelease": True})
+    assert result["status"] == 200, result
+    assert result["data"]["createdTag"] is True
+    assert git_out(bare_repo, "rev-parse", "refs/tags/v1.0.0").strip() == head
+    record = manifest(bare_repo, "v1.0.0")
+    assert record["name"] == "First release" and record["prerelease"] is True
+    assert record["tag_commit"] == head and record["body"] == "## Changes\n- all"
+    assert record["source"] == "web" and record["assets"] == []
+    assert calls["notified"][0]["tag"] == "v1.0.0"
+    git(bare_repo, "fsck", "--strict", "--no-dangling")
+
+
+def test_editing_keeps_the_tag_and_creation_time(bare_repo):
+    releases_harness(bare_repo)
+    release({"op": "save", "tag": "v1.0.0", "branch": "main", "title": "A"})
+    first = manifest(bare_repo, "v1.0.0")
+    tag = git_out(bare_repo, "rev-parse", "refs/tags/v1.0.0").strip()
+    edited = release({"op": "save", "tag": "v1.0.0", "branch": "main",
+                      "title": "B", "notes": "fixed"})
+    assert edited["status"] == 200, edited
+    assert "createdTag" not in edited["data"]
+    record = manifest(bare_repo, "v1.0.0")
+    assert record["name"] == "B" and record["body"] == "fixed"
+    assert record["created_at"] == first["created_at"] and record["updated_at"]
+    assert git_out(bare_repo, "rev-parse", "refs/tags/v1.0.0").strip() == tag
+
+
+def test_a_tag_on_its_own_and_at_a_named_commit(bare_repo):
+    releases_harness(bare_repo)
+    first = git_out(bare_repo, "rev-list", "--max-parents=0", "main").strip()
+    tagged = release({"op": "tag", "tag": "seed", "branch": "main",
+                      "target": first})
+    assert tagged["status"] == 200, tagged
+    assert git_out(bare_repo, "rev-parse", "refs/tags/seed").strip() == first
+    again = release({"op": "tag", "tag": "seed", "branch": "main"})
+    assert again["status"] == 409
+
+
+def test_deleting_a_release_removes_its_notes_but_keeps_the_tag(bare_repo):
+    releases_harness(bare_repo)
+    release({"op": "save", "tag": "v2", "branch": "main", "title": "Two"})
+    gone = release({"op": "delete", "tag": "v2", "branch": "main"})
+    assert gone["status"] == 200, gone
+    assert git(bare_repo, "cat-file", "-e",
+               "main:.forkmesh/releases/v2/release.json",
+               check=False).returncode != 0
+    assert git_out(bare_repo, "rev-parse", "refs/tags/v2").strip()
+    assert release({"op": "delete", "tag": "v2", "branch": "main"})[
+        "status"] == 404
+
+
+def test_signed_and_reserved_channels_are_never_written(bare_repo, tmp_path):
+    releases_harness(bare_repo)
+    work = tmp_path / "signed"
+    git(tmp_path, "clone", "-q", str(bare_repo), str(work))
+    folder = work / ".forkmesh" / "releases" / "v9"
+    folder.mkdir(parents=True)
+    (folder / "release.json").write_text('{"tag": "v9"}\n')
+    (folder / "release.json.sig").write_text("signature\n")
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "-m", "signed")
+    git(work, "tag", "v9")
+    git(work, "push", "-q", "origin", "main", "v9")
+    signed = release({"op": "save", "tag": "v9", "branch": "main", "title": "x"})
+    assert signed["status"] == 409 and signed["data"]["error"] == "signed_release"
+    grants = []
+
+    async def grant(_env, actor, owner, repo, ref, target):
+        grants.append(ref)
+        return 1, None
+    repository_releases.core_push_grant_tag_move = grant
+    tag_before = git_out(bare_repo, "rev-parse", "refs/tags/v9").strip()
+    moved = release({"op": "move-tag", "tag": "v9", "branch": "main",
+                     "target": git_out(bare_repo, "rev-parse", "main~1").strip()})
+    assert moved["status"] == 409 and moved["data"]["error"] == "signed_release"
+    assert grants == []
+    assert git_out(bare_repo, "rev-parse", "refs/tags/v9").strip() == tag_before
+    for name in ("latest", "candidate-1.2.3"):
+        refused = release({"op": "save", "tag": name, "branch": "main"})
+        assert refused["data"]["error"] == "reserved_tag"
+
+
+def test_only_writers_manage_releases(bare_repo):
+    releases_harness(bare_repo, owner_write=False)
+    refused = release({"op": "save", "tag": "v1", "branch": "main"})
+    assert refused["status"] == 403
+    releases_harness(bare_repo, access=False, owner_write=False)
+    assert release({"op": "save", "tag": "v1", "branch": "main"})[
+        "status"] == 404
+    releases_harness(bare_repo)
+    for body in ({"op": "save", "tag": "../x", "branch": "main"},
+                 {"op": "rename", "tag": "v1", "branch": "main"},
+                 {"op": "save", "tag": "v1", "branch": "main",
+                  "notes": "x" * (128 * 1024 + 1)}):
+        assert release(body)["status"] in (400, 413)
+
+
+def test_files_attach_to_a_web_release_and_leave_with_it(bare_repo):
+    import base64
+    import hashlib
+    releases_harness(bare_repo)
+    release({"op": "save", "tag": "v3", "branch": "main", "title": "Three"})
+    data = bytes(range(256)) * 4
+    added = release({"op": "asset", "tag": "v3", "branch": "main",
+                     "name": "tool-linux.tar.gz", "contentType": "application/gzip",
+                     "content": base64.b64encode(data).decode()})
+    assert added["status"] == 200, added
+    path = ".forkmesh/releases/v3/assets/tool-linux.tar.gz"
+    assert git(bare_repo, "show", "main:" + path).stdout == data
+    [asset] = manifest(bare_repo, "v3")["assets"]
+    assert asset == {"name": "tool-linux.tar.gz", "size": len(data),
+                     "content_type": "application/gzip",
+                     "sha256": hashlib.sha256(data).hexdigest(),
+                     "path": path, "source": "web"}
+    bad = release({"op": "asset", "tag": "v3", "branch": "main",
+                   "name": "../x", "content": "AA=="})
+    assert bad["status"] == 400
+    removed = release({"op": "asset-delete", "tag": "v3", "branch": "main",
+                       "name": "tool-linux.tar.gz"})
+    assert removed["status"] == 200 and manifest(bare_repo, "v3")["assets"] == []
+    assert git(bare_repo, "cat-file", "-e", "main:" + path,
+               check=False).returncode != 0
+    release({"op": "asset", "tag": "v3", "branch": "main", "name": "a.bin",
+             "content": base64.b64encode(b"abc").decode()})
+    assert release({"op": "delete", "tag": "v3", "branch": "main"})["status"] == 200
+    assert git(bare_repo, "cat-file", "-e", "main:.forkmesh/releases/v3",
+               check=False).returncode != 0
+    git(bare_repo, "fsck", "--strict", "--no-dangling")
+
+
+def test_assets_need_a_web_release(bare_repo):
+    import base64
+    releases_harness(bare_repo)
+    missing = release({"op": "asset", "tag": "v4", "branch": "main",
+                       "name": "a.bin", "content": base64.b64encode(b"x").decode()})
+    assert missing["status"] == 404
+
+
+def test_an_owner_moves_a_tag_with_a_grant_on_core_held_repositories(bare_repo, tmp_path):
+    releases_harness(bare_repo)
+    first = git_out(bare_repo, "rev-parse", "main").strip()
+    release({"op": "save", "tag": "v5", "branch": "main", "title": "Five"})
+    head = git_out(bare_repo, "rev-parse", "main").strip()
+    grants = []
+
+    async def grant(_env, actor, owner, repo, ref, target):
+        grants.append((actor, ref, target))
+        return 1, None
+    repository_releases.core_push_grant_tag_move = grant
+    moved = release({"op": "move-tag", "tag": "v5", "branch": "main",
+                     "target": "main"})
+    assert moved["status"] == 200, moved
+    assert grants == [("jett", "refs/tags/v5", head)]
+    assert git_out(bare_repo, "rev-parse", "refs/tags/v5").strip() == head
+    assert manifest(bare_repo, "v5")["tag_commit"] == head
+    assert first != head
+
+    async def refuse(*_args):
+        return 0, {"status": 409, "data": {"error": "tag_moves_unavailable"}}
+    repository_releases.core_push_grant_tag_move = refuse
+    release({"op": "tag", "tag": "v6", "branch": "main", "target": first})
+    refused = release({"op": "move-tag", "tag": "v6", "branch": "main",
+                       "target": "main"})
+    assert refused["data"]["error"] == "tag_moves_unavailable"
+    assert git_out(bare_repo, "rev-parse", "refs/tags/v6").strip() == first

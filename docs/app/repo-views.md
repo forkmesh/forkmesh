@@ -217,6 +217,13 @@ fediverse posts sit at the bottom as collapsibles.
 These three tabs follow GitHub's layouts (October 2026, from the user's
 GitHub reference screenshots).
 
+The issue list's label filter lives in the address bar (`?label=…`), so a
+filtered list can be linked and survives a refresh. Only the list route is
+rewritten; an open issue keeps its own address. A label's swatch is its
+colour dot, except Hacktoberfest, which gets a small pumpkin that wiggles a
+few times when the list first paints (and stays still for viewers who ask for
+reduced motion).
+
 - **Issues and Pull requests lists** share one layout
   (`data-repo-collection-layout`). On wide screens the views sidebar sits
   flush against the left edge of the window with a border down its right
@@ -321,8 +328,8 @@ GitHub reference screenshots).
   discussion, with Categories on the left and the list on the right. Each row
   shows the category's emoji, the title, who started it, when, and in which
   category. There are no vote or reply counts because the list reads only
-  `discussion.md`. New discussion explains that discussions are created from
-  the desktop app, since they are signed by the author's node.
+  `discussion.md`. New discussion (and the empty list's Start a discussion)
+  opens the web composer; see [web-discussions.md](web-discussions.md).
 
 ## Issue page first view
 
@@ -491,3 +498,59 @@ than `src`, `alt`, `width`, `height` and `href`, event handlers, `style`,
 addresses, `<svg>`, `<iframe>`, `<source srcset>`. External images get
 `referrerpolicy="no-referrer"`; instance pages already allow `https:` images in
 their CSP `img-src`, and there is no image proxy.
+
+## Code addresses with a branch, tag or commit
+
+The app's own code addresses are `/<owner>/<repo>/blob/<path>` and
+`/<owner>/<repo>/tree/<path>` (or `/<repo>/...` at a short address) for the
+default branch, with `?ref=<ref>` added for any other ref. The address bar
+now carries that `?ref=` while a non-default branch is browsed, so a copied
+link reopens the same branch; Back and Forward restore the ref of the entry.
+
+Links copied from GitHub put the ref in the path instead:
+`/alice/tools/blob/main/README.md`, `/alice/tools/tree/feature/x/src`. They
+used to read `main/README.md` from the default branch and show "File
+unavailable". They now open the right file and settle on the app's address.
+
+How a path after `tree/` or `blob/` is read when the address has no `?ref=`:
+
+1. If a leading run of segments names a known branch, that is the ref and the
+   rest is the path. The longest match wins, so `feature/x` beats `feature`.
+   A `blob/` address keeps at least one segment for the file. The default
+   branch is matched from the catalog without a listing; other names need
+   the branch listing (`branches`), read once and cached.
+2. Otherwise it is a path on the default branch, exactly as before, so
+   `/blob/README.md` and `/tree/docs` behave as they always have.
+3. If that path does not exist and the first segment resolves as a ref on a
+   mirror (a tag such as `v1.0`, a full or short commit SHA, a branch the
+   listing missed), the rest is read at that ref.
+
+So a real folder named like a branch (`main/`) loses to the branch, just as
+it does on GitHub. A folder named like a tag or commit wins, because tags and
+commits are not listed and are only tried when the path is missing.
+
+Once resolved, the address is replaced (`history.replaceState`, no new
+history entry) with `/blob/<path>` for the default branch or
+`/blob/<path>?ref=<ref>` for any other ref.
+
+On a node that reads the repository locally (repo_fastpath), the host answers
+a plain GET of a GitHub-style address with a `308` to the same canonical
+address before the page loads (`app/host/forkmesh_host/repo_code_ref.py`). It
+reads the gateway's branch listing (cached 30 s, waited for at most 150 ms)
+and redirects only on a listed branch, so tags and commits are left to the
+page. A short address is redirected once the Worker's page names its owner.
+The redirect is `no-store` because branches come and go. A path that names no
+branch, or an address that already has a query, is served as before.
+A failed listing (a private or missing repository) is cached for the same
+30 s, so repeated GitHub-style hits on it do not each wait on the gateway.
+An address with a `.` or `..` segment (decoded, so `%2E%2E` and `a%2F..`
+count) is never redirected, so the `Location` header never carries a dot
+segment.
+
+One known cost: the app still writes its own default-branch addresses as
+`/tree/<path>`, so on a repository that also has a branch named like that
+path's first folder (a `docs` branch and a `docs/` folder), such a link opens
+the branch. A shared link that must survive this can carry `?ref=`.
+
+There is no `raw/<ref>/<path>` page route; raw bytes come from
+`/api/repo/<owner>/<repo>/raw?path=&ref=`.

@@ -552,7 +552,7 @@ def test_new_pull_request_ping_for_a_plain_node_repo():
     assert ping["title"] == "New pull request in source/forkmesh"
     assert ping["repo"] == "source/forkmesh"
     # A new item links straight to itself rather than to the repository.
-    assert ping["href"] == "/source/forkmesh/pulls/3"
+    assert ping["href"] == "/source/forkmesh/pull/3"
     # No alias, so no parenthetical: the body stays the submitted title.
     assert ping["body"] == "Add relay retries"
     assert ping["meta"]["hostOwner"] == "source"

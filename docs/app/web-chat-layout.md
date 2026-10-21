@@ -9,7 +9,11 @@
 - **Channel pane**: header, transcript, composer.
 - **Member list** (from 1200px): online (a frame in the last 3 minutes) and
   offline (`/api/accounts/users`), 200 names per section. Hidden state is in
-  `localStorage` `forkmesh.dashboard.chat.membersHidden`.
+  `localStorage` `forkmesh.dashboard.chat.membersHidden`. Below 1200px the
+  header's member button opens the same list as a drawer over the channel
+  pane (`data-members-open`, not remembered); Escape or a tap outside closes
+  it. Each person's row carries a one-line activity summary under the name
+  ([chat-member-stats.md](chat-member-stats.md)).
 
 Under 768px the page is a single column. `regroupFullLog`, scheduled by a
 `MutationObserver` on `#fullChatMessages`, groups consecutive messages from one

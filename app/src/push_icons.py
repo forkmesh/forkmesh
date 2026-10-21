@@ -43,6 +43,7 @@ PUSH_KIND_ICONS = {
     "security_alert": "\U0001F6A8",
     "security_advisory": "\U0001F6E1\uFE0F",
     "package_review": "\u2B50",
+    "reaction": "\U0001F389",
     "badge": "\U0001F3C5",
 }
 PUSH_DESKTOP_CATEGORY_ICONS = {

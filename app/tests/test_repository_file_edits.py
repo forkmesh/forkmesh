@@ -118,8 +118,14 @@ def harness(bare, owner_write=True, org_write=False, access=True,
                           check=False)
             if content.returncode != 0:
                 return FakeResponse(404, {"ok": False})
-            return FakeResponse(200, {
-                "ok": True, "content": content.stdout.decode()})
+            try:
+                return FakeResponse(200, {
+                    "ok": True, "content": content.stdout.decode()})
+            except UnicodeDecodeError:
+                import base64
+                return FakeResponse(200, {
+                    "ok": True, "encoding": "base64",
+                    "content": base64.b64encode(content.stdout).decode()})
         return FakeResponse(404, {"ok": False})
 
     async def push_send(env, request, owner, repo, account, method, body,
@@ -472,3 +478,169 @@ def test_unknown_mode_is_rejected(bare_repo):
     harness(bare_repo)
     result = run("alice", "project", FakeRequest(body={"mode": "force"}))
     assert result["status"] == 400
+
+
+def test_owner_deletes_a_file_and_an_emptied_folder_goes_with_it(bare_repo):
+    calls = harness(bare_repo)
+    result = run("alice", "project", FakeRequest(body={
+        "op": "delete", "path": "docs/guide.md", "branch": "main",
+        "oid": blob_oid(bare_repo, "main", "docs/guide.md"),
+    }))
+    assert result["status"] == 200, result
+    assert result["data"]["subject"] == "Delete docs/guide.md on the web"
+    names = git_out(bare_repo, "ls-tree", "-r", "--name-only", "main").split()
+    assert names == [".gitignore", "README.md"]
+    git(bare_repo, "fsck", "--strict", "--no-dangling")
+    assert calls["audits"][-1][1] == "repository.file_delete"
+    gone = run("alice", "project", FakeRequest(body={
+        "op": "delete", "path": "docs/guide.md", "branch": "main"}))
+    assert gone["status"] == 404
+
+
+def test_owner_renames_and_moves_a_file_keeping_or_changing_its_text(bare_repo):
+    harness(bare_repo)
+    moved = run("alice", "project", FakeRequest(body={
+        "op": "rename", "path": "README.md", "newPath": "docs/intro/README.md",
+        "branch": "main", "message": "Move the readme",
+    }))
+    assert moved["status"] == 200, moved
+    assert git_out(bare_repo, "show", "main:docs/intro/README.md") == "# Top\n"
+    assert git(bare_repo, "cat-file", "-e", "main:README.md",
+               check=False).returncode != 0
+    git(bare_repo, "fsck", "--strict", "--no-dangling")
+    edited = run("alice", "project", FakeRequest(body={
+        "op": "rename", "path": "docs/guide.md", "newPath": "guide.md",
+        "branch": "main", "content": "# Guide v2\n",
+    }))
+    assert edited["status"] == 200, edited
+    assert git_out(bare_repo, "show", "main:guide.md") == "# Guide v2\n"
+    git(bare_repo, "fsck", "--strict", "--no-dangling")
+
+
+def test_rename_refuses_a_taken_name_and_bad_requests(bare_repo):
+    harness(bare_repo)
+    taken = run("alice", "project", FakeRequest(body={
+        "op": "rename", "path": "README.md", "newPath": "docs/guide.md",
+        "branch": "main"}))
+    assert taken["status"] == 409
+    folder = run("alice", "project", FakeRequest(body={
+        "op": "rename", "path": "README.md", "newPath": "docs",
+        "branch": "main"}))
+    assert folder["status"] == 409
+    same = run("alice", "project", FakeRequest(body={
+        "op": "rename", "path": "README.md", "newPath": "README.md",
+        "branch": "main"}))
+    assert same["status"] == 400
+    bad = run("alice", "project", FakeRequest(body={
+        "op": "rename", "path": "README.md", "newPath": "../x",
+        "branch": "main"}))
+    assert bad["status"] == 400
+    unknown = run("alice", "project", FakeRequest(body={
+        "op": "chmod", "path": "README.md", "branch": "main"}))
+    assert unknown["status"] == 400
+    stale = run("alice", "project", FakeRequest(body={
+        "op": "delete", "path": "README.md", "branch": "main",
+        "oid": "1" * 40}))
+    assert stale["status"] == 409
+
+
+def test_readers_cannot_delete_directly_but_can_propose(bare_repo, tmp_path):
+    calls = harness(bare_repo, owner_write=False)
+    refused = run("alice", "project", FakeRequest(body={
+        "op": "delete", "path": "README.md", "branch": "main"}))
+    assert refused["status"] == 403 and refused["data"]["canPropose"] is True
+    proposal = run("alice", "project", FakeRequest(body={
+        "mode": "propose", "op": "delete", "path": "docs/guide.md",
+        "branch": "main"}))
+    assert proposal["status"] == 200, proposal
+    assert "deleted file mode 100644" in proposal["data"]["patch"]
+    assert calls["pushes"] == []
+    work = apply_proposal(tmp_path, bare_repo, proposal["data"])
+    assert not (work / "docs" / "guide.md").exists()
+    assert (work / "README.md").read_text() == "# Top\n"
+
+
+def test_a_rename_proposal_replays_with_git_am(bare_repo, tmp_path):
+    harness(bare_repo, owner_write=False)
+    proposal = run("alice", "project", FakeRequest(body={
+        "mode": "propose", "op": "rename", "path": "docs/guide.md",
+        "newPath": "manual/guide.md", "branch": "main"}))
+    assert proposal["status"] == 200, proposal
+    work = apply_proposal(tmp_path, bare_repo, proposal["data"])
+    assert not (work / "docs" / "guide.md").exists()
+    assert (work / "manual" / "guide.md").read_text() == "# Guide\n"
+    assert git_out(work, "log", "-1", "--format=%s").strip() == (
+        "Rename docs/guide.md on the web")
+
+
+PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c6360000002000154a24f5d00000000"
+    "49454e44ae426082") + bytes(range(256))
+
+
+def test_an_uploaded_binary_file_is_committed_byte_for_byte(bare_repo):
+    import base64
+    harness(bare_repo)
+    result = run("alice", "project", FakeRequest(body={
+        "path": "docs/logo.png", "branch": "main", "create": True,
+        "encoding": "base64", "content": base64.b64encode(PNG).decode(),
+    }))
+    assert result["status"] == 200, result
+    stored = git(bare_repo, "show", "main:docs/logo.png").stdout
+    assert stored == PNG
+    git(bare_repo, "fsck", "--strict", "--no-dangling")
+    replaced = run("alice", "project", FakeRequest(body={
+        "path": "docs/logo.png", "branch": "main", "encoding": "base64",
+        "content": base64.b64encode(PNG[::-1]).decode(),
+    }))
+    assert replaced["status"] == 200, replaced
+    assert git(bare_repo, "show", "main:docs/logo.png").stdout == PNG[::-1]
+    bad = run("alice", "project", FakeRequest(body={
+        "path": "x.bin", "branch": "main", "create": True,
+        "encoding": "base64", "content": "not base64!"}))
+    assert bad["status"] == 400
+
+
+def test_binary_proposals_replay_with_git_am(bare_repo, tmp_path):
+    import base64
+    harness(bare_repo)
+    run("alice", "project", FakeRequest(body={
+        "path": "art/logo.png", "branch": "main", "create": True,
+        "encoding": "base64", "content": base64.b64encode(PNG).decode()}))
+    harness(bare_repo, owner_write=False)
+    added = run("alice", "project", FakeRequest(body={
+        "mode": "propose", "path": "art/new.bin", "branch": "main",
+        "create": True, "encoding": "base64",
+        "content": base64.b64encode(bytes(range(256)) * 3).decode()}))
+    assert added["status"] == 200, added
+    assert "GIT binary patch" in added["data"]["patch"]
+    work = apply_proposal(tmp_path, bare_repo, added["data"])
+    assert (work / "art" / "new.bin").read_bytes() == bytes(range(256)) * 3
+    changed = run("alice", "project", FakeRequest(body={
+        "mode": "propose", "path": "art/logo.png", "branch": "main",
+        "encoding": "base64", "content": base64.b64encode(PNG[::-1]).decode()}))
+    assert changed["status"] == 200, changed
+    work = apply_proposal(tmp_path / "second", bare_repo, changed["data"]) \
+        if (tmp_path / "second").mkdir() is None else None
+    assert (work / "art" / "logo.png").read_bytes() == PNG[::-1]
+
+
+def test_paths_refuse_git_folder_look_alikes_and_dot_segments():
+    for path in (".git/config", ".GIT/config", "a/.Git/hooks/x", ".git./x",
+                 ".git /x", "GIT~1/config", "a/../b", "./a", "/a", "a//b"):
+        assert not repository_file_edits.valid_path(path), path
+    for path in ("README.md", ".github/workflows/ci.yml", "a/.gitignore",
+                 "docs/git~2.md"):
+        assert repository_file_edits.valid_path(path), path
+
+
+def test_commit_paths_refuses_a_path_outside_the_tree():
+    try:
+        asyncio.run(repository_file_edits.commit_paths(
+            object(), FakeRequest(body={}), "alice", "project", "jett", "main",
+            {".forkmesh/releases/v1/assets/../../../.git/config": None}, "x"))
+    except repository_file_edits.FileEditError as error:
+        assert error.code == "invalid_path"
+    else:
+        raise AssertionError("commit_paths accepted a dot segment")

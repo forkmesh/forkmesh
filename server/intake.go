@@ -148,6 +148,13 @@ func (d *Daemon) handleCollaboration(w http.ResponseWriter, request *http.Reques
 		}
 	}
 	d.collaborationWriteMu.Unlock()
+	if errors.Is(err, errDiscussionLocked) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"ok": false, "error": "discussion_locked", "number": number,
+			"servedBy": d.gateway.Node.Name,
+		})
+		return
+	}
 	if errors.Is(err, errIssueUnknown) {
 		w.Header().Set("Retry-After", "30")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
@@ -1361,8 +1368,14 @@ func pullMarkdown(number int, pull map[string]any) string {
 		"authorName: " + safeHeader(stringValue(pull["authorName"])),
 		"sig: " + safeHeader(stringValue(pull["sig"])),
 	}
-	for _, key := range []string{"creationBaseOid", "creationHeadOid", "client", "clientSig"} {
-		if value := safeHeader(stringValue(pull[key])); value != "" {
+	for _, key := range []string{"creationBaseOid", "creationHeadOid", "client", "clientSig", "aiModel"} {
+		value := safeHeader(stringValue(pull[key]))
+		if key == "aiModel" {
+			if runes := []rune(value); len(runes) > 80 {
+				value = strings.TrimSpace(string(runes[:80]))
+			}
+		}
+		if value != "" {
 			lines = append(lines, key+": "+value)
 		}
 	}
@@ -1407,6 +1420,10 @@ func materializeDiscussionInbox(ctx context.Context, repo Repository,
 			continue
 		}
 		wrote, number, err := writeDiscussionItem(dir, item)
+		if errors.Is(err, errDiscussionLocked) {
+			ids = append(ids, item.ID)
+			continue
+		}
 		if err != nil {
 			return ids, err
 		}
@@ -1463,12 +1480,18 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 	if typeName == "answer" && number > 0 {
 		return writeDiscussionAnswer(filepath.Join(base, strconv.Itoa(number)), item)
 	}
+	if (typeName == "status" || typeName == "delete") && number > 0 {
+		return writeDiscussionModeration(filepath.Join(base, strconv.Itoa(number)), item)
+	}
 	if typeName != "comment" || number <= 0 {
 		return false, number, nil
 	}
 	dir := filepath.Join(base, strconv.Itoa(number))
 	if !fileExists(filepath.Join(dir, "discussion.md")) {
 		return false, number, nil
+	}
+	if discussionStatus(dir) != "open" {
+		return false, number, errDiscussionLocked
 	}
 	entries, _ = os.ReadDir(dir)
 	index := 2
@@ -1486,6 +1509,118 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 		stringValue(item.Event["body"]), "",
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%04d-comment.md", index))
+	return true, number, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
+}
+
+var errDiscussionLocked = errors.New("discussion is closed to new replies")
+
+const discussionDeleteTarget = "#discussion"
+
+var discussionStatuses = map[string]bool{"open": true, "closed": true, "archived": true}
+
+func discussionStatus(dir string) string {
+	raw, err := os.ReadFile(filepath.Join(dir, "discussion.md"))
+	if err != nil {
+		return "open"
+	}
+	opened, ok := parseFrontMatter(raw)
+	if !ok {
+		return "open"
+	}
+	switch status := strings.TrimSpace(opened.values["status"]); status {
+	case "closed", "archived":
+		return status
+	}
+	return "open"
+}
+
+func removeDiscussionFolder(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("discussion folder %s holds %s, which is not a plain file", dir, entry.Name())
+		}
+	}
+	for _, entry := range entries {
+		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return os.Remove(dir)
+}
+
+func writeDiscussionModeration(dir string, item collaborationItem) (bool, int, error) {
+	number := item.Number
+	approved, _ := item.Meta["ownerApproved"].(bool)
+	if approved && stringValue(item.Event["type"]) == "delete" &&
+		safeHeader(stringValue(item.Event["target"])) == discussionDeleteTarget &&
+		!fileExists(filepath.Join(dir, "discussion.md")) {
+		return true, number, nil
+	}
+	if !approved || !fileExists(filepath.Join(dir, "discussion.md")) {
+		return false, number, nil
+	}
+	if stringValue(item.Event["type"]) == "delete" {
+		target := safeHeader(stringValue(item.Event["target"]))
+		if target == "" {
+			return false, number, nil
+		}
+		if target == discussionDeleteTarget {
+			return true, number, removeDiscussionFolder(dir)
+		}
+		entries, _ := os.ReadDir(dir)
+		for _, entry := range entries {
+			if !strings.HasSuffix(entry.Name(), "-comment.md") {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			if comment, ok := parseFrontMatter(raw); ok && comment.values["id"] == target {
+				return true, number, os.Remove(path)
+			}
+		}
+		return true, number, nil
+	}
+	status := strings.TrimSpace(stringValue(item.Event["status"]))
+	if !discussionStatuses[status] {
+		return false, number, nil
+	}
+	path := filepath.Join(dir, "discussion.md")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false, number, nil
+	}
+	lines := strings.Split(string(raw), "\n")
+	if len(lines) == 0 || lines[0] != "---" {
+		return false, number, nil
+	}
+	closing := -1
+	for i := 1; i < len(lines); i++ {
+		if lines[i] == "---" {
+			closing = i
+			break
+		}
+	}
+	if closing < 0 {
+		return false, number, nil
+	}
+	replaced := false
+	for i := 1; i < closing; i++ {
+		if strings.HasPrefix(lines[i], "status:") {
+			lines[i] = "status: " + status
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		lines = append(lines[:closing], append([]string{"status: " + status}, lines[closing:]...)...)
+	}
 	return true, number, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
 }
 
@@ -1559,8 +1694,11 @@ func writeDiscussionAnswer(dir string, item collaborationItem) (bool, int, error
 		[]byte(strings.Join(lines, "\n")), 0600)
 }
 
+var headerLineBreaks = strings.NewReplacer("\r", " ", "\n", " ", "\v", " ", "\f", " ",
+	"\x1c", " ", "\x1d", " ", "\x1e", " ", "\u0085", " ", "\u2028", " ", "\u2029", " ")
+
 func safeHeader(value string) string {
-	return strings.TrimSpace(strings.NewReplacer("\r", " ", "\n", " ").Replace(value))
+	return strings.TrimSpace(headerLineBreaks.Replace(value))
 }
 
 func firstNonEmpty(values ...string) string {

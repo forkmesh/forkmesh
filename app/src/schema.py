@@ -4974,6 +4974,40 @@ SCHEMA_STATEMENTS = [
     "ON recent_pushes(pull_bi)",
     "CREATE INDEX IF NOT EXISTS idx_recent_pushes_age "
     "ON recent_pushes(pushed_at)",
+    """CREATE TABLE IF NOT EXISTS comment_reactions (
+        repo_bi TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        comment TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        account_bi TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (repo_bi, subject, comment, emoji, account_bi))""",
+    "CREATE INDEX IF NOT EXISTS idx_comment_reactions_account "
+    "ON comment_reactions(account_bi, created_at)",
+    """CREATE TABLE IF NOT EXISTS comment_reaction_rate (
+        account_bi TEXT PRIMARY KEY,
+        window_start INTEGER NOT NULL,
+        count INTEGER NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS member_repo_activity (
+        repo_bi TEXT NOT NULL,
+        user_bi TEXT NOT NULL,
+        commits INTEGER NOT NULL DEFAULT 0,
+        pulls INTEGER NOT NULL DEFAULT 0,
+        issues INTEGER NOT NULL DEFAULT 0,
+        reviews INTEGER NOT NULL DEFAULT 0,
+        day_start TEXT NOT NULL DEFAULT '',
+        day_mask TEXT NOT NULL DEFAULT '',
+        last_day TEXT NOT NULL DEFAULT '',
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (repo_bi, user_bi))""",
+    "CREATE INDEX IF NOT EXISTS idx_member_repo_activity_user "
+    "ON member_repo_activity(user_bi)",
+    """CREATE TABLE IF NOT EXISTS member_activity_repos (
+        repo_bi TEXT PRIMARY KEY,
+        refreshed_at INTEGER NOT NULL DEFAULT 0,
+        people INTEGER NOT NULL DEFAULT 0,
+        ok INTEGER NOT NULL DEFAULT 0)""",
     """CREATE TABLE IF NOT EXISTS instance_settings (
         k TEXT PRIMARY KEY,
         doc TEXT NOT NULL,

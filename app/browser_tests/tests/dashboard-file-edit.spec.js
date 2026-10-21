@@ -243,7 +243,7 @@ test("a reader without write access proposes the edit as a pull request", async 
   await editor.locator("[data-repo-file-editor-message]").fill("Suggest README wording");
   await editor.locator("[data-repo-file-editor-save]").click();
 
-  await page.waitForURL("**/alice/project/pulls/7");
+  await page.waitForURL("**/alice/project/pull/7");
   const propose = requests.find((request) => request.body.mode === "propose");
   expect(propose.body).toMatchObject({
     mode: "propose",

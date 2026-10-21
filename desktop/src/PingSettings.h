@@ -58,6 +58,8 @@ inline const QList<KindInfo> &kinds()
         {"mention", "conversations", "Mentions", true, true},
         {"subscribed", "conversations", "Activity on things you follow", true,
          true},
+        {"reaction", "conversations", "Reactions to your comments", false,
+         false},
         {"chat_webhook", "conversations", "Chat webhook posts", false, false},
         {"channel_unread", "conversations", "Unread channel messages", true,
          true},
