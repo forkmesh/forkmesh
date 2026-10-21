@@ -644,7 +644,9 @@
     if (!background) setRepoTab("code");
     treePanel?.classList.remove("hidden");
     viewer?.classList.add("hidden");
-    readmePanel?.classList.toggle("hidden", Boolean(path));
+    readmePanel?.classList.add("hidden");
+    const contentGrid = detail.querySelector("[data-repo-content-grid]");
+    if (!background) contentGrid?.setAttribute("data-repo-tree-pending", "");
     setRepoExplorerFocusMode(Boolean(path));
     // The root/README view keeps the two-column layout: the About rail is a
     // permanent right-hand column (the old full-width README override that
@@ -653,7 +655,7 @@
     if (!background) resetRepoDirAbout();
 
     treeBody.innerHTML = repoTreeSkeletonHtml();
-    renderRepoExplorer(repo, path, []);
+    renderRepoExplorer(repo, path, null);
     try {
       const requestedAt = performance.now();
       // A live-mirror read: fetch fresh (fetchRepoJson, no-store) like every
@@ -687,6 +689,7 @@
       if (!background) navigateHistory(repoCodeLinkUrl(repo, "tree", path));
       window.lucide?.createIcons();
       if (!path) {
+        readmePanel?.classList.remove("hidden");
         const readmeEntry = entries.find((e) => e.type === "blob" && /^readme(\.md|\.txt|\.rst)?$/i.test(String(e.name || "")));
         const readmeBody = detail.querySelector("[data-repo-readme-body]");
         const readmeFilename = detail.querySelector("[data-repo-readme-filename]");
@@ -731,12 +734,15 @@
         ? `<div class="fm-blankslate"><i data-lucide="${path ? "file-question" : "folder-open"}"></i><p class="fm-blankslate-title">${path ? "Path not found" : "No files yet"}</p><p class="fm-blankslate-desc">${escapeHtml(path ? `${path} is not in this repository at this revision.` : "This repository has no files at this revision.")}</p></div>`
         : '<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Repository unavailable</p><p class="fm-blankslate-desc">No reachable mirror host is serving this repository tree right now.</p></div>';
       if (!path) {
+        readmePanel?.classList.remove("hidden");
         const readmeBody = detail.querySelector("[data-repo-readme-body]");
         if (readmeBody) {
           readmeBody.className = "p-4 text-sm leading-6 text-muted-foreground";
           readmeBody.innerHTML = `<p class="mt-1">${escapeHtml(repo.description || "This repository has not published a README preview yet.")}</p>`;
         }
       }
+    } finally {
+      contentGrid?.removeAttribute("data-repo-tree-pending");
     }
   }
 
@@ -1744,7 +1750,6 @@
       startDate: Number(project.startDate || 0) || 0,
       endDate: Number(project.endDate || 0) || 0,
       createdAtMs: Number(project.createdAt || 0) || 0,
-      // ProjectStore::isDeleted: a "delete" of "self" tombstones it.
       deleted: (Array.isArray(project.events) ? project.events : [])
         .some((event) => event?.type === "delete" && event?.target === "self"),
     };
@@ -5221,7 +5226,6 @@
       const action = options.canMark && ev.id
         ? `<button type="button" data-repo-discussion-answer="${escapeHtml(isAnswer ? "" : ev.id)}" data-repo-discussion-answer-number="${escapeHtml(options.number)}" class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="${isAnswer ? "circle-x" : "circle-check"}" class="h-3.5 w-3.5 text-muted-foreground"></i>${isAnswer ? "Clear answer" : "Mark as answer"}</button>`
         : "";
-      // The owner's moderation, like the desktop's Delete on a reply card.
       const remove = options.canModerate && ev.id
         ? `<button type="button" data-repo-discussion-delete="${escapeHtml(ev.id)}" data-repo-discussion-delete-number="${escapeHtml(options.number)}" aria-label="Delete this reply" class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-destructive hover:bg-secondary disabled:opacity-50"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete</button>`
         : "";
@@ -5252,10 +5256,6 @@
     }
   }
 
-  // Closing, archiving and deleting replies are the repository owner's, as on
-  // the desktop (its buttons need the owner's working tree). On the web the
-  // owner's or an organization owner's account session is the proof the relay
-  // checks, so the controls follow the same rule.
   async function loadRepoDiscussionModeration(repo) {
     if (!repo || !state.session?.sessionToken) return false;
     if (isRepoOwner(repo)) return true;
@@ -5270,15 +5270,11 @@
     }
   }
 
-  // discussion.md's status the way DiscussionStore reads it: anything but
-  // closed or archived is open.
   function discussionStatus(value) {
     const status = String(value || "").trim().toLowerCase();
     return status === "closed" || status === "archived" ? status : "open";
   }
 
-  // Closed and archived discussions are read-only for everyone (the desktop's
-  // addComment refuses, and mirrors drop late replies).
   function renderDiscussionLockedNotice(status) {
     const archived = status === "archived";
     return `<div data-repo-discussion-locked="${escapeHtml(status)}" class="flex items-start gap-2 border-t border-border bg-secondary/20 px-4 py-3 text-[14px] text-muted-foreground"><i data-lucide="${archived ? "archive" : "lock"}" class="mt-0.5 h-4 w-4 shrink-0"></i><span>${archived ? "This discussion is archived. It is read-only." : "This discussion is closed. New replies are turned off."}</span></div>`;
@@ -5995,9 +5991,6 @@
 
   async function loadRepoPullMergeAuthorization(repo) {
     if (!repo || !state.session?.sessionToken) return false;
-    // A personal repository's owner merges from the web too; the relay
-    // refuses one that is linked to an organization, where only that
-    // organization's owners merge (_repository_owner_can_merge_repo).
     if (sessionOwnsRepo(repo)) return true;
     try {
       const profile = await orgApiRequest(
@@ -8418,11 +8411,6 @@
   // is therefore kept per browser and laid over what the mirror serves until
   // the mirror carries that event, or a newer status change from anywhere
   // supersedes it.
-  // Discussions get the same treatment for the owner's Close/Reopen/Archive
-  // and Delete discussion (issue #715's problem in another tab): sent through
-  // the relay they wait for a drain, so the next mirror read would undo them on
-  // screen. The signed event is kept per browser and laid over what mirrors
-  // serve until they serve the same state, or OPTIMISTIC_RECORD_TTL_MS passes.
   const PENDING_DISCUSSION_STATE_STORAGE = "forkmesh.repoPendingDiscussionState";
   const PENDING_DISCUSSION_STATE_LIMIT = 100;
   let pendingDiscussionStateHydrated = false;
@@ -8462,7 +8450,6 @@
     } catch (_) { /* private mode or a full quota: the page copy still works */ }
   }
 
-  // event: the signed "status" event, or a "delete" of the whole discussion.
   function rememberPendingDiscussionState(repo, number, event) {
     if (!["status", "delete"].includes(event?.type)) return;
     pendingDiscussionStates()[optimisticRepoRecordKey(repo, "discussions", number)] = {
@@ -8471,8 +8458,6 @@
     persistPendingDiscussionStates();
   }
 
-  // The pending change for this discussion, or null once mirrors serve it:
-  // the same status for a status change, no discussion at all for a delete.
   function pendingDiscussionStateFor(repo, number, servedStatus, served = true) {
     const pending = pendingDiscussionStates();
     const key = optimisticRepoRecordKey(repo, "discussions", number);
@@ -8490,8 +8475,6 @@
     return entry;
   }
 
-  // Lay pending changes over a served discussion list: statuses move, deleted
-  // discussions are hidden.
   function applyPendingDiscussionStates(repo, items) {
     const rows = Array.isArray(items) ? items : [];
     const served = new Set(rows.map((item) => String(item.number)));
@@ -8510,7 +8493,6 @@
     });
   }
 
-  // The same for a served discussion page (parseFrontMatter shape).
   function withPendingDiscussionState(repo, number, parsed) {
     const entry = pendingDiscussionStateFor(repo, number, parsed?.values?.status, true);
     if (entry?.type === "status") {
@@ -10417,8 +10399,6 @@
       .filter((value) => Number.isInteger(value) && value > 0))].sort((a, b) => a - b);
   }
 
-  // New / Edit project, in place of the list. Saved as signed project events
-  // through project-edit (submitWebProjectEvents).
   function renderProjectForm(project = null) {
     const field = "h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent";
     return `
@@ -10449,7 +10429,7 @@
         </div>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <span data-repo-project-hint role="status" class="text-[11px] text-muted-foreground">Signed in this browser and committed to .forkmesh/projects/.</span>
-          <button type="submit" data-repo-project-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-60"><i data-lucide="save" class="h-4 w-4"></i>${project ? "Save project" : "Create project"}</button>
+          <button type="submit" data-repo-project-submit class="inline-flex h-9 items-center gap-2 rounded-md px-4 text-sm font-medium disabled:opacity-60 ${project ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-cta text-cta-foreground hover:bg-cta/90"}"><i data-lucide="save" class="h-4 w-4"></i>${project ? "Save project" : "Create project"}</button>
         </div>
       </form>`;
   }
@@ -10463,8 +10443,6 @@
     container.querySelector("[data-repo-project-title]")?.focus();
   }
 
-  // The events that turn `before` (null for a new project) into the form's
-  // values: only what changed, in ProjectStore's vocabulary.
   function projectFormEvents(before, values) {
     const specs = [];
     if (!before) {
@@ -10527,7 +10505,6 @@
           await submitWebProjectEvents(repo, target, specs);
           break;
         } catch (error) {
-          // Someone created a project meanwhile: sign again for the next number.
           if (!number && error.code === "number_taken" && error.next && attempt < 2) {
             target = error.next;
             continue;
@@ -11232,14 +11209,10 @@
     window.lucide?.createIcons();
   }
 
-  // A repository with no discussions yet invites the first one.
   function renderDiscussionsEmptyState() {
     return `<div data-repo-discussions-empty class="fm-blankslate"><i data-lucide="messages-square"></i><p class="fm-blankslate-title">Welcome to Discussions</p><p class="fm-blankslate-desc">Ask a question, share an idea or show what you built. Discussions are signed by their author and kept in the repository.</p><button type="button" data-repo-discussion-new class="mt-3 inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">Start a discussion</button></div>`;
   }
 
-  // The New discussion form, drawn in place of the list like the New issue
-  // form. Title, category and a Markdown body with a preview tab; signed by
-  // this browser's key when it is sent (submitWebDiscussion).
   function renderDiscussionComposeForm() {
     const categories = WEB_DISCUSSION_CATEGORIES;
     const preset = categories.find((name) => name.toLowerCase() === String(discussionView().category || "").toLowerCase()) || "Ideas";
@@ -11314,8 +11287,6 @@
     const catalogNote = Number.isFinite(count) && count > 0
       ? `The catalog reports ${formatCount(count)} discussion${count === 1 ? "" : "s"}, but ${count === 1 ? "it" : "they"} cannot be fetched because no mirror is reachable right now.`
       : "Discussions cannot be fetched because no mirror is reachable right now.";
-    // Starting one still works: it is signed here and queued for the
-    // repository, which writes it once a mirror or the owner's node is back.
     return `<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Discussions unavailable</p><p class="fm-blankslate-desc">${catalogNote}</p><button type="button" data-repo-discussion-new class="mt-3 inline-flex h-8 items-center rounded-md border border-border px-3 text-[14px] font-medium text-foreground hover:bg-secondary">Start a discussion anyway</button></div>`;
   }
 
@@ -11323,8 +11294,6 @@
     const container = $(containerSelector);
     const config = repoCollectionConfig[kind];
     if (!container || !config) return;
-    // A background refresh must not wipe a New discussion draft, the same
-    // rule loadRepoIssues keeps for the New issue form.
     if (kind === "discussions" && container.querySelector?.("[data-repo-discussion-form]")) return;
     // The pull ledger advances independently from the selected source branch.
     // A commit cached while this repository page was open would otherwise keep
@@ -11950,10 +11919,35 @@
     return base.toLowerCase() === repoApiBase(repo).toLowerCase() ? seed : null;
   }
 
+  let repoFirstViewReadsTaken = false;
+  let repoFirstViewReadsSeeded = false;
+  function seedRepoFirstViewReads(repo) {
+    if (repoFirstViewReadsTaken) return false;
+    const seed = repoFirstViewSeed(repo);
+    if (!seed || !seed.reads || typeof seed.reads !== "object") return false;
+    if (seed.tree?.commit !== seed.commit) return false;
+    repoFirstViewReadsTaken = true;
+    mergeRepoReadSeeds({
+      base: repoApiBase(repo).toLowerCase(),
+      reads: seed.reads,
+      servedBy: seed.servedBy || "",
+      view: "first-view",
+      number: 0,
+    });
+    repoFirstViewReadsSeeded = true;
+    return true;
+  }
+
   function applyRepoFirstViewAbout(repo) {
     const seed = repoFirstViewSeed(repo);
     if (!seed) return;
     applyRepoFeatures(seed.features);
+    seedRepoFirstViewReads(repo);
+    const size = Number(seed.sizeBytes) || 0;
+    const sizeMeta = $("[data-repo-about-sizemap-meta]");
+    if (size > 0 && sizeMeta) sizeMeta.textContent = formatSize(size);
+    const watchers = $("[data-repo-watch-count]");
+    if (Number.isInteger(seed.followers) && watchers) watchers.textContent = formatCount(seed.followers);
     const about = String(seed.info?.about || "").trim();
     if (about) applyRepoAboutDescription(repo, about);
     if (seed.info) applyRepoAboutWebsite(String(seed.info.website || ""));
@@ -13074,6 +13068,12 @@
     } catch (_) { /* no releases — section stays hidden */ }
   }
 
+  function setHtmlIfChanged(element, markup) {
+    if (element.dataset?.renderedHtml === markup) return;
+    element.innerHTML = markup;
+    if (element.dataset) element.dataset.renderedHtml = markup;
+  }
+
   function renderRepoAboutFileCount(count, partial) {
     const section = $("[data-repo-about-files]");
     const label = $("[data-repo-about-files-count]");
@@ -13090,16 +13090,16 @@
     const legend = $("[data-repo-about-langs-legend]");
     const section = $("[data-repo-about-langs]");
     if (!bar || !legend || !section) return;
-    bar.innerHTML = ranked.map(([language, weight]) => {
+    setHtmlIfChanged(bar, ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = (weight / total) * 100;
       return `<span title="${escapeHtml(language)}" class="h-full shrink-0 first:rounded-l-full last:rounded-r-full" style="width:${pct.toFixed(1)}%;min-width:2px;background-color:${color}"></span>`;
-    }).join("");
-    legend.innerHTML = ranked.map(([language, weight]) => {
+    }).join(""));
+    setHtmlIfChanged(legend, ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = ((weight / total) * 100).toFixed(1);
       return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
-    }).join("");
+    }).join(""));
     section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
@@ -13318,10 +13318,10 @@
     const shown = rows.slice(0, REPO_CONTRIBUTOR_ROSTER_SHOWN);
     const more = total - shown.length;
     const everyone = repoLinkUrl(repo, "blob", REPO_CONTRIBUTOR_ROSTER_PATH);
-    list.innerHTML = shown.map((row) => repoRosterContributorAvatar(repo, row)).join("") +
+    setHtmlIfChanged(list, shown.map((row) => repoRosterContributorAvatar(repo, row)).join("") +
       (more > 0
         ? `<a href="${escapeHtml(everyone)}" title="All ${escapeHtml(formatCount(total))} contributors" class="!ml-2 text-[11px] text-muted-foreground hover:text-foreground hover:underline">+${formatCount(more)}</a>`
-        : "");
+        : ""));
     dropBrokenContributorAvatars(list);
     section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
@@ -13351,8 +13351,8 @@
     count.textContent = String(Number(total) || rows.length);
     const shown = rows.slice(0, 8);
     const more = (Number(total) || rows.length) - shown.length;
-    list.innerHTML = shown.map(repoContributorAvatar).join("") +
-      (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
+    setHtmlIfChanged(list, shown.map(repoContributorAvatar).join("") +
+      (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : ""));
     dropBrokenContributorAvatars(list);
     section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
@@ -13915,6 +13915,11 @@
   function scheduleRepoAboutRail(repo) {
     if (!repo || state.repoAboutLoaded) return;
     state.repoAboutLoaded = true;
+    if (repoFirstViewReadsSeeded && state.activeRepoTab === "code") {
+      repoFirstViewReadsSeeded = false;
+      loadRepoAboutRail(repo);
+      return;
+    }
     const load = () => {
       if (
         state.activeRepoTab !== "code"

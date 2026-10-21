@@ -813,7 +813,7 @@ void AnalyticsFeature::loadCampaigns(int serial)
     QString host;
     for (const QJsonValue &origin : projectRecord().value(QStringLiteral("settings")).toObject()
                                         .value(QStringLiteral("allowedOrigins")).toArray()) {
-        host = QUrl(origin.toString()).host();
+        host = QUrl(QString(origin.toString()).replace(QStringLiteral("://*."), QStringLiteral("://"))).host();
         if (!host.isEmpty())
             break;
     }

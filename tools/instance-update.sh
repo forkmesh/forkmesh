@@ -74,19 +74,36 @@ commit_fields() {
     "${prefix}Subject=$subject" "${prefix}Version=$version"
 }
 
+source_url() {
+  local url
+  url="$(setting sourceUrl https://app.forkmesh.com/forkmesh/forkmesh)"
+  [[ "$url" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9._/-]+$ ]] ||
+    [[ "$url" =~ ^file:///[A-Za-z0-9._/-]+$ ]] || return 1
+  printf '%s' "$url"
+}
+
 fetch_latest() {
-  local ref
+  local ref url domain
+  local resolve=()
   ref="$(setting sourceRef main)"
   case "$ref" in
     -*|*[!A-Za-z0-9._/-]*) status lastError="The source branch in $INSTANCE_JSON is not valid."; return 1 ;;
   esac
-  if ! git -C "$SRC" fetch --quiet --depth 1 origin "$ref" >"$STAGE.log" 2>&1; then
-    status lastError="Could not reach $(setting sourceUrl 'the ForkMesh source'): $(tail -n 1 "$STAGE.log" | cut -c1-200)"
+  if ! url="$(source_url)"; then
+    status lastError="The source address in $INSTANCE_JSON is not valid."
+    return 1
+  fi
+  domain="$(setting domain '')"
+  if [[ "$domain" =~ ^[a-z0-9.-]+$ ]] && [[ "$url" == "https://$domain/"* ]]; then
+    resolve=(-c "http.curloptResolve=$domain:443:127.0.0.1")
+  fi
+  if ! git "${resolve[@]}" -C "$SRC" fetch --quiet --depth 1 "$url" "$ref" >"$STAGE.log" 2>&1; then
+    status lastError="Could not reach $url: $(tail -n 1 "$STAGE.log" | cut -c1-200)"
     return 1
   fi
   local fields=()
   mapfile -t fields < <(commit_fields upstream FETCH_HEAD)
-  status "${fields[@]}" checkedAt:int="$(now)" sourceRef="$ref" lastError=
+  status "${fields[@]}" checkedAt:int="$(now)" sourceRef="$ref" sourceUrl="$url" lastError=
 }
 
 running_fields() {
@@ -118,8 +135,9 @@ run_check() {
 }
 
 run_update() {
-  status state=updating action=update startedAt:int="$(now)" finishedAt:int=0 \
-    step= stepState= lastError= exitCode:int=0 fromCommit="$(git -C "$SRC" rev-parse HEAD 2>/dev/null || true)"
+  local trigger="$1"
+  status state=updating action=update trigger="$trigger" startedAt:int="$(now)" finishedAt:int=0 \
+    step= stepState= lastError= exitCode:int=0 toCommit= fromCommit="$(git -C "$SRC" rev-parse HEAD 2>/dev/null || true)"
   if systemctl is-active --quiet "$SETUP_UNIT" 2>/dev/null; then
     status state=failed finishedAt:int="$(now)" \
       lastError="A setup or update started on the server is still running; try again when it ends."
@@ -127,6 +145,10 @@ run_update() {
   fi
   if ! fetch_latest; then
     status state=failed finishedAt:int="$(now)"
+    return 0
+  fi
+  if [ "$trigger" = "merge" ] && [ "$(git -C "$SRC" rev-parse FETCH_HEAD)" = "$(git -C "$SRC" rev-parse HEAD)" ]; then
+    status state=done exitCode:int=0 finishedAt:int="$(now)" toCommit="$(git -C "$SRC" rev-parse HEAD)" step=
     return 0
   fi
   if ! git -C "$SRC" show FETCH_HEAD:www/public/install-instance.sh > "$INSTALLER.new" ||
@@ -159,7 +181,8 @@ main() {
   action="$(read_request)"
   case "$action" in
     check) run_check ;;
-    update) run_update ;;
+    update) run_update admin ;;
+    auto) run_update merge ;;
     *) printf 'No valid update request.\n' ;;
   esac
 }

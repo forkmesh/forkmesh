@@ -902,27 +902,16 @@
     return { ...data, event };
   }
 
-  // Desktop and mirror materializers skip an event id they already hold, so
-  // two replies sent from one browser in the same second need distinct ids.
   function webDiscussionEventId(type, ts) {
     const suffix = new Uint32Array(1);
     crypto.getRandomValues(suffix);
     return `${type}-web-${ts}-${suffix[0].toString(36)}`;
   }
 
-  // The categories DiscussionStore::categories() offers (and the relay's
-  // DISCUSSION_CATEGORIES accepts), in the desktop's order.
   const WEB_DISCUSSION_CATEGORIES = ["Announcements", "Ideas", "Q&A", "Show and tell", "Maintainer notes"];
 
-  // Mirrors DiscussionStore::contentForSigning's "open" case (title NUL body
-  // NUL category) and createDiscussion on the desktop. A new discussion is
-  // signed against number 0: whoever writes it (an online mirror right away,
-  // or the owner's node when it drains the relay inbox) gives it the next
-  // free number, exactly as for one a desktop without the working tree sends.
   async function signWebDiscussionOpenEvent(repo, title, body, category) {
     const { privateKey, pub } = await getWebIssueKey();
-    // DiscussionStore stamps events in epoch milliseconds; the opening post's
-    // ts is also the discussion's createdAt, so keep the desktop's unit.
     const ts = Date.now();
     const cleanTitle = String(title || "").trim().slice(0, 240);
     const cleanBody = String(body || "").replace(/^[\r\n]+|[\r\n]+$/g, "");
@@ -945,9 +934,6 @@
     };
   }
 
-  // Starts a discussion from the browser. An online mirror writes it at once
-  // and answers with its number; through the relay it waits in the owner's
-  // inbox and the answer carries number 0 (not yet numbered).
   async function submitWebDiscussion(repo, { title, body, category } = {}, onProgress = null) {
     onProgress?.({ phase: "signing" });
     let event;
@@ -971,11 +957,6 @@
     return { ...data, number: Number(data?.number || 0), event };
   }
 
-  // The owner's moderation, as on the desktop's Close / Archive / Delete
-  // buttons: "status" moves the discussion to open, closed or archived, and
-  // "delete" removes one reply (value = its event id). The signature proves
-  // the event; the account session proves repository authority, and the relay
-  // and mirrors refuse these without it.
   async function submitWebDiscussionModeration(repo, number, type, value) {
     const discussionNumber = Number(number);
     if (!Number.isInteger(discussionNumber) || discussionNumber <= 0) {
@@ -984,7 +965,6 @@
     if (type === "status" && !["open", "closed", "archived"].includes(value)) {
       throw new Error("unsupported_discussion_action");
     }
-    // "delete" takes a reply id, or "#discussion" for the whole discussion.
     if (type !== "status" && (type !== "delete" || !String(value || ""))) {
       throw new Error("unsupported_discussion_action");
     }
@@ -1041,10 +1021,6 @@
     return fetchRepoMutation(repo, "discussions", payload);
   }
 
-  // Mirrors ProjectStore::contentForSigning/canonicalString on the desktop
-  // (forkmesh-project-event-v1, no repository binding). Each spec is
-  // {type, ...fields}; the relay's project-edit route verifies, appends and
-  // commits them in one go.
   function webProjectEventContent(ev) {
     const NUL = String.fromCharCode(0);
     if (ev.type === "open") return `${ev.title}${NUL}${ev.body}`;
@@ -2338,8 +2314,6 @@
     }
   }
 
-  // One message per refusal the relay, a mirror or the browser can give a
-  // discussion submission; the typed draft always survives.
   function webDiscussionSubmitErrorText(error) {
     const code = String(error?.message || error?.code || "");
     const status = Number(error?.status || 0);
@@ -2395,8 +2369,6 @@
       if (submit) submit.disabled = false;
       const number = Number(result.number || 0);
       if (Number.isInteger(number) && number > 0) {
-        // A mirror wrote it already. Keep the accepted post on screen while
-        // the next read converges, the same way a new issue is shown.
         rememberOptimisticRepoRecord(repo, "discussions", number, {
           values: {
             title: event.title,
@@ -2423,8 +2395,6 @@
         await loadRepoRecordDetail(repo, "discussions", number);
         return;
       }
-      // Through the relay: the owner's node or a mirror numbers it when it
-      // drains the inbox. Say so instead of linking to a number nobody has.
       if (titleInput) titleInput.value = "";
       if (bodyInput) bodyInput.value = "";
       renderRepoDiscussions();
@@ -2439,8 +2409,6 @@
     }
   }
 
-  // The owner's Close / Reopen / Archive / Unarchive. The status is shown at
-  // once and kept while the mirror catches up; a refusal puts it back.
   async function handleDiscussionStatusClick(repo, button) {
     if (!repo || !button) return;
     const number = Number(button.dataset.repoDiscussionStatusNumber || 0);
@@ -2478,8 +2446,6 @@
     }
   }
 
-  // The owner deletes the whole discussion, as on the desktop: its folder
-  // leaves the repository once a mirror (or the owner's node) applies it.
   async function handleDiscussionRemoveClick(repo, button) {
     if (!repo || !button) return;
     const number = Number(button.dataset.repoDiscussionRemove || 0);

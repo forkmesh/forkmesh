@@ -1,4 +1,3 @@
-"""Releases and tags from the web (repository_releases.py), against real git."""
 
 import asyncio
 import json
@@ -112,6 +111,18 @@ def test_signed_and_reserved_channels_are_never_written(bare_repo, tmp_path):
     git(work, "push", "-q", "origin", "main", "v9")
     signed = release({"op": "save", "tag": "v9", "branch": "main", "title": "x"})
     assert signed["status"] == 409 and signed["data"]["error"] == "signed_release"
+    grants = []
+
+    async def grant(_env, actor, owner, repo, ref, target):
+        grants.append(ref)
+        return 1, None
+    repository_releases.core_push_grant_tag_move = grant
+    tag_before = git_out(bare_repo, "rev-parse", "refs/tags/v9").strip()
+    moved = release({"op": "move-tag", "tag": "v9", "branch": "main",
+                     "target": git_out(bare_repo, "rev-parse", "main~1").strip()})
+    assert moved["status"] == 409 and moved["data"]["error"] == "signed_release"
+    assert grants == []
+    assert git_out(bare_repo, "rev-parse", "refs/tags/v9").strip() == tag_before
     for name in ("latest", "candidate-1.2.3"):
         refused = release({"op": "save", "tag": name, "branch": "main"})
         assert refused["data"]["error"] == "reserved_tag"

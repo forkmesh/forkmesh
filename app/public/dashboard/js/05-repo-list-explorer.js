@@ -1730,8 +1730,6 @@
     }
     const node = externalMirrorNodeName();
     if (!node) {
-      // No node to lend, but this forge's core nodes can host a copy: import
-      // it here instead of sending the visitor to install the desktop app.
       if (!hostedSettings) await loadHostedSettings();
       const original = String(repository?.originalUrl || "").trim();
       if (hostedImportAllowed(original)) {
@@ -2837,7 +2835,8 @@
       rows.push(`<div data-repo-explorer-current-path="${escapeHtml(path)}" class="${repoExplorerRowClass(true)}"><i data-lucide="folder-open" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="min-w-0 truncate">${escapeHtml(currentName)}</span></div>`);
     }
 
-    if (entries.length) {
+    if (entries === null) {
+    } else if (entries.length) {
       rows.push(entries.map((entry) => {
         const isTree = entry.type === "tree";
         const childPath = repoChildPath(path, entry.name);
@@ -3815,9 +3814,6 @@
     if (mode !== viewer.dataset.repoFileCurrentMode) viewer.dataset.repoFileCurrentMode = mode;
   }
 
-  // Rename/move or delete the open file, from the browser: a commit for a
-  // writer, or a signed pull request that proposes it for everyone else,
-  // through /file-edit's "rename" and "delete" operations.
   function openRepoFileMoveForm(viewer, repo, path, content, lines, meta, op) {
     const shell = viewer?.querySelector("[data-repo-file-shell]");
     const fileContent = viewer?.querySelector("[data-repo-file-content]");
@@ -3943,8 +3939,6 @@
     updateRepoFileStatus(viewer, deleting ? "Confirm to delete this file." : "Choose the new path.", "good");
   }
 
-  // The folder the Code tab is showing (the breadcrumb's last folder; a file
-  // view counts as its folder), so Add file starts there like on GitHub.
   function currentRepoBrowseFolder() {
     const crumb = $("[data-repo-detail] [data-repo-breadcrumb]");
     const folders = [...(crumb?.querySelectorAll("[data-dashboard-tree-path]") || [])];
@@ -3955,10 +3949,6 @@
     return String(value || "").trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/{2,}/g, "/");
   }
 
-  // Add file > Create new file, in the browser: a path, the text, and either
-  // a commit to a branch (repository writers) or a signed pull request that
-  // proposes the file (everyone else). Both go through /file-edit with
-  // create: true, the same route that edits an existing file.
   function openRepoNewFile(repo, folder = currentRepoBrowseFolder()) {
     const detail = $("[data-repo-detail]");
     const viewer = detail?.querySelector("[data-repo-blob]");
@@ -4024,8 +4014,6 @@
       controller.abort();
       void loadRepositoryTree(repo, folder);
     };
-    // An uploaded file (an image, an archive, any bytes) goes up as base64
-    // and is committed exactly; the text box is set aside meanwhile.
     let upload = null;
     const uploadInput = editor.querySelector("[data-repo-new-file-upload]");
     const uploadName = editor.querySelector("[data-repo-new-file-upload-name]");

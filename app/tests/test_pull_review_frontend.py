@@ -135,7 +135,6 @@ def test_pull_review_approval_and_owner_only_mirror_merge_are_available():
     assert 'data-repo-pull-review-action="approved"' in CONTENT
     assert "loadRepoPullMergeAuthorization" in CONTENT
     assert 'profile?.viewerRole === "owner"' in CONTENT
-    # A personal repository's owner gets the merge control as well.
     merge_auth = CONTENT[CONTENT.index("async function loadRepoPullMergeAuthorization"):]
     assert "if (sessionOwnsRepo(repo)) return true;" in merge_auth[:600]
     assert "data-repo-pull-merge" in CONTENT
@@ -186,7 +185,7 @@ def test_pull_header_names_the_source_and_target_repositories():
     # pull.md has no head-repository field: the record lives in the target
     # repo, and a cross-node pull only carries "<contributor>:" on head.
     assert "const branchChip = (repoLabel, branch) =>" in CONTENT
-    assert 'const baseRepoLabel = `${repo.owner || "owner"}/${repo.name || "repo"}`;' in CONTENT
+    assert 'const baseRepoLabel = repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`);' in CONTENT
     assert 'headRef.slice(0, headRef.lastIndexOf(":")).trim()' in CONTENT
     assert "branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}" in CONTENT
     assert '<span class="opacity-75">${escapeHtml(repoLabel)}:</span>${escapeHtml(branch)}' in CONTENT

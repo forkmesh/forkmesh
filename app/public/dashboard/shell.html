@@ -18,6 +18,10 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
     <link rel="manifest" href="/favicon/site.webmanifest" />
+    <!-- The mono face (counts, hashes, dates) is fetched with the page, not
+         after the stylesheet: a late swap re-measured every counter. -->
+    <link rel="preload" href="/assets/fonts/DejaVuSansMono-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/assets/fonts/DejaVuSansMono-Bold-latin.woff2" as="font" type="font/woff2" crossorigin />
     <script>
       (() => {
         const key = "forkmesh.dashboard.theme";
@@ -1196,6 +1200,25 @@
 
       .view.active.flex-view {
         display: flex;
+      }
+
+      /* The page scrolls inside the view, which starts short and grows as the
+         data arrives: keep the scrollbar's gutter so the centred content does
+         not slide sideways the moment the scrollbar appears. */
+      .view.overflow-y-auto {
+        scrollbar-gutter: stable;
+      }
+
+      /* Narrow screens stack the About rail under the file table, and a
+         folder's table under its Files list: keep what sits below out of the
+         layout while the lists and README are still growing, so it is placed
+         once instead of being pushed down the screen. */
+      @media (max-width: 1023.98px) {
+        [data-repo-tree-pending] > [data-repo-about-rail],
+        [data-repo-tree-pending] > [data-repo-dir-about],
+        [data-repo-tree-pending] [data-repo-code-explorer]:not(.hidden) ~ [data-repo-code-main] {
+          display: none;
+        }
       }
 
       .copy-check {

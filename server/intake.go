@@ -1491,8 +1491,6 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 		return false, number, nil
 	}
 	if discussionStatus(dir) != "open" {
-		// Closed and archived discussions are read-only, as on the desktop
-		// (DiscussionStore::addComment). The reply is consumed, not kept.
 		return false, number, errDiscussionLocked
 	}
 	entries, _ = os.ReadDir(dir)
@@ -1514,19 +1512,12 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 	return true, number, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
 }
 
-// errDiscussionLocked: a reply to a closed or archived discussion. The relay
-// row is acknowledged (it can never be written) and a direct submission is
-// answered 409 discussion_locked.
 var errDiscussionLocked = errors.New("discussion is closed to new replies")
 
-// discussionDeleteTarget: a "delete" event whose target is this removes the
-// whole discussion rather than one reply (reply ids never start with "#").
 const discussionDeleteTarget = "#discussion"
 
 var discussionStatuses = map[string]bool{"open": true, "closed": true, "archived": true}
 
-// discussionStatus reads discussion.md's status the way the desktop does:
-// anything but closed or archived is open.
 func discussionStatus(dir string) string {
 	raw, err := os.ReadFile(filepath.Join(dir, "discussion.md"))
 	if err != nil {
@@ -1543,18 +1534,30 @@ func discussionStatus(dir string) string {
 	return "open"
 }
 
-// writeDiscussionModeration applies the owner-only discussion events: a status
-// change (open, closed, archived) rewrites discussion.md's status line, and a
-// delete removes the reply whose id is the event's target. Both mirror the
-// desktop's DiscussionStore::setStatus/deleteComment and are refused unless the
-// relay or gateway recorded the repository owner's approval.
+func removeDiscussionFolder(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("discussion folder %s holds %s, which is not a plain file", dir, entry.Name())
+		}
+	}
+	for _, entry := range entries {
+		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return os.Remove(dir)
+}
+
 func writeDiscussionModeration(dir string, item collaborationItem) (bool, int, error) {
 	number := item.Number
 	approved, _ := item.Meta["ownerApproved"].(bool)
 	if approved && stringValue(item.Event["type"]) == "delete" &&
 		safeHeader(stringValue(item.Event["target"])) == discussionDeleteTarget &&
 		!fileExists(filepath.Join(dir, "discussion.md")) {
-		// Already gone: consume the redelivery.
 		return true, number, nil
 	}
 	if !approved || !fileExists(filepath.Join(dir, "discussion.md")) {
@@ -1566,9 +1569,7 @@ func writeDiscussionModeration(dir string, item collaborationItem) (bool, int, e
 			return false, number, nil
 		}
 		if target == discussionDeleteTarget {
-			// The whole discussion: its folder leaves the tree, like the
-			// desktop's DiscussionStore::deleteDiscussion.
-			return true, number, removeTreeUnder(filepath.Dir(dir), dir)
+			return true, number, removeDiscussionFolder(dir)
 		}
 		entries, _ := os.ReadDir(dir)
 		for _, entry := range entries {
@@ -1584,7 +1585,6 @@ func writeDiscussionModeration(dir string, item collaborationItem) (bool, int, e
 				return true, number, os.Remove(path)
 			}
 		}
-		// Already gone: the removal is consumed rather than retried forever.
 		return true, number, nil
 	}
 	status := strings.TrimSpace(stringValue(item.Event["status"]))

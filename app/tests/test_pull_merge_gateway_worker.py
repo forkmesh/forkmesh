@@ -861,10 +861,8 @@ def test_a_personal_repository_owner_may_merge_on_the_web():
     check = ns["_repository_owner_can_merge_repo"]
     request = _merge_request("/api/repo/alice/garden/pulls/3/merge")
     assert asyncio.run(check(None, request, "alice", "garden", "alice")) is True
-    # Someone else, or nobody, is refused.
     assert asyncio.run(check(None, request, "alice", "garden", "bob")) is False
     assert asyncio.run(check(None, request, "alice", "garden", "")) is False
-    # A URL naming another repository than the context never authorizes.
     other = _merge_request("/api/repo/alice/other/pulls/3/merge")
     assert asyncio.run(check(None, other, "alice", "garden", "alice")) is False
 

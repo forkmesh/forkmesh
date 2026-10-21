@@ -226,8 +226,10 @@ export function functions({
       ctx.player.position.z = previousHorizontalPosition.z;
       fns.cancelDash();
     }
+    fns.checkTerritoryCrossing?.(previousHorizontalPosition);
     if (!ctx.superJumping) {
       fns.constrainTownOfficeWalls(previousHorizontalPosition);
+      fns.constrainTerritoryObstacles?.(previousHorizontalPosition);
       constrainNeighbourWalls(previousHorizontalPosition);
       for (let index = 0; index < ctx.districtPackages.length; index += 1) {
         ctx.districtPackages[index].instance.constrainPlayer?.(

@@ -192,8 +192,6 @@
     const forkSplitButton = (compact) => websiteForkAvailable
       ? `<div data-repo-fork-split class="flex ${compact ? "h-8" : "h-9"} min-w-0 shrink-0 items-stretch overflow-hidden rounded-md border border-border bg-secondary text-xs font-semibold text-foreground"><button type="button" data-repo-fork-create data-repo-fork-go title="Fork this repository: your own copy, linked to this one" class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 px-3 hover:bg-background disabled:cursor-wait"><i data-lucide="git-fork" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Fork</span></button><button type="button" data-repo-fork-split-count aria-label="See who forked this repository" title="See who forked this repository" style="min-width:2.25rem" class="inline-flex items-center justify-center border-l border-border px-2 font-mono text-[12px] font-medium hover:bg-background"><span data-repo-fork-count>–</span></button></div>`
       : "";
-    // Add file creates a file in the browser (openRepoNewFile); a read-only
-    // mirror cannot take one, and says why instead.
     const readOnlyMirror = repoReadOnlyMirror(repo);
     const addFileButton = (height) => `<button type="button" data-repo-file-new${readOnlyMirror ? ` disabled title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}"` : ' title="Create a new file"'} class="inline-flex ${height} items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>`;
     const settingsPanel = canSeeSettingsTab ? `
@@ -367,7 +365,7 @@
               // routed in-app by the document click handler.
               const tabHref = tab === "code" ? repoLinkUrl(repo) : `${repoLinkUrl(repo)}/${tab}`;
               const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", actions: "actions", agents: "agents" }[tab];
-              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span>${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground${hideDiscussionsBadge ? " hidden" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
+              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span>${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground${hideDiscussionsBadge ? " hidden" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
             }).join("")}
           </div>
         </div>
@@ -420,7 +418,7 @@
 	                    <div data-repo-tree></div>
 	                  </div>
 	                  <div data-repo-blob class="hidden"></div>
-	                  <section data-repo-readme class="mt-4 overflow-hidden rounded-lg border border-border bg-background">
+	                  <section data-repo-readme class="hidden mt-4 overflow-hidden rounded-lg border border-border bg-background">
 	                    <div data-repo-readme-filename class="flex items-center gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="book-open" class="h-3.5 w-3.5 text-muted-foreground"></i>README.md</div>
 	                    <div data-repo-readme-body class="p-4 text-sm leading-6 text-muted-foreground">
 	                      <p class="mt-1">${loadingHtml("Loading README...")}</p>

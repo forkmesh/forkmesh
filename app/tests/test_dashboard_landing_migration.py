@@ -1714,7 +1714,6 @@ def test_dashboard_repository_tabs_read_public_mirror_data_not_owner_inbox():
         "Object.assign(blobs, await fetchRepoBlobs(",
         "paths.slice(offset, offset + 50), refParams",
         "fetchMissingRepoBlobs(",
-        # New discussions are signed in the browser (web-discussions.md).
         "function openDiscussionCompose(repo)",
     ):
         assert marker in dashboard_js
@@ -2599,7 +2598,8 @@ def test_dashboard_repository_code_explorer_switches_between_tree_and_file_revie
     assert 'data-repo-code-explorer class="hidden' in render
     assert 'treePanel?.classList.remove("hidden");' in tree_loader
     assert 'viewer?.classList.add("hidden");' in tree_loader
-    assert 'readmePanel?.classList.toggle("hidden", Boolean(path));' in tree_loader
+    assert 'readmePanel?.classList.add("hidden");' in tree_loader
+    assert 'readmePanel?.classList.remove("hidden");' in tree_loader
     assert "setRepoExplorerFocusMode(Boolean(path));" in tree_loader
     assert 'treePanel?.classList.add("hidden");' in blob_loader
     assert 'readmePanel?.classList.add("hidden");' in blob_loader
@@ -2946,7 +2946,7 @@ def test_dashboard_hard_refresh_preserves_tab_through_404_bounce():
     render_body = dashboard_js[render_start:dashboard_js.index("\n  function findRepository(key)")]
 
     assert "routeMatchesRepo" in render_body
-    assert 'repoTabRoutesFor(repo).includes(routeKind)\n          ? `${repoLinkUrl(repo)}/${routeKind}`' in render_body
+    assert 'repoTabRoutesFor(repo).includes(routeKind)\n              ? `${repoLinkUrl(repo)}/${routeKind}`' in render_body
     assert "navigateHistory(detailPath);" in render_body
     # The old bare-collapse call must be gone.
     assert "const detailPath = repoLinkUrl(repo);" not in render_body

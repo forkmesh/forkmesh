@@ -45,11 +45,23 @@ NOTICES = {
                       "site, or give a full http or https link.", "bad"),
     "legal_core": ("These pages are set on self-hosted instances only.",
                    "bad"),
+    "auto_on": ("Merges to the source branch now update this server.", "ok"),
+    "auto_off": ("Merges no longer update this server automatically.", "ok"),
+    "auto_no_target": ("This server's source is not a repository on this "
+                       "instance, so merges cannot update it.", "bad"),
+    "auto_unprotected": ("Protect the source repository's default branch "
+                         "first: anyone who can merge into it could "
+                         "otherwise deploy code to this server.", "bad"),
     "csrf": ("Action blocked: reload the page and try again.", "bad"),
     "invalid": ("Action failed: unknown action.", "bad"),
 }
 ACTIONS = ("check_update", "start_update", "save_repo_paths",
-           "save_repo_projects", "save_legal_page")
+           "save_repo_projects", "save_legal_page", "save_auto_update")
+TRIGGER_LABELS = {"admin": "Update button", "merge": "Merged pull request"}
+OUTCOME_LABELS = {"requested": "Update requested",
+                  "queued": "Joined the update already waiting",
+                  "write_failed": "The request could not be saved",
+                  "unprotected": "Skipped: the source branch is not protected"}
 LEGAL_MODES = (
     ("off", "Off: no link, the page is not found"),
     ("markdown", "A page on this site, written in Markdown"),
@@ -155,6 +167,8 @@ def _instance_progress(status, now):
     else:
         label = shell.pill("Idle", "")
     rows = [("Status", label)]
+    if status["trigger"] and status["action"] == "update":
+        rows.append(("Started by", _esc(TRIGGER_LABELS[status["trigger"]])))
     if status["step"] and state == "updating":
         rows.append(("Step", _esc(server_update.step_label(status["step"]))))
     if status["startedAt"]:
@@ -236,6 +250,65 @@ async def _settings_doc(env, key):
     return (row or {}).get("doc") or ""
 
 
+def _daemon_notice(source):
+    if source["daemon"] != "stale":
+        return ""
+    return (
+        '<p class="hint">The git node program was built from older server '
+        'code (%s) and keeps running until it is rebuilt: build '
+        '<span class="mono">server/cmd/forkmesh-mirror-node</span> from the '
+        'running commit and run the update with '
+        '<span class="mono">FORKMESH_INSTANCE_DAEMON</span> '
+        '(docs/INSTANCES.md).</p>' % _esc(
+            _short(source["daemonBuiltCommit"]) or "unknown commit"))
+
+
+async def _auto_update_card(env, csrf_field, admin_query, now):
+    shell = _admin_shell  # noqa: F821
+    source = server_update.build_source(env)
+    try:
+        wanted = await _self_update.current_target(env)
+        setting = await _self_update.setting(env)
+        last = await _self_update.last(env)
+    except Exception:
+        wanted, setting, last = None, {"auto": False}, {}
+    rows = [("Source", '<span class="mono">%s</span>' % _esc(
+        source["source"] or "unknown")),
+        ("Branch", '<span class="mono">%s</span>' % _esc(
+            source["ref"] or "unknown"))]
+    if wanted:
+        rows.append(("Repository", _esc(wanted[0] + "/" + wanted[1])))
+    if last:
+        rows.append(("Last merge", "%s: pull request #%d by %s, %s" % (
+            shell.time_html(last["at"], now), last["pull"],
+            _esc(last["actor"] or "unknown"),
+            _esc(OUTCOME_LABELS[last["outcome"]]))))
+    body = '<dl class="kv">%s</dl>' % "".join(
+        "<dt>%s</dt><dd>%s</dd>" % (label, value) for label, value in rows)
+    on = setting["auto"] and bool(wanted)
+    if wanted:
+        body += '<div style="margin-top:12px">%s</div>' % _form(
+            "save_auto_update",
+            "Turn off" if setting["auto"] else "Turn on", csrf_field,
+            admin_query, extra='<input type="hidden" name="auto" value="%s">'
+            % ("0" if setting["auto"] else "1"))
+    else:
+        body += ('<p class="hint">Point <span class="mono">sourceUrl</span> '
+                 'in instance.json at a repository on this instance and run '
+                 'one update first.</p>')
+    return shell.card(
+        title="Update when a pull request is merged",
+        description="When a pull request is merged into the branch this "
+        "server is built from, ask for the same update the button above "
+        "starts. Only that repository and branch count; pushes, pull "
+        "request branches and forks never do. The branch must be protected "
+        "(merged only after an owner or admin approves), because whoever "
+        "can merge into it deploys code to this server. Merges that land "
+        "while an update runs are picked up by one more update afterwards.",
+        actions=shell.pill("On" if on else "Off", "ok" if on else ""),
+        body=body)
+
+
 async def render_update(env, csrf_field, admin_query, now):
     shell = _admin_shell  # noqa: F821
     kind = server_update.mode(env)
@@ -268,7 +341,8 @@ async def render_update(env, csrf_field, admin_query, now):
     cards = (
         '<div class="grid cols-2">'
         + shell.card(title="This server", description="The ForkMesh build "
-                     "running here.", body=_commit_rows(current, now),
+                     "running here.", body=_commit_rows(current, now)
+                     + _daemon_notice(server_update.build_source(env)),
                      actions=_freshness_pill(freshness))
         + shell.card(title="Latest available",
                      description=checked or "The newest commit on the "
@@ -288,6 +362,7 @@ async def render_update(env, csrf_field, admin_query, now):
             "Your data, settings and accounts stay. The site may be "
             "unavailable for a minute while the app restarts.",
             body=update_body)
+        update += await _auto_update_card(env, csrf_field, admin_query, now)
     elif kind == "core":
         button = "" if busy else _form(
             "start_update", "Update ForkMesh", csrf_field, admin_query,
@@ -605,6 +680,21 @@ async def _save_legal(env, form):
     return "legal_saved", {"page": page, "mode": entry["mode"]}
 
 
+async def _save_auto_update(env, form):
+    if server_update.mode(env) != "instance":
+        return "unavailable", {}
+    auto = _first(form, "auto") == "1"
+    wanted = await _self_update.current_target(env)
+    if auto and not wanted:
+        return "auto_no_target", {}
+    if auto and not await _self_update.source_protected(env, *wanted):
+        return "auto_unprotected", {}
+    await _self_update.save(env, auto)
+    return ("auto_on" if auto else "auto_off"), {
+        "auto": auto, "repo": "/".join(wanted[:2]) if wanted else "",
+        "branch": wanted[2] if wanted else ""}
+
+
 async def _handle_post(env, request, view, admin_query, account):
     try:
         raw = await request.text()
@@ -637,6 +727,8 @@ async def _handle_post(env, request, view, admin_query, account):
         notice, saved = await _save_legal(env, form)
         if saved is not None:
             details = saved
+    elif action == "save_auto_update":
+        notice, details = await _save_auto_update(env, form)
     elif action == "start_update" and _first(form, "confirm") != "yes":
         return _redirect(location("unconfirmed"))
     else:

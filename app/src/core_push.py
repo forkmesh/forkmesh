@@ -395,9 +395,6 @@ async def tag_moves_handler(env, request):
 
 
 async def grant_tag_move(env, account, owner, repo, ref, target):
-    """Record that ``account`` may move tag ``ref`` to ``target`` on its next
-    push. Returns (expires_at, None) or (0, an error response). Used by the
-    signed /api/git/tag-moves route and by the web's release editor."""
     await ensure_schema(env)
     node = await _org_repo_node(env, owner, repo) or owner
     audit_target = node + "/" + repo

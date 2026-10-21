@@ -1,4 +1,3 @@
-"""Projects from the web (repository_projects.py), against real git."""
 
 import asyncio
 import hashlib
@@ -21,11 +20,22 @@ SHARED = ("json_response", "method_name", "bounded_json_request",
 SIGNER = _Signer()
 
 
-def projects_harness(bare, **kwargs):
+def projects_harness(bare, bound_keys=None, **kwargs):
     calls = harness(bare, **kwargs)
     for name in SHARED:
         setattr(repository_projects, name, getattr(repository_file_edits, name))
     repository_projects.ed25519_verify = _ed25519_verify
+    bound_keys = bound_keys or {}
+
+    async def bind_session_author(env, request, data, record, session=None):
+        bound = bound_keys.get(record.get("author"), "")
+        if session and bound and bound != session:
+            return {"status": 403, "data": {"error": "author_mismatch"}}
+        record["authorName"] = session or bound
+        record["authorVerified"] = bool(session or bound)
+        return None
+
+    repository_projects._bind_session_author = bind_session_author
     return calls
 
 
@@ -117,3 +127,15 @@ def test_signatures_events_and_permissions_are_checked(bare_repo):
     assert save(1, signed(1, "title", 1, title="x"))["status"] == 404
     projects_harness(bare_repo, owner_write=False)
     assert save(1, signed(1, "open", 1, title="x"))["status"] == 403
+
+
+def test_project_events_carry_the_signed_in_account_name(bare_repo):
+    projects_harness(bare_repo)
+    claimed = signed(1, "open", 1790000000000, title="Roadmap", authorName="bob")
+    assert save(1, claimed)["status"] == 200
+    project = stored(bare_repo, 1)
+    assert project["authorName"] == "jett"
+    assert all(ev["authorName"] == "jett" for ev in project["events"])
+    assert all("authorVerified" not in ev for ev in project["events"])
+    projects_harness(bare_repo, bound_keys={SIGNER.pub: "bob"})
+    assert save(1, signed(1, "title", 1790000000001, title="x"))["status"] == 403

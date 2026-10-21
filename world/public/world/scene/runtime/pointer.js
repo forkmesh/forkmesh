@@ -34,6 +34,8 @@ export function functions({
   onFederatedWorldTravel,
   onFediverseProfile,
   onInstanceHexagonSelect,
+  onTerritoryLinkSelect = () => {},
+  onTerritoryBugSelect = () => {},
   onNeighbourBugSelect = () => {},
   onFloorTap,
   onForkbotChat,
@@ -786,6 +788,17 @@ export function functions({
       });
       return;
     }
+    if (hit?.object?.userData?.interactive === "territory-link") {
+      onTerritoryLinkSelect({
+        url: String(hit.object.userData.url || ""),
+        label: String(hit.object.userData.label || ""),
+      });
+      return;
+    }
+    if (hit?.object?.userData?.interactive === "territory-bug") {
+      onTerritoryBugSelect({ ...(hit.object.userData.bug || {}) });
+      return;
+    }
     if (hit?.object?.userData?.interactive === "beach-scene-enter") {
       ctx.enterBeachScene();
       return;
@@ -1327,6 +1340,7 @@ export function functions({
       }
       if (
         enteredDistrictRide ||
+        fns.enterNearbyTerritoryDoor?.() ||
         fns.toggleNearestCoasterRide() ||
         fns.toggleNearestQuadcopterRide() ||
         fns.toggleNearestBikeRide() ||

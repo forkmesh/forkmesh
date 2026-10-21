@@ -395,8 +395,6 @@ async def insert(runtime, repo_id, key_bi, owner_bi, creator_bi, visibility,
 
 
 async def set_visibility(runtime, repo_id, visibility):
-    """Make a hosted repository public or private; cores pick it up on their
-    next replica sync."""
     if visibility not in ("public", "private"):
         raise ValueError("visibility")
     await runtime.d1_run(

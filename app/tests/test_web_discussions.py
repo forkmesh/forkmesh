@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Discussions from the web: start, reply, answer and moderate in a browser.
-
-The browser signs every discussion event with its own key (the same key and
-wire format as web issue events); the relay checks the signature and, for the
-owner-only events, the account session; mirrors and the owner's desktop write
-the result in the same .forkmesh/discussions format either way.
-"""
 
 import ast
 import asyncio
@@ -48,7 +41,6 @@ def _verify(number, ev):
     return _run(EV["verify_discussion_event"](number, ev, (REPO_KEY,), False))
 
 
-# -- the relay's signature rules ---------------------------------------------
 
 def test_a_new_discussion_is_signed_against_zero_with_title_and_category():
     signer = _Signer()
@@ -86,7 +78,6 @@ def test_replies_status_and_delete_need_a_real_number():
     assert _verify(4, other) is False
 
 
-# -- the relay's discussions_handler -----------------------------------------
 
 FUNCS = {
     "discussions_handler",
@@ -127,7 +118,6 @@ class _Request:
 
 
 class _Relay:
-    """The handler with an in-memory inbox and recorded side effects."""
 
     def __init__(self, owner=False, session="bob", queued=(), pending=0,
                  author_rows=0, fanout_fails=False, private=False):
@@ -277,7 +267,6 @@ def test_status_and_delete_need_the_owners_session():
         assert owner.post({"number": 4, "event": event})["status"] == 201
     assert [item["meta"] for item in owner.inserted] == [
         {"ownerApproved": True}, {"ownerApproved": True}]
-    # Moderation is not content: no mentions, followers or contribution.
     assert not owner.called("mentions") and not owner.called("subscribers")
     assert not owner.called("contributor") and not owner.called("fediverse")
 
@@ -397,7 +386,6 @@ def test_a_private_discussion_skips_provider_mirrors_and_public_tallies():
     assert relay.called("pending")      # the owner still hears about it
 
 
-# -- the browser --------------------------------------------------------------
 
 def _js_function(name):
     match = re.search(r"\n  (?:async )?function %s\(" % re.escape(name), DASHBOARD_JS)
@@ -639,7 +627,6 @@ def test_pending_discussion_changes_survive_mirror_reads_until_served():
     assert out["stale"] == [{"number": 1, "state": "closed"}, {"number": 3, "state": "open"}]
     assert out["detail"]["values"]["status"] == "closed"
     assert out["fresh"] == [{"number": 1, "state": "closed"}, {"number": 3, "state": "open"}]
-    # Both retire once a mirror serves them: #1 closed, #2 gone.
     assert out["left"] == []
 
 

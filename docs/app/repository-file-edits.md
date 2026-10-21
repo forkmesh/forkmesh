@@ -44,6 +44,13 @@ The commit pack is pushed through `_https_mirror_push_send` with the
 editable; a protected default branch refuses the edit at the gateway
 ([branch-protection.md](branch-protection.md)) and push policy still applies.
 
+`valid_path` refuses empty, `.` and `..` segments and any segment that names
+the Git folder on a case-insensitive or Windows file system: `.git` in any
+case, with trailing dots or spaces (`.GIT`, `.git.`, `.git `), and the 8.3
+short name `git~1` (the CVE-2014-9390 family). `commit_paths`, which the
+release and project routes use with paths read from repository JSON, checks
+every path with it too.
+
 ## Proposals: editing without write access
 
 Like GitHub, a reader without write access can still edit a file: the change

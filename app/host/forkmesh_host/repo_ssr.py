@@ -14,10 +14,10 @@ HTML the Worker returns for ``/<owner>/<repo>``:
   page's early-read script (partials/repo-early-reads.html) hands to the
   dashboard, so it does not ask for them again.
 
-An issue page (``/<owner>/<repo>/issues/<n>``) gets the header, the tab
-strip and the issue itself in the dashboard's own markup (repo_ssr_issue,
-from repo_views' issue bundle), which dashboard.js keeps in place until its
-own render of the same markup replaces it.
+An issue page (``/<owner>/<repo>/issues/<n>`` or ``/<name>/issues/<n>``) gets
+the header, the tab strip and the issue itself in the dashboard's own markup
+(repo_ssr_issue, from repo_views' issue bundle), which dashboard.js keeps in
+place until its own render of the same markup replaces it.
 
 The reads start when the request arrives, in parallel with the Worker, and
 are skipped (the page is served as before) when they take longer than
@@ -36,6 +36,7 @@ import time
 import urllib.parse
 
 from . import repo_code_ref
+from . import repo_ssr_about
 
 PAGE_RE = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/?$")
 SHORT_PAGE_RE = re.compile(r"^/([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/?$")
@@ -51,10 +52,11 @@ README_RE = re.compile(r"^readme(\.md|\.txt|\.rst)?$", re.I)
 # The page waits at most this long for its first view; after that it is
 # served as before and the dashboard reads the data itself. Views and the
 # repository root are remembered (stale-while-revalidate), so the wait is
-# only ever paid when nothing is remembered yet (after a restart).
-SSR_BUDGET_SECONDS = 0.04
+SSR_BUDGET_SECONDS = 0.3
+SSR_REFRESH_SECONDS = 0.12
+VIEW_BUDGET_SECONDS = 0.04
 PRERENDER_FRESH_SECONDS = 5.0
-PRERENDER_STALE_SECONDS = 300.0
+PRERENDER_STALE_SECONDS = 6 * 3600.0
 MAX_TREE_ROWS = 400
 MAX_README_CHARS = 200_000
 PLACEHOLDER = ('<div data-repo-frame data-repo-layout="pending" class="min-w-0"><div '
@@ -122,6 +124,62 @@ def short_target(scope):
     return name
 
 
+SHORT_SUB_RE = re.compile(
+    r"^/([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/([^/?#]+)(?:/[^?#]*)?$")
+SUB_TABS = ("issues", "pulls", "discussions", "insights", "projects", "actions")
+SUB_OTHER_ROUTES = frozenset({
+    "branches", "commits", "sizemap", "releases", "mirrors", "agents",
+    "settings", "compare", "network", "security"})
+
+
+def short_sub_target(scope):
+    if scope.get("method", "GET").upper() != "GET" or \
+            (scope.get("query_string") or b""):
+        return None
+    raw = scope.get("raw_path")
+    path = raw.decode("latin-1") if raw else (scope.get("path") or "")
+    match = SHORT_SUB_RE.match(path)
+    if not match:
+        return None
+    name, second = match.group(1), urllib.parse.unquote(match.group(2))
+    if name.lower() in RESERVED_OWNERS or name.endswith(".git") \
+            or second in SUB_OTHER_ROUTES:
+        return None
+    if second == "pull":
+        return name, "pulls"
+    return name, second if second in SUB_TABS else "code"
+
+
+SHORT_ISSUE_RE = re.compile(r"^/[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}/issues/([1-9]\d{0,8})/?$")
+ISSUE_BUDGET_SECONDS = 0.3
+
+
+def short_issue_number(scope):
+    raw = scope.get("raw_path")
+    path = raw.decode("latin-1") if raw else (scope.get("path") or "")
+    match = SHORT_ISSUE_RE.match(path)
+    return int(match.group(1)) if match else 0
+
+
+def _issue_bundle(fastpath, owner, repo, number):
+    from . import repo_views
+    bundle = repo_views.cached(fastpath, owner, repo, "issue", number)
+    if bundle is not None:
+        done = asyncio.get_running_loop().create_future()
+        done.set_result(bundle)
+        return done
+    return asyncio.ensure_future(repo_views.build(fastpath, owner, repo, "issue", number))
+
+
+async def _within(task, seconds):
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), max(0.01, seconds))
+    except asyncio.TimeoutError:
+        return None
+    except Exception:
+        return None
+
+
 def short_page(page):
     found = {}
     end = page.find("</head>")
@@ -169,8 +227,11 @@ async def prerender(fastpath, owner, repo):
                 [("path", ".forkmesh/info.json"), ("ref", commit)]))
             info = repo_info(blob)
         node = await fastpath.node_name() or ""
+        extras = await repo_ssr_about.extras(fastpath, base, owner, repo,
+                                             commit, tree)
         return {"owner": owner, "repo": repo, "ref": ref, "commit": commit,
-                "servedBy": node, "tree": tree, "readme": readme, "info": info}
+                "servedBy": node, "tree": tree, "readme": readme, "info": info,
+                "extras": extras}
     except Exception:
         return None
 
@@ -192,10 +253,16 @@ def repo_info(blob):
 
 
 class ShortTicket:
-    def __init__(self, fastpath, name, code=None):
+    def __init__(self, fastpath, name, tab=None, issue=0, code=None):
         self.fastpath = fastpath
         self.name = name
+        self.tab = tab
+        self.issue = issue
         self.code = code
+        self.bundle = None
+        self.bundle_owner = _short_owners.get(name.lower()) if issue else None
+        if self.bundle_owner:
+            self.bundle = _issue_bundle(fastpath, self.bundle_owner, name, issue)
 
 
 class CodeRefTicket:
@@ -217,19 +284,8 @@ class ViewTicket:
         self.reactions = None
 
 
-ISSUE_BUDGET_SECONDS = 0.3
-
-
-async def _within(task, seconds):
-    try:
-        return await asyncio.wait_for(asyncio.shield(task), max(0.01, seconds))
-    except asyncio.TimeoutError:
-        return None
-    except Exception:
-        return None
-
-
 _prerendered = {}   # (owner, repo) -> (monotonic time, data)
+_short_owners = {}  # short name (lowercase) -> owner its page named last
 _prerendering = {}  # (owner, repo) -> Future
 
 
@@ -254,16 +310,26 @@ def _prerender_task(fastpath, owner, repo):
 
 def remembered_prerender(fastpath, owner, repo):
     """A future for the repository root's first view: the remembered one at
-    once when there is one (refreshed in the background once stale)."""
+    once while fresh; once older, a re-read the page waits for briefly
+    (SSR_REFRESH_SECONDS) before taking the remembered one."""
     entry = _prerendered.get((owner, repo))
     loop = asyncio.get_running_loop()
     if entry is not None and loop.time() - entry[0] < PRERENDER_STALE_SECONDS:
-        if loop.time() - entry[0] >= PRERENDER_FRESH_SECONDS:
-            _prerender_task(fastpath, owner, repo)
-        done = loop.create_future()
-        done.set_result(entry[1])
-        return done
+        if loop.time() - entry[0] < PRERENDER_FRESH_SECONDS:
+            done = loop.create_future()
+            done.set_result(entry[1])
+            return done
+        return asyncio.ensure_future(_fresh_or_remembered(
+            _prerender_task(fastpath, owner, repo), entry[1]))
     return _prerender_task(fastpath, owner, repo)
+
+
+async def _fresh_or_remembered(task, remembered):
+    try:
+        data = await asyncio.wait_for(asyncio.shield(task), SSR_REFRESH_SECONDS)
+    except asyncio.TimeoutError:
+        return remembered
+    return data
 
 
 def start(fastpath, scope):
@@ -302,7 +368,11 @@ def start(fastpath, scope):
         short = repo_code_ref.short_code(scope)
         name = urllib.parse.unquote(short[0][1:]) if short else ""
         if name and name.lower() not in RESERVED_OWNERS:
-            return ShortTicket(fastpath, name, short)
+            return ShortTicket(fastpath, name, "code", code=short)
+        sub = short_sub_target(scope)
+        if sub:
+            return ShortTicket(fastpath, sub[0], sub[1],
+                               short_issue_number(scope) if sub[1] == "issues" else 0)
         return None
     return remembered_prerender(fastpath, *target)
 
@@ -322,6 +392,9 @@ MICRO_MAX_ENTRIES = 512
 MICRO_MAX_BODY = 256 * 1024
 _micro = {}
 _micro_refreshing = set()
+ABOUT_MEMO_SECONDS = 24 * 3600.0
+_about_memo = {}   # "/api/repo/<owner>/<repo>/about" (lowercase) -> (time, about)
+_warmer = {}       # "fetch": the Worker fetch, "headers": a visitor's headers
 
 
 class MicroKey(str):
@@ -359,7 +432,9 @@ async def _micro_store(key, response):
     if int(response.status) == 200 and len(body) <= MICRO_MAX_BODY:
         if len(_micro) >= MICRO_MAX_ENTRIES:
             _micro.clear()
-        _micro[key] = (asyncio.get_running_loop().time(), 200, headers, body)
+        now = asyncio.get_running_loop().time()
+        _micro[key] = (now, 200, headers, body)
+        _remember_about(str(key), body, now)
     return _js.Response(body, response.status, "", _js.Headers(dict(headers)))
 
 
@@ -485,6 +560,60 @@ def request_origin(request):
     return "%s://%s" % (parts.scheme, parts.netloc)
 
 
+def _remember_about(path, body, now):
+    if "?" in path or not path.endswith("/about"):
+        return
+    try:
+        about = json.loads(body)
+    except (TypeError, ValueError):
+        return
+    if isinstance(about, dict) and about.get("ok"):
+        if len(_about_memo) >= MICRO_MAX_ENTRIES:
+            _about_memo.clear()
+        _about_memo[path.lower()] = (now, about)
+
+
+def warm_about(owner, repo):
+    worker_fetch = _warmer.get("fetch")
+    if worker_fetch is None:
+        return
+    path = "/api/repo/%s/%s/about" % (urllib.parse.quote(owner, safe=""),
+                                      urllib.parse.quote(repo, safe=""))
+    key = MicroKey(path)
+    loop = asyncio.get_running_loop()
+    entry = _about_memo.get(path.lower())
+    if (entry is not None and loop.time() - entry[0] < MICRO_FRESH_SECONDS) \
+            or key in _micro_refreshing:
+        return
+    from . import js as _js
+    headers = _js.Headers({k: v for k, v in _warmer.get("headers", {}).items()
+                           if k not in ("cookie", "authorization")})
+    headers.set("accept", "application/json")
+    request = _js.Request(_warmer.get("origin", "") + path, "GET", headers)
+    _micro_refreshing.add(key)
+
+    async def run():
+        try:
+            await _micro_store(key, await worker_fetch(request))
+        except Exception:
+            pass
+        finally:
+            _micro_refreshing.discard(key)
+    asyncio.ensure_future(run())
+
+
+def _remember_warmer(worker_fetch, request):
+    try:
+        parts = urllib.parse.urlsplit(str(request.url))
+        _warmer["origin"] = "%s://%s" % (parts.scheme, parts.netloc)
+        _warmer["headers"] = {"host": parts.netloc,
+                              "user-agent": "forkmesh-host-first-view",
+                              "cf-connecting-ip": "127.0.0.1"}
+        _warmer["fetch"] = worker_fetch
+    except Exception:
+        pass
+
+
 async def fetch(ticket, worker_fetch, request):
     """The Worker's answer, or the micro-cache's for an anonymous read."""
     if isinstance(ticket, CodeRefTicket):
@@ -499,6 +628,8 @@ async def fetch(ticket, worker_fetch, request):
             ticket.reactions = read_reactions(
                 worker_fetch, request_origin(request), owner, repo, view,
                 number)
+        if ticket is not None and not isinstance(ticket, ViewTicket):
+            _remember_warmer(worker_fetch, request)
         return await worker_fetch(request)
     entry = _micro.get(ticket)
     now = asyncio.get_running_loop().time()
@@ -535,9 +666,10 @@ async def finish(task, response):
             return await _finish_short(task, response)
         started = asyncio.get_running_loop().time()
         try:
-            data = await asyncio.wait_for(asyncio.shield(task), ISSUE_BUDGET_SECONDS
-                                          if view is not None and view.root is not None
-                                          else SSR_BUDGET_SECONDS)
+            data = await asyncio.wait_for(
+                asyncio.shield(task),
+                (ISSUE_BUDGET_SECONDS if view.root is not None else VIEW_BUDGET_SECONDS)
+                if view is not None else SSR_BUDGET_SECONDS)
         except asyncio.TimeoutError:
             if view is None or view.target is None:
                 return response
@@ -590,14 +722,34 @@ async def _finish_short(ticket, response):
                                                   *ticket.code)
             if target:
                 return repo_code_ref.response(target)
-            return _js.Response(body, response.status, "", response.headers)
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        bundle_task = None
+        if ticket.issue:
+            if len(_short_owners) > 1024:
+                _short_owners.clear()
+            _short_owners[ticket.name.lower()] = owner
+            bundle_task = ticket.bundle if ticket.bundle is not None \
+                and ticket.bundle_owner == owner \
+                else _issue_bundle(ticket.fastpath, owner, repo, ticket.issue)
         try:
             data = await asyncio.wait_for(asyncio.shield(remembered_prerender(
                 ticket.fastpath, owner, repo)), SSR_BUDGET_SECONDS)
         except asyncio.TimeoutError:
             data = None
-        if data:
-            rendered = inject(page, data, short=canonical)
+        if data and bundle_task is not None:
+            bundle = await _within(bundle_task, ISSUE_BUDGET_SECONDS - (
+                loop.time() - started))
+            if bundle is not None and (bundle.owner, bundle.repo) == (owner, repo):
+                rendered = inject_issue(page, data, bundle, short=canonical)
+            if rendered is None:
+                rendered = inject_header(page, data, ticket.tab, short=canonical)
+                if rendered is not None:
+                    rendered = inject_view_reads(rendered, owner, repo, "issue",
+                                                 ticket.issue) or rendered
+        elif data:
+            rendered = inject(page, data, short=canonical) if ticket.tab is None \
+                else inject_header(page, data, ticket.tab, short=canonical)
     if rendered is None:
         return _js.Response(body, response.status, "", response.headers)
     headers = response.headers
@@ -625,6 +777,24 @@ def inject(page, data, short=False):
     about = cached_about(data["owner"], data["repo"])
     if data.get("info"):
         payload["info"] = data["info"]
+    reads = repo_ssr_about.seed_reads(data.get("extras"), data.get("ref"))
+    memo = _about_memo.get(("/api/repo/%s/%s/about" % (
+        data["owner"], data["repo"])).lower())
+    try:
+        recent = memo is not None and \
+            asyncio.get_running_loop().time() - memo[0] < MICRO_STALE_SECONDS
+    except RuntimeError:
+        recent = False
+    if recent and reads:
+        reads["about?"] = memo[1]
+    if reads:
+        payload["reads"] = reads
+    size = (data.get("extras") or {}).get("sizeBytes")
+    if size:
+        payload["sizeBytes"] = size
+    followers = ((about or {}).get("fediverse") or {}).get("followers")
+    if isinstance(followers, int) and not isinstance(followers, bool):
+        payload["followers"] = followers
     if about and isinstance(about.get("features"), dict):
         payload["features"] = {key: bool(value) for key, value in about["features"].items()
                                if key in ("issues", "pulls", "discussions")}
@@ -640,6 +810,29 @@ def inject(page, data, short=False):
     page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
         'class="inline-flex', 'class="hidden inline-flex'), 1)
     return page.replace(PLACEHOLDER, render_view(data, short, about), 1)
+
+
+def inject_header(page, data, tab, short=False):
+    if 'data-page="repo"' not in page or PLACEHOLDER not in page \
+            or CHARSET not in page:
+        return None
+    owner, repo = data["owner"], data["repo"]
+    base = "/" + urllib.parse.quote(repo) if short else "/%s/%s" % (
+        urllib.parse.quote(owner), urllib.parse.quote(repo))
+    tree = data.get("tree") or {}
+    counts = tree.get("counts") if isinstance(tree.get("counts"), dict) else {}
+    tabs = _tabs(base, cached_about(owner, repo), counts, tab)
+    page = page.replace(CHARSET, CHARSET + "\n    " + STYLE, 1)
+    page = page.replace(HEADER_CONTEXT, header_context(data, short), 1)
+    page = page.replace(HEADER_META, HEADER_META.replace(
+        '"hidden shrink-0', '"hidden sm:flex shrink-0'), 1)
+    page = page.replace(HEADER_VISIBILITY, HEADER_VISIBILITY.replace(
+        "></span>", ">public</span>"), 1)
+    page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
+        'class="inline-flex', 'class="hidden inline-flex'), 1)
+    return page.replace(PLACEHOLDER, (
+        '<div data-repo-ssr data-repo-layout="first-view" class="min-w-0">%s%s</div>'
+        % (_icon_sprite(), tabs)), 1)
 
 
 ISSUE_RENDER_SECONDS = 60.0
@@ -683,7 +876,7 @@ def inject_issue(page, data, bundle, short=False, origin="", reactions=None):
     from . import repo_ssr_issue
     try:
         article = issue_article(bundle, data, short, origin, reactions)
-    except Exception as error:  # the bundle's own first view is still correct
+    except Exception as error:  # the header-only page is still correct
         print("issue ssr skipped: %r" % (error,))
         article = None
     if article is None:
@@ -875,23 +1068,24 @@ def _icon_sprite():
 
 def cached_about(owner, repo):
     target = ("/api/repo/%s/%s/about" % (owner, repo)).lower()
-    now = None
-    for key, entry in list(_micro.items()):
-        if key.lower() != target:
-            continue
-        if now is None:
-            try:
-                now = asyncio.get_running_loop().time()
-            except RuntimeError:
-                return None
-        if now - entry[0] >= MICRO_STALE_SECONDS:
-            return None
-        try:
-            about = json.loads(entry[3])
-        except (TypeError, ValueError):
-            return None
-        return about if isinstance(about, dict) and about.get("ok") else None
-    return None
+    try:
+        now = asyncio.get_running_loop().time()
+    except RuntimeError:
+        return None
+    try:
+        warm_about(owner, repo)
+    except Exception:
+        pass
+    entry = _about_memo.get(target)
+    if entry is None:
+        for key, micro in list(_micro.items()):
+            if key.lower() == target and now - micro[0] < MICRO_STALE_SECONDS:
+                _remember_about(target, micro[3], micro[0])
+                entry = _about_memo.get(target)
+                break
+    if entry is None or now - entry[0] >= ABOUT_MEMO_SECONDS:
+        return None
+    return entry[1]
 
 
 TAB = ('<a href="%s" role="tab" aria-selected="%s" class="group relative '
@@ -899,7 +1093,7 @@ TAB = ('<a href="%s" role="tab" aria-selected="%s" class="group relative '
        'text-foreground"><span class="inline-flex h-8 items-center gap-2 '
        'rounded-md px-2 transition-colors group-hover:bg-secondary">%s'
        '<span>%s</span>%s</span></a>')
-COUNT = ('<span class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] '
+COUNT = ('<span style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] '
          'px-1.5 text-center text-[12px] font-medium leading-[18px] '
          'text-foreground">%s</span>')
 TABS = (("code", "Code", "code-2", ""), ("issues", "Issues", "circle-dot", "openIssues"),
@@ -934,8 +1128,6 @@ def _tabs(base, about, counts, selected="code"):
     features = (about or {}).get("features") or {}
     shown = []
     for key, label, icon, count_key in TABS:
-        if key != "code" and about is None and selected == "code":
-            continue
         if key in ("issues", "pulls", "discussions") and features.get(key) is False:
             continue
         count = ""
@@ -1038,7 +1230,72 @@ def _title_row(repo, base, about):
             _icon("git-fork"), count, _icon("chevron-down"), _icon("star"), count))
 
 
-def _about_rail(about, readme_href, info=None):
+def _languages_html(ranked):
+    total = sum(weight for _, weight in ranked)
+    if not ranked or not total:
+        return None
+    bar = "".join(
+        '<span title="%s" class="h-full shrink-0 first:rounded-l-full last:rounded-r-full" '
+        'style="width:%.1f%%;min-width:2px;background-color:%s"></span>' % (
+            html.escape(name), weight / total * 100,
+            repo_ssr_about.LANGUAGE_COLORS.get(name, "#8a8a8a"))
+        for name, weight in ranked)
+    legend = "".join(
+        '<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 '
+        'rounded-full" style="background-color:%s"></span><span class="min-w-0 truncate '
+        'text-foreground">%s</span><span class="ml-auto shrink-0 font-mono">%.1f%%</span>'
+        '</span>' % (repo_ssr_about.LANGUAGE_COLORS.get(name, "#8a8a8a"),
+                     html.escape(name), weight / total * 100)
+        for name, weight in ranked)
+    return bar, legend
+
+
+AVATAR_CLASS = ("relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden "
+                "rounded-full border-2 border-background bg-secondary font-mono text-[10px] "
+                "font-semibold uppercase text-muted-foreground")
+
+
+def _contributors_html(people, base, raw):
+    total = int(people["total"]) or len(people["rows"])
+    avatars = []
+    for row in people["rows"]:
+        name = str(row.get("name") or row.get("email") or "?")
+        commits = int(row.get("commits") or 0) if str(row.get("commits") or "0").isdigit() else 0
+        title = name + (" \u2014 %s commit%s" % ("{:,}".format(commits), "" if commits == 1 else "s")
+                        if commits else "")
+        inner = "<span>%s</span>" % html.escape(repo_ssr_about.initials(name))
+        picture = ""
+        if people["roster"] and row.get("slug"):
+            picture = raw + urllib.parse.quote(
+                "%s/%s.png" % (repo_ssr_about.ROSTER_DIR, row["slug"]), safe="")
+        elif not people["roster"] and repo_ssr_about._https_url(str(row.get("avatarUrl") or "")):
+            picture = str(row["avatarUrl"])
+        if picture:
+            inner += ('<img src="%s" alt="" width="28" height="28" loading="lazy" '
+                      'decoding="async" referrerpolicy="no-referrer" class="absolute '
+                      'inset-0 h-full w-full object-cover" />' % html.escape(picture))
+        attrs = 'title="%s" %sdata-repo-contributor-avatar class="%s"' % (
+            html.escape(title), ('aria-label="%s" ' % html.escape(title))
+            if people["roster"] else "", AVATAR_CLASS)
+        profile = str(row.get("profile") or "") if people["roster"] else ""
+        avatars.append(
+            '<a href="%s" target="_blank" rel="noopener noreferrer nofollow ugc" %s>%s</a>'
+            % (html.escape(profile), attrs, inner) if profile
+            else "<span %s>%s</span>" % (attrs, inner))
+    more = total - len(people["rows"])
+    if more > 0 and people["roster"]:
+        avatars.append(
+            '<a href="%s" title="All %s contributors" class="!ml-2 text-[11px] '
+            'text-muted-foreground hover:text-foreground hover:underline">+%s</a>' % (
+                html.escape("%s/blob/%s" % (base, repo_ssr_about.ROSTER_PATH)),
+                "{:,}".format(total), "{:,}".format(more)))
+    elif more > 0:
+        avatars.append('<span class="!ml-2 text-[11px] text-muted-foreground">+%s</span>'
+                       % "{:,}".format(more))
+    return str(total), "".join(avatars)
+
+
+def _about_rail(about, readme_href, info=None, values=None, base="", raw=""):
     description = str((info or {}).get("about") or (about or {}).get("description")
                       or "").strip()
     website = str((info or {}).get("website") or "").strip()
@@ -1055,12 +1312,33 @@ def _about_rail(about, readme_href, info=None):
                 html.escape(website), html.escape(re.sub(r"^https?://", "", website,
                                                          flags=re.I).rstrip("/")))
             ) if website else ""
+    values = values or {}
+    mono = '<span class="font-mono">%s</span>'
+    followers = ((about or {}).get("fediverse") or {}).get("followers")
+    watchers = mono % html.escape("{:,}".format(followers)) \
+        if isinstance(followers, int) and not isinstance(followers, bool) else dash
+    files = mono % "{:,}".format(values["files"]) if values.get("files") else dash
+    size = ('<span class="block h-4 w-4"></span>' + mono % html.escape(
+        repo_ssr_about.format_size(values["size"])) + _icon(
+            "chevron-right", "h-3 w-3", "text-muted-foreground")) if values.get("size") else dash
     rows = site + "".join(ABOUT_ROW % (label, value) for label, value in (
-        ("Watchers", dash + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),
-        ("Mirrors", dash), ("Files", dash), ("Size", dash)))
-    legend = "".join('<span class="block %s">&nbsp;</span>' % SKELETON for _ in range(6))
-    people = "".join('<span class="h-7 w-7 rounded-full border-2 border-background '
-                     'bg-secondary"></span>' for _ in range(8))
+        ("Watchers", watchers + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),
+        ("Mirrors", dash), ("Files", files), ("Size", size)))
+    drawn = _languages_html(values.get("languages") or [])
+    if drawn:
+        bar = ('<div class="mt-2.5 flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full">%s'
+               '</div>' % drawn[0])
+        legend = drawn[1]
+    else:
+        bar = '<div class="mt-2.5 h-1.5 w-full rounded-full bg-muted-foreground/20"></div>'
+        legend = "".join('<span class="block %s">&nbsp;</span>' % SKELETON for _ in range(6))
+    contributors = values.get("contributors")
+    if contributors and contributors.get("rows"):
+        count, people = _contributors_html(contributors, base, raw)
+    else:
+        count = "–"
+        people = "".join('<span class="h-7 w-7 rounded-full border-2 border-background '
+                         'bg-secondary"></span>' for _ in range(8))
     return (
         '<aside class="min-w-0 self-start rounded-lg border border-border bg-background p-4">'
         '<div class="flex items-center justify-between gap-3"><h3 class="text-sm '
@@ -1073,19 +1351,19 @@ def _about_rail(about, readme_href, info=None):
         '<span class="inline-flex min-w-0 items-center gap-1.5">%s<span>Activity</span>'
         '</span></div><div class="-mx-2 mt-3 grid">%s</div>'
         '<div class="mt-3 border-t border-border pt-3"><h4 class="text-xs font-semibold '
-        'text-foreground">Languages</h4><div class="mt-2.5 h-1.5 w-full rounded-full '
-        'bg-muted-foreground/20"></div><div class="mt-2.5 grid grid-cols-2 gap-x-3 '
-        'gap-y-1 text-[11px]">%s</div></div>'
+        'text-foreground">Languages</h4>%s<div class="mt-2.5 grid grid-cols-2 gap-x-3 '
+        'gap-y-1 text-[11px] text-muted-foreground">%s</div></div>'
         '<div class="mt-3 border-t border-border pt-3"><div class="flex items-center '
         'justify-between gap-3"><h4 class="text-xs font-semibold text-foreground">'
-        'Contributors</h4><span class="font-mono text-[11px] text-muted-foreground">–'
+        'Contributors</h4><span class="font-mono text-[11px] text-muted-foreground">%s'
         '</span></div><div class="mt-2.5 flex items-center -space-x-1.5">%s</div></div>'
         '<div class="mt-4 border-t border-border pt-4"><div class="flex items-center '
         'justify-between gap-2 text-xs font-semibold text-foreground"><span '
         'class="inline-flex items-center gap-1.5">%sRepository logo</span>%s</div></div>'
         '</aside>' % (
             text, _icon("link", "h-3.5 w-3.5", "shrink-0"), html.escape(readme_href),
-            _icon("book-open"), _icon("activity"), rows, legend, people,
+            _icon("book-open"), _icon("activity"), rows, bar, legend,
+            html.escape(count), people,
             _icon("image-plus", "h-3.5 w-3.5", "text-muted-foreground"),
             _icon("chevron-down", "h-3.5 w-3.5", "text-muted-foreground")))
 
@@ -1168,7 +1446,9 @@ def render_view(data, short=False, about=None):
             _icon_sprite(), _tabs(base, about, counts), _title_row(repo, base, about),
             _toolbar(str(data.get("ref") or "main")), html.escape(base), html.escape(repo),
             summary, "".join(rows), readme,
-            _about_rail(about, readme_href, data.get("info"))))
+            _about_rail(about, readme_href, data.get("info"),
+                        repo_ssr_about.rail_values(data.get("extras")),
+                        base, raw_prefix(data))))
 
 
 HEADER_CONTEXT = '<span data-dashboard-header-context class="min-w-0 truncate"></span>'

@@ -219,7 +219,8 @@ such an instance silently replaced the fork's program with upstream's. Now:
 - `build-info.json` gets `daemon: {state, builtTree, sourceTree,
   builtCommit}`. `state` is `current` when the recorded `server/` tree equals
   the running source's, `stale` when `server/` changed since, `release` or
-  `unknown`. The installer warns on `stale`.
+  `unknown`. The installer warns on `stale`, and the admin console's Update
+  page says "The git node program was built from older server code".
 
 Building on the server was rejected: a 1 GB instance would need a ~250 MB
 pinned Go toolchain and a memory-hungry build in the middle of an unattended
@@ -229,6 +230,54 @@ keeps serving with the older program until the operator rebuilds it
 (`cd server && go build -trimpath -o forkmesh-mirror-node ./cmd/forkmesh-mirror-node`
 from the running commit on a build machine, copy it over, run
 `FORKMESH_INSTANCE_DAEMON=<binary> bash install-instance.sh --update`).
+
+## Building the instance from its own repository
+
+An instance can be updated from a repository it hosts itself, so that a
+merged pull request deploys. Everything is opt-in:
+
+1. **Publish the platform code as an organization repository** linked as a
+   fork of the instance's platform mirror (`/<owner>/forkmesh`), with the
+   default branch protected and Actions off (the repository's workflows are
+   the platform's, not jobs for this server):
+
+   ```sh
+   git clone --bare --single-branch -b <integration-branch> \
+     /root/platform-src /root/acme-platform.git
+   git -C /root/acme-platform.git branch -m <integration-branch> main
+   cd /opt/forkmesh-instance/src/app/host
+   /opt/forkmesh-instance/venv/bin/python -m forkmesh_host instance-repo \
+     --owner alice --organization acme --name acme-platform \
+     --from /root/acme-platform.git --fork-of acme/forkmesh \
+     --protect-default-branch --actions off --no-hooks \
+     --env-file /etc/forkmesh-instance/app.env \
+     --db sqlite:/var/lib/forkmesh-instance/app.db \
+     --data-dir /var/lib/forkmesh-instance/data
+   systemctl restart forkmesh-mirror-node
+   ```
+
+   The repository must be public, because the updater fetches it without
+   credentials.
+2. **Point the instance at it.** In `/etc/forkmesh-instance/instance.json`
+   set `"sourceUrl": "https://code.example.org/acme/acme-platform.git"` and
+   `"sourceRef": "main"`, then run one update (console button, or
+   `bash /opt/forkmesh-instance/src/www/public/install-instance.sh --update`).
+   The installer keeps the platform mirror on its own upstream: it follows
+   `platformUrl` when set, else the ForkMesh release source whenever
+   `sourceUrl` is on the instance's domain (before, `sourceUrl` also became
+   the mirror's upstream label and `INSTANCE_UPSTREAM`).
+3. **Turn on "Update when a pull request is merged"** on the console's Update
+   page ([app/server-update.md](app/server-update.md#update-when-a-pull-request-is-merged)).
+
+From then on: a contributor opens a pull request, an organization owner or
+admin who is not the author approves it, an owner merges it, and the instance
+updates itself; `build-info.json` and the Update page show the merged commit.
+The protected branch ([app/branch-protection.md](app/branch-protection.md))
+is what keeps unreviewed code from deploying: nobody can push, edit or merge
+into it any other way. The console refuses to turn automatic updates on, and
+a merge files no update, while the source branch is not protected.
+The operator's `instance-repo` stays a root-only bypass and never triggers
+an update.
 
 ## Private admin console path
 
@@ -804,15 +853,16 @@ What does not work on an instance: the rewards and ledger parts (World
 store, wallet, central fund, pending rewards), community ads, the ForkMesh
 blog board, the `forkmesh/forkmesh` mirror and agent-bot boards (they read
 that repository, which an instance does not have under that name), Discord,
-and the relay federation towers. The World shows those boards empty.
+and the relay federation towers. Their boards and buildings are hidden in
+the instance's hexagon (below).
 
 The World asks `/api/instance` once (`instanceInfo()` in `world.js`) and
 does not request what the instance has switched off, so a visitor's console
 stays clean: with `rewards` off it skips `/api/accounts/central-fund` and
 `/api/rewards/pending`; with `ads` off the community placement and
 `/api/ads/serve`; and on any instance (`branded: true`) the forkmesh.com
-directory `/api/start/instances`, which only forkmesh.com fills (only the
-home portal is drawn). `instancePluginOff` and `instanceKeepsDirectory` in
+directory `/api/start/instances`, which only forkmesh.com fills (the
+ForkMesh World next door is drawn from `/api/instance` instead). `instancePluginOff` and `instanceKeepsDirectory` in
 `world-instance-portals.js` decide. `/api/accounts/central-fund` belongs to
 the `rewards` plugin on the server too, so it answers 404 rather than 503.
 The one error left for a signed-out visitor is the 401 from
@@ -826,6 +876,126 @@ loads `_blank` windows in the same tab, or a tool that drives the active tab
 of a shared browser, can look like the World navigating away on its own; a
 plain browser left on `/world/` stays there.
 
+### An instance World is its own hexagon
+
+Before this, an instance's World was the whole ForkMesh World (town, Office
+tower, beach, coaster, districts, desert plots) filled with the instance's
+data, so visitors took it for a copy of world.forkmesh.com. Now the instance
+World is one hexagon of its own, placed where the directory put it, with the
+ForkMesh World across the road.
+
+**What is drawn.** `territoryFromInstance()` (`world-territory.js`) turns
+`/api/instance` into the hexagon's settings whenever `branded` is true. The
+World then hides every ForkMesh element through the same element registry
+the Elements panel uses (`TERRITORY_HIDDEN_ELEMENTS`, passed with the
+visitor's own choices as `initialDisabledElements`): the town terrain and
+landscaping, the Office tower and its garden, causeways, beach, bikes,
+coaster, zip line, quadcopters and drone race, gym and swing, the
+leaderboard district, the Start Here and QA boards, the bulletin, chat and
+Discord boards, the blog banner, the Mastodon kiosk, ForkBot and agent bots,
+the mirror-node yard and the desert plots. It keeps what comes from the
+instance's own data: the Members Circle and its members, and the repository
+portal ring. On the hexagon `scene/instance-territory.js` builds a fresh
+starter world: ground, a road around the hexagon with a centre line, a plaza
+with a sign carrying the instance name and logo (`/instance-logo.*` when the
+installer wrote one, else `/assets/logo.svg`) and the logo on the ground,
+benches, lamps and trees. Fresh visitors arrive on the plaza
+(`TERRITORY_FRESH_SPAWN`) instead of at the campfire. The Office stays
+reachable at `/office`; its tower is not in the hexagon, and the tower's
+walls and door zone are switched off with it (`territoryWalkActive()`).
+
+**Style.** `style` is `meadow` (green ground, stone plaza) or `security`
+(dark ground, red accents, padlocks and a shield over the sign, terminal
+green lettering). `accent` overrides the accent colour; empty takes the
+instance theme's dark `primary`, then the style's own. The palettes are in
+`TERRITORY_STYLES`.
+
+**Buildings that link out.** `objects` lists up to 12 houses
+`{type: "house", label, url, position: [x, z], color}`; `position` is
+measured from the plaza centre, within 300 on each axis, and must stay
+inside the hexagon: at most 330 from its centre (the plaza sits 85 in front
+of it), the reach the ForkMesh World draws a neighbour scene to
+(`NEIGHBOUR_SCENE_REACH`). Clicking a house leaves the World for `url`
+(https only, no credentials) in the same tab, after the "Entering …" notice
+(`openTerritoryLink`). Nothing opens by walking.
+
+The neighbour scene (`/api/world/neighbour-scene`) is served from the
+instance's own `PUBLIC_BASE_URL` and answers 404 without one, so a request's
+`Host` header never picks the address the server fetches the bug list from.
+Until an operator saves World settings the route falls through to the
+existing handler, so `WORLD_NEIGHBOUR_SCENE` and the default scene still
+apply. Every answer is edge-cached (600 s, or 60 s when the bug list could
+not be read), so anonymous requests do not each repeat the database reads
+and the bug-list fetch.
+
+**Bug terrarium.** `bugs: {repo, ref, path, title, limit, position}` draws a
+glass enclosure with up to 60 crawling bugs. The list is a JSON file in one
+of the instance's own repositories, read through
+`/api/repo/<owner>/<name>/raw?path=...&ref=...`: an array of
+`{domain, name, url, favicon, count}` (`count` optional). `favicon` is a
+path next to the list (`favicons/<domain>.png`; png, ico, gif, jpg or webp)
+and is drawn on the bug's back, so the visitor's browser only ever loads
+same-origin files: no third-party favicon service learns who looks at the
+terrarium. A path that leaves the repository, an absolute address or an
+SVG favicon is dropped (`territoryFaviconURL`). Clicking a bug shows its
+domain, name and count with a link to `url` (https only) in a small card.
+
+**Settings.** The `instance_settings` row `world` holds them
+(`app/src/instance_world.py`, cleaned on save, defaults when missing or
+invalid) and `/api/instance` reports them as `world`. Admins edit them as
+JSON under Platform → World in the admin console (`save_world`, CSRF-checked
+and audited as `admin.console_save_world`).
+
+**The ForkMesh World next door is live.** The hexagon stands on one of the
+ForkMesh town's desert petals: the petal the hub publishes for it in
+`/api/world/mesh`, else slot n's petal n + 1 (`territoryPetal`). ForkMesh's
+own World is the same code, so its town, petals, roads, Office tower,
+coaster, beach and other scenery (`TERRITORY_NEIGHBOUR_ELEMENTS`) are moved
+beside the instance hexagon and are walkable and solid, with nothing
+reloading at the border (world federation, [world/federation.md](world/federation.md)).
+Stepping onto ForkMesh's ground moves the walker's presence to ForkMesh's
+relay over a visit socket with a visitor token, so they are `name@<this
+host>` there; the Office runs against ForkMesh's API (`setOfficeOwner`),
+giving visitors its lobby and rooftop. Pieces that would show the
+instance's own data inside ForkMesh's town stay off
+(`TERRITORY_HIDDEN_ELEMENTS`).
+
+**What ForkMesh's World draws.** forkmesh.com draws the instance hexagon as
+it is laid out here from `GET /api/world/neighbour-scene`
+(`app/src/instance_world_scene.py`: ground, plaza, sign, lamps, houses with
+their links and the terrarium with up to 32 bugs and their favicons), and a
+ForkMesh walker steps onto it without a reload: their World opens a visit
+socket to this instance's relay with a visa, and they appear here as
+`name@world.forkmesh.com`.
+
+**Crossing the road.** `checkTerritoryCrossing()` runs after every walking
+step: when the avatar's step enters the land of a neighbouring tile
+(`crossedInto`), the World navigates. On an instance it goes to
+`<home>?from=<instance domain>&slot=<n>&pos=<x>,<z>`, where `home` is the
+directory's `portal.home` or `https://world.forkmesh.com/world/`. The
+reverse direction (walking from world.forkmesh.com into an instance) is the
+world-mesh flowers' job since upstream main's world-mesh topology
+([world/README.md](world/README.md)); the territory turns off the mesh
+neighbours (`placeWorldMesh`) so the two layouts never overlap. `pos` is
+the crossing point relative to the instance hexagon's centre, rounded to a
+tenth and within 400, in the same frame on both sides. On arrival
+`territoryArrival()` reads the three parameters (a domain, `forkmesh`, a
+slot 0-11, two short numbers; anything else is ignored), the visitor is
+placed on the matching road edge, 14 units in, facing away from the road
+(`edgeArrival`), the saved position is not restored, and the parameters are
+removed from the address. Sign-ins do not cross: each World has its own
+accounts and its session cookie is per origin, so the URL carries no token
+and the visitor is told "Visiting from <origin> as a guest" unless they are
+already signed in there. A crossing waits four seconds before it can fire
+again.
+
+**What needs forkmesh.com.** On the instance alone: the hexagon, the
+ForkMesh hexagons next door, crossing into world.forkmesh.com and the
+portal obelisk work as soon as this is deployed. world.forkmesh.com only
+parses `from`/`slot`/`pos`, draws the instance hexagon and lets a visitor
+walk back once it runs this code and lists the instance with a World slot;
+until then a visitor who crosses arrives at the usual ForkMesh spawn and the
+instance hexagon there is missing.
 ### Platform name
 
 The instance name replaces "ForkMesh" wherever the platform itself is meant.

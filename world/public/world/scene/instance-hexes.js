@@ -50,7 +50,7 @@ export function instanceHexSlot(slot) {
   return Number.isInteger(index) ? INSTANCE_HEX_SLOTS[index] || null : null;
 }
 
-function flowerRoadGeometry(THREE, hexes = WORLD_MESH_FLOWER_HEXES) {
+function roadRingsGeometry(THREE, rings) {
   const outer = roundedHexagonOutline(
     CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
     CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
@@ -66,9 +66,7 @@ function flowerRoadGeometry(THREE, hexes = WORLD_MESH_FLOWER_HEXES) {
   const indices = [];
   const count = outer.length;
   const fanSegments = 12;
-  hexes.forEach((hex) => {
-    const cx = hex.x;
-    const cy = -hex.z;
+  rings.forEach(({ cx, cy, corners }) => {
     const base = positions.length / 3;
     for (let index = 0; index < count; index += 1) {
       positions.push(cx + inner[index][0], cy + inner[index][1], 0);
@@ -78,8 +76,7 @@ function flowerRoadGeometry(THREE, hexes = WORLD_MESH_FLOWER_HEXES) {
       indices.push(base + index * 2, base + index * 2 + 1, base + next * 2 + 1);
       indices.push(base + index * 2, base + next * 2 + 1, base + next * 2);
     }
-    hexCorners(hex).forEach((point) => {
-      const corner = { x: point.x, y: -point.z };
+    corners.forEach((corner) => {
       const fan = positions.length / 3;
       positions.push(corner.x, corner.y, 0);
       normals.push(0, 0, 1);
@@ -101,6 +98,21 @@ function flowerRoadGeometry(THREE, hexes = WORLD_MESH_FLOWER_HEXES) {
   geometry.setIndex(indices);
   geometry.computeBoundingSphere();
   return geometry;
+}
+
+export function hexRoadRingGeometry(THREE, corners = []) {
+  return roadRingsGeometry(THREE, [{ cx: 0, cy: 0, corners }]);
+}
+
+function flowerRoadGeometry(THREE, hexes = WORLD_MESH_FLOWER_HEXES) {
+  return roadRingsGeometry(
+    THREE,
+    hexes.map((hex) => ({
+      cx: hex.x,
+      cy: -hex.z,
+      corners: hexCorners(hex).map((point) => ({ x: point.x, y: -point.z })),
+    })),
+  );
 }
 
 function initialTexture(THREE, name) {

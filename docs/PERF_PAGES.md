@@ -47,6 +47,50 @@ because a replaced block is not a shift. What each page now paints first:
 | Header | A head script marks `html[data-guest]` when there is neither a `forkmesh_session` cookie nor a stored session, and CSS shows the guest header from the start; the dashboard clears it when a session turns up. The always-visible header icons are inline SVG. `:where(i[data-lucide])` is `inline-block`, so every other icon placeholder already has its size. |
 | Profile | The contribution period buttons (Last year and the five years before) are in the page with year-wide placeholders filled by an inline script; the summary keeps two lines; the About panel's edit button no longer sets the panel's height (guests do not see it). |
 
+### Header and About rail in the first HTML (2026-10-21)
+
+The dashboard fills the About rail from four reads after it boots (stats, the
+`.forkmesh` listing, the contributor roster and the size map), so a first view
+that drew only placeholders changed under the visitor twice. The node now
+reads them from its own Git gateway while it renders the page, once per
+commit (`app/host/forkmesh_host/repo_ssr_about.py`):
+
+- `extras()` fetches them, remembered per commit and trimmed to what the rail
+  shows (a roster can be megabytes), so a busy page costs no gateway reads
+  after the first view of a push.
+- `rail_values()` turns them into the file count, size, languages and
+  contributors the way `06-repo-content.js` computes them
+  (`loadRepoAboutStats`, `parseRepoContributorRoster`,
+  `renderRepoAboutLanguages`, `renderRepoAboutRoster`); the language tables
+  must stay identical to the dashboard's (`test_repo_ssr.py` checks).
+- `seed_reads()` hands the same answers to the dashboard, keyed as
+  `repoReadSeedKey` builds them, so its loaders render the rail in the frame
+  they take the page over. A repository with a roster shows the roster, not
+  the commit authors. Author rows lose their weekly activity, the bulk of a
+  `/stats` answer.
+
+Everything that reaches HTML is escaped by `repo_ssr`'s templates.
+
+First views are remembered for `PRERENDER_STALE_SECONDS` (6 hours). One
+older than `PRERENDER_FRESH_SECONDS` is re-read at once and the page waits
+up to `SSR_REFRESH_SECONDS` for the new one, then uses the old one. A re-read
+that finishes with nothing (the repository went private or was deleted)
+drops the remembered view and that page is served without it; only a
+re-read that is still running falls back to the remembered view.
+
+The last anonymous `/about` answer per repository is kept (`_about_memo`,
+up to `ABOUT_MEMO_SECONDS`) past the micro-cache for the first view's tabs
+and rail, and `warm_about` re-reads it in the background, anonymously and
+with only the headers that route the read, when it is missing or past
+`MICRO_FRESH_SECONDS`. A recent one also answers the rail's own `/about`
+read; an older one only draws the page. Without one, the tabs a repository
+has by default are drawn so the strip does not grow later.
+
+Below a short repository address (`/<name>/<folder>`, `/<name>/issues`) the
+page gets the root's header and tab strip with that tab selected
+(`short_sub_target`); `/<name>/issues/<n>` also gets the issue itself, its
+reads started alongside the Worker's from the owner the name had last time.
+
 Fonts were not the cause: DejaVu Sans Mono is a Latin subset with
 `font-display: swap` used only for counts and hashes, and the theme is set by
 the inline head script before the stylesheet.

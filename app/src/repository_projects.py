@@ -1,18 +1,3 @@
-"""Projects from the browser: POST /api/repo/<owner>/<repo>/project-edit.
-
-A project is the desktop's ProjectStore record: one JSON file per project at
-``.forkmesh/projects/<n>/project-<n>.json`` holding derived metadata (title,
-description, status, dates, milestone, linked issues) and the full signed
-event log those are derived from. The browser signs each event with its own
-key (``forkmesh-project-event-v1``, ProjectStore::canonicalString); this
-route verifies the signatures, checks the account may write the repository,
-appends the events, recomputes the metadata exactly like
-ProjectStore::recomputeMetadata and commits the file, so the desktop and
-every other reader see a web-made project unchanged.
-
-Request: ``{"branch": "<default branch>", "number": <n>, "events": [...]}``.
-A new project's first event is ``open``, signed with the next free number.
-"""
 
 import hashlib
 import json
@@ -50,7 +35,6 @@ def sorted_issues(values):
 
 
 def content_for_signing(ev):
-    """ProjectStore::contentForSigning."""
     t = ev.get("type")
     if t == "open":
         return str(ev.get("title", "")) + "\0" + str(ev.get("body", ""))
@@ -73,7 +57,6 @@ def content_for_signing(ev):
 
 
 def canonical_string(number, ev):
-    """ProjectStore::canonicalString (no repository binding, v1)."""
     digest = hashlib.sha256(content_for_signing(ev).encode("utf-8")).hexdigest()
     return ("forkmesh-project-event-v1\n%s\n%d\n%s\n%d\n%s" % (
         ev.get("type"), number, ev.get("author"), int(ev.get("ts")),
@@ -81,7 +64,6 @@ def canonical_string(number, ev):
 
 
 def clean_event(raw):
-    """The ProjectEvent::toJson shape of one submitted event, or None."""
     if not isinstance(raw, dict):
         return None
     t = str(raw.get("type") or "")
@@ -139,7 +121,6 @@ def clean_event(raw):
 
 
 def recompute(project):
-    """ProjectStore::recomputeMetadata plus Project::toJson's updatedAt."""
     updated = int(project.get("createdAt") or 0)
     for ev in project.get("events") or []:
         t = ev.get("type")
@@ -221,6 +202,11 @@ async def _save(env, request, owner, repo):
             return edits._error("bad_signature",
                                 "A project event's signature is invalid.",
                                 401)
+        refused = await _bind_session_author(env, request, data, ev,
+                                             session=actor)
+        if refused is not None:
+            return refused
+        ev.pop("authorVerified", None)
     opening = events[0]["type"] == "open"
     if any(ev["type"] == "open" for ev in events[1:]):
         return edits._error("invalid_event", "Only one opening event.", 400)

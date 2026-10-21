@@ -4,7 +4,7 @@ Pure (builtin-only, no ``js``/``workers`` runtime, no ``env``/DB access): a
 Mastodon/Slack/Twitter unfurl of a repo URL used to show only the ForkMesh
 logo (issue adhoc #46); now it gets a 1200x630 PNG card drawn as a terminal
 window - the repository shown by name, its description, its live counts and
-the clone command - with the ForkMesh mark in the corner.
+the clone command - with the repository's or instance's mark in the corner.
 
 Everything is rendered in-process with the stdlib (Pyodide workers have no
 Pillow): pixels go into a flat RGB bytearray, text comes from an embedded
@@ -231,6 +231,183 @@ _LOGO_B64 = (
 
 def _logo_rgba():
     return zlib.decompress(base64.b64decode(_LOGO_B64))
+
+
+# A repository's or instance's own logo, drawn in place of the ForkMesh mark.
+# Only small 8-bit, non-interlaced PNGs are read (the formats rsvg-convert and
+# the logo upload produce); anything else falls back to the caller's next
+# choice. Decoding is pure Python, so the scaled result is remembered.
+LOGO_BOX = 112
+MAX_LOGO_PIXELS = 1024 * 1024
+_PNG_CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+_logo_memo = {}
+
+
+def _unfilter(kind, line, prev, bpp):
+    if kind == 0:
+        return line
+    if kind == 2:
+        return bytearray((a + b) & 255 for a, b in zip(line, prev))
+    out = bytearray(line)
+    n = len(out)
+    if kind == 1:
+        for i in range(bpp, n):
+            out[i] = (out[i] + out[i - bpp]) & 255
+    elif kind == 3:
+        for i in range(n):
+            left = out[i - bpp] if i >= bpp else 0
+            out[i] = (out[i] + ((left + prev[i]) >> 1)) & 255
+    elif kind == 4:
+        for i in range(n):
+            a = out[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            p = a + b - c
+            pa = abs(p - a)
+            pb = abs(p - b)
+            pc = abs(p - c)
+            pred = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+            out[i] = (out[i] + pred) & 255
+    else:
+        raise ValueError("bad PNG filter")
+    return out
+
+
+def decode_png(data):
+    """(width, height, RGBA bytes) of an 8-bit non-interlaced PNG, or None."""
+    data = bytes(data or b"")
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    pos = 8
+    header = None
+    palette = b""
+    alpha = b""
+    chunks = []
+    while pos + 8 <= len(data):
+        (size,) = struct.unpack(">I", data[pos:pos + 4])
+        tag = data[pos + 4:pos + 8]
+        body = data[pos + 8:pos + 8 + size]
+        pos += 12 + size
+        if tag == b"IHDR" and size == 13:
+            header = struct.unpack(">IIBBBBB", body)
+        elif tag == b"PLTE":
+            palette = body
+        elif tag == b"tRNS":
+            alpha = body
+        elif tag == b"IDAT":
+            chunks.append(body)
+        elif tag == b"IEND":
+            break
+    if not header:
+        return None
+    width, height, depth, color, _, _, interlace = header
+    channels = _PNG_CHANNELS.get(color)
+    if (depth != 8 or interlace or not channels or width < 1 or height < 1
+            or width * height > MAX_LOGO_PIXELS):
+        return None
+    stride = width * channels
+    try:
+        raw = zlib.decompressobj().decompress(
+            b"".join(chunks), height * (stride + 1))
+        if len(raw) < height * (stride + 1):
+            return None
+        rows = []
+        prev = bytearray(stride)
+        for y in range(height):
+            start = y * (stride + 1)
+            prev = _unfilter(raw[start], raw[start + 1:start + 1 + stride],
+                             prev, channels)
+            rows.append(bytes(prev))
+    except (zlib.error, ValueError, IndexError):
+        return None
+    pixels = b"".join(rows)
+    if color == 6:
+        return width, height, pixels
+    out = bytearray(width * height * 4)
+    if color == 2:
+        out[0::4] = pixels[0::3]
+        out[1::4] = pixels[1::3]
+        out[2::4] = pixels[2::3]
+        out[3::4] = b"\xff" * (width * height)
+    elif color == 0:
+        for k in range(3):
+            out[k::4] = pixels
+        out[3::4] = b"\xff" * (width * height)
+    elif color == 4:
+        for k in range(3):
+            out[k::4] = pixels[0::2]
+        out[3::4] = pixels[1::2]
+    else:  # palette
+        if not palette:
+            return None
+        table = []
+        for index in range(256):
+            rgb = palette[index * 3:index * 3 + 3]
+            if len(rgb) < 3:
+                rgb = b"\x00\x00\x00"
+            table.append(rgb + bytes((alpha[index] if index < len(alpha)
+                                      else 255,)))
+        out = bytearray(b"".join(table[index] for index in pixels))
+    return width, height, bytes(out)
+
+
+def scale_logo(width, height, rgba, box=LOGO_BOX):
+    """Fit an RGBA image inside box x box (3x3 supersampled, alpha-weighted)."""
+    factor = min(box / width, box / height, 1.0)
+    out_w = max(1, int(round(width * factor)))
+    out_h = max(1, int(round(height * factor)))
+    if (out_w, out_h) == (width, height):
+        return width, height, bytes(rgba)
+    out = bytearray(out_w * out_h * 4)
+    taps = (1 / 6, 1 / 2, 5 / 6)
+    for oy in range(out_h):
+        ys = [min(height - 1, int((oy + t) * height / out_h)) for t in taps]
+        for ox in range(out_w):
+            xs = [min(width - 1, int((ox + t) * width / out_w)) for t in taps]
+            r = g = b = a = 0
+            for sy in ys:
+                base = sy * width
+                for sx in xs:
+                    i = (base + sx) * 4
+                    alpha = rgba[i + 3]
+                    r += rgba[i] * alpha
+                    g += rgba[i + 1] * alpha
+                    b += rgba[i + 2] * alpha
+                    a += alpha
+            o = (oy * out_w + ox) * 4
+            if a:
+                out[o] = r // a
+                out[o + 1] = g // a
+                out[o + 2] = b // a
+                out[o + 3] = a // 9
+    return out_w, out_h, bytes(out)
+
+
+def card_logo(data):
+    """A PNG's bytes as the (width, height, rgba) card logo, or None."""
+    data = bytes(data or b"")
+    key = zlib.crc32(data), len(data)
+    if key in _logo_memo:
+        return _logo_memo[key]
+    decoded = decode_png(data)
+    logo = scale_logo(*decoded) if decoded else None
+    if len(_logo_memo) > 16:
+        _logo_memo.clear()
+    _logo_memo[key] = logo
+    return logo
+
+
+def _draw_logo(canvas, pad, top, logo):
+    """Blit the card logo (or the ForkMesh mark) right-aligned; its left x."""
+    if logo:
+        width, height, rgba = logo
+        x = CARD_W - pad - width
+        canvas.blit_rgba(x, top + (LOGO_BOX - height) // 2, width, height,
+                         rgba)
+        return min(x, CARD_W - pad - _LOGO_W)
+    x = CARD_W - pad - _LOGO_W
+    canvas.blit_rgba(x, top, _LOGO_W, _LOGO_H, _logo_rgba())
+    return x
 
 
 class _Canvas:
@@ -1460,8 +1637,8 @@ def render_repo_card(info, now_s, logo=None):
     accent) and ``path`` - the repository's public address on this site
     ("/name" on an instance with short addresses, else "/owner/name"), which
     the title bar, the command and the clone URL use. ``logo`` is a
-    (width, height, rgba) mark drawn in place of the ForkMesh mark; without
-    a theme accent, the mark's own colour is the accent.
+    card_logo() result drawn in place of the ForkMesh mark; without a theme
+    accent, the logo's own colour is the accent.
     """
     owner = str(info.get("owner") or "")
     repo = str(info.get("repo") or "")
