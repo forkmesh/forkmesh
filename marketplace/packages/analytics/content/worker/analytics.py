@@ -89,6 +89,11 @@ PUBLIC_PAGE_PREFIXES = ("/docs",)
 FLAG_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 ORIGIN_RE = re.compile(r"^https?://[a-z0-9.-]{1,253}(?::[0-9]{1,5})?$")
+# "https://*.example.org" allows every subdomain of example.org (not the bare
+# domain, which is listed on its own). At least two labels must follow "*.",
+# so a whole public suffix such as "https://*.com" is refused.
+WILDCARD_ORIGIN_RE = re.compile(
+    r"^(https?)://\*\.((?:[a-z0-9-]{1,63}\.)+[a-z0-9-]{1,63})(?::([0-9]{1,5}))?$")
 MAX_GOALS = 20
 
 PLAYBOOK_VERSION = 1
@@ -484,7 +489,8 @@ def _origins(value):
     result = []
     for item in (value if isinstance(value, list) else [])[:40]:
         origin = _text(item, 300).strip().lower().rstrip("/")
-        if ORIGIN_RE.fullmatch(origin) and origin not in result:
+        if ((ORIGIN_RE.fullmatch(origin) or WILDCARD_ORIGIN_RE.fullmatch(origin))
+                and origin not in result):
             result.append(origin)
     return result
 
@@ -626,7 +632,21 @@ def _origin_allowed(runtime, settings):
     origin = _request_origin(runtime)
     # Server-side callers send no Origin header; the write key is their only
     # credential, as it is for every analytics ingestion API.
-    return not origin or origin in allowed
+    return not origin or origin in allowed or any(
+        _wildcard_origin_matches(entry, origin) for entry in allowed)
+
+
+def _wildcard_origin_matches(entry, origin):
+    """True when origin is a subdomain allowed by a "scheme://*.domain" entry."""
+    rule = WILDCARD_ORIGIN_RE.fullmatch(entry or "")
+    if not rule:
+        return False
+    match = re.fullmatch(r"(https?)://([a-z0-9.-]{1,253})(?::([0-9]{1,5}))?", origin or "")
+    if not match:
+        return False
+    scheme, domain, port = rule.groups()
+    return (match.group(1) == scheme and (match.group(3) or "") == (port or "")
+            and match.group(2).endswith("." + domain))
 
 
 # --------------------------------------------------------------------------
