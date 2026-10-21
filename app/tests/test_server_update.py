@@ -446,3 +446,213 @@ def test_a_running_setup_blocks_the_update(instance):
     status = helper(instance, "update")
     assert status["state"] == "failed"
     assert "still running" in status["lastError"]
+
+
+def test_a_merge_request_updates_only_when_the_source_moved(instance):
+    status = helper(instance, "auto")
+    assert status["state"] == "done" and status["trigger"] == "merge"
+    assert status["toCommit"] == instance.first
+    assert not (instance.state / "update.log").exists()
+    latest = publish(instance.remote, instance.env, "Merged change", "1.1.0")
+    status = helper(instance, "auto")
+    assert status["state"] == "done" and status["trigger"] == "merge"
+    assert status["fromCommit"] == instance.first and status["toCommit"] == latest
+    status = helper(instance, "update")
+    assert status["trigger"] == "admin"
+
+
+def test_the_helper_fetches_from_the_configured_source_not_origin(instance, tmp_path):
+    other = tmp_path / "own"
+    git(tmp_path, instance.env, "clone", "-q", str(instance.remote), str(other))
+    moved = publish(other, instance.env, "Own platform change", "1.0.1")
+    (tmp_path / "instance.json").write_text(json.dumps(
+        {"sourceUrl": "file://%s" % other, "sourceRef": "main"}))
+    status = helper(instance, "check")
+    assert status["upstreamCommit"] == moved
+    assert status["sourceUrl"] == "file://%s" % other
+    (tmp_path / "instance.json").write_text(json.dumps(
+        {"sourceUrl": "https://bad host/x", "sourceRef": "main"}))
+    status = helper(instance, "check")
+    assert status["state"] == "failed" and "not valid" in status["lastError"]
+
+
+def test_an_own_domain_source_is_fetched_through_the_local_web_server():
+    text = HELPER.read_text(encoding="utf-8")
+    assert 'resolve=(-c "http.curloptResolve=$domain:443:127.0.0.1")' in text
+    assert 'auto) run_update merge ;;' in text
+
+
+def test_the_self_source_is_parsed_from_the_build_source():
+    import self_update
+    origin = "https://code.example.com"
+    assert self_update.target(origin + "/acme/platform", origin) == (
+        "acme", "platform")
+    assert self_update.target(origin + "/acme/platform.git", origin) == (
+        "acme", "platform")
+    assert self_update.target(origin + "/platform.git", origin, "acme") == (
+        "acme", "platform")
+    for source in (origin + "/platform", "https://app.forkmesh.com/forkmesh/"
+                   "forkmesh", origin + "/a/b/c", origin + "/acme/.hidden",
+                   "https://code.example.com.evil.test/acme/platform", ""):
+        assert self_update.target(source, origin) is None, source
+    assert self_update.parse('{"auto": true}') == {"auto": True}
+    assert self_update.parse('{"auto": "yes"}') == {"auto": False}
+    assert self_update.parse("[") == {"auto": False}
+
+
+class SelfUpdateWorld:
+    def __init__(self, tmp_path, monkeypatch):
+        import self_update
+        self.module = self_update
+        self.settings = {}
+        self.audits = []
+        self.base = "main"
+        self.protected = True
+        monkeypatch.setattr(server_update, "INSTANCE_REQUEST_ROOT",
+                            str(tmp_path) + "/")
+        monkeypatch.setattr(server_update, "INSTANCE_STATUS_ROOT",
+                            str(tmp_path) + "/")
+        info = tmp_path / "build-info.json"
+        info.write_text(json.dumps({
+            "commit": "a" * 40, "source": "https://code.example.com/acme/"
+            "platform.git", "ref": "main",
+            "daemon": {"state": "stale", "builtCommit": "b" * 40}}))
+        self.request = tmp_path / "request"
+        self.env = SimpleNamespace(
+            PUBLIC_BASE_URL="https://code.example.com",
+            BUILD_INFO_FILE=str(info),
+            INSTANCE_UPDATE_REQUEST=str(self.request),
+            INSTANCE_UPDATE_STATUS=str(tmp_path / "status.json"))
+
+        async def d1_first(env, sql, *args):
+            doc = self.settings.get(args[0])
+            return {"doc": doc} if doc is not None else None
+
+        async def d1_run(env, sql, *args):
+            self.settings[args[0]] = args[1]
+
+        async def storage_owner(env, owner, repo):
+            return "alice" if owner in ("acme", "alice") else owner
+
+        async def pull(env, owner, repo, number):
+            return {"base": self.base, "number": str(number)}
+
+        async def protected_refs(env, owner, repo):
+            if self.protected is None:
+                raise RuntimeError("settings unavailable")
+            return ["refs/heads/main"] if self.protected else []
+
+        async def audit(env, actor, action, kind, target, outcome, details):
+            self.audits.append((actor, action, target, outcome, details))
+
+        for name, value in {
+                "d1_first": d1_first, "d1_run": d1_run,
+                "_branch_protection": SimpleNamespace(
+                    storage_owner=storage_owner, protected_refs=protected_refs,
+                    branch_is_protected=lambda branch, refs: (
+                        "refs/heads/" + branch) in refs),
+                "_pull_lifecycle_record": pull,
+                "_audit_sensitive_action": audit,
+                "Date": SimpleNamespace(now=lambda: NOW)}.items():
+            monkeypatch.setattr(self_update, name, value, raising=False)
+
+    def merge(self, owner="alice", repo="platform", number=7):
+        return asyncio.run(self.module.on_merge(
+            self.env, owner, repo, number, "bob", {"baseAfter": "c" * 40}))
+
+
+def test_a_merge_into_the_source_branch_files_one_update(tmp_path, monkeypatch):
+    world = SelfUpdateWorld(tmp_path, monkeypatch)
+    assert world.merge() == "" and not world.request.exists()
+    asyncio.run(world.module.save(world.env, True))
+    assert world.merge(repo="other") == ""
+    assert world.merge(owner="mallory") == ""
+    world.base = "topic"
+    assert world.merge() == "" and not world.request.exists()
+    world.base = "main"
+    assert world.merge() == "requested"
+    assert world.request.read_text() == "auto\n"
+    assert world.merge(owner="acme", number=8) == "queued"
+    assert world.request.read_text() == "auto\n"
+    last = asyncio.run(world.module.last(world.env))
+    assert last["pull"] == 8 and last["outcome"] == "queued"
+    assert last["commit"] == "c" * 40 and last["repo"] == "acme/platform"
+    assert [a[1] for a in world.audits] == ["admin.auto_update"] * 2
+    assert world.audits[0][4]["outcome"] == "requested"
+    world.request.unlink()
+    asyncio.run(world.module.save(world.env, False))
+    assert world.merge() == "" and not world.request.exists()
+    core = SimpleNamespace(CORE_ADMIN_UPDATES="1")
+    assert asyncio.run(world.module.on_merge(core, "alice", "platform", 9,
+                                             "bob", {})) == ""
+
+
+def test_a_merge_never_deploys_from_an_unprotected_source_branch(tmp_path, monkeypatch):
+    world = SelfUpdateWorld(tmp_path, monkeypatch)
+    asyncio.run(world.module.save(world.env, True))
+    for protected in (False, None):
+        world.protected = protected
+        assert world.merge() == "unprotected" and not world.request.exists()
+    assert world.audits[-1][3] == "refused"
+    world.protected = True
+    world.request.write_text("check\n")
+    assert world.merge() == "requested"
+    assert world.request.read_text() == "auto\n"
+    world.request.write_text("update\n")
+    assert world.merge() == "queued"
+    assert world.request.read_text() == "update\n"
+
+
+def test_the_console_turns_automatic_updates_on_and_shows_the_last_merge(
+        tmp_path, monkeypatch):
+    world = SelfUpdateWorld(tmp_path, monkeypatch)
+    audits = []
+
+    async def audit(env, account, action, kind, target, outcome, details):
+        audits.append((action, outcome, details.get("notice")))
+
+    async def nav_badges(env):
+        return {}
+
+    monkeypatch.setattr(admin_shell, "nav_badges", nav_badges)
+    bind(monkeypatch, tmp_path, {"_audit_sensitive_action": audit,
+                                 "_self_update": world.module})
+    env = SimpleNamespace(ADMIN_PATH="secret", **vars(world.env))
+
+    def post(**form):
+        request = FakeRequest("https://code.example.com/secret", "POST",
+                              dict(form, csrf="ok", action="save_auto_update"))
+        return asyncio.run(admin.admin_handler(
+            env, request, {"view": ["update"]}, "", "", "ada"))
+
+    assert "notice=auto_on" in post(auto="1").headers["location"]
+    assert world.settings["self_update"] == '{"auto":true}'
+    world.merge()
+    page = asyncio.run(admin.admin_handler(
+        env, FakeRequest("https://code.example.com/secret?view=update"),
+        {"view": ["update"]}, "<csrf>", "", "ada")).body
+    assert "Update when a pull request is merged" in page
+    assert "acme/platform" in page and "pull request #7 by bob" in page
+    assert "Update requested" in page and "Turn off" in page
+    assert "The git node program was built from older server code" in page
+    assert "bbbbbbbbbbbb" in page
+    assert "notice=auto_off" in post(auto="0").headers["location"]
+    world.protected = False
+    assert "notice=auto_unprotected" in post(auto="1").headers["location"]
+    assert world.settings["self_update"] == '{"auto":false}'
+    world.protected = True
+    world.env.BUILD_INFO_FILE = str(tmp_path / "missing.json")
+    env.BUILD_INFO_FILE = world.env.BUILD_INFO_FILE
+    assert "notice=auto_no_target" in post(auto="1").headers["location"]
+    assert [a[2] for a in audits] == ["auto_on", "auto_off", "auto_unprotected",
+                                      "auto_no_target"]
+
+
+def test_the_merge_handler_hands_merges_to_the_self_update():
+    handlers = (ROOT / "src" / "route_handlers.py").read_text(encoding="utf-8")
+    merge = handlers.split("async def repository_pull_merge_handler(", 1)[1]
+    merge = merge.split("\nasync def ", 1)[0]
+    block = merge.split('if mutation == "merge":\n            badge_fact', 1)[1]
+    assert "_self_update.on_merge(" in block
+    status = server_update.instance_status(SimpleNamespace())
+    assert status["trigger"] == ""

@@ -2598,7 +2598,9 @@ def test_dashboard_repository_code_explorer_switches_between_tree_and_file_revie
     assert 'data-repo-code-explorer class="hidden' in render
     assert 'treePanel?.classList.remove("hidden");' in tree_loader
     assert 'viewer?.classList.add("hidden");' in tree_loader
-    assert 'readmePanel?.classList.toggle("hidden", Boolean(path));' in tree_loader
+    # The README box waits for the rows (shown again once they are in).
+    assert 'readmePanel?.classList.add("hidden");' in tree_loader
+    assert 'readmePanel?.classList.remove("hidden");' in tree_loader
     assert "setRepoExplorerFocusMode(Boolean(path));" in tree_loader
     assert 'treePanel?.classList.add("hidden");' in blob_loader
     assert 'readmePanel?.classList.add("hidden");' in blob_loader
