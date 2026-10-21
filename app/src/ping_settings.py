@@ -42,6 +42,7 @@ PING_KIND_GROUPS = (
 PING_KIND_CATALOG = (
     ("mention", "conversations", "Mentions"),
     ("subscribed", "conversations", "Activity on things you follow"),
+    ("reaction", "conversations", "Reactions to your comments"),
     ("chat_webhook", "conversations", "Chat webhook posts"),
     ("channel_unread", "conversations", "Unread channel messages"),
     ("direct_unread", "conversations", "Unread direct messages"),

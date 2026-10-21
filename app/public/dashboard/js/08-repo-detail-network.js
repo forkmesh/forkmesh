@@ -1163,6 +1163,7 @@
     const icons = {
       mention: "at-sign",
       subscribed: "bell-ring",
+      reaction: "smile-plus",
       issue_opened: "circle-dot",
       pull_submitted: "git-pull-request",
       repo_activity: "git-commit-horizontal",

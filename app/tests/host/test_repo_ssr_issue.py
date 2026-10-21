@@ -47,7 +47,9 @@ FUNCTIONS = {
         "decodeHtmlEntities", "flattenMarkdownHtml", "flattenOutsideCode", "takeWrappedLines",
         "joinWrappedLines", "mdLoneImage", "renderMarkdown", "renderRecordMarkdown",
         "parseFrontMatterList", "parseIssueJson", "formatRecordDate", "issueDetailParsed",
-        "issueEventIcon", "foldIssueReactions", "renderIssueReactionChips",
+        "issueEventIcon", "foldIssueReactions", "commentReactionSubject",
+        "commentReactionLabel", "commentReactionTallies", "commentReactionWho",
+        "renderCommentReactionChip", "renderCommentReactionBar",
         "issueEventDescription", "renderIssueTimelineComment",
         "renderIssueTimelineEvent", "issueEventDescriptionHtml", "renderIssueTimeline",
         "formatRecordDateTime", "issueLabelHue", "renderIssueLabelChip",
@@ -66,6 +68,7 @@ CONSTANTS = {
     "06-repo-content.js": (
         "MD_DATA_IMAGE_URL", "MD_BARE_URL", "MD_ENTITIES", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
+        "COMMENT_REACTIONS", "COMMENT_REACTION_KINDS",
         "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
         "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT"),
 }
@@ -97,7 +100,8 @@ const NOW = %(now)d;
 Date.now = () => NOW;
 const VIEWER = %(viewer)s;
 const state = { session: VIEWER === "member" ? { nodeName: "me" } : null,
-  userNameCases: new Map(), issuesView: { items: [] }, repoCollectionItems: {} };
+  userNameCases: new Map(), issuesView: { items: [] }, repoCollectionItems: {},
+  commentReactions: %(reactions)s };
 let countFormatter = null;
 function watchIssueActorAvatars() {}
 function platformName() { return "Acme Code"; }
@@ -133,13 +137,16 @@ process.stdout.write(renderRepoIssueDetail(repo, input.number, parsed));
 """
 
 
-def js_render(issue, number, index=(), viewer="guest", origin="", template=""):
+def js_render(issue, number, index=(), viewer="guest", origin="", template="",
+              reactions=None):
     code = "\n".join(
         [_const(SOURCES[name], const) for name, consts in CONSTANTS.items() for const in consts]
         + [_function(SOURCES[name], fn) for name, fns in FUNCTIONS.items() for fn in fns])
     script = HARNESS % {
         "now": NOW_MS, "viewer": json.dumps(viewer), "link": LINK_BASE, "api": API_BASE,
         "origin": json.dumps(origin),
+        "reactions": json.dumps({"issue:%d" % number: {"reactions": reactions}}
+                                if reactions is not None else {}),
         "path": json.dumps(PAGE_PATH), "code": code, "owner": json.dumps(OWNER),
         "name": json.dumps(NAME), "input": json.dumps(json.dumps({
             "issue": json.dumps(issue), "number": number, "template": template,
@@ -150,12 +157,14 @@ def js_render(issue, number, index=(), viewer="guest", origin="", template=""):
                           ).stdout
 
 
-def py_render(issue, number, index=(), viewer="guest", origin="", template=""):
+def py_render(issue, number, index=(), viewer="guest", origin="", template="",
+              reactions=None):
     ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, "main", origin=origin)
     rows = [repo_ssr_issue.parse_issue(json.dumps(row), 0) for row in index]
     return repo_ssr_issue.render_issue(
         repo_ssr_issue.parse_issue(json.dumps(issue), number), ctx, OWNER, PAGE_PATH,
-        index=rows, now=NOW_MS / 1000, viewer=viewer, repo=NAME, prompt=template)
+        index=rows, now=NOW_MS / 1000, viewer=viewer, repo=NAME, prompt=template,
+        reactions=reactions)
 
 
 ICON_RE = re.compile(r'<svg xmlns="http://www.w3.org/2000/svg"[^>]*class="lucide lucide-'
@@ -513,3 +522,50 @@ def test_the_issue_bundle_reads_the_settings_the_dashboard_reads():
     assert repo_views.COLLAB_SETTINGS_PATHS == (
         ".forkmesh/issues.json", ".forkmesh/pulls.json", "AI_POLICY.md")
     assert '"settings": (settings_data or {}).get("blobs") or {}' in views
+
+
+STORED_REACTIONS = {
+    "body": [{"emoji": "rocket", "count": 3, "mine": False, "people": [
+        {"name": "alice", "agent": False}, {"name": "helper", "agent": True}]},
+        {"emoji": "celebrate", "count": 1234, "mine": False, "people": []}],
+    "c1": [{"emoji": "like", "count": 1, "mine": False,
+            "people": [{"name": "bob", "agent": False}]}],
+    "c2": [{"emoji": "like", "count": 2, "mine": False,
+            "people": [{"name": "erin", "agent": False}, {"name": "<b>z</b>", "agent": False}]},
+           {"emoji": "not-a-slug", "count": 5, "mine": False, "people": []}],
+}
+
+
+@needs_node
+@pytest.mark.parametrize("viewer", ["guest", "member"])
+def test_stored_reactions_render_the_same_on_both_sides(viewer):
+    issue = issue27()
+    expected = normalize(js_render(issue, 27, index_rows(), viewer, reactions=STORED_REACTIONS))
+    got = normalize(py_render(issue, 27, index_rows(), viewer, reactions=STORED_REACTIONS))
+    assert got == expected
+    assert got.count("data-comment-reactions=") == 3
+    assert 'data-comment-id="body"' in got and 'data-reaction="rocket"' in got
+    assert ">1,234<" in got and "not-a-slug" not in got
+    assert "&lt;b&gt;z&lt;/b&gt;" in got and "<b>z</b>" not in got
+
+
+def test_ledger_and_stored_reactions_merge_without_counting_a_name_twice():
+    ledger = [{"value": "like", "names": ["erin", "Bob"]}, {"value": "wave", "names": ["x"]}]
+    tallies = repo_ssr_issue.reaction_tallies(STORED_REACTIONS["c1"], ledger)
+    assert [(t["emoji"], t["count"]) for t in tallies] == [("like", 2), ("wave", 1)]
+    bar = repo_ssr_issue.reaction_bar("issue:27", "c1", STORED_REACTIONS["c1"], ledger)
+    assert 'aria-label="Like 2: bob and erin reacted with Like"' in bar
+    assert ">wave<" in bar
+
+
+def test_agent_reactors_are_marked_on_the_chip():
+    bar = repo_ssr_issue.reaction_bar("issue:27", "body", STORED_REACTIONS["body"])
+    assert 'class="fm-reaction fm-reaction-agent"' in bar
+    assert "helper (agent)" in bar
+    assert "and 1 other reacted with Rocket" in bar
+
+
+def test_every_comment_card_gets_a_bar_even_without_reactions():
+    html = py_render(issue27(), 27, index_rows(), viewer="both", reactions={})
+    assert html.count('data-reaction-add aria-label="Add reaction"') == 3
+    assert 'data-comment-id="c3"' not in html

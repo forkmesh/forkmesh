@@ -46,6 +46,7 @@ fun notificationIconForKind(kind: String): String = when (kind.trim().lowercase(
     "hackathon_reward" -> "card_giftcard_outlined"
     "badge" -> "emoji_events_outlined"
     "package_review" -> "rate_review_outlined"
+    "reaction" -> "add_reaction_outlined"
     else -> NOTIFICATION_LINE_ICON
 }
 

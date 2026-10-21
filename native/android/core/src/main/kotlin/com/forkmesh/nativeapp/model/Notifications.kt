@@ -133,6 +133,7 @@ data class ForkNotification(
             "device_added" -> "New device"
             "plugin_activity" -> "Package"
             "package_review" -> "Package review"
+            "reaction" -> "Reaction"
             "hackathon_squad", "hackathon_reward" -> "Hackathon"
             "badge" -> "Badge"
             "timer_finished" -> "Timer"

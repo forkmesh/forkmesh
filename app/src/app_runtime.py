@@ -3701,6 +3701,15 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_star_handler(self.env, request, owner, repo)
 
+        reactions_match = REPO_REACTIONS_RE.match(url.path)
+        if reactions_match:
+            owner = safe_segment(reactions_match.group(1))
+            repo = safe_segment(reactions_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await comment_reactions_handler(
+                self.env, request, owner, repo)
+
         forks_match = REPO_FORKS_RE.match(url.path)
         if forks_match:
             owner = safe_segment(forks_match.group(1))

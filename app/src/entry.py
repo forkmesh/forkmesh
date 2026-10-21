@@ -893,6 +893,7 @@ NOTIFICATION_KINDS = frozenset({
     # review) landed on a package you maintain, or a maintainer replied to
     # your review (app/src/marketplace_reviews.py).
     "package_review",
+    "reaction",
 })
 # The ping kinds a marketplace package's Worker API may raise.
 PLUGIN_NOTIFICATION_KINDS = frozenset({"plugin_activity"})
@@ -1180,7 +1181,8 @@ _URL_EXPORT_NAMES = (
     "REPO_AP_DIGEST_RE", "REPO_AP_POSTS_RE", "REPO_WEBHOOKS_RE",
     "REPO_PROVIDER_MIRROR_RE",
     "REPO_CARD_RE",
-    "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_VIEW_RE", "REPO_VIEWS_RE",
+    "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
+    "REPO_VIEWS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
@@ -13510,7 +13512,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "809f8ba0db32b4ca902b82f56c42fc89ccf03eb50dbf54e3b7e509c9cbc1e5da"
+    "32fe1f7b51cfe6b5e1d0faabc48b4ad6e7ac0f7099979b3b0f3e5b924b98c8a4"
 )
 
 
@@ -16204,6 +16206,8 @@ recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
 recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
 recent_pushes_handler = _recent_pushes.export("handler")
+_comment_reactions = _LazyModule("comment_reactions")
+comment_reactions_handler = _comment_reactions.export("handler")
 
 
 def _repo_identity_from_clone_url(value):
@@ -18801,6 +18805,7 @@ _REPO_SCOPED_TABLES = (
     ("pull_batch_sent", "repo_bi"),
     ("pull_submission_receipts", "repo_bi"),
     ("recent_pushes", "repo_bi"),
+    ("comment_reactions", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
@@ -18996,6 +19001,9 @@ async def _delete_account_namespace(env, name_bi, rec):
     await d1_run(env, "DELETE FROM referral_stats WHERE referrer_bi=?", name_bi)
     await d1_run(env, "DELETE FROM notifications WHERE recipient_bi=?", name_bi)
     await d1_run(env, "DELETE FROM recent_pushes WHERE account_bi=?", name_bi)
+    await d1_run(env, "DELETE FROM comment_reactions WHERE account_bi=?", name_bi)
+    await d1_run(
+        env, "DELETE FROM comment_reaction_rate WHERE account_bi=?", name_bi)
     await d1_run(env, "DELETE FROM profile_follows WHERE follower_bi=? OR target_bi=?", name_bi, name_bi)
     await d1_run(env, "DELETE FROM login_attempts WHERE id_bi=?", name_bi)
     await d1_run(

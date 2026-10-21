@@ -289,6 +289,8 @@ ICONS = {
         '<path d="M20 7h-9"></path><path d="M14 17H5"></path><circle cx="17" cy="17" r="3"></circle><circle cx="7" cy="7" r="3"></circle>'),
     'shield-check': (
         '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="m9 12 2 2 4-4"></path>'),
+    'smile-plus': (
+        '<path d="M22 11v1a10 10 0 1 1-9-10"></path><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" x2="9.01" y1="9" y2="9"></line><line x1="15" x2="15.01" y1="9" y2="9"></line><path d="M16 5h6"></path><path d="M19 2v6"></path>'),
     'tag': (
         '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"></path><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"></circle>'),
     'text-quote': (
@@ -1029,16 +1031,86 @@ def fold_reactions(events):
     return by_target
 
 
-def reaction_chips(tallies):
-    if not tallies:
+REACTION_LABELS = {
+    "like": "Like", "love": "Love", "laugh": "Laugh", "celebrate": "Celebrate",
+    "hot": "Hot", "thanks": "Thanks", "smile": "Smile", "wink": "Wink",
+    "cool": "Cool", "thinking": "Thinking", "surprised": "Surprised", "sad": "Sad",
+    "angry": "Angry", "dislike": "Dislike", "eyes": "Eyes", "star": "Star",
+    "rocket": "Rocket", "check": "Done",
+}
+REACTION_KINDS = {"issues": "issue", "pulls": "pull", "discussions": "discussion"}
+
+
+def reaction_subject(kind, number):
+    name = REACTION_KINDS.get(kind, "")
+    try:
+        value = int(number)
+    except (TypeError, ValueError):
         return ""
-    chips = "".join(
-        '<span title="%s" class="inline-flex h-7 items-center gap-1.5 rounded-full border '
-        'border-border px-2.5 text-[12px] text-foreground"><span>%s</span><span '
-        'class="text-muted-foreground">%d</span></span>' % (
-            esc(", ".join(t["names"])), esc(REACTION_EMOJI.get(t["value"], t["value"])),
-            len(t["names"])) for t in tallies)
-    return '<div class="flex flex-wrap items-center gap-1.5 px-4 pb-3">%s</div>' % chips
+    return "%s:%d" % (name, value) if name and value > 0 else ""
+
+
+def reaction_tallies(stored, ledger=None):
+    tallies = []
+    for tally in stored if isinstance(stored, list) else []:
+        if not isinstance(tally, dict) or str(tally.get("emoji")) not in REACTION_EMOJI:
+            continue
+        try:
+            count = max(0, int(tally.get("count") or 0))
+        except (TypeError, ValueError):
+            count = 0
+        people = [{"name": str(p["name"]), "agent": p.get("agent") is True}
+                  for p in (tally.get("people") if isinstance(tally.get("people"), list) else [])
+                  if isinstance(p, dict) and p.get("name")]
+        tallies.append({"emoji": str(tally["emoji"]), "count": count,
+                        "mine": tally.get("mine") is True, "people": people})
+    for entry in ledger or []:
+        tally = next((t for t in tallies if t["emoji"] == str(entry["value"])), None)
+        if tally is None:
+            tally = {"emoji": str(entry["value"]), "count": 0, "mine": False, "people": []}
+            tallies.append(tally)
+        for name in entry.get("names") or []:
+            label = str(name)
+            if any(p["name"].lower() == label.lower() for p in tally["people"]):
+                continue
+            tally["people"].append({"name": label, "agent": False})
+            tally["count"] += 1
+    return [t for t in tallies if t["count"] > 0]
+
+
+def reaction_who(tally):
+    names = ["%s (agent)" % p["name"] if p["agent"] else p["name"] for p in tally["people"]]
+    others = max(0, tally["count"] - len(names))
+    if others:
+        names.append("%d other%s" % (others, "" if others == 1 else "s"))
+    listed = "%s and %s" % (", ".join(names[:-1]), names[-1]) if len(names) > 1 \
+        else "".join(names)
+    return "%s reacted with %s" % (listed, REACTION_LABELS.get(tally["emoji"], tally["emoji"]))
+
+
+def reaction_chip(tally):
+    agent = any(p["agent"] for p in tally["people"])
+    label = "%s %s: %s" % (REACTION_LABELS.get(tally["emoji"], tally["emoji"]),
+                           tally["count"], reaction_who(tally))
+    return ('<button type="button" data-reaction="%s" aria-pressed="%s" aria-label="%s" '
+            'class="fm-reaction%s"><span aria-hidden="true" class="fm-reaction-emoji">%s'
+            '</span><span class="fm-reaction-count">%s</span></button>' % (
+                esc(tally["emoji"]), "true" if tally["mine"] else "false", esc(label),
+                " fm-reaction-agent" if agent else "",
+                esc(REACTION_EMOJI.get(tally["emoji"], tally["emoji"])),
+                esc(format_count(tally["count"]))))
+
+
+def reaction_bar(subject, comment, stored=None, ledger=None, extra=""):
+    if not subject or not comment:
+        return ""
+    chips = "".join(reaction_chip(t) for t in reaction_tallies(stored, ledger))
+    return ('<div data-comment-reactions="%s" data-comment-id="%s" role="group" '
+            'aria-label="Reactions" class="fm-reactions%s">%s<button type="button" '
+            'data-reaction-add aria-label="Add reaction" aria-haspopup="dialog" '
+            'aria-expanded="false" class="fm-reaction-add">%s</button></div>' % (
+                esc(subject), esc(comment), " " + extra if extra else "", chips,
+                icon("smile-plus")))
 
 
 def event_description(event):
@@ -1119,9 +1191,11 @@ def event_description_html(event):
 
 
 class Renderer:
-    def __init__(self, ctx, now):
+    def __init__(self, ctx, now, subject="", reactions=None):
         self.ctx = ctx
         self.now = now
+        self.subject = subject
+        self.reactions = reactions if isinstance(reactions, dict) else {}
 
     def time(self, value):
         iso, label = record_datetime(value)
@@ -1212,7 +1286,11 @@ class Renderer:
                         'data-repo-issue-development-event="%s"' % esc(event.get("id") or "")))
                     continue
                 items.append(self.timeline_comment(
-                    shown, bool(edit), reaction_chips(reactions.get(str(event.get("id") or "")))))
+                    shown, bool(edit), reaction_bar(
+                        self.subject, str(event["id"]),
+                        self.reactions.get(str(event["id"])),
+                        reactions.get(str(event["id"])), "px-4 pb-3")
+                    if event.get("id") else ""))
                 continue
             items.append(self.timeline_event(EVENT_ICONS.get(kind, "activity"), who,
                                              event.get("author"),
@@ -1483,7 +1561,7 @@ def ai_prompt_html(ctx, number, title, repo, template=""):
 
 
 def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
-                 repo="", prompt=""):
+                 repo="", prompt="", reactions=None):
     now = time.time() if now is None else now
     number = issue["number"]
     title = issue["title"] or "Issue #%d" % number
@@ -1501,7 +1579,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
     is_owner = str(owner or "").lower() == str(author).lower()
     state_label = esc("Closed" if closed else "Open" if status == "open"
                       else status[:1].upper() + status[1:])
-    render = Renderer(ctx, now)
+    render = Renderer(ctx, now, reaction_subject("issues", number), reactions)
     index = [row for row in (index or []) if row]
     by_number = {row["number"]: row for row in index}
     mentions = mentions_of(index, number)
@@ -1516,10 +1594,8 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
     child_rows = [row for row in child_rows if not row.get("deleted")]
 
     timeline = render.timeline(events, mentions)
-    reactions = fold_reactions(events).get(issue["openEventId"])
-    chips = reaction_chips(reactions)
-    chips = re.sub(r"^<div class=\"[^\"]*\">", "", chips)
-    chips = re.sub(r"</div>$", "", chips)
+    chips = reaction_bar(render.subject, "body", render.reactions.get("body"),
+                         fold_reactions(events).get(issue["openEventId"]))
     reaction_row = (
         '<div data-repo-issue-reactions class="flex flex-wrap items-center gap-1.5 px-4 pb-4">\n'
         '          <button type="button" data-repo-issue-vote title="Vote for this issue" '
