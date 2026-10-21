@@ -3189,6 +3189,13 @@ class Default:
         if url.path in ("/api/ai/agent", "/api/ai/agent/"):
             return await ai_agent_handler(self.env, request)
 
+        ai_review_match = AI_REVIEW_RE.match(url.path)
+        if ai_review_match:
+            return await ai_review_handler(
+                self.env, request, ai_review_match.group(1) or "pull",
+                ai_review_match.group(2) or "", ai_review_match.group(3) or "",
+                ai_review_match.group(4) or "")
+
         # Self-serve plan surface (issue #488): usage meters + trial register.
         plans_match = PLAN_SERVICES_RE.match(url.path)
         if plans_match:

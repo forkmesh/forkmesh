@@ -4671,6 +4671,15 @@ async def repository_pull_merge_handler(
                     meta={"number": int(pull_number)})
             except Exception:
                 pass
+        elif mutation == "update":
+            queue_ai_review = globals().get("ai_review_enqueue")
+            if queue_ai_review is not None:
+                try:
+                    await queue_ai_review(
+                        env, context["owner"], context["repo"],
+                        int(pull_number), "updated", actor)
+                except Exception:
+                    pass
     return _https_mirror_merge_response(result, mutation)
 
 

@@ -141,6 +141,9 @@ CRON_PHASE_CATALOG = (
      "achievement badges."),
     ("workflow-schedules", 5, (3,), "platform",
      "Run up to three workflows whose schedule trigger is due."),
+    ("ai-review", 5, (0,), "platform",
+     "Review at most one queued pull request with Cloudflare Workers AI "
+     "when an administrator turned AI review on."),
     ("world-satellites", 180, (11,), "platform",
      "Refresh the world satellite snapshot."),
     ("attribution-clone-snapshot", 1440, (5,), "platform",

@@ -317,6 +317,12 @@ async def record_accepted_push(env, owner, repo, endpoint, account, report,
                 env, owner, repo, account, updates, alias=alias)
         except Exception:
             pass
+    note_ai_review = globals().get("ai_review_note_push")
+    if updates and note_ai_review is not None:
+        try:
+            await note_ai_review(env, owner, repo, updates)
+        except Exception:
+            pass
     if core and updates:
         try:
             await _fire_push_hooks(env, owner, repo, account, updates, state)

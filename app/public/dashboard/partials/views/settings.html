@@ -80,6 +80,11 @@
                       <i data-lucide="building-2" class="h-5 w-5"></i>
                       Organizations
                     </button>
+                    <button data-settings-section-link="ai-review" data-ai-review-settings-link hidden type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
+                      <i data-lucide="sparkles" class="h-5 w-5"></i>
+                      AI review
+                    </button>
                     <button data-settings-section-link="agents" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
                       <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="bot" class="h-5 w-5"></i>
@@ -760,6 +765,42 @@
                     <div data-orgs-root class="mt-5 max-w-3xl">
                       <p class="text-sm text-muted-foreground">Loading organizations…</p>
                     </div>
+                  </section>
+
+                  <section id="settings-ai-review" data-settings-section="ai-review" data-ai-review-settings class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">AI review</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">An automated first-pass review of pull requests by Cloudflare Workers AI, posted as one ForkBot comment per head commit. It never approves, requests changes or merges. Only the pull request's text (title, description, commit messages, file list and diff) is sent, under this instance's Cloudflare account.</p>
+                    <form data-ai-review-settings-form class="mt-5 grid min-w-0 max-w-3xl gap-4 rounded-md border border-border bg-card px-4 py-4 sm:grid-cols-2">
+                      <label class="flex min-w-0 items-center gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-enabled type="checkbox" class="shrink-0"> Review pull requests automatically</label>
+                      <label class="flex min-w-0 items-start gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-default-on type="checkbox" class="mt-1 shrink-0"><span class="min-w-0 [overflow-wrap:anywhere]">On for every public repository unless its <code class="font-mono text-xs">.forkmesh/pulls.json</code> says <code class="font-mono text-xs">"aiReview": false</code>. Otherwise repositories opt in with <code class="font-mono text-xs">"aiReview": true</code>.</span></label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Cloudflare account ID
+                        <input data-ai-review-account autocomplete="off" spellcheck="false" maxlength="32" placeholder="32 hexadecimal characters" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">API token <span class="font-normal text-muted-foreground">(Workers AI permission only)</span>
+                        <input data-ai-review-token type="password" autocomplete="off" spellcheck="false" placeholder="Paste a token to set or replace it" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground sm:col-span-2">Model <span class="font-normal text-muted-foreground">(models are limited to an approved list)</span>
+                        <select data-ai-review-model class="h-9 rounded-md border border-border bg-background px-2 text-sm font-normal text-foreground"></select>
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Reviews per day (instance)
+                        <input data-ai-review-daily-cap type="number" min="0" max="5000" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Largest diff to review (KB)
+                        <input data-ai-review-max-diff type="number" min="16" max="4096" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Reviews per repository per day
+                        <input data-ai-review-repo-daily type="number" min="1" max="1000" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                      </label>
+                      <label class="grid gap-1 text-xs font-semibold text-foreground">Reviews per pull request author per day
+                        <input data-ai-review-author-daily type="number" min="1" max="1000" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                      </label>
+                      <label data-ai-review-binding-row hidden class="flex items-center gap-2 text-sm text-foreground sm:col-span-2"><input data-ai-review-binding type="checkbox"> Use this server's AI binding when no token is set</label>
+                      <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
+                        <button type="submit" class="fm-btn fm-btn-cta">Save</button>
+                        <button type="button" data-ai-review-clear-token class="fm-btn">Remove token</button>
+                        <p data-ai-review-settings-status role="status" class="text-xs text-muted-foreground"></p>
+                      </div>
+                    </form>
                   </section>
 
                   <section id="settings-apps" data-settings-section="apps" class="hidden pb-8">
