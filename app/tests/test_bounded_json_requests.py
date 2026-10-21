@@ -123,7 +123,6 @@ def test_no_route_bypasses_the_bounded_json_reader():
 
 
 def test_pull_submissions_get_the_large_body_allowance():
-    """A signed pull request carries its whole patch series inline."""
     namespace = {
         "JSON_BODY_DEFAULT_MAX_BYTES": 64,
         "JSON_BODY_LARGE_MAX_BYTES": 128,
@@ -138,7 +137,8 @@ def test_pull_submissions_get_the_large_body_allowance():
         return limit(SimpleNamespace(url="https://forkmesh.test" + path))
 
     assert at("/api/repo/alice/tools/pulls") == 128
-    assert at("/api/repo/alice/tools/pulls/") == 128
+    assert at("/api/repo/alice/tools/pulls/") == 64
+    assert at("/api/repo//tools/pulls") == 64
     assert at("/api/repo/alice/tools/issues") == 64
     assert at("/api/repo/alice/tools/pulls/7/events") == 64
     assert at("/api/repo/pulls") == 64
