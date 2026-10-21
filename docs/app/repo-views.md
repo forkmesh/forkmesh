@@ -370,7 +370,10 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   included: the issue file's `status` is author-controlled and not checked
   against a signature here. The Markdown port escapes before it formats.
 - **Data.** `repo_views` builds an issue bundle (the whole record and the
-  open issues, for mentions and sub-issues) from the local gateway,
+  issue index, for mentions and sub-issues; the open records on a gateway
+  without the index, see
+  [issue-scale-limits.md](issue-scale-limits.md#the-issue-index)) from the
+  local gateway,
   remembered per content; the rendered article is kept on the bundle for a
   minute because its relative times move. The page waits at most
   `ISSUE_BUDGET_SECONDS` (0.3 s) for the issue and the repository's first

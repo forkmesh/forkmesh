@@ -24,6 +24,14 @@ thread. The daemon waits up to 90 s (`gatewayReloadTimeout`) and restarts only
 a gateway that is not responding, after a random delay of up to 20 s, so a
 slow reload never restarts the whole fleet at once.
 
+## Issue index
+
+`issue-index?ref=` answers one compact summary per issue record at a commit,
+so the issues list and an issue page's relations do not download every
+record. It is carried by the `blobs` permission (`ISSUE_INDEX_CARRIER_OPERATION`)
+and never advertised on its own; folding, caching and limits are in
+[issue-scale-limits.md](../app/issue-scale-limits.md#the-issue-index).
+
 ## Traps
 
 - An older gateway refuses to start on a config key it does not know. Deploy

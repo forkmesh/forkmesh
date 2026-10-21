@@ -26,6 +26,55 @@ on 2026-10-21; keep paired values in step.
 | `MAX_NOTIFICATIONS_PER_RECIPIENT` | `app/src/entry.py` | 500 | 2,000 | notifications kept per account |
 | title, body, labels, per-run counts | `app/src/repository_provider_mirror.py` | 240 chars, 16,000 chars, 8 labels, 10 issues and 20 comments per run, 20 replies per discussion | 256, 262,144, 100, 100, 500, all replies | the in-app provider mirror; `tools/forge_sync.py` (see [forge-sync](../../www/docs/forge-sync.md)) never had caps |
 
-The issues list still downloads every open issue record to show one page of
-titles; a commit-pinned issue index on the gateway is the next step for a forum
-of this size.
+## The issue index
+
+The issues list used to download every open issue record (and the whole
+closed history once Closed was chosen) to show 25 titles, and every issue page
+downloaded the open records again for mentions and sub-issues. Since
+2026-10-21 both read one commit-pinned summary instead:
+`GET /api/repo/<owner>/<repo>/issue-index?ref=<commit>`.
+
+- **What it holds.** One entry per issue folder under `.forkmesh/issues/open`,
+  `.forkmesh/issues/closed` and the legacy `.forkmesh/issues/<n>` location
+  (an open copy wins over a closed one, either over a legacy one, as the list
+  did), newest number first. Each entry is the dashboard's `parseIssueJson`
+  result without the event list: number, title, status, deleted flags,
+  author and author key, labels, milestone, priority, progress, assignees,
+  dates, votes, comment count, the open event id, the opening description
+  (the free-text search reads it), and `location`. Instead of the events it
+  carries what the list and the relations derive from them:
+  `mentionHandles` (every `@name` in the description and comments, for
+  `mentions:@me`), `participants` (every event author, for `involves:@me`
+  and the assignee picker), `mentionRefs` (`[issue, ts, author key, name]`
+  per issue this one mentions, for the Mentioned-in rail), `pullLinks`
+  (`[pull, linked]`, for Development) and the status events alone (for the
+  browser's pending close/reopen). Also `missing` (folders whose record could
+  not be read), `openFolders`/`closedFolders` (the folder counts the tab
+  badge uses) and `truncated`.
+- **Folding.** `_issue_index_fold` in `tools/mirror_gateway.py` is a port of
+  `parseIssueJson`, down to JavaScript's `Number()`, `String()`, truthiness
+  and whitespace rules, so a row from the index renders, filters and sorts
+  exactly like one from the record. A record that is not JSON (or over
+  `MAX_JSON_BLOB`) folds to the same defaults the dashboard shows.
+  `app/tests/test_mirror_gateway_issue_index.py` runs the dashboard's own
+  functions under node against both and compares them.
+- **Cost.** Each record is folded once per blob id (`_issue_index_records`,
+  up to `ISSUE_INDEX_RECORD_CACHE` entries) and the whole answer is kept per
+  `.forkmesh/issues` tree id, so after a push only the changed records are
+  read again. The answer is commit-keyed in the gateway's memory cache and,
+  pinned to a commit id, immutable in the host's (`IMMUTABLE`). Bodies are
+  the bulk of it; comments are not included. At most
+  `ISSUE_INDEX_MAX_ISSUES` (50,000) entries and `MAX_JSON_OUTPUT` bytes:
+  past either the answer says `truncated: true` and the dashboard uses the
+  old reads.
+- **Who reads it.** `loadRepoIssues` (after the `.forkmesh/issues` listing
+  that names the commit) and `loadRepoIssueRelationIndex` in
+  `06-repo-content.js`, and `plan_issues` / `plan_issue` in
+  `app/host/forkmesh_host/repo_views.py`. Full records are fetched only for
+  the issue being opened. Because the index has the closed issues too, the
+  Closed view needs no second load, and mentions from closed issues now show
+  on an issue page.
+- **Older gateways.** The operation rides on the `blobs` permission (like
+  `pulse` on `stats`), so no signed configuration changes. A gateway or host
+  without it answers 404 and every reader falls back to the per-record
+  `blobs` reads.
