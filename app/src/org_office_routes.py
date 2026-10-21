@@ -4,6 +4,7 @@ import hmac
 import json
 import re
 from urllib.parse import parse_qs, quote, urlparse
+from hidden_unicode import clean_value as clean_hidden_unicode
 
 import org_office as o
 import org_office_room as room
@@ -294,7 +295,7 @@ async def org_office_entry_handler(env, request):
         return _json({"error": "login_required"}, 401)
     try:
         raw = await request.text()
-        data = json.loads(raw) if raw and len(raw) <= 2048 else {}
+        data = clean_hidden_unicode(json.loads(raw)) if raw and len(raw) <= 2048 else {}
     except Exception:
         data = {}
     if not isinstance(data, dict):

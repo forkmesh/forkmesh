@@ -5,6 +5,9 @@ Split out of entry.py so Cloudflare's startup-memory validation (error
 through a _LazyModule proxy on the first request that needs it.
 """
 
+from hidden_unicode import clean_value as clean_hidden_unicode
+
+
 
 def _bind_runtime(runtime):
     """Supply the entrypoint primitives used by this domain."""
@@ -62,7 +65,7 @@ class _MarketplaceGovernanceRuntime:
         if not raw.strip():
             return {}, ""
         try:
-            data = json.loads(raw)
+            data = clean_hidden_unicode(json.loads(raw))
         except Exception:
             return None, "invalid_json"
         return (data, "") if isinstance(data, dict) else (None, "invalid_json")

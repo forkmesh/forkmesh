@@ -45,6 +45,7 @@ import com.forkmesh.nativeapp.market.PackageInstallMode
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.fmGlass
 import com.forkmesh.nativeapp.ui.kit.fmSafeAreaInsets
 import com.forkmesh.nativeapp.ui.theme.Fm
@@ -99,7 +100,7 @@ private fun MarketSearchField(query: String, onQuery: (String) -> Unit, modifier
         FmIcon("search", size = 18.dp, tint = c.textSecondary)
         BasicTextField(
             value = query,
-            onValueChange = onQuery,
+            onValueChange = FmSafeInput.text(onQuery),
             singleLine = true,
             textStyle = style,
             cursorBrush = SolidColor(c.accent),

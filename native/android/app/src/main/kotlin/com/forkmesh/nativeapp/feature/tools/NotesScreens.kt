@@ -91,6 +91,7 @@ import com.forkmesh.nativeapp.ui.kit.FmModalBottomSheet
 import com.forkmesh.nativeapp.ui.kit.FmNavBar
 import com.forkmesh.nativeapp.ui.kit.FmPanelHeader
 import com.forkmesh.nativeapp.ui.kit.FmRowDivider
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.FmSegmentTab
 import com.forkmesh.nativeapp.ui.kit.FmSegmentTabBar
 import com.forkmesh.nativeapp.ui.kit.FmStatus
@@ -740,7 +741,7 @@ private fun MarkdownField(value: TextFieldValue, onChange: (TextFieldValue) -> U
     val style = Fm.mono(size = Fm.text.bodyMedium.fontSize).copy(color = c.textPrimary)
     BasicTextField(
         value = value,
-        onValueChange = onChange,
+        onValueChange = FmSafeInput.text(onChange),
         readOnly = readOnly,
         textStyle = style,
         cursorBrush = SolidColor(c.accent),

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.openwrt
 
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.background
@@ -144,7 +145,7 @@ private fun Row2(title: String, detail: String = "", icon: String? = null, onCli
 private fun Field(label: String, value: String, onChange: (String) -> Unit, hint: String = "", secret: Boolean = false, keyboard: KeyboardType = KeyboardType.Text) {
     OutlinedTextField(
         value = value,
-        onValueChange = onChange,
+        onValueChange = if (secret) onChange else FmSafeInput.text(onChange),
         label = { Text(label) },
         placeholder = if (hint.isEmpty()) null else ({ Text(hint) }),
         singleLine = true,
@@ -208,7 +209,7 @@ private fun Prompt(title: String, text: String, initial: String, action: String,
         text = {
             Column {
                 Text(text)
-                OutlinedTextField(value = value, onValueChange = { value = it }, singleLine = true, modifier = Modifier.padding(top = FmSpace.x2))
+                OutlinedTextField(value = value, onValueChange = FmSafeInput.text<String> { value = it }, singleLine = true, modifier = Modifier.padding(top = FmSpace.x2))
             }
         },
         confirmButton = { TextButton(onClick = { onDismiss(); onConfirm(value.trim()) }) { Text(action) } },
@@ -475,7 +476,7 @@ class OpenWrtWifiScreen : Screen() {
                 text = {
                     Column {
                         Text("The new network uses WPA2/WPA3 and connects to the local network.")
-                        OutlinedTextField(newSsid, { newSsid = it }, label = { Text("Network name") }, singleLine = true)
+                        OutlinedTextField(newSsid, FmSafeInput.text<String> { newSsid = it }, label = { Text("Network name") }, singleLine = true)
                         OutlinedTextField(newKey, { newKey = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
                     }
                 },

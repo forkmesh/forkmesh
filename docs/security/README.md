@@ -20,6 +20,7 @@ under `www/docs/security/`; report vulnerabilities as described in
 | Node ownership changes | `_account_link_grant` | [NODE_LINK_GRANT.md](NODE_LINK_GRANT.md) |
 | Signup bot check | `app/src/turnstile.py` | [OPERATIONS.md](../OPERATIONS.md) |
 | Front-door checks | `app/host/forkmesh_host/request_guard.py`, `request_policy.py` | [host/README.md](../host/README.md) |
+| Hidden Unicode in input | `app/src/hidden_unicode.py`, `www/public/safe-input.js`, `desktop/src/HiddenUnicodeGuard.{h,cpp}`, `HiddenUnicode.swift`, `HiddenUnicode.kt`, `conformance/hidden-unicode/v1` | [hidden-unicode.md](hidden-unicode.md) |
 | Outbound request guard | `app/host/forkmesh_host/egress.py` | [host/README.md](../host/README.md) |
 | Host intrusion detection | `deploy/core/ids.py`, `tools/next_ids.py` | [IDS.md](../IDS.md) |
 | Node hardening | `deploy/core/render.py`, `deploy/core/certsync.py`, `tools/next_fleet.py` | [OPERATIONS.md](../OPERATIONS.md) |

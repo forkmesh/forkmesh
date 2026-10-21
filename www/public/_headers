@@ -71,6 +71,9 @@
 /analytics.js
   Cache-Control: public, max-age=0, stale-while-revalidate=86400
 
+/safe-input.js
+  Cache-Control: public, max-age=0, stale-while-revalidate=86400
+
 /assets/logo-96.png
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 

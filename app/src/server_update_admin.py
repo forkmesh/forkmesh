@@ -1,5 +1,6 @@
 import secrets
 from urllib.parse import parse_qs, quote, urlparse
+from hidden_unicode import clean_query as clean_hidden_query
 
 import deploy_approvals
 import instance_legal
@@ -609,7 +610,7 @@ async def _handle_post(env, request, view, admin_query, account):
         raw = await request.text()
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True))
     target = view if view in VIEWS else VIEW
 
     def location(notice):

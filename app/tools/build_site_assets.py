@@ -57,6 +57,7 @@ SHARED_FILES = (
     "mesh-page-theme.css",
     "noisy-background.avif",
     "analytics.js",
+    "safe-input.js",
     "analytics-sdk.js",
     "genie-spider.js",
     "site-footer.css",

@@ -20,6 +20,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qs, quote, urlparse
+from hidden_unicode import clean_value as clean_hidden_unicode
 
 
 # These primitives are injected by entry._LazyModule when this route is first
@@ -2367,7 +2368,7 @@ async def operating_expense_record_handler(env, request):
             outcome="denied")
         return _expense_error("admin_required", 403)
     try:
-        data = json.loads(raw)
+        data = clean_hidden_unicode(json.loads(raw))
     except ValueError:
         data = None
     if not isinstance(data, dict):

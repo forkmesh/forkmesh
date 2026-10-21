@@ -21,6 +21,7 @@ once published; a breaking change adds `v2` beside it.
 | `funding` | `program.json`, `rounds/` | `tools/public_interest_funding.py`; `app/tests/test_public_interest_funding.py` | `www/docs/funding/` |
 | `git` | `matrix.json`, `results.json`, `evidence/` | `tools/git_conformance.py` (`validate`, `render`, `run`, ...); `app/tests/test_git_workflow_conformance.py` | `www/docs/git-compatibility.md` (generated), `www/docs/operations/git-conformance.md` |
 | `governance` | `charter.json`, `participants.json`, `records/` | `tools/protocol_governance.py`; `app/tests/test_protocol_governance.py` | `www/docs/governance/` |
+| `hidden-unicode` | `vectors.json`, `generate_vectors.py` | `app/src/hidden_unicode.py`, `www/public/safe-input.js`, `desktop/src/HiddenUnicode.cpp`, `native/ios/ForkMeshCore/Sources/FMBase/HiddenUnicode.swift`, `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/security/HiddenUnicode.kt`; `app/tests/test_hidden_unicode.py`, `desktop/tests/test_hidden_unicode.cpp` | `docs/security/hidden-unicode.md` |
 | `incentives` | `requirements.json` | `app/tests/test_incentive_independence.py` | `www/docs/incentive-independence.md` |
 | `integrations` | `contract.json`, `examples/` | `tools/forkmesh_integration.py`; `app/tests/test_integration_contract.py` | `www/docs/integrations.md` |
 | `protocol` | `manifest.json`, `threats.json`, `vectors/`, `generate_vectors.py`, `verify_suite.py` | `app/tests/test_protocol_suite.py`; clean-room `verify_suite.py` | `www/docs/protocol/` |

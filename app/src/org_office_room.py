@@ -4,6 +4,7 @@ import json
 import random
 import re
 import secrets
+from hidden_unicode import clean_value as clean_hidden_unicode
 
 import org_office as o
 
@@ -419,7 +420,7 @@ class OfficeCore:
             if not await self._revalidate(entry, now):
                 return
         try:
-            m = json.loads(raw)
+            m = clean_hidden_unicode(json.loads(raw))
         except Exception:
             return
         if not isinstance(m, dict):

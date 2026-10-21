@@ -390,7 +390,7 @@ def test_console_dispatches_the_404_view_and_the_nav_links_it():
     runtime = (SRC / "app_runtime.py").read_text(encoding="utf-8")
     assert runtime.index("_not_found_log.VIEW") < runtime.index(
         'if method_name(request) == "POST":\n            try:\n'
-        '                form = parse_qs(')
+        '                form = clean_hidden_query(parse_qs(')
     assert "status == 404" in runtime and "record_response" in runtime
     shell = _load("admin_shell")
     keys = [key for _group, items in shell.NAV for key, *_rest in items]

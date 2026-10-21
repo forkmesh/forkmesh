@@ -20,6 +20,7 @@ import re
 from urllib.parse import quote
 
 import agent_notes
+from hidden_unicode import clean_query as clean_hidden_query
 
 
 def _bind_runtime(runtime):
@@ -150,7 +151,7 @@ async def _handle_post(env, request, params, admin_query, account):
         raw = await request.text()
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True))
     if _first(params, "view") == "agent-notes":
         return await _review_agent_note(env, form, params, admin_query,
                                         account)
