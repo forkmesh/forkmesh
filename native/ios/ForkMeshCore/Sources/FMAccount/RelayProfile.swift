@@ -134,6 +134,11 @@ public struct RelayProfile: Hashable, Sendable, CustomStringConvertible {
 
     public var isLoopback: Bool { AppEnv.isLoopbackHost(host) }
 
+    public var instanceId: String? {
+        if !hasInstance { return nil }
+        return RelayProfile.normalizeOrigin(serverUrl) ?? id
+    }
+
     public var displayOrigin: String {
         if !hasInstance { return RelayProfile.noInstanceLabel }
         return AppEnv.isProdAlias(id) ? AppEnv.prodHost : id
