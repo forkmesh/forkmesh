@@ -13062,6 +13062,7 @@
   }
 
   function showAgentLoginModal(titleText, statusText, footerText = "") {
+    ensureDeferredMarkup("dialogs");
     const modal = $("[data-agent-login-modal]");
     if (!modal?.querySelector("[data-agent-login-surface]")) return null;
     closeAgentLoginTerminal();
@@ -13171,6 +13172,7 @@
   }
 
   function setAgentModalOpen(open) {
+    if (open) ensureDeferredMarkup("agent");
     const modal = $("#agentModal");
     if (!modal) return;
     modal._agentRepoMembershipRequest =
@@ -13390,7 +13392,7 @@
       window.ForkMeshComposer.insert(value);
       return true;
     }
-    if (!$("#agentModal")) return false;
+    if (!$("#agentModalToggle")) return false;
     setAgentModalOpen(true);
     const input = $("#agentModal")?.querySelector("[data-repo-agent-new-input]");
     if (!input) return false;

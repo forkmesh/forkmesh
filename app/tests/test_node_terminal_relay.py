@@ -46,8 +46,10 @@ DASHBOARD = (
 MODALS = (
     ROOT / "public" / "dashboard" / "partials" / "modals.html"
 ).read_text(encoding="utf-8")
+# The "Start an agent" popover, added under the header's toggle on first open
+# (dashboard_bundle.DEFERRED_MARKUP).
 HEADER = (
-    ROOT / "public" / "dashboard" / "partials" / "header.html"
+    ROOT / "public" / "dashboard" / "partials" / "agent-modal.html"
 ).read_text(encoding="utf-8")
 GO_TERMINAL = (REPOSITORY / "server" / "terminal.go").read_text(encoding="utf-8")
 GO_EVENTS = (REPOSITORY / "server" / "nodeevents.go").read_text(encoding="utf-8")

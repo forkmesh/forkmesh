@@ -3233,6 +3233,7 @@
   }
 
   function setProfileModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-profile-modal]");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);
@@ -4106,6 +4107,7 @@
   }
 
   function setProfileAboutModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-profile-about-modal]");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);

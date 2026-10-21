@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from urllib.parse import quote
 
-from _dashboard_shell import assembled_dashboard, assembled_dashboard_page
+from _dashboard_shell import assembled_dashboard, assembled_dashboard_page, deferred_dialogs
 from _dashboard_bundle import assembled_dashboard_js
 from _maintenance_stubs import with_maintenance_off
 
@@ -311,7 +311,7 @@ def test_dashboard_notifications_are_wired_to_real_api_not_mock_data():
     assert "Notifications disabled until notification data is wired" not in dashboard
     assert "const notifications = []" not in dashboard
     assert "notificationToggle" in dashboard
-    assert "notificationModal" in dashboard
+    assert "notificationModal" in deferred_dialogs()
     assert "data-notification-count" in dashboard
     assert "loadNotifications" in dashboard_js
     assert 'fetchJson(`/api/notifications?node=${encodeURIComponent(node)}`)' in dashboard_js
@@ -1997,7 +1997,8 @@ def test_one_pings_settings_page_covers_every_ping_switch_on_the_web():
     # page) and the pings modal header, a trailing gear column on each modal
     # row, and "Turn off … pings" in the detail pane — all real links to the
     # section, switched in place when already on the settings page.
-    assert home_page.count('href="/dashboard/settings/notifications" data-ping-settings-link=""') == 2
+    assert home_page.count('href="/dashboard/settings/notifications" data-ping-settings-link=""') == 1
+    assert deferred_dialogs().count('href="/dashboard/settings/notifications" data-ping-settings-link=""') == 1
     assert "Ping settings" in home_page
     assert "/dashboard/settings/notifications#ping-kind-${encodeURIComponent(key)}" in dashboard_js
     assert "data-notification-row" in dashboard_js

@@ -1568,6 +1568,22 @@
     });
   }
 
+  // Dialogs no page shows on load are not in the page documents
+  // (dashboard_bundle.py DEFERRED_MARKUP): the first open adds their markup,
+  // then the caller finds and opens the dialog as before.
+  function ensureDeferredMarkup(name) {
+    const spec = deferredMarkup(name);
+    if (!spec || !document.body || document.querySelector(spec.marker)) return;
+    const template = document.createElement("template");
+    template.innerHTML = spec.html;
+    const added = [...template.content.children];
+    const anchor = spec.after ? document.querySelector(spec.after) : null;
+    if (anchor) anchor.after(template.content);
+    else document.body.append(template.content);
+    added.forEach((element) => applyPlatformName(element));
+    window.lucide?.createIcons();
+  }
+
   let instanceInfoRequest = null;
   let instanceGitNode = "";
 

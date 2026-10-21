@@ -1482,6 +1482,7 @@
   }
 
   function setNotificationModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("#notificationModal");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);
@@ -2171,7 +2172,7 @@
 
     if (event.target.closest("#agentModalToggle")) {
       event.stopPropagation();
-      setAgentModalOpen($("#agentModal")?.classList.contains("hidden"));
+      setAgentModalOpen($("#agentModal")?.classList.contains("hidden") ?? true);
       return;
     }
 

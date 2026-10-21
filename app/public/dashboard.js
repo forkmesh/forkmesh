@@ -1950,6 +1950,22 @@
     });
   }
 
+  // Dialogs no page shows on load are not in the page documents
+  // (dashboard_bundle.py DEFERRED_MARKUP): the first open adds their markup,
+  // then the caller finds and opens the dialog as before.
+  function ensureDeferredMarkup(name) {
+    const spec = deferredMarkup(name);
+    if (!spec || !document.body || document.querySelector(spec.marker)) return;
+    const template = document.createElement("template");
+    template.innerHTML = spec.html;
+    const added = [...template.content.children];
+    const anchor = spec.after ? document.querySelector(spec.after) : null;
+    if (anchor) anchor.after(template.content);
+    else document.body.append(template.content);
+    added.forEach((element) => applyPlatformName(element));
+    window.lucide?.createIcons();
+  }
+
   let instanceInfoRequest = null;
   let instanceGitNode = "";
 
@@ -8403,6 +8419,7 @@
   }
 
   function setProfileModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-profile-modal]");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);
@@ -9276,6 +9293,7 @@
   }
 
   function setProfileAboutModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-profile-about-modal]");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);
@@ -29526,6 +29544,7 @@
   }
 
   function showAgentLoginModal(titleText, statusText, footerText = "") {
+    ensureDeferredMarkup("dialogs");
     const modal = $("[data-agent-login-modal]");
     if (!modal?.querySelector("[data-agent-login-surface]")) return null;
     closeAgentLoginTerminal();
@@ -29635,6 +29654,7 @@
   }
 
   function setAgentModalOpen(open) {
+    if (open) ensureDeferredMarkup("agent");
     const modal = $("#agentModal");
     if (!modal) return;
     modal._agentRepoMembershipRequest =
@@ -29854,7 +29874,7 @@
       window.ForkMeshComposer.insert(value);
       return true;
     }
-    if (!$("#agentModal")) return false;
+    if (!$("#agentModalToggle")) return false;
     setAgentModalOpen(true);
     const input = $("#agentModal")?.querySelector("[data-repo-agent-new-input]");
     if (!input) return false;
@@ -40390,6 +40410,7 @@
   }
 
   function setNotificationModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("#notificationModal");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);
@@ -41079,7 +41100,7 @@
 
     if (event.target.closest("#agentModalToggle")) {
       event.stopPropagation();
-      setAgentModalOpen($("#agentModal")?.classList.contains("hidden"));
+      setAgentModalOpen($("#agentModal")?.classList.contains("hidden") ?? true);
       return;
     }
 
@@ -45023,6 +45044,7 @@
   }
 
   function setFeedbackModalOpen(open, plugin = null) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-feedback-modal]");
     if (!modal) return;
     window.clearTimeout(feedbackCloseTimer);
@@ -45119,7 +45141,8 @@
   }
 
   function initDashboardFeedback() {
-    if (!$("[data-feedback-modal]")) return;
+    // The dialog itself is added on first open (ensureDeferredMarkup), so its
+    // controls are reached through the document.
     document.addEventListener("click", (event) => {
       if (event.target.closest("[data-feedback-open]")) {
         event.preventDefault();
@@ -45136,9 +45159,11 @@
       if ($("[data-feedback-modal]")?.classList.contains("hidden")) return;
       setFeedbackModalOpen(false);
     });
-    $("[data-feedback-form]")?.addEventListener("submit", (event) => {
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest?.("[data-feedback-form]");
+      if (!form) return;
       event.preventDefault();
-      void submitDashboardFeedback(event.currentTarget);
+      void submitDashboardFeedback(form);
     });
     openFeedbackFromQuery();
   }
@@ -46951,6 +46976,15 @@
         });
     }
     return dashboardChunkLoads[name];
+  }
+
+  // Dialog markup the page documents leave out (dashboard_bundle.py
+  // DEFERRED_MARKUP); ensureDeferredMarkup adds it on first use.
+  function deferredMarkup(name) {
+    return {
+      "dialogs": { marker: "#notificationModal", after: null, html: "    <div\n      data-profile-modal\n      class=\"hidden fixed inset-0 z-[90] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileModalTitle\"\n    >\n      <button data-profile-modal-backdrop type=\"button\" aria-label=\"Close profile settings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileModalTitle\" class=\"fm-dialog-title\">Profile settings</h2>\n            <p class=\"fm-dialog-desc\">Verify email and optionally add a public Solana address for mirror rewards or direct community donations.</p>\n          </div>\n          <button data-profile-modal-close type=\"button\" aria-label=\"Close profile settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <div class=\"flex items-start justify-between gap-3 border-b border-border pb-4\">\n            <div class=\"min-w-0\">\n              <p class=\"text-sm font-medium text-foreground\">Email verification</p>\n              <p data-profile-email-status class=\"mt-1 text-xs text-muted-foreground\">Sign in to view email status.</p>\n            </div>\n            <button data-profile-verify-email type=\"button\" class=\"fm-btn fm-btn-sm shrink-0\">\n              Send link\n            </button>\n          </div>\n\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Solana payout address\n            <input data-profile-solana type=\"text\" inputmode=\"latin\" autocomplete=\"off\" placeholder=\"Your public Solana address\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n            <span class=\"text-xs leading-5 text-muted-foreground\">Used only for optional mirror rewards and direct community donations. Legacy bounty custody is disabled; you may leave it empty.</span>\n            <span class=\"text-xs leading-5 text-muted-foreground\">Non-custodial: only this public address is saved. Keys and recovery phrases stay on your device. User funds, the community pool, pending rewards, and completed transfers are distinct states.</span>\n          </label>\n\n          <form data-credential-scope class=\"contents\">\n          <label class=\"grid gap-1.5 text-xs text-muted-foreground\">\n            Current password\n            <input data-profile-password type=\"password\" autocomplete=\"current-password\" placeholder=\"Required to save payout changes\" class=\"h-control rounded-control border border-border bg-background px-3 text-control text-foreground outline-none placeholder:text-muted-foreground\" />\n          </label>\n          </form>\n\n          <p data-profile-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n            Save profile\n          </button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      data-profile-about-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"profileAboutModalTitle\"\n    >\n      <button data-profile-about-modal-backdrop type=\"button\" aria-label=\"Close about editor\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-3xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"profileAboutModalTitle\" class=\"fm-dialog-title\">Edit about yourself</h2>\n            <p class=\"fm-dialog-desc\">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>\n          </div>\n          <button data-profile-about-modal-close type=\"button\" aria-label=\"Close about editor\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-4\">\n          <label class=\"grid gap-2 text-xs font-medium text-muted-foreground\">\n            About yourself\n            <textarea data-profile-about-textarea rows=\"14\" maxlength=\"32000\" spellcheck=\"true\" class=\"min-h-72 resize-y rounded-control border border-border bg-background px-3 py-2 font-mono text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\" placeholder=\"# Hi, I'm ...\"></textarea>\n          </label>\n          <p data-profile-about-hint class=\"min-h-4 text-xs text-muted-foreground\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-profile-about-cancel type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-profile-about-save type=\"button\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Save about</button>\n        </div>\n      </div>\n    </div>\n\n    <div\n      id=\"notificationModal\"\n      class=\"hidden fixed inset-0 z-[80] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"notificationModalTitle\"\n    >\n      <button data-notification-modal-backdrop type=\"button\" aria-label=\"Close pings\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog relative z-10 w-full max-w-4xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"notificationModalTitle\" class=\"fm-dialog-title\">Pings</h2>\n            <p class=\"fm-dialog-desc\">Read node, repository, and network updates.</p>\n          </div>\n          <div class=\"flex shrink-0 items-center gap-1\">\n            <a href=\"/dashboard/settings/notifications\" data-ping-settings-link=\"\" title=\"Ping settings\" class=\"fm-btn fm-btn-sm fm-btn-invisible\">\n              <i data-lucide=\"settings\" aria-hidden=\"true\"></i>\n              Ping settings\n            </a>\n            <button data-close-notification-modal type=\"button\" aria-label=\"Close pings\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n              <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n            </button>\n          </div>\n        </div>\n\n        <div class=\"grid min-h-0 flex-1 md:grid-cols-[19rem_minmax(0,1fr)]\">\n          <div data-notification-modal-list class=\"max-h-80 overflow-y-auto border-b border-border p-2 md:max-h-none md:border-b-0 md:border-r\"></div>\n          <article data-notification-modal-detail class=\"min-h-0 overflow-y-auto p-5\"></article>\n        </div>\n      </div>\n    </div>\n\n    <!--\n      Provider sign-in, streamed from the owner's own node (agent-terminal.js).\n      This replaces a `forkmesh://agent-login/<node>` hand-off that a browser\n      could only complete on a machine with the desktop app installed.\n    -->\n    <div\n      data-agent-login-modal\n      class=\"fm-agent-login-modal hidden fixed inset-0 z-[95] items-center justify-center px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"agentLoginModalTitle\"\n    >\n      <button data-agent-login-backdrop type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"absolute inset-0 cursor-default\"></button>\n      <div class=\"fm-dialog fm-agent-login-box relative z-10 w-full max-w-5xl\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"agentLoginModalTitle\" data-agent-login-title class=\"fm-dialog-title flex items-center gap-2\"><i data-lucide=\"terminal\" class=\"h-4 w-4 text-muted-foreground\"></i>Sign in on your node</h2>\n            <p data-agent-login-status class=\"fm-dialog-desc\">Connecting\u2026</p>\n          </div>\n          <button data-agent-login-close type=\"button\" aria-label=\"Close the sign-in terminal\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div data-agent-login-surface class=\"fm-agent-login-surface min-h-0 flex-1 overflow-hidden p-2\"></div>\n        <p data-agent-login-footer class=\"border-t border-border px-4 py-2 text-xs leading-5 text-muted-foreground\">\n          Keystrokes and screen updates travel between this tab and your node over the account's existing relay socket, which forwards them and stores nothing. The node runs only the provider's own login command \u2014 not a shell \u2014 and the credential itself is created on the provider's site, never here.\n        </p>\n      </div>\n    </div>\n\n    <div\n      data-feedback-modal\n      class=\"hidden fixed inset-0 z-[95] items-center justify-center bg-background/80 px-4 py-6 backdrop-blur-sm\"\n      role=\"dialog\"\n      aria-modal=\"true\"\n      aria-labelledby=\"feedbackModalTitle\"\n    >\n      <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"absolute inset-0 cursor-default\"></button>\n      <form data-feedback-form class=\"fm-dialog relative z-10 w-full max-w-lg\">\n        <div class=\"fm-dialog-header\">\n          <div class=\"fm-dialog-heading\">\n            <h2 id=\"feedbackModalTitle\" class=\"fm-dialog-title\">Send feedback</h2>\n            <p class=\"fm-dialog-desc\">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>\n          </div>\n          <button data-feedback-close type=\"button\" aria-label=\"Close feedback\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n            <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n          </button>\n        </div>\n        <div class=\"fm-dialog-body grid gap-3\">\n          <label class=\"grid gap-1.5 text-xs font-medium text-muted-foreground\">\n            Your feedback\n            <textarea data-feedback-message name=\"message\" rows=\"6\" minlength=\"2\" maxlength=\"2000\" required placeholder=\"What should we know?\" class=\"min-h-32 resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-6 text-foreground outline-none placeholder:text-muted-foreground\"></textarea>\n          </label>\n          <p data-feedback-status class=\"min-h-4 text-xs text-muted-foreground\" role=\"status\" aria-live=\"polite\"></p>\n        </div>\n        <div class=\"fm-dialog-footer\">\n          <button data-feedback-close type=\"button\" class=\"fm-btn fm-btn-sm\">Cancel</button>\n          <button data-feedback-submit type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">Send feedback</button>\n        </div>\n      </form>\n    </div>\n" },
+      "agent": { marker: "#agentModal", after: "#agentModalToggle", html: "<div\n  id=\"agentModal\"\n  class=\"fm-popover hidden fixed inset-x-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 sm:max-h-[calc(100dvh-6rem)]\"\n  role=\"dialog\"\n  aria-labelledby=\"agentModalTitle\"\n>\n  <div class=\"fm-popover-header\">\n    <div class=\"min-w-0 py-1\">\n      <h2 id=\"agentModalTitle\" class=\"fm-popover-title\">Start an agent</h2>\n      <p class=\"text-xs text-muted-foreground\">Run on an agent-capable node owned by your account.</p>\n    </div>\n    <button data-agent-modal-close type=\"button\" aria-label=\"Close agent composer\" class=\"fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0\">\n      <i data-lucide=\"x\" aria-hidden=\"true\"></i>\n    </button>\n  </div>\n  <form data-repo-agent-new-form class=\"grid gap-3 p-3 text-xs\">\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Repository\n      <select data-agent-modal-repo name=\"repository\" required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"></select>\n    </label>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Run on\n      <select data-agent-modal-target name=\"targetNode\" required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"><option value=\"\">Choose an owned node\u2026</option></select>\n    </label>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Agent and model\n      <select data-repo-agent-new-agent-model required class=\"h-control rounded-control border border-border bg-background px-2 text-control text-foreground\"></select>\n    </label>\n    <input data-repo-agent-new-provider name=\"provider\" type=\"hidden\" value=\"claude-code\" />\n    <input data-repo-agent-new-model name=\"model\" type=\"hidden\" value=\"\" />\n    <div data-agent-modal-login class=\"hidden flex-col gap-1.5\">\n      <button data-agent-modal-login-start type=\"button\" class=\"fm-btn fm-btn-sm\">\n        <i data-lucide=\"key\" aria-hidden=\"true\"></i>\n        <span data-agent-modal-login-label>Sign in to agent</span>\n      </button>\n      <a data-agent-modal-login-desktop href=\"#\" class=\"text-xs text-accent hover:underline\">Or hand this off to the <span data-desktop-brand>ForkMesh </span>desktop app</a>\n    </div>\n    <label class=\"grid gap-1.5 font-medium text-foreground\">Task\n      <textarea data-repo-agent-new-input name=\"prompt\" required maxlength=\"8000\" rows=\"5\" class=\"w-full resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-5 text-foreground\" placeholder=\"Describe the change you want the agent to make\u2026\"></textarea>\n    </label>\n    <input data-repo-agent-new-file-input type=\"file\" accept=\"image/png,image/jpeg,image/webp,image/gif\" multiple class=\"hidden\" />\n    <div class=\"flex flex-wrap items-center gap-2\">\n      <button data-repo-agent-new-attach type=\"button\" class=\"fm-btn fm-btn-sm\">\n        <i data-lucide=\"image-plus\" aria-hidden=\"true\"></i>\n        Attach images\n      </button>\n      <span class=\"text-xs text-muted-foreground\">or paste a screenshot into the task</span>\n    </div>\n    <div data-repo-agent-new-attachments class=\"hidden\"></div>\n    <label class=\"flex items-center gap-2 text-foreground\">\n      <input name=\"createPr\" type=\"checkbox\" class=\"h-4 w-4 rounded border-border\" />\n      Create a pull request when the run finishes\n    </label>\n    <p class=\"text-xs leading-5 text-muted-foreground\">Prompts are encrypted at rest until the selected owned node claims them. Agent provider credentials and owner-device private keys never leave that node.</p>\n    <p data-repo-agent-new-hint class=\"text-xs leading-5 text-muted-foreground\">The request is saved durably and starts when the selected node claims it.</p>\n    <div class=\"flex justify-end border-t border-border pt-3\">\n      <button type=\"submit\" class=\"fm-btn fm-btn-sm fm-btn-cta\">\n        <i data-lucide=\"play\" aria-hidden=\"true\"></i>\n        Start agent\n      </button>\n    </div>\n  </form>\n</div>\n" },
+    }[name] || null;
   }
 
   // ---------------------------------------------------------------------------

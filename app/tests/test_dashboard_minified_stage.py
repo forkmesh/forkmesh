@@ -85,6 +85,12 @@ def test_window_and_chunk_contracts_survive_renaming(stage):
             assert name in text, (chunk, name)
         for name in imports:
             assert name in served, (chunk, name)
+    # The deferred dialog markup is string data and keeps its hooks.
+    for spec in dashboard_bundle.DEFERRED_MARKUP.values():
+        assert spec["marker"].lstrip("#") in served
+    for hook in ("data-feedback-form", "data-agent-login-surface",
+                 "data-repo-agent-new-form", "data-profile-about-textarea"):
+        assert hook in served, hook
 
 
 def test_source_map_points_at_the_readable_build(stage):
