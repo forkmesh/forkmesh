@@ -2062,6 +2062,17 @@
     return { base, head };
   }
 
+  function splitRepoCodeRef(kind, parts, refs) {
+    const names = new Set((refs || []).map((ref) => String(ref || "").trim()).filter(Boolean));
+    const segments = (parts || []).map((part) => String(part || "")).filter(Boolean);
+    const longest = segments.length - (kind === "blob" ? 1 : 0);
+    for (let size = longest; size > 0; size -= 1) {
+      const ref = segments.slice(0, size).join("/");
+      if (names.has(ref)) return { ref, path: segments.slice(size).join("/") };
+    }
+    return null;
+  }
+
   function repoCompareRouteOptions(search) {
     const params = new URLSearchParams(String(search || ""));
     const title = String(params.get("title") || "").replace(/\s+/g, " ").trim().slice(0, 240);

@@ -146,7 +146,7 @@
             ? `${repoLinkUrl(repo)}/insights${repoInsightsRouteQuery()}`
             : repoTabRoutesFor(repo).includes(routeKind)
               ? `${repoLinkUrl(repo)}/${routeKind}`
-              : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
+              : repoCodeLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
     navigateHistory(detailPath);
     const branch = repoSelectedBranch(repo);
     const issuesCount = repoCount(repo, ["issueCount", "issues", "issuesCount", "openIssues"]);
@@ -557,8 +557,7 @@
     // the requested panel compete with data the visitor could not see.
     if (initialTab === "code") {
       state.loadedRepoTabs.code = true;
-      if (routeKind === "blob" && routePath) loadRepositoryBlob(repo, routePath);
-      else loadRepositoryTree(repo, routeKind === "tree" ? routePath : "");
+      void openRepoCodeRoute(repo, routeKind, routePath, { explicitRef: Boolean(routeRef) });
       scheduleRepoAboutRail(repo);
     }
     // Feature tabs read only their own record folders, while code deep links
@@ -4431,10 +4430,10 @@
               }
             }
           }
-        } else if (kind === "blob" && path) {
-          loadRepositoryBlob(repo, path);
         } else {
-          loadRepositoryTree(repo, kind === "tree" ? path : "");
+          const routeRef = String(new URLSearchParams(location.search).get("ref") || "").trim();
+          applyRepoCodeRef(repo, routeRef || repoDefaultBranch(repo));
+          void openRepoCodeRoute(repo, kind, path, { explicitRef: Boolean(routeRef) });
         }
         return;
       }

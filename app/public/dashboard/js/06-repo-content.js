@@ -679,12 +679,12 @@
       if (!background) loadRepoDirAbout(repo, path, data.commit, entries);
       if (!entries.length) {
         treeBody.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">This directory is empty.</div>';
-        if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
+        if (!background) navigateHistory(repoCodeLinkUrl(repo, "tree", path));
         window.lucide?.createIcons();
         return;
       }
       renderRepoTreeRows();
-      if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
+      if (!background) navigateHistory(repoCodeLinkUrl(repo, "tree", path));
       window.lucide?.createIcons();
       if (!path) {
         const readmeEntry = entries.find((e) => e.type === "blob" && /^readme(\.md|\.txt|\.rst)?$/i.test(String(e.name || "")));
@@ -720,6 +720,8 @@
         }
       }
     } catch (error) {
+      if (path && options.refFallback && isMissingMirrorFolder(error)
+          && await openRepoCodeRefFallback(repo, "tree", options.refFallback)) return;
       // The tree fetch drives the commit summary; if no mirror answered, still
       // resolve the loading skeleton to the repo-derived fallback metadata.
       updateRepoCommitSummary(null, repo);
@@ -738,7 +740,7 @@
     }
   }
 
-  async function loadRepositoryBlob(repo, path) {
+  async function loadRepositoryBlob(repo, path, options = {}) {
     const detail = $("[data-repo-detail]");
     const viewer = detail?.querySelector("[data-repo-blob]");
     const treePanel = detail?.querySelector("[data-repo-tree-panel]");
@@ -803,7 +805,7 @@
         </div>`;
       setRepoFileMode(viewer, markdownPreview ? "preview" : "code", lines, path, meta);
       bindRepoFileToolbar(viewer, repo, path, content, lines, meta);
-      navigateHistory(repoLinkUrl(repo, "blob", path));
+      navigateHistory(repoCodeLinkUrl(repo, "blob", path));
       window.lucide?.createIcons();
     } catch (_) {
       // A markdown link to a folder ("[docs](www/docs)") has no trailing slash
@@ -822,6 +824,7 @@
           // Not a folder either; fall through to the file error.
         }
       }
+      if (await openRepoCodeRefFallback(repo, "blob", options.refFallback)) return;
       viewer.innerHTML = '<div class="fm-blankslate rounded-lg border border-border"><i data-lucide="file-x"></i><p class="fm-blankslate-title">File unavailable</p><p class="fm-blankslate-desc">Could not load this file from a live host.</p></div>';
       window.lucide?.createIcons();
     }

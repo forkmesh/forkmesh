@@ -2698,6 +2698,81 @@
     state.selectedBranches[repoKey(repo)] = name;
   }
 
+  function repoCodeLinkUrl(repo, kind = "tree", path = "") {
+    const url = repoLinkUrl(repo, kind, path);
+    const ref = repoSelectedBranch(repo);
+    return ref && ref !== repoDefaultBranch(repo) ? `${url}?ref=${encodeURIComponent(ref)}` : url;
+  }
+
+  function repoKnownDefaultBranch(repo) {
+    return String(state.repoBranches[repoKey(repo)]?.defaultBranch
+      || repo?.defaultBranch || repo?.branch || repo?.rootBranch || "").trim();
+  }
+
+  async function resolveRepoCodeRoute(repo, kind, path) {
+    const parts = String(path || "").split("/").filter(Boolean);
+    const literal = { ref: "", path, fallback: null };
+    if (!parts.length || (kind === "blob" && parts.length < 2)) return literal;
+    const known = repoKnownDefaultBranch(repo);
+    const quick = known ? splitRepoCodeRef(kind, parts, [known]) : null;
+    if (quick) return { ...quick, fallback: null };
+    let listed = [];
+    try {
+      listed = (await fetchRepoBranches(repo)).map((branch) => branch.name);
+    } catch (_) {
+      listed = [];
+    }
+    const hit = splitRepoCodeRef(kind, parts, [...listed, repoKnownDefaultBranch(repo)]);
+    if (hit) return { ...hit, fallback: null };
+    return { ...literal, fallback: { ref: parts[0], path: parts.slice(1).join("/") } };
+  }
+
+  function replaceRepoCodeAddress(repo, kind, path) {
+    const url = repoCodeLinkUrl(repo, kind, path);
+    if (`${location.pathname}${location.search}` === url) return;
+    window.history.replaceState(window.history.state, "", `${url}${location.hash || ""}`);
+  }
+
+  function applyRepoCodeRef(repo, ref) {
+    const name = String(ref || "").trim();
+    if (!name || name === repoSelectedBranch(repo)) return;
+    setRepoSelectedBranch(repo, name);
+    updateRepoBranchControls(repo, null);
+  }
+
+  async function openRepoCodeRoute(repo, kind, path, { explicitRef = false } = {}) {
+    const code = kind === "blob" || kind === "tree";
+    let target = { ref: "", path: code ? path : "", fallback: null };
+    if (code && path && !explicitRef) target = await resolveRepoCodeRoute(repo, kind, path);
+    if (state.selectedRepo !== repo) return;
+    if (target.ref) {
+      applyRepoCodeRef(repo, target.ref);
+      replaceRepoCodeAddress(repo, kind, target.path);
+    }
+    const options = target.fallback ? { refFallback: target.fallback } : {};
+    if (kind === "blob" && target.path) await loadRepositoryBlob(repo, target.path, options);
+    else await loadRepositoryTree(repo, kind === "tree" ? target.path : "", options);
+  }
+
+  async function openRepoCodeRefFallback(repo, kind, fallback) {
+    if (!fallback?.ref || state.selectedRepo !== repo) return false;
+    try {
+      const probe = await fetchRepoJson(repoLiveUrl(repo, "tree", {
+        path: kind === "tree" ? fallback.path : "",
+        ref: fallback.ref,
+      }));
+      if (!probe || probe.ok === false) return false;
+    } catch (_) {
+      return false;
+    }
+    if (state.selectedRepo !== repo) return false;
+    applyRepoCodeRef(repo, fallback.ref);
+    replaceRepoCodeAddress(repo, kind, fallback.path);
+    if (kind === "blob") await loadRepositoryBlob(repo, fallback.path);
+    else await loadRepositoryTree(repo, fallback.path);
+    return true;
+  }
+
   function renderRepoBranchButton(branch) {
     return `<button type="button" data-repo-branch-button aria-haspopup="menu" aria-expanded="false" class="inline-flex h-9 w-full max-w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-secondary/80 transition-colors"><i data-lucide="git-branch" class="h-3.5 w-3.5 shrink-0"></i><span data-repo-branch-current class="min-w-0 truncate">${escapeHtml(branch)}</span><i data-lucide="chevron-down" class="h-3 w-3 shrink-0 text-muted-foreground"></i></button>`;
   }

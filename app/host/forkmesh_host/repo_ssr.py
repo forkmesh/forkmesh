@@ -35,6 +35,8 @@ import re
 import time
 import urllib.parse
 
+from . import repo_code_ref
+
 PAGE_RE = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/?$")
 SHORT_PAGE_RE = re.compile(r"^/([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/?$")
 SHORT_META_RE = re.compile(
@@ -190,9 +192,16 @@ def repo_info(blob):
 
 
 class ShortTicket:
-    def __init__(self, fastpath, name):
+    def __init__(self, fastpath, name, code=None):
         self.fastpath = fastpath
         self.name = name
+        self.code = code
+
+
+class CodeRefTicket:
+    def __init__(self, fastpath, target):
+        self.fastpath = fastpath
+        self.target = target
 
 
 class ViewTicket:
@@ -282,7 +291,16 @@ def start(fastpath, scope):
     target = page_target(scope)
     if target is None:
         name = short_target(scope)
-        return ShortTicket(fastpath, name) if name else None
+        if name:
+            return ShortTicket(fastpath, name)
+        code = repo_code_ref.long_target(scope, RESERVED_OWNERS)
+        if code is not None:
+            return CodeRefTicket(fastpath, code)
+        short = repo_code_ref.short_code(scope)
+        name = urllib.parse.unquote(short[0][1:]) if short else ""
+        if name and name.lower() not in RESERVED_OWNERS:
+            return ShortTicket(fastpath, name, short)
+        return None
     return remembered_prerender(fastpath, *target)
 
 
@@ -344,6 +362,10 @@ async def _micro_store(key, response):
 
 async def fetch(ticket, worker_fetch, request):
     """The Worker's answer, or the micro-cache's for an anonymous read."""
+    if isinstance(ticket, CodeRefTicket):
+        target = await repo_code_ref.redirect(ticket.fastpath, *ticket.target)
+        if target:
+            return repo_code_ref.response(target)
     if not isinstance(ticket, MicroKey):
         return await worker_fetch(request)
     entry = _micro.get(ticket)
@@ -367,7 +389,7 @@ async def fetch(ticket, worker_fetch, request):
 
 async def finish(task, response):
     """Add the rendered first view to the Worker's repository page."""
-    if task is None or isinstance(task, MicroKey):
+    if task is None or isinstance(task, (MicroKey, CodeRefTicket)):
         return response
     view = task if isinstance(task, ViewTicket) else None
     if view is not None:
@@ -428,6 +450,12 @@ async def _finish_short(ticket, response):
     rendered = None
     if named is not None and named[1].lower() == ticket.name.lower():
         owner, repo, canonical = named
+        if ticket.code is not None:
+            target = await repo_code_ref.redirect(ticket.fastpath, owner, repo,
+                                                  *ticket.code)
+            if target:
+                return repo_code_ref.response(target)
+            return _js.Response(body, response.status, "", response.headers)
         try:
             data = await asyncio.wait_for(asyncio.shield(remembered_prerender(
                 ticket.fastpath, owner, repo)), SSR_BUDGET_SECONDS)
