@@ -1299,10 +1299,13 @@ overview).
   `ShellPullsWatch.swift`) is the one reader of the current repository's pull
   list. It reads on a repository change, when the app comes to the
   foreground, when the account socket reconnects, on the relay `pulls` frame
-  (`ShellBadges.install` chains `AccountEventChannel.onTopic`), and every 20 s
-  (`NewPullsMarker.pollEvery`: 5 minutes in battery saver or at thermal status
-  severe, none from critical; the loop only runs in the foreground). A read
-  that lands while one is running queues one more. The Pull requests page
+  (`ShellBadges.install` chains `AccountEventChannel.onTopic`). It does not
+  poll: the pull request's port added a 20 s foreground loop
+  (`NewPullsMarker.pollEvery`, as iOS has), which the no-display-polling rule
+  (`www/docs/operations/polling-elimination.md`) forbids, and the `pulls`
+  frame already says when the list changed, so the loop was removed; core
+  keeps `pollEvery` with its iOS tests. A read that lands while one is running
+  queues one more. The Pull requests page
   (`PullsTabContent`) takes the watch's list when it changes, supports pull to
   refresh, keeps its list when a refresh fails, and marks pulls seen while it
   is open.
@@ -2076,7 +2079,12 @@ iOS, so a user switching phones keeps the same switches.
   with the 864 s countdown ring redrawn each second), the stage mark (bottom
   right: search, edit, send, check for 3 s, pause on the warning colour) and a
   spinner while an email is in progress. Tap writes to the contact;
-  long-press toggles auto-send. `SuggestionModeRow` is the You hub switch.
+  long-press turns auto-send off at once, but turning it on (long-press or
+  the accessibility action) first asks "Send emails for you?", because it
+  sends the first email immediately and then up to 100 a day without showing
+  each one. Contact pictures are read with a bounded loop (`readNBytes(int)`
+  exists only from Android 13) and decoded downsampled to about 256 px, so a
+  huge picture in CRM data cannot exhaust memory. `SuggestionModeRow` is the You hub switch.
 - **Auto-send.** `ShellAutoSend` with `GenieAutoSendPace` (`shell/auto_send*`)
   sends one email every 864 s, 100 a day, through `POST
   /api/crm/<org>/outreach/auto` to the best email contact in a CRM with Zoho
@@ -2141,3 +2149,32 @@ their own.
   `DjNowPlayingChip`, `DjMediaService` and the `dj-share` file path come with
   it.
 
+
+## 34. Fixes made when the parity pull requests merged (2026-10-20)
+
+- **Stickers in bubble conversations.** Direct chats and private rooms draw
+  bubbles (`ChatBubbleRow`), which did not show `row.stickers` although the
+  long-press menu offered Add sticker. The stickers now sit on the bubble's
+  bottom corner and toggle through `ChatBubbleActions.onSticker`.
+- **Screen capture.** `CaptureOverlay` says "Copied to clipboard" only when
+  the copy succeeded, else "Could not copy the picture".
+- **Home drag.** `shellDragSource` ends the drag in a `finally`, so a gesture
+  cancelled mid-drag (a tile dragged across sections) no longer leaves the
+  floating preview on screen.
+- **Sensors.** `StepsSensors.refresh` is `@Synchronized` (it is called from
+  the main thread and from background threads, which could register a
+  listener twice or leave one registered), and `DirectLiveMotionFeed.stop`
+  always unregisters, so a half-failed start cannot leak its listener.
+- **Backups.** `nexus/` (scan history) is excluded from backup and device
+  transfer next to `chat-history/`; the app already sets
+  `allowBackup="false"`.
+- **Vault import.** `VaultTransfer.readCsv` refuses an archive whose CSV entry
+  is itself an archive (`zip_unreadable`) instead of following it, so a
+  self-containing ZIP can no longer recurse until the app crashes
+  (`testAnArchiveInsideTheArchiveIsRefusedNotFollowed`).
+- **Kept as on iOS, worth a product decision for both apps.** A direct chat
+  shares the phone's motion with the other person while it is open
+  (`DirectLiveFeature`, as iOS `MessagesConversationView.startSharing`), with
+  no setting; and NEXUS counts `10.0.0.0/8` and `100.64.0.0/10` as the local
+  network without asking for confirmation, which on mobile data covers the
+  carrier's network (`IPv4Addr.isLocalScope`, as iOS `IPAddress`).

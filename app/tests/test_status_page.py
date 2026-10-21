@@ -4619,7 +4619,7 @@ def test_core_mail_status_skips_rows_from_before_delivery_tracking():
     db.row_factory = sqlite3.Row
     db.execute("CREATE TABLE mail_sends (send_id TEXT, sent_at INTEGER, "
                "status TEXT NOT NULL DEFAULT '', status_at INTEGER NOT NULL DEFAULT 0, "
-               "dsn TEXT NOT NULL DEFAULT '')")
+               "dsn TEXT NOT NULL DEFAULT '', cause TEXT NOT NULL DEFAULT '')")
 
     async def d1_first(_env, sql, *params):
         row = db.execute(sql, params).fetchone()
@@ -4633,15 +4633,15 @@ def test_core_mail_status_skips_rows_from_before_delivery_tracking():
     now = 2_000_000_000_000
     hour = 60 * 60 * 1000
     check = lambda: asyncio.run(module._core_mail_status(None, now))
-    db.execute("INSERT INTO mail_sends VALUES ('legacy', ?, '', 0, '')", (now - hour,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('legacy', ?, '', 0, '')", (now - hour,))
     assert check() == (True, "")
-    db.execute("INSERT INTO mail_sends VALUES ('old', ?, 'delivery', 1, '2.0.0')", (now - 2 * hour,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('old', ?, 'delivery', 1, '2.0.0')", (now - 2 * hour,))
     assert check() == (True, "")
-    db.execute("INSERT INTO mail_sends VALUES ('stuck', ?, 'accepted', 1, '')", (now - hour // 2 - 1,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('stuck', ?, 'accepted', 1, '')", (now - hour // 2 - 1,))
     assert check() == (False, "The most recent email has no delivery event after 30 minutes")
-    db.execute("INSERT INTO mail_sends VALUES ('fresh', ?, 'accepted', 1, '')", (now - 60_000,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('fresh', ?, 'accepted', 1, '')", (now - 60_000,))
     assert check() == (True, "")
-    db.execute("INSERT INTO mail_sends VALUES ('bounced', ?, 'bounce', 1, '')", (now - 1000,))
+    db.execute("INSERT INTO mail_sends(send_id,sent_at,status,status_at,dsn) VALUES ('bounced', ?, 'bounce', 1, '')", (now - 1000,))
     assert check() == (False, "The most recent email was reported as bounce")
 
 
@@ -4655,8 +4655,9 @@ def _core_mail_module(rows):
     db.row_factory = sqlite3.Row
     db.execute("CREATE TABLE mail_sends (send_id TEXT, sent_at INTEGER, "
                "status TEXT NOT NULL DEFAULT '', status_at INTEGER NOT NULL DEFAULT 0, "
-               "dsn TEXT NOT NULL DEFAULT '')")
-    db.executemany("INSERT INTO mail_sends VALUES (?, ?, ?, 1, ?)", rows)
+               "dsn TEXT NOT NULL DEFAULT '', cause TEXT NOT NULL DEFAULT '')")
+    db.executemany("INSERT INTO mail_sends VALUES (?, ?, ?, 1, ?, ?)",
+                   [tuple(row) + ("",) * (5 - len(row)) for row in rows])
 
     async def d1_first(_env, sql, *params):
         row = db.execute(sql, params).fetchone()
@@ -4694,6 +4695,19 @@ def test_core_mail_status_names_the_postfix_cause(status, dsn, age_minutes,
     now = 2_000_000_000_000
     module = _core_mail_module(
         [("latest", now - age_minutes * 60_000, status, dsn)])
+    assert asyncio.run(module._core_mail_status(None, now)) == expected
+
+
+@pytest.mark.parametrize("cause,expected", [
+    ("recipient", (True, "")),
+    ("", (False, "The most recent email was reported as bounce: the "
+     "recipient's server refused it for security or policy reasons (5.7.1)")),
+])
+def test_core_mail_status_passes_a_policy_coded_missing_recipient(cause,
+                                                                  expected):
+    now = 2_000_000_000_000
+    module = _core_mail_module(
+        [("latest", now - 60_000, "bounce", "5.7.1", cause)])
     assert asyncio.run(module._core_mail_status(None, now)) == expected
 
 

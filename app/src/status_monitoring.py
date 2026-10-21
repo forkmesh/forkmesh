@@ -416,7 +416,7 @@ async def _core_mail_status(env, now):
         return False, "The core mail service (Postfix) is not answering"
     row = await d1_first(
         env,
-        "SELECT status,sent_at,dsn FROM mail_sends WHERE sent_at>=? "
+        "SELECT status,sent_at,dsn,cause FROM mail_sends WHERE sent_at>=? "
         "AND status<>'' ORDER BY sent_at DESC LIMIT 1",
         int(now) - EMAIL_STATUS_LOOKBACK_MS,
     )
@@ -424,9 +424,10 @@ async def _core_mail_status(env, now):
         return True, ""
     status = clean_string(row.get("status") or "", 40).strip().lower()
     dsn = clean_string(row.get("dsn") or "", 16).strip()
+    cause = clean_string(row.get("cause") or "", 16).strip()
     old = int(now) - max(0, int(row.get("sent_at") or 0)) >= EMAIL_DELIVERY_GRACE_MS
     if status in ("bounce", "reject"):
-        if dsn in EMAIL_RECIPIENT_ADDRESS_DSNS:
+        if dsn in EMAIL_RECIPIENT_ADDRESS_DSNS or cause == "recipient":
             return True, ""
         return False, ("The most recent email was reported as " + status
                        + _mail_dsn_cause(dsn))

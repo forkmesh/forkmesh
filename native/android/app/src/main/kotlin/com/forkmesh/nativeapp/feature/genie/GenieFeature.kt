@@ -33,6 +33,7 @@ import java.net.URL
 
 object GenieFeature {
     const val IMAGE_BYTES = 2_000_000
+    const val PICTURE_PIXELS = 256
     private var app: Context? = null
 
     var prefs: PrefStore = MemoryPrefStore()
@@ -90,7 +91,7 @@ object GenieFeature {
         }
         for (url in urls.take(4)) {
             val data = fetch(url) ?: continue
-            val bitmap = runCatching { BitmapFactory.decodeByteArray(data, 0, data.size) }.getOrNull() ?: continue
+            val bitmap = runCatching { decodePicture(data) }.getOrNull() ?: continue
             return bitmap.asImageBitmap()
         }
         return null
@@ -103,12 +104,32 @@ object GenieFeature {
         connection.setRequestProperty("User-Agent", "ForkMesh-Android")
         try {
             if (connection.responseCode != 200) return@runCatching null
-            val bytes = connection.inputStream.use { it.readNBytes(IMAGE_BYTES + 1) }
+            val bytes = connection.inputStream.use { readBounded(it, IMAGE_BYTES + 1) }
             if (bytes.size > IMAGE_BYTES) null else bytes
         } finally {
             connection.disconnect()
         }
     }.getOrNull()
+
+    private fun readBounded(input: java.io.InputStream, limit: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (out.size() < limit) {
+            val read = input.read(buffer, 0, minOf(buffer.size, limit - out.size()))
+            if (read < 0) break
+            out.write(buffer, 0, read)
+        }
+        return out.toByteArray()
+    }
+
+    private fun decodePicture(data: ByteArray): android.graphics.Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= PICTURE_PIXELS) sample *= 2
+        return BitmapFactory.decodeByteArray(data, 0, data.size, BitmapFactory.Options().apply { inSampleSize = sample })
+    }
 
     fun openUrl(url: String): Boolean {
         val context = app ?: return false

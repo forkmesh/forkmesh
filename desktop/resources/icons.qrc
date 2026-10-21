@@ -6,6 +6,7 @@
         <file alias="book.svg">icons/octicons/book.svg</file>
         <file alias="broadcast.svg">icons/octicons/broadcast.svg</file>
         <file alias="calendar.svg">icons/octicons/calendar.svg</file>
+        <file alias="check.svg">icons/octicons/check.svg</file>
         <file alias="check-circle.svg">icons/octicons/check-circle.svg</file>
         <file alias="check-white.svg">icons/octicons/check-white.svg</file>
         <file alias="chevron-down.svg">icons/octicons/chevron-down.svg</file>

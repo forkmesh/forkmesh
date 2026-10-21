@@ -4707,7 +4707,8 @@ SCHEMA_STATEMENTS = [
         sent_at INTEGER NOT NULL,
         status TEXT NOT NULL DEFAULT '',
         status_at INTEGER NOT NULL DEFAULT 0,
-        dsn TEXT NOT NULL DEFAULT '')""",
+        dsn TEXT NOT NULL DEFAULT '',
+        cause TEXT NOT NULL DEFAULT '')""",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_sends_message "
     "ON mail_sends(message_id)",
     "CREATE INDEX IF NOT EXISTS idx_mail_sends_sent ON mail_sends(sent_at)",

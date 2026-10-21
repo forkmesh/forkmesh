@@ -232,7 +232,7 @@ internal object CaptureOverlay {
         data object Waiting : Step()
         data class Picking(val screen: Bitmap) : Step()
         data class Marking(val crop: Bitmap) : Step()
-        data object Copied : Step()
+        data class Copied(val ok: Boolean) : Step()
     }
 
     fun show(activity: Activity, x: Float, y: Float) {
@@ -300,21 +300,21 @@ internal object CaptureOverlay {
                         close()
                         return@LaunchedEffect
                     }
-                    withContext(Dispatchers.IO) { runCatching { CaptureHold.copy(activity, marked.bytes) } }
-                    step = Step.Copied
+                    val copied = withContext(Dispatchers.IO) { runCatching { CaptureHold.copy(activity, marked.bytes) }.isSuccess }
+                    step = Step.Copied(copied)
                 }
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
                     Image(now.crop.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 }
             }
-            Step.Copied -> {
+            is Step.Copied -> {
                 LaunchedEffect(Unit) {
                     delay(CaptureHold.shownMs)
                     close()
                 }
                 Box(Modifier.fillMaxSize().safeDrawingPadding().padding(top = 12.dp), contentAlignment = Alignment.TopCenter) {
                     Text(
-                        "Copied to clipboard",
+                        if (now.ok) "Copied to clipboard" else "Could not copy the picture",
                         Modifier
                             .background(Fm.colors.bgElevated, RoundedCornerShape(50))
                             .padding(horizontal = 16.dp, vertical = 10.dp),
