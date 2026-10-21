@@ -2836,7 +2836,6 @@
     }
 
     if (entries === null) {
-      // Still reading the folder: no "empty" claim, and no rows to grow from.
     } else if (entries.length) {
       rows.push(entries.map((entry) => {
         const isTree = entry.type === "tree";

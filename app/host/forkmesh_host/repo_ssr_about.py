@@ -1,24 +1,3 @@
-"""The About rail of the server-rendered repository first view (repo_ssr).
-
-The dashboard fills the rail from four reads after it boots (stats, the
-.forkmesh listing, the contributor roster and the size map), so a first view
-that drew only placeholders changed under the visitor twice: once when the
-page arrived and again when those reads came back. The node reads them from
-its own Git gateway while it renders the page, once per commit:
-
-* ``extras()`` fetches them (remembered per commit, so a busy page costs no
-  gateway reads after the first view of a push);
-* ``rail_values()`` turns them into what the rail shows - file count, size,
-  languages and contributors - the way the dashboard computes them
-  (06-repo-content.js: loadRepoAboutStats, parseRepoContributorRoster,
-  renderRepoAboutLanguages, renderRepoAboutRoster);
-* ``seed_reads()`` hands the same answers to the dashboard (trimmed to what
-  the rail uses), so its loaders render the rail in the frame it takes the
-  page over, with no request and no placeholder in between.
-
-Everything that reaches HTML is escaped by the caller's templates; this module
-returns plain values.
-"""
 
 from __future__ import annotations
 
@@ -27,8 +6,6 @@ import json
 import re
 import urllib.parse
 
-# 06-repo-content.js REPO_LANGUAGE_EXTENSIONS / REPO_LANGUAGE_COLORS
-# (tests/host/test_repo_ssr.py checks the two stay identical).
 LANGUAGE_EXTENSIONS = {
     "c": "C", "h": "C++", "cc": "C++", "cpp": "C++", "cxx": "C++", "hpp": "C++",
     "py": "Python", "js": "JavaScript", "mjs": "JavaScript", "jsx": "JavaScript",
@@ -56,8 +33,6 @@ ROSTER_PATH = ROSTER_DIR + "/contributors.json"
 ROSTER_MAX_CHARS = 2 * 1024 * 1024
 ROSTER_MAX_ROWS = 10000
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,99}$", re.I)
-# Author rows handed to the dashboard (without their weekly activity, the bulk
-# of a /stats answer); its bot-adjusted contributor count reads every row.
 STATS_CONTRIBUTORS_KEPT = 2000
 EXTRAS_MAX = 64
 
@@ -76,10 +51,6 @@ async def _json(fastpath, url):
 
 
 async def extras(fastpath, base, owner, repo, commit, tree):
-    """The rail's reads at ``commit`` (remembered per commit), or {}.
-
-    ``base`` is the gateway's /v1/public/repositories/<owner>/<repo>/ path and
-    ``tree`` the root listing already read for the first view."""
     key = (owner, repo, commit)
     if key in _extras:
         return _extras[key]
@@ -105,7 +76,6 @@ async def extras(fastpath, base, owner, repo, commit, tree):
                 and blob.get("encoding") != "base64":
             roster = parse_roster(str(blob.get("content") or ""))
     if roster:
-        # Only what the rail shows is kept in memory (a roster can be MBs).
         roster = {"count": roster["count"], "rows": roster["rows"][:CONTRIBUTORS_SHOWN]}
     out = {
         "stats": _trim_stats(stats) if stats and stats.get("ok") is not False else None,
@@ -128,7 +98,6 @@ def _int(value):
 
 
 def parse_roster(text):
-    """06-repo-content.js parseRepoContributorRoster: {count, rows} or None."""
     if not isinstance(text, str) or not text or len(text) > ROSTER_MAX_CHARS:
         return None
     try:
@@ -179,7 +148,6 @@ BOT_PATTERNS = (
 
 
 def is_bot(row, platform=""):
-    """06-repo-content.js repoContributorIsBot."""
     name = str(row.get("name") or "").strip()
     email = str(row.get("email") or "").strip().lower()
     if not name and not email:
@@ -195,7 +163,6 @@ def is_bot(row, platform=""):
 
 
 def languages(stats):
-    """[(language, weight)] ranked as renderRepoAboutLanguages draws them."""
     tally = {}
     for ext, info in ((stats or {}).get("extensions") or {}).items():
         language = LANGUAGE_EXTENSIONS.get(str(ext).lower())
@@ -208,7 +175,6 @@ def languages(stats):
 
 
 def rail_values(extra, platform=""):
-    """What the About rail shows, or {} when nothing was read."""
     if not extra:
         return {}
     stats = extra.get("stats") or {}
@@ -231,8 +197,6 @@ def rail_values(extra, platform=""):
 
 
 def _trim_stats(stats):
-    """A /stats answer without what the rail never reads (per-author weekly
-    activity, extensions no language claims)."""
     trimmed = {key: value for key, value in stats.items()
                if key not in ("contributors", "extensions")}
     trimmed["extensions"] = {
@@ -249,8 +213,6 @@ def _trim_stats(stats):
 
 
 def seed_reads(extra, ref):
-    """The dashboard's reads of the rail, keyed as repoReadSeedKey builds them
-    for ``ref`` (the branch the page shows), trimmed to what the rail uses."""
     if not extra or not ref:
         return {}
     reads = {}
@@ -259,7 +221,6 @@ def seed_reads(extra, ref):
     if stats:
         trimmed = _trim_stats(stats)
         if extra.get("roster"):
-            # A repository with a roster shows the roster, not the authors.
             trimmed["contributors"] = []
         reads["stats?" + suffix] = trimmed
     listing = extra.get("listing")
@@ -280,7 +241,6 @@ def seed_reads(extra, ref):
 
 
 def format_size(size):
-    """02-helpers.js formatSize."""
     value = float(size or 0)
     units = ("B", "KB", "MB", "GB", "TB")
     unit = 0

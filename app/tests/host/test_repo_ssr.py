@@ -327,8 +327,6 @@ def _tablist(view):
 
 
 def test_first_view_tabs_follow_the_cached_about():
-    # Without a remembered /about the default strip is drawn (features on), so
-    # the tabs are in the first paint instead of joining it later.
     plain = _tablist(repo_ssr.render_view(DATA))
     assert re.findall(r"<span>(Code|Issues|Pull requests|Discussions|Insights|Projects|Actions)</span>",
                       plain) == ["Code", "Issues", "Pull requests", "Discussions", "Insights",
@@ -413,7 +411,6 @@ def test_inject_fills_the_header_and_seeds_the_dashboard():
     assert "<span>Issues</span>" not in view and "<span>Pull requests</span>" in view
 
 
-# -- About rail values (repo_ssr_about) --------------------------------------
 
 from forkmesh_host import repo_ssr_about  # noqa: E402
 
@@ -448,7 +445,6 @@ def test_language_tables_match_the_dashboard():
 def test_roster_and_values_follow_the_dashboard_rules():
     roster = EXTRAS["roster"]
     assert roster["count"] == 12
-    # Commits descending, ties in file order; unsafe slugs and profiles dropped.
     assert [(row["name"], row["slug"], row["profile"]) for row in roster["rows"]] == [
         ("Bob", "", ""), ("Cy", "cy", ""), ("Ada <script>", "ada", "https://example.test/ada")]
     values = repo_ssr_about.rail_values(EXTRAS)
@@ -478,7 +474,6 @@ def test_seed_reads_are_keyed_like_the_dashboard_reads():
     assert shown["count"] == 12 and len(shown["contributors"]) == 3
     plain = repo_ssr_about.seed_reads(dict(EXTRAS, roster=None), "main")
     assert plain["stats?ref=main"]["contributors"] == [{"name": "Ada", "commits": 3}]
-    # The key builder the dashboard uses: decoded values, sorted names.
     source = (DASHBOARD / "js" / "06-repo-content.js").read_text("utf-8")
     assert "pairs.sort((a, b) => (a[0] < b[0]" in source
     assert "`${match[1].toLowerCase()}|${operation}?${pairs.map(([name, value]) => `${name}=${value}`).join(\"&\")}`" in source
@@ -500,7 +495,6 @@ def test_about_rail_is_drawn_with_its_values_and_escaped():
     assert 'href="https://example.test/ada" target="_blank"' in rail
     assert '>+9</a>' in rail and 'href="/forkmesh/blob/.forkmesh/contributors/contributors.json"' in rail
     assert rail.count("data-repo-contributor-avatar") == 3
-    # The same classes the dashboard draws, so the take-over does not move.
     source = (DASHBOARD / "js" / "06-repo-content.js").read_text("utf-8")
     assert repo_ssr.AVATAR_CLASS in source
     assert 'class="h-full shrink-0 first:rounded-l-full last:rounded-r-full"' in source
@@ -559,6 +553,24 @@ def test_a_stale_first_view_waits_briefly_for_a_newer_one(monkeypatch):
             await asyncio.sleep(delay)
     assert asyncio.run(main(0)) == "new"
     assert asyncio.run(main(repo_ssr.SSR_REFRESH_SECONDS * 2)) == "old"
+
+
+def test_a_repository_that_stopped_answering_drops_its_remembered_first_view(
+        monkeypatch):
+    import asyncio
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        key = ("acme", "gone")
+        repo_ssr._prerendered[key] = (loop.time() - repo_ssr.PRERENDER_FRESH_SECONDS - 1,
+                                      {"commit": "old"})
+
+        async def prerender(_fastpath, _owner, _repo):
+            return None
+        monkeypatch.setattr(repo_ssr, "prerender", prerender)
+        first = await repo_ssr.remembered_prerender(object(), *key)
+        return first, key in repo_ssr._prerendered
+    assert asyncio.run(main()) == (None, False)
 
 
 def test_about_answers_are_remembered_past_the_micro_cache():
