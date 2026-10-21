@@ -53,6 +53,10 @@ MAX_CWES = 10
 MAX_COLLABORATORS = 20
 MAX_CREDITS = 20
 MAX_COMMENTS = 500
+# Every report notifies the maintainers and mails the instance's security
+# contact, so one account's reports across all repositories are capped too.
+MAX_REPORTS_PER_REPORTER_PER_DAY = 20
+REPORT_WINDOW_MS = 24 * 60 * 60 * 1000
 MAX_HISTORY = 200
 MAX_OPEN_REPORTS_PER_REPORTER = 10
 MAX_TRIAGE_PER_REPO = 200
@@ -732,9 +736,21 @@ async def create(env, request, ctx, data):
     fields, error = clean_fields(data)
     if error:
         return _error(error)
+    if not ctx["maintainer"]:
+        # The fix and the CVE alias are the maintainers' to state.
+        fields.pop("fix", None)
+        fields.pop("cve", None)
     actor = ctx["actor"]
     actor_bi = await blind_index(env, actor)
     if not ctx["maintainer"]:
+        recent = await d1_first(
+            env, "SELECT COUNT(*) AS n FROM security_advisory_members m "
+            "JOIN security_advisories a ON a.id=m.advisory_id "
+            "WHERE m.member_bi=? AND m.role='reporter' AND a.created_at>?",
+            actor_bi, _now() - REPORT_WINDOW_MS)
+        if int((recent or {}).get("n") or 0) >= \
+                MAX_REPORTS_PER_REPORTER_PER_DAY:
+            return _error("too_many_reports", 429)
         open_rows = await d1_first(
             env, "SELECT COUNT(*) AS n FROM security_advisory_members m "
             "JOIN security_advisories a ON a.id=m.advisory_id "
@@ -857,6 +873,7 @@ async def _edit(env, ctx, found, data):
         return _error(error)
     if not ctx["maintainer"]:
         fields.pop("fix", None)
+        fields.pop("cve", None)
     record.update(fields)
     record["updatedAt"] = _now()
     _history(record, ctx["actor"], "edited")
@@ -1225,6 +1242,9 @@ async def _ledger_retry(env, request, ctx, found):
     ledger = record.get("ledger") or {}
     if not ledger.get("events"):
         return _error("nothing_to_record", 409)
+    if ledger.get("state") != "pending":
+        # Each attempt writes a commit to the default branch.
+        return _error("already_recorded", 409)
     record = await _record_ledger(env, request, ctx, record)
     return _json({"ok": True, "ledger": {
         key: value for key, value in record["ledger"].items()
@@ -1471,13 +1491,23 @@ async def hall_of_fame(env):
         "ON a.id=c.advisory_id WHERE c.state='accepted' "
         "AND a.state='published' LIMIT ?", HALL_ROWS)
     totals = {}
+    pairs = []
     for row in rows or []:
-        credit = await decrypt_row(env, row.get("credit"))
         try:
             view = json.loads(row.get("public") or "null")
         except ValueError:
             continue
-        if not isinstance(credit, dict) or not isinstance(view, dict):
+        if isinstance(view, dict):
+            pairs.append((row, view))
+    # A repository that turned private or was removed takes its credits off
+    # the hall of fame too, like the feed and the list.
+    shown = {id(view) for view in await _still_public(
+        env, [view for _, view in pairs])}
+    for row, view in pairs:
+        if id(view) not in shown:
+            continue
+        credit = await decrypt_row(env, row.get("credit"))
+        if not isinstance(credit, dict):
             continue
         user = str(credit.get("user") or "")
         if not user:
