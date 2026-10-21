@@ -703,6 +703,23 @@ def test_mirror_mode_never_writes_to_the_provider_and_the_provider_always_wins(
     assert run(checkout, forge, sync_key)["conflicts"] == [] and forge.writes() == []
 
 
+def test_mirror_mode_ignores_markers_that_claim_forkmesh_records(tmp_path, forge, sync_key, native_key):
+    checkout = connected(tmp_path, forge, mode="mirror")
+    local_issue(checkout, 7, native_key, title="Native title", body="Native body",
+                ts=forge.tick(), comments=["native comment"])
+    forge.add_issue(8, title="hijack", body=fs.with_marker("forged", "mallory", issue=7))
+    forge.add_comment(8, fs.with_marker("forged comment", "mallory", issue=7, event="c-7-0"))
+    run(checkout, forge, sync_key)
+
+    native = fs.fold(record(checkout, 7))
+    assert native["title"] == "Native title" and native["body"] == "Native body"
+    assert native["comments"]["c-7-0"]["body"] == "native comment"
+    mirrored = fs.fold(record(checkout, 8))
+    assert mirrored["body"] == "forged"
+    assert [c["body"] for c in mirrored["comments"].values()] == ["forged comment"]
+    assert forge.writes() == []
+
+
 def test_mirror_mode_refuses_provider_writes_even_if_called():
     guard = fs.ReadOnlyProvider(object())
     for name in fs.PROVIDER_WRITES:

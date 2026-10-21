@@ -591,6 +591,8 @@ class Engine:
             if comment.id in by_remote:
                 continue
             body, marker = split_marker(comment.body)
+            if self.mirror:
+                marker = None
             eid = str((marker or {}).get("event") or f"forge-{self.p}-comment-{comment.id}")
             if eid in mapped:
                 self.report.warnings.append(
@@ -625,7 +627,7 @@ class Engine:
 
     def adopt_or_import(self, issue: Any, linked: dict[str, int], now: int) -> None:
         body, marker = split_marker(issue.body)
-        claimed = marker.get("issue") if marker else None
+        claimed = marker.get("issue") if marker and not self.mirror else None
         if isinstance(claimed, int) and claimed in self.local.records:
             entry = self.ledger["issues"].get(str(claimed))
             if entry and entry.get("remoteId") and str(entry["remoteId"]) != issue.id:

@@ -53,6 +53,10 @@ ledger stores `"mode": "mirror"`; a ledger without `mode` is two-way.
   adapter so any write method raises before a request is made, so a read-only
   token is enough and a token with write scope is never used to write.
 - ForkMesh-only comments and issues stay in ForkMesh.
+- Provider records are always imported as new mirrored records: a
+  `forkmesh-forge-sync` marker in a provider issue or comment is ignored, so a
+  forged marker cannot claim, and then overwrite, a ForkMesh-only issue or
+  comment.
 
 ## Identities
 
