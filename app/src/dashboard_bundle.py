@@ -52,6 +52,7 @@ FRAGMENTS = (
     "09-microjobs.js",
     "09-notes.js",
     "09-plugin-menu.js",
+    "09-recent-pushes.js",
     "09-referrals.js",
     "09-repo-activity.js",
     "09-runners.js",

@@ -782,7 +782,9 @@
     const headSelect = container.querySelector("[data-repo-pull-head]");
     if (baseSelect) baseSelect.value = presetBase || defaultBranch;
     if (headSelect) headSelect.value = headDefault;
-    container.querySelector("[data-repo-pull-title]")?.focus();
+    const titleInput = container.querySelector("[data-repo-pull-title]");
+    if (titleInput && preset?.title) titleInput.value = String(preset.title).slice(0, 240);
+    titleInput?.focus();
     void fillPullComposeTargets(repo, container.querySelector("[data-repo-pull-new-form]"));
   }
 
@@ -855,10 +857,10 @@
     return "This comparison could not be read from a live mirror right now. Refresh to try again.";
   }
 
-  async function openRepoCompare(repo, base, head, { navigate = true } = {}) {
+  async function openRepoCompare(repo, base, head, { navigate = true, expand = false, title = "" } = {}) {
     const container = $("[data-repo-pulls]");
     if (!container || !repo || !base || !head) return;
-    const compare = { base, head };
+    const compare = { base, head, title };
     state.repoCompare = compare;
     state.repoRecordDetail = null;
     state.loadedRepoTabs = state.loadedRepoTabs || {};
@@ -921,6 +923,7 @@
       baseOid: String(comparison?.baseOid || ""),
       headOid: String(comparison?.headOid || ""),
       mergeBaseOid: String(comparison?.mergeBaseOid || ""),
+      title: commits.length ? String(commits[commits.length - 1].body || "").trim().slice(0, 240) : "",
     };
     const viewed = loadRepoCompareViewed(repo, compare);
     const painted = paint(`
@@ -942,6 +945,10 @@
     // A freshly painted pane starts on its first file, as the pull review does.
     const first = files[0]?.path || "";
     if (first) setRepoPullActiveFile(first, { revealRow: true });
+    if (expand && state.session?.nodeName && !repoReadOnlyMirror(repo)) {
+      navigateHistory(`${repoLinkUrl(repo)}/pulls`);
+      openPullCompose(repo, { base, head, title: title || compare.result.title });
+    }
   }
 
   async function handleRemotePullSubmit(repo, remote, { title, body, base, head, submit, setHint, titleInput, bodyInput }) {
@@ -1011,6 +1018,7 @@
       }
       const targetRepo = result.targetRepo || repo;
       const crossFork = targetRepo !== repo;
+      noteRecentPushPullOpened(repo, head);
       const item = {
         number,
         title,
@@ -2546,7 +2554,9 @@
       } else if (active === "pulls" && compareRoute) {
         // A comparison deep link (/owner/repo/compare/base...head) opens the
         // diff viewer directly; Back to the list loads it lazily from there.
-        openRepoCompare(repo, compareRoute.base, compareRoute.head, { navigate: false });
+        openRepoCompare(repo, compareRoute.base, compareRoute.head, {
+          navigate: false, expand: compareRoute.expand, title: compareRoute.title,
+        });
       } else {
         loadRepoCollection(repo, active, `[data-repo-${active}]`);
       }
