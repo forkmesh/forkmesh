@@ -945,6 +945,34 @@ def test_a_split_csv_import_pings_start_and_finish_and_explains_skipped_rows():
         "CRM import started: one.csv", "CRM import finished: one.csv"]
 
 
+def test_a_full_crm_skips_new_import_rows_and_still_updates_known_ones():
+    runtime = Runtime()
+    call(runtime.use("POST", body={"name": "Ada", "email": "ada@example.com"}),
+         "/api/crm/acme/contacts")
+    runtime.db.executemany(
+        "INSERT INTO crm_contacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        [("filler%04d" % index, "org:acme", "acme", "", "", "", "", "", 1, 1,
+          'sealed:{"name":"x"}') for index in range(crm.MAX_CONTACTS - 1)])
+    imported = call(runtime.use("POST", body={
+        "fileName": "leads.csv",
+        "csv": "name,email,company\nAda,ada@example.com,Engines\n"
+               "Bob,bob@example.com,Looms\n",
+    }), "/api/crm/acme/contacts/import")
+    assert imported["status"] == 200
+    data = imported["data"]
+    assert (data["created"], data["updated"], data["skipped"]) == (0, 1, 1)
+    assert data["errors"] == [{
+        "row": 3, "error": "crm_full",
+        "message": "Row 3 was not added because the CRM already holds %d contacts."
+                   % crm.MAX_CONTACTS}]
+    assert runtime.pings[-1]["title"] == (
+        "CRM import finished with 1 skipped row: leads.csv")
+
+    created = call(runtime.use("POST", body={"name": "Grace"}),
+                   "/api/crm/acme/contacts")
+    assert (created["status"], created["data"]) == (409, {"error": "crm_full"})
+
+
 def test_an_abandoned_split_import_pings_failure_and_drops_its_empty_sheet():
     runtime = Runtime()
     envelope = {"id": "import-0002", "parts": 3, "rows": 250}
