@@ -1,0 +1,63 @@
+QHeaderView { background-color: transparent; border: none; }
+QHeaderView::section {
+    background-color: transparent; color: @fgMuted; border: none;
+    border-bottom: 1px solid @border; padding: 8px 12px;
+    font-size: 12px; font-weight: 500;
+}
+#issueTable QHeaderView::section {
+    background-color: transparent; color: @fgMuted; border: none;
+    border-bottom: 1px solid @border; padding: 7px 12px; font-weight: 500;
+}
+
+QTableView, QTableWidget {
+    selection-background-color: @accentSubtle; selection-color: @fg; outline: none;
+}
+QTableView::item:selected, QTableWidget::item:selected {
+    background-color: @accentSubtle; color: @fg;
+}
+
+QTableView[dataTable="true"] {
+    background-color: @bg; alternate-background-color: @bg;
+    border: 1px solid @border; border-radius: 8px; outline: none;
+}
+QTableView[dataTable="true"]::item {
+    padding: 0px 12px; border: none; border-bottom: 1px solid @border;
+    color: @fgSecondary;
+}
+QTableView[dataTable="true"]::item:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+QTableView[dataTable="true"]::item:selected,
+QTableView[dataTable="true"]::item:selected:hover {
+    background-color: @accentSubtle; color: @fg;
+}
+QTableView[dataTable="true"] QHeaderView::section {
+    background-color: transparent; color: @fgMuted; border: none;
+    border-bottom: 1px solid @border; padding: 9px 12px;
+    font-size: 12px; font-weight: 500;
+}
+
+QTableView::corner, QTreeView::corner { background: transparent; border: none; }
+QTableView QScrollBar:vertical, QTreeView QScrollBar:vertical {
+    background: transparent; width: 8px; margin: 0px;
+}
+QTableView QScrollBar:horizontal, QTreeView QScrollBar:horizontal {
+    background: transparent; height: 8px; margin: 0px;
+}
+QTableView QScrollBar::handle:vertical, QTreeView QScrollBar::handle:vertical {
+    background: @borderStrong; border-radius: 3px; min-height: 28px; margin: 1px;
+}
+QTableView QScrollBar::handle:horizontal, QTreeView QScrollBar::handle:horizontal {
+    background: @borderStrong; border-radius: 3px; min-width: 28px; margin: 1px;
+}
+QTableView QScrollBar::handle:hover, QTreeView QScrollBar::handle:hover {
+    background: @fgSubtle;
+}
+QTableView QScrollBar::add-line, QTableView QScrollBar::sub-line,
+QTreeView QScrollBar::add-line, QTreeView QScrollBar::sub-line {
+    width: 0px; height: 0px;
+}
+QTableView QScrollBar::add-page, QTableView QScrollBar::sub-page,
+QTreeView QScrollBar::add-page, QTreeView QScrollBar::sub-page {
+    background: none;
+}
