@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""GitHub-style /blob/<ref>/<path> and /tree/<ref>/<path> addresses open the
-file or folder on that ref and settle on the app's own address."""
-
 import json
 import subprocess
 

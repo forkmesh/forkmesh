@@ -107,10 +107,9 @@ def _listing_task(fastpath, owner, repo):
     if pending is None:
         async def run():
             found = await _read_listing(fastpath, owner, repo)
-            if found is not None:
-                if len(_listings) > MAX_LISTINGS:
-                    _listings.clear()
-                _listings[key] = (asyncio.get_running_loop().time(), found)
+            if len(_listings) > MAX_LISTINGS:
+                _listings.clear()
+            _listings[key] = (asyncio.get_running_loop().time(), found)
             return found
         pending = asyncio.ensure_future(run())
         _pending[key] = pending
@@ -123,6 +122,9 @@ async def redirect(fastpath, owner, repo, base, kind, rest):
         return None
     segments = parts(rest)
     if not segments or (kind == "blob" and len(segments) < 2):
+        return None
+    if any(piece in (".", "..") for segment in segments
+           for piece in segment.split("/")):
         return None
     try:
         found = await asyncio.wait_for(

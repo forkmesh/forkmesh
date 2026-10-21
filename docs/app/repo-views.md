@@ -534,6 +534,16 @@ and redirects only on a listed branch, so tags and commits are left to the
 page. A short address is redirected once the Worker's page names its owner.
 The redirect is `no-store` because branches come and go. A path that names no
 branch, or an address that already has a query, is served as before.
+A failed listing (a private or missing repository) is cached for the same
+30 s, so repeated GitHub-style hits on it do not each wait on the gateway.
+An address with a `.` or `..` segment (decoded, so `%2E%2E` and `a%2F..`
+count) is never redirected, so the `Location` header never carries a dot
+segment.
+
+One known cost: the app still writes its own default-branch addresses as
+`/tree/<path>`, so on a repository that also has a branch named like that
+path's first folder (a `docs` branch and a `docs/` folder), such a link opens
+the branch. A shared link that must survive this can carry `?ref=`.
 
 There is no `raw/<ref>/<path>` page route; raw bytes come from
 `/api/repo/<owner>/<repo>/raw?path=&ref=`.

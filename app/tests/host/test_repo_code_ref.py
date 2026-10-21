@@ -1,5 +1,3 @@
-"""GitHub-style /tree/<ref>/<path> and /blob/<ref>/<path> links (repo_code_ref)."""
-
 from __future__ import annotations
 
 import asyncio
@@ -119,6 +117,26 @@ def test_redirect_resolves_known_refs_and_leaves_plain_paths():
         "/alice/tools?ref=dev",
         None, None, None, None]
     assert calls.count("/v1/public/repositories/alice/tools/branches") == 1
+
+
+def test_dot_segments_never_reach_a_redirect_and_misses_are_remembered():
+    async def main():
+        clear()
+        fast = FastPath(LISTING)
+        go = repo_code_ref.redirect
+        found = [
+            await go(fast, "alice", "tools", "/alice/tools", "blob", "main/../../x"),
+            await go(fast, "alice", "tools", "/alice/tools", "blob", "main/%2E%2E/x"),
+            await go(fast, "alice", "tools", "/alice/tools", "blob", "main/a%2F..%2Fb"),
+            await go(fast, "carol", "gone", "/carol/gone", "blob", "main/a"),
+            await go(fast, "carol", "gone", "/carol/gone", "blob", "main/b"),
+        ]
+        calls = list(fast.client().calls)
+        clear()
+        return found, calls
+    found, calls = asyncio.run(main())
+    assert found == [None] * 5
+    assert calls.count("/v1/public/repositories/carol/gone/branches") == 1
 
 
 def test_a_real_folder_named_like_no_ref_stays_a_path():
