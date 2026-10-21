@@ -129,6 +129,15 @@ def test_anyone_can_build_a_theme_with_a_live_preview_at_setup():
     assert "blt" not in PAGE.lower()
 
 
+def test_named_theme_cards_come_from_the_catalogue():
+    assert 'data-start-theme-cards' in PAGE
+    assert '.theme-field[data-named]' in PAGE
+    assert 'fetch("/instance-themes/themes.json"' in SCRIPT
+    assert "if (namedTheme()) return themeState.named;" in SCRIPT
+    assert 'theme.status === "ready"' in SCRIPT
+    assert (ROOT / "app" / "public" / "instance-themes" / "themes.json").is_file()
+
+
 def test_the_example_zip_holds_the_example_settings_and_a_logo():
     import sys
     import zipfile
