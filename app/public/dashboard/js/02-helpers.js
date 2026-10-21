@@ -796,23 +796,42 @@
     return handle && validNodeName(handle) ? publicProfileUrl(handle) : "";
   }
 
+  const FORGE_PROFILES = Object.freeze({ github: { origin: "https://github.com/", label: "GitHub" } });
+  const FORGE_IDENTITY_RE = /^(github):([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)$/;
+
+  function forgeIdentity(name) {
+    const match = FORGE_IDENTITY_RE.exec(String(name || "").trim());
+    if (!match || match[2].includes("--")) return null;
+    const profile = FORGE_PROFILES[match[1]];
+    return { provider: match[1], login: match[2], href: profile.origin + match[2],
+      title: `${match[2]} on ${profile.label}` };
+  }
+
+  function forgeLinkAttrs(forge) {
+    return `href="${escapeHtml(forge.href)}" target="_blank" rel="noopener noreferrer nofollow" data-forge-person="${escapeHtml(forge.provider)}" title="${escapeHtml(forge.title)}"`;
+  }
+
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
     const label = String(name || author || (agent ? "Agent" : "unknown"));
     const bot = agent || issueActorIsBot(label);
     const sessionName = String(state.session?.nodeName || state.session?.email || "");
     const ownAvatar = !bot && label.toLowerCase() === sessionName.toLowerCase()
       ? String(state.session?.avatarPng || "") : "";
-    const handle = bot ? "" : issuePersonHandle(label);
+    const forge = bot ? null : forgeIdentity(label);
+    const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
     const inner = bot
       ? `<i data-lucide="bot" class="${pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5"} text-muted-foreground"></i>`
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
-        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml((label[0] || "?").toUpperCase())}</span>`;
+        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
     const hydrate = handle && !ownAvatar ? ` data-issue-actor-avatar="${escapeHtml(handle)}"` : "";
     if (hydrate) watchIssueActorAvatars();
     const classes = `relative flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary`;
     const title = bot ? `${label} (bot)` : label;
+    if (forge && link) {
+      return `<a ${forgeLinkAttrs(forge)} aria-label="${escapeHtml(forge.title)}" class="${classes} hover:ring-2 hover:ring-[var(--dashboard-link)]">${inner}</a>`;
+    }
     if (handle && link) {
       const href = issuePersonProfileHref(handle);
       return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(`${label}'s profile`)}"${hydrate} class="${classes} hover:ring-2 hover:ring-[var(--dashboard-link)]">${inner}</a>`;
@@ -823,6 +842,10 @@
   function issuePersonNameHtml(name, classes = "font-semibold text-foreground") {
     const label = String(name || "").trim() || "unknown";
     if (issueActorIsBot(label)) return `<span class="${classes}">${escapeHtml(label)}</span>`;
+    const forge = forgeIdentity(label);
+    if (forge) {
+      return `<a ${forgeLinkAttrs(forge)} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">@${escapeHtml(forge.login)}</a>`;
+    }
     const handle = issuePersonHandle(label);
     if (!handle) return `<span class="${classes}">${userNameHtml(label)}</span>`;
     watchIssueActorAvatars();
