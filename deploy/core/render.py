@@ -56,6 +56,8 @@ SSH_FINGERPRINT = re.compile(r"^SHA256:[A-Za-z0-9+/]{43}$")
 LOGREAD_PUBLIC_KEY = re.compile(r"^ssh-ed25519 (AAAAC3NzaC1lZDI1NTE5[A-Za-z0-9+/]{48}) fmnext-logread$")
 LOGREAD_PROGRAM = "/opt/forkmesh-next/bin/fmnext-logread"
 LOGREAD_AUTHORIZED_KEY = "/etc/forkmesh-next/logread.authorized_key"
+APP_UPSTREAM_TRY_SECONDS = 30
+UPSTREAM_RETRY_AFTER_SECONDS = 5
 ACCESS_LOG_QUERY_KEYS = ("token", "access_token", "refresh_token", "sig",
                          "signature", "key", "api_key", "code", "password",
                          "secret", "auth", "session")
@@ -1464,7 +1466,7 @@ def caddyfile(fleet, node, paths, per_node=True):
         "\ttransport http {",
         "\t\tkeepalive 10s",
         "\t}",
-        "\tlb_try_duration 10s",
+        "\tlb_try_duration %ds" % APP_UPSTREAM_TRY_SECONDS,
         "\tlb_try_interval 250ms",
         "\tflush_interval -1",
         "}",
@@ -1535,10 +1537,23 @@ def caddyfile(fleet, node, paths, per_node=True):
         "}",
         "",
         *(access_log_snippet() if access_log else []),
+        "# The App unreachable (restart, crash): a JSON answer the clients can",
+        "# read and retry; the status stays 502/504 for the Worker's fallback.",
+        "(upstream_errors) {",
+        "\thandle_errors 502 504 {",
+        "\t\timport security_headers",
+        "\t\theader Content-Type \"application/json; charset=utf-8\"",
+        "\t\theader Cache-Control no-store",
+        "\t\theader Retry-After %d" % UPSTREAM_RETRY_AFTER_SECONDS,
+        "\t\trespond `{\"error\":\"upstream_unavailable\"}` {err.status_code}",
+        "\t}",
+        "}",
+        "",
         "(site_common) {",
         *(["\timport access_log"] if access_log else []),
         "\timport client_headers",
         "\timport security_headers",
+        "\timport upstream_errors",
         "\timport app_body_limits",
         "\tencode zstd gzip",
         "\t# Host-internal and mesh paths are never public. A handle (not a",

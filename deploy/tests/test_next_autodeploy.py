@@ -435,8 +435,48 @@ def test_a_push_during_a_deploy_waits_for_the_next_one(repo, tmp_path):
     assert result_line(late) == ""
     assert list(agent.pending.values()) == [second]
     settle(agent, clock)
+    assert calls == [(first, "auto")]
+    settle(agent, clock, auto.DEPLOY_COOLDOWN_SECONDS)
     assert calls == [(first, "auto"), (second, "auto")]
     assert "deployed %s" % second[:12] in result_line(late)
+
+
+def test_pushes_after_a_deploy_wait_out_the_pause_as_one_deploy(repo, tmp_path):
+    clock, calls = Clock(), []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    root = tmp_path / "actions"
+    first = commit(repo, {"app/a.py": "1\n"}, "1")
+    make_run(root, 1, first)
+    agent.tick()
+    settle(agent, clock)
+    assert calls == [(first, "auto")]
+    later, workspaces = [], []
+    for index in range(3):
+        later.append(commit(repo, {"app/a.py": "late %d\n" % index}, "late %d" % index))
+        workspaces.append(make_run(root, 2 + index, later[-1]))
+        settle(agent, clock, 60)
+    assert calls == [(first, "auto")]
+    assert "left of the pause after the last deploy" in sink_text(workspaces[0])
+    settle(agent, clock, auto.DEPLOY_COOLDOWN_SECONDS)
+    assert calls == [(first, "auto"), (later[-1], "auto")]
+
+
+def test_a_failed_deploy_does_not_pause_the_next_one(repo, tmp_path):
+    clock, calls = Clock(), []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    agent.pipeline = lambda repo_path, target, mode, log, **kwargs: calls.append(
+        (target, mode)) or {"ok": False, "target": target, "rev": target[:12],
+                            "deployed": False, "message": "tests failed"}
+    root = tmp_path / "actions"
+    first = commit(repo, {"app/a.py": "1\n"}, "1")
+    make_run(root, 1, first)
+    agent.tick()
+    settle(agent, clock)
+    second = commit(repo, {"app/a.py": "2\n"}, "2")
+    make_run(root, 2, second)
+    agent.tick()
+    settle(agent, clock)
+    assert [target for target, _ in calls] == [first, second]
 
 
 def test_run_sink_never_follows_a_planted_file_or_link(tmp_path):

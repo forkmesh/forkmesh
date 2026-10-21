@@ -36,6 +36,7 @@ REV_RE = re.compile(r"^[0-9a-f]{7,40}$")
 DEBOUNCE_SECONDS = 3
 SETTLE_SECONDS = 2
 MAX_WAIT_SECONDS = 600
+DEPLOY_COOLDOWN_SECONDS = 300
 POLL_SECONDS = 3
 LOCK_WAIT_SECONDS = 3600
 VERIFY_SECONDS = 120
@@ -1201,7 +1202,7 @@ class Pipeline:
         if tests_error is not None:
             raise tests_error
         self.say("gate 2: passed")
-        self.say("gate 4: next_deploy migrate, restart (one core first, chosen per release, then the rest)")
+        self.say("gate 4: next_deploy migrate, restart (one core at a time, the first chosen per release)")
         self.tool(worktree, lock, ["migrate", "--execute"], DEPLOY_TIMEOUT)
         result["deployed"] = True
         self.tool(worktree, lock, ["restart", "--rev", rev, "--execute"], DEPLOY_TIMEOUT)
@@ -1376,6 +1377,7 @@ class Agent:
         self.last_request_at = None
         self.main_tip = ""
         self.main_changed_at = clock()
+        self.quiet_until = None
         self.worker = None
         self.current = None
         self.idle_log = Log(echo=True, clock=clock)
@@ -1415,8 +1417,12 @@ class Agent:
             sink.write("a deploy of %s is in progress; following it\n" % self.current["rev"])
             self.current["log"].attach(sink)
         else:
-            sink.write("queued: waiting for main to settle (%d s debounce)%s\n" % (
-                DEBOUNCE_SECONDS, "" if state == "armed" else
+            quiet = (self.quiet_until or 0) - now
+            sink.write("queued: waiting for main to settle (%d s debounce)%s%s\n" % (
+                DEBOUNCE_SECONDS,
+                "; %d s left of the pause after the last deploy" % quiet
+                if quiet > 0 else "",
+                "" if state == "armed" else
                 "; auto-deploy is %s (%s)" % (state, reason)))
 
     def finish_run(self, run_id, ok, message):
@@ -1460,6 +1466,8 @@ class Agent:
             self.pending.clear()
             self.first_request_at = self.last_request_at = None
             return
+        if self.quiet_until is not None and self.clock() < self.quiet_until:
+            return
         if ready_to_start(self.clock(), self.first_request_at, self.last_request_at,
                           self.main_changed_at):
             self.start(self.main_tip)
@@ -1497,6 +1505,8 @@ class Agent:
                                 "%s (covers %s)" % (result["message"], commit[:12]))
                 del self.pending[run_id]
         current["log"].close()
+        if result.get("deployed"):
+            self.quiet_until = self.clock() + DEPLOY_COOLDOWN_SECONDS
         if self.pending:
             self.first_request_at = self.last_request_at = self.clock()
         else:

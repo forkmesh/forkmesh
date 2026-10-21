@@ -44,6 +44,12 @@ The agent runs its installed copy, so a commit cannot change how it decides;
 - **Debounce:** deploy once `main` is quiet for a few seconds (10-minute cap);
   deploy the tip; every waiting run the deployed commit contains gets the
   result.
+- **Pause after a deploy:** once a deploy has restarted the cores, the next
+  one waits `DEPLOY_COOLDOWN_SECONDS` (5 minutes), so merges landing in that
+  window ship as one deploy. A deploy that failed before restarting anything
+  (gate 1 to 3) does not pause the next one, so a fix ships at once. On
+  2026-10-21 ten deploys started between 13:02 and 14:22, each right after the
+  one before.
 - Fast-forwarding `main` to a commit first pushed on a branch queues no main
   run; merge with `--no-ff` or run `deploy --commit <sha>`.
 
@@ -75,9 +81,10 @@ The agent runs its installed copy, so a commit cannot change how it decides;
    `/usr/lib/go`, `~/go` or `~/.local/go`; without it every deploy fails at
    this gate rather than skipping the Go tests.
 3. **Build** in a fresh detached worktree.
-4. **Deploy:** upload, migrate, then rolling restart (the first core alone as
-   the canary, then the rest in parallel), each gated on `/readyz` and the
-   running revision, with per-node rollback.
+4. **Deploy:** upload, migrate, then a rolling restart one core at a time
+   (the first chosen per release), each gated on `/readyz` (never ready while
+   sealed) and the running revision before the next one restarts, with
+   per-node rollback.
 5. **Verify** on each node: `/readyz`, `/api/version`, the node name's
    `/readyz`, `/dashboard`, `/login`, and the World deploy marker, retrying up
    to 2 minutes.
@@ -86,7 +93,8 @@ The agent runs its installed copy, so a commit cannot change how it decides;
 
 After the release passes (or for a roll-only push), the agent runs
 `python3 tools/next_fleet.py roll --execute` from the pinned worktree under
-the deploy lock: one core at a time, drain, install `daemon,files,start`,
+the deploy lock: one core at a time, drain, wait the DNS TTL plus 30 s
+(`ROLL_DRAIN_MARGIN_SECONDS`, 90 s in all), install `daemon,files,start`,
 check readyz, units and IDS, undrain, stop at the first failure. Roll paths
 are counted since the last successful roll, so a skipped roll is caught up.
 When `server/` changed, it then runs `roll-runners --idle-wait 0`, which
@@ -162,3 +170,44 @@ Re-run `install` after changing the agent; the unit starts disarmed. Gate
 changes, such as the Go tests and the security must-pass set added on
 2026-10-15, take effect only after `install`. If runs
 never report a result, compare the installed copy with `tools/`.
+
+## Restarts without 502s and 503s
+
+On 2026-10-21 users saw "Notes are unavailable: HTTP 502" and 503s from
+other pages while `main` was deploying. Nothing was wrong in the App code:
+the rollout itself took cores away from clients that were still using them.
+
+- `next_deploy restart` restarted the canary and then the other two cores
+  together, still in DNS. For 10 to 20 s two of three cores had no App
+  behind Caddy: Caddy answered 502 once `lb_try_duration` (10 s) ran out, and
+  the App answered `503 {"error":"sealed"}` until it was unsealed. The
+  desktop saw a WebSocket 502 at 13:10:29, during the n4/n2 restart of
+  `99fa98f28091`.
+- `next_fleet roll` removed a core's A/AAAA records (TTL 60 s) and started
+  its install about 6 s later, so clients still holding the address hit the
+  restart. The desktop saw a 502 at 13:22:09, 31 s after n4 was drained for
+  the roll of `0b105afa2be5`.
+
+What changed:
+
+- Restarts go one core at a time (`tools/next_deploy.py` `restart`); each
+  must pass `/readyz` and report the new revision before the next starts.
+- A roll waits out the DNS TTL plus 30 s after the drain, before the core
+  restarts (`tools/next_fleet.py` `roll`).
+- Caddy keeps a request waiting for the local App for up to
+  `APP_UPSTREAM_TRY_SECONDS` (30 s, `deploy/core/render.py`) instead of 10 s,
+  which covers an App restart. If the App is still unreachable, the shared
+  names answer `{"error":"upstream_unavailable"}` with `Retry-After: 5` (the
+  `upstream_errors` snippet). The status stays 502 or 504, because the
+  forkmesh.com Worker falls back to the per-node names only on those
+  (`www/worker.js` `APP_FALLBACK_STATUSES`). The Caddy install check allows
+  `CADDY_INSTALL_MAX_TIME` (35 s) per request, so a fresh core's `/readyz`
+  is not cut off while Caddy waits for the App.
+- The Notes page retries a failed read 3 times (0.5, 1.5 and 4 s), as
+  `fetchJson` already did, and shows "ForkMesh is restarting" rather than
+  "HTTP 502".
+
+What is still exposed: a browser keeps reusing an HTTP/2 connection to a
+drained core, so DNS does not move it. For those clients the 30 s Caddy wait
+and the client retries are what hide the restart.
+
