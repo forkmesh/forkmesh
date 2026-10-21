@@ -87,3 +87,10 @@ async def bounded_json_request(request, max_bytes=None):
     raw = await bounded_request_text(
         request, int(max_bytes or _json_request_limit(request)))
     return clean_value(json.loads(raw or "{}"))
+
+
+async def bounded_json_request_with_raw(request, max_bytes=None):
+    raw = await bounded_request_text(
+        request, int(max_bytes or _json_request_limit(request)))
+    parsed = json.loads(raw or "{}")
+    return clean_value(parsed), parsed
