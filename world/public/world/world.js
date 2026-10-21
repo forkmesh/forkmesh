@@ -6498,6 +6498,7 @@ class ForkMeshWorld extends HTMLElement {
     this.meshVisitId = "";
     this.meshRoot = null;
     this.meshRootGeneration = 0;
+    this.meshRestoreChecked = false;
     this.meshPlaced = [];
     this.meshSwitching = false;
     this.arrivalVisa = takeArrivalVisa();
@@ -11650,6 +11651,7 @@ class ForkMeshWorld extends HTMLElement {
     this.meshHexNeighbors = placed.filter((world) => world.shape === "hex");
     this.worldMeshLinks()?.setNeighbors(this.meshLinkWorlds(placed));
     this.applyWorldMeshArrival();
+    this.leaveRestoredNeighbourHex();
     this.syncWorldMeshPosition();
   }
 
@@ -11809,10 +11811,46 @@ class ForkMeshWorld extends HTMLElement {
     const standing = rootId || this.worldMesh?.self?.id || "";
     let visit = rootId;
     if (ownerId && ownerId !== standing) {
-      if (this.enterMeshWorld(ownerId)) return;
+      if (owner.shape !== "hex" && this.enterMeshWorld(ownerId)) return;
       if (!rootId) visit = ownerId;
     }
     this.meshLinks.update(x, z, visit);
+  }
+
+  neighbourHexLandAt(x, z) {
+    const owner = this.world?.worldMeshOwner?.(x, z, WORLD_MESH_SWITCH_MARGIN);
+    return owner?.shape === "hex" &&
+      owner.onLand &&
+      owner.id !== this.worldMesh?.self?.id
+      ? owner
+      : null;
+  }
+
+  leaveRestoredNeighbourHex() {
+    if (
+      this.meshRestoreChecked ||
+      !this.world?.setSpawn ||
+      !this.worldMesh?.self
+    ) {
+      return;
+    }
+    this.meshRestoreChecked = true;
+    const position = this.world.getPosition?.();
+    if (
+      !this.restoredPosition ||
+      !position ||
+      String(position.space || "") !== "town-square" ||
+      !this.neighbourHexLandAt(position.x, position.z) ||
+      !this.world.setSpawn(FRESH_ARRIVAL_CAMPFIRE_PREVIEW)
+    ) {
+      return;
+    }
+    this.restoredPosition = null;
+    this.lastMovement = {
+      ...this.lastMovement,
+      ...FRESH_ARRIVAL_CAMPFIRE_PREVIEW,
+    };
+    this.rememberWorldPosition(this.lastMovement, true);
   }
 
   handleWorldMeshVisit(world, previous) {
@@ -31863,6 +31901,12 @@ class ForkMeshWorld extends HTMLElement {
 
   rememberWorldPosition(position, flush = false) {
     if (!this.positionKey) return;
+    if (
+      String(position?.space || this.currentSpace || "") === "town-square" &&
+      this.neighbourHexLandAt(position?.x, position?.z)
+    ) {
+      return;
+    }
     const shift = this.meshHomeShift();
     if (this.meshRoot) {
       const space = String(position?.space || this.currentSpace || "");
