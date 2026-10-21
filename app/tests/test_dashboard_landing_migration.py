@@ -1389,8 +1389,9 @@ def test_repository_code_toolbar_carries_fork_and_about_carries_code_map():
     # Fork | count sits directly left of "Add file", in both toolbars.
     for bar, compact in ((toolbar, "false"), (focus_actions, "true")):
         fork = bar.index("${forkSplitButton(%s)}" % compact)
-        assert fork < bar.index("Add file")
-        assert "data-repo-codemap-open" not in bar[fork:bar.index("Add file")]
+        add_file = bar.index("${addFileButton(")
+        assert fork < add_file
+        assert "data-repo-codemap-open" not in bar[fork:add_file]
     assert "md:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto]" in toolbar
     # The main toolbar lost Code map to the About box; the file view keeps it,
     # since About is hidden there.

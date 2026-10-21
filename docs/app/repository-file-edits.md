@@ -13,6 +13,7 @@ existing text files. Saving posts to
 | `oid` | Blob OID the browser loaded; a mismatch returns `409 conflict` |
 | `content` | New UTF-8 text, capped at 2 MB |
 | `message` | Optional; defaults to `Edit <path> on the web` |
+| `create` | `true` to add a new file; `409 conflict` if the path exists |
 
 `app/src/repository_file_edits.py` reads the live tree, builds a blob, trees
 and a commit authored by the signed-in account.
@@ -84,6 +85,17 @@ and can tick **Propose as a pull request instead of committing**. A `403` with
 `canPropose` on save (for example after a permission change) switches the open
 editor to proposing. A signed-out visitor who clicks **Edit file** is sent to
 `/login?next=<this page>`.
+
+## Add file
+
+The Code tab's **Add file** button (both toolbars) opens a new-file form in
+the file viewer (`openRepoNewFile`): a path that starts in the folder being
+browsed, the text, the branch and a commit message. It probes access like the
+editor: a writer commits with `create: true` and lands on the new file's
+page; a reader (or a writer who ticks the box) proposes the file as a pull
+request through the same signed proposal flow. A read-only mirror shows the
+button disabled with the fork hint, and a signed-out visitor is sent to
+`/login?next=<this page>`. Tests: `app/tests/test_web_add_file.py`.
 
 Tests: `app/tests/test_repository_file_edits.py` (proposals replay with
 `git am --3way`, the patch matches `git diff`, writers still commit, direct

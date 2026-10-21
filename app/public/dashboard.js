@@ -15651,6 +15651,153 @@
     if (mode !== viewer.dataset.repoFileCurrentMode) viewer.dataset.repoFileCurrentMode = mode;
   }
 
+  // The folder the Code tab is showing (the breadcrumb's last folder; a file
+  // view counts as its folder), so Add file starts there like on GitHub.
+  function currentRepoBrowseFolder() {
+    const crumb = $("[data-repo-detail] [data-repo-breadcrumb]");
+    const folders = [...(crumb?.querySelectorAll("[data-dashboard-tree-path]") || [])];
+    return String(folders.at(-1)?.dataset.dashboardTreePath || "");
+  }
+
+  function normalizedNewFilePath(value) {
+    return String(value || "").trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/{2,}/g, "/");
+  }
+
+  // Add file > Create new file, in the browser: a path, the text, and either
+  // a commit to a branch (repository writers) or a signed pull request that
+  // proposes the file (everyone else). Both go through /file-edit with
+  // create: true, the same route that edits an existing file.
+  function openRepoNewFile(repo, folder = currentRepoBrowseFolder()) {
+    const detail = $("[data-repo-detail]");
+    const viewer = detail?.querySelector("[data-repo-blob]");
+    if (!viewer || !repo) return;
+    setRepoTab("code");
+    detail.querySelector("[data-repo-tree-panel]")?.classList.add("hidden");
+    detail.querySelector("[data-repo-readme]")?.classList.add("hidden");
+    viewer.classList.remove("hidden");
+    viewer._repoFileEditorAbort?.abort();
+    const controller = new AbortController();
+    viewer._repoFileEditorAbort = controller;
+    const currentBranch = repoSelectedBranch(repo) || repoDefaultBranch(repo) || "main";
+    const branchListId = `repo-new-file-branches-${Date.now().toString(36)}`;
+    const options = repoFileEditorBranchOptions(repo, currentBranch)
+      .map((branch) => `<option value="${escapeHtml(branch)}"></option>`).join("");
+    const prefix = folder ? `${folder.replace(/\/+$/, "")}/` : "";
+    viewer.innerHTML = `
+      <div data-repo-file-shell class="overflow-hidden rounded-lg border border-border bg-background">
+        <div class="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/40 px-3 py-2">
+          <span class="inline-flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="file-plus" class="h-4 w-4 text-muted-foreground"></i>New file</span>
+          <span data-repo-file-status role="status" class="min-w-0 font-mono text-[10px] text-muted-foreground">Name the file and write its contents.</span>
+        </div>
+        <form data-repo-file-editor="true" data-repo-new-file-form class="grid gap-3 p-3">
+          <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span>File path</span>
+            <input data-repo-new-file-path required autocomplete="off" spellcheck="false" value="${escapeHtml(prefix)}" placeholder="docs/notes.md" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+          </label>
+          <p data-repo-file-editor-notice hidden class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="git-pull-request" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-file-editor-notice-text>${escapeHtml(REPO_FILE_PROPOSE_NOTICE)}</span></p>
+          <textarea data-repo-file-editor-content spellcheck="false" placeholder="Enter file contents here" class="min-h-[24rem] w-full resize-y rounded-md border border-border bg-black/20 p-3 font-mono text-xs leading-5 text-foreground outline-none focus:border-primary/70"></textarea>
+          <div class="grid gap-2 md:grid-cols-[minmax(12rem,18rem)_1fr_auto]">
+            <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span data-repo-file-editor-branch-label>Branch</span>
+              <input data-repo-file-editor-branch list="${escapeHtml(branchListId)}" value="${escapeHtml(currentBranch)}" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+              <datalist id="${escapeHtml(branchListId)}">${options}</datalist>
+            </label>
+            <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span>Commit message</span>
+              <input data-repo-file-editor-message placeholder="Create a file on the web" class="h-9 rounded-md border border-border bg-background px-3 text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+            </label>
+            <div class="flex items-end gap-2">
+              <button type="button" data-repo-file-editor-cancel class="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
+              <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border border-primary/50 bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90 transition-colors"><i data-lucide="save" class="h-3.5 w-3.5"></i><span data-repo-file-editor-save-label>Save</span></button>
+            </div>
+          </div>
+          <label data-repo-file-editor-propose-wrap class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" data-repo-file-editor-propose class="h-3.5 w-3.5 rounded border-border accent-primary">
+            <span>Propose as a pull request instead of committing</span>
+          </label>
+        </form>
+      </div>`;
+    window.lucide?.createIcons();
+    const editor = viewer.querySelector("[data-repo-new-file-form]");
+    const pathInput = editor.querySelector("[data-repo-new-file-path]");
+    const textarea = editor.querySelector("[data-repo-file-editor-content]");
+    const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
+    const messageInput = editor.querySelector("[data-repo-file-editor-message]");
+    const saveButton = editor.querySelector("[data-repo-file-editor-save]");
+    const cancel = () => {
+      controller.abort();
+      void loadRepositoryTree(repo, folder);
+    };
+    editor.querySelector("[data-repo-file-editor-cancel]")?.addEventListener("click", cancel, { signal: controller.signal });
+    editor.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        editor.requestSubmit();
+      }
+    }, { signal: controller.signal });
+    editor.querySelector("[data-repo-file-editor-propose]")?.addEventListener("change", (event) => {
+      setRepoFileEditorProposing(editor, Boolean(event.target.checked));
+      if (event.target.checked && branchInput) branchInput.value = currentBranch;
+    }, { signal: controller.signal });
+    editor.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const path = normalizedNewFilePath(pathInput?.value);
+      if (!path || path.endsWith("/")) {
+        updateRepoFileStatus(viewer, "Name the new file.", "bad");
+        pathInput?.focus();
+        return;
+      }
+      const content = textarea?.value || "";
+      const message = String(messageInput?.value || "").trim() || `Create ${repoFileName(path)}`;
+      const proposing = editor.dataset.repoFileEditorMode === "propose";
+      const branch = proposing ? currentBranch : String(branchInput?.value || "").trim();
+      saveButton.disabled = true;
+      let proposal = null;
+      try {
+        if (proposing) {
+          updateRepoFileStatus(viewer, "Preparing your proposed file...", "good");
+          proposal = await repoFileEditRequest(repo, {
+            mode: "propose", path, branch, content, message, create: true,
+          });
+          await proposeRepoFileEdit(viewer, repo, proposal);
+          return;
+        }
+        updateRepoFileStatus(viewer, "Creating the file...", "good");
+        const payload = await repoFileEditRequest(repo, {
+          mode: "commit", path, branch, baseRef: currentBranch, content, message, create: true,
+        });
+        controller.abort();
+        if (payload.branch) state.selectedBranches[repoKey(repo)] = payload.branch;
+        navigateHistory(repoLinkUrl(repo, "blob", path));
+        await loadRepositoryBlob(repo, path);
+        const shortCommit = String(payload.commit || "").slice(0, 10);
+        updateRepoFileStatus(viewer, `Created on ${payload.branch || branch}${shortCommit ? ` at ${shortCommit}` : ""}.`, "good");
+      } catch (error) {
+        saveButton.disabled = false;
+        if (!proposal && error?.status === 401) {
+          location.href = repoFileSignInUrl();
+          return;
+        }
+        if (error?.status === 403 && error?.data?.canPropose) {
+          setRepoFileEditorProposing(editor, true, { access: "propose" });
+          if (branchInput) branchInput.value = currentBranch;
+        }
+        updateRepoFileStatus(viewer, proposal
+          ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayName(repo))
+          : error?.code === "conflict" ? "A file with that name already exists. Choose another name or edit that file."
+          : repoFileEditError(error), "bad");
+      }
+    }, { signal: controller.signal });
+    editor.dataset.repoFileEditorBase = currentBranch;
+    setRepoFileEditorProposing(editor, false);
+    void probeRepoFileEditAccess(viewer, editor, repo, controller.signal);
+    pathInput?.focus();
+    pathInput?.setSelectionRange(prefix.length, prefix.length);
+  }
+
   function setRepoFileFullscreenFallback(shell, active) {
     if (!shell) return;
     shell.classList.toggle("fixed", active);
@@ -39678,6 +39825,10 @@
     const forkSplitButton = (compact) => websiteForkAvailable
       ? `<div data-repo-fork-split class="flex ${compact ? "h-8" : "h-9"} min-w-0 shrink-0 items-stretch overflow-hidden rounded-md border border-border bg-secondary text-xs font-semibold text-foreground"><button type="button" data-repo-fork-create data-repo-fork-go title="Fork this repository: your own copy, linked to this one" class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 px-3 hover:bg-background disabled:cursor-wait"><i data-lucide="git-fork" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Fork</span></button><button type="button" data-repo-fork-split-count aria-label="See who forked this repository" title="See who forked this repository" style="min-width:2.25rem" class="inline-flex items-center justify-center border-l border-border px-2 font-mono text-[12px] font-medium hover:bg-background"><span data-repo-fork-count>–</span></button></div>`
       : "";
+    // Add file creates a file in the browser (openRepoNewFile); a read-only
+    // mirror cannot take one, and says why instead.
+    const readOnlyMirror = repoReadOnlyMirror(repo);
+    const addFileButton = (height) => `<button type="button" data-repo-file-new${readOnlyMirror ? ` disabled title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}"` : ' title="Create a new file"'} class="inline-flex ${height} items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>`;
     const settingsPanel = canSeeSettingsTab ? `
       <section data-dashboard-repo-tab-panel="settings" class="hidden">
         <div class="mt-4 overflow-hidden rounded-lg border border-border bg-background">
@@ -39860,7 +40011,7 @@
 		                ${renderRepoBranchToolbar(repo, branch)}
 		                <button type="button" data-repo-file-finder-open class="inline-flex h-9 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-left text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Go to file</span><span class="ml-auto hidden rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">T</span></button>
 		                ${forkSplitButton(false)}
-		                <button type="button" aria-disabled="true" class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file<i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i></button>
+		                ${addFileButton("h-9")}
 		                <div class="flex min-w-0 items-center gap-2">${mirrorButton(false)}${renderRepoCodeButton(repo, false)}</div>
 		              </div>
 		              <div data-repo-pathbar class="my-3 flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -39869,7 +40020,7 @@
 		                  <button type="button" data-repo-file-finder-open class="inline-flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-left text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Go to file</span><span class="ml-auto rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">T</span></button>
 		                  <button type="button" data-repo-codemap-open title="See the whole codebase as a zoomable treemap, in 2D or 3D" class="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="layout-grid" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-codemap-label>Code map</span></button>
 		                  ${forkSplitButton(true)}
-		                  <button type="button" aria-disabled="true" class="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>
+		                  ${addFileButton("h-8")}
 		                  ${mirrorButton(true)}
 		                  ${renderRepoCodeButton(repo, true)}
 		                </div>
@@ -42521,6 +42672,16 @@
       const issueNewMenu = event.target.closest("[data-repo-issue-new-menu]");
       if (issueNewMenu && event.target.closest("[data-repo-issue-import], [data-repo-issue-template]")) {
         issueNewMenu.open = false;
+      }
+
+      const fileNewButton = event.target.closest("[data-repo-file-new]");
+      if (fileNewButton && state.selectedRepo && !fileNewButton.disabled) {
+        if (!state.session?.nodeName) {
+          location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+          return;
+        }
+        openRepoNewFile(state.selectedRepo);
+        return;
       }
 
       const issueNewButton = event.target.closest("[data-repo-issue-new]");
