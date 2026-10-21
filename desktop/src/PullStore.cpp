@@ -2255,7 +2255,7 @@ bool writeEventFileIn(const QString &dir, int index, const PullEvent &ev,
     if (!ev.anchorLines.isEmpty())
         lines << "anchorLinesB64: " + encodeFrontMatterBlob(ev.anchorLines);
     if ((ev.type == "thread-state" || ev.type == "suggestion-state" ||
-         ev.type == "status") &&
+         ev.type == "status" || ev.type == "revision") &&
         !ev.state.isEmpty())
         lines << "state: " + ev.state;
     lines << "sig: " + ev.sig;
@@ -2839,6 +2839,8 @@ bool PullStore::writePull(const PullRequest &pr, QString *error) const
         lines << "creationBaseOid: " + pr.creationBaseOid;
     if (!pr.creationHeadOid.isEmpty())
         lines << "creationHeadOid: " + pr.creationHeadOid;
+    if (pr.revision > 1)
+        lines << "revision: " + QString::number(pr.revision);
     if (!pr.headBaseOid.isEmpty())
         lines << "headBaseOid: " + pr.headBaseOid;
     if (!pr.headOid.isEmpty())
@@ -2915,6 +2917,7 @@ bool PullStore::readPull(int number, PullRequest &out) const
     out.branchBacked = fm.get("derive") == QLatin1String("branch");
     out.creationBaseOid = fm.get("creationBaseOid");
     out.creationHeadOid = fm.get("creationHeadOid");
+    out.revision = int(fm.num("revision"));
     out.headBaseOid = fm.get("headBaseOid");
     out.headOid = fm.get("headOid");
     out.mergeBase = fm.get("mergeBase");
@@ -5491,8 +5494,11 @@ QString PullStore::baseTip() const
     return QString::fromUtf8(out).trimmed();
 }
 
-bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error)
+bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error,
+                                bool *opened)
 {
+    if (opened)
+        *opened = false;
     if (!canWrite())
         return false;
     PullRequest pr = incoming;
@@ -5527,9 +5533,78 @@ bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error)
                 error))
         return false;
     materializePullRef(pr, nullptr);
+    if (opened)
+        *opened = true;
     return true;
 }
 
+
+bool PullStore::applyRemoteRevision(int number, const PullRequest &revision,
+                                    const QString &revisionSig, QString *error)
+{
+    if (!canWrite())
+        return false;
+    PullRequest current;
+    if (number <= 0 || !readPull(number, current))
+        return false;
+    if (revision.sig.isEmpty() || current.sig == revision.sig)
+        return true;
+    if (current.status != QLatin1String("open") || current.branchBacked ||
+        revision.author != current.author || revision.ts <= current.ts)
+        return true;
+    const int previous = qMax(1, current.revision);
+    const QString archive =
+        pullDir(number) + QStringLiteral("/revisions/%1").arg(previous);
+    QDir().mkpath(archive);
+    for (const QString &name : {QStringLiteral("pull.md"), QStringLiteral("changes.patch"),
+                                QStringLiteral("commits.mbox")}) {
+        QFile source(pullDir(number) + "/" + name);
+        if (!source.exists())
+            continue;
+        if (!source.open(QIODevice::ReadOnly) ||
+            !writeTextFile(archive + "/" + name, QString::fromUtf8(source.readAll()), error))
+            return false;
+    }
+    PullRequest next = current;
+    if (!revision.title.trimmed().isEmpty())
+        next.title = revision.title;
+    if (!revision.description.trimmed().isEmpty())
+        next.description = revision.description;
+    next.base = revision.base;
+    next.head = revision.head;
+    next.patch = revision.patch;
+    next.commits = revision.commits;
+    next.ts = revision.ts;
+    next.sig = revision.sig;
+    next.creationBaseOid = revision.creationBaseOid;
+    next.creationHeadOid = revision.creationHeadOid;
+    next.headBaseOid.clear();
+    next.headOid.clear();
+    next.revision = previous + 1;
+    if (next.commits.isEmpty())
+        QFile::remove(pullDir(number) + "/commits.mbox");
+    if (!writePull(next, error))
+        return false;
+    PullEvent ev;
+    ev.type = QStringLiteral("revision");
+    ev.id = QStringLiteral("revision-%1").arg(revision.sig.left(16));
+    ev.author = revision.author;
+    ev.authorName = revision.authorName;
+    ev.ts = revision.ts;
+    ev.state = QString::number(next.revision);
+    ev.sig = revisionSig;
+    if (!writeEventFile(number, nextEventIndex(number), ev, error))
+        return false;
+    if (!commit(QStringLiteral("pull #%1: revision %2 (from %3)")
+                    .arg(number)
+                    .arg(next.revision)
+                    .arg(revision.authorName.isEmpty() ? revision.author.left(8)
+                                                       : revision.authorName),
+                error))
+        return false;
+    materializePullRef(next, nullptr);
+    return true;
+}
 
 QString PullStore::missingPullMessage(int number)
 {

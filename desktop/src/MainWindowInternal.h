@@ -7735,9 +7735,17 @@ public:
             m_markdownPreview->setFrameShape(QFrame::NoFrame);
             connect(m_markdownPreview, &QTextBrowser::anchorClicked, this,
                     [this](const QUrl &url) {
-                        if (markdownLinkHandler)
+                        if (markdownLinkHandler) {
                             markdownLinkHandler(m_markdownPreview, url);
-                        else if (!url.scheme().isEmpty())
+                            return;
+                        }
+                        const QString scheme = url.scheme().toLower();
+                        if (scheme.isEmpty() && url.path().isEmpty() &&
+                            url.hasFragment())
+                            m_markdownPreview->scrollToAnchor(url.fragment());
+                        else if (scheme == QLatin1String("http") ||
+                                 scheme == QLatin1String("https") ||
+                                 scheme == QLatin1String("mailto"))
                             QDesktopServices::openUrl(url);
                     });
         }

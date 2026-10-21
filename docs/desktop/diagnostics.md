@@ -66,6 +66,16 @@ The desktop has no toasts or floating cards; information is shown inline.
   until cleared, at most three per page (`kPageNoticesPerPage`), 60 in all.
   Rows have Copy, clear, **View output** for failed runs and an **Open**
   action (`noticeDestination`); text over 600 characters is shortened.
+- One operation, one Pings row: notices raised inside a `PingThreadScope`
+  share a key (`m_pingThreadKey`) and `refileThreadPing` rewrites that row in
+  place instead of filing another. A branch merge (`mergePingThread(dir,
+  branch)`) used to file four rows: "Merging…", "Merged… cleaning up in the
+  background", "Agent session deleted…" (the cleanup's own notice, which also
+  replaced the merge line in the strip) and the final outcome. Now its start
+  opens a fresh thread, every merge outcome or refusal updates that one row,
+  and the merge path calls `deleteWorktreeBranchAndAgentInBackground` with
+  `announce=false`. Only the notice calls themselves sit inside the scope, so
+  unrelated notices raised by work the merge triggers keep their own rows.
 - `showLocalNotice(label, text, error, kind)` prefers the status label of the
   originating panel or dialog, falling back to the strip. `fileMessage` only
   does the bookkeeping.

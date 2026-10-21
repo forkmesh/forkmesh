@@ -219,23 +219,50 @@ def test_a_contributor_grant_naming_refs_outside_its_prefix_is_invalid(forge):
     assert _rev(git_dir, "refs/heads/pr/bob/fix") == ""
 
 
-def test_history_keeps_the_last_tips_per_branch_and_prunes_older(
-        forge, monkeypatch):
+def test_history_keeps_every_replaced_tip(forge):
     handler, source, git_dir, _app = forge
-    monkeypatch.setattr(gateway, "PUSH_HISTORY_KEEP", 3)
     handler.query = {"rewrite": "refs/heads/"}
     tips = [_branch(source, "feature")]
     assert _push(source, "origin", "feature").returncode == 0
-    for index in range(4):
+    for index in range(24):
         tips.append(_rewrite(source, "rewrite %d" % index))
         assert _push(source, "--force", "origin", "feature").returncode == 0
     kept = _refs(git_dir, "refs/forkmesh/history/feature/")
     assert kept == {
-        "refs/forkmesh/history/feature/0000000002": tips[1],
-        "refs/forkmesh/history/feature/0000000003": tips[2],
-        "refs/forkmesh/history/feature/0000000004": tips[3],
-    }
-    assert _rev(git_dir, "refs/heads/feature") == tips[4]
+        "refs/forkmesh/history/feature/%010d" % (index + 1): tip
+        for index, tip in enumerate(tips[:-1])}
+    assert _rev(git_dir, "refs/heads/feature") == tips[-1]
+
+
+def test_a_force_push_is_refused_when_the_old_tip_cannot_be_kept(
+        forge, monkeypatch):
+    handler, source, git_dir, _app = forge
+    handler.query = {"rewrite": "refs/heads/"}
+    old = _branch(source, "feature")
+    assert _push(source, "origin", "feature").returncode == 0
+    monkeypatch.setattr(
+        gateway.GitRepository, "keep_push_history", lambda *_args: "")
+    _rewrite(source)
+    refused = _push(source, "--force", "origin", "feature")
+    assert refused.returncode != 0
+    assert _rev(git_dir, "refs/heads/feature") == old
+
+
+def test_the_tip_is_kept_before_the_branch_moves(forge, monkeypatch):
+    handler, source, git_dir, _app = forge
+    handler.query = {"rewrite": "refs/heads/"}
+    old = _branch(source, "feature")
+    assert _push(source, "origin", "feature").returncode == 0
+    seen = []
+    keep = gateway.GitRepository.keep_push_history
+
+    def watching(self, ref, tip):
+        seen.append(_rev(git_dir, ref))
+        return keep(self, ref, tip)
+    monkeypatch.setattr(gateway.GitRepository, "keep_push_history", watching)
+    _rewrite(source)
+    assert _push(source, "--force", "origin", "feature").returncode == 0
+    assert seen == [old]
 
 
 def test_a_push_never_deletes_a_branch(forge):

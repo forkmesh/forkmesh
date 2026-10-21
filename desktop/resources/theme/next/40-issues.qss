@@ -21,7 +21,8 @@ QTableWidget#issueTable[repositoryGrid="true"]::item:selected {
     background-color: transparent; border-color: @border; color: @fgSubtle;
 }
 #issueTable QHeaderView::section {
-    color: @fgMuted; border-right: none; border-bottom: 1px solid @border; font-weight: 500;
+    background-color: transparent; color: @fgMuted; border: none;
+    border-bottom: 1px solid @border; padding: 7px 12px; font-weight: 500;
 }
 #notesList::item:hover { background-color: @surfaceRaised; }
 #notesList::item:selected { background-color: @surfaceActive; color: @fg; }

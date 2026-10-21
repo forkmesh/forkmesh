@@ -1256,8 +1256,7 @@ REWRITE_QUERY_FIELD = "rewrite"
 MAX_REWRITE_REFS = 8
 REWRITE_EXCLUDED_PREFIXES = ("refs/heads/forkmesh/",)
 PUSH_HISTORY_PREFIX = INTERNAL_GIT_REF_NAMESPACE + "history/"
-PUSH_HISTORY_FALLBACK_PREFIX = INTERNAL_GIT_REF_NAMESPACE + "history-tips/"
-PUSH_HISTORY_KEEP = 20
+PUSH_HISTORY_SAVE_ATTEMPTS = 8
 PUSH_HISTORY_SEQUENCE_RE = re.compile(r"^[0-9]{10}$")
 PUSH_HOOK_REWRITE_ENV = "FORKMESH_PUSH_REWRITE"
 PUSH_HOOK_DEFAULT_ENV = "FORKMESH_PUSH_DEFAULT_REF"
@@ -7104,9 +7103,24 @@ class GitRepository:
                 max_input_bytes, self.receive_hooks_path)
             environment = {}
         forced: dict[str, str] = {}
+        kept: dict[str, tuple[str, str]] = {}
+        serial = rewrite_push_lock(self.git_dir) if hook_mode else None
+        if serial is not None:
+            serial.acquire()
         lock = maintenance_push_lock(self.git_dir)
         try:
             before = stable_refs(self.git_dir)
+            if hook_mode:
+                for ref in sorted(rewrite or ()):
+                    old = before.get(ref, "")
+                    if _zero_oid(old):
+                        continue
+                    name = self.keep_push_history(ref, old)
+                    if not name:
+                        raise GatewayError(
+                            "the current tip of %s could not be kept, so the "
+                            "push was refused" % ref[len("refs/heads/"):])
+                    kept[ref] = (old, name)
             output = _run_git(
                 self.git_dir,
                 configuration
@@ -7117,18 +7131,19 @@ class GitRepository:
                 extra_environment=environment,
             )
             changes = ref_transitions(before, stable_refs(self.git_dir))
-            if hook_mode:
-                for ref, old, new in changes:
-                    if (
-                        ref in (rewrite or ())
-                        and not _zero_oid(old)
-                        and not _zero_oid(new)
-                        and not self.is_ancestor(old, new)
-                    ):
-                        forced[ref] = self.keep_push_history(ref, old)
+            moved = {ref: new for ref, _old, new in changes}
+            for ref, (old, name) in kept.items():
+                new = moved.get(ref, "")
+                if new and not _zero_oid(new) and not self.is_ancestor(
+                        old, new):
+                    forced[ref] = name
+                else:
+                    self.release_push_history(name, old)
         finally:
             if lock is not None:
                 os.close(lock)
+            if serial is not None:
+                serial.release()
         if changes:
             mark_maintenance_due(self.git_dir)
         return output, changes, forced
@@ -7154,26 +7169,23 @@ class GitRepository:
         except (GitError, OSError):
             existing = []
         sequence = int(existing[-1][len(prefix):]) + 1 if existing else 1
-        name = prefix + "%010d" % sequence
         zero = "0" * len(old)
+        for attempt in range(PUSH_HISTORY_SAVE_ATTEMPTS):
+            name = prefix + "%010d" % (sequence + attempt)
+            try:
+                _run_git(self.git_dir, ["update-ref", name, old, zero],
+                         max_output=1024)
+            except (GitError, OSError):
+                continue
+            return name
+        return ""
+
+    def release_push_history(self, name: str, old: str) -> None:
         try:
-            _run_git(self.git_dir, ["update-ref", name, old, zero],
+            _run_git(self.git_dir, ["update-ref", "-d", name, old],
                      max_output=1024)
         except (GitError, OSError):
-            name = PUSH_HISTORY_FALLBACK_PREFIX + old
-            try:
-                _run_git(self.git_dir, ["update-ref", name, old],
-                         max_output=1024)
-            except (GitError, OSError):
-                return ""
-            return name
-        for stale in (existing + [name])[:-PUSH_HISTORY_KEEP]:
-            try:
-                _run_git(self.git_dir, ["update-ref", "-d", stale],
-                         max_output=1024)
-            except (GitError, OSError):
-                pass
-        return name
+            pass
 
     def open_pulls_for_head(self, branch: str) -> list[int]:
         if not branch:
@@ -7263,6 +7275,16 @@ class GitRepository:
             return int(output.decode("ascii").strip() or 0)
         except (GitError, OSError, ValueError):
             return 0
+
+
+_REWRITE_PUSH_LOCKS: dict[str, threading.Lock] = {}
+_REWRITE_PUSH_LOCKS_GUARD = threading.Lock()
+
+
+def rewrite_push_lock(git_dir: Path) -> threading.Lock:
+    with _REWRITE_PUSH_LOCKS_GUARD:
+        return _REWRITE_PUSH_LOCKS.setdefault(
+            str(Path(git_dir).resolve()), threading.Lock())
 
 
 def maintenance_push_lock(git_dir: Path | None) -> int | None:

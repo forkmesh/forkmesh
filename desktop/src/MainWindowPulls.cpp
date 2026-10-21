@@ -5506,6 +5506,12 @@ void MainWindow::renderPullThread(const PullRequest &pr)
             }
         } else if (ev.type == QLatin1String("thread-reply")) {
             verb = QStringLiteral("replied in a review thread");
+        } else if (ev.type == QLatin1String("revision")) {
+            verb = ev.state.isEmpty()
+                       ? QStringLiteral("updated the pull request")
+                       : QStringLiteral("updated the pull request to revision %1")
+                             .arg(ev.state.toHtmlEscaped());
+            accent = QStringLiteral("#58a6ff");
         } else if (ev.type == QLatin1String("thread-state")) {
             if (ev.state == QLatin1String("resolved")) {
                 verb = QStringLiteral("<span style='color:#3fb950'>resolved a "
@@ -12825,6 +12831,18 @@ MainWindow::applyPullsInboxEntries(PullStore store, const QJsonArray &pending)
                       static_cast<qint64>(obj.value("id").toDouble()))
                 : QString();
         const QString reviewBranch = obj.value("branch").toString();
+        if (obj.value("revision").isObject()) {
+            const int number = obj.value("number").toInt();
+            const QJsonObject revisionJson = obj.value("revision").toObject();
+            const PullRequest revision = PullRequest::fromJson(revisionJson);
+            if (store.applyRemoteRevision(
+                    number, revision, revisionJson.value("revisionSig").toString())) {
+                if (!inboxId.isEmpty())
+                    outcome.drainedIds << inboxId;
+                ++outcome.merged;
+            }
+            continue;
+        }
         if (obj.contains("event") && !reviewBranch.isEmpty()) {
             const PullEvent ev =
                 PullEvent::fromJson(obj.value("event").toObject());
@@ -12832,10 +12850,6 @@ MainWindow::applyPullsInboxEntries(PullStore store, const QJsonArray &pending)
                 if (!inboxId.isEmpty())
                     outcome.drainedIds << inboxId;
                 ++outcome.merged;
-                outcome.lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
-                                                             : ev.authorName;
-                outcome.lastTitle =
-                    QStringLiteral("review on %1").arg(reviewBranch);
             }
             continue;
         }
@@ -12850,21 +12864,22 @@ MainWindow::applyPullsInboxEntries(PullStore store, const QJsonArray &pending)
                 if (!inboxId.isEmpty())
                     outcome.drainedIds << inboxId;
                 ++outcome.merged;
-                outcome.lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
-                                                             : ev.authorName;
-                outcome.lastTitle = QStringLiteral("review on #%1").arg(number);
             }
             continue;
         }
         const PullRequest pr =
             PullRequest::fromJson(obj.value("pull").toObject());
-        if (store.applyRemotePull(pr)) {
+        bool opened = false;
+        if (store.applyRemotePull(pr, nullptr, &opened)) {
             if (!inboxId.isEmpty())
                 outcome.drainedIds << inboxId;
             ++outcome.merged;
-            outcome.lastAuthor = pr.authorName.isEmpty() ? pr.author.left(8)
-                                                         : pr.authorName;
-            outcome.lastTitle = pr.title;
+            if (opened) {
+                ++outcome.opened;
+                outcome.lastAuthor = pr.authorName.isEmpty() ? pr.author.left(8)
+                                                             : pr.authorName;
+                outcome.lastTitle = pr.title;
+            }
         }
     }
     return outcome;
@@ -12975,22 +12990,23 @@ void MainWindow::finishPullsInboxApply(const RepositoryRecord &repo,
             this, "Sync inbox",
             QStringLiteral("Merged %1 pull request(s) into .forkmesh/pulls/.")
                 .arg(merged));
-    } else if (merged > 0) {
+    } else if (outcome.opened > 0) {
         const QString body =
-            merged == 1
+            outcome.opened == 1
                 ? QStringLiteral("%1 opened a pull request: %2")
                       .arg(outcome.lastAuthor, outcome.lastTitle)
                 : QStringLiteral("%1 new pull requests on %2/%3")
-                      .arg(merged)
+                      .arg(outcome.opened)
                       .arg(repo.owner, repo.name);
         const QString where = repo.owner + QLatin1Char('/') + repo.name;
         const QString alertTitle =
-            merged == 1 ? forkmesh::pings::alertLeadTitle(outcome.lastAuthor, where)
-                        : where;
+            outcome.opened == 1
+                ? forkmesh::pings::alertLeadTitle(outcome.lastAuthor, where)
+                : where;
         const QString alertBody =
-            merged == 1 && !outcome.lastTitle.trimmed().isEmpty()
+            outcome.opened == 1 && !outcome.lastTitle.trimmed().isEmpty()
                 ? forkmesh::pings::alertSnippet(outcome.lastTitle)
-                : QStringLiteral("%1 new pull requests").arg(merged);
+                : QStringLiteral("%1 new pull requests").arg(outcome.opened);
         flashPingMessage(body);
         if (notifyEnabled(kPullAlertSetting))
             notifyIfInactive(alertTitle, alertBody);

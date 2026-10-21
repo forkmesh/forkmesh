@@ -531,7 +531,7 @@ def _proxy_harness(
 
     namespace = _load(
         {"_https_mirror_push_proxy", "_https_mirror_push_send",
-         "_git_push_basic_challenge",
+         "_push_target_on_cores", "_git_push_basic_challenge",
          "_https_mirror_request_body_stream", "_ref_updates_from"}, {
         **BASE_GLOBALS,
         "json": __import__("json"),
@@ -749,8 +749,7 @@ def test_post_capability_binds_receive_pack_masked_target():
     assert lines[0] == "forkmesh-masked-proxy-v1"
     assert lines[1] == "write-node"
     assert lines[2] == "POST"
-    assert lines[3] == (
-        "/v1/repositories/alice/app/git-receive-pack?rewrite=refs%2Fheads%2F")
+    assert lines[3] == "/v1/repositories/alice/app/git-receive-pack"
     assert lines[4] == hashlib.sha256(body).hexdigest()
     assert re.fullmatch(r"[A-Za-z0-9_-]{12,80}", lines[5])
     assert lines[6] == str(NOW)
@@ -758,7 +757,7 @@ def test_post_capability_binds_receive_pack_masked_target():
     target, init = fetches[0]
     assert target == (
         "https://write-node.example.test"
-        "/v1/repositories/alice/app/git-receive-pack?rewrite=refs%2Fheads%2F")
+        "/v1/repositories/alice/app/git-receive-pack")
     assert init["method"] == "POST"
     assert init["body"] == body
     assert init["headers"]["Content-Type"] == (
@@ -1494,3 +1493,20 @@ def test_a_contributor_push_signs_its_namespace_and_skips_owner_paths():
         body=b"pack"), is_info=False)
     assert refused["status"] == 403
     assert not fetches
+
+
+def test_force_push_grant_goes_only_to_repositories_the_cores_hold():
+    body = b"receive-pack-request-bytes"
+    namespace, _messages, fetches = _proxy_harness(
+        candidates=[_endpoint("core-1")], upstreams=[_Upstream()])
+
+    async def hosted_push_candidates(_env, owner, repo):
+        return [_endpoint("core-1")] if (owner, repo) == ("alice", "app") else None
+    namespace["hosted_push_candidates"] = hosted_push_candidates
+    request = _Request(
+        "https://forkmesh.test/alice/app/git-receive-pack",
+        headers=_Headers({**_signed_headers(), "content-encoding": "gzip"}),
+        body=body)
+    _run_proxy(namespace, request, is_info=False)
+    assert fetches[0][0].endswith(
+        "/v1/repositories/alice/app/git-receive-pack?rewrite=refs%2Fheads%2F")

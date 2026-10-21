@@ -1323,6 +1323,7 @@ verify_discussion_event = _events.export("verify_discussion_event")
 event_signing_repo_keys = _events.export("event_signing_repo_keys")
 verify_issue_event = _events.export("verify_issue_event")
 verify_pull_comment_event = _events.export("verify_pull_comment_event")
+verify_pull_revision = _events.export("verify_pull_revision")
 verify_branch_comment_event = _events.export("verify_branch_comment_event")
 verify_pull_event = _events.export("verify_pull_event")
 verify_release_manifest = _events.export("verify_release_manifest")
@@ -5592,7 +5593,7 @@ async def _flagship_repository_probe(env):
     if error:
         return False, error
 
-    snapshot_metadata, error = await routed_json(
+    metadata_tree, error = await routed_json(
         "Repository metadata tree",
         "https://forkmesh.internal/api/repo/forkmesh/forkmesh/"
         "tree?path=.forkmesh&ref=" + quote(snapshot_ref),
@@ -5600,14 +5601,13 @@ async def _flagship_repository_probe(env):
     )
     if error:
         return False, error
-    snapshot_metadata_entries = snapshot_metadata.get("entries")
+    metadata_listing = metadata_tree.get("entries")
     has_discussions = any(
         isinstance(item, dict)
         and str(item.get("type") or "").lower() == "tree"
         and str(item.get("name") or "") == "discussions"
         for item in (
-            snapshot_metadata_entries
-            if isinstance(snapshot_metadata_entries, list) else [])
+            metadata_listing if isinstance(metadata_listing, list) else [])
     )
     discussion = None
     if has_discussions:
@@ -16904,6 +16904,9 @@ async def _repo_about_public(env, request, owner, repo):
                         follower.get("url") or "") or follower_url,
                     "followedAt": int(follower.get("created_at") or 0),
                 })
+    about_mirror_fields = _read_only_mirrors.about_fields(
+        await _repo_features_get(env, owner, repo),
+        await _read_only_mirror_fields(env, owner, repo, rec or {}))
     return json_response({
         "ok": True,
         "description": clean_string(
@@ -16925,9 +16928,11 @@ async def _repo_about_public(env, request, owner, repo):
             "followersList": followers_list,
             "settings": ap_settings,
         },
-        **_read_only_mirrors.about_fields(
-            await _repo_features_get(env, owner, repo),
-            await _read_only_mirror_fields(env, owner, repo, rec or {})),
+        **about_mirror_fields,
+        "externalMirrors": _read_only_mirrors.external_mirrors(
+            _read_only_mirrors.upstream_link(about_mirror_fields["mirrorOf"]),
+            await _repository_provider_mirror.public_about_link(
+                env, owner, repo)),
     }, cache_control="public, max-age=600")
 
 
@@ -32343,7 +32348,7 @@ def _account_email_activity(rec):
     }
 
 
-# --- External GitHub/GitLab/Codeberg metadata imports -----------------------
+# --- External GitHub/GitLab/Codeberg/Gitea metadata imports -----------------
 #
 # Provider imports live in a separate D1 namespace from the mirror catalog.
 # repository_imports.py owns the provider-neutral policy/service layer; these
@@ -32367,8 +32372,8 @@ async def _repository_provider_fetch(env, provider, path, token=""):
         headers["x-github-api-version"] = "2026-03-10"
         if token:
             headers["authorization"] = "Bearer " + token
-    elif provider == "codeberg":
-        # Codeberg runs Forgejo's Gitea-compatible API. Its access token is
+    elif provider in repository_import.GITEA_API_PROVIDERS:
+        # Codeberg (Forgejo) and gitea.com share Gitea's API. Its access token is
         # request-scoped exactly like the other provider credentials and is
         # never persisted or forwarded across a redirect.
         if token:
@@ -37024,7 +37029,8 @@ async def _promote_hosted_repository_import(env, catalog_record):
     rows = await d1_all(
         env,
         "SELECT id, data FROM repository_imports "
-        "WHERE provider IN ('github','gitlab','codeberg') AND is_private=0 "
+        "WHERE provider IN ('github','gitlab','codeberg','gitea') "
+        "AND is_private=0 "
         "AND status NOT IN ('actively_mirrored','archived') "
         "ORDER BY updated_at DESC LIMIT ?",
         repository_import.MAX_PUBLIC_IMPORTS,
@@ -37057,11 +37063,8 @@ async def _promote_hosted_repository_import(env, catalog_record):
         return 1
 
     for row, record, target_owner in sorted(candidates, key=branch_rank):
-        provider_label = {
-            "github": "GitHub",
-            "gitlab": "GitLab",
-            "codeberg": "Codeberg",
-        }.get(clean_string(record.get("provider"), 40).lower(), "provider")
+        provider_label = repository_import.PROVIDER_LABELS.get(
+            clean_string(record.get("provider"), 40).lower(), "provider")
         now = int(Date.now())
         record["status"] = "actively_mirrored"
         record["statusLabel"] = "Actively mirrored"
@@ -41123,6 +41126,106 @@ async def _authorize_pull_lifecycle(env, owner, repo, number, data, request,
     return False, json_response({"error": "not_authorized"}, status=403), ""
 
 
+PULL_REVISION_FIELDS = ("title", "base", "head", "patch", "commits",
+                        "author", "sig", "revisionSig",
+                        "creationBaseOid", "creationHeadOid")
+
+
+async def _accept_pull_revision(env, request, data, owner, repo, repo_bi,
+                                revision):
+    try:
+        number = int(data.get("number", 0))
+    except (TypeError, ValueError):
+        number = 0
+    if number <= 0:
+        return json_response({"error": "number_required"}, status=400)
+    if any(field in revision and not isinstance(revision.get(field), str)
+           for field in PULL_REVISION_FIELDS + ("description",)):
+        return json_response({"error": "revision_invalid"}, status=400)
+    if len((revision.get("description", "") or "").encode("utf-8")) > \
+            MAX_ISSUE_BYTES:
+        return json_response({"error": "description_too_large"}, status=413)
+    revision_bytes = len((revision.get("patch", "") or "").encode("utf-8")) + \
+        len((revision.get("commits", "") or "").encode("utf-8"))
+    if revision_bytes > MAX_PULL_BYTES:
+        return json_response({"error": "pull_too_large"}, status=413)
+    if not (revision.get("patch") or revision.get("commits")):
+        return json_response({"error": "revision_empty"}, status=400)
+    if not await verify_pull_revision(
+            number, revision, _event_signing_repo_keys(request, owner, repo)):
+        return json_response({"error": "bad_signature"}, status=401)
+    record = await _pull_lifecycle_record(env, owner, repo, number)
+    if not record:
+        return json_response({"error": "pull_unavailable"}, status=503)
+    status = str(record.get("status") or "open").strip().lower()
+    if status != "open":
+        return json_response({"error": "pull_not_open"}, status=409)
+    if str(record.get("derive") or "").strip() == "branch":
+        return json_response({"error": "pull_follows_branch"}, status=409)
+    if str(record.get("author") or "").strip() != str(
+            revision.get("author") or "").strip():
+        return json_response({"error": "not_authorized"}, status=403)
+    try:
+        stored_ts = int(record.get("ts") or 0)
+        revision_ts = int(revision.get("ts") or 0)
+    except (TypeError, ValueError):
+        return json_response({"error": "revision_invalid"}, status=400)
+    if revision_ts <= stored_ts:
+        return json_response({"error": "revision_stale"}, status=409)
+    refused = await _bind_session_author(env, request, data, revision)
+    if refused is not None:
+        return refused
+    count = await d1_first(
+        env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi)
+    if count and count.get("c", 0) >= MAX_PENDING_PULLS:
+        return json_response({"error": "inbox_full"}, status=429)
+    submitter_bi = await blind_index(env, revision.get("author", ""))
+    if await _inbox_author_over_quota(env, "pull_inbox", repo_bi, submitter_bi):
+        return json_response({"error": "author_quota"}, status=429)
+    submission_bi = await blind_index(
+        env, "pull-revision:" + revision.get("author", "") + ":" +
+        revision.get("sig", ""))
+    item = {
+        "number": number,
+        "revision": revision,
+        "event": {
+            "type": "revision",
+            "id": "revision-%s" % clean_string(revision.get("sig", ""), 16),
+            "author": revision.get("author", ""),
+            "authorName": revision.get("authorName", ""),
+            "ts": revision.get("ts", 0),
+            "sig": revision.get("revisionSig", ""),
+            "body": "",
+        },
+        "submitter": clean_string(revision.get("author", ""), 120),
+        "submittedAt": int(Date.now()),
+    }
+    await d1_run(
+        env,
+        "INSERT OR IGNORE INTO pull_inbox "
+        "(repo_bi, data, submitter_bi, submission_bi) VALUES (?,?,?,?)",
+        repo_bi, await encrypt_row(env, item), submitter_bi, submission_bi,
+    )
+    await _branch_protection.dismiss_approvals(env, owner, repo, number)
+    actor = clean_string(
+        revision.get("authorName", "") or revision.get("author", ""),
+        MAX_NODE_NAME).lower()
+    await notify_subscribers(
+        env, owner, repo, "pull", number, actor, "",
+        "Updated the pull request with new changes.",
+        repo_web_href(owner, repo))
+    await notify_repo_host(env, owner, repo, "pulls")
+    await notify_repo_mirrors(env, owner, repo, "pulls")
+    emit_app = globals().get("apps_emit_repo_event")
+    if emit_app is not None:
+        await emit_app(
+            env, owner, repo, "pull.revised",
+            {"number": number, "author": actor,
+             "head": clean_string(revision.get("head", ""), 260)},
+            source_actor=actor)
+    return json_response({"ok": True, "number": number}, status=201)
+
+
 async def pulls_handler(env, request, owner, repo):
     await ensure_schema(env)
     method = method_name(request)
@@ -41258,6 +41361,10 @@ async def pulls_handler(env, request, owner, repo):
                     number, "", event.get("body", ""),
                     event.get("authorName", "")))
             return json_response({"ok": True}, status=201)
+        revision = data.get("revision")
+        if isinstance(revision, dict):
+            return await _accept_pull_revision(
+                env, request, data, owner, repo, repo_bi, revision)
         pull = data.get("pull")
         if not isinstance(pull, dict):
             return json_response({"error": "pull_required"}, status=400)
@@ -52879,6 +52986,16 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
     )
 
 
+async def _push_target_on_cores(env, owner, repo):
+    hosted_candidates = globals().get("hosted_push_candidates")
+    if not callable(hosted_candidates):
+        return False
+    try:
+        return await hosted_candidates(env, owner, repo) is not None
+    except Exception:
+        return False
+
+
 async def _https_mirror_push_send(
         env, request, owner, repo, account, method, body, body_stream,
         body_digest, is_info=False, alias_owner="", core_held=False,
@@ -52909,7 +53026,8 @@ async def _https_mirror_push_send(
             query = dict(query or {}, protect=" ".join(protected))
         if push_prefix:
             query = dict(query or {}, pushPrefix=push_prefix)
-        if rewrite:
+        if rewrite and (core_held or await _push_target_on_cores(
+                env, owner, repo)):
             query = dict(query or {}, rewrite=push_prefix or "refs/heads/")
     for endpoint in candidates:
         if body_stream is not None and endpoint is not candidates[0]:

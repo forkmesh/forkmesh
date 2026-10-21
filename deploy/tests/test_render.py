@@ -111,6 +111,14 @@ def test_per_node_values(tmp_path):
         assert "reverse_proxy 127.0.0.1:8790" in caddy
 
 
+def test_caddy_holds_requests_through_an_app_restart(tmp_path):
+    files, _ = rendered(tmp_path, "n1")
+    caddy = files["/etc/caddy/Caddyfile"]
+    assert render.APP_UPSTREAM_TRY_SECONDS >= 30
+    assert "\tlb_try_duration %ds\n" % render.APP_UPSTREAM_TRY_SECONDS in caddy
+    assert "lb_try_duration 10s" not in caddy
+
+
 def test_app_unit_limits(tmp_path):
     files, _ = rendered(tmp_path, "n1")
     unit = files["/etc/systemd/system/forkmesh-app.service"]

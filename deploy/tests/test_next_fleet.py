@@ -1067,4 +1067,29 @@ def test_caddy_install_waits_long_enough_for_a_first_certificate():
     assert "seq 1 %d" % next_fleet.CADDY_INSTALL_WAIT in next_fleet.caddy_debian_script(
         "n4.next.example.test")
     assert "--max-time %d " % next_fleet.CADDY_INSTALL_MAX_TIME in script
-    assert next_fleet.CADDY_INSTALL_MAX_TIME > 10
+    import render
+    assert next_fleet.CADDY_INSTALL_MAX_TIME > render.APP_UPSTREAM_TRY_SECONDS
+
+
+def test_roll_waits_out_the_dns_ttl_before_restarting_a_drained_core(monkeypatch):
+    import next_dns
+    data = tomllib.loads(FLEET.read_text())
+    events = []
+    monkeypatch.setattr(next_fleet, "verify_target", lambda *a: None)
+    monkeypatch.setattr(next_dns, "main",
+                        lambda argv: events.append(("dns", argv[-3], argv[-2])) or 0)
+    monkeypatch.setattr(next_fleet, "install",
+                        lambda fleet_doc, name, *a, **k: events.append(("install", name)))
+    monkeypatch.setattr(next_fleet, "roll_healthy", lambda ssh, ip: (True, "ok"))
+    monkeypatch.setattr(next_fleet, "in_dns", lambda name: True)
+    clock = iter(range(0, 10000, 10))
+    done = next_fleet.roll(data, ["n1", "n2"], FakeSsh([]), Runner(execute=True),
+                           steps=("files",), sleep=lambda s: events.append(("sleep", s)),
+                           clock=lambda: next(clock))
+    wait = next_dns.TTL + next_fleet.ROLL_DRAIN_MARGIN_SECONDS
+    assert wait > next_dns.TTL
+    assert done == ["n1", "n2"]
+    assert events == [("dns", "drain", "n1"), ("sleep", wait), ("install", "n1"),
+                      ("dns", "undrain", "n1"),
+                      ("dns", "drain", "n2"), ("sleep", wait), ("install", "n2"),
+                      ("dns", "undrain", "n2")]

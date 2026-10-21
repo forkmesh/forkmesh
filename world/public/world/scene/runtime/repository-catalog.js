@@ -785,7 +785,9 @@ export function functions({
               ? "#fc8d45"
               : state.provider === "codeberg"
                 ? "#77d9ff"
-                : "#f0f6fc";
+                : state.provider === "gitea"
+                  ? "#a3e635"
+                  : "#f0f6fc";
       spark.material.color.set(color);
       spark.material.emissive?.set?.(color);
     }

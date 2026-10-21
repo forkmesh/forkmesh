@@ -5771,6 +5771,115 @@
     });
     input.click();
   });
+
+  function pullRevisionSource(values) {
+    const head = String(values?.head || "").trim();
+    if (!head) return null;
+    const colon = head.lastIndexOf(":");
+    if (colon < 0) return { owner: "", branch: head };
+    const prefix = head.slice(0, colon);
+    if (!prefix || prefix.includes("/")) return null;
+    return { owner: prefix, branch: head.slice(colon + 1) };
+  }
+
+  function pullRevisionAllowed(parsed) {
+    const values = parsed?.values || {};
+    return String(values.status || "open").trim().toLowerCase() === "open"
+      && values.derive !== "branch"
+      && webSessionAuthored({ author: values.author, authorName: values.authorName })
+      && Boolean(pullRevisionSource(values));
+  }
+
+  async function submitWebPullRevision(repo, number, values, branch) {
+    const source = pullRevisionSource(values);
+    if (!source || !branch) throw new Error("revision_unsupported");
+    const sourceRepo = source.owner ? { owner: source.owner, name: repo.name } : repo;
+    const base = String(values.base || "");
+    let comparison;
+    try {
+      comparison = await fetchRepoJson(repoLiveUrl(sourceRepo, "compare", { base, head: branch, ref: "" }));
+    } catch (_) {
+      throw new Error("comparison_unavailable");
+    }
+    const patch = String(comparison.patch || "");
+    const commits = String(comparison.commits || "");
+    const baseOid = String(comparison.baseOid || "").toLowerCase();
+    const headOid = String(comparison.headOid || "").toLowerCase();
+    const validOid = (value) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
+    if (!validOid(baseOid) || !validOid(headOid)) throw new Error("invalid_comparison");
+    if (!patch.trim()) throw new Error("no_changes");
+    if (headOid === String(values.creationHeadOid || "").toLowerCase()) throw new Error("no_new_commits");
+    const signedHead = source.owner ? `${source.owner}:${branch}` : branch;
+    const revision = await signWebPullContent(
+      repo, String(values.title || ""), "", base, signedHead, patch, commits);
+    delete revision.description;
+    revision.creationBaseOid = baseOid;
+    revision.creationHeadOid = headOid;
+    const { privateKey } = await getWebIssueKey();
+    const binding = `${Number(number)}\n${revision.author}\n${revision.ts}\n${revision.sig}`;
+    revision.revisionSig = bytesToB64url(await crypto.subtle.sign(
+      { name: "Ed25519" }, privateKey,
+      ISSUE_TEXT_ENCODER.encode(`${webEventSigningPrefix("pull-revision", repo)}${binding}`)));
+    const data = await fetchRepoMutation(repo, "pulls", {
+      owner: repo.owner, repo: repo.name, number: Number(number), revision,
+    });
+    return { ...data, revision };
+  }
+
+  function pullRevisionError(code) {
+    return ({
+      comparison_unavailable: "That branch is not on the serving mirror yet. A branch you just pushed can take a moment to arrive.",
+      invalid_comparison: "That branch could not be compared with the base branch.",
+      no_changes: "That branch has no changes against the base branch.",
+      no_new_commits: "This pull request already shows that branch's latest commit.",
+      revision_stale: "A newer version of this pull request is already waiting.",
+      pull_not_open: "Only an open pull request can be updated.",
+      pull_follows_branch: "This pull request already follows its branch.",
+      not_authorized: "Only the pull request's author can update it.",
+      pull_too_large: "That change is too large to send.",
+      revision_unsupported: "This pull request came from another instance; update it there.",
+      author_mismatch: "Sign in with the account that opened this pull request.",
+    })[code] || "The pull request could not be updated. Please try again.";
+  }
+
+  function renderPullRevisionPanel(number, parsed) {
+    if (!pullRevisionAllowed(parsed)) return "";
+    const branch = pullRevisionSource(parsed.values)?.branch || "";
+    return `
+      <form data-repo-pull-revision-form data-repo-pull-revision-number="${escapeHtml(number)}" class="flex flex-wrap items-center gap-2 rounded-md border border-border px-4 py-3 text-[14px] sm:ml-14">
+        <span class="min-w-0 flex-1 text-muted-foreground">Pushed more commits, or rewrote the branch? Update this pull request from a branch. No force push is needed.</span>
+        <input data-repo-pull-revision-branch value="${escapeHtml(branch)}" aria-label="Source branch" spellcheck="false" class="h-control-sm w-48 rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-[var(--dashboard-link)]" />
+        <button type="submit" data-repo-pull-revision-submit class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border bg-secondary px-2 text-control font-medium text-foreground hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Update pull request</button>
+        <span data-repo-pull-revision-hint class="w-full text-[11px] text-muted-foreground"></span>
+      </form>`;
+  }
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target?.closest?.("[data-repo-pull-revision-form]");
+    if (!form) return;
+    event.preventDefault();
+    const detail = state.repoRecordDetail;
+    const number = Number(form.dataset.repoPullRevisionNumber || 0);
+    if (!detail?.repo || detail.kind !== "pulls" || Number(detail.number) !== number) return;
+    const hint = form.querySelector("[data-repo-pull-revision-hint]");
+    const submit = form.querySelector("[data-repo-pull-revision-submit]");
+    const branch = String(form.querySelector("[data-repo-pull-revision-branch]")?.value || "").trim();
+    const setHint = (text, bad = false) => {
+      if (!hint) return;
+      hint.className = `w-full text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (submit) submit.disabled = true;
+    setHint("Comparing, signing and sending…");
+    try {
+      await submitWebPullRevision(detail.repo, number, detail.parsed?.values || {}, branch);
+      setHint("Sent. The pull request shows the new version once the repository's node takes it in.");
+    } catch (error) {
+      setHint(pullRevisionError(error?.code || error?.message), true);
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
   // Every top-level page is its own document now (/dashboard, /dashboard/repos,
   // /dashboard/network, ...) — navigation between them is a real page load via
   // plain <a href> links, so there is no client-side section router anymore.
@@ -5788,7 +5897,7 @@
     }
   });
 
-  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents"];
+  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents"];
 
   function normalizeSettingsSection(section) {
     return SETTINGS_SECTIONS.includes(section) ? section : "public-profile";
@@ -5837,6 +5946,8 @@
     if (activeSection === "ssh-keys") loadSshKeys();
     if (activeSection === "notifications") loadPingSettings();
     if (activeSection === "agents") initSettingsAgents();
+    if (activeSection === "instance-theme") initInstanceThemeSection();
+    else leaveInstanceThemeSection();
     // Session state changes on other devices, so re-entering this tab always
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
@@ -6624,6 +6735,179 @@
     } finally {
       if (button) { button.disabled = false; button.textContent = "Update password"; }
     }
+  }
+
+  const INSTANCE_THEME_ERRORS = {
+    invalid_credentials: "That password is not right.",
+    too_many_attempts: "Too many wrong passwords. Wait a minute and try again.",
+    not_admin: "Only an admin of this instance can change its theme.",
+    password_not_set: "Your account has no password to confirm with. Set one under Account first.",
+    invalid_theme: "That theme is not available yet.",
+  };
+  const instanceThemeState = { themes: [], current: "default", previewing: "", bound: false };
+
+  function renderInstanceThemeAccess(session) {
+    const nav = $("[data-instance-theme-nav]");
+    nav?.classList.toggle("hidden", !(session?.isAdmin === true && dashboardOnInstance()));
+  }
+
+  function instanceThemeLink() {
+    let link = document.querySelector("link[data-instance-theme]");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "/instance-theme.css";
+      link.setAttribute("data-instance-theme", "");
+      document.head.append(link);
+    }
+    return link;
+  }
+
+  function setInstanceThemeStatus(text, tone = "") {
+    const status = $("[data-instance-theme-status]");
+    if (!status) return;
+    status.textContent = text || "";
+    status.classList.toggle("text-destructive", tone === "bad");
+    status.classList.toggle("text-success", tone === "good");
+    status.classList.toggle("text-muted-foreground", tone !== "bad" && tone !== "good");
+  }
+
+  function instanceThemeName(id) {
+    return instanceThemeState.themes.find((theme) => theme.id === id)?.name || id;
+  }
+
+  function instanceThemeCard(theme) {
+    const palette = (theme.palette || []).map((colour) => escapeHtml(colour));
+    const ready = theme.status === "ready";
+    const current = theme.id === instanceThemeState.current;
+    const selected = theme.id === (instanceThemeState.previewing || instanceThemeState.current);
+    const badge = current
+      ? '<span class="fm-label fm-label-accent">Current</span>'
+      : ready ? (selected ? '<span class="fm-label fm-label-attention">Previewing</span>' : "") : '<span class="fm-label">Coming soon</span>';
+    const swatches = palette.map((colour, index) =>
+      `<span class="h-full" style="background:${colour};flex:${index === 0 ? 3 : 1}"></span>`).join("");
+    return `<button type="button" role="radio" data-instance-theme-card="${escapeHtml(theme.id)}" aria-checked="${selected}"${ready ? "" : ' disabled aria-disabled="true"'} class="grid content-start gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? "border-primary bg-primary/5" : "border-border bg-card"} ${ready ? "hover:border-primary/60" : "cursor-not-allowed opacity-60"}">
+      <span class="flex h-16 overflow-hidden rounded-md border border-border" aria-hidden="true">${swatches}</span>
+      <span class="flex items-center justify-between gap-2"><span class="text-sm font-semibold text-foreground">${escapeHtml(theme.name)}</span>${badge}</span>
+      <span class="text-xs leading-5 text-muted-foreground">${escapeHtml(theme.description)}</span>
+    </button>`;
+  }
+
+  function renderInstanceThemeCards() {
+    const box = $("[data-instance-theme-cards]");
+    if (!box) return;
+    box.innerHTML = instanceThemeState.themes.map(instanceThemeCard).join("");
+    const confirm = $("[data-instance-theme-confirm]");
+    const previewing = instanceThemeState.previewing;
+    if (confirm) confirm.hidden = !previewing;
+    const name = $("[data-instance-theme-preview-name]");
+    if (name) name.textContent = previewing ? instanceThemeName(previewing) : "";
+  }
+
+  function previewInstanceTheme(id) {
+    const previewing = id === instanceThemeState.current ? "" : id;
+    instanceThemeState.previewing = previewing;
+    instanceThemeLink().href = previewing
+      ? `/instance-theme.css?preset=${encodeURIComponent(previewing)}`
+      : `/instance-theme.css?v=${Date.now()}`;
+    renderInstanceThemeCards();
+    setInstanceThemeStatus(previewing ? "" : `${instanceThemeName(instanceThemeState.current)} is the current theme.`);
+    if (previewing) $("[data-instance-theme-password]")?.focus({ preventScroll: true });
+  }
+
+  async function applyInstanceTheme() {
+    const id = instanceThemeState.previewing;
+    const field = $("[data-instance-theme-password]");
+    const password = field?.value || "";
+    if (!id) return;
+    if (!password) {
+      setInstanceThemeStatus("Enter your current password to change the instance theme.", "bad");
+      field?.focus();
+      return;
+    }
+    const button = $("[data-instance-theme-apply]");
+    if (button) { button.disabled = true; button.textContent = "Applying…"; }
+    setInstanceThemeStatus("Applying the theme…");
+    try {
+      const token = state.session?.sessionToken || "";
+      const response = await fetch("/api/instance/theme", {
+        method: "PUT",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          ...(token ? { authorization: "Bearer " + token } : {}),
+        },
+        body: JSON.stringify({ theme: id, password }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok !== true) throw new Error(body.error || `http_${response.status}`);
+      if (field) field.value = "";
+      instanceThemeState.current = body.theme?.preset || "default";
+      const info = await instanceInfo();
+      if (info && typeof info === "object") {
+        info.theme = { ...(info.theme && typeof info.theme === "object" ? info.theme : {}), preset: instanceThemeState.current };
+      }
+      instanceThemeState.previewing = "";
+      instanceThemeLink().href = `/instance-theme.css?v=${Date.now()}`;
+      renderInstanceThemeCards();
+      setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is now the theme for everyone on this instance.`, "good");
+    } catch (error) {
+      if (field) field.value = "";
+      setInstanceThemeStatus(INSTANCE_THEME_ERRORS[error.message] || "Could not change the theme. Try again.", "bad");
+    } finally {
+      if (button) { button.disabled = false; button.textContent = "Apply to instance"; }
+    }
+  }
+
+  function clearInstanceThemePassword() {
+    const field = $("[data-instance-theme-password]");
+    if (field) field.value = "";
+  }
+
+  function leaveInstanceThemeSection() {
+    clearInstanceThemePassword();
+    if (instanceThemeState.previewing) previewInstanceTheme(instanceThemeState.current);
+  }
+
+  function bindInstanceThemeControls() {
+    if (instanceThemeState.bound) return;
+    instanceThemeState.bound = true;
+    $("[data-instance-theme-cards]")?.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-instance-theme-card]");
+      if (card && !card.disabled) previewInstanceTheme(card.dataset.instanceThemeCard);
+    });
+    $("[data-instance-theme-cancel]")?.addEventListener("click", () => {
+      clearInstanceThemePassword();
+      previewInstanceTheme(instanceThemeState.current);
+    });
+    window.addEventListener("pagehide", clearInstanceThemePassword);
+    $("[data-instance-theme-apply]")?.addEventListener("click", () => applyInstanceTheme());
+    $("[data-instance-theme-password]")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      applyInstanceTheme();
+    });
+  }
+
+  async function initInstanceThemeSection() {
+    bindInstanceThemeControls();
+    const username = $("[data-instance-theme-username]");
+    if (username) username.value = state.session?.nodeName || "";
+    const allowed = state.session?.isAdmin === true && dashboardOnInstance();
+    const denied = $("[data-instance-theme-denied]");
+    if (denied) denied.hidden = allowed;
+    if (!allowed) {
+      $("[data-instance-theme-cards]")?.replaceChildren();
+      return;
+    }
+    const info = await instanceInfo();
+    instanceThemeState.themes = Array.isArray(info?.themes) ? info.themes : [];
+    if (!instanceThemeState.previewing) instanceThemeState.current = info?.theme?.preset || "default";
+    renderInstanceThemeCards();
+    if (!instanceThemeState.themes.length) setInstanceThemeStatus("Could not load the themes. Refresh to try again.", "bad");
+    else if (!instanceThemeState.previewing) setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is the current theme.`);
   }
 
   // ---- Nodes & devices (account_devices registry) ----------------------------
@@ -10889,6 +11173,7 @@
     if (payoutStatus) payoutStatus.textContent = session?.hasPayoutAddress ? "Configured" : "Not configured";
     if (adminStatus) adminStatus.textContent = session?.isAdmin ? "Yes" : "No";
     $("[data-admin-test-email-row]")?.classList.toggle("hidden", session?.isAdmin !== true);
+    renderInstanceThemeAccess(session);
     if (emailStatus) {
       emailStatus.textContent = session?.emailVerified
         ? `${email} is verified.`
@@ -13273,7 +13558,7 @@
       ? entries.map(homeRepositoryRow).join("")
       : `<div class="px-2 py-3 text-sm text-muted-foreground">${query
         ? emptyListHtml("No repositories match this filter.", query)
-        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab or Codeberg, or create one</a>.'}</div>`;
+        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab, Codeberg or Gitea, or create one</a>.'}</div>`;
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
   }
@@ -14307,7 +14592,7 @@
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
+      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg or Gitea profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.textContent = `${platformName()} clones this URL into a bare mirror you then keep in sync.`;
@@ -14370,7 +14655,7 @@
     window.lucide?.createIcons();
   }
 
-  // A bare organization link — a GitLab group or a Codeberg profile — imports
+  // A bare organization link — a GitLab group or a Codeberg or Gitea profile — imports
   // every repository underneath it. GitHub is absent because the relay has no
   // organization walk for it, and a GitLab subgroup path is not matched because
   // group/thing is indistinguishable from a repository URL; the group walk
@@ -14382,7 +14667,7 @@
     } catch (_) {
       return "";
     }
-    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org"];
+    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org", "gitea.com", "www.gitea.com"];
     if (parsed.protocol !== "https:" || !namespaceHosts.includes(parsed.hostname.toLowerCase())) return "";
     return parsed.pathname.split("/").filter(Boolean).length === 1 ? parsed.toString() : "";
   }
@@ -14611,7 +14896,7 @@
       return `This account hosts as many repositories on ${platformName()} as it may. Delete one, or host more from your own node.`;
     }
     if (code === "invalid_import_url") {
-      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org"]).join(", ")}.`;
+      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org", "gitea.com"]).join(", ")}.`;
     }
     if (code === "organization_not_found") return "That organization does not exist.";
     return "Could not create the repository.";
@@ -14661,11 +14946,11 @@
     const sourceValue = String($("[data-new-repo-source-value]")?.value || "").trim();
     if (source === "provider") {
       if (!state.session?.sessionToken) {
-        setNewRepoHint("Sign in to import a GitHub, GitLab, or Codeberg repository.", "bad");
+        setNewRepoHint("Sign in to import a GitHub, GitLab, Codeberg, or Gitea repository.", "bad");
         return;
       }
       if (!sourceValue) {
-        setNewRepoHint("Enter a GitHub, GitLab, or Codeberg repository URL.", "bad");
+        setNewRepoHint("Enter a GitHub, GitLab, Codeberg, or Gitea repository URL.", "bad");
         $("[data-new-repo-source-value]")?.focus();
         return;
       }
@@ -14758,7 +15043,7 @@
         setNewRepoHint(
           code === "provider_rate_limited" ? "The provider rate limit was reached. Try again after its reset time."
             : code.includes("authorization") ? "The provider rejected access. Private repositories require a valid scoped token."
-            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, or codeberg.org repository URL."
+            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, codeberg.org, or gitea.com repository URL."
             : code === "empty_namespace" ? "That organization listed no importable repositories. A private group needs a token with read access."
             : code === "namespace_import_failed" ? "None of that organization's repositories could be read."
             : code === "provider_request_failed" ? "The provider did not recognise that organization. Check the group path, or add a token if it is private."
@@ -17609,6 +17894,22 @@
 
   function textWithMentionsHtml(text) {
     return escapeHtml(text).replace(MD_MENTION, (whole, prefix, login) => `${prefix}${mdMentionHtml(login)}`);
+  }
+
+  function textWithLinksHtml(text) {
+    return escapeHtml(text).replace(MD_BARE_URL, (whole, prefix, candidate) => {
+      const url = mdTrimAutolink(candidate);
+      return `${prefix}${mdLinkHtml(url, url)}${candidate.slice(url.length)}`;
+    });
+  }
+
+  function repoAboutDescriptionHtml(repo) {
+    const text = repoDescriptionText(repo);
+    if (!text) return "No description published.";
+    const mirrorOf = String(repo?.description || "").trim() ? "" : repoMirrorOf(repo);
+    const upstream = mirrorOf && repoMirrorUpstreamPath(mirrorOf);
+    if (upstream) return `Read-only mirror of ${mdLinkHtml(escapeHtml(upstream), escapeHtml(mirrorOf))}`;
+    return textWithLinksHtml(text);
   }
 
   function mdTrimAutolink(url) {
@@ -22645,6 +22946,9 @@
     if (ev.type === "force-push") return { label: "force-pushed", tone: neutral };
     if (ev.type === "status") return { label: "closed this pull request", tone: neutral };
     if (ev.type === "delete") return { label: "deleted this pull request", tone: neutral };
+    if (ev.type === "revision") {
+      return { label: ev.state ? `updated this pull request to revision ${ev.state}` : "updated this pull request", tone: neutral };
+    }
     return { label: "comment", tone: neutral };
   }
 
@@ -22758,7 +23062,8 @@
         : ev.type === "review" && ev.state === "approved" ? "check"
           : ev.type === "review" && ev.state === "changes_requested" ? "file-diff"
             : ev.type === "status" ? "git-pull-request-closed"
-              : ev.type === "delete" ? "trash-2" : "eye";
+              : ev.type === "delete" ? "trash-2"
+                : ev.type === "revision" ? "git-commit-horizontal" : "eye";
       return renderIssueTimelineEvent(icon, author, ev.author, `<span class="${meta.tone.split(" ").filter((name) => name.startsWith("text-")).join(" ")}">${escapeHtml(meta.label)}</span>${ev.type === "agent" && ev.branchName ? `<span class="font-mono text-[12px]">${escapeHtml(ev.branchName)}</span>` : ""}${anchor ? `<span class="truncate font-mono text-[12px]">${escapeHtml(anchor)}</span>` : ""}`, ev.ts, "", ev.type === "agent");
     }
     const fullDate = formatRecordDateTime(ev.ts);
@@ -23916,7 +24221,7 @@
     if (!state.session?.nodeName) {
       return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to comment on or review this pull request.</div>`;
     }
-    return `
+    return `${renderPullRevisionPanel(number, parsed)}
       <form data-repo-pull-review-form data-repo-pull-review-number="${escapeHtml(number)}" class="grid min-w-0 gap-4 border-t-2 border-border pt-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(state.session.nodeName, state.session.nodeName, "h-10 w-10")}</span>
         <div class="grid min-w-0 gap-2">
@@ -29943,7 +30248,7 @@
       }
     });
     $$("[data-repo-about-description]").forEach((el) => {
-      el.textContent = text || "No description published.";
+      el.innerHTML = repoAboutDescriptionHtml(repo);
     });
     $$("[data-repo-about-input]").forEach((el) => {
       el.value = text;
@@ -30460,6 +30765,10 @@
         .map((item) => rememberRepoMirrorAbout(item, body))
         .some(Boolean);
       if (mirrorChanged) applyRepoReadOnlyMirror(state.selectedRepo);
+      const externalMirrors = Array.isArray(body.externalMirrors) ? body.externalMirrors : [];
+      [repo, state.selectedRepo].forEach((item) => { if (item) item.externalMirrors = externalMirrors; });
+      renderRepoExternalMirrors(state.selectedRepo);
+      window.lucide?.createIcons();
       const followers = Number(body.fediverse?.followers || 0);
       $$("[data-repo-watch-count], [data-repo-watch-followers], [data-repo-social-followers]").forEach((el) => {
         el.textContent = formatCount(followers);
@@ -38047,6 +38356,43 @@
     container.innerHTML = online.length
       ? online.map((mirror) => renderMirrorRow(mirror, servedBy, refMirror)).join("")
       : '<div class="px-2 py-1 text-xs text-muted-foreground">No nodes online right now.</div>';
+    renderRepoExternalMirrors(state.selectedRepo);
+  }
+
+  function repoExternalMirrorPath(url) {
+    try {
+      return new URL(url).pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "");
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function renderRepoExternalMirrorRow(link) {
+    const url = String(link?.url || "");
+    if (!/^https:\/\/[^\s"'<>]+$/i.test(url)) return "";
+    const label = String(link.label || "");
+    const path = repoExternalMirrorPath(url) || url.replace(/^https:\/\//i, "");
+    const mark = String(REPO_FORGE_MIRROR_MARKS[link.provider] || "").replace('class="h-5 w-5"', 'class="h-3.5 w-3.5"')
+      || '<i data-lucide="git-branch" class="h-3.5 w-3.5"></i>';
+    const upstream = link.role === "upstream";
+    const title = `${upstream ? "Upstream" : "Mirror"} on ${label || "the web"}: ${url}`;
+    return `
+        <a data-repo-external-mirror="${escapeHtml(String(link.provider || ""))}" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(title)}" class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-secondary/60">
+          <span class="flex min-w-0 flex-1 items-center gap-1.5">
+            <span class="inline-flex shrink-0 text-muted-foreground">${mark}</span>
+            <span class="block min-w-0 truncate font-mono text-xs font-medium text-foreground">${escapeHtml(path)}</span>
+            ${upstream ? '<span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">upstream</span>' : ""}
+          </span>
+          <span class="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-muted-foreground">${escapeHtml(label)}</span>
+          <i data-lucide="external-link" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
+        </a>`;
+  }
+
+  function renderRepoExternalMirrors(repo) {
+    const links = Array.isArray(repo?.externalMirrors) ? repo.externalMirrors : [];
+    const rows = links.map(renderRepoExternalMirrorRow).join("");
+    $$("[data-repo-external-mirror-list]").forEach((list) => { list.innerHTML = rows; });
+    $$("[data-repo-external-mirrors]").forEach((wrap) => { wrap.hidden = !rows; });
   }
 
   // A repository that has been around collects far more retired desktops than
@@ -43291,7 +43637,7 @@
                 ? `<button type="button" data-repo-about-edit aria-label="Edit About" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>`
                 : ""}
             </div>
-            <p data-repo-about-description class="mt-2 text-sm leading-6 text-foreground">${escapeHtml(repoDescriptionText(repo) || "No description published.")}</p>
+            <p data-repo-about-description class="mt-2 break-words text-sm leading-6 text-foreground">${repoAboutDescriptionHtml(repo)}</p>
             <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
               <a href="${escapeHtml(cloneUrl(repo))}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="link" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Open clean URL</span></a>
               <a href="${escapeHtml(readmeHref)}" data-repo-readme-link data-repo-readme-path="${escapeHtml(readmePath)}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="book-open" class="h-3.5 w-3.5"></i><span>Readme</span></a>
@@ -43356,13 +43702,17 @@
               </div>
               <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5">${'<span class="h-7 w-7 rounded-full border-2 border-background bg-secondary"></span>'.repeat(8)}</div>
             </div>
-            ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
+            ${dashboardOnInstance() ? `<div data-repo-external-mirrors hidden class="mt-3 border-t border-border pt-3">
+              <h4 class="text-xs font-semibold text-foreground">Mirrors</h4>
+              <div data-repo-external-mirror-list class="-mx-2 mt-2 grid"></div>
+            </div>` : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
                 <span class="font-mono text-[11px] text-muted-foreground"><span data-dashboard-repo-count="mirrors">${tabCountLabel(mirrorsCount)}</span> online</span>
               </div>
               <p class="mt-1 text-[11px] leading-4 text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
               <div data-repo-live-mirror-list class="-mx-2 mt-2 grid"></div>
+              <div data-repo-external-mirrors hidden><div data-repo-external-mirror-list class="-mx-2 grid"></div></div>
             </div>`}
             ${canEditAbout && !repo.isPrivate ? `
             <details data-repo-fedi-posts class="mt-4 border-t border-border pt-4">
@@ -51876,7 +52226,7 @@
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=24b1d60f9ff3",
+    "notes": "/dashboard-page-notes.js?v=c59dced335d6",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=b3986bf8501f",
     "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",

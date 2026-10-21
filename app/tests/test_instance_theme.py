@@ -166,3 +166,12 @@ def test_a_missing_catalogue_leaves_only_colour_themes(tmp_path):
     assert list(themes) == ["x"]
     assert themes["x"]["stylesheet"] == ""
     assert themes["x"]["colors"] == {"dark": {"border": "#abcdef"}}
+
+def test_settings_offer_the_instance_theme_to_admins_only():
+    settings = (PUBLIC / "dashboard" / "partials" / "views" / "settings.html").read_text(encoding="utf-8")
+    script = (PUBLIC / "dashboard" / "js" / "04-account.js").read_text(encoding="utf-8")
+    assert '<div data-instance-theme-nav class="hidden grid">' in settings
+    assert 'data-settings-section="instance-theme"' in settings
+    assert 'data-instance-theme-password type="password"' in settings
+    assert 'nav?.classList.toggle("hidden", !(session?.isAdmin === true && dashboardOnInstance()))' in script
+    assert 'body: JSON.stringify({ theme: id, password })' in script

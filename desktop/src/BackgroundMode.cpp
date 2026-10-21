@@ -40,6 +40,7 @@ constexpr char kLegacyEngineName[] = "forkmesh-core";
 
 std::atomic_bool g_stopSignal{false};
 std::atomic_bool g_sessionEnding{false};
+std::atomic_bool g_handOverRequested{false};
 
 bool writeText(const QString &path, const QString &content, QString *error)
 {
@@ -932,6 +933,12 @@ RunnerBadge runnerBadge(const RunnerDiagnostics &diagnostics)
     return badge;
 }
 
+bool canCloseToHeadless(const RunnerDiagnostics &diagnostics)
+{
+    return diagnostics.start.enabled && !diagnostics.instanceRunning &&
+           diagnostics.activeState != QLatin1String("active");
+}
+
 QString runnerReport(const RunnerDiagnostics &d)
 {
     if (!d.start.enabled)
@@ -1096,10 +1103,15 @@ bool launchTray()
     return startInOwnScope(trayLabel(project), desktopBinaryPath(), trayArguments(project));
 }
 
+void requestHandOverOnClose()
+{
+    g_handOverRequested = true;
+}
+
 bool handOverAfterWindowClose(bool restarting)
 {
-    if (restarting || g_stopSignal || !supported() || !keepRunning() || isBackgroundInstance() ||
-        !singleInstanceHeld() || !displayPlatform())
+    if (restarting || g_stopSignal || !supported() || !(keepRunning() || g_handOverRequested) ||
+        isBackgroundInstance() || !singleInstanceHeld() || !displayPlatform())
         return false;
     if (!startHeadless()) {
         qWarning().noquote() << "ForkMesh closed, but could not start it without a window.";

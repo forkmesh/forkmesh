@@ -48,7 +48,7 @@
 	transport http {
 		keepalive 10s
 	}
-	lb_try_duration 10s
+	lb_try_duration 30s
 	lb_try_interval 250ms
 	flush_interval -1
 }
@@ -177,10 +177,23 @@
 	}
 }
 
+# The App unreachable (restart, crash): a JSON answer the clients can
+# read and retry; the status stays 502/504 for the Worker's fallback.
+(upstream_errors) {
+	handle_errors 502 504 {
+		import security_headers
+		header Content-Type "application/json; charset=utf-8"
+		header Cache-Control no-store
+		header Retry-After 5
+		respond `{"error":"upstream_unavailable"}` {err.status_code}
+	}
+}
+
 (site_common) {
 	import access_log
 	import client_headers
 	import security_headers
+	import upstream_errors
 	import app_body_limits
 	encode zstd gzip
 	# Host-internal and mesh paths are never public. A handle (not a
