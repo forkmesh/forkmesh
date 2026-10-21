@@ -1,0 +1,124 @@
+# Pull request merge box
+
+The conversation tab of an open pull request ends in one merge box
+(`renderRepoPullMergeBox` in `app/public/dashboard/js/06-repo-content.js`,
+styles `.fm-merge-*` in `app/public/dashboard/shell.html`). It replaced three
+separate panels (readiness, merge control, update button) that each said part
+of the story.
+
+## What it shows
+
+`repoPullMergeModel` turns what the page already reads into rows, one per
+thing that can block a merge, each with the action that clears it:
+
+| Row | Source | Action |
+| --- | --- | --- |
+| Review | signed reviews on the pull ledger (`pullReviewPolicy`) | Copy review link (to the Files changed tab) |
+| Checks | the mirror's Actions runs for the current head, and `.forkmesh/required-checks.json` read at the reviewed base commit | Re-run failed (`actions/control` `rerun`), Run checks / Open Actions |
+| Branch | the mirror's merge trial (`merge-preview`) | Update branch, or how to resolve conflicts |
+| Rules | `pulls/<n>/rules` | none: blocking rules cannot be waived |
+
+The footer says whether the pull can merge, why not, and holds the controls.
+Only an owner of the organization that owns the repository sees the merge
+controls (the relay's `_organization_owner_can_merge_repo`); everyone else
+sees the same rows and who can merge.
+
+- **Independent review.** The executor requires one signed approval from
+  someone other than the author and no outstanding request for changes. When
+  that is missing, *Merge pull request* stays disabled and the organization
+  owner gets a
+  separate *Merge without review* button. It asks for confirmation and only
+  then sends `overrideReview: true`, which the relay audits and the executor
+  records in the ledger. The flag is sent only when the gate is actually
+  unmet, so an approved pull never carries a waiver.
+- **Merge method.** Mirror merges create a merge commit
+  (`git merge-tree`, `docs/server/merge-executor.md`). Squash and rebase are
+  listed but disabled until the executor supports them.
+- **Behind the base.** Being behind does not block a merge that is clean: a
+  branch-backed pull lands as a merge commit, and a patch-backed pull is
+  replayed onto the newest base. It is shown as a warning, not a blocker.
+
+## Update branch
+
+A branch-backed pull (`derive: branch`, its head is a branch of this
+repository) that is behind and merges cleanly gets **Update branch** for an
+organization owner. It posts `forkmesh.pull-update-v1` to `/api/repo/<o>/<r>/pulls/<n>/update`
+(`repository_pull_merge_handler`, mutation `update`); the mirror merges the
+base into the head branch (`update-pull-branch`, `_update_execute_locked` and
+`server/merge.go`). Only merging is supported: the executor has no rebase
+mode, so none is offered.
+
+- A pull from someone else's copy (a fork on another node, a web or
+  cross-node submission) is patch-backed: its commits travel in the ledger as
+  `commits.mbox`/`changes.patch`, there is no branch here to update, and no
+  maintainer can push to the author's copy. The box says so, says that only
+  the author can refresh it by rebasing and resubmitting, and that it can
+  still be merged while behind.
+- A visitor or the author of a branch-backed pull sees the commands to merge
+  the base locally and push.
+
+## "The pull-request metadata changed"
+
+Every merge and update pins three object ids: the base tip, the head, and
+the tip of the `forkmesh/pulls` ledger branch (`expectedPullsOid`). The
+mirror refuses with `stale_pull_metadata` when the ledger tip moved, and the
+ledger moves for *any* pull activity in the repository: a comment, a review,
+another pull's intake. In the reported case the pull's author commented 58
+seconds before the owner pressed merge.
+
+Two things kept it failing:
+
+1. The page pinned an old ledger tip and kept it. The pull page's read
+   bundle (`app/host/forkmesh_host/repo_views.py`, `/page-reads`) is served
+   stale-while-revalidate for up to `BUNDLE_STALE_SECONDS` (five minutes),
+   and its `forkmesh/pulls` read seeded the page even after a reload. An idle
+   page's activity tick only watches agents, so it never re-read the ledger.
+2. *Retry merge* resent the same request id. The relay keeps one terminal
+   answer per request id (`repo_merge_jobs`, idempotency), so a retry could
+   only read back the stored failure.
+
+Now:
+
+- Before sending, the page re-reads the ledger tip, the pull record, its
+  reviews and the merge trial with `fresh` reads that skip the page bundle,
+  the early reads and the session cache (`refreshRepoPullMergePins`,
+  `fetchRepoJson(..., { fresh: true })`), and pins what it just read.
+- When a mirror still answers `stale_pull_metadata` or `stale_base`, the page
+  re-reads once more and retries once with a new request id.
+- It compares what decides the merge before and after (`pullMergeFingerprint`:
+  status, head, patch series, conflicts, requests for changes). If any of
+  those changed, nothing is sent and the box lists what changed; a comment,
+  another pull's activity or a moved base that still merges cleanly is not a
+  reason to stop.
+- A request id is reused only for an answer that is not final yet (the
+  relay could not be reached, the mirror is still working, or the result is
+  pending), so retrying such a request can never merge twice. After a final
+  answer the next attempt is a new request.
+
+The same applies to Update branch.
+
+## Repository tab strip on phones
+
+The tab strip (Code, Issues, Pull requests, ...) scrolls sideways on a
+phone. It used to jump:
+
+- Re-rendering the repository page (`renderRepoDetail`, for example when the
+  viewer's permissions arrive and add Agents or Settings) rebuilt the strip
+  and reset its `scrollLeft` to 0. The page now carries the strip's
+  `scrollLeft` across the re-render, including from the server-rendered first
+  view.
+- The selected tab is bold, which widened it and pushed every tab after it.
+  Each label now reserves its bold width with a hidden bold copy
+  (`[data-repo-tab-label]::after`).
+- Selecting a tab that is off screen now scrolls the strip just far enough to
+  show it (`keepRepoActiveTabVisible`), and only when the selection changed,
+  never on a re-render the reader did not ask for.
+- The Discussions counter is kept as invisible space while a positive count
+  waits for a live mirror, instead of appearing later; counters use tabular
+  figures and are only rewritten when the number changes.
+- The strip contains its overscroll, hides its scrollbar, and gives icons a
+  fixed box before the icon script replaces them.
+- The server-rendered strip (`_tabs` in `app/host/forkmesh_host/repo_ssr.py`)
+  draws the same tabs as the dashboard (including Security), the same counter
+  pills (`...` until a count is known) and the same label markup, so the
+  dashboard replacing it does not move anything.

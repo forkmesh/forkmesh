@@ -328,17 +328,30 @@ def _tablist(view):
 
 def test_first_view_tabs_follow_the_cached_about():
     plain = _tablist(repo_ssr.render_view(DATA))
-    assert re.findall(r"<span>(Code|Issues|Pull requests|Discussions|Insights|Projects|Actions)</span>",
-                      plain) == ["Code", "Issues", "Pull requests", "Discussions", "Insights",
-                                 "Projects", "Actions"]
+    assert re.findall(r'<span data-repo-tab-label="[^"]+">([^<]+)</span>', plain) == [
+        "Code", "Issues", "Pull requests", "Discussions", "Insights", "Projects", "Actions",
+        "Security"]
     tree = dict(DATA["tree"], counts={"openIssues": 3, "openPulls": 12, "discussions": 0})
     about = {"ok": True, "features": {"issues": True, "pulls": True, "discussions": False}}
     view = _tablist(repo_ssr.render_view(dict(DATA, tree=tree), about=about))
-    labels = re.findall(r"<span>(Code|Issues|Pull requests|Discussions|Insights|Projects|Actions)</span>",
-                        view)
-    assert labels == ["Code", "Issues", "Pull requests", "Insights", "Projects", "Actions"]
+    labels = re.findall(r'<span data-repo-tab-label="[^"]+">([^<]+)</span>', view)
+    assert labels == ["Code", "Issues", "Pull requests", "Insights", "Projects", "Actions",
+                      "Security"]
     assert ">3</span>" in view and ">12</span>" in view
     assert 'href="/forkmesh/forkmesh" role="tab" aria-selected="true"' in view
+
+
+def test_first_view_tab_strip_matches_the_dashboards_so_hydration_does_not_shift_it():
+    # The dashboard draws every default tab, Security after Actions, a counter
+    # pill on Issues and Pull requests even before their counts arrive, and a
+    # hidden bold copy of each label; the first view reserves the same widths.
+    view = _tablist(repo_ssr.render_view(DATA))
+    assert "data-repo-tabs" in repo_ssr.render_view(DATA)
+    assert 'data-dashboard-repo-tab-count="issues"' in view
+    assert 'data-dashboard-repo-tab-count="pulls"' in view
+    assert view.count(">...</span>") == 2
+    assert '<span data-repo-tab-label="Security">Security</span>' in view
+    assert "tabular-nums" in view
 
 
 def test_first_view_about_rail_and_mirror_line():
@@ -408,7 +421,8 @@ def test_inject_fills_the_header_and_seeds_the_dashboard():
     assert payload["features"] == {"issues": False, "pulls": True}
     assert payload["info"] == {"about": "A", "website": ""}
     view = page[page.index("<div data-repo-ssr"):]
-    assert "<span>Issues</span>" not in view and "<span>Pull requests</span>" in view
+    assert '<span data-repo-tab-label="Issues">' not in view
+    assert '<span data-repo-tab-label="Pull requests">Pull requests</span>' in view
 
 
 

@@ -2070,7 +2070,7 @@ def test_dashboard_pull_detail_reads_committed_patch_for_files_changed():
 
     for marker in (
         'const PULL_METADATA_BRANCH = "forkmesh/pulls";',
-        "async function resolveRepoPullMetadataCommit(repo)",
+        "async function resolveRepoPullMetadataCommit(repo, options = {})",
         'async function loadRepoPullPatch(repo, number, metadataCommit = "", values = {})',
         "function parsePatchStats(patch)",
         "function renderRepoPullFiles(files, viewed = new Set(), options = {})",
@@ -2463,7 +2463,7 @@ def test_dashboard_repository_branch_button_lists_live_remote_branches():
         "function renderRepoBranchToolbar(repo, branch)",
         "function renderRepoBranchMenu(repo, branches, open)",
         "async function toggleRepoBranchMenu(repo, button)",
-        "fetchRepoJson(`${repoApiBase(repo)}/branches`)",
+        "fetchRepoJson(`${repoApiBase(repo)}/branches`",
         "filterRepoBranches(repo, branches)",
         "branches.map((branch) =>",
         "data-repo-branch-button",
