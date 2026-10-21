@@ -1878,6 +1878,59 @@ class Default:
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "public, max-age=60"}))
 
+    async def _instance_world_public(self):
+        if not instance_branded(self.env):
+            return None
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_world.SETTING_KEY)
+        except Exception:
+            row = None
+        return instance_world.public(
+            instance_world.parse((row or {}).get("doc") or ""),
+            getattr(self.env, "INSTANCE_LOGO", "") or "")
+
+    async def _instance_world_scene(self, request, url):
+        """Public, cacheable description of this World's hexagon for a
+        neighbouring World (see instance_world_scene)."""
+        origin = str(getattr(self.env, "PUBLIC_BASE_URL", "") or "").strip() \
+            .rstrip("/") or "https://" + str(url.hostname or "")
+        cache_key = origin + instance_world_scene.PATH
+        headers = {
+            "access-control-allow-origin": "*",
+            "x-content-type-options": "nosniff",
+        }
+        cached = await edge_cache_match(cache_key)
+        if cached is not None:
+            return self._without_head_body(request, cached)
+        world = await self._instance_world_public() or {}
+        theme = await self._instance_theme()
+        accent = str(((theme or {}).get("dark") or {}).get("primary") or "")
+        listing = None
+        bugs = world.get("bugs") if isinstance(world.get("bugs"), dict) \
+            else None
+        if bugs:
+            try:
+                resp = await js_fetch_with_timeout(
+                    instance_world_scene.raw_url(origin, bugs, bugs["path"]),
+                    {"method": "GET",
+                     "headers": {"accept": "application/json"},
+                     "redirect": "error"},
+                    6)
+                if int(getattr(resp, "status", 0)) == 200:
+                    listing = json.loads(str(await resp.text())[:262144])
+            except Exception:
+                listing = None
+        scene = instance_world_scene.build(
+            instance_name(self.env), world, origin, accent, listing)
+        response = json_response(
+            scene, cache_seconds=instance_world_scene.CACHE_SECONDS,
+            extra_headers=headers)
+        if listing is not None:
+            await edge_cache_put(cache_key, response)
+        return self._without_head_body(request, response)
+
     async def _instance_theme(self):
         if not instance_branded(self.env):
             return {}
@@ -1950,7 +2003,12 @@ class Default:
                     instance_branded(self.env)),
                 "repoAddresses": await self._repo_addresses_doc(),
                 "directory": await self._instance_directory_links(),
+                "world": await self._instance_world_public(),
             }, cache_control="public, max-age=60")
+        if instance_branded(self.env) and url.path.rstrip("/") == \
+                "/api/world/neighbour-scene" and \
+                method_name(request) in ("GET", "HEAD"):
+            return await self._instance_world_scene(request, url)
         if url.path == "/api/instance/theme" and instance_branded(self.env) \
                 and method_name(request) in ("PUT", "POST"):
             return await self._instance_theme_write(request)

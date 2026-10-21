@@ -103,12 +103,30 @@ ALLOWED = {
         "SpriteMaterial": 1,
     },
     "scene/instance-hexes.js": {"BufferGeometry": 1},
+    # The terrarium's parts are merged once inside resources.geometry
+    # factories, as are the bugs (one geometry per kind and colour).
+    "scene/instance-territory.js": {
+        "BoxGeometry": 1,
+        "BufferGeometry": 1,
+        "ConeGeometry": 2,
+        "CylinderGeometry": 1,
+        "DodecahedronGeometry": 1,
+        "ExtrudeGeometry": 1,
+    },
     "scene/runtime/network.js": {"BufferGeometry": 1},
     "scene/runtime/office-exits.js": {"BufferGeometry": 1, "LineBasicMaterial": 1},
     "scene/sol-fountain.js": {
         "BufferGeometry": 1,
         "PointsMaterial": 1,
         "SpriteMaterial": 1,
+    },
+    "scene/territory-bugs.js": {
+        "BoxGeometry": 1,
+        "BufferGeometry": 1,
+        "CircleGeometry": 1,
+        "PlaneGeometry": 1,
+        "ShapeGeometry": 1,
+        "SphereGeometry": 2,
     },
     "scene/town.js": {"BufferGeometry": 1},
     "scene/weather.js": {"BufferGeometry": 1, "PointsMaterial": 2},

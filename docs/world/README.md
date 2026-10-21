@@ -30,6 +30,8 @@ desktop embeds the same page.
 | `world/public/world/world-debug-log.js` | Admin debug log: counters, ring buffer, error/console/long-animation-frame/HTTP observers |
 | `world/public/world/world-mesh.js` | World mesh: directory normalising and the watch/visit sockets to neighbouring worlds ([World mesh](#world-mesh)) |
 | `world/public/world/world-boot.js` | Load log: boot timeline, scene-element and shader-compile trace, load suggestions |
+| `world/public/world/world-territory.js` | An instance's own hexagon: settings from `/api/instance`, the ForkMesh elements it hides, crossing URLs and arrival parameters, the bug list ([INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon)) |
+| `world/public/world/scene/instance-territory.js`, `scene/territory-geometry.js` | The instance hexagon's scene (plaza, sign, buildings, bug terrarium, the ForkMesh hexagons next door) and the road-crossing geometry |
 | `world/public/world/world-brand.js` | On a white-label instance, renames "ForkMesh" in canvas-painted scene text to the instance name ([INSTANCES.md](../INSTANCES.md#the-world-on-an-instance)) |
 | `world/public/world/world-marketplace-packages.js` | Loader for World packages from `marketplace/packages/*/content/world/` |
 | `world/public/world/elements/` | Self-contained purchasable World elements; contract in its `README.md` |
@@ -502,6 +504,13 @@ count toward the safe-mode reboot; visible crashes are kind `crash`.
   hexagon that leads back; `?portal=<n>` places the arriving visitor in front
   of hexagon `n`
   ([../app/instance-federation.md](../app/instance-federation.md#world-connectivity)).
+  On an instance with its own hexagon (a territory), the World is drawn as
+  that one hexagon with the ForkMesh hexagons next door, and walking across
+  its road travels to the ForkMesh World (`checkTerritoryCrossing`); while a
+  territory is active `placeWorldMesh` draws no world-mesh neighbours, so the
+  two layouts never overlap. Off a territory the world-mesh flowers below
+  replace the old road crossing into an instance hexagon
+  ([../INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon)).
 - **Bounds.** `desertWalkSurfaceContains()` is the union of all hexes grown
   by the road width plus junction discs, the hexes of every placed
   neighbouring world included (`setWorldMeshFlowers()`). `WORLD_RADIUS` (1900) bounds remote
