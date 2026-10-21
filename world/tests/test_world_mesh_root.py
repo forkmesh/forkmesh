@@ -15,12 +15,15 @@ NODE = shutil.which("node")
 
 HUB = "forkmesh"
 BLT = "f455c98c739e5b0f7348dfd5914d2eac"
+ACME = "0a1b2c3d4e5f60718293a4b5c6d7e8f9"
 WORLDS = [
     {"id": HUB, "name": "ForkMesh", "world": "https://world.forkmesh.com",
      "api": "https://app.forkmesh.com", "slot": -1, "shape": "flower"},
     {"id": BLT, "name": "OWASP BLT", "world": "https://git.owaspblt.org",
      "api": "https://git.owaspblt.org", "slot": 0, "shape": "hex",
      "scene": "https://git.owaspblt.org/api/world/neighbour-scene"},
+    {"id": ACME, "name": "Acme", "world": "https://world.acme.dev",
+     "api": "https://app.acme.dev", "slot": 3, "shape": "flower"},
 ]
 
 
@@ -65,6 +68,7 @@ const {
   WORLD_BIKE_LANE_CENTER_X, WORLD_MESH_HEX_SHAPE, worldMeshSlotOffset,
 } = l;
 const WORLD_MESH_SWITCH_MARGIN = 8;
+const FRESH_ARRIVAL_CAMPFIRE_PREVIEW = { x: 0, y: 0.38, z: 114.8, heading: Math.PI, space: "town-square" };
 const THREE = { Group: class { add() {} } };
 const createInstanceHex = () => null;
 const clearNeighbourFootprints = () => {};
@@ -97,11 +101,20 @@ function view(self, x, z) {
     officeOwner: null,
     notices: [],
     reloads: 0,
+    saved: [],
+    restoredPosition: null,
+    meshRestoreChecked: false,
     player,
     lastMovement: { x, z, space: "town-square" },
     worldMesh: normalizeWorldMesh({ self, worlds: __WORLDS__ }),
     world: {
       updateInstanceHexes, worldMeshOwner,
+      getPosition: () => ({ x: player.x, z: player.z, space: "town-square" }),
+      setSpawn(spawn) {
+        player.x = spawn.x;
+        player.z = spawn.z;
+        return true;
+      },
       shiftPlayer(dx, dz) {
         player.x += dx;
         player.z += dz;
@@ -122,6 +135,7 @@ function view(self, x, z) {
     return this.meshLinks;
   };
   v.applyWorldMeshArrival = () => {};
+  v.rememberWorldPosition = (position) => { v.saved.push({ x: position.x, z: position.z }); };
   v.hudNotice = (text) => v.notices.push(text);
   v.setOfficeOwner = (owner) => { v.officeOwner = owner?.id || null; };
   v.reloadMeshRootData = () => { v.reloads += 1; };
@@ -159,13 +173,41 @@ walk(hub, (home.x + blt.x) / 2, (home.z + blt.z) / 2);
 out.onRoad = { root: hub.meshRoot?.id || "", reloads: hub.reloads };
 walk(hub, into.x, into.z);
 await flush();
-const hubInBlt = hub.meshPlaced.find((world) => world.id === "forkmesh");
+out.visited = {
+  root: hub.meshRoot?.id || "",
+  player: { ...hub.player },
+  petals: worldMeshReplacedPetals(),
+  visit: hub.meshLinks.visitId,
+  links: links(hub),
+  socket: sockets.at(-1)?.url || "",
+  office: hub.officeOwner,
+  notices: [...hub.notices],
+  reloads: hub.reloads,
+  shift: hub.meshHomeShift(),
+  onLand: hub.neighbourHexLandAt(into.x, into.z)?.id || "",
+  onRoad: hub.neighbourHexLandAt((home.x + blt.x) / 2, (home.z + blt.z) / 2)?.id || "",
+  atHome: hub.neighbourHexLandAt(home.x, home.z)?.id || "",
+};
+walk(hub, home.x, home.z);
+await flush();
+out.left = {
+  root: hub.meshRoot?.id || "",
+  visit: hub.meshLinks.visitId,
+  notices: [...hub.notices],
+};
+
+const acme = hub.meshPlaced.find((world) => world.id === "__ACME__");
+const startPlayer = { ...hub.player };
+walk(hub, acme.x, acme.z);
+await flush();
+const hubInAcme = hub.meshPlaced.find((world) => world.id === "forkmesh");
 out.entered = {
+  acme: { dx: acme.dx, dz: acme.dz },
+  start: startPlayer,
   root: hub.meshRoot?.id || "",
   player: { ...hub.player },
   lastMovement: { x: hub.lastMovement.x, z: hub.lastMovement.z },
-  hub: { shape: hubInBlt.shape, dx: hubInBlt.dx, dz: hubInBlt.dz },
-  petals: worldMeshReplacedPetals(),
+  hub: { shape: hubInAcme.shape, dx: hubInAcme.dx, dz: hubInAcme.dz },
   visit: hub.meshLinks.visitId,
   links: links(hub),
   socket: sockets.at(-1)?.url || "",
@@ -178,9 +220,9 @@ out.entered = {
 walk(hub, hub.lastMovement.x + 1, hub.lastMovement.z + 1);
 out.stays = { root: hub.meshRoot?.id || "", reloads: hub.reloads };
 
-hub.meshLinks.links.get("__BLT__").peers.set("p1", {
+hub.meshLinks.links.get("__ACME__").peers.set("p1", {
   id: "p1", name: "resident", activity: "coding", category: "work", x: 3, z: 4,
-  space: "town-square", home: "git.owaspblt.org",
+  space: "town-square", home: "world.acme.dev",
 });
 out.resident = hub.meshPeerPlayers()[0];
 
@@ -195,12 +237,11 @@ out.reads.write = await hub.fetchMeshRootJSON(
 const late = hub.fetchMeshRootJSON("/api/leaderboards", {}, "read");
 hub.meshRootGeneration += 1;
 out.reads.late = await late.then(() => "applied", (error) => error.message);
-out.reads.at = await hub.fetchJSONAt(hubInBlt.x, hubInBlt.z, "/api/world/events");
+out.reads.at = await hub.fetchJSONAt(hubInAcme.x, hubInAcme.z, "/api/world/events");
 out.federated = federated;
 out.own = own;
 
-const back = { x: hubInBlt.x - hubInBlt.dx * 0.4, z: hubInBlt.z - hubInBlt.dz * 0.4 };
-walk(hub, back.x, back.z);
+walk(hub, hubInAcme.x, hubInAcme.z);
 out.back = {
   root: hub.meshRoot?.id || "",
   player: { ...hub.player },
@@ -211,6 +252,24 @@ out.back = {
   reloads: hub.reloads,
   shift: hub.meshHomeShift(),
 };
+
+const restored = view("forkmesh", into.x, into.z);
+restored.restoredPosition = { x: into.x, z: into.z, space: "town-square" };
+const loadedMesh = restored.worldMesh;
+restored.worldMesh = { self: null, worlds: [] };
+restored.placeWorldMesh();
+restored.worldMesh = loadedMesh;
+restored.placeWorldMesh();
+out.restoredOnBlt = {
+  player: { ...restored.player },
+  restored: restored.restoredPosition,
+  saved: restored.saved,
+  root: restored.meshRoot?.id || "",
+};
+const kept = view("forkmesh", home.x, home.z);
+kept.restoredPosition = { x: home.x, z: home.z, space: "town-square" };
+kept.placeWorldMesh();
+out.restoredAtHome = { player: { ...kept.player }, saved: kept.saved };
 
 const own_page = view("__BLT__", home.x, home.z);
 own_page.placeWorldMesh();
@@ -233,7 +292,8 @@ def walk():
     script = (SCRIPT.replace("__SCENE__", SCENE)
               .replace("__METHODS__", METHODS)
               .replace("__WORLDS__", json.dumps(WORLDS))
-              .replace("__BLT__", BLT))
+              .replace("__BLT__", BLT)
+              .replace("__ACME__", ACME))
     result = subprocess.run([NODE, "--input-type=module", "-e", script],
                             cwd=WORLD, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
@@ -266,36 +326,76 @@ def test_the_shared_road_does_not_switch_worlds(walk):
     assert walk["onRoad"] == {"root": "", "reloads": 0}
 
 
-def test_stepping_onto_blt_puts_the_page_in_blt(walk):
-    entered = walk["entered"]
-    assert entered["root"] == BLT
-    assert close(entered["player"]["x"], -PETAL1[0])
-    assert close(entered["player"]["z"], -45 - PETAL1[1])
-    assert close(entered["lastMovement"]["x"], -PETAL1[0] * 0.4)
-    assert close(entered["lastMovement"]["z"], -45 - PETAL1[1] * 0.4)
-    assert entered["hub"]["shape"] == "hex"
-    assert close(entered["hub"]["dx"], -PETAL1[0])
-    assert entered["petals"] == [4]
-    assert entered["visit"] == BLT
-    assert entered["links"] == [[BLT, "visit"]]
-    assert entered["socket"] == (
+def test_stepping_onto_blt_visits_it_and_keeps_the_page_in_forkmesh(walk):
+    visited = walk["visited"]
+    assert visited["root"] == ""
+    assert visited["player"] == {"x": 0, "z": -45}
+    assert visited["petals"] == [1]
+    assert visited["visit"] == BLT
+    assert visited["links"] == [[BLT, "visit"]]
+    assert visited["socket"] == (
         "wss://git.owaspblt.org/api/world/ws?visitor=fmwv1.token")
-    assert entered["office"] == BLT
-    assert entered["notices"] == ["Entering OWASP BLT · git.owaspblt.org"]
+    assert visited["office"] is None
+    assert visited["notices"] == ["Entering OWASP BLT · git.owaspblt.org"]
+    assert visited["reloads"] == 0
+    assert visited["shift"] is None
+
+
+def test_only_blt_land_counts_as_its_hexagon(walk):
+    visited = walk["visited"]
+    assert visited["onLand"] == BLT
+    assert visited["onRoad"] == ""
+    assert visited["atHome"] == ""
+
+
+def test_walking_off_blt_returns_home(walk):
+    left = walk["left"]
+    assert left["root"] == ""
+    assert left["visit"] == ""
+    assert left["notices"][-1] == "Back in ForkMesh"
+
+
+def test_a_saved_spot_on_blt_starts_at_the_campfire(walk):
+    restored = walk["restoredOnBlt"]
+    assert restored["root"] == ""
+    assert restored["player"] == {"x": 0, "z": 114.8}
+    assert restored["restored"] is None
+    assert restored["saved"] == [{"x": 0, "z": 114.8}]
+
+
+def test_a_saved_spot_in_forkmesh_is_kept(walk):
+    assert walk["restoredAtHome"] == {"player": {"x": 0, "z": -45}, "saved": []}
+
+
+def test_stepping_onto_a_flower_puts_the_page_in_that_world(walk):
+    entered = walk["entered"]
+    acme = entered["acme"]
+    assert entered["root"] == ACME
+    assert close(entered["player"]["x"], entered["start"]["x"] - acme["dx"])
+    assert close(entered["player"]["z"], entered["start"]["z"] - acme["dz"])
+    assert entered["hub"]["shape"] == "flower"
+    assert close(entered["hub"]["dx"], -acme["dx"])
+    assert close(entered["hub"]["dz"], -acme["dz"])
+    assert entered["visit"] == ACME
+    assert entered["links"] == [[ACME, "visit"]]
+    assert entered["socket"] == (
+        "wss://app.acme.dev/api/world/ws?visitor=fmwv1.token")
+    assert entered["office"] == ACME
+    assert entered["notices"][-1] == "Entering Acme · world.acme.dev"
     assert entered["reloads"] == 1
-    assert close(entered["shift"]["dx"], -PETAL1[0])
-    assert close(entered["homePeer"]["x"], -PETAL1[0])
-    assert close(entered["homePeer"]["z"], -45 - PETAL1[1])
+    assert close(entered["shift"]["dx"], -acme["dx"])
+    assert close(entered["homePeer"]["x"], -acme["dx"])
+    assert close(entered["homePeer"]["z"], -45 - acme["dz"])
 
 
-def test_walking_inside_blt_keeps_the_page_there(walk):
-    assert walk["stays"] == {"root": BLT, "reloads": 1}
+def test_walking_inside_the_flower_keeps_the_page_there(walk):
+    assert walk["stays"] == {"root": ACME, "reloads": 1}
 
 
-def test_blt_residents_keep_their_activity_and_stand_where_blt_puts_them(walk):
+def test_residents_keep_their_activity_and_stand_where_their_world_puts_them(walk):
     resident = walk["resident"]
-    assert resident["id"] == f"mesh:{BLT}:p1"
-    assert resident["name"] == "resident@git.owaspblt.org"
+    assert resident["id"] == f"mesh:{ACME}:p1"
+    assert resident["name"] == "resident@world.acme.dev"
     assert resident["activity"] == "coding"
     assert resident["category"] == "work"
     assert (resident["x"], resident["z"]) == (3, 4)
@@ -303,14 +403,14 @@ def test_blt_residents_keep_their_activity_and_stand_where_blt_puts_them(walk):
 
 def test_town_reads_follow_the_world_the_page_stands_in(walk):
     reads = walk["reads"]
-    assert reads["users"] == {"from": BLT}
+    assert reads["users"] == {"from": ACME}
     assert reads["hidden"] == "not_in_this_world"
     assert reads["write"] == {"from": "home"}
     assert reads["late"] == "world_changed"
     assert reads["at"] == {"from": "home"}
-    assert {"world": BLT, "path": "/api/accounts/users?view=world",
+    assert {"world": ACME, "path": "/api/accounts/users?view=world",
             "options": {"maxAge": 5, "auth": False}} in walk["federated"]
-    assert all(item["world"] == BLT for item in walk["federated"])
+    assert all(item["world"] == ACME for item in walk["federated"])
     assert [item["path"] for item in walk["own"]] == [
         "/api/world/inactive", "/api/world/events"]
     assert all(item["options"]["meshHome"] is True for item in walk["own"])
