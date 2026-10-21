@@ -50,6 +50,12 @@ EDGE_SCOPE_KEY = "forkmesh.edge_client"
 HANDSHAKE_LOG_MESSAGE = "ASGI callable returned without completing handshake."
 HELD_REQUEST_PATHS = frozenset({"/api/runners/claim"})
 REQUEST_CHECK_PATH = "/_host/request-policy"
+# A static file asked for with a content version (``/app.js?v=3f9c…``, stamped
+# by tools/build_site_assets.py and dashboard_shell) never changes under that
+# URL: a new build changes the query. Browsers and the edge keep it for a
+# year without revalidating. The bare URL keeps the _headers rules.
+VERSIONED_ASSET_CACHE = "public, max-age=31536000, immutable"
+_ASSET_VERSION_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
 _denied_over_http = contextvars.ContextVar("forkmesh_ws_denied_over_http",
                                            default=False)
 
@@ -72,6 +78,18 @@ def install_handshake_log_filter(logger_name="uvicorn.error"):
 BOOT_UNSEAL_WINDOW_SECONDS = 20.0
 BOOT_UNSEAL_WAIT_SECONDS = 3.0
 BOOT_UNSEAL_POLL_SECONDS = 0.05
+
+
+def versioned_asset_query(scope):
+    """True when the query is a single content version: ``?v=<token>``."""
+    raw = scope.get("query_string") or b""
+    try:
+        pairs = urllib.parse.parse_qsl(raw.decode("latin-1"),
+                                       keep_blank_values=True)
+    except ValueError:
+        return False
+    return (len(pairs) == 1 and pairs[0][0] == "v"
+            and bool(_ASSET_VERSION_RE.fullmatch(pairs[0][1])))
 
 
 def server_timing_headers(response, elapsed_ms, db_count, db_ms):
@@ -563,8 +581,12 @@ class HostASGI:
                 for name, value in scope.get("headers") or []:
                     if name == b"if-none-match":
                         if_none_match = value.decode("latin-1")
-                await self._send_response(
-                    send, assets.serve(path, method, if_none_match), method)
+                response = assets.serve(path, method, if_none_match)
+                if (int(response.status) in (200, 304)
+                        and versioned_asset_query(scope)):
+                    response.headers.set("cache-control",
+                                         VERSIONED_ASSET_CACHE)
+                await self._send_response(send, response, method)
                 return
         limit = request_guard.body_limit(method, path)
         declared = request_guard.declared_length(scope)
