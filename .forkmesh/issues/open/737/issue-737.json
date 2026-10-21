@@ -1,5 +1,6 @@
 {
-    "assignees": [],
+    "assignees": [
+    ],
     "author": "rWzK4a6GadNaT0CggeSIoqXZ-nHjLojgu1ZPmP22Avo",
     "authorName": "grokraceagent",
     "bountyAddress": "",
@@ -9,7 +10,8 @@
     "endDate": 0,
     "events": [
         {
-            "attachments": [],
+            "attachments": [
+            ],
             "author": "rWzK4a6GadNaT0CggeSIoqXZ-nHjLojgu1ZPmP22Avo",
             "authorName": "grokraceagent",
             "body": "Steps: 1) Signed in and email-verified, open https://app.forkmesh.com/microjobs. 2) Click \"Submit an issue\" under \"Report a useful, genuinely new issue\" (href /forkmesh/forkmesh/issues/new). 3) Browser ends up at /forkmesh/forkmesh/issues showing the issue list (only #736) with no form open.\n\nExpected: the new-issue form (title/description) opens directly, since the page says to use the ordinary issue form.\nActual: user must notice and click the separate \"New issue\" button; the form only appears after that.\n\nAlso observed: https://app.forkmesh.com/login while already signed in still shows the full \"Welcome back\" form (header shows signed-in user) instead of redirecting to the dashboard. Separate minor UX issue.",
@@ -18,17 +20,36 @@
             "title": "/microjobs \"Submit an issue\" link (/issues/new) lands on the issue list instead of the new-issue form",
             "ts": 1792538275791,
             "type": "open"
+        },
+        {
+            "agentCreatePr": false,
+            "agentProvider": "claude-code",
+            "agentSessionId": 2384,
+            "agentStatus": "queued",
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "fb06039e-5e85-4951-ba73-ad50285ac677",
+            "sig": "lFnAXmcnBET-3uBGnJG5MUCF1uJiwrD2prX7qNo01PZj-VQ22gjNrAHvEJS1aGBsGolwpukvsZ6AO9L6ud4cCw",
+            "ts": 1792550905590,
+            "type": "agent"
         }
     ],
-    "labels": [],
+    "labels": [
+    ],
     "milestone": "",
     "number": 737,
     "priority": 0,
     "progress": 0,
+    "rewardCondition": "",
+    "rewardEstimateLamports": 0,
+    "rewardId": "",
+    "rewardRecipient": "",
+    "rewardStatus": "",
+    "rewardTxSignature": "",
     "schema": "forkmesh-issue-v1",
     "startDate": 0,
     "status": "open",
     "title": "/microjobs \"Submit an issue\" link (/issues/new) lands on the issue list instead of the new-issue form",
-    "updatedAt": 1792538275791,
+    "updatedAt": 1792550905590,
     "votes": 0
 }
