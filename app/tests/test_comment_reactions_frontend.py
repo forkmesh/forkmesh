@@ -45,15 +45,19 @@ def _run(body):
     code = "\n".join([
         _const(CONTENT, "ISSUE_REACTION_EMOJI"), _const(CONTENT, "COMMENT_REACTIONS"),
         _const(CONTENT, "COMMENT_REACTION_QUICK"), _const(CONTENT, "COMMENT_REACTION_KINDS"),
+        _const(CONTENT, "COMMENT_REACTION_GRATITUDE"), _const(CONTENT, "COMMENT_REACTION_STICKERS"),
+        _const(CONTENT, "COMMENT_REACTION_CUSTOM_RE"),
         _function(HELPERS, "escapeHtml"), _function(HELPERS, "formatCount"),
     ] + [_function(CONTENT, name) for name in (
-        "commentReactionSubject", "commentReactionLabel", "commentReactionTallies",
-        "commentReactionWho", "renderCommentReactionChip", "renderCommentReactionBar")]
+        "commentReactionSubject", "commentReactionLabel", "commentReactionKnown",
+        "commentReactionSafeSrc", "commentReactionGlyph", "commentReactionTallies",
+        "commentReactionWho", "renderCommentReactionChip", "renderCommentReactionExtras",
+        "renderCommentReactionBar")]
         + [_function(FRAGMENT, name) for name in (
             "commentReactionParts", "commentReactionBase", "prepareCommentReactions",
             "seedCommentReactions", "commentReactionApplyLocal", "commentReactionAuthor",
-            "commentReactionOptionHtml", "renderCommentReactionPicker",
-            "commentReactionErrorText")])
+            "commentReactionOptionHtml", "commentReactionSectionHtml",
+            "renderCommentReactionPicker", "commentReactionErrorText")])
     script = """
 let countFormatter = null;
 const state = { session: { nodeName: "bob", sessionToken: "cookie" } };
@@ -65,8 +69,8 @@ const out = {};
 %s
 process.stdout.write(JSON.stringify(out));
 """ % (code, body)
-    result = subprocess.run(["node", "-"], input=script, capture_output=True, text=True,
-                            check=True)
+    result = subprocess.run(["node", "-"], input=script, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr[-2000:]
     return json.loads(result.stdout)
 
 
@@ -107,7 +111,7 @@ out.subjects = [commentReactionSubject("issues", 3), commentReactionSubject("pul
 """)
     bar = out["bar"]
     assert 'data-comment-id="x&quot;y"' in bar
-    assert "<img" not in bar and "&lt;img src=x&gt; (agent)" in bar
+    assert "<img src=x>" not in bar and "&lt;img src=x&gt; (agent)" in bar
     assert 'aria-pressed="true"' in bar and "fm-reaction-agent" in bar
     assert '<span class="fm-reaction-count">2</span>' in bar
     assert 'data-reaction="eyes"' in bar
@@ -148,7 +152,9 @@ out.empty = renderCommentReactionPicker(bar, "<zzz>");
 out.errors = ["rate_limited", "too_many_reactions", "daily_limit", "boom"].map((code) => commentReactionErrorText(new Error(code)));
 """)
     assert out["options"][:6] == ["like", "love", "laugh", "celebrate", "eyes", "rocket"]
-    assert sorted(out["options"]) == sorted(set(out["options"])) and len(out["options"]) == 18
+    assert sorted(out["options"]) == sorted(set(out["options"])) and len(out["options"]) == 24
+    assert out["options"][6:13] == ["thanks", "hearthands", "sparkleheart", "handshake",
+                                    "glowstar", "trophy", "thankyou"]
     assert out["pressed"] == ["rocket"]
     assert out["party"] == ["celebrate"]
     assert out["thumbs"] == ["like", "dislike"]

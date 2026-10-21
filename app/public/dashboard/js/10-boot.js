@@ -211,6 +211,9 @@
       initDashboardUpdateNotice();
       initRecentPushes();
       initCommentReactions();
+      initCommentGifs();
+      initCommentTips();
+      void initReactionSettings();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

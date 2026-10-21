@@ -1181,7 +1181,8 @@ _URL_EXPORT_NAMES = (
     "REPO_PROVIDER_MIRROR_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
-    "REPO_VIEWS_RE",
+    "REPO_VIEWS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
+    "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
@@ -13509,7 +13510,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "32fe1f7b51cfe6b5e1d0faabc48b4ad6e7ac0f7099979b3b0f3e5b924b98c8a4"
+    "2145ff5525d296868c8e3913e69b80cafcbe43131fdd79f64127a419deab06b3"
 )
 
 
@@ -16205,6 +16206,16 @@ recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
 recent_pushes_handler = _recent_pushes.export("handler")
 _comment_reactions = _LazyModule("comment_reactions")
 comment_reactions_handler = _comment_reactions.export("handler")
+_custom_reactions = _LazyModule("custom_reactions")
+custom_reactions_handler = _custom_reactions.export("handler")
+custom_reactions_asset_handler = _custom_reactions.export("asset_handler")
+custom_reactions_catalog = _custom_reactions.export("catalog")
+_comment_gifs = _LazyModule("comment_gifs")
+comment_gifs_handler = _comment_gifs.export("handler")
+_comment_tips = _LazyModule("comment_tips")
+comment_tips_handler = _comment_tips.export("handler")
+comment_tips_intent_handler = _comment_tips.export("intent_handler")
+comment_tips_verify_cron = _comment_tips.export("verify_cron")
 
 
 def _repo_identity_from_clone_url(value):
@@ -18803,6 +18814,7 @@ _REPO_SCOPED_TABLES = (
     ("pull_submission_receipts", "repo_bi"),
     ("recent_pushes", "repo_bi"),
     ("comment_reactions", "repo_bi"),
+    ("comment_tips", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
@@ -19001,6 +19013,9 @@ async def _delete_account_namespace(env, name_bi, rec):
     await d1_run(env, "DELETE FROM comment_reactions WHERE account_bi=?", name_bi)
     await d1_run(
         env, "DELETE FROM comment_reaction_rate WHERE account_bi=?", name_bi)
+    await d1_run(
+        env, "DELETE FROM comment_tips WHERE tipper_bi=? OR recipient_bi=?",
+        name_bi, name_bi)
     await d1_run(env, "DELETE FROM profile_follows WHERE follower_bi=? OR target_bi=?", name_bi, name_bi)
     await d1_run(env, "DELETE FROM login_attempts WHERE id_bi=?", name_bi)
     await d1_run(
@@ -22052,12 +22067,29 @@ async def _new_solana_keypair():
     return _base58_encode(pub), seed_b64url
 
 
-def _solana_pay_uri(address, amount_lamports, reference="", message="Join ForkMesh"):
-    uri = ("solana:" + address +
-           "?amount=" + _amount_sol(amount_lamports))
+def _amount_units(units, decimals):
+    """Base units as a plain decimal string with no trailing zeros
+    (1500000, 6 -> "1.5"), the form Solana Pay's amount field takes."""
+    units, decimals = int(units), max(0, int(decimals))
+    whole, frac = divmod(units, 10 ** decimals) if decimals else (units, 0)
+    if not decimals or not frac:
+        return str(whole)
+    return "%d.%s" % (whole, str(frac).rjust(decimals, "0").rstrip("0"))
+
+
+def _solana_pay_uri(address, amount_lamports, reference="", message="Join ForkMesh",
+                    spl_token="", decimals=9, label="ForkMesh"):
+    """A Solana Pay transfer request. ``spl_token`` (a mint address) asks for
+    that token instead of SOL, with ``amount_lamports`` in its base units and
+    ``decimals`` its precision. SOL requests keep their historical form."""
+    amount = (_amount_units(amount_lamports, decimals) if spl_token
+              else _amount_sol(amount_lamports))
+    uri = "solana:" + address + "?amount=" + amount
+    if spl_token:
+        uri += "&spl-token=" + spl_token
     if reference:
         uri += "&reference=" + reference
-    uri += ("&label=" + quote("ForkMesh") +
+    uri += ("&label=" + quote(label) +
             "&message=" + quote(message))
     return uri
 
@@ -52667,6 +52699,7 @@ def _cron_due_phases(minute_slot):
             "direct-unread-email"))
     elif minute % 5 == 2:
         phases.append("federation")
+        phases.append("tip-verify")
     elif minute % 5 == 3:
         phases.extend((
             "notification-digest", "chat-digest", "channel-unread-email"))
@@ -52843,6 +52876,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _instance_directory_admin.health_cron(env)
     if phase == "instance-announce":
         return await _instance_console.announce_cron(env)
+    if phase == "tip-verify":
+        return await comment_tips_verify_cron(env)
     if phase == "chat-prune":
         await chat_history_prune_expired(env)
         return await chat_direct_media_api.sweep(

@@ -116,11 +116,22 @@
 
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
+  // A GIF from GIPHY's media hosts (what the composer's GIF picker inserts)
+  // gets a still frame for prefers-reduced-motion and a play/pause control;
+  // every other image keeps the plain rendering below.
+  const MD_GIPHY_GIF = /^https:\/\/media[0-4]?\.giphy\.com\/media\/(?:v1\.[A-Za-z0-9_=.-]{1,200}\/)?[A-Za-z0-9]{4,64}\/(?:giphy|200|200w|giphy-downsized)\.gif$/;
+
+  function mdGifHtml(alt, source) {
+    const still = source.replace(/\.gif$/, "_s.gif");
+    return `<span class="fm-gif" data-fm-gif role="button" tabindex="0" aria-label="GIF: ${alt || "animated image"}. Press to play or pause."><picture><source srcset="${still}" media="(prefers-reduced-motion: reduce)" data-fm-gif-still><img src="${source}" alt="${alt}" class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" referrerpolicy="no-referrer" /></picture><span class="fm-gif-badge" aria-hidden="true">GIF</span></span>`;
+  }
+
   function mdImageHtml(alt, url, context) {
     const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
     const source = mdImageSource(target, context);
     if (!source || source === "#") return alt;
+    if (!hint && MD_GIPHY_GIF.test(source)) return mdGifHtml(alt, source);
     const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
     const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
@@ -1306,6 +1317,8 @@
     thinking: "\u{1F914}", surprised: "\u{1F62E}", sad: "\u{1F622}",
     angry: "\u{1F621}", dislike: "\u{1F44E}", eyes: "\u{1F440}",
     star: "\u2B50", rocket: "\u{1F680}", check: "\u2705",
+    hearthands: "\u{1FAF6}", sparkleheart: "\u{1F496}", handshake: "\u{1F91D}",
+    glowstar: "\u{1F31F}", trophy: "\u{1F3C6}", thankyou: "\u{1F4AC}",
   });
 
   // Live reactions per event id. A reaction is an ordinary signed event naming
@@ -1358,8 +1371,20 @@
     ["star", "Star", "favorite"],
     ["rocket", "Rocket", "ship launch"],
     ["check", "Done", "check tick yes"],
+    ["hearthands", "Heart hands", "thanks grateful love appreciate"],
+    ["sparkleheart", "Sparkling heart", "thanks love sparkle grateful"],
+    ["handshake", "Handshake", "thanks deal agree team"],
+    ["glowstar", "Glowing star", "thanks star great shine"],
+    ["trophy", "Trophy", "thanks winner award champion"],
+    ["thankyou", "Thank you", "thanks sticker thx ty grateful"],
   ]);
   const COMMENT_REACTION_QUICK = Object.freeze(["like", "love", "laugh", "celebrate", "eyes", "rocket"]);
+  // The gratitude group: the picker's second row, and "thankyou" is what the
+  // bar's "Say thanks" button adds. Stickers are drawn from their own image
+  // (same origin, /assets/reactions/) instead of an emoji glyph.
+  const COMMENT_REACTION_GRATITUDE = Object.freeze(["thanks", "hearthands", "sparkleheart", "handshake", "glowstar", "trophy", "thankyou"]);
+  const COMMENT_REACTION_STICKERS = Object.freeze({ thankyou: "/assets/reactions/thank-you.svg" });
+  const COMMENT_REACTION_CUSTOM_RE = /^custom:[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
   const COMMENT_REACTION_KINDS = Object.freeze({ issues: "issue", pulls: "pull", discussions: "discussion" });
 
   function commentReactionSubject(kind, number) {
@@ -1368,23 +1393,60 @@
     return name && Number.isInteger(value) && value > 0 ? `${name}:${value}` : "";
   }
 
-  function commentReactionLabel(emoji) {
+  function commentReactionLabel(emoji, custom) {
     const entry = COMMENT_REACTIONS.find((row) => row[0] === emoji);
-    return entry ? entry[1] : String(emoji || "");
+    if (entry) return entry[1];
+    const text = String(emoji || "");
+    if (!COMMENT_REACTION_CUSTOM_RE.test(text)) return text;
+    const known = custom || state.customReactions?.items?.[text];
+    return known?.label ? String(known.label) : text.slice(7);
+  }
+
+  function commentReactionKnown(emoji) {
+    return Boolean(ISSUE_REACTION_EMOJI[emoji]) || COMMENT_REACTION_CUSTOM_RE.test(String(emoji || ""));
+  }
+
+  // Same-origin image paths only: a custom reaction's src comes from this
+  // instance's /api/reactions/custom/asset/ and a sticker's from /assets/reactions/.
+  function commentReactionSafeSrc(src) {
+    const text = String(src || "");
+    return /^\/(?:api\/reactions\/custom\/asset\/[0-9a-f]{40}\.(?:svg|png|gif|webp)|assets\/reactions\/[a-z0-9-]+\.svg)$/.test(text) ? text : "";
+  }
+
+  // The glyph inside a chip or a picker cell: the emoji, a sticker or custom
+  // image, or for a custom reaction that was deleted, its name as text.
+  function commentReactionGlyph(emoji, custom, size = 18) {
+    const sticker = COMMENT_REACTION_STICKERS[emoji];
+    if (sticker) return `<img src="${sticker}" alt="" width="${size}" height="${size}" class="fm-reaction-img" decoding="async" draggable="false">`;
+    if (COMMENT_REACTION_CUSTOM_RE.test(String(emoji || ""))) {
+      const src = commentReactionSafeSrc(custom?.src);
+      if (!src) return `<span class="fm-reaction-fallback">:${escapeHtml(String(emoji).slice(7))}:</span>`;
+      const animated = commentReactionSafeSrc(custom?.animatedSrc);
+      return `<img src="${src}"${animated ? ` data-reaction-animated="${animated}"` : ""} alt="" width="${size}" height="${size}" class="fm-reaction-img" decoding="async" draggable="false">`;
+    }
+    return escapeHtml(ISSUE_REACTION_EMOJI[emoji] || emoji);
   }
 
   function commentReactionTallies(subject, comment, ledger) {
     const stored = state.commentReactions?.[subject]?.reactions?.[comment];
     const tallies = (Array.isArray(stored) ? stored : [])
-      .filter((tally) => tally && ISSUE_REACTION_EMOJI[tally.emoji])
-      .map((tally) => ({
-        emoji: String(tally.emoji),
-        count: Math.max(0, Math.floor(Number(tally.count) || 0)),
-        mine: tally.mine === true,
-        people: (Array.isArray(tally.people) ? tally.people : [])
-          .filter((person) => person && person.name)
-          .map((person) => ({ name: String(person.name), agent: person.agent === true })),
-      }));
+      .filter((tally) => tally && commentReactionKnown(tally.emoji))
+      .map((tally) => {
+        const out = {
+          emoji: String(tally.emoji),
+          count: Math.max(0, Math.floor(Number(tally.count) || 0)),
+          mine: tally.mine === true,
+          people: (Array.isArray(tally.people) ? tally.people : [])
+            .filter((person) => person && person.name)
+            .map((person) => ({ name: String(person.name), agent: person.agent === true })),
+        };
+        if (COMMENT_REACTION_CUSTOM_RE.test(out.emoji)) {
+          out.custom = tally.custom && typeof tally.custom === "object"
+            ? { label: String(tally.custom.label || ""), src: String(tally.custom.src || ""), animatedSrc: String(tally.custom.animatedSrc || "") }
+            : null;
+        }
+        return out;
+      });
     for (const entry of Array.isArray(ledger) ? ledger : []) {
       let tally = tallies.find((item) => item.emoji === String(entry.value));
       if (!tally) {
@@ -1408,12 +1470,25 @@
     const list = names.length > 1
       ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
       : names.join("");
-    return `${list} reacted with ${commentReactionLabel(tally.emoji)}`;
+    return `${list} reacted with ${commentReactionLabel(tally.emoji, tally.custom)}`;
   }
 
   function renderCommentReactionChip(tally) {
     const agent = tally.people.some((person) => person.agent);
-    return `<button type="button" data-reaction="${escapeHtml(tally.emoji)}" aria-pressed="${tally.mine ? "true" : "false"}" aria-label="${escapeHtml(`${commentReactionLabel(tally.emoji)} ${tally.count}: ${commentReactionWho(tally)}`)}" class="fm-reaction${agent ? " fm-reaction-agent" : ""}"><span aria-hidden="true" class="fm-reaction-emoji">${escapeHtml(ISSUE_REACTION_EMOJI[tally.emoji] || tally.emoji)}</span><span class="fm-reaction-count">${escapeHtml(formatCount(tally.count))}</span></button>`;
+    return `<button type="button" data-reaction="${escapeHtml(tally.emoji)}" aria-pressed="${tally.mine ? "true" : "false"}" aria-label="${escapeHtml(`${commentReactionLabel(tally.emoji, tally.custom)} ${tally.count}: ${commentReactionWho(tally)}`)}" class="fm-reaction${agent ? " fm-reaction-agent" : ""}"><span aria-hidden="true" class="fm-reaction-emoji">${commentReactionGlyph(tally.emoji, tally.custom)}</span><span class="fm-reaction-count">${escapeHtml(formatCount(tally.count))}</span></button>`;
+  }
+
+  // The extras after the chips: "Say thanks" (adds the Thank you sticker;
+  // gone once the viewer has), and, once the page knows them, a tipped
+  // count and a Tip button for an author with a public Solana address.
+  function renderCommentReactionExtras(subject, comment, tallies) {
+    const thanked = tallies.some((tally) => tally.emoji === "thankyou" && tally.mine);
+    const thanks = thanked ? "" : `<button type="button" data-reaction-thanks aria-label="Say thanks" title="Say thanks" class="fm-reaction-thanks"><img src="${COMMENT_REACTION_STICKERS.thankyou}" alt="" width="18" height="18" class="fm-reaction-img" decoding="async" draggable="false"><span class="fm-reaction-thanks-label">Say thanks</span></button>`;
+    const tips = Number(state.commentTips?.[subject]?.[comment]) || 0;
+    const tipped = tips > 0 ? `<span data-comment-tipped class="fm-reaction-tipped" title="${escapeHtml(`Tipped ${tips} time${tips === 1 ? "" : "s"}`)}"><span aria-hidden="true">\u{1F4B8}</span> tipped${tips > 1 ? ` <span class="fm-reaction-count">${escapeHtml(formatCount(tips))}</span>` : ""}</span>` : "";
+    const author = typeof commentTipAuthor === "function" ? commentTipAuthor(subject, comment) : "";
+    const tip = author ? `<button type="button" data-comment-tip="${escapeHtml(author)}" aria-label="${escapeHtml(`Tip @${author} in Solana`)}" aria-haspopup="dialog" class="fm-reaction-tip"><span aria-hidden="true">\u25CE</span><span>Tip</span></button>` : "";
+    return `${thanks}${tipped}${tip}`;
   }
 
   function renderCommentReactionBar(subject, comment, ledger = null, extraClass = "") {
@@ -1422,8 +1497,9 @@
       if (!state.commentReactionLedger) state.commentReactionLedger = {};
       state.commentReactionLedger[`${subject}\u0000${comment}`] = ledger;
     }
-    const chips = commentReactionTallies(subject, comment, ledger).map(renderCommentReactionChip).join("");
-    return `<div data-comment-reactions="${escapeHtml(subject)}" data-comment-id="${escapeHtml(comment)}" role="group" aria-label="Reactions" class="fm-reactions${extraClass ? ` ${extraClass}` : ""}">${chips}<button type="button" data-reaction-add aria-label="Add reaction" aria-haspopup="dialog" aria-expanded="false" class="fm-reaction-add"><i data-lucide="smile-plus" class="h-4 w-4"></i></button></div>`;
+    const tallies = commentReactionTallies(subject, comment, ledger);
+    const chips = tallies.map(renderCommentReactionChip).join("");
+    return `<div data-comment-reactions="${escapeHtml(subject)}" data-comment-id="${escapeHtml(comment)}" role="group" aria-label="Reactions" class="fm-reactions${extraClass ? ` ${extraClass}` : ""}">${chips}${renderCommentReactionExtras(subject, comment, tallies)}<button type="button" data-reaction-add aria-label="Add reaction" aria-haspopup="dialog" aria-expanded="false" class="fm-reaction-add"><i data-lucide="smile-plus" class="h-4 w-4"></i></button></div>`;
   }
 
   function issueEventDescription(ev) {

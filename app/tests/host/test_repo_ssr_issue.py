@@ -42,14 +42,15 @@ FUNCTIONS = {
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates"),
     "04-account.js": ("validNodeName",),
     "06-repo-content.js": (
-        "mdSafeUrl", "mdImageSource", "mdHeadingSlug", "mdLinkHtml", "mdImageHtml",
+        "mdSafeUrl", "mdImageSource", "mdHeadingSlug", "mdLinkHtml", "mdGifHtml", "mdImageHtml",
         "mdTrimAutolink", "renderMarkdownInline", "htmlTagAttr",
         "decodeHtmlEntities", "flattenMarkdownHtml", "flattenOutsideCode", "takeWrappedLines",
         "joinWrappedLines", "mdLoneImage", "renderMarkdown", "renderRecordMarkdown",
         "parseFrontMatterList", "parseIssueJson", "formatRecordDate", "issueDetailParsed",
         "issueEventIcon", "foldIssueReactions", "commentReactionSubject",
-        "commentReactionLabel", "commentReactionTallies", "commentReactionWho",
-        "renderCommentReactionChip", "renderCommentReactionBar",
+        "commentReactionLabel", "commentReactionKnown", "commentReactionSafeSrc",
+        "commentReactionGlyph", "commentReactionTallies", "commentReactionWho",
+        "renderCommentReactionChip", "renderCommentReactionExtras", "renderCommentReactionBar",
         "issueEventDescription", "renderIssueTimelineComment",
         "renderIssueTimelineEvent", "issueEventDescriptionHtml", "renderIssueTimeline",
         "formatRecordDateTime", "issueLabelHue", "renderIssueLabelChip",
@@ -65,7 +66,8 @@ CONSTANTS = {
     "06-repo-content.js": (
         "MD_DATA_IMAGE_URL", "MD_BARE_URL", "MD_ENTITIES", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
-        "COMMENT_REACTIONS", "COMMENT_REACTION_KINDS",
+        "COMMENT_REACTIONS", "COMMENT_REACTION_KINDS", "COMMENT_REACTION_STICKERS",
+        "COMMENT_REACTION_CUSTOM_RE", "MD_GIPHY_GIF",
         "rewardStateLabels", "MD_MENTION"),
 }
 

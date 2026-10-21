@@ -141,6 +141,9 @@ CRON_PHASE_CATALOG = (
      "achievement badges."),
     ("workflow-schedules", 5, (3,), "platform",
      "Run up to three workflows whose schedule trigger is due."),
+    ("tip-verify", 5, (2,), "rewards",
+     "Look for the Solana transfers paying up to three pending comment "
+     "tips (read-only RPC; the forge never signs or holds funds)."),
     ("world-satellites", 180, (11,), "platform",
      "Refresh the world satellite snapshot."),
     ("attribution-clone-snapshot", 1440, (5,), "platform",

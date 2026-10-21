@@ -1278,6 +1278,9 @@ def _image_html(alt, url, raw):
     source = _image_src(target, raw)
     if not source:
         return html.escape(alt)
+    from .repo_ssr_issue import GIPHY_GIF_RE, gif_html
+    if not hint and GIPHY_GIF_RE.match(source):
+        return gif_html(html.escape(alt), html.escape(source), IMAGE_CLASS)
     size = ""
     if hint:
         size = ' width="%s"' % hint.group(1)
