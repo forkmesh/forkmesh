@@ -55,6 +55,17 @@
             "sig": "DIaDVssnoxQPTjVs-zZ-sdQC9jsnrYmIVofOG92FEhqj0PpPYOcIVuJ9SW1mv8E_Pzmt0jg3vl2a918QdiRJAg",
             "ts": 1792550878738,
             "type": "assignees"
+        },
+        {
+            "attachments": [
+            ],
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "body": "Closed by merged branch \"agent/issue-736-s2383-paid-microjobs-docs-describe\".",
+            "id": "d1dafb0b-7c91-4224-b4b0-d9a638b212a9",
+            "sig": "rCyw1peK1kM5FhmGIcda-SHOZZMrxQXqA5BIKnjT44PoSr5yN91DjUpF20FAX0EHhZEAUs1eWF2PpYEETC2BAQ",
+            "ts": 1792551012956,
+            "type": "comment"
         }
     ],
     "labels": [
@@ -73,6 +84,6 @@
     "startDate": 0,
     "status": "open",
     "title": "Paid microjobs docs describe fixed claims and batching while live UI uses discretionary issue rewards",
-    "updatedAt": 1792550878738,
+    "updatedAt": 1792551012956,
     "votes": 0
 }
