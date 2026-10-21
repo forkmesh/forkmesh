@@ -309,7 +309,6 @@ struct AgentRunScreen: View {
                 }
             }
             .buttonStyle(AgentRunActionButtonStyle())
-            .modifier(AgentRunActionsCap())
         } changes: {
             changesLink
         })
@@ -808,8 +807,12 @@ private struct AgentRunActionChip: View {
 }
 
 private struct AgentRunActionsCap: ViewModifier {
-    static let maxWidth: CGFloat = 184
+    static let minRoom: CGFloat = 184
+    static let reserved: CGFloat = 144
+    let pageWidth: CGFloat
     @State private var width: CGFloat = 0
+
+    private var maxWidth: CGFloat { max(AgentRunActionsCap.minRoom, pageWidth - AgentRunActionsCap.reserved) }
 
     func body(content: Content) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -821,15 +824,23 @@ private struct AgentRunActionsCap: ViewModifier {
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .defaultScrollAnchor(.trailing)
-        .frame(width: min(max(width, 1), AgentRunActionsCap.maxWidth), height: 44)
+        .frame(width: min(max(width, 1), maxWidth), height: 44)
     }
 }
 
 private struct AgentRunToolbar<Actions: View, Changes: View>: ViewModifier {
     @ViewBuilder let actions: () -> Actions
     @ViewBuilder let changes: () -> Changes
+    @State private var pageWidth: CGFloat = 0
 
     func body(content: Content) -> some View {
+        bar(content.onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { (next: CGFloat) in
+            pageWidth = next
+        })
+    }
+
+    @ViewBuilder
+    private func bar(_ content: some View) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             content.toolbar {
@@ -853,6 +864,7 @@ private struct AgentRunToolbar<Actions: View, Changes: View>: ViewModifier {
     private var actionsItem: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             actions()
+                .modifier(AgentRunActionsCap(pageWidth: pageWidth))
         }
     }
 
