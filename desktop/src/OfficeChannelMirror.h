@@ -22,6 +22,7 @@
 #include <memory>
 
 class QNetworkAccessManager;
+class QNetworkRequest;
 class QTimer;
 class ServerNode;
 
@@ -134,6 +135,7 @@ public:
     void setIdentity(const QString &account, const QString &selfId,
                      const QString &displayName = QString());
     void setConnectionAuthorizer(std::function<bool(const QUrl &)> authorizer);
+    void setSessionProvider(std::function<QString(const QUrl &)> provider);
     void setApiBase(const QUrl &apiBase);
     struct MeshTransport {
         std::function<QList<forkmesh::chatv3::MeshLinkedDevice>()> linkedDevices;
@@ -368,6 +370,7 @@ private:
                             const QString &url);
     QUrl signedUrl(const QString &path, const QString &ts,
                    const QByteArray &canonical) const;
+    QNetworkRequest apiRequest(const QUrl &url) const;
     bool ready() const;
     QString channelIdForConversation(const QString &conversation,
                                      bool requireManager) const;
@@ -382,6 +385,7 @@ private:
     qint64 m_lastListMs = 0;
     std::function<QString(const QByteArray &)> m_signer;
     std::function<bool(const QUrl &)> m_connectionAuthorizer;
+    std::function<QString(const QUrl &)> m_sessionProvider;
     MeshTransport m_mesh;
     std::shared_ptr<forkmesh::chatv3::ChatDevice> m_device;
     int m_deviceToken = 0;
