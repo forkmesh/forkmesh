@@ -228,4 +228,31 @@ console.log(JSON.stringify({
         "plain": "",
     }
     assert 'repoDescriptionText(repo, origin) || "No description published."' in EXPLORER
-    assert 'repoDescriptionText(repo) || "No description published."' in DETAIL
+    assert "${repoAboutDescriptionHtml(repo)}</p>" in DETAIL
+    assert "el.innerHTML = repoAboutDescriptionHtml(repo);" in CONTENT
+
+
+def test_the_about_description_links_its_urls_and_upstream():
+    output = _run(
+        "repoAboutDescriptionHtml",
+        """
+const { repoAboutDescriptionHtml } = global.__dashboardExports;
+const mirror = { owner: "node", name: "platform", mirrorOf: "https://app.example.test/acme/platform" };
+console.log(JSON.stringify({
+  mirror: repoAboutDescriptionHtml(mirror),
+  text: repoAboutDescriptionHtml({ description: "Docs at https://docs.example.test/a?b=1&c=2. <b>x</b>" }),
+  unsafe: repoAboutDescriptionHtml({ description: "javascript:alert(1) and https://x.test/\\"onmouseover=" }),
+  plain: repoAboutDescriptionHtml({ owner: "a", name: "b" }),
+}));
+""",
+    )
+    result = json.loads(output.strip().splitlines()[-1])
+    assert result["mirror"].startswith("Read-only mirror of <a href=\"https://app.example.test/acme/platform\"")
+    assert ">example.test/acme/platform</a>" in result["mirror"]
+    assert result["text"].startswith("Docs at <a href=\"https://docs.example.test/a?b=1&amp;c=2\"")
+    assert 'target="_blank" rel="noopener noreferrer nofollow ugc"' in result["text"]
+    assert ">https://docs.example.test/a?b=1&amp;c=2</a>. &lt;b&gt;x&lt;/b&gt;" in result["text"]
+    assert result["unsafe"].count("<a ") == 1
+    assert 'href="https://x.test/"' in result["unsafe"]
+    assert "javascript:alert(1) and" in result["unsafe"]
+    assert result["plain"] == "No description published."

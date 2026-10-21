@@ -17896,6 +17896,22 @@
     return escapeHtml(text).replace(MD_MENTION, (whole, prefix, login) => `${prefix}${mdMentionHtml(login)}`);
   }
 
+  function textWithLinksHtml(text) {
+    return escapeHtml(text).replace(MD_BARE_URL, (whole, prefix, candidate) => {
+      const url = mdTrimAutolink(candidate);
+      return `${prefix}${mdLinkHtml(url, url)}${candidate.slice(url.length)}`;
+    });
+  }
+
+  function repoAboutDescriptionHtml(repo) {
+    const text = repoDescriptionText(repo);
+    if (!text) return "No description published.";
+    const mirrorOf = String(repo?.description || "").trim() ? "" : repoMirrorOf(repo);
+    const upstream = mirrorOf && repoMirrorUpstreamPath(mirrorOf);
+    if (upstream) return `Read-only mirror of ${mdLinkHtml(escapeHtml(upstream), escapeHtml(mirrorOf))}`;
+    return textWithLinksHtml(text);
+  }
+
   function mdTrimAutolink(url) {
     let end = url;
     for (;;) {
@@ -30232,7 +30248,7 @@
       }
     });
     $$("[data-repo-about-description]").forEach((el) => {
-      el.textContent = text || "No description published.";
+      el.innerHTML = repoAboutDescriptionHtml(repo);
     });
     $$("[data-repo-about-input]").forEach((el) => {
       el.value = text;
@@ -43621,7 +43637,7 @@
                 ? `<button type="button" data-repo-about-edit aria-label="Edit About" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>`
                 : ""}
             </div>
-            <p data-repo-about-description class="mt-2 text-sm leading-6 text-foreground">${escapeHtml(repoDescriptionText(repo) || "No description published.")}</p>
+            <p data-repo-about-description class="mt-2 break-words text-sm leading-6 text-foreground">${repoAboutDescriptionHtml(repo)}</p>
             <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
               <a href="${escapeHtml(cloneUrl(repo))}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="link" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Open clean URL</span></a>
               <a href="${escapeHtml(readmeHref)}" data-repo-readme-link data-repo-readme-path="${escapeHtml(readmePath)}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="book-open" class="h-3.5 w-3.5"></i><span>Readme</span></a>
