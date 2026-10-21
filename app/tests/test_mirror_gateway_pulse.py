@@ -533,3 +533,13 @@ def test_people_view_counts_each_human_over_the_past_year(
     clock[0] = NOW + 2 * 3601 * 1000
     limited = payload(app, "view=people")
     assert len(limited["people"]) == 2 and limited["truncated"] is True
+
+
+def test_the_worker_router_forwards_the_people_view():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    import edge_routing
+    assert edge_routing.masked_target_url(
+        "https://core.example.test", "alice", "project", "pulse",
+        {"view": "people"},
+    ) == ("https://core.example.test/v1/repositories/alice/project/pulse"
+          "?view=people")

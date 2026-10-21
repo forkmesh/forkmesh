@@ -142,8 +142,8 @@ CRON_PHASE_CATALOG = (
     ("workflow-schedules", 5, (3,), "platform",
      "Run up to three workflows whose schedule trigger is due."),
     ("member-activity", 15, (6,), "platform",
-     "Refresh the chat member list's activity figures from up to six public "
-     "repositories' Pulse ledgers."),
+     "Refresh the chat member list's activity figures from up to six hosted "
+     "public repositories' Pulse ledgers."),
     ("world-satellites", 180, (11,), "platform",
      "Refresh the world satellite snapshot."),
     ("attribution-clone-snapshot", 1440, (5,), "platform",

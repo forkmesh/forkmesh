@@ -454,7 +454,8 @@ def test_member_rows_stay_two_lines_and_open_as_a_drawer_on_phones():
 
 def _catalog_row(key, owner, name, **record):
     return {"key_bi": key, "is_private": 0, "data": {
-        "owner": owner, "name": name, "visibility": "public", **record}}
+        "owner": owner, "name": name, "visibility": "public",
+        "source": "hosted-web", **record}}
 
 
 def _people(*rows, day_start=WINDOW_START):
@@ -542,6 +543,21 @@ def test_fork_families_count_once_and_private_repositories_never():
     sources = module.member_activity_sources(rows)
     assert [item["key_bi"] for item in sources] == ["k-main", "k-own"]
     assert sources[0] == {"key_bi": "k-main", "owner": "ann", "name": "app"}
+
+
+def test_only_repositories_hosted_on_this_instance_count():
+    module, _, _ = _load()
+    # A mirror of a project hosted elsewhere never counts, and does not make
+    # the hosted fork of it a duplicate: the fork is that family's copy here.
+    rows = [
+        _catalog_row("k-mirror", "upstream", "tool", source="remote-clone",
+                     logicalOwner="team", commitCount=900),
+        _catalog_row("k-fork", "ann", "tool", forkedFrom="team/tool"),
+        _catalog_row("k-sync", "ann", "lib", source="github"),
+        _catalog_row("k-none", "ann", "misc", source=""),
+    ]
+    sources = module.member_activity_sources(rows)
+    assert [item["key_bi"] for item in sources] == ["k-fork"]
 
 
 def test_people_map_to_accounts_only_by_their_exact_pulse_name():

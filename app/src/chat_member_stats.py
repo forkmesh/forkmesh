@@ -37,6 +37,9 @@ MEMBER_ACTIVITY_REFRESH_MS = 3 * 60 * 60 * 1000
 MEMBER_ACTIVITY_FETCH_SECONDS = 15
 MEMBER_ACTIVITY_PEOPLE_LIMIT = 1000
 MEMBER_ACTIVITY_MASK_RE = re.compile(r"^(?:[0-9a-f]{2}){1,64}$")
+# Only repositories hosted on this instance count, not catalog entries that
+# mirror a repository hosted elsewhere (hosted_git.HOSTED_SOURCE).
+MEMBER_ACTIVITY_HOSTED_SOURCE = "hosted-web"
 MEMBER_ACTIVITY_ROOT_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -368,7 +371,9 @@ def _repo_aliases(record):
 def member_activity_sources(catalog_rows):
     """The public repositories whose activity counts, one per fork family.
 
-    A fork whose parent is also a public repository here is skipped (its
+    Only repositories hosted on this instance count; a catalog entry that
+    mirrors a repository hosted elsewhere does not. Among them, a fork whose
+    parent is also a counted repository here is skipped (its
     history is the parent's, as on GitHub, where commits in a fork do not
     count), and of several repositories with the same root commit only one
     is kept: not a fork first, then the longest history.
@@ -381,7 +386,8 @@ def member_activity_sources(catalog_rows):
             continue
         if (int((row or {}).get("is_private") or 0)
                 or record.get("visibility") != "public"
-                or record.get("isPrivate")):
+                or record.get("isPrivate")
+                or record.get("source") != MEMBER_ACTIVITY_HOSTED_SOURCE):
             continue
         owner = str(record.get("owner") or "").strip()
         name = str(record.get("name") or record.get("repo") or "").strip()

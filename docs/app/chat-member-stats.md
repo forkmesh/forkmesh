@@ -46,7 +46,7 @@ stays one line high.
 
 Two sources, combined per person.
 
-**The instance's own repositories.** The same ledger the repository Insights
+**The repositories hosted on the instance.** The same ledger the repository Insights
 tab's Pulse and leaderboard read ([repository-activity.md](repository-activity.md)):
 commits on the default branch (merges excluded), pull requests opened,
 issues opened, and reviews of someone else's pull request, over the trailing
@@ -63,14 +63,16 @@ own account-name rule applies again on top.
 
 Which repositories count:
 
-- only repositories in the public catalog: public, not private, retained;
-  a repository made private or deleted stops counting at once, because the
-  read joins `repositories` and requires `is_private=0`;
-- one repository per fork family: a fork whose parent is also a public
+- only repositories hosted on this instance (catalog `source` `hosted-web`);
+  a catalog entry that mirrors a repository hosted elsewhere never counts;
+- only public ones: public, not private, retained; a repository made private
+  or deleted stops counting at once, because the read joins `repositories`
+  and requires `is_private=0`;
+- one repository per fork family: a fork whose parent is also a counted
   repository on the instance is skipped (commits in a fork do not count,
   as on GitHub), and of several repositories with the same root commit only
-  one counts (not a fork first, then the longest history). A fork of a
-  project hosted elsewhere counts as the project's copy here.
+  one counts (not a fork first, then the longest history). A hosted fork of
+  a project hosted elsewhere counts as that project's copy here.
 
 A cron phase, `member-activity` (every 15 minutes), reads the decrypted public
 catalog the catalog pages already memoise, drops the rows of repositories that
