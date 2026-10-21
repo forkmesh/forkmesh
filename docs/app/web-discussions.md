@@ -2,8 +2,8 @@
 
 Everything the desktop does with a repository's discussions works in a
 browser, with nothing installed: start a discussion, reply, mark a Q&A answer,
-and, for the repository owner, close, reopen, archive and delete replies.
-and deleting a whole discussion.
+and, for the repository owner, close, reopen, archive, delete replies and
+delete the whole discussion.
 
 ## Who may do what
 
@@ -78,6 +78,17 @@ and Android read web-made discussions unchanged:
 
 On the desktop `DiscussionStore::applyRemoteEvent` applies the same rules
 through `setStatus`, `deleteComment` and `deleteDiscussion`.
+
+## Changes waiting on a drain
+
+A status change or a deleted discussion sent through the relay waits in the
+owner's inbox, and until it is drained mirrors still serve the old state.
+The browser keeps each such change (`rememberPendingDiscussionState`, in
+`localStorage` under `forkmesh.repoPendingDiscussionState`, at most 100, for
+a week) and lays it over every list and page it reads
+(`applyPendingDiscussionStates`, `withPendingDiscussionState`) until a mirror
+serves the same status, or no longer serves the deleted discussion; issues
+do the same with their status events.
 
 ## Abuse limits
 

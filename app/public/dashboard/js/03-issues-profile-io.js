@@ -2387,7 +2387,8 @@
       hint.textContent = "Signing and sending…";
     }
     try {
-      await submitWebDiscussionModeration(repo, number, "status", status);
+      const result = await submitWebDiscussionModeration(repo, number, "status", status);
+      rememberPendingDiscussionState(repo, number, result.event);
       const detail = state.repoRecordDetail;
       if (detail?.kind === "discussions" && Number(detail.number) === number && detail.parsed) {
         detail.parsed.values = { ...(detail.parsed.values || {}), status };
@@ -2421,7 +2422,8 @@
     const hint = bar?.querySelector("[data-repo-discussion-moderation-hint]");
     bar?.querySelectorAll("button").forEach((control) => { control.disabled = true; });
     try {
-      await submitWebDiscussionModeration(repo, number, "delete", "#discussion");
+      const result = await submitWebDiscussionModeration(repo, number, "delete", "#discussion");
+      rememberPendingDiscussionState(repo, number, result.event);
       forgetOptimisticRepoRecord(repo, "discussions", number);
       const items = state.repoCollectionItems.discussions;
       if (Array.isArray(items)) {

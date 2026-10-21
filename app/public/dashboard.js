@@ -5259,7 +5259,8 @@
       hint.textContent = "Signing and sending…";
     }
     try {
-      await submitWebDiscussionModeration(repo, number, "status", status);
+      const result = await submitWebDiscussionModeration(repo, number, "status", status);
+      rememberPendingDiscussionState(repo, number, result.event);
       const detail = state.repoRecordDetail;
       if (detail?.kind === "discussions" && Number(detail.number) === number && detail.parsed) {
         detail.parsed.values = { ...(detail.parsed.values || {}), status };
@@ -5293,7 +5294,8 @@
     const hint = bar?.querySelector("[data-repo-discussion-moderation-hint]");
     bar?.querySelectorAll("button").forEach((control) => { control.disabled = true; });
     try {
-      await submitWebDiscussionModeration(repo, number, "delete", "#discussion");
+      const result = await submitWebDiscussionModeration(repo, number, "delete", "#discussion");
+      rememberPendingDiscussionState(repo, number, result.event);
       forgetOptimisticRepoRecord(repo, "discussions", number);
       const items = state.repoCollectionItems.discussions;
       if (Array.isArray(items)) {
@@ -24682,6 +24684,107 @@
   // is therefore kept per browser and laid over what the mirror serves until
   // the mirror carries that event, or a newer status change from anywhere
   // supersedes it.
+  // Discussions get the same treatment for the owner's Close/Reopen/Archive
+  // and Delete discussion (issue #715's problem in another tab): sent through
+  // the relay they wait for a drain, so the next mirror read would undo them on
+  // screen. The signed event is kept per browser and laid over what mirrors
+  // serve until they serve the same state, or OPTIMISTIC_RECORD_TTL_MS passes.
+  const PENDING_DISCUSSION_STATE_STORAGE = "forkmesh.repoPendingDiscussionState";
+  const PENDING_DISCUSSION_STATE_LIMIT = 100;
+  let pendingDiscussionStateHydrated = false;
+
+  function pendingDiscussionStates() {
+    if (!pendingDiscussionStateHydrated) {
+      pendingDiscussionStateHydrated = true;
+      let stored = null;
+      try {
+        stored = JSON.parse(localStorage.getItem(PENDING_DISCUSSION_STATE_STORAGE) || "null");
+      } catch (_) { stored = null; }
+      const cutoff = Date.now() - OPTIMISTIC_RECORD_TTL_MS;
+      const restored = {};
+      Object.entries(stored && typeof stored === "object" ? stored : {})
+        .forEach(([key, entry]) => {
+          if (entry && typeof entry === "object" && ["status", "delete"].includes(entry.type)
+              && Number(entry.savedAt) > cutoff) {
+            restored[key] = entry;
+          }
+        });
+      state.repoPendingDiscussionState = {
+        ...restored,
+        ...(state.repoPendingDiscussionState || {}),
+      };
+    }
+    return state.repoPendingDiscussionState;
+  }
+
+  function persistPendingDiscussionStates() {
+    const pending = pendingDiscussionStates();
+    Object.keys(pending)
+      .sort((a, b) => Number(pending[b]?.savedAt || 0) - Number(pending[a]?.savedAt || 0))
+      .slice(PENDING_DISCUSSION_STATE_LIMIT)
+      .forEach((key) => { delete pending[key]; });
+    try {
+      localStorage.setItem(PENDING_DISCUSSION_STATE_STORAGE, JSON.stringify(pending));
+    } catch (_) { /* private mode or a full quota: the page copy still works */ }
+  }
+
+  // event: the signed "status" event, or a "delete" of the whole discussion.
+  function rememberPendingDiscussionState(repo, number, event) {
+    if (!["status", "delete"].includes(event?.type)) return;
+    pendingDiscussionStates()[optimisticRepoRecordKey(repo, "discussions", number)] = {
+      type: event.type, status: String(event.status || ""), id: String(event.id || ""), savedAt: Date.now(),
+    };
+    persistPendingDiscussionStates();
+  }
+
+  // The pending change for this discussion, or null once mirrors serve it:
+  // the same status for a status change, no discussion at all for a delete.
+  function pendingDiscussionStateFor(repo, number, servedStatus, served = true) {
+    const pending = pendingDiscussionStates();
+    const key = optimisticRepoRecordKey(repo, "discussions", number);
+    const entry = pending[key];
+    if (!entry) return null;
+    const settled = Number(entry.savedAt) <= Date.now() - OPTIMISTIC_RECORD_TTL_MS
+      || (entry.type === "status" && served
+        && String(servedStatus || "open").toLowerCase() === entry.status)
+      || (entry.type === "delete" && !served);
+    if (settled) {
+      delete pending[key];
+      persistPendingDiscussionStates();
+      return null;
+    }
+    return entry;
+  }
+
+  // Lay pending changes over a served discussion list: statuses move, deleted
+  // discussions are hidden.
+  function applyPendingDiscussionStates(repo, items) {
+    const rows = Array.isArray(items) ? items : [];
+    const served = new Set(rows.map((item) => String(item.number)));
+    const prefix = optimisticRepoRecordKey(repo, "discussions", "");
+    Object.keys(pendingDiscussionStates()).forEach((key) => {
+      if (key.startsWith(prefix) && !served.has(key.slice(prefix.length))) {
+        pendingDiscussionStateFor(repo, key.slice(prefix.length), "", false);
+      }
+    });
+    return rows.filter((item) => {
+      const entry = pendingDiscussionStateFor(repo, item.number, item.state, true);
+      if (!entry) return true;
+      if (entry.type === "delete") return false;
+      item.state = entry.status;
+      return true;
+    });
+  }
+
+  // The same for a served discussion page (parseFrontMatter shape).
+  function withPendingDiscussionState(repo, number, parsed) {
+    const entry = pendingDiscussionStateFor(repo, number, parsed?.values?.status, true);
+    if (entry?.type === "status") {
+      parsed.values = { ...(parsed.values || {}), status: entry.status };
+    }
+    return parsed;
+  }
+
   const PENDING_ISSUE_STATUS_STORAGE = "forkmesh.repoPendingIssueStatus";
   const PENDING_ISSUE_STATUS_LIMIT = 100;
   let pendingIssueStatusHydrated = false;
@@ -25030,6 +25133,7 @@
       }
       if (kind === "discussions") {
         const thread = await discussionConversation;
+        withPendingDiscussionState(repo, number, parsed);
         parsed.discussionConversation = thread.events;
         parsed.discussionAnswer = thread.answer;
         [parsed.discussionAnswerAuthorized, parsed.discussionModerationAuthorized] = await Promise.all([
@@ -27161,8 +27265,10 @@
 
   function renderRepoDiscussions({ syncQuery = false } = {}) {
     const container = $("[data-repo-discussions]");
-    const loadedItems = state.repoCollectionItems.discussions;
-    if (!container || !Array.isArray(loadedItems)) return;
+    if (!container || !Array.isArray(state.repoCollectionItems.discussions)) return;
+    const loadedItems = state.selectedRepo
+      ? applyPendingDiscussionStates(state.selectedRepo, state.repoCollectionItems.discussions)
+      : state.repoCollectionItems.discussions;
     setRepoRecordOpen("discussions", false);
     const view = discussionView();
     const filtered = loadedItems.filter((item) => {

@@ -545,3 +545,49 @@ def test_a_whole_discussion_delete_is_owner_only_at_the_relay():
     owner = _Relay(owner=True, session="alice")
     assert owner.post({"number": 4, "event": whole})["status"] == 201
     assert owner.inserted[0]["meta"] == {"ownerApproved": True}
+
+
+def test_pending_discussion_changes_survive_mirror_reads_until_served():
+    names = ["pendingDiscussionStates", "persistPendingDiscussionStates",
+             "rememberPendingDiscussionState", "pendingDiscussionStateFor",
+             "applyPendingDiscussionStates", "withPendingDiscussionState"]
+    script = "\n".join([
+        "const store = {};",
+        "globalThis.localStorage = {getItem: (k) => store[k] ?? null,"
+        " setItem: (k, v) => { store[k] = String(v); }};",
+        "const state = {};",
+        "const OPTIMISTIC_RECORD_TTL_MS = 1000 * 60;",
+        "const optimisticRepoRecordKey = (repo, kind, n) => `${repo.owner}/${repo.name}:${kind}:${n}`;",
+        _js_const("PENDING_DISCUSSION_STATE_STORAGE"),
+        _js_const("PENDING_DISCUSSION_STATE_LIMIT"),
+        "let pendingDiscussionStateHydrated = false;",
+    ] + [_js_function(name) for name in names] + ["""
+      const repo = {owner: 'alice', name: 'garden'};
+      rememberPendingDiscussionState(repo, 1, {type: 'status', status: 'closed', id: 's1'});
+      rememberPendingDiscussionState(repo, 2, {type: 'delete', id: 'd2'});
+      // The mirror still serves the old state: the pending change wins.
+      const stale = applyPendingDiscussionStates(repo, [
+        {number: 1, state: 'open'}, {number: 2, state: 'open'}, {number: 3, state: 'open'}]);
+      const detail = withPendingDiscussionState(repo, 1, {values: {status: 'open'}});
+      // The mirror catches up: closed is served and #2 is gone.
+      const fresh = applyPendingDiscussionStates(repo, [
+        {number: 1, state: 'closed'}, {number: 3, state: 'open'}]);
+      const left = Object.keys(JSON.parse(store['forkmesh.repoPendingDiscussionState']));
+      console.log(JSON.stringify({stale, detail, fresh, left}));
+    """])
+    out = json.loads(subprocess.run(["node", "-e", script], check=True,
+                                    capture_output=True, text=True).stdout)
+    assert out["stale"] == [{"number": 1, "state": "closed"}, {"number": 3, "state": "open"}]
+    assert out["detail"]["values"]["status"] == "closed"
+    assert out["fresh"] == [{"number": 1, "state": "closed"}, {"number": 3, "state": "open"}]
+    # Both retire once a mirror serves them: #1 closed, #2 gone.
+    assert out["left"] == []
+
+
+def test_moderation_handlers_remember_their_pending_change():
+    assert "rememberPendingDiscussionState(repo, number, result.event)" in _js_function(
+        "handleDiscussionStatusClick")
+    assert "rememberPendingDiscussionState(repo, number, result.event)" in _js_function(
+        "handleDiscussionRemoveClick")
+    assert "applyPendingDiscussionStates(state.selectedRepo" in _js_function(
+        "renderRepoDiscussions")
