@@ -13005,6 +13005,10 @@
         .map((item) => rememberRepoMirrorAbout(item, body))
         .some(Boolean);
       if (mirrorChanged) applyRepoReadOnlyMirror(state.selectedRepo);
+      const externalMirrors = Array.isArray(body.externalMirrors) ? body.externalMirrors : [];
+      [repo, state.selectedRepo].forEach((item) => { if (item) item.externalMirrors = externalMirrors; });
+      renderRepoExternalMirrors(state.selectedRepo);
+      window.lucide?.createIcons();
       const followers = Number(body.fediverse?.followers || 0);
       $$("[data-repo-watch-count], [data-repo-watch-followers], [data-repo-social-followers]").forEach((el) => {
         el.textContent = formatCount(followers);

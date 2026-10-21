@@ -16904,6 +16904,9 @@ async def _repo_about_public(env, request, owner, repo):
                         follower.get("url") or "") or follower_url,
                     "followedAt": int(follower.get("created_at") or 0),
                 })
+    about_mirror_fields = _read_only_mirrors.about_fields(
+        await _repo_features_get(env, owner, repo),
+        await _read_only_mirror_fields(env, owner, repo, rec or {}))
     return json_response({
         "ok": True,
         "description": clean_string(
@@ -16925,9 +16928,11 @@ async def _repo_about_public(env, request, owner, repo):
             "followersList": followers_list,
             "settings": ap_settings,
         },
-        **_read_only_mirrors.about_fields(
-            await _repo_features_get(env, owner, repo),
-            await _read_only_mirror_fields(env, owner, repo, rec or {})),
+        **about_mirror_fields,
+        "externalMirrors": _read_only_mirrors.external_mirrors(
+            _read_only_mirrors.upstream_link(about_mirror_fields["mirrorOf"]),
+            await _repository_provider_mirror.public_about_link(
+                env, owner, repo)),
     }, cache_control="public, max-age=600")
 
 
