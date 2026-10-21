@@ -114,6 +114,9 @@ USER_NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 def user_name_html(name):
     text = str(name or "").strip()
+    forge = forge_identity(text)
+    if forge:
+        return '<span title="%s">@%s</span>' % (esc(forge["title"]), esc(forge["login"]))
     key = re.sub(r"^@", "", text).lower()
     if not USER_NAME_RE.match(key):
         return esc(text)

@@ -470,6 +470,8 @@
 
   function userNameHtml(name) {
     const text = String(name || "").trim();
+    const forge = forgeIdentity(text);
+    if (forge) return `<span title="${escapeHtml(forge.title)}">@${escapeHtml(forge.login)}</span>`;
     const key = userNameKey(text);
     if (!key) return escapeHtml(text);
     return `<span data-user-name="${escapeHtml(key)}">${escapeHtml(userDisplayName(text))}</span>`;

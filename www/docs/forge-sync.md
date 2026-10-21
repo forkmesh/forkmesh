@@ -61,7 +61,8 @@ Imported records are signed by the sync key and credited as
 `<provider>:<login>`. The web dashboard shows a `github:<login>` author as
 `@<login>`, linked to `https://github.com/<login>` in a new tab
 (`forgeIdentity` in `app/public/dashboard/js/02-helpers.js`); its avatar is the
-initial only, so a page never loads anything from GitHub (readers of a mirror
+initial only, and list rows show plain `@<login>` text (`userNameHtml`; the
+server renderer `user_name_html` matches), so a page never loads anything from GitHub (readers of a mirror
 may be on networks where GitHub is blocked or watched). The ledger `identities` map links provider logins to
 ForkMesh accounts for assignees only; ambiguous links are ignored.
 

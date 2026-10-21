@@ -132,6 +132,7 @@ console.log(JSON.stringify({
   hostile: issuePersonNameHtml('github:x"onmouseover=alert(1)'),
   doubleDash: issuePersonNameHtml("github:a--b"),
   other: issuePersonNameHtml("gitea:alice"),
+  row: userNameHtml("github:JohnWatsoon"),
   watched,
 }));
 """)
@@ -144,6 +145,7 @@ console.log(JSON.stringify({
     for plain in (out["sync"], out["hostile"], out["doubleDash"], out["other"]):
         assert "github.com" not in plain and "<a" not in plain and '"onmouseover' not in plain
     assert out["watched"] == 0
+    assert out["row"] == '<span title="JohnWatsoon on GitHub">@JohnWatsoon</span>'
 
 
 def test_event_rows_and_comment_cards_name_people_with_links():
