@@ -800,21 +800,19 @@
 
   function repoCompareHeaderHtml(repo, base, head) {
     return `
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <button type="button" data-repo-compare-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to pull requests</button>
-        <div class="flex flex-wrap items-center gap-2">
-          <button type="button" data-repo-compare-refresh class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
-          <button type="button" data-repo-compare-pull class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>Create pull request</button>
-        </div>
-      </div>
-      <header class="grid gap-1 rounded-lg border border-border bg-secondary/30 p-4">
-        <h3 class="flex flex-wrap items-center gap-2 text-base font-semibold text-foreground"><i data-lucide="git-compare-arrows" class="h-4 w-4 text-muted-foreground"></i>Comparing changes</h3>
-        <p class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span class="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-foreground" title="base">${escapeHtml(base)}</span>
-          <i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>
-          <span class="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-foreground" title="head">${escapeHtml(head)}</span>
-          <span data-repo-compare-summary class="min-w-0"></span>
-        </p>
+      <header data-repo-compare-head class="flex min-w-0 flex-wrap items-center gap-2">
+        <button type="button" data-repo-compare-back aria-label="Back to pull requests" title="Back to pull requests" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="arrow-left"></i></button>
+        <h3 class="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold text-foreground"><i data-lucide="git-compare-arrows" class="h-3.5 w-3.5 text-muted-foreground"></i>Comparing</h3>
+        <span class="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs text-muted-foreground">
+          <span class="min-w-0 truncate rounded-md border border-border bg-background px-1.5 font-mono text-foreground" title="base">${escapeHtml(base)}</span>
+          <i data-lucide="arrow-left" class="h-3 w-3 shrink-0"></i>
+          <span class="min-w-0 truncate rounded-md border border-border bg-background px-1.5 font-mono text-foreground" title="head">${escapeHtml(head)}</span>
+        </span>
+        <span data-repo-compare-summary class="min-w-0 text-xs text-muted-foreground"></span>
+        <span class="ml-auto flex items-center gap-2">
+          <button type="button" data-repo-compare-refresh aria-label="Refresh" title="Refresh" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="refresh-cw"></i></button>
+          <button type="button" data-repo-compare-pull class="${repoReadOnlyMirror(repo) ? "hidden " : ""}fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="git-pull-request"></i>Create pull request</button>
+        </span>
       </header>`;
   }
 
@@ -849,15 +847,18 @@
     setRepoTab("pulls");
     setRepoRecordOpen("pulls", true);
     if (navigate) navigateHistory(repoCompareUrl(repo, base, head));
-    const paint = (bodyHtml) => {
+    const paint = (bodyHtml, diffHtml = "") => {
       // A read that lands after the reader left for the list, a record, or
       // another comparison must not paint over what replaced it.
       if (state.repoCompare !== compare) return false;
       container.innerHTML = `
-        <article data-repo-compare="${escapeHtml(`${base}...${head}`)}" class="grid gap-4 border-t border-border bg-background p-4">
-          ${repoCompareHeaderHtml(repo, base, head)}
-          <section data-repo-compare-merge hidden></section>
-          ${bodyHtml}
+        <article data-repo-compare="${escapeHtml(`${base}...${head}`)}" class="min-w-0 border-t border-border bg-background">
+          <div class="grid min-w-0 gap-2 px-3 py-2 sm:px-5">
+            ${repoCompareHeaderHtml(repo, base, head)}
+            <section data-repo-compare-merge hidden></section>
+            ${bodyHtml}
+          </div>
+          ${diffHtml}
         </article>`;
       renderRepoCompareMergePanel(repo);
       window.lucide?.createIcons();
@@ -906,16 +907,16 @@
     };
     const viewed = loadRepoCompareViewed(repo, compare);
     const painted = paint(`
-      <section class="overflow-hidden rounded-lg border border-border">
-        <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-          <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits</span>
-          <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(formatCount(commitCount))} ${commitCount === 1 ? "commit" : "commits"}</span>
-        </div>
-        <div data-repo-compare-commits class="divide-y divide-border">${renderRepoPullCommits(commits)}</div>
-      </section>
-      <div data-repo-compare-diff>${patch.trim()
+      <details data-repo-compare-commits-box class="group min-w-0 rounded-md border border-border">
+        <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-xs font-medium text-foreground">
+          <i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits
+          <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(formatCount(commitCount))}</span>
+          <i data-lucide="chevron-down" class="ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-180"></i>
+        </summary>
+        <div data-repo-compare-commits class="divide-y divide-border border-t border-border">${renderRepoPullCommits(commits)}</div>
+      </details>`, `<div data-repo-compare-diff>${patch.trim()
         ? renderRepoPullFilesSection({ patch, files }, viewed, { reviewable: false })
-        : '<section class="rounded-lg border border-border"><div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this comparison.</div></section>'}</div>`);
+        : '<div class="border-t border-border px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this comparison.</div>'}</div>`);
     if (!painted) return;
     const summary = container.querySelector("[data-repo-compare-summary]");
     if (summary) {
@@ -924,6 +925,17 @@
     // A freshly painted pane starts on its first file, as the pull review does.
     const first = files[0]?.path || "";
     if (first) setRepoPullActiveFile(first, { revealRow: true });
+    fillRepoDiffCiPills(repo, compare.result.headOid, () => state.repoCompare === compare);
+  }
+
+  async function fillRepoDiffCiPills(repo, headOid, stillCurrent) {
+    if (!immutableGitCommit(headOid)) return;
+    const checks = await loadRepoPullChecks(repo, {}, { headOid });
+    if (!stillCurrent()) return;
+    const slot = repoPullFilesSection()?.querySelector("[data-repo-diff-ci]");
+    if (!slot) return;
+    slot.innerHTML = renderRepoDiffCiPills(checks);
+    window.lucide?.createIcons();
   }
 
   async function handleRemotePullSubmit(repo, remote, { title, body, base, head, submit, setHint, titleInput, bodyInput }) {
@@ -1130,45 +1142,37 @@
       </div>`).join("");
   }
 
-  // The section holding this carries no overflow-hidden: that would make it the
-  // scroll container for the file headers' position:sticky, so they would never
-  // stick while the page scrolls past a long file.
   function renderRepoCommitDiff(diff, imageDiffs) {
-    if (!String(diff || "").trim()) return '<div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this commit.</div>';
-    return `<div data-repo-commit-diff>${renderDiffFiles(parseDiffFiles(diff), imageDiffs)}</div>`;
+    if (!String(diff || "").trim()) return "";
+    const commit = state.repoCommitDetail;
+    const viewed = commit?.data?.diff === diff ? loadRepoCommitViewed(commit) : new Set();
+    return `<div data-repo-commit-diff>${renderRepoPullFilesSection({ patch: diff, files: parsePatchStats(diff), imageDiffs }, viewed, { reviewable: false })}</div>`;
   }
 
   function renderRepoCommitDetail(repo, data) {
     const commit = data.commit || {};
     const hash = String(commit.hash || "");
     const parents = String(commit.parents || "").split(/\s+/).filter(Boolean);
+    const diffHtml = renderRepoCommitDiff(data.diff, data.imageDiffs);
     return `
-      <article data-repo-commit-detail class="grid gap-4 border-t border-border bg-background p-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <button type="button" data-repo-commit-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to commits</button>
-          <span class="font-mono text-xs text-muted-foreground">${escapeHtml(hash)}</span>
-        </div>
-        <header class="rounded-lg border border-border bg-secondary/30 p-4">
-          <h3 class="text-base font-semibold text-foreground">${escapeHtml(commit.subject || "Commit")}</h3>
-          ${commit.body ? `<p class="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(commit.body)}</p>` : ""}
-          <dl class="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(shownAccountName(commit.author) || "unknown")}</dd></div>
-            <div><dt class="font-semibold text-foreground">Date</dt><dd>${escapeHtml(commit.date || "unknown")}</dd></div>
-            <div><dt class="font-semibold text-foreground">Parents</dt><dd class="font-mono">${parents.length ? parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ") : "root commit"}</dd></div>
-            <div><dt class="font-semibold text-foreground">Repository</dt><dd class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</dd></div>
-          </dl>
-        </header>
-        <section class="overflow-hidden rounded-lg border border-border">
-          <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="files" class="h-3.5 w-3.5 text-muted-foreground"></i>Files changed</span>
-            <span class="font-mono text-[10px] text-muted-foreground">${formatCount(Array.isArray(data.files) ? data.files.length : 0)} files</span>
+      <article data-repo-commit-detail class="min-w-0 bg-background">
+        <header class="grid min-w-0 gap-1 px-3 py-2 sm:px-5">
+          <div class="flex min-w-0 items-center gap-2">
+            <button type="button" data-repo-commit-back aria-label="Back to commits" title="Back to commits" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="arrow-left"></i></button>
+            <h3 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground" title="${escapeHtml(commit.subject || "Commit")}">${escapeHtml(commit.subject || "Commit")}</h3>
+            <span class="hidden font-mono text-xs text-muted-foreground sm:inline">${escapeHtml(hash.slice(0, 12))}</span>
           </div>
+          <p class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+            <span><span class="font-semibold text-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")}</span> committed ${escapeHtml(commit.date || "")}</span>
+            <span class="font-mono">${parents.length ? `parent ${parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ")}` : "root commit"}</span>
+            <span class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</span>
+          </p>
+          ${commit.body ? `<details class="min-w-0 text-xs"><summary class="cursor-pointer text-muted-foreground">Message</summary><p class="mt-1 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(commit.body)}</p></details>` : ""}
+        </header>
+        ${diffHtml || `<section class="border-t border-border">
+          <div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this commit.</div>
           <div data-repo-commit-files>${renderRepoCommitFiles(data.files)}</div>
-        </section>
-        <section class="rounded-lg border border-border">
-          <div class="flex items-center gap-2 rounded-t-lg border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="git-compare-arrows" class="h-3.5 w-3.5 text-muted-foreground"></i>Diff</div>
-          ${renderRepoCommitDiff(data.diff, data.imageDiffs)}
-        </section>
+        </section>`}
       </article>`;
   }
 
@@ -1178,8 +1182,12 @@
     container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading commit from the live mirror...")}</div>`;
     try {
       const data = await fetchRepoJson(repoLiveUrl(repo, "commit", { path: hash }));
-      state.repoCommitDetail = { repo, data };
+      const detail = { repo, data };
+      state.repoCommitDetail = detail;
       container.innerHTML = renderRepoCommitDetail(repo, data);
+      const first = repoPullFilesSection()?.dataset.activeFile || "";
+      if (first) setRepoPullActiveFile(first, { revealRow: true });
+      fillRepoDiffCiPills(repo, data.commit?.hash, () => state.repoCommitDetail === detail);
     } catch (_) {
       container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Commit detail is unavailable until a reachable mirror host serves this commit.</div>';
     } finally {
