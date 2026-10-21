@@ -749,7 +749,8 @@ MAX_DIFF_FILES = 60
 MAX_BODY_CHARS = 60_000
 VIEW_PATH_RE = re.compile(
     r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/"
-    r"(pulls|issues|discussions)(?:/(\d{1,9})(?:/(files|commits|checks))?)?/?$")
+    r"(pulls|pull|issues|discussions)(?:/(\d{1,9})"
+    r"(?:/(files|commits|checks))?)?/?$")
 
 VIEW_STYLE = """<style>
 .fm-ssr-tabs{display:flex;gap:4px;border-bottom:1px solid rgb(var(--dashboard-border-rgb));margin:0 0 16px;overflow:hidden}
@@ -785,7 +786,9 @@ def view_target(scope):
     if owner.lower() in RESERVED_OWNERS or repo in (".", "..") \
             or repo.endswith(".git"):
         return None
-    view = {"pulls": "pull", "issues": "issue",
+    if kind in ("pull", "pulls") and (kind == "pull") != bool(number):
+        return None
+    view = {"pull": "pull", "issues": "issue",
             "discussions": "discussion"}[kind] if number else kind
     return owner.lower(), repo, view, int(number or 0), section or ""
 
@@ -884,7 +887,8 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None):
             '<div class="fm-ssr-item" data-ssr-record="%s"%s><a href="%s/%s/%d">'
             '%s</a>%s<div class="m">%s</div></div>' % (
                 kind, " data-ssr-usable" if index == 0 else "", _esc(base),
-                kind, number, _esc(row.get("title")), labels, meta))
+                "pull" if kind == "pulls" else kind, number,
+                _esc(row.get("title")), labels, meta))
     if not items:
         items.append('<div class="fm-ssr-item" data-ssr-usable>No open %s.'
                      '</div>' % {"pulls": "pull requests"}.get(kind, kind))
@@ -959,7 +963,7 @@ def _render(bundle, section=""):
                      model.get("open"), model.get("closed"))
     if bundle.view == "pull" and model.get("pull"):
         pull = model["pull"]
-        tabs = "".join('<a href="%s/pulls/%d%s"%s>%s</a>' % (
+        tabs = "".join('<a href="%s/pull/%d%s"%s>%s</a>' % (
             _esc(base), pull["number"], suffix,
             ' class="on"' if suffix.strip("/") == section else "", label)
             for suffix, label in (("", "Conversation"), ("/commits", "Commits"),

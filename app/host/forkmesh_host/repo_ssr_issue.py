@@ -351,7 +351,8 @@ class Context:
         self.figures = figures
 
     def record_url(self, kind, number):
-        return "%s/%s/%d" % (self.link_base, kind, int(number))
+        return "%s/%s/%d" % (self.link_base,
+                             "pull" if kind == "pulls" else kind, int(number))
 
     def path_url(self, kind="tree", path=""):
         suffix = "/%s/%s" % (kind, "/".join(urllib.parse.quote(part, safe="")

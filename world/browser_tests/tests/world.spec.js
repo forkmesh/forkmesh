@@ -10146,7 +10146,7 @@ test("pull requests open and become viewed entirely inside the repository World"
     page.locator(
       "[data-world-repository-web-workbench='pull'] iframe",
     ),
-  ).toHaveAttribute("src", "/forkmesh/forkmesh/pulls/44");
+  ).toHaveAttribute("src", "/forkmesh/forkmesh/pull/44");
   await review.getByRole("button", { name: /Files changed/ }).click();
   await expect(review.locator("[data-repo-pull-file]")).toHaveCount(2);
   await expect(review.locator("[data-repo-pull-diff-file]")).toHaveCount(2);

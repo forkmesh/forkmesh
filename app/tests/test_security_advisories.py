@@ -402,7 +402,7 @@ def test_publish_records_a_signed_ledger_entry_and_valid_osv(world):
     assert osv["aliases"] == ["CVE-2026-12345"]
     assert osv["affected"][0]["ranges"][0]["events"] == [
         {"introduced": "1.0"}, {"fixed": "1.4.2"}]
-    assert {"type": "FIX", "url": ORIGIN + "/acme/widget/pulls/42"} in \
+    assert {"type": "FIX", "url": ORIGIN + "/acme/widget/pull/42"} in \
         osv["references"]
     assert osv == public(world, "GET", "/advisories/%s.json" % advisory_id).data
     assert osv["credits"] == [{"name": "bob", "contact": [ORIGIN + "/bob"],

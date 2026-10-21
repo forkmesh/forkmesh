@@ -7129,7 +7129,7 @@
           <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation, { answer: parsed.discussionAnswer, canMark: parsed.discussionAnswerAuthorized, number })}</div>
           ${renderDiscussionReplyForm(number)}
         </section>` : "";
-    // The open section comes from the URL (/owner/repo/pulls/93/files), so a
+    // The open section comes from the URL (/owner/repo/pull/93/files), so a
     // shared link and a re-render both land on the same tab the sender saw.
     const activeSection = isPulls
       ? normalizeRepoRecordSection(state.repoRecordSection)

@@ -101,7 +101,7 @@ addresses:
 | --- | --- |
 | `/<repo>` | `/<owner>/<repo>` |
 | `/<repo>/<folder>/...` | `/<owner>/<repo>/tree/<folder>/...` |
-| `/<repo>/issues`, `/pulls/3`, `/blob/...` | that repository tab or file |
+| `/<repo>/issues`, `/pull/3`, `/blob/...` | that repository tab or file |
 | `/<repo>.git/info/refs`, `/<repo>/git-upload-pack` | Git over HTTPS (clone, fetch, push) |
 
 The setting is the `repo_paths` row of `instance_settings`

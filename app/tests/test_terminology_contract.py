@@ -252,13 +252,25 @@ def test_every_route_alias_redirects_to_its_canonical_route(alias):
 
 def test_repo_aliases_preserve_deep_paths_and_leave_other_routes_alone():
     redirect = static_routes.repo_alias_redirect
-    assert redirect("/o/r/pull/7/files", "") == "/o/r/pulls/7/files"
-    assert redirect("/o/r/pull/7/", "") == "/o/r/pulls/7"
+    assert redirect("/o/r/pulls/7/files", "") == "/o/r/pull/7/files"
+    assert redirect("/o/r/pulls/7/", "") == "/o/r/pull/7"
+    assert redirect("/o/r/pulls/7/commits", "w=1") == "/o/r/pull/7/commits?w=1"
+    assert redirect("/o/r/pull-requests/7/checks", "") == "/o/r/pull/7/checks"
+    assert redirect("/o/r/-/merge_requests/7/diffs", "") == "/o/r/pull/7/diffs"
+    assert redirect("/o/r/-/pull/7", "") == "/o/r/pull/7"
+    assert redirect("/o/r/pull", "q=is%3Aopen") == "/o/r/pulls?q=is%3Aopen"
+    assert redirect("/o/r/pull/send", "") == "/o/r/pulls/send"
     assert redirect("/o/r/-/tree/main/src", "") == "/o/r/tree/main/src"
     assert redirect("/o/r/-/compare/main...feature", "") == "/o/r/compare/main...feature"
     assert redirect("/o/my%20repo/merge_requests", "") == "/o/my%20repo/pulls"
     for untouched in (
-        "/o/r/pulls/7",
+        "/o/r/pull/7",
+        "/o/r/pull/7/files",
+        "/o/r/pull/7/commits",
+        "/o/r/pull/7/checks",
+        "/o/r/pulls",
+        "/o/r/pulls/send",
+        "/o/r/pulls/new",
         "/o/r",
         "/o/r/tree/pull",
         "/o/r/-/unknown",
@@ -295,5 +307,5 @@ def test_wire_names_stay_stable():
     wire = next(item for item in CONTRACT["compatibilityAliases"] if item["kind"] == "api")
     assert wire["alias"] == wire["canonical"]
     entry = (ROOT / "app" / "src" / "entry.py").read_text(encoding="utf-8")
-    assert '"pull": "pulls",' in entry
+    assert '"pull": "pull",' in entry
     assert '"/api/repositories"' in entry
