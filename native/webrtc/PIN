@@ -1,0 +1,4 @@
+WEBRTC_BRANCH=8078
+WEBRTC_COMMIT=2a990ce0ccd00a3ad449f2201a8e5c2dad53177d
+DEPOT_TOOLS_URL=https://chromium.googlesource.com/chromium/tools/depot_tools.git
+WEBRTC_URL=https://webrtc.googlesource.com/src

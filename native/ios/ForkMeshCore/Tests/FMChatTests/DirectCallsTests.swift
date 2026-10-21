@@ -420,6 +420,17 @@ final class DirectCallsTests: XCTestCase {
             .allSatisfy { $0 == 0 })
     }
 
+    @MainActor func testPushRingSoundLoopsTheRingUnderThirtySeconds() async {
+        let rate = 8000
+        let pcm = DirectCallTones.ringLoop(seconds: DirectCallEngine.ringSoundSeconds, rate: rate)
+        XCTAssertEqual(pcm.count, 9 * 3 * rate)
+        XCTAssertLessThan(Double(pcm.count) / Double(rate), 30)
+        XCTAssertEqual(Array(pcm[(3 * rate)..<(6 * rate)]), DirectCallTones.ring(rate: rate))
+        XCTAssertEqual(DirectCallTones.ringLoop(seconds: 1, rate: rate).count, 3 * rate)
+        XCTAssertEqual(DirectCallEngine.ringTopic, "calls")
+        XCTAssertTrue(DirectCallEngine.ringSound.hasSuffix(".wav"))
+    }
+
     @MainActor func testCalleeFlowAcceptsAndAnswers() async throws {
         let engine = makeEngine()
         let factory = FakeCallPeerFactory()

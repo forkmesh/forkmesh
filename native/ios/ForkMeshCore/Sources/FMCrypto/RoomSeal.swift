@@ -42,6 +42,11 @@ public enum RoomSealOpen: Equatable, Sendable {
         if !node.isEmpty { plain["senderId"] = .string(node) }
         return plain
     }
+
+    public var senderKid: String? {
+        if case .opened(_, let kid, _, _) = self { return kid }
+        return nil
+    }
 }
 
 public final class RoomSeal: @unchecked Sendable {

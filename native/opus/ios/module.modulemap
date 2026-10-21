@@ -1,0 +1,9 @@
+module Opus {
+    header "opus_types.h"
+    header "opus_defines.h"
+    header "opus.h"
+    header "opus_multistream.h"
+    header "opus_projection.h"
+    header "fm_opus.h"
+    export *
+}

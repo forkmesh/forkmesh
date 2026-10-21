@@ -770,6 +770,7 @@
     {"host": "forkmesh.your-domain", "kind": "documentation", "why": "Self-host placeholder in the docs landing page."},
     {"host": "www.w3.org", "kind": "namespace", "why": "XML, SVG, and ActivityStreams namespace identifiers."},
     {"host": "schema.org", "kind": "namespace", "why": "JSON-LD structured data vocabulary."},
+    {"host": "www.ietf.org", "kind": "namespace", "why": "RTP transport-wide congestion control header-extension URI named in call SDP."},
     {"host": "purl.org", "kind": "namespace", "why": "RSS content module namespace."},
     {"host": "search.yahoo.com", "kind": "namespace", "why": "Media RSS namespace."},
     {"host": "w3id.org", "kind": "namespace", "why": "ActivityPub security vocabulary."},

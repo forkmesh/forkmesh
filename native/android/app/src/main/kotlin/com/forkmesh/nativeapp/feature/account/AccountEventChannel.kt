@@ -30,6 +30,12 @@ class AccountEventChannel(
             loop.onTopic = value
         }
 
+    var onEvent: ((String, Map<String, Any?>) -> Unit)?
+        get() = loop.onEvent
+        set(value) {
+            loop.onEvent = value
+        }
+
     var onConnected: (() -> Unit)?
         get() = loop.onConnected
         set(value) {

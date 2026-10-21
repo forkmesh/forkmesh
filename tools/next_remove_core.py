@@ -39,6 +39,7 @@ STOP_UNITS = (
     "fmnext-certsync.service", "fmnext-cert-sync.timer", "fmnext-cert-sync.service",
     "fmnext-fleet-peers.service", "fmnext-request-rules.path",
     "fmnext-request-rules.service", "fmnext-turn.service",
+    "fmnext-calls.service",
 )
 RQLITE_UNIT = "rqlite.service"
 

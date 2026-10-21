@@ -117,6 +117,7 @@ optional_secrets = [
   "AUTOSCALE_IDS_SUBMASTER",
   "AUTOSCALE_CERTSYNC_SECRET",
   "OFFICE_TURN_SECRET",
+  "FORKMESH_CALLS_SECRET",
 ]
 
 [production]
@@ -150,6 +151,15 @@ relay_min_port = 49160
 relay_max_port = 49999
 user_quota = 12
 total_quota = 1200
+
+[calls]
+enabled = true
+udp_port = 3479
+http_port = 7881
+# FM Media (QUIC and WebTransport) beside the WebRTC SFU; off until clients
+# exist (docs/deploy/calls.md "FM Media").
+fmm = false
+fmm_port = 4433
 
 [dns]
 # Leaderless DNS health on the core nodes (app/host/forkmesh_host/

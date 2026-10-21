@@ -686,6 +686,7 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `forkmesh.your-domain` | documentation | Self-host placeholder in the docs landing page. |
 | `www.w3.org` | namespace | XML, SVG, and ActivityStreams namespace identifiers. |
 | `schema.org` | namespace | JSON-LD structured data vocabulary. |
+| `www.ietf.org` | namespace | RTP transport-wide congestion control header-extension URI named in call SDP. |
 | `purl.org` | namespace | RSS content module namespace. |
 | `search.yahoo.com` | namespace | Media RSS namespace. |
 | `w3id.org` | namespace | ActivityPub security vocabulary. |

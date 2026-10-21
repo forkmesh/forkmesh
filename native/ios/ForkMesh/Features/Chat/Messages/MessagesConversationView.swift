@@ -525,6 +525,8 @@ struct MessagesConversationView<Drawer: View>: View {
             DirectLiveTouchButton(hub: hub, dark: palette.dark, drawing: $drawing, focused: $focused)
             DirectCallHeaderButtons(hub: hub, dark: palette.dark)
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            GroupCallHeaderButtons(hub: hub, dark: palette.dark)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .padding(.horizontal, FmSpace.x3)
         .padding(.top, FmSpace.x1)

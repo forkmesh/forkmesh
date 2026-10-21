@@ -37,6 +37,7 @@ import com.forkmesh.nativeapp.feature.account.SettingsService
 import com.forkmesh.nativeapp.feature.account.projects.AppFiles
 import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
+import com.forkmesh.nativeapp.push.CallRings
 import com.forkmesh.nativeapp.push.DIRECT_MESSAGES_TOPIC
 import com.forkmesh.nativeapp.security.SecretStore
 import java.io.File
@@ -240,6 +241,14 @@ object ChatDepth {
                         ProjectLifecycle.scope.launch(Dispatchers.IO) { directService.refresh() }
                     } else if (topic == ChatReadMarks.TOPIC && hub === chat) {
                         ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks() }
+                    }
+                }
+                val previousEvent = channel.onEvent
+                channel.onEvent = { topic, frame ->
+                    previousEvent?.invoke(topic, frame)
+                    val ringing = CallRings.conversation(frame)
+                    if (ringing != null && direct === directService) {
+                        ProjectLifecycle.scope.launch(Dispatchers.IO) { runCatching { directService.openRinging(ringing) } }
                     }
                 }
                 val previousConnected = channel.onConnected

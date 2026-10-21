@@ -11,8 +11,11 @@ the air during calls".
 
 `ForkMesh/Platform/OtherAppCall.swift` watches `CXCallObserver`, which lists
 cellular calls and every VoIP call an app reports through CallKit (Signal,
-WhatsApp, FaceTime). ForkMesh's own direct calls do not use CallKit, so the
-observer only ever sees other apps' calls. `OtherAppCall.inProgress` reads the
+WhatsApp, FaceTime). Since 2026-10-21 ForkMesh reports its own incoming
+direct calls through CallKit too (`DirectCallKit`, see
+`native/ios/docs/FMChat.md`), so the observer also sees a ForkMesh call while
+it rings or runs, and the rules below apply to it: interface sounds, chimes and
+the mesh stay quiet during our own call as well, which is what a call needs. `OtherAppCall.inProgress` reads the
 call list each time, and listeners registered with `onChange` hear the start
 and end.
 

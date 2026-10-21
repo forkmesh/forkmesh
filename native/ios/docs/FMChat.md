@@ -581,12 +581,130 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   (a preview or call is capturing) and otherwise uses `.playback` with `.mixWithOthers`, like
   `GenieSounds`. While the app is not in the foreground, a pending invite also posts a local
   notification (`direct-call-<call id>`, title "Incoming video call" or "Incoming voice call",
-  body "@name is calling you", default sound, `interruptionLevel = .timeSensitive`) with
+  body "@name is calling you", the ring sound below, `interruptionLevel = .timeSensitive`) with
   `topic: direct-messages` and the conversation, so a tap opens that DM where the full-screen
   incoming view waits. It is removed when the invite ends or the app returns to the foreground.
   There are no Accept and Decline notification actions: the categories come from the shared
   `NotificationCategoryId` list in FMApi, and a call category there needs matching server and
   Android work.
+- **Call pushes** (since 2026-10-21; protocol in `docs/app/chat-direct-calls.md`).
+  `sendCallFrame` opens the DM's socket when it is not open and marks every `call-invite`
+  envelope `ring: true`; the relay then sends the callee a `calls` account event and an APNs
+  alert. The callee's app reacts in four places, each calling
+  `DirectMessageService.openRinging(conversation)` (it reloads the conversation list when the
+  conversation is not known yet, then `open`s it), so the next resent invite (every 3 s)
+  arrives and `DirectCallIncomingScreen` shows:
+  - `AccountEventChannel.onEvent` (new: topic and whole frame, before `onTopic`) with topic
+    `DirectCallEngine.ringTopic` (`calls`), wired in `AppServices+Chat.swift`;
+  - `ApplePushBridge` `willPresent` for a `calls` push in the foreground, which shows the banner
+    with sound unless the engine is already in a call or showing that invite;
+  - a tap on the push (`receivedTap`); `PushOpen.isCall` counts as a direct message, so the tap
+    also opens that DM like a DM push;
+  - `CallRinger.sweepPushes`: whenever the ringer refreshes it removes delivered `calls` pushes
+    for the ringing conversation, for one whose invite just ended, and all of them while the app
+    is in front; a push under 45 s old found in the foreground with no invite yet also opens its
+    DM, so opening the app from its icon during a ring still shows the call.
+
+  `CallRinger.attach` writes `DirectCallEngine.ringSound` (`forkmesh-call-ring.wav`, nine
+  three-second ring cycles from `DirectCallTones.ringLoop`, 27 s, under Apple's 30 s cap) to
+  `Library/Sounds` with `completeUntilFirstUserAuthentication` protection, so a push on a locked
+  phone can read it, and the local call notification uses it too. The notification extension
+  delivers a `calls` push as it came (the relay also leaves `mutable-content` off), so it is never
+  rewritten into an inbox row.
+- **CallKit and PushKit** (2026-10-21). Incoming calls show on the system call screen.
+  `DirectCallKit` (`Calls/DirectCallKit.swift`) owns one `CXProvider` (video supported, one call,
+  generic handles "@name", kept out of the phone's Recents because those sync through iCloud) and
+  a `PKPushRegistry` for `.voIP`. `AppDelegate` starts the registry in `didFinishLaunching`, so a
+  VoIP push that launches the app is delivered; `installCalls` attaches the engine and the DM
+  service. The decisions live in `DirectCallKitLedger` (FMChat, `Direct/DirectCallKitLedger.swift`,
+  Linux tests in `DirectCallKitLedgerTests`); the app class only turns its effects into CallKit
+  and engine calls.
+  - **Token.** The PushKit token goes to `PushNotificationService.didReceiveVoipToken`, which
+    re-registers the device with `voipToken` beside the alert token.
+  - **VoIP push.** Every VoIP push is reported to CallKit before its completion runs, because iOS
+    ends an app that does not and then stops delivering VoIP pushes. A malformed one is reported
+    and ended at once. The CallKit UUID is the invite's call id. The push then opens the DM
+    (`openRinging`, held until the services are attached; on a cold launch `DirectCallKit.wake`
+    starts `AppBoot.shared`) so the resent invite arrives and fills in the caller and
+    voice/video (`reportCall(updated:)`). With no invite within 20 s
+    (`DirectCallKitLedger.inviteWait`) the call ends as unanswered. A second push for a call
+    still ringing reports the same UUID again, and one for a call already over is reported and
+    ended at once.
+  - **Socket invites** that arrive with no push (app open, or Android or web callers on an old
+    relay) are reported to CallKit too.
+  - **Answer** (CallKit `CXAnswerCallAction`) accepts the invite through the same access check as
+    the in-app Accept, or waits for the invite if it has not arrived yet. **Decline or end**
+    (`CXEndCallAction`) declines the invite, hangs up a live call, or declines the invite once it
+    arrives. **Mute** maps to `toggleMute`. Accepting in the app asks CallKit to mark the call
+    answered (`CXAnswerCallAction` transaction); a call the caller ends, or that ends in the app,
+    is reported ended (`remoteEnded`).
+  - **Ringing.** While CallKit has the call, `CallRinger` neither plays its own ring nor posts the
+    local call notification (`DirectCallKit.ringing`). If CallKit refuses a report for any reason
+    other than Focus or the block list (for example `unentitled`), the ledger drops the call and
+    the in-app ring, notification and incoming screen work as before. A call Focus filters stays
+    silent, as the user asked.
+  - **Region check.** CallKit must not be used in apps on the mainland China App Store. Both are
+    off when `DirectCallKitRegion.allowed` says no: the App Store storefront is `CHN`, or the
+    device region is `CN`. `DirectCallKit.start` decides at launch from the last storefront it
+    saw (`callkit.storefront` in `UserDefaults`, so a VoIP push on a cold launch never waits on
+    StoreKit) and the region, then reads `Storefront.current` and follows `Storefront.updates`.
+    While it is off, no `PKPushRegistry` exists (so no VoIP push can arrive that would have to be
+    reported), the VoIP token is withdrawn from the relay (re-registration without `voipToken`,
+    so the phone gets the alert push), and the `CXProvider` is never created. Calls then ring
+    through `CallRinger`, its local notification and the in-app incoming screen. Turning it off
+    while calls are on the CallKit screen ends them there (`DirectCallKitLedger.endAll`) but not
+    in the app; a VoIP push that lands during the switch is reported and ended at once, as iOS
+    requires.
+  - **Our call counts as a call.** `OtherAppCall` (`docs/native/OTHER_APP_CALLS.md`) sees our CallKit
+    call too, so interface sounds and chimes stay quiet during it.
+- **Native call engine** (2026-10-21, `Calls/Native/`, compiled only when `canImport(WebRTC)`,
+  i.e. when `native/ios/WebRTCPackage/WebRTC.xcframework` exists and `tools/generate_project.rb`
+  links it; without it the WebView path above is unchanged). The framework is our own build of
+  libwebrtc from `native/webrtc/` (`docs/server/rtc.md`, "Phone media engine").
+  - `NativeCallMedia` owns the one `RTCPeerConnectionFactory`, built by our patch's
+    `RTCFmFactory.factory(withCaptureProcessor:)` so microphone audio passes through
+    `NativeVoicePipeline` (the ported `CallVoiceProcessor`, skipped when the voice is off) after
+    echo cancellation. `RTCAudioSession` runs in manual-audio mode: CallKit's
+    `provider(_:didActivate:)` hands its session to WebRTC (`callKitActivated`), and calls CallKit
+    does not own (outgoing, or the China region) activate it themselves (`beginAudio`/`endAudio`).
+    That is what gives a call answered on the lock screen its audio at once.
+  - `NativeCameraPipeline` wraps `RTCCameraVideoCapturer` (front camera, nearest format) and runs
+    every frame through a `NativeFrameFilter`. While a face is chosen on a phone with a TrueDepth
+    front camera it switches the camera to `NativeFaceTrackingSource` (`ARFaceTrackingConfiguration`,
+    `ARFrame.capturedImage` fed to the same `RTCVideoSource`, with the face mesh, blend shapes and
+    depth passed to the filter) and back when the face is cleared, the session fails or no frame
+    arrives within 1.5 s; while a look is active it also caps the frame rate and encode size by
+    thermal state (`CallFaceQuality.capture`, `CallFaceFrameGate`); `NativeLookFilter` draws the chosen face, then
+    replaces or blurs the background with `VNGeneratePersonSegmentationRequest` and Core Image
+    (pictures in `Resources/CallBackgrounds`, the custom photo from the look). Both follow
+    `FaceChangerLook` through `NativeCallMedia.follow`.
+  - `NativeCallPeer` is the one-to-one `DirectCallPeer`: two `sendrecv` transceivers (audio,
+    video) like `/chat`, the same `{type, sdp}` and candidate JSON, `CallMediaTuning.tune` on every
+    local description (the web page's Opus parameters, checked against the JS output), sender caps,
+    the 8 s disconnect grace and the 4 s route check. `NativeCallPeerFactory` is the engine's
+    `peerFactory`; `DirectCallScreen` draws `NativeCallSurface` (remote video plus a mirrored self
+    view) and `NativePreCallScreen` replaces the WebView pre-call check.
+  - `NativeGroupCall` joins group calls in private channels (`docs/app/chat-group-calls.md`): it
+    asks `OfficeChannelService.callTicket` for a ticket, speaks the call-server protocol over a
+    `URLSessionWebSocketTask`, attaches one `RTCFmFrameEncryptor` from our patch to both its senders
+    (one frame counter for audio and video, kept for the whole call) and an
+    `RTCFmFrameDecryptor` to every forwarded receiver (keyed by the stream's peer id), sends
+    presence and keys with `sendLiveFrame` (sealed, never stored), draws a new key on every
+    `joined`, rotates its key when someone leaves and rejoins on another core when its server goes
+    away. `ChatHub.onGroupCallFrame`
+    feeds it the channel's group-call frames; the roster and key rules are `GroupCallRoster`
+    (`FMChat/Group/GroupCalls.swift`). The channel header shows `GroupCallHeaderButtons` (Join · N
+    while a call runs) and `.groupCallsRoot()` presents `GroupCallPanel`.
+  - Faces are drawn natively: `NativeLookFilter` runs `NativeFaceRenderer` (Metal, Vision
+    landmarks or the ARKit face mesh, the shared `FMChat/CallFace` maths, `CallFaceStage` for the
+    frame loop) before the background, and hands the background step a keep mask so the
+    stand-in's hair is not cut away; a blur background is drawn inside the face pass from the
+    reconstructed room. `NativeFaceSegment` runs the browser's hair network
+    (`Resources/CallSegmentation/hair-192.fmnn`, `CallSegmentModel`/`CallSegmentPlan` in
+    `FMChat/CallFace`) as Metal compute kernels and the browser's guided-filter person matte on
+    Vision's mask. Stand-in photos are in `Resources/CallFaces`; the custom face is built from the
+    look's photo. Passes, threading, fallbacks, cost and the differences from the browser are in
+    `docs/app/chat-direct-calls.md`, "Native face renderer (iOS)".
 - **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
   connects and when the selected candidate pair changes. `WebCallPeer` passes it to
   `WebCallPeerFactory.route` (a `DirectCallRoute`, reset for each new call and when the peer
@@ -594,12 +712,14 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   no server in between" or "Relayed · through a TURN relay server (third party)". The live state
   line is "Connected · end-to-end encrypted", since the route is unknown until then. The pre-call
   screen shows the hint "Calls go directly between your devices when possible."
-- **Limits.** Ringing reaches the phone only while the app is running and the DM's socket is open
-  (foreground, or background while the `audio` mode keeps it alive). A killed or suspended app
-  does not ring: that needs VoIP push (PushKit) and CallKit, which need server work to send VoIP
-  pushes and are not part of this app. The time-sensitive level only breaks through Focus when the
-  app has the Time Sensitive Notifications capability; without it the notification arrives as a
-  normal alert. The root `fullScreenCover` cannot present while another screen of `HomeShell` is
+- **Limits.** Media runs in a WebView, which only captures the camera and microphone while the
+  app is in front, so a call answered on the lock screen connects its signaling at once but its
+  audio and picture start once the user unlocks and opens ForkMesh (the app button on the call
+  screen). CallKit's audio session activation and WebKit's capture session have not been tried
+  together on a device. Outgoing calls are not reported to CallKit. The alert push (phones
+  without a VoIP token) uses time-sensitive delivery, which only breaks through Focus once the
+  app has the Time Sensitive Notifications capability
+  (`com.apple.developer.usernotifications.time-sensitive`); it is not switched on yet. The root `fullScreenCover` cannot present while another screen of `HomeShell` is
   showing a sheet or cover; the call then appears when that sheet closes. The ringback plays on
   whatever route WebKit's `.playAndRecord` session uses (often the earpiece).
 
@@ -672,7 +792,11 @@ history store, direct messages, receipts, view-once media and captions, push dec
 parsing, v4 delivery (`DirectMessagesTests`: own frames ignored, one reset and advertisement per
 lost session, a received reset reseals the outbox to that device only, no superseded), the v3 UI logic (`DirectTrustUITests`: trust lines and banners, transcript order, safety
 rows and scan results, the privacy switches and lock, focus reporting, office channel ids), calls (including the state lines, route notes and the ringback and ring tones in
-`DirectCallsTests`) and call face depth (`CallFaceDepthTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
+`DirectCallsTests`), call face depth (`CallFaceDepthTests`), the call face maths
+(`CallFaceParityTests`, `CallFaceStageTests`), the segmentation network against the browser's
+WebGL output (`CallSegmentTests`, fixture from `tools/call_segment_parity.mjs`) and the ARKit-side
+logic: blend-shape mapping, mesh binding, capture format, frame gate and quality levels
+(`CallFaceTrackingTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
 syntax-checked on Linux and compiled only on macOS CI; the Local Network prompt, multicast and
 device capture paths need on-device verification.
 

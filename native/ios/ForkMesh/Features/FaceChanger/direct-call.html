@@ -4628,7 +4628,7 @@ function callOutfitThumbnail(id, documentRef = globalThis.document, width = 160,
 return { CALL_OUTFIT_STORAGE_KEY, OUTFIT_SIZE, OUTFIT_UNIT, OUTFIT_NECK, OUTFIT_DROP, OUTFIT_CHIN_SPANS, OUTFIT_ROLL, OUTFIT_TILE, CALL_OUTFITS, callOutfitById, savedCallOutfit, rememberCallOutfit, outfitFrame, outfitUv, createOutfitSmoother, drawCallOutfit, callOutfitThumbnail };
 })();
 
-const { BACKGROUND_MODES, faceWebGL, backgroundCapable, VERTEX_FLOATS, vertexRegion, warpVertices, coverRect, hairRegion, photoEyes, lookUniform, axisFrame, zoneFrame, createFaceRenderer } = (() => {
+const { BACKGROUND_MODES, FACE_WARP, faceWebGL, backgroundCapable, VERTEX_FLOATS, vertexRegion, warpVertices, coverRect, hairRegion, photoEyes, lookUniform, axisFrame, zoneFrame, createFaceRenderer } = (() => {
 const LOW_WIDTH = 160;
 const FILL_WIDTH = 192;
 const FILL_LEVELS = 5;
@@ -5071,6 +5071,8 @@ function target(gl, width, height, type, depth = false) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   return ok ? { texture: handle, framebuffer, width, height, depth: Boolean(renderbuffer) } : null;
 }
+
+const FACE_WARP = Object.freeze({ vertex: WARP_VERTEX, fragment: WARP_FRAGMENT, compile, texture, target });
 
 function faceWebGL(canvas) {
   try {
@@ -5611,7 +5613,7 @@ function createFaceRenderer(canvas, { models = null } = {}) {
     },
   };
 }
-return { BACKGROUND_MODES, faceWebGL, backgroundCapable, VERTEX_FLOATS, vertexRegion, warpVertices, coverRect, hairRegion, photoEyes, lookUniform, axisFrame, zoneFrame, createFaceRenderer };
+return { BACKGROUND_MODES, FACE_WARP, faceWebGL, backgroundCapable, VERTEX_FLOATS, vertexRegion, warpVertices, coverRect, hairRegion, photoEyes, lookUniform, axisFrame, zoneFrame, createFaceRenderer };
 })();
 
 const { CALL_BACKGROUND_STORAGE_KEY, CALL_BACKGROUND_IMAGE_KEY, CALL_BACKGROUND_BASE, CUSTOM_BACKGROUND_ID, CUSTOM_BACKGROUND_SIDE, PORTRAIT_SUFFIX, PORTRAIT_RATIO, CALL_BACKGROUNDS, callBackgroundById, isPortraitFrame, callBackgroundImageUrl, callBackgroundThumbUrl, savedCallBackground, rememberCallBackground, fitSide, customBackgroundFromFile } = (() => {

@@ -95,6 +95,11 @@ optional_secrets = []
 [turn]
 enabled = false
 
+[calls]
+enabled = false
+# fmm = false        # FM Media over QUIC/WebTransport (docs/deploy/calls.md)
+# fmm_port = 4433
+
 [dns]
 # Leaderless DNS health on the core nodes (app/host/forkmesh_host/
 # dns_reconciler.py): every node votes, the node chosen for each 30 s interval

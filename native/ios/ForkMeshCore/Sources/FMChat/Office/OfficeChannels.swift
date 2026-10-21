@@ -385,10 +385,13 @@ public final class OfficeChannelService {
             return
         }
         if RoomSeal.isSealedFrame(plain) {
-            guard let opened = seal.open(plain, now: clock.nowMillis, history: history).authenticatedPlain else { return }
-            plain = opened
+            let result = seal.open(plain, now: clock.nowMillis, history: history)
+            guard let opened = result.authenticatedPlain else { return }
+            plain = GroupCallE2ee.annotate(opened, kid: result.senderKid, acct: result.senderAcct)
         } else if room.isPrivate && !room.serverVisible {
             return
+        } else {
+            plain = GroupCallE2ee.annotate(plain, kid: nil, acct: nil)
         }
         acceptPlain(plain, room: room, live: live, recipients: recipients)
     }
@@ -708,6 +711,36 @@ public final class OfficeChannelService {
     }
 
     public var currentSelfId: String { selfId() }
+
+    @discardableResult
+    public func sendLiveFrame(_ conversation: String, type: String, fields: JSONObject) async -> Bool {
+        guard let room = room(for: conversation), room.isPrivate, !room.readOnly else { return false }
+        if sockets[room.id] == nil, !(await open(conversation)) { return false }
+        guard let socket = sockets[room.id] else { return false }
+        var plain = frame(room, text: "", bot: false)
+        plain["type"] = .string(type)
+        plain.removeValue(forKey: "text")
+        for (key, value) in fields { plain[key] = value }
+        do {
+            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
+            try await socket.connection.send(text: JSON.encode(envelope))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    public func callTicket(_ conversation: String, engines: JSONObject = [:]) async throws -> GroupCallTicket? {
+        guard let room = room(for: conversation), room.isPrivate else { return nil }
+        return GroupCallTicket(json: try await api.accountApiCall("POST", "/api/chat/channels/\(room.id)/call-ticket", engines))
+    }
+
+    public func callIdentity(_ conversation: String) async -> GroupCallIdentity? {
+        guard let room = room(for: conversation), room.isPrivate else { return nil }
+        if sockets[room.id] == nil, !(await open(conversation)) { return nil }
+        guard let seal = sockets[room.id]?.seal, let acct = seal.acct, !acct.isEmpty else { return nil }
+        return GroupCallIdentity(call: seal.room, acct: acct, kid: seal.keyring.kid, seed: seal.keyring.callSigningSeed())
+    }
 
     public func postFrame(_ conversation: String, type: String, fields: JSONObject) async -> JSONObject? {
         guard let room = room(for: conversation), !room.readOnly else { return nil }

@@ -3246,12 +3246,14 @@ ACCOUNT_EVENT_PUSH_MEMO_MAX = 512
 # "re-read your inbox", so one frame answers any number of rows; a banner is
 # the notification itself, and a second ping inside the window that produced
 # no banner is a ping the phone never heard about.
-ACCOUNT_EVENT_PUSH_EVERY_TOPICS = ("pings", "direct-messages")
-ACCOUNT_EVENT_SOCKET_EVERY_TOPICS = ("chat-read", "direct-messages")
+ACCOUNT_EVENT_PUSH_EVERY_TOPICS = ("pings", "direct-messages", "calls")
+ACCOUNT_EVENT_SOCKET_EVERY_TOPICS = ("chat-read", "direct-messages", "calls")
+ACCOUNT_EVENT_CONVERSATION_TOPICS = ("direct-messages", "calls")
 
 
 def _account_event_query(topic, push_alert):
-    if topic != "direct-messages" or not isinstance(push_alert, dict):
+    if (topic not in ACCOUNT_EVENT_CONVERSATION_TOPICS
+            or not isinstance(push_alert, dict)):
         return ""
     conversation = str(push_alert.get("conversation") or "")
     if not re.fullmatch(r"direct:[0-9a-f]{32}", conversation):
@@ -3376,6 +3378,8 @@ async def _apns_tokens_from_rows(env, rows):
             "token_bi": str(row.get("token_bi") or ""),
             "account_bi": str(row.get("account_bi") or ""),
             "token": token,
+            "voip_token": clean_string(
+                record.get("voipToken", ""), 200).strip(),
             "environment": str(row.get("environment") or "production"),
             # The app that minted the token, which is the apns-topic Apple
             # accepts it under; "" for an older build that never said.
@@ -3437,7 +3441,77 @@ async def push_account_apns(env, owner, topic, push_alert=None):
         alert = push_alert
     if not isinstance(alert, dict) or not alert.get("title"):
         return 0
+    if topic == apns.APNS_CALL_TOPIC:
+        return await _apns_send_call(env, tokens, alert)
     return await _apns_send_tokens(env, tokens, topic, alert)
+
+
+_APNS_VOIP_CALL_MEMO = {}
+APNS_VOIP_CALL_MEMO_MS = 2 * 60 * 1000
+APNS_VOIP_CALL_MEMO_MAX = 256
+
+
+async def _apns_send_call(env, tokens, alert):
+    apns = _apns_module()
+    try:
+        jwt = await apns.provider_token(env)
+    except Exception:
+        return 0
+    started = int(Date.now())
+    call_key = str(alert.get("callId") or alert.get("conversation") or "")
+    collapse_id = apns.collapse_id_for(
+        apns.APNS_CALL_TOPIC, alert.get("conversation", ""))
+    delivered = 0
+    for entry in tokens:
+        now = int(Date.now())
+        if now - started > apns.APNS_PUSH_BUDGET_MS:
+            break
+        voip_token = entry.get("voip_token", "")
+        if voip_token:
+            memo_key = entry["token_bi"] + "\n" + call_key
+            last = _APNS_VOIP_CALL_MEMO.get(memo_key)
+            if last is not None and now - last < APNS_VOIP_CALL_MEMO_MS:
+                continue
+            try:
+                ok, dead, _status, _reason = await apns.send_voip(
+                    env, js_fetch_with_timeout, jwt, voip_token,
+                    entry["environment"], alert,
+                    bundle_id=entry.get("bundle_id", ""))
+            except Exception:
+                ok, dead = False, False
+            if ok:
+                if len(_APNS_VOIP_CALL_MEMO) >= APNS_VOIP_CALL_MEMO_MAX:
+                    _APNS_VOIP_CALL_MEMO.clear()
+                _APNS_VOIP_CALL_MEMO[memo_key] = now
+                delivered += 1
+                continue
+            if dead:
+                await _apns_forget_voip_token(env, entry)
+        try:
+            ok, dead, _status, _reason = await apns.send_one(
+                env, js_fetch_with_timeout, jwt,
+                entry["token"], entry["environment"], alert,
+                collapse_id=collapse_id, topic=apns.APNS_CALL_TOPIC,
+                bundle_id=entry.get("bundle_id", ""))
+        except Exception:
+            continue
+        if ok:
+            delivered += 1
+        elif dead:
+            await _apns_prune_token(env, entry["token_bi"])
+            _APNS_BROADCAST_MEMO.clear()
+    print("apns: topic calls delivered %d of %d" % (delivered, len(tokens)))
+    return delivered
+
+
+async def _apns_forget_voip_token(env, entry):
+    try:
+        await d1_run(
+            env, "UPDATE apns_device_tokens SET data=? WHERE token_bi=?",
+            await encrypt_row(env, {"token": entry["token"]}),
+            entry["token_bi"])
+    except Exception:
+        pass
 
 
 async def _apns_ping_alert(env, record):
@@ -3615,7 +3689,8 @@ async def push_chat_room_apns(env, room_key, channel_id="", sender_bi="",
 
 
 async def register_apns_device_token(env, account, token, environment,
-                                     device_bi="", bundle_id=""):
+                                     device_bi="", bundle_id="",
+                                     voip_token=""):
     """Upsert one phone's push token for an account.
 
     Keyed on a blind index of the token itself, so a phone that re-registers
@@ -3642,6 +3717,11 @@ async def register_apns_device_token(env, account, token, environment,
         if str(environment or "").strip().lower() == "development"
         else "production")
     bundle_id = apns.normalize_bundle_id(bundle_id)
+    record = {"token": token}
+    voip_token = clean_string(voip_token, 200).strip().lower()
+    if len(voip_token) >= 32 and all(
+            c in "0123456789abcdef" for c in voip_token):
+        record["voipToken"] = voip_token
     now = int(Date.now())
     account_bi = await blind_index(env, account)
     token_bi = await blind_index(env, "apns:" + token)
@@ -3660,7 +3740,7 @@ async def register_apns_device_token(env, account, token, environment,
              data=excluded.data,
              last_seen=excluded.last_seen""",
         token_bi, account_bi, clean_string(device_bi or "", 128),
-        environment, bundle_id, await encrypt_row(env, {"token": token}),
+        environment, bundle_id, await encrypt_row(env, record),
         now, now,
     )
     # Retire installs that stopped checking in long ago. The app registers on
@@ -3739,6 +3819,7 @@ async def register_device_handler(env, request):
         # The app that minted the token (its apns-topic). Absent from older
         # builds, which then keep the App Store id.
         bundle_id=clean_string(data.get("bundleId", ""), 128),
+        voip_token=clean_string(data.get("voipToken", ""), 200),
     )
     if not ok:
         return json_response(
@@ -10252,6 +10333,25 @@ async def _chat_direct_message_retained(
                 key_version=key_version, frame=frame))
 
 
+async def _chat_direct_call_ring(env, conversation_id, caller_bi, call_id=""):
+    recipient, caller = await _chat_direct_message_parties(
+        env, conversation_id, caller_bi)
+    if recipient:
+        await notify_account_event(
+            env, recipient, "calls",
+            _apns_module().direct_call_alert(
+                conversation_id=conversation_id, caller=caller,
+                call_id=call_id))
+
+
+_CHAT_DIRECT_RING_MEMO = {}
+CHAT_DIRECT_RING_EVERY_MS = 20 * 1000
+CHAT_DIRECT_RING_MEMO_MAX = 256
+_CHAT_DIRECT_RING_BUDGET = {}
+CHAT_DIRECT_RINGS_PER_WINDOW = 8
+CHAT_DIRECT_RING_WINDOW_MS = 60 * 1000
+
+
 # conversation_id -> {sender account_bi: (peer name, sender name)}. A direct
 # conversation has
 # exactly two participants and they never change, so this is immutable for the
@@ -11147,6 +11247,184 @@ async def _chat_channel_deliver(env, channel_id, key_version, plain):
         raise RuntimeError("chat_webhook_delivery_failed")
 
 
+CHAT_CALL_TICKET_TTL_MS = 60 * 1000
+CHAT_CALL_HEALTH_TTL_MS = 10 * 1000
+CHAT_CALL_HEALTH_TIMEOUT_SECONDS = 1.5
+CHAT_CALL_NODES_MAX = 16
+CHAT_CALL_FMM_ENGINE = "fmm"
+CHAT_CALL_FMM_PATH = "/calls/fmm"
+CHAT_CALL_FMM_ALPN = "fmm/1"
+CHAT_CALL_FMM_HASHES_MAX = 4
+_CHAT_CALL_HEALTH = {}
+
+
+def chat_call_nodes(value):
+    nodes = []
+    for item in str(value or "").split(","):
+        url = item.strip()
+        if (url.startswith("wss://") and url.endswith("/calls/ws")
+                and len(url) <= 200 and url not in nodes
+                and not any(c in url for c in " \t\r\n?#@")):
+            nodes.append(url)
+    return nodes[:CHAT_CALL_NODES_MAX]
+
+
+def chat_call_health_url(node):
+    return "https://" + node[len("wss://"):-len("/ws")] + "/health"
+
+
+def chat_call_pick(room, nodes, healthy):
+    candidates = [node for node in nodes if node in healthy] or list(nodes)
+    if not candidates:
+        return ""
+    return max(candidates, key=lambda node: hashlib.sha256(
+        (str(room) + "\n" + node).encode()).hexdigest())
+
+
+def chat_call_rank(room, nodes, healthy):
+    candidates = [node for node in nodes if node in healthy] or list(nodes)
+    return sorted(candidates, key=lambda node: hashlib.sha256(
+        (str(room) + "\n" + node).encode()).hexdigest(), reverse=True)
+
+
+def chat_call_fm_media_info(body):
+    fmm = body.get("fmm") if isinstance(body, dict) else None
+    if not isinstance(fmm, dict):
+        return None
+    port = fmm.get("port")
+    hashes = fmm.get("hashes")
+    if (isinstance(port, bool) or not isinstance(port, int)
+            or not 0 < port < 65536
+            or fmm.get("path") != CHAT_CALL_FMM_PATH
+            or fmm.get("alpn") != CHAT_CALL_FMM_ALPN
+            or not isinstance(hashes, list)
+            or not 0 < len(hashes) <= CHAT_CALL_FMM_HASHES_MAX):
+        return None
+    kept = []
+    for value in hashes:
+        if not isinstance(value, str):
+            return None
+        try:
+            raw = base64.b64decode(value, validate=True)
+        except Exception:
+            return None
+        if len(raw) != 32:
+            return None
+        kept.append(value)
+    return {"port": port, "hashes": kept}
+
+
+def chat_call_host(node):
+    return node[len("wss://"):-len("/calls/ws")]
+
+
+def chat_call_sign(secret, body):
+    payload = base64.urlsafe_b64encode(json.dumps(
+        body, separators=(",", ":")).encode()).decode().rstrip("=")
+    signature = hmac.new(
+        secret.encode(), ("forkmesh-call-ticket-v1\n" + payload).encode(),
+        "sha256").digest()
+    return payload + "." + base64.urlsafe_b64encode(
+        signature).decode().rstrip("=")
+
+
+def chat_call_fm_ticket(secret, room, peer, account, now_ms, standby):
+    body = {"room": room, "peer": peer, "acct": account,
+            "exp": int((now_ms + CHAT_CALL_TICKET_TTL_MS) // 1000),
+            "engine": CHAT_CALL_FMM_ENGINE}
+    if standby:
+        body["standby"] = True
+    return chat_call_sign(secret, body)
+
+
+def chat_call_fm_media(secret, room, peer, account, now_ms, nodes, healthy,
+                       info):
+    ranked = chat_call_rank(room, nodes, healthy)
+    if not ranked or ranked[0] not in info:
+        return None
+
+    def endpoint(node, standby):
+        host, media = chat_call_host(node), info[node]
+        return {
+            "url": "https://%s:%d%s" % (host, media["port"], CHAT_CALL_FMM_PATH),
+            "addr": "%s:%d" % (host, media["port"]),
+            "alpn": CHAT_CALL_FMM_ALPN,
+            "hashes": list(media["hashes"]),
+            "ticket": chat_call_fm_ticket(
+                secret, room, peer, account, now_ms, standby),
+        }
+
+    access = dict(endpoint(ranked[0], False), engine=CHAT_CALL_FMM_ENGINE)
+    if len(ranked) > 1 and ranked[1] in info:
+        access["standby"] = endpoint(ranked[1], True)
+    return access
+
+
+async def _chat_call_probe(node):
+    try:
+        response = await js_fetch_with_timeout(
+            chat_call_health_url(node), {"method": "GET"},
+            CHAT_CALL_HEALTH_TIMEOUT_SECONDS)
+        if int(getattr(response, "status", 0) or 0) != 200:
+            return False, None
+    except Exception:
+        return False, None
+    try:
+        return True, chat_call_fm_media_info(
+            json.loads(str(await response.text()) or "{}"))
+    except Exception:
+        return True, None
+
+
+async def _chat_call_healthy(nodes):
+    now = int(Date.now())
+    healthy = set()
+    for node in nodes:
+        checked = _CHAT_CALL_HEALTH.get(node)
+        if checked and now - checked[0] < CHAT_CALL_HEALTH_TTL_MS:
+            ok = checked[1]
+        else:
+            ok, media = await _chat_call_probe(node)
+            _CHAT_CALL_HEALTH[node] = (now, ok, media)
+        if ok:
+            healthy.add(node)
+    return healthy
+
+
+def _chat_call_fm_info(nodes):
+    info = {}
+    for node in nodes:
+        checked = _CHAT_CALL_HEALTH.get(node)
+        if checked and checked[1] and len(checked) > 2 and checked[2]:
+            info[node] = checked[2]
+    return info
+
+
+def chat_call_room(secret, channel_id):
+    return hmac.new(
+        secret.encode(), ("forkmesh-call-room-v1\n" + str(channel_id)).encode(),
+        "sha256").hexdigest()
+
+
+def chat_call_account(secret, account_bi):
+    return hmac.new(
+        secret.encode(),
+        ("forkmesh-call-account-v1\n" + str(account_bi)).encode(),
+        "sha256").hexdigest()[:32]
+
+
+def chat_call_ticket(secret, channel_id, peer, now_ms, account_bi):
+    room = chat_call_room(secret, channel_id)
+    return {
+        "ticket": chat_call_sign(secret, {
+            "room": room, "peer": peer,
+            "acct": chat_call_account(secret, account_bi),
+            "exp": int((now_ms + CHAT_CALL_TICKET_TTL_MS) // 1000)}),
+        "room": room,
+        "peer": peer,
+    }
+
+
 class _ChatChannelsRuntime(_WorldCommunityRuntime):
     async def ensure_schema(self):
         await super().ensure_schema()
@@ -11175,6 +11453,32 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
     def new_webhook_token(self):
         return bytes(
             js_crypto.getRandomValues(Uint8Array.new(32)).to_py()).hex()
+
+    async def call_ticket(self, channel_id, account_bi):
+        secret = str(getattr(self.env, "FORKMESH_CALLS_SECRET", "") or "")
+        nodes = chat_call_nodes(
+            getattr(self.env, "FORKMESH_CALLS_NODES", "") or "")
+        if len(secret) < 32 or not nodes:
+            return None
+        peer = bytes(
+            js_crypto.getRandomValues(Uint8Array.new(16)).to_py()).hex()
+        ticket = chat_call_ticket(
+            secret, channel_id, peer, int(Date.now()), account_bi)
+        ticket["url"] = chat_call_pick(
+            ticket["room"], nodes, await _chat_call_healthy(nodes))
+        return ticket
+
+    async def call_fm_media(self, channel_id, account_bi, ticket):
+        secret = str(getattr(self.env, "FORKMESH_CALLS_SECRET", "") or "")
+        nodes = chat_call_nodes(
+            getattr(self.env, "FORKMESH_CALLS_NODES", "") or "")
+        if len(secret) < 32 or not nodes or not ticket:
+            return None
+        healthy = await _chat_call_healthy(nodes)
+        return chat_call_fm_media(
+            secret, ticket["room"], ticket["peer"],
+            chat_call_account(secret, account_bi), int(Date.now()), nodes,
+            healthy, _chat_call_fm_info(nodes))
 
     def webhook_url(self, token):
         return self.public_origin() + "/api/chat/webhooks/" + str(token)
@@ -56458,12 +56762,45 @@ class ForkMeshRoom(DurableObject):
                 durable_object_traffic_note(
                     self, bytes_out=len(ack.encode("utf-8")))
         await durable_object_traffic_flush(self)
+        if (envelope.get("ring") is True
+                and envelope.get("persist") is not True):
+            await self._ring_direct(ws, envelope.get("call"))
 
         # Retain durable conversation messages (still encrypted) for late joiners.
         if direct_stored:
             await self._maybe_retain(ws, message, direct_stored, stored=True)
         elif not direct_account:
             await self._maybe_retain(ws, message, ref)
+
+    async def _ring_direct(self, ws, call_id=None):
+        account_bi = self._direct_account(ws)
+        if not account_bi:
+            return
+        direct_id = str(_ws_attr(ws, "direct_id", "") or "")
+        call_id = str(call_id or "")[:64]
+        now = int(Date.now())
+        memo_key = direct_id + "\n" + account_bi + "\n" + call_id
+        last = _CHAT_DIRECT_RING_MEMO.get(memo_key, 0)
+        if last and now - last < CHAT_DIRECT_RING_EVERY_MS:
+            return
+        budget_key = direct_id + "\n" + account_bi
+        recent = [
+            stamp for stamp in _CHAT_DIRECT_RING_BUDGET.get(budget_key, ())
+            if now - stamp < CHAT_DIRECT_RING_WINDOW_MS]
+        if len(recent) >= CHAT_DIRECT_RINGS_PER_WINDOW:
+            _CHAT_DIRECT_RING_BUDGET[budget_key] = recent
+            return
+        if len(_CHAT_DIRECT_RING_BUDGET) >= CHAT_DIRECT_RING_MEMO_MAX:
+            _CHAT_DIRECT_RING_BUDGET.clear()
+        _CHAT_DIRECT_RING_BUDGET[budget_key] = recent + [now]
+        if len(_CHAT_DIRECT_RING_MEMO) >= CHAT_DIRECT_RING_MEMO_MAX:
+            _CHAT_DIRECT_RING_MEMO.clear()
+        _CHAT_DIRECT_RING_MEMO[memo_key] = now
+        try:
+            await _chat_direct_call_ring(
+                self.env, direct_id, account_bi, call_id=call_id)
+        except Exception:
+            pass
 
     def _direct_account(self, ws):
         direct_id = str(_ws_attr(ws, "direct_id", "") or "")
@@ -56876,7 +57213,7 @@ class ForkMeshNodes(DurableObject):
                     "topic": clean_string(query.get("topic", [""])[0], 40),
                     "repo": clean_string(query.get("repo", [""])[0], 200),
                 }
-                if frame_data["topic"] == "direct-messages":
+                if frame_data["topic"] in ACCOUNT_EVENT_CONVERSATION_TOPICS:
                     frame_data.update(_account_event_direct_fields(query))
                 # A source-signed refs digest lets a headless mirror tell
                 # "fetch succeeded" from "the selected peer was stale". It

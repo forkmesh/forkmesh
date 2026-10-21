@@ -380,7 +380,7 @@ def test_services_prefetch_repos_while_the_release_uploads(tmp_path, monkeypatch
     (tmp_path / "dist" / ("fmnext-%s.tar.gz" % REV)).write_bytes(b"release")
     ssh = FakeSsh()
     next_add_core.FleetBackend(ssh=ssh).step_services(job)
-    assert ("install", "n4", ("daemon", "files", "start")) in calls
+    assert ("install", "n4", ("daemon", "calls", "files", "start")) in calls
     assert ("upload", REV, ["n4"]) in calls
     assert any(s == next_add_core.DAEMON_SYNC for _, s, _ in ssh.runs)
 

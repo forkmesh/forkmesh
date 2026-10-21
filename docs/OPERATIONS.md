@@ -43,7 +43,7 @@ python3 tools/next_fleet.py fleet-toml --execute
 python3 tools/next_fleet.py init-secrets --execute
 for n in n1 n2 n3; do python3 tools/next_fleet.py install $n --steps base,wireguard --execute; done
 python3 tools/next_fleet.py fleet-toml --execute      # adds WireGuard public keys; commit it
-for n in n1 n2 n3; do python3 tools/next_fleet.py install $n --steps rqlite,files,secrets,start --execute; done
+for n in n1 n2 n3; do python3 tools/next_fleet.py install $n --steps rqlite,turn,calls,files,secrets,start --execute; done
 python3 tools/next_dns.py ensure --execute
 python3 tools/next_deploy.py build --execute
 python3 tools/next_deploy.py upload --execute
@@ -105,6 +105,14 @@ python3 tools/next_ids.py status n1 n2 n3 r1
 - **Cron** is leaderless: the per-minute coordinator rotates across live
   nodes and hands over 45 s into each minute; `host_cron_runs` records who ran
   which minute. Keep node clocks in sync.
+- **TURN relay and group calls.** Every core runs the office TURN relay
+  (`fmnext-turn`, [office/README.md](office/README.md)) and the group-call
+  server (`fmnext-calls`, [deploy/calls.md](deploy/calls.md)). Their shared
+  secrets (`OFFICE_TURN_SECRET`, `FORKMESH_CALLS_SECRET`) come from
+  `init-secrets`, reach the app through `next_vault.py sync`, and reach each
+  core as an encrypted credential through the `turn` and `calls` steps of a
+  roll. Check calls with
+  `curl -fsS https://nN.next.forkmesh.com/calls/health`.
 - **Node DNS reconciler** (`app/host/forkmesh_host/dns_reconciler.py`): every
   unsealed node probes every core and votes in `dns_health_votes`. It acts
   only with a DNS token in the vault and a majority of voters; without one

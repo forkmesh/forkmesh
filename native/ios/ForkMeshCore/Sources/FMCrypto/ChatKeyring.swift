@@ -194,6 +194,8 @@ public final class ChatKeyring: @unchecked Sendable {
     private var ratchets: [String: [String: ChatRatchetPeer]] = [:]
     private let ratchetLock = NSLock()
 
+    public func callSigningSeed() -> [UInt8] { seed }
+
     private init(seed: [UInt8], prekeys: [ChatPrekeySecret], store: SecureStore?) throws {
         guard seed.count == Ed25519.seedBytes else { throw CryptoArgumentError("The chat identity seed must be 32 bytes.") }
         self.seed = seed
