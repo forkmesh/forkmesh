@@ -178,6 +178,7 @@ struct ChatInstaller: AppServicesInstaller {
             },
             look: studio.look)
         #if canImport(WebRTC)
+        NativeCallMedia.shared.follow(studio.look)
         calls.peerFactory = NativeCallPeerFactory.shared
         #else
         calls.peerFactory = studio.factory

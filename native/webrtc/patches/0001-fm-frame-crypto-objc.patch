@@ -1,37 +1,42 @@
 diff --git a/sdk/BUILD.gn b/sdk/BUILD.gn
-index aeb65e1..82ee290 100644
+index aeb65e1..50147ac 100644
 --- a/sdk/BUILD.gn
 +++ b/sdk/BUILD.gn
-@@ -1071,6 +1071,8 @@ if (is_ios || is_mac) {
+@@ -1071,6 +1071,10 @@ if (is_ios || is_mac) {
          "objc/api/peerconnection/RTCRtpSender+Private.h",
          "objc/api/peerconnection/RTCRtpSender.h",
          "objc/api/peerconnection/RTCRtpSender.mm",
 +        "objc/api/peerconnection/RTCFmFrameCryptor.h",
 +        "objc/api/peerconnection/RTCFmFrameCryptor.mm",
++        "objc/api/peerconnection/RTCFmVoice.h",
++        "objc/api/peerconnection/RTCFmVoice.mm",
          "objc/api/peerconnection/RTCRtpSource+Private.h",
          "objc/api/peerconnection/RTCRtpSource.h",
          "objc/api/peerconnection/RTCRtpSource.mm",
-@@ -1139,6 +1141,7 @@ if (is_ios || is_mac) {
+@@ -1139,6 +1143,8 @@ if (is_ios || is_mac) {
          "../api/audio_codecs:builtin_audio_encoder_factory",
          "../api/crypto:frame_decryptor_interface",
          "../api/crypto:frame_encryptor_interface",
 +        "//fm:fm_frame_crypto",
++        "../modules/audio_processing:audio_buffer",
          "../api/environment",
          "../api/environment:deprecated_global_field_trials",
          "../api/environment:environment_factory",
-@@ -1399,6 +1402,7 @@ if (is_ios || is_mac) {
+@@ -1399,6 +1405,8 @@ if (is_ios || is_mac) {
            "objc/api/peerconnection/RTCRtpReceiver.h",
            "objc/api/peerconnection/RTCRtpSource.h",
            "objc/api/peerconnection/RTCRtpSender.h",
 +          "objc/api/peerconnection/RTCFmFrameCryptor.h",
++          "objc/api/peerconnection/RTCFmVoice.h",
            "objc/api/peerconnection/RTCRtpTransceiver.h",
            "objc/api/peerconnection/RTCDtmfSender.h",
            "objc/api/peerconnection/RTCSSLAdapter.h",
-@@ -1518,6 +1522,7 @@ if (is_ios || is_mac) {
+@@ -1518,6 +1526,8 @@ if (is_ios || is_mac) {
            "objc/api/peerconnection/RTCRtpParameters.h",
            "objc/api/peerconnection/RTCRtpReceiver.h",
            "objc/api/peerconnection/RTCRtpSender.h",
 +          "objc/api/peerconnection/RTCFmFrameCryptor.h",
++          "objc/api/peerconnection/RTCFmVoice.h",
            "objc/api/peerconnection/RTCRtpSource.h",
            "objc/api/peerconnection/RTCRtpTransceiver.h",
            "objc/api/peerconnection/RTCSSLAdapter.h",

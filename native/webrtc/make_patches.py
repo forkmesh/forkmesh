@@ -7,11 +7,19 @@ SOURCE_ANCHOR = '        "objc/api/peerconnection/RTCRtpSender.mm",\n'
 SOURCE_LINES = (
     '        "objc/api/peerconnection/RTCFmFrameCryptor.h",\n'
     '        "objc/api/peerconnection/RTCFmFrameCryptor.mm",\n'
+    '        "objc/api/peerconnection/RTCFmVoice.h",\n'
+    '        "objc/api/peerconnection/RTCFmVoice.mm",\n'
 )
 DEPS_ANCHOR = '        "../api/crypto:frame_encryptor_interface",\n'
-DEPS_LINE = '        "//fm:fm_frame_crypto",\n'
+DEPS_LINE = (
+    '        "//fm:fm_frame_crypto",\n'
+    '        "../modules/audio_processing:audio_buffer",\n'
+)
 HEADER_ANCHOR = '          "objc/api/peerconnection/RTCRtpSender.h",\n'
-HEADER_LINE = '          "objc/api/peerconnection/RTCFmFrameCryptor.h",\n'
+HEADER_LINE = (
+    '          "objc/api/peerconnection/RTCFmFrameCryptor.h",\n'
+    '          "objc/api/peerconnection/RTCFmVoice.h",\n'
+)
 TARGET = 'rtc_library("peerconnectionfactory_base_objc") {'
 
 

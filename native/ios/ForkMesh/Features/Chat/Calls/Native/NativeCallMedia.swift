@@ -76,13 +76,15 @@ final class NativeCallMedia {
     static let shared = NativeCallMedia()
 
     let factory: RTCPeerConnectionFactory
+    let voice = NativeVoicePipeline()
+    let lookFilter = NativeLookFilter()
     private var callKitOwnsAudio = false
     private var audioUsers = 0
+    private var lookToken: UUID?
 
     private init() {
         RTCInitializeSSL()
-        factory = RTCPeerConnectionFactory(
-            encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: RTCDefaultVideoDecoderFactory())
+        factory = RTCFmFactory.factory(withCaptureProcessor: voice.capture)
         let session = RTCAudioSession.sharedInstance()
         session.useManualAudio = true
         session.isAudioEnabled = false
@@ -91,6 +93,17 @@ final class NativeCallMedia {
         configuration.mode = AVAudioSession.Mode.voiceChat.rawValue
         configuration.categoryOptions = [.allowBluetooth, .allowBluetoothA2DP, .duckOthers]
         RTCAudioSessionConfiguration.setWebRTC(configuration)
+    }
+
+    func follow(_ look: FaceChangerLook) {
+        if let lookToken { look.removeListener(lookToken) }
+        voice.setVoice(look.effectiveVoice)
+        lookFilter.apply(background: look.background, customImage: look.customBackgroundImage)
+        lookToken = look.addListener { [weak self, weak look] (_: FaceChangerPart) in
+            guard let self, let look else { return }
+            self.voice.setVoice(look.effectiveVoice)
+            self.lookFilter.apply(background: look.background, customImage: look.customBackgroundImage)
+        }
     }
 
     func makeAudioTrack() -> RTCAudioTrack {
@@ -107,7 +120,9 @@ final class NativeCallMedia {
     func makeVideo() -> (RTCVideoTrack, NativeCameraPipeline) {
         let source = factory.videoSource()
         let track = factory.videoTrack(with: source, trackId: "video-" + UUID().uuidString.lowercased())
-        return (track, NativeCameraPipeline(source: source))
+        let pipeline = NativeCameraPipeline(source: source)
+        pipeline.setFilter(lookFilter)
+        return (track, pipeline)
     }
 
     func beginAudio() {

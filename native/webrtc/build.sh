@@ -45,7 +45,8 @@ git checkout -- .
 mkdir -p fm
 cp "$here"/fm/BUILD.gn "$here"/fm/fm_frame_crypto.h "$here"/fm/fm_frame_crypto.cc \
   "$here"/fm/fm_frame_cryptor.h "$here"/fm/fm_frame_cryptor.cc fm/
-cp "$here"/fm/objc/RTCFmFrameCryptor.h "$here"/fm/objc/RTCFmFrameCryptor.mm sdk/objc/api/peerconnection/
+cp "$here"/fm/objc/RTCFmFrameCryptor.h "$here"/fm/objc/RTCFmFrameCryptor.mm \
+  "$here"/fm/objc/RTCFmVoice.h "$here"/fm/objc/RTCFmVoice.mm sdk/objc/api/peerconnection/
 for patch in "$here"/patches/*.patch; do
   [ -e "$patch" ] || continue
   git apply --check "$patch"

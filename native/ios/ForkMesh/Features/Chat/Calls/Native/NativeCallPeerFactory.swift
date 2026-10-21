@@ -14,7 +14,7 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
     private(set) var route: DirectCallRoute?
     private(set) var remoteVideo: RTCVideoTrack?
     private(set) var localVideo: RTCVideoTrack?
-    @ObservationIgnored var filter: NativeFrameFilter?
+    @ObservationIgnored var filter: NativeFrameFilter? = NativeCallMedia.shared.lookFilter
     @ObservationIgnored private var preview: (RTCVideoTrack, NativeCameraPipeline)?
     @ObservationIgnored private var previewAudio: RTCAudioTrack?
 
