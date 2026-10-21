@@ -645,13 +645,14 @@ def port_state(port, paths=RULE_FILES):
             fields = line.split()[3:]
             if len(fields) < 6 or fields[0] not in ("allow", "limit"):
                 continue
-            if "out" in fields[6:]:
+            if any(field.startswith("out") for field in fields[6:]):
                 continue
             if fields[1] not in ("tcp", "any") or not _covers(fields[2], port):
                 continue
             if fields[5] in ("0.0.0.0/0", "::/0"):
                 return "open"
-            state = "narrow"
+            if fields[2] != "any":
+                state = "narrow"
     return state
 
 
@@ -665,7 +666,7 @@ def cloudflare_ranges(fetch=_fetch):
     for url in SOURCES:
         for item in fetch(url).split():
             network = ipaddress.ip_network(item, strict=True)
-            if network.prefixlen < (8 if network.version == 4 else 20):
+            if network.prefixlen < (12 if network.version == 4 else 28):
                 raise ValueError("implausible range " + item)
             ranges.add(str(network))
     if not 4 <= len(ranges) <= MAX_RANGES:
@@ -730,7 +731,12 @@ WEBFIREWALL
 }
 
 configure_web_firewall() {
-  command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active' || return 0
+  if ! { command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; }; then
+    if [ "${CFG_webFirewall:-}" = "cloudflare" ]; then
+      warn "webFirewall is cloudflare but ufw is not active; ports 80 and 443 are not limited to Cloudflare."
+    fi
+    return 0
+  fi
   write_web_firewall_tool
   if [ "${CFG_webFirewall:-}" = "cloudflare" ]; then
     cat > "$WEB_FIREWALL_UNIT" <<EOF

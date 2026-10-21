@@ -54,7 +54,9 @@ def test_a_narrowed_port_list_is_seen_as_narrow(tmp_path):
     ("allow tcp 80 ::/0 any ::/0 in", 80, "open"),
     ("allow tcp 80 0.0.0.0/0 any 0.0.0.0/0 in", 443, "none"),
     ("allow tcp 400:500 0.0.0.0/0 any 198.51.100.0/24 in", 443, "narrow"),
-    ("allow any any 0.0.0.0/0 any 198.51.100.7 in", 80, "narrow"),
+    ("allow any any 0.0.0.0/0 any 198.51.100.7 in", 80, "none"),
+    ("allow tcp 80 0.0.0.0/0 any 198.51.100.7 in", 80, "narrow"),
+    ("allow tcp 80 0.0.0.0/0 any 0.0.0.0/0 out_eth0", 80, "none"),
     ("allow tcp 80,443 0.0.0.0/0 any 0.0.0.0/0 Nginx%20Full - in", 443, "open"),
     ("deny tcp 80 0.0.0.0/0 any 0.0.0.0/0 in", 80, "none"),
     ("allow udp 443 0.0.0.0/0 any 0.0.0.0/0 in", 443, "none"),
@@ -103,7 +105,9 @@ def test_cloudflare_mode_allows_new_ranges_before_closing_anything(tmp_path):
 
 
 @pytest.mark.parametrize("reply", ["", "<html>error</html>", "0.0.0.0/0\n" * 5,
-                                   "10.0.0.1/8\n"])
+                                   "10.0.0.1/8\n",
+                                   CLOUDFLARE_V4 + "100.0.0.0/11\n",
+                                   CLOUDFLARE_V6 + "2a00::/27\n"])
 def test_a_bad_range_list_changes_nothing(tmp_path, reply):
     tool = _tool(tmp_path)
     calls = []
