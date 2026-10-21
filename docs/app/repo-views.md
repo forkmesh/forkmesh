@@ -79,6 +79,9 @@ per-page colours:
 - The branch merge dialog uses `fm-dialog` inside the native `<dialog>`; the
   `fm-dialog` class sits on the inner form because its `display: flex` would
   otherwise override the closed dialog's `display: none`.
+- The issue and pull-request metadata pickers are non-modal popovers: opening
+  one moves focus to its first field, and closing it with Escape or Close
+  returns focus to the settings button that opened it.
 - Empty and error states are `fm-blankslate`: an empty or missing path, an
   unreachable tree, a file that will not load, empty issue and pull-request
   lists, discussions with no mirror, the Actions empty states and the

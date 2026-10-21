@@ -24055,20 +24055,37 @@
 
   function closeIssuePicker({ apply = true } = {}) {
     const open = issuePicker;
+    const restoreFocus = Boolean(document.activeElement?.closest?.("[data-repo-issue-picker]"));
+    const focusOpener = () => {
+      const opener = $$('[data-repo-issue-picker-open]').find((button) =>
+        button.dataset.repoIssuePickerOpen === open?.field);
+      opener?.focus();
+    };
     $$("[data-repo-issue-picker]").forEach((node) => node.remove());
     $$("[data-repo-issue-picker-open]").forEach((button) => button.setAttribute("aria-expanded", "false"));
     issuePicker = null;
-    if (!open || !apply || open.field === "fields") return;
-    if (open.selected.join(",") === open.original) return;
+    if (!open || !apply || open.field === "fields") {
+      if (open && restoreFocus) queueMicrotask(focusOpener);
+      return;
+    }
+    if (open.selected.join(",") === open.original) {
+      if (restoreFocus) queueMicrotask(focusOpener);
+      return;
+    }
     if (open.field === "development") {
-      void applyDevelopmentPicker(open);
+      const saving = applyDevelopmentPicker(open);
+      if (restoreFocus) void saving.finally(focusOpener);
       return;
     }
     const input = issuePickerInput(open.field);
     const form = issuePickerForm();
-    if (!input || !form) return;
+    if (!input || !form) {
+      if (restoreFocus) queueMicrotask(focusOpener);
+      return;
+    }
     input.value = open.selected.join(", ");
     form.requestSubmit();
+    if (restoreFocus) queueMicrotask(focusOpener);
   }
 
   function applyIssueFieldsPicker() {

@@ -113,7 +113,7 @@ def test_development_sections_open_a_picker_on_both_pages():
     assert 'data-repo-development="pulls"' in REPO_UI
     assert 'state.session?.nodeName ? "development" : ""' in REPO_UI
     pickers = REPO_UI[REPO_UI.index("let issuePicker = null;"):]
-    assert 'void applyDevelopmentPicker(open);' in pickers
+    assert 'saving.finally(focusOpener)' in pickers
     assert "submitWebIssueComment(" in pickers
     assert "openIssuePicker(field)" in WIRING
     review = _function(REPO_UI, "handlePullReviewSubmit")

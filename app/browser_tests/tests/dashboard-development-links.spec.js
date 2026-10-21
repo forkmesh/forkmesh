@@ -133,6 +133,9 @@ test("an issue links a pull request from its Development section", async ({ page
   await picker.locator('[data-repo-issue-picker-option="4"]').click();
   await page.keyboard.press("Escape");
 
+  await expect(picker).toHaveCount(0);
+  await expect(page.locator('[data-repo-issue-picker-open="development"]')).toBeFocused();
+
   await expect.poll(() => issuePosts(posted)).toEqual([[7, "Linked pull request #4"]]);
   await expect(development.locator('a[href$="/pulls/4"]')).toContainText("Add search index");
   await expect(development.locator('a[href$="/pulls/3"]')).toBeVisible();
