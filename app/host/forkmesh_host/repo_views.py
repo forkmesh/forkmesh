@@ -427,9 +427,11 @@ async def plan_issue(reader, branch, number):
     root = asyncio.ensure_future(_root(reader, branch))
 
     async def relation_index():
-        indexed = await reader.get("issue-index", [("ref", branch)])
-        if _indexed_issues(indexed) is not None:
-            return indexed
+        for pairs in ([("ref", branch), ("related", number)],
+                      [("ref", branch)]):
+            indexed = await reader.get("issue-index", pairs)
+            if _indexed_issues(indexed) is not None:
+                return indexed
         tree = await reader.get("tree", [("path", ISSUES_DIR + "/open"),
                                          ("ref", branch)])
         if not tree:

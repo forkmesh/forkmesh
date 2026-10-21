@@ -479,7 +479,7 @@ def test_issue_list_and_relations_read_the_issue_index():
 
     issue, _fast = build("issue", 5, fast=IndexFastPath())
     data = reads(issue)
-    assert "issue-index?ref=main" in data
+    assert "issue-index?ref=main&related=5" in data
     assert not any(key.startswith("tree?path=.forkmesh/issues/open")
                    for key in data)
     assert issue.model["index"]["issues"][0]["number"] == 12

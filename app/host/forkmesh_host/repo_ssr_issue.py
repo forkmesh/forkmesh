@@ -1647,7 +1647,8 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
     parents = [by_number[n] for n in dependency_numbers(body) if n != number and n in by_number]
     children = sorted({row["number"] for row in index if not row.get("deleted")
                        and row["number"] != number
-                       and number in dependency_numbers(row.get("body"))}
+                       and number in (row["dependsOn"] if isinstance(row.get("dependsOn"), list)
+                                      else dependency_numbers(row.get("body")))}
                       | {int(m.group(1)) for m in re.finditer(
                           r"\(sub-issue\s+#([1-9]\d*)\)", body, re.I) if int(m.group(1)) != number})
     child_rows = [dict(by_number[n], status=by_number[n]["status"]) if n in by_number
