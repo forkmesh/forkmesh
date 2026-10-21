@@ -59,6 +59,57 @@ Kotlin) and exchange whole frames with the core. The browser client is a
 JavaScript port held to the Go core by shared fixtures, the way the face and
 voice code is.
 
+## Beyond FaceTime
+
+Decided 2026-10-21: matching WebRTC is not the goal; the engine has to be
+first in class. FaceTime already uses its own stack, the device's voice
+processing, hardware codecs and long-term reference frames, so beating it
+takes ideas it does not use. Five of them, each measurable on the bench:
+
+1. **The face keeps moving when the video cannot.** Below the bitrate where
+   real video holds (about 150 kbps), the sender switches its camera track to
+   a *face stream*: 3D pose, the 68 landmarks and expression weights, about
+   2 kB/s, plus a real reference picture of the sender refreshed whenever
+   the link allows. The receiver animates the reference with the face
+   changer's warp renderer, which already exists in the browser and on
+   iPhone. A call on a bad cellular link shows a live, talking face instead
+   of a frozen frame, at a twentieth of the bitrate. It switches back as soon
+   as real video fits, and the receiver is told which it is seeing.
+2. **Audio that survives a third of its packets lost.** Opus 1.5 built with
+   deep redundancy (DRED: up to a second of history in every packet, a few
+   kbps), deep concealment and decoder enhancement. The jitter buffer
+   recovers a lost frame from the redundancy carried by the next packet that
+   arrives.
+3. **No keyframe storms.** Video recovers by long-term reference: receivers
+   acknowledge decoded frames, and after a loss the encoder predicts from the
+   newest frame every receiver holds instead of sending a keyframe to all.
+   Temporal layers let the SFU thin video per receiver without asking the
+   sender.
+4. **No dropout on a network change, no dropout when a server dies.** QUIC
+   multipath keeps Wi-Fi and cellular open together and sends audio over both
+   while either is weak; each client also keeps a warm standby session on a
+   second core, so a core failure moves the call in well under a second
+   instead of a rejoin.
+5. **Post-quantum, group-verified encryption.** Media keys come from a hybrid
+   X25519 + ML-KEM-768 exchange per epoch, with a new epoch on every join and
+   leave and a short verification code every participant can compare. The
+   servers carry only ciphertext and headers.
+
+Targets, measured on the bench (and by hand against FaceTime on two iPhones
+with the Network Link Conditioner, since FaceTime cannot be driven by a
+test):
+
+| Measure | Target |
+| --- | --- |
+| Join to first audio | under 300 ms on a clean regional path |
+| Mouth-to-ear delay | under 150 ms on a clean regional path |
+| Audio at 30% random loss | intelligible, under 3% audible concealment |
+| Video at 300 kbps | continuous real video at reduced resolution |
+| Below 100 kbps | a live face stream, no frozen frames |
+| Wi-Fi to cellular | no audible gap |
+| A core dies mid-call | audio back in under 500 ms |
+| Engine size on a phone | under 5 MB |
+
 ## Phases
 
 | Phase | Done when |
@@ -71,6 +122,13 @@ voice code is.
 | 6. Browser engine | WebTransport + WebCodecs client; browsers without WebTransport stay on WebRTC |
 | 7. Android engine | same as iPhone |
 | 8. Switch | FM Media is the default wherever it beats the baseline on the bench |
+| 9. Beyond FaceTime | every target in the table above is met on the bench |
+
+Phases 3 to 7 build the five ideas in from the start rather than after the
+switch: the face stream and long-term reference recovery in the core,
+DRED in the Opus build and the audio buffer, multipath and the standby core
+in the QUIC layer, and the hybrid key exchange in the core every client
+shares.
 
 Status lives in the commits of each phase; this table changes only when the
 plan does.
