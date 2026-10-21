@@ -442,6 +442,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("marketing-email")
         if minute % 5 == 3:
             phases.append("workflow-schedules")
+        if minute % 15 == 6:
+            phases.append("member-activity")
         hourly = minute % 60
         if hourly == 7:
             phases.append("microjob-payouts")

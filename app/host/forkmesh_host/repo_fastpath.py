@@ -108,7 +108,7 @@ def gateway_query(operation, query_string):
         if params.get("path"):
             out.append(("path", repository_read_path(params["path"][0])))
     elif operation == "pulse":
-        for key in ("period", "person"):
+        for key in ("period", "person", "view"):
             if params.get(key):
                 out.append((key, params[key][0]))
     if params.get("ref") and operation in REF_OPERATIONS:

@@ -44,17 +44,60 @@ stays one line high.
 
 ## Where the numbers come from
 
-The figures are the same rows the public profile contribution graph draws
-from: `profile_contribution_days`, joined to `profile_contribution_projects`
-and `repositories`. Only a project marked public on a repository that is not
-private counts, and a day counts only once the project's history is verified
-back to it (`verified_from`), exactly as the profile graph requires. A project
-mirrored by several nodes is counted once, from its most recent capture. So a
-viewer only ever sees totals for activity they could already read on that
-person's public profile, and private-repository work never shows. Pull
-requests are counted when opened; the contribution snapshot does not carry
-merges, so the line does not claim them. Issues reported through a canonical
-tracker that is not itself a contribution snapshot are not included.
+Two sources, combined per person.
+
+**The instance's own repositories.** The same ledger the repository Insights
+tab's Pulse and leaderboard read ([repository-activity.md](repository-activity.md)):
+commits on the default branch (merges excluded), pull requests opened,
+issues opened, and reviews of someone else's pull request, over the trailing
+365 days. Each repository answers `GET /api/repo/<owner>/<repo>/pulse?view=people`
+with every human's figures, an activity-day bitmap and the time of their last
+activity (`view=people` takes no `period` or `person`; the gateway caches it
+per hour). People are identified exactly as Pulse identifies them: by the
+case-folded name on their commits and ledger records, so a git author or
+record author counts for an account only when the name is spelled the same as
+the account name (`AliceW` and `alicew` match, `Jane Doe` and `jane` do not).
+Pulse's humans-only rules apply first (bots, AI agents, the platform's service
+identities, mirror nodes, `ACTIVITY_EXCLUDE_AUTHORS`), and the member line's
+own account-name rule applies again on top.
+
+Which repositories count:
+
+- only repositories in the public catalog: public, not private, retained;
+  a repository made private or deleted stops counting at once, because the
+  read joins `repositories` and requires `is_private=0`;
+- one repository per fork family: a fork whose parent is also a public
+  repository on the instance is skipped (commits in a fork do not count,
+  as on GitHub), and of several repositories with the same root commit only
+  one counts (not a fork first, then the longest history). A fork of a
+  project hosted elsewhere counts as the project's copy here.
+
+A cron phase, `member-activity` (every 15 minutes), reads the decrypted public
+catalog the catalog pages already memoise, drops the rows of repositories that
+stopped counting, and refreshes up to six repositories whose figures are older
+than three hours, one gateway read each. Only people who are accounts on the
+instance are stored, one `member_repo_activity` row per repository and
+account; `member_activity_repos` records when each repository was last read.
+A repository whose host does not answer keeps its previous figures until the
+next attempt. Figures are therefore up to about three hours old, plus the
+time the sweep needs to reach every repository.
+
+**The public profile contribution rows** (`profile_contribution_days`, joined
+to `profile_contribution_projects` and `repositories`), the rows the profile
+contribution graph draws from. Only a project marked public on a repository
+that is not private counts, and a day counts only once the project's history
+is verified back to it (`verified_from`), exactly as the profile graph
+requires. A project mirrored by several nodes is counted once, from its most
+recent capture.
+
+**Combining them.** The two sources often describe the same work (a profile
+project is usually one of the instance's repositories), so each figure is the
+larger of the two, never their sum: pull requests, commits, issues and reviews
+each take the maximum, active days the larger day count, and the last
+contribution the later date. Repositories are summed among themselves, which
+is safe because only one repository of a fork family counts. Pull requests
+are counted when opened; merges are not shown. Private-repository work never
+counts from either source.
 
 ## Cost and caching
 
@@ -65,10 +108,15 @@ tracker that is not itself a contribution snapshot are not included.
   for 5 minutes (1 minute after a failed request), so the list's re-render
   every minute and every presence change reuse them without a request.
 - On the server a batch costs at most two D1 statements, whatever its size:
-  one `users` read by blind index (`user_bi IN (...)`) and one grouped read of
-  the contribution rows (`subject_user_bi IN (...)`, indexed by
-  `idx_profile_contribution_days_subject_day`) for the 365-day window. There is
-  no per-row query.
+  one `users` read by blind index (`user_bi IN (...)`) and one read of both
+  sources (`UNION ALL`): the grouped contribution rows
+  (`subject_user_bi IN (...)`, indexed by
+  `idx_profile_contribution_days_subject_day`) for the 365-day window, and
+  the stored repository rows (`user_bi IN json_each(?)`, indexed by
+  `idx_member_repo_activity_user`). The names are bound once as a list and
+  once as one JSON value, so 50 names use 53 bound parameters. There is no
+  per-row query, and the request path never reads a repository: only the
+  cron phase does.
 - Each person's answer, including "not a member", is memoised in the isolate
   for 5 minutes, at most 2,000 entries, and dropped early when this isolate
   writes contribution or repository rows (the `contributions` watch generation
@@ -91,8 +139,12 @@ Rows grew from a fixed 40px to a 40px minimum with 4px padding. Colours are the
 
 | Path | Responsibility |
 | --- | --- |
-| `app/src/chat_member_stats.py` | Route, membership filter, batched reads, memo |
+| `app/src/chat_member_stats.py` | Route, membership filter, batched reads, memo, repository sweep |
+| `tools/mirror_gateway.py` | `pulse?view=people` (`GitRepository.pulse_people`) |
+| `app/src/entry.py` | `member-activity` cron phase |
+| `app/migrations/0280_member_repo_activity.sql` | `member_repo_activity`, `member_activity_repos` |
 | `app/src/app_runtime.py` | Routes `/api/chat/member-stats` |
 | `app/public/dashboard-chat.js` | Batching, page cache, row rendering, phone drawer |
 | `app/public/dashboard/partials/views/chat.html` | Row and drawer styles |
-| `app/tests/test_chat_member_stats.py` | API shape, privacy, caching, frontend contract |
+| `app/tests/test_chat_member_stats.py` | API shape, privacy, sources, sweep, caching, frontend contract |
+| `app/tests/test_mirror_gateway_pulse.py` | The people view |

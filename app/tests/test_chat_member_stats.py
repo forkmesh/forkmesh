@@ -32,7 +32,9 @@ YESTERDAY = "2027-01-14"
 
 def _contribution_tables():
     wanted = (
-        "profile_contribution_projects (", "profile_contribution_days (")
+        "profile_contribution_projects (", "profile_contribution_days (",
+        "member_repo_activity (", "member_activity_repos (",
+        "idx_member_repo_activity_user ")
     return [
         statement for statement in SCHEMA_STATEMENTS
         if any(name in statement for name in wanted)
@@ -55,7 +57,8 @@ def _load():
         db.execute(statement)
     state = {
         "now": NOW, "queries": [], "cache": {}, "generation": {
-            "contributions": 0}}
+            "contributions": 0}, "catalog": [], "people": {}, "fetches": [],
+        "writes": []}
 
     class _Date:
         @staticmethod
@@ -65,6 +68,34 @@ def _load():
     async def d1_all(env, sql, *params):
         state["queries"].append(sql)
         return [dict(row) for row in db.execute(sql, params).fetchall()]
+
+    async def d1_run(env, sql, *params):
+        state["writes"].append(sql)
+        db.execute(sql, params)
+
+    async def d1_run_batch(env, statements):
+        state["writes"].append("batch")
+        for sql, params in statements:
+            db.execute(sql, params)
+
+    async def decrypted_public_catalog(env, now):
+        return state["catalog"]
+
+    def public_base_url(env, request=None):
+        return "https://forge.example.test"
+
+    class _Response:
+        def __init__(self, data):
+            self.status = 200 if data is not None else 503
+            self._data = data
+
+        async def json(self):
+            return self._data
+
+    async def js_fetch_with_timeout(url, init, timeout):
+        state["fetches"].append(url)
+        path = url.split("/api/repo/", 1)[1].rsplit("/pulse", 1)[0]
+        return _Response(state["people"].get(path))
 
     async def decrypt_row(env, data):
         return json.loads(data) if data else None
@@ -99,6 +130,11 @@ def _load():
     module._bind_runtime({
         "Date": _Date,
         "d1_all": d1_all,
+        "d1_run": d1_run,
+        "d1_run_batch": d1_run_batch,
+        "_decrypted_public_catalog": decrypted_public_catalog,
+        "_public_base_url": public_base_url,
+        "js_fetch_with_timeout": js_fetch_with_timeout,
         "decrypt_row": decrypt_row,
         "blind_index": blind_index,
         "ensure_schema": ensure_schema,
@@ -141,6 +177,29 @@ def _day(db, repo, name, day, commits=0, issues=0, pulls=0, reviews=0):
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         ("gen:" + repo, "bi:" + name, "acct", repo, "project:" + repo, day,
          commits, issues, pulls, reviews, 1, "{}"))
+
+
+WINDOW_START = "2026-01-16"
+
+
+def _mask(days, start=WINDOW_START):
+    import datetime
+    first = datetime.date.fromisoformat(start).toordinal()
+    mask = bytearray(46)
+    for day in days:
+        offset = datetime.date.fromisoformat(day).toordinal() - first
+        mask[offset // 8] |= 1 << (offset % 8)
+    return mask.hex()
+
+
+def _repo_activity(db, repo, name, commits=0, pulls=0, issues=0, reviews=0,
+                   days=(), last_day="", day_start=WINDOW_START):
+    db.execute(
+        "INSERT INTO member_repo_activity (repo_bi, user_bi, commits, pulls, "
+        "issues, reviews, day_start, day_mask, last_day, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (repo, "bi:" + name, commits, pulls, issues, reviews, day_start,
+         _mask(days, day_start), last_day or (max(days) if days else ""), 1))
 
 
 def _payload(module, names):
@@ -280,9 +339,20 @@ def test_a_batch_is_two_queries_however_many_names():
     _repo(db, "repo-a")
     for name in names:
         _day(db, "repo-a", name, YESTERDAY, commits=1)
+        _repo_activity(db, "repo-a", name, commits=3)
+        _repo_activity(db, "repo-b", name, pulls=1)
+    db.execute("INSERT INTO repositories (key_bi) VALUES ('repo-b')")
     payload = _payload(module, names)
     assert len(payload["members"]) == 50
+    assert all((entry["commits"], entry["pulls"]) == (3, 1)
+               for entry in payload["members"])
     assert len(state["queries"]) == 2
+    activity = state["queries"][1]
+    assert "profile_contribution_days" in activity
+    assert "member_repo_activity" in activity
+    # 50 names, the window, and the same names again as one JSON value:
+    # inside D1's 100 bound parameters.
+    assert activity.count("?") == 50 + 2 + 1
 
 
 def test_results_are_memoized_until_ttl_or_a_contribution_write():
@@ -376,3 +446,209 @@ def test_member_rows_stay_two_lines_and_open_as_a_drawer_on_phones():
         row = row[:row.index("}")]
         assert "min-height: 40px;" in row
         assert "height: 40px;" not in row.replace("min-height: 40px;", "")
+
+
+# ---------------------------------------------------------------------------
+# Repository source
+
+
+def _catalog_row(key, owner, name, **record):
+    return {"key_bi": key, "is_private": 0, "data": {
+        "owner": owner, "name": name, "visibility": "public", **record}}
+
+
+def _people(*rows, day_start=WINDOW_START):
+    return {"ok": True, "view": "people", "dayStart": day_start,
+            "people": [dict({"commits": 0, "pulls": 0, "issues": 0,
+                             "reviews": 0, "dayMask": "", "lastAt": 0},
+                            **row) for row in rows]}
+
+
+def _sweep(module, state, now=NOW):
+    return asyncio.run(module.refresh_member_repo_activity(
+        SimpleNamespace(), now))
+
+
+def test_repository_activity_counts_when_the_profile_source_is_empty():
+    module, db, _ = _load()
+    _user(db, "alice")
+    for repo in ("repo-a", "repo-b"):
+        db.execute("INSERT INTO repositories (key_bi) VALUES (?)", (repo,))
+    _repo_activity(db, "repo-a", "alice", commits=40, pulls=2, reviews=1,
+                   days=("2026-12-01", YESTERDAY))
+    _repo_activity(db, "repo-b", "alice", commits=2, issues=1,
+                   days=("2026-12-01", "2026-12-02"))
+    alice = _members(_payload(module, ["alice"]))["alice"]
+    assert alice == {
+        "name": "alice", "pulls": 2, "commits": 42, "issues": 1,
+        "reviews": 1, "activeDays": 3, "lastActive": YESTERDAY}
+
+
+def test_private_and_deleted_repositories_never_count():
+    module, db, _ = _load()
+    _user(db, "alice")
+    db.execute("INSERT INTO repositories (key_bi) VALUES ('public-repo')")
+    db.execute(
+        "INSERT INTO repositories (key_bi, is_private) VALUES ('secret', 1)")
+    _repo_activity(db, "public-repo", "alice", commits=1, days=(YESTERDAY,))
+    _repo_activity(db, "secret", "alice", commits=90, pulls=9,
+                   days=(TODAY,))
+    _repo_activity(db, "deleted-repo", "alice", issues=5, days=(TODAY,))
+    alice = _members(_payload(module, ["alice"]))["alice"]
+    assert (alice["commits"], alice["pulls"], alice["issues"],
+            alice["activeDays"], alice["lastActive"]) == (
+        1, 0, 0, 1, YESTERDAY)
+
+
+def test_the_two_sources_combine_by_the_larger_figure_not_the_sum():
+    module, db, _ = _load()
+    _user(db, "alice")
+    _repo(db, "repo-a")
+    _day(db, "repo-a", "alice", "2026-12-01", commits=6, pulls=2)
+    _day(db, "repo-a", "alice", "2026-12-02", reviews=3)
+    _repo_activity(db, "repo-a", "alice", commits=4, pulls=5,
+                   days=("2026-12-01",), last_day="2026-12-01")
+    alice = _members(_payload(module, ["alice"]))["alice"]
+    assert (alice["commits"], alice["pulls"], alice["reviews"],
+            alice["activeDays"], alice["lastActive"]) == (
+        6, 5, 3, 2, "2026-12-02")
+    combined = module.combine_member_activity(
+        {"commits": 1, "active_days": 1, "last_day": "2026-02-01"},
+        [{"commits": 2, "day_start": WINDOW_START,
+          "day_mask": _mask(("2026-01-16", "2026-03-01")),
+          "last_day": "2026-03-01"}],
+        "2026-02-01", TODAY)
+    assert combined == {
+        "pulls": 0, "commits": 2, "issues": 0, "reviews": 0,
+        "active_days": 1, "last_day": "2026-03-01"}
+
+
+def test_fork_families_count_once_and_private_repositories_never():
+    module, _, _ = _load()
+    root = "a" * 40
+    rows = [
+        _catalog_row("k-main", "ann", "app", logicalOwner="team",
+                     rootCommit=root, commitCount=90),
+        _catalog_row("k-fork", "bob", "app", forkedFrom="team/app",
+                     commitCount=95),
+        _catalog_row("k-fork2", "cat", "app", forkedFrom="ANN/APP"),
+        _catalog_row("k-copy", "dan", "app-copy", rootCommit=root,
+                     commitCount=10),
+        _catalog_row("k-own", "eve", "tool", forkedFrom="elsewhere/tool"),
+        _catalog_row("k-secret", "ann", "secret"),
+        dict(_catalog_row("k-flag", "ann", "flag"), is_private=1),
+    ]
+    rows[5]["data"]["visibility"] = "private"
+    sources = module.member_activity_sources(rows)
+    assert [item["key_bi"] for item in sources] == ["k-main", "k-own"]
+    assert sources[0] == {"key_bi": "k-main", "owner": "ann", "name": "app"}
+
+
+def test_people_map_to_accounts_only_by_their_exact_pulse_name():
+    module, _, _ = _load()
+    rows = dict(module.member_activity_people(_people(
+        {"key": "alice", "commits": 3, "dayMask": "01", "lastAt": NOW},
+        {"key": "Bob", "pulls": 1, "dayMask": "zz"},
+        {"key": "carol jones", "commits": 9},
+        {"key": "release-bot", "commits": 9},
+        {"key": "claude", "commits": 9},
+        {"key": "deploy-helper", "commits": 9},
+        {"key": "idle"},
+        {"key": "alice", "commits": 100},
+    ), ("deploy-*",)))
+    assert sorted(rows) == ["alice", "bob"]
+    assert rows["alice"]["commits"] == 3
+    assert rows["alice"]["last_day"] == TODAY
+    assert rows["alice"]["day_mask"] == "01"
+    assert rows["bob"]["day_mask"] == ""
+    assert module.member_activity_people({"view": "leaderboard"}) == []
+    assert module.member_activity_people(
+        _people({"key": "alice", "commits": 1}, day_start="bad")) == []
+
+
+def test_the_sweep_stores_accounts_and_refreshes_on_schedule():
+    module, db, state = _load()
+    _user(db, "alice")
+    _user(db, "bob")
+    for repo in ("k-a", "k-b", "k-fork"):
+        db.execute("INSERT INTO repositories (key_bi) VALUES (?)", (repo,))
+    state["catalog"] = [
+        _catalog_row("k-a", "ann", "app"),
+        _catalog_row("k-b", "ann", "tool"),
+        _catalog_row("k-fork", "bob", "app", forkedFrom="ann/app"),
+    ]
+    state["people"] = {
+        "ann/app": _people(
+            {"key": "alice", "commits": 5, "pulls": 1,
+             "dayMask": _mask((YESTERDAY,)), "lastAt": NOW - 86400000},
+            {"key": "carol", "commits": 7},
+            {"key": "dependabot", "commits": 50}),
+        "ann/tool": _people({"key": "alice", "reviews": 2}),
+        "bob/app": _people({"key": "alice", "commits": 500}),
+    }
+    result = _sweep(module, state)
+    assert sorted(result["refreshed"]) == ["ann/app", "ann/tool"]
+    assert sorted(url.split("/api/repo/")[1] for url in state["fetches"]) == [
+        "ann/app/pulse?view=people", "ann/tool/pulse?view=people"]
+    stored = db.execute(
+        "SELECT repo_bi, user_bi, commits, pulls, reviews, last_day "
+        "FROM member_repo_activity ORDER BY repo_bi").fetchall()
+    assert [tuple(row) for row in stored] == [
+        ("k-a", "bi:alice", 5, 1, 0, YESTERDAY),
+        ("k-b", "bi:alice", 0, 0, 2, "")]
+    alice = _members(_payload(module, ["alice"]))["alice"]
+    assert (alice["commits"], alice["pulls"], alice["reviews"],
+            alice["activeDays"], alice["lastActive"]) == (
+        5, 1, 2, 1, YESTERDAY)
+    # Fresh repositories are not read again until the refresh interval.
+    state["fetches"].clear()
+    assert _sweep(module, state, NOW + 60_000)["refreshed"] == []
+    assert state["fetches"] == []
+    later = NOW + module.MEMBER_ACTIVITY_REFRESH_MS
+    state["people"]["ann/app"] = None
+    result = _sweep(module, state, later)
+    assert result["refreshed"] == ["ann/tool"]
+    assert db.execute(
+        "SELECT ok FROM member_activity_repos WHERE repo_bi='k-a'"
+    ).fetchone()[0] == 0
+    assert db.execute(
+        "SELECT commits FROM member_repo_activity WHERE repo_bi='k-a'"
+    ).fetchone()[0] == 5
+    # A repository that stops counting loses its rows on the next run.
+    state["catalog"] = state["catalog"][1:]
+    assert _sweep(module, state, later + 1)["dropped"] == 1
+    assert db.execute(
+        "SELECT COUNT(*) FROM member_repo_activity WHERE repo_bi='k-a'"
+    ).fetchone()[0] == 0
+
+
+def test_the_sweep_reads_a_bounded_number_of_repositories_per_run():
+    module, db, state = _load()
+    state["catalog"] = [
+        _catalog_row("k-%02d" % index, "ann", "repo%d" % index)
+        for index in range(module.MEMBER_ACTIVITY_REPOS_PER_RUN + 4)]
+    result = _sweep(module, state)
+    assert len(state["fetches"]) == module.MEMBER_ACTIVITY_REPOS_PER_RUN
+    assert result["due"] == 4
+    state["fetches"].clear()
+    _sweep(module, state, NOW + 1)
+    assert len(state["fetches"]) == 4
+
+
+def test_the_request_path_never_reads_a_repository():
+    module, db, state = _load()
+    _user(db, "alice")
+    state["catalog"] = [_catalog_row("k-a", "ann", "app")]
+    _payload(module, ["alice"])
+    _get(module, "names=alice")
+    assert state["fetches"] == [] and state["writes"] == []
+    assert "refresh_member_repo_activity" not in module.member_stats_payload \
+        .__code__.co_names
+
+
+def test_the_member_activity_phase_is_scheduled_and_dispatched():
+    assert 'phases.append("member-activity")' in ENTRY
+    assert ("return await _chat_member_stats.refresh_member_repo_activity("
+            "env)") in ENTRY
+    assert '("member_repo_activity", "repo_bi"),' in ENTRY
+    assert "DELETE FROM member_repo_activity WHERE user_bi=?" in ENTRY

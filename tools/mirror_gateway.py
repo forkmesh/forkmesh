@@ -457,7 +457,7 @@ OPERATION_QUERY_FIELDS = {
     "branches": frozenset(),
     "search": frozenset({"path", "ref"}),
     "stats": frozenset({"ref"}),
-    "pulse": frozenset({"period", "person"}),
+    "pulse": frozenset({"period", "person", "view"}),
     "sizes": frozenset({"ref"}),
     "release-blob": frozenset({"sha256", "path"}),
     "merge-pull": frozenset(),
@@ -3729,6 +3729,101 @@ def pulse_window_end(period: str, now_seconds: int) -> int:
     return -(-max(0, int(now_seconds)) // bucket) * bucket
 
 
+# ``view=people``: every human's own figures for the trailing year in one
+# answer, for readers that total activity across repositories (the chat
+# member list). Computed from the same ledger as the leaderboard, so the same
+# people, identities and humans-only rules apply.
+PULSE_PEOPLE_VIEW = "people"
+PULSE_PEOPLE_SECONDS = 365 * 86400
+PULSE_PEOPLE_BUCKET = 3600
+PULSE_PEOPLE_LIMIT = 1000
+PULSE_PEOPLE_KINDS = {"pull": "pulls", "issue": "issues", "review": "reviews"}
+
+
+def pulse_view(query: Mapping[str, str]) -> str:
+    view = str(query.get("view") or "")
+    if "view" in query and view != PULSE_PEOPLE_VIEW:
+        raise GatewayError("invalid pulse view")
+    if view and ("period" in query or "person" in query):
+        raise GatewayError("invalid pulse view")
+    return view
+
+
+def pulse_cache_end(query: Mapping[str, str], now_seconds: int) -> int:
+    if pulse_view(query) == PULSE_PEOPLE_VIEW:
+        bucket = PULSE_PEOPLE_BUCKET
+        return -(-max(0, int(now_seconds)) // bucket) * bucket
+    return pulse_window_end(pulse_period(query), now_seconds)
+
+
+def _pulse_day_mask(days: Iterable[int], first: int, count: int) -> str:
+    mask = bytearray(-(-count // 8))
+    for day in days:
+        offset = day - first
+        if 0 <= offset < count:
+            mask[offset // 8] |= 1 << (offset % 8)
+    return mask.hex()
+
+
+def _pulse_people(
+    ledger: Mapping[str, Any], start: int, end: int
+) -> tuple[list[dict[str, Any]], int]:
+    """Per-person counts in [start, end): commits on the default branch
+    (merges excluded), pull requests and issues opened, reviews of someone
+    else's pull request, and the UTC days with any of them."""
+    figures: dict[str, dict[str, Any]] = {}
+
+    def entry(key: str) -> dict[str, Any]:
+        row = figures.get(key)
+        if row is None:
+            row = figures[key] = {
+                "commits": 0, "pulls": 0, "issues": 0, "reviews": 0,
+                "days": set(), "last": 0}
+        return row
+
+    for key, times in ledger["commits"].items():
+        low = bisect.bisect_left(times, start)
+        high = bisect.bisect_left(times, end)
+        if low < high:
+            row = entry(key)
+            row["commits"] += high - low
+            row["days"].update(at // 86400 for at in times[low:high])
+            row["last"] = max(row["last"], times[high - 1])
+    events = ledger["events"]
+    for at, key, kind, _thread, _number, _bug in events[
+            bisect.bisect_left(events, (start,)):
+            bisect.bisect_left(events, (end,))]:
+        field = PULSE_PEOPLE_KINDS.get(kind)
+        if not field:
+            continue
+        row = entry(key)
+        row[field] += 1
+        row["days"].add(at // 86400)
+        row["last"] = max(row["last"], at)
+    first = start // 86400
+    count = (max(start, end - 1) // 86400) - first + 1
+    ordered = sorted(
+        figures.items(),
+        key=lambda item: (
+            -(item[1]["commits"] + item[1]["pulls"] + item[1]["issues"]
+              + item[1]["reviews"]),
+            item[0]))
+    people = []
+    for key, row in ordered[:PULSE_PEOPLE_LIMIT]:
+        people.append({
+            "key": key,
+            "name": ledger["names"].get(key, key),
+            "commits": row["commits"],
+            "pulls": row["pulls"],
+            "issues": row["issues"],
+            "reviews": row["reviews"],
+            "activeDays": len(row["days"]),
+            "dayMask": _pulse_day_mask(row["days"], first, count),
+            "lastAt": row["last"] * 1000,
+        })
+    return people, len(figures)
+
+
 def _pulse_ms(value: Any) -> int:
     try:
         number = int(float(str(value if value is not None else "").strip()
@@ -6423,6 +6518,8 @@ class GitRepository:
         self, query: Mapping[str, str], now_seconds: int,
         rules: tuple[str, ...] = (),
     ) -> dict[str, Any]:
+        if pulse_view(query) == PULSE_PEOPLE_VIEW:
+            return self.pulse_people(now_seconds, rules)
         period = pulse_period(query)
         person = pulse_person(query)
         spec = PULSE_PERIODS[period]
@@ -6553,6 +6650,31 @@ class GitRepository:
             "opened": listing(ledger["issues"], "opened"),
         }
         return response
+
+    def pulse_people(
+        self, now_seconds: int, rules: tuple[str, ...] = ()
+    ) -> dict[str, Any]:
+        now_seconds = max(0, int(now_seconds))
+        end = -(-now_seconds // PULSE_PEOPLE_BUCKET) * PULSE_PEOPLE_BUCKET
+        start = max(0, end - PULSE_PEOPLE_SECONDS)
+        with self._pulse_lock:
+            ledger = self._pulse_index(tuple(rules))
+        people, total = _pulse_people(ledger, start, end)
+        return {
+            "ok": True,
+            "commit": ledger["main"],
+            "branch": self.default_branch_ref()[len("refs/heads/"):],
+            "view": PULSE_PEOPLE_VIEW,
+            "since": _pulse_iso(start),
+            "until": _pulse_iso(min(end, now_seconds)),
+            "generatedAt": _pulse_iso(now_seconds),
+            "refreshSeconds": PULSE_PEOPLE_BUCKET,
+            "dayStart": datetime.fromtimestamp(
+                start - start % 86400, timezone.utc).date().isoformat(),
+            "people": people,
+            "peopleTotal": total,
+            "truncated": total > len(people),
+        }
 
     def sizes(self, query: Mapping[str, str]) -> dict[str, Any]:
         commit = self.resolve_commit(query.get("ref", ""))
@@ -11648,8 +11770,8 @@ class GatewayApplication:
                     repository, operation, query, git_protocol)
             elif method in ("GET", "HEAD") and operation == PULSE_OPERATION:
                 cache_key = self._repository_response_cache_key(
-                    repository, operation, query, "until:%d" % pulse_window_end(
-                        pulse_period(query), int(self.clock_ms()) // 1000))
+                    repository, operation, query, "until:%d" % pulse_cache_end(
+                        query, int(self.clock_ms()) // 1000))
             elif method in ("GET", "HEAD") and operation in (
                 DIRECT_PUBLIC_READ_OPERATIONS - {"raw", "release-blob"}
             ):
