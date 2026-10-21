@@ -1262,7 +1262,7 @@ print(encode(seed), encode(public))
     echo "CORS_ALLOWED_ORIGINS=$ORIGIN"
     echo "NODE_NAME=$NODE_NAME"
     echo "HOSTED_GIT_CORE_NODES=$NODE_NAME"
-    echo "HOSTED_IMPORT_HOSTS=github.com,gitlab.com,codeberg.org,app.forkmesh.com"
+    echo "HOSTED_IMPORT_HOSTS=github.com,gitlab.com,codeberg.org,gitea.com,app.forkmesh.com"
     echo "HOSTED_REPO_MAX_BYTES=1073741824"
     if [ "$CFG_actions" = "1" ]; then
       echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"
@@ -1889,7 +1889,7 @@ cfg.update({
         "enabled": True,
         "root": "/var/lib/forkmesh/hosted",
         "maxRepositoryBytes": 1073741824,
-        "importHosts": ["github.com", "gitlab.com", "codeberg.org", "app.forkmesh.com"],
+        "importHosts": ["github.com", "gitlab.com", "codeberg.org", "gitea.com", "app.forkmesh.com"],
     },
 })
 gateway = cfg.get("gatewayConfig")

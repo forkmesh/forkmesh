@@ -150,4 +150,7 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S075 | 2026-10-21 | Agents | feature | Scrolling up in an agent's transcript keeps your place while it works, and an arrow above the composer takes you back to the latest output. | 74c29b740e | synced | 74c29b740e |
 | S076 | 2026-10-20 | Notifications | fix | Notification links to a pull request open it at its new /pull/<number> address. | 8d87f5e467 | synced | 8d87f5e467 |
 | S077 | 2026-10-21 | Notifications | feature | Pings say when someone reacted to your comment, with a reaction icon. | 8b43090ad3 | synced | 8b43090ad3 |
+| S078 | 2026-10-21 | Pings | ui | Ping banners lead with who acted and where, with what they wrote straight under it, instead of a generic event label | 26a6431321 | pending |  |
+| S079 | 2026-10-21 | Agents | feature | Every agent page pins the last thing you wrote to the agent above its transcript; pull the card down to flip back through earlier prompts. | cd58bc31c2 | pending |  |
+| S080 | 2026-10-21 | Code | feature | Mirror import accepts gitea.com repositories alongside GitHub, GitLab and Codeberg. | c8852efb65 | synced | c8852efb65 |
 <!-- ledger:end -->

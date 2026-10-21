@@ -425,6 +425,27 @@ async def verify_pull_event(pr, repo_keys=(), allow_v1=None):
     return False
 
 
+def pull_revision_binding_body(number, ev):
+    try:
+        ts = int(ev.get("ts", 0))
+    except (TypeError, ValueError):
+        ts = 0
+    return "%d\n%s\n%d\n%s" % (
+        int(number), ev.get("author", ""), ts, ev.get("sig", ""))
+
+
+async def verify_pull_revision(number, ev, repo_keys=(), allow_v1=None):
+    author = ev.get("author", "")
+    binding = ev.get("revisionSig", "")
+    if not author or not binding or int(number or 0) <= 0:
+        return False
+    if not await verify_pull_event(ev, repo_keys, allow_v1):
+        return False
+    return await _verify_event_messages(
+        author, binding, "pull-revision",
+        pull_revision_binding_body(number, ev), repo_keys, False)
+
+
 def pull_comment_anchor_fields(ev):
     """Signed patchset anchor of a line-anchored pull event, or nothing.
 
@@ -482,7 +503,14 @@ def pull_comment_content(ev):
         return "\x00".join([ev.get("state", ""), ev.get("body", "")])
     if t == "delete":
         return ev.get("body", "")
+    if t == "comment-edit":
+        return "\x00".join([ev.get("target", ""), ev.get("body", "")])
+    if t == "comment-delete":
+        return ev.get("target", "")
     return ""
+
+
+PULL_COMMENT_TARGET_EVENT_TYPES = frozenset({"comment-edit", "comment-delete"})
 
 
 async def verify_pull_comment_event(number, ev, repo_keys=(), allow_v1=None):
@@ -494,10 +522,14 @@ async def verify_pull_comment_event(number, ev, repo_keys=(), allow_v1=None):
     allowed_types = (
         "comment", "review", "line-comment", "thread-comment", "thread-reply",
         "thread-state", "suggestion-state", "status", "delete",
+        "comment-edit", "comment-delete",
     )
     if not author or not signature or event_type not in allowed_types:
         return False
     if event_type == "status" and ev.get("state") != "closed":
+        return False
+    if event_type in PULL_COMMENT_TARGET_EVENT_TYPES and not str(
+            ev.get("target", "") or "").strip():
         return False
     try:
         ts = int(ev.get("ts", 0))

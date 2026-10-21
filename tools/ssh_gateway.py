@@ -133,6 +133,8 @@ PULL_COMMENT_EVENT_TYPES = frozenset(
         "thread-reply",
         "thread-state",
         "suggestion-state",
+        "comment-edit",
+        "comment-delete",
     }
 )
 # Matches the relay's MAX_ISSUE_BYTES; a spooled submission replays against the
@@ -1240,6 +1242,10 @@ def _pull_comment_content(event: dict[str, Any]) -> str:
             event.get("threadId", ""), event.get("state", ""),
             event.get("appliedCommit", ""), event.get("body", ""),
         ])
+    if event_type == "comment-edit":
+        return "\x00".join([event.get("target", ""), event.get("body", "")])
+    if event_type == "comment-delete":
+        return event.get("target", "")
     return ""
 
 
@@ -1322,8 +1328,13 @@ def _verify_pull_submission(
             (
                 "body", "state", "path", "side", "threadId", "parentId",
                 "suggestionPatch", "appliedCommit", "patchset", "anchorLines",
+                "target",
             ),
         )
+        if event.get("type") in ("comment-edit", "comment-delete") and not (
+            str(event.get("target") or "").strip()
+        ):
+            raise VerbError("pull submission is invalid")
         if len((event.get("body", "") or "").encode("utf-8")) > (
             MAX_SUBMISSION_TEXT_BYTES
         ):

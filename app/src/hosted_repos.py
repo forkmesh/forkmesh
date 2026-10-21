@@ -54,7 +54,7 @@ MAX_COMMIT_COUNT = 10 ** 9
 BRANCH = "main"
 DEFAULT_MAX_PER_ACCOUNT = 10
 DEFAULT_MAX_BYTES = 200 * 1024 * 1024
-DEFAULT_IMPORT_HOSTS = ("github.com", "gitlab.com", "codeberg.org")
+DEFAULT_IMPORT_HOSTS = ("github.com", "gitlab.com", "codeberg.org", "gitea.com")
 REMOVED_KEEP_MS = 30 * 24 * 60 * 60 * 1000
 # Replica read grants: long enough for a slow fetch of a full-size repository.
 GRANT_TTL_MS = 60 * 60 * 1000
@@ -415,7 +415,56 @@ async def link_organization(runtime, org_bi, repo, node_owner, now):
         org_bi, repo, str(node_owner or "").lower(), now)
 
 
-async def note_push(runtime, repo_id, node, now):
+FORCED_KEEP_MS = 7 * 24 * 60 * 60 * 1000
+FORCED_MAX = 32
+FORCED_REF_RE = re.compile(r"^refs/heads/(?!forkmesh/)[^\x00-\x20~^:?*\[\\]{1,240}$")
+FORCED_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+
+def merge_forced(current, updates, now):
+    entries = {}
+    for ref, value in (current if isinstance(current, dict) else {}).items():
+        if (
+            isinstance(value, dict)
+            and FORCED_REF_RE.fullmatch(str(ref))
+            and FORCED_OID_RE.fullmatch(str(value.get("new") or ""))
+            and now - int(value.get("at") or 0) < FORCED_KEEP_MS
+        ):
+            entries[ref] = {"old": str(value.get("old") or ""),
+                            "new": value["new"], "at": int(value["at"])}
+    for update in updates or []:
+        ref = str((update or {}).get("ref") or "")
+        new = str((update or {}).get("new") or "")
+        old = str((update or {}).get("old") or "")
+        if FORCED_REF_RE.fullmatch(ref) and FORCED_OID_RE.fullmatch(new):
+            entries[ref] = {"old": old if FORCED_OID_RE.fullmatch(old) else "",
+                            "new": new, "at": int(now)}
+    newest = sorted(entries.items(), key=lambda item: -item[1]["at"])
+    return dict(newest[:FORCED_MAX])
+
+
+def forced_tips(record, now):
+    return {ref: value["new"] for ref, value in merge_forced(
+        (record or {}).get("forced"), [], now).items()}
+
+
+async def note_forced(runtime, repo_id, updates, now):
+    row = await runtime.d1_first(
+        "SELECT data FROM hosted_repos WHERE id=?", repo_id)
+    if not row or not hasattr(runtime, "seal"):
+        return
+    record = await runtime.open(row.get("data"))
+    if not isinstance(record, dict):
+        return
+    record["forced"] = merge_forced(record.get("forced"), updates, now)
+    await runtime.d1_run(
+        "UPDATE hosted_repos SET data=? WHERE id=?",
+        await runtime.seal(record), repo_id)
+
+
+async def note_push(runtime, repo_id, node, now, forced=None):
+    if forced:
+        await note_forced(runtime, repo_id, forced, now)
     await runtime.d1_run(
         "UPDATE hosted_repos SET pushed_at=?,pushed_by=? WHERE id=?",
         now, node, repo_id)
@@ -706,6 +755,9 @@ async def replicas(runtime, raw):
         }
         if caller == primary and isinstance(record.get("init"), dict):
             item["init"] = record["init"]
+        forced = forced_tips(record, now)
+        if forced:
+            item["forced"] = forced
         fork = fork_of(record)
         upstream = None if fork else fork_upstream(record)
         if fork and item["visibility"] == "public" and fork[0] in public_ids:

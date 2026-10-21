@@ -27,6 +27,7 @@ Topic pages in this folder:
 - [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window (including keeping the computer from sleeping)
 - [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
+- [markdown-preview.md](markdown-preview.md): one render path for every Markdown preview, hard-break handling, the GitHub-style document styling and painted decorations
 - [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
 - Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
 
@@ -59,7 +60,7 @@ Everything is in `desktop/`.
 | `src/StallWatchdog.*`, `src/CrashHandler.*`, `src/CrashLogScan.*` | UI stall sampling, crash records, crash-repair dispatch |
 | `src/CodeHealth.*`, `src/ComponentHealthBoard.*`, `src/StatsDashboard.*`, `src/HomeBoard.*` | Health, Stats and Home pages |
 | `src/NativePackageExtension.*`, `src/ForkMeshPackageRegistry.*`, `src/*HostFeed.*` | Market packages hosted in the desktop and the host sockets they use |
-| `src/MarkdownRender.h`, `src/MarkdownDocument.h` | Markdown rendering shared by README views and packages |
+| `src/MarkdownRender.h`, `src/MarkdownDocument.h`, `src/MarkdownPreviewStyle.h` | Markdown rendering shared by README views, file previews, composers and packages ([markdown-preview](markdown-preview.md)) |
 | `src/Tooltips.h` | The app-drawn tooltip window |
 | `tests/` | Qt Test programs (`test_*.cpp`) and Python source validators (`validate_*.py`) |
 

@@ -38,6 +38,8 @@ FUNCS = {
     "_notification_email_item",
     "_notification_digest_email",
     "_notification_instant_email",
+    "_notification_email_footer_html",
+    "_notification_email_subject",
 }
 # Module constants the rendering path reads. Taken from entry.py's own
 # assignments rather than restated here, so a limit or route-segment change
@@ -54,10 +56,11 @@ CONSTANTS = {
     "NOTIFICATION_ITEM_URL_SEGMENTS",
     "NOTIFICATION_ITEM_NOUNS",
     "NOTIFICATION_EMAIL_AVATAR_MAX_B64",
+    "NOTIFICATION_EMAIL_SNIPPET_MAX",
 }
 
 
-BOB_BYLINE = ('by <a href="https://forkmesh.com/@bob" '
+BOB_BYLINE = ('<a href="https://forkmesh.com/@bob" '
               'style="color:#0969da;text-decoration:none"><strong>bob</strong></a>')
 
 
@@ -120,7 +123,15 @@ def test_digest_item_shows_number_actor_and_time():
         "ts": 1783607520000,
         "meta": {"number": 42, "source": "issue"},
     }], base_url="https://forkmesh.com")
-    assert subject == "ForkMesh: 1 new notification"
+    assert subject == (
+        "bob: Search box is broken on mobile \xb7 [alice/forkmesh] #42")
+    assert "new notification" not in subject + text + html
+    assert "You have" not in text + html
+    assert ('style="display:none;max-height:0;overflow:hidden;opacity:0;'
+            'color:transparent">Search box is broken on mobile</div>') in html
+    card = html[html.index('class="fm-item"'):]
+    assert card.index(BOB_BYLINE) < card.index("Search box is broken")
+    assert card.index("Search box is broken") < card.index("Issue submitted")
     # Text body: number folded into the header line, "by <actor>" + time on
     # their own indented line (matching the existing "    body" indent style).
     # The repository is named by the "[owner/repo]" prefix and taken back out
@@ -220,10 +231,9 @@ def test_digest_item_without_number_or_actor_degrades_gracefully():
     header_idx = lines.index("- [alice/forkmesh] Pull request submitted")
     assert lines[header_idx + 1] == "    https://forkmesh.com/alice/forkmesh"
     assert ">Open alice/forkmesh</a>" in html
-    # HTML: the meta <p> (distinguished by its #8a8a93 muted color) is omitted
-    # entirely rather than rendering an empty/placeholder line.
-    assert "#8a8a93;font-size:12px\">" not in html.split(
-        "Pull request submitted</a></p>")[1].split("</div>")[0]
+    card = html.split('class="fm-item"')[1].split("</div>")[0]
+    assert 'line-height:20px">alice/forkmesh</p>' in card
+    assert "Pull request submitted</a></p>" in card
 
 
 def test_legacy_notification_without_repo_or_meta_still_renders_and_links():
@@ -239,8 +249,8 @@ def test_legacy_notification_without_repo_or_meta_still_renders_and_links():
         "actor": "",
         "ts": 0,
     }], base_url="https://forkmesh.com")
-    assert "- Invitation: release sync" in text
-    assert "[" not in text.split("\n")[4]
+    assert text.startswith("- Invitation: release sync\n")
+    assert "[" not in text.split("\n")[0]
     link = "https://forkmesh.com/dashboard/calendar?event=abc123"
     assert "    " + link in text
     assert '<a href="' + link + '"' in html
@@ -300,9 +310,9 @@ def test_actor_avatar_renders_with_the_name_and_falls_back_to_text():
     # line rather than a dangling "by".
     assert actor_html("", png) == ""
     assert actor_html("bob", "", "https://next.example/") == (
-        'by <a href="https://next.example/@bob" '
+        '<a href="https://next.example/@bob" '
         'style="color:#0969da;text-decoration:none"><strong>bob</strong></a>')
-    assert actor_html("Bob Smith", "") == "by <strong>Bob Smith</strong>"
+    assert actor_html("Bob Smith", "") == "<strong>Bob Smith</strong>"
 
 
 def test_digest_shows_the_actor_avatar_next_to_the_public_username():
@@ -368,7 +378,7 @@ def test_digest_item_uses_the_resolved_public_alias_and_does_not_duplicate():
         }],
         identity={"repos": {"mirror23/forkmesh": "forkmesh/forkmesh"}},
         base_url="https://forkmesh.com")
-    assert _subject == "ForkMesh: 1 new notification"
+    assert _subject == "bob: Issue submitted \xb7 [forkmesh/forkmesh] #42"
     assert "mirror23" not in text
     assert "mirror23" not in html
     assert text.count("forkmesh/forkmesh") == 2  # item prefix + item link
@@ -394,7 +404,7 @@ def test_unaliased_node_repo_keeps_its_own_route():
         }],
         identity={"repos": {"alices-box/notes": ""}},
         base_url="https://forkmesh.com")
-    assert text.startswith("Hi alice,")
+    assert "Sent to alice." in text
     assert "- [alices-box/notes] #3 Pull request submitted\n" in text
     assert "https://forkmesh.com/alices-box/notes/pull/3" in html
 
@@ -647,8 +657,11 @@ def test_instant_email_puts_the_event_in_the_subject_and_reuses_the_digest_card(
         "ts": 1783607520000,
         "meta": {"number": 42, "source": "issue"},
     }, base_url="https://forkmesh.com")
-    # The event, not a count — and the repository appears once, not twice.
-    assert subject == "ForkMesh: [alice/forkmesh] #42 Issue submitted"
+    assert subject == (
+        "bob: Search box is broken on mobile \xb7 [alice/forkmesh] #42")
+    assert "New notification" not in html
+    assert "new ForkMesh notification" not in html
+    assert '<h1 class="fm-h1"' not in html
     assert "- [alice/forkmesh] #42 Issue submitted" in text
     assert "    by bob \xb7 2026-07-09 14:32 UTC" in text
     assert "    Search box is broken on mobile" in text

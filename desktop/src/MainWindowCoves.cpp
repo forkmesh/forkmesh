@@ -6,6 +6,7 @@
 
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "PingSettings.h"
 
 #include "CoveCrypto.h"
 #include "CoveStore.h"
@@ -172,9 +173,11 @@ void MainWindow::onCoveOpened(const QString &creatorKey, const QString &coveId,
         QString::fromUtf8("%1 opened your cove \xE2\x80\x9C%2\xE2\x80\x9D.")
             .arg(who, coveName);
     logSystem(body);
-    addNotification(QStringLiteral("Cove opened"), body);
+    const QString alertTitle = forkmesh::pings::alertLeadTitle(who, coveName);
+    const QString alertBody = QStringLiteral("Opened your cove");
+    addNotification(alertTitle, alertBody);
     if (coveAlertEnabled())
-        showPingTrayMessage(QStringLiteral("ForkMesh — cove opened"), body);
+        showPingTrayMessage(alertTitle, alertBody);
 }
 
 void MainWindow::onCoveInvited(const QString &inviteeAccount, const QString &coveId,
@@ -198,13 +201,15 @@ void MainWindow::onCoveInvited(const QString &inviteeAccount, const QString &cov
     const NotificationLink link = notificationLinkForHref(shareUrl);
     const bool linkMatchesInvite =
         link.kind == QLatin1String("cove") && link.ref == coveId;
+    const QString alertTitle = forkmesh::pings::alertLeadTitle(who, name);
+    const QString alertBody = QStringLiteral("Invited you to join this cove");
     if (linkMatchesInvite)
-        addNotification(QStringLiteral("Cove invitation"), body, false, link,
+        addNotification(alertTitle, alertBody, false, link,
                         QStringLiteral("cove"), who);
     else
-        addNotification(QStringLiteral("Cove invitation"), body);
+        addNotification(alertTitle, alertBody);
     if (coveAlertEnabled())
-        postNotification(QStringLiteral("ForkMesh — cove invitation"), body,
+        postNotification(alertTitle, alertBody,
                          false, QStringLiteral("folder-locked"),
                          linkMatchesInvite ? shareUrl : QString());
 }

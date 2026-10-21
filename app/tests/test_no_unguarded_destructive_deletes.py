@@ -63,6 +63,18 @@ KEYWORDS = re.compile(
     r"|prune=now|filter-branch")
 
 ALLOW: list[tuple[str, str, str]] = [
+    ("app/public/dashboard.js",
+     'may force-push (them|any branch).*\\(use (<span class="font-mono">)?git push --force-with-lease',
+     'user-facing help recommending git push --force-with-lease to update a pull request branch; it runs nothing'),
+    ("app/public/dashboard/js/04-account.js",
+     'may force-push (them|any branch).*\\(use (<span class="font-mono">)?git push --force-with-lease',
+     'user-facing help recommending git push --force-with-lease to update a pull request branch; it runs nothing'),
+    ("app/src/entry.py",
+     'git push --force-with-lease',
+     'user-facing help recommending git push --force-with-lease to update a pull request branch; it runs nothing'),
+    ("app/src/instance_pages.py",
+     'git push --force-with-lease',
+     'user-facing help recommending git push --force-with-lease to update a pull request branch; it runs nothing'),
     ("desktop/src/DestructiveCommandReview.cpp",
      '^\\.arg\\(code\\(',
      'prompt text that names the command being reviewed; this file runs nothing'),

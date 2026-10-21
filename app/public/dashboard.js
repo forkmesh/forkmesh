@@ -3344,6 +3344,14 @@
     return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  function webSessionAuthored(ev) {
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (!me || !ev) return false;
+    if (String(ev.authorName || "").trim().toLowerCase() === me) return true;
+    const pub = webIssueKeyPublic();
+    return Boolean(pub) && String(ev.author || "") === pub;
+  }
+
   async function getWebIssueKey() {
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null"); } catch (_) {}
@@ -4026,6 +4034,12 @@
       content = [fields.state || "", cleanBody].join(NUL);
     } else if (type === "delete") {
       content = cleanBody;
+    } else if (type === "comment-edit") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = [fields.target, cleanBody].join(NUL);
+    } else if (type === "comment-delete") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = String(fields.target);
     } else {
       throw new Error("unsupported_pull_event_type");
     }
@@ -4041,12 +4055,20 @@
       ts,
       sig,
     };
-    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines"]) {
+    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines", "target"]) {
       if (fields[key] !== undefined && fields[key] !== "") event[key] = fields[key];
     }
     const payload = { owner: repo.owner, repo: repo.name, number, event };
     const data = await fetchRepoMutation(repo, "pulls", payload);
     return { ...data, event };
+  }
+
+  async function submitWebPullCommentEdit(repo, number, target, body) {
+    return submitWebPullEvent(repo, number, "comment-edit", { target, body });
+  }
+
+  async function submitWebPullCommentDelete(repo, number, target) {
+    return submitWebPullEvent(repo, number, "comment-delete", { target });
   }
 
   async function submitWebPullComment(repo, number, body) {
@@ -4442,6 +4464,9 @@
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
     }
+    if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
+      return "Only the comment's author, the repository owner or an organization admin can change this comment.";
+    }
     return ({
       not_authorized: "Only the repository owner or an organization admin can do that.",
       bad_signature: "The signed issue action could not be verified.",
@@ -4489,6 +4514,47 @@
     return [...new Set(String(value || "").split(",")
       .map((item) => item.trim())
       .filter(Boolean))].slice(0, 20);
+  }
+
+  async function handleWebPullCommentAction(action, target) {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "pulls" || !number || !target) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const parsed = detail.parsed || {};
+    const original = foldPullCommentChanges(parsed.pullConversation)
+      .find((ev) => String(ev.id || "") === String(target));
+    if (!original) return;
+    let result;
+    try {
+      if (action === "delete") {
+        if (!await confirmAccountAction({
+          title: "Delete this comment?",
+          body: "Its Git history remains recoverable.",
+          confirmLabel: "Delete comment",
+        })) return;
+        result = await submitWebPullCommentDelete(repo, number, target);
+      } else {
+        const nextBody = await openIssueCommentEditor(
+          target, original.body || "",
+          "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
+        if (nextBody === null) return;
+        const trimmed = String(nextBody).replace(/[\r\n]+$/, "");
+        if (!trimmed.trim() || trimmed === String(original.body || "").replace(/[\r\n]+$/, "")) return;
+        result = await submitWebPullCommentEdit(repo, number, target, trimmed);
+      }
+    } catch (error) {
+      showErrorNotice(webIssueActionError(error, action === "delete" ? "delete-comment" : "edit-comment"));
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
+    refreshPullConversationProjection();
   }
 
   async function handleWebIssueAction(action, target = "") {
@@ -5705,6 +5771,115 @@
     });
     input.click();
   });
+
+  function pullRevisionSource(values) {
+    const head = String(values?.head || "").trim();
+    if (!head) return null;
+    const colon = head.lastIndexOf(":");
+    if (colon < 0) return { owner: "", branch: head };
+    const prefix = head.slice(0, colon);
+    if (!prefix || prefix.includes("/")) return null;
+    return { owner: prefix, branch: head.slice(colon + 1) };
+  }
+
+  function pullRevisionAllowed(parsed) {
+    const values = parsed?.values || {};
+    return String(values.status || "open").trim().toLowerCase() === "open"
+      && values.derive !== "branch"
+      && webSessionAuthored({ author: values.author, authorName: values.authorName })
+      && Boolean(pullRevisionSource(values));
+  }
+
+  async function submitWebPullRevision(repo, number, values, branch) {
+    const source = pullRevisionSource(values);
+    if (!source || !branch) throw new Error("revision_unsupported");
+    const sourceRepo = source.owner ? { owner: source.owner, name: repo.name } : repo;
+    const base = String(values.base || "");
+    let comparison;
+    try {
+      comparison = await fetchRepoJson(repoLiveUrl(sourceRepo, "compare", { base, head: branch, ref: "" }));
+    } catch (_) {
+      throw new Error("comparison_unavailable");
+    }
+    const patch = String(comparison.patch || "");
+    const commits = String(comparison.commits || "");
+    const baseOid = String(comparison.baseOid || "").toLowerCase();
+    const headOid = String(comparison.headOid || "").toLowerCase();
+    const validOid = (value) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
+    if (!validOid(baseOid) || !validOid(headOid)) throw new Error("invalid_comparison");
+    if (!patch.trim()) throw new Error("no_changes");
+    if (headOid === String(values.creationHeadOid || "").toLowerCase()) throw new Error("no_new_commits");
+    const signedHead = source.owner ? `${source.owner}:${branch}` : branch;
+    const revision = await signWebPullContent(
+      repo, String(values.title || ""), "", base, signedHead, patch, commits);
+    delete revision.description;
+    revision.creationBaseOid = baseOid;
+    revision.creationHeadOid = headOid;
+    const { privateKey } = await getWebIssueKey();
+    const binding = `${Number(number)}\n${revision.author}\n${revision.ts}\n${revision.sig}`;
+    revision.revisionSig = bytesToB64url(await crypto.subtle.sign(
+      { name: "Ed25519" }, privateKey,
+      ISSUE_TEXT_ENCODER.encode(`${webEventSigningPrefix("pull-revision", repo)}${binding}`)));
+    const data = await fetchRepoMutation(repo, "pulls", {
+      owner: repo.owner, repo: repo.name, number: Number(number), revision,
+    });
+    return { ...data, revision };
+  }
+
+  function pullRevisionError(code) {
+    return ({
+      comparison_unavailable: "That branch is not on the serving mirror yet. A branch you just pushed can take a moment to arrive.",
+      invalid_comparison: "That branch could not be compared with the base branch.",
+      no_changes: "That branch has no changes against the base branch.",
+      no_new_commits: "This pull request already shows that branch's latest commit.",
+      revision_stale: "A newer version of this pull request is already waiting.",
+      pull_not_open: "Only an open pull request can be updated.",
+      pull_follows_branch: "This pull request already follows its branch.",
+      not_authorized: "Only the pull request's author can update it.",
+      pull_too_large: "That change is too large to send.",
+      revision_unsupported: "This pull request came from another instance; update it there.",
+      author_mismatch: "Sign in with the account that opened this pull request.",
+    })[code] || "The pull request could not be updated. Please try again.";
+  }
+
+  function renderPullRevisionPanel(number, parsed) {
+    if (!pullRevisionAllowed(parsed)) return "";
+    const branch = pullRevisionSource(parsed.values)?.branch || "";
+    return `
+      <form data-repo-pull-revision-form data-repo-pull-revision-number="${escapeHtml(number)}" class="flex flex-wrap items-center gap-2 rounded-md border border-border px-4 py-3 text-[14px] sm:ml-14">
+        <span class="min-w-0 flex-1 text-muted-foreground">Pushed more commits, or rewrote the branch? Update this pull request from a branch. No force push is needed.</span>
+        <input data-repo-pull-revision-branch value="${escapeHtml(branch)}" aria-label="Source branch" spellcheck="false" class="h-control-sm w-48 rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-[var(--dashboard-link)]" />
+        <button type="submit" data-repo-pull-revision-submit class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border bg-secondary px-2 text-control font-medium text-foreground hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Update pull request</button>
+        <span data-repo-pull-revision-hint class="w-full text-[11px] text-muted-foreground"></span>
+      </form>`;
+  }
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target?.closest?.("[data-repo-pull-revision-form]");
+    if (!form) return;
+    event.preventDefault();
+    const detail = state.repoRecordDetail;
+    const number = Number(form.dataset.repoPullRevisionNumber || 0);
+    if (!detail?.repo || detail.kind !== "pulls" || Number(detail.number) !== number) return;
+    const hint = form.querySelector("[data-repo-pull-revision-hint]");
+    const submit = form.querySelector("[data-repo-pull-revision-submit]");
+    const branch = String(form.querySelector("[data-repo-pull-revision-branch]")?.value || "").trim();
+    const setHint = (text, bad = false) => {
+      if (!hint) return;
+      hint.className = `w-full text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (submit) submit.disabled = true;
+    setHint("Comparing, signing and sending…");
+    try {
+      await submitWebPullRevision(detail.repo, number, detail.parsed?.values || {}, branch);
+      setHint("Sent. The pull request shows the new version once the repository's node takes it in.");
+    } catch (error) {
+      setHint(pullRevisionError(error?.code || error?.message), true);
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
   // Every top-level page is its own document now (/dashboard, /dashboard/repos,
   // /dashboard/network, ...) — navigation between them is a real page load via
   // plain <a href> links, so there is no client-side section router anymore.
@@ -5722,7 +5897,7 @@
     }
   });
 
-  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents"];
+  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents"];
 
   function normalizeSettingsSection(section) {
     return SETTINGS_SECTIONS.includes(section) ? section : "public-profile";
@@ -5771,6 +5946,7 @@
     if (activeSection === "ssh-keys") loadSshKeys();
     if (activeSection === "notifications") loadPingSettings();
     if (activeSection === "agents") initSettingsAgents();
+    if (activeSection === "instance-theme") initInstanceThemeSection();
     // Session state changes on other devices, so re-entering this tab always
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
@@ -6560,6 +6736,158 @@
     }
   }
 
+  const INSTANCE_THEME_ERRORS = {
+    invalid_credentials: "That password is not right.",
+    too_many_attempts: "Too many wrong passwords. Wait a minute and try again.",
+    not_admin: "Only an admin of this instance can change its theme.",
+    password_not_set: "Your account has no password to confirm with. Set one under Account first.",
+    invalid_theme: "That theme is not available yet.",
+  };
+  const instanceThemeState = { themes: [], current: "default", previewing: "", bound: false };
+
+  function renderInstanceThemeAccess(session) {
+    const nav = $("[data-instance-theme-nav]");
+    nav?.classList.toggle("hidden", !(session?.isAdmin === true && dashboardOnInstance()));
+  }
+
+  function instanceThemeLink() {
+    let link = document.querySelector("link[data-instance-theme]");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "/instance-theme.css";
+      link.setAttribute("data-instance-theme", "");
+      document.head.append(link);
+    }
+    return link;
+  }
+
+  function setInstanceThemeStatus(text, tone = "") {
+    const status = $("[data-instance-theme-status]");
+    if (!status) return;
+    status.textContent = text || "";
+    status.classList.toggle("text-destructive", tone === "bad");
+    status.classList.toggle("text-success", tone === "good");
+    status.classList.toggle("text-muted-foreground", tone !== "bad" && tone !== "good");
+  }
+
+  function instanceThemeName(id) {
+    return instanceThemeState.themes.find((theme) => theme.id === id)?.name || id;
+  }
+
+  function instanceThemeCard(theme) {
+    const palette = (theme.palette || []).map((colour) => escapeHtml(colour));
+    const ready = theme.status === "ready";
+    const current = theme.id === instanceThemeState.current;
+    const selected = theme.id === (instanceThemeState.previewing || instanceThemeState.current);
+    const badge = current
+      ? '<span class="fm-label fm-label-accent">Current</span>'
+      : ready ? (selected ? '<span class="fm-label fm-label-attention">Previewing</span>' : "") : '<span class="fm-label">Coming soon</span>';
+    const swatches = palette.map((colour, index) =>
+      `<span class="h-full" style="background:${colour};flex:${index === 0 ? 3 : 1}"></span>`).join("");
+    return `<button type="button" role="radio" data-instance-theme-card="${escapeHtml(theme.id)}" aria-checked="${selected}"${ready ? "" : ' disabled aria-disabled="true"'} class="grid content-start gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? "border-primary bg-primary/5" : "border-border bg-card"} ${ready ? "hover:border-primary/60" : "cursor-not-allowed opacity-60"}">
+      <span class="flex h-16 overflow-hidden rounded-md border border-border" aria-hidden="true">${swatches}</span>
+      <span class="flex items-center justify-between gap-2"><span class="text-sm font-semibold text-foreground">${escapeHtml(theme.name)}</span>${badge}</span>
+      <span class="text-xs leading-5 text-muted-foreground">${escapeHtml(theme.description)}</span>
+    </button>`;
+  }
+
+  function renderInstanceThemeCards() {
+    const box = $("[data-instance-theme-cards]");
+    if (!box) return;
+    box.innerHTML = instanceThemeState.themes.map(instanceThemeCard).join("");
+    const confirm = $("[data-instance-theme-confirm]");
+    const previewing = instanceThemeState.previewing;
+    if (confirm) confirm.hidden = !previewing;
+    const name = $("[data-instance-theme-preview-name]");
+    if (name) name.textContent = previewing ? instanceThemeName(previewing) : "";
+  }
+
+  function previewInstanceTheme(id) {
+    const previewing = id === instanceThemeState.current ? "" : id;
+    instanceThemeState.previewing = previewing;
+    instanceThemeLink().href = previewing
+      ? `/instance-theme.css?preset=${encodeURIComponent(previewing)}`
+      : `/instance-theme.css?v=${Date.now()}`;
+    renderInstanceThemeCards();
+    setInstanceThemeStatus(previewing ? "" : `${instanceThemeName(instanceThemeState.current)} is the current theme.`);
+    if (previewing) $("[data-instance-theme-password]")?.focus({ preventScroll: true });
+  }
+
+  async function applyInstanceTheme() {
+    const id = instanceThemeState.previewing;
+    const field = $("[data-instance-theme-password]");
+    const password = field?.value || "";
+    if (!id) return;
+    if (!password) {
+      setInstanceThemeStatus("Enter your current password to change the instance theme.", "bad");
+      field?.focus();
+      return;
+    }
+    const button = $("[data-instance-theme-apply]");
+    if (button) { button.disabled = true; button.textContent = "Applying…"; }
+    setInstanceThemeStatus("Applying the theme…");
+    try {
+      const token = state.session?.sessionToken || "";
+      const response = await fetch("/api/instance/theme", {
+        method: "PUT",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          ...(token ? { authorization: "Bearer " + token } : {}),
+        },
+        body: JSON.stringify({ theme: id, password }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok !== true) throw new Error(body.error || `http_${response.status}`);
+      if (field) field.value = "";
+      instanceThemeState.current = body.theme?.preset || "default";
+      instanceThemeState.previewing = "";
+      instanceThemeLink().href = `/instance-theme.css?v=${Date.now()}`;
+      renderInstanceThemeCards();
+      setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is now the theme for everyone on this instance.`, "good");
+    } catch (error) {
+      setInstanceThemeStatus(INSTANCE_THEME_ERRORS[error.message] || "Could not change the theme. Try again.", "bad");
+    } finally {
+      if (button) { button.disabled = false; button.textContent = "Apply to instance"; }
+    }
+  }
+
+  function bindInstanceThemeControls() {
+    if (instanceThemeState.bound) return;
+    instanceThemeState.bound = true;
+    $("[data-instance-theme-cards]")?.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-instance-theme-card]");
+      if (card && !card.disabled) previewInstanceTheme(card.dataset.instanceThemeCard);
+    });
+    $("[data-instance-theme-cancel]")?.addEventListener("click", () => previewInstanceTheme(instanceThemeState.current));
+    $("[data-instance-theme-apply]")?.addEventListener("click", () => applyInstanceTheme());
+    $("[data-instance-theme-password]")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      applyInstanceTheme();
+    });
+  }
+
+  async function initInstanceThemeSection() {
+    bindInstanceThemeControls();
+    const allowed = state.session?.isAdmin === true && dashboardOnInstance();
+    const denied = $("[data-instance-theme-denied]");
+    if (denied) denied.hidden = allowed;
+    if (!allowed) {
+      $("[data-instance-theme-cards]")?.replaceChildren();
+      return;
+    }
+    const info = await instanceInfo();
+    instanceThemeState.themes = Array.isArray(info?.themes) ? info.themes : [];
+    if (!instanceThemeState.previewing) instanceThemeState.current = info?.theme?.preset || "default";
+    renderInstanceThemeCards();
+    if (!instanceThemeState.themes.length) setInstanceThemeStatus("Could not load the themes. Refresh to try again.", "bad");
+    else if (!instanceThemeState.previewing) setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is the current theme.`);
+  }
+
   // ---- Nodes & devices (account_devices registry) ----------------------------
   // The web dashboard is the source of truth for every node key bound to the
   // account (desktop and mobile). Listing is session-gated like sessions; the
@@ -6933,8 +7261,8 @@
       ${field("Username", push?.username, "data-git-push-username")}
       ${field("Password (shown once; copy it now)", push?.password, "data-git-push-password")}
       <p class="text-xs text-muted-foreground">${contributor
-        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>. Pushes are fast-forward only: add commits instead of force-pushing, or push a new branch name. Then open a pull request from that branch on the repository's Pull requests tab.`
-        : "You have write access to this repository; its branch protection still applies."}
+        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>, and you may force-push them after a rebase or amend (use <span class="font-mono">git push --force-with-lease</span>; the previous tip is kept). Then open a pull request from that branch on the repository's Pull requests tab.`
+        : "You have write access to this repository. You may force-push any branch except the default and protected ones (use git push --force-with-lease; the previous tip is kept); branch protection still applies."}
         ${expires ? ` Expires ${escapeHtml(formatDate(expires))}.` : ""}</p>
       <pre class="overflow-x-auto rounded-md border border-border bg-secondary p-3 font-mono text-xs text-foreground">${escapeHtml(commands)}</pre>`;
     target.classList.remove("hidden");
@@ -10823,6 +11151,7 @@
     if (payoutStatus) payoutStatus.textContent = session?.hasPayoutAddress ? "Configured" : "Not configured";
     if (adminStatus) adminStatus.textContent = session?.isAdmin ? "Yes" : "No";
     $("[data-admin-test-email-row]")?.classList.toggle("hidden", session?.isAdmin !== true);
+    renderInstanceThemeAccess(session);
     if (emailStatus) {
       emailStatus.textContent = session?.emailVerified
         ? `${email} is verified.`
@@ -13207,7 +13536,7 @@
       ? entries.map(homeRepositoryRow).join("")
       : `<div class="px-2 py-3 text-sm text-muted-foreground">${query
         ? emptyListHtml("No repositories match this filter.", query)
-        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab or Codeberg, or create one</a>.'}</div>`;
+        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab, Codeberg or Gitea, or create one</a>.'}</div>`;
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
   }
@@ -14241,7 +14570,7 @@
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
+      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg or Gitea profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.textContent = `${platformName()} clones this URL into a bare mirror you then keep in sync.`;
@@ -14304,7 +14633,7 @@
     window.lucide?.createIcons();
   }
 
-  // A bare organization link — a GitLab group or a Codeberg profile — imports
+  // A bare organization link — a GitLab group or a Codeberg or Gitea profile — imports
   // every repository underneath it. GitHub is absent because the relay has no
   // organization walk for it, and a GitLab subgroup path is not matched because
   // group/thing is indistinguishable from a repository URL; the group walk
@@ -14316,7 +14645,7 @@
     } catch (_) {
       return "";
     }
-    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org"];
+    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org", "gitea.com", "www.gitea.com"];
     if (parsed.protocol !== "https:" || !namespaceHosts.includes(parsed.hostname.toLowerCase())) return "";
     return parsed.pathname.split("/").filter(Boolean).length === 1 ? parsed.toString() : "";
   }
@@ -14545,7 +14874,7 @@
       return `This account hosts as many repositories on ${platformName()} as it may. Delete one, or host more from your own node.`;
     }
     if (code === "invalid_import_url") {
-      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org"]).join(", ")}.`;
+      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org", "gitea.com"]).join(", ")}.`;
     }
     if (code === "organization_not_found") return "That organization does not exist.";
     return "Could not create the repository.";
@@ -14595,11 +14924,11 @@
     const sourceValue = String($("[data-new-repo-source-value]")?.value || "").trim();
     if (source === "provider") {
       if (!state.session?.sessionToken) {
-        setNewRepoHint("Sign in to import a GitHub, GitLab, or Codeberg repository.", "bad");
+        setNewRepoHint("Sign in to import a GitHub, GitLab, Codeberg, or Gitea repository.", "bad");
         return;
       }
       if (!sourceValue) {
-        setNewRepoHint("Enter a GitHub, GitLab, or Codeberg repository URL.", "bad");
+        setNewRepoHint("Enter a GitHub, GitLab, Codeberg, or Gitea repository URL.", "bad");
         $("[data-new-repo-source-value]")?.focus();
         return;
       }
@@ -14692,7 +15021,7 @@
         setNewRepoHint(
           code === "provider_rate_limited" ? "The provider rate limit was reached. Try again after its reset time."
             : code.includes("authorization") ? "The provider rejected access. Private repositories require a valid scoped token."
-            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, or codeberg.org repository URL."
+            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, codeberg.org, or gitea.com repository URL."
             : code === "empty_namespace" ? "That organization listed no importable repositories. A private group needs a token with read access."
             : code === "namespace_import_failed" ? "None of that organization's repositories could be read."
             : code === "provider_request_failed" ? "The provider did not recognise that organization. Check the group path, or add a token if it is private."
@@ -19103,7 +19432,7 @@
         ev = {
           ...ev,
           ...(edit ? { body: edit.body } : {}),
-          _canManage: Boolean(options.canManage),
+          _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
           _edited: Boolean(edit),
           _reactions: ev.id
             ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(ev.id),
@@ -20773,7 +21102,7 @@
 
   function pullInlineCommentsForPath(path) {
     const conversation = state.repoRecordDetail?.kind === "pulls"
-      ? state.repoRecordDetail.parsed?.pullConversation || []
+      ? foldPullCommentChanges(state.repoRecordDetail.parsed?.pullConversation)
       : [];
     const submitted = conversation.filter((event) =>
       (event?.type === "line-comment" || event?.type === "thread-comment")
@@ -21397,6 +21726,7 @@
     if (list) {
       list.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
       list.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
+      window.lucide?.createIcons();
     }
     const count = document.querySelector("[data-repo-pull-timeline-count]");
     if (count) count.textContent = formatCount(parsed.pullTimeline.length);
@@ -22575,8 +22905,12 @@
     if (ev.type === "thread-reply") return { label: "reply", tone: neutral };
     if (ev.type === "thread-state") return { label: `thread ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
     if (ev.type === "suggestion-state") return { label: `suggestion ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
+    if (ev.type === "force-push") return { label: "force-pushed", tone: neutral };
     if (ev.type === "status") return { label: "closed this pull request", tone: neutral };
     if (ev.type === "delete") return { label: "deleted this pull request", tone: neutral };
+    if (ev.type === "revision") {
+      return { label: ev.state ? `updated this pull request to revision ${ev.state}` : "updated this pull request", tone: neutral };
+    }
     return { label: "comment", tone: neutral };
   }
 
@@ -22587,6 +22921,10 @@
     const rows = Array.isArray(events) ? events : [];
     const byAuthor = new Map();
     for (const ev of rows) {
+      if (ev.type === "force-push") {
+        for (const reviewer of byAuthor.values()) reviewer.olderCommit = true;
+        continue;
+      }
       if (ev.type !== "review" || !ev.state) continue;
       const key = ev.author || ev.authorName || "";
       if (!key) continue;
@@ -22594,6 +22932,7 @@
         author: ev.author || "",
         authorName: ev.authorName || ev.author || "unknown",
         state: ev.state,
+        olderCommit: false,
       });
     }
     return Array.from(byAuthor.values());
@@ -22637,7 +22976,10 @@
     return gate + reviewers.map((reviewer) => {
       const tone = reviewer.state === "approved" ? "text-success" : reviewer.state === "changes_requested" ? "text-destructive" : "text-muted-foreground";
       const label = reviewer.state === "approved" ? "Approved" : reviewer.state === "changes_requested" ? "Requested changes" : "Commented";
-      return `<span class="mt-1.5 flex items-center justify-between gap-2 first:mt-0"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}${issuePersonNameHtml(reviewer.authorName, "truncate font-medium text-foreground")}</span><span class="shrink-0 text-[10px] font-semibold ${tone}">${escapeHtml(label)}</span></span>`;
+      const older = reviewer.olderCommit
+        ? `<span class="shrink-0 text-[10px] text-muted-foreground" title="The branch was force-pushed after this review" data-repo-pull-review-older>on an older commit</span>`
+        : "";
+      return `<span class="mt-1.5 flex items-center justify-between gap-2 first:mt-0"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}${issuePersonNameHtml(reviewer.authorName, "truncate font-medium text-foreground")}</span><span class="inline-flex shrink-0 items-center gap-1.5">${older}<span class="text-[10px] font-semibold ${tone}">${escapeHtml(label)}</span></span></span>`;
     }).join("");
   }
 
@@ -22665,6 +23007,15 @@
     const author = ev.authorName || ev.author || (ev.type === "agent" ? "Agent" : "unknown");
     const body = String(ev.body || "").trim();
     const commit = String(ev.hash || "").slice(0, 7);
+    if (ev.type === "force-push") {
+      const branch = String(ev.ref || "").replace(/^refs\/heads\//, "");
+      const before = String(ev.before || "").slice(0, 7);
+      const after = String(ev.after || "").slice(0, 7);
+      const compare = ev.compareUrl
+        ? `<a href="${escapeHtml(ev.compareUrl)}" data-repo-pull-force-push-compare class="font-medium text-[var(--dashboard-link)] hover:underline">Compare</a>`
+        : "";
+      return renderIssueTimelineEvent("git-branch", author, ev.author, `<span>force-pushed</span>${branch ? `<span class="font-mono text-[12px] text-foreground">${escapeHtml(branch)}</span>` : ""}${before && after ? `<span>from</span><span class="font-mono text-[12px]">${escapeHtml(before)}</span><span>to</span><span class="font-mono text-[12px]">${escapeHtml(after)}</span>` : ""}${compare}`, ev.ts);
+    }
     if (ev.type === "commit") {
       return renderIssueTimelineEvent("git-commit-horizontal", author.replace(/\s*<[^>]*>\s*$/, "") || author, ev.author, `<span class="min-w-0 truncate text-foreground">${escapeHtml(body || "Commit")}</span>${commit ? `<span class="font-mono text-[12px]">${escapeHtml(commit)}</span>` : ""}`, ev.ts);
     }
@@ -22673,7 +23024,8 @@
         : ev.type === "review" && ev.state === "approved" ? "check"
           : ev.type === "review" && ev.state === "changes_requested" ? "file-diff"
             : ev.type === "status" ? "git-pull-request-closed"
-              : ev.type === "delete" ? "trash-2" : "eye";
+              : ev.type === "delete" ? "trash-2"
+                : ev.type === "revision" ? "git-commit-horizontal" : "eye";
       return renderIssueTimelineEvent(icon, author, ev.author, `<span class="${meta.tone.split(" ").filter((name) => name.startsWith("text-")).join(" ")}">${escapeHtml(meta.label)}</span>${ev.type === "agent" && ev.branchName ? `<span class="font-mono text-[12px]">${escapeHtml(ev.branchName)}</span>` : ""}${anchor ? `<span class="truncate font-mono text-[12px]">${escapeHtml(anchor)}</span>` : ""}`, ev.ts, "", ev.type === "agent");
     }
     const fullDate = formatRecordDateTime(ev.ts);
@@ -22686,9 +23038,14 @@
             <span>${ev.type === "review" ? escapeHtml(meta.label) : "commented"}</span>
             <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>
             ${anchor ? `<span class="min-w-0 truncate font-mono text-[12px]">on ${escapeHtml(anchor)}</span>` : ""}
+            ${ev._edited ? "<span>· edited</span>" : ""}
             ${ev.type !== "review" && ev.type !== "comment" ? `<span class="ml-auto rounded-full border px-2 text-[12px] font-medium leading-5 ${meta.tone}">${escapeHtml(meta.label)}</span>` : ""}
+            ${ev._canManage ? `<span class="${ev.type !== "review" && ev.type !== "comment" ? "" : "ml-auto "}inline-flex items-center gap-0.5">
+              <button type="button" data-repo-pull-comment-edit="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Edit comment"><i data-lucide="pencil" class="h-4 w-4"></i></button>
+              ${ev.type === "review" ? "" : `<button type="button" data-repo-pull-comment-delete="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete comment"><i data-lucide="trash-2" class="h-4 w-4"></i></button>`}
+            </span>` : ""}
           </div>
-          <div class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>
+          <div data-repo-issue-comment-text class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>
           ${commentReactionEventBar(ev, "px-4 pb-3")}
         </div>
       </div>`;
@@ -22704,7 +23061,11 @@
 
   function renderRepoPullConversation(events) {
     const rows = Array.isArray(events) ? events : [];
-    return rows.filter((ev) => ev?.type !== "open").map(renderPullConversationEvent).join("");
+    return rows.filter((ev) => ev?.type !== "open")
+      .map((ev) => (ev.id && !ev.pending && PULL_EDITABLE_COMMENT_TYPES.has(ev.type) && webSessionAuthored(ev)
+        ? { ...ev, _canManage: true }
+        : ev))
+      .map(renderPullConversationEvent).join("");
   }
 
   function pullTimestamp(value) {
@@ -22942,6 +23303,43 @@
     }
   }
 
+  const PULL_EDITABLE_COMMENT_TYPES = new Set([
+    "comment", "review", "line-comment", "thread-comment", "thread-reply",
+  ]);
+
+  function pullCommentChangeApplies(change, target) {
+    if (!change || !target || !PULL_EDITABLE_COMMENT_TYPES.has(target.type)) return false;
+    if (change.author && change.author === target.author) return true;
+    const name = String(change.authorName || "").trim().toLowerCase();
+    return Boolean(name) && name === String(target.authorName || "").trim().toLowerCase();
+  }
+
+  function foldPullCommentChanges(events) {
+    const rows = (Array.isArray(events) ? events : []).filter(Boolean);
+    const byId = new Map(rows.filter((ev) => ev.id).map((ev) => [String(ev.id), ev]));
+    const edits = new Map();
+    const deleted = new Set();
+    for (const ev of rows) {
+      if (ev.type !== "comment-edit" && ev.type !== "comment-delete") continue;
+      const id = String(ev.target || "");
+      const target = byId.get(id);
+      if (!pullCommentChangeApplies(ev, target)) continue;
+      if (ev.type === "comment-delete") {
+        if (target.type === "review") continue;
+        deleted.add(id);
+      } else if (!edits.has(id) || pullTimestamp(edits.get(id).ts) <= pullTimestamp(ev.ts)) {
+        edits.set(id, ev);
+      }
+    }
+    return rows
+      .filter((ev) => ev.type !== "comment-edit" && ev.type !== "comment-delete")
+      .filter((ev) => !deleted.has(String(ev.id || "")))
+      .map((ev) => {
+        const edit = edits.get(String(ev.id || ""));
+        return edit ? { ...ev, body: edit.body, _edited: true } : ev;
+      });
+  }
+
   function buildRepoPullTimeline(values, conversation, commits, agents) {
     const opener = {
       id: "open",
@@ -22951,7 +23349,7 @@
       ts: values?.ts || values?.createdAt || 0,
       body: "",
     };
-    return [opener, ...(commits || []), ...(conversation || []), ...(agents || [])]
+    return [opener, ...(commits || []), ...foldPullCommentChanges(conversation), ...(agents || [])]
       .filter(Boolean)
       .sort((left, right) => pullTimestamp(left.ts) - pullTimestamp(right.ts));
   }
@@ -23156,6 +23554,13 @@
         line: Number(values.line || 0),
         lineStart: Number(values.lineStart || 0),
         lineEnd: Number(values.lineEnd || 0),
+        target: values.target || "",
+        ref: values.ref || "",
+        before: immutableGitCommit(values.before || ""),
+        after: immutableGitCommit(values.after || ""),
+        compareUrl: values.type === "force-push" && immutableGitCommit(values.before || "") && immutableGitCommit(values.after || "")
+          ? repoCompareUrl(repo, values.before, values.after)
+          : "",
         body: parsed.body || "",
       };
     }).filter(Boolean);
@@ -23716,9 +24121,9 @@
     window.addEventListener("resize", reposition);
   }
 
-  function openIssueCommentEditor(target, body) {
-    const button = [...document.querySelectorAll("[data-repo-issue-comment-edit]")]
-      .find((node) => node.dataset.repoIssueCommentEdit === String(target));
+  function openIssueCommentEditor(target, body, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
+    const button = [...document.querySelectorAll(selector)]
+      .find((node) => node.dataset[key] === String(target));
     const card = button?.closest("[data-repo-issue-comment]");
     const panel = card?.querySelector(".rounded-md.border");
     if (!panel) return Promise.resolve(window.prompt("Edit comment", body));
@@ -23778,7 +24183,7 @@
     if (!state.session?.nodeName) {
       return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to comment on or review this pull request.</div>`;
     }
-    return `
+    return `${renderPullRevisionPanel(number, parsed)}
       <form data-repo-pull-review-form data-repo-pull-review-number="${escapeHtml(number)}" class="grid min-w-0 gap-4 border-t-2 border-border pt-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(state.session.nodeName, state.session.nodeName, "h-10 w-10")}</span>
         <div class="grid min-w-0 gap-2">
@@ -43933,19 +44338,42 @@
       list.innerHTML = '<div class="px-3 py-4 text-xs text-muted-foreground">No pings yet. Mentions, PRs, assignments, shares, bounties, releases, and host status changes will appear here.</div>';
       return;
     }
-    list.innerHTML = items.map((item) => `
-      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full px-3 py-2 text-left hover:bg-secondary transition-colors ${item.readAt ? "opacity-70" : ""}">
-        <div class="flex items-start gap-2">
-          <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
+    list.innerHTML = items.map((item) => {
+      const lead = notificationLead(item);
+      const unreadItem = !item.readAt;
+      const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
+      const avatar = lead.actor
+        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
+          <span class="absolute bottom-0 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">${icon}</span>`
+        : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
+      return `
+      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full rounded-md px-2.5 py-2 text-left hover:bg-secondary transition-colors">
+        <div class="flex items-start gap-2.5">
+          <span class="relative mt-0.5 shrink-0">${avatar}</span>
           <div class="min-w-0 flex-1">
-            <p class="truncate text-xs font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
-            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || `${platformName()} update`)}</p>
+            <div class="flex items-center gap-2">
+              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
+              <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
+              ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
+            </div>
+            <p class="mt-0.5 line-clamp-2 break-words text-xs leading-5 ${unreadItem ? "text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</p>
           </div>
-          <span class="shrink-0 text-[10px] text-muted-foreground font-mono">${escapeHtml(notificationTimeLabel(item.ts))}</span>
         </div>
       </button>
-    `).join("");
+    `;
+    }).join("");
     window.lucide?.createIcons();
+  }
+
+  function notificationLead(item) {
+    const actor = String(item?.actor || "").trim();
+    const number = Number(item?.meta?.number) || 0;
+    const repo = item?.repo ? repoPublicKey(item.repo) : "";
+    const where = [repo, number > 0 ? `#${number}` : ""].filter(Boolean).join(" ");
+    const title = repoPublicText(item?.title) || "Ping";
+    const body = String(repoPublicText(item?.body) || "").replace(/\s+/g, " ").trim();
+    if (actor) return { actor, head: actor, where, text: body || title };
+    return { actor: "", head: title, where, text: body || `${platformName()} update` };
   }
 
   function renderNotificationDetail(item) {
@@ -44158,6 +44586,7 @@
     state.selectedNotificationId = selected?.id || "";
     list.innerHTML = state.notifications.map((item) => {
       const active = item.id === state.selectedNotificationId;
+      const lead = notificationLead(item);
       const settingsTitle = pingKindLabel(item.kind)
         ? `${pingKindLabel(item.kind)}: ping settings`
         : "Ping settings";
@@ -44171,8 +44600,8 @@
                 <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
               </span>
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-xs font-medium">${escapeHtml(item.title || "Ping")}</span>
-                <span class="mt-1 block truncate text-[11px] font-mono">${escapeHtml(item.repo || item.kind || "forkmesh")}</span>
+                <span class="block truncate text-[11px]"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
               </span>
             </span>
           </button>
@@ -46251,6 +46680,18 @@
           "delete-comment",
           issueCommentDeleteButton.dataset.repoIssueCommentDelete || "",
         );
+        return;
+      }
+
+      const pullCommentEditButton = event.target.closest("[data-repo-pull-comment-edit]");
+      if (pullCommentEditButton) {
+        void handleWebPullCommentAction("edit", pullCommentEditButton.dataset.repoPullCommentEdit || "");
+        return;
+      }
+
+      const pullCommentDeleteButton = event.target.closest("[data-repo-pull-comment-delete]");
+      if (pullCommentDeleteButton) {
+        void handleWebPullCommentAction("delete", pullCommentDeleteButton.dataset.repoPullCommentDelete || "");
         return;
       }
 

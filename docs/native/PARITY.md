@@ -52,7 +52,7 @@ desktop-only; on-device models run through MLX on iOS).
 | 28 | Code editor with key bar, and the highlighter |
 | 29 | Local repositories: create, import zip, browse, edit, commit, publish, PR |
 | 30 | Clone to device from the mesh |
-| 31 | Mirror import (GitHub, GitLab, Codeberg) and import tokens |
+| 31 | Mirror import (GitHub, GitLab, Codeberg, Gitea) and import tokens |
 | 32 | Signed inbox writes (issues, PRs, comments) |
 | 33 | Bounties, funding and the donation wallet panels (read-only; no wallet keys) |
 | 34 | Serve as a node (node-sync drain and applier) |

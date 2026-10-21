@@ -60,6 +60,7 @@ type collaborationItem struct {
 	TitleIfNew     string           `json:"titleIfNew"`
 	Event          map[string]any   `json:"event"`
 	Pull           map[string]any   `json:"pull"`
+	Revision       map[string]any   `json:"revision"`
 	Meta           map[string]any   `json:"meta"`
 	AttachmentData []map[string]any `json:"attachmentData"`
 	FediverseID    string           `json:"fediverseMentionId"`
@@ -215,7 +216,7 @@ func materializeDirectCollaboration(ctx context.Context, repo Repository,
 		return number, commitCollaboration(ctx, dir, ".forkmesh/issues",
 			fmt.Sprintf("issue #%d: direct mirror intake", number))
 	case "pulls":
-		if len(item.Event) == 0 && len(item.Pull) == 0 {
+		if len(item.Event) == 0 && len(item.Pull) == 0 && len(item.Revision) == 0 {
 			return 0, errors.New("pull or pull event is required")
 		}
 		branch := "forkmesh/pulls"
@@ -1125,7 +1126,7 @@ func materializePullInbox(ctx context.Context, repo Repository,
 func commitPullIntake(ctx context.Context, repo Repository, dir string,
 	item collaborationItem, number int, message string) error {
 	head := ""
-	if len(item.Pull) != 0 {
+	if len(item.Pull) != 0 || len(item.Revision) != 0 {
 		head, _ = recordPullHead(ctx, repo.GitDir, dir, number)
 	}
 	if err := commitCollaboration(ctx, dir, ".forkmesh/pulls", message); err != nil {
@@ -1226,6 +1227,9 @@ func writePullItem(root string, item collaborationItem) (bool, int, error) {
 	if err := os.MkdirAll(base, 0700); err != nil {
 		return false, 0, err
 	}
+	if len(item.Revision) != 0 {
+		return writePullRevision(base, item)
+	}
 	if len(item.Event) != 0 {
 		number := item.Number
 		pullDir := filepath.Join(base, strconv.Itoa(number))
@@ -1301,6 +1305,114 @@ func writePullItem(root string, item collaborationItem) (bool, int, error) {
 		}
 	}
 	return true, number, nil
+}
+
+func writePullRevision(base string, item collaborationItem) (bool, int, error) {
+	number := item.Number
+	revision := item.Revision
+	pullDir := filepath.Join(base, strconv.Itoa(number))
+	recordPath := filepath.Join(pullDir, "pull.md")
+	raw, err := os.ReadFile(recordPath)
+	if number <= 0 || err != nil {
+		return false, number, nil
+	}
+	matter, ok := parseFrontMatter(raw)
+	sig := safeHeader(stringValue(revision["sig"]))
+	if !ok || sig == "" {
+		return true, number, nil
+	}
+	if matter.values["sig"] == sig {
+		return true, number, nil
+	}
+	ts := issueNumber(revision["ts"])
+	stored, _ := strconv.Atoi(matter.values["ts"])
+	if matter.values["status"] != "open" || matter.values["derive"] == "branch" ||
+		safeHeader(stringValue(revision["author"])) != matter.values["author"] ||
+		ts <= stored {
+		return true, number, nil
+	}
+	current, _ := strconv.Atoi(matter.values["revision"])
+	if current < 1 {
+		current = 1
+	}
+	archive := filepath.Join(pullDir, "revisions", strconv.Itoa(current))
+	if err := os.MkdirAll(archive, 0700); err != nil {
+		return false, number, err
+	}
+	for _, name := range []string{"pull.md", "changes.patch", "commits.mbox"} {
+		content, err := os.ReadFile(filepath.Join(pullDir, name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return false, number, err
+		}
+		if err := os.WriteFile(filepath.Join(archive, name), content, 0600); err != nil {
+			return false, number, err
+		}
+	}
+	replacements := map[string]string{
+		"title":           safeHeader(stringValue(revision["title"])),
+		"base":            safeHeader(stringValue(revision["base"])),
+		"head":            safeHeader(stringValue(revision["head"])),
+		"ts":              strconv.Itoa(ts),
+		"sig":             sig,
+		"revision":        strconv.Itoa(current + 1),
+		"creationBaseOid": safeHeader(stringValue(revision["creationBaseOid"])),
+		"creationHeadOid": safeHeader(stringValue(revision["creationHeadOid"])),
+		"headBaseOid":     "",
+		"headOid":         "",
+	}
+	if replacements["title"] == "" {
+		replacements["title"] = matter.values["title"]
+	}
+	if description, ok := revision["description"].(string); ok && description != "" {
+		matter.body = []string{"", description, ""}
+	}
+	order := []string{"revision", "creationBaseOid", "creationHeadOid"}
+	if err := os.WriteFile(recordPath, matter.encode(replacements, order), 0600); err != nil {
+		return false, number, err
+	}
+	for name, key := range map[string]string{"changes.patch": "patch", "commits.mbox": "commits"} {
+		path := filepath.Join(pullDir, name)
+		content := stringValue(revision[key])
+		if content == "" {
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return false, number, err
+			}
+			continue
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			return false, number, err
+		}
+	}
+	return true, number, writePullRevisionEvent(pullDir, revision, current+1)
+}
+
+func writePullRevisionEvent(pullDir string, revision map[string]any, number int) error {
+	entries, _ := os.ReadDir(pullDir)
+	index := 2
+	for _, entry := range entries {
+		if value, err := strconv.Atoi(strings.SplitN(entry.Name(), "-", 2)[0]); err == nil && value >= index {
+			index = value + 1
+		}
+	}
+	short := safeHeader(stringValue(revision["sig"]))
+	if len(short) > 16 {
+		short = short[:16]
+	}
+	event := map[string]any{
+		"type":       "revision",
+		"id":         "revision-" + strconv.Itoa(number) + "-" + short,
+		"author":     revision["author"],
+		"authorName": revision["authorName"],
+		"ts":         revision["ts"],
+		"state":      strconv.Itoa(number),
+		"sig":        revision["revisionSig"],
+		"body":       "",
+	}
+	path := filepath.Join(pullDir, fmt.Sprintf("%04d-revision.md", index))
+	return os.WriteFile(path, []byte(pullEventMarkdown(event)), 0600)
 }
 
 var pullLifecycleStatus = map[string]string{"status": "closed", "delete": "deleted"}
@@ -1385,7 +1497,7 @@ func pullMarkdown(number int, pull map[string]any) string {
 
 func pullEventMarkdown(event map[string]any) string {
 	lines := []string{"---"}
-	for _, key := range []string{"type", "id", "author", "authorName", "authorClaimedName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "appliedCommit", "patchset", "sig"} {
+	for _, key := range []string{"type", "id", "author", "authorName", "authorClaimedName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "target", "appliedCommit", "patchset", "ref", "before", "after", "sig"} {
 		if value, ok := event[key]; ok && fmt.Sprint(value) != "" {
 			lines = append(lines, key+": "+safeHeader(fmt.Sprint(value)))
 		}

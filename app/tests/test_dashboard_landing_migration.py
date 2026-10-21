@@ -625,9 +625,9 @@ def test_dashboard_profile_tabs_link_to_network_without_placeholder_tabs():
         assert ">40<" not in tabs
 
     # The active tab underline is baked into each page's own view.
-    assert 'href="/dashboard/profile" class="inline-flex items-center gap-2 border-b-2 border-[#f78166]' in overview
-    assert 'href="/dashboard/profile/repositories" class="inline-flex items-center gap-2 border-b-2 border-[#f78166]' in repositories
-    assert 'href="/dashboard/network" class="inline-flex items-center gap-2 border-b-2 border-[#f78166]' in network
+    assert 'href="/dashboard/profile" class="inline-flex items-center gap-2 border-b-2 border-[var(--dashboard-tab-underline)]' in overview
+    assert 'href="/dashboard/profile/repositories" class="inline-flex items-center gap-2 border-b-2 border-[var(--dashboard-tab-underline)]' in repositories
+    assert 'href="/dashboard/network" class="inline-flex items-center gap-2 border-b-2 border-[var(--dashboard-tab-underline)]' in network
     assert 'data-network-page-inner class="w-full px-4 py-6 sm:px-6 lg:px-8"' in network
     assert "mx-auto max-w-[1432px]" in network
     for icon in ("shield", "zap", "lock", "refresh-cw"):

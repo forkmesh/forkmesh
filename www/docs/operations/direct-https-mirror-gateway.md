@@ -171,7 +171,10 @@ never by hand in the generated gateway file:
 
 On a capability-bound push the gateway creates
 `<writableRepositoryRoot>/<owner>/<repo>.git`, runs `git receive-pack` with
-deletes, non-fast-forwards and hooks refused, records it in
+deletes and repository hooks refused and non-fast-forwards refused unless the
+capability carries a `rewrite=` grant (then the gateway's own pre-receive
+decides per ref and keeps each replaced tip under `refs/forkmesh/history/`;
+see `docs/CORE_PUSH.md#force-pushes`), records it in
 `hosted-pushes.json` (treated as untrusted input) and touches
 `/run/forkmesh-mirror-refresh/pending` to trigger a refresh. At most two pushes
 run at once (`503 push_busy`). The pushing device, not the node, publishes the

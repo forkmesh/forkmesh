@@ -1,4 +1,6 @@
 #include "MarkdownEditor.h"
+#include "MarkdownDocument.h"
+#include "MarkdownRender.h"
 #include "PromptSpellCheckHighlighter.h"
 
 #include <QClipboard>
@@ -187,6 +189,7 @@ void MarkdownEditor::showPreview()
     hideMentionPopup();
     updatePreview();
     m_stack->setCurrentWidget(m_preview);
+    forkmesh::ui::styleReadmeDocument(m_preview);
     m_writeTab->setChecked(false);
     m_previewTab->setChecked(true);
 }
@@ -341,7 +344,9 @@ void MarkdownEditor::updatePreview()
         previewMarkdown.replace(m_attachmentPlaceholders.at(i),
                                 QUrl::fromLocalFile(m_attachments.at(i)).toString());
     }
-    m_preview->setMarkdown(previewMarkdown);
+    m_preview->setMarkdown(MarkdownRender::forPreview(previewMarkdown));
+    if (m_stack && m_stack->currentWidget() == m_preview)
+        forkmesh::ui::styleReadmeDocument(m_preview);
 }
 
 void MarkdownEditor::wrapSelection(const QString &left, const QString &right)

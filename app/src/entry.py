@@ -1089,6 +1089,7 @@ NOTIFICATION_ITEM_NOUNS = {
 # missing, or held by an account the digest cannot read — falls back to the
 # actor's name, which every item renders either way.
 NOTIFICATION_EMAIL_AVATAR_MAX_B64 = 12 * 1024
+NOTIFICATION_EMAIL_SNIPPET_MAX = 90
 # The same portrait, for the phone's lock screen. A push alert carries it as a
 # UNNotificationAttachment thumbnail roughly 40pt square, so this only has to
 # be big enough to look sharp there — and the whole response is read inside an
@@ -1322,6 +1323,7 @@ verify_discussion_event = _events.export("verify_discussion_event")
 event_signing_repo_keys = _events.export("event_signing_repo_keys")
 verify_issue_event = _events.export("verify_issue_event")
 verify_pull_comment_event = _events.export("verify_pull_comment_event")
+verify_pull_revision = _events.export("verify_pull_revision")
 verify_branch_comment_event = _events.export("verify_branch_comment_event")
 verify_pull_event = _events.export("verify_pull_event")
 verify_release_manifest = _events.export("verify_release_manifest")
@@ -32324,7 +32326,7 @@ def _account_email_activity(rec):
     }
 
 
-# --- External GitHub/GitLab/Codeberg metadata imports -----------------------
+# --- External GitHub/GitLab/Codeberg/Gitea metadata imports -----------------
 #
 # Provider imports live in a separate D1 namespace from the mirror catalog.
 # repository_imports.py owns the provider-neutral policy/service layer; these
@@ -32348,8 +32350,8 @@ async def _repository_provider_fetch(env, provider, path, token=""):
         headers["x-github-api-version"] = "2026-03-10"
         if token:
             headers["authorization"] = "Bearer " + token
-    elif provider == "codeberg":
-        # Codeberg runs Forgejo's Gitea-compatible API. Its access token is
+    elif provider in repository_import.GITEA_API_PROVIDERS:
+        # Codeberg (Forgejo) and gitea.com share Gitea's API. Its access token is
         # request-scoped exactly like the other provider credentials and is
         # never persisted or forwarded across a redirect.
         if token:
@@ -36767,6 +36769,58 @@ async def _authorize_issue_manager(env, owner, data, request=None):
     return False, err
 
 
+ISSUE_OWN_EDITABLE_EVENT_TYPES = frozenset({"comment", "open"})
+
+
+async def _issue_comment_owned_by_submitter(env, owner, repo, number, event):
+    target = clean_string(event.get("target", "") or "", 200).strip()
+    if not target or target == "self" or int(number or 0) <= 0:
+        return False
+    author = str(event.get("author", "") or "").strip()
+    actor = clean_string(
+        event.get("authorName", "") or "", MAX_NODE_NAME).strip().lower()
+    if not event.get("authorVerified"):
+        actor = ""
+    if not author and not actor:
+        return False
+    paths = _forkbot_issue_json_candidates(number)
+    try:
+        data = await _forkbot_repo_gateway_json(
+            env, owner, repo,
+            "blobs?" + "&".join("path=" + quote(p, safe="") for p in paths))
+    except Exception:
+        return False
+    blobs = data.get("blobs") if isinstance(data, dict) else None
+    if not isinstance(blobs, dict):
+        return False
+    for path in paths:
+        text = _forkbot_blob_text(blobs.get(path))
+        if not text:
+            continue
+        try:
+            record = json.loads(text)
+        except Exception:
+            continue
+        events = record.get("events") if isinstance(record, dict) else None
+        if not isinstance(events, list):
+            continue
+        for item in events:
+            if not isinstance(item, dict) or str(item.get("id") or "") != target:
+                continue
+            allowed = ISSUE_OWN_EDITABLE_EVENT_TYPES
+            if event.get("type") == "delete":
+                allowed = frozenset({"comment"})
+            if item.get("type") not in allowed:
+                return False
+            if author and str(item.get("author") or "").strip() == author:
+                return True
+            target_name = clean_string(
+                item.get("authorName", "") or "", MAX_NODE_NAME).strip().lower()
+            return bool(actor) and target_name == actor
+        return False
+    return False
+
+
 async def _authorize_issue_self_claim(env, data, request, event):
     """Authorize a signed-in visitor claiming (or releasing) an issue themselves.
 
@@ -36953,7 +37007,8 @@ async def _promote_hosted_repository_import(env, catalog_record):
     rows = await d1_all(
         env,
         "SELECT id, data FROM repository_imports "
-        "WHERE provider IN ('github','gitlab','codeberg') AND is_private=0 "
+        "WHERE provider IN ('github','gitlab','codeberg','gitea') "
+        "AND is_private=0 "
         "AND status NOT IN ('actively_mirrored','archived') "
         "ORDER BY updated_at DESC LIMIT ?",
         repository_import.MAX_PUBLIC_IMPORTS,
@@ -36986,11 +37041,8 @@ async def _promote_hosted_repository_import(env, catalog_record):
         return 1
 
     for row, record, target_owner in sorted(candidates, key=branch_rank):
-        provider_label = {
-            "github": "GitHub",
-            "gitlab": "GitLab",
-            "codeberg": "Codeberg",
-        }.get(clean_string(record.get("provider"), 40).lower(), "provider")
+        provider_label = repository_import.PROVIDER_LABELS.get(
+            clean_string(record.get("provider"), 40).lower(), "provider")
         now = int(Date.now())
         record["status"] = "actively_mirrored"
         record["statusLabel"] = "Actively mirrored"
@@ -38989,12 +39041,13 @@ def _forkmesh_email_card_html(
         "<img class=\"fm-brand\" "
         "src=\"https://app.forkmesh.com/assets/logo-96.png\" "
         "width=\"32\" alt=\"ForkMesh\" style=\"display:block;border:0;"
-        "outline:none;width:32px;height:auto\">"
-        "<h1 class=\"fm-h1\" style=\"margin:28px 0 12px;color:#171717;"
-        "font-size:22px;line-height:1.3;font-weight:600;"
-        "letter-spacing:-0.01em\">" + heading + "</h1>"
-        "<p class=\"fm-text\" style=\"margin:0 0 20px;color:#525252;font-size:14px\">" +
-        intro_html + "</p>" + body_html +
+        "outline:none;width:32px;height:auto\">" +
+        ("<h1 class=\"fm-h1\" style=\"margin:28px 0 12px;color:#171717;"
+         "font-size:22px;line-height:1.3;font-weight:600;"
+         "letter-spacing:-0.01em\">" + heading + "</h1>"
+         if heading else "<div style=\"height:24px\"></div>") +
+        ("<p class=\"fm-text\" style=\"margin:0 0 20px;color:#525252;font-size:14px\">" +
+         intro_html + "</p>" if intro_html else "") + body_html +
         (footer_html if footer_html else "") +
         _forkmesh_email_action_html(action_label, action_url) +
         "<p data-forkmesh-email-link style=\"margin:20px 0 0;color:#737373;"
@@ -39186,6 +39239,14 @@ def _push_alert_item(it, aliases=None, avatars=None):
         title = ("#" + str(number) + " " + title).strip()
     subtitle = " \xb7 ".join(
         [part for part in (repo, ("by " + actor) if actor else "") if part])
+    body = clean_string(it.get("body", ""), PUSH_ALERT_BODY_MAX).strip()
+    if actor:
+        where = " ".join(part for part in (
+            repo, ("#" + str(number)) if number > 0 else "") if part)
+        title = actor + ((" \xb7 " + where) if where else "")
+        body = body or _notification_digest_title(
+            clean_string(it.get("title", ""), 160), repo, stored_repo)
+        subtitle = ""
     meta = it.get("meta")
     if (kind == "desktop_ping" and isinstance(meta, dict)
             and meta.get("desktopKind") == "agent-done"):
@@ -39207,7 +39268,7 @@ def _push_alert_item(it, aliases=None, avatars=None):
         "id": clean_string(it.get("id", ""), 160),
         "title": with_icon(title or "Notification", alert_icon(kind, meta)),
         "subtitle": subtitle,
-        "body": clean_string(it.get("body", ""), PUSH_ALERT_BODY_MAX).strip(),
+        "body": body,
         "actor": actor,
         "repo": repo,
         "kind": kind,
@@ -39258,7 +39319,6 @@ def _notification_actor_html(actor, avatar_b64="", base_url=""):
             "<a href=\"" + _html_escape(_notification_item_url(
                 base_url, "/@" + quote(handle, safe=""))) + "\" "
             "style=\"color:#0969da;text-decoration:none\">" + name_html + "</a>")
-    name_html = "by " + name_html
     # Rejected, never truncated: half a base64 blob is a broken image, and
     # the byline reads correctly without one.
     avatar = clean_string(avatar_b64 or "", MAX_AVATAR_B64).strip()
@@ -39266,10 +39326,10 @@ def _notification_actor_html(actor, avatar_b64="", base_url=""):
             or not AVATAR_B64_RE.match(avatar)):
         return name_html
     return (
-        "<img src=\"data:image/png;base64," + avatar + "\" width=\"18\" "
-        "height=\"18\" alt=\"" + _html_escape(actor) + "\" "
-        "style=\"width:18px;height:18px;border-radius:9px;"
-        "vertical-align:middle;border:1px solid #d0d7de;margin-right:5px\">"
+        "<img src=\"data:image/png;base64," + avatar + "\" width=\"20\" "
+        "height=\"20\" alt=\"" + _html_escape(actor) + "\" "
+        "style=\"width:20px;height:20px;border-radius:10px;"
+        "vertical-align:middle;border:1px solid #d0d7de;margin-right:6px\">"
         + name_html)
 
 
@@ -39320,32 +39380,55 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
     if url:
         lines.append("    " + url)
     record = _notification_record_label(repo, segment, number)
+    where = " ".join(filter(None, [
+        repo, ("#" + str(number)) if number > 0 else ""]))
     meta_html = " &middot; ".join(filter(None, [
-        _html_escape("#" + str(number)) if number > 0 else "",
         _notification_actor_html(actor, avatars.get(actor.lower(), ""), base_url),
+        _html_escape(where) if where else "",
         _html_escape(when) if when else "",
     ]))
-    # The number rides the meta line below in HTML, so the heading keeps
-    # the plain-text form's "[owner/repo] Title" without repeating it.
-    heading_html = _html_escape(prefix + title)
+    label_html = _html_escape(title)
     if url:
-        heading_html = (
+        label_html = (
             "<a href=\"" + _html_escape(url) + "\" "
-            "style=\"color:#0969da;text-decoration:none\">" +
-            heading_html + "</a>")
+            "style=\"color:" + ("#0969da" if body else "#24292f") +
+            ";text-decoration:none\">" + label_html +
+            (" &rarr;" if body else "") + "</a>")
+    head_html = (
+        "<p class=\"fm-muted\" style=\"margin:0 0 8px;color:#8a8a93;font-size:12px;"
+        "line-height:20px\">" + meta_html + "</p>" if meta_html else "")
+    if body:
+        content_html = (
+            "<div class=\"fm-item-body\" style=\"margin:0;color:#f5f5f5;"
+            "font-size:15px;line-height:1.55\">" + _chat_format.to_html(
+                body, _notification_item_url(base_url, "/")) + "</div>"
+            "<p class=\"fm-item-title\" style=\"margin:10px 0 0;font-size:12px;"
+            "font-weight:600\">" + label_html + "</p>")
+    else:
+        content_html = (
+            "<p class=\"fm-item-title\" style=\"margin:0;color:#f5f5f5;"
+            "font-size:15px;font-weight:600\">" + label_html + "</p>")
     item_html = (
-        "<div class=\"fm-item\" style=\"border:1px solid #313134;border-radius:8px;"
-        "background:#0f0f11;padding:12px 14px;margin:0 0 10px\">"
-        "<p class=\"fm-item-title\" style=\"margin:0;color:#f5f5f5;font-size:14px;"
-        "font-weight:800\">" + heading_html + "</p>" +
-        ("<p class=\"fm-muted\" style=\"margin:4px 0 0;color:#8a8a93;font-size:12px\">" +
-         meta_html + "</p>" if meta_html else "") +
-        ("<div class=\"fm-item-body\" style=\"margin:6px 0 0;color:#a3a3a3;font-size:13px;"
-         "line-height:1.45\">" + _chat_format.to_html(
-             body, _notification_item_url(base_url, "/")) + "</div>"
-         if body else "") + "</div>")
+        "<div class=\"fm-item\" style=\"border:1px solid #313134;border-radius:12px;"
+        "background:#141416;padding:14px 16px;margin:0 0 12px\">" +
+        head_html + content_html + "</div>")
+    snippet = " \xb7 ".join(filter(None, (
+        line.strip() for line in _chat_format.to_text(body).split("\n"))))
+    if len(snippet) > NOTIFICATION_EMAIL_SNIPPET_MAX:
+        snippet = snippet[:NOTIFICATION_EMAIL_SNIPPET_MAX - 1].rstrip() + "\u2026"
+    if actor:
+        lead = actor + ": " + (snippet or title) + (
+            (" \xb7 " + prefix + number_prefix).rstrip() if prefix or number_prefix
+            else "")
+    elif snippet:
+        lead = headline + " \xb7 " + snippet
+    else:
+        lead = headline
     return {
         "headline": headline,
+        "lead": lead,
+        "snippet": snippet,
+        "actor": actor,
         "url": url,
         "action_label": ("Open " + record) if (url and record) else "",
         "lines": lines,
@@ -39354,94 +39437,102 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
 
 
 def _notification_digest_email(node, items, identity=None, base_url=""):
-    """Subject/text/HTML for one recipient's unread-notification digest.
-
-    `node` is the ACCOUNT to greet — the human who owns the mailbox, not the
-    node that happens to hold the notification rows. `identity` carries what
-    only a database read can answer (see _notification_digest_identity): the
-    public slug per stored repo slug, and an actor's avatar. Rendering stays a
-    pure function of those inputs so every branch below is directly testable.
-    """
     identity = identity if isinstance(identity, dict) else {}
     aliases = identity.get("repos") if isinstance(
         identity.get("repos"), dict) else {}
     avatars = identity.get("avatars") if isinstance(
         identity.get("avatars"), dict) else {}
     n = len(items)
-    subject = ("ForkMesh: " + str(n) + " new notification" +
-               ("s" if n != 1 else ""))
-    lines = ["Hi " + (node or "there") + ",", "",
-             "You have " + str(n) + " unread ForkMesh notification" +
-             ("s" if n != 1 else "") + ":", ""]
+    lines = []
     html_items = []
     action_url = ""
     action_label = ""
+    first = None
+    actors = []
     for it in items:
         rendered = _notification_email_item(it, aliases, avatars, base_url)
+        if lines:
+            lines.append("")
         lines.extend(rendered["lines"])
         html_items.append(rendered["html"])
-        # The first item is the newest (the digest query orders ts DESC), so
-        # it is what the primary action opens.
+        first = first or rendered
+        if rendered["actor"] and rendered["actor"].lower() not in (
+                a.lower() for a in actors):
+            actors.append(rendered["actor"])
         if rendered["url"] and not action_url:
             action_url = rendered["url"]
             action_label = rendered["action_label"]
+    first = first or {"lead": "", "actor": "", "snippet": ""}
+    subject = _notification_email_subject(first) + (
+        " (+" + str(n - 1) + " more)" if n > 1 else "")
+    if len(actors) > 2:
+        heading = (actors[0] + ", " + actors[1] + " and " +
+                   str(len(actors) - 2) + " more")
+    elif actors:
+        heading = " and ".join(actors)
+    else:
+        heading = ""
+    if heading and n > 1:
+        heading += " \xb7 " + str(n) + " pings"
+    elif n > 1:
+        heading = str(n) + " pings"
+    who = clean_string(node or "", MAX_NODE_NAME)
     lines += ["", "Open ForkMesh to read and reply.",
+              ("Sent to " + who + ". " if who else "") +
               "To stop these emails, turn off email notifications in your "
               "profile settings."]
     text = "\n".join(lines)
     html = _forkmesh_email_card_html(
-        _html_escape(str(n) + " new notification" + ("s" if n != 1 else "")),
-        "Hi <strong class=\"fm-strong\" style=\"color:#f5f5f5\">" +
-        _html_escape(node or "there") +
-        "</strong>, you have " + str(n) + " unread ForkMesh notification" +
-        ("s" if n != 1 else "") + ".",
-        "<div style=\"margin:0 0 18px\">" + "".join(html_items) + "</div>"
-        "<p class=\"fm-text\" style=\"margin:0 0 16px;color:#d4d4d8;font-size:14px\">Open "
-        "ForkMesh to read and reply.</p>",
-        "<p class=\"fm-muted\" style=\"margin:22px 0 0;color:#8a8a93;font-size:12px\">To stop "
-        "these emails, update email notifications in your profile settings."
-        "</p>",
+        _html_escape(heading),
+        "",
+        "<div style=\"margin:0 0 18px\">" + "".join(html_items) + "</div>",
+        _notification_email_footer_html(
+            who, "To stop these emails, update email notifications in your "
+                 "profile settings."),
         action_label=action_label or "Open ForkMesh",
         action_url=action_url or FORKMESH_SITE_URL,
+        preheader=first["snippet"],
     )
     return subject, text, html
 
 
-def _notification_instant_email(node, item, identity=None, base_url=""):
-    """One notification, one email — the instant-delivery counterpart.
+def _notification_email_subject(rendered):
+    lead = rendered.get("lead") or "Notification"
+    if rendered.get("actor") or rendered.get("snippet"):
+        return lead
+    return "ForkMesh: " + lead
 
-    The subject carries the event itself rather than a count, which is the
-    reason to choose instant over the rollup: the mail is readable without
-    opening it. Everything below the subject is the digest's own item card, on
-    the same resolved identity (issue #652), so the two modes name a repository,
-    an actor and a deep link identically — and the single item's own record is
-    what the primary action opens.
-    """
+
+def _notification_email_footer_html(who, sentence):
+    return (
+        "<p class=\"fm-muted\" style=\"margin:22px 0 0;color:#8a8a93;font-size:12px\">" +
+        ("Sent to <strong>" + _html_escape(who) + "</strong>. " if who else "") +
+        _html_escape(sentence) + "</p>")
+
+
+def _notification_instant_email(node, item, identity=None, base_url=""):
     identity = identity if isinstance(identity, dict) else {}
     aliases = identity.get("repos") if isinstance(
         identity.get("repos"), dict) else {}
     avatars = identity.get("avatars") if isinstance(
         identity.get("avatars"), dict) else {}
     rendered = _notification_email_item(item, aliases, avatars, base_url)
-    subject = "ForkMesh: " + (rendered["headline"] or "New notification")
+    subject = _notification_email_subject(rendered)
+    who = clean_string(node or "", MAX_NODE_NAME)
+    sentence = ("To switch back to a periodic digest, or stop these emails, "
+                "update email notifications in your profile settings.")
     text = "\n".join(
-        ["Hi " + (node or "there") + ",", ""] + rendered["lines"] +
+        rendered["lines"] +
         ["", "Open ForkMesh to read and reply.",
-         "To switch back to a periodic digest, or stop these emails, update "
-         "email notifications in your profile settings."])
+         ("Sent to " + who + ". " if who else "") + sentence])
     html = _forkmesh_email_card_html(
-        _html_escape("New notification"),
-        "Hi <strong class=\"fm-strong\" style=\"color:#f5f5f5\">" +
-        _html_escape(node or "there") +
-        "</strong>, you have a new ForkMesh notification.",
-        "<div style=\"margin:0 0 18px\">" + rendered["html"] + "</div>"
-        "<p class=\"fm-text\" style=\"margin:0 0 16px;color:#d4d4d8;font-size:14px\">Open "
-        "ForkMesh to read and reply.</p>",
-        "<p class=\"fm-muted\" style=\"margin:22px 0 0;color:#8a8a93;font-size:12px\">To "
-        "switch back to a periodic digest, or stop these emails, update email "
-        "notifications in your profile settings.</p>",
+        "",
+        "",
+        "<div style=\"margin:0 0 18px\">" + rendered["html"] + "</div>",
+        _notification_email_footer_html(who, sentence),
         action_label=rendered["action_label"] or "Open ForkMesh",
         action_url=rendered["url"] or FORKMESH_SITE_URL,
+        preheader=rendered["snippet"],
     )
     return subject, text, html
 
@@ -40635,6 +40726,9 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
     }
     if event_type in owner_event_types and not actions_job:
         ok, err = await _authorize_issue_manager(env, owner, data, request)
+        if not ok and event_type in ("edit", "delete"):
+            ok = await _issue_comment_owned_by_submitter(
+                env, owner, repo, number, event)
         if not ok:
             return err
     # Self-assignment (issue #570) is the one assignment a public
@@ -41010,6 +41104,106 @@ async def _authorize_pull_lifecycle(env, owner, repo, number, data, request,
     return False, json_response({"error": "not_authorized"}, status=403), ""
 
 
+PULL_REVISION_FIELDS = ("title", "base", "head", "patch", "commits",
+                        "author", "sig", "revisionSig",
+                        "creationBaseOid", "creationHeadOid")
+
+
+async def _accept_pull_revision(env, request, data, owner, repo, repo_bi,
+                                revision):
+    try:
+        number = int(data.get("number", 0))
+    except (TypeError, ValueError):
+        number = 0
+    if number <= 0:
+        return json_response({"error": "number_required"}, status=400)
+    if any(field in revision and not isinstance(revision.get(field), str)
+           for field in PULL_REVISION_FIELDS + ("description",)):
+        return json_response({"error": "revision_invalid"}, status=400)
+    if len((revision.get("description", "") or "").encode("utf-8")) > \
+            MAX_ISSUE_BYTES:
+        return json_response({"error": "description_too_large"}, status=413)
+    revision_bytes = len((revision.get("patch", "") or "").encode("utf-8")) + \
+        len((revision.get("commits", "") or "").encode("utf-8"))
+    if revision_bytes > MAX_PULL_BYTES:
+        return json_response({"error": "pull_too_large"}, status=413)
+    if not (revision.get("patch") or revision.get("commits")):
+        return json_response({"error": "revision_empty"}, status=400)
+    if not await verify_pull_revision(
+            number, revision, _event_signing_repo_keys(request, owner, repo)):
+        return json_response({"error": "bad_signature"}, status=401)
+    record = await _pull_lifecycle_record(env, owner, repo, number)
+    if not record:
+        return json_response({"error": "pull_unavailable"}, status=503)
+    status = str(record.get("status") or "open").strip().lower()
+    if status != "open":
+        return json_response({"error": "pull_not_open"}, status=409)
+    if str(record.get("derive") or "").strip() == "branch":
+        return json_response({"error": "pull_follows_branch"}, status=409)
+    if str(record.get("author") or "").strip() != str(
+            revision.get("author") or "").strip():
+        return json_response({"error": "not_authorized"}, status=403)
+    try:
+        stored_ts = int(record.get("ts") or 0)
+        revision_ts = int(revision.get("ts") or 0)
+    except (TypeError, ValueError):
+        return json_response({"error": "revision_invalid"}, status=400)
+    if revision_ts <= stored_ts:
+        return json_response({"error": "revision_stale"}, status=409)
+    refused = await _bind_session_author(env, request, data, revision)
+    if refused is not None:
+        return refused
+    count = await d1_first(
+        env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi)
+    if count and count.get("c", 0) >= MAX_PENDING_PULLS:
+        return json_response({"error": "inbox_full"}, status=429)
+    submitter_bi = await blind_index(env, revision.get("author", ""))
+    if await _inbox_author_over_quota(env, "pull_inbox", repo_bi, submitter_bi):
+        return json_response({"error": "author_quota"}, status=429)
+    submission_bi = await blind_index(
+        env, "pull-revision:" + revision.get("author", "") + ":" +
+        revision.get("sig", ""))
+    item = {
+        "number": number,
+        "revision": revision,
+        "event": {
+            "type": "revision",
+            "id": "revision-%s" % clean_string(revision.get("sig", ""), 16),
+            "author": revision.get("author", ""),
+            "authorName": revision.get("authorName", ""),
+            "ts": revision.get("ts", 0),
+            "sig": revision.get("revisionSig", ""),
+            "body": "",
+        },
+        "submitter": clean_string(revision.get("author", ""), 120),
+        "submittedAt": int(Date.now()),
+    }
+    await d1_run(
+        env,
+        "INSERT OR IGNORE INTO pull_inbox "
+        "(repo_bi, data, submitter_bi, submission_bi) VALUES (?,?,?,?)",
+        repo_bi, await encrypt_row(env, item), submitter_bi, submission_bi,
+    )
+    await _branch_protection.dismiss_approvals(env, owner, repo, number)
+    actor = clean_string(
+        revision.get("authorName", "") or revision.get("author", ""),
+        MAX_NODE_NAME).lower()
+    await notify_subscribers(
+        env, owner, repo, "pull", number, actor, "",
+        "Updated the pull request with new changes.",
+        repo_web_href(owner, repo))
+    await notify_repo_host(env, owner, repo, "pulls")
+    await notify_repo_mirrors(env, owner, repo, "pulls")
+    emit_app = globals().get("apps_emit_repo_event")
+    if emit_app is not None:
+        await emit_app(
+            env, owner, repo, "pull.revised",
+            {"number": number, "author": actor,
+             "head": clean_string(revision.get("head", ""), 260)},
+            source_actor=actor)
+    return json_response({"ok": True, "number": number}, status=201)
+
+
 async def pulls_handler(env, request, owner, repo):
     await ensure_schema(env)
     method = method_name(request)
@@ -41108,6 +41302,10 @@ async def pulls_handler(env, request, owner, repo):
                 "VALUES (?,?,?)",
                 repo_bi, await encrypt_row(env, item), submitter_bi,
             )
+            if event.get("type") in ("comment-edit", "comment-delete"):
+                await notify_repo_host(env, owner, repo, "pulls")
+                await notify_repo_mirrors(env, owner, repo, "pulls")
+                return json_response({"ok": True}, status=201)
             await _record_public_contributor(
                 env, owner, repo, event.get("author", ""), "pulls",
                 event.get("authorName", ""))
@@ -41141,6 +41339,10 @@ async def pulls_handler(env, request, owner, repo):
                     number, "", event.get("body", ""),
                     event.get("authorName", "")))
             return json_response({"ok": True}, status=201)
+        revision = data.get("revision")
+        if isinstance(revision, dict):
+            return await _accept_pull_revision(
+                env, request, data, owner, repo, repo_bi, revision)
         pull = data.get("pull")
         if not isinstance(pull, dict):
             return json_response({"error": "pull_required"}, status=400)
@@ -52349,8 +52551,19 @@ def _ref_updates_from(upstream):
             commits = max(0, int(item.get("commits") or 0))
         except (TypeError, ValueError):
             commits = 0
-        updates.append(
-            {"ref": ref, "old": old, "new": new, "commits": commits})
+        update = {"ref": ref, "old": old, "new": new, "commits": commits}
+        if item.get("forced") is True and ref.startswith("refs/heads/"):
+            update["forced"] = True
+            pulls = item.get("pulls")
+            update["pulls"] = sorted({
+                int(number) for number in (
+                    pulls if isinstance(pulls, list) else [])[:10]
+                if isinstance(number, int) and 0 < number < 10 ** 9})
+            kept = clean_string(item.get("kept", ""), 300)
+            if re.fullmatch(r"refs/forkmesh/history(?:-tips)?/[^\x00-\x20]+",
+                            kept):
+                update["kept"] = kept
+        updates.append(update)
     try:
         total = max(len(updates), int(value.get("total") or 0))
     except (TypeError, ValueError, AttributeError):
@@ -52536,6 +52749,7 @@ async def _fork_push_notice(env, request, owner, repo, alias_owner,
     ]
     if not branches:
         return None
+    forced = [update for update in updates if update.get("forced")][:5]
     record = await _repo_catalog_record(env, owner, repo)
     if not isinstance(record, dict):
         return None
@@ -52546,12 +52760,22 @@ async def _fork_push_notice(env, request, owner, repo, alias_owner,
         if branch != default and (fork or branch.startswith("pr/"))
     ][:5]
     parsed = urlparse(str(getattr(request, "url", "") or ""))
-    if not branches or parsed.scheme not in ("https", "http") or (
+    if not (branches or forced) or parsed.scheme not in ("https", "http") or (
             not parsed.netloc):
         return None
     base = parsed.scheme + "://" + parsed.netloc + await _repo_public_path(
         env, alias_owner or owner, repo)
     lines = [""]
+    for update in forced:
+        lines.append("Forced update of '%s' from %s to %s; the previous "
+                     "tip is kept. Compare:" % (
+                         update["ref"][len("refs/heads/"):],
+                         update["old"][:7], update["new"][:7]))
+        lines.append("     %s/compare/%s...%s" % (
+            base, update["old"], update["new"]))
+        lines.append("Prefer 'git push --force-with-lease': it refuses when "
+                     "the branch has commits you have not fetched.")
+        lines.append("")
     for branch in branches:
         lines.append("Open a pull request for '%s' by visiting:" % branch)
         lines.append("     %s/compare/%s...%s" % (
@@ -52699,7 +52923,7 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
         credential="key" if signed_headers else (
             "contributor" if push_prefix else "session"),
         encoding=request.headers.get("content-encoding"),
-        push_prefix=push_prefix)
+        push_prefix=push_prefix, rewrite=True)
     if upstream is None:
         return json_response(
             {"error": "push_unavailable"}, status=503,
@@ -52740,10 +52964,20 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
     )
 
 
+async def _push_target_on_cores(env, owner, repo):
+    hosted_candidates = globals().get("hosted_push_candidates")
+    if not callable(hosted_candidates):
+        return False
+    try:
+        return await hosted_candidates(env, owner, repo) is not None
+    except Exception:
+        return False
+
+
 async def _https_mirror_push_send(
         env, request, owner, repo, account, method, body, body_stream,
         body_digest, is_info=False, alias_owner="", core_held=False,
-        credential="session", encoding=None, push_prefix=""):
+        credential="session", encoding=None, push_prefix="", rewrite=False):
     router_public_key = _https_mirror_router_public_key(env)
     router_seed = _https_mirror_router_seed(env)
     if not router_public_key or not router_seed:
@@ -52770,6 +53004,9 @@ async def _https_mirror_push_send(
             query = dict(query or {}, protect=" ".join(protected))
         if push_prefix:
             query = dict(query or {}, pushPrefix=push_prefix)
+        if rewrite and (core_held or await _push_target_on_cores(
+                env, owner, repo)):
+            query = dict(query or {}, rewrite=push_prefix or "refs/heads/")
     for endpoint in candidates:
         if body_stream is not None and endpoint is not candidates[0]:
             # A streamed pack is consumed by its first upstream attempt; the
@@ -52833,6 +53070,7 @@ async def _https_mirror_push_send(
         ):
             continue
         if method == "POST" and status == 200:
+            report = _ref_updates_from(upstream)
             # A repository ForkMesh hosts has no node of its own to publish
             # the refs attestation a public read is routed against, so the
             # push that just moved its refs is where that pin is recorded —
@@ -52841,7 +53079,9 @@ async def _https_mirror_push_send(
             # are left alone, and a failure only delays the pin.
             try:
                 await record_hosted_push_state(
-                    env, owner, repo, endpoint, pusher=account)
+                    env, owner, repo, endpoint, pusher=account,
+                    forced=[update for update in report["updates"]
+                            if update.get("forced")])
             except Exception:
                 pass
             state = ""
@@ -52857,7 +53097,7 @@ async def _https_mirror_push_send(
             try:
                 await record_accepted_push(
                     env, owner, repo, endpoint, account,
-                    _ref_updates_from(upstream), core=core_push,
+                    report, core=core_push,
                     state=state, tag_moves=tag_moves,
                     credential=credential, contributor=bool(push_prefix),
                     alias=alias_owner)

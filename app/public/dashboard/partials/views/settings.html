@@ -60,6 +60,13 @@
                       <i data-lucide="paintbrush" class="h-5 w-5"></i>
                       Appearance
                     </button>
+                    <div data-instance-theme-nav class="hidden grid">
+                      <button data-settings-section-link="instance-theme" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                        <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
+                        <i data-lucide="palette" class="h-5 w-5"></i>
+                        Instance theme
+                      </button>
+                    </div>
                     <button data-settings-section-link="notifications" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
                       <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="bell" class="h-5 w-5"></i>
@@ -822,6 +829,32 @@
                           </div>
                         </div>
                       </div>
+                    </div>
+                  </section>
+
+                  <section id="settings-instance-theme" data-settings-section="instance-theme" data-instance-theme-panel class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Instance theme</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">The look of every page on this instance, for everyone who visits. Only an admin can change it, and the change asks for your password.</p>
+                    <div class="mt-5 grid max-w-4xl gap-4">
+                      <p data-instance-theme-denied hidden class="fm-flash-neutral rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">Only an admin of this instance can change its theme.</p>
+                      <div data-instance-theme-cards role="radiogroup" aria-label="Instance theme" class="grid gap-3 sm:grid-cols-2"></div>
+                      <div data-instance-theme-confirm hidden class="overflow-hidden rounded-md border border-border bg-card">
+                        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
+                          <div class="min-w-0">
+                            <h3 class="text-base font-semibold text-foreground">Previewing <span data-instance-theme-preview-name></span></h3>
+                            <p class="mt-1 text-sm text-muted-foreground">Only this page shows it. Nobody else sees it until you apply it.</p>
+                          </div>
+                          <button data-instance-theme-cancel type="button" class="fm-btn fm-btn-sm">Cancel preview</button>
+                        </div>
+                        <form data-credential-scope class="grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:items-end">
+                          <label class="grid gap-1.5 text-sm font-medium text-foreground">
+                            Current password
+                            <input data-instance-theme-password type="password" autocomplete="current-password" placeholder="Required to change the instance theme" aria-describedby="instance-theme-status" class="h-control rounded-control border border-border bg-background px-3 text-control text-foreground placeholder:text-muted-foreground" />
+                          </label>
+                          <button data-instance-theme-apply type="button" class="fm-btn fm-btn-cta">Apply to instance</button>
+                        </form>
+                      </div>
+                      <p id="instance-theme-status" data-instance-theme-status role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground"></p>
                     </div>
                   </section>
 

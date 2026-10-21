@@ -453,6 +453,14 @@
     return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  function webSessionAuthored(ev) {
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (!me || !ev) return false;
+    if (String(ev.authorName || "").trim().toLowerCase() === me) return true;
+    const pub = webIssueKeyPublic();
+    return Boolean(pub) && String(ev.author || "") === pub;
+  }
+
   async function getWebIssueKey() {
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null"); } catch (_) {}
@@ -1135,6 +1143,12 @@
       content = [fields.state || "", cleanBody].join(NUL);
     } else if (type === "delete") {
       content = cleanBody;
+    } else if (type === "comment-edit") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = [fields.target, cleanBody].join(NUL);
+    } else if (type === "comment-delete") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = String(fields.target);
     } else {
       throw new Error("unsupported_pull_event_type");
     }
@@ -1150,12 +1164,20 @@
       ts,
       sig,
     };
-    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines"]) {
+    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines", "target"]) {
       if (fields[key] !== undefined && fields[key] !== "") event[key] = fields[key];
     }
     const payload = { owner: repo.owner, repo: repo.name, number, event };
     const data = await fetchRepoMutation(repo, "pulls", payload);
     return { ...data, event };
+  }
+
+  async function submitWebPullCommentEdit(repo, number, target, body) {
+    return submitWebPullEvent(repo, number, "comment-edit", { target, body });
+  }
+
+  async function submitWebPullCommentDelete(repo, number, target) {
+    return submitWebPullEvent(repo, number, "comment-delete", { target });
   }
 
   async function submitWebPullComment(repo, number, body) {
@@ -1551,6 +1573,9 @@
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
     }
+    if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
+      return "Only the comment's author, the repository owner or an organization admin can change this comment.";
+    }
     return ({
       not_authorized: "Only the repository owner or an organization admin can do that.",
       bad_signature: "The signed issue action could not be verified.",
@@ -1598,6 +1623,47 @@
     return [...new Set(String(value || "").split(",")
       .map((item) => item.trim())
       .filter(Boolean))].slice(0, 20);
+  }
+
+  async function handleWebPullCommentAction(action, target) {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "pulls" || !number || !target) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const parsed = detail.parsed || {};
+    const original = foldPullCommentChanges(parsed.pullConversation)
+      .find((ev) => String(ev.id || "") === String(target));
+    if (!original) return;
+    let result;
+    try {
+      if (action === "delete") {
+        if (!await confirmAccountAction({
+          title: "Delete this comment?",
+          body: "Its Git history remains recoverable.",
+          confirmLabel: "Delete comment",
+        })) return;
+        result = await submitWebPullCommentDelete(repo, number, target);
+      } else {
+        const nextBody = await openIssueCommentEditor(
+          target, original.body || "",
+          "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
+        if (nextBody === null) return;
+        const trimmed = String(nextBody).replace(/[\r\n]+$/, "");
+        if (!trimmed.trim() || trimmed === String(original.body || "").replace(/[\r\n]+$/, "")) return;
+        result = await submitWebPullCommentEdit(repo, number, target, trimmed);
+      }
+    } catch (error) {
+      showErrorNotice(webIssueActionError(error, action === "delete" ? "delete-comment" : "edit-comment"));
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
+    refreshPullConversationProjection();
   }
 
   async function handleWebIssueAction(action, target = "") {
@@ -2813,4 +2879,113 @@
       markdownVideoFiles(input.files).forEach((file) => void insertMarkdownVideo(textarea, file));
     });
     input.click();
+  });
+
+  function pullRevisionSource(values) {
+    const head = String(values?.head || "").trim();
+    if (!head) return null;
+    const colon = head.lastIndexOf(":");
+    if (colon < 0) return { owner: "", branch: head };
+    const prefix = head.slice(0, colon);
+    if (!prefix || prefix.includes("/")) return null;
+    return { owner: prefix, branch: head.slice(colon + 1) };
+  }
+
+  function pullRevisionAllowed(parsed) {
+    const values = parsed?.values || {};
+    return String(values.status || "open").trim().toLowerCase() === "open"
+      && values.derive !== "branch"
+      && webSessionAuthored({ author: values.author, authorName: values.authorName })
+      && Boolean(pullRevisionSource(values));
+  }
+
+  async function submitWebPullRevision(repo, number, values, branch) {
+    const source = pullRevisionSource(values);
+    if (!source || !branch) throw new Error("revision_unsupported");
+    const sourceRepo = source.owner ? { owner: source.owner, name: repo.name } : repo;
+    const base = String(values.base || "");
+    let comparison;
+    try {
+      comparison = await fetchRepoJson(repoLiveUrl(sourceRepo, "compare", { base, head: branch, ref: "" }));
+    } catch (_) {
+      throw new Error("comparison_unavailable");
+    }
+    const patch = String(comparison.patch || "");
+    const commits = String(comparison.commits || "");
+    const baseOid = String(comparison.baseOid || "").toLowerCase();
+    const headOid = String(comparison.headOid || "").toLowerCase();
+    const validOid = (value) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
+    if (!validOid(baseOid) || !validOid(headOid)) throw new Error("invalid_comparison");
+    if (!patch.trim()) throw new Error("no_changes");
+    if (headOid === String(values.creationHeadOid || "").toLowerCase()) throw new Error("no_new_commits");
+    const signedHead = source.owner ? `${source.owner}:${branch}` : branch;
+    const revision = await signWebPullContent(
+      repo, String(values.title || ""), "", base, signedHead, patch, commits);
+    delete revision.description;
+    revision.creationBaseOid = baseOid;
+    revision.creationHeadOid = headOid;
+    const { privateKey } = await getWebIssueKey();
+    const binding = `${Number(number)}\n${revision.author}\n${revision.ts}\n${revision.sig}`;
+    revision.revisionSig = bytesToB64url(await crypto.subtle.sign(
+      { name: "Ed25519" }, privateKey,
+      ISSUE_TEXT_ENCODER.encode(`${webEventSigningPrefix("pull-revision", repo)}${binding}`)));
+    const data = await fetchRepoMutation(repo, "pulls", {
+      owner: repo.owner, repo: repo.name, number: Number(number), revision,
+    });
+    return { ...data, revision };
+  }
+
+  function pullRevisionError(code) {
+    return ({
+      comparison_unavailable: "That branch is not on the serving mirror yet. A branch you just pushed can take a moment to arrive.",
+      invalid_comparison: "That branch could not be compared with the base branch.",
+      no_changes: "That branch has no changes against the base branch.",
+      no_new_commits: "This pull request already shows that branch's latest commit.",
+      revision_stale: "A newer version of this pull request is already waiting.",
+      pull_not_open: "Only an open pull request can be updated.",
+      pull_follows_branch: "This pull request already follows its branch.",
+      not_authorized: "Only the pull request's author can update it.",
+      pull_too_large: "That change is too large to send.",
+      revision_unsupported: "This pull request came from another instance; update it there.",
+      author_mismatch: "Sign in with the account that opened this pull request.",
+    })[code] || "The pull request could not be updated. Please try again.";
+  }
+
+  function renderPullRevisionPanel(number, parsed) {
+    if (!pullRevisionAllowed(parsed)) return "";
+    const branch = pullRevisionSource(parsed.values)?.branch || "";
+    return `
+      <form data-repo-pull-revision-form data-repo-pull-revision-number="${escapeHtml(number)}" class="flex flex-wrap items-center gap-2 rounded-md border border-border px-4 py-3 text-[14px] sm:ml-14">
+        <span class="min-w-0 flex-1 text-muted-foreground">Pushed more commits, or rewrote the branch? Update this pull request from a branch. No force push is needed.</span>
+        <input data-repo-pull-revision-branch value="${escapeHtml(branch)}" aria-label="Source branch" spellcheck="false" class="h-control-sm w-48 rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-[var(--dashboard-link)]" />
+        <button type="submit" data-repo-pull-revision-submit class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border bg-secondary px-2 text-control font-medium text-foreground hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Update pull request</button>
+        <span data-repo-pull-revision-hint class="w-full text-[11px] text-muted-foreground"></span>
+      </form>`;
+  }
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target?.closest?.("[data-repo-pull-revision-form]");
+    if (!form) return;
+    event.preventDefault();
+    const detail = state.repoRecordDetail;
+    const number = Number(form.dataset.repoPullRevisionNumber || 0);
+    if (!detail?.repo || detail.kind !== "pulls" || Number(detail.number) !== number) return;
+    const hint = form.querySelector("[data-repo-pull-revision-hint]");
+    const submit = form.querySelector("[data-repo-pull-revision-submit]");
+    const branch = String(form.querySelector("[data-repo-pull-revision-branch]")?.value || "").trim();
+    const setHint = (text, bad = false) => {
+      if (!hint) return;
+      hint.className = `w-full text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (submit) submit.disabled = true;
+    setHint("Comparing, signing and sending…");
+    try {
+      await submitWebPullRevision(detail.repo, number, detail.parsed?.values || {}, branch);
+      setHint("Sent. The pull request shows the new version once the repository's node takes it in.");
+    } catch (error) {
+      setHint(pullRevisionError(error?.code || error?.message), true);
+    } finally {
+      if (submit) submit.disabled = false;
+    }
   });

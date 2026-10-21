@@ -1461,6 +1461,7 @@ void MainWindow::refreshThemedIcons()
     for (QTabWidget *tabs : tabWidgets)
         refreshTabOcticons(tabs);
     refreshSettingsSectionIcons();
+    refreshComposerIcons();
     refreshChatWorkspaceUser();
     if (m_chatMembersLayout) {
         m_chatMembersSignature.clear();

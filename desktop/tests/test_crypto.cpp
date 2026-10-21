@@ -570,6 +570,29 @@ int main(int argc, char *argv[])
               "URLs, same-document anchors and absolute paths are not repository links");
     }
 
+    {
+        const QChar br(0x2028);
+        const QString prepared = MarkdownRender::forPreview(
+            QStringLiteral("# Title\r\n\\\r\nFirst line\\\nsecond line  \nthird line\n\n"
+                           "Last line\\\n\n- item\\\n- next\n"));
+        check(!prepared.contains(QLatin1Char('\\')),
+              "a lone or paragraph-ending backslash never reaches the preview as text");
+        check(prepared.contains(QStringLiteral("First line") + br + QStringLiteral("second line") +
+                                br + QStringLiteral("third line")),
+              "hard line breaks stay inside one paragraph instead of splitting it");
+        check(prepared.contains(QStringLiteral("- item\n- next")),
+              "a backslash before a new list item is dropped, not joined");
+        check(prepared.startsWith(QStringLiteral("# Title\n\nFirst line")),
+              "a lone backslash line becomes a paragraph break");
+
+        const QString kept = MarkdownRender::forPreview(
+            QStringLiteral("```\nC:\\dir\\\nnext\n```\n\nEscaped \\\\\nplain\n"));
+        check(kept.contains(QStringLiteral("C:\\dir\\\nnext")),
+              "fenced code keeps its backslashes and lines");
+        check(kept.contains(QStringLiteral("Escaped \\\\\nplain")),
+              "an escaped backslash is literal text, not a line break");
+    }
+
     // Ctrl+K search: the rules that decide what the overlay finds, and the
     // parsers for the git output it searches (adhoc #28 widened it from
     // issues/PRs/code to everything this node holds).

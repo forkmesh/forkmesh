@@ -609,6 +609,7 @@ public:
     static void applyTheme(
         forkmesh::market::PackageRegistry *registry = nullptr);
     void refreshThemedIcons();
+    void refreshComposerIcons();
 
     static QString autolinkReferences(
         const QString &markdown,
@@ -6575,6 +6576,8 @@ private:
                            const WorkflowScan &scan);
     void drainDeferredActionWorkflowScans();
     void submitPullComment();                       // post a comment on the PR
+    void editPullComment(int number, const QString &target, const QString &original);
+    void deletePullComment(int number, const QString &target);
     void sendPullRevisionToAgent();                 // re-queue the linked agent with revision feedback
     void submitPullReview(const QString &state);    // approve / request changes
     bool currentAccountOwnsPullRepository();

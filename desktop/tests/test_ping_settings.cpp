@@ -351,6 +351,29 @@ void checkPingKinds()
     QSettings().remove(kMutedDesktopKindsSetting);
 }
 
+void checkAlertLead()
+{
+    using namespace forkmesh::pings;
+    check(alertLeadTitle(QStringLiteral("bob"), QStringLiteral("acme/widgets"), 42) ==
+              QString::fromUtf8("bob \xC2\xB7 acme/widgets #42"),
+          "an alert title leads with who acted, then where");
+    check(alertLeadTitle(QStringLiteral("bob"), QStringLiteral("acme/widgets")) ==
+              QString::fromUtf8("bob \xC2\xB7 acme/widgets"),
+          "an alert title without a number names the repository only");
+    check(alertLeadTitle(QString(), QStringLiteral("acme/widgets"), 7) ==
+              QStringLiteral("acme/widgets #7"),
+          "an alert title without an actor keeps the place");
+    check(alertLeadTitle(QStringLiteral(" carol "), QString()) == QStringLiteral("carol"),
+          "an alert title without a place is the actor alone");
+    check(alertSnippet(QStringLiteral("  fix \n the   login  ")) ==
+              QStringLiteral("fix the login"),
+          "an alert snippet collapses whitespace");
+    const QString longText(400, QLatin1Char('x'));
+    const QString cut = alertSnippet(longText);
+    check(cut.size() == 180 && cut.endsWith(QString::fromUtf8("\xE2\x80\xA6")),
+          "an alert snippet is bounded and ends with an ellipsis");
+}
+
 int main(int argc, char **argv)
 {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
@@ -368,6 +391,7 @@ int main(int argc, char **argv)
     checkRelaySync();
     checkPanel();
     checkPingKinds();
+    checkAlertLead();
 
     std::fprintf(failures ? stderr : stdout, "%s: %d failure(s)\n",
                  failures ? "FAILED" : "OK", failures);
