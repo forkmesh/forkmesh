@@ -89,7 +89,9 @@ class ProjectsService(
         withContext(Dispatchers.IO) { probe.check(input, directory.projects, label, worldUrl) }
 
     suspend fun checkInstance(input: String): ProbeResult =
-        withContext(Dispatchers.IO) { probe.check(input) }
+        withContext(Dispatchers.IO) { probe.check(input, directory.projects) }
+
+    fun instanceOwner(instance: Project): Project? = directory.ownerOf(instance)
 
     suspend fun attachInstance(projectId: String, instance: Project): Project? = withContext(Dispatchers.IO) {
         val attached = directory.attach(projectId, instance) ?: return@withContext null
@@ -110,7 +112,7 @@ class ProjectsService(
     }
 
     fun add(project: Project): Project {
-        val fresh = directory.byId(project.id) == null
+        val fresh = directory.byId(project.id) == null && directory.ownerOf(project) == null
         return directory.add(project).also { if (fresh) markNew(it) }
     }
 

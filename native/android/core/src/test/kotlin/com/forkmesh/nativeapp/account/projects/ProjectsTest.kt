@@ -131,6 +131,34 @@ class ProjectsTest {
         assertEq(instance.serverUrl, restored.serverUrl)
     }
 
+    fun testAnInstanceBelongsToOnlyOneProject() {
+        val directory = ProjectDirectory.load(MemoryPrefStore())
+        val instance = Project.tryParse("relay.example.com")!!
+        val tea = directory.addNamed("Tea")!!
+        val coffee = directory.addNamed("Coffee")!!
+        expect(directory.attach(tea.id, instance) != null)
+        assertEq(tea.id, directory.ownerOf(instance)?.id)
+        assertEq(null, directory.attach(coffee.id, instance))
+        assertEq(false, directory.byId(coffee.id)!!.hasInstance)
+        assertEq(null, directory.attach(coffee.id, Project.tryParse("https://relay.example.com/ws")!!))
+        assertEq(null, directory.attach(coffee.id, Project.tryParse(prod)!!))
+        assertEq(null, directory.attach(coffee.id, Project.tryParse("forkmesh.com")!!))
+
+        val count = directory.projects.size
+        assertEq(tea.id, directory.add(instance).id)
+        assertEq(tea.id, directory.useUrl("wss://relay.example.com/ws")?.id)
+        assertEq(tea.id, directory.activeId)
+        assertEq(count, directory.projects.size)
+
+        val probe = ProjectProbe(transport = HttpTransport { _ -> error("no request expected") })
+        val duplicate = probe.check("https://relay.example.com/", directory.projects)
+        assertEq(ProbeStatus.duplicate, duplicate.status)
+        assertEq(tea.id, duplicate.knownAs?.id)
+        assertEq("That instance already belongs to the project Tea. An instance can only be in one project.", duplicate.message)
+        assertEq("This instance is already one of your projects.", probe.check(prod, directory.projects).message)
+        expect(directory.attach(coffee.id, Project.tryParse("other.example.com")!!) != null)
+    }
+
     fun testALogoCanBeSetAndClearedOnAnyProject() {
         val directory = ProjectDirectory.load(MemoryPrefStore())
         directory.setLogo(prod, "fm.png")

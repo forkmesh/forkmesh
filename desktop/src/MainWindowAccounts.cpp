@@ -767,6 +767,12 @@ bool MainWindow::switchToUserAccount(const QString &accountName,
             QStringLiteral("Choose a valid ws:// or wss:// ForkMesh instance."));
         return false;
     }
+    if (std::none_of(m_servers.cbegin(), m_servers.cend(),
+                     [&targetServer](const ServerConfig &server) {
+                         return accountInstanceUrl(server.url) == targetServer;
+                     }) &&
+        refuseInstanceOfAnotherProject(targetServer))
+        return false;
 
     if (hasActiveAccountSession() &&
         AccountCapability::normalizedAccount(m_accountName) == account &&
