@@ -455,6 +455,7 @@ func reconcileUpstreamRefsWithUpdater(ctx context.Context, gitDir string, update
 		}
 	}
 	retiredPulls := retiredPullBranchArrivals(ctx, gitDir, pullArrivals)
+	superseded := supersededBranchTips(ctx, gitDir)
 	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
@@ -486,11 +487,116 @@ func reconcileUpstreamRefsWithUpdater(ctx context.Context, gitDir string, update
 		if current == "" && retiredPulls[local] {
 			continue
 		}
+		if current != "" && superseded[local][incoming] {
+			continue
+		}
 		if err := settleRef(ctx, gitDir, local, current, incoming, local == head, updater); err != nil {
 			return err
 		}
 	}
 	return adoptAdmittedTagMoves(ctx, gitDir, movedTags, upstreamRefs, desired)
+}
+
+const (
+	pushHistoryRoot         = "refs/forkmesh/history/"
+	pushHistorySaveAttempts = 8
+)
+
+var pushHistorySequence = regexp.MustCompile(`^[0-9]{10}$`)
+
+func supersededBranchTips(ctx context.Context, gitDir string) map[string]map[string]bool {
+	values, err := gitRefValues(ctx, gitDir, strings.TrimSuffix(pushHistoryRoot, "/"))
+	if err != nil {
+		return nil
+	}
+	tips := map[string]map[string]bool{}
+	for ref, oid := range values {
+		branch, sequence, ok := cutLast(strings.TrimPrefix(ref, pushHistoryRoot), "/")
+		if !ok || !pushHistorySequence.MatchString(sequence) {
+			continue
+		}
+		local := "refs/heads/" + branch
+		if tips[local] == nil {
+			tips[local] = map[string]bool{}
+		}
+		tips[local][oid] = true
+	}
+	return tips
+}
+
+func cutLast(text, separator string) (string, string, bool) {
+	index := strings.LastIndex(text, separator)
+	if index <= 0 {
+		return "", "", false
+	}
+	return text[:index], text[index+len(separator):], true
+}
+
+func keepSupersededTip(ctx context.Context, gitDir, ref, oid string) error {
+	prefix := pushHistoryRoot + strings.TrimPrefix(ref, "refs/heads/") + "/"
+	values, err := gitRefValues(ctx, gitDir, strings.TrimSuffix(prefix, "/"))
+	if err != nil {
+		return err
+	}
+	var names []string
+	for name := range values {
+		if pushHistorySequence.MatchString(strings.TrimPrefix(name, prefix)) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	sequence := 1
+	if len(names) > 0 {
+		last, _ := strconv.Atoi(strings.TrimPrefix(names[len(names)-1], prefix))
+		sequence = last + 1
+	}
+	var output []byte
+	for attempt := 0; attempt < pushHistorySaveAttempts; attempt++ {
+		name := fmt.Sprintf("%s%010d", prefix, sequence+attempt)
+		if output, err = updateRef(ctx, gitDir, name, oid, ""); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("keep %s: %s", ref, boundedText(output, 160))
+}
+
+func adoptForcedBranches(ctx context.Context, gitDir string, forced map[string]string) {
+	if len(forced) == 0 {
+		return
+	}
+	head := headBranchRef(ctx, gitDir)
+	staged, err := gitRefValues(ctx, gitDir, "refs/forkmesh/upstream/heads")
+	if err != nil {
+		return
+	}
+	refs := make([]string, 0, len(forced))
+	for ref := range forced {
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	for _, ref := range refs {
+		tip := forced[ref]
+		if !strings.HasPrefix(ref, "refs/heads/") || strings.HasPrefix(ref, "refs/heads/forkmesh/") ||
+			ref == head || !gitObjectIDPattern.MatchString(tip) {
+			continue
+		}
+		if staged["refs/forkmesh/upstream/heads/"+strings.TrimPrefix(ref, "refs/heads/")] != tip {
+			continue
+		}
+		current := gitRefValue(ctx, gitDir, ref)
+		if current == "" || current == tip || gitIsAncestor(ctx, gitDir, current, tip) {
+			continue
+		}
+		if err := keepSupersededTip(ctx, gitDir, ref, current); err != nil {
+			log.Printf("mirror %s: %v", gitDir, err)
+			continue
+		}
+		if output, err := updateRef(ctx, gitDir, ref, tip, current); err != nil {
+			log.Printf("mirror %s: force %s: %s", gitDir, ref, boundedText(output, 160))
+			continue
+		}
+		log.Printf("mirror %s: %s force-updated %s -> %s as admitted", gitDir, ref, current[:12], tip[:12])
+	}
 }
 
 func headBranchRef(ctx context.Context, gitDir string) string {

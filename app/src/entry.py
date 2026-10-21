@@ -52448,8 +52448,19 @@ def _ref_updates_from(upstream):
             commits = max(0, int(item.get("commits") or 0))
         except (TypeError, ValueError):
             commits = 0
-        updates.append(
-            {"ref": ref, "old": old, "new": new, "commits": commits})
+        update = {"ref": ref, "old": old, "new": new, "commits": commits}
+        if item.get("forced") is True and ref.startswith("refs/heads/"):
+            update["forced"] = True
+            pulls = item.get("pulls")
+            update["pulls"] = sorted({
+                int(number) for number in (
+                    pulls if isinstance(pulls, list) else [])[:10]
+                if isinstance(number, int) and 0 < number < 10 ** 9})
+            kept = clean_string(item.get("kept", ""), 300)
+            if re.fullmatch(r"refs/forkmesh/history(?:-tips)?/[^\x00-\x20]+",
+                            kept):
+                update["kept"] = kept
+        updates.append(update)
     try:
         total = max(len(updates), int(value.get("total") or 0))
     except (TypeError, ValueError, AttributeError):
@@ -52635,6 +52646,7 @@ async def _fork_push_notice(env, request, owner, repo, alias_owner,
     ]
     if not branches:
         return None
+    forced = [update for update in updates if update.get("forced")][:5]
     record = await _repo_catalog_record(env, owner, repo)
     if not isinstance(record, dict):
         return None
@@ -52645,12 +52657,22 @@ async def _fork_push_notice(env, request, owner, repo, alias_owner,
         if branch != default and (fork or branch.startswith("pr/"))
     ][:5]
     parsed = urlparse(str(getattr(request, "url", "") or ""))
-    if not branches or parsed.scheme not in ("https", "http") or (
+    if not (branches or forced) or parsed.scheme not in ("https", "http") or (
             not parsed.netloc):
         return None
     base = parsed.scheme + "://" + parsed.netloc + await _repo_public_path(
         env, alias_owner or owner, repo)
     lines = [""]
+    for update in forced:
+        lines.append("Forced update of '%s' from %s to %s; the previous "
+                     "tip is kept. Compare:" % (
+                         update["ref"][len("refs/heads/"):],
+                         update["old"][:7], update["new"][:7]))
+        lines.append("     %s/compare/%s...%s" % (
+            base, update["old"], update["new"]))
+        lines.append("Prefer 'git push --force-with-lease': it refuses when "
+                     "the branch has commits you have not fetched.")
+        lines.append("")
     for branch in branches:
         lines.append("Open a pull request for '%s' by visiting:" % branch)
         lines.append("     %s/compare/%s...%s" % (
@@ -52798,7 +52820,7 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
         credential="key" if signed_headers else (
             "contributor" if push_prefix else "session"),
         encoding=request.headers.get("content-encoding"),
-        push_prefix=push_prefix)
+        push_prefix=push_prefix, rewrite=True)
     if upstream is None:
         return json_response(
             {"error": "push_unavailable"}, status=503,
@@ -52839,10 +52861,20 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
     )
 
 
+async def _push_target_on_cores(env, owner, repo):
+    hosted_candidates = globals().get("hosted_push_candidates")
+    if not callable(hosted_candidates):
+        return False
+    try:
+        return await hosted_candidates(env, owner, repo) is not None
+    except Exception:
+        return False
+
+
 async def _https_mirror_push_send(
         env, request, owner, repo, account, method, body, body_stream,
         body_digest, is_info=False, alias_owner="", core_held=False,
-        credential="session", encoding=None, push_prefix=""):
+        credential="session", encoding=None, push_prefix="", rewrite=False):
     router_public_key = _https_mirror_router_public_key(env)
     router_seed = _https_mirror_router_seed(env)
     if not router_public_key or not router_seed:
@@ -52869,6 +52901,9 @@ async def _https_mirror_push_send(
             query = dict(query or {}, protect=" ".join(protected))
         if push_prefix:
             query = dict(query or {}, pushPrefix=push_prefix)
+        if rewrite and (core_held or await _push_target_on_cores(
+                env, owner, repo)):
+            query = dict(query or {}, rewrite=push_prefix or "refs/heads/")
     for endpoint in candidates:
         if body_stream is not None and endpoint is not candidates[0]:
             # A streamed pack is consumed by its first upstream attempt; the
@@ -52932,6 +52967,7 @@ async def _https_mirror_push_send(
         ):
             continue
         if method == "POST" and status == 200:
+            report = _ref_updates_from(upstream)
             # A repository ForkMesh hosts has no node of its own to publish
             # the refs attestation a public read is routed against, so the
             # push that just moved its refs is where that pin is recorded —
@@ -52940,7 +52976,9 @@ async def _https_mirror_push_send(
             # are left alone, and a failure only delays the pin.
             try:
                 await record_hosted_push_state(
-                    env, owner, repo, endpoint, pusher=account)
+                    env, owner, repo, endpoint, pusher=account,
+                    forced=[update for update in report["updates"]
+                            if update.get("forced")])
             except Exception:
                 pass
             state = ""
@@ -52956,7 +52994,7 @@ async def _https_mirror_push_send(
             try:
                 await record_accepted_push(
                     env, owner, repo, endpoint, account,
-                    _ref_updates_from(upstream), core=core_push,
+                    report, core=core_push,
                     state=state, tag_moves=tag_moves,
                     credential=credential, contributor=bool(push_prefix),
                     alias=alias_owner)

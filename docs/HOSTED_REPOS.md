@@ -38,7 +38,9 @@ for long. Push bodies are streamed, up to
 `FORKMESH_MAX_GIT_PUSH_BODY_BYTES` (256 MiB). The creating account must have a
 verified email.
 
-**Git rules** (gateway receive-pack): fast-forward only, no ref deletes, new
+**Git rules** (gateway receive-pack): the default and protected branches
+fast-forward only; other branches may be force-pushed by accounts that may
+write them ([CORE_PUSH.md](CORE_PUSH.md#force-pushes)); no ref deletes, new
 tags allowed but never moved, only `refs/heads/*` and `refs/tags/*`, objects
 fsck-checked, no hooks, every accepted push audited per ref.
 

@@ -121,7 +121,18 @@ application event filter applied in Next and undone in Classic):
 - *Combo rows.* `kit::prepareComboPopup` swaps in a `QStyledItemDelegate` so
   `::item` rules apply.
 - *Tables.* Default-centred headers become left aligned; tables with property
-  `dataTable` drop grid, row numbers and alternating rows.
+  `dataTable` drop grid, row numbers and alternating rows, get 38 px rows,
+  right-elided cells, a stretched last column and a delegate that hovers the
+  whole row (a cell-level `::item:hover` is all a sheet can do). The admin
+  Users and Quarantine tables carry `dataTable`. `91-tables.qss` gives every
+  header a 12 px muted caption, 12 px side padding and one hairline, selection
+  `accentSubtle`, and item views slim scrollbars. The column-menu header
+  (`KebabHeaderView`) painted its chevron over the caption: the caption's
+  rectangle never left room for it, so a section narrower than its caption
+  (dragged, capped, or measured before the sheet applied) ran under the
+  glyph. In Next it now elides the caption before the menu button and sort
+  arrow, draws its own sort arrow, and shows the menu chevron only on the
+  hovered column.
 
 **Hooks instead of header edits.** `MainWindow.h` and `MainWindowInternal.h` are
 in the precompiled header. `MainWindow` declares
@@ -141,6 +152,10 @@ and drop and context menus are unchanged.
 `Q_OBJECT`): `Toggle` (a `QCheckBox` subclass), `Card`, `SettingsRow`, `Badge`,
 `KeyHint`, `InlineNotice`, `EmptyState`, `SegmentedControl`, `Spinner`, and
 helpers `groupHeading`, `pageTitle`, `pageLede`, `labeledField`, `tintedIcon`.
+The special agents roster's empty state (`#teammateEmpty`) is an `EmptyState`
+in Next: its own labels painted the page colour as dark boxes on the card, and
+the centred layout sized the wrapped body to its one-line hint, cutting its
+descenders.
 
 ## Shell features
 
@@ -165,6 +180,25 @@ helpers `groupHeading`, `pageTitle`, `pageLede`, `labeledField`, `tintedIcon`.
   default): the coloured left stripe on inline notices and conversation cards.
 - **Notices** are inline `kit::InlineNotice` rows in `#pageNoticeArea`, not
   floating cards.
+- **Alerts** (`QMessageBox`, every call site) are restyled centrally in Next by
+  `kit::installStockPolish()` and `13-message-card.qss`: a frameless rounded
+  card on `surface` with a hairline border, no icon, the default button in the
+  accent, and a dim `#messageCardScrim` over the parent window while it is
+  open. The box is marked on its first `ChildAdded` (during construction,
+  before its native window exists, which `Polish` is too late for); its
+  translucent window skips the stylesheet background, so the filter paints
+  `PE_Widget` on `Paint`. The window title becomes a bold heading and the
+  message the body when the box has no informative text. macOS discards
+  `QMessageBox` window titles (`QMessageBox::setWindowTitle` is a no-op there),
+  so on macOS only boxes that set the heading as `text` and the body as
+  `informativeText` get a heading; the rest show the message alone. Qt's macOS
+  box adds a 24 px widget margin and re-inserts the icon on a style change, so
+  the layout is fixed on `Show`, just before `QMessageBox::showEvent` sizes it.
+  Frameless alerts cannot be dragged. The scrim follows the parent window
+  when it is resized while the alert is open (`fitMessageScrims` on
+  `Resize`), and a title moved into the heading is set as plain text unless
+  the box is already rich text, so a title containing `<` is never read as
+  markup. Classic is unchanged.
 
 ## Must not break
 
