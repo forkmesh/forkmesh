@@ -83,7 +83,7 @@
 }
 #promptWrapper QComboBox#quickAddAgentModelSelector,
 #promptWrapper QComboBox#quickAddTaskAssignee { padding: 0px 4px 0px 8px; }
-#promptWrapper QComboBox#quickAddModeSelector { padding: 0px 8px 0px 6px; }
+#promptWrapper QComboBox#quickAddModeSelector { padding: 0px 8px 0px 6px; font-size: 12px; }
 #promptWrapper QComboBox#quickAddSpeedSelector { padding: 0px 6px; }
 #promptWrapper QComboBox#quickAddAgentModelSelector:hover,
 #promptWrapper QComboBox#quickAddTaskAssignee:hover,

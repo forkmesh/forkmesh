@@ -279,7 +279,10 @@ unchanged.
 - Settings rows onto `SettingsRow`; hard-coded colours in files also built into
   test programs; some charts and badges; rich-text colours.
 - Widgets styled once at build time do not follow a live design switch until
-  rebuilt.
+  rebuilt; the prompt composer's Next sizes and its icon-less send, add and
+  task buttons are one such case. Its baked mode, effort and model icons do
+  follow a dark/light switch (`refreshComposerIcons` from
+  `refreshThemedIcons`).
 - Overlay coverage for remaining object names and Market package pages; text
   tabs with overflow for the repository tab row.
 - Motion, empty and loading states, an interface font-size option, focus rings.

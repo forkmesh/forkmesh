@@ -3572,8 +3572,6 @@ QWidget *MainWindow::buildNetworkLogDock()
         m_quickAddModeSelector->setIconSize(QSize(kComposerIconPx, kComposerIconPx));
         m_quickAddModeSelector->view()->setIconSize(
             QSize(kComposerIconPx, kComposerIconPx));
-        m_quickAddModeSelector->setStyleSheet(
-            QStringLiteral("QComboBox { font-size: 12px; }"));
         m_quickAddSpeedSelector->setIconSize(QSize(kComposerIconPx, kComposerIconPx));
         m_quickAddSpeedSelector->view()->setIconSize(
             QSize(kComposerIconPx, kComposerIconPx));
@@ -6528,6 +6526,16 @@ void MainWindow::refreshCloudflareAiModels()
         refreshQuickAddAgentModelSelector();
         refreshComposerModelVisibilityList();
     });
+}
+
+void MainWindow::refreshComposerIcons()
+{
+    if (m_quickAddModeSelector) {
+        for (int row = 0; row < m_quickAddModeSelector->count() && row < 4; ++row)
+            m_quickAddModeSelector->setItemIcon(row, composerModeIcon(7 + row));
+    }
+    refreshQuickAddSpeedSelector();
+    refreshQuickAddAgentModelSelector();
 }
 
 void MainWindow::refreshQuickAddSpeedSelector()
