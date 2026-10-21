@@ -11450,8 +11450,6 @@ class ForkMeshWorld extends HTMLElement {
       ? label || "the ForkMesh World"
       : label || "a ForkMesh instance";
     this.hudNotice(`Entering ${name}…`);
-    // A signed-in walker carries a short-lived visa from this World, which
-    // the other side checks with this server before seating them by name.
     const visa = await this.requestTerritoryVisa(new URL(destination).origin);
     this.leaveTerritory(withTerritoryVisa(destination, visa), `Entering ${name}…`);
   }
@@ -11470,8 +11468,6 @@ class ForkMeshWorld extends HTMLElement {
     }
   }
 
-  // Doors and borders leave in the same tab behind a short fade, so the walk
-  // reads as one movement. Back/forward cache restores take the veil down.
   leaveTerritory(destination, message) {
     this.territoryLeaving = true;
     const veil = document.createElement("div");
@@ -11600,9 +11596,6 @@ class ForkMeshWorld extends HTMLElement {
     }, intervalMs);
   }
 
-  // The mesh directory as this server relays it from the hub: who this World
-  // is, its shape and the petal the hub draws it on. Shared by the boot (for
-  // placement) and the directory refresh.
   worldMeshDirectory() {
     if (!this.worldMeshRequest) {
       this.worldMeshRequest = this.fetchJSON(
@@ -11613,8 +11606,6 @@ class ForkMeshWorld extends HTMLElement {
     return this.worldMeshRequest;
   }
 
-  // ForkMesh's town is drawn beside this World; its live visitors are shown
-  // in it through a receive-only watch socket on the hub, shifted the same way.
   async placeTerritoryMesh() {
     const payload = await this.worldMeshDirectory();
     this.worldMeshRequest = null;
@@ -11626,8 +11617,6 @@ class ForkMeshWorld extends HTMLElement {
     this.worldMeshLinks()?.setNeighbors([
       { ...hub, dx: shift.x, dz: shift.z, x: shift.townX, z: shift.townZ },
     ]);
-    // ForkMesh's Office beside this World is theirs: it runs against their
-    // API with this page's visitor token.
     this.setOfficeOwner(hub);
     this.syncWorldMeshPosition();
   }
@@ -11803,8 +11792,6 @@ class ForkMeshWorld extends HTMLElement {
       this.meshLinks.update(NaN, NaN, document.hidden ? "" : rootId);
       return;
     }
-    // On an instance, ForkMesh's ground beside it is a visit to ForkMesh:
-    // the walker's presence moves to its relay without leaving the page.
     if (this.territory) {
       this.meshLinks.update(x, z, this.world?.territoryOwnerAt?.(x, z) || "");
       return;

@@ -398,8 +398,9 @@ async def render_world(env, csrf_field, admin_query):
     rules = (
         "<p>style: %s. accent: a #rrggbb colour (empty uses the instance "
         "theme). objects: up to %d buildings, each {type: \"house\", label, "
-        "url (https), position [x, z] from the plaza, within %d}; clicking "
-        "one opens its url in a new tab. bugs: the terrarium reads a JSON "
+        "url (https), position [x, z] from the plaza, within %d and inside "
+        "the hexagon}; clicking one leaves the World for its url. bugs: the "
+        "terrarium reads a JSON "
         "list of {domain, name, url, favicon} from a file in one of this "
         "instance's repositories (repo owner/name, ref, path); favicon is a "
         "png, ico, gif, jpg or webp path next to that file; at most %d "

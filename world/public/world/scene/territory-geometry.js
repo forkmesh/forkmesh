@@ -24,11 +24,6 @@ const EDGE_NORMALS = Object.freeze(
   ),
 );
 
-// Where ForkMesh's World draws a directory slot's single hexagon. Slots 0-4
-// are petals of ForkMesh's town: slot n takes desert petal n + 1 (at 60°·(n+1);
-// petal 0 holds the beach) and shares an edge with the town. The rest keep
-// the outer ring. This must match NEIGHBOUR_HEX_PETALS in ForkMesh's
-// scene/layout.js so both Worlds agree on where the border is.
 export const TERRITORY_PETALS = Object.freeze([1, 2, 3, 4, 5]);
 export const TERRITORY_SLOTS = Object.freeze(
   [2, 4, 6, 8, 10, 11, 0, 2, 4, 6, 8, 10].map((step, slot) => {
@@ -44,8 +39,6 @@ export const TERRITORY_SLOTS = Object.freeze(
   }),
 );
 
-// Where the hub says this World stands: the desert petal it publishes, else
-// the directory slot's place.
 export function territoryPetalTile(petal) {
   const index = Number(petal);
   if (!Number.isInteger(index) || index < 0 || index > 5) return null;
@@ -61,8 +54,6 @@ export function territorySlotTile(slot) {
   return Number.isInteger(index) ? TERRITORY_SLOTS[index] || null : null;
 }
 
-// How far ForkMesh's own World (town at its usual place) moves to sit beside
-// this World, which is drawn at the centre.
 export function forkmeshShiftAround(slot) {
   const home = territorySlotTile(slot);
   if (!home) return null;
@@ -72,8 +63,6 @@ export function forkmeshShiftAround(slot) {
 export function forkmeshTilesAround(slot) {
   const home = territorySlotTile(slot);
   if (!home) return [];
-  // A petal slot stands where one of the town's desert petals would be; that
-  // petal is the instance itself, so it is not drawn as ForkMesh's.
   return WORLD_HEX_TILES.flatMap((tile, index) => {
     const dx = tile.x - home.x;
     const dz = tile.z - home.z;
@@ -218,11 +207,6 @@ export function portalBorderLocal(slot) {
   };
 }
 
-// Territory buildings collide like the town office: a footprint is a box in
-// the plot's own frame (its +z face looks at the plaza), either solid (a
-// house) or hollow with glass walls (the terrarium). Each one has a door on
-// its +z face. A hollow box lets walkers through its door; a solid one turns a
-// walk into its door into a "door" result the caller can act on.
 export const TERRITORY_WALL_THICKNESS = 0.3;
 const COLLISION_STEP = 0.35;
 
@@ -244,7 +228,6 @@ export function territoryFootprint({
   };
 }
 
-// three.js turns a child's local +z towards (sin r, cos r); this undoes it.
 export function footprintLocal(footprint, x, z) {
   const dx = x - footprint.x;
   const dz = z - footprint.z;
@@ -295,9 +278,6 @@ function pathBlocked(footprint, from, to, radius) {
   return null;
 }
 
-// Moves a walker from `previous` to `current` past every footprint. A blocked
-// move slides along the wall it met (keeping the free axis of the building's
-// own frame); a walker already inside a wall is let out rather than pinned.
 export function constrainToFootprints(footprints, previous, current, radius = 0) {
   let x = Number(current?.x);
   let z = Number(current?.z);

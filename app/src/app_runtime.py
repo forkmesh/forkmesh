@@ -1891,11 +1891,22 @@ class Default:
             instance_world.parse((row or {}).get("doc") or ""),
             getattr(self.env, "INSTANCE_LOGO", "") or "")
 
+    async def _instance_world_saved(self):
+        try:
+            row = await d1_first(
+                self.env, "SELECT 1 AS saved FROM instance_settings WHERE k=?",
+                instance_world.SETTING_KEY)
+        except Exception:
+            row = None
+        return bool(row)
+
     async def _instance_world_scene(self, request, url):
-        """Public, cacheable description of this World's hexagon for a
-        neighbouring World (see instance_world_scene)."""
         origin = str(getattr(self.env, "PUBLIC_BASE_URL", "") or "").strip() \
-            .rstrip("/") or "https://" + str(url.hostname or "")
+            .rstrip("/")
+        if not origin:
+            return json_response({"error": "not_found"}, status=404)
+        if not await self._instance_world_saved():
+            return None
         cache_key = origin + instance_world_scene.PATH
         headers = {
             "access-control-allow-origin": "*",
@@ -1927,8 +1938,12 @@ class Default:
         response = json_response(
             scene, cache_seconds=instance_world_scene.CACHE_SECONDS,
             extra_headers=headers)
-        if listing is not None:
+        if listing is not None or not bugs:
             await edge_cache_put(cache_key, response)
+        else:
+            await edge_cache_put(cache_key, json_response(
+                scene, cache_seconds=instance_world_scene.FAILED_CACHE_SECONDS,
+                extra_headers=headers))
         return self._without_head_body(request, response)
 
     async def _instance_theme(self):
@@ -2008,7 +2023,9 @@ class Default:
         if instance_branded(self.env) and url.path.rstrip("/") == \
                 "/api/world/neighbour-scene" and \
                 method_name(request) in ("GET", "HEAD"):
-            return await self._instance_world_scene(request, url)
+            scene = await self._instance_world_scene(request, url)
+            if scene is not None:
+                return scene
         if url.path == "/api/instance/theme" and instance_branded(self.env) \
                 and method_name(request) in ("PUT", "POST"):
             return await self._instance_theme_write(request)

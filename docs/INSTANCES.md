@@ -912,9 +912,21 @@ instance theme's dark `primary`, then the style's own. The palettes are in
 
 **Buildings that link out.** `objects` lists up to 12 houses
 `{type: "house", label, url, position: [x, z], color}`; `position` is
-measured from the plaza centre, within 300. Clicking a house opens `url`
-(https only, no credentials) in a new tab with `noopener`. Nothing opens by
-walking: a browser blocks a new tab that no click asked for.
+measured from the plaza centre, within 300 on each axis, and must stay
+inside the hexagon: at most 330 from its centre (the plaza sits 85 in front
+of it), the reach the ForkMesh World draws a neighbour scene to
+(`NEIGHBOUR_SCENE_REACH`). Clicking a house leaves the World for `url`
+(https only, no credentials) in the same tab, after the "Entering …" notice
+(`openTerritoryLink`). Nothing opens by walking.
+
+The neighbour scene (`/api/world/neighbour-scene`) is served from the
+instance's own `PUBLIC_BASE_URL` and answers 404 without one, so a request's
+`Host` header never picks the address the server fetches the bug list from.
+Until an operator saves World settings the route falls through to the
+existing handler, so `WORLD_NEIGHBOUR_SCENE` and the default scene still
+apply. Every answer is edge-cached (600 s, or 60 s when the bug list could
+not be read), so anonymous requests do not each repeat the database reads
+and the bug-list fetch.
 
 **Bug terrarium.** `bugs: {repo, ref, path, title, limit, position}` draws a
 glass enclosure with up to 60 crawling bugs. The list is a JSON file in one

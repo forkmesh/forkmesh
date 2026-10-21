@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from urllib.parse import urlsplit
 
@@ -8,6 +9,8 @@ MAX_DOC_BYTES = 8 * 1024
 MAX_OBJECTS = 12
 MAX_BUGS = 60
 REACH = 300
+PLAZA_Z = 85
+SCENE_REACH = 330
 LABEL_CHARS = 40
 URL_CHARS = 300
 HEX_RE = re.compile(r"^#[0-9a-f]{6}$")
@@ -71,7 +74,12 @@ def _position(value, fallback):
         return list(fallback)
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise SettingError("A position is two numbers, [x, z].")
-    return [_coordinate(value[0]), _coordinate(value[1])]
+    x, z = _coordinate(value[0]), _coordinate(value[1])
+    if math.hypot(x, z + PLAZA_Z) > SCENE_REACH:
+        raise SettingError(
+            "A position stays inside the hexagon, within %d of its centre."
+            % SCENE_REACH)
+    return [x, z]
 
 
 def _color(value):

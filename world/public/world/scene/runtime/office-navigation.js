@@ -593,8 +593,6 @@ export function functions({
   }
 
   function constrainTownOfficeWalls(previousPosition) {
-    // On an instance the Office drawn beside it is ForkMesh's live one, so
-    // its walls and doorway work there too.
     if (ctx.officeSceneMode !== "town") return false;
     const office = ctx.landmarkObjects.get("office");
     if (!office) return false;

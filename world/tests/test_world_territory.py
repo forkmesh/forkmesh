@@ -245,8 +245,6 @@ def result():
 def test_the_forkmesh_world_sits_next_door_at_the_directory_slot(result):
     for item in result["slots"]:
         petal = item["slot"] < 5
-        # A petal slot is one of the town's petals: the desert petal it
-        # replaces is not drawn, and it borders the town and two petals.
         assert item["count"] == (6 if petal else 7), item
         assert item["replaces"] == (item["slot"] + 2 if petal else -1), item
         assert item["town"] is petal, item
@@ -274,7 +272,6 @@ def test_arrival_is_on_the_matching_road_edge_facing_in(result):
     assert abs(result["clamped"]["z"] - 150) < 1e-9
     assert result["badArrival"] == [None, None]
     assert result["instanceSpawn"]["space"] == "town-square"
-    # Arrivals turn the camera to face into the World entered.
     assert result["instanceSpawn"]["faceCamera"] is True
     assert result["forkmeshSpawn"]["faceCamera"] is True
     assert round(result["instanceSpawn"]["x"]) == 351
@@ -338,9 +335,6 @@ def test_an_instance_world_is_its_own_branded_territory(result):
 def test_forkmesh_world_is_shown_beside_and_its_live_pieces_are_hidden(result):
     hidden = set(result["hidden"])
     shown = set(result["neighbour"])
-    # ForkMesh's own town, petals and buildings are drawn beside the
-    # instance; boards, bots and districts that would show the instance's
-    # own data inside ForkMesh's town stay off.
     for element in ("landmark-office", "city-terrain", "desert-plots",
                     "coaster", "beach", "town-landscape", "bike-lane"):
         assert element in shown
@@ -411,7 +405,6 @@ def test_the_world_wires_the_territory():
     assert "fns.setForkmeshCrossings?.(" not in NETWORK
     assert "if (!this.world || this.destroyed || this.territory) return;" in APP
     assert "territoryWalkActive()" not in OFFICE
-    # The portal obelisk no longer reloads the page.
     assert 'part.userData.interactive = "instance-hexagon";' not in TERRITORY
 
 
@@ -428,11 +421,9 @@ def test_the_terrarium_and_houses_are_walled_with_one_way_in(result):
                                          "door": None}
     assert collide["beside"]["blocked"] is True
     assert collide["beside"]["at"][1] > 8
-    # A diagonal step into the glass slides along it instead of stopping.
     assert collide["slide"]["at"] == [6.4, 9.5]
     assert collide["tunnel"]["blocked"] is True
     assert collide["tunnel"]["at"] == [0, -20]
-    # A walker already inside a wall is let out, never pinned.
     assert collide["stuck"]["blocked"] is False
     assert collide["houseWall"]["blocked"] is True
     assert collide["houseWall"]["door"] is None

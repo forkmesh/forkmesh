@@ -1,6 +1,3 @@
-// Bugs for an instance's terrarium: one bug per site with bug reports, its
-// favicon on a little badge above it. The body type, colour, size and the way
-// it moves all come from the domain, so a site always gets the same bug.
 import { deterministicFraction } from "./layout.js";
 import * as resources from "./resources.js";
 
@@ -13,8 +10,6 @@ const BADGE_GAP = 0.45;
 const FLUSH_MS = 120;
 const DARK = "#161616";
 
-// Each kind: body colours, the [min, max] of size and walking speed, how it
-// moves ("walk", "dash" = stop-and-go, "fly"), its turning and leg rate.
 export const BUG_KINDS = Object.freeze({
   beetle: Object.freeze({
     colors: ["#2d6a4f", "#1d3557", "#6a4c93", "#8d5524", "#0f766e"],
@@ -74,7 +69,6 @@ export function bugMonogram(domain) {
   return name.charAt(0).toUpperCase() || "?";
 }
 
-// --- geometry --------------------------------------------------------------
 
 function shade(color, amount) {
   const value = parseInt(color.slice(1), 16);
@@ -134,8 +128,6 @@ export function mergeParts(THREE, parts) {
 const sphere = (THREE, radius, w = 12, h = 9) => new THREE.SphereGeometry(radius, w, h);
 const box = (THREE, x, y, z) => new THREE.BoxGeometry(x, y, z);
 
-// One leg: hinged on the body at `hinge`, reaching out to `side` (+1 right,
-// -1 left), swept forward or back by `sweep` and dropping to the soil.
 function leg(THREE, hinge, side, sweep, length, color, thickness = 0.05) {
   const geometry = box(THREE, length, thickness, thickness);
   geometry.translate((side * length) / 2, 0, 0);
@@ -301,7 +293,6 @@ function bodyTop(kind) {
   return { beetle: 0.68, stag: 0.68, ant: 0.7, spider: 1, ladybug: 0.55, moth: 0.3 }[kind] || 0.7;
 }
 
-// --- favicon badges ----------------------------------------------------------
 
 function roundedRect(context, x, y, size, radius) {
   context.beginPath();
@@ -313,8 +304,6 @@ function roundedRect(context, x, y, size, radius) {
   context.closePath();
 }
 
-// A favicon that decoded but shows nothing (a blank, fully transparent or
-// one-pixel image) gets the monogram instead.
 export function faviconUsable(image) {
   const width = image?.naturalWidth || 0;
   const height = image?.naturalHeight || 0;
@@ -355,8 +344,6 @@ function drawBadge(context, cell, { image = null, domain = "", hue = 0, ring = "
     const width = image.naturalWidth || 64;
     const height = image.naturalHeight || 64;
     const box = 76;
-    // Small icons scale up by whole steps without smoothing so their pixels
-    // stay sharp; larger ones are smoothed down into the box.
     const small = Math.max(width, height) < 48;
     const scale = small
       ? Math.max(1, Math.floor(box / Math.max(width, height)))
@@ -433,7 +420,6 @@ function makeAtlas(THREE) {
   };
 }
 
-// --- the swarm -------------------------------------------------------------
 
 export function createBugSwarm(THREE, { bounds, ring, height = 8, interactive }) {
   const layer = new THREE.Group();
@@ -506,7 +492,6 @@ export function createBugSwarm(THREE, { bounds, ring, height = 8, interactive })
     badge.position.y = bodyTop(traits.kind) * traits.scale + BADGE_GAP + BADGE_SIZE / 2;
     badge.renderOrder = 6;
     badge.frustumCulled = false;
-    // Face the camera whatever way the bug is heading.
     badge.onBeforeRender = (_renderer, _scene, camera) => {
       group.getWorldQuaternion(billboard).invert().multiply(camera.quaternion);
       badge.quaternion.copy(billboard);
@@ -559,7 +544,6 @@ export function createBugSwarm(THREE, { bounds, ring, height = 8, interactive })
       }
       let speed = traits.speed;
       if (traits.motion === "dash") {
-        // Stop, look about, then scurry off: a sawtooth of rest and run.
         const cycle = (state.phase * 0.45 + index * 0.37) % 1;
         speed = cycle < 0.45 ? 0 : traits.speed * Math.min(1, (cycle - 0.45) * 6);
       }

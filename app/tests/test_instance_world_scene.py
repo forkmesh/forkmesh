@@ -74,5 +74,15 @@ def test_the_scene_is_served_publicly_and_cached():
     assert '"access-control-allow-origin": "*",' in RUNTIME
     assert "cache_seconds=instance_world_scene.CACHE_SECONDS" in RUNTIME
     assert "await edge_cache_put(cache_key, response)" in RUNTIME
+    assert "cache_seconds=instance_world_scene.FAILED_CACHE_SECONDS" in RUNTIME
+
+
+def test_the_scene_needs_a_configured_origin_and_a_saved_world():
+    scene = RUNTIME.split("    async def _instance_world_scene(", 1)[1]
+    scene = scene.split("\n    async def ", 1)[0]
+    assert '"url.hostname' not in scene and "url.hostname" not in scene
+    assert 'return json_response({"error": "not_found"}, status=404)' in scene
+    assert "if not await self._instance_world_saved():\n            return None" in scene
+    assert "if scene is not None:\n                return scene" in RUNTIME
     assert 'instance_world_scene = _LazyModule("instance_world_scene")' \
         in ENTRY

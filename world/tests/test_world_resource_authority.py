@@ -103,8 +103,6 @@ ALLOWED = {
         "SpriteMaterial": 1,
     },
     "scene/instance-hexes.js": {"BufferGeometry": 1},
-    # The terrarium's parts are merged once inside resources.geometry
-    # factories, as are the bugs (one geometry per kind and colour).
     "scene/instance-territory.js": {
         "BoxGeometry": 1,
         "BufferGeometry": 1,

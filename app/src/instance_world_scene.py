@@ -1,11 +1,3 @@
-"""What stands on this instance's World hexagon, for a neighbouring World.
-
-ForkMesh's World draws this instance as one hexagon beside its town and, when
-it can, reads this description to draw the hexagon as it is laid out here:
-ground, plaza, sign, houses and the bug terrarium. It is plain data in the
-neighbour-scene v1 shape (world/public/world/world-neighbour-scene.js on the
-hub); positions are relative to the hexagon centre, in the World's own axes.
-"""
 import json
 import math
 from urllib.parse import quote, urlencode
@@ -14,8 +6,7 @@ VERSION = 1
 PATH = "/api/world/neighbour-scene"
 MAX_BUGS = 32
 CACHE_SECONDS = 600
-# The territory's centre and plaza (world-territory.js TERRITORY_PLAZA and
-# territory-geometry.js TERRITORY_CENTER): the plaza sits 85 in front.
+FAILED_CACHE_SECONDS = 60
 PLAZA = (0.0, 85.0)
 PLAZA_RADIUS = 26
 SIGN = (0.0, -22.0)

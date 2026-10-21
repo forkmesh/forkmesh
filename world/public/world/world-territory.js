@@ -39,8 +39,6 @@ export const TERRITORY_KEPT_ELEMENTS = Object.freeze([
   "instance-territory",
 ]);
 
-// ForkMesh's own World, drawn beside this one: its town, petals, roads,
-// buildings and rides, moved to where they stand relative to this World.
 export const TERRITORY_NEIGHBOUR_ELEMENTS = Object.freeze([
   "beach",
   "benches",
@@ -60,8 +58,6 @@ export const TERRITORY_NEIGHBOUR_ELEMENTS = Object.freeze([
   "zip-line",
 ]);
 
-// Live or per-World pieces that would show this instance's own data (or
-// move by themselves) inside ForkMesh's town stay off.
 export const TERRITORY_HIDDEN_ELEMENTS = Object.freeze([
   "agent-npcs",
   "arrival-box",
@@ -271,9 +267,6 @@ export function territoryBugs(list, limit = TERRITORY_BUG_LIMIT, source = null) 
   return bugs;
 }
 
-// The desert petal of ForkMesh's town this World stands on: the one the hub
-// publishes for it in /api/world/mesh, else the petal its directory slot
-// maps to (slot n is petal n + 1; petal 0 is ForkMesh's beach).
 export function territoryPetal(slot, mesh = null) {
   const worlds = Array.isArray(mesh?.worlds) ? mesh.worlds : [];
   const self = worlds.find((world) => world?.id && world.id === mesh?.self);
@@ -364,8 +357,6 @@ export function territoryCrossingURL(base, { from, slot = -1, local } = {}) {
   return url.href;
 }
 
-// The visa rides in the fragment: it never reaches a server log or a
-// Referer header, and the arriving page removes it before anything else.
 export function withTerritoryVisa(href, visa) {
   const token = String(visa || "");
   if (!href || !VISA_RE.test(token)) return href;

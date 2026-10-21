@@ -121,8 +121,6 @@ function circuitCanvases(palette) {
     paint.lineTo(CIRCUIT_TEXTURE, line * cell + 0.5);
     paint.stroke();
   }
-  // Traces run along the grid and turn at 45 degrees, ending in pads. They
-  // are drawn on both canvases: dim on the colour map, lit on the glow map.
   for (let trace = 0; trace < 14; trace += 1) {
     const random = (key) => deterministicFraction(`circuit:${trace}:${key}`);
     let x = Math.floor(random("x") * 16) * cell;
@@ -166,8 +164,6 @@ function circuitCanvases(palette) {
   return { base, glow };
 }
 
-// The security style's ground: dark slate with a faint grid and a few lit
-// circuit traces, one repeating texture across the whole hexagon.
 function circuitGroundMaterial(THREE, palette) {
   const { base, glow } = circuitCanvases(palette);
   const repeat = (CONTINUOUS_CITY_RADIUS * 2) / CIRCUIT_TILE;
@@ -498,8 +494,6 @@ function colouredPart(THREE, geometry, color, position, rotation = [0, 0, 0], sc
   return out;
 }
 
-// The terrarium is a walk-in glass tank: four glass walls, a lid, a metal
-// frame and one open glass door on the side that faces the plaza.
 function terrariumGlass(THREE) {
   const { width, depth, height } = TERRITORY_TERRARIUM;
   const t = TERRITORY_WALL_THICKNESS;
@@ -515,7 +509,6 @@ function terrariumGlass(THREE) {
     colouredBox(THREE, [door.width, height - door.height, t * 0.4], glass,
       [0, door.height + (height - door.height) / 2, depth / 2]),
     colouredBox(THREE, [width, t * 0.4, depth], glass, [0, height, 0]),
-    // The door itself, swung open against the front wall.
     colouredBox(THREE, [door.width - 0.2, door.height - 0.2, t * 0.4], glass,
       [door.width / 2 + 0.1, door.height / 2, depth / 2 + (door.width - 0.2) / 2 + 0.2],
       [0, Math.PI / 2, 0]),
@@ -547,7 +540,6 @@ function terrariumFrame(THREE, accent) {
       parts.push(colouredBox(THREE, [post, post, depth], metal, [(sx * width) / 2, y + (y ? 0 : post / 2), 0]));
     });
   });
-  // The door frame and its hinge-side leaf frame, in the accent colour.
   [-1, 1].forEach((sx) => {
     parts.push(colouredBox(THREE, [0.4, door.height + 0.2, 0.45], accent,
       [(sx * (door.width + 0.4)) / 2, (door.height + 0.2) / 2, depth / 2]));
@@ -679,8 +671,6 @@ function makeTerrarium(THREE, territory, interactive, animated) {
 function makeForkmeshNeighbours(THREE, territory, interactive) {
   const group = new THREE.Group();
   group.name = "territory-forkmesh-neighbours";
-  // ForkMesh's own town and petals are drawn by the World itself, moved
-  // beside this one (showForkmeshWorld); these tiles only mark the border.
   const tiles = forkmeshTilesAround(territory.place);
   const border = portalBorderLocal(territory.place);
   if (border) {
@@ -874,7 +864,6 @@ export function buildInstanceTerritory({ THREE, territory, interactive, animated
     root.add(terrarium.group);
     const tank = terrariumFootprint(x, z, rotation);
     footprints.push(tank);
-    // The open door leaf stands out from the front wall beside the doorway.
     const leaf = footprintWorld(
       tank,
       TERRARIUM_DOOR.width / 2 + 0.1,
@@ -889,8 +878,6 @@ export function buildInstanceTerritory({ THREE, territory, interactive, animated
   root.add(neighbours.group);
   return {
     root,
-    // ForkMesh's whole flower is walkable from here: it is the real
-    // ForkMesh World, live (federated), so nothing reloads at the border.
     walkTiles: [TERRITORY_CENTER, ...neighbours.tiles],
     forkmeshTiles: neighbours.tiles,
     crossings: [],
@@ -919,13 +906,6 @@ export function functions({
   let doorAt = 0;
   const hintedAt = new Map();
 
-  // ForkMesh's World is this same World code: its town, petals, buildings
-  // and rides are built here too, moved beside this World's hexagon to where
-  // they stand relative to it in the ForkMesh World. It is the live ForkMesh
-  // World: walkable and solid, its Office runs against ForkMesh's API with
-  // this page's visitor token (setOfficeOwner), and walkers there are on
-  // ForkMesh's relay. Clicks on other pieces stay off: they would act on this
-  // instance's own data.
   const shifted = new WeakSet();
   let shift = null;
   let sweptAt = -Infinity;
@@ -977,8 +957,6 @@ export function functions({
     return built;
   }
 
-  // Whose ground a point is: ForkMesh's when it is on one of its tiles
-  // (past the shared road's centre line), else this World's.
   function territoryOwnerAt(x, z) {
     if (!built) return "";
     for (const tile of built.forkmeshTiles) {
@@ -1018,9 +996,6 @@ export function functions({
     return true;
   }
 
-  // Buildings are solid and the terrarium only opens at its door, the same
-  // previous-position slide the town office walls use. Walking into a
-  // house's door goes through it.
   function constrainTerritoryObstacles(previous) {
     if (!footprints.length || !previous || ctx.superJumping) return false;
     const position = ctx.player.position;
