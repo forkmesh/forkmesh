@@ -249,6 +249,27 @@ def test_readme_relative_and_centred_images_use_the_raw_endpoint():
     assert repo_ssr.markdown_html("![x](logo.png)", "/tools") == "<p>x</p>"
 
 
+def test_readme_mentions_link_to_profiles_outside_code_links_and_urls():
+    out = repo_ssr.markdown_html(
+        "Thanks @Alice and **@bob**, not `@carol`, [@dan](https://d.example), "
+        "https://m.example/@erin, x@frank.example, @gh[bot] or @-no\n\n"
+        "- <a href=\"https://g.example\">@gus</a> @hal",
+        "/tools")
+    mention = ('<a href="/@%s" data-issue-person="%s" data-issue-mention="" '
+               'class="dashboard-accent-link underline underline-offset-2 '
+               'hover:text-foreground">@%s</a>')
+    assert mention % ("alice", "alice", "Alice") in out
+    assert "<strong>%s</strong>" % (mention % ("bob", "bob", "bob")) in out
+    assert "<code>@carol</code>" in out
+    assert '<a href="https://d.example">@dan</a>' in out
+    assert "https://m.example/@erin," in out
+    assert "x@frank.example" in out
+    assert "@gh[bot]" in out and "/@gh" not in out
+    assert '<a href="https://g.example">@gus</a>' in out
+    assert mention % ("hal", "hal", "hal") in out
+    assert out.count("data-issue-mention") == 3
+
+
 def test_readme_raw_html_stays_sanitized():
     out = repo_ssr.markdown_html(
         '<a href="javascript:alert(1)" onclick="x"><img src="javascript:y" onerror="z" alt="j"></a> '

@@ -463,7 +463,7 @@ func transcriptInline(_ text: String, _ fm: FmPalette, _ repo: RepoRef? = nil) -
         var piece = AttributedString(span.text)
         switch span.style {
         case .plain:
-            piece = referenceAttributed(ReferenceLinks.runs(span.text, repo: repo, commits: repo != nil))
+            piece = referenceAttributed(ReferenceLinks.runs(span.text, repo: repo, commits: repo != nil, mentions: false))
             for run in piece.runs where run.link != nil {
                 piece[run.range].foregroundColor = fm.accent
             }

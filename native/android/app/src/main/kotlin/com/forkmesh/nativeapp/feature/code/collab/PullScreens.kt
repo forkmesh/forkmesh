@@ -333,6 +333,7 @@ private fun PullTimelineView(pull: PublishedPull, repo: RepoRef) {
                 author = event.displayAuthor,
                 body = event.body,
                 repo = repo,
+                profile = event.authorName,
             )
         }
     }

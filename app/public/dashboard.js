@@ -6982,7 +6982,7 @@
         : orgRoleBadge(member.role);
       return '<div class="rounded-md border border-border bg-card px-3 py-2">' +
         '<div class="flex items-center gap-2">' +
-          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") + "</span>" +
+          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + issuePersonNameHtml(member.name || "", "") + "</span>" +
           controls +
         "</div>" +
         orgMemberFloorGroups(member, canManage) +
@@ -7583,7 +7583,7 @@
     const rows = teamMembers.map((member) => {
       const memberName = escapeHtml(member.name || "");
       return '<div class="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">' +
-        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") +
+        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + issuePersonNameHtml(member.name || "", "") +
           (member.external
             ? ' <small class="ml-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">outside collaborator</small>'
             : "") + "</span>" +
@@ -16042,7 +16042,7 @@
       ? `<span>Logs are shown to the repository owner and organization writers.</span>`
       : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
     const facts = [
-      run.actor ? `Triggered by ${userNameHtml(run.actor)}` : "",
+      run.actor ? `Triggered by ${issuePersonNameHtml(run.actor, "font-medium text-foreground")}` : "",
       run.event ? `on ${escapeHtml(run.event)}` : "",
       run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
     ].filter(Boolean).join(" ");
@@ -16101,7 +16101,7 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, escapeHtml(repoActionsRefLabel(run.ref)), pullLink,
-        run.actor ? `<span data-repo-actions-run-actor>${userNameHtml(run.actor)}</span>` : "",
+        run.actor ? `<span data-repo-actions-run-actor>${issuePersonNameHtml(run.actor, "")}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `
@@ -16573,6 +16573,10 @@
     if (typeof watchIssueActorAvatars === "function") watchIssueActorAvatars();
     const handle = String(login).toLowerCase();
     return `<a href="${escapeHtml(publicProfileUrl(handle))}" data-issue-person="${escapeHtml(handle)}" data-issue-mention="" class="dashboard-accent-link underline underline-offset-2 hover:text-foreground">@${escapeHtml(login)}</a>`;
+  }
+
+  function textWithMentionsHtml(text) {
+    return escapeHtml(text).replace(MD_MENTION, (whole, prefix, login) => `${prefix}${mdMentionHtml(login)}`);
   }
 
   function mdTrimAutolink(url) {
@@ -19391,7 +19395,7 @@
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
             <div class="truncate text-2xl font-bold text-foreground">${escapeHtml(title || "Pull request")}</div>
-            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${author ? userNameHtml(author) : "unknown"}</span></div>
+            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${author ? issuePersonNameHtml(author, "text-muted-foreground") : "unknown"}</span></div>
           </div>
           <div class="flex shrink-0 gap-6">
             ${stat(`+${formatCount(additions)}`, "Additions", "text-success")}
@@ -19647,7 +19651,7 @@
     return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
       ${issueActorAvatarHtml(author, event.author, "h-6 w-6")}
       <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${userNameHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${issuePersonNameHtml(author, "")}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
         <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
       </div>
     </article>`;
@@ -20640,7 +20644,7 @@
     return gate + reviewers.map((reviewer) => {
       const tone = reviewer.state === "approved" ? "text-success" : reviewer.state === "changes_requested" ? "text-destructive" : "text-muted-foreground";
       const label = reviewer.state === "approved" ? "Approved" : reviewer.state === "changes_requested" ? "Requested changes" : "Commented";
-      return `<span class="mt-1.5 flex items-center justify-between gap-2 first:mt-0"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}<span class="truncate font-medium text-foreground">${escapeHtml(reviewer.authorName)}</span></span><span class="shrink-0 text-[10px] font-semibold ${tone}">${escapeHtml(label)}</span></span>`;
+      return `<span class="mt-1.5 flex items-center justify-between gap-2 first:mt-0"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}${issuePersonNameHtml(reviewer.authorName, "truncate font-medium text-foreground")}</span><span class="shrink-0 text-[10px] font-semibold ${tone}">${escapeHtml(label)}</span></span>`;
     }).join("");
   }
 
@@ -23235,8 +23239,8 @@
               ? `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 font-medium text-foreground"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`
               : `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${statePillTone} px-3 font-medium text-white"><i data-lucide="${stateIcon}" class="h-4 w-4"></i>${escapeHtml(stateLabel)}</span>`}
             <span class="min-w-0">${isPulls
-              ? `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
-              : `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
+              ? `${issuePersonNameHtml(author)} wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
+              : `${issuePersonNameHtml(author)} started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
           </div>
           ${recordTabs}
         </header>
@@ -23401,7 +23405,7 @@
     // clicks route through /login.
     const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
     const assigneeValue = `${issueAssignees.length
-      ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}<span class="truncate font-semibold">${escapeHtml(assignee)}</span></span>`).join("")}</div>`
+      ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`).join("")}</div>`
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
     const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
@@ -23561,7 +23565,7 @@
               <span class="hidden sm:block">${item ? issueActorAvatarHtml(item.author, item.author, "h-10 w-10") : bar("w-10", "h-10 rounded-full")}</span>
               <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                 <div class="flex items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] text-muted-foreground">
-                  ${item ? `<span><span class="font-semibold text-foreground">${userNameHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
+                  ${item ? `<span>${issuePersonNameHtml(item.author)} opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
                 </div>
                 <div class="grid gap-2.5 px-4 py-4">
                   ${bar("w-1/4", "h-5")}${bar("w-11/12")}${bar("w-10/12")}${bar("w-7/12")}
@@ -23576,7 +23580,7 @@
             </div>
           </div>
           <aside class="min-w-0 self-start">
-            ${section("Assignees", item ? (assignees.length ? `<div class="grid gap-1.5">${assignees.map((name) => `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}<span class="font-semibold">${escapeHtml(name)}</span></span>`).join("")}</div>` : `<span class="text-muted-foreground">No one assigned</span>`) : bar("w-1/2"))}
+            ${section("Assignees", item ? (assignees.length ? `<div class="grid gap-1.5">${assignees.map((name) => `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "font-semibold")}</span>`).join("")}</div>` : `<span class="text-muted-foreground">No one assigned</span>`) : bar("w-1/2"))}
             ${section("Agent", bar("w-2/3"))}
             ${section("Labels", item ? (labels.length ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>` : `<span class="text-muted-foreground">No labels</span>`) : bar("w-3/4"))}
             ${section("Fields", item && Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(item.priority)}</span>` : bar("w-1/2"))}
@@ -38446,7 +38450,7 @@
           <span class="font-mono">${escapeHtml(item.id)}</span>
           ${item.cve ? `<span class="font-mono">${escapeHtml(item.cve)}</span>` : ""}
           <span>${escapeHtml(when)}</span>
-          ${item.reporter ? `<span>reported by ${userNameHtml(item.reporter)}</span>` : ""}
+          ${item.reporter ? `<span>reported by ${issuePersonNameHtml(item.reporter, "text-muted-foreground")}</span>` : ""}
         </div>
       </div>
       ${item.state && item.state !== "published" ? securityStatePill(item.state) : ""}
@@ -38670,13 +38674,13 @@
         return `<div data-security-comment class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
           <span class="hidden sm:block">${issueActorAvatarHtml(comment.author, comment.author, "h-10 w-10")}</span>
           <div class="min-w-0 overflow-hidden rounded-md border border-border">
-            <div class="border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-1.5 text-[14px] text-muted-foreground"><span class="font-semibold text-foreground">${userNameHtml(comment.author)}</span> commented ${escapeHtml(relativeTimeLabel(comment.ts))}</div>
+            <div class="border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-1.5 text-[14px] text-muted-foreground">${issuePersonNameHtml(comment.author)} commented ${escapeHtml(relativeTimeLabel(comment.ts))}</div>
             <div class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(comment.body, repo)}</div>
           </div>
         </div>`;
       }
       const entry = item.entry;
-      return `<div data-security-event class="flex items-center gap-2 text-[13px] text-muted-foreground sm:ml-14"><i data-lucide="dot" class="h-4 w-4"></i><span class="font-semibold text-foreground">${userNameHtml(entry.actor)}</span> ${escapeHtml(entry.action)}${entry.detail ? ` <span class="text-foreground">${escapeHtml(entry.detail)}</span>` : ""} ${escapeHtml(relativeTimeLabel(entry.ts))}</div>`;
+      return `<div data-security-event class="flex items-center gap-2 text-[13px] text-muted-foreground sm:ml-14"><i data-lucide="dot" class="h-4 w-4"></i>${issuePersonNameHtml(entry.actor)} ${escapeHtml(entry.action)}${entry.detail ? ` <span class="text-foreground">${escapeHtml(entry.detail)}</span>` : ""} ${escapeHtml(relativeTimeLabel(entry.ts))}</div>`;
     }).join("");
   }
 
@@ -38709,9 +38713,9 @@
     const creditBanner = credit && credit.state === "pending" && ["published", "withdrawn"].includes(stateName) || credit && credit.state === "pending" && member
       ? `<div data-security-credit-banner class="flex flex-wrap items-center gap-3 rounded-md border border-primary px-4 py-3 text-[14px]"><i data-lucide="award" class="h-4 w-4 text-primary"></i><span class="min-w-0 flex-1">You are credited as <strong>${escapeHtml(securityCreditLabel(credit.type))}</strong> on this advisory. Accepted credits appear on your profile and in the security researchers ranking.</span>${button("credit-decision", "Accept credit", "bg-primary text-primary-foreground hover:bg-primary/90", " data-decision=\"accept\"")}${button("credit-decision", "Decline", "", " data-decision=\"decline\"")}</div>` : "";
     const affected = (advisory.affected || []).map((entry) => `<li class="py-1"><span class="font-semibold">${escapeHtml(entry.package || entry.path || "Repository")}</span>${entry.ecosystem ? ` <span class="text-muted-foreground">(${escapeHtml(entry.ecosystem)})</span>` : ""}${entry.path && entry.package ? ` <span class="font-mono text-[12px] text-muted-foreground">${escapeHtml(entry.path)}</span>` : ""}<div class="text-[12px] text-muted-foreground">Affected: ${escapeHtml(entry.vulnerable || "all versions")} · Patched: ${escapeHtml(entry.patched || "none yet")}</div></li>`).join("");
-    const credits = (detail.credits || []).map((item) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(item.user, item.user, "h-5 w-5")}<a href="/${encodeURIComponent(item.user)}" class="font-semibold hover:text-accent hover:underline">${userNameHtml(item.user)}</a><span class="text-[12px] text-muted-foreground">${escapeHtml(securityCreditLabel(item.type))}${member && item.state !== "accepted" ? ` · ${escapeHtml(item.state)}` : ""}</span>${perms.manage ? `<button type="button" data-security-action="credit-remove" data-user="${escapeHtml(item.user)}" aria-label="Remove credit" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
+    const credits = (detail.credits || []).map((item) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(item.user, item.user, "h-5 w-5")}${issuePersonNameHtml(item.user, "font-semibold")}<span class="text-[12px] text-muted-foreground">${escapeHtml(securityCreditLabel(item.type))}${member && item.state !== "accepted" ? ` · ${escapeHtml(item.state)}` : ""}</span>${perms.manage ? `<button type="button" data-security-action="credit-remove" data-user="${escapeHtml(item.user)}" aria-label="Remove credit" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
     const creditForm = perms.manage ? `<form data-security-inline="credit" class="mt-2 grid gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" /><select name="type" class="${securityFieldClass()}">${SECURITY_CREDIT_TYPES.map(([key, label]) => `<option value="${key}">${label}</option>`).join("")}</select>${button("credit-add", "Add credit")}</form>` : "";
-    const collaborators = (advisory.collaborators || []).map((name) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(name, name, "h-5 w-5")}${userNameHtml(name)}${perms.manage ? `<button type="button" data-security-action="collaborator-remove" data-user="${escapeHtml(name)}" aria-label="Remove collaborator" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
+    const collaborators = (advisory.collaborators || []).map((name) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "")}${perms.manage ? `<button type="button" data-security-action="collaborator-remove" data-user="${escapeHtml(name)}" aria-label="Remove collaborator" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
     const collaboratorForm = perms.manage ? `<form data-security-inline="collaborator" class="mt-2 flex gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" />${button("collaborator-add", "Add")}</form>` : "";
     const fixLinks = [
       fix.branch ? `<a class="font-mono text-primary hover:underline" href="${escapeHtml(repoLinkUrl(repo, "tree", "") + "?branch=" + encodeURIComponent(fix.branch))}">${escapeHtml(fix.branch)}</a>` : "",
@@ -38737,7 +38741,7 @@
             ${securitySeverityPill(severity)}
             <span class="font-mono">${escapeHtml(advisory.id || "")}</span>
             ${advisory.cve ? `<span class="font-mono">${escapeHtml(advisory.cve)}</span>` : ""}
-            ${opener && member ? `<span>${advisory.reporter ? "Reported" : "Opened"} by <span class="font-semibold text-foreground">${userNameHtml(opener)}</span> ${escapeHtml(relativeTimeLabel(advisory.createdAt))}</span>` : ""}
+            ${opener && member ? `<span>${advisory.reporter ? "Reported" : "Opened"} by ${issuePersonNameHtml(opener)} ${escapeHtml(relativeTimeLabel(advisory.createdAt))}</span>` : ""}
             ${advisory.publishedAt ? `<span>Published ${escapeHtml(formatDate(advisory.publishedAt))}</span>` : ""}
           </div>
           ${actions.length ? `<div data-security-actions class="mt-3 flex flex-wrap gap-2">${actions.join("")}</div>` : ""}
@@ -40079,11 +40083,11 @@
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
         </span>
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
+          <p class="text-sm font-semibold text-foreground">${textWithMentionsHtml(repoPublicText(item.title) || "Ping")}</p>
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
+      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${textWithMentionsHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">
@@ -47340,17 +47344,17 @@
   // this bundle; the stubs where the modules were load it on first use.
   const DASHBOARD_CHUNK_URLS = {
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
-    "agents": "/dashboard-page-agents.js?v=01286bc2cfba",
-    "apps": "/dashboard-page-apps.js?v=8e695c33eb03",
+    "agents": "/dashboard-page-agents.js?v=8e608cb03ff4",
+    "apps": "/dashboard-page-apps.js?v=584df5307f30",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=1ebcd099794e",
-    "challenges": "/dashboard-page-challenges.js?v=2c09240bdb95",
+    "challenges": "/dashboard-page-challenges.js?v=a053b54ae338",
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
-    "hackathon": "/dashboard-page-hackathon.js?v=915f8761c02c",
+    "hackathon": "/dashboard-page-hackathon.js?v=22656013417d",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=befe2a1621ea",
+    "notes": "/dashboard-page-notes.js?v=9cd57af4c881",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "tasks": "/dashboard-page-tasks.js?v=21e0b6211e46",
+    "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",
     "workflows": "/dashboard-page-workflows.js?v=9cec7cd9e87f",
   };
   const dashboardChunkScope = {
@@ -47370,6 +47374,7 @@
     formatTimeAgo,
     groupDisplayOwner,
     groupRepositories,
+    issuePersonNameHtml,
     loadQrGenerator,
     loadRunnerAccountsPicker,
     loadingHtml,
@@ -47393,8 +47398,10 @@
     sourceOfTruth,
     state,
     submitWebIssue,
-    userNameHtml,
+    userDisplayName,
+    userNameKey,
     validNodeName,
+    watchIssueActorAvatars,
     get repositoriesReady() { return repositoriesReady; },
   };
   const dashboardChunkLoads = {};

@@ -795,6 +795,13 @@ def _esc(value):
     return html.escape(str(value or ""))
 
 
+def _person(name):
+    from .repo_ssr_issue import actor_is_bot, profile_href
+    text = str(name or "").strip()
+    href = "" if actor_is_bot(text) else profile_href(re.sub(r"^@", "", text).lower())
+    return '<a href="%s">%s</a>' % (_esc(href), _esc(text)) if href else _esc(text)
+
+
 def _date(value):
     import datetime
     try:
@@ -835,7 +842,7 @@ def _frame(bundle, active, inner):
             ("discussions", "/discussions", "Discussions")))
     return (
         '<div class="fm-ssr" data-repo-ssr>'
-        '<h1 class="fm-ssr-title"><a href="/%s">%s</a> / <a href="%s">%s</a>'
+        '<h1 class="fm-ssr-title"><a href="/@%s">%s</a> / <a href="%s">%s</a>'
         '</h1><nav class="fm-ssr-tabs">%s</nav>%s</div>' % (
             _esc(urllib.parse.quote(owner)), _esc(owner), _esc(base),
             _esc(repo), tabs, inner))
@@ -862,7 +869,7 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None):
     items = []
     for index, row in enumerate(shown[:LIST_PAGE_SIZE]):
         number = row["number"]
-        meta = "#%d opened by %s" % (number, _esc(row.get("author")))
+        meta = "#%d opened by %s" % (number, _person(row.get("author")))
         when = _date(row.get("ts"))
         if when:
             meta += " &middot; " + when
@@ -928,7 +935,7 @@ def _events(events, base):
     return "".join(
         '<div class="fm-ssr-event"><div><b>%s</b> %s &middot; %s</div>'
         '<div class="fm-ssr-md">%s</div></div>' % (
-            _esc(e.get("author")), _esc(e.get("type") or "commented")
+            _person(e.get("author")), _esc(e.get("type") or "commented")
             if e.get("type") not in (None, "", "comment") else "commented",
             _date(e.get("ts")), _md(e.get("body"), base))
         for e in events if str(e.get("body") or "").strip())
@@ -962,7 +969,7 @@ def _render(bundle, section=""):
                 '<code>%s</code> from <code>%s</code> &middot; %s</p>'
                 '<nav class="fm-ssr-tabs">%s</nav>' % (
                     _esc(pull["title"]), pull["number"], _pill(pull["state"]),
-                    _esc(pull["author"]), _esc(pull["base"]),
+                    _person(pull["author"]), _esc(pull["base"]),
                     _esc(pull["head"]), _date(pull["ts"]), tabs))
         if section == "files":
             body = _diff(pull.get("patch") or "")
@@ -970,7 +977,7 @@ def _render(bundle, section=""):
             body = ('<div class="fm-ssr-event"><div><b>%s</b> opened this '
                     'pull request</div><div class="fm-ssr-md" '
                     'data-ssr-usable>%s</div></div>%s' % (
-                        _esc(pull["author"]), _md(pull["body"], base),
+                        _person(pull["author"]), _md(pull["body"], base),
                         _events(pull.get("conversation") or [], base)))
         return _frame(bundle, "pulls", head + body)
     if bundle.view == "issue" and model.get("issue"):
@@ -981,11 +988,11 @@ def _render(bundle, section=""):
                 '<p class="fm-ssr-sub">%s<b>%s</b> opened this issue '
                 '&middot; %s%s</p>' % (
                     _esc(issue["title"]), issue["number"],
-                    _pill(issue["state"]), _esc(issue["author"]),
+                    _pill(issue["state"]), _person(issue["author"]),
                     _date(issue["ts"]), labels))
         body = ('<div class="fm-ssr-event"><div><b>%s</b></div>'
                 '<div class="fm-ssr-md" data-ssr-usable>%s</div></div>%s' % (
-                    _esc(issue["author"]), _md(issue["body"], base),
+                    _person(issue["author"]), _md(issue["body"], base),
                     _events(issue.get("comments") or [], base)))
         return _frame(bundle, "issues", head + body)
     if bundle.view == "discussion" and model.get("discussion"):
@@ -993,12 +1000,12 @@ def _render(bundle, section=""):
         head = ('<h2 class="fm-ssr-h1">%s <span>#%d</span></h2>'
                 '<p class="fm-ssr-sub"><b>%s</b> started this discussion '
                 '&middot; %s%s</p>' % (
-                    _esc(item["title"]), item["number"], _esc(item["author"]),
+                    _esc(item["title"]), item["number"], _person(item["author"]),
                     _date(item["ts"]), (" &middot; " + _esc(item["category"]))
                     if item.get("category") else ""))
         body = ('<div class="fm-ssr-event"><div><b>%s</b></div>'
                 '<div class="fm-ssr-md" data-ssr-usable>%s</div></div>%s' % (
-                    _esc(item["author"]), _md(item["body"], base),
+                    _person(item["author"]), _md(item["body"], base),
                     _events(item.get("replies") or [], base)))
         return _frame(bundle, "discussions", head + body)
     return None

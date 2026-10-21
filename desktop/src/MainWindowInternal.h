@@ -841,6 +841,11 @@ const QLatin1String kIssueLinkScheme("forkmesh-issue:");
 
 const QLatin1String kTaskLinkScheme("forkmesh-task:");
 
+const QLatin1String kUserLinkScheme("forkmesh-user:");
+
+QString userProfileAccount(const QString &name);
+QString userProfileLinkHtml(const QString &account, const QString &shown = QString());
+
 QString branchLinkHtml(const QString &branch);
 
 const QLatin1String kRepoInfoPath(".forkmesh/info.json");

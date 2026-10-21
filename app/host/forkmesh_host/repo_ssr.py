@@ -1148,6 +1148,15 @@ def _inline(text, base, raw=""):
 
     text = _LINK.sub(keep_link, text)
     text = html.escape(text, quote=False)
+    from .repo_ssr_issue import MD_BARE_URL, MD_MENTION, mention_html
+
+    def keep_markup(markup):
+        links.append(markup)
+        return "\x03%d\x03" % (len(links) - 1)
+
+    text = MD_BARE_URL.sub(lambda m: m.group(1) + keep_markup(m.group(2)), text)
+    text = MD_MENTION.sub(lambda m: m.group(1) + keep_markup(mention_html(m.group(2))),
+                          text)
     text = _BOLD.sub(lambda m: "<strong>%s</strong>" % (m.group(1) or m.group(2)),
                      text)
     text = _ITALIC.sub(lambda m: "<em>%s</em>" % m.group(1), text)

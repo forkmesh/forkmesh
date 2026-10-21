@@ -449,7 +449,7 @@ private fun rememberInline(text: String): AnnotatedString {
         buildAnnotatedString {
             for (span in AgentTranscriptFormat.inline(text)) {
                 when (span.style) {
-                    TranscriptInlineStyle.Plain -> for (run in ReferenceLinks.runs(span.text, repo, commits = repo != null)) {
+                    TranscriptInlineStyle.Plain -> for (run in ReferenceLinks.runs(span.text, repo, commits = repo != null, mentions = false)) {
                         val url = run.url
                         if (url == null) append(run.text) else appendLink(run.text, url, c.accent, open)
                     }

@@ -1845,7 +1845,12 @@ void MainWindow::buildIssueSidebarValues()
         v->setOpenExternalLinks(false);
         v->setTextInteractionFlags(Qt::TextBrowserInteraction);
     }
-    connect(m_issueAssigneesValue, &QLabel::linkActivated, this, [this] {
+    connect(m_issueAssigneesValue, &QLabel::linkActivated, this,
+            [this](const QString &href) {
+        if (href.startsWith(kUserLinkScheme)) {
+            openBodyReference(href);
+            return;
+        }
         editIssueAssignees();
         if (!m_issueAssigneesEdit || !m_issueAssigneesStack ||
             m_issueAssigneesStack->currentIndex() != 1)
@@ -1860,7 +1865,12 @@ void MainWindow::buildIssueSidebarValues()
             assignees << who;
         m_issueAssigneesEdit->setText(assignees.join(", "));
     });
-    connect(m_issueReporterValue, &QLabel::linkActivated, this, [this] {
+    connect(m_issueReporterValue, &QLabel::linkActivated, this,
+            [this](const QString &href) {
+        if (href.startsWith(kUserLinkScheme)) {
+            openBodyReference(href);
+            return;
+        }
         editIssueReporter();
         if (!m_issueReporterEdit || !m_issueReporterStack ||
             m_issueReporterStack->currentIndex() != 1)
@@ -4855,8 +4865,13 @@ void MainWindow::addIssueThreadCard(const Issue &issue, const IssueEvent &ev,
     headerRow->setSpacing(8);
     auto *header = new QLabel(
         QStringLiteral("<b>%1</b> <span>%2 %3</span>")
-            .arg(who.toHtmlEscaped(), isOpen ? "opened" : "commented", when));
+            .arg(userProfileLinkHtml(ev.authorName, who),
+                 isOpen ? "opened" : "commented", when));
     header->setTextFormat(Qt::RichText);
+    header->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    header->setOpenExternalLinks(false);
+    connect(header, &QLabel::linkActivated, this,
+            [this](const QString &href) { openBodyReference(href); });
     header->setToolTip(issueFullDateTime(ev.ts));
     headerRow->addWidget(header);
     headerRow->addStretch();
@@ -5539,7 +5554,7 @@ void MainWindow::addIssueActivityRow(const IssueEvent &ev, const QString &html)
     const QString when = formatIssueRelativeTime(ev.ts);
     auto *line = new QLabel(
         QStringLiteral("<b>%1</b> %2 <span style='color:#8b949e'>%3</span>")
-            .arg(who.toHtmlEscaped(), html, when.toHtmlEscaped()),
+            .arg(userProfileLinkHtml(ev.authorName, who), html, when.toHtmlEscaped()),
         row);
     line->setObjectName(QStringLiteral("issueActivityCard"));
     line->setTextFormat(Qt::RichText);
@@ -5549,6 +5564,8 @@ void MainWindow::addIssueActivityRow(const IssueEvent &ev, const QString &html)
     connect(line, &QLabel::linkActivated, this, [this](const QString &href) {
         if (href.startsWith(QStringLiteral("forkmesh-issue:")))
             showIssue(href.mid(15).toInt());
+        else if (href.startsWith(kUserLinkScheme))
+            openBodyReference(href);
     });
     rowLayout->addWidget(line, 1);
     m_issueThreadLayout->addWidget(row);
@@ -10861,7 +10878,8 @@ void MainWindow::renderIssueReporterValue(QString reporter)
             issueTimelineAvatar(authorKey, m_issueReporterShown, 18);
         lines << QStringLiteral("%1&nbsp;%2")
                      .arg(inlinePixmapMarkup(avatar, 18),
-                          m_issueReporterShown.left(24).toHtmlEscaped());
+                          userProfileLinkHtml(m_issueReporterShown,
+                                              m_issueReporterShown.left(24)));
     }
     if (hostOnly)
         lines << QStringLiteral("<i>%1</i>").arg(kIssueReporterHostOnlyNotice);
@@ -10955,7 +10973,8 @@ void MainWindow::renderIssueAssigneesValue(QStringList assignees)
         // Reading the seed directly pinned this line to the stand-in forever.
         const QPixmap avatar = issueTimelineAvatar(QString(), a, 18);
         lines << QStringLiteral("%1&nbsp;%2")
-                     .arg(inlinePixmapMarkup(avatar, 18), a.left(24).toHtmlEscaped());
+                     .arg(inlinePixmapMarkup(avatar, 18),
+                          userProfileLinkHtml(a, a.left(24)));
     }
     if (lines.isEmpty())
         lines << (writable ? QStringLiteral("No one - <a href='#'>Assign yourself</a>")

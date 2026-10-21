@@ -10,8 +10,10 @@ web visitors never see it — leaving the website out of the shared chat. This
 contract pins the website tagging the same durable set the node does.
 """
 
+import json
 from pathlib import Path
 import re
+import subprocess
 
 
 PUBLIC = Path(__file__).resolve().parents[1] / "public"
@@ -413,6 +415,89 @@ def test_public_chat_usernames_link_to_relay_profile_pages():
     assert 'document.createElement(hasProfile ? "a" : "div")' in PUBLIC_CHAT
     assert "a.chat-author:hover" in PUBLIC_CHAT_CSS
     assert "a.chat-person:hover" in PUBLIC_CHAT_CSS
+
+
+def test_public_chat_thread_authors_link_to_profile_pages():
+    header = PUBLIC_CHAT[
+        PUBLIC_CHAT.index("function threadMessageHeader(record) {"):
+        PUBLIC_CHAT.index("function renderThreadRoot(record) {")
+    ]
+    assert 'const author = document.createElement("strong");' in header
+    assert "if (record.senderId === FORKBOT_SENDER_ID) {" in header
+    assert 'authorLink.className = "chat-author";' in header
+    assert "authorLink.href = mentionProfilePath(record.sender);" in header
+    assert "showMentionCard(authorLink, record.sender)" in header
+    assert "author.append(authorLink);" in header
+
+
+def test_dashboard_chat_authors_link_to_profile_pages():
+    helper = CHAT[
+        CHAT.index("function authorProfileName(record) {"):
+        CHAT.index("async function fetchMentionProfile(name) {")
+    ]
+    assert 'record.external || record.accountKind !== "user"' in helper
+    assert "/^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/" in helper
+    assert "FORKBOT_SENDER_ID, CLAUDE_SENDER_ID, CODEX_SENDER_ID, ORG_BOT_SENDER_ID" in helper
+    assert 'replace(/^@/, "")' in helper
+    assert 'href="${escapeHtml(mentionProfilePath(name))}"' in helper
+    assert "hover:underline" in helper
+    assert "data-chat-author-profile" in helper
+    assert "showMentionCard(element, name)" in helper
+    assert (
+        '${authorElementHtml(record, `chat-message-author text-xs font-semibold '
+        in CHAT
+    )
+    assert 'bindAuthorProfileCard(row.querySelector(".chat-message-author"));' in CHAT
+    assert "chat-side-message-author" in CHAT
+    assert 'bindAuthorProfileCard(row.querySelector(".chat-side-message-author"));' in CHAT
+    card = CHAT[CHAT.index("function threadCard(record, root = false) {"):]
+    card = card[:card.index("\n  }\n")]
+    assert 'document.createElement(profileName ? "a" : "strong")' in card
+    assert "author.href = mentionProfilePath(profileName);" in card
+    assert 'accountKind: String(entry.accountKind || ""),' in CHAT
+    assert 'accountKind: String(metadata?.accountKind || (self ? chatAccountKind() : "")),' in CHAT
+    assert 'String(entry.accountKind || ""),\n    );' in CHAT
+
+
+def test_dashboard_chat_author_links_only_cover_user_accounts():
+    helpers = (
+        CHAT[CHAT.index("  function escapeHtml(value) {"):CHAT.index("  function mentionName(value) {")]
+        + CHAT[CHAT.index("  function mentionName(value) {"):CHAT.index("  async function fetchMentionProfile(name) {")]
+    )
+    script = (
+        "globalThis.location = { hostname: 'world.forkmesh.com', origin: 'https://world.forkmesh.com' };\n"
+        "const FORKBOT_SENDER_ID = 'forkbot', CLAUDE_SENDER_ID = 'claude', "
+        "CODEX_SENDER_ID = 'codex', ORG_BOT_SENDER_ID = 'agent';\n"
+        + helpers
+        + "\nconst cases = {"
+        "user: { who: 'Jett', senderId: 'p1', accountKind: 'user' },"
+        "at: { who: '@dana', senderId: 'p2', accountKind: 'user' },"
+        "guest: { who: 'jett', senderId: 'p3', accountKind: 'guest' },"
+        "discord: { who: 'jett', senderId: 'discord:1', accountKind: 'user', external: true },"
+        "bot: { who: 'forkbot', senderId: 'forkbot', accountKind: 'user' },"
+        "agent: { who: 'jett', senderId: 'agent', accountKind: 'user' },"
+        "suffixed: { who: 'helper[bot]', senderId: 'p4', accountKind: 'user' },"
+        "spaced: { who: 'Jett Smith', senderId: 'p5', accountKind: 'user' },"
+        "hostile: { who: '<b>x</b>', senderId: 'p6', accountKind: 'user' },"
+        "};\n"
+        "const out = {};\n"
+        "for (const [key, record] of Object.entries(cases)) "
+        "out[key] = authorElementHtml(record, 'chat-message-author');\n"
+        "console.log(JSON.stringify(out));\n"
+    )
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        check=True, capture_output=True, text=True, timeout=30)
+    out = json.loads(result.stdout)
+    assert out["user"] == (
+        '<a class="chat-message-author hover:underline" '
+        'href="https://forkmesh.com/@jett" data-chat-author-profile="jett" '
+        'data-user-status-name="Jett">Jett</a>')
+    assert 'href="https://forkmesh.com/@dana"' in out["at"]
+    for key in ("guest", "discord", "bot", "agent", "suffixed", "spaced", "hostile"):
+        assert out[key].startswith('<span class="chat-message-author"'), key
+        assert "href=" not in out[key], key
+    assert "&lt;b&gt;x&lt;/b&gt;" in out["hostile"]
 
 
 def test_dashboard_side_chat_orders_by_ts_with_avatar_and_time():

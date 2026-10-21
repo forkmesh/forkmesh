@@ -295,6 +295,8 @@ struct MessagesBubbleRow: View {
                 Text(message.senderName)
                     .font(.system(size: 12))
                     .foregroundStyle(colors.meta)
+                    .onTapGesture { actions.onProfile?() }
+                    .accessibilityAddTraits(actions.onProfile == nil ? [] : .isButton)
                     .padding(.leading, 46)
                     .padding(.top, 6)
             }

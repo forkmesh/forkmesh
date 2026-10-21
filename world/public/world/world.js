@@ -15354,7 +15354,15 @@ class ForkMeshWorld extends HTMLElement {
           .slice(0, 6)
           .map(
             (actor) =>
-              `<i title="@${escapeHTML(actor.name)} · ${actor.count.toLocaleString()} occurrence(s)">${escapeHTML(actor.name.slice(0, 1).toUpperCase())}</i>`,
+              `<i title="@${escapeHTML(actor.name)} · ${actor.count.toLocaleString()} occurrence(s)">${
+                worldPublicProfileUrl(actor.name)
+                  ? `<a href="${escapeHTML(
+                      worldPublicProfileUrl(actor.name),
+                    )}" aria-label="Open @${escapeHTML(
+                      actor.name,
+                    )} public profile">${escapeHTML(actor.name.slice(0, 1).toUpperCase())}</a>`
+                  : escapeHTML(actor.name.slice(0, 1).toUpperCase())
+              }</i>`,
           )
           .join("")}
         ${anonymous ? `<i title="${anonymous.toLocaleString()} anonymous occurrence(s)">?</i>` : ""}
@@ -17451,6 +17459,10 @@ class ForkMeshWorld extends HTMLElement {
     )
       ? worldPublicProfileUrl(name, "#contributions")
       : "";
+    const memberProfileUrl =
+      String(record.accountStatus || "Guest") === "Guest"
+        ? ""
+        : worldPublicProfileUrl(name);
     const posts = (Array.isArray(fediverse.posts) ? fediverse.posts : [])
       .filter((post) => String(post?.label || "").trim())
       .slice(0, 5);
@@ -17478,9 +17490,15 @@ class ForkMeshWorld extends HTMLElement {
       <header class="world-detail-header">
         <div>
           <p class="world-eyebrow">WORLD MEMBER / PUBLIC PROFILE</p>
-          <h2 id="world-detail-title">${escapeHTML(
-            [record.flag, name].filter(Boolean).join(" "),
-          )}</h2>
+          <h2 id="world-detail-title">${
+            memberProfileUrl
+              ? `${record.flag ? `${escapeHTML(record.flag)} ` : ""}<a href="${escapeHTML(
+                  memberProfileUrl,
+                )}" title="Open @${escapeHTML(
+                  name.trim().toLowerCase(),
+                )} public profile">${escapeHTML(name)}</a>`
+              : escapeHTML([record.flag, name].filter(Boolean).join(" "))
+          }</h2>
         </div>
         <button class="world-detail-close" type="button" data-world-detail-close aria-label="Close ${escapeHTML(name)} profile">×</button>
       </header>

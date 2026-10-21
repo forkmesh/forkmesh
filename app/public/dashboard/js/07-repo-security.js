@@ -206,7 +206,7 @@
           <span class="font-mono">${escapeHtml(item.id)}</span>
           ${item.cve ? `<span class="font-mono">${escapeHtml(item.cve)}</span>` : ""}
           <span>${escapeHtml(when)}</span>
-          ${item.reporter ? `<span>reported by ${userNameHtml(item.reporter)}</span>` : ""}
+          ${item.reporter ? `<span>reported by ${issuePersonNameHtml(item.reporter, "text-muted-foreground")}</span>` : ""}
         </div>
       </div>
       ${item.state && item.state !== "published" ? securityStatePill(item.state) : ""}
@@ -430,13 +430,13 @@
         return `<div data-security-comment class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
           <span class="hidden sm:block">${issueActorAvatarHtml(comment.author, comment.author, "h-10 w-10")}</span>
           <div class="min-w-0 overflow-hidden rounded-md border border-border">
-            <div class="border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-1.5 text-[14px] text-muted-foreground"><span class="font-semibold text-foreground">${userNameHtml(comment.author)}</span> commented ${escapeHtml(relativeTimeLabel(comment.ts))}</div>
+            <div class="border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-1.5 text-[14px] text-muted-foreground">${issuePersonNameHtml(comment.author)} commented ${escapeHtml(relativeTimeLabel(comment.ts))}</div>
             <div class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(comment.body, repo)}</div>
           </div>
         </div>`;
       }
       const entry = item.entry;
-      return `<div data-security-event class="flex items-center gap-2 text-[13px] text-muted-foreground sm:ml-14"><i data-lucide="dot" class="h-4 w-4"></i><span class="font-semibold text-foreground">${userNameHtml(entry.actor)}</span> ${escapeHtml(entry.action)}${entry.detail ? ` <span class="text-foreground">${escapeHtml(entry.detail)}</span>` : ""} ${escapeHtml(relativeTimeLabel(entry.ts))}</div>`;
+      return `<div data-security-event class="flex items-center gap-2 text-[13px] text-muted-foreground sm:ml-14"><i data-lucide="dot" class="h-4 w-4"></i>${issuePersonNameHtml(entry.actor)} ${escapeHtml(entry.action)}${entry.detail ? ` <span class="text-foreground">${escapeHtml(entry.detail)}</span>` : ""} ${escapeHtml(relativeTimeLabel(entry.ts))}</div>`;
     }).join("");
   }
 
@@ -469,9 +469,9 @@
     const creditBanner = credit && credit.state === "pending" && ["published", "withdrawn"].includes(stateName) || credit && credit.state === "pending" && member
       ? `<div data-security-credit-banner class="flex flex-wrap items-center gap-3 rounded-md border border-primary px-4 py-3 text-[14px]"><i data-lucide="award" class="h-4 w-4 text-primary"></i><span class="min-w-0 flex-1">You are credited as <strong>${escapeHtml(securityCreditLabel(credit.type))}</strong> on this advisory. Accepted credits appear on your profile and in the security researchers ranking.</span>${button("credit-decision", "Accept credit", "bg-primary text-primary-foreground hover:bg-primary/90", " data-decision=\"accept\"")}${button("credit-decision", "Decline", "", " data-decision=\"decline\"")}</div>` : "";
     const affected = (advisory.affected || []).map((entry) => `<li class="py-1"><span class="font-semibold">${escapeHtml(entry.package || entry.path || "Repository")}</span>${entry.ecosystem ? ` <span class="text-muted-foreground">(${escapeHtml(entry.ecosystem)})</span>` : ""}${entry.path && entry.package ? ` <span class="font-mono text-[12px] text-muted-foreground">${escapeHtml(entry.path)}</span>` : ""}<div class="text-[12px] text-muted-foreground">Affected: ${escapeHtml(entry.vulnerable || "all versions")} · Patched: ${escapeHtml(entry.patched || "none yet")}</div></li>`).join("");
-    const credits = (detail.credits || []).map((item) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(item.user, item.user, "h-5 w-5")}<a href="/${encodeURIComponent(item.user)}" class="font-semibold hover:text-accent hover:underline">${userNameHtml(item.user)}</a><span class="text-[12px] text-muted-foreground">${escapeHtml(securityCreditLabel(item.type))}${member && item.state !== "accepted" ? ` · ${escapeHtml(item.state)}` : ""}</span>${perms.manage ? `<button type="button" data-security-action="credit-remove" data-user="${escapeHtml(item.user)}" aria-label="Remove credit" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
+    const credits = (detail.credits || []).map((item) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(item.user, item.user, "h-5 w-5")}${issuePersonNameHtml(item.user, "font-semibold")}<span class="text-[12px] text-muted-foreground">${escapeHtml(securityCreditLabel(item.type))}${member && item.state !== "accepted" ? ` · ${escapeHtml(item.state)}` : ""}</span>${perms.manage ? `<button type="button" data-security-action="credit-remove" data-user="${escapeHtml(item.user)}" aria-label="Remove credit" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
     const creditForm = perms.manage ? `<form data-security-inline="credit" class="mt-2 grid gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" /><select name="type" class="${securityFieldClass()}">${SECURITY_CREDIT_TYPES.map(([key, label]) => `<option value="${key}">${label}</option>`).join("")}</select>${button("credit-add", "Add credit")}</form>` : "";
-    const collaborators = (advisory.collaborators || []).map((name) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(name, name, "h-5 w-5")}${userNameHtml(name)}${perms.manage ? `<button type="button" data-security-action="collaborator-remove" data-user="${escapeHtml(name)}" aria-label="Remove collaborator" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
+    const collaborators = (advisory.collaborators || []).map((name) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "")}${perms.manage ? `<button type="button" data-security-action="collaborator-remove" data-user="${escapeHtml(name)}" aria-label="Remove collaborator" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
     const collaboratorForm = perms.manage ? `<form data-security-inline="collaborator" class="mt-2 flex gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" />${button("collaborator-add", "Add")}</form>` : "";
     const fixLinks = [
       fix.branch ? `<a class="font-mono text-primary hover:underline" href="${escapeHtml(repoLinkUrl(repo, "tree", "") + "?branch=" + encodeURIComponent(fix.branch))}">${escapeHtml(fix.branch)}</a>` : "",
@@ -497,7 +497,7 @@
             ${securitySeverityPill(severity)}
             <span class="font-mono">${escapeHtml(advisory.id || "")}</span>
             ${advisory.cve ? `<span class="font-mono">${escapeHtml(advisory.cve)}</span>` : ""}
-            ${opener && member ? `<span>${advisory.reporter ? "Reported" : "Opened"} by <span class="font-semibold text-foreground">${userNameHtml(opener)}</span> ${escapeHtml(relativeTimeLabel(advisory.createdAt))}</span>` : ""}
+            ${opener && member ? `<span>${advisory.reporter ? "Reported" : "Opened"} by ${issuePersonNameHtml(opener)} ${escapeHtml(relativeTimeLabel(advisory.createdAt))}</span>` : ""}
             ${advisory.publishedAt ? `<span>Published ${escapeHtml(formatDate(advisory.publishedAt))}</span>` : ""}
           </div>
           ${actions.length ? `<div data-security-actions class="mt-3 flex flex-wrap gap-2">${actions.join("")}</div>` : ""}

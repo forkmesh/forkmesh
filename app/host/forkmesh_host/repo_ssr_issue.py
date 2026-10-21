@@ -1444,8 +1444,8 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
              'hover:text-[var(--dashboard-link)]">%sAssign yourself</button>' % icon(
                  "user-plus", "h-3.5 w-3.5"))
     assignee_value = ('<div class="grid gap-1.5">%s</div>' % "".join(
-        '<span class="inline-flex min-w-0 items-center gap-2">%s<span class="truncate '
-        'font-semibold">%s</span></span>' % (avatar_html(name, name, "h-5 w-5"), esc(name))
+        '<span class="inline-flex min-w-0 items-center gap-2">%s%s</span>' % (
+            avatar_html(name, name, "h-5 w-5"), person_name_html(name, "truncate font-semibold"))
         for name in assignees) if assignees
         else '<span class="text-muted-foreground">No one assigned</span>') + claim
     agent = next((e for e in reversed(events) if e.get("type") == "agent"), None)

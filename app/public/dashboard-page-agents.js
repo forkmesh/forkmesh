@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["agents"] = (core) => {
-  const { $, desktopBrand, escapeHtml, formatCount, formatTimeAgo, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, repoPathUrl, repoPublicKey, state } = core;
+  const { $, desktopBrand, escapeHtml, formatCount, formatTimeAgo, issuePersonNameHtml, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, repoPathUrl, repoPublicKey, state } = core;
   const AGENTS_ACTIVE_STATUSES = new Set(["queued", "running", "security_pending"]);
   const AGENTS_FAILED_STATUSES = new Set(["failed", "rejected", "stopped"]);
   const AGENTS_FILTER_KEYS = Object.freeze(["status", "repo", "node"]);
@@ -180,7 +180,7 @@
             <span>${escapeHtml(agentsKindLabel(row))}</span>
             ${runtime ? `<span>${escapeHtml(runtime)}</span>` : ""}
             ${row.node ? `<span class="inline-flex items-center gap-1"><i data-lucide="server" class="h-3 w-3 text-muted-foreground" aria-hidden="true"></i><span class="font-mono">${escapeHtml(row.node)}</span></span>` : ""}
-            ${row.createdBy ? `<span>by ${escapeHtml(row.createdBy)}</span>` : ""}
+            ${row.createdBy ? `<span>by ${row.href ? escapeHtml(row.createdBy) : issuePersonNameHtml(row.createdBy, "")}</span>` : ""}
             ${started ? `<span class="sm:hidden">${started}</span>` : ""}
             ${updated ? `<span class="sm:hidden">${updated}</span>` : ""}
           </div>

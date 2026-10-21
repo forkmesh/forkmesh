@@ -69,6 +69,48 @@ bool hasTaskMarker(const QTextBlock &block)
            block.blockFormat().marker() != QTextBlockFormat::MarkerType::NoMarker;
 }
 
+void linkMentions(QTextDocument &document)
+{
+    static const QRegularExpression mention(QStringLiteral(
+        "(?<![\\w@/.+-])@([a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)(?![\\w-]|[./][a-z0-9]|@|\\[bot\\])"),
+        QRegularExpression::CaseInsensitiveOption);
+    struct Mention {
+        int position = 0;
+        int length = 0;
+        QString login;
+        QTextCharFormat format;
+    };
+    QList<Mention> found;
+    for (QTextBlock block = document.begin(); block.isValid(); block = block.next()) {
+        if (block.blockFormat().hasProperty(QTextFormat::BlockCodeFence) ||
+            block.blockFormat().hasProperty(QTextFormat::BlockCodeLanguage))
+            continue;
+        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            if (!fragment.isValid())
+                continue;
+            const QTextCharFormat format = fragment.charFormat();
+            if (format.isAnchor() || format.isImageFormat() || format.fontFixedPitch())
+                continue;
+            auto match = mention.globalMatch(fragment.text());
+            while (match.hasNext()) {
+                const QRegularExpressionMatch m = match.next();
+                found.append({fragment.position() + int(m.capturedStart()),
+                              int(m.capturedLength()), m.captured(1).toLower(), format});
+            }
+        }
+    }
+    for (auto it = found.crbegin(); it != found.crend(); ++it) {
+        QTextCursor cursor(&document);
+        cursor.setPosition(it->position);
+        cursor.setPosition(it->position + it->length, QTextCursor::KeepAnchor);
+        QTextCharFormat link = it->format;
+        link.setAnchor(true);
+        link.setAnchorHref(QStringLiteral("forkmesh-user:") + it->login);
+        cursor.setCharFormat(link);
+    }
+}
+
 int markerCount(const QTextDocument &document)
 {
     int count = 0;
@@ -133,6 +175,7 @@ QString toHtml(const QString &markdown)
         plain.setFontUnderline(false);
         cursor.setCharFormat(plain);
     }
+    linkMentions(document);
 
     const QString html = document.toHtml();
     const int bodyStart = html.indexOf(QLatin1String("<body"));

@@ -118,7 +118,8 @@ def test_desktop_message_actions_open_or_reuse_one_server_dm():
     assert "m_officeChannelMirror->startDirectMessage(name)" in start
     assert start.index("startDirectMessage(name)") < start.index("openDirectChat(")
     assert "startDirectMessageWith(account, peerId, peerName);" in MESSAGES
-    assert "showChatSenderProfile(id, name);" in MESSAGES
+    assert "openUserProfile(account, name)" in MESSAGES
+    assert 'showChatSenderProfile(QStringLiteral("user:") + key,' in MESSAGES
     assert "&MainWindow::showNewMessageDialog" in ISSUES
     reuse = MIRROR[MIRROR.index("bool OfficeChannelMirror::startDirectMessage("):]
     reuse = reuse[:reuse.index("const QString ts")]

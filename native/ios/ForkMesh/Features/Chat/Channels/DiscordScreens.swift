@@ -164,7 +164,7 @@ struct DiscordChannelScreen: View {
                 Text("Reply").fmText(.labelSmall, color: fm.textTertiary)
             }
             if !message.text.isEmpty {
-                ChatLinkText(text: message.text)
+                ChatLinkText(text: message.text, profiles: false)
             }
             if message.truncated {
                 Text("Shortened; open Discord for the rest.").fmText(.labelSmall, color: fm.textTertiary)

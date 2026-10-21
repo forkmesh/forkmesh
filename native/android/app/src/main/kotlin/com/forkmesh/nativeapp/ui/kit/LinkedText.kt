@@ -14,12 +14,14 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import com.forkmesh.nativeapp.ci.RepoRef
 import com.forkmesh.nativeapp.collab.ReferenceLinks
 import com.forkmesh.nativeapp.collab.ReferenceRun
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
+import com.forkmesh.nativeapp.navigation.ProfileLinks
 import com.forkmesh.nativeapp.ui.theme.Fm
 
 val LocalReferenceRepo = staticCompositionLocalOf<RepoRef?> { null }
@@ -41,8 +43,12 @@ fun rememberLinkOpener(): (String) -> Unit {
 }
 
 fun AnnotatedString.Builder.appendLink(text: String, url: String, accent: Color, open: (String) -> Unit) {
-    val styles = TextLinkStyles(style = SpanStyle(color = accent, textDecoration = TextDecoration.Underline))
-    withLink(LinkAnnotation.Clickable(url, styles) { open(url) }) { append(text) }
+    val style = if (ProfileLinks.isProfileLink(url)) {
+        SpanStyle(color = accent, fontWeight = FontWeight.Bold)
+    } else {
+        SpanStyle(color = accent, textDecoration = TextDecoration.Underline)
+    }
+    withLink(LinkAnnotation.Clickable(url, TextLinkStyles(style = style)) { open(url) }) { append(text) }
 }
 
 fun linkedAnnotated(runs: List<ReferenceRun>, accent: Color, open: (String) -> Unit): AnnotatedString =

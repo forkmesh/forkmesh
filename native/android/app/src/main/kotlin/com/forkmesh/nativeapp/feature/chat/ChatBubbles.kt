@@ -301,7 +301,7 @@ internal fun ChatBubbleRow(
         if (bubble.showsSender) {
             Text(
                 message.senderName,
-                modifier = Modifier.padding(start = 46.dp, top = 6.dp),
+                modifier = Modifier.padding(start = 46.dp, top = 6.dp).openSenderProfile(row),
                 style = TextStyle(fontSize = 12.sp, color = colors.meta),
             )
         }
@@ -313,7 +313,7 @@ internal fun ChatBubbleRow(
             if (mine) {
                 Spacer(Modifier.widthIn(min = 56.dp))
             } else if (group) {
-                if (bubble.position.hasTail) ChatSenderAvatar(message) else Spacer(Modifier.size(28.dp, 1.dp))
+                if (bubble.position.hasTail) Box(Modifier.openSenderProfile(row)) { ChatSenderAvatar(message) } else Spacer(Modifier.size(28.dp, 1.dp))
                 Spacer(Modifier.size(6.dp, 1.dp))
             }
             Box(

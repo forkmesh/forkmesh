@@ -154,7 +154,18 @@
     }
   }
 
-  function boardRow(rank, who, score) {
+  const ACCOUNT_NAME_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+  function profileLink(who) {
+    const handle = String(who || "").trim().replace(/^@/, "").toLowerCase();
+    if (!ACCOUNT_NAME_RE.test(handle)) return document.createTextNode(who);
+    const link = document.createElement("a");
+    link.href = `/@${encodeURIComponent(handle)}`;
+    link.textContent = who;
+    return link;
+  }
+
+  function boardRow(rank, who, score, suffix = "") {
     const row = document.createElement("div");
     row.className = "board-row";
     const rankCell = document.createElement("span");
@@ -163,7 +174,7 @@
     const whoCell = document.createElement("span");
     whoCell.className = "who";
     // Built as text, never innerHTML: these are other people's usernames.
-    whoCell.textContent = who;
+    whoCell.append(profileLink(who), suffix);
     const scoreCell = document.createElement("span");
     scoreCell.className = "score";
     scoreCell.textContent = score;
@@ -192,8 +203,9 @@
       if (board === "squads") {
         return boardRow(
           index + 1,
-          `${row.name || ""}'s squad`,
+          row.name || "",
           `${count(row.members)} builders · ${count(row.points)} pts`,
+          "'s squad",
         );
       }
       return boardRow(index + 1, row.name || "", `${count(row.points)} pts`);

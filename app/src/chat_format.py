@@ -1,5 +1,5 @@
 import re
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 
 MAX_SOURCE = 16000
@@ -21,6 +21,7 @@ MENTION_RE = re.compile(r"@([a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)\b", re.IGNORECASE
 BULLET_RE = re.compile(r"^\s*[-*•]\s+(.*)$")
 NUMBERED_RE = re.compile(r"^\s*\d+[.)]\s+(.*)$")
 QUOTE_RE = re.compile(r"^>\s?(.*)$")
+PROFILE_ORIGIN = "https://forkmesh.com"
 
 LINK_STYLE = "color:#0969da;text-decoration:underline"
 CODE_STYLE = (
@@ -201,7 +202,7 @@ def parse_inline(source, depth=0):
         if ch == "@":
             previous = text[index - 1] if index else ""
             match = MENTION_RE.match(text, index)
-            if match and not (previous.isascii() and
+            if match and not (previous and previous.isascii() and
                               (previous.isalnum() or previous in "_-")):
                 flush()
                 nodes.append({"type": "mention", "text": match.group(0)})
@@ -320,14 +321,23 @@ def to_text(source, links=True):
     return "\n".join(out)
 
 
-def _inline_html(nodes):
+def _mention_html(text, profile_origin, in_link):
+    if in_link:
+        return "<strong>" + escape(text) + "</strong>"
+    href = (str(profile_origin or PROFILE_ORIGIN).strip().rstrip("/") + "/@"
+            + quote(text[1:].lower(), safe=""))
+    return ("<a href=\"" + escape(href) + "\" style=\"" + LINK_STYLE + "\">"
+            + escape(text) + "</a>")
+
+
+def _inline_html(nodes, profile_origin="", in_link=False):
     out = []
     for node in nodes:
         kind = node["type"]
         if kind == "text":
             out.append(escape(node["text"]))
         elif kind == "mention":
-            out.append("<strong>" + escape(node["text"]) + "</strong>")
+            out.append(_mention_html(node["text"], profile_origin, in_link))
         elif kind == "code":
             out.append("<code style=\"" + CODE_STYLE + "\">"
                        + escape(node["text"]) + "</code>")
@@ -339,15 +349,17 @@ def _inline_html(nodes):
                 out.append(escape(node["text"]))
         elif kind == "link":
             out.append("<a href=\"" + escape(node["href"]) + "\" style=\""
-                       + LINK_STYLE + "\">" + _inline_html(node["children"])
+                       + LINK_STYLE + "\">"
+                       + _inline_html(node["children"], profile_origin, True)
                        + "</a>")
         else:
-            out.append("<" + kind + ">" + _inline_html(node["children"])
+            out.append("<" + kind + ">"
+                       + _inline_html(node["children"], profile_origin, in_link)
                        + "</" + kind + ">")
     return "".join(out)
 
 
-def to_html(source):
+def to_html(source, profile_origin=""):
     out = []
     for block in parse_blocks(source):
         kind = block["type"]
@@ -356,13 +368,14 @@ def to_html(source):
                        + escape(block["text"]) + "</pre>")
         elif kind in ("ul", "ol"):
             out.append("<" + kind + " style=\"" + LIST_STYLE + "\">" + "".join(
-                "<li>" + _inline_html(parse_inline(item)) + "</li>"
+                "<li>" + _inline_html(parse_inline(item), profile_origin) + "</li>"
                 for item in block["items"]) + "</" + kind + ">")
         elif kind == "quote":
             out.append("<blockquote style=\"" + QUOTE_STYLE + "\">" + "<br>".join(
-                _inline_html(parse_inline(line)) for line in block["lines"])
-                + "</blockquote>")
+                _inline_html(parse_inline(line), profile_origin)
+                for line in block["lines"]) + "</blockquote>")
         else:
             out.append("<br>".join(
-                _inline_html(parse_inline(line)) for line in block["lines"]))
+                _inline_html(parse_inline(line), profile_origin)
+                for line in block["lines"]))
     return "".join(out)
