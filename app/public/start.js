@@ -254,7 +254,9 @@
     return rgbHex([0, 8, 4].map((n) => 255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))));
   };
 
-  const themeState = { neutral: "slate", accent: ACCENTS[0], loaded: null, preset: "", edits: { dark: {}, light: {} }, mode: "dark" };
+  const themeState = { neutral: "slate", accent: ACCENTS[0], loaded: null, preset: "", named: "", edits: { dark: {}, light: {} }, mode: "dark" };
+  const themeCatalogue = [];
+  const namedTheme = () => themeCatalogue.find((theme) => theme.id === themeState.named && theme.status === "ready");
   const accentTokens = (accent, mode) => {
     const colour = accent[mode];
     return {
@@ -271,6 +273,20 @@
   };
   const currentTheme = () => {
     const theme = {};
+    const named = namedTheme();
+    if (named) {
+      for (const mode of THEME_MODES) {
+        const colours = Object.entries((named.colors || {})[mode] || {})
+          .filter(([name, colour]) => THEME_TOKENS.includes(name) && HEX_RE.test(String(colour).toLowerCase()));
+        theme[mode] = {
+          ...NEUTRALS.slate[mode],
+          ...THEME_STATUS[mode],
+          ...accentTokens(ACCENTS[0], mode),
+          ...Object.fromEntries(colours.map(([name, colour]) => [name, String(colour).toLowerCase()])),
+        };
+      }
+      return theme;
+    }
     for (const mode of THEME_MODES) {
       theme[mode] = {
         ...NEUTRALS[themeState.neutral][mode],
@@ -286,11 +302,14 @@
     themeState.neutral === "slate" && themeState.accent.id === "forkmesh" && !themeState.loaded &&
     THEME_MODES.every((mode) => !Object.keys(themeState.edits[mode]).length);
   const themeValue = () => {
+    if (namedTheme()) return themeState.named;
     if (themeState.preset) return themeState.preset;
     if (themeIsDefault()) return "";
     return JSON.stringify(currentTheme());
   };
 
+  const themeField = $(".theme-field");
+  const cardBox = $("[data-start-theme-cards]");
   const accentBox = $("[data-start-theme-accents]");
   const neutralBox = $("[data-start-theme-neutrals]");
   const tokenBox = $("[data-start-theme-tokens]");
@@ -380,12 +399,17 @@
       button.setAttribute("aria-pressed", String(button.dataset.startThemeMode === themeState.mode));
     }
     $("[data-start-theme-mode-name]").textContent = themeState.mode;
+    themeField.toggleAttribute("data-named", Boolean(namedTheme()));
+    for (const card of cardBox.querySelectorAll("[data-theme-card]")) {
+      card.setAttribute("aria-checked", String(card.dataset.themeCard === (namedTheme() ? themeState.named : "default")));
+    }
     field("theme").value = themeValue();
   };
   const dropEdits = (names) => {
     for (const mode of THEME_MODES) for (const name of names) delete themeState.edits[mode][name];
   };
   const chooseAccent = (accent) => {
+    themeState.named = "";
     themeState.accent = accent;
     themeState.loaded = null;
     themeState.preset = "";
@@ -393,6 +417,7 @@
     renderTheme();
   };
   const chooseNeutral = (id) => {
+    themeState.named = "";
     themeState.neutral = id;
     themeState.loaded = null;
     themeState.preset = "";
@@ -400,7 +425,7 @@
     renderTheme();
   };
   const resetTheme = () => {
-    Object.assign(themeState, { neutral: "slate", accent: ACCENTS[0], loaded: null, preset: "", edits: { dark: {}, light: {} } });
+    Object.assign(themeState, { neutral: "slate", accent: ACCENTS[0], loaded: null, preset: "", named: "", edits: { dark: {}, light: {} } });
     renderTheme();
   };
   const setThemeFrom = (raw) => {
@@ -409,6 +434,15 @@
       return true;
     }
     if (typeof raw === "string") {
+      const name = raw.trim().toLowerCase();
+      if (name === "default") {
+        resetTheme();
+        return true;
+      }
+      if (themeCatalogue.some((theme) => theme.id === name && theme.status === "ready")) {
+        chooseNamedTheme(name);
+        return true;
+      }
       const preset = THEME_PRESETS[raw.trim().toLowerCase()];
       if (!preset) return false;
       resetTheme();
@@ -451,6 +485,38 @@
     chooseAccent({ id: "custom", label: "Your own colour", dark, light: hslHex(hue, 72, 42) });
   });
   $("[data-start-theme-reset]").addEventListener("click", resetTheme);
+  const chooseNamedTheme = (id) => {
+    resetTheme();
+    if (id !== "default") themeState.named = id;
+    renderTheme();
+  };
+  const themeCard = (theme) => {
+    const palette = (theme.palette || []).filter((colour) => HEX_RE.test(String(colour).toLowerCase()));
+    const ready = theme.status === "ready";
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "theme-card";
+    card.setAttribute("role", "radio");
+    card.dataset.themeCard = theme.id;
+    card.disabled = !ready;
+    card.innerHTML = `
+      <span class="theme-card-palette" aria-hidden="true">${palette.map((colour, index) => `<span style="background:${colour};flex:${index === 0 ? 3 : 1}"></span>`).join("")}</span>
+      <span class="theme-card-name"><span></span>${ready ? "" : "<em>Coming soon</em>"}</span>
+      <span class="theme-card-desc"></span>`;
+    card.querySelector(".theme-card-name span").textContent = String(theme.name || theme.id);
+    card.querySelector(".theme-card-desc").textContent = String(theme.description || "");
+    card.addEventListener("click", () => chooseNamedTheme(theme.id));
+    return card;
+  };
+  fetch("/instance-themes/themes.json", { headers: { accept: "application/json" } })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((data) => {
+      const themes = Array.isArray(data && data.themes) ? data.themes : [];
+      themeCatalogue.push(...themes.filter((theme) => theme && /^[a-z][a-z0-9-]{0,40}$/.test(String(theme.id || ""))));
+      cardBox.replaceChildren(...themeCatalogue.map(themeCard));
+      renderTheme();
+    })
+    .catch(() => {});
   themeState.mode = document.documentElement.classList.contains("light") ? "light" : "dark";
   renderTheme();
 

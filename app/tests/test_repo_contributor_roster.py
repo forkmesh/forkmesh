@@ -67,7 +67,7 @@ let countFormatter = null;
                 "renderRepoAboutContributors", "repoContributorIsBot", "repoContributorProfileUrl",
                 "parseRepoContributorRoster", "repoRosterLogin", "repoRosterAvatarPath", "repoRosterAvatarUrl",
                 "repoRosterContributorAvatar", "renderRepoAboutRoster",
-                "renderRepoAboutAuthors")),
+                "renderRepoAboutAuthors", "setHtmlIfChanged")),
         body,
     )
     result = subprocess.run(["node", "--input-type=module"], input=script,

@@ -448,6 +448,34 @@ def test_pull_from_an_unknown_key_is_unverified_and_unnamed():
 
     assert inserted[0][1]["pull"]["authorName"] == ""
     assert inserted[0][1]["pull"]["authorVerified"] is False
+    assert inserted[0][1]["pull"]["authorClaimedName"] == "bob"
+
+
+def test_verified_pull_drops_the_claimed_name():
+    inserted = []
+    handler = _load_pulls_handler(_runtime(inserted, [], []))
+
+    asyncio.run(handler(
+        object(), _Request(_signed_pull(
+            authorName="carol", authorClaimedName="mallory")),
+        "alice", "project"))
+
+    assert inserted[0][1]["pull"]["authorName"] == "bob"
+    assert "authorClaimedName" not in inserted[0][1]["pull"]
+
+
+def test_unverified_pull_keeps_only_a_valid_claimed_name():
+    inserted = []
+    handler = _load_pulls_handler(_runtime(inserted, [], []))
+
+    asyncio.run(handler(
+        object(), _Request(_signed_pull(
+            author="web-author", authorName="not a name",
+            authorClaimedName="mallory")),
+        "alice", "project"))
+
+    assert inserted[0][1]["pull"]["authorName"] == ""
+    assert "authorClaimedName" not in inserted[0][1]["pull"]
 
 
 def test_pull_comment_takes_the_session_name_over_a_spoofed_one():

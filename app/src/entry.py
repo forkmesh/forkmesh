@@ -1354,6 +1354,8 @@ instance_features = _LazyModule("instance_features")
 instance_pages = _LazyModule("instance_pages")
 instance_legal = _LazyModule("instance_legal")
 instance_registry = _LazyModule("instance_registry")
+instance_world = _LazyModule("instance_world")
+instance_world_scene = _LazyModule("instance_world_scene")
 instance_theme = _LazyModule("instance_theme")
 mail_tracking = _LazyModule("mail_tracking")
 marketing_email = _LazyModule("marketing_email")
@@ -35186,6 +35188,43 @@ def _repository_social_version(record):
     return ""
 
 
+INSTANCE_RASTER_LOGO = "/instance-logo.png"
+
+
+async def _repo_card_logo(env, request, repo_bi):
+    try:
+        row = await d1_first(
+            env, "SELECT data FROM repo_media WHERE repo_bi=? AND kind='logo'",
+            repo_bi)
+        rec = await decrypt_row(env, row.get("data")) if row else None
+        png_b64 = (rec or {}).get("png", "")
+        logo = og_card.card_logo(base64.b64decode(png_b64)) if png_b64 else None
+        if logo:
+            return logo
+    except Exception:
+        pass
+    if not instance_branded(env):
+        return None
+    paths = [INSTANCE_RASTER_LOGO]
+    configured = instance_logo_path(env)
+    if configured.endswith(".png") and "/" + configured not in paths:
+        paths.append("/" + configured)
+    parts = urlparse(request.url)
+    for path in paths:
+        try:
+            resp = await env.ASSETS.fetch(
+                parts.scheme + "://" + parts.netloc + path)
+            if int(getattr(resp, "status", 0) or 0) != 200:
+                continue
+            logo = og_card.card_logo(bytes(Uint8Array.new(
+                await resp.arrayBuffer()).to_py()))
+            if logo:
+                return logo
+        except Exception:
+            continue
+    return None
+
+
 REPO_CARD_READ_ORIGIN = "https://forkmesh.internal"
 REPO_CARD_COUNTS_TTL_MS = 5 * 60 * 1000
 REPO_CARD_COUNTS_MAX = 256
@@ -35261,7 +35300,10 @@ async def _repo_card_accent(env):
         theme = instance_theme.parse((row or {}).get("doc") or "")
     except Exception:
         return ""
-    tokens = theme.get("dark") or theme.get("light") or {}
+    preset = instance_theme.THEMES.get(theme.get("preset") or "") or {}
+    colors = preset.get("colors") or {}
+    tokens = theme.get("dark") or theme.get("light") or colors.get("dark") \
+        or colors.get("light") or {}
     return str(tokens.get("accent") or tokens.get("primary") or "")
 
 
@@ -35359,7 +35401,13 @@ async def repo_card_handler(env, request, owner, repo):
         "followers": followers,
         "accent": await _repo_card_accent(env),
     }
-    png = og_card.render_repo_card(info, time.time())
+    try:
+        info["path"] = unquote(await _repo_public_path(
+            env, display_owner, display_repo))
+    except Exception:
+        info["path"] = "/%s/%s" % (display_owner, display_repo)
+    logo = await _repo_card_logo(env, request, repo_bi)
+    png = og_card.render_repo_card(info, time.time(), logo)
     # Stats drift, so keep the browser TTL modest; preview crawlers cache the
     # rendered card on their side anyway. Uint8Array.new copies into a JS-owned
     # buffer — a bare _to_js(bytes) view into WASM memory read off the GIL
@@ -40870,6 +40918,11 @@ async def _bind_session_author(env, request, data, record, session=None):
     if session and bound and bound != session:
         return json_response({"error": "author_mismatch"}, status=403)
     name = session or bound
+    claimed = clean_string(
+        record.get("authorName", "") or "", MAX_NODE_NAME).strip().lower()
+    record.pop("authorClaimedName", None)
+    if not name and valid_node_name(claimed):
+        record["authorClaimedName"] = claimed
     record["authorName"] = name
     record["authorVerified"] = bool(name)
     return None
@@ -51448,6 +51501,7 @@ async def _repo_merge_jobs_make_room(env, repo_bi, now):
 repository_pull_merge_handler = _route_handlers.export("repository_pull_merge_handler")
 _pull_rules = _LazyModule("pull_rules")
 _branch_protection = _LazyModule("branch_protection")
+_self_update = _LazyModule("self_update")
 repo_pull_rules_handler = _pull_rules.export("repo_pull_rules_handler")
 _ai_disclosure = _LazyModule("ai_disclosure")
 pull_ai_disclosure_check = _ai_disclosure.export("pull_ai_disclosure_check")

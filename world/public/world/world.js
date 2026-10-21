@@ -86,6 +86,22 @@ import {
   worldPortalURL,
 } from "./world-instance-portals.js";
 import {
+  TERRITORY_FRESH_SPAWN,
+  territoryArrival,
+  territoryBugs,
+  territoryCrossingURL,
+  territoryDisabledElements,
+  territoryFromInstance,
+  territoryLinkURL,
+  territoryRawURL,
+  territoryVisitorLabel,
+  withTerritoryVisa,
+  withoutTerritoryArrival,
+} from "./world-territory.js";
+
+const TERRITORY_TRANSITION_MS = 450;
+const TERRITORY_VISA_TIMEOUT_MS = 2500;
+import {
   WORLD_MEMBER_DIRECTORY_PATH,
   installWorldBoot,
   readWorldBootPrefs,
@@ -5545,6 +5561,14 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <span data-world-hud-notice-text></span>
             <button type="button" data-world-hud-notice-dismiss aria-label="Dismiss notice">${worldIconSvg("close")}</button>
           </p>
+          <div class="world-territory-bug" data-world-territory-bug role="dialog" aria-label="Bug report" hidden>
+            <div class="world-territory-bug-text">
+              <strong data-world-territory-bug-domain></strong>
+              <span data-world-territory-bug-name></span>
+            </div>
+            <a data-world-territory-bug-link target="_blank" rel="noopener noreferrer" hidden>View bugs</a>
+            <button type="button" data-world-territory-bug-dismiss aria-label="Close">${worldIconSvg("close")}</button>
+          </div>
           <div class="world-hud-island-feed world-native-chat" data-world-island-feed>
             <div id="fullChatMessages" role="log" aria-live="polite" aria-label="World chat"></div>
           </div>
@@ -6475,10 +6499,14 @@ class ForkMeshWorld extends HTMLElement {
     this.meshPlaced = [];
     this.meshSwitching = false;
     this.arrivalVisa = takeArrivalVisa();
+    this.arrivedWithVisa = Boolean(this.arrivalVisa);
     this.instanceHexes = [];
     this.homePortal = undefined;
     this.pendingPortalSlot = requestedPortalSlot(location.search);
     this.pendingMeshArrival = worldMeshArrival(location.search);
+    this.territory = null;
+    this.territoryLeaving = false;
+    this.pendingTerritoryArrival = territoryArrival(location.search);
     this.communityPlacement = null;
     this.networkAd = null;
     this.networkAdLoad = null;
@@ -7887,6 +7915,11 @@ class ForkMeshWorld extends HTMLElement {
         "three.js r184 · streaming since page load",
       );
       if (this.destroyed) return;
+      this.territory = territoryFromInstance(
+        await this.instanceInfo(),
+        await this.worldMeshDirectory(),
+      );
+      if (this.destroyed) return;
       this.setLoadingProgress(46, "Placing the town square…");
       this.startBootStep("scene", "geometry, lighting, labels");
       // The scene build owns the main thread for its whole run, so hand the
@@ -7910,11 +7943,21 @@ class ForkMeshWorld extends HTMLElement {
         initialSpawn:
           this.restoredPosition ||
           (this.currentSpace === "town-square"
-            ? FRESH_ARRIVAL_CAMPFIRE_PREVIEW
+            ? this.territory
+              ? TERRITORY_FRESH_SPAWN
+              : FRESH_ARRIVAL_CAMPFIRE_PREVIEW
             : null),
+        territory: this.territory,
+        onTerritoryCross: (target) => this.crossTerritoryBorder(target),
+        onTerritoryLinkSelect: (link) => this.openTerritoryLink(link),
+        onTerritoryBugSelect: (bug) => this.showTerritoryBug(bug),
+        onTerritoryNotice: (message) => this.hudNotice(message),
         // Applied before the account ticket resolves, and kept local to this
         // browser so one visitor's performance experiment stays personal.
-        initialDisabledElements: this.disabledWorldElements,
+        initialDisabledElements: territoryDisabledElements(
+          this.disabledWorldElements,
+          this.territory,
+        ),
         initialRemovedWorldPackages: this.removedWorldPackages,
         initialInstalledWorldPackages: this.installedWorldPackages,
         // Pieces deleted by right-clicking them come out again as each owning
@@ -8258,6 +8301,9 @@ class ForkMeshWorld extends HTMLElement {
       this.socialCircleNear = false;
       this.syncMemberLounge();
       this.seatFreshArrivalAtCampfire();
+      this.applyTerritoryArrival();
+      this.applyPortalArrival();
+      void this.loadTerritoryBugs();
       [
         () => this.pushLiveMirrorNodes(),
         () => {
@@ -11344,7 +11390,14 @@ class ForkMeshWorld extends HTMLElement {
     } catch (_) {}
     const instance = await this.instanceInfo();
     if (this.homePortal === undefined) {
-      this.homePortal = homePortalHex(instance);
+      this.homePortal = territoryFromInstance(instance)
+        ? null
+        : homePortalHex(instance);
+    }
+    if (this.territory) {
+      await this.placeTerritoryMesh();
+      this.applyPortalArrival();
+      return;
     }
     try {
       if (!instanceKeepsDirectory(instance)) {
@@ -11384,9 +11437,145 @@ class ForkMeshWorld extends HTMLElement {
     } catch (_) {}
   }
 
+  async crossTerritoryBorder({ kind, url, label, slot, local } = {}) {
+    const destination =
+      territoryCrossingURL(url, {
+        from: kind === "forkmesh" ? location.hostname : "forkmesh",
+        slot: kind === "forkmesh" ? slot : -1,
+        local,
+      });
+    if (!destination || this.territoryLeaving) return;
+    this.territoryLeaving = true;
+    const name = kind === "forkmesh"
+      ? label || "the ForkMesh World"
+      : label || "a ForkMesh instance";
+    this.hudNotice(`Entering ${name}…`);
+    const visa = await this.requestTerritoryVisa(new URL(destination).origin);
+    this.leaveTerritory(withTerritoryVisa(destination, visa), `Entering ${name}…`);
+  }
+
+  async requestTerritoryVisa(destination) {
+    if (!this.sessionAuthenticated || !destination) return "";
+    try {
+      const payload = await this.postJSON(
+        "/api/world/visa",
+        { destination },
+        { timeout: TERRITORY_VISA_TIMEOUT_MS },
+      );
+      return typeof payload?.visa === "string" ? payload.visa : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  leaveTerritory(destination, message) {
+    this.territoryLeaving = true;
+    const veil = document.createElement("div");
+    veil.className = "world-territory-transition";
+    veil.setAttribute("role", "status");
+    veil.setAttribute("aria-live", "assertive");
+    veil.textContent = message;
+    document.body.append(veil);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.requestAnimationFrame(() => veil.classList.add("is-active"));
+    const reset = () => {
+      veil.remove();
+      this.territoryLeaving = false;
+      window.removeEventListener("pageshow", restored);
+    };
+    const restored = (event) => {
+      if (event.persisted) reset();
+    };
+    window.addEventListener("pageshow", restored);
+    window.setTimeout(() => {
+      window.location.assign(destination);
+      window.setTimeout(() => {
+        if (!document.hidden) reset();
+      }, 8000);
+    }, reduced ? 0 : TERRITORY_TRANSITION_MS);
+  }
+
+  openTerritoryLink({ url, label } = {}) {
+    const destination = territoryLinkURL(url);
+    if (!destination || this.territoryLeaving) return;
+    const name = label || new URL(destination).hostname;
+    this.hudNotice(`Entering ${name}…`);
+    this.leaveTerritory(destination, `Entering ${name}…`);
+  }
+
+  applyTerritoryArrival() {
+    const arrival = this.pendingTerritoryArrival;
+    if (!arrival || !this.world?.setSpawn) return;
+    this.pendingTerritoryArrival = null;
+    const spawn = this.world.territoryArrival?.(arrival);
+    if (spawn && this.world.setSpawn(spawn)) {
+      this.restoredPosition = null;
+      this.spawnSelected = true;
+    }
+    const from = territoryVisitorLabel(arrival);
+    this.hudNotice(
+      this.sessionAuthenticated
+        ? `Welcome, visitor from ${from}.`
+        : this.arrivedWithVisa
+          ? `Welcome over from ${from}: your home World is signing you in.`
+          : `Visiting from ${from} as a guest. Sign in there first to arrive as yourself.`,
+    );
+    try {
+      const clean = withoutTerritoryArrival(location.href);
+      if (clean) history.replaceState(history.state, "", clean);
+    } catch (_) {}
+  }
+
+  async loadTerritoryBugs() {
+    if (!this.territory?.bugs || !this.world?.updateTerritoryBugs) return;
+    try {
+      const { source, limit } = this.territory.bugs;
+      const payload = await this.fetchJSON(territoryRawURL(source, source.path), {
+        auth: false,
+        timeout: 8000,
+        credentials: "omit",
+      });
+      if (this.destroyed || !this.world) return;
+      this.world.updateTerritoryBugs(territoryBugs(payload, limit, source));
+    } catch (_) {
+      this.world?.updateTerritoryBugs?.([]);
+    }
+  }
+
+  showTerritoryBug(bug = {}) {
+    const card = this.$("[data-world-territory-bug]");
+    if (!card || !bug.domain) return;
+    card.querySelector("[data-world-territory-bug-domain]").textContent = bug.domain;
+    card.querySelector("[data-world-territory-bug-name]").textContent =
+      bug.count > 0
+        ? `${bug.name} · ${bug.count} bug${bug.count === 1 ? "" : "s"} reported`
+        : bug.name;
+    const link = card.querySelector("[data-world-territory-bug-link]");
+    const href = territoryLinkURL(bug.url);
+    link.hidden = !href;
+    if (href) link.href = href;
+    card.hidden = false;
+  }
+
   applyPortalArrival() {
     const slot = this.pendingPortalSlot;
     if (slot < 0 || !this.world?.setSpawn) return;
+    if (this.territory) {
+      const spawn = this.world.territoryArrival?.({ portal: true });
+      if (!spawn) return;
+      this.pendingPortalSlot = -1;
+      if (this.world.setSpawn(spawn)) {
+        this.restoredPosition = null;
+        this.spawnSelected = true;
+      }
+      this.hudNotice("Arrived through the portal from the ForkMesh World");
+      try {
+        const url = new URL(location.href);
+        url.searchParams.delete(PORTAL_PARAM);
+        history.replaceState(history.state, "", url.href);
+      } catch (_) {}
+      return;
+    }
     const hex = this.instanceHexes.find((item) => item.slot === slot);
     const spawn = hex ? this.world.instanceHexArrival?.(slot) : null;
     if (!spawn) return;
@@ -11407,8 +11596,33 @@ class ForkMeshWorld extends HTMLElement {
     }, intervalMs);
   }
 
+  worldMeshDirectory() {
+    if (!this.worldMeshRequest) {
+      this.worldMeshRequest = this.fetchJSON(
+        `/api/world/mesh?refresh=${Math.floor(Date.now() / 300_000)}`,
+        { auth: false, timeout: 2500, credentials: "omit" },
+      ).catch(() => null);
+    }
+    return this.worldMeshRequest;
+  }
+
+  async placeTerritoryMesh() {
+    const payload = await this.worldMeshDirectory();
+    this.worldMeshRequest = null;
+    if (!payload || !this.world || this.destroyed) return;
+    this.worldMesh = normalizeWorldMesh(payload);
+    const hub = this.worldMesh.worlds.find((world) => world.id === "forkmesh");
+    const shift = this.world.territoryForkmeshShift?.();
+    if (!hub || !shift) return;
+    this.worldMeshLinks()?.setNeighbors([
+      { ...hub, dx: shift.x, dz: shift.z, x: shift.townX, z: shift.townZ },
+    ]);
+    this.setOfficeOwner(hub);
+    this.syncWorldMeshPosition();
+  }
+
   placeWorldMesh() {
-    if (!this.world || this.destroyed) return;
+    if (!this.world || this.destroyed || this.territory) return;
     const home = this.worldMesh?.self || null;
     if (this.meshRoot) {
       this.meshRoot =
@@ -11576,6 +11790,10 @@ class ForkMeshWorld extends HTMLElement {
       !Number.isFinite(z)
     ) {
       this.meshLinks.update(NaN, NaN, document.hidden ? "" : rootId);
+      return;
+    }
+    if (this.territory) {
+      this.meshLinks.update(x, z, this.world?.territoryOwnerAt?.(x, z) || "");
       return;
     }
     const owner =
@@ -14292,6 +14510,10 @@ class ForkMeshWorld extends HTMLElement {
     this.$("[data-world-hud-notice-dismiss]")?.addEventListener("click", () =>
       this.dismissHudNotice(),
     );
+    this.$("[data-world-territory-bug-dismiss]")?.addEventListener("click", () => {
+      const card = this.$("[data-world-territory-bug]");
+      if (card) card.hidden = true;
+    });
     this.$("[data-world-agent-run-dismiss]")?.addEventListener("click", () => {
       this.stopAgentRunWatch();
       const run = this.$("[data-world-agent-run]");
@@ -21005,6 +21227,8 @@ class ForkMeshWorld extends HTMLElement {
     // A saved pose, shared view, or explicit regional destination always wins.
     // Only a truly unplaced Town Square arrival starts at the social circle.
     if (
+      this.territory ||
+      this.pendingTerritoryArrival ||
       this.restoredPosition ||
       this.sharedView ||
       this.spawnSelected ||

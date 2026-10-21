@@ -644,7 +644,9 @@
     if (!background) setRepoTab("code");
     treePanel?.classList.remove("hidden");
     viewer?.classList.add("hidden");
-    readmePanel?.classList.toggle("hidden", Boolean(path));
+    readmePanel?.classList.add("hidden");
+    const contentGrid = detail.querySelector("[data-repo-content-grid]");
+    if (!background) contentGrid?.setAttribute("data-repo-tree-pending", "");
     setRepoExplorerFocusMode(Boolean(path));
     // The root/README view keeps the two-column layout: the About rail is a
     // permanent right-hand column (the old full-width README override that
@@ -653,7 +655,7 @@
     if (!background) resetRepoDirAbout();
 
     treeBody.innerHTML = repoTreeSkeletonHtml();
-    renderRepoExplorer(repo, path, []);
+    renderRepoExplorer(repo, path, null);
     try {
       const requestedAt = performance.now();
       // A live-mirror read: fetch fresh (fetchRepoJson, no-store) like every
@@ -687,6 +689,7 @@
       if (!background) navigateHistory(repoCodeLinkUrl(repo, "tree", path));
       window.lucide?.createIcons();
       if (!path) {
+        readmePanel?.classList.remove("hidden");
         const readmeEntry = entries.find((e) => e.type === "blob" && /^readme(\.md|\.txt|\.rst)?$/i.test(String(e.name || "")));
         const readmeBody = detail.querySelector("[data-repo-readme-body]");
         const readmeFilename = detail.querySelector("[data-repo-readme-filename]");
@@ -731,12 +734,15 @@
         ? `<div class="fm-blankslate"><i data-lucide="${path ? "file-question" : "folder-open"}"></i><p class="fm-blankslate-title">${path ? "Path not found" : "No files yet"}</p><p class="fm-blankslate-desc">${escapeHtml(path ? `${path} is not in this repository at this revision.` : "This repository has no files at this revision.")}</p></div>`
         : '<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Repository unavailable</p><p class="fm-blankslate-desc">No reachable mirror host is serving this repository tree right now.</p></div>';
       if (!path) {
+        readmePanel?.classList.remove("hidden");
         const readmeBody = detail.querySelector("[data-repo-readme-body]");
         if (readmeBody) {
           readmeBody.className = "p-4 text-sm leading-6 text-muted-foreground";
           readmeBody.innerHTML = `<p class="mt-1">${escapeHtml(repo.description || "This repository has not published a README preview yet.")}</p>`;
         }
       }
+    } finally {
+      contentGrid?.removeAttribute("data-repo-tree-pending");
     }
   }
 
@@ -1764,9 +1770,10 @@
   }
 
   async function fetchRepoJson(path, options = {}) {
-    const seeded = options.canonical ? null : await seededRepoRead(path);
+    const remembered = options.canonical || options.fresh;
+    const seeded = remembered ? null : await seededRepoRead(path);
     if (seeded) return seeded;
-    const early = options.canonical ? null : await earlyRepoRead(path);
+    const early = remembered ? null : await earlyRepoRead(path);
     if (early) return early;
     const direct = options.canonical ? [] : directRepoRequestCandidates(path);
     let response = null;
@@ -1774,6 +1781,7 @@
       try {
         const attempted = await fetch(candidate, {
           credentials: "omit",
+          ...(options.fresh ? { cache: "no-cache" } : {}),
           headers: { accept: "application/json" },
           signal: options.signal,
         });
@@ -2101,7 +2109,7 @@
     ].join("@");
   }
 
-  async function resolveRepoPullMetadataCommit(repo) {
+  async function resolveRepoPullMetadataCommit(repo, options = {}) {
     // Named private repository routes intentionally remain inert. Private
     // bytes use the opaque encrypted-replica transport and must never become
     // discoverable through this public branch lookup.
@@ -2109,6 +2117,16 @@
       throw new Error("pull_metadata_unavailable");
     }
     const key = repoPullMetadataCacheKey(repo);
+    if (options.fresh) {
+      const data = await fetchRepoJson(repoLiveUrl(repo, "tree", {
+        path: ".forkmesh/pulls",
+        ref: PULL_METADATA_BRANCH,
+      }), { fresh: true });
+      const commit = immutableGitCommit(data?.commit || data?.analysis?.commit);
+      if (!commit) throw new Error("pull_metadata_absent");
+      state.repoPullMetadataCommits[key] = commit;
+      return commit;
+    }
     const cached = immutableGitCommit(state.repoPullMetadataCommits[key]);
     if (cached) return cached;
     if (state.repoPullMetadataInflight[key]) {
@@ -2498,7 +2516,7 @@
         number,
         title: values.title || `${config.itemLabel} #${number}`,
         state: values.status || values.state || values.category || "open",
-        author: values.authorName || values.author || "unknown",
+        author: recordAuthorName(values) || values.author || "unknown",
         date: formatRecordDate(values.updatedAt || values.createdAt || values.ts),
         updatedAtMs: Number(values.updatedAt || values.createdAt || values.ts || 0) || 0,
         createdAtMs: Number(values.createdAt || values.ts || values.updatedAt || 0) || 0,
@@ -5529,7 +5547,7 @@
       id: "open",
       type: "open",
       author: values?.author || "",
-      authorName: values?.authorName || values?.author || "unknown",
+      authorName: recordAuthorName(values) || values?.author || "unknown",
       ts: values?.ts || values?.createdAt || 0,
       body: "",
     };
@@ -5669,6 +5687,8 @@
     if (!pullDetailIsCurrent(repo, number)) return;
     parsed.pullRules = await loadRepoPullRules(repo, number, readiness);
     if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.pullRequiredChecks = await loadRepoPullRequiredChecks(repo, values, readiness);
+    if (!pullDetailIsCurrent(repo, number)) return;
     const rulesSlot = $("[data-repo-pull-rules-slot]");
     if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
     const checkList = $("[data-repo-pull-checks]");
@@ -5679,7 +5699,6 @@
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
     }
-    updateRepoPullReadinessPanel(repo, number, parsed);
     updateRepoPullMergePanel(repo, number, parsed);
     window.lucide?.createIcons();
     scheduleRepoPullActivityRefresh(repo, number,
@@ -5729,7 +5748,7 @@
         type: values.type || "comment",
         id: values.id || "",
         author: values.author || "",
-        authorName: values.authorName || "",
+        authorName: recordAuthorName(values),
         ts: values.ts || "",
         state: values.state || "",
         path: values.path || "",
@@ -6623,19 +6642,19 @@
   // The current tips an owner merge would pin when the mirror's readiness
   // trial is unavailable (a read-only mirror without merge-preview) or when
   // the pull is patch-backed and has no head branch to trial at all.
-  async function loadRepoPullMergeBase(repo, values) {
+  async function loadRepoPullMergeBase(repo, values, options = {}) {
     const unavailable = { available: false, baseOid: "", headOid: "" };
     if (!repo || String(values?.status || "open").toLowerCase() !== "open") {
       return unavailable;
     }
-    const baseOid = await repoPullBaseTip(repo, values);
+    const baseOid = await repoPullBaseTip(repo, values, options);
     if (!baseOid) return unavailable;
     let headOid = "";
     if (values?.derive === "branch") {
       const branchName = pullHeadBranchRef(values);
       if (branchName) {
         try {
-          const data = await fetchRepoJson(`${repoApiBase(repo)}/branches`);
+          const data = await readRepoPullBranches(repo, options);
           const branch = (Array.isArray(data?.branches) ? data.branches : [])
             .map(normalizeRepoBranch)
             .filter(Boolean)
@@ -6666,21 +6685,21 @@
   // not name a base at all.
   const repoPullBranchReads = new Map();
 
-  function readRepoPullBranches(repo) {
-    const key = repoKey(repo);
+  function readRepoPullBranches(repo, options = {}) {
+    const key = `${repoKey(repo)}${options.fresh ? "#fresh" : ""}`;
     if (!repoPullBranchReads.has(key)) {
-      const read = fetchRepoJson(`${repoApiBase(repo)}/branches`);
+      const read = fetchRepoJson(`${repoApiBase(repo)}/branches`, { fresh: Boolean(options.fresh) });
       repoPullBranchReads.set(key, read);
       read.catch(() => {}).finally(() => repoPullBranchReads.delete(key));
     }
     return repoPullBranchReads.get(key);
   }
 
-  async function repoPullBaseTip(repo, values) {
+  async function repoPullBaseTip(repo, values, options = {}) {
     const branchName = String(values?.base || "").trim();
     if (branchName) {
       try {
-        const data = await readRepoPullBranches(repo);
+        const data = await readRepoPullBranches(repo, options);
         const branch = (Array.isArray(data?.branches) ? data.branches : [])
           .map(normalizeRepoBranch)
           .filter(Boolean)
@@ -6703,7 +6722,7 @@
   // base, and reports the paths a three-way merge would leave conflicted. A
   // mirror that does not advertise the operation yields `available: false`, and
   // every control below then says nothing rather than something untrue.
-  async function loadRepoPullReadiness(repo, number, values) {
+  async function loadRepoPullReadiness(repo, number, values, options = {}) {
     const unavailable = { available: false };
     const branchBacked = values?.derive === "branch";
     if (
@@ -6713,7 +6732,7 @@
     ) {
       return unavailable;
     }
-    const base = await repoPullBaseTip(repo, values);
+    const base = await repoPullBaseTip(repo, values, options);
     const head = branchBacked
       ? pullHeadBranchRef(values) || immutableGitCommit(values?.creationHeadOid)
       : immutableGitCommit(values?.headOid);
@@ -6721,7 +6740,7 @@
     try {
       const preview = await fetchRepoJson(repoLiveUrl(repo, "merge-preview", {
         base, head, ref: "",
-      }));
+      }), { fresh: Boolean(options.fresh) });
       const baseOid = immutableGitCommit(preview?.baseOid);
       const headOid = immutableGitCommit(preview?.headOid);
       if (!baseOid || !headOid || baseOid !== base) return unavailable;
@@ -6825,6 +6844,8 @@
       return unavailable;
     }
     if (payload?.ok !== true) return unavailable;
+    const controlAvailable = payload.controlAvailable !== false;
+    const node = String(payload.node || "").trim().slice(0, 80);
     const runs = (Array.isArray(payload.runs) ? payload.runs : [])
       .filter((run) => immutableGitCommit(run?.commit) === headOid)
       .map((run) => ({
@@ -6839,7 +6860,7 @@
       }))
       .sort((left, right) =>
         (right.finishedAt || right.startedAt) - (left.finishedAt || left.startedAt));
-    return { available: true, headOid, runs };
+    return { available: true, headOid, runs, controlAvailable, node };
   }
 
   // The executor's own status vocabulary, verbatim — the worker rejects any run
@@ -7055,241 +7076,527 @@
     }
   }
 
-  function renderRepoPullReadiness(repo, number, parsed) {
-    const readiness = parsed.pullReadiness;
-    // Unknown readiness renders nothing at all: an absent panel is honest,
-    // a panel claiming "up to date" from no data is not.
-    if (!readiness?.available) return "";
-    const values = parsed.values || {};
-    const baseBranch = values.base || "the base branch";
-    const update = parsed.pullUpdate || {};
-    const context = repoPullUpdateContext(
-      repo, number, values, parsed.pullMetadataCommit || "", readiness,
-    );
-    const state_ = String(update.state || "");
-    const processing = state_ === "processing";
-    const updated = state_ === "updated";
-    const behind = readiness.behind;
-    const rows = [];
-    if (!readiness.clean) {
-      const shown = readiness.conflicts.slice(0, 10);
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-destructive">Conflicts with ${escapeHtml(baseBranch)}.</strong> ${readiness.conflicts.length ? `${formatCount(readiness.conflicts.length)} file${readiness.conflicts.length === 1 ? "" : "s"} must be resolved locally: ` : ""}${shown.map((path) => `<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(path)}</span>`).join("")}${readiness.conflicts.length > shown.length ? `and ${formatCount(readiness.conflicts.length - shown.length)} more.` : ""}</p>`);
-    } else if (behind) {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-attention">Out of date.</strong> This branch is ${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
-    } else {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-success">Up to date.</strong> This branch already contains ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
-    }
-    if (updated) {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground">The mirror published the branch update. Normal repository sync carries it back to the source of truth.</p>`);
-    } else if (update.message) {
-      rows.push(`<p class="text-xs leading-5 text-destructive">${escapeHtml(update.message)}</p>`);
-    }
-    // The control exists only when a real, signed, exact-OID update can be
-    // dispatched right now by an actor the worker will actually authorize.
-    // Otherwise the panel reports state and offers nothing to press: a button
-    // that can only ever answer 403 is a worse answer than no button.
-    const action = context && !updated && parsed.pullMergeAuthorized === true
-      ? `<button type="button" data-repo-pull-update ${processing ? "disabled" : ""} class="fm-btn fm-btn-sm shrink-0"><i data-lucide="${processing ? "loader-circle" : "git-merge"}"${processing ? ' class="animate-spin"' : ""}></i>${processing ? "Updating branch…" : `Update branch from ${escapeHtml(baseBranch)}`}</button>`
-      : "";
-    const summary = pullChecksSummary(parsed.pullChecks);
-    const checksRow = summary.text
-      ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="${summary.tone === "bad" ? "text-destructive" : summary.tone === "pending" ? "text-attention" : summary.tone === "good" ? "text-success" : "text-foreground"}">Checks.</strong> ${escapeHtml(summary.text)}</p>`
-      : "";
-    return `
-      <div data-repo-pull-readiness role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="fm-flash ${!readiness.clean ? "fm-flash-danger" : behind ? "fm-flash-warning" : "fm-flash-neutral"} flex-wrap items-center">
-        <i data-lucide="${!readiness.clean ? "git-pull-request-closed" : behind ? "git-compare-arrows" : "git-pull-request"}" class="self-start"></i>
-        <div class="grid min-w-0 flex-1 gap-1">
-          <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(readiness.headOid.slice(0, 12))} · ${formatCount(readiness.ahead)} ahead · ${formatCount(behind)} behind</span>
-          ${rows.join("")}
-          ${checksRow}
-        </div>
-        ${action}
-      </div>`;
-  }
+  const PULL_MERGE_REPIN_ERRORS = new Set(["stale_pull_metadata", "stale_base"]);
+  const PULL_MERGE_RESUMABLE_ERRORS = new Set(["merge_status_pending", "merge_state_unavailable"]);
 
-  // The slot is mounted (possibly empty) by the detail render, so readiness
-  // that only becomes available on a later tick still has somewhere to land —
-  // and readiness that becomes unavailable empties the slot rather than leaving
-  // a stale panel describing refs that have since moved.
-  function updateRepoPullReadinessPanel(repo, number, parsed) {
-    const slot = document.querySelector("[data-repo-pull-readiness-slot]");
-    if (!slot) return;
-    slot.innerHTML = renderRepoPullReadiness(repo, number, parsed);
-    window.lucide?.createIcons();
-  }
-
-  async function handleRepoPullUpdate(repo) {
-    const detail = state.repoRecordDetail;
-    if (!repo || detail?.kind !== "pulls") return;
-    const parsed = detail.parsed || {};
-    if (!parsed.pullMergeAuthorized) return;
-    const context = repoPullUpdateContext(
-      repo,
-      detail.number,
-      parsed.values || {},
-      parsed.pullMetadataCommit || "",
-      parsed.pullReadiness,
-    );
-    if (!context) return;
-    const existing = parsed.pullUpdate || {};
-    const requestId = existing.requestId || createRepoPullMergeRequestId();
-    const request = {
-      schemaVersion: 1,
-      type: "forkmesh.pull-update-v1",
-      pullNumber: context.number,
-      requestId,
-      expectedBaseOid: context.expectedBaseOid,
-      expectedHeadOid: context.expectedHeadOid,
-      expectedPullsOid: context.expectedPullsOid,
+  function pullMergeFailureMessage(payload) {
+    const error = String(payload?.error || "");
+    const messages = {
+      forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can merge this pull request.",
+      merge_conflict: "The exact reviewed commits do not apply cleanly to the base branch.",
+      stale_base: "The base branch kept moving while the merge was being prepared. Merge again to land it on the newest base.",
+      stale_head: "New commits were pushed to this pull request while you were merging. Review them, then merge again.",
+      stale_pull_metadata: "The pull request kept changing while the merge was being prepared (new comments or reviews landed twice in a row). Merge again to use the newest state.",
+      merge_node_unavailable: payload?.reason === "no_merge_executor"
+        ? "No online mirror runs the merge executor. Mirrors on an older node build advertise no merge capability; merge from the desktop, or retry once an updated mirror is online."
+        : "No online mirror could take this merge in the last few minutes. Try again shortly.",
+      merge_status_pending: "A mirror took this merge but has not confirmed it yet. Retry to check the same merge.",
+      merge_state_unavailable: "The relay could not read this merge's result back. Retry to check the same merge.",
+      merge_queue_full: "The merge queue is full; try again in a moment.",
+      review_required: "The mirror read no independent approval on the published pull request. Ask for a review, or merge without it as the owner.",
+      rules_required: payload?.message || "This pull request does not meet the repository's or organization's pull request rules. Fix what the rules list and push again.",
+      checks_required: "This repository requires signed status checks, and the head being merged has no fresh passing result from a runner the base branch trusts. Run the checks, or change .forkmesh/required-checks.json on the base branch.",
+      unsupported_pull: "This pull request cannot be merged on the web; merge it from the desktop client.",
+      pull_not_found: "The mirror could not read this pull request's record.",
+      pull_not_open: "This pull request is no longer open.",
+      request_id_reused: "That merge request was already used. Merge again to send a new one.",
+      read_only_mirror: payload?.message || REPO_READ_ONLY_MIRROR_HINT,
     };
-    parsed.pullUpdate = { state: "processing", requestId, message: "" };
-    updateRepoPullReadinessPanel(repo, detail.number, parsed);
-    const endpoint = `${repoApiBase(repo)}/pulls/${context.number}/update`;
-    let result;
-    try {
-      result = await postRepoPullMutation(endpoint, request);
-    } catch (_) {
-      parsed.pullUpdate = {
-        state: "failed",
-        requestId,
-        message: "The branch update request could not reach the relay.",
-      };
-      updateRepoPullReadinessPanel(repo, detail.number, parsed);
-      return;
-    }
-    const { response, payload, waiting } = result;
-    if (waiting && payload?.status === "processing") {
-      parsed.pullUpdate = {
-        state: "failed",
-        requestId,
-        message: "The mirror is still processing. Retry to check the same update request.",
-      };
-      updateRepoPullReadinessPanel(repo, detail.number, parsed);
-      return;
-    }
-    if (
-      response.ok
-      && payload?.status === "updated"
-      && payload?.published === true
-      && payload?.requestId === requestId
-      && immutableGitCommit(payload.baseBefore) === context.expectedBaseOid
-      && immutableGitCommit(payload.head) === context.expectedHeadOid
-      && immutableGitCommit(payload.pullsBefore) === context.expectedPullsOid
-      && immutableGitCommit(payload.headAfter)
-    ) {
-      parsed.pullUpdate = { state: "updated", requestId, message: "" };
-    } else {
-      parsed.pullUpdate = {
-        state: "failed",
-        requestId,
-        message: PULL_UPDATE_MESSAGES[payload?.error]
-          || "The mirror branch update could not be confirmed.",
-      };
-    }
-    updateRepoPullReadinessPanel(repo, detail.number, parsed);
-    // Either outcome changes what the refs say, so re-read readiness and
-    // the commit series rather than leaving the panel to describe the past.
-    refreshRepoPullActivity(repo, detail.number);
+    return messages[error] || "The mirror merge could not be confirmed.";
   }
 
-  function renderRepoPullMergeControl(repo, number, parsed) {
-    if (!parsed.pullMergeAuthorized) return "";
-    const merge = parsed.pullMerge || {};
-    const context = repoPullMergeContext(repo, number, parsed);
-    const reviewPolicy = pullReviewPolicy(
-      parsed.pullConversation || [],
-      parsed.values?.author || "",
-    );
-    if (!context) {
-      const readiness = parsed.pullReadiness;
-      const conflicted = readiness?.available && readiness.clean !== true;
-      const reason = conflicted
-        ? "This pull request conflicts with its base branch; it can be merged once the conflicts are resolved and pushed."
-        : parsed.values?.derive !== "branch" && !repoPullHasPatchPayload(parsed)
-          ? "This pull request carries no committed patch or commit series, so a mirror cannot replay it."
-          : "Merging needs the current base branch tip and the pull-request ledger commit from an online mirror; reload once a mirror answers.";
-      return `
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="fm-flash fm-flash-neutral">
-          <i data-lucide="info"></i>
-          <p class="fm-flash-body text-xs text-muted-foreground">${escapeHtml(reason)}</p>
-        </div>`;
+  function pullTextDigest(text) {
+    let hash = 0x811c9dc5;
+    const value = String(text || "");
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
     }
-    const stateName = String(merge.state || "ready");
-    const processing = stateName === "processing";
-    const merged = stateName === "merged";
-    const failed = stateName === "failed";
-    const baseBranch = String(parsed.values?.base || "main").trim() || "main";
-    const rules = parsed.pullRules;
-    const rulesLocked = !merged && !processing && rules?.headOid === context.expectedHeadOid
+    return `${value.length}:${hash.toString(16)}`;
+  }
+
+  function pullMergeFingerprint(parsed) {
+    const values = parsed?.values || {};
+    const readiness = parsed?.pullReadiness || {};
+    const branchBacked = values.derive === "branch";
+    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "");
+    const commits = Array.isArray(parsed?.pullCommits) ? parsed.pullCommits : [];
+    const patch = String(parsed?.pullPatch?.patch || "");
+    const series = commits.map((commit) => String(commit?.hash || "")).join(",");
+    return {
+      status: String(values.status || "open").toLowerCase(),
+      head: branchBacked
+        ? immutableGitCommit(readiness.available ? readiness.headOid : parsed?.pullMergeBase?.headOid)
+          || immutableGitCommit(values.creationHeadOid)
+        : immutableGitCommit(values.headOid),
+      payload: branchBacked || (!patch.trim() && !series) ? "" : pullTextDigest(`${patch}\n${series}`),
+      clean: readiness.available ? readiness.clean === true : null,
+      blockers: policy.blockers,
+    };
+  }
+
+  function pullMergeChanges(before, after) {
+    const changes = [];
+    if (after.status !== before.status) {
+      changes.push(after.status === "merged"
+        ? "It was merged in the meantime."
+        : after.status === "closed"
+          ? "It was closed in the meantime."
+          : `Its status changed to ${after.status}.`);
+    }
+    if (before.head && after.head && before.head !== after.head) {
+      changes.push(`New commits were pushed: the head moved from ${before.head.slice(0, 7)} to ${after.head.slice(0, 7)}.`);
+    }
+    if (before.payload && after.payload && before.payload !== after.payload) {
+      changes.push("The submitted patch series changed.");
+    }
+    if (before.clean !== false && after.clean === false) {
+      changes.push("It now conflicts with the base branch.");
+    }
+    if (after.blockers > before.blockers) {
+      changes.push("A reviewer requested changes.");
+    }
+    return changes;
+  }
+
+  async function refreshRepoPullMergePins(repo, number, parsed) {
+    const before = pullMergeFingerprint(parsed);
+    let tip = "";
+    try {
+      tip = await resolveRepoPullMetadataCommit(repo, { fresh: true });
+    } catch (_) {
+      tip = "";
+    }
+    if (tip && tip !== immutableGitCommit(parsed.pullMetadataCommit)) {
+      let record = null;
+      try {
+        record = await fetchRepoJson(repoLiveUrl(repo, "blob", {
+          path: `.forkmesh/pulls/${number}/pull.md`, ref: tip,
+        }));
+      } catch (_) {
+        record = null;
+      }
+      if (record) {
+        const fresh = parseFrontMatter(blobText(record));
+        const values = fresh.values || {};
+        const [patch, conversation, commits] = await Promise.all([
+          loadRepoPullPatch(repo, number, tip, values),
+          loadRepoPullConversation(repo, number, tip),
+          loadRepoPullCommits(repo, number, tip, values),
+        ]);
+        parsed.values = values;
+        if (fresh.body) parsed.body = fresh.body;
+        parsed.pullMetadataCommit = tip;
+        if (patch) parsed.pullPatch = patch;
+        parsed.pullConversation = conversation;
+        parsed.pullCommits = commits;
+        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, parsed.pullAgents || []);
+      }
+    }
+    const values = parsed.values || {};
+    const [readiness, mergeBase] = await Promise.all([
+      loadRepoPullReadiness(repo, number, values, { fresh: true }),
+      loadRepoPullMergeBase(repo, values, { fresh: true }),
+    ]);
+    parsed.pullReadiness = readiness;
+    parsed.pullMergeBase = mergeBase;
+    return pullMergeChanges(before, pullMergeFingerprint(parsed));
+  }
+
+  function repoPullRequiredCheckNames(policy, baseBranch) {
+    if (!policy || policy.schema !== "forkmesh-required-checks-v1" || !Array.isArray(policy.checks)) return [];
+    const branches = Array.isArray(policy.branches) ? policy.branches.map(String) : [];
+    if (branches.length && !branches.includes(String(baseBranch || ""))) return [];
+    return policy.checks
+      .map((check) => String(check?.name || "").trim())
+      .filter(Boolean)
+      .slice(0, 32);
+  }
+
+  async function loadRepoPullRequiredChecks(repo, values, readiness) {
+    const base = immutableGitCommit(readiness?.baseOid);
+    if (!repo || !base) return { known: false, names: [] };
+    try {
+      const blob = await fetchRepoJson(repoLiveUrl(repo, "blob", {
+        path: ".forkmesh/required-checks.json", ref: base,
+      }));
+      let policy = null;
+      try {
+        policy = JSON.parse(blobText(blob));
+      } catch (_) {
+        policy = null;
+      }
+      return { known: true, names: repoPullRequiredCheckNames(policy, values?.base || "") };
+    } catch (error) {
+      return { known: error?.status === 404 || error?.code === "not_found", names: [] };
+    }
+  }
+
+  function repoPullMergeModel(repo, number, parsed) {
+    const values = parsed?.values || {};
+    const status = String(values.status || "open").toLowerCase();
+    const baseBranch = String(values.base || "").trim() || "main";
+    const headBranch = pullHeadBranchRef(values) || "the head branch";
+    const branchBacked = values.derive === "branch";
+    const readiness = parsed?.pullReadiness || { available: false };
+    const authorized = parsed?.pullMergeAuthorized === true;
+    const merge = parsed?.pullMerge || {};
+    const update = parsed?.pullUpdate || {};
+    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "");
+    const rows = [];
+
+    const reviewRow = { id: "review", actions: [] };
+    if (policy.blockers) {
+      reviewRow.tone = "bad";
+      reviewRow.title = `Changes requested by ${formatCount(policy.blockers)} reviewer${policy.blockers === 1 ? "" : "s"}`;
+      reviewRow.detail = "An independent reviewer asked for changes. The author pushes a fix and the reviewer approves it again.";
+    } else if (policy.ready) {
+      reviewRow.tone = "good";
+      reviewRow.title = `Approved by ${formatCount(policy.approvals)} independent reviewer${policy.approvals === 1 ? "" : "s"}`;
+      reviewRow.detail = "The independent review requirement is met.";
+    } else {
+      reviewRow.tone = "warn";
+      reviewRow.title = "Independent review required";
+      reviewRow.detail = "This repository requires one approval from someone other than the author, with no outstanding request for changes. Anyone signed in except the author can approve it on the Files changed tab.";
+    }
+    if (!policy.ready) {
+      reviewRow.actions.push({ kind: "copy-review", label: "Copy review link" });
+    }
+    rows.push(reviewRow);
+
+    const checks = parsed?.pullChecks || { available: false, runs: [] };
+    const required = parsed?.pullRequiredChecks || { known: false, names: [] };
+    const runs = checks.runs || [];
+    const summary = pullChecksSummary(checks);
+    const failedRun = runs.find((run) => pullCheckStateMeta(run.status).outcome === "failed");
+    const checksRow = { id: "checks", actions: [] };
+    const requiredNames = required.names || [];
+    const passedNames = new Set(runs
+      .filter((run) => pullCheckStateMeta(run.status).outcome === "passed")
+      .map((run) => run.workflow));
+    const missingRequired = requiredNames.filter((name) => !passedNames.has(name));
+    if (summary.tone === "bad") {
+      checksRow.tone = "bad";
+      checksRow.title = "Some checks failed";
+    } else if (summary.tone === "pending") {
+      checksRow.tone = "pending";
+      checksRow.title = "Checks are running";
+    } else if (summary.tone === "good") {
+      checksRow.tone = "good";
+      checksRow.title = "All checks passed";
+    } else {
+      checksRow.tone = requiredNames.length ? "warn" : "muted";
+      checksRow.title = runs.length ? "Some checks did not finish" : "No checks have run on this head";
+    }
+    checksRow.detail = [
+      summary.text || "Live checks appear once a mirror publishes an attested Actions executor for this repository.",
+      requiredNames.length
+        ? `Required before merging: ${requiredNames.join(", ")}.${missingRequired.length ? ` Not yet passed: ${missingRequired.join(", ")}.` : ""} The mirror verifies the signed results at merge time.`
+        : required.known ? "No checks are required to merge." : "",
+    ].filter(Boolean).join(" ");
+    if (failedRun && authorized && checks.node && checks.controlAvailable !== false && state.session?.sessionToken) {
+      checksRow.actions.push({ kind: "rerun", label: "Re-run failed", runId: failedRun.id, node: checks.node });
+    }
+    checksRow.actions.push({ kind: "actions", label: runs.length ? "Open Actions" : "Run checks" });
+    rows.push(checksRow);
+
+    const branchRow = { id: "branch", actions: [] };
+    if (!readiness.available) {
+      branchRow.tone = "muted";
+      branchRow.title = "Mergeability unknown";
+      branchRow.detail = "No mirror answered a merge trial for this pull request just now. It is re-tried while the page is open.";
+    } else if (!readiness.clean) {
+      const count = readiness.conflicts?.length || 0;
+      branchRow.tone = "bad";
+      branchRow.title = `Conflicts with ${baseBranch}`;
+      branchRow.conflicts = (readiness.conflicts || []).slice(0, 10);
+      branchRow.moreConflicts = Math.max(0, count - branchRow.conflicts.length);
+      branchRow.detail = branchBacked
+        ? `Resolve the conflicts locally and push to ${headBranch}: git fetch origin && git switch ${shellWord(headBranch)} && git merge ${shellWord(`origin/${baseBranch}`)}, fix the files, commit, and git push.`
+        : `This pull request was submitted as a patch series, so only its author can resolve the conflicts: rebase the change onto the newest ${baseBranch}, fix the files, and submit it again.`;
+    } else if (readiness.behind > 0) {
+      const behind = readiness.behind;
+      branchRow.tone = "warn";
+      branchRow.title = `${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${baseBranch}`;
+      if (branchBacked) {
+        branchRow.detail = authorized
+          ? `It merges cleanly, so being behind does not block the merge. Update the branch to bring ${baseBranch} into ${headBranch} and re-run the checks on the combined code.`
+          : `It merges cleanly, so being behind does not block the merge. The author can bring ${baseBranch} in with git fetch origin && git merge ${shellWord(`origin/${baseBranch}`)} && git push; an organization owner can also update the branch here.`;
+        if (authorized && repoPullUpdateContext(repo, number, values, parsed?.pullMetadataCommit || "", readiness)) {
+          branchRow.actions.push({ kind: "update", label: update.state === "processing" ? "Updating branch…" : "Update branch", busy: update.state === "processing" });
+        }
+      } else {
+        branchRow.detail = `It merges cleanly, so being behind does not block the merge: the mirror replays the submitted commits onto the newest ${baseBranch}. It was submitted as a patch series from the author's own copy, so there is no branch here to update; only the author can refresh it, by rebasing onto ${baseBranch} and submitting it again.`;
+      }
+    } else {
+      branchRow.tone = "good";
+      branchRow.title = `Up to date with ${baseBranch}`;
+      branchRow.detail = `This branch already contains ${baseBranch} and merges cleanly.`;
+    }
+    if (update.state === "updated") {
+      branchRow.note = { tone: "good", text: "The branch was updated. Checks re-run on the new head." };
+    } else if (update.state === "current") {
+      branchRow.note = { tone: "good", text: `This branch already contains the newest ${baseBranch}.` };
+    } else if (update.state === "failed" && update.message) {
+      branchRow.note = { tone: "bad", text: update.message };
+    }
+    branchRow.ahead = readiness.available ? readiness.ahead : null;
+    branchRow.behind = readiness.available ? readiness.behind : null;
+    branchRow.headOid = readiness.available ? readiness.headOid : "";
+    rows.push(branchRow);
+
+    const rules = parsed?.pullRules;
+    const context = repoPullMergeContext(repo, number, parsed);
+    const rulesLocked = Boolean(context) && rules?.headOid === context.expectedHeadOid
       && (rules.blocked === true || (rules.available !== true && (rules.organizations || []).length > 0));
     if (rulesLocked) {
       const unmet = (rules.rules || []).filter((rule) => rule.status !== "passed" && rule.enforcement === "block").length;
-      const reason = rules.available === true
-        ? `This pull request does not meet ${unmet} required rule${unmet === 1 ? "" : "s"}. Fix what the rules list above, push, and the merge unlocks; the repository host enforces the same rules, so it cannot be waived here.`
-        : "The organization's pull request rules have not been checked on a repository host yet, so the merge stays locked. Reload in a moment.";
-      return `
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="fm-flash fm-flash-danger flex-wrap items-center">
-          <i data-lucide="shield-x" class="self-start"></i>
-          <span class="fm-flash-body text-xs text-muted-foreground">${escapeHtml(reason)}</span>
-          <div class="fm-flash-actions"><button type="button" data-repo-pull-merge disabled class="fm-btn fm-btn-sm fm-btn-cta">Rules not met</button></div>
-        </div>`;
+      rows.push({
+        id: "rules",
+        tone: "bad",
+        title: rules.available === true
+          ? `${formatCount(unmet)} required rule${unmet === 1 ? "" : "s"} not met`
+          : "Pull request rules not checked yet",
+        detail: rules.available === true
+          ? "The rules listed above block the merge until they pass; the repository host enforces them, so they cannot be waived."
+          : "The organization's rules have not been evaluated on a repository host yet, so the merge stays locked. It is re-tried while the page is open.",
+        actions: [],
+      });
     }
-    // The peer gate is advice to the owner, not a lock on them: this panel
-    // renders only for an organization owner, and that same owner can already
-    // merge the pull unreviewed from the desktop client. An unmet gate keeps
-    // its amber warning and its own button wording, but leaves the merge
-    // reachable as an explicit waiver the relay records.
-    const waiveReview = !reviewPolicy.ready && !merged;
-    const reviewReason = reviewPolicy.blockers
-      ? `${reviewPolicy.blockers} independent reviewer${reviewPolicy.blockers === 1 ? " has" : "s have"} requested changes.`
-      : "No peer other than the pull-request author has approved it.";
-    const label = merged
-      ? "Merged"
-      : processing
-        ? "Merging…"
-        : failed
-          ? "Retry merge"
-          : waiveReview
-            ? "Merge without review"
-            : "Merge pull request";
-    const status = merged
-      ? `Merged into ${escapeHtml(baseBranch)}. The merged state is pinned as current and every mirror is syncing it; the source of truth picks it up the next time it connects.`
-      : processing
-        ? merge.queued
-          ? "Waiting for an online mirror to take this merge. No mirror has accepted it yet."
-          : "An online mirror is merging the exact reviewed commits."
-        : failed
-          ? escapeHtml(merge.message || "The mirror could not confirm the merge. Retrying reuses the same idempotent request.")
-          : waiveReview
-            ? `<strong class="text-foreground">Independent review recommended.</strong> ${escapeHtml(reviewReason)} Additional distinct approvals strengthen the review signal. As the owner you can merge into ${escapeHtml(baseBranch)} without them; the waiver is recorded in the audit log and in the pull-request ledger.`
-            : `As the owner you can merge this pull request into ${escapeHtml(baseBranch)} now. An online mirror lands the exact reviewed commits, the relay pins that state, and the rest of the mirrors — and the source of truth when it reconnects — sync to it.`;
-    const frame = failed
-      ? "fm-flash-danger"
-      : merged
-        ? "fm-flash-success"
-        : waiveReview
-          ? "fm-flash-warning"
-          : "fm-flash-neutral";
-    const flashIcon = failed ? "circle-x" : merged ? "git-merge" : waiveReview ? "shield-alert" : processing ? "loader-circle" : "git-merge";
+
+    const hardBlocked = rows.some((row) => row.id === "rules")
+      || (readiness.available && readiness.clean !== true);
+    const reviewMissing = !policy.ready;
+    const merged = merge.state === "merged" || status === "merged";
+    const busy = merge.state === "processing";
+    const footer = { tone: "muted", text: "", method: "merge" };
+    if (status !== "open" && !merged) {
+      footer.tone = "muted";
+      footer.text = "This pull request is closed.";
+    } else if (merged) {
+      footer.tone = "good";
+      footer.text = `Merged into ${baseBranch}. The merged state is pinned as current and every mirror is syncing it.`;
+    } else if (!authorized) {
+      footer.tone = "muted";
+      footer.text = "Only an owner of the organization that owns this repository can merge pull requests here.";
+    } else if (busy) {
+      footer.tone = "pending";
+      footer.text = merge.phase === "checking"
+        ? "Reading the newest state of this pull request…"
+        : merge.phase === "repinning"
+          ? "The pull request changed while merging; re-reading it and trying once more…"
+          : merge.queued
+            ? "Waiting for an online mirror to take this merge. No mirror has accepted it yet."
+            : "An online mirror is merging the exact reviewed commits.";
+    } else if (merge.state === "changed") {
+      footer.tone = "warn";
+      footer.text = "This pull request changed since you opened it, so nothing was merged:";
+      footer.changes = merge.changes || [];
+    } else if (merge.state === "failed") {
+      footer.tone = "bad";
+      footer.text = merge.message || "The mirror merge could not be confirmed.";
+    } else if (!context) {
+      footer.tone = "muted";
+      footer.text = hardBlocked
+        ? "Resolve what is listed above, then merge."
+        : values.derive !== "branch" && !repoPullHasPatchPayload(parsed)
+          ? "This pull request carries no committed patch or commit series, so a mirror cannot replay it."
+          : "Merging needs the current base branch tip from an online mirror; it is re-tried while the page is open.";
+    } else if (hardBlocked) {
+      footer.tone = "bad";
+      footer.text = "Merging is blocked until the items above are resolved.";
+    } else if (reviewMissing) {
+      footer.tone = "warn";
+      footer.text = `Merging is blocked until an independent reviewer approves. As the owner you can override the rule and merge into ${baseBranch} without that approval; the override is recorded in the audit log and in the pull-request ledger.`;
+    } else {
+      footer.tone = "good";
+      footer.text = `Ready to merge into ${baseBranch}. An online mirror lands the exact reviewed commits with a merge commit.`;
+    }
+    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked;
+    return {
+      open: status === "open",
+      authorized,
+      merged,
+      busy,
+      branchBacked,
+      baseBranch,
+      rows,
+      footer,
+      canMerge: canAct && !reviewMissing && !busy,
+      canOverride: canAct && reviewMissing && !busy,
+      retry: merge.state === "failed" || merge.state === "changed",
+    };
+  }
+
+  const PULL_MERGE_ROW_ICONS = {
+    good: "check-circle-2",
+    warn: "alert-circle",
+    bad: "x-circle",
+    pending: "loader-circle",
+    muted: "circle-dashed",
+  };
+
+  function shellWord(value) {
+    const text = String(value || "");
+    return /^[A-Za-z0-9._\/@+=:,-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
+  }
+
+  function renderRepoPullMergeAction(repo, number, action) {
+    if (action.kind === "update") {
+      return `<button type="button" data-repo-pull-update ${action.busy ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${action.busy ? "loader-circle" : "git-merge"}"${action.busy ? ' class="animate-spin"' : ""}></i>${escapeHtml(action.label)}</button>`;
+    }
+    if (action.kind === "rerun") {
+      return `<button type="button" data-repo-pull-check-rerun="${escapeHtml(String(action.runId || ""))}" data-repo-pull-check-node="${escapeHtml(action.node || "")}" class="fm-btn fm-btn-sm"><i data-lucide="rotate-ccw"></i>${escapeHtml(action.label)}</button>`;
+    }
+    if (action.kind === "actions") {
+      return `<a href="${escapeHtml(`${repoLinkUrl(repo)}/actions`)}" data-repo-pull-open-actions data-dashboard-repo-tab="actions" class="fm-btn fm-btn-sm"><i data-lucide="play"></i>${escapeHtml(action.label)}</a>`;
+    }
+    if (action.kind === "copy-review") {
+      return `<button type="button" data-dashboard-copy="${escapeHtml(new URL(repoRecordUrl(repo, "pulls", number, "files"), location.origin).href)}" title="Copy a link to this pull request's changes to send to a reviewer" class="copy-button fm-btn fm-btn-sm"><i data-lucide="user-plus" class="copy-icon"></i><i data-lucide="check" class="copy-check"></i>${escapeHtml(action.label)}</button>`;
+    }
+    return "";
+  }
+
+  function renderRepoPullMergeBox(repo, number, parsed) {
+    const model = repoPullMergeModel(repo, number, parsed);
+    if (!model.open && !model.merged) return "";
+    const rows = model.rows.map((row) => {
+      const icon = PULL_MERGE_ROW_ICONS[row.tone] || PULL_MERGE_ROW_ICONS.muted;
+      const conflicts = row.conflicts?.length
+        ? `<p class="fm-merge-row-files">${row.conflicts.map((path) => `<code>${escapeHtml(path)}</code>`).join("")}${row.moreConflicts ? `<span>and ${formatCount(row.moreConflicts)} more</span>` : ""}</p>`
+        : "";
+      const meta = row.id === "branch" && row.headOid
+        ? `<span class="fm-merge-row-meta" data-repo-pull-readiness>${escapeHtml(row.headOid.slice(0, 12))} · ${formatCount(row.ahead)} ahead · ${formatCount(row.behind)} behind</span>`
+        : "";
+      const note = row.note
+        ? `<p class="fm-merge-row-note" data-tone="${escapeHtml(row.note.tone)}">${escapeHtml(row.note.text)}</p>`
+        : "";
+      const actions = (row.actions || []).map((action) => renderRepoPullMergeAction(repo, number, action)).join("");
+      return `
+        <div class="fm-merge-row" data-repo-pull-merge-row="${escapeHtml(row.id)}" data-tone="${escapeHtml(row.tone)}">
+          <span class="fm-merge-row-icon"><i data-lucide="${icon}"${row.tone === "pending" ? ' class="animate-spin"' : ""}></i></span>
+          <div class="fm-merge-row-body">
+            <p class="fm-merge-row-title">${escapeHtml(row.title)}</p>
+            ${meta}
+            <p class="fm-merge-row-detail">${escapeHtml(row.detail)}</p>
+            ${conflicts}${note}
+          </div>
+          ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
+        </div>`;
+    }).join("");
+    const footer = model.footer;
+    const changes = footer.changes?.length
+      ? `<ul class="fm-merge-changes">${footer.changes.map((change) => `<li>${escapeHtml(change)}</li>`).join("")}</ul>`
+      : "";
+    const showControls = model.authorized && model.open && !model.merged;
+    const method = showControls
+      ? `<label class="fm-merge-method"><span>Merge method</span><select data-repo-pull-merge-method aria-label="Merge method"><option value="merge" selected>Create a merge commit</option><option value="squash" disabled>Squash and merge (not on mirrors yet)</option><option value="rebase" disabled>Rebase and merge (not on mirrors yet)</option></select></label>`
+      : "";
+    const mergeLabel = model.busy
+      ? "Merging…"
+      : model.retry
+        ? "Merge again"
+        : "Merge pull request";
+    const mergeButton = showControls
+      ? `<button type="button" data-repo-pull-merge ${model.canMerge ? "" : "disabled"} class="fm-btn fm-btn-cta"><i data-lucide="${model.busy ? "loader-circle" : "git-merge"}"${model.busy ? ' class="animate-spin"' : ""}></i>${mergeLabel}</button>`
+      : model.merged
+        ? `<button type="button" disabled class="fm-btn fm-btn-cta"><i data-lucide="check-circle-2"></i>Merged</button>`
+        : "";
+    const override = model.canOverride
+      ? `<button type="button" data-repo-pull-merge-override class="fm-btn fm-btn-danger"><i data-lucide="shield-alert"></i>Merge without review</button>`
+      : "";
     return `
-      <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="fm-flash ${frame} flex-wrap items-center">
-        <i data-lucide="${flashIcon}" class="self-start${processing ? " animate-spin" : ""}"></i>
-        <span class="fm-flash-body text-xs text-muted-foreground">${status}</span>
-        <div class="fm-flash-actions"><button type="button" data-repo-pull-merge ${processing || merged ? "disabled" : ""} class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="${merged ? "check-circle-2" : waiveReview ? "shield-alert" : "git-merge"}"></i>${label}</button></div>
-      </div>`;
+      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
+        ${rows}
+        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
+          <p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>
+          ${changes}
+          ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
+        </div>
+      </section>`;
   }
 
   function updateRepoPullMergePanel(repo, number, parsed) {
-    const current = document.querySelector("[data-repo-pull-merge-panel]");
-    if (!current) return;
-    const wrapper = document.createElement("div");
-    wrapper.innerHTML = renderRepoPullMergeControl(repo, number, parsed);
-    const replacement = wrapper.firstElementChild;
-    if (replacement) current.replaceWith(replacement);
+    const slot = document.querySelector("[data-repo-pull-merge-slot]");
+    if (!slot) return;
+    slot.innerHTML = renderRepoPullMergeBox(repo, number, parsed);
     window.lucide?.createIcons();
   }
 
-  async function handleRepoPullMerge(repo) {
+  function repoPullMutationRequestId(previous) {
+    return previous?.resumable === true && previous.request?.requestId
+      ? previous.request.requestId
+      : createRepoPullMergeRequestId();
+  }
+
+  function buildRepoPullMergeRequest(repo, number, parsed, overrideReview) {
+    const context = repoPullMergeContext(repo, number, parsed);
+    if (!context) return null;
+    const waive = overrideReview === true && !pullReviewPolicy(
+      parsed.pullConversation || [],
+      parsed.values?.author || "",
+    ).ready;
+    return {
+      schemaVersion: 1,
+      type: "forkmesh.pull-merge-v1",
+      pullNumber: context.number,
+      requestId: createRepoPullMergeRequestId(),
+      expectedBaseOid: context.expectedBaseOid,
+      expectedHeadOid: context.expectedHeadOid,
+      expectedPullsOid: context.expectedPullsOid,
+      ...(waive ? { overrideReview: true } : {}),
+    };
+  }
+
+  async function sendRepoPullMerge(repo, number, parsed, request) {
+    const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/merge`;
+    let result;
+    try {
+      result = await postRepoPullMutation(endpoint, request, (accepted) => {
+        if (parsed.pullMerge?.request?.requestId !== request.requestId) return;
+        if (Boolean(parsed.pullMerge.queued) === !accepted) return;
+        parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };
+        updateRepoPullMergePanel(repo, number, parsed);
+      });
+    } catch (_) {
+      return {
+        state: "failed",
+        resumable: true,
+        request,
+        message: "The merge request could not reach the relay. Retrying resends the same request, so nothing can merge twice.",
+      };
+    }
+    const { response, payload, waiting } = result;
+    if (waiting && payload?.status === "processing") {
+      return {
+        state: "failed",
+        resumable: true,
+        request,
+        message: "The mirror is still processing. Retry to check the same merge.",
+      };
+    }
+    if (
+      response.ok
+      && payload?.status === "merged"
+      && payload?.published === true
+      && payload?.requestId === request.requestId
+      && immutableGitCommit(payload.baseBefore) === request.expectedBaseOid
+      && immutableGitCommit(payload.head) === request.expectedHeadOid
+      && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
+    ) {
+      return { state: "merged", request };
+    }
+    const error = String(payload?.error || "");
+    return {
+      state: "failed",
+      error,
+      resumable: PULL_MERGE_RESUMABLE_ERRORS.has(error),
+      request,
+      message: pullMergeFailureMessage(payload),
+    };
+  }
+
+  async function handleRepoPullMerge(repo, options = {}) {
     const detail = state.repoRecordDetail;
     if (
       !repo
@@ -7299,101 +7606,205 @@
       return;
     }
     const parsed = detail.parsed;
-    const context = repoPullMergeContext(repo, detail.number, parsed);
-    if (!context) return;
-    // Derived here, not read back off the button, so a retry of an in-flight
-    // request keeps asking for exactly what the first attempt asked for.
-    const waiveReview = !pullReviewPolicy(
-      parsed.pullConversation || [],
-      parsed.values?.author || "",
-    ).ready;
-    const existing = parsed.pullMerge || {};
-    if (
-      waiveReview
-      && !existing.requestId
-      && !window.confirm(
-        `Merge pull request #${context.number} without an independent peer approval? The waiver is recorded in the audit log and in the pull-request ledger.`,
-      )
-    ) {
+    const number = detail.number;
+    const previous = parsed.pullMerge || {};
+    if (previous.state === "processing") return;
+    let request = previous.resumable === true ? previous.request : null;
+    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request };
+    updateRepoPullMergePanel(repo, number, parsed);
+    if (!request) {
+      const changes = await refreshRepoPullMergePins(repo, number, parsed);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      if (changes.length) {
+        parsed.pullMerge = { state: "changed", changes };
+        updateRepoPullMergePanel(repo, number, parsed);
+        return;
+      }
+      request = buildRepoPullMergeRequest(repo, number, parsed, options.overrideReview === true);
+      if (!request) {
+        parsed.pullMerge = {};
+        updateRepoPullMergePanel(repo, number, parsed);
+        return;
+      }
+    }
+    let outcome = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      parsed.pullMerge = { state: "processing", phase: "", request };
+      updateRepoPullMergePanel(repo, number, parsed);
+      outcome = await sendRepoPullMerge(repo, number, parsed, request);
+      if (
+        attempt > 0
+        || outcome.state !== "failed"
+        || outcome.resumable
+        || !PULL_MERGE_REPIN_ERRORS.has(outcome.error)
+      ) {
+        break;
+      }
+      parsed.pullMerge = { state: "processing", phase: "repinning" };
+      updateRepoPullMergePanel(repo, number, parsed);
+      const changes = await refreshRepoPullMergePins(repo, number, parsed);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      if (changes.length) {
+        outcome = { state: "changed", changes };
+        break;
+      }
+      const next = buildRepoPullMergeRequest(repo, number, parsed, request.overrideReview === true);
+      if (!next) break;
+      request = next;
+    }
+    parsed.pullMerge = outcome;
+    updateRepoPullMergePanel(repo, number, parsed);
+    if (outcome?.state === "merged") refreshRepoPullActivity(repo, number);
+  }
+
+  async function handleRepoPullMergeOverride(repo) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls" || !detail.parsed?.pullMergeAuthorized) return;
+    if (!window.confirm(
+      `Merge pull request #${detail.number} without an independent approval?\n\nThis repository requires one approval from someone other than the author. As the owner you can override that rule; the override is recorded in the audit log and in the pull-request ledger.`,
+    )) {
       return;
     }
-    const requestId = existing.requestId || createRepoPullMergeRequestId();
-    const request = {
+    await handleRepoPullMerge(repo, { overrideReview: true });
+  }
+
+  function buildRepoPullUpdateRequest(repo, number, parsed) {
+    const context = repoPullUpdateContext(
+      repo,
+      number,
+      parsed.values || {},
+      parsed.pullMetadataCommit || "",
+      parsed.pullReadiness,
+    );
+    if (!context) return null;
+    return {
       schemaVersion: 1,
-      type: "forkmesh.pull-merge-v1",
+      type: "forkmesh.pull-update-v1",
       pullNumber: context.number,
-      requestId,
+      requestId: createRepoPullMergeRequestId(),
       expectedBaseOid: context.expectedBaseOid,
       expectedHeadOid: context.expectedHeadOid,
       expectedPullsOid: context.expectedPullsOid,
-      // Absent unless waived: the same request id must never mean a reviewed
-      // merge on one attempt and an unreviewed one on the next.
-      ...(waiveReview ? { overrideReview: true } : {}),
     };
-    parsed.pullMerge = { state: "processing", requestId };
-    updateRepoPullMergePanel(repo, detail.number, parsed);
-    const endpoint =
-      `${repoApiBase(repo)}/pulls/${context.number}/merge`;
+  }
+
+  async function sendRepoPullUpdate(repo, request) {
+    const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/update`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request, (accepted) => {
-        if (parsed.pullMerge?.requestId !== requestId) return;
-        if (Boolean(parsed.pullMerge.queued) === !accepted) return;
-        parsed.pullMerge = { state: "processing", requestId, queued: !accepted };
-        updateRepoPullMergePanel(repo, detail.number, parsed);
-      });
+      result = await postRepoPullMutation(endpoint, request);
     } catch (_) {
-      parsed.pullMerge = {
+      return {
         state: "failed",
-        requestId,
-        message: "The mirror merge could not reach the relay.",
+        resumable: true,
+        request,
+        message: "The branch update request could not reach the relay. Retrying resends the same request.",
       };
-      updateRepoPullMergePanel(repo, detail.number, parsed);
-      return;
     }
     const { response, payload, waiting } = result;
     if (waiting && payload?.status === "processing") {
-      parsed.pullMerge = {
+      return {
         state: "failed",
-        requestId,
-        message: "The mirror is still processing. Retry to check the same merge.",
-      };
-    } else if (
-      response.ok
-      && payload?.status === "merged"
-      && payload?.published === true
-      && payload?.requestId === requestId
-      && immutableGitCommit(payload.baseBefore) === context.expectedBaseOid
-      && immutableGitCommit(payload.head) === context.expectedHeadOid
-      && immutableGitCommit(payload.pullsBefore) === context.expectedPullsOid
-    ) {
-      parsed.pullMerge = { state: "merged", requestId };
-    } else {
-      const messages = {
-        forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can merge this pull request.",
-        merge_conflict: "The exact reviewed commits do not apply cleanly to the base branch.",
-        stale_base: "The base branch changed; reload and review the new state.",
-        stale_head: "The pull-request head changed; reload and review it again.",
-        stale_pull_metadata: "The pull-request metadata changed; reload before merging.",
-        merge_node_unavailable: payload?.reason === "no_merge_executor"
-          ? "No online mirror runs the merge executor. Mirrors on an older node build advertise no merge capability; merge from the desktop, or retry once an updated mirror is online."
-          : "No online mirror could take this merge in the last few minutes. Try again shortly.",
-        merge_status_pending: "A mirror took this merge but has not confirmed it yet. Retry to check the same merge.",
-        merge_queue_full: "The merge queue is full; try again in a moment.",
-        review_required: "The mirror read no independent review on the published pull-request ledger. Reload to re-read the review history, then merge again to waive the gate as the owner.",
-        rules_required: payload?.message || "This pull request does not meet the repository's or organization's pull request rules. Fix what the rules list above and push again.",
-        checks_required: "This repository requires signed status checks, and the head being merged has no fresh passing result from a runner the base branch trusts. Run the checks, or change .forkmesh/required-checks.json on the base branch.",
-        unsupported_pull: "This pull request cannot be merged on the web; merge it from the desktop client.",
-        pull_not_found: "The mirror could not read this pull request's record.",
-        read_only_mirror: payload?.message || REPO_READ_ONLY_MIRROR_HINT,
-      };
-      parsed.pullMerge = {
-        state: "failed",
-        requestId,
-        message: messages[payload?.error] || "The mirror merge could not be confirmed.",
+        resumable: true,
+        request,
+        message: "The mirror is still processing. Retry to check the same update request.",
       };
     }
-    updateRepoPullMergePanel(repo, detail.number, parsed);
+    if (
+      response.ok
+      && payload?.status === "updated"
+      && payload?.published === true
+      && payload?.requestId === request.requestId
+      && immutableGitCommit(payload.baseBefore) === request.expectedBaseOid
+      && immutableGitCommit(payload.head) === request.expectedHeadOid
+      && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
+      && immutableGitCommit(payload.headAfter)
+    ) {
+      return { state: "updated", request };
+    }
+    const error = String(payload?.error || "");
+    return {
+      state: "failed",
+      error,
+      resumable: PULL_MERGE_RESUMABLE_ERRORS.has(error),
+      request,
+      message: PULL_UPDATE_MESSAGES[error] || "The mirror branch update could not be confirmed.",
+    };
+  }
+
+  async function handleRepoPullUpdate(repo) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls") return;
+    const parsed = detail.parsed || {};
+    if (!parsed.pullMergeAuthorized) return;
+    const number = detail.number;
+    const previous = parsed.pullUpdate || {};
+    if (previous.state === "processing") return;
+    let request = previous.resumable === true ? previous.request : null;
+    parsed.pullUpdate = { state: "processing", request };
+    updateRepoPullMergePanel(repo, number, parsed);
+    if (!request) {
+      const changes = await refreshRepoPullMergePins(repo, number, parsed);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      request = changes.length ? null : buildRepoPullUpdateRequest(repo, number, parsed);
+      if (!request) {
+        parsed.pullUpdate = changes.length
+          ? { state: "failed", message: `Nothing was updated: ${changes.join(" ")}` }
+          : parsed.pullReadiness?.available && parsed.pullReadiness.behind <= 0
+            ? { state: "current" }
+            : { state: "failed", message: "The branch cannot be updated right now; the merge trial on the mirror did not answer." };
+        updateRepoPullMergePanel(repo, number, parsed);
+        return;
+      }
+    }
+    let outcome = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      parsed.pullUpdate = { state: "processing", request };
+      updateRepoPullMergePanel(repo, number, parsed);
+      outcome = await sendRepoPullUpdate(repo, request);
+      if (
+        attempt > 0
+        || outcome.state !== "failed"
+        || outcome.resumable
+        || !PULL_MERGE_REPIN_ERRORS.has(outcome.error)
+      ) {
+        break;
+      }
+      const changes = await refreshRepoPullMergePins(repo, number, parsed);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      const next = changes.length ? null : buildRepoPullUpdateRequest(repo, number, parsed);
+      if (!next) {
+        if (changes.length) outcome = { state: "failed", message: `Nothing was updated: ${changes.join(" ")}` };
+        break;
+      }
+      request = next;
+    }
+    parsed.pullUpdate = outcome;
+    updateRepoPullMergePanel(repo, number, parsed);
+    refreshRepoPullActivity(repo, number);
+  }
+
+  async function handleRepoPullCheckRerun(repo, runId) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls" || !runId) return;
+    const button = document.querySelector(`[data-repo-pull-check-rerun="${CSS.escape(String(runId))}"]`);
+    const node = button?.getAttribute("data-repo-pull-check-node") || "";
+    if (!node) return;
+    if (button) button.disabled = true;
+    try {
+      await orgAgentRequest("POST", `${repoApiBase(repo)}/actions/control`, {
+        requestId: repoActionsRequestId(),
+        action: "rerun",
+        node,
+        runId: Number(runId),
+      });
+      refreshRepoPullActivity(repo, detail.number);
+    } catch (error) {
+      if (button) {
+        button.disabled = false;
+        button.title = String(error?.message || "The run could not be restarted.");
+      }
+    }
   }
 
   // Owner-authored contributor reward estimate. Both pull.md and issue-<n>.json
@@ -7714,7 +8125,7 @@
     const values = parsed.values || {};
     const title = values.title || `${config.itemLabel} #${number}`;
     const recordState = values.status || values.state || values.category || "open";
-    const author = values.authorName || values.author || "unknown";
+    const author = recordAuthorName(values) || values.author || "unknown";
     const timestamp = values.updatedAt || values.createdAt || values.ts;
     const date = isFinite(Number(timestamp)) || timestamp
       ? formatTimeAgo(timestamp)
@@ -7887,9 +8298,8 @@
                 ${openingBlock}
                 ${isDiscussions ? discussionConversationSection : pullConversationSection}
               </section>
-              ${isPulls ? `<div data-repo-pull-readiness-slot class="sm:ml-14">${renderRepoPullReadiness(repo, number, parsed)}</div>` : ""}
               ${isPulls ? `<div data-repo-pull-rules-slot class="sm:ml-14">${renderRepoPullRules(parsed.pullRules)}</div>` : ""}
-              ${isPulls ? `<div class="sm:ml-14">${renderRepoPullMergeControl(repo, number, parsed)}</div>` : ""}
+              ${isPulls ? `<div data-repo-pull-merge-slot class="min-w-0 sm:ml-14">${renderRepoPullMergeBox(repo, number, parsed)}</div>` : ""}
               ${repo.isPrivate ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
                 <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[14px] text-muted-foreground">
                   <i data-lucide="radio" class="h-4 w-4"></i><span class="font-semibold text-foreground">Fediverse thread</span><span class="text-[12px]">· remote provenance, separate from signed history</span><i data-lucide="chevron-down" class="ml-auto h-4 w-4 transition-transform group-open:rotate-180"></i>
@@ -9359,7 +9769,7 @@
         parsed.pullMetadataCommit = pullMetadataCommit;
         const values = parsed.values || {};
         const readiness = loadRepoPullReadiness(repo, number, values);
-        const [pullPatch, conversation, commits, agents, mergeAuthorized, mergeBase, checks, rules] = await Promise.all([
+        const [pullPatch, conversation, commits, agents, mergeAuthorized, mergeBase, checks, rules, requiredChecks] = await Promise.all([
           loadRepoPullPatch(repo, number, pullMetadataCommit, values),
           loadRepoPullConversation(repo, number, pullMetadataCommit),
           loadRepoPullCommits(repo, number, pullMetadataCommit, values),
@@ -9368,6 +9778,7 @@
           loadRepoPullMergeBase(repo, values),
           readiness.then((result) => loadRepoPullChecks(repo, values, result)),
           readiness.then((result) => loadRepoPullRules(repo, number, result)),
+          readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
         ]);
         if (pullPatch) parsed.pullPatch = pullPatch;
         parsed.pullConversation = conversation;
@@ -9379,6 +9790,7 @@
         parsed.pullMergeBase = mergeBase;
         parsed.pullChecks = checks;
         parsed.pullRules = rules;
+        parsed.pullRequiredChecks = requiredChecks;
       }
       if (kind === "issues") {
         [parsed.issueMutationAuthorized, parsed.issueSubscribed] = await issueAccess;
@@ -9439,8 +9851,9 @@
       badge.classList.add("hidden");
       return;
     }
-    badge.classList.remove("hidden");
-    badge.textContent = formatCount(Number.isFinite(number) ? number : 0);
+    const label = formatCount(Number.isFinite(number) ? number : 0);
+    if (badge.textContent !== label) badge.textContent = label;
+    badge.classList.remove("hidden", "invisible");
   }
 
   // Star/unstar a repo (GET/POST/DELETE /api/repo/o/r/star). A star is a
@@ -12451,10 +12864,35 @@
     return base.toLowerCase() === repoApiBase(repo).toLowerCase() ? seed : null;
   }
 
+  let repoFirstViewReadsTaken = false;
+  let repoFirstViewReadsSeeded = false;
+  function seedRepoFirstViewReads(repo) {
+    if (repoFirstViewReadsTaken) return false;
+    const seed = repoFirstViewSeed(repo);
+    if (!seed || !seed.reads || typeof seed.reads !== "object") return false;
+    if (seed.tree?.commit !== seed.commit) return false;
+    repoFirstViewReadsTaken = true;
+    mergeRepoReadSeeds({
+      base: repoApiBase(repo).toLowerCase(),
+      reads: seed.reads,
+      servedBy: seed.servedBy || "",
+      view: "first-view",
+      number: 0,
+    });
+    repoFirstViewReadsSeeded = true;
+    return true;
+  }
+
   function applyRepoFirstViewAbout(repo) {
     const seed = repoFirstViewSeed(repo);
     if (!seed) return;
     applyRepoFeatures(seed.features);
+    seedRepoFirstViewReads(repo);
+    const size = Number(seed.sizeBytes) || 0;
+    const sizeMeta = $("[data-repo-about-sizemap-meta]");
+    if (size > 0 && sizeMeta) sizeMeta.textContent = formatSize(size);
+    const watchers = $("[data-repo-watch-count]");
+    if (Number.isInteger(seed.followers) && watchers) watchers.textContent = formatCount(seed.followers);
     const about = String(seed.info?.about || "").trim();
     if (about) applyRepoAboutDescription(repo, about);
     if (seed.info) applyRepoAboutWebsite(String(seed.info.website || ""));
@@ -13575,6 +14013,12 @@
     } catch (_) { /* no releases — section stays hidden */ }
   }
 
+  function setHtmlIfChanged(element, markup) {
+    if (element.dataset?.renderedHtml === markup) return;
+    element.innerHTML = markup;
+    if (element.dataset) element.dataset.renderedHtml = markup;
+  }
+
   function renderRepoAboutFileCount(count, partial) {
     const section = $("[data-repo-about-files]");
     const label = $("[data-repo-about-files-count]");
@@ -13591,16 +14035,16 @@
     const legend = $("[data-repo-about-langs-legend]");
     const section = $("[data-repo-about-langs]");
     if (!bar || !legend || !section) return;
-    bar.innerHTML = ranked.map(([language, weight]) => {
+    setHtmlIfChanged(bar, ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = (weight / total) * 100;
       return `<span title="${escapeHtml(language)}" class="h-full shrink-0 first:rounded-l-full last:rounded-r-full" style="width:${pct.toFixed(1)}%;min-width:2px;background-color:${color}"></span>`;
-    }).join("");
-    legend.innerHTML = ranked.map(([language, weight]) => {
+    }).join(""));
+    setHtmlIfChanged(legend, ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = ((weight / total) * 100).toFixed(1);
       return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
-    }).join("");
+    }).join(""));
     section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
@@ -13819,10 +14263,10 @@
     const shown = rows.slice(0, REPO_CONTRIBUTOR_ROSTER_SHOWN);
     const more = total - shown.length;
     const everyone = repoLinkUrl(repo, "blob", REPO_CONTRIBUTOR_ROSTER_PATH);
-    list.innerHTML = shown.map((row) => repoRosterContributorAvatar(repo, row)).join("") +
+    setHtmlIfChanged(list, shown.map((row) => repoRosterContributorAvatar(repo, row)).join("") +
       (more > 0
         ? `<a href="${escapeHtml(everyone)}" title="All ${escapeHtml(formatCount(total))} contributors" class="!ml-2 text-[11px] text-muted-foreground hover:text-foreground hover:underline">+${formatCount(more)}</a>`
-        : "");
+        : ""));
     dropBrokenContributorAvatars(list);
     section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
@@ -13852,8 +14296,8 @@
     count.textContent = String(Number(total) || rows.length);
     const shown = rows.slice(0, 8);
     const more = (Number(total) || rows.length) - shown.length;
-    list.innerHTML = shown.map(repoContributorAvatar).join("") +
-      (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
+    setHtmlIfChanged(list, shown.map(repoContributorAvatar).join("") +
+      (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : ""));
     dropBrokenContributorAvatars(list);
     section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
@@ -14416,6 +14860,11 @@
   function scheduleRepoAboutRail(repo) {
     if (!repo || state.repoAboutLoaded) return;
     state.repoAboutLoaded = true;
+    if (repoFirstViewReadsSeeded && state.activeRepoTab === "code") {
+      repoFirstViewReadsSeeded = false;
+      loadRepoAboutRail(repo);
+      return;
+    }
     const load = () => {
       if (
         state.activeRepoTab !== "code"

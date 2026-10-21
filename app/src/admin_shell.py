@@ -92,6 +92,8 @@ NAV = (
         ("plugins", "Plugins", "grid", ("console", "plugins")),
         ("federation", "ForkMesh directory", "globe",
          ("console", "federation")),
+        ("world-territory", "World", "grid",
+         ("console", "world-territory")),
         ("database", "Database", "database", ("console", "database")),
     )),
 )

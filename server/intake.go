@@ -1368,7 +1368,7 @@ func pullMarkdown(number int, pull map[string]any) string {
 		"authorName: " + safeHeader(stringValue(pull["authorName"])),
 		"sig: " + safeHeader(stringValue(pull["sig"])),
 	}
-	for _, key := range []string{"creationBaseOid", "creationHeadOid", "client", "clientSig", "aiModel"} {
+	for _, key := range []string{"authorClaimedName", "creationBaseOid", "creationHeadOid", "client", "clientSig", "aiModel"} {
 		value := safeHeader(stringValue(pull[key]))
 		if key == "aiModel" {
 			if runes := []rune(value); len(runes) > 80 {
@@ -1385,7 +1385,7 @@ func pullMarkdown(number int, pull map[string]any) string {
 
 func pullEventMarkdown(event map[string]any) string {
 	lines := []string{"---"}
-	for _, key := range []string{"type", "id", "author", "authorName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "appliedCommit", "patchset", "sig"} {
+	for _, key := range []string{"type", "id", "author", "authorName", "authorClaimedName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "appliedCommit", "patchset", "sig"} {
 		if value, ok := event[key]; ok && fmt.Sprint(value) != "" {
 			lines = append(lines, key+": "+safeHeader(fmt.Sprint(value)))
 		}

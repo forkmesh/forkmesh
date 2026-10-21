@@ -53,7 +53,7 @@ KEPT = {
     "07-repo-compose-branch.js": ["runs a ForkMesh version"],
     "07-repo-pull-batch.js": ["runs a ForkMesh version"],
     "08-repo-detail-network.js": ["other ForkMesh instances"],
-    "09-workflows.js": ["an n8n or ForkMesh workflow file", "The ForkMesh desktop app (MainWindow::"],
+    "09-workflows.js": ["an n8n or ForkMesh workflow file"],
 }
 
 

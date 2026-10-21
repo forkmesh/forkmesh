@@ -46,6 +46,7 @@ only drops a request file; a root unit does the work.
 1. **Check now** or **Update ForkMesh** writes `check` or `update` to
    `INSTANCE_UPDATE_REQUEST` (`/var/lib/forkmesh-instance/update/request`,
    written atomically; the path must be under `/var/lib/forkmesh-instance/`).
+   A merged pull request writes `auto` (below).
 2. `forkmesh-instance-update.path` (`PathExists=`) starts
    `forkmesh-instance-update.service`, a root oneshot running
    `/usr/local/lib/forkmesh-instance-update/instance-update.sh`
@@ -53,8 +54,12 @@ only drops a request file; a root unit does the work.
 3. The helper reads at most 32 bytes of the request, keeps only `a-z`,
    refuses a symlink, and deletes the file. Nothing from the request reaches a
    command.
-4. **check** fetches the configured `sourceRef` from `origin` (depth 1) and
-   records the fetched commit, date, subject and version.
+4. **check** fetches the configured `sourceRef` from the configured
+   `sourceUrl` (depth 1; not from the checkout's `origin`, so editing
+   `instance.json` is enough) and records the fetched commit, date, subject,
+   version and source. A `sourceUrl` on the instance's own `domain` is
+   fetched through the local Caddy (`http.curloptResolve`). Only `https://`
+   (and `file:///` for tests) addresses are accepted.
 5. **update** refuses while `forkmesh-instance-setup.service` runs, fetches
    the latest source, extracts that commit's
    `www/public/install-instance.sh` and runs it with `--update`. The installer
@@ -64,15 +69,71 @@ only drops a request file; a root unit does the work.
    beside the running version and switches only after a good build, rolling
    back if the restart fails, so a failed update leaves the old version
    serving ([../INSTANCES.md](../INSTANCES.md#updates-build-beside-the-running-version)).
+   **auto** is the same run with `trigger: merge` recorded, except that it
+   ends at once (`done`, nothing restarted) when the fetched commit is the
+   one already running, for example when two merges were coalesced.
 6. Progress goes to `/var/lib/forkmesh-instance-update/status.json`
-   (root:forkmesh-app, 0640): state, the installer's current `FMI` step, the
-   last `Error:` line, the commits before and after, and the upstream commit.
+   (root:forkmesh-app, 0640): state, `trigger` (`admin` or `merge`), the
+   installer's current `FMI` step, the last `Error:` line, the commits before
+   and after, and the upstream commit.
    The full log is `update.log` in the same folder, readable by root only,
    because installer output is not meant for the web.
 
 While a request or run is open the page refreshes every 5 seconds and hides
 the buttons. The app restarts during the update, so the page may fail to load
 for a moment.
+
+The "This server" card also warns when `build-info.json` says the git node
+program was built from older `server/` code than the running source
+(`daemon.state` = `stale`); the installer keeps the installed program on an
+instance that follows its own source, see
+[../INSTANCES.md](../INSTANCES.md#the-git-node-program).
+
+### Update when a pull request is merged
+
+A card under **Update** (instances only) turns automatic updates on and off
+(`save_auto_update`, CSRF-checked, audited as
+`admin.console_save_auto_update`). The setting is the `self_update` row of
+`instance_settings` (`{"auto": true}`); `app/src/self_update.py` holds the
+rules.
+
+- **Which repository.** The one the running build came from:
+  `build-info.json` `source` and `ref` (rewritten on every installer run,
+  also when the commit is already built, so switching `sourceUrl` to the
+  running commit's repository takes effect after one update). The source must be
+  `<PUBLIC_BASE_URL>/<owner>/<repo>[.git]`, or `/<repo>[.git]` when short
+  addresses are on. Anything else (the ForkMesh release, another host) cannot
+  be turned on (`auto_no_target`). The repository is compared by its storage
+  owner, so the organization alias and the creator address are the same
+  repository; a fork is a different repository and never matches.
+- **Which event.** Only a successful web merge (`repository_pull_merge_handler`,
+  the `merge` mutation, after `repo_merge_jobs` moved to `succeeded`, which
+  happens once per merge) whose pull request base (`pull.md` `base`) is the
+  source branch. Pushes, the "update branch" mutation (it moves the pull
+  request's own branch), agent merges, branch operations and operator imports
+  never trigger it; on a protected branch the merge is the only way in.
+- **Only a protected branch.** The installer runs as root from whatever the
+  source branch holds, so whoever can merge into it can deploy code to this
+  server. The source branch must be protected
+  ([branch-protection.md](branch-protection.md): merged only after an owner
+  or admin who is not the author approves, never pushed to directly):
+  turning the card on is refused otherwise (`auto_unprotected`), and a merge
+  arriving after protection was switched off, or while the setting cannot be
+  read, files nothing (outcome `unprotected`, audited as refused). Protection
+  is also what keeps a direct push from riding along with the next merge,
+  since the update fetches the branch tip, not the merged commit.
+- **What it does.** The same request the button files, with action `auto`.
+  The request is one file: if an `update` or `auto` is already waiting, the
+  merge joins it (`queued`); a waiting `check` is replaced by `auto`, so a
+  check never swallows a merge's update; if an update is running, the new file makes the path unit run
+  exactly one more update when it finishes, and that run fetches the latest
+  commit, so any number of merges during a run cost one extra update. The
+  oneshot service never runs twice at once.
+- **Audit and display.** Each trigger writes `admin.auto_update` (pull
+  number, branch, merged commit, outcome) and the `self_update_last` row,
+  which the card shows ("Last merge: pull request #12 by alice, Update
+  requested"). The update's own progress shows "Started by: Merged pull
+  request" and the commits it moved between.
 
 The installer writes the units in its `services` step, so an instance set up
 before this change gets the button after one manual
