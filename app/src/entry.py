@@ -40222,6 +40222,14 @@ async def _record_mirror_attested_state(env, request, owner, repo, mirror_node):
         return False
 
 
+async def _wake_mirrors_after_intake(env, owner, repo):
+    try:
+        if not await schedule_repo_mirror_wake(env, owner, repo, "commits"):
+            await notify_repo_mirrors(env, owner, repo, "commits")
+    except Exception:
+        pass
+
+
 async def _rekey_alias_inbox(env, alias_owner, host_owner, repo, repo_bi):
     """Move issue/pull/discussion inbox rows off an organization alias's blind
     index and onto the backing node's key, where every drain actually reads.
@@ -40682,6 +40690,7 @@ async def issues_handler(env, request, owner, repo):
             if drained:
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
+                await _wake_mirrors_after_intake(env, owner, repo)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -41174,6 +41183,7 @@ async def pulls_handler(env, request, owner, repo):
             if drained:
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
+                await _wake_mirrors_after_intake(env, owner, repo)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -41359,6 +41369,7 @@ async def discussions_handler(env, request, owner, repo):
             if drained:
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
+                await _wake_mirrors_after_intake(env, owner, repo)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -54750,6 +54761,9 @@ class ForkMeshCronRunner(DurableObject):
             return json_response({"error": "invalid_mirror_wake"}, status=400)
         pending = await self._load_json_state(MIRROR_WAKE_REQUESTED_PREFIX)
         key = owner + "/" + repo + "/" + topic
+        prior = pending.get(key)
+        if not state and isinstance(prior, dict) and prior.get("state"):
+            return json_response({"ok": True, "coalesced": True}, status=202)
         now = int(Date.now())
         if key not in pending and len(pending) >= 128:
             oldest = min(
