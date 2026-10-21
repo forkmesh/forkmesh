@@ -384,6 +384,43 @@
       .fm-flash-neutral > svg, .fm-flash-neutral > i { color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-flash > .fm-flash-icon-accent { color: rgb(var(--dashboard-primary-rgb)); }
 
+      .fm-merge-box { overflow: hidden; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 8px; background: rgb(var(--dashboard-background-rgb)); font-size: 13px; line-height: 1.5; }
+      .fm-merge-row { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 10px; row-gap: 8px; padding: 12px 16px; border-bottom: 1px solid rgb(var(--dashboard-border-rgb)); }
+      .fm-merge-row-icon { display: flex; padding-top: 2px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-merge-row-icon svg, .fm-merge-row-icon i { width: 16px; height: 16px; }
+      .fm-merge-row[data-tone="good"] .fm-merge-row-icon { color: rgb(var(--dashboard-success-rgb)); }
+      .fm-merge-row[data-tone="warn"] .fm-merge-row-icon, .fm-merge-row[data-tone="pending"] .fm-merge-row-icon { color: rgb(var(--dashboard-attention-rgb)); }
+      .fm-merge-row[data-tone="bad"] .fm-merge-row-icon { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-merge-row-body { min-width: 0; }
+      .fm-merge-row-title { margin: 0; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-row-meta { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-merge-row-detail { margin: 2px 0 0; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); overflow-wrap: anywhere; }
+      .fm-merge-row-files { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; font-size: 11px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-merge-row-files code { padding: 1px 6px; border-radius: 4px; background: rgb(var(--dashboard-secondary-rgb)); color: rgb(var(--dashboard-foreground-rgb)); overflow-wrap: anywhere; }
+      .fm-merge-row-note { margin: 6px 0 0; font-size: 12px; }
+      .fm-merge-row-note[data-tone="good"] { color: rgb(var(--dashboard-success-rgb)); }
+      .fm-merge-row-note[data-tone="bad"] { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-merge-row-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; }
+      @media (min-width: 640px) {
+        .fm-merge-row { grid-template-columns: 20px minmax(0, 1fr) auto; }
+        .fm-merge-row-actions { grid-column: 3; grid-row: 1; align-self: start; justify-content: flex-end; }
+      }
+      .fm-merge-footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px 16px; background: rgb(var(--dashboard-subtle-rgb)); }
+      .fm-merge-footer-text { margin: 0; font-size: 13px; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-footer[data-tone="bad"] .fm-merge-footer-text { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-merge-footer[data-tone="warn"] .fm-merge-footer-text { color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-footer[data-tone="good"] .fm-merge-footer-text::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 999px; background: rgb(var(--dashboard-success-rgb)); vertical-align: 1px; }
+      .fm-merge-changes { margin: 0; padding-left: 18px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); list-style: disc; }
+      .fm-merge-footer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+      .fm-merge-method { display: flex; min-width: 0; flex: 1 1 14rem; max-width: 100%; align-items: center; gap: 8px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-merge-method > span { white-space: nowrap; }
+      .fm-merge-method select { width: 0; min-width: 0; flex: 1 1 auto; max-width: 18rem; height: var(--dashboard-control-height-sm); padding: 0 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 12px; }
+      .fm-merge-buttons { display: flex; flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+      @media (max-width: 639px) {
+        .fm-merge-buttons { flex-basis: 100%; }
+        .fm-merge-buttons .fm-btn { flex: 1 1 auto; }
+      }
+
       :where(.fm-label) { display: inline-flex; }
       .fm-label { align-items: center; gap: 4px; height: 20px; padding: 0 7px; border: 1px solid rgb(var(--fm-label-rgb, var(--dashboard-border-rgb))); border-radius: 999px; color: rgb(var(--fm-label-fg, var(--dashboard-muted-foreground-rgb))); font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none; }
       .fm-label svg, .fm-label i { flex: none; width: 12px; height: 12px; }
@@ -515,6 +552,27 @@
         --dashboard-background-rgb: var(--dashboard-canvas-rgb);
         --background: rgb(var(--dashboard-canvas-rgb));
       }
+
+      [data-repo-github-header] [role="tablist"] {
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        scroll-padding-inline: 12px;
+      }
+      [data-repo-github-header] [role="tablist"]::-webkit-scrollbar { display: none; }
+      [data-repo-github-header] [role="tab"] i[data-lucide],
+      [data-repo-github-header] [role="tab"] svg { display: inline-block; flex: none; width: 16px; height: 16px; }
+      [data-repo-tab-label] { display: inline-flex; flex-direction: column; align-items: center; }
+      [data-repo-tab-label]::after {
+        content: attr(data-repo-tab-label);
+        height: 0;
+        overflow: hidden;
+        visibility: hidden;
+        font-weight: 600;
+        user-select: none;
+        pointer-events: none;
+      }
+      [data-dashboard-repo-tab-count] { font-variant-numeric: tabular-nums; }
 
       /* Repository tabs: the selected one carries GitHub's coral underline.
          Driven by aria-selected so setRepoTab only has to flip one attribute. */

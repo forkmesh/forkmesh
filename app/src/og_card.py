@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 
 CARD_W = 1200
 CARD_H = 630
-CARD_REVISION = "3"
+CARD_REVISION = "4"
 
 _BG = (1, 4, 9)            # --background
 _CARD = (13, 17, 23)       # --card
@@ -233,12 +233,9 @@ def _logo_rgba():
     return zlib.decompress(base64.b64decode(_LOGO_B64))
 
 
-# A repository's or instance's own logo, drawn in place of the ForkMesh mark.
-# Only small 8-bit, non-interlaced PNGs are read (the formats rsvg-convert and
-# the logo upload produce); anything else falls back to the caller's next
-# choice. Decoding is pure Python, so the scaled result is remembered.
 LOGO_BOX = 112
-MAX_LOGO_PIXELS = 1024 * 1024
+MAX_PNG_PIXELS = 1024 * 1024
+MAX_LOGO_PIXELS = 512 * 512
 _PNG_CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
 _logo_memo = {}
 
@@ -273,8 +270,7 @@ def _unfilter(kind, line, prev, bpp):
     return out
 
 
-def decode_png(data):
-    """(width, height, RGBA bytes) of an 8-bit non-interlaced PNG, or None."""
+def decode_png(data, max_pixels=MAX_PNG_PIXELS):
     data = bytes(data or b"")
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         return None
@@ -303,7 +299,7 @@ def decode_png(data):
     width, height, depth, color, _, _, interlace = header
     channels = _PNG_CHANNELS.get(color)
     if (depth != 8 or interlace or not channels or width < 1 or height < 1
-            or width * height > MAX_LOGO_PIXELS):
+            or width * height > max_pixels):
         return None
     stride = width * channels
     try:
@@ -352,7 +348,6 @@ def decode_png(data):
 
 
 def scale_logo(width, height, rgba, box=LOGO_BOX):
-    """Fit an RGBA image inside box x box (3x3 supersampled, alpha-weighted)."""
     factor = min(box / width, box / height, 1.0)
     out_w = max(1, int(round(width * factor)))
     out_h = max(1, int(round(height * factor)))
@@ -384,30 +379,16 @@ def scale_logo(width, height, rgba, box=LOGO_BOX):
 
 
 def card_logo(data):
-    """A PNG's bytes as the (width, height, rgba) card logo, or None."""
     data = bytes(data or b"")
     key = zlib.crc32(data), len(data)
     if key in _logo_memo:
         return _logo_memo[key]
-    decoded = decode_png(data)
+    decoded = decode_png(data, MAX_LOGO_PIXELS)
     logo = scale_logo(*decoded) if decoded else None
     if len(_logo_memo) > 16:
         _logo_memo.clear()
     _logo_memo[key] = logo
     return logo
-
-
-def _draw_logo(canvas, pad, top, logo):
-    """Blit the card logo (or the ForkMesh mark) right-aligned; its left x."""
-    if logo:
-        width, height, rgba = logo
-        x = CARD_W - pad - width
-        canvas.blit_rgba(x, top + (LOGO_BOX - height) // 2, width, height,
-                         rgba)
-        return min(x, CARD_W - pad - _LOGO_W)
-    x = CARD_W - pad - _LOGO_W
-    canvas.blit_rgba(x, top, _LOGO_W, _LOGO_H, _logo_rgba())
-    return x
 
 
 class _Canvas:

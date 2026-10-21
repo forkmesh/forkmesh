@@ -35188,18 +35188,10 @@ def _repository_social_version(record):
     return ""
 
 
-# Raster copy of an instance's logo written by tools/apply_instance_brand.py
-# (social crawlers do not draw SVG, and neither can the card renderer).
 INSTANCE_RASTER_LOGO = "/instance-logo.png"
 
 
 async def _repo_card_logo(env, request, repo_bi):
-    """The social card's logo: the owner-uploaded repository logo, else the
-    instance's PNG logo; None draws the ForkMesh mark (forkmesh.com itself).
-
-    A committed logo.svg cannot be rasterised in the Worker, so a repository
-    whose only artwork is an SVG shows its instance's logo instead.
-    """
     try:
         row = await d1_first(
             env, "SELECT data FROM repo_media WHERE repo_bi=? AND kind='logo'",
@@ -35406,9 +35398,6 @@ async def repo_card_handler(env, request, owner, repo):
         "followers": followers,
         "accent": await _repo_card_accent(env),
     }
-    # The card names the repository by the address its page has (/name on an
-    # instance with short addresses, not /owner/name) and carries the
-    # repository's or the instance's logo rather than the ForkMesh mark.
     try:
         info["path"] = unquote(await _repo_public_path(
             env, display_owner, display_repo))
