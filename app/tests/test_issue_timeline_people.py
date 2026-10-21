@@ -35,6 +35,7 @@ HELPER_NAMES = (
     "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issuePersonHandle",
     "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref", "issueActorAvatarHtml",
     "issuePersonNameHtml", "hydrateIssuePersonLink", "issueActorPortraitPng", "issueActorAccount",
+    "forgeIdentity", "forgeLinkAttrs",
 )
 CONTENT_NAMES = (
     "repoContributorIsBot", "repoContributorProfileUrl", "repoRosterPerson", "issueCardAuthorHtml",
@@ -74,7 +75,8 @@ const issueActorAccountsSettled = new Map();
 %s
 """ % (
         _const(HELPERS, "USER_NAME_RE"),
-        _const(HELPERS, "ISSUE_PERSON_HANDLE_RE"),
+        "\n".join([_const(HELPERS, "ISSUE_PERSON_HANDLE_RE"), _const(HELPERS, "FORGE_PROFILES"),
+                   _const(HELPERS, "FORGE_IDENTITY_RE")]),
         "\n".join(_function(HELPERS, name) for name in HELPER_NAMES),
         "\n".join([_const(CONTENT, "MD_MENTION"), _const(CONTENT, "MENTION_SUGGESTION_LIMIT"),
                    _const(CONTENT, "MENTION_LOGIN_RE")]
@@ -118,6 +120,32 @@ console.log(JSON.stringify({
     assert out["botName"] == '<span class="font-semibold text-foreground">tasks[bot]</span>'
     assert "<img" not in out["hostile"] and "&lt;img src=x onerror=alert(1)&gt;" in out["hostile"]
     assert "<script" not in out["hostileAvatar"] and "href" not in out["hostileAvatar"]
+
+
+def test_mirrored_github_authors_link_to_their_github_profile_without_loading_github():
+    out = _node("""
+console.log(JSON.stringify({
+  name: issuePersonNameHtml("github:Gulp-Run"),
+  avatar: issueActorAvatarHtml("github:wkrp", "", "h-6 w-6"),
+  comment: renderIssueTimelineComment({ type: "comment", authorName: "github:immartian", body: "hi", ts: 1 }),
+  sync: issuePersonNameHtml("github:~sync"),
+  hostile: issuePersonNameHtml('github:x"onmouseover=alert(1)'),
+  doubleDash: issuePersonNameHtml("github:a--b"),
+  other: issuePersonNameHtml("gitea:alice"),
+  row: userNameHtml("github:JohnWatsoon"),
+  watched,
+}));
+""")
+    assert out["name"].startswith('<a href="https://github.com/Gulp-Run" target="_blank" rel="noopener noreferrer nofollow"')
+    assert 'title="Gulp-Run on GitHub"' in out["name"] and ">@Gulp-Run</a>" in out["name"]
+    assert out["avatar"].startswith('<a href="https://github.com/wkrp"') and ">W</span></a>" in out["avatar"]
+    assert "data-issue-actor-avatar" not in out["avatar"] and "<img" not in out["avatar"]
+    assert out["comment"].count('href="https://github.com/immartian"') == 3
+    assert "data-issue-actor-avatar" not in out["comment"] and "data-issue-person" not in out["comment"]
+    for plain in (out["sync"], out["hostile"], out["doubleDash"], out["other"]):
+        assert "github.com" not in plain and "<a" not in plain and '"onmouseover' not in plain
+    assert out["watched"] == 0
+    assert out["row"] == '<span title="JohnWatsoon on GitHub">@JohnWatsoon</span>'
 
 
 def test_event_rows_and_comment_cards_name_people_with_links():

@@ -271,6 +271,12 @@ reduced motion).
   beside the name on phones, where the column is hidden. The roster is read
   once per repository and branch (`repoContributorRosterCached`), shared with
   the About rail. Tests: `app/tests/test_issue_timeline_people.py`.
+- **HTML entities in markdown** (`MD_ESCAPED_ENTITY` in `renderMarkdownInline`):
+  text is escaped first, so `&rlm;` used to show as the literal "&rlm;" (the
+  net4people/bbs README marks its Persian and Arabic headings with `&rlm;` and
+  `&zwnj;`). After code spans are parked, a well-formed named or numeric
+  entity is restored, as GitHub renders it; an entity only ever yields text,
+  `&lt;script&gt;` stays visible text, and code spans keep the literal.
 - **@mentions in markdown** (`MD_MENTION` in `renderMarkdownInline`): an
   `@login` (letters, digits and single inner hyphens, at most 39) becomes a
   link to its profile, resolved like a timeline name; with no forge account
@@ -373,7 +379,10 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   included: the issue file's `status` is author-controlled and not checked
   against a signature here. The Markdown port escapes before it formats.
 - **Data.** `repo_views` builds an issue bundle (the whole record and the
-  open issues, for mentions and sub-issues) from the local gateway,
+  issue index's `related` answer, for mentions and sub-issues; the open records on a gateway
+  without the index, see
+  [issue-scale-limits.md](issue-scale-limits.md#the-issue-index)) from the
+  local gateway,
   remembered per content; the rendered article is kept on the bundle for a
   minute because its relative times move. The page waits at most
   `ISSUE_BUDGET_SECONDS` (0.3 s) for the issue and the repository's first

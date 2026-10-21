@@ -24,6 +24,17 @@ thread. The daemon waits up to 90 s (`gatewayReloadTimeout`) and restarts only
 a gateway that is not responding, after a random delay of up to 20 s, so a
 slow reload never restarts the whole fleet at once.
 
+## Issue index
+
+`issue-index?ref=` answers one compact summary per issue record at a commit
+(no descriptions), so the issues list does not download every record;
+`issue-index?ref=&related=<n>` answers only the issues one issue page's
+relations need; `issue-search?ref=&q=` answers the numbers whose title,
+description or live comments contain a text. All three are carried by the
+`blobs` permission (`ISSUE_INDEX_CARRIER_OPERATION`), never advertised on
+their own, and sent as UTF-8 JSON; folding, caching and limits are in
+[issue-scale-limits.md](../app/issue-scale-limits.md#the-issue-index).
+
 ## Traps
 
 - An older gateway refuses to start on a config key it does not know. Deploy
@@ -33,6 +44,14 @@ slow reload never restarts the whole fleet at once.
   both for an absent path and for a broken object store, so `blob`, `blobs`,
   `tree` and `raw` look the entry up with `ls-tree` on a literal pathspec and
   read the object by id.
+- `tree` lists at most `MAX_TREE_ENTRIES` (500) entries of a code folder, with
+  `truncated: true` past that. The collaboration folders
+  (`COLLABORATION_TREE_ROOTS`: `.forkmesh/issues`, `pulls`, `discussions`,
+  `releases`) list up to `MAX_COLLABORATION_TREE_ENTRIES` (50,000): they skip
+  the per-entry history and analysis, so a long listing is cheap, and the
+  issue list reads `.forkmesh/issues/open` as one listing. With the 500 cap a
+  mirror of a forge with 547 open issues showed "Open 500" and never loaded
+  the rest.
 - The HTTPS gateway has no `receive-pack`. Pushes go through SSH or through the
   Worker's hosted-push path ([hosted-repositories.md](../../www/docs/hosted-repositories.md)).
 - A search for a common word is a repository answer too, not an outage.

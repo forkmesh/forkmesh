@@ -470,6 +470,8 @@
 
   function userNameHtml(name) {
     const text = String(name || "").trim();
+    const forge = forgeIdentity(text);
+    if (forge) return `<span title="${escapeHtml(forge.title)}">@${escapeHtml(forge.login)}</span>`;
     const key = userNameKey(text);
     if (!key) return escapeHtml(text);
     return `<span data-user-name="${escapeHtml(key)}">${escapeHtml(userDisplayName(text))}</span>`;
@@ -1178,23 +1180,42 @@
     return handle && validNodeName(handle) ? publicProfileUrl(handle) : "";
   }
 
+  const FORGE_PROFILES = Object.freeze({ github: { origin: "https://github.com/", label: "GitHub" } });
+  const FORGE_IDENTITY_RE = /^(github):([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)$/;
+
+  function forgeIdentity(name) {
+    const match = FORGE_IDENTITY_RE.exec(String(name || "").trim());
+    if (!match || match[2].includes("--")) return null;
+    const profile = FORGE_PROFILES[match[1]];
+    return { provider: match[1], login: match[2], href: profile.origin + match[2],
+      title: `${match[2]} on ${profile.label}` };
+  }
+
+  function forgeLinkAttrs(forge) {
+    return `href="${escapeHtml(forge.href)}" target="_blank" rel="noopener noreferrer nofollow" data-forge-person="${escapeHtml(forge.provider)}" title="${escapeHtml(forge.title)}"`;
+  }
+
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
     const label = String(name || author || (agent ? "Agent" : "unknown"));
     const bot = agent || issueActorIsBot(label);
     const sessionName = String(state.session?.nodeName || state.session?.email || "");
     const ownAvatar = !bot && label.toLowerCase() === sessionName.toLowerCase()
       ? String(state.session?.avatarPng || "") : "";
-    const handle = bot ? "" : issuePersonHandle(label);
+    const forge = bot ? null : forgeIdentity(label);
+    const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
     const inner = bot
       ? `<i data-lucide="bot" class="${pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5"} text-muted-foreground"></i>`
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
-        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml((label[0] || "?").toUpperCase())}</span>`;
+        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
     const hydrate = handle && !ownAvatar ? ` data-issue-actor-avatar="${escapeHtml(handle)}"` : "";
     if (hydrate) watchIssueActorAvatars();
     const classes = `relative flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary`;
     const title = bot ? `${label} (bot)` : label;
+    if (forge && link) {
+      return `<a ${forgeLinkAttrs(forge)} aria-label="${escapeHtml(forge.title)}" class="${classes} hover:ring-2 hover:ring-[var(--dashboard-link)]">${inner}</a>`;
+    }
     if (handle && link) {
       const href = issuePersonProfileHref(handle);
       return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(`${label}'s profile`)}"${hydrate} class="${classes} hover:ring-2 hover:ring-[var(--dashboard-link)]">${inner}</a>`;
@@ -1205,6 +1226,10 @@
   function issuePersonNameHtml(name, classes = "font-semibold text-foreground") {
     const label = String(name || "").trim() || "unknown";
     if (issueActorIsBot(label)) return `<span class="${classes}">${escapeHtml(label)}</span>`;
+    const forge = forgeIdentity(label);
+    if (forge) {
+      return `<a ${forgeLinkAttrs(forge)} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">@${escapeHtml(forge.login)}</a>`;
+    }
     const handle = issuePersonHandle(label);
     if (!handle) return `<span class="${classes}">${userNameHtml(label)}</span>`;
     watchIssueActorAvatars();
@@ -17932,6 +17957,8 @@
   // between them into an <em>, and a code span reading `a_b_c` lost its
   // underscores. Link labels are rendered before their whole anchor is parked,
   // preserving emphasis without allowing record references to become nested links.
+  const MD_ESCAPED_ENTITY = /&amp;(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/g;
+
   function renderMarkdownInline(escapedText, context, linkRecordReferences = true, parked = []) {
     const park = (html) => `\u0001${parked.push(html) - 1}\u0001`;
     const recordReference = (whole, prefix, label, kind, number) => {
@@ -17946,6 +17973,7 @@
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
         park(mdLinkHtml(renderMarkdownInline(label, context, false, parked), url, context)))
       .replace(/`([^`]+)`/g, (_, code) => park(`<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">${code}</code>`))
+      .replace(MD_ESCAPED_ENTITY, "&$1;")
       .replace(/&lt;(https?:\/\/(?:(?!&[lg]t;)[^\s\u0000\u0001<>"'])+)&gt;/gi, (whole, url) =>
         (linkRecordReferences ? park(mdLinkHtml(url, url, context)) : whole))
       .replace(MD_BARE_URL, (whole, prefix, candidate) => {
@@ -18777,6 +18805,29 @@
     };
   }
 
+  function issueFromIndex(summary) {
+    return {
+      ...summary,
+      number: summary.number === null ? NaN : summary.number,
+      date: formatRecordDate(summary.dateValue),
+      openAttachments: [],
+      events: Array.isArray(summary.events) ? summary.events : [],
+      indexed: true,
+    };
+  }
+
+  async function fetchRepoIssueIndex(repo, options = {}) {
+    try {
+      const params = options.ref ? { ref: options.ref } : {};
+      if (options.related) params.related = Number(options.related);
+      const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", params));
+      if (!data || data.truncated || !Array.isArray(data.issues)) return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // Sub-issues are portable rather than index-backed: their opening
   // description says "Parent issue: #N". Accept the plural spelling too so a
   // hand-authored issue can depend on more than one parent. Keep the parser
@@ -18839,7 +18890,8 @@
     (Array.isArray(issues) ? issues : []).forEach((issue) => {
       const number = Number(issue?.number);
       if (!issue || issue.deleted || number === parent) return;
-      if (issueDependencyNumbers(issue.body).includes(parent)) numbers.add(number);
+      const dependsOn = Array.isArray(issue.dependsOn) ? issue.dependsOn : issueDependencyNumbers(issue.body);
+      if (dependsOn.includes(parent)) numbers.add(number);
     });
     for (const match of String(parentBody || "").matchAll(/\(sub-issue\s+#([1-9]\d*)\)/gi)) {
       const number = Number(match[1]);
@@ -18864,6 +18916,19 @@
         else if (event.type === "delete" && event.target) deleted.add(String(event.target));
       });
       const credited = new Set();
+      (Array.isArray(source.mentionRefs) ? source.mentionRefs : []).forEach(([reference, ts, author, who]) => {
+        if (Number(reference) !== target || credited.has(who)) return;
+        credited.add(who);
+        mentions.push({
+          _mention: true,
+          ts: Number(ts) || 0,
+          author: author || "",
+          authorName: who,
+          sourceNumber: Number(source.number),
+          sourceTitle: String(source.title || ""),
+          sourceStatus: String(source.status || "open"),
+        });
+      });
       for (const event of events) {
         const opening = event.type === "open";
         if (!opening && event.type !== "comment") continue;
@@ -18953,6 +19018,13 @@
     return states;
   }
 
+  function issueRecordPullStates(issue) {
+    const states = new Map((Array.isArray(issue?.pullLinks) ? issue.pullLinks : [])
+      .map(([number, linked]) => [Number(number), Boolean(linked)]));
+    issueDevelopmentPullStates(issue?.events).forEach((linked, number) => states.set(number, linked));
+    return states;
+  }
+
   function issueLinkedPullNumbers(issueNumber, events, pulls) {
     const target = Number(issueNumber);
     const states = issueDevelopmentPullStates(events);
@@ -18973,7 +19045,7 @@
     const numbers = new Set(ownNumbers || []);
     (Array.isArray(issues) ? issues : []).forEach((issue) => {
       if (!issue || issue.deleted) return;
-      const linked = issueDevelopmentPullStates(issue.events).get(target);
+      const linked = issueRecordPullStates(issue).get(target);
       if (linked === true) numbers.add(Number(issue.number));
       else if (linked === false) numbers.delete(Number(issue.number));
     });
@@ -19054,14 +19126,23 @@
   // per minute. The closed history is not paged in just for this - it is often
   // far larger - so a closed child is still found through its parent's
   // "(sub-issue #N)" checklist link.
-  async function loadRepoIssueRelationIndex(repo) {
+  async function loadRepoIssueRelationIndex(repo, number = 0) {
     const view = state.issuesView || {};
-    if (view.repo && repoKey(view.repo) === repoKey(repo) && Array.isArray(view.items)) {
+    if (view.repo && repoKey(view.repo) === repoKey(repo) && Array.isArray(view.items)
+        && !(number && view.items.some((issue) => issue.indexed))) {
       return view.items;
     }
+    const key = number ? `${repoKey(repo)}#${Number(number)}` : repoKey(repo);
     const cached = state.issueRelationIndex;
-    if (cached && cached.key === repoKey(repo) && Date.now() - cached.at < 60_000) {
+    if (cached && cached.key === key && Date.now() - cached.at < 60_000) {
       return cached.items;
+    }
+    const indexed = (number && await fetchRepoIssueIndex(repo, { related: number }))
+      || await fetchRepoIssueIndex(repo);
+    if (indexed) {
+      const items = indexed.issues.map(issueFromIndex);
+      state.issueRelationIndex = { key, at: Date.now(), items };
+      return items;
     }
     try {
       const tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/issues/open" }));
@@ -19078,6 +19159,49 @@
       return items;
     } catch (_) {
       return [];
+    }
+  }
+
+  const ISSUE_RELATIONS_WAIT_MS = 150;
+
+  async function loadRepoIssueRelations(repo, number, parsed) {
+    const relationIndex = await loadRepoIssueRelationIndex(repo, number);
+    const [dependencies, subIssues] = await Promise.all([
+      loadRepoIssueDependencies(repo, parsed.body, number, relationIndex),
+      loadRepoIssueSubIssues(repo, number, parsed.body, relationIndex),
+    ]);
+    return {
+      issueDependencies: dependencies,
+      issueSubIssues: subIssues,
+      issueMentions: issueMentionsOf(relationIndex, number),
+    };
+  }
+
+  function repoIssueDetailBusy(container) {
+    const active = document.activeElement;
+    return Boolean(container.querySelector("[data-repo-issue-comment-editor]")
+      || (active && container.contains(active) && /^(TEXTAREA|INPUT|SELECT)$/.test(active.tagName))
+      || issuePicker);
+  }
+
+  async function showRepoIssueRelationsLater(repo, number, parsed, container, pending) {
+    const relations = await pending;
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const detail = state.repoRecordDetail;
+      if (!detail || detail.parsed !== parsed || !container.isConnected) return;
+      if (!repoIssueDetailBusy(container)) {
+        Object.assign(parsed, relations);
+        const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
+        container.innerHTML = renderRepoRecordDetail(repo, "issues", number, parsed);
+        mountIssueStickyHeader(container);
+        if (draft) {
+          const body = container.querySelector("[data-repo-issue-comment-body]");
+          if (body) body.value = draft;
+        }
+        window.lucide?.createIcons();
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
@@ -26693,7 +26817,8 @@
       issueParticipants(parsed).forEach((name) => add(name, "participant", "Took part in this issue"));
       add(detail?.repo?.owner, "owner", "Repository owner");
       tally((issue) => [issue.author, ...(issue.assignees || []),
-        ...(Array.isArray(issue.events) ? issue.events : []).map((event) => event?.authorName)])
+        ...(Array.isArray(issue.events) ? issue.events : []).map((event) => event?.authorName),
+        ...(Array.isArray(issue.participants) ? issue.participants : [])])
         .forEach(({ value, count }) => add(value, "active", `Active on ${count} ${count === 1 ? "issue" : "issues"}`));
       // The directory is long, so it only joins once a name is being typed.
       if (String(issuePicker?.query || "").trim()) {
@@ -27075,7 +27200,7 @@
     if (!parsed.developmentIssues) parsed.developmentIssues = (await loadRepoIssueRelationIndex(repo)).slice();
     const issues = developmentIssues(parsed);
     const pending = pullClosingIssueNumbers(body).filter((issueNumber) => !ownText.has(issueNumber)
-      && issueDevelopmentPullStates(issues.find((issue) => Number(issue?.number) === issueNumber)?.events)
+      && issueRecordPullStates(issues.find((issue) => Number(issue?.number) === issueNumber))
         .get(Number(pullNumber)) !== true);
     try {
       for (const issueNumber of pending) await postDevelopmentLink(repo, issueNumber, [pullNumber], true);
@@ -27597,15 +27722,17 @@
       const parsed = kind === "issues"
         ? withPendingIssueStatus(repo, number, issueDetailParsed(blobText(blob), number))
         : parseFrontMatter(blobText(blob));
+      let issueRelations = null;
       if (kind === "issues") {
-        const relationIndex = await loadRepoIssueRelationIndex(repo);
-        const [dependencies, subIssues] = await Promise.all([
-          loadRepoIssueDependencies(repo, parsed.body, number, relationIndex),
-          loadRepoIssueSubIssues(repo, number, parsed.body, relationIndex),
-        ]);
-        parsed.issueDependencies = dependencies;
-        parsed.issueSubIssues = subIssues;
-        parsed.issueMentions = issueMentionsOf(relationIndex, number);
+        issueRelations = loadRepoIssueRelations(repo, number, parsed);
+        const early = await Promise.race([
+          issueRelations, new Promise((resolve) => setTimeout(() => resolve(null), ISSUE_RELATIONS_WAIT_MS))]);
+        if (early) {
+          Object.assign(parsed, early);
+          issueRelations = null;
+        } else {
+          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [] });
+        }
       }
       if (collabSettings) parsed.repoCollabSettings = await collabSettings;
       if (kind === "pulls") {
@@ -27663,6 +27790,7 @@
         if (commentBody) commentBody.value = commentDraft;
       }
       loadFederatedReplies(repo, kind, number, container);
+      if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
       void refreshRepoRecordDevelopment(repo, kind, number);
       // Members watch an open pull for agent activity; signed-out visitors
       // cannot read organization sessions at all, so they get no timer.
@@ -28138,6 +28266,45 @@
     return haystack.includes(q);
   }
 
+  function issueMatchesSearch(issue, query) {
+    const queries = localFilterQueries(query);
+    if (queries.every((text) => issueMatchesQuery(issue, text))) return true;
+    if (!issue.indexed) return false;
+    const search = issueSearchState(query);
+    return Boolean(search?.numbers?.has(Number(issue.number)));
+  }
+
+  function issueSearchState(query) {
+    const view = state.issuesView;
+    const text = localFilterQueries(query)[0] || "";
+    if (!text || !(view.items || []).some((issue) => issue.indexed)) return null;
+    const search = view.search;
+    if (search && search.text === text && search.repo === view.repo && search.ref === view.ref) return search;
+    const next = { text, repo: view.repo, ref: view.ref, loading: true, numbers: null, failed: false };
+    view.search = next;
+    clearTimeout(view.searchTimer);
+    view.searchTimer = setTimeout(() => runIssueSearch(next), ISSUE_SEARCH_DELAY_MS);
+    return next;
+  }
+
+  const ISSUE_SEARCH_DELAY_MS = 250;
+
+  async function runIssueSearch(search) {
+    try {
+      const params = { q: search.text };
+      if (search.ref) params.ref = search.ref;
+      const data = await fetchRepoJson(repoLiveUrl(search.repo, "issue-search", params));
+      if (!Array.isArray(data?.numbers)) throw new Error("issue_search_unavailable");
+      search.numbers = new Set(data.numbers.map(Number));
+    } catch (_) {
+      search.failed = true;
+    }
+    search.loading = false;
+    const listShown = $("[data-repo-issues] [data-repo-issue-list-header]")
+      && !$("[data-repo-issue-form]");
+    if (state.issuesView.search === search && listShown) renderRepoIssues();
+  }
+
   // The collection toolbar's four issue metadata selects used to be visual
   // placeholders: their choices were hard-coded, no change listener read them,
   // and renderRepoIssues never consulted them. Keep their values separate from
@@ -28314,6 +28481,8 @@
   function issueMentionsAccount(issue, account) {
     const name = String(account || "").trim();
     if (!name) return false;
+    if (Array.isArray(issue.mentionHandles) && /^[\w-]+$/.test(name)
+      && issue.mentionHandles.includes(name.toLowerCase())) return true;
     const pattern = new RegExp(
       `(^|[^\\w@])@${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "i");
     const bodies = [issue.body, ...(Array.isArray(issue.events) ? issue.events : [])
@@ -28330,6 +28499,7 @@
     return same(issue.author)
       || (Array.isArray(issue.assignees) ? issue.assignees : []).some(same)
       || (Array.isArray(issue.events) ? issue.events : []).some((event) => same(event?.authorName))
+      || (Array.isArray(issue.participants) ? issue.participants : []).some(same)
       || issueMentionsAccount(issue, account);
   }
 
@@ -28635,8 +28805,8 @@
       if (issuesView.filter === "open") return issue.status !== "closed";
       return issue.status === "closed";
     }).filter((issue) => issueMatchesFilters(issue, issueFilterState()))
-      .filter((issue) => localFilterQueries(issuesView.query)
-      .every((query) => issueMatchesQuery(issue, query)));
+      .filter((issue) => issueMatchesSearch(issue, issuesView.query));
+    const search = issueSearchState(issuesView.query);
     // The list stays an activity feed by default (newest update first), while
     // the visible Sort control can deliberately switch to creation time,
     // priority, or comment activity. Every mode keeps the durable issue number
@@ -28686,6 +28856,7 @@
     if (missing.length) {
       warnParts.push(`${missing.length} issue${missing.length === 1 ? "" : "s"} (#${missing.slice(0, 12).join(", #")}${missing.length > 12 ? ", ..." : ""}) couldn't be read from the live mirror`);
     }
+    if (search?.failed) warnParts.push("Descriptions and comments could not be searched; only titles, authors and labels were");
     const warnBar = warnParts.length
       ? `<div role="status" class="fm-flash fm-flash-warning fm-flash-full flex-wrap items-center border-t-0 px-4 py-2 text-xs">
           <i data-lucide="triangle-alert" class="!mt-0"></i>
@@ -28705,8 +28876,11 @@
     const allHint = issuesView.filter === "closed"
       ? `<p class="border-t border-border px-4 py-2 text-[12px] text-muted-foreground">Deleted issues are listed with <button type="button" data-repo-issue-query-set="state:all" class="font-mono text-[var(--dashboard-link)] hover:underline">state:all</button>.</p>`
       : "";
+    const searchHint = search?.loading
+      ? `<p data-repo-issue-search-pending role="status" class="border-b border-border px-4 py-2 text-[12px] text-muted-foreground">${loadingHtml("Searching descriptions and comments...")}</p>`
+      : "";
     setRepoIssueRecordOpen(false);
-    container.innerHTML = filterBar + warnBar + (filtered.length
+    container.innerHTML = filterBar + warnBar + searchHint + (filtered.length
       ? renderRepoRecordList(filtered, config, "issues")
       : issuesView.closedLoading
         ? `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`
@@ -28819,6 +28993,12 @@
       // produces false "couldn't load from mirror" rows for deleted issues.
       const issueCommit = immutableGitCommit(tree.commit);
       const issueReadOptions = issueCommit ? { ref: issueCommit } : {};
+      const indexed = await fetchRepoIssueIndex(repo, issueReadOptions);
+      if (indexed) {
+        showIndexedRepoIssues(repo, indexed, issueCommit);
+        renderRepoIssues();
+        return;
+      }
       const rootEntries = Array.isArray(tree.entries) ? tree.entries : [];
       // number -> record path, split by status. The open/ and closed/ subdirs
       // (adhoc #14) hold the numbered folders; pre-split legacy mirrors keep
@@ -28941,6 +29121,45 @@
     } finally {
       setRepoIssuesRefreshing(false);
     }
+  }
+
+  function showIndexedRepoIssues(repo, indexed, issueCommit) {
+    const view = state.issuesView;
+    const items = indexed.issues.map(issueFromIndex);
+    items.sort((a, b) => Number(b.number) - Number(a.number));
+    const missing = (Array.isArray(indexed.missing) ? indexed.missing : []).map(Number);
+    const servedNumbers = new Set([
+      ...items.map((issue) => Number(issue.number)), ...missing,
+    ]);
+    view.items = withOptimisticIssues(repo, items, servedNumbers);
+    const pendingMoves = applyPendingIssueStatuses(repo, view.items);
+    view.missing = missing;
+    view.repo = repo;
+    view.ref = issueCommit;
+    view.closedPaths = new Map();
+    view.closedLoaded = true;
+    view.closedLoading = false;
+    const legacy = items.filter((issue) => !issue.location);
+    const legacyOpen = legacy.filter((issue) => issue.status !== "closed" && !issue.deleted).length;
+    const legacyClosed = legacy.filter((issue) => issue.status === "closed" && !issue.deleted).length;
+    const notYetServed = view.items.filter(
+      (issue) => !servedNumbers.has(Number(issue.number)) && issue.status !== "closed").length;
+    const locations = new Map(items.map((issue) => [Number(issue.number), issue.location]));
+    let pendingOpened = 0;
+    let pendingClosed = 0;
+    pendingMoves.forEach((servedStatus, number) => {
+      if (!locations.get(number)) return;
+      if (servedStatus === "closed") pendingOpened += 1;
+      else pendingClosed += 1;
+    });
+    const openIssues = Number(indexed.openFolders || 0) + legacyOpen + notYetServed
+      + pendingOpened - pendingClosed;
+    const closedIssues = Number(indexed.closedFolders || 0) - pendingOpened + legacyClosed + pendingClosed;
+    view.openCount = openIssues;
+    view.closedCount = closedIssues;
+    view.unservedOpen = notYetServed;
+    setRepoTabCount("issues", openIssues);
+    setRepoCollectionCounts("issues", openIssues, closedIssues);
   }
 
   // Reads and parses the issue-N.json blobs for a page of numbered folders in

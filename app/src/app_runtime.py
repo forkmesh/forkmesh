@@ -32,7 +32,7 @@ def _bind_runtime(runtime):
 REPO_HOST_READ_ACTIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "commit",
     "compare", "merge-preview", "branches", "search", "stats", "sizes",
-    "pulse",
+    "pulse", "issue-index", "issue-search",
 })
 SITE_DOCUMENT_PROXY_TIMEOUT_SECONDS = 8
 SITE_DOCUMENT_PROXY_MAX_BYTES = 1024 * 1024
