@@ -1226,8 +1226,8 @@
       ${field("Username", push?.username, "data-git-push-username")}
       ${field("Password (shown once; copy it now)", push?.password, "data-git-push-password")}
       <p class="text-xs text-muted-foreground">${contributor
-        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>. Pushes are fast-forward only: add commits instead of force-pushing, or push a new branch name. Then open a pull request from that branch on the repository's Pull requests tab.`
-        : "You have write access to this repository; its branch protection still applies."}
+        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>, and you may force-push them after a rebase or amend (use <span class="font-mono">git push --force-with-lease</span>; the previous tip is kept). Then open a pull request from that branch on the repository's Pull requests tab.`
+        : "You have write access to this repository. You may force-push any branch except the default and protected ones (use git push --force-with-lease; the previous tip is kept); branch protection still applies."}
         ${expires ? ` Expires ${escapeHtml(formatDate(expires))}.` : ""}</p>
       <pre class="overflow-x-auto rounded-md border border-border bg-secondary p-3 font-mono text-xs text-foreground">${escapeHtml(commands)}</pre>`;
     target.classList.remove("hidden");

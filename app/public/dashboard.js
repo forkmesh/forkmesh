@@ -6999,8 +6999,8 @@
       ${field("Username", push?.username, "data-git-push-username")}
       ${field("Password (shown once; copy it now)", push?.password, "data-git-push-password")}
       <p class="text-xs text-muted-foreground">${contributor
-        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>. Pushes are fast-forward only: add commits instead of force-pushing, or push a new branch name. Then open a pull request from that branch on the repository's Pull requests tab.`
-        : "You have write access to this repository; its branch protection still applies."}
+        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>, and you may force-push them after a rebase or amend (use <span class="font-mono">git push --force-with-lease</span>; the previous tip is kept). Then open a pull request from that branch on the repository's Pull requests tab.`
+        : "You have write access to this repository. You may force-push any branch except the default and protected ones (use git push --force-with-lease; the previous tip is kept); branch protection still applies."}
         ${expires ? ` Expires ${escapeHtml(formatDate(expires))}.` : ""}</p>
       <pre class="overflow-x-auto rounded-md border border-border bg-secondary p-3 font-mono text-xs text-foreground">${escapeHtml(commands)}</pre>`;
     target.classList.remove("hidden");
@@ -22642,6 +22642,7 @@
     if (ev.type === "thread-reply") return { label: "reply", tone: neutral };
     if (ev.type === "thread-state") return { label: `thread ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
     if (ev.type === "suggestion-state") return { label: `suggestion ${ev.state || "updated"}`.replace(/_/g, " "), tone: neutral };
+    if (ev.type === "force-push") return { label: "force-pushed", tone: neutral };
     if (ev.type === "status") return { label: "closed this pull request", tone: neutral };
     if (ev.type === "delete") return { label: "deleted this pull request", tone: neutral };
     return { label: "comment", tone: neutral };
@@ -22654,6 +22655,10 @@
     const rows = Array.isArray(events) ? events : [];
     const byAuthor = new Map();
     for (const ev of rows) {
+      if (ev.type === "force-push") {
+        for (const reviewer of byAuthor.values()) reviewer.olderCommit = true;
+        continue;
+      }
       if (ev.type !== "review" || !ev.state) continue;
       const key = ev.author || ev.authorName || "";
       if (!key) continue;
@@ -22661,6 +22666,7 @@
         author: ev.author || "",
         authorName: ev.authorName || ev.author || "unknown",
         state: ev.state,
+        olderCommit: false,
       });
     }
     return Array.from(byAuthor.values());
@@ -22704,7 +22710,10 @@
     return gate + reviewers.map((reviewer) => {
       const tone = reviewer.state === "approved" ? "text-success" : reviewer.state === "changes_requested" ? "text-destructive" : "text-muted-foreground";
       const label = reviewer.state === "approved" ? "Approved" : reviewer.state === "changes_requested" ? "Requested changes" : "Commented";
-      return `<span class="mt-1.5 flex items-center justify-between gap-2 first:mt-0"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}${issuePersonNameHtml(reviewer.authorName, "truncate font-medium text-foreground")}</span><span class="shrink-0 text-[10px] font-semibold ${tone}">${escapeHtml(label)}</span></span>`;
+      const older = reviewer.olderCommit
+        ? `<span class="shrink-0 text-[10px] text-muted-foreground" title="The branch was force-pushed after this review" data-repo-pull-review-older>on an older commit</span>`
+        : "";
+      return `<span class="mt-1.5 flex items-center justify-between gap-2 first:mt-0"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}${issuePersonNameHtml(reviewer.authorName, "truncate font-medium text-foreground")}</span><span class="inline-flex shrink-0 items-center gap-1.5">${older}<span class="text-[10px] font-semibold ${tone}">${escapeHtml(label)}</span></span></span>`;
     }).join("");
   }
 
@@ -22732,6 +22741,15 @@
     const author = ev.authorName || ev.author || (ev.type === "agent" ? "Agent" : "unknown");
     const body = String(ev.body || "").trim();
     const commit = String(ev.hash || "").slice(0, 7);
+    if (ev.type === "force-push") {
+      const branch = String(ev.ref || "").replace(/^refs\/heads\//, "");
+      const before = String(ev.before || "").slice(0, 7);
+      const after = String(ev.after || "").slice(0, 7);
+      const compare = ev.compareUrl
+        ? `<a href="${escapeHtml(ev.compareUrl)}" data-repo-pull-force-push-compare class="font-medium text-[var(--dashboard-link)] hover:underline">Compare</a>`
+        : "";
+      return renderIssueTimelineEvent("git-branch", author, ev.author, `<span>force-pushed</span>${branch ? `<span class="font-mono text-[12px] text-foreground">${escapeHtml(branch)}</span>` : ""}${before && after ? `<span>from</span><span class="font-mono text-[12px]">${escapeHtml(before)}</span><span>to</span><span class="font-mono text-[12px]">${escapeHtml(after)}</span>` : ""}${compare}`, ev.ts);
+    }
     if (ev.type === "commit") {
       return renderIssueTimelineEvent("git-commit-horizontal", author.replace(/\s*<[^>]*>\s*$/, "") || author, ev.author, `<span class="min-w-0 truncate text-foreground">${escapeHtml(body || "Commit")}</span>${commit ? `<span class="font-mono text-[12px]">${escapeHtml(commit)}</span>` : ""}`, ev.ts);
     }
@@ -23270,6 +23288,12 @@
         lineStart: Number(values.lineStart || 0),
         lineEnd: Number(values.lineEnd || 0),
         target: values.target || "",
+        ref: values.ref || "",
+        before: immutableGitCommit(values.before || ""),
+        after: immutableGitCommit(values.after || ""),
+        compareUrl: values.type === "force-push" && immutableGitCommit(values.before || "") && immutableGitCommit(values.after || "")
+          ? repoCompareUrl(repo, values.before, values.after)
+          : "",
         body: parsed.body || "",
       };
     }).filter(Boolean);

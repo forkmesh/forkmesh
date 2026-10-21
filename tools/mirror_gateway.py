@@ -34,6 +34,7 @@ from pathlib import Path
 import posixpath
 import re
 import selectors
+import shlex
 import signal
 import shutil
 import stat
@@ -444,7 +445,7 @@ OPERATION_QUERY_FIELDS = {
     "git-info-refs": frozenset({"service"}),
     "git-upload-pack": frozenset(),
     "git-receive-pack": frozenset(
-        {"service", "tagMoves", "protect", "pushPrefix"}),
+        {"service", "tagMoves", "protect", "pushPrefix", "rewrite"}),
     "tree": frozenset({"path", "ref"}),
     "blobs": frozenset({"path", "ref"}),
     "blob": frozenset({"path", "ref"}),
@@ -1251,6 +1252,17 @@ MAX_CONTRIBUTOR_BRANCHES = 32
 REF_UPDATES_HEADER = "X-ForkMesh-Ref-Updates"
 REF_UPDATES_MAX = 40
 REF_UPDATE_COMMIT_COUNT_LIMIT = 10000
+REWRITE_QUERY_FIELD = "rewrite"
+MAX_REWRITE_REFS = 8
+REWRITE_EXCLUDED_PREFIXES = ("refs/heads/forkmesh/",)
+PUSH_HISTORY_PREFIX = INTERNAL_GIT_REF_NAMESPACE + "history/"
+PUSH_HISTORY_FALLBACK_PREFIX = INTERNAL_GIT_REF_NAMESPACE + "history-tips/"
+PUSH_HISTORY_KEEP = 20
+PUSH_HISTORY_SEQUENCE_RE = re.compile(r"^[0-9]{10}$")
+PUSH_HOOK_REWRITE_ENV = "FORKMESH_PUSH_REWRITE"
+PUSH_HOOK_DEFAULT_ENV = "FORKMESH_PUSH_DEFAULT_REF"
+PUSH_HOOK_DIRECTORY = "push-hooks"
+FORCED_PULLS_MAX = 10
 
 
 def parse_tag_moves(value: Any) -> dict[str, str]:
@@ -1310,6 +1322,127 @@ def enforce_protected_refs(
                 raise GatewayError(
                     "%s is protected: it changes only by merging an approved "
                     "pull request" % ref)
+
+
+def parse_rewrite_refs(value: Any) -> list[str]:
+    text = str(value or "")
+    if not text:
+        return []
+    items = text.split(" ")
+    if len(items) > MAX_REWRITE_REFS:
+        raise GatewayError("force-push grant is invalid")
+    refs = []
+    for item in items:
+        if item == "refs/heads/":
+            refs.append(item)
+            continue
+        name = item[:-1] if item.endswith("/") else item
+        if not name.startswith("refs/heads/") or len(name) <= len("refs/heads/"):
+            raise GatewayError("force-push grant is invalid")
+        try:
+            if _safe_ref(name) != name:
+                raise GatewayError("force-push grant is invalid")
+        except GatewayError as exc:
+            raise GatewayError("force-push grant is invalid") from exc
+        refs.append(item)
+    return refs
+
+
+def _zero_oid(oid: str) -> bool:
+    return not oid or set(oid) == {"0"}
+
+
+def rewritable_refs(
+    commands: list[tuple[str, str, str]],
+    patterns: list[str],
+    protected: list[str],
+    default_ref: str,
+) -> frozenset[str]:
+    allowed = set()
+    for old, new, ref in commands:
+        if (
+            _zero_oid(old)
+            or _zero_oid(new)
+            or not ref.startswith("refs/heads/")
+            or ref == default_ref
+            or ref.startswith(REWRITE_EXCLUDED_PREFIXES)
+            or any(
+                ref == item or (item.endswith("/") and ref.startswith(item))
+                for item in protected)
+        ):
+            continue
+        if any(
+            ref == item or (item.endswith("/") and ref.startswith(item))
+            for item in patterns
+        ):
+            allowed.add(ref)
+    return frozenset(allowed)
+
+
+def enforce_branch_deletes(commands: list[tuple[str, str, str]]) -> None:
+    for old, new, ref in commands:
+        if ref.startswith("refs/heads/") and _zero_oid(new) and not _zero_oid(
+                old):
+            raise PushRefused(
+                "a push does not delete branches; delete %s on the "
+                "repository's Branches page, which keeps its tip restorable"
+                % ref[len("refs/heads/"):])
+
+
+def push_rewrite_hook_script(next_hook: str = "") -> bytes:
+    lines = [
+        "#!/bin/sh",
+        "set -f",
+        "input=$(cat)",
+        "status=0",
+        "while IFS=' ' read -r old new ref; do",
+        '  [ -n "${ref:-}" ] || continue',
+        '  case "$ref" in refs/heads/*) ;; *) continue ;; esac',
+        '  case "$old" in *[!0]*) ;; *) continue ;; esac',
+        '  case "$new" in *[!0]*) ;; *) continue ;; esac',
+        "  allowed=no",
+        "  for candidate in ${%s:-}; do" % PUSH_HOOK_REWRITE_ENV,
+        '    [ "$candidate" = "$ref" ] && allowed=yes',
+        "  done",
+        '  [ "$allowed" = yes ] && continue',
+        '  git merge-base --is-ancestor "$old" "$new" 2>/dev/null && continue',
+        "  branch=${ref#refs/heads/}",
+        '  if [ "$ref" = "${%s:-}" ]; then' % PUSH_HOOK_DEFAULT_ENV,
+        '    echo "error: $branch is the default branch: it only moves'
+        ' forward, so a force push cannot rewrite it." >&2',
+        '    echo "hint: run \'git pull --rebase origin $branch\', then push'
+        ' again without --force." >&2',
+        '    echo "hint: to rewrite commits, push them to a new branch and'
+        ' open a pull request." >&2',
+        "  else",
+        '    echo "error: $branch only moves forward for this push." >&2',
+        '    echo "hint: run \'git pull --rebase origin $branch\', then push'
+        ' again." >&2',
+        "  fi",
+        "  status=1",
+        "done <<FORKMESH_PUSH_INPUT",
+        "$input",
+        "FORKMESH_PUSH_INPUT",
+        '[ "$status" -eq 0 ] || exit 1',
+    ]
+    if next_hook:
+        lines.append(
+            "printf '%s\\n' \"$input\" | " + shlex.quote(next_hook))
+        lines.append("exit $?")
+    else:
+        lines.append("exit 0")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def install_push_rewrite_hook(directory: Path, next_hook: str = "") -> Path:
+    directory.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(directory, 0o700)
+    target = directory / "pre-receive"
+    staged = directory / ".pre-receive.tmp"
+    staged.write_bytes(push_rewrite_hook_script(next_hook))
+    os.chmod(staged, 0o700)
+    os.replace(staged, target)
+    return directory
 
 
 def parse_push_prefix(value: Any) -> str:
@@ -2948,8 +3081,11 @@ def _run_git(
     allow_exit_one: bool = False,
     git_protocol: str = "",
     alternate: Path | None = None,
+    extra_environment: Mapping[str, str] | None = None,
 ) -> bytes:
     environment = _git_environment(git_protocol)
+    if extra_environment:
+        environment.update(extra_environment)
     if alternate is not None:
         environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(
             alternate / "objects")
@@ -4162,6 +4298,7 @@ class GitRepository:
         # The application points this at its operator-policy hooks directory;
         # repository-planted hooks never run either way.
         self.receive_hooks_path = os.devnull
+        self.rewrite_hooks_path = ""
         _ensure_bare_repository(git_dir)
         self.check_integrity(force=True)
 
@@ -6874,7 +7011,9 @@ class GitRepository:
 
     @staticmethod
     def _receive_pack_configuration(
-        max_input_bytes: int, hooks_path: str = os.devnull
+        max_input_bytes: int,
+        hooks_path: str = os.devnull,
+        allow_rewrite: bool = False,
     ) -> list[str]:
         """Fixed fail-closed receive-pack policy.
 
@@ -6888,7 +7027,8 @@ class GitRepository:
             "-c",
             "receive.denyDeletes=true",
             "-c",
-            "receive.denyNonFastForwards=true",
+            "receive.denyNonFastForwards=false"
+            if allow_rewrite else "receive.denyNonFastForwards=true",
             "-c",
             "core.hooksPath=" + hooks_path,
             "-c",
@@ -6937,27 +7077,176 @@ class GitRepository:
     def receive_pack_transitions(
         self, body: bytes, max_input_bytes: int
     ) -> tuple[bytes, list[tuple[str, str, str]]]:
+        output, changes, _forced = self.receive_pack_rewrites(
+            body, max_input_bytes)
+        return output, changes
+
+    def receive_pack_rewrites(
+        self,
+        body: bytes,
+        max_input_bytes: int,
+        rewrite: frozenset[str] | None = None,
+        default_ref: str = "",
+    ) -> tuple[bytes, list[tuple[str, str, str]], dict[str, str]]:
         if len(body) > max_input_bytes:
             raise GatewayError("push request is too large")
+        hook_mode = rewrite is not None and bool(self.rewrite_hooks_path) and (
+            Path(self.rewrite_hooks_path) / "pre-receive").is_file()
+        if hook_mode:
+            configuration = self._receive_pack_configuration(
+                max_input_bytes, self.rewrite_hooks_path, allow_rewrite=True)
+            environment = {
+                PUSH_HOOK_REWRITE_ENV: " ".join(sorted(rewrite or ())),
+                PUSH_HOOK_DEFAULT_ENV: default_ref,
+            }
+        else:
+            configuration = self._receive_pack_configuration(
+                max_input_bytes, self.receive_hooks_path)
+            environment = {}
+        forced: dict[str, str] = {}
         lock = maintenance_push_lock(self.git_dir)
         try:
             before = stable_refs(self.git_dir)
             output = _run_git(
                 self.git_dir,
-                self._receive_pack_configuration(
-                    max_input_bytes, self.receive_hooks_path)
+                configuration
                 + ["receive-pack", "--stateless-rpc", str(self.git_dir)],
                 input_bytes=body,
                 max_output=MAX_JSON_OUTPUT,
                 timeout=receive_pack_timeout_seconds(len(body)),
+                extra_environment=environment,
             )
             changes = ref_transitions(before, stable_refs(self.git_dir))
+            if hook_mode:
+                for ref, old, new in changes:
+                    if (
+                        ref in (rewrite or ())
+                        and not _zero_oid(old)
+                        and not _zero_oid(new)
+                        and not self.is_ancestor(old, new)
+                    ):
+                        forced[ref] = self.keep_push_history(ref, old)
         finally:
             if lock is not None:
                 os.close(lock)
         if changes:
             mark_maintenance_due(self.git_dir)
-        return output, changes
+        return output, changes, forced
+
+    def is_ancestor(self, older: str, newer: str) -> bool:
+        try:
+            _run_git(
+                self.git_dir,
+                ["merge-base", "--is-ancestor", older, newer],
+                max_output=1024,
+            )
+        except (GitError, OSError):
+            return False
+        return True
+
+    def keep_push_history(self, ref: str, old: str) -> str:
+        branch = ref[len("refs/heads/"):]
+        prefix = PUSH_HISTORY_PREFIX + branch + "/"
+        try:
+            existing = sorted(
+                name for name in prefix_refs(self.git_dir, prefix)
+                if PUSH_HISTORY_SEQUENCE_RE.fullmatch(name[len(prefix):]))
+        except (GitError, OSError):
+            existing = []
+        sequence = int(existing[-1][len(prefix):]) + 1 if existing else 1
+        name = prefix + "%010d" % sequence
+        zero = "0" * len(old)
+        try:
+            _run_git(self.git_dir, ["update-ref", name, old, zero],
+                     max_output=1024)
+        except (GitError, OSError):
+            name = PUSH_HISTORY_FALLBACK_PREFIX + old
+            try:
+                _run_git(self.git_dir, ["update-ref", name, old],
+                         max_output=1024)
+            except (GitError, OSError):
+                return ""
+            return name
+        for stale in (existing + [name])[:-PUSH_HISTORY_KEEP]:
+            try:
+                _run_git(self.git_dir, ["update-ref", "-d", stale],
+                         max_output=1024)
+            except (GitError, OSError):
+                pass
+        return name
+
+    def open_pulls_for_head(self, branch: str) -> list[int]:
+        if not branch:
+            return []
+        try:
+            raw = _run_git(
+                self.git_dir,
+                ["for-each-ref", "--format=%(objectname)",
+                 "refs/heads/forkmesh/pull/", "refs/heads/forkmesh/pulls"],
+                max_output=4 * 1024 * 1024,
+            ).decode("ascii", "replace").split()
+        except (GitError, OSError):
+            return []
+        commits = sorted({oid for oid in raw if GIT_OID_RE.fullmatch(oid)})
+        if not commits:
+            return []
+        try:
+            code, output = _run_git_status(
+                self.git_dir,
+                ["grep", "-l", "-z", "-F", "-e", "head: " + branch,
+                 *commits[:512], "--",
+                 ":(glob).forkmesh/pulls/*/pull.md"],
+                max_output=4 * 1024 * 1024,
+                allowed_codes=(0, 1),
+            )
+        except (GitError, OSError):
+            return []
+        if code == 1:
+            return []
+        found: dict[int, str] = {}
+        for item in output.split(b"\0"):
+            text = item.decode("utf-8", "replace")
+            commit, _, path = text.partition(":")
+            match = re.fullmatch(
+                r"\.forkmesh/pulls/([1-9][0-9]{0,8})/pull\.md", path)
+            if match:
+                found.setdefault(int(match.group(1)), commit)
+        numbers = []
+        for number in sorted(found):
+            try:
+                record = _run_git(
+                    self.git_dir,
+                    ["cat-file", "blob", "%s:.forkmesh/pulls/%d/pull.md" % (
+                        self._pull_record_commit(number, found[number]),
+                        number)],
+                    max_output=256 * 1024,
+                ).decode("utf-8", "replace")
+            except (GitError, OSError):
+                continue
+            header = record.split("\n---", 1)[0]
+            status = re.search(r"(?m)^status:[ \t]*([A-Za-z-]+)", header)
+            head = re.search(r"(?m)^head:[ \t]*(.*)$", header)
+            if (
+                head and head.group(1).strip() == branch
+                and (status is None or status.group(1).lower() == "open")
+            ):
+                numbers.append(number)
+            if len(numbers) >= FORCED_PULLS_MAX:
+                break
+        return numbers
+
+    def _pull_record_commit(self, number: int, fallback: str) -> str:
+        try:
+            oid = _run_git(
+                self.git_dir,
+                ["rev-parse", "--verify", "-q",
+                 "refs/heads/forkmesh/pull/%d^{commit}" % number],
+                max_output=256,
+                allow_exit_one=True,
+            ).decode("ascii", "replace").strip()
+        except (GitError, OSError):
+            oid = ""
+        return oid if GIT_OID_RE.fullmatch(oid) else fallback
 
     def new_commit_count(self, old: str, new: str) -> int:
         if set(new) == {"0"} or not GIT_OID_RE.fullmatch(new):
@@ -9723,6 +10012,10 @@ class GatewayApplication:
             prefix="forkmesh-mirror-runtime-"
         )
         os.chmod(self._temporary_root.name, 0o700)
+        self.rewrite_hooks_path = str(install_push_rewrite_hook(
+            Path(self._temporary_root.name) / PUSH_HOOK_DIRECTORY,
+            "" if self.receive_hooks_path == os.devnull
+            else str(Path(self.receive_hooks_path) / "pre-receive")))
         materializer = self._materializer
         self.repositories: dict[tuple[str, str], GitRepository] = {}
         # Restricted repositories (see the config parser): kept apart from
@@ -9764,6 +10057,7 @@ class GatewayApplication:
                     raise GatewayError("public repository storage is missing")
                 runtime = GitRepository(repository, git_dir)
                 runtime.receive_hooks_path = self.receive_hooks_path
+                runtime.rewrite_hooks_path = self.rewrite_hooks_path
                 if not runtime.check_integrity(force=True):
                     raise GatewayError("public repository integrity pin mismatch")
                 target = (
@@ -9917,6 +10211,7 @@ class GatewayApplication:
         except (GatewayError, GitError, OSError):
             return None
         repository.receive_hooks_path = self.receive_hooks_path
+        repository.rewrite_hooks_path = self.rewrite_hooks_path
         return repository
 
     def _writable_repository(
@@ -10989,14 +11284,16 @@ class GatewayApplication:
         name: str,
         decoded_body: bytes,
         actions: bool = False,
+        rewrite: frozenset[str] | None = None,
+        default_ref: str = "",
     ) -> GatewayResponse:
         """Run one authorized receive-pack and publish its side effects."""
         if len(decoded_body) > self.config.receive_max_input_bytes:
             return json_response(
                 {"ok": False, "error": "request_too_large"}, 413)
-        output, changes = repository.receive_pack_transitions(
-            decoded_body, self.config.receive_max_input_bytes
-        )
+        output, changes, forced = repository.receive_pack_rewrites(
+            decoded_body, self.config.receive_max_input_bytes,
+            rewrite, default_ref)
         refs_changed = bool(changes)
         headers = {"Cache-Control": "no-store"}
         if changes:
@@ -11005,6 +11302,14 @@ class GatewayApplication:
                 update: dict[str, Any] = {"ref": ref, "old": old, "new": new}
                 if ref.startswith("refs/heads/"):
                     update["commits"] = repository.new_commit_count(old, new)
+                if ref in forced:
+                    update["forced"] = True
+                    if forced[ref]:
+                        update["kept"] = forced[ref]
+                    pulls = repository.open_pulls_for_head(
+                        ref[len("refs/heads/"):])
+                    if pulls:
+                        update["pulls"] = pulls
                 updates.append(update)
             report: dict[str, Any] = {
                 "total": len(changes), "updates": updates}
@@ -11998,7 +12303,7 @@ class GatewayApplication:
                     method != "POST"
                     or set(query) - {
                         TAG_MOVES_QUERY_FIELD, PROTECT_QUERY_FIELD,
-                        PUSH_PREFIX_QUERY_FIELD}
+                        PUSH_PREFIX_QUERY_FIELD, REWRITE_QUERY_FIELD}
                     or normalized_headers.get("content-type", "")
                     .split(";", 1)[0]
                     .strip()
@@ -12020,6 +12325,12 @@ class GatewayApplication:
                     query.get(PUSH_PREFIX_QUERY_FIELD, ""))
                 if push_prefix and tag_moves:
                     raise GatewayError("contributor push grant is invalid")
+                rewrite_patterns = parse_rewrite_refs(
+                    query.get(REWRITE_QUERY_FIELD, ""))
+                if push_prefix and any(
+                        not item.startswith(push_prefix)
+                        for item in rewrite_patterns):
+                    raise GatewayError("contributor push grant is invalid")
                 enforce_push_ref_policy(commands, tag_moves)
                 enforce_protected_refs(commands, protected)
                 try:
@@ -12027,6 +12338,7 @@ class GatewayApplication:
                         commands, push_prefix,
                         prefix_refs(repository.git_dir, push_prefix)
                         if push_prefix else None)
+                    enforce_branch_deletes(commands)
                 except PushRefused as refused:
                     return GatewayResponse(
                         200,
@@ -12035,8 +12347,13 @@ class GatewayApplication:
                             decoded_body, commands, str(refused)),
                         {"Cache-Control": "no-store"},
                     )
+                default_ref = repository.default_branch_ref()
                 return self._run_receive_pack(
-                    repository, owner, name, decoded_body)
+                    repository, owner, name, decoded_body,
+                    rewrite=rewritable_refs(
+                        commands, rewrite_patterns, protected, default_ref)
+                    if rewrite_patterns else None,
+                    default_ref=default_ref)
             if method not in ("GET", "HEAD"):
                 raise GatewayError("repository operation is read-only")
             if operation == "blobs":

@@ -459,7 +459,8 @@ async def contributor_push_allowed(env, owner, repo, account, alias=""):
 
 
 async def record_hosted_push_state(env, owner, repo, endpoint=None,
-                                   pusher="", state="", notify=True):
+                                   pusher="", state="", notify=True,
+                                   forced=None):
     """Pin the refs digest the hosting node signs after a hosted push.
 
     A public read is routed only against an authenticated refs attestation
@@ -494,7 +495,8 @@ async def record_hosted_push_state(env, owner, repo, endpoint=None,
         # routing digest (default branch + tags) alone: the other cores fetch
         # when their copy is behind it (hosted_repos.replicas).
         try:
-            await _note_core_push(env, key_bi, endpoint.get("node", ""))
+            await _note_core_push(env, key_bi, endpoint.get("node", ""),
+                                  forced)
         except Exception:
             pass
     digest = clean_string(state, 64).strip().lower()
@@ -1114,6 +1116,9 @@ class _ReplicaRuntime:
     async def fork_parent(self, owner, name):
         return await _public_node_parent(self.env, owner, name)
 
+    async def seal(self, record):
+        return await encrypt_row(self.env, record)
+
     async def pin_initial(self, owner, name, digest):
         """Pin the first content a core reports (initial commit or import)."""
         key_bi = await blind_index(self.env, owner + "/" + name)
@@ -1258,13 +1263,14 @@ async def _notify_cores(env, owner, name):
             pass
 
 
-async def _note_core_push(env, key_bi, node):
+async def _note_core_push(env, key_bi, node, forced=None):
     runtime = _ReplicaRuntime(env)
     await _hosted_repos.ensure_tables(runtime)
     row = await _hosted_repos.find_by_key(runtime, key_bi)
     if not row:
         return
-    await _hosted_repos.note_push(runtime, row["id"], node, int(Date.now()))
+    await _hosted_repos.note_push(runtime, row["id"], node, int(Date.now()),
+                                  forced)
     record = await decrypt_row(env, row.get("data"))
     if isinstance(record, dict):
         await _notify_cores(env, record.get("owner", ""), record.get("name", ""))
