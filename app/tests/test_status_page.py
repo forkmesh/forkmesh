@@ -64,6 +64,7 @@ def _load(*names, extra_globals=None):
         "STATUS_SYSTEM_CHECK_STEPS", "STATUS_MIRROR_CHECK_STEPS",
         "STATUS_SYSTEM_PROBE_PHASES", "STATUS_SAMPLE_PHASE",
         "STATUS_NEXT_CHECK_SCAN_MINUTES",
+        "STATUS_REDACTED_ROUTE_PREFIXES", "STATUS_REDACTED_ROUTE_PATHS",
         "STATUS_HISTORY_DAYS",
         "STATUS_HISTORY_RETAIN_MS", "STATUS_SAMPLE_WINDOW_MS",
         "STATUS_HOUR_MS", "STATUS_DAY_MS",
@@ -117,6 +118,7 @@ def _load(*names, extra_globals=None):
     }
     helper_names = {
         "_cron_due_phases", "_status_phase_slots", "_status_next_check",
+        "_status_error_route_path",
         "_status_expected_checks_for_hour", "_status_effective_hour",
         "_status_minute", "_is_tunnel_content_path",
         "_status_deploy_semaphore_active",
@@ -2178,6 +2180,60 @@ def test_worker_errors_still_fail_worker_health_after_client_filtering():
     assert "/desktop-error/" not in reasons["errors"]
 
 
+def test_redacted_private_repository_errors_keep_their_route_family():
+    error_rows = [
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[api:pulls]",
+            "status": 503, "message": "response status 503",
+        },
+    ]
+    results, reasons, _minutes = _run_sample(error_rows=error_rows)
+    assert results["api"] == 1
+    assert results["errors"] == 1
+    assert results["website"] == 0
+    assert "[api:pulls]" in reasons["api"]
+
+    error_rows = [
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[api:tree]",
+            "status": 503, "message": "response status 503",
+        },
+        {
+            "method": "GET",
+            "path": "/repository-route-redacted/[git-upload-pack]",
+            "status": 502, "message": "response status 502",
+        },
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[release-blob]",
+            "status": 504, "message": "response status 504",
+        },
+    ]
+    results, reasons, _minutes = _run_sample(error_rows=error_rows)
+    for system in ("website", "api", "errors", "realtime"):
+        assert results[system] == 0, system
+
+    error_rows = [
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[git-info-refs]",
+            "status": 500, "message": "response status 500",
+        },
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[page]",
+            "status": 500, "message": "response status 500",
+        },
+    ]
+    results, reasons, _minutes = _run_sample(error_rows=error_rows)
+    assert results["realtime"] == 1
+    assert results["website"] == 1
+    assert results["api"] == 0
+    assert "[page]" in reasons["website"]
+
+
 def test_one_sampler_records_each_minute_via_the_claim_row():
     # Replayed alarm delivery can call record_status_sample more than once for
     # a minute. A completed batch is the receipt that suppresses later work.
@@ -3999,6 +4055,10 @@ def test_flagship_repository_probe_loads_records_from_eligible_mirrors():
     }
     assert asyncio.run(probe(Env())) == (True, "")
     assert discussions_key not in calls
+    assert ("blobs", "blobs?path=.forkmesh/discussions/3/discussion.md&ref="
+            + default_ref) not in calls
+    assert ("blobs", "blobs?path=.forkmesh/pulls/7/pull.md&ref="
+            + pulls_ref) in calls
 
     calls.clear()
     payloads[metadata_key] = {
@@ -4007,6 +4067,8 @@ def test_flagship_repository_probe_loads_records_from_eligible_mirrors():
     payloads[discussions_key] = {"ok": True, "entries": []}
     assert asyncio.run(probe(Env())) == (True, "")
     assert discussions_key in calls
+    assert ("blobs", "blobs?path=.forkmesh/discussions/3/discussion.md&ref="
+            + default_ref) not in calls
 
     calls.clear()
     missing_provenance.add(metadata_key)
@@ -4965,6 +5027,27 @@ def test_recorded_core_appears_as_a_full_status_system():
         "Intrusion detector"]
     assert "pinged every five minutes" in system["checkDescription"]
     assert all(s["id"] != "core:n8" for s in out["systems"])
+
+
+def test_new_fleet_node_uptime_starts_at_its_first_sample():
+    cur_day = (_Clock.value // DAY_MS) * DAY_MS
+    rows = [
+        {"day_ts": cur_day - offset * DAY_MS, "system": system,
+         "checks": 1440, "failures": 0}
+        for offset in (1, 2)
+        for system in ("core:n4", "website")
+    ]
+    rows.append({"day_ts": cur_day - 5 * DAY_MS, "system": "website",
+                 "checks": 0, "failures": 0})
+    out = _run_history(rows, core_rows=[_core_row("n4")])
+    by_id = {s["id"]: s for s in out["systems"]}
+    core = by_id["core:n4"]
+    today_expected = core["days"][-1]["expectedChecks"]
+    sampled = round(2880 / (2880 + today_expected) * 100, 2)
+    assert core["uptimePct"] == sampled
+    assert core["coveragePct"] == sampled
+    assert [d["uptimePct"] for d in core["days"]][:3] == [None, None, None]
+    assert by_id["website"]["coveragePct"] < 100.0
 
 
 def test_status_only_release_reads_release_their_bodies():

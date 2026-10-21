@@ -66,6 +66,29 @@ failed or unattributed read of `.forkmesh` itself still counts as an outage.
 A third-party package can add dots the same way: depend on `status-page`,
 set `install.sync: "account"`, and declare a `status.monitor` contribution.
 
+### Redacted private-repository errors keep their route family
+
+The error log renames a failing private or unpublished repository route to
+`/private-or-unpublished-repository/<kind>` (or `/repository-route-redacted/`),
+where `<kind>` is `[api:<route>]`, `[git-info-refs]`, `[git-upload-pack]`,
+`[release-blob]` or `[page]`. The sampler used to bucket by path prefix, so a
+redacted `/api/repo/<o>/<r>/pulls` 503 no longer started with `/api/` and
+painted the Website row red (2026-10-21, 17:56 to 18:16 UTC).
+`_status_error_route_path` maps each kind back to a stand-in path of the same
+route family before bucketing, so a redacted API error lands on API, a git
+error on Realtime, a page error on Website, and a 502/503/504 on a mirror-served
+content route is skipped exactly as its public form is.
+
+### A new fleet node's uptime starts at its first sample
+
+Core, runner and mirror rows appear when a node joins the fleet. The 30-day
+uptime and coverage used to count every day of the window as expected, so a
+core added on 2026-10-14 showed 25.78% uptime on 2026-10-21 while every one of
+its daily bars was green. For those rows the days before the node's first
+recorded sample are left out of the 30-day expected total. Their daily bars
+still show no data. Fixed rows keep counting every day, because a gap there is
+a missed sample, not a system that did not exist yet.
+
 ## Market nesting
 
 Every Market nests a package under its first `dependencies` entry, so the
