@@ -286,6 +286,29 @@ inline bool setPingKindEnabled(const QString &kind, bool enabled)
     return false;
 }
 
+inline QString alertLeadTitle(const QString &who, const QString &where,
+                              int number = 0)
+{
+    QString place = where.trimmed();
+    if (number > 0)
+        place += (place.isEmpty() ? QString() : QStringLiteral(" ")) +
+                 QLatin1Char('#') + QString::number(number);
+    const QString actor = who.trimmed();
+    if (actor.isEmpty())
+        return place;
+    if (place.isEmpty())
+        return actor;
+    return actor + QString::fromUtf8(" \xC2\xB7 ") + place;
+}
+
+inline QString alertSnippet(const QString &text, int maxChars = 180)
+{
+    const QString clean = text.simplified();
+    if (clean.size() <= maxChars)
+        return clean;
+    return clean.left(maxChars - 1).trimmed() + QString::fromUtf8("\xE2\x80\xA6");
+}
+
 // The daily quiet window, in the same shape as the relay's
 // notification_quiet_hours: minutes after local midnight, an end at or before
 // the start runs across midnight, and days are the weekdays a window may START
