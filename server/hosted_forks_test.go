@@ -471,3 +471,30 @@ func TestHostedForkUpstreamEntriesAreValidated(t *testing.T) {
 		}
 	}
 }
+
+func TestHostedForkFetchOnlyReachesTheNetworkOriginOrAnAllowedForge(t *testing.T) {
+	r := &hostedReplicator{
+		d:   &Daemon{config: Config{CatalogURL: "https://app.example/api/repositories"}},
+		cfg: HostedConfig{ImportHosts: []string{"github.com"}},
+	}
+	for _, allowed := range []string{
+		"https://app.example/forkmesh/forkmesh.git",
+		"https://github.com/acme/tool.git",
+		"http://127.0.0.1:8080/tool.git",
+	} {
+		if !r.forkFetchHostAllowed(allowed) {
+			t.Fatalf("refused %s", allowed)
+		}
+	}
+	for _, refused := range []string{
+		"https://internal.corp/tool.git",
+		"https://app.example:8443/tool.git",
+		"https://github.com:444/acme/tool.git",
+		"http://app.example/tool.git",
+		"http://10.0.0.5/tool.git",
+	} {
+		if r.forkFetchHostAllowed(refused) {
+			t.Fatalf("allowed %s", refused)
+		}
+	}
+}

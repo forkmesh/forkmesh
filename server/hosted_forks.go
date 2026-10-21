@@ -182,17 +182,44 @@ func (r *hostedReplicator) upstreamCopy(ctx context.Context, upstream hostedFork
 	return ""
 }
 
+func (r *hostedReplicator) forkFetchHostAllowed(raw string) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if parsed.Scheme == "http" {
+		return isLoopbackHost(host)
+	}
+	if parsed.Scheme != "https" || parsed.Port() != "" {
+		return false
+	}
+	if r.importAllowed(raw) {
+		return true
+	}
+	if catalog, err := url.Parse(r.d.config.CatalogURL); err == nil &&
+		catalog.Scheme == "https" && catalog.Port() == "" {
+		return host == strings.ToLower(catalog.Hostname())
+	}
+	return false
+}
+
 func (r *hostedReplicator) fetchForkUpstream(ctx context.Context, pool, cloneURL, prefix string) error {
 	if !hostedForkCloneURLAllowed(cloneURL) {
 		return errors.New("fork parent URL is not a public https URL")
+	}
+	if !r.forkFetchHostAllowed(cloneURL) {
+		return errors.New("fork parent URL is not on this network's git origin or an allowed forge")
 	}
 	args := []string{"--git-dir=" + pool, "fetch", "--quiet", "--no-tags", "--", cloneURL,
 		"+refs/heads/*:" + prefix + "heads/*", "+refs/tags/*:" + prefix + "tags/*"}
 	env := append(gitNetworkEnvironment(),
 		"GIT_ALLOW_PROTOCOL=https:http",
-		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_COUNT=2",
 		"GIT_CONFIG_KEY_0=credential.helper",
-		"GIT_CONFIG_VALUE_0=")
+		"GIT_CONFIG_VALUE_0=",
+		"GIT_CONFIG_KEY_1=http.followRedirects",
+		"GIT_CONFIG_VALUE_1=false")
 	return r.boundedGit(ctx, pool, args, env)
 }
 

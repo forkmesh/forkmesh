@@ -295,6 +295,12 @@ path), `hosted_repos.fork_of`, `server/hosted_forks.go`.
     `refs/pools/<network>/…`). The fetch allows only `https` (plain `http`
     only to loopback, for tests), clears credential helpers and is held to
     the hosted size limit and fetch timeout like an import (`boundedGit`).
+    The `cloneUrl` comes from the publishing node's catalog record, so the
+    core only fetches it from the network's own git origin (the host of
+    `catalogUrl`) or a forge on `hosted.importHosts`, on the default port,
+    and never follows a redirect (`http.followRedirects=false`); anything
+    else would let a publisher point a core at an internal address
+    (`forkFetchHostAllowed`).
     Replicas with no local copy fetch nothing from the parent: they borrow
     from the pool if it already exists and take the fork's refs from their
     peers.
