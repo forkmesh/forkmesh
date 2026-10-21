@@ -13,6 +13,10 @@ DEFAULT_HUB_API = "https://app.forkmesh.com"
 DEFAULT_HUB_WORLD = "https://world.forkmesh.com"
 SLOTS = 12
 HEX_SLOTS = 5
+# The hub may also say which of its town's desert petals a hex World stands
+# on ("petal", 0-5); an instance passes it through so its own World can stand
+# in the same place.
+PETALS = 6
 SHAPE_FLOWER = "flower"
 SHAPE_HEX = "hex"
 SCENE_PATH = "/api/world/neighbour-scene"
@@ -259,6 +263,14 @@ def build_directory(hub, rows, api_base, hexes=frozenset()):
     return worlds
 
 
+def petal_of(item):
+    petal = item.get("petal")
+    if isinstance(petal, int) and not isinstance(petal, bool) \
+            and 0 <= petal < PETALS and item.get("shape") == SHAPE_HEX:
+        return {"petal": petal}
+    return {}
+
+
 def normalize_world(item):
     if not isinstance(item, dict):
         return None
@@ -298,6 +310,7 @@ def normalize_world(item):
         **({"scene": world + SCENE_PATH}
            if shape_for(item.get("shape"), slot) == SHAPE_HEX
            and item.get("scene") == world + SCENE_PATH else {}),
+        **petal_of(item),
     }
 
 
