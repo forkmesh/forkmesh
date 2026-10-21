@@ -114,9 +114,16 @@
     return `<a href="${escapeHtml(href)}${hash}" data-repo-markdown-link="${kind}" data-repo-markdown-path="${escapeHtml(path)}"${anchor ? ` data-repo-markdown-anchor="${anchor}"` : ""} class="${linkClass}">${labelHtml}</a>`;
   }
 
+  const MD_VIDEO_URL =
+    /^(?:https:\/\/[a-z0-9.-]+(?::\d{1,5})?)?\/api\/repo\/[^\s/?#"'<>]+\/[^\s/?#"'<>]+\/media\/[0-9a-f]{32}\.(?:mp4|m4v|webm|mov)$/i;
+  const MD_VIDEO_CLASS = "my-2 block max-h-[34rem] w-full max-w-3xl rounded-md border border-border bg-black";
+
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
   function mdImageHtml(alt, url, context) {
+    if (MD_VIDEO_URL.test(String(url || "").trim())) {
+      return `<video src="${String(url).trim()}" controls preload="metadata" playsinline aria-label="${alt}" class="${MD_VIDEO_CLASS}"></video>`;
+    }
     const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
     const source = mdImageSource(target, context);
@@ -5366,7 +5373,7 @@
             <div data-repo-issue-comment-preview hidden class="min-h-[6.5rem] px-4 py-3 ${MD_BODY_CLASS}"></div>
             <div class="flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground">
               <span class="inline-flex items-center gap-1.5"><i data-lucide="shield-check" class="h-3.5 w-3.5"></i>Signed in this browser · Markdown is supported</span>
-              <span data-repo-issue-comment-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
+              <span class="inline-flex items-center gap-2">${markdownVideoButtonHtml()}<span data-repo-issue-comment-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span></span>
             </div>
           </div>
           <div class="flex flex-wrap items-center justify-end gap-2">
@@ -5829,7 +5836,7 @@
           ${composeIdentityHtml(state.session, "Reviewing")}
           <textarea data-repo-pull-review-body data-mention-input="record" rows="4" aria-label="Review" placeholder="Leave a comment. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]"></textarea>
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
+            <span class="inline-flex items-center gap-2">${markdownVideoButtonHtml()}<span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span></span>
             <div class="flex flex-wrap items-center gap-2">
               ${renderPullLifecycleButtons(repo, parsed)}
               <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Request changes</button>
