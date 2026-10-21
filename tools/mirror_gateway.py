@@ -8075,7 +8075,7 @@ AI_DISCLOSURE_MESSAGE = (
     "\"Claude Opus 5.5\", or \"None\"), add a line \"AI model: <name>\" "
     "to the description, or add a Co-Authored-By trailer naming the "
     "model to the head commit.")
-AI_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]")
+AI_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 AI_BODY_LINE_RE = re.compile(
     r"^\s*(?:[-*+>]\s+)?AI[ -]?models?(?:\(s\))?(?:\s+used)?\s*:\s*(.+?)\s*$",
     re.I)

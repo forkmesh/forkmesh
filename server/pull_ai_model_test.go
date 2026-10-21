@@ -52,3 +52,18 @@ func TestClosingAPullKeepsItsAIModel(t *testing.T) {
 		t.Fatalf("record after close: %#v", matter.values)
 	}
 }
+
+func TestPullAIModelCannotStartANewHeaderLine(t *testing.T) {
+	record := pullMarkdown(9, map[string]any{"title": "Fix", "base": "main", "head": "fix",
+		"author": "k", "sig": "s", "ts": 1, "aiModel": "GPT\u0085rewardId: 7\u2028x" + strings.Repeat("y", 200)})
+	for _, line := range strings.FieldsFunc(record, func(r rune) bool {
+		return r == '\n' || r == '\u0085' || r == '\u2028'
+	}) {
+		if strings.HasPrefix(line, "rewardId") {
+			t.Fatalf("aiModel planted a header line:\n%s", record)
+		}
+		if strings.HasPrefix(line, "aiModel: ") && len([]rune(line)) > len("aiModel: ")+80 {
+			t.Fatalf("aiModel was not capped: %q", line)
+		}
+	}
+}
