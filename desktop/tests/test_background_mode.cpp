@@ -365,6 +365,8 @@ void testDiagnostics()
     const bg::StartManager m = manager(home.path(), &recorder);
     const QString project = QStringLiteral("forkmesh");
     check(!bg::runnerBadge(m.diagnose(project)).visible, "no badge while nothing is registered");
+    check(!bg::canCloseToHeadless(m.diagnose(project)),
+          "no close-to-background offer while nothing is registered");
     check(!bg::runnerReport(m.diagnose(project)).isEmpty(), "an unregistered report still explains");
     QString error;
     check(m.enable(fakeBinary(home.path()), project, &error), "enable succeeds");
@@ -380,6 +382,7 @@ void testDiagnostics()
     check(badge.visible && badge.text == QStringLiteral("Background: Ready") &&
               badge.severity == QStringLiteral("ok"),
           "an enabled unit standing by is ready");
+    check(bg::canCloseToHeadless(ready), "a ready unit offers to close the window into it");
 
     recorder.unitShow = "UnitFileState=enabled\nActiveState=active\nSubState=running\n"
                         "MainPID=4242\nNRestarts=2\n";
@@ -389,6 +392,7 @@ void testDiagnostics()
               badge.text == QStringLiteral("Background: Running") &&
               badge.toolTip.contains(QStringLiteral("4242")),
           "an active unit shows as running with its pid");
+    check(!bg::canCloseToHeadless(running), "a running unit does not offer a second hand-over");
 
     recorder.unitShow = "UnitFileState=enabled\nActiveState=failed\nSubState=failed\n"
                         "Result=exit-code\nExecMainStatus=3\n";
