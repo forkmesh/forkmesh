@@ -3219,6 +3219,9 @@ class Default:
         if chat_direct_media_api.matches(url.path):
             return await chat_direct_media_api.handle(
                 _ChatDirectMessagesRuntime(self.env, request), url.path)
+        if repo_media_api.matches(url.path):
+            return await repo_media_api.handle(
+                _RepoMediaRuntime(self.env, request), url.path)
         if (
             CHAT_DIRECT_MESSAGES_RE.match(url.path)
             or CHAT_DIRECT_MESSAGE_USERS_RE.match(url.path)

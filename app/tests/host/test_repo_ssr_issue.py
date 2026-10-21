@@ -39,7 +39,8 @@ FUNCTIONS = {
         "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
         "issuePersonNameHtml"),
     "03-issues-profile-io.js": (
-        "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates"),
+        "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
+        "markdownVideoButtonHtml"),
     "04-account.js": ("validNodeName",),
     "06-repo-content.js": (
         "mdSafeUrl", "mdImageSource", "mdHeadingSlug", "mdLinkHtml", "mdImageHtml",
@@ -66,7 +67,7 @@ FUNCTIONS = {
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE"),
     "06-repo-content.js": (
-        "MD_DATA_IMAGE_URL", "MD_BARE_URL", "MD_ENTITIES", "MD_HARD_BREAK",
+        "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS", "MD_BARE_URL", "MD_ENTITIES", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
         "COMMENT_REACTIONS", "COMMENT_REACTION_KINDS",
         "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
