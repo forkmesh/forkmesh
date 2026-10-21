@@ -180,7 +180,6 @@ def test_first_view_reads_answer_the_rail_in_the_takeover_frame():
     schedule = CONTENT.split("  function scheduleRepoAboutRail(repo) {", 1)[1].split("\n  }\n", 1)[0]
     assert schedule.index("loadRepoAboutRail(repo);") < schedule.index("requestIdleCallback")
     assert 'if (repoFirstViewReadsSeeded && state.activeRepoTab === "code") {' in schedule
-    # A refresh with the same answer leaves the rail's markup (and images) alone.
     for name in ("renderRepoAboutLanguages", "renderRepoAboutRoster", "renderRepoAboutContributors"):
         body = _function(CONTENT, name)
         assert "setHtmlIfChanged(" in body and ".innerHTML =" not in body, name

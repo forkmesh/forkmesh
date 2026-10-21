@@ -52,14 +52,8 @@ README_RE = re.compile(r"^readme(\.md|\.txt|\.rst)?$", re.I)
 # The page waits at most this long for its first view; after that it is
 # served as before and the dashboard reads the data itself. Views and the
 # repository root are remembered (stale-while-revalidate), so the wait is
-# only ever paid when nothing is remembered yet (after a restart, or the
-# first visit of a repository in PRERENDER_STALE_SECONDS). A remembered view
-# older than PRERENDER_FRESH_SECONDS is re-read at once and the page waits up
-# to SSR_REFRESH_SECONDS for the new one (a push since), then uses the old.
 SSR_BUDGET_SECONDS = 0.3
 SSR_REFRESH_SECONDS = 0.12
-# A pull request, issue or discussion page keeps its own short wait: its
-# bundle is fetched by the page's head script when it is not ready.
 VIEW_BUDGET_SECONDS = 0.04
 PRERENDER_FRESH_SECONDS = 5.0
 PRERENDER_STALE_SECONDS = 6 * 3600.0
@@ -132,8 +126,6 @@ def short_target(scope):
 
 SHORT_SUB_RE = re.compile(
     r"^/([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/([^/?#]+)(?:/[^?#]*)?$")
-# Second path segments the dashboard opens on a tab of the strip; any other
-# segment that is not a dashboard route is a folder or file (the Code tab).
 SUB_TABS = ("issues", "pulls", "discussions", "insights", "projects", "actions")
 SUB_OTHER_ROUTES = frozenset({
     "branches", "commits", "sizemap", "releases", "mirrors", "agents",
@@ -141,7 +133,6 @@ SUB_OTHER_ROUTES = frozenset({
 
 
 def short_sub_target(scope):
-    """(name, tab) for a GET below a short repository address, else None."""
     if scope.get("method", "GET").upper() != "GET" or \
             (scope.get("query_string") or b""):
         return None
@@ -160,13 +151,10 @@ def short_sub_target(scope):
 
 
 SHORT_ISSUE_RE = re.compile(r"^/[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}/issues/([1-9]\d{0,8})/?$")
-# How long an issue page waits for its issue (the bundle is usually
-# remembered; a cold one is a handful of local gateway reads).
 ISSUE_BUDGET_SECONDS = 0.3
 
 
 def short_issue_number(scope):
-    """<n> for a GET of /<name>/issues/<n>, else 0."""
     raw = scope.get("raw_path")
     path = raw.decode("latin-1") if raw else (scope.get("path") or "")
     match = SHORT_ISSUE_RE.match(path)
@@ -341,7 +329,7 @@ async def _fresh_or_remembered(task, remembered):
         data = await asyncio.wait_for(asyncio.shield(task), SSR_REFRESH_SECONDS)
     except asyncio.TimeoutError:
         return remembered
-    return data or remembered
+    return data
 
 
 def start(fastpath, scope):
@@ -404,9 +392,6 @@ MICRO_MAX_ENTRIES = 512
 MICRO_MAX_BODY = 256 * 1024
 _micro = {}
 _micro_refreshing = set()
-# The last /about answer per repository, kept past MICRO_STALE_SECONDS for the
-# first view's tabs and About rail (features, description, followers), and
-# re-read in the background (warm_about) whenever a page is rendered from it.
 ABOUT_MEMO_SECONDS = 24 * 3600.0
 _about_memo = {}   # "/api/repo/<owner>/<repo>/about" (lowercase) -> (time, about)
 _warmer = {}       # "fetch": the Worker fetch, "headers": a visitor's headers
@@ -589,9 +574,6 @@ def _remember_about(path, body, now):
 
 
 def warm_about(owner, repo):
-    """Re-read a repository's /about in the background (anonymously, as a
-    visitor would), when its remembered answer is missing or past
-    MICRO_FRESH_SECONDS, so the next first view has current tabs."""
     worker_fetch = _warmer.get("fetch")
     if worker_fetch is None:
         return
@@ -624,7 +606,6 @@ def _remember_warmer(worker_fetch, request):
     try:
         parts = urllib.parse.urlsplit(str(request.url))
         _warmer["origin"] = "%s://%s" % (parts.scheme, parts.netloc)
-        # Only what routes the read; never a visitor's identity or address.
         _warmer["headers"] = {"host": parts.netloc,
                               "user-agent": "forkmesh-host-first-view",
                               "cf-connecting-ip": "127.0.0.1"}
@@ -797,8 +778,6 @@ def inject(page, data, short=False):
     if data.get("info"):
         payload["info"] = data["info"]
     reads = repo_ssr_about.seed_reads(data.get("extras"), data.get("ref"))
-    # A recent /about answers the rail's own /about read too (followers,
-    # branding); an older one only draws the page and the dashboard re-reads.
     memo = _about_memo.get(("/api/repo/%s/%s/about" % (
         data["owner"], data["repo"])).lower())
     try:
@@ -834,10 +813,6 @@ def inject(page, data, short=False):
 
 
 def inject_header(page, data, tab, short=False):
-    """A page below the repository root with the root's header and tab strip
-    (``tab`` selected) in place of the empty band, or None. The rest of the
-    page is the dashboard's: only what is identical on every route is drawn.
-    """
     if 'data-page="repo"' not in page or PLACEHOLDER not in page \
             or CHARSET not in page:
         return None
@@ -1092,9 +1067,6 @@ def _icon_sprite():
 
 
 def cached_about(owner, repo):
-    """The repository's last anonymous /about answer (up to
-    ABOUT_MEMO_SECONDS old), or None; asks for a newer one when it is past
-    MICRO_FRESH_SECONDS or missing."""
     target = ("/api/repo/%s/%s/about" % (owner, repo)).lower()
     try:
         now = asyncio.get_running_loop().time()
@@ -1155,8 +1127,6 @@ def _count_label(value):
 def _tabs(base, about, counts, selected="code"):
     features = (about or {}).get("features") or {}
     shown = []
-    # Without a remembered /about the features are not known; the tabs a
-    # repository has by default are drawn, so the strip does not grow later.
     for key, label, icon, count_key in TABS:
         if key in ("issues", "pulls", "discussions") and features.get(key) is False:
             continue
@@ -1261,7 +1231,6 @@ def _title_row(repo, base, about):
 
 
 def _languages_html(ranked):
-    """renderRepoAboutLanguages' bar and legend, or None."""
     total = sum(weight for _, weight in ranked)
     if not ranked or not total:
         return None
@@ -1287,7 +1256,6 @@ AVATAR_CLASS = ("relative flex h-7 w-7 shrink-0 items-center justify-center over
 
 
 def _contributors_html(people, base, raw):
-    """renderRepoAboutRoster / renderRepoAboutContributors: (count, list)."""
     total = int(people["total"]) or len(people["rows"])
     avatars = []
     for row in people["rows"]:

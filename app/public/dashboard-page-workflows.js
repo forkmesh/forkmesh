@@ -1473,7 +1473,7 @@
     if (failed) {
       const step = wfCore(failed.type)?.desktopStep;
       if (step) {
-        lines.push("", `"${failed.name}" is a desktop step. The ForkMesh desktop app (MainWindow::runLocalControlFreeDiskSpace) runs \`python3 -u <checkout>/tools/free_disk_space.py --execute --step ${step} --repo <checkout> --json\` and reports the last line it printed as the error. \`python3 tools/free_disk_space.py --step ${step}\` repeats it as a dry run that deletes nothing. See docs/tools/free-disk-space.md and docs/app/workflows.md.`);
+        lines.push("", `"${failed.name}" is a desktop step. The ${desktopBrand()}desktop app (MainWindow::runLocalControlFreeDiskSpace) runs \`python3 -u <checkout>/tools/free_disk_space.py --execute --step ${step} --repo <checkout> --json\` and reports the last line it printed as the error. \`python3 tools/free_disk_space.py --step ${step}\` repeats it as a dry run that deletes nothing. See docs/tools/free-disk-space.md and docs/app/workflows.md.`);
       } else {
         lines.push("", `Settings of "${failed.name}": ${wfShort(JSON.stringify(wfRedactParams(failed.params || {})), WF_FAILURE_PARAMS_MAX)}`, "See docs/app/workflows.md for how steps run.");
       }

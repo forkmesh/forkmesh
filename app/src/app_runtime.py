@@ -4903,15 +4903,18 @@ class Default:
                 "<meta property=\"og:image\" content=\"%s\">"
                 "<meta property=\"og:image:width\" content=\"%d\">"
                 "<meta property=\"og:image:height\" content=\"%d\">"
+                "<meta property=\"og:image:type\" content=\"image/png\">"
+                "<meta property=\"og:image:alt\" content=\"%s\">"
                 "<meta name=\"twitter:card\" content=\"summary_large_image\">"
                 "<meta name=\"twitter:title\" content=\"%s\">"
                 "<meta name=\"twitter:description\" content=\"%s\">"
                 "<meta name=\"twitter:image\" content=\"%s\">"
+                "<meta name=\"twitter:image:alt\" content=\"%s\">"
                 % (canonical, fedi_profile,
                    fediverse_origin, quote(owner), quote(repo),
                    site_name, canonical, title, _html_escape(og_description), og_image,
-                   og_card.CARD_W, og_card.CARD_H,
-                   title, _html_escape(og_description), og_image))
+                   og_card.CARD_W, og_card.CARD_H, title,
+                   title, _html_escape(og_description), og_image, title))
             body = body.replace("</head>", tags + "</head>", 1)
         if short_name and owner and "</head>" in body:
             short_metas = (

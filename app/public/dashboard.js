@@ -14789,7 +14789,6 @@
     }
 
     if (entries === null) {
-      // Still reading the folder: no "empty" claim, and no rows to grow from.
     } else if (entries.length) {
       rows.push(entries.map((entry) => {
         const isTree = entry.type === "tree";
@@ -17864,12 +17863,7 @@
     if (!background) setRepoTab("code");
     treePanel?.classList.remove("hidden");
     viewer?.classList.add("hidden");
-    // The README box sits under the file table, which grows from the skeleton
-    // to the real row count; it stays out of the layout until the rows are in
-    // so it never jumps down the page (it only opens at the repository root).
     readmePanel?.classList.add("hidden");
-    // On a narrow screen the About rail stacks under the file table and the
-    // README; it joins the page once both have their final height (shell.html).
     const contentGrid = detail.querySelector("[data-repo-content-grid]");
     if (!background) contentGrid?.setAttribute("data-repo-tree-pending", "");
     setRepoExplorerFocusMode(Boolean(path));
@@ -29144,11 +29138,6 @@
     return base.toLowerCase() === repoApiBase(repo).toLowerCase() ? seed : null;
   }
 
-  // The About rail's reads the node made while rendering the page (stats, the
-  // .forkmesh listing, the contributor roster; repo_ssr_about.py). Handed to
-  // the read seeds, they answer the rail's loaders without a request, so
-  // loadRepoAboutRail can draw the rail in the frame the dashboard takes the
-  // page over (scheduleRepoAboutRail) instead of after an idle callback.
   let repoFirstViewReadsTaken = false;
   let repoFirstViewReadsSeeded = false;
   function seedRepoFirstViewReads(repo) {
@@ -29156,8 +29145,6 @@
     const seed = repoFirstViewSeed(repo);
     if (!seed || !seed.reads || typeof seed.reads !== "object") return false;
     if (seed.tree?.commit !== seed.commit) return false;
-    // Once per page load: a later redraw must not bring back answers the
-    // rail already used.
     repoFirstViewReadsTaken = true;
     mergeRepoReadSeeds({
       base: repoApiBase(repo).toLowerCase(),
@@ -30300,8 +30287,6 @@
     } catch (_) { /* no releases — section stays hidden */ }
   }
 
-  // A refresh that brings the same rail must not rebuild it: replacing equal
-  // markup re-requests its avatars and flickers them.
   function setHtmlIfChanged(element, markup) {
     if (element.dataset?.renderedHtml === markup) return;
     element.innerHTML = markup;
@@ -50579,7 +50564,7 @@
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=b3986bf8501f",
     "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",
-    "workflows": "/dashboard-page-workflows.js?v=9cec7cd9e87f",
+    "workflows": "/dashboard-page-workflows.js?v=37375cef53b2",
   };
   const dashboardChunkScope = {
     $,
