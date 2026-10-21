@@ -47,11 +47,11 @@ calls off.
 
 When the client's call server goes away (the WebSocket closes, the peer
 connection fails, or the server reports an error other than `room_full`),
-`chat-group-calls.js` keeps the camera, microphone, key and encryption worker,
+`chat-group-calls.js` keeps the camera, microphone and encryption worker,
 says `group-call-presence` `out` for the old peer id, asks for a new ticket
 (which now names a surviving server) and joins again, after 1, 2, 4, 8 and
 16 s, then gives up. Everybody in that call does the same and meets on the new
-server; keys are re-shared on joining as usual. The panel says
+server; every join draws and shares a new key (see "Keys" below). The panel says
 "Reconnecting…" meanwhile. `TestAGroupCallMovesToASurvivingNodeWhenItsNodeDies`
 (`server/rtc/sfu`) kills the server under a three-browser encrypted call and
 checks that all three decode each other again on the other one.
@@ -67,6 +67,26 @@ in the channel's own end-to-end encrypted room with non-persisted frames:
   people" with Join buttons to members who are not in the call.
 - The name shown on a tile is the sealed frame's sender, so it is as
   trustworthy as the chat message author.
+- **A peer id belongs to its first sender.** The first `group-call-presence`
+  or `group-call-key` frame for a peer id in a conversation binds that peer id
+  to the frame's sender name. Every later presence, `out` or key frame for that
+  peer id from a different sender is ignored, so one member cannot drop
+  another from the roster, rename their tile or replace their key. The binding
+  lasts until its sender says `out` (which also forgets that peer's key) or is
+  not heard from for 60 s. Frames whose sender name is empty are ignored
+  altogether. A participant announces its random per-join peer id right after
+  `joined`, so the window in which another member could claim it first is
+  short (the id also shows as the stream's `msid` to people already in the
+  call). A member who wins that race can blank that participant's tile, since
+  the owner's key is then ignored, but cannot speak as them: the stream under
+  that peer id still carries the owner's media, which the claimed key does not
+  open. The same rule
+  is in `chat-group-calls.js` (`claim`), `GroupCallRoster` in
+  `native/ios/ForkMeshCore/Sources/FMChat/Group/GroupCalls.swift` and
+  `GroupCallRoster` in
+  `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/chat/GroupCalls.kt`,
+  each with a test (`app/tests/test_chat_group_calls_client.py`,
+  `GroupCallsTests`, `GroupCallsTest`).
 
 ## Frame encryption
 
@@ -83,17 +103,45 @@ clear.
   tag, then an 8-byte frame counter and a 1-byte key id. The IV is four zero
   bytes and the counter; the readable bytes are the additional data, so they
   cannot be altered either.
-- **Keys.** Each participant draws a random 128-bit key per call and sends it
-  to the channel in a `group-call-key` frame `{peer, keyId, key}` over the
-  room's end-to-end encryption, never to the call server. It sends the key
-  again whenever a new participant appears. A key frame for a peer whose
-  presence names a different sender is ignored.
+- **One counter per sender.** AES-GCM must never see the same key and IV
+  twice, so each sender has exactly one counter, shared by its audio and its
+  video: the browser's single worker counts for both senders, and the iPhone
+  attaches one `RTCFmFrameEncryptor` (one `fm::FrameSendKey`, whose mutex
+  guards the counter; libwebrtc calls `Encrypt` from the audio and the video
+  encoder threads) to both its senders. Until 2026-10-21 the iPhone had one
+  encryptor per sender, each counting from 1 under the same key, so audio frame
+  n and video frame n shared an IV. Installing the key that is already in use
+  keeps the counter running (worker `send-key`, `FrameSendKey::Set`); only a
+  different key starts it again from 1. The worker also handles its messages
+  one at a time, so two installs cannot interleave around a key import.
+- **Keys.** Each participant draws a random 128-bit key and sends it to the
+  channel in a `group-call-key` frame `{peer, keyId, key}` over the room's
+  end-to-end encryption, never to the call server. It draws a new key with the
+  next key id on every `joined`, the first join and every rejoin after a
+  failover alike, installs it and shares it; before 2026-10-21 a rejoin
+  installed the old key again and the counter restarted, repeating IVs. It
+  sends its current key again whenever a new participant appears. A key frame
+  for a peer id bound to a different sender is ignored (see "Who is in the
+  call").
 - **Rotation.** When somebody leaves, every remaining sender draws a new key,
   sends it, and switches to it one second later; receivers keep the last
   three keys per peer. A frame with an unknown key or a failed tag is dropped.
-- **What the server could do.** It could withhold or reorder media, or label
-  one person's stream with another's peer id; the receiver then holds the
-  wrong key and decodes nothing, so it cannot put words in someone's mouth.
+- **Replay window.** Receivers keep, per peer and key id, the highest counter
+  that decrypted and a 1024-entry bitmap of the counters below it (the
+  worker's `fresh`/`mark`; `fm::FrameReplayWindow` in each libwebrtc
+  `FrameDecryptor`, which is per receiver track, so per key id inside it). A
+  frame whose counter is more than 1024 below the highest, or was already
+  seen, is dropped; frames reordered inside the window are accepted. The window
+  moves only after the tag checks, so a forged frame cannot spend a counter.
+  The window is 1024 rather than SFrame's usual 128 because audio and video
+  share the counter (about 80 frames a second together) and a video frame
+  waiting on retransmissions can arrive a second or more after the audio sent
+  with it. Receiving the same key again (senders re-share whenever someone
+  joins) keeps the window; a different key under the same id starts a new one.
+- **What the server could do.** It still cannot decrypt or forge media, and it
+  can no longer replay old frames into the call. It can drop, delay or reorder
+  media, or label one person's stream with another's peer id; the receiver
+  then holds the wrong key and decodes nothing.
 
 ## Limits
 
@@ -103,3 +151,9 @@ clear.
   that participant's key (and sees a blank tile) until they come back.
 - Phones join group calls once the apps carry the native WebRTC engine
   (`docs/server/rtc.md`, "Phone media engine").
+- `app/tests/test_group_call_frame_crypto.py` runs the real worker in node
+  against `fm_frame_crypto.cc` built with OpenSSL: frames cross both ways,
+  replays are dropped and reordering inside the window is accepted on both
+  sides, re-installing the same send key keeps the counter, a new key resets
+  it, and audio and video through one `FrameSendKey` never repeat a counter
+  (`fm_frame_crypto_tool send` / `receive`).

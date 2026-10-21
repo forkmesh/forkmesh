@@ -27,6 +27,7 @@ var (
 type Ticket struct {
 	Room string `json:"room"`
 	Peer string `json:"peer"`
+	Acct string `json:"acct"`
 	Exp  int64  `json:"exp"`
 }
 
@@ -73,7 +74,8 @@ func VerifyTicket(secret []byte, token string, now time.Time) (Ticket, error) {
 	if err := json.Unmarshal(body, &ticket); err != nil {
 		return Ticket{}, ErrTicketMalformed
 	}
-	if !roomPattern.MatchString(ticket.Room) || !peerPattern.MatchString(ticket.Peer) {
+	if !roomPattern.MatchString(ticket.Room) || !peerPattern.MatchString(ticket.Peer) ||
+		!peerPattern.MatchString(ticket.Acct) {
 		return Ticket{}, ErrTicketMalformed
 	}
 	if now.Unix() > ticket.Exp || ticket.Exp > now.Add(2*TicketLifetime).Unix() {

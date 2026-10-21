@@ -1152,7 +1152,7 @@ async def _call_ticket(runtime, account_bi, channel_id, is_admin):
     if _visibility(record) == "public" or _is_notices(record):
         return _response(
             runtime, {"error": "private_channel_required"}, status=409)
-    ticket = await runtime.call_ticket(channel_id)
+    ticket = await runtime.call_ticket(channel_id, account_bi)
     if not ticket:
         return _response(
             runtime, {"error": "calls_unavailable"}, status=503)

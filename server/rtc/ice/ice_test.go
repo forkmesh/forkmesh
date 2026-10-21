@@ -64,21 +64,61 @@ func check(username, password string, nominate bool) ([]byte, [12]byte) {
 	return message.Encode([]byte(password), true), message.TransactionID
 }
 
-func exchange(t *testing.T, conn *net.UDPConn, mux *Mux, packet []byte) *stun.Message {
+const peerPwd = "peer-password-0123456789"
+
+func target(mux *Mux) *net.UDPAddr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: mux.Port()}
+}
+
+func read(t *testing.T, conn *net.UDPConn) ([]byte, *stun.Message) {
 	t.Helper()
-	target := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: mux.Port()}
-	conn.WriteToUDP(packet, target)
 	conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
 	buffer := make([]byte, 1500)
 	n, _, err := conn.ReadFromUDP(buffer)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	message, err := stun.Parse(buffer[:n])
 	if err != nil {
-		t.Fatalf("bad response: %v", err)
+		t.Fatalf("bad stun: %v", err)
 	}
+	return buffer[:n], message
+}
+
+func exchange(t *testing.T, conn *net.UDPConn, mux *Mux, packet []byte) *stun.Message {
+	t.Helper()
+	conn.WriteToUDP(packet, target(mux))
+	_, message := read(t, conn)
 	return message
+}
+
+func answerCheck(t *testing.T, conn *net.UDPConn, mux *Mux, session *Session) bool {
+	t.Helper()
+	raw, message := read(t, conn)
+	if message == nil || message.Type != stun.BindingRequest {
+		return false
+	}
+	username, _ := message.Get(stun.AttrUsername)
+	if string(username) != "peer:"+session.LocalUfrag || !stun.CheckIntegrity(raw, []byte(peerPwd)) {
+		t.Fatalf("verification check %q not signed with the peer's password", username)
+	}
+	response := &stun.Message{Type: stun.BindingSuccess, TransactionID: message.TransactionID}
+	local := conn.LocalAddr().(*net.UDPAddr).AddrPort()
+	response.AddXORMappedAddress(local)
+	conn.WriteToUDP(response.Encode([]byte(peerPwd), true), target(mux))
+	return true
+}
+
+func connect(t *testing.T, conn *net.UDPConn, mux *Mux, session *Session, nominate bool) {
+	t.Helper()
+	request, tid := check(session.LocalUfrag+":peer", session.LocalPwd, nominate)
+	response := exchange(t, conn, mux, request)
+	if response == nil || response.Type != stun.BindingSuccess || response.TransactionID != tid {
+		t.Fatalf("response %+v", response)
+	}
+	if !answerCheck(t, conn, mux, session) {
+		t.Fatal("the mux sent no verification check")
+	}
 }
 
 func waitFor(condition func() bool) bool {
@@ -92,10 +132,18 @@ func waitFor(condition func() bool) bool {
 	return condition()
 }
 
-func TestAValidCheckIsAnsweredAndSelectsThePath(t *testing.T) {
+func selectedPort(session *Session) int {
+	selected, ok := session.Selected()
+	if !ok {
+		return 0
+	}
+	return int(selected.Port())
+}
+
+func TestAPathIsSelectedOnlyAfterThePeerAnswersOurCheck(t *testing.T) {
 	mux := startMux(t)
 	got := &received{}
-	session := mux.NewSession("peer", got.handle)
+	session := mux.NewSession("peer", peerPwd, got.handle)
 	if len(session.LocalUfrag) != 8 || len(session.LocalPwd) != 24 {
 		t.Fatalf("credentials %q %q", session.LocalUfrag, session.LocalPwd)
 	}
@@ -111,14 +159,18 @@ func TestAValidCheckIsAnsweredAndSelectsThePath(t *testing.T) {
 	if err != nil || mapped != netip.AddrPortFrom(local.Addr().Unmap(), local.Port()) {
 		t.Fatalf("mapped %v %v", mapped, err)
 	}
-	selected, ok := session.Selected()
-	if !ok || selected != mapped {
-		t.Fatalf("selected %v %v", selected, ok)
+	if _, ok := session.Selected(); ok {
+		t.Fatal("a check alone selected the path")
 	}
-	target := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: mux.Port()}
-	conn.WriteToUDP([]byte{22, 254, 253, 0}, target)
-	conn.WriteToUDP([]byte{0x80, 111, 0, 1}, target)
-	conn.WriteToUDP([]byte{70, 1, 2}, target)
+	if !answerCheck(t, conn, mux, session) {
+		t.Fatal("no verification check")
+	}
+	if !waitFor(func() bool { return selectedPort(session) == int(mapped.Port()) }) {
+		t.Fatal("an answered check did not select the path")
+	}
+	conn.WriteToUDP([]byte{22, 254, 253, 0}, target(mux))
+	conn.WriteToUDP([]byte{0x80, 111, 0, 1}, target(mux))
+	conn.WriteToUDP([]byte{70, 1, 2}, target(mux))
 	if !waitFor(func() bool { return got.count() == 2 }) {
 		t.Fatalf("delivered %d", got.count())
 	}
@@ -138,7 +190,7 @@ func TestAValidCheckIsAnsweredAndSelectsThePath(t *testing.T) {
 func TestBadChecksAreIgnoredAndOnlyTheSelectedAddressIsHeard(t *testing.T) {
 	mux := startMux(t)
 	got := &received{}
-	session := mux.NewSession("peer", got.handle)
+	session := mux.NewSession("peer", peerPwd, got.handle)
 	conn := client(t)
 	wrongPassword, _ := check(session.LocalUfrag+":peer", "not-the-password-at-all!", true)
 	wrongPeer, _ := check(session.LocalUfrag+":intruder", session.LocalPwd, true)
@@ -154,39 +206,99 @@ func TestBadChecksAreIgnoredAndOnlyTheSelectedAddressIsHeard(t *testing.T) {
 	if err := session.Send([]byte{1}); err != ErrNoPath {
 		t.Fatalf("send without path %v", err)
 	}
-	good, _ := check(session.LocalUfrag+":peer", session.LocalPwd, false)
-	exchange(t, conn, mux, good)
+	connect(t, conn, mux, session, false)
+	home := int(conn.LocalAddr().(*net.UDPAddr).Port)
+	if !waitFor(func() bool { return selectedPort(session) == home }) {
+		t.Fatal("no path")
+	}
 	stranger := client(t)
-	stranger.WriteToUDP([]byte{0x80, 111, 0, 1}, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: mux.Port()})
+	stranger.WriteToUDP([]byte{0x80, 111, 0, 1}, target(mux))
 	time.Sleep(50 * time.Millisecond)
 	if got.count() != 0 {
 		t.Fatal("a stranger's packet was delivered")
 	}
 	moved := client(t)
-	nominated, _ := check(session.LocalUfrag+":peer", session.LocalPwd, true)
-	exchange(t, moved, mux, nominated)
-	selected, _ := session.Selected()
-	if selected.Port() != uint16(moved.LocalAddr().(*net.UDPAddr).Port) {
-		t.Fatal("USE-CANDIDATE did not move the path")
+	connect(t, moved, mux, session, true)
+	away := int(moved.LocalAddr().(*net.UDPAddr).Port)
+	if !waitFor(func() bool { return selectedPort(session) == away }) {
+		t.Fatal("an answered USE-CANDIDATE did not move the path")
 	}
-	conn.WriteToUDP([]byte{0x80, 111, 0, 1}, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: mux.Port()})
+	conn.WriteToUDP([]byte{0x80, 111, 0, 1}, target(mux))
 	time.Sleep(50 * time.Millisecond)
 	if got.count() != 0 {
 		t.Fatal("the old path is still heard")
 	}
 }
 
-func TestConsentExpiresAndClosedSessionsStopAnswering(t *testing.T) {
+func TestAReplayedCheckFromAnotherAddressCannotStealThePath(t *testing.T) {
 	mux := startMux(t)
+	session := mux.NewSession("peer", peerPwd, nil)
+	conn := client(t)
+	connect(t, conn, mux, session, false)
+	home := int(conn.LocalAddr().(*net.UDPAddr).Port)
+	if !waitFor(func() bool { return selectedPort(session) == home }) {
+		t.Fatal("no path")
+	}
+	captured, _ := check(session.LocalUfrag+":peer", session.LocalPwd, true)
+	attacker := client(t)
+	if response := exchange(t, attacker, mux, captured); response == nil {
+		t.Fatal("a valid check went unanswered")
+	}
+	_, verify := read(t, attacker)
+	if verify == nil || verify.Type != stun.BindingRequest {
+		t.Fatal("no verification check to the new address")
+	}
+	forged := &stun.Message{Type: stun.BindingSuccess, TransactionID: verify.TransactionID}
+	forged.AddXORMappedAddress(attacker.LocalAddr().(*net.UDPAddr).AddrPort())
+	attacker.WriteToUDP(forged.Encode([]byte("guessed-password-wrong!!"), true), target(mux))
+	time.Sleep(50 * time.Millisecond)
+	if selectedPort(session) != home {
+		t.Fatal("a forged answer moved the path")
+	}
+}
+
+func TestConsentIsRefreshedByAnsweredProbesAndExpiresWithout(t *testing.T) {
+	mux := startMux(t)
+	var mu sync.Mutex
 	now := time.Unix(1000, 0)
-	mux.now = func() time.Time { return now }
-	session := mux.NewSession("", nil)
-	if session.Expired(now.Add(ConsentTimeout - time.Second)) {
-		t.Fatal("expired early")
+	clock := func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
 	}
-	if !session.Expired(now.Add(ConsentTimeout + time.Second)) {
-		t.Fatal("never expired")
+	advance := func(by time.Duration) time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		now = now.Add(by)
+		return now
 	}
+	mux.now = clock
+	session := mux.NewSession("peer", peerPwd, nil)
+	conn := client(t)
+	connect(t, conn, mux, session, false)
+	if !waitFor(func() bool { return selectedPort(session) != 0 }) {
+		t.Fatal("no path")
+	}
+	for i := 0; i < 8; i++ {
+		at := advance(ConsentInterval)
+		session.Refresh(at)
+		if !answerCheck(t, conn, mux, session) {
+			t.Fatalf("probe %d not sent", i)
+		}
+		time.Sleep(20 * time.Millisecond)
+		if session.Expired(at) {
+			t.Fatalf("expired after answered probe %d", i)
+		}
+	}
+	at := clock()
+	if !session.Expired(at.Add(ConsentTimeout + time.Second)) {
+		t.Fatal("never expired without answers")
+	}
+}
+
+func TestClosedSessionsStopAnswering(t *testing.T) {
+	mux := startMux(t)
+	session := mux.NewSession("", "", nil)
 	conn := client(t)
 	request, _ := check(session.LocalUfrag+":anyone", session.LocalPwd, false)
 	if exchange(t, conn, mux, request) == nil {
@@ -196,7 +308,7 @@ func TestConsentExpiresAndClosedSessionsStopAnswering(t *testing.T) {
 	if exchange(t, conn, mux, request) != nil {
 		t.Fatal("closed session answered")
 	}
-	if !session.Expired(now) {
+	if !session.Expired(time.Now()) {
 		t.Fatal("closed session not expired")
 	}
 }

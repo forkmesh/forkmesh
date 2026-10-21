@@ -34,11 +34,80 @@ fm::FrameKey KeyFrom(const std::string& hex) {
   return key;
 }
 
+struct Step {
+  std::string kind;
+  std::string first;
+  std::string second;
+};
+
+Step Parse(const std::string& token) {
+  Step step;
+  size_t one = token.find(':');
+  step.kind = token.substr(0, one);
+  if (one == std::string::npos) {
+    return step;
+  }
+  size_t two = token.find(':', one + 1);
+  step.first = token.substr(one + 1, two == std::string::npos ? std::string::npos : two - one - 1);
+  if (two != std::string::npos) {
+    step.second = token.substr(two + 1);
+  }
+  return step;
+}
+
+int Send(int argc, char** argv) {
+  fm::FrameSendKey sender;
+  for (int i = 2; i < argc; ++i) {
+    Step step = Parse(argv[i]);
+    if (step.kind == "key") {
+      sender.Set(KeyFrom(step.first), static_cast<uint8_t>(std::atoi(step.second.c_str())));
+      continue;
+    }
+    std::vector<uint8_t> frame = FromHex(step.first);
+    std::vector<uint8_t> out(frame.size() + fm::kFrameOverhead);
+    size_t written = 0;
+    if (!sender.Encrypt(step.kind == "audio", frame, out, &written)) {
+      std::puts("fail");
+      continue;
+    }
+    std::puts(ToHex(out.data(), written).c_str());
+  }
+  return 0;
+}
+
+int Receive(int argc, char** argv) {
+  fm::FrameKeyring ring;
+  for (int i = 2; i < argc; ++i) {
+    Step step = Parse(argv[i]);
+    if (step.kind == "key") {
+      ring.Set(static_cast<uint8_t>(std::atoi(step.second.c_str())), KeyFrom(step.first));
+      continue;
+    }
+    std::vector<uint8_t> encrypted = FromHex(step.first);
+    std::vector<uint8_t> out(encrypted.size());
+    size_t written = 0;
+    if (!ring.Decrypt(step.kind == "audio", encrypted, out, &written)) {
+      std::puts("fail");
+      continue;
+    }
+    std::puts(ToHex(out.data(), written).c_str());
+  }
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc >= 2 && std::string(argv[1]) == "send") {
+    return Send(argc, argv);
+  }
+  if (argc >= 2 && std::string(argv[1]) == "receive") {
+    return Receive(argc, argv);
+  }
   if (argc < 5) {
-    std::fprintf(stderr, "usage: encrypt audio|video KEY KEYID COUNTER FRAME | decrypt audio|video KEY FRAME\n");
+    std::fprintf(stderr,
+                 "usage: encrypt audio|video KEY KEYID COUNTER FRAME | decrypt audio|video KEY FRAME | "
+                 "send key:KEY:KEYID|audio:FRAME|video:FRAME... | receive key:KEY:KEYID|audio:FRAME|video:FRAME...\n");
     return 2;
   }
   std::string mode = argv[1];

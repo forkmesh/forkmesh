@@ -2,6 +2,7 @@
 #define FM_FRAME_CRYPTO_H_
 
 #include <array>
+#include <bitset>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -17,6 +18,7 @@ constexpr size_t kFrameCounterBytes = 8;
 constexpr size_t kFrameTrailerBytes = kFrameCounterBytes + 1;
 constexpr size_t kFrameOverhead = kFrameTagBytes + kFrameTrailerBytes;
 constexpr size_t kFrameKeysKept = 3;
+constexpr size_t kFrameReplayWindow = 1024;
 
 using FrameKey = std::array<uint8_t, kFrameKeyBytes>;
 
@@ -38,6 +40,19 @@ bool DecryptFrame(bool audio,
 
 bool FrameKeyId(std::span<const uint8_t> encrypted, uint8_t* key_id);
 
+bool FrameCounter(std::span<const uint8_t> encrypted, uint64_t* counter);
+
+class FrameReplayWindow {
+ public:
+  bool Fresh(uint64_t counter) const;
+  void Mark(uint64_t counter);
+
+ private:
+  bool started_ = false;
+  uint64_t top_ = 0;
+  std::bitset<kFrameReplayWindow> seen_;
+};
+
 class FrameSendKey {
  public:
   void Set(const FrameKey& key, uint8_t key_id);
@@ -58,8 +73,13 @@ class FrameKeyring {
   bool Decrypt(bool audio, std::span<const uint8_t> encrypted, std::span<uint8_t> out, size_t* written);
 
  private:
+  struct Entry {
+    FrameKey key{};
+    FrameReplayWindow window;
+  };
+
   std::mutex mutex_;
-  std::map<uint8_t, FrameKey> keys_;
+  std::map<uint8_t, Entry> keys_;
   std::vector<uint8_t> order_;
 };
 

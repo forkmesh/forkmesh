@@ -64,6 +64,42 @@ final class GroupCallsTests: XCTestCase {
         XCTAssertEqual(roster.keys("#team")[Self.ana]?.keyId, 4)
     }
 
+    @MainActor func testAPeerIdStaysWithTheFirstSenderThatClaimedIt() async {
+        var clock: TimeInterval = 1000
+        let roster = GroupCallRoster(now: { clock })
+        let cat = String(repeating: "c", count: 32)
+        func presence(_ peer: String, _ sender: String, _ state: String = "in") -> GroupCallFrameEvent? {
+            roster.handle(frame(GroupCallFrames.presenceType, peer: peer, sender: sender, extra: ["call": .string(state)]),
+                conversation: "#team", selfPeer: Self.ben)
+        }
+        func key(_ peer: String, _ sender: String, _ keyId: Int) -> GroupCallFrameEvent? {
+            var plain = frame(GroupCallFrames.keyType, peer: peer, sender: sender)
+            for (field, value) in GroupCallFrames.key(peer: peer, keyId: keyId, raw: [UInt8](repeating: UInt8(keyId), count: 16)) {
+                plain[field] = value
+            }
+            return roster.handle(plain, conversation: "#team", selfPeer: Self.ben)
+        }
+        XCTAssertEqual(presence(Self.ana, "Ana"), .joined(peer: Self.ana, isNew: true))
+        XCTAssertNil(presence(Self.ana, "mallory", "out"))
+        XCTAssertNil(presence(Self.ana, "mallory"))
+        XCTAssertNil(key(Self.ana, "mallory", 1))
+        XCTAssertEqual(roster.roster("#team"), [GroupCallMember(peer: Self.ana, name: "ana")])
+        XCTAssertNil(roster.keys("#team")[Self.ana])
+        XCTAssertNotNil(key(Self.ana, "ana", 2))
+        XCTAssertNil(presence(cat, ""))
+        XCTAssertNil(presence(cat, "  "))
+        XCTAssertNil(key(cat, "", 3))
+        XCTAssertNotNil(key(cat, "cat", 3))
+        XCTAssertNil(presence(cat, "mallory"))
+        XCTAssertEqual(presence(cat, "cat"), .joined(peer: cat, isNew: true))
+        XCTAssertEqual(presence(Self.ana, "ana", "out"), .left(peer: Self.ana))
+        XCTAssertNil(roster.keys("#team")[Self.ana])
+        XCTAssertEqual(presence(Self.ana, "mallory"), .joined(peer: Self.ana, isNew: true))
+        clock += GroupCallFrames.presenceTTL + 1
+        XCTAssertEqual(presence(cat, "dan"), .joined(peer: cat, isNew: false))
+        XCTAssertEqual(roster.roster("#team"), [GroupCallMember(peer: cat, name: "dan")])
+    }
+
     func testTicketsNeedASecureURLAndAPeerId() {
         XCTAssertNotNil(GroupCallTicket(json: ["ticket": "t", "url": "wss://n2.next.forkmesh.com/calls/ws", "peer": .string(Self.ana)]))
         XCTAssertNil(GroupCallTicket(json: ["ticket": "t", "url": "ws://x/calls/ws", "peer": .string(Self.ana)]))

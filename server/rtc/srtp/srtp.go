@@ -96,7 +96,8 @@ type sessionKeys struct {
 }
 
 type txRTPState struct {
-	index uint64
+	index  uint64
+	sealed replayWindow
 }
 
 type rxState struct {

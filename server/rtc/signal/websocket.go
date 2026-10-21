@@ -16,14 +16,15 @@ import (
 )
 
 const (
-	MaxMessageBytes = 256 * 1024
-	websocketGUID   = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-	opContinuation  = 0x0
-	opText          = 0x1
-	opBinary        = 0x2
-	opClose         = 0x8
-	opPing          = 0x9
-	opPong          = 0xA
+	MaxMessageBytes  = 64 * 1024
+	JoinMessageBytes = 4 * 1024
+	websocketGUID    = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	opContinuation   = 0x0
+	opText           = 0x1
+	opBinary         = 0x2
+	opClose          = 0x8
+	opPing           = 0x9
+	opPong           = 0xA
 )
 
 var (
@@ -39,6 +40,7 @@ type Conn struct {
 	reader  *bufio.Reader
 	writeMu sync.Mutex
 	closed  bool
+	limit   int
 }
 
 func Upgrade(w http.ResponseWriter, r *http.Request, allowOrigin func(string) bool) (*Conn, error) {
@@ -80,7 +82,13 @@ func Upgrade(w http.ResponseWriter, r *http.Request, allowOrigin func(string) bo
 		conn.Close()
 		return nil, err
 	}
-	return &Conn{conn: conn, reader: buffered.Reader}, nil
+	return &Conn{conn: conn, reader: buffered.Reader, limit: JoinMessageBytes}, nil
+}
+
+func (c *Conn) SetLimit(bytes int) {
+	if bytes > 0 && bytes <= MaxMessageBytes {
+		c.limit = bytes
+	}
 }
 
 func headerHasToken(header http.Header, name, token string) bool {
@@ -154,7 +162,7 @@ func (c *Conn) readMessage() ([]byte, error) {
 			if messageOp == 0 {
 				return nil, ErrProtocol
 			}
-			if len(message)+len(payload) > MaxMessageBytes {
+			if len(message)+len(payload) > c.limit {
 				return nil, ErrMessageTooBig
 			}
 			message = append(message, payload...)
@@ -201,7 +209,7 @@ func (c *Conn) readFrame() (bool, byte, []byte, error) {
 	if op >= opClose && (length > 125 || !fin) {
 		return false, 0, nil, ErrProtocol
 	}
-	if length > MaxMessageBytes {
+	if length > uint64(c.limit) {
 		return false, 0, nil, ErrMessageTooBig
 	}
 	var mask [4]byte

@@ -48,6 +48,35 @@ class GroupCallsTest {
         assertEq(4, roster.keys("#team")[ana]?.keyId)
     }
 
+    fun testAPeerIdStaysWithTheFirstSenderThatClaimedIt() {
+        var clock = 1_000_000L
+        val roster = GroupCallRoster { clock }
+        val cat = "c".repeat(32)
+        fun presence(peer: String, sender: String, state: String = "in") =
+            roster.handle(frame(GroupCallFrames.PRESENCE_TYPE, peer, sender, "call" to state), "#team", ben)
+        fun key(peer: String, sender: String, keyId: Int) =
+            roster.handle(frame(GroupCallFrames.KEY_TYPE, peer, sender) + GroupCallFrames.key(peer, keyId, ByteArray(16) { keyId.toByte() }), "#team", ben)
+        assertEq(GroupCallFrameEvent.Joined(ana, true), presence(ana, "Ana"))
+        assertEq(null, presence(ana, "mallory", "out"))
+        assertEq(null, presence(ana, "mallory"))
+        assertEq(null, key(ana, "mallory", 1))
+        assertEq(listOf(GroupCallMember(ana, "ana")), roster.roster("#team"))
+        assertEq(null, roster.keys("#team")[ana])
+        assertEq(true, key(ana, "ana", 2) != null)
+        assertEq(null, presence(cat, ""))
+        assertEq(null, presence(cat, "  "))
+        assertEq(null, key(cat, "", 3))
+        assertEq(true, key(cat, "cat", 3) != null)
+        assertEq(null, presence(cat, "mallory"))
+        assertEq(GroupCallFrameEvent.Joined(cat, true), presence(cat, "cat"))
+        assertEq(GroupCallFrameEvent.Left(ana), presence(ana, "ana", "out"))
+        assertEq(null, roster.keys("#team")[ana])
+        assertEq(GroupCallFrameEvent.Joined(ana, true), presence(ana, "mallory"))
+        clock += GroupCallFrames.PRESENCE_TTL_MS + 1
+        assertEq(GroupCallFrameEvent.Joined(cat, false), presence(cat, "dan"))
+        assertEq(listOf(GroupCallMember(cat, "dan")), roster.roster("#team"))
+    }
+
     fun testTicketsNeedASecureUrlAndAPeerId() {
         assertEq(true, GroupCallTicket.from(mapOf("ticket" to "t", "url" to "wss://n2.next.forkmesh.com/calls/ws", "peer" to ana)) != null)
         assertEq(null, GroupCallTicket.from(mapOf("ticket" to "t", "url" to "ws://x/calls/ws", "peer" to ana)))

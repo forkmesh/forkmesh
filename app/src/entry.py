@@ -11247,10 +11247,18 @@ def chat_call_room(secret, channel_id):
         "sha256").hexdigest()
 
 
-def chat_call_ticket(secret, channel_id, peer, now_ms):
+def chat_call_account(secret, account_bi):
+    return hmac.new(
+        secret.encode(),
+        ("forkmesh-call-account-v1\n" + str(account_bi)).encode(),
+        "sha256").hexdigest()[:32]
+
+
+def chat_call_ticket(secret, channel_id, peer, now_ms, account_bi):
     room = chat_call_room(secret, channel_id)
     body = json.dumps(
         {"room": room, "peer": peer,
+         "acct": chat_call_account(secret, account_bi),
          "exp": int((now_ms + CHAT_CALL_TICKET_TTL_MS) // 1000)},
         separators=(",", ":")).encode()
     payload = base64.urlsafe_b64encode(body).decode().rstrip("=")
@@ -11294,7 +11302,7 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
         return bytes(
             js_crypto.getRandomValues(Uint8Array.new(32)).to_py()).hex()
 
-    async def call_ticket(self, channel_id):
+    async def call_ticket(self, channel_id, account_bi):
         secret = str(getattr(self.env, "FORKMESH_CALLS_SECRET", "") or "")
         nodes = chat_call_nodes(
             getattr(self.env, "FORKMESH_CALLS_NODES", "") or "")
@@ -11302,7 +11310,8 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
             return None
         peer = bytes(
             js_crypto.getRandomValues(Uint8Array.new(16)).to_py()).hex()
-        ticket = chat_call_ticket(secret, channel_id, peer, int(Date.now()))
+        ticket = chat_call_ticket(
+            secret, channel_id, peer, int(Date.now()), account_bi)
         ticket["url"] = chat_call_pick(
             ticket["room"], nodes, await _chat_call_healthy(nodes))
         return ticket

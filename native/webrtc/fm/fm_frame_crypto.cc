@@ -133,6 +133,46 @@ bool FrameKeyId(std::span<const uint8_t> encrypted, uint8_t* key_id) {
   return true;
 }
 
+bool FrameCounter(std::span<const uint8_t> encrypted, uint64_t* counter) {
+  if (encrypted.size() < kFrameOverhead + 1) {
+    return false;
+  }
+  uint64_t value = 0;
+  for (uint8_t byte : encrypted.last(kFrameTrailerBytes).first(kFrameCounterBytes)) {
+    value = (value << 8) | byte;
+  }
+  *counter = value;
+  return true;
+}
+
+bool FrameReplayWindow::Fresh(uint64_t counter) const {
+  if (!started_ || counter > top_) {
+    return true;
+  }
+  uint64_t age = top_ - counter;
+  return age < kFrameReplayWindow && !seen_.test(static_cast<size_t>(age));
+}
+
+void FrameReplayWindow::Mark(uint64_t counter) {
+  if (!started_) {
+    started_ = true;
+    top_ = counter;
+    seen_.reset();
+    seen_.set(0);
+  } else if (counter > top_) {
+    uint64_t shift = counter - top_;
+    if (shift >= kFrameReplayWindow) {
+      seen_.reset();
+    } else {
+      seen_ <<= static_cast<size_t>(shift);
+    }
+    seen_.set(0);
+    top_ = counter;
+  } else if (top_ - counter < kFrameReplayWindow) {
+    seen_.set(static_cast<size_t>(top_ - counter));
+  }
+}
+
 bool DecryptFrame(bool audio,
                   const FrameKey& key,
                   std::span<const uint8_t> encrypted,
@@ -165,27 +205,41 @@ bool DecryptFrame(bool audio,
 
 void FrameSendKey::Set(const FrameKey& key, uint8_t key_id) {
   std::lock_guard<std::mutex> lock(mutex_);
-  key_ = key;
   key_id_ = key_id;
+  if (ready_ && key_ == key) {
+    return;
+  }
+  key_ = key;
   counter_ = 0;
   ready_ = true;
 }
 
 bool FrameSendKey::Encrypt(bool audio, std::span<const uint8_t> frame, std::span<uint8_t> out, size_t* written) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (!ready_) {
-    return false;
+  FrameKey key;
+  uint8_t key_id = 0;
+  uint64_t counter = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!ready_) {
+      return false;
+    }
+    ++counter_;
+    key = key_;
+    key_id = key_id_;
+    counter = counter_;
   }
-  ++counter_;
-  return EncryptFrame(audio, key_, key_id_, counter_, frame, out, written);
+  return EncryptFrame(audio, key, key_id, counter, frame, out, written);
 }
 
 void FrameKeyring::Set(uint8_t key_id, const FrameKey& key) {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (keys_.count(key_id) == 0) {
-    order_.push_back(key_id);
+  auto found = keys_.find(key_id);
+  if (found != keys_.end() && found->second.key == key) {
+    return;
   }
-  keys_[key_id] = key;
+  std::erase(order_, key_id);
+  order_.push_back(key_id);
+  keys_[key_id] = Entry{key, FrameReplayWindow()};
   while (order_.size() > kFrameKeysKept) {
     keys_.erase(order_.front());
     order_.erase(order_.begin());
@@ -200,19 +254,31 @@ void FrameKeyring::Clear() {
 
 bool FrameKeyring::Decrypt(bool audio, std::span<const uint8_t> encrypted, std::span<uint8_t> out, size_t* written) {
   uint8_t key_id = 0;
-  if (!FrameKeyId(encrypted, &key_id)) {
+  uint64_t counter = 0;
+  if (!FrameKeyId(encrypted, &key_id) || !FrameCounter(encrypted, &counter)) {
     return false;
   }
   FrameKey key;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto found = keys_.find(key_id);
-    if (found == keys_.end()) {
+    if (found == keys_.end() || !found->second.window.Fresh(counter)) {
       return false;
     }
-    key = found->second;
+    key = found->second.key;
   }
-  return DecryptFrame(audio, key, encrypted, out, written);
+  size_t opened = 0;
+  if (!DecryptFrame(audio, key, encrypted, out, &opened)) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto found = keys_.find(key_id);
+  if (found == keys_.end() || found->second.key != key || !found->second.window.Fresh(counter)) {
+    return false;
+  }
+  found->second.window.Mark(counter);
+  *written = opened;
+  return true;
 }
 
 }  // namespace fm

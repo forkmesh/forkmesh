@@ -13,6 +13,8 @@ const (
 	joinTimeout = 10 * time.Second
 	idleTimeout = 60 * time.Second
 	tickEvery   = 100 * time.Millisecond
+	MaxSockets  = 1000
+	MaxWaiting  = 200
 )
 
 type clientMessage struct {
@@ -28,7 +30,7 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("/calls/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "rooms": s.Rooms()})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	})
 	return routes
 }
@@ -47,6 +49,23 @@ func (s *Server) Run(ctx context.Context) {
 }
 
 func (s *Server) serveSocket(w http.ResponseWriter, r *http.Request) {
+	if s.sockets.Add(1) > MaxSockets {
+		s.sockets.Add(-1)
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+		return
+	}
+	defer s.sockets.Add(-1)
+	if s.waiting.Add(1) > MaxWaiting {
+		s.waiting.Add(-1)
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+		return
+	}
+	waiting := true
+	defer func() {
+		if waiting {
+			s.waiting.Add(-1)
+		}
+	}()
 	conn, err := signal.Upgrade(w, r, s.cfg.AllowOrigin)
 	if err != nil {
 		return
@@ -63,14 +82,15 @@ func (s *Server) serveSocket(w http.ResponseWriter, r *http.Request) {
 		_ = conn.WriteJSON(map[string]any{"type": "error", "error": "ticket_invalid"})
 		return
 	}
-	room := s.room(ticket.Room)
-	participant, others, err := room.join(ticket.Peer)
+	room, participant, others, err := s.join(ticket.Room, ticket.Peer, ticket.Acct)
 	if err != nil {
 		_ = conn.WriteJSON(map[string]any{"type": "error", "error": "room_full"})
-		s.dropRoomIfEmpty(room)
 		return
 	}
 	defer room.leave(participant)
+	waiting = false
+	s.waiting.Add(-1)
+	conn.SetLimit(signal.MaxMessageBytes)
 	go func(out chan outgoing) {
 		for message := range out {
 			if err := conn.WriteJSON(message.message); err != nil {

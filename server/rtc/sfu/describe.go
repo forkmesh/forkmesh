@@ -115,7 +115,6 @@ func codecLines(lines []string, kind string, pt uint8) []string {
 		"a=rtpmap:"+p+" VP8/90000",
 		"a=rtcp-fb:"+p+" goog-remb",
 		"a=rtcp-fb:"+p+" ccm fir",
-		"a=rtcp-fb:"+p+" nack",
 		"a=rtcp-fb:"+p+" nack pli",
 	)
 }

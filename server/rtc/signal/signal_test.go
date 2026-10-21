@@ -24,7 +24,7 @@ func TestTicketRoundTripAndRefusals(t *testing.T) {
 	if len(room) != 64 || room == RoomID([]byte("other"), "0123456789abcdef0123456789abcdef") {
 		t.Fatalf("room id %q", room)
 	}
-	ticket := Ticket{Room: room, Peer: NewPeerID(), Exp: now.Add(TicketLifetime).Unix()}
+	ticket := Ticket{Room: room, Peer: NewPeerID(), Acct: NewPeerID(), Exp: now.Add(TicketLifetime).Unix()}
 	token := MintTicket(secret, ticket)
 	got, err := VerifyTicket(secret, token, now)
 	if err != nil || got != ticket {
@@ -36,7 +36,7 @@ func TestTicketRoundTripAndRefusals(t *testing.T) {
 	if _, err := VerifyTicket(secret, token, now.Add(2*TicketLifetime)); err != ErrTicketExpired {
 		t.Fatalf("expired %v", err)
 	}
-	far := MintTicket(secret, Ticket{Room: room, Peer: ticket.Peer, Exp: now.Add(time.Hour).Unix()})
+	far := MintTicket(secret, Ticket{Room: room, Peer: ticket.Peer, Acct: ticket.Acct, Exp: now.Add(time.Hour).Unix()})
 	if _, err := VerifyTicket(secret, far, now); err != ErrTicketExpired {
 		t.Fatalf("too long lived %v", err)
 	}
@@ -46,7 +46,10 @@ func TestTicketRoundTripAndRefusals(t *testing.T) {
 	if _, err := VerifyTicket(secret, string(flipped)+"."+signature, now); err == nil {
 		t.Fatal("tampered payload accepted")
 	}
-	bad := MintTicket(secret, Ticket{Room: "../room", Peer: ticket.Peer, Exp: ticket.Exp})
+	bad := MintTicket(secret, Ticket{Room: "../room", Peer: ticket.Peer, Acct: ticket.Acct, Exp: ticket.Exp})
+	if _, err := VerifyTicket(secret, MintTicket(secret, Ticket{Room: room, Peer: ticket.Peer, Exp: ticket.Exp}), now); err != ErrTicketMalformed {
+		t.Fatalf("ticket without an account %v", err)
+	}
 	if _, err := VerifyTicket(secret, bad, now); err != ErrTicketMalformed {
 		t.Fatalf("bad room %v", err)
 	}
@@ -62,7 +65,11 @@ type testClient struct {
 	reader *bufio.Reader
 }
 
-func dial(t *testing.T, server *httptest.Server, origin string) (*testClient, int) {
+func dial(t *testing.T, server *httptest.Server, origin string, queries ...string) (*testClient, int) {
+	query := ""
+	if len(queries) > 0 {
+		query = queries[0]
+	}
 	t.Helper()
 	conn, err := net.Dial("tcp", strings.TrimPrefix(server.URL, "http://"))
 	if err != nil {
@@ -71,7 +78,7 @@ func dial(t *testing.T, server *httptest.Server, origin string) (*testClient, in
 	var raw [16]byte
 	rand.Read(raw[:])
 	key := base64.StdEncoding.EncodeToString(raw[:])
-	request := "GET /calls/ws HTTP/1.1\r\nHost: test\r\nUpgrade: websocket\r\nConnection: keep-alive, Upgrade\r\n" +
+	request := "GET /calls/ws" + query + " HTTP/1.1\r\nHost: test\r\nUpgrade: websocket\r\nConnection: keep-alive, Upgrade\r\n" +
 		"Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: " + key + "\r\nOrigin: " + origin + "\r\n\r\n"
 	conn.Write([]byte(request))
 	reader := bufio.NewReader(conn)
@@ -148,6 +155,9 @@ func echoServer(t *testing.T, results chan error) *httptest.Server {
 			return
 		}
 		defer conn.Close()
+		if r.URL.Query().Get("joined") != "" {
+			conn.SetLimit(MaxMessageBytes)
+		}
 		for {
 			var message map[string]any
 			if err := conn.ReadJSON(&message); err != nil {
@@ -167,7 +177,7 @@ func TestWebSocketEchoesJSONAndAnswersPings(t *testing.T) {
 	results := make(chan error, 4)
 	server := echoServer(t, results)
 	defer server.Close()
-	client, status := dial(t, server, "https://app.example")
+	client, status := dial(t, server, "https://app.example", "?joined=1")
 	if status != http.StatusSwitchingProtocols {
 		t.Fatalf("status %d", status)
 	}
@@ -185,9 +195,9 @@ func TestWebSocketEchoesJSONAndAnswersPings(t *testing.T) {
 	if op != opText || reply["type"] != "join" || reply["echo"] != true {
 		t.Fatalf("echo %d %s", op, payload)
 	}
-	big := `{"type":"offer","sdp":"` + strings.Repeat("x", 70000) + `"}`
+	big := `{"type":"offer","sdp":"` + strings.Repeat("x", 60000) + `"}`
 	client.send(opText, true, []byte(big), true)
-	if op, payload := client.receive(t); op != opText || len(payload) < 70000 {
+	if op, payload := client.receive(t); op != opText || len(payload) < 60000 {
 		t.Fatalf("big echo %d %d", op, len(payload))
 	}
 	client.send(opClose, true, nil, true)
@@ -212,6 +222,11 @@ func TestWebSocketRefusesBadOriginUnmaskedAndOversize(t *testing.T) {
 		t.Fatalf("unmasked %v", err)
 	}
 	client, _ = dial(t, server, "https://app.example")
+	client.send(opText, true, make([]byte, JoinMessageBytes+1), true)
+	if err := <-results; err != ErrMessageTooBig {
+		t.Fatalf("oversize before join %v", err)
+	}
+	client, _ = dial(t, server, "https://app.example", "?joined=1")
 	client.send(opText, true, make([]byte, MaxMessageBytes+1), true)
 	if err := <-results; err != ErrMessageTooBig {
 		t.Fatalf("oversize %v", err)
@@ -225,13 +240,14 @@ func TestWebSocketRefusesBadOriginUnmaskedAndOversize(t *testing.T) {
 
 func TestTheAppServersTicketIsAcceptedAsMinted(t *testing.T) {
 	appSecret := []byte("browser-test-secret-0123456789abcdef")
-	minted := "eyJyb29tIjoiMjA5MDU0YzFjNjhkMzI1YzE0OWQ2NjdhZGMwZGY1ZjYwYjBmMGIzNTE0YzY1MWVhOGJiODhkNzE1NjQwYjk1ZSIsInBlZXIiOiJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYiIsImV4cCI6MTgwMDAwMDA2MH0.eq6TkYD-Bi8gljNRwWNVEBm0nk624YO2ndgxdkHven4"
+	minted := "eyJyb29tIjoiMjA5MDU0YzFjNjhkMzI1YzE0OWQ2NjdhZGMwZGY1ZjYwYjBmMGIzNTE0YzY1MWVhOGJiODhkNzE1NjQwYjk1ZSIsInBlZXIiOiJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYiIsImFjY3QiOiJkYjQ0MGY1MDE3YTc1YjNjNzM3OTA3ZTIzYzNkNzhmMSIsImV4cCI6MTgwMDAwMDA2MH0._SwoxYSH23v-fsxGRbL66itpXI8mLo_MLfma9EB3U9Y"
 	room := RoomID(appSecret, "0123456789abcdef0123456789abcdef")
 	if room != "209054c1c68d325c149d667adc0df5f60b0f0b3514c651ea8bb88d715640b95e" {
 		t.Fatalf("room %s", room)
 	}
 	ticket, err := VerifyTicket(appSecret, minted, time.Unix(1_800_000_000, 0))
-	if err != nil || ticket.Room != room || ticket.Peer != strings.Repeat("ab", 16) || ticket.Exp != 1_800_000_060 {
+	if err != nil || ticket.Room != room || ticket.Peer != strings.Repeat("ab", 16) ||
+		ticket.Acct != "db440f5017a75b3c737907e23c3d78f1" || ticket.Exp != 1_800_000_060 {
 		t.Fatalf("ticket %+v %v", ticket, err)
 	}
 	if MintTicket(appSecret, ticket) != minted {

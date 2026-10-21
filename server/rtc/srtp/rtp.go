@@ -68,6 +68,9 @@ func (c *Context) EncryptRTP(dst, packet []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if started && !st.sealed.fresh(index) {
+		return nil, errReplay
+	}
 	roc := uint32(index >> 16)
 
 	n := len(packet)
@@ -83,10 +86,12 @@ func (c *Context) EncryptRTP(dst, packet []byte) ([]byte, error) {
 	}
 
 	if !started {
-		c.txRTP[ssrc] = &txRTPState{index: index}
+		st = &txRTPState{index: index}
+		c.txRTP[ssrc] = st
 	} else if index > st.index {
 		st.index = index
 	}
+	st.sealed.mark(index)
 	return out, nil
 }
 

@@ -37,6 +37,7 @@ export function createGroupCalls({
   scope = globalThis,
 }) {
   const presence = new Map();
+  const owners = new Map();
   const keyring = new Map();
   let call = null;
   let lastError = "";
@@ -57,11 +58,30 @@ export function createGroupCalls({
     return presence.get(channelKey)?.get(peer)?.name || "";
   }
 
+  function claim(channelKey, peer, name) {
+    if (!owners.has(channelKey)) owners.set(channelKey, new Map());
+    const bound = owners.get(channelKey);
+    const owner = bound.get(peer);
+    const now = Date.now();
+    if (owner && now - owner.at <= PRESENCE_TTL_MS && owner.name !== name) return false;
+    bound.set(peer, { name, at: now });
+    return true;
+  }
+
+  function release(channelKey, peer) {
+    owners.get(channelKey)?.delete(peer);
+    keyring.get(channelKey)?.delete(peer);
+  }
+
   function notePresence(channelKey, peer, name, state) {
     if (!presence.has(channelKey)) presence.set(channelKey, new Map());
     const entries = presence.get(channelKey);
-    if (state === "out") entries.delete(peer);
-    else entries.set(peer, { name, at: Date.now() });
+    if (state === "out") {
+      entries.delete(peer);
+      release(channelKey, peer);
+    } else {
+      entries.set(peer, { name, at: Date.now() });
+    }
   }
 
   function announce(state) {
@@ -92,6 +112,13 @@ export function createGroupCalls({
     call.worker.postMessage({ op: "send-key", raw: raw.buffer.slice(0), keyId });
   }
 
+  function freshKey(current) {
+    current.sendKeyId = (current.sendKeyId + 1) & 0xff;
+    current.sendKey = newKey();
+    useKey(current.sendKey, current.sendKeyId);
+    shareKey();
+  }
+
   function rotateKey() {
     if (!call) return;
     const current = call;
@@ -116,8 +143,10 @@ export function createGroupCalls({
     if (!PEER_RE.test(peer)) return;
     if (call && peer === call.peer) return;
     const name = String(plain.sender || "").trim().toLowerCase();
+    if (!name) return;
     if (plain.type === "group-call-presence") {
       const state = plain.call === "out" ? "out" : "in";
+      if (!claim(channelKey, peer, name)) return;
       const known = presence.get(channelKey)?.has(peer);
       notePresence(channelKey, peer, name, state);
       if (call && call.channelKey === channelKey) {
@@ -140,8 +169,7 @@ export function createGroupCalls({
       return;
     }
     if (raw.length !== 16) return;
-    const owner = presence.get(channelKey)?.get(peer)?.name;
-    if (owner && name && owner !== name) return;
+    if (!claim(channelKey, peer, name)) return;
     if (!keyring.has(channelKey)) keyring.set(channelKey, new Map());
     keyring.get(channelKey).set(peer, { keyId, raw, name });
     if (call && call.channelKey === channelKey) handKey(peer, keyId, raw);
@@ -199,8 +227,7 @@ export function createGroupCalls({
     if (message.type === "joined") {
       current.peer = message.peer;
       announce("in");
-      useKey(current.sendKey, current.sendKeyId);
-      shareKey();
+      freshKey(current);
       for (const [peer, entry] of keyring.get(current.channelKey) || []) {
         handKey(peer, entry.keyId, entry.raw);
       }

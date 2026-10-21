@@ -115,7 +115,7 @@ func TestThreeBrowsersHoldAnEncryptedGroupCall(t *testing.T) {
 	routes.HandleFunc("/ticket", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
 			"ticket": signal.MintTicket(secret, signal.Ticket{
-				Room: room, Peer: signal.NewPeerID(), Exp: time.Now().Add(signal.TicketLifetime).Unix(),
+				Room: room, Peer: signal.NewPeerID(), Acct: signal.NewPeerID(), Exp: time.Now().Add(signal.TicketLifetime).Unix(),
 			}),
 			"url": "ws://" + r.Host + "/calls/ws",
 		})

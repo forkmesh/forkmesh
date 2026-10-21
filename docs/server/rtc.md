@@ -259,16 +259,27 @@ timer.
 
 ### `ice`
 
-An ICE-lite agent on one UDP port (`Mux`). The SFU only ever answers
-connectivity checks (it gathers one host candidate per configured public
-address and never sends checks). Packets are demultiplexed by first byte
+An ICE-lite agent on one UDP port (`Mux`). It gathers one host candidate per
+configured public address. Packets are demultiplexed by first byte
 (RFC 7983): 0..3 STUN, 20..63 DTLS, 128..191 RTP/RTCP. A STUN binding request
 is accepted when its USERNAME is `<sfu ufrag>:<peer ufrag>` of a known session
 and its MESSAGE-INTEGRITY checks with the SFU password; the response carries
-XOR-MAPPED-ADDRESS, MESSAGE-INTEGRITY and FINGERPRINT. The source address of
-the last nominated (USE-CANDIDATE) check is where the session sends, and DTLS
-and SRTP from any other address are dropped. A session with no valid check for
-30 s is closed (consent freshness, RFC 7675).
+XOR-MAPPED-ADDRESS, MESSAGE-INTEGRITY and FINGERPRINT.
+
+A valid request alone never moves media. Someone on the path can capture a
+check and replay it from their own address, and if the SFU sent to the source
+of any valid check, that would steal the stream. So the SFU sends its own
+check back to that address, signed with the peer's password from its SDP
+(`NewSession(remoteUfrag, remotePwd, handler)`). The address becomes the
+selected path only when an authenticated response to that check's random
+transaction id comes back from it: the first such address, then the address of
+any nominated (USE-CANDIDATE) check. A session remembers at most 8 candidate
+addresses and 16 outstanding checks, and DTLS and SRTP from any address other
+than the selected one are dropped.
+
+Consent (RFC 7675): every 5 s the SFU sends a check on the selected path
+(`Session.Refresh`, called from the room tick), and a session with no
+authenticated response for 30 s expires and its participant leaves.
 
 ### `sfu`
 
@@ -288,12 +299,32 @@ the SFU, bundled on one transport, rtcp-mux required:
   unchanged otherwise (frames are end-to-end encrypted, the SFU never parses
   payloads beyond the RTP header).
 - **Feedback.** PLI and FIR from a receiver go to the sender of that SSRC
-  (rewritten sender SSRC), throttled to one per 500 ms per stream; NACK is
-  forwarded the same way; the SFU sends its own receiver reports and a REMB
-  per sender capped at 1.5 Mbps (video) so senders adapt. Sender reports are
+  (rewritten sender SSRC), at most one per second per stream however many
+  receivers ask. NACK is not offered or forwarded: one receiver's NACKs would
+  make the sender retransmit to everybody, and a lost frame is repaired with a
+  keyframe instead. The SFU sends its own receiver reports and a REMB per
+  sender capped at 1.5 Mbps (video) so senders adapt. Sender reports are
   forwarded so receivers can sync audio and video.
-- **Limits.** 16 participants per room (`MaxParticipants`), 2 send tracks per
-  participant, 1500-byte packets, per-participant packet and byte budgets.
+- **SSRCs.** An offer is refused if it repeats an SSRC within itself (RTX
+  included) or uses one any participant of the room has used before, so a
+  participant cannot take over another's stream, even after that one left. A
+  room remembers its last 4096 SSRCs.
+- **Renegotiation.** A participant that leaves an SFU offer unanswered for
+  10 s is removed, so one stuck client cannot freeze renegotiation for the
+  room.
+- **Work.** Each room has its own goroutine and a queue of 4096 packets; the
+  UDP reader only hands packets over and drops them when the queue is full, so
+  one busy room cannot stall the others.
+- **Limits.** 16 participants per room (`MaxParticipants`), 4 per account
+  in a room (`MaxPerAccount`, from the ticket's `acct`), 400 on a node
+  (`MaxServerPeople`), 2 send tracks per participant, 1500-byte packets, and
+  per participant 600 packets and 500 kB per second upstream (enough for
+  1.5 Mbps video and Opus; the rest is dropped). Joining is checked under the
+  server lock, so two joins cannot both take the last place.
+- **Sockets.** At most 1000 open WebSockets per node and 200 that have not
+  joined yet; more get `503`. Before the join a message may be 4 KiB, after it
+  64 KiB. `/calls/health` answers `{"ok":true}` and does not say how many rooms
+  are open.
 
 ### `signal`
 
@@ -315,10 +346,13 @@ from the SFU); the client's trickled candidates are not needed.
 
 A join ticket proves the caller may join that room. The app server mints it for
 a member of the private channel (`POST /api/chat/channels/<id>/call-ticket`):
-`base64url(json{"room","peer","exp"}) + "." + base64url(HMAC-SHA256)` under the
-secret `FORKMESH_CALLS_SECRET`, which the app and the SFU share. `room` is
-HMAC-SHA256 of the channel id under the same secret, so the SFU never sees the
-channel id, `peer` is random per join, and tickets live 60 s.
+`base64url(json{"room","peer","acct","exp"}) + "." + base64url(HMAC-SHA256)`
+under the secret `FORKMESH_CALLS_SECRET`, which the app and the SFU share.
+`room` is HMAC-SHA256 of the channel id under the same secret, so the SFU never
+sees the channel id, `peer` is random per join, and tickets live 60 s. `acct`
+is the first 32 hex digits of an HMAC of the account under the same secret: it
+lets the SFU count one account's places in a room without learning who the
+account is.
 
 ## Frame encryption
 
@@ -330,8 +364,11 @@ build. The layout follows SFrame (RFC 9605) with a key per sender: the first
 bytes a decoder needs unencrypted stay clear (VP8: 10 bytes on a keyframe, 3
 otherwise; Opus: 1), then ciphertext, the 16-byte tag, an 8-byte frame counter
 and a 1-byte key id. Keys are random 128-bit values sent to the other
-participants in the channel's sealed chat frames (never to the SFU), and a
-sender rotates its key whenever somebody leaves.
+participants in the channel's sealed chat frames (never to the SFU). A sender
+draws a new key on every join or rejoin and rotates it whenever somebody
+leaves, and audio and video share one encryptor and so one counter, so a
+counter is never used twice under a key. Receivers keep a 1024-frame replay
+window per sender and key id; `docs/app/chat-group-calls.md` has the details.
 
 ## Phone media engine
 

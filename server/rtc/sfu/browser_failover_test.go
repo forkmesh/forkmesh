@@ -103,7 +103,7 @@ func TestAGroupCallMovesToASurvivingNodeWhenItsNodeDies(t *testing.T) {
 		}
 		json.NewEncoder(w).Encode(map[string]string{
 			"ticket": signal.MintTicket(secret, signal.Ticket{
-				Room: room, Peer: signal.NewPeerID(), Exp: time.Now().Add(signal.TicketLifetime).Unix(),
+				Room: room, Peer: signal.NewPeerID(), Acct: signal.NewPeerID(), Exp: time.Now().Add(signal.TicketLifetime).Unix(),
 			}),
 			"url": "ws" + node.web.URL[len("http"):] + "/calls/ws",
 		})

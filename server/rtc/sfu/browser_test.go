@@ -154,7 +154,7 @@ func TestThreeBrowsersShareAudioAndVideoThroughTheSFU(t *testing.T) {
 	})
 	routes.HandleFunc("/ticket", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, signal.MintTicket(secret, signal.Ticket{
-			Room: room, Peer: signal.NewPeerID(), Exp: time.Now().Add(signal.TicketLifetime).Unix(),
+			Room: room, Peer: signal.NewPeerID(), Acct: signal.NewPeerID(), Exp: time.Now().Add(signal.TicketLifetime).Unix(),
 		}))
 	})
 	routes.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {

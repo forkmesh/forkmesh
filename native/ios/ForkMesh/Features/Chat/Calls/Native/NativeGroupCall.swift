@@ -43,7 +43,7 @@ final class NativeGroupCall {
     @ObservationIgnored private var socket: URLSessionWebSocketTask?
     @ObservationIgnored private var audioTrack: RTCAudioTrack?
     @ObservationIgnored private var video: (RTCVideoTrack, NativeCameraPipeline)?
-    @ObservationIgnored private var encryptors: [RTCFmFrameEncryptor] = []
+    @ObservationIgnored private var encryptor: RTCFmFrameEncryptor?
     @ObservationIgnored private var decryptors: [String: [RTCFmFrameDecryptor]] = [:]
     @ObservationIgnored private var timers: [Task<Void, Never>] = []
     @ObservationIgnored private var retries = 0
@@ -92,6 +92,7 @@ final class NativeGroupCall {
         muted = false
         cameraOff = false
         sendKey = GroupCallSendKey()
+        encryptor = RTCFmFrameEncryptor()
         retries = 0
         audioTrack = NativeCallMedia.shared.makeAudioTrack()
         if kind == .video {
@@ -119,6 +120,7 @@ final class NativeGroupCall {
         for timer in timers { timer.cancel() }
         timers.removeAll()
         dropConnection()
+        encryptor = nil
         video?.1.stop()
         video = nil
         localVideo = nil
@@ -181,8 +183,7 @@ final class NativeGroupCall {
     }
 
     private func useKey() {
-        let data = Data(sendKey.raw)
-        for encryptor in encryptors { encryptor.setKey(data, keyId: UInt8(sendKey.keyId)) }
+        encryptor?.setKey(Data(sendKey.raw), keyId: UInt8(sendKey.keyId))
     }
 
     private func rotateKey() {
@@ -211,7 +212,8 @@ final class NativeGroupCall {
     }
 
     private func connect() async -> Bool {
-        guard let office, let ticket = try? await office.callTicket(conversation), let url = URL(string: ticket.url)
+        guard let office, let encryptor, let ticket = try? await office.callTicket(conversation),
+            let url = URL(string: ticket.url)
         else { return false }
         generation += 1
         let current = generation
@@ -226,14 +228,11 @@ final class NativeGroupCall {
         delegate.generation = current
         relay = delegate
         connection = made
-        encryptors = []
         let audioInit = RTCRtpTransceiverInit()
         audioInit.direction = .sendOnly
         audioInit.streamIds = ["forkmesh"]
         if let audioTrack, let transceiver = made.addTransceiver(with: audioTrack, init: audioInit) {
-            let encryptor = RTCFmFrameEncryptor()
             encryptor.attach(to: transceiver.sender)
-            encryptors.append(encryptor)
         }
         let videoInit = RTCRtpTransceiverInit()
         videoInit.direction = .sendOnly
@@ -241,9 +240,7 @@ final class NativeGroupCall {
         let videoTransceiver = video.map { made.addTransceiver(with: $0.0, init: videoInit) }
             ?? made.addTransceiver(of: .video, init: videoInit)
         if let videoTransceiver {
-            let encryptor = RTCFmFrameEncryptor()
             encryptor.attach(to: videoTransceiver.sender)
-            encryptors.append(encryptor)
         }
         let task = URLSession.shared.webSocketTask(with: url)
         socket = task
@@ -265,7 +262,6 @@ final class NativeGroupCall {
         connection?.close()
         connection = nil
         relay = nil
-        encryptors = []
         for (peer, _) in decryptors { forget(peer) }
         decryptors = [:]
         tiles = []
@@ -319,6 +315,7 @@ final class NativeGroupCall {
         case "joined":
             peer = message["peer"]?.text ?? ""
             announce("in")
+            sendKey.rotate()
             useKey()
             shareKey()
             guard let offer = try? await describe({ connection.offer(for: Self.constraints, completionHandler: $0) }),

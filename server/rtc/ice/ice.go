@@ -2,6 +2,7 @@ package ice
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"net"
 	"net/netip"
@@ -17,24 +18,39 @@ const (
 	KindDTLS = 1
 	KindRTP  = 2
 
-	ConsentTimeout = 30 * time.Second
-	MaxDatagram    = 1500
-	iceChars       = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/"
+	ConsentTimeout   = 30 * time.Second
+	ConsentInterval  = 5 * time.Second
+	VerifyTimeout    = 3 * time.Second
+	MaxDatagram      = 1500
+	maxCandidates    = 8
+	maxPendingChecks = 16
+	iceChars         = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/"
 )
 
 var ErrNoPath = errors.New("ice: no selected path")
 
 type Handler func(kind int, packet []byte)
 
+type pendingCheck struct {
+	addr     netip.AddrPort
+	sent     time.Time
+	nominate bool
+}
+
 type Session struct {
 	mux         *Mux
 	LocalUfrag  string
 	LocalPwd    string
 	remoteUfrag string
+	remotePwd   string
 	handler     Handler
 	selected    netip.AddrPort
 	hasPath     bool
-	lastCheck   time.Time
+	candidates  []netip.AddrPort
+	pending     map[[12]byte]pendingCheck
+	lastConsent time.Time
+	lastProbe   time.Time
+	tieBreaker  [8]byte
 	closed      bool
 }
 
@@ -95,15 +111,20 @@ func randomString(n int) string {
 	return string(raw)
 }
 
-func (m *Mux) NewSession(remoteUfrag string, handler Handler) *Session {
+func (m *Mux) NewSession(remoteUfrag, remotePwd string, handler Handler) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	session := &Session{
 		mux:         m,
 		LocalPwd:    randomString(24),
 		remoteUfrag: remoteUfrag,
+		remotePwd:   remotePwd,
 		handler:     handler,
-		lastCheck:   m.now(),
+		pending:     map[[12]byte]pendingCheck{},
+		lastConsent: m.now(),
+	}
+	if _, err := rand.Read(session.tieBreaker[:]); err != nil {
+		panic(err)
 	}
 	for {
 		session.LocalUfrag = randomString(8)
@@ -113,12 +134,6 @@ func (m *Mux) NewSession(remoteUfrag string, handler Handler) *Session {
 	}
 	m.byUfrag[session.LocalUfrag] = session
 	return session
-}
-
-func (s *Session) SetRemoteUfrag(ufrag string) {
-	s.mux.mu.Lock()
-	s.remoteUfrag = ufrag
-	s.mux.mu.Unlock()
 }
 
 func (s *Session) Selected() (netip.AddrPort, bool) {
@@ -150,15 +165,59 @@ func (s *Session) closeLocked() {
 	}
 	s.closed = true
 	delete(s.mux.byUfrag, s.LocalUfrag)
-	if s.hasPath && s.mux.byAddr[s.selected] == s {
-		delete(s.mux.byAddr, s.selected)
+	for _, candidate := range s.candidates {
+		if s.mux.byAddr[candidate] == s {
+			delete(s.mux.byAddr, candidate)
+		}
 	}
+	s.candidates = nil
+	s.pending = nil
 }
 
 func (s *Session) Expired(now time.Time) bool {
 	s.mux.mu.Lock()
 	defer s.mux.mu.Unlock()
-	return s.closed || now.Sub(s.lastCheck) > ConsentTimeout
+	return s.closed || now.Sub(s.lastConsent) > ConsentTimeout
+}
+
+func (s *Session) Refresh(now time.Time) {
+	s.mux.mu.Lock()
+	if s.closed || !s.hasPath || now.Sub(s.lastProbe) < ConsentInterval {
+		s.mux.mu.Unlock()
+		return
+	}
+	s.lastProbe = now
+	target := s.selected
+	packet, ok := s.checkLocked(target, false, now)
+	s.mux.mu.Unlock()
+	if ok {
+		_, _ = s.mux.conn.WriteToUDPAddrPort(packet, target)
+	}
+}
+
+func (s *Session) checkLocked(target netip.AddrPort, nominate bool, now time.Time) ([]byte, bool) {
+	if s.remotePwd == "" || s.remoteUfrag == "" {
+		return nil, false
+	}
+	for tid, check := range s.pending {
+		if now.Sub(check.sent) > VerifyTimeout {
+			delete(s.pending, tid)
+		}
+	}
+	if len(s.pending) >= maxPendingChecks {
+		return nil, false
+	}
+	request := &stun.Message{Type: stun.BindingRequest}
+	if _, err := rand.Read(request.TransactionID[:]); err != nil {
+		return nil, false
+	}
+	request.Add(stun.AttrUsername, []byte(s.remoteUfrag+":"+s.LocalUfrag))
+	var priority [4]byte
+	binary.BigEndian.PutUint32(priority[:], 1853824767)
+	request.Add(stun.AttrPriority, priority[:])
+	request.Add(stun.AttrICEControlled, s.tieBreaker[:])
+	s.pending[request.TransactionID] = pendingCheck{addr: target, sent: now, nominate: nominate}
+	return request.Encode([]byte(s.remotePwd), true), true
 }
 
 func (m *Mux) Serve() error {
@@ -179,6 +238,9 @@ func (m *Mux) Serve() error {
 }
 
 func (m *Mux) HandleDatagram(packet []byte, from netip.AddrPort) {
+	if len(packet) == 0 {
+		return
+	}
 	from = netip.AddrPortFrom(from.Addr().Unmap(), from.Port())
 	first := packet[0]
 	switch {
@@ -194,8 +256,9 @@ func (m *Mux) HandleDatagram(packet []byte, from netip.AddrPort) {
 func (m *Mux) deliver(kind int, packet []byte, from netip.AddrPort) {
 	m.mu.Lock()
 	session := m.byAddr[from]
+	heard := session != nil && !session.closed && (!session.hasPath || session.selected == from)
 	m.mu.Unlock()
-	if session == nil || session.handler == nil {
+	if !heard || session.handler == nil {
 		return
 	}
 	session.handler(kind, packet)
@@ -206,9 +269,18 @@ func (m *Mux) handleSTUN(packet []byte, from netip.AddrPort) {
 		return
 	}
 	message, err := stun.Parse(packet)
-	if err != nil || message.Type != stun.BindingRequest {
+	if err != nil {
 		return
 	}
+	switch message.Type {
+	case stun.BindingRequest:
+		m.handleRequest(packet, message, from)
+	case stun.BindingSuccess:
+		m.handleResponse(packet, message, from)
+	}
+}
+
+func (m *Mux) handleRequest(packet []byte, message *stun.Message, from netip.AddrPort) {
 	username, ok := message.Get(stun.AttrUsername)
 	if !ok {
 		return
@@ -229,29 +301,62 @@ func (m *Mux) handleSTUN(packet []byte, from netip.AddrPort) {
 	if !stun.CheckIntegrity(packet, []byte(session.LocalPwd)) {
 		return
 	}
+	_, nominate := message.Get(stun.AttrUseCandidate)
+	now := m.now()
 	m.mu.Lock()
 	if session.closed || (session.remoteUfrag != "" && session.remoteUfrag != remote) {
 		m.mu.Unlock()
 		return
 	}
-	_, nominate := message.Get(stun.AttrUseCandidate)
-	if nominate || !session.hasPath {
-		if session.hasPath && m.byAddr[session.selected] == session {
-			delete(m.byAddr, session.selected)
+	if owner := m.byAddr[from]; owner != nil && owner != session {
+		m.mu.Unlock()
+		return
+	}
+	if m.byAddr[from] == nil {
+		if len(session.candidates) >= maxCandidates {
+			oldest := session.candidates[0]
+			if oldest != session.selected && m.byAddr[oldest] == session {
+				delete(m.byAddr, oldest)
+			}
+			session.candidates = session.candidates[1:]
 		}
-		if other := m.byAddr[from]; other != nil && other != session {
-			m.mu.Unlock()
-			return
-		}
-		session.selected = from
-		session.hasPath = true
+		session.candidates = append(session.candidates, from)
 		m.byAddr[from] = session
 	}
-	if from == session.selected {
-		session.lastCheck = m.now()
+	var verify []byte
+	if (nominate || !session.hasPath) && (!session.hasPath || from != session.selected) {
+		verify, _ = session.checkLocked(from, nominate, now)
 	}
 	m.mu.Unlock()
 	response := &stun.Message{Type: stun.BindingSuccess, TransactionID: message.TransactionID}
 	response.AddXORMappedAddress(from)
 	_, _ = m.conn.WriteToUDPAddrPort(response.Encode([]byte(session.LocalPwd), true), from)
+	if verify != nil {
+		_, _ = m.conn.WriteToUDPAddrPort(verify, from)
+	}
+}
+
+func (m *Mux) handleResponse(packet []byte, message *stun.Message, from netip.AddrPort) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	session := m.byAddr[from]
+	if session == nil || session.closed {
+		return
+	}
+	check, ok := session.pending[message.TransactionID]
+	if !ok || check.addr != from {
+		return
+	}
+	if !stun.CheckIntegrity(packet, []byte(session.remotePwd)) {
+		return
+	}
+	delete(session.pending, message.TransactionID)
+	now := m.now()
+	if check.nominate || !session.hasPath {
+		session.selected = from
+		session.hasPath = true
+	}
+	if from == session.selected {
+		session.lastConsent = now
+	}
 }

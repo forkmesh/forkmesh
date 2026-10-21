@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"forkmesh.com/mirror-node/rtc/dtls"
@@ -21,12 +22,17 @@ const (
 	MaxParticipants     = 16
 	MaxTracks           = 2
 	MaxPacketBytes      = 1500
-	keyframeInterval    = 500 * time.Millisecond
+	keyframeInterval    = time.Second
 	feedbackInterval    = time.Second
+	answerTimeout       = 10 * time.Second
 	defaultVideoBitrate = 1_500_000
 	sendQueue           = 64
-	packetBudget        = 2000
-	byteBudget          = 2_500_000
+	roomQueue           = 4096
+	packetBudget        = 600
+	byteBudget          = 500_000
+	MaxPerAccount       = 4
+	MaxServerPeople     = 400
+	usedSSRCMemory      = 4096
 )
 
 var (
@@ -52,6 +58,8 @@ type Server struct {
 	candidates  []string
 	mu          sync.Mutex
 	rooms       map[string]*Room
+	sockets     atomic.Int64
+	waiting     atomic.Int64
 }
 
 type Room struct {
@@ -60,6 +68,16 @@ type Room struct {
 	mu           sync.Mutex
 	participants map[string]*Participant
 	order        []string
+	used         map[uint32]bool
+	usedOrder    []uint32
+	queue        chan inbound
+	done         chan struct{}
+}
+
+type inbound struct {
+	participant *Participant
+	kind        int
+	packet      []byte
 }
 
 type Track struct {
@@ -100,6 +118,8 @@ type Participant struct {
 	version     int
 	sessionID   string
 	pendingRev  int
+	pendingAt   time.Time
+	account     string
 	rev         int
 	dirty       bool
 	closed      bool
@@ -160,14 +180,65 @@ func randomSSRC() uint32 {
 }
 
 func (s *Server) room(id string) *Room {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	room := s.rooms[id]
 	if room == nil {
-		room = &Room{server: s, id: id, participants: map[string]*Participant{}}
+		room = &Room{
+			server: s, id: id, participants: map[string]*Participant{}, used: map[uint32]bool{},
+			queue: make(chan inbound, roomQueue), done: make(chan struct{}),
+		}
 		s.rooms[id] = room
+		go room.work()
 	}
 	return room
+}
+
+func (r *Room) work() {
+	for {
+		select {
+		case <-r.done:
+			return
+		case in := <-r.queue:
+			r.packet(in.participant, in.kind, in.packet)
+		}
+	}
+}
+
+func (r *Room) enqueue(p *Participant, kind int, packet []byte) {
+	select {
+	case r.queue <- inbound{participant: p, kind: kind, packet: packet}:
+	default:
+	}
+}
+
+func (s *Server) people() int {
+	total := 0
+	for _, room := range s.rooms {
+		room.mu.Lock()
+		total += len(room.participants)
+		room.mu.Unlock()
+	}
+	return total
+}
+
+func (s *Server) join(id, peerID, account string) (*Room, *Participant, []string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.people() >= MaxServerPeople {
+		return nil, nil, nil, ErrRoomFull
+	}
+	room := s.room(id)
+	participant, others, err := room.join(peerID, account)
+	if err != nil {
+		room.mu.Lock()
+		empty := len(room.participants) == 0
+		room.mu.Unlock()
+		if empty && s.rooms[id] == room {
+			delete(s.rooms, id)
+			close(room.done)
+		}
+		return nil, nil, nil, err
+	}
+	return room, participant, others, nil
 }
 
 func (s *Server) dropRoomIfEmpty(room *Room) {
@@ -178,6 +249,7 @@ func (s *Server) dropRoomIfEmpty(room *Room) {
 	room.mu.Unlock()
 	if empty && s.rooms[room.id] == room {
 		delete(s.rooms, room.id)
+		close(room.done)
 	}
 }
 
@@ -187,13 +259,22 @@ func (s *Server) Rooms() int {
 	return len(s.rooms)
 }
 
-func (r *Room) join(peerID string) (*Participant, []string, error) {
+func (r *Room) join(peerID, account string) (*Participant, []string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, taken := r.participants[peerID]; taken {
 		return nil, nil, ErrRoomFull
 	}
 	if len(r.participants) >= r.server.cfg.MaxParticipants {
+		return nil, nil, ErrRoomFull
+	}
+	same := 0
+	for _, other := range r.participants {
+		if other.account == account {
+			same++
+		}
+	}
+	if same >= MaxPerAccount {
 		return nil, nil, ErrRoomFull
 	}
 	others := append([]string(nil), r.order...)
@@ -205,6 +286,7 @@ func (r *Room) join(peerID string) (*Participant, []string, error) {
 		negotiated: map[*Track]bool{},
 		sessionID:  randomID(),
 		lastKey:    map[uint32]time.Time{},
+		account:    account,
 	}
 	r.participants[peerID] = participant
 	r.order = append(r.order, peerID)
@@ -273,6 +355,7 @@ func (r *Room) offer(p *Participant, text string) error {
 	p.fingerprint = "sha-256 " + strings.ToUpper(strings.TrimSpace(value))
 	p.upstream = upstream
 	kinds := map[string]bool{}
+	offered := map[uint32]bool{}
 	for index, media := range session.Media {
 		section := upstream[index]
 		if !section.accepted || section.direction != "recvonly" || kinds[section.kind] {
@@ -281,6 +364,13 @@ func (r *Room) offer(p *Participant, text string) error {
 		rtx := map[uint32]bool{}
 		for _, group := range media.FIDGroups() {
 			rtx[group[1]] = true
+		}
+		for _, ssrc := range media.SSRCs() {
+			if offered[ssrc] || r.used[ssrc] || ssrc == 0 {
+				p.tracks = nil
+				return ErrBadOffer
+			}
+			offered[ssrc] = true
 		}
 		for _, ssrc := range media.SSRCs() {
 			if rtx[ssrc] {
@@ -300,17 +390,15 @@ func (r *Room) offer(p *Participant, text string) error {
 			break
 		}
 	}
-	for _, track := range p.tracks {
-		for _, other := range r.participants {
-			for _, owned := range other.tracks {
-				if other != p && owned.ssrc == track.ssrc {
-					p.tracks = nil
-					return ErrBadOffer
-				}
-			}
-		}
+	for ssrc := range offered {
+		r.used[ssrc] = true
+		r.usedOrder = append(r.usedOrder, ssrc)
 	}
-	p.ice = r.server.mux.NewSession(ufrag, func(kind int, packet []byte) { r.packet(p, kind, packet) })
+	for len(r.usedOrder) > usedSSRCMemory {
+		delete(r.used, r.usedOrder[0])
+		r.usedOrder = r.usedOrder[1:]
+	}
+	p.ice = r.server.mux.NewSession(ufrag, pwd, func(kind int, packet []byte) { r.enqueue(p, kind, packet) })
 	config := *r.server.dtlsConfig
 	expected := p.fingerprint
 	config.VerifyPeer = func(der []byte) error {
@@ -378,7 +466,7 @@ func (r *Room) renegotiateLocked(p *Participant) {
 	wanted := []*Track{}
 	for _, id := range r.order {
 		other := r.participants[id]
-		if other == nil || other == p {
+		if other == nil || other == p || other.closed {
 			continue
 		}
 		wanted = append(wanted, other.tracks...)
@@ -420,6 +508,7 @@ func (r *Room) renegotiateLocked(p *Participant) {
 	}
 	p.rev++
 	p.pendingRev = p.rev
+	p.pendingAt = time.Now()
 	p.send(map[string]any{
 		"type": "offer",
 		"rev":  p.rev,
@@ -588,19 +677,6 @@ func (r *Room) rtcpLocked(p *Participant, packet []byte, now time.Time) {
 			if track != nil && track.owner != p && track.kind == "video" && p.negotiated[track] {
 				r.requestKeyframeLocked(track, now)
 			}
-		case rtp.TypeRTPFB:
-			if rtp.Count(part) != rtp.FmtNACK {
-				continue
-			}
-			media, lost, err := rtp.ParseNACK(part)
-			if err != nil || len(lost) == 0 {
-				continue
-			}
-			track := r.trackBySSRC(media)
-			if track == nil || track.owner == p || !p.negotiated[track] || !track.owner.ready {
-				continue
-			}
-			r.sendRTCPLocked(track.owner, rtp.NewNACK(track.owner.sendSSRC, media, lost))
 		case rtp.TypeSR:
 			if len(part) < 28 || rtp.SenderSSRC(part) == 0 {
 				continue
@@ -657,6 +733,13 @@ func (r *Room) tick(now time.Time) []*Participant {
 		if p.ice != nil && p.ice.Expired(now) {
 			expired = append(expired, p)
 			continue
+		}
+		if p.pendingRev != 0 && now.Sub(p.pendingAt) > answerTimeout {
+			expired = append(expired, p)
+			continue
+		}
+		if p.ice != nil {
+			p.ice.Refresh(now)
 		}
 		if p.dtls != nil && !p.ready {
 			if err := p.dtls.Tick(now); err != nil || p.dtls.Failed() != nil {

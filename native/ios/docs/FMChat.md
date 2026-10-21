@@ -681,10 +681,12 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     view) and `NativePreCallScreen` replaces the WebView pre-call check.
   - `NativeGroupCall` joins group calls in private channels (`docs/app/chat-group-calls.md`): it
     asks `OfficeChannelService.callTicket` for a ticket, speaks the call-server protocol over a
-    `URLSessionWebSocketTask`, attaches our patch's `RTCFmFrameEncryptor` to its two senders and an
+    `URLSessionWebSocketTask`, attaches one `RTCFmFrameEncryptor` from our patch to both its senders
+    (one frame counter for audio and video, kept for the whole call) and an
     `RTCFmFrameDecryptor` to every forwarded receiver (keyed by the stream's peer id), sends
-    presence and keys with `sendLiveFrame` (sealed, never stored), rotates its key when someone
-    leaves and rejoins on another core when its server goes away. `ChatHub.onGroupCallFrame`
+    presence and keys with `sendLiveFrame` (sealed, never stored), draws a new key on every
+    `joined`, rotates its key when someone leaves and rejoins on another core when its server goes
+    away. `ChatHub.onGroupCallFrame`
     feeds it the channel's group-call frames; the roster and key rules are `GroupCallRoster`
     (`FMChat/Group/GroupCalls.swift`). The channel header shows `GroupCallHeaderButtons` (Join · N
     while a call runs) and `.groupCallsRoot()` presents `GroupCallPanel`.

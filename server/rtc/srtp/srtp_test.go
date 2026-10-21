@@ -573,3 +573,35 @@ func TestDstReuse(t *testing.T) {
 		}
 	}
 }
+
+func TestAnIndexIsNeverSealedTwice(t *testing.T) {
+	for _, profile := range []Profile{ProfileAES128CMHMACSHA1_80, ProfileAEADAES128GCM} {
+		key := make([]byte, 16)
+		salt := make([]byte, 14)
+		if profile == ProfileAEADAES128GCM {
+			salt = salt[:12]
+		}
+		tx, err := NewContext(profile, key, salt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		packet := func(seq uint16, fill byte) []byte {
+			p := []byte{0x80, 96, byte(seq >> 8), byte(seq), 0, 0, 0, 1, 0, 0, 0, 9, fill, fill, fill}
+			return p
+		}
+		for seq := uint16(100); seq < 105; seq++ {
+			if _, err := tx.EncryptRTP(nil, packet(seq, 1)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := tx.EncryptRTP(nil, packet(102, 2)); err == nil {
+			t.Fatalf("%v sealed index 102 twice", profile)
+		}
+		if _, err := tx.EncryptRTP(nil, packet(98, 2)); err != nil {
+			t.Fatalf("%v refused an unsent older index: %v", profile, err)
+		}
+		if _, err := tx.EncryptRTP(nil, packet(105, 2)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

@@ -64,6 +64,7 @@ public enum GroupCallFrameEvent: Equatable, Sendable {
 @MainActor
 public final class GroupCallRoster {
     private var presence: [String: [String: (name: String, at: TimeInterval)]] = [:]
+    private var owners: [String: [String: (name: String, at: TimeInterval)]] = [:]
     private var keyring: [String: [String: GroupCallKey]] = [:]
     private let now: () -> TimeInterval
 
@@ -75,13 +76,17 @@ public final class GroupCallRoster {
         guard let type = plain["type"]?.text, GroupCallFrames.types.contains(type) else { return nil }
         let peer = plain["peer"]?.text ?? ""
         guard GroupCallFrames.validPeer(peer), peer != selfPeer else { return nil }
-        let name = (plain["sender"]?.text ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        let name = (plain["sender"]?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !name.isEmpty else { return nil }
         if type == GroupCallFrames.presenceType {
+            guard claim(conversation, peer: peer, name: name) else { return nil }
             let out = plain["call"]?.text == "out"
             var entries = presence[conversation] ?? [:]
             let known = entries[peer] != nil
             if out {
                 entries.removeValue(forKey: peer)
+                owners[conversation]?.removeValue(forKey: peer)
+                keyring[conversation]?.removeValue(forKey: peer)
             } else {
                 entries[peer] = (name, now())
             }
@@ -90,16 +95,23 @@ public final class GroupCallRoster {
         }
         guard let keyId = plain["keyId"]?.intValue, (0...255).contains(keyId),
             let text = plain["key"]?.text, let decoded = Data(base64Encoded: text),
-            decoded.count == GroupCallFrames.keyBytes
+            decoded.count == GroupCallFrames.keyBytes,
+            claim(conversation, peer: peer, name: name)
         else { return nil }
-        if let owner = presence[conversation]?[peer]?.name, !owner.isEmpty, !name.isEmpty, owner != name {
-            return nil
-        }
         let key = GroupCallKey(keyId: keyId, raw: [UInt8](decoded), name: name)
         var ring = keyring[conversation] ?? [:]
         ring[peer] = key
         keyring[conversation] = ring
         return .key(peer: peer, key: key)
+    }
+
+    private func claim(_ conversation: String, peer: String, name: String) -> Bool {
+        let at = now()
+        if let owner = owners[conversation]?[peer], at - owner.at <= GroupCallFrames.presenceTTL, owner.name != name {
+            return false
+        }
+        owners[conversation, default: [:]][peer] = (name, at)
+        return true
     }
 
     public func roster(_ conversation: String) -> [GroupCallMember] {

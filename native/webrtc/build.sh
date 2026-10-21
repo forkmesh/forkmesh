@@ -9,6 +9,8 @@ case "$target" in
 esac
 # shellcheck disable=SC1091
 source "$here/PIN"
+# shellcheck disable=SC1091
+source "$here/../../tools/forkmesh-safe-rm.sh"
 work="${WEBRTC_WORK:-$PWD/webrtc-work}"
 out="${WEBRTC_OUT:-$PWD/webrtc-out}"
 mkdir -p "$work" "$out"
@@ -16,7 +18,7 @@ cd "$work"
 if [ ! -d depot_tools ]; then
   git clone --depth 1 "$DEPOT_TOOLS_URL" depot_tools
 fi
-export PATH="$work/depot_tools:$PATH"
+export PATH="$work/depot_tools/python-bin:$work/depot_tools:$PATH"
 export DEPOT_TOOLS_UPDATE=0
 "$work/depot_tools/ensure_bootstrap"
 if [ ! -f .gclient ]; then
@@ -60,7 +62,7 @@ if [ "$target" = ios ]; then
     --output-dir "$work/src/out_fm/ios" \
     --extra-gn-args "$gn_args enable_dsyms=false enable_stripping=true"
   mkdir -p "$out/ios"
-  rm -rf "$out/ios/WebRTC.xcframework"
+  fm_safe_rm_tree "$out/ios" "$out/ios/WebRTC.xcframework"
   cp -R "$work/src/out_fm/ios/WebRTC.xcframework" "$out/ios/"
   (cd "$out/ios" && rm -f WebRTC.xcframework.zip && zip -qry WebRTC.xcframework.zip WebRTC.xcframework)
   shasum -a 256 "$out/ios/WebRTC.xcframework.zip" | tee "$out/ios/WebRTC.xcframework.zip.sha256"
