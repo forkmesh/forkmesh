@@ -331,10 +331,11 @@
         </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
         <div data-repo-github-header class="border-b border-border">
-          <div class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
+          <div data-repo-tabs class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
             ${["code", "issues", "pulls", "discussions", "insights", "projects", "actions", "security", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
               const meta = tabMeta[tab];
               const isDiscussions = tab === "discussions";
@@ -345,8 +346,9 @@
               // offline; loadRepoCollection will restore the badge if its
               // recovery attempt reaches one.
               const hideDiscussionsBadge = isDiscussions && (
-                !repoIsLive(repo) || !Number.isFinite(discussionCount) || discussionCount <= 0
+                !Number.isFinite(discussionCount) || discussionCount <= 0
               );
+              const reserveDiscussionsBadge = isDiscussions && !hideDiscussionsBadge && !repoIsLive(repo);
               const iconAttr = tab === "issues"
                 ? 'data-lucide="circle-dot"'
                 : tab === "pulls"
@@ -361,7 +363,7 @@
               // routed in-app by the document click handler.
               const tabHref = tab === "code" ? repoLinkUrl(repo) : `${repoLinkUrl(repo)}/${tab}`;
               const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", actions: "actions", agents: "agents" }[tab];
-              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span>${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground${hideDiscussionsBadge ? " hidden" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
+              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span data-repo-tab-label="${escapeHtml(meta.label)}">${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground tabular-nums${hideDiscussionsBadge ? " hidden" : reserveDiscussionsBadge ? " invisible" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
             }).join("")}
           </div>
         </div>
@@ -551,6 +553,9 @@
       ? "pulls"
       : repoTabRoutesFor(repo).includes(routeKind) ? routeKind : "code";
     setRepoTab(initialTab);
+    const tabStrip = detail.querySelector("[data-repo-tabs]");
+    if (tabStrip && tabStripScroll > 0) tabStrip.scrollLeft = tabStripScroll;
+    else keepRepoActiveTabVisible(tabStrip);
     window.lucide?.createIcons();
     // Only fetch code when Code is visible. Warming the tree/README behind an
     // Issues or Pulls deep link multiplied cold-cache mirror traffic and made
@@ -3524,6 +3529,18 @@
       const pullMergeButton = event.target.closest("[data-repo-pull-merge]");
       if (pullMergeButton && state.selectedRepo) {
         handleRepoPullMerge(state.selectedRepo);
+        return;
+      }
+
+      const pullMergeOverrideButton = event.target.closest("[data-repo-pull-merge-override]");
+      if (pullMergeOverrideButton && state.selectedRepo) {
+        handleRepoPullMergeOverride(state.selectedRepo);
+        return;
+      }
+
+      const pullCheckRerunButton = event.target.closest("[data-repo-pull-check-rerun]");
+      if (pullCheckRerunButton && state.selectedRepo) {
+        handleRepoPullCheckRerun(state.selectedRepo, pullCheckRerunButton.dataset.repoPullCheckRerun);
         return;
       }
 

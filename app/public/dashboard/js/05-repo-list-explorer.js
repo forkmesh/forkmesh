@@ -2598,9 +2598,24 @@
     window.setTimeout(() => $("[data-new-repo-cancel]")?.focus(), 0);
   }
 
+  function keepRepoActiveTabVisible(strip) {
+    if (!strip || strip.scrollWidth <= strip.clientWidth + 1) return;
+    const active = strip.querySelector('[role="tab"][aria-selected="true"]');
+    if (!active || active.classList.contains("hidden")) return;
+    const frame = strip.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    const inset = 12;
+    if (box.left < frame.left + inset) {
+      strip.scrollLeft -= Math.ceil(frame.left + inset - box.left);
+    } else if (box.right > frame.right - inset) {
+      strip.scrollLeft += Math.ceil(box.right - (frame.right - inset));
+    }
+  }
+
   function setRepoTab(tab) {
     const detail = $(`[data-dashboard-repo-tab-panel="${tab}"]`)?.closest("[data-repo-detail]") || $("[data-repo-detail]");
     if (!detail) return;
+    const tabChanged = state.activeRepoTab !== tab;
     state.activeRepoTab = tab;
     // The selected tab's weight and underline are styled from aria-selected
     // (shell.html), so this only has to move the attribute.
@@ -2608,6 +2623,7 @@
       const active = button.dataset.dashboardRepoTab === tab;
       button.setAttribute("aria-selected", active ? "true" : "false");
     });
+    if (tabChanged) keepRepoActiveTabVisible(detail.querySelector("[data-repo-tabs]"));
     detail.querySelectorAll("[data-dashboard-repo-tab-panel]").forEach((panel) => {
       panel.classList.toggle("hidden", panel.dataset.dashboardRepoTabPanel !== tab);
     });

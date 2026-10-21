@@ -682,6 +682,8 @@ ICONS = {
         '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path>'),
     'search': (
         '<circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>'),
+    'shield': (
+        '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path>'),
     'star': (
         '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path>'),
     'workflow': (
@@ -728,15 +730,18 @@ TAB = ('<a href="%s" role="tab" aria-selected="%s" class="group relative '
        'inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal '
        'text-foreground"><span class="inline-flex h-8 items-center gap-2 '
        'rounded-md px-2 transition-colors group-hover:bg-secondary">%s'
-       '<span>%s</span>%s</span></a>')
-COUNT = ('<span class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] '
+       '<span data-repo-tab-label="%s">%s</span>%s</span></a>')
+COUNT = ('<span data-dashboard-repo-tab-count="%s" '
+         'class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] '
          'px-1.5 text-center text-[12px] font-medium leading-[18px] '
-         'text-foreground">%s</span>')
+         'text-foreground tabular-nums">%s</span>')
+COUNT_PENDING = "..."
 TABS = (("code", "Code", "code-2", ""), ("issues", "Issues", "circle-dot", "openIssues"),
         ("pulls", "Pull requests", "git-pull-request", "openPulls"),
         ("discussions", "Discussions", "message-square", "discussions"),
         ("insights", "Insights", "chart-no-axes-combined", ""),
-        ("projects", "Projects", "chart-gantt", ""), ("actions", "Actions", "workflow", ""))
+        ("projects", "Projects", "chart-gantt", ""), ("actions", "Actions", "workflow", ""),
+        ("security", "Security", "shield", ""))
 SKELETON = "rounded bg-muted-foreground/20"
 ROW = ('<a href="%s" %s="%s" class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] '
        'items-center gap-3 border-t border-border px-4 py-2.5 text-left text-sm '
@@ -764,20 +769,21 @@ def _tabs(base, about, counts, selected="code"):
     features = (about or {}).get("features") or {}
     shown = []
     for key, label, icon, count_key in TABS:
-        if key != "code" and about is None and selected == "code":
-            continue
         if key in ("issues", "pulls", "discussions") and features.get(key) is False:
             continue
         count = ""
         if count_key and count_key in counts:
             number = counts.get(count_key)
             if key != "discussions" or (isinstance(number, int) and number > 0):
-                count = COUNT % html.escape(_count_label(number))
+                count = COUNT % (key, html.escape(_count_label(number) or COUNT_PENDING))
+        elif key in ("issues", "pulls"):
+            count = COUNT % (key, COUNT_PENDING)
         href = base if key == "code" else "%s/%s" % (base, key)
         shown.append(TAB % (html.escape(href), "true" if key == selected else "false",
                             _icon(icon, "h-4 w-4", "text-muted-foreground"),
-                            label, count))
-    return ('<div data-repo-github-header class="border-b border-border"><div class="flex w-full min-w-0 '
+                            html.escape(label), label, count))
+    return ('<div data-repo-github-header class="border-b border-border"><div data-repo-tabs '
+            'class="flex w-full min-w-0 '
             'gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" '
             'aria-label="Repository sections">%s</div></div>' % "".join(shown))
 
