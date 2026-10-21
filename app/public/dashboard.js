@@ -15090,6 +15090,17 @@
     window.setTimeout(() => $("[data-new-repo-cancel]")?.focus(), 0);
   }
 
+  // Tab strips scroll sideways only. CSS hides their vertical overflow (the
+  // tabs sit 1px into the border line), but focus and scrollIntoView can still
+  // move it, so any vertical offset snaps straight back.
+  document.addEventListener("scroll", (event) => {
+    const strip = event.target;
+    if (strip instanceof Element && strip.scrollTop
+        && strip.matches("[data-repo-tabs], [data-repo-record-tabs]")) {
+      strip.scrollTop = 0;
+    }
+  }, { capture: true, passive: true });
+
   function keepRepoActiveTabVisible(strip) {
     if (!strip || strip.scrollWidth <= strip.clientWidth + 1) return;
     const active = strip.querySelector('[role="tab"][aria-selected="true"]');

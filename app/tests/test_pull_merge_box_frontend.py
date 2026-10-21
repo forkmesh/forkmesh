@@ -486,3 +486,9 @@ def test_tab_strips_scroll_sideways_only():
     rule = shell[start:shell.index("}", start)]
     assert "overflow-y: hidden;" in rule
     assert "scrollbar-width: none;" in rule
+
+
+def test_tab_strips_snap_back_from_any_vertical_offset():
+    DASHBOARD_JS = (ROOT / "app/public/dashboard/js/05-repo-list-explorer.js").read_text(encoding="utf-8")
+    assert 'strip.matches("[data-repo-tabs], [data-repo-record-tabs]")' in DASHBOARD_JS
+    assert "strip.scrollTop = 0;" in DASHBOARD_JS
