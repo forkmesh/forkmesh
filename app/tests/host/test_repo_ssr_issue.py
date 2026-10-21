@@ -263,8 +263,8 @@ def test_linked_pull_requests_match_the_dashboard(viewer):
     assert got == expected
     assert 'data-repo-issue-development-event="k1"' in got
     development = got.split('data-repo-development="issues"')[1].split("</div> </div>")[0]
-    assert "/Bolt/pulls/11" in development and "/Bolt/pulls/5" in development
-    assert "/Bolt/pulls/9" not in development and "/Bolt/pulls/12" not in development
+    assert "/Bolt/pull/11" in development and "/Bolt/pull/5" in development
+    assert "/Bolt/pull/9" not in development and "/Bolt/pull/12" not in development
     assert ('data-repo-issue-picker-open="development"' in got) == (viewer == "member")
 
 

@@ -827,6 +827,8 @@ def test_short_pull_addresses_are_served_and_the_plural_redirects():
     assert repo_short_urls.alias_redirect("/Bolt/pulls/3", "", "acme") == "/Bolt/pull/3"
     assert repo_short_urls.alias_redirect("/Bolt/pulls", "", "acme") is None
     assert repo_short_urls.alias_redirect("/Bolt/pull", "", "acme") == "/Bolt/pulls"
+    assert repo_short_urls.alias_redirect("/Bolt/pulls/0", "", "acme") != "/Bolt/pull/0"
+    assert repo_short_urls.alias_redirect("/Bolt/pulls/03", "", "acme") != "/Bolt/pull/03"
 
 
 def test_the_dashboard_loads_the_setting_before_the_first_render():

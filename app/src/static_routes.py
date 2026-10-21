@@ -289,7 +289,7 @@ REPO_ROUTE_ALIASES = {
     "merge-requests": "pulls",
 }
 PULL_RECORD_ROUTE = "pull"
-PULL_NUMBER_RE = re.compile(r"^[0-9]{1,9}$")
+PULL_NUMBER_RE = re.compile(r"^[1-9][0-9]{0,8}$")
 
 
 def repo_alias_redirect(path, query):
