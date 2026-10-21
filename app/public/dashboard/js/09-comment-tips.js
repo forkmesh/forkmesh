@@ -1,13 +1,3 @@
-  // Tips on comments, wallet to wallet over Solana Pay
-  // (docs/app/comment-tips.md).
-  //
-  // An author with a Solana address on their profile (the public "solana"
-  // payout field) gets a Tip button on their comments. The sheet asks
-  // POST /api/repo/<o>/<r>/tips for a Solana Pay transfer request (a fresh
-  // reference key per request), shows it as a QR code (ForkMeshQR, as on the
-  // profile's tips card) and an "Open in wallet" link, then asks
-  // /api/tips/verify every few seconds while it is open. The tipper's wallet
-  // signs and sends; the forge never sees a key or holds funds.
   const COMMENT_TIP_POLL_MS = 6000;
   const COMMENT_TIP_POLL_LIMIT_MS = 3 * 60 * 1000;
   const COMMENT_TIP_PRESETS = Object.freeze({ sol: ["0.01", "0.05", "0.1"], usdc: ["1", "5", "10"], token: ["10", "50", "100"] });
@@ -33,8 +23,6 @@
     return commentTipUi.configLoad;
   }
 
-  // The comment's author when they can be tipped by this viewer: tips on,
-  // signed in, someone else, with a public address on their profile.
   function commentTipAuthor(subject, comment) {
     if (!commentTipUi.config?.enabled || !state.session?.sessionToken) return "";
     const author = String(commentReactionAuthor(subject, comment) || "").toLowerCase();
@@ -66,7 +54,6 @@
         for (const name of list) state.commentTipWallets[name] = String(data?.wallets?.[name] || "");
         refreshCommentReactionBars(subject);
       } catch (_) {
-        // No Tip buttons is the safe failure.
       } finally {
         commentTipUi.loads.delete(key);
       }
@@ -75,10 +62,6 @@
     return load;
   }
 
-  // ForkMeshQR holds up to 230 bytes. A request with a token, a reference
-  // and a long label or message can pass that; the QR then drops the
-  // message, then the label (wallets show recipient and amount anyway). The
-  // "Open in wallet" link keeps everything.
   const COMMENT_TIP_QR_MAX_BYTES = 230;
 
   function commentTipQrText(uri) {

@@ -23,9 +23,6 @@ EMOJI = {
     "handshake": "\U0001F91D", "glowstar": "\U0001F31F",
     "trophy": "\U0001F3C6", "thankyou": "\U0001F4AC",
 }
-# The gratitude group: the picker's second row and the "Say thanks" family.
-# "thankyou" is a sticker (its own drawing, /assets/reactions/thank-you.svg); its
-# unicode stand-in is only for text surfaces such as the ping summary.
 GRATITUDE = ("thanks", "hearthands", "sparkleheart", "handshake", "glowstar",
              "trophy", "thankyou")
 STICKERS = {"thankyou": "/assets/reactions/thank-you.svg"}
@@ -107,9 +104,6 @@ async def _person(env, row):
 
 
 async def summarize(env, rows, viewer_bi="", custom=None):
-    """Tallies per comment. A custom reaction's tally carries ``custom``: its
-    label and image from ``custom`` (slug -> item), or None once it was
-    deleted, so every surface can draw a fallback chip."""
     comments = {}
     for row in rows or []:
         comment = str(row.get("comment") or "")
@@ -163,7 +157,6 @@ async def _custom_catalog(env, owner, rows=None):
 
 
 async def tip_counts(env, repo_bi, subject):
-    """comment -> number of confirmed tips on it (comment_tips)."""
     try:
         rows = await d1_all(
             env, "SELECT comment, COUNT(*) AS n FROM comment_tips WHERE "
@@ -388,7 +381,6 @@ async def _write(env, request, owner, repo):
     custom = {}
     if CUSTOM_RE.fullmatch(emoji):
         custom = await _custom_catalog(env, owner)
-        # A deleted or disabled custom reaction can still be taken back.
         if on and emoji[len("custom:"):] not in custom:
             return json_response({"error": "invalid_reaction"}, status=400,
                                  cache_control=PRIVATE_CACHE)

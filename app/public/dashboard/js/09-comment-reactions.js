@@ -501,9 +501,6 @@
     options[Math.max(0, Math.min(options.length - 1, next))].focus();
   }
 
-  // The merged custom reactions for the repository on screen (its owner's
-  // organization's and the instance's), fetched once per owner. Resolves
-  // true when the list changed.
   async function loadCustomReactions() {
     const repo = state.repoRecordDetail?.repo || state.selectedRepo;
     const owner = String(repo?.owner || "").toLowerCase();
@@ -532,8 +529,6 @@
     return load;
   }
 
-  // "Say thanks": one tap adds the Thank you sticker (never takes it back;
-  // the chip does that).
   function sayCommentThanks(bar) {
     if (!bar) return;
     const subject = bar.getAttribute("data-comment-reactions") || "";
@@ -543,8 +538,6 @@
     if (!mine) void toggleCommentReaction(bar, "thankyou");
   }
 
-  // A custom reaction with an animated variant plays it while hovered (and
-  // never under reduced motion); the still image comes back on leave.
   function commentReactionAnimate(target, on) {
     const host = target?.closest?.("[data-reaction], [data-reaction-option]");
     const image = host?.querySelector?.("img[data-reaction-animated]");

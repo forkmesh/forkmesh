@@ -17889,9 +17889,6 @@
 
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
-  // A GIF from GIPHY's media hosts (what the composer's GIF picker inserts)
-  // gets a still frame for prefers-reduced-motion and a play/pause control;
-  // every other image keeps the plain rendering below.
   const MD_GIPHY_GIF = /^https:\/\/media[0-4]?\.giphy\.com\/media\/(?:v1\.[A-Za-z0-9_=.-]{1,200}\/)?[A-Za-z0-9]{4,64}\/(?:giphy|200|200w|giphy-downsized)\.gif$/;
 
   function mdGifHtml(alt, source) {
@@ -19376,9 +19373,6 @@
     ["thankyou", "Thank you", "thanks sticker thx ty grateful"],
   ]);
   const COMMENT_REACTION_QUICK = Object.freeze(["like", "love", "laugh", "celebrate", "eyes", "rocket"]);
-  // The gratitude group: the picker's second row, and "thankyou" is what the
-  // bar's "Say thanks" button adds. Stickers are drawn from their own image
-  // (same origin, /assets/reactions/) instead of an emoji glyph.
   const COMMENT_REACTION_GRATITUDE = Object.freeze(["thanks", "hearthands", "sparkleheart", "handshake", "glowstar", "trophy", "thankyou"]);
   const COMMENT_REACTION_STICKERS = Object.freeze({ thankyou: "/assets/reactions/thank-you.svg" });
   const COMMENT_REACTION_CUSTOM_RE = /^custom:[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
@@ -19403,15 +19397,11 @@
     return Boolean(ISSUE_REACTION_EMOJI[emoji]) || COMMENT_REACTION_CUSTOM_RE.test(String(emoji || ""));
   }
 
-  // Same-origin image paths only: a custom reaction's src comes from this
-  // instance's /api/reactions/custom/asset/ and a sticker's from /assets/reactions/.
   function commentReactionSafeSrc(src) {
     const text = String(src || "");
     return /^\/(?:api\/reactions\/custom\/asset\/[0-9a-f]{40}\.(?:svg|png|gif|webp)|assets\/reactions\/[a-z0-9-]+\.svg)$/.test(text) ? text : "";
   }
 
-  // The glyph inside a chip or a picker cell: the emoji, a sticker or custom
-  // image, or for a custom reaction that was deleted, its name as text.
   function commentReactionGlyph(emoji, custom, size = 18) {
     const sticker = COMMENT_REACTION_STICKERS[emoji];
     if (sticker) return `<img src="${sticker}" alt="" width="${size}" height="${size}" class="fm-reaction-img" decoding="async" draggable="false">`;
@@ -19475,9 +19465,6 @@
     return `<button type="button" data-reaction="${escapeHtml(tally.emoji)}" aria-pressed="${tally.mine ? "true" : "false"}" aria-label="${escapeHtml(`${commentReactionLabel(tally.emoji, tally.custom)} ${tally.count}: ${commentReactionWho(tally)}`)}" class="fm-reaction${agent ? " fm-reaction-agent" : ""}"><span aria-hidden="true" class="fm-reaction-emoji">${commentReactionGlyph(tally.emoji, tally.custom)}</span><span class="fm-reaction-count">${escapeHtml(formatCount(tally.count))}</span></button>`;
   }
 
-  // The extras after the chips: "Say thanks" (adds the Thank you sticker;
-  // gone once the viewer has), and, once the page knows them, a tipped
-  // count and a Tip button for an author with a public Solana address.
   function renderCommentReactionExtras(subject, comment, tallies) {
     const thanked = tallies.some((tally) => tally.emoji === "thankyou" && tally.mine);
     const thanks = thanked ? "" : `<button type="button" data-reaction-thanks aria-label="Say thanks" title="Say thanks" class="fm-reaction-thanks"><img src="${COMMENT_REACTION_STICKERS.thankyou}" alt="" width="18" height="18" class="fm-reaction-img" decoding="async" draggable="false"><span class="fm-reaction-thanks-label">Say thanks</span></button>`;
@@ -27862,7 +27849,6 @@
       state.repoRecordDetail = { repo, kind, number, parsed };
       container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
       if (kind === "issues") mountIssueStickyHeader(container);
-      // The authors are known now: look up who can be tipped.
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
@@ -49629,17 +49615,6 @@
     return loadDashboardChunk("challenges").then((chunk) => chunk.initChallengesPage(...args));
   }
 
-  // GIFs and stickers in comment composers (docs/app/comment-gifs.md).
-  //
-  // Every record composer (a textarea marked data-mention-input="record":
-  // issue, pull request and discussion comments, replies, reviews, edits)
-  // gets a Sticker button and, when the instance has a GIPHY key, a GIF
-  // button. Both open one picker that inserts Markdown at the caret. GIF
-  // searches go through /api/gifs/* so the key never reaches the browser,
-  // and the picker shows "Powered by GIPHY" as GIPHY's terms ask. A GIF
-  // reply (from the reaction picker) drops the GIF into the record's
-  // composer and sends it. Rendered GIFs (mdGifHtml) can be paused, and show
-  // a still frame under prefers-reduced-motion until hovered or pressed.
   const COMMENT_GIF_SEARCH_DELAY_MS = 350;
   const COMMENT_GIF_ATTRIBUTION = "Powered by GIPHY";
   const commentGifUi = {
@@ -49678,9 +49653,6 @@
     return `<button type="button" data-composer-sticker aria-label="Add a sticker" title="Add a sticker" aria-haspopup="dialog" class="fm-composer-media"><i data-lucide="sticker" class="h-4 w-4"></i></button>`;
   }
 
-  // Adds the Sticker and GIF buttons to every record composer on the page
-  // that does not have them yet: in the issue composer's toolbar, else in a
-  // small row under the text box.
   function decorateCommentComposers() {
     commentGifUi.queued = false;
     if (!state.session?.sessionToken) return;
@@ -49824,7 +49796,6 @@
     if (restoreFocus && picker.anchor?.isConnected) picker.anchor.focus();
   }
 
-  // One picker for GIFs and stickers. onPick receives {kind, markdown, gif}.
   function openGifPicker({ anchor, tab = "gifs", title = "Add to your comment", onPick }) {
     closeGifPicker();
     if (typeof closeCommentReactionPicker === "function") closeCommentReactionPicker();
@@ -49918,15 +49889,12 @@
     });
   }
 
-  // Previews are stills under reduced motion; hovering or focusing one plays
-  // just that one.
   function gifPreviewMotion(target, on) {
     const image = target?.closest?.("[data-gif-pick]")?.querySelector("img");
     if (!image || commentReactionMotionOk()) return;
     image.src = on ? image.dataset.gifPreview : image.dataset.gifStill;
   }
 
-  // The record's own composer and its send button, for a one-click GIF reply.
   function commentGifComposer() {
     const forms = [
       ["[data-repo-issue-comment-form]", "[data-repo-issue-comment-submit]"],
@@ -49960,7 +49928,6 @@
         const author = commentReactionAuthor(subject, comment).toLowerCase();
         const me = String(state.session?.nodeName || "").toLowerCase();
         const mention = author && author !== me && /^[a-z0-9][a-z0-9-]{0,62}$/.test(author) ? `@${author} ` : "";
-        // A draft in progress is never replaced or sent: the GIF joins it.
         if (composer.textarea.value.trim() || !composer.submit) {
           insertIntoComposer(composer.textarea, `${mention}${markdown}`);
           composer.textarea.scrollIntoView({ block: "center", behavior: commentReactionMotionOk() ? "smooth" : "auto" });
@@ -49974,8 +49941,6 @@
     });
   }
 
-  // Play/pause for rendered GIFs: the <source> carries the still frame for
-  // reduced motion; "all" pins the still, "not all" pins the animation.
   function commentGifPlaying(holder) {
     const source = holder.querySelector("[data-fm-gif-still]");
     const media = source?.getAttribute("media") || "";
@@ -50025,7 +49990,6 @@
       event.preventDefault();
       setCommentGifPlaying(holder, !commentGifPlaying(holder));
     });
-    // Under reduced motion a GIF plays only while it is hovered.
     document.addEventListener("pointerover", (event) => {
       const holder = event.target.closest?.("[data-fm-gif]");
       if (!holder || commentReactionMotionOk() || holder.contains(event.relatedTarget)) return;
@@ -50548,9 +50512,6 @@
     options[Math.max(0, Math.min(options.length - 1, next))].focus();
   }
 
-  // The merged custom reactions for the repository on screen (its owner's
-  // organization's and the instance's), fetched once per owner. Resolves
-  // true when the list changed.
   async function loadCustomReactions() {
     const repo = state.repoRecordDetail?.repo || state.selectedRepo;
     const owner = String(repo?.owner || "").toLowerCase();
@@ -50579,8 +50540,6 @@
     return load;
   }
 
-  // "Say thanks": one tap adds the Thank you sticker (never takes it back;
-  // the chip does that).
   function sayCommentThanks(bar) {
     if (!bar) return;
     const subject = bar.getAttribute("data-comment-reactions") || "";
@@ -50590,8 +50549,6 @@
     if (!mine) void toggleCommentReaction(bar, "thankyou");
   }
 
-  // A custom reaction with an animated variant plays it while hovered (and
-  // never under reduced motion); the still image comes back on leave.
   function commentReactionAnimate(target, on) {
     const host = target?.closest?.("[data-reaction], [data-reaction-option]");
     const image = host?.querySelector?.("img[data-reaction-animated]");
@@ -50713,16 +50670,6 @@
       hideCommentReactionWho();
     }, { passive: true });
   }
-  // Tips on comments, wallet to wallet over Solana Pay
-  // (docs/app/comment-tips.md).
-  //
-  // An author with a Solana address on their profile (the public "solana"
-  // payout field) gets a Tip button on their comments. The sheet asks
-  // POST /api/repo/<o>/<r>/tips for a Solana Pay transfer request (a fresh
-  // reference key per request), shows it as a QR code (ForkMeshQR, as on the
-  // profile's tips card) and an "Open in wallet" link, then asks
-  // /api/tips/verify every few seconds while it is open. The tipper's wallet
-  // signs and sends; the forge never sees a key or holds funds.
   const COMMENT_TIP_POLL_MS = 6000;
   const COMMENT_TIP_POLL_LIMIT_MS = 3 * 60 * 1000;
   const COMMENT_TIP_PRESETS = Object.freeze({ sol: ["0.01", "0.05", "0.1"], usdc: ["1", "5", "10"], token: ["10", "50", "100"] });
@@ -50748,8 +50695,6 @@
     return commentTipUi.configLoad;
   }
 
-  // The comment's author when they can be tipped by this viewer: tips on,
-  // signed in, someone else, with a public address on their profile.
   function commentTipAuthor(subject, comment) {
     if (!commentTipUi.config?.enabled || !state.session?.sessionToken) return "";
     const author = String(commentReactionAuthor(subject, comment) || "").toLowerCase();
@@ -50781,7 +50726,6 @@
         for (const name of list) state.commentTipWallets[name] = String(data?.wallets?.[name] || "");
         refreshCommentReactionBars(subject);
       } catch (_) {
-        // No Tip buttons is the safe failure.
       } finally {
         commentTipUi.loads.delete(key);
       }
@@ -50790,10 +50734,6 @@
     return load;
   }
 
-  // ForkMeshQR holds up to 230 bytes. A request with a token, a reference
-  // and a long label or message can pass that; the QR then drops the
-  // message, then the label (wallets show recipient and amount anyway). The
-  // "Open in wallet" link keeps everything.
   const COMMENT_TIP_QR_MAX_BYTES = 230;
 
   function commentTipQrText(uri) {
@@ -51744,9 +51684,6 @@
       toggle?.focus();
     });
   }
-  // Settings -> Reactions, GIFs & tips. Shown to administrators (custom
-  // reactions for the instance, the GIPHY key, tip tokens) and to
-  // organization owners (their organization's custom reactions).
   const reactionSettingsUi = { scopes: [], scope: "", reactions: [], editing: "", loaded: false };
 
   async function reactionSettingsPost(path, body) {

@@ -120,9 +120,6 @@
 
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
-  // A GIF from GIPHY's media hosts (what the composer's GIF picker inserts)
-  // gets a still frame for prefers-reduced-motion and a play/pause control;
-  // every other image keeps the plain rendering below.
   const MD_GIPHY_GIF = /^https:\/\/media[0-4]?\.giphy\.com\/media\/(?:v1\.[A-Za-z0-9_=.-]{1,200}\/)?[A-Za-z0-9]{4,64}\/(?:giphy|200|200w|giphy-downsized)\.gif$/;
 
   function mdGifHtml(alt, source) {
@@ -1607,9 +1604,6 @@
     ["thankyou", "Thank you", "thanks sticker thx ty grateful"],
   ]);
   const COMMENT_REACTION_QUICK = Object.freeze(["like", "love", "laugh", "celebrate", "eyes", "rocket"]);
-  // The gratitude group: the picker's second row, and "thankyou" is what the
-  // bar's "Say thanks" button adds. Stickers are drawn from their own image
-  // (same origin, /assets/reactions/) instead of an emoji glyph.
   const COMMENT_REACTION_GRATITUDE = Object.freeze(["thanks", "hearthands", "sparkleheart", "handshake", "glowstar", "trophy", "thankyou"]);
   const COMMENT_REACTION_STICKERS = Object.freeze({ thankyou: "/assets/reactions/thank-you.svg" });
   const COMMENT_REACTION_CUSTOM_RE = /^custom:[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
@@ -1634,15 +1628,11 @@
     return Boolean(ISSUE_REACTION_EMOJI[emoji]) || COMMENT_REACTION_CUSTOM_RE.test(String(emoji || ""));
   }
 
-  // Same-origin image paths only: a custom reaction's src comes from this
-  // instance's /api/reactions/custom/asset/ and a sticker's from /assets/reactions/.
   function commentReactionSafeSrc(src) {
     const text = String(src || "");
     return /^\/(?:api\/reactions\/custom\/asset\/[0-9a-f]{40}\.(?:svg|png|gif|webp)|assets\/reactions\/[a-z0-9-]+\.svg)$/.test(text) ? text : "";
   }
 
-  // The glyph inside a chip or a picker cell: the emoji, a sticker or custom
-  // image, or for a custom reaction that was deleted, its name as text.
   function commentReactionGlyph(emoji, custom, size = 18) {
     const sticker = COMMENT_REACTION_STICKERS[emoji];
     if (sticker) return `<img src="${sticker}" alt="" width="${size}" height="${size}" class="fm-reaction-img" decoding="async" draggable="false">`;
@@ -1706,9 +1696,6 @@
     return `<button type="button" data-reaction="${escapeHtml(tally.emoji)}" aria-pressed="${tally.mine ? "true" : "false"}" aria-label="${escapeHtml(`${commentReactionLabel(tally.emoji, tally.custom)} ${tally.count}: ${commentReactionWho(tally)}`)}" class="fm-reaction${agent ? " fm-reaction-agent" : ""}"><span aria-hidden="true" class="fm-reaction-emoji">${commentReactionGlyph(tally.emoji, tally.custom)}</span><span class="fm-reaction-count">${escapeHtml(formatCount(tally.count))}</span></button>`;
   }
 
-  // The extras after the chips: "Say thanks" (adds the Thank you sticker;
-  // gone once the viewer has), and, once the page knows them, a tipped
-  // count and a Tip button for an author with a public Solana address.
   function renderCommentReactionExtras(subject, comment, tallies) {
     const thanked = tallies.some((tally) => tally.emoji === "thankyou" && tally.mine);
     const thanks = thanked ? "" : `<button type="button" data-reaction-thanks aria-label="Say thanks" title="Say thanks" class="fm-reaction-thanks"><img src="${COMMENT_REACTION_STICKERS.thankyou}" alt="" width="18" height="18" class="fm-reaction-img" decoding="async" draggable="false"><span class="fm-reaction-thanks-label">Say thanks</span></button>`;
@@ -10093,7 +10080,6 @@
       state.repoRecordDetail = { repo, kind, number, parsed };
       container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
       if (kind === "issues") mountIssueStickyHeader(container);
-      // The authors are known now: look up who can be tipped.
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");

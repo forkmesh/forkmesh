@@ -22457,8 +22457,6 @@ async def _new_solana_keypair():
 
 
 def _amount_units(units, decimals):
-    """Base units as a plain decimal string with no trailing zeros
-    (1500000, 6 -> "1.5"), the form Solana Pay's amount field takes."""
     units, decimals = int(units), max(0, int(decimals))
     whole, frac = divmod(units, 10 ** decimals) if decimals else (units, 0)
     if not decimals or not frac:
@@ -22468,9 +22466,6 @@ def _amount_units(units, decimals):
 
 def _solana_pay_uri(address, amount_lamports, reference="", message="Join ForkMesh",
                     spl_token="", decimals=9, label="ForkMesh"):
-    """A Solana Pay transfer request. ``spl_token`` (a mint address) asks for
-    that token instead of SOL, with ``amount_lamports`` in its base units and
-    ``decimals`` its precision. SOL requests keep their historical form."""
     amount = (_amount_units(amount_lamports, decimals) if spl_token
               else _amount_sol(amount_lamports))
     uri = "solana:" + address + "?amount=" + amount

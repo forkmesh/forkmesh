@@ -521,7 +521,6 @@ void paintCheck(QPainter &p)
 
 void heartPath(QPainterPath &heart, qreal cx, qreal top, qreal w, qreal h)
 {
-    // The love heart's curve, scaled into a (cx, top, w, h) box.
     auto pt = [&](qreal x, qreal y) {
         return QPointF(cx + (x - 0.5) * w / 0.87, top + (y - 0.09) * h / 0.79);
     };
@@ -659,8 +658,6 @@ void paintTrophy(QPainter &p)
 
 void paintThankYouSticker(QPainter &p)
 {
-    // The web's thank-you.svg, reduced to what reads at chip size: a tilted
-    // sky-blue balloon with an ink outline and a pink "TY".
     p.save();
     p.translate(0.5, 0.5);
     p.rotate(-8);
@@ -740,8 +737,6 @@ QString displayName(const QString &value)
         if (canonical == entry.value)
             return entry.label;
     }
-    // A web custom reaction ("custom:party-parrot") has no drawing here; its
-    // chip falls back to the name.
     if (value.startsWith(QLatin1String("custom:")))
         return QLatin1Char(':') + value.mid(7) + QLatin1Char(':');
     return value;
