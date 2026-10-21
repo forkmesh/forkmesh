@@ -93,6 +93,19 @@ Everything is in `desktop/`.
   project with no logo saves the instance's logo as `logo.png`: the `logo`
   path from `GET /api/instance`, else its favicon. Project settings is a page
   of the main window.
+- **An instance belongs to one project (2026-10-21).** A project may hold
+  several instances (rarely), but two projects never share one, so their
+  accounts, chat and data cannot mix. Each project records the origins of its
+  instances (`host[:port]`, production aliases folded to `app.forkmesh.com`)
+  as `instances` in its `project.json` whenever its server list changes
+  (`MainWindow::recordProjectInstances`); a project that has not recorded them
+  yet is read from its settings file. Choosing an instance for a new project,
+  "Add mainnode server", signing in to another instance, connecting a deployed
+  relay and editing the relay address all refuse an instance another project
+  uses (`ProjectRegistry::instanceOwner`) and offer to open that project. The
+  new-project dialog no longer offers the current project's instances, which
+  belong to it. Projects that already shared an instance before this rule are
+  left as they are.
 - **Project menu.** The instance, account and repository live as rows in the
   project picker's menu rather than in the top bar. When no account is signed
   in, the account row is the "Log in / Sign up" entry; the top bar has no

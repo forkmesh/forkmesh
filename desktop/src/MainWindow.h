@@ -4461,6 +4461,9 @@ private:
     bool projectInstancePending() const;
     void promptChooseProjectInstance();
     void connectProjectInstance(const QString &url, const QString &name);
+    QString otherProjectForInstance(const QString &url, QString *slug = nullptr) const;
+    bool refuseInstanceOfAnotherProject(const QString &url);
+    void recordProjectInstances();
     void adoptInstanceLogo(const QString &serverUrl);
     void saveInstanceLogo(const QString &projectDir, QList<QUrl> candidates);
     void openProject(const QString &slug, bool keepThisOneOpen);

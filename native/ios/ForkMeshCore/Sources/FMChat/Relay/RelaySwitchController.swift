@@ -264,6 +264,11 @@ public final class RelaySwitchController {
 
     @discardableResult
     public func attach(_ relayId: String, to instance: RelayProfile) async -> RelaySwitchResult {
+        if let owner = settings.relays.owner(of: instance), owner.id != relayId {
+            return RelaySwitchResult(
+                ok: false, relay: settings.relays.byId(relayId),
+                error: "\(instance.host) already belongs to the project \(owner.label). An instance can only be in one project.")
+        }
         guard let attached = settings.relays.attach(relayId, to: instance) else {
             return RelaySwitchResult(
                 ok: false, relay: settings.relays.byId(relayId), error: "That project is already connected to an instance.")

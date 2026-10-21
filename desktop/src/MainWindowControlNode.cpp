@@ -4749,6 +4749,8 @@ void MainWindow::connectToDeployedRelay(const QString &hostname)
         }
     }
     if (index < 0) {
+        if (refuseInstanceOfAnotherProject(host))
+            return;
         ServerConfig server;
         server.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         server.name = host;

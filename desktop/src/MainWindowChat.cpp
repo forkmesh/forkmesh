@@ -1,6 +1,7 @@
 
 #include "ForkMeshVersion.h"
 #include "ProcessReaper.h"
+#include "ProjectRegistry.h"
 #include "Tooltips.h"
 #include "UiSounds.h"
 #include "MainWindow.h"
@@ -1937,6 +1938,8 @@ void MainWindow::loadServers()
             &legacySingleUrl, &legacySingleRoom);
     if (migratedDefaultRoom || migratedInstances)
         saveServers();
+    else
+        recordProjectInstances();
 }
 
 void MainWindow::saveServers()
@@ -1963,6 +1966,7 @@ void MainWindow::saveServers()
         settings.setValue(kRoomNameSetting, active.room);
         forgetConfiguredRelayHost();
     }
+    recordProjectInstances();
 }
 
 QString MainWindow::activeServerInstanceId() const
@@ -2006,7 +2010,13 @@ void MainWindow::persistEditsToActiveServer()
     if (m_activeServer < 0 || m_activeServer >= m_servers.size())
         return;
     ServerConfig &active = m_servers[m_activeServer];
-    active.url = canonicalServerUrl(m_serverUrlEdit->text()); // host -> full URL
+    const QString editedUrl = canonicalServerUrl(m_serverUrlEdit->text());
+    if (forkmesh::projects::instanceKey(editedUrl) != forkmesh::projects::instanceKey(active.url) &&
+        refuseInstanceOfAnotherProject(editedUrl)) {
+        m_serverUrlEdit->setText(serverHostDisplay(active.url));
+        return;
+    }
+    active.url = editedUrl; // host -> full URL
     active.room = m_roomNameEdit->text().trimmed();
     if (isValidNodeName(active.lastAccount))
         rememberUserAccount(active.lastAccount, active.url);
@@ -2115,6 +2125,8 @@ void MainWindow::promptAddServer()
         server.url = kDefaultServerUrl;
     const QString legacyUrl = server.url;
     server.url = canonicalServerUrl(server.url);
+    if (refuseInstanceOfAnotherProject(server.url))
+        return;
     server.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     server.name = nameEdit->text().trimmed().left(80);
     if (server.name.isEmpty())

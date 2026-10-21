@@ -10,6 +10,7 @@
 #include <QLockFile>
 #include <QSaveFile>
 #include <QSettings>
+#include <QUrl>
 
 namespace forkmesh::projects {
 
@@ -80,7 +81,55 @@ Project readProject(const QString &dir, bool isHome)
     project.created = QDateTime::fromString(
         object.value(QStringLiteral("created")).toString(), Qt::ISODate);
     project.ownsFolder = !isHome && project.created.isValid();
+    project.instancesRecorded = object.contains(QStringLiteral("instances"));
+    project.instances = stringList(object.value(QStringLiteral("instances")));
     return project;
+}
+
+QStringList settingsInstances(const QString &projectDir)
+{
+    const QString path = settingsFilePath(projectDir);
+    if (!QFileInfo(path).isFile())
+        return {};
+    QSettings settings(path, QSettings::IniFormat);
+    if (settings.value(kInstancePendingSetting, false).toBool())
+        return {};
+    QStringList keys;
+    const QJsonArray servers = QJsonDocument::fromJson(
+        settings.value(QStringLiteral("servers/items")).toString().toUtf8()).array();
+    for (const QJsonValue &server : servers) {
+        const QString key = instanceKey(server.toObject().value(QStringLiteral("url")).toString());
+        if (!key.isEmpty() && !keys.contains(key))
+            keys.append(key);
+    }
+    if (keys.isEmpty()) {
+        const QString key = instanceKey(settings.value(QStringLiteral("server/url")).toString());
+        if (!key.isEmpty())
+            keys.append(key);
+    }
+    return keys;
+}
+
+bool readObject(const QString &path, QJsonObject *object, QString *error)
+{
+    QFile file(path);
+    if (!file.exists()) {
+        object->insert(QStringLiteral("schema"), kSchema);
+        return true;
+    }
+    if (file.size() > kMaxProjectFileBytes || !file.open(QIODevice::ReadOnly)) {
+        *error = QStringLiteral("Could not read %1.").arg(QDir::toNativeSeparators(path));
+        return false;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        *error = QStringLiteral("%1 could not be read, so it was left as it is.")
+                     .arg(QDir::toNativeSeparators(path));
+        return false;
+    }
+    *object = document.object();
+    return true;
 }
 
 bool writeJson(const QString &path, const QJsonObject &object, QString *error)
@@ -161,6 +210,73 @@ QVector<InstanceChoice> decodeInstanceChoices(const QString &json)
         choices.append(choice);
     }
     return choices;
+}
+
+QString instanceKey(const QString &url)
+{
+    QString raw = url.trimmed();
+    if (raw.isEmpty())
+        return {};
+    if (!raw.contains(QStringLiteral("://")))
+        raw.prepend(QStringLiteral("https://"));
+    const QUrl parsed(raw);
+    const QString host = parsed.host().toLower();
+    if (!parsed.isValid() || host.isEmpty())
+        return {};
+    const QString scheme = parsed.scheme().toLower();
+    int port = parsed.port(-1);
+    if (((scheme == QLatin1String("https") || scheme == QLatin1String("wss")) && port == 443) ||
+        ((scheme == QLatin1String("http") || scheme == QLatin1String("ws")) && port == 80))
+        port = -1;
+    static const QStringList production{QStringLiteral("app.forkmesh.com"),
+                                        QStringLiteral("forkmesh.com"),
+                                        QStringLiteral("api.forkmesh.com"),
+                                        QStringLiteral("app.next.forkmesh.com")};
+    if (port < 0 && (production.contains(host) || host.endsWith(QLatin1String(".next.forkmesh.com"))))
+        return production.first();
+    return port < 0 ? host : QStringLiteral("%1:%2").arg(host).arg(port);
+}
+
+bool recordInstances(const QString &projectDir, const QStringList &urls, QString *error)
+{
+    QString localError;
+    if (!error)
+        error = &localError;
+    error->clear();
+    QStringList keys;
+    for (const QString &url : urls) {
+        const QString key = instanceKey(url);
+        if (!key.isEmpty() && !keys.contains(key))
+            keys.append(key);
+    }
+    const QString path =
+        QDir(projectDir).filePath(QLatin1String(forkmesh::paths::kProjectFileName));
+    QJsonObject object;
+    if (!readObject(path, &object, error))
+        return false;
+    const QJsonArray array = QJsonArray::fromStringList(keys);
+    if (object.value(QStringLiteral("instances")).toArray() == array)
+        return true;
+    object.insert(QStringLiteral("instances"), array);
+    return writeJson(path, object, error);
+}
+
+const Project *instanceOwner(const QVector<Project> &projects, const QString &url,
+                             const QString &exceptDir)
+{
+    const QString key = instanceKey(url);
+    if (key.isEmpty())
+        return nullptr;
+    const QString except = QDir::cleanPath(exceptDir);
+    for (const Project &project : projects) {
+        if (QDir::cleanPath(project.dir) == except)
+            continue;
+        const QStringList keys =
+            project.instancesRecorded ? project.instances : settingsInstances(project.dir);
+        if (keys.contains(key))
+            return &project;
+    }
+    return nullptr;
 }
 
 QString settingsFilePath(const QString &projectDir)
@@ -317,24 +433,8 @@ bool updateDetails(const QString &projectDir, const QString &name,
     const QString path =
         QDir(projectDir).filePath(QLatin1String(forkmesh::paths::kProjectFileName));
     QJsonObject object;
-    QFile file(path);
-    if (file.exists()) {
-        if (file.size() > kMaxProjectFileBytes || !file.open(QIODevice::ReadOnly)) {
-            *error = QStringLiteral("Could not read %1.").arg(QDir::toNativeSeparators(path));
-            return false;
-        }
-        QJsonParseError parseError;
-        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
-        file.close();
-        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-            *error = QStringLiteral("%1 could not be read, so it was left as it is.")
-                         .arg(QDir::toNativeSeparators(path));
-            return false;
-        }
-        object = document.object();
-    } else {
-        object.insert(QStringLiteral("schema"), kSchema);
-    }
+    if (!readObject(path, &object, error))
+        return false;
     object.insert(QStringLiteral("name"), trimmedName);
     object.insert(QStringLiteral("description"), description.trimmed().left(400));
     return writeJson(path, object, error);

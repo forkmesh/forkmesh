@@ -90,6 +90,9 @@ final class ProjectRuntime: ProjectActivator {
     }
 
     private func forgetPreviousProject() {
+        if let hub = Services.get(ChatHub.self) {
+            hub.enterProject(workspace: ChatInstaller.bindProject() ?? ChatWorkspace())
+        }
         Services.get(LocalControlService.self)?.resetForProjectSwitch()
         Services.get(DesktopControlHub.self)?.resetForProjectSwitch()
         Services.get(AgentControlCenter.self)?.resetForProjectSwitch()

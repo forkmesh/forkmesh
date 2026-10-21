@@ -28,6 +28,8 @@ struct Project {
     bool isHome = false;
     bool ownsFolder = false;
     QDateTime created;
+    QStringList instances;
+    bool instancesRecorded = false;
 };
 
 // Conventional logo at the project root, in the order repositories use.
@@ -71,6 +73,13 @@ bool updateDetails(const QString &projectDir, const QString &name,
 
 bool remove(const QString &projectsRoot, const QString &slug, bool keepFolder,
             QString *error, QString *movedTo = nullptr);
+
+QString instanceKey(const QString &url);
+
+bool recordInstances(const QString &projectDir, const QStringList &urls, QString *error);
+
+const Project *instanceOwner(const QVector<Project> &projects, const QString &url,
+                             const QString &exceptDir);
 
 // Settings file a project's process will read, for seeding before first run.
 QString settingsFilePath(const QString &projectDir);

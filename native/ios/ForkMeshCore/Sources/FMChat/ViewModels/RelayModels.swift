@@ -370,7 +370,9 @@ public final class AddProjectModel {
         loadingInstances = false
     }
 
-    public func added(_ entry: InstanceDirectoryEntry) -> RelayProfile? { relays.byId(entry.id) }
+    public func added(_ entry: InstanceDirectoryEntry) -> RelayProfile? {
+        relays.byId(entry.id) ?? RelayProfile.normalizeOrigin(entry.id).flatMap(relays.owner(ofInstance:))
+    }
 
     public func quickAdd(_ entry: InstanceDirectoryEntry) async {
         if added(entry) != nil || checking { return }

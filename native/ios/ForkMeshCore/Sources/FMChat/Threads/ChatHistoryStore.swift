@@ -467,6 +467,11 @@ public final class ChatHistoryStore {
         }
     }
 
+    public func cancelScheduledSave() {
+        saveTask?.cancel()
+        saveTask = nil
+    }
+
     @discardableResult
     public func flush() async -> Int {
         await saveTask?.value

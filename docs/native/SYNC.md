@@ -144,4 +144,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S069 | 2026-10-19 | Router | fix | Router network sharing creates a missing share config so a new share shows up | 3330f9588b be89626f7f | synced | be89626f7f |
 | S070 | 2026-10-20 | Chat | feature | Usernames and @mentions in chat, issues, pull requests and discussions open that person's ForkMesh profile when tapped | 079280627a | synced | 079280627a |
 | S071 | 2026-10-21 | Kit | fix | Every text field strips hidden Unicode (zero-width, bidi override, tag and smuggling characters) as you type or paste; passwords stay exact | 1c703806a7 | synced | 1c703806a7 |
+| S072 | 2026-10-21 | Projects | fix | Switching projects no longer shows another project's chat channels, private rooms or direct messages | 2b6c130a28 | n/a | Android rebuilds its chat services per project (ProjectLifecycle.close, Features.install), so it never had this leak |
+| S073 | 2026-10-21 | Projects | fix | Adding an instance that another project already uses opens that project instead of creating a second one | 4beeb217c2 | synced | 68c7fcc9e7 |
 <!-- ledger:end -->

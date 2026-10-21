@@ -316,6 +316,7 @@ public final class DirectMessageService {
     @ObservationIgnored private var roomNames: [String: String] = [:]
     @ObservationIgnored private var seen: [String: Set<String>] = [:]
     @ObservationIgnored private var sequence = 0
+    @ObservationIgnored private var generation = 0
     @ObservationIgnored private var receivedRefs: [String: [String]] = [:]
     @ObservationIgnored let sleeper: @Sendable (TimeInterval) async throws -> Void
     @ObservationIgnored private var pinned: Set<String> = []
@@ -436,9 +437,11 @@ public final class DirectMessageService {
     public func refresh() async {
         loading = true
         defer { loading = false }
+        let started = generation
         do {
             let payload = try await call(
                 "GET", "\(DirectMessageFrames.endpoint)?limit=\(DirectMessageFrames.pageLimit)", nil)
+            if generation != started { return }
             apply(DirectMessageFrames.conversations(from: payload), replacing: true)
             nextCursor = payload["nextCursor"]?.text ?? ""
             lastError = nil
@@ -453,8 +456,10 @@ public final class DirectMessageService {
             let cursor = nextCursor.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
         else { return }
         do {
+            let started = generation
             let payload = try await call(
                 "GET", "\(DirectMessageFrames.endpoint)?limit=\(DirectMessageFrames.pageLimit)&cursor=\(cursor)", nil)
+            if generation != started { return }
             apply(DirectMessageFrames.conversations(from: payload), replacing: false)
             nextCursor = payload["nextCursor"]?.text ?? ""
         } catch {
@@ -1441,7 +1446,14 @@ public final class DirectMessageService {
     }
 
     public func clear() async {
+        generation &+= 1
         await closeAll()
+        sockets = [:]
+        connected = []
+        serverCopies = [:]
+        cryptos = [:]
+        receivedRefs = [:]
+        lastError = nil
         records = []
         history = [:]
         seen = [:]
