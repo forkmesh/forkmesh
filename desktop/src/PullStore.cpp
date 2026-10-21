@@ -713,6 +713,7 @@ PullEvent eventFromFrontMatter(const FrontMatter &fm)
     ev.lineEnd = int(fm.num("lineEnd"));
     ev.suggestionPatch = decodeFrontMatterBlob(fm.get("suggestionPatchB64"));
     ev.targetPath = fm.get("targetPath");
+    ev.target = fm.get("target");
     ev.appliedCommit = fm.get("appliedCommit");
     ev.patchset = fm.get("patchset");
     ev.anchorLines = decodeFrontMatterBlob(fm.get("anchorLinesB64"));
@@ -1159,7 +1160,8 @@ QJsonObject PullEvent::toJson() const
             {"line", line},   {"threadId", threadId},
             {"parentId", parentId}, {"lineStart", lineStart},
             {"lineEnd", lineEnd}, {"suggestionPatch", suggestionPatch},
-            {"targetPath", targetPath}, {"appliedCommit", appliedCommit},
+            {"targetPath", targetPath}, {"target", target},
+            {"appliedCommit", appliedCommit},
             {"patchset", patchset}, {"anchorLines", anchorLines},
             {"sig", sig}};
 }
@@ -1183,6 +1185,7 @@ PullEvent PullEvent::fromJson(const QJsonObject &obj)
     ev.lineEnd = obj.value("lineEnd").toInt();
     ev.suggestionPatch = obj.value("suggestionPatch").toString();
     ev.targetPath = obj.value("targetPath").toString();
+    ev.target = obj.value("target").toString();
     ev.appliedCommit = obj.value("appliedCommit").toString();
     ev.patchset = obj.value("patchset").toString();
     ev.anchorLines = obj.value("anchorLines").toString();
@@ -2114,6 +2117,10 @@ QString PullStore::contentForSigning(const PullEvent &ev)
         return ev.state + nul + ev.body;
     if (ev.type == "delete")
         return ev.body;
+    if (ev.type == "comment-edit")
+        return ev.target + nul + ev.body;
+    if (ev.type == "comment-delete")
+        return ev.target;
     return QString();
 }
 
@@ -2239,6 +2246,8 @@ bool writeEventFileIn(const QString &dir, int index, const PullEvent &ev,
         lines << "suggestionPatchB64: " + encodeFrontMatterBlob(ev.suggestionPatch);
     if (!ev.targetPath.isEmpty())
         lines << "targetPath: " + ev.targetPath;
+    if (!ev.target.isEmpty())
+        lines << "target: " + ev.target;
     if (!ev.appliedCommit.isEmpty())
         lines << "appliedCommit: " + ev.appliedCommit;
     if (!ev.patchset.isEmpty())
@@ -2465,6 +2474,113 @@ bool PullStore::applyRemoteEvent(int number, const PullEvent &ev, QString *error
             .arg(ev.type == "review" ? QStringLiteral("review") : QStringLiteral("comment"),
                  ev.authorName.isEmpty() ? ev.author.left(8) : ev.authorName),
         error);
+}
+
+PullEvent PullStore::makeCommentChange(int number, const QString &target,
+                                       const QString &body, bool remove) const
+{
+    PullEvent ev;
+    ev.type = remove ? QStringLiteral("comment-delete")
+                     : QStringLiteral("comment-edit");
+    ev.target = target;
+    if (!remove)
+        ev.body = stripEdgeNewlines(body);
+    return makeSignedEvent(number, ev);
+}
+
+bool PullStore::editComment(int number, const QString &target,
+                            const QString &body, QString *error)
+{
+    if (!canWrite()) {
+        if (error)
+            *error = QStringLiteral("This repository is read-only on this node.");
+        return false;
+    }
+    return appendEvent(number, makeCommentChange(number, target, body, false),
+                       QStringLiteral("pull #%1: edit comment").arg(number), error);
+}
+
+bool PullStore::deleteComment(int number, const QString &target, QString *error)
+{
+    if (!canWrite()) {
+        if (error)
+            *error = QStringLiteral("This repository is read-only on this node.");
+        return false;
+    }
+    return appendEvent(number, makeCommentChange(number, target, QString(), true),
+                       QStringLiteral("pull #%1: delete comment").arg(number), error);
+}
+
+bool PullStore::isCommentChangeEvent(const PullEvent &ev)
+{
+    return ev.type == QLatin1String("comment-edit") ||
+           ev.type == QLatin1String("comment-delete");
+}
+
+bool PullStore::isEditableComment(const PullEvent &ev)
+{
+    static const QSet<QString> editable = {
+        QStringLiteral("comment"), QStringLiteral("review"),
+        QStringLiteral("line-comment"), QStringLiteral("thread-comment"),
+        QStringLiteral("thread-reply")};
+    return editable.contains(ev.type);
+}
+
+bool PullStore::commentChangeApplies(const PullEvent &change, const PullEvent &target)
+{
+    if (!isCommentChangeEvent(change) || !isEditableComment(target))
+        return false;
+    if (change.type == QLatin1String("comment-delete") &&
+        target.type == QLatin1String("review"))
+        return false;
+    if (!change.author.isEmpty() && change.author == target.author)
+        return true;
+    const QString name = change.authorName.trimmed().toLower();
+    return !name.isEmpty() && name == target.authorName.trimmed().toLower();
+}
+
+QList<PullEvent> PullStore::foldCommentChanges(const QList<PullEvent> &events,
+                                               QSet<QString> *edited)
+{
+    QHash<QString, int> indexById;
+    for (int i = 0; i < events.size(); ++i)
+        if (!events.at(i).id.isEmpty() && !isCommentChangeEvent(events.at(i)))
+            indexById.insert(events.at(i).id, i);
+    QHash<QString, PullEvent> edits;
+    QSet<QString> deleted;
+    for (const PullEvent &ev : events) {
+        if (!isCommentChangeEvent(ev) || !indexById.contains(ev.target))
+            continue;
+        if (!commentChangeApplies(ev, events.at(indexById.value(ev.target))))
+            continue;
+        if (ev.type == QLatin1String("comment-delete"))
+            deleted.insert(ev.target);
+        else if (!edits.contains(ev.target) || edits.value(ev.target).ts <= ev.ts)
+            edits.insert(ev.target, ev);
+    }
+    QList<PullEvent> out;
+    out.reserve(events.size());
+    for (const PullEvent &ev : events) {
+        if (isCommentChangeEvent(ev) || (!ev.id.isEmpty() && deleted.contains(ev.id)))
+            continue;
+        PullEvent shown = ev;
+        const auto edit = edits.constFind(ev.id);
+        if (!ev.id.isEmpty() && edit != edits.constEnd()) {
+            shown.body = edit->body;
+            if (edited)
+                edited->insert(ev.id);
+        }
+        out.append(shown);
+    }
+    return out;
+}
+
+bool PullStore::authoredByThisNode(const PullEvent &ev) const
+{
+    if (m_identity && !ev.author.isEmpty() && ev.author == m_identity->publicKey())
+        return true;
+    const QString name = m_authorName.trimmed().toLower();
+    return !name.isEmpty() && name == ev.authorName.trimmed().toLower();
 }
 
 QString PullStore::branchReviewKey(const QString &branch)

@@ -453,6 +453,14 @@
     return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  function webSessionAuthored(ev) {
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (!me || !ev) return false;
+    if (String(ev.authorName || "").trim().toLowerCase() === me) return true;
+    const pub = webIssueKeyPublic();
+    return Boolean(pub) && String(ev.author || "") === pub;
+  }
+
   async function getWebIssueKey() {
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null"); } catch (_) {}
@@ -1135,6 +1143,12 @@
       content = [fields.state || "", cleanBody].join(NUL);
     } else if (type === "delete") {
       content = cleanBody;
+    } else if (type === "comment-edit") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = [fields.target, cleanBody].join(NUL);
+    } else if (type === "comment-delete") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = String(fields.target);
     } else {
       throw new Error("unsupported_pull_event_type");
     }
@@ -1150,12 +1164,20 @@
       ts,
       sig,
     };
-    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines"]) {
+    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines", "target"]) {
       if (fields[key] !== undefined && fields[key] !== "") event[key] = fields[key];
     }
     const payload = { owner: repo.owner, repo: repo.name, number, event };
     const data = await fetchRepoMutation(repo, "pulls", payload);
     return { ...data, event };
+  }
+
+  async function submitWebPullCommentEdit(repo, number, target, body) {
+    return submitWebPullEvent(repo, number, "comment-edit", { target, body });
+  }
+
+  async function submitWebPullCommentDelete(repo, number, target) {
+    return submitWebPullEvent(repo, number, "comment-delete", { target });
   }
 
   async function submitWebPullComment(repo, number, body) {
@@ -1551,6 +1573,9 @@
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
     }
+    if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
+      return "Only the comment's author, the repository owner or an organization admin can change this comment.";
+    }
     return ({
       not_authorized: "Only the repository owner or an organization admin can do that.",
       bad_signature: "The signed issue action could not be verified.",
@@ -1598,6 +1623,47 @@
     return [...new Set(String(value || "").split(",")
       .map((item) => item.trim())
       .filter(Boolean))].slice(0, 20);
+  }
+
+  async function handleWebPullCommentAction(action, target) {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "pulls" || !number || !target) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const parsed = detail.parsed || {};
+    const original = foldPullCommentChanges(parsed.pullConversation)
+      .find((ev) => String(ev.id || "") === String(target));
+    if (!original) return;
+    let result;
+    try {
+      if (action === "delete") {
+        if (!await confirmAccountAction({
+          title: "Delete this comment?",
+          body: "Its Git history remains recoverable.",
+          confirmLabel: "Delete comment",
+        })) return;
+        result = await submitWebPullCommentDelete(repo, number, target);
+      } else {
+        const nextBody = await openIssueCommentEditor(
+          target, original.body || "",
+          "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
+        if (nextBody === null) return;
+        const trimmed = String(nextBody).replace(/[\r\n]+$/, "");
+        if (!trimmed.trim() || trimmed === String(original.body || "").replace(/[\r\n]+$/, "")) return;
+        result = await submitWebPullCommentEdit(repo, number, target, trimmed);
+      }
+    } catch (error) {
+      showErrorNotice(webIssueActionError(error, action === "delete" ? "delete-comment" : "edit-comment"));
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
+    refreshPullConversationProjection();
   }
 
   async function handleWebIssueAction(action, target = "") {

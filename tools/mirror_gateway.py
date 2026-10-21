@@ -8157,6 +8157,12 @@ def _dashboard_pull_event_content(event: Mapping[str, Any]) -> str | None:
             return "closed\0" + body
         if event_type == "delete":
             return body
+        if event_type == "comment-edit":
+            target = str(event.get("target") or "")
+            return target + "\0" + body if target.strip() else None
+        if event_type == "comment-delete":
+            target = str(event.get("target") or "")
+            return target if target.strip() else None
     except (TypeError, ValueError):
         return None
     return None

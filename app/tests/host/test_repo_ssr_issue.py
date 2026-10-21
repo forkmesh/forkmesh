@@ -40,7 +40,8 @@ FUNCTIONS = {
         "issuePersonNameHtml"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
-        "markdownVideoButtonHtml"),
+        "markdownVideoButtonHtml",
+        "webIssueKeyPublic", "webSessionAuthored"),
     "04-account.js": ("validNodeName",),
     "06-repo-content.js": (
         "mdSafeUrl", "mdImageSource", "mdHeadingSlug", "mdLinkHtml", "mdImageHtml",

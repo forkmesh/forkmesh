@@ -36768,6 +36768,58 @@ async def _authorize_issue_manager(env, owner, data, request=None):
     return False, err
 
 
+ISSUE_OWN_EDITABLE_EVENT_TYPES = frozenset({"comment", "open"})
+
+
+async def _issue_comment_owned_by_submitter(env, owner, repo, number, event):
+    target = clean_string(event.get("target", "") or "", 200).strip()
+    if not target or target == "self" or int(number or 0) <= 0:
+        return False
+    author = str(event.get("author", "") or "").strip()
+    actor = clean_string(
+        event.get("authorName", "") or "", MAX_NODE_NAME).strip().lower()
+    if not event.get("authorVerified"):
+        actor = ""
+    if not author and not actor:
+        return False
+    paths = _forkbot_issue_json_candidates(number)
+    try:
+        data = await _forkbot_repo_gateway_json(
+            env, owner, repo,
+            "blobs?" + "&".join("path=" + quote(p, safe="") for p in paths))
+    except Exception:
+        return False
+    blobs = data.get("blobs") if isinstance(data, dict) else None
+    if not isinstance(blobs, dict):
+        return False
+    for path in paths:
+        text = _forkbot_blob_text(blobs.get(path))
+        if not text:
+            continue
+        try:
+            record = json.loads(text)
+        except Exception:
+            continue
+        events = record.get("events") if isinstance(record, dict) else None
+        if not isinstance(events, list):
+            continue
+        for item in events:
+            if not isinstance(item, dict) or str(item.get("id") or "") != target:
+                continue
+            allowed = ISSUE_OWN_EDITABLE_EVENT_TYPES
+            if event.get("type") == "delete":
+                allowed = frozenset({"comment"})
+            if item.get("type") not in allowed:
+                return False
+            if author and str(item.get("author") or "").strip() == author:
+                return True
+            target_name = clean_string(
+                item.get("authorName", "") or "", MAX_NODE_NAME).strip().lower()
+            return bool(actor) and target_name == actor
+        return False
+    return False
+
+
 async def _authorize_issue_self_claim(env, data, request, event):
     """Authorize a signed-in visitor claiming (or releasing) an issue themselves.
 
@@ -40675,6 +40727,9 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
     }
     if event_type in owner_event_types and not actions_job:
         ok, err = await _authorize_issue_manager(env, owner, data, request)
+        if not ok and event_type in ("edit", "delete"):
+            ok = await _issue_comment_owned_by_submitter(
+                env, owner, repo, number, event)
         if not ok:
             return err
     # Self-assignment (issue #570) is the one assignment a public
@@ -41148,6 +41203,10 @@ async def pulls_handler(env, request, owner, repo):
                 "VALUES (?,?,?)",
                 repo_bi, await encrypt_row(env, item), submitter_bi,
             )
+            if event.get("type") in ("comment-edit", "comment-delete"):
+                await notify_repo_host(env, owner, repo, "pulls")
+                await notify_repo_mirrors(env, owner, repo, "pulls")
+                return json_response({"ok": True}, status=201)
             await _record_public_contributor(
                 env, owner, repo, event.get("author", ""), "pulls",
                 event.get("authorName", ""))
