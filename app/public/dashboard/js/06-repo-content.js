@@ -152,6 +152,22 @@
     return escapeHtml(text).replace(MD_MENTION, (whole, prefix, login) => `${prefix}${mdMentionHtml(login)}`);
   }
 
+  function textWithLinksHtml(text) {
+    return escapeHtml(text).replace(MD_BARE_URL, (whole, prefix, candidate) => {
+      const url = mdTrimAutolink(candidate);
+      return `${prefix}${mdLinkHtml(url, url)}${candidate.slice(url.length)}`;
+    });
+  }
+
+  function repoAboutDescriptionHtml(repo) {
+    const text = repoDescriptionText(repo);
+    if (!text) return "No description published.";
+    const mirrorOf = String(repo?.description || "").trim() ? "" : repoMirrorOf(repo);
+    const upstream = mirrorOf && repoMirrorUpstreamPath(mirrorOf);
+    if (upstream) return `Read-only mirror of ${mdLinkHtml(escapeHtml(upstream), escapeHtml(mirrorOf))}`;
+    return textWithLinksHtml(text);
+  }
+
   function mdTrimAutolink(url) {
     let end = url;
     for (;;) {
@@ -12488,7 +12504,7 @@
       }
     });
     $$("[data-repo-about-description]").forEach((el) => {
-      el.textContent = text || "No description published.";
+      el.innerHTML = repoAboutDescriptionHtml(repo);
     });
     $$("[data-repo-about-input]").forEach((el) => {
       el.value = text;
@@ -13005,6 +13021,10 @@
         .map((item) => rememberRepoMirrorAbout(item, body))
         .some(Boolean);
       if (mirrorChanged) applyRepoReadOnlyMirror(state.selectedRepo);
+      const externalMirrors = Array.isArray(body.externalMirrors) ? body.externalMirrors : [];
+      [repo, state.selectedRepo].forEach((item) => { if (item) item.externalMirrors = externalMirrors; });
+      renderRepoExternalMirrors(state.selectedRepo);
+      window.lucide?.createIcons();
       const followers = Number(body.fediverse?.followers || 0);
       $$("[data-repo-watch-count], [data-repo-watch-followers], [data-repo-social-followers]").forEach((el) => {
         el.textContent = formatCount(followers);

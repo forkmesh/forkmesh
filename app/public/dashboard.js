@@ -5947,6 +5947,7 @@
     if (activeSection === "notifications") loadPingSettings();
     if (activeSection === "agents") initSettingsAgents();
     if (activeSection === "instance-theme") initInstanceThemeSection();
+    else leaveInstanceThemeSection();
     // Session state changes on other devices, so re-entering this tab always
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
@@ -6844,15 +6845,30 @@
       if (!response.ok || body.ok !== true) throw new Error(body.error || `http_${response.status}`);
       if (field) field.value = "";
       instanceThemeState.current = body.theme?.preset || "default";
+      const info = await instanceInfo();
+      if (info && typeof info === "object") {
+        info.theme = { ...(info.theme && typeof info.theme === "object" ? info.theme : {}), preset: instanceThemeState.current };
+      }
       instanceThemeState.previewing = "";
       instanceThemeLink().href = `/instance-theme.css?v=${Date.now()}`;
       renderInstanceThemeCards();
       setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is now the theme for everyone on this instance.`, "good");
     } catch (error) {
+      if (field) field.value = "";
       setInstanceThemeStatus(INSTANCE_THEME_ERRORS[error.message] || "Could not change the theme. Try again.", "bad");
     } finally {
       if (button) { button.disabled = false; button.textContent = "Apply to instance"; }
     }
+  }
+
+  function clearInstanceThemePassword() {
+    const field = $("[data-instance-theme-password]");
+    if (field) field.value = "";
+  }
+
+  function leaveInstanceThemeSection() {
+    clearInstanceThemePassword();
+    if (instanceThemeState.previewing) previewInstanceTheme(instanceThemeState.current);
   }
 
   function bindInstanceThemeControls() {
@@ -6862,7 +6878,11 @@
       const card = event.target.closest("[data-instance-theme-card]");
       if (card && !card.disabled) previewInstanceTheme(card.dataset.instanceThemeCard);
     });
-    $("[data-instance-theme-cancel]")?.addEventListener("click", () => previewInstanceTheme(instanceThemeState.current));
+    $("[data-instance-theme-cancel]")?.addEventListener("click", () => {
+      clearInstanceThemePassword();
+      previewInstanceTheme(instanceThemeState.current);
+    });
+    window.addEventListener("pagehide", clearInstanceThemePassword);
     $("[data-instance-theme-apply]")?.addEventListener("click", () => applyInstanceTheme());
     $("[data-instance-theme-password]")?.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
@@ -6873,6 +6893,8 @@
 
   async function initInstanceThemeSection() {
     bindInstanceThemeControls();
+    const username = $("[data-instance-theme-username]");
+    if (username) username.value = state.session?.nodeName || "";
     const allowed = state.session?.isAdmin === true && dashboardOnInstance();
     const denied = $("[data-instance-theme-denied]");
     if (denied) denied.hidden = allowed;
@@ -17872,6 +17894,22 @@
 
   function textWithMentionsHtml(text) {
     return escapeHtml(text).replace(MD_MENTION, (whole, prefix, login) => `${prefix}${mdMentionHtml(login)}`);
+  }
+
+  function textWithLinksHtml(text) {
+    return escapeHtml(text).replace(MD_BARE_URL, (whole, prefix, candidate) => {
+      const url = mdTrimAutolink(candidate);
+      return `${prefix}${mdLinkHtml(url, url)}${candidate.slice(url.length)}`;
+    });
+  }
+
+  function repoAboutDescriptionHtml(repo) {
+    const text = repoDescriptionText(repo);
+    if (!text) return "No description published.";
+    const mirrorOf = String(repo?.description || "").trim() ? "" : repoMirrorOf(repo);
+    const upstream = mirrorOf && repoMirrorUpstreamPath(mirrorOf);
+    if (upstream) return `Read-only mirror of ${mdLinkHtml(escapeHtml(upstream), escapeHtml(mirrorOf))}`;
+    return textWithLinksHtml(text);
   }
 
   function mdTrimAutolink(url) {
@@ -30210,7 +30248,7 @@
       }
     });
     $$("[data-repo-about-description]").forEach((el) => {
-      el.textContent = text || "No description published.";
+      el.innerHTML = repoAboutDescriptionHtml(repo);
     });
     $$("[data-repo-about-input]").forEach((el) => {
       el.value = text;
@@ -30727,6 +30765,10 @@
         .map((item) => rememberRepoMirrorAbout(item, body))
         .some(Boolean);
       if (mirrorChanged) applyRepoReadOnlyMirror(state.selectedRepo);
+      const externalMirrors = Array.isArray(body.externalMirrors) ? body.externalMirrors : [];
+      [repo, state.selectedRepo].forEach((item) => { if (item) item.externalMirrors = externalMirrors; });
+      renderRepoExternalMirrors(state.selectedRepo);
+      window.lucide?.createIcons();
       const followers = Number(body.fediverse?.followers || 0);
       $$("[data-repo-watch-count], [data-repo-watch-followers], [data-repo-social-followers]").forEach((el) => {
         el.textContent = formatCount(followers);
@@ -38314,6 +38356,43 @@
     container.innerHTML = online.length
       ? online.map((mirror) => renderMirrorRow(mirror, servedBy, refMirror)).join("")
       : '<div class="px-2 py-1 text-xs text-muted-foreground">No nodes online right now.</div>';
+    renderRepoExternalMirrors(state.selectedRepo);
+  }
+
+  function repoExternalMirrorPath(url) {
+    try {
+      return new URL(url).pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "");
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function renderRepoExternalMirrorRow(link) {
+    const url = String(link?.url || "");
+    if (!/^https:\/\/[^\s"'<>]+$/i.test(url)) return "";
+    const label = String(link.label || "");
+    const path = repoExternalMirrorPath(url) || url.replace(/^https:\/\//i, "");
+    const mark = String(REPO_FORGE_MIRROR_MARKS[link.provider] || "").replace('class="h-5 w-5"', 'class="h-3.5 w-3.5"')
+      || '<i data-lucide="git-branch" class="h-3.5 w-3.5"></i>';
+    const upstream = link.role === "upstream";
+    const title = `${upstream ? "Upstream" : "Mirror"} on ${label || "the web"}: ${url}`;
+    return `
+        <a data-repo-external-mirror="${escapeHtml(String(link.provider || ""))}" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(title)}" class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-secondary/60">
+          <span class="flex min-w-0 flex-1 items-center gap-1.5">
+            <span class="inline-flex shrink-0 text-muted-foreground">${mark}</span>
+            <span class="block min-w-0 truncate font-mono text-xs font-medium text-foreground">${escapeHtml(path)}</span>
+            ${upstream ? '<span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">upstream</span>' : ""}
+          </span>
+          <span class="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-muted-foreground">${escapeHtml(label)}</span>
+          <i data-lucide="external-link" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
+        </a>`;
+  }
+
+  function renderRepoExternalMirrors(repo) {
+    const links = Array.isArray(repo?.externalMirrors) ? repo.externalMirrors : [];
+    const rows = links.map(renderRepoExternalMirrorRow).join("");
+    $$("[data-repo-external-mirror-list]").forEach((list) => { list.innerHTML = rows; });
+    $$("[data-repo-external-mirrors]").forEach((wrap) => { wrap.hidden = !rows; });
   }
 
   // A repository that has been around collects far more retired desktops than
@@ -43558,7 +43637,7 @@
                 ? `<button type="button" data-repo-about-edit aria-label="Edit About" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>`
                 : ""}
             </div>
-            <p data-repo-about-description class="mt-2 text-sm leading-6 text-foreground">${escapeHtml(repoDescriptionText(repo) || "No description published.")}</p>
+            <p data-repo-about-description class="mt-2 break-words text-sm leading-6 text-foreground">${repoAboutDescriptionHtml(repo)}</p>
             <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
               <a href="${escapeHtml(cloneUrl(repo))}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="link" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Open clean URL</span></a>
               <a href="${escapeHtml(readmeHref)}" data-repo-readme-link data-repo-readme-path="${escapeHtml(readmePath)}" class="inline-flex min-w-0 items-center gap-1.5 hover:text-foreground"><i data-lucide="book-open" class="h-3.5 w-3.5"></i><span>Readme</span></a>
@@ -43623,13 +43702,17 @@
               </div>
               <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5">${'<span class="h-7 w-7 rounded-full border-2 border-background bg-secondary"></span>'.repeat(8)}</div>
             </div>
-            ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
+            ${dashboardOnInstance() ? `<div data-repo-external-mirrors hidden class="mt-3 border-t border-border pt-3">
+              <h4 class="text-xs font-semibold text-foreground">Mirrors</h4>
+              <div data-repo-external-mirror-list class="-mx-2 mt-2 grid"></div>
+            </div>` : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
                 <span class="font-mono text-[11px] text-muted-foreground"><span data-dashboard-repo-count="mirrors">${tabCountLabel(mirrorsCount)}</span> online</span>
               </div>
               <p class="mt-1 text-[11px] leading-4 text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
               <div data-repo-live-mirror-list class="-mx-2 mt-2 grid"></div>
+              <div data-repo-external-mirrors hidden><div data-repo-external-mirror-list class="-mx-2 grid"></div></div>
             </div>`}
             ${canEditAbout && !repo.isPrivate ? `
             <details data-repo-fedi-posts class="mt-4 border-t border-border pt-4">

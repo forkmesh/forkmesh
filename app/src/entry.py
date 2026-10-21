@@ -5593,25 +5593,42 @@ async def _flagship_repository_probe(env):
     if error:
         return False, error
 
-    discussions, error = await routed_json(
-        "Discussions collection",
+    metadata_tree, error = await routed_json(
+        "Repository metadata tree",
         "https://forkmesh.internal/api/repo/forkmesh/forkmesh/"
-        "tree?path=.forkmesh/discussions&ref=" + quote(snapshot_ref),
+        "tree?path=.forkmesh&ref=" + quote(snapshot_ref),
         "tree",
     )
     if error:
         return False, error
-    discussion = numbered_tree(discussions.get("entries"))
-    if discussion is None:
-        return False, "Discussions collection did not contain a readable discussion"
-    discussion_number = str(discussion.get("name") or "")
-    error = await readable_record(
-        "Discussion #%s" % discussion_number,
-        ".forkmesh/discussions/%s/discussion.md" % discussion_number,
-        ref=snapshot_ref,
+    metadata_listing = metadata_tree.get("entries")
+    has_discussions = any(
+        isinstance(item, dict)
+        and str(item.get("type") or "").lower() == "tree"
+        and str(item.get("name") or "") == "discussions"
+        for item in (
+            metadata_listing if isinstance(metadata_listing, list) else [])
     )
-    if error:
-        return False, error
+    discussion = None
+    if has_discussions:
+        discussions, error = await routed_json(
+            "Discussions collection",
+            "https://forkmesh.internal/api/repo/forkmesh/forkmesh/"
+            "tree?path=.forkmesh/discussions&ref=" + quote(snapshot_ref),
+            "tree",
+        )
+        if error:
+            return False, error
+        discussion = numbered_tree(discussions.get("entries"))
+    if discussion is not None:
+        discussion_number = str(discussion.get("name") or "")
+        error = await readable_record(
+            "Discussion #%s" % discussion_number,
+            ".forkmesh/discussions/%s/discussion.md" % discussion_number,
+            ref=snapshot_ref,
+        )
+        if error:
+            return False, error
 
     # The Pull requests tab resolves the metadata branch, pins its immutable
     # OID, then reads both the collection and record from that exact revision.
@@ -16887,6 +16904,9 @@ async def _repo_about_public(env, request, owner, repo):
                         follower.get("url") or "") or follower_url,
                     "followedAt": int(follower.get("created_at") or 0),
                 })
+    about_mirror_fields = _read_only_mirrors.about_fields(
+        await _repo_features_get(env, owner, repo),
+        await _read_only_mirror_fields(env, owner, repo, rec or {}))
     return json_response({
         "ok": True,
         "description": clean_string(
@@ -16908,9 +16928,11 @@ async def _repo_about_public(env, request, owner, repo):
             "followersList": followers_list,
             "settings": ap_settings,
         },
-        **_read_only_mirrors.about_fields(
-            await _repo_features_get(env, owner, repo),
-            await _read_only_mirror_fields(env, owner, repo, rec or {})),
+        **about_mirror_fields,
+        "externalMirrors": _read_only_mirrors.external_mirrors(
+            _read_only_mirrors.upstream_link(about_mirror_fields["mirrorOf"]),
+            await _repository_provider_mirror.public_about_link(
+                env, owner, repo)),
     }, cache_control="public, max-age=600")
 
 

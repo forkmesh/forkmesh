@@ -262,6 +262,24 @@ def public_view(row, record):
     }
 
 
+def public_link(row, record):
+    record = record if isinstance(record, dict) else {}
+    provider = clean_provider(record.get("provider"))
+    remote = record.get("remote") if isinstance(
+        record.get("remote"), dict) else {}
+    status = record.get("status") if isinstance(
+        record.get("status"), dict) else {}
+    if (not provider or not remote.get("path")
+            or int((row or {}).get("active") or 0) != 1
+            or not pushes(normalize_resources(
+                record.get("resources"), provider), "code")
+            or not status.get("remoteExists")
+            or status.get("remotePrivate")):
+        return None
+    return {"provider": provider, "label": PROVIDERS[provider]["label"],
+            "url": remote_web_url(provider, remote), "role": "mirror"}
+
+
 def clean_title(value):
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     return text[:MAX_TITLE_LENGTH] or "Untitled"
@@ -671,6 +689,14 @@ async def _load(env, repo_bi):
     record["resources"] = normalize_resources(
         record.get("resources"), record["provider"])
     return row, record
+
+
+async def public_about_link(env, owner, repo):
+    try:
+        row, record = await _load(env, await _repo_bi(env, owner, repo))
+    except Exception:
+        return None
+    return public_link(row, record)
 
 
 async def _store(env, repo_bi, record, active=None, next_sync_at=None,

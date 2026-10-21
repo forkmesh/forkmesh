@@ -48,6 +48,18 @@ absent keeps the saved value, anything else is `invalid_refs`). The
 `provider-mirror` cron phase drains the outbox and syncs due
 mirrors every 10 minutes.
 
+## Listed in About
+
+The public `GET /api/repo/<owner>/<repo>/about` returns `externalMirrors`:
+`{provider, label, url, role}` rows the repository page lists in the About
+rail's mirror list (under Direct access, or a Mirrors block on instances).
+A provider mirror is listed (`role: "mirror"`) only while it is active, pushes
+code, and its last check found the remote existing and public; a read-only
+mirror's `mirrorOf` is listed as `role: "upstream"`. GitHub is one more mirror
+of the repository, so a visitor who finds the ForkMesh page also finds it there.
+Built by `public_link` / `public_about_link` here and `upstream_link` /
+`external_mirrors` in `app/src/read_only_mirrors.py`.
+
 ## Security
 
 - The token is stored only encrypted, never returned (last four characters

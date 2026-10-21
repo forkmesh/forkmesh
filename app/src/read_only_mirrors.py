@@ -11,6 +11,12 @@ WRITE_PATH_RE = re.compile(
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 PLATFORM_REPOSITORY = "forkmesh"
 MIRROR_CLOSED_FEATURES = ("issues", "pulls", "discussions")
+UPSTREAM_PROVIDERS = {
+    "github.com": ("github", "GitHub"),
+    "gitlab.com": ("gitlab", "GitLab"),
+    "codeberg.org": ("codeberg", "Codeberg"),
+    "bitbucket.org": ("bitbucket", "Bitbucket"),
+}
 
 
 def upstream_page(value):
@@ -81,3 +87,27 @@ def about_fields(features, fields):
     if fields.get("readOnly"):
         features.update({kind: False for kind in MIRROR_CLOSED_FEATURES})
     return dict(fields, features=features)
+
+
+def upstream_link(value):
+    page = upstream_page(value)
+    if not page:
+        return None
+    host = str(urlsplit(page).hostname or "").lower()
+    provider, label = UPSTREAM_PROVIDERS.get(host, ("git", host))
+    return {"provider": provider, "label": label, "url": page,
+            "role": "upstream"}
+
+
+def external_mirrors(*links):
+    seen = set()
+    result = []
+    for link in links:
+        if not isinstance(link, dict) or not link.get("url"):
+            continue
+        key = str(link["url"]).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(link)
+    return result
