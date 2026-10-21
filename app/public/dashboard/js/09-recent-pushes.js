@@ -68,7 +68,7 @@
             <p class="text-foreground"><a href="${escapeHtml(item.branchUrl)}" class="break-all font-mono font-semibold text-accent hover:underline">${escapeHtml(item.branch)}</a>${where} had recent pushes <time datetime="${escapeHtml(when.toISOString())}" title="${escapeHtml(when.toLocaleString())}">${escapeHtml(recentPushAgo(item.pushedAt, now))}</time></p>
           </div>
           <div class="fm-flash-actions">
-            <a href="${escapeHtml(`${item.compareUrl}?expand=1`)}" data-recent-push-compare class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="git-pull-request" aria-hidden="true"></i>Compare &amp; pull request</a>
+            <a href="${escapeHtml(`${item.compareUrl}?expand=1`)}" data-recent-push-compare class="fm-btn fm-btn-sm"><i data-lucide="git-pull-request" aria-hidden="true"></i>Compare &amp; pull request</a>
             <button type="button" data-recent-push-dismiss="${escapeHtml(recentPushKey(item))}" aria-label="Dismiss ${escapeHtml(item.branch)}" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon"><i data-lucide="x" aria-hidden="true"></i></button>
           </div>
         </div>`;

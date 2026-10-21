@@ -118,6 +118,7 @@ def test_the_banner_renders_newest_first_up_to_three_and_escapes():
     assert "Compare &amp; pull request" in html
     assert "1 minute ago" in html and "2 minutes ago" in html
     assert "fm-flash-warning" in html
+    assert "fm-btn-cta" not in html
     assert "onclick" not in html.lower()
 
 

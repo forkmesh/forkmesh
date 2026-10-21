@@ -41,8 +41,10 @@ does.
 On the dashboard home, the repositories list, and the repository pages of the
 pushed repository and (for a fork) its parent. Not on the compare page of the
 branch itself, and never to a signed-out visitor. The bar sits at the top of
-`<main>`, above the page, in `fm-flash fm-flash-warning` with the `cta`
-button, as the update notice does.
+`<main>`, above the page, in `fm-flash fm-flash-warning` with a plain
+`fm-btn fm-btn-sm` button: the green `cta` is kept for each page's single
+create button (`app/public/dashboard/theme.json`), and up to three bars can
+show at once.
 
 ## Data and cost
 
