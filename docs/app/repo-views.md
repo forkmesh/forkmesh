@@ -128,6 +128,11 @@ border, on every tab:
   every icon grey, so `setRepoStarButtonState` also sets the colour inline.
   Stars have no list (they are blind-indexed), so the button has no ▾.
 
+`renderRepoDetail` draws the Fork button in the Code toolbar too, so it
+declares its own `websiteForkAvailable`. Until 2026-10-21 only
+`renderRepoTitleRow` declared it, and every repository page stopped with a
+ReferenceError before its tabs loaded.
+
 Watch stays in the About rail. The forks menu is anchored to the actions
 container, which `ml-auto` keeps at the right edge even when it wraps under
 the name on a phone, so the menu always opens on screen. The server-rendered
@@ -274,6 +279,40 @@ GitHub reference screenshots).
   roster. Editing a comment opens an inline editor in its card
   (`openIssueCommentEditor`, replacing the browser prompt, which could not
   offer suggestions); a quiet refresh waits while it is open.
+- **Development links** (October 2026; the user asked for GitHub's
+  Development section on both pages, with a picker and links made from
+  "fixes #71" style comments). There is no link event type: a new signed
+  event would need every client and the gateway to learn it. Links are read
+  from signed text instead, the way issue relationships are:
+  - A pull links issue #N when its title or body names `#N`, or when one of
+    its comments or commit messages says `close`, `fix` or `resolve` (any
+    tense) `#N`. Code spans and fenced blocks don't count.
+  - An issue's own description or comments link pull #N with
+    `Linked pull request #N`, `fixed by #N`, `resolved in PR #N` and similar
+    lines, and unlink it with `Unlinked pull request #N`. The last line about
+    a pull wins, so an unlink also hides a link that comes from the pull's
+    text. A plain `fixes #N` on an issue is not a link, because issues and
+    pulls are numbered separately and `#N` there means an issue.
+  - The settings button on Development (any signed-in visitor, since the
+    write is an ordinary comment) opens the sidebar picker. On an issue it
+    searches the pull list; on a pull it searches the open issues
+    (`loadRepoIssueRelationIndex`). Typing a number links one that isn't
+    listed. Closing the picker writes one signed issue comment with a
+    `Linked/Unlinked pull request #N` line per change. From a pull page that
+    comment goes on each issue, because an issue page reads only the pull
+    list, not pull comments. For the same reason a web pull comment that says
+    `fixes #N` also writes `Linked pull request #P` on issue #N
+    (`linkPullCommentIssues`). A comment made only of those lines shows on
+    the issue timeline as a "linked pull request #P" rail line.
+  - The issue page reads the pull list in the background
+    (`loadRepoDevelopmentPulls`, cached for a minute) when the Pull requests
+    tab hasn't loaded it. The rules are `pullOwnIssueNumbers`,
+    `issueDevelopmentPullStates`, `issueLinkedPullNumbers` and
+    `pullLinkedIssueNumbers` in `06-repo-content.js`, ported to
+    `development_pull_states` in `repo_ssr_issue.py` for the first view. The
+    desktop and phone apps don't show these links yet. Tests:
+    `app/tests/test_development_links_frontend.py` and
+    `app/browser_tests/tests/dashboard-development-links.spec.js`.
 - **Discussions** have a search box (`is:open category:…`), Sort by (latest
   activity, date created, oldest), Filter (open, closed, all) and New
   discussion, with Categories on the left and the list on the right. Each row
@@ -306,8 +345,8 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   `app/tests/host/test_repo_ssr_issue.py` run the dashboard's own functions
   under node and compare the two renders (add any new helper the issue view
   calls to the test's `FUNCTIONS`/`CONSTANTS`).
-- **Viewer-dependent parts.** The comment box and the sub-issue Add button
-  depend on who is looking, so both the guest and the member variants are
+- **Viewer-dependent parts.** The comment box, the sub-issue Add button and
+  the Development settings button depend on who is looking, so both the guest and the member variants are
   drawn and the page's head script picks one before the first paint
   (`html[data-guest]`, `VIEWER_STYLE`). A member's comment-box avatar is
   drawn blank: the node does not know who is signed in.
