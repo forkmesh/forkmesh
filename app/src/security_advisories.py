@@ -1491,13 +1491,23 @@ async def hall_of_fame(env):
         "ON a.id=c.advisory_id WHERE c.state='accepted' "
         "AND a.state='published' LIMIT ?", HALL_ROWS)
     totals = {}
+    pairs = []
     for row in rows or []:
-        credit = await decrypt_row(env, row.get("credit"))
         try:
             view = json.loads(row.get("public") or "null")
         except ValueError:
             continue
-        if not isinstance(credit, dict) or not isinstance(view, dict):
+        if isinstance(view, dict):
+            pairs.append((row, view))
+    # A repository that turned private or was removed takes its credits off
+    # the hall of fame too, like the feed and the list.
+    shown = {id(view) for view in await _still_public(
+        env, [view for _, view in pairs])}
+    for row, view in pairs:
+        if id(view) not in shown:
+            continue
+        credit = await decrypt_row(env, row.get("credit"))
+        if not isinstance(credit, dict):
             continue
         user = str(credit.get("user") or "")
         if not user:

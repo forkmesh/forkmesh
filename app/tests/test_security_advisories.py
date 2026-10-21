@@ -724,3 +724,25 @@ def test_ledger_retry_refuses_once_recorded(world):
                 {"action": "ledger-retry"})
     assert again.status == 409 and again.data["error"] == "already_recorded"
     assert len(world.commits) == commits
+
+
+def test_hall_of_fame_drops_credits_of_a_repository_gone_private(world):
+    key = Key()
+    advisory_id = report(world, "alice")
+    api(world, "POST", "/advisories/" + advisory_id, "alice",
+        {"action": "credit", "user": "alice", "type": "finder"})
+    assert publish(world, advisory_id, key).status == 200
+    assert [item["user"] for item in
+            asyncio.run(sa.hall_of_fame(world.env))] == ["alice"]
+    world.repos[("acme", "widget")] = "private"
+    sa._hall_cache["value"] = None
+    assert asyncio.run(sa.hall_of_fame(world.env)) == []
+    assert 'href="/alice"' not in public(
+        world, "GET", "/security-researchers").body
+    # A removed repository takes them off as well.
+    world.repos[("acme", "widget")] = "public"
+    sa._hall_cache["value"] = None
+    assert asyncio.run(sa.hall_of_fame(world.env))
+    del world.repos[("acme", "widget")]
+    sa._hall_cache["value"] = None
+    assert asyncio.run(sa.hall_of_fame(world.env)) == []
