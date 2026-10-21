@@ -909,6 +909,7 @@ PING_OPENED_KINDS = {"issue": "issue_opened", "pull": "pull_submitted"}
 # Organization owners/admins/maintainers pinged per new item, beyond the
 # hosting account. Bounds the request-time fan-out for a large organization.
 PING_OPENED_MAX_ORG_RECIPIENTS = 25
+PING_CATALOG_ISSUES_MAX = 5
 # repo_activity vocabulary (adhoc #295): event key -> (headline, fallback
 # body). The keys are deliberately the outbound-webhook event names
 # (repository_webhooks.EVENT_CATALOG), because the ping and the webhook are
@@ -37153,6 +37154,48 @@ async def _org_repo_maintainers(env, host_owner, repo):
         if valid_node_name(name):
             found.add(name)
     return sorted(found)[:PING_OPENED_MAX_ORG_RECIPIENTS]
+
+
+def _catalog_issue_max(rec):
+    try:
+        return int(str((rec or {}).get("issueMaxNumber", "")).strip())
+    except (TypeError, ValueError):
+        return -1
+
+
+async def notify_catalog_issues_opened(env, owner, repo, repo_bi, prior,
+                                       record):
+    owner = clean_string(owner, MAX_NODE_NAME).lower()
+    repo = clean_string(repo, MAX_REPO_SEGMENT)
+    before = _catalog_issue_max(prior)
+    after = _catalog_issue_max(record)
+    if not valid_node_name(owner) or not repo or before < 0 or after <= before:
+        return 0
+    maintainers = [name for name in await _org_repo_maintainers(env, owner, repo)
+                   if name != owner]
+    if not maintainers:
+        return 0
+    try:
+        row = await d1_first(
+            env, "SELECT next_number FROM issue_seq WHERE repo_bi=?", repo_bi)
+        reserved = int((row or {}).get("next_number") or 0)
+    except Exception:
+        return 0
+    first = max(before + 1, reserved, after - PING_CATALOG_ISSUES_MAX + 1)
+    slug = owner + "/" + repo
+    filed = 0
+    for number in range(first, after + 1):
+        href = repo_web_href(owner, repo) + "/issues/" + str(number)
+        for maintainer in maintainers:
+            if await enqueue_notification(
+                    env, maintainer, "issue_opened", "New issue in " + slug,
+                    body="Issue #" + str(number), repo=slug, href=href,
+                    actor=owner, source="issue",
+                    dedupe="issue-opened:" + slug + ":" + str(number),
+                    meta={"number": number, "source": "issue",
+                          "hostOwner": owner, "via": "catalog"}):
+                filed += 1
+    return filed
 
 
 async def notify_issue_assignees(env, owner, repo, assignees, actor, title, number=0):
