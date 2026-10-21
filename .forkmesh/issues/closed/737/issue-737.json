@@ -55,6 +55,15 @@
             "sig": "tgpeFrUUqXHN5oN7xbbAnv2NzONUNIIadTZZwVc2db5JwaUDipMRsYBXkyouYZUDkkuHl-1GwkWNc1h0qltpCQ",
             "ts": 1792551821986,
             "type": "comment"
+        },
+        {
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "16ee5442-9083-47c3-880c-ccf263670518",
+            "sig": "MbbXBgSWHDiyCjRRUuM_tV-3WlahJf8B47fKm-b13gfKovbw-VXzOsPvV5DPWAWqinOyrib-O2iW5zsrwAXrDw",
+            "status": "closed",
+            "ts": 1792551822228,
+            "type": "status"
         }
     ],
     "labels": [
@@ -71,8 +80,8 @@
     "rewardTxSignature": "",
     "schema": "forkmesh-issue-v1",
     "startDate": 0,
-    "status": "open",
+    "status": "closed",
     "title": "/microjobs \"Submit an issue\" link (/issues/new) lands on the issue list instead of the new-issue form",
-    "updatedAt": 1792551821986,
+    "updatedAt": 1792551822228,
     "votes": 0
 }
