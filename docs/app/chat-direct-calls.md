@@ -567,6 +567,100 @@ caller's median is tracked continuously and saved in
 voice id) is stored in `forkmesh.chat.callVoice` / `chat.callVoice`; a face
 without a matching voice id gets the caller's own voice.
 
+#### Native voice processor
+
+Phone calls are moving from the WebView to native libwebrtc
+([../server/rtc.md](../server/rtc.md), "Phone media engine"), so the voice
+changer has to run on the captured 48 kHz mono PCM before it reaches the
+encoder. The engine is ported line for line, with no new behaviour:
+
+| Platform | Code |
+|---|---|
+| iOS (Foundation only) | `native/ios/ForkMeshCore/Sources/FMChat/CallVoice/`: `CallVoiceProcessor`, `CallVoiceCatalog` |
+| Android `:core` (pure JVM) | `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/chat/voice/`: `CallVoiceProcessor`, `CallVoiceCatalog` |
+
+Each port has the same pieces as `chat-call-voice-worklet.js`: the radix-2 FFT
+and packed real FFT, the McLeod pitch detector, the PSOLA `PitchShifter`, the
+look-ahead `PeakLimiter` and `VoiceEngine` (high-pass, denoise, peak envelope,
+warp, breath path, AGC). `CallVoiceCatalog` carries `CALL_VOICES`,
+`VOICE_LIMITS`, `normalizeVoiceChoice`, `resolveCallVoice` (match face / off /
+a voice id), the labels and the choice list. The order of every floating-point
+expression is kept, and so are the two xorshift32 generators with their seeds
+(`0x6d2b79f5` for grain jitter, `0x2545f491` for breath phases), so the output
+is deterministic. JS `Math.round` rounds halves up, so both ports use
+`floor(x)` plus one when the remainder is at least 0.5.
+
+The API is `CallVoiceProcessor(sampleRate, userPitchHz)`, then `setVoice(id)`
+(an unknown id or `""` is the caller's own voice), `setUserPitch(hz)`,
+`setNoiseReduction(amount)` and `process(samples)` in place
+(`UnsafeMutableBufferPointer<Float>`, `inout [Float]` or a pointer and count on
+iOS; `FloatArray` with offset and count on Android). `latencySamples` is 1728
+at 48 kHz, as on the web. Every buffer is allocated in the initializer (raw
+pointers on iOS so there is no copy-on-write), and `process` allocates nothing.
+Setters only store a request: Android swaps it through an `AtomicReference`,
+iOS behind an `NSLock` that `process` takes with `try()`, so the audio thread
+never waits. A request made between two `process` calls applies at the first
+sample of the next one, which is what the worklet's message port does. Unlike
+the worklet, a non-finite input sample is read as 0, because one NaN would
+otherwise stick in the AGC and silence the rest of the call.
+
+`userPitchHz` (the tracked caller median, to save in `chat.callVoicePitch`
+like the web's stats message) and `pitchHz` are published at the end of each
+`process` call.
+
+**Parity fixture.** `tools/call_voice_parity.mjs` runs the JS engine in node on
+one second of 48 kHz input: a 220 to 180 Hz sawtooth through a one-pole
+low-pass, a noise burst, then a 125 Hz sawtooth, over a light noise floor. The
+generator uses only arithmetic and xorshift32, so Swift and Kotlin rebuild the
+same Float32 input exactly. It records every voice, "off", `maya` seeded with
+a 120 Hz caller, and three switches in the middle of the stream
+(`maya`→`kofi`, `off`→`teen`, `robot`→`off`). For each case it stores the RMS
+of every 10 ms block, every 149th sample (rounded to 1e-8), the caller pitch
+it ends on, and an FNV-1a hash of the Float32 output bits. The fixture has two
+identical copies:
+`native/ios/ForkMeshCore/Tests/FMChatTests/Fixtures/call-voice-parity.json`
+(read through `#filePath`) and
+`native/android/core/src/test/resources/chat/call-voice-parity.json`.
+
+`CallVoiceProcessorTests` (Swift) and `CallVoiceProcessorTest` (Kotlin) check:
+
+- samples within 1e-6 absolute, block RMS within 1e-5 relative and the final
+  caller pitch within 1e-6 Hz, for every case;
+- "off" is the input delayed by exactly 1728 samples, bit for bit;
+- a switch in the middle of the stream never steps further between neighbouring
+  samples than 1.2 times the largest step of either voice running alone;
+- 128, 480, 960 and 1024-sample buffers give exactly the output of one long
+  buffer;
+- a NaN or infinite input sample leaves the output finite;
+- the catalogue matches the JS voices field by field.
+
+Measured on 2026-10-21, both ports land on the fixture's rounding floor: a
+worst sample error of 5e-9 and a worst relative RMS error of 5e-6. The hash
+shows how many cases come out bit for bit. Kotlin uses `StrictMath` (fdlibm,
+the same as V8's `Math`), and 17 of 19 cases are bit-identical. Kofi and Young
+man differ in the last bits because the JVM has no fdlibm `log2`, so the port
+uses `log(x) / log(2)`. Swift on Linux uses glibc, and 12 of 19 are
+bit-identical. The tolerances leave room for Apple's libm, which has not been
+measured yet. A real divergence, such as a pitch mark landing one sample away,
+would show up as errors orders of magnitude above the tolerance.
+
+`app/tests/test_call_voice_native_parity.py` regenerates the fixture from the
+JS in a temporary directory and fails if any number differs from the committed
+copy by more than 1e-7 (the hash is left out of that comparison, so a V8
+`Math` change cannot fail it on its own). It also checks that the two copies
+are the same file. A change to the worklet or to `CALL_VOICES` therefore fails
+that test until the fixture is regenerated and both ports follow:
+
+```sh
+node tools/call_voice_parity.mjs \
+  native/ios/ForkMeshCore/Tests/FMChatTests/Fixtures/call-voice-parity.json \
+  native/android/core/src/test/resources/chat/call-voice-parity.json
+```
+
+Then run the native tests: `swift test --filter CallVoice` from
+`native/ios/ForkMeshCore` (`FM_ONLY=FMChat` keeps the build small), and
+`./gradlew --offline :core:coreTest -Pfilter=CallVoice` from `native/android`.
+
 ### Preview and reuse outside a call
 
 `/chat`'s pre-call check (above) opens the camera through the same stage

@@ -190,6 +190,12 @@ struct ChatInstaller: AppServicesInstaller {
         }
         hub.calls = calls
         Services.put(calls)
+        #if canImport(WebRTC)
+        NativeGroupCall.shared.office = hub.office
+        hub.onGroupCallFrame = { (frame: JSONObject, conversation: String) in
+            NativeGroupCall.shared.handleFrame(frame, conversation: conversation)
+        }
+        #endif
         CallRinger.shared.attach(calls)
         DirectCallKit.shared.attach(calls, direct: direct)
     }

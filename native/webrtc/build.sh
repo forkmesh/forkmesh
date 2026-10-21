@@ -18,6 +18,7 @@ if [ ! -d depot_tools ]; then
 fi
 export PATH="$work/depot_tools:$PATH"
 export DEPOT_TOOLS_UPDATE=0
+"$work/depot_tools/ensure_bootstrap"
 if [ ! -f .gclient ]; then
   cat > .gclient <<GCLIENT
 solutions = [{

@@ -678,6 +678,29 @@ public final class OfficeChannelService {
 
     public var currentSelfId: String { selfId() }
 
+    @discardableResult
+    public func sendLiveFrame(_ conversation: String, type: String, fields: JSONObject) async -> Bool {
+        guard let room = room(for: conversation), room.isPrivate, !room.readOnly else { return false }
+        if sockets[room.id] == nil, !(await open(conversation)) { return false }
+        guard let socket = sockets[room.id] else { return false }
+        var plain = frame(room, text: "", bot: false)
+        plain["type"] = .string(type)
+        plain.removeValue(forKey: "text")
+        for (key, value) in fields { plain[key] = value }
+        do {
+            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
+            try await socket.connection.send(text: JSON.encode(envelope))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    public func callTicket(_ conversation: String) async throws -> GroupCallTicket? {
+        guard let room = room(for: conversation), room.isPrivate else { return nil }
+        return GroupCallTicket(json: try await api.accountApiCall("POST", "/api/chat/channels/\(room.id)/call-ticket", [:]))
+    }
+
     public func postFrame(_ conversation: String, type: String, fields: JSONObject) async -> JSONObject? {
         guard let room = room(for: conversation), !room.readOnly else { return nil }
         if sockets[room.id] == nil, !(await open(conversation)) { return nil }

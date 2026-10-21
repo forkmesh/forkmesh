@@ -103,6 +103,7 @@ struct AppHomeView: View {
                     .overlay { DevPerformanceOverlay() }
                     .overlay { PingCelebrationOverlay() }
                     .directCallsRoot()
+                    .groupCallsRoot()
             } else {
                 AuthFlowView()
             }

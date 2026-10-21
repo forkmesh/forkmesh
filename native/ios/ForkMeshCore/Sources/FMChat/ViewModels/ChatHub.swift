@@ -80,6 +80,10 @@ public final class ChatHub: ShellChatBridge {
             restoreOfficeHistory()
             office?.onFrame = { [weak self] frame, conversation in
                 guard let self, let office = self.office else { return }
+                if let type = frame["type"]?.text, GroupCallFrames.types.contains(type) {
+                    self.onGroupCallFrame?(frame, conversation)
+                    return
+                }
                 self.extras.applyRoomFrame(frame, conversation: conversation, selfId: office.currentSelfId)
             }
             office?.onMessage = { [weak self] message in
@@ -126,6 +130,7 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored public var readMarks: ChatReadMarks?
     @ObservationIgnored public var onMessageRemoved: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var calls: DirectCallEngine?
+    @ObservationIgnored public var onGroupCallFrame: (@MainActor (JSONObject, String) -> Void)?
     @ObservationIgnored public var live: DirectLiveEngine?
     @ObservationIgnored public var pings: LocalPingLog? {
         didSet { purgePrivatePings() }
