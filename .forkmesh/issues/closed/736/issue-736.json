@@ -66,6 +66,15 @@
             "sig": "rCyw1peK1kM5FhmGIcda-SHOZZMrxQXqA5BIKnjT44PoSr5yN91DjUpF20FAX0EHhZEAUs1eWF2PpYEETC2BAQ",
             "ts": 1792551012956,
             "type": "comment"
+        },
+        {
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "c84bf1c9-a476-4423-be5d-dbbc6718a160",
+            "sig": "PCypCdSlLyw33UFknKmir-hWtdU-CTI1313OXYrFFyyoH7kD7pPYRTgry5Aa_nUdUyZ_JnRhqGvGvwIrFuOmDA",
+            "status": "closed",
+            "ts": 1792551013135,
+            "type": "status"
         }
     ],
     "labels": [
@@ -82,8 +91,8 @@
     "rewardTxSignature": "",
     "schema": "forkmesh-issue-v1",
     "startDate": 0,
-    "status": "open",
+    "status": "closed",
     "title": "Paid microjobs docs describe fixed claims and batching while live UI uses discretionary issue rewards",
-    "updatedAt": 1792551012956,
+    "updatedAt": 1792551013135,
     "votes": 0
 }
