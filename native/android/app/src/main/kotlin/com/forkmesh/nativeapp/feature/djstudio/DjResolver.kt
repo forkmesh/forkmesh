@@ -98,12 +98,12 @@ internal class DjResolver(private val context: Context) {
         val url = request.url ?: return null
         val host = url.host?.lowercase() ?: return null
         if (request.method != "GET" || request.isForMainFrame) return null
-        if (!(host.endsWith("youtube-nocookie.com") || host.endsWith("youtube.com")) || url.path?.startsWith("/embed/") != true) return null
+        if (!youtubeHost(host) || url.path?.startsWith("/embed/") != true) return null
         return runCatching {
             val connection = URL(url.toString()).openConnection() as HttpURLConnection
             connection.connectTimeout = 10_000
             connection.readTimeout = 15_000
-            connection.instanceFollowRedirects = true
+            connection.instanceFollowRedirects = false
             for ((name, value) in request.requestHeaders) {
                 if (name.equals("Accept-Encoding", true) || name.equals("Cookie", true)) continue
                 connection.setRequestProperty(name, value)
@@ -152,6 +152,10 @@ internal class DjResolver(private val context: Context) {
             }
         }
     }
+
+    private fun youtubeHost(host: String): Boolean =
+        host == "youtube.com" || host.endsWith(".youtube.com") ||
+            host == "youtube-nocookie.com" || host.endsWith(".youtube-nocookie.com")
 
     companion object {
         const val ORIGIN = "https://forkmesh.com/"
