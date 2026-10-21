@@ -129,6 +129,10 @@ the account's (`ownsDesktopKey` false in `activateAccountSession`).
 - When it still cannot start, the alert says why: signed out offers a "Sign in"
   button (`showSignInMenu()`); signed in but unreachable says the relay could
   not be reached.
+- Signing out (`logout`) and switching to another server
+  (`isolateAccountForServerSwitch`) stop the mirror, so a password session on
+  a shared machine does not leave room WebSockets open and decrypted DMs
+  arriving after the account has gone.
 
 ## Direct messages: v4
 
