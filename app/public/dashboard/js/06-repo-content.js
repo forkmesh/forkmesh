@@ -7925,6 +7925,7 @@
       icon.classList.toggle("fill-yellow-400", starred);
       icon.classList.toggle("text-yellow-400", starred);
       icon.classList.toggle("text-muted-foreground", !starred);
+      icon.style.color = starred ? "#facc15" : "";
     }
     const label = button.querySelector("[data-repo-star-label]");
     if (label) label.textContent = starred ? "Starred" : "Star";
@@ -7998,8 +7999,7 @@
   // Who forked this repo (GET /api/repo/o/r/forks): fills the fork button's
   // badge and the list its popover opens. A fork edge is published by the
   // fork's own node inside its signed catalog record, so this is a plain
-  // public read with no viewer state to toggle - unlike Star, the button is a
-  // disclosure, not an action.
+  // public read with no viewer state to toggle.
   function repoForkPath(rawUrl, owner, name) {
     return /^\/[^/\\]/.test(rawUrl) && !/[\u0000-\u0020\\]/.test(rawUrl)
       ? repoPublicHref(rawUrl)
@@ -8026,6 +8026,26 @@
     return `<div class="flex items-center gap-1.5 py-0.5">${portrait}${who}<span class="text-muted-foreground/60">/</span><a href="${escapeHtml(url)}" class="min-w-0 truncate text-foreground hover:underline">${escapeHtml(name)}</a></div>`;
   }
 
+  function setRepoOwnFork(url) {
+    const primary = $("[data-repo-fork-primary]");
+    if (!primary || !url) return;
+    primary.dataset.repoForkOwnUrl = url;
+    primary.title = "Open your fork";
+  }
+
+  function repoForkPushHtml(push) {
+    const commands = (Array.isArray(push?.commands) ? push.commands : []).map(String).join("\n");
+    const expires = push?.expiresAt ? new Date(Number(push.expiresAt)).toLocaleString() : "soon";
+    const copy = (value, label) => `<button type="button" data-dashboard-copy="${escapeHtml(value)}" aria-label="Copy ${label}" class="copy-button fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0"><i data-lucide="copy" class="copy-icon"></i><i data-lucide="check" class="copy-check"></i></button>`;
+    const field = (label, value, attr) => `<div class="flex min-w-0 items-center gap-2"><span class="w-16 shrink-0">${label}</span><code ${attr} class="min-w-0 flex-1 truncate rounded border border-border bg-subtle px-1.5 py-0.5 font-mono text-[11px] text-foreground">${escapeHtml(value)}</code>${copy(value, label.toLowerCase())}</div>`;
+    return `<p class="font-semibold text-foreground">Push to your fork</p>
+      <p class="leading-4">Run these in your checkout. git asks for this credential, which is shown only once.</p>
+      ${commands ? `<div class="grid min-w-0 gap-1"><div class="flex items-center justify-between gap-2"><span>Commands</span>${copy(commands, "commands")}</div><pre data-repo-fork-push-commands class="min-w-0 max-h-40 overflow-auto whitespace-pre rounded-md border border-border bg-subtle p-2 font-mono text-[11px] leading-5 text-foreground">${escapeHtml(commands)}</pre></div>` : ""}
+      ${field("Username", String(push?.username || ""), "data-repo-fork-push-username")}
+      ${field("Password", String(push?.password || ""), "data-repo-fork-push-password")}
+      <p>Expires <span data-repo-fork-push-expiry class="text-foreground">${escapeHtml(expires)}</span></p>`;
+  }
+
   async function loadRepoForks(repo) {
     const list = $("[data-repo-fork-list]");
     try {
@@ -8037,9 +8057,12 @@
       $$("[data-repo-fork-count]").forEach((el) => {
         el.textContent = formatCount(Number(data.count) || 0);
       });
+      const forks = Array.isArray(data.forks) ? data.forks : [];
+      const viewer = String(state.session?.nodeName || "").trim().toLowerCase();
+      const own = viewer && forks.find((fork) => String(fork?.owner || "").toLowerCase() === viewer);
+      if (own) setRepoOwnFork(repoForkPath(String(own.url || ""), String(own.owner || ""), String(own.name || "")));
       if (!list) return;
-      const rows = (Array.isArray(data.forks) ? data.forks : [])
-        .map(repoForkRowHtml).filter(Boolean);
+      const rows = forks.map(repoForkRowHtml).filter(Boolean);
       list.innerHTML = rows.length
         ? rows.join("")
         : `<p class="px-1 py-0.5">Nobody has forked this repository yet.</p>`;
@@ -8156,6 +8179,7 @@
       return;
     }
     const status = $("[data-repo-fork-status]");
+    const pushSlot = $("[data-repo-fork-push]");
     const original = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"></span>Creating fork…';
@@ -8194,27 +8218,35 @@
       const forkUrl = /^\/[A-Za-z0-9._:%-]+\/[A-Za-z0-9._:%-]+$/.test(rawUrl)
         ? rawUrl
         : "";
-      button.innerHTML = data.queued
-        ? '<i data-lucide="clock-3" class="h-3.5 w-3.5"></i>Fork queued'
-        : '<i data-lucide="check" class="h-3.5 w-3.5"></i>Fork created';
+      const existing = data.existing === true || data.exists === true || (!data.created && !data.queued);
+      button.innerHTML = existing
+        ? '<i data-lucide="check" class="h-3.5 w-3.5"></i>You already have a fork'
+        : data.queued
+          ? '<i data-lucide="clock-3" class="h-3.5 w-3.5"></i>Fork queued'
+          : '<i data-lucide="check" class="h-3.5 w-3.5"></i>Fork created';
+      if (forkUrl) setRepoOwnFork(forkUrl);
       if (status) {
-        const message = data.queued
-          ? `Queued on ${String(fork.owner || "your mirror")}. It will finish as soon as that mirror can reach any copy of the source.`
-          : data.existing
-            ? "You already have a fork of this repository."
-            : "Your fork is ready. Push branches to it, then open a pull request back here.";
-        status.innerHTML = `${escapeHtml(message)}${forkUrl ? ` <a href="${escapeHtml(forkUrl)}" class="font-medium text-accent hover:underline">Open fork</a>` : ""}`;
+        const name = `${String(fork.owner || "")}/${String(fork.name || repo.name || "")}`;
+        const message = existing
+          ? `You already have a fork: ${name}.`
+          : data.queued
+            ? `Queued as ${name}. It will be ready in a moment.`
+            : `Your fork ${name} is ready. Push branches to it, then open a pull request back here.`;
+        status.innerHTML = `${escapeHtml(message)}${forkUrl ? ` <a href="${escapeHtml(forkUrl)}" data-repo-fork-open class="font-medium text-accent hover:underline">Open fork</a>` : ""}`;
       }
+      if (pushSlot) {
+        pushSlot.hidden = !data.push;
+        pushSlot.innerHTML = data.push ? repoForkPushHtml(data.push) : "";
+      }
+      loadRepoForks(repo);
     } catch (error) {
       button.disabled = false;
       button.innerHTML = original;
       if (status) {
         const code = String(error?.code || "");
-        status.textContent = code === "email_verification_required"
-          ? "Verify your email address under Settings, Account, then fork."
-          : code === "headless_mirror_required"
+        status.textContent = code === "headless_mirror_required"
           ? "Link a managed headless mirror in Settings first. It may be offline when you create the fork."
-          : String(error?.message || "The fork could not be queued. Try again.");
+          : String(error?.message || "The fork could not be created. Try again.");
       }
     } finally {
       window.lucide?.createIcons();

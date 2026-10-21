@@ -1384,7 +1384,7 @@
     return before !== `${repoMirrorOf(repo)}|${repoReadOnlyMirror(repo)}|${repoMirrorSyncedAt(repo)}|${repo.upstreamCommit || ""}`;
   }
 
-  function repoProvenanceHtml(repo) {
+  function repoProvenanceHtml(repo, { forkButton = true } = {}) {
     const mirrorOf = repoMirrorOf(repo);
     const parent = mirrorOf ? null : repoForkParent(repo);
     if (!mirrorOf && !parent) return "";
@@ -1403,7 +1403,7 @@
       ? `<span data-repo-mirror-synced${syncedTitle ? ` title="${escapeHtml(syncedTitle)}"` : ""} class="shrink-0 text-muted-foreground">· synced ${escapeHtml(formatTimeAgo(syncedAt))}</span>`
       : "";
     const notice = `<span data-repo-mirror-notice class="min-w-0 text-[11px] text-muted-foreground">Read-only. Send changes <a href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="dashboard-accent-link hover:underline">upstream</a> or into a fork.</span>`;
-    const fork = `<button type="button" data-repo-mirror-fork title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-fork"></i>Fork</button>`;
+    const fork = forkButton ? `<button type="button" data-repo-mirror-fork title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-fork"></i>Fork</button>` : "";
     const line = `<span data-repo-provenance-line="mirror" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="refresh-cw" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">Mirror of</span><a data-repo-provenance-link href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="${linkClass}">${escapeHtml(repoMirrorUpstreamPath(mirrorOf) || mirrorOf)}</a>${synced}</span>`;
     return `${line}${notice}${fork}`;
   }

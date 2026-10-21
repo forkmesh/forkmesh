@@ -1330,18 +1330,33 @@ def test_repository_header_is_compact_and_actions_live_in_about():
     ]
     for marker in (
         "data-repo-action-watch",
-        "data-repo-action-fork",
-        "data-repo-action-star",
         'data-dashboard-repo-tab="mirrors"',
         'data-repo-about-actions aria-label="Repository details"',
         'data-repo-about-website',
         'data-repo-about-release',
         'data-repo-watch-count class="font-mono"',
-        'data-repo-fork-count class="font-mono"',
-        'data-repo-star-count class="font-mono"',
         'data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors"',
     ):
         assert marker in about_actions
+    for marker in ("data-repo-action-fork", "data-repo-action-star", "data-repo-fork-wrap"):
+        assert marker not in about_actions
+
+    title_row = render[
+        render.index("function renderRepoTitleRow")
+        : render.index("function startRepoForkFromTitle")
+    ]
+    for marker in (
+        "data-repo-fork-primary",
+        "data-repo-action-fork",
+        "data-repo-fork-menu",
+        "data-repo-action-star",
+        'data-repo-fork-count class="fm-counter"',
+        'data-repo-star-count class="fm-counter"',
+        "fm-btn fm-btn-sm",
+    ):
+        assert marker in title_row
+    assert "data-repo-action-watch" not in title_row
+    assert title_row.count("fm-btn-cta") == 1
 
 
 def test_repository_context_links_and_fediverse_avatars_replace_redundant_ui():
