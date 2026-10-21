@@ -3023,7 +3023,8 @@ def test_source_never_enables_push_or_default_request_logging():
     assert "receive.fsckObjects=true" in source
     # Repository hooks never run: the hooks path is the null device unless
     # the gateway-owned operator-policy directory replaces it.
-    assert 'max_input_bytes: int, hooks_path: str = os.devnull' in source
+    assert "hooks_path: str = os.devnull,\n        allow_rewrite: bool = False" in source
+    assert "self.rewrite_hooks_path = \"\"" in source
     assert 'core.hooksPath=" + hooks_path' in source
     assert "self.receive_hooks_path = os.devnull" in source
     assert "writableOwners requires writableRepositoryRoot" in source
