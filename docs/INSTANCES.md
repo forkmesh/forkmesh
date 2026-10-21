@@ -1296,7 +1296,11 @@ to every provider.
 - SSH credentials pass through the app once, in memory only.
 - The instance app's egress guard refuses forkmesh.com except
   `app.forkmesh.com` (`FORKMESH_EGRESS_PRODUCTION_ALLOW` in the app unit),
-  which only the directory announcement uses.
+  which only the directory announcement uses, and the instance's own domain.
+  An instance on a `*.forkmesh.com` name (net4people.forkmesh.com) used to
+  refuse its own endpoint registration ("production host … is off limits for
+  Next"), so the git node never leased its endpoint and the `repo` step waited
+  on the platform mirror until the guard was widened.
 - Server text that is not listed under "Platform name" (admin-only
   operational alerts, the plugin descriptions on the admin console's
   Plugins page, Solana/ledger notices of switched-off plugins, the referral
