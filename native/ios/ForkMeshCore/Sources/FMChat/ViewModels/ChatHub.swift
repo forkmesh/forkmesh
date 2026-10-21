@@ -148,6 +148,7 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored public var historyScope: @MainActor () -> String = { "" }
     @ObservationIgnored public var historyFormerScopes: @MainActor () -> [String] = { [] }
     @ObservationIgnored private var loadedScope = ""
+    @ObservationIgnored public private(set) var projectSuspended = false
     @ObservationIgnored private var historyToken: ListenerToken?
     @ObservationIgnored private var directRestore:
         (messages: [ChatMessage], receipts: [String: ChatReceipt], times: [String: ChatReceiptTimes])?
@@ -259,9 +260,48 @@ public final class ChatHub: ShellChatBridge {
         }
     }
 
+    public func leaveProject() async {
+        if !projectSuspended, let history {
+            history.cancelScheduledSave()
+            if !loadedScope.isEmpty { history.save(historySnapshot(), scope: loadedScope) }
+        }
+        projectSuspended = true
+        loadedScope = ""
+        directRestore = nil
+        officeRestore = nil
+        directAccount = ""
+        conversationChosen = false
+        ephemerals = [:]
+        unreadStart = [:]
+        appBusy = []
+        directTypingSent = [:]
+        trustChangedAt = [:]
+        directoryMembers = []
+        directoryLoadedAt = nil
+        replyingTo = nil
+        replyConversation = ""
+        notice = nil
+        pendingIssue = nil
+        pendingSearch = nil
+        pendingSaved = false
+        resetAppCommands(clearReplies: true)
+        readMarks?.clear()
+        extras.resetForProjectSwitch()
+        workspace = ChatWorkspace()
+        await office?.clear()
+        await direct?.clear()
+        live?.clear()
+    }
+
+    public func enterProject(workspace: ChatWorkspace) {
+        self.workspace = workspace
+        projectSuspended = false
+        restoreHistoryIfNeeded()
+    }
+
     @discardableResult
     private func restoreHistoryIfNeeded() -> Bool {
-        guard let history else { return false }
+        guard let history, !projectSuspended else { return false }
         let scope = historyScope()
         if scope.isEmpty { return false }
         if scope == loadedScope { return true }
