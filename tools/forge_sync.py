@@ -67,11 +67,19 @@ bridge = _load("forkmesh_forge_bridge", _TOOLS / "github_forkmesh_bridge.py")
 sync_status = _load("forkmesh_forge_sync_status", _TOOLS.parent / "app" / "src" / "sync_status.py")
 
 LEDGER_REL = ".forkmesh/forge-sync.json"
+LEDGER_ENV = "FORKMESH_FORGE_LEDGER"
+SOURCE_REL = ".forkmesh/forge-source.json"
+SOURCE_SCHEMA = "forkmesh-forge-source-v1"
+ISSUE_URL_TEMPLATES = {"github": "https://github.com/{repository}/issues/{number}",
+                       "gitea": "{base}/{repository}/issues/{number}"}
 SCHEMA = "forkmesh-forge-sync-v1"
 REPORT_SCHEMA = "forkmesh-forge-sync-report-v1"
 DEFAULT_SLO_MS = 15 * 60 * 1000
 FIELDS = ("title", "body", "state", "labels", "assignees")
 RULES = ("manual", "forkmesh", "provider")
+MODES = ("sync", "mirror")
+PROVIDER_WRITES = ("create_issue", "update_issue", "create_comment", "update_comment",
+                   "delete_comment")
 SIDES = ("forkmesh", "provider")
 FOREIGN_EVENT_PREFIXES = ("forge-", "github-")
 HISTORY_LIMIT = 100
@@ -82,6 +90,16 @@ MARKER_RE = re.compile(
 
 class SyncError(RuntimeError):
     """A configuration or usage failure that is safe to print."""
+
+
+class ReadOnlyProvider:
+    def __init__(self, provider: Any) -> None:
+        self._provider = provider
+
+    def __getattr__(self, name: str) -> Any:
+        if name in PROVIDER_WRITES:
+            raise SyncError(f"mirror mode never writes to the provider ({name})")
+        return getattr(self._provider, name)
 
 
 def digest(value: Any) -> str:
@@ -113,8 +131,13 @@ def label_key(labels: list[str]) -> list[str]:
 # ---- ledger -----------------------------------------------------------------
 
 
+def ledger_path(checkout: Path) -> Path:
+    override = os.environ.get(LEDGER_ENV, "").strip()
+    return Path(override) if override else Path(checkout) / LEDGER_REL
+
+
 def load_ledger(checkout: Path) -> dict[str, Any]:
-    path = Path(checkout) / LEDGER_REL
+    path = ledger_path(checkout)
     try:
         ledger = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -130,12 +153,14 @@ def load_ledger(checkout: Path) -> dict[str, Any]:
     for name, rule in ledger["sourceOfTruth"].items():
         if name not in FIELDS or rule not in RULES:
             raise SyncError(f"sourceOfTruth.{name} must be one of {', '.join(RULES)}")
+    if ledger.setdefault("mode", "sync") not in MODES:
+        raise SyncError(f"mode must be one of {', '.join(MODES)}")
     return ledger
 
 
 def save_ledger(checkout: Path, ledger: dict[str, Any]) -> bool:
     return bridge.write_if_changed(
-        Path(checkout) / LEDGER_REL,
+        ledger_path(checkout),
         json.dumps(ledger, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
 
@@ -302,11 +327,12 @@ class SyncReport:
 class Engine:
     def __init__(self, provider: Any, signer: Any, *, checkout: Path,
                  clock: Callable[[], int] = lambda: int(time.time() * 1000)) -> None:
-        self.provider = provider
-        self.p = provider.name
         self.checkout = Path(checkout)
         self.clock = clock
         self.ledger = load_ledger(self.checkout)
+        self.mirror = self.ledger["mode"] == "mirror"
+        self.provider = ReadOnlyProvider(provider) if self.mirror else provider
+        self.p = provider.name
         if self.ledger.get("provider") != self.p or \
                 self.ledger.get("repository") != provider.repository:
             raise SyncError(f"{LEDGER_REL} is connected to "
@@ -363,7 +389,8 @@ class Engine:
                 if issue.id not in linked:
                     self.adopt_or_import(issue, linked, now)
             for number in sorted(self.local.records):
-                self.export_if_new(number, now)
+                if not self.mirror:
+                    self.export_if_new(number, now)
         except providers.ForgeError as exc:
             self.report.completed = False
             self.report.error = exc.code
@@ -439,6 +466,11 @@ class Engine:
             conflicts.pop(name, None)
             self.tidy(entry)
             return None
+        if self.mirror:
+            bases[name] = r
+            conflicts.pop(name, None)
+            self.tidy(entry)
+            return "provider"
         if l == base:
             bases[name] = r
             conflicts.pop(name, None)
@@ -513,6 +545,8 @@ class Engine:
             key = f"comment:{eid}"
             local = folded["comments"].get(eid)
             if link.get("reexport"):
+                if self.mirror:
+                    continue
                 if local is None:
                     link["deleted"] = True
                     continue
@@ -543,6 +577,8 @@ class Engine:
             if local is None and comment is None:
                 link["deleted"] = True
             elif local is None:
+                if self.mirror:
+                    continue
                 if digest(split_marker(comment.body)[0]) != base:
                     self.conflict(entry, key, {"forkmesh": "deleted",
                                                "provider": split_marker(comment.body)[0]}, now)
@@ -551,7 +587,7 @@ class Engine:
                 link["deleted"] = True
                 self.report.bump("toProvider", "deleted")
             else:
-                if digest(local["body"]) != base:
+                if not self.mirror and digest(local["body"]) != base:
                     self.conflict(entry, key, {"forkmesh": local["body"], "provider": "deleted"}, now)
                     continue
                 self.local.append(number, "delete", f"forge-{self.p}-delete-{link['remoteId']}",
@@ -565,6 +601,8 @@ class Engine:
             if comment.id in by_remote:
                 continue
             body, marker = split_marker(comment.body)
+            if self.mirror:
+                marker = None
             eid = str((marker or {}).get("event") or f"forge-{self.p}-comment-{comment.id}")
             if eid in mapped:
                 self.report.warnings.append(
@@ -580,6 +618,8 @@ class Engine:
                            "bases": {f"comment:{eid}": digest(body)}}
             by_remote[comment.id] = eid
 
+        if self.mirror:
+            return
         folded = fold(self.local.records[number])
         for eid, local in sorted(folded["comments"].items(), key=lambda kv: (kv[1]["ts"], kv[0])):
             if eid in mapped or eid.startswith(FOREIGN_EVENT_PREFIXES):
@@ -597,7 +637,7 @@ class Engine:
 
     def adopt_or_import(self, issue: Any, linked: dict[str, int], now: int) -> None:
         body, marker = split_marker(issue.body)
-        claimed = marker.get("issue") if marker else None
+        claimed = marker.get("issue") if marker and not self.mirror else None
         if isinstance(claimed, int) and claimed in self.local.records:
             entry = self.ledger["issues"].get(str(claimed))
             if entry and entry.get("remoteId") and str(entry["remoteId"]) != issue.id:
@@ -687,8 +727,38 @@ class Engine:
         retries = getattr(self.provider.transport, "retries", 0)
         recovered = getattr(self.provider.transport, "recovered", 0)
         save_ledger(self.checkout, self.ledger)
+        save_source(self.checkout, self.ledger)
         return build_report(self.ledger, now, report=self.report, retries=retries,
                             recovered=recovered)
+
+
+def source_record(ledger: dict[str, Any]) -> dict[str, Any] | None:
+    provider = str(ledger.get("provider") or "")
+    template = ISSUE_URL_TEMPLATES.get(provider)
+    repository = str(ledger.get("repository") or "")
+    if not template or not repository:
+        return None
+    base = str(ledger.get("baseUrl") or "").rstrip("/")
+    if "{base}" in template and not base:
+        return None
+    renumbered = {}
+    for number, entry in (ledger.get("issues") or {}).items():
+        remote = entry.get("remoteNumber")
+        if isinstance(remote, int) and str(remote) != str(number):
+            renumbered[str(number)] = remote
+    return {"schema": SOURCE_SCHEMA, "provider": provider, "repository": repository,
+            "baseUrl": base,
+            "issueUrl": template.replace("{repository}", repository).replace("{base}", base),
+            "renumbered": dict(sorted(renumbered.items(), key=lambda kv: int(kv[0])))}
+
+
+def save_source(checkout: Path, ledger: dict[str, Any]) -> bool:
+    record = source_record(ledger)
+    if record is None:
+        return False
+    return bridge.write_if_changed(
+        Path(checkout) / SOURCE_REL,
+        json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
 
 # ---- status & telemetry ---------------------------------------------------------
@@ -769,18 +839,23 @@ def markdown(result: dict[str, Any]) -> str:
 
 
 def connect(checkout: Path, *, provider: str, repository: str, base_url: str = "",
-            export_from: int, slo_ms: int = DEFAULT_SLO_MS) -> dict[str, Any]:
+            export_from: int, slo_ms: int = DEFAULT_SLO_MS,
+            mode: str | None = None) -> dict[str, Any]:
     if provider not in providers.ADAPTERS:
         raise SyncError(f"provider must be one of {', '.join(providers.ADAPTERS)}")
     repository = providers.validate_repository(repository)
-    path = Path(checkout) / LEDGER_REL
+    path = ledger_path(checkout)
     ledger = load_ledger(checkout) if path.exists() else {"schema": SCHEMA, "issues": {},
                                                           "identities": {}, "history": [],
                                                           "sourceOfTruth": {}}
     if ledger.get("provider") not in (None, provider) or \
             ledger.get("repository") not in (None, repository):
         raise SyncError(f"{LEDGER_REL} is already connected to another repository")
+    if mode is not None and mode not in MODES:
+        raise SyncError(f"mode must be one of {', '.join(MODES)}")
     ledger.update({"provider": provider, "repository": repository, "sloMs": slo_ms})
+    if mode is not None:
+        ledger["mode"] = mode
     ledger.setdefault("exportFrom", export_from)
     ledger.setdefault("paused", False)
     if base_url:
@@ -863,8 +938,22 @@ def build_provider(ledger: dict[str, Any], token: str, **transport: Any) -> Any:
 
 
 def main(argv: list[str] | None = None) -> int:
+    previous = os.environ.get(LEDGER_ENV)
+    try:
+        return _main(argv)
+    finally:
+        if previous is None:
+            os.environ.pop(LEDGER_ENV, None)
+        else:
+            os.environ[LEDGER_ENV] = previous
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--checkout", type=Path, default=Path("."))
+    parser.add_argument("--ledger", type=Path, default=None,
+                        help="keep the sync ledger at this path instead of the checkout's "
+                             ".forkmesh/forge-sync.json")
     sub = parser.add_subparsers(dest="command", required=True)
     c = sub.add_parser("connect", help="create or update the sync ledger")
     c.add_argument("--provider", required=True, choices=sorted(providers.ADAPTERS))
@@ -873,6 +962,11 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--slo-minutes", type=int, default=DEFAULT_SLO_MS // 60000)
     c.add_argument("--export-existing", action="store_true",
                    help="also create provider issues for ForkMesh issues opened before connecting")
+    c.add_argument("--mirror", action="store_const", const="mirror", dest="mode",
+                   help="import only: copy the provider's issues and comments exactly and "
+                        "never write to the provider")
+    c.add_argument("--two-way", action="store_const", const="sync", dest="mode",
+                   help="sync both ways (the default for a new ledger)")
     s = sub.add_parser("sync", help="run one two-way pass")
     s.add_argument("--report", type=Path)
     sub.add_parser("status", help="show lag, conflicts and failures without contacting the provider")
@@ -885,12 +979,14 @@ def main(argv: list[str] | None = None) -> int:
                                                    "issue, or comment:<event id>")
     r.add_argument("--take", required=True, choices=SIDES)
     args = parser.parse_args(argv)
+    if args.ledger is not None:
+        os.environ[LEDGER_ENV] = str(args.ledger)
     now = int(time.time() * 1000)
     try:
         if args.command == "connect":
             connect(args.checkout, provider=args.provider, repository=args.repository,
                     base_url=args.base_url, slo_ms=args.slo_minutes * 60000,
-                    export_from=0 if args.export_existing else now)
+                    export_from=0 if args.export_existing else now, mode=args.mode)
             result = build_report(load_ledger(args.checkout), now)
         elif args.command in ("pause", "resume"):
             result = build_report(set_paused(args.checkout, args.command == "pause",

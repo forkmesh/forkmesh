@@ -47,10 +47,12 @@ API_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/([^/]+)$")
 READ_OPERATIONS = frozenset({
     "tree", "blob", "blobs", "raw", "history", "commit", "compare",
     "merge-preview", "branches", "search", "stats", "sizes", "pulse",
+    "issue-index", "issue-search",
 })
 # entry.HTTPS_MIRROR_REF_OPERATIONS
 REF_OPERATIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "search", "stats", "sizes",
+    "issue-index", "issue-search",
 })
 MAX_BLOB_BATCH = 60  # entry.MAX_BLOB_BATCH
 PRIVATE_VIEW_FIELDS = ("viewer", "ts", "sig")
@@ -69,7 +71,7 @@ PASS_HEADERS = ("content-type", "content-disposition", "content-length")
 # gateway's per-push cache generation, and a page's reads are assembled
 # without a gateway round trip each (repo_views).
 IMMUTABLE_CACHE_BYTES = 48 * 1024 * 1024
-IMMUTABLE_CACHE_ENTRY_MAX = 4 * 1024 * 1024
+IMMUTABLE_CACHE_ENTRY_MAX = 16 * 1024 * 1024
 # The host-side view bundles (repo_views): the pull/issue/discussion reads a
 # page needs, in one response.
 VIEW_OPERATION = "page-reads"
@@ -109,6 +111,10 @@ def gateway_query(operation, query_string):
             out.append(("path", repository_read_path(params["path"][0])))
     elif operation == "pulse":
         for key in ("period", "person", "view"):
+            if params.get(key):
+                out.append((key, params[key][0]))
+    elif operation in ("issue-index", "issue-search"):
+        for key in ("related", "q"):
             if params.get(key):
                 out.append((key, params[key][0]))
     if params.get("ref") and operation in REF_OPERATIONS:

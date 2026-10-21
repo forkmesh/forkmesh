@@ -60,7 +60,7 @@ MAX_BUNDLES = 64
 BUNDLE_FRESH_SECONDS = 5.0
 BUNDLE_STALE_SECONDS = 300.0
 PUBLIC_CHECK_SECONDS = 5.0
-MAX_BUNDLE_BYTES = 8 * 1024 * 1024
+MAX_BUNDLE_BYTES = 32 * 1024 * 1024
 SEED_ERROR = "__seedError"
 NUMBERED = re.compile(r"^\d+$")
 CLAIMED_NAME = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -327,7 +327,7 @@ def issue_summary(text, number):
         "author": issue.get("authorName") or opened.get("authorName")
         or issue.get("author") or opened.get("author") or "unknown",
         "ts": issue.get("createdAt") or opened.get("ts") or "",
-        "labels": [str(label) for label in labels][:6],
+        "labels": [str(label) for label in labels][:20],
         "body": str(effective.get("body") or issue.get("body") or ""),
         "comments": [{"author": c.get("authorName") or c.get("author")
                       or "unknown", "ts": c.get("ts") or "",
@@ -340,6 +340,36 @@ async def _open_issue_index(reader, ref_pairs, path=ISSUES_DIR + "/open"):
     return tree
 
 
+def index_list_row(summary):
+    body = summary.get("body")
+    created = summary.get("createdAtMs")
+    return {
+        "number": int(summary.get("number") or 0),
+        "title": summary.get("title"),
+        "state": summary.get("status"),
+        "deleted": bool(summary.get("deleted")),
+        "author": summary.get("author"),
+        "ts": created or "",
+        "labels": [str(label) for label in summary.get("labels") or []][:20],
+        "body": ("" if body is None else str(body))[:300],
+    }
+
+
+def _indexed_issues(index):
+    if not isinstance(index, dict) or index.get("truncated") \
+            or not isinstance(index.get("issues"), list):
+        return None
+    rows = [index_list_row(item) for item in index["issues"]
+            if isinstance(item, dict) and item.get("location") in ("open", "")]
+    legacy = {int(item.get("number") or 0) for item in index["issues"]
+              if isinstance(item, dict) and item.get("location") == ""}
+    open_count = int(index.get("openFolders") or 0) + sum(
+        1 for row in rows if row["number"] in legacy
+        and row["state"] != "closed" and not row["deleted"])
+    return {"rows": rows, "open": open_count,
+            "closed": int(index.get("closedFolders") or 0)}
+
+
 async def plan_issues(reader, branch):
     """loadRepoIssues: the folder listing, then the open issues."""
     root = asyncio.ensure_future(_root(reader, branch))
@@ -349,6 +379,11 @@ async def plan_issues(reader, branch):
     if tree:
         commit = str(tree.get("commit") or "")
         ref = commit if is_commit(commit) else branch
+        indexed = _indexed_issues(
+            await reader.get("issue-index", [("ref", ref)]))
+        if indexed is not None:
+            await root
+            return indexed
         entries = tree.get("entries") or []
         legacy = {int(e["name"]): issue_path(int(e["name"]))
                   for e in entries if e.get("type") == "tree"
@@ -392,6 +427,11 @@ async def plan_issue(reader, branch, number):
     root = asyncio.ensure_future(_root(reader, branch))
 
     async def relation_index():
+        for pairs in ([("ref", branch), ("related", number)],
+                      [("ref", branch)]):
+            indexed = await reader.get("issue-index", pairs)
+            if _indexed_issues(indexed) is not None:
+                return indexed
         tree = await reader.get("tree", [("path", ISSUES_DIR + "/open"),
                                          ("ref", branch)])
         if not tree:
@@ -766,7 +806,7 @@ async def handle(fastpath, scope, send, owner, repo):
 LIST_PAGE_SIZE = 25  # REPO_COLLECTION_PAGE_SIZE
 MAX_DIFF_LINES = 1500
 MAX_DIFF_FILES = 60
-MAX_BODY_CHARS = 60_000
+MAX_BODY_CHARS = 262_144
 VIEW_PATH_RE = re.compile(
     r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/"
     r"(pulls|pull|issues|discussions)(?:/(\d{1,9})"

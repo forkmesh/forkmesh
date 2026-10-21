@@ -601,8 +601,8 @@ PROFILE_TXT_PREFIX = "forkmesh-profile="
 MAX_FILES = 5000
 # Issue inbox: a single signed event body is small text; cap it and the number
 # of un-merged submissions a repo's inbox will hold.
-MAX_ISSUE_BYTES = 64 * 1024
-MAX_PENDING_ISSUES = 500
+MAX_ISSUE_BYTES = 256 * 1024
+MAX_PENDING_ISSUES = 2000
 # A mirror gets a bounded window to commit and acknowledge the exact issue
 # rows it read. If that device disappears, another authorized online mirror
 # can reclaim them without operator intervention.
@@ -617,7 +617,7 @@ ISSUE_ATTACHMENT_NAME_RE = re.compile(
     r"^[0-9a-f]{8}\.(png|jpg|jpeg|gif|webp|bmp|svg|mp4|webm|mov|bin)$")
 # Per-author cap across the issue/pull/commit/discussion inboxes, so one signing
 # key can't fill a repo's whole inbox to the global cap and block everyone else.
-MAX_PENDING_PER_AUTHOR = 50
+MAX_PENDING_PER_AUTHOR = 100
 # Pull-request inbox: a PR carries a unified diff (text), capped larger than an
 # issue body but still bounded. Raised to 100 MB so a PR with a large diff (e.g.
 # generated files or vendored code) isn't rejected at submission.
@@ -626,7 +626,7 @@ MAX_PENDING_PULLS = 200
 # Discussion inbox: signed open/comment events for read-only contributors.
 MAX_DISCUSSION_BYTES = 64 * 1024
 DISCUSSION_OWNER_EVENT_TYPES = frozenset({"status", "delete"})
-MAX_PENDING_DISCUSSIONS = 500
+MAX_PENDING_DISCUSSIONS = 2000
 # One inbox read hands back a bounded PAGE, never the whole backlog. The caps
 # above bound a single submission, not the queue: MAX_PENDING_PULLS rows of
 # near-limit patches are hundreds of megabytes, and a drain used to SELECT,
@@ -814,7 +814,7 @@ FORKBOT_GATEWAY_MAX_ACTION = 4096
 # Notification inbox: Worker indexes public-safe notification state while the
 # canonical issue/PR/discussion/release records remain in signed repo files or
 # pending inboxes. Stored rows are encrypted and bounded per recipient.
-MAX_NOTIFICATIONS_PER_RECIPIENT = 500
+MAX_NOTIFICATIONS_PER_RECIPIENT = 2000
 # The per-recipient cap trim used to run on every insert as a NOT IN over the
 # recipient's whole inbox (two full scans, ~1k rows read for a full inbox)
 # and was the single largest D1 reader on 2026-09-13. It now runs at most
@@ -2493,9 +2493,11 @@ class RequestBodyTooLarge(BaseException):
 _request_bodies = _LazyModule("request_bodies")
 bounded_request_text = _request_bodies.export("bounded_request_text")
 bounded_json_request = _request_bodies.export("bounded_json_request")
+bounded_json_request_with_raw = _request_bodies.export("bounded_json_request_with_raw")
 _json_request_limit = _request_bodies.export("_json_request_limit")
 _hidden_unicode = _LazyModule("hidden_unicode")
 clean_hidden_unicode = _hidden_unicode.export("clean_value")
+has_hidden_unicode = _hidden_unicode.export("has_hidden")
 
 
 def _legacy_custody_not_ready_response():
@@ -41542,7 +41544,7 @@ async def pulls_handler(env, request, owner, repo):
         if disabled is not None:
             return disabled
         try:
-            data = await bounded_json_request(request)
+            data, raw_data = await bounded_json_request_with_raw(request)
         except Exception:
             return json_response({"error": "invalid_json"}, status=400)
         # A submission is either a whole new PR ("pull") or a signed conversation
@@ -41690,12 +41692,28 @@ async def pulls_handler(env, request, owner, repo):
         # sender drains into the same lossless PullRequest representation.
         pull["description"] = description
         pull.pop("body", None)
-        pull_bytes = len((pull.get("patch", "") or "").encode("utf-8")) + len(
-            (pull.get("commits", "") or "").encode("utf-8"))
+        raw_pull = raw_data.get("pull") if isinstance(raw_data, dict) else None
+        raw_pull = raw_pull if isinstance(raw_pull, dict) else {}
+        pull_bytes = 0
+        for field in ("patch", "commits"):
+            if isinstance(raw_pull.get(field), str):
+                pull[field] = raw_pull[field]
+            try:
+                pull_bytes += len((pull.get(field, "") or "").encode("utf-8"))
+            except UnicodeEncodeError:
+                return json_response({"error": "pull_invalid"}, status=400)
         if pull_bytes > MAX_PULL_BYTES:
             return json_response({"error": "pull_too_large"}, status=413)
+        pull["hiddenUnicode"] = any(
+            has_hidden_unicode(pull.get(field) or "") for field in ("patch", "commits"))
         if not await verify_pull_event(
                 pull, _event_signing_repo_keys(request, owner, repo)):
+            altered = [field for field in ("title", "base", "head")
+                       if isinstance(raw_pull.get(field), str)
+                       and raw_pull[field] != pull.get(field)]
+            if altered:
+                return json_response(
+                    {"error": "hidden_unicode", "fields": altered}, status=400)
             return json_response({"error": "bad_signature"}, status=401)
         refused = await _bind_session_author(env, request, data, pull)
         if refused is not None:
@@ -50382,6 +50400,7 @@ async def _https_mirror_route_advance(env, context, served_node, operation):
 # receives no `ref`, which is exactly what its gateway route accepts.
 HTTPS_MIRROR_REF_OPERATIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "search", "stats", "sizes",
+    "issue-index", "issue-search",
 })
 
 
@@ -50437,6 +50456,10 @@ def _https_mirror_request_query(url, operation, release_sha=""):
             output["path"] = _repository_read_path(params["path"][0])
     elif operation == "pulse":
         for key in ("period", "person", "view"):
+            if params.get(key):
+                output[key] = params[key][0]
+    elif operation in ("issue-index", "issue-search"):
+        for key in ("related", "q"):
             if params.get(key):
                 output[key] = params[key][0]
     # Only operations that resolve a ref accept one. compare/merge-preview

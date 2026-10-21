@@ -110,6 +110,15 @@
         -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E") center / contain no-repeat;
         mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.5 8.5 3 3 6-7'/%3E%3C/svg%3E") center / contain no-repeat;
       }
+      .release h3 {
+        margin: 28px 0 12px;
+        color: var(--kit-ink);
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .release .pitch + h3 {
+        margin-top: 0;
+      }
       .release li strong {
         color: var(--kit-ink);
         font-weight: 600;
@@ -167,21 +176,109 @@
         <h1 class="kit-title" id="log-title">Every release, in plain English</h1>
         <p class="kit-lede">
           How ForkMesh grew — from a single mirror on one laptop to an
-          agent-powered, community-run developer mesh.
+          agent-powered, community-run developer mesh. The ForkMesh apps show
+          these same notes under What's new.
         </p>
       </section>
 
-      <section class="release">
+      <section class="release" id="2026-10-21">
+        <div class="release-meta">
+          <time class="when" datetime="2026-10-21">October 21, 2026</time>
+        </div>
+        <div class="release-body">
+          <h2>Neighbours, stickers and runners</h2>
+          <p class="pitch">Walk between ForkMesh Worlds, react to messages with stickers, and keep runners in hand from the desktop and the iPhone.</p>
+          <h3>Market</h3>
+          <ul>
+            <li>Feed is a Market package, with its own screens on iPhone and Android.</li>
+            <li>NEXUS and runners joined the Market.</li>
+            <li>The CRM moves a contact to Contacted every time you reach out to them.</li>
+          </ul>
+          <h3>Calls</h3>
+          <ul>
+            <li>A missed-call line is posted when the caller hangs up before you answer.</li>
+          </ul>
+          <h3>Projects</h3>
+          <ul>
+            <li>An instance belongs to only one project.</li>
+            <li>Add your own instance from the Federated instances list.</li>
+          </ul>
+          <h3>Chat</h3>
+          <ul>
+            <li>Stick stickers on messages.</li>
+            <li>Swipe left on a message for Message Info; your last sent message shows when it was delivered and read.</li>
+            <li>Each project keeps its own chat when you switch projects.</li>
+          </ul>
+          <h3>Agents</h3>
+          <ul>
+            <li>Pause and resume runners from the new Runners pages on the desktop and the iPhone.</li>
+            <li>Your last prompt stays pinned above every agent transcript.</li>
+            <li>Scrolling back through a transcript no longer snaps to the bottom.</li>
+            <li>Review with AI uses the agent and model picked in the composer.</li>
+          </ul>
+          <h3>World</h3>
+          <ul>
+            <li>Walk from your World onto a neighbouring instance's hexagon and see its scene, without reloading.</li>
+            <li>Visitors can walk into a neighbour's Office.</li>
+          </ul>
+          <h3>Settings</h3>
+          <ul>
+            <li>What's new in the app and forkmesh.com/changelog now show the same notes.</li>
+          </ul>
+          <h3>iPhone</h3>
+          <ul>
+            <li>AUTO DJ plays a related song people liked on the next deck.</li>
+          </ul>
+          <h3>Server</h3>
+          <ul>
+            <li>Issues and pull requests link up from Development and from "fixes #N" comments.</li>
+            <li>Mirrors fetch issue, pull request and discussion changes as soon as they are committed.</li>
+            <li>Delete branches one at a time or several at once.</li>
+          </ul>
+          <h3>Other improvements</h3>
+          <ul>
+            <li>Hidden Unicode characters are stripped from every input on the web, desktop, phones and server.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="release" id="2026-10-13">
+        <div class="release-meta">
+          <time class="when" datetime="2026-10-13">October 13, 2026</time>
+        </div>
+        <div class="release-body">
+          <h2>Face swap, a new Market and What's new</h2>
+          <p class="pitch">Calls get face swap and background blur, the Market gets a fresh look, and the app tells you what changed.</p>
+          <h3>Calls</h3>
+          <ul>
+            <li>Face swap in video calls now covers your whole head, hair included, and follows your movements naturally.</li>
+            <li>Your voice changes to match the face you pick.</li>
+            <li>Blur your background during a call, or replace it with a picture of your own.</li>
+          </ul>
+          <h3>Market</h3>
+          <ul>
+            <li>The Market has a fresh look, with sorting, filters, usage numbers and one-tap install.</li>
+            <li>Packages you have installed now show as installed, every time.</li>
+          </ul>
+          <h3>Projects</h3>
+          <ul>
+            <li>A new project no longer shows repositories from app.forkmesh.com until you choose an instance for it.</li>
+          </ul>
+          <h3>Settings</h3>
+          <ul>
+            <li>Your app version and build number now show at the bottom of the You menu. Tap it to see what is new.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="release" id="v0.7.0">
         <div class="release-meta">
           <span class="tag">v0.7.0</span>
-          <span class="when">July 2026</span>
+          <time class="when" datetime="2026-07">July 2026</time>
         </div>
         <div class="release-body">
           <h2>The Living Code City</h2>
-          <p class="pitch">
-            ForkMesh becomes a shared three-dimensional developer world backed by
-            independently operated repository mirrors.
-          </p>
+          <p class="pitch">ForkMesh becomes a shared three-dimensional developer world backed by independently operated repository mirrors.</p>
           <ul>
             <li><strong>Everyone enters the World.</strong> Guests and members share the Town Square, see live avatar movement, and can use the embedded public World chat without leaving the scene.</li>
             <li><strong>Resilient repository routes.</strong> Public smart-HTTP traffic is proxied through healthy, signed mirrors with automatic failover and round-robin selection.</li>
@@ -193,18 +290,14 @@
         </div>
       </section>
 
-      <section class="release">
+      <section class="release" id="v0.5.0">
         <div class="release-meta">
           <span class="tag">v0.5.0</span>
-          <span class="when">June 2026</span>
+          <time class="when" datetime="2026-06">June 2026</time>
         </div>
         <div class="release-body">
           <h2>The Agent Mesh</h2>
-          <p class="pitch">
-            The release where ForkMesh starts to feel alive. Open an issue, hand it
-            to an AI agent, and watch a real pull request show up — all without
-            leaving the mesh.
-          </p>
+          <p class="pitch">The release where ForkMesh starts to feel alive. Open an issue, hand it to an AI agent, and watch a real pull request show up — all without leaving the mesh.</p>
           <ul>
             <li><strong>Built-in coding agents.</strong> Assign any issue to Claude Code or Codex from the issue detail or quick-add box. The agent works on your connected fork and opens a pull request when it's done.</li>
             <li><strong>A real terminal, in the app.</strong> A native VT100 terminal renders every agent and workflow run with full color output and emoji.</li>
@@ -216,10 +309,10 @@
         </div>
       </section>
 
-      <section class="release">
+      <section class="release" id="v0.4.0">
         <div class="release-meta">
           <span class="tag">v0.4.0</span>
-          <span class="when">June 2026</span>
+          <time class="when" datetime="2026-06">June 2026</time>
         </div>
         <div class="release-body">
           <h2>Autonomous Agents</h2>
@@ -234,10 +327,10 @@
         </div>
       </section>
 
-      <section class="release">
+      <section class="release" id="v0.3.0">
         <div class="release-meta">
           <span class="tag">v0.3.0</span>
-          <span class="when">June 2026</span>
+          <time class="when" datetime="2026-06">June 2026</time>
         </div>
         <div class="release-body">
           <h2>Identity &amp; Rewards</h2>
@@ -251,10 +344,10 @@
         </div>
       </section>
 
-      <section class="release">
+      <section class="release" id="v0.2.0">
         <div class="release-meta">
           <span class="tag">v0.2.0</span>
-          <span class="when">June 2026</span>
+          <time class="when" datetime="2026-06">June 2026</time>
         </div>
         <div class="release-body">
           <h2>Collaborate Anywhere</h2>
@@ -270,17 +363,14 @@
         </div>
       </section>
 
-      <section class="release">
+      <section class="release" id="v0.1.0">
         <div class="release-meta">
           <span class="tag">v0.1.0</span>
-          <span class="when">June 2026</span>
+          <time class="when" datetime="2026-06">June 2026</time>
         </div>
         <div class="release-body">
           <h2>Genesis</h2>
-          <p class="pitch">
-            The first commit. A bet that source code shouldn't be locked to a
-            single forge.
-          </p>
+          <p class="pitch">The first commit. A bet that source code shouldn't be locked to a single forge.</p>
           <ul>
             <li><strong>A distributed mirror network.</strong> Local Git mirrors, signed identities, and a Cloudflare relay that coordinates without ever holding your objects.</li>
             <li><strong>A public catalog.</strong> Public repositories and clearly labeled external stubs, with actively mirrored repository bytes streamed over HTTPS from a selected healthy origin.</li>

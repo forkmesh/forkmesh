@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,7 +35,8 @@ def test_about_page_leaves_the_dark_only_mesh_theme():
 
 def test_changelog_releases_use_a_timeline_without_green_dots():
     html = read(WWW / "changelog.html")
-    assert html.count('<div class="release-meta">') == 6
-    assert html.count('<div class="release-body">') == 6
+    entries = len(json.loads((WWW.parents[1] / "changelog" / "changelog.json").read_text())["entries"])
+    assert html.count('<div class="release-meta">') == entries
+    assert html.count('<div class="release-body">') == entries
     assert "var(--accent-bright)" not in html
     assert ".release::before" not in html

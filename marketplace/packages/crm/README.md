@@ -382,6 +382,31 @@ name a flow or stage (the browser extension, and `send_email` logging in
 `tools/forkmesh_mcp_server.py`); its response carries `stageAdvanced`. Inbound
 links never move a stage. Tests: `tests/test_zoho_marks_contacted.py`.
 
+**Every contact made moves the stage** (1.43.0). Before 1.43.0 only a Zoho
+sync and an outbound `/emails/link` applied that stage rule. **Mark
+contacted**, the **Now** button and a typed **Last contacted** date (`PATCH
+/contacts/<id>` and `POST /contacts/bulk`), a tracked send (`POST
+/emails/send`), founders outreach (`POST /outreach/send`), an automatic
+outreach note (`POST /outreach/auto`) and a hand-recorded email (`POST
+/emails`) moved only **Last contacted**. So a pipeline's stage strip read
+**Contacted 0** while every row showed a recent date. Each of these now runs
+the same rule (`_stamp_contacted`, `_advance_contacted`): a contact before
+`contacted` moves to it, and one at or past it keeps its stage. An edit that
+names a `flow` or `stage` keeps the stage it names, and clearing the date
+moves nothing. `POST /emails` stamps the date from `sentAt` (forward only)
+unless the status is `draft`, `failed` or `reject`. It did not stamp the date
+at all before.
+
+Contacts stamped before 1.43.0 are moved once per organization, the first
+time the CRM page loads (`_backfill_contacted_stages`, run from the summary).
+Every contact with a **Last contacted** date that sits before `contacted` is
+moved, and the stage changes are filed in list activity. The pass is marked
+done in `crm_backfills` (`org_bi`, `name = "contacted-stages"`), so a contact
+moved back by hand afterwards stays where it was put. The marker has its own
+table rather than a settings key because the Zoho sync rewrites settings from
+the known keys only, and would drop the marker. Uninstalling purges the
+marker with the rest. Tests: `tests/test_contact_made_marks_contacted.py`.
+
 ### Sending and tracking
 
 - One-off sends go through the host's Mailtrap capability; Mailtrap keys are

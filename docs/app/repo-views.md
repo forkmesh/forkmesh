@@ -271,6 +271,21 @@ reduced motion).
   beside the name on phones, where the column is hidden. The roster is read
   once per repository and branch (`repoContributorRosterCached`), shared with
   the About rail. Tests: `app/tests/test_issue_timeline_people.py`.
+- **Code map text vs binary** (`createLoader` in `app/public/assets/codemap/codemap.js`,
+  glue `openRepoCodeMap`): a file is drawn as a binary card only when the host
+  answered it as base64 (not UTF-8) or its text holds a NUL byte. A path the
+  `/blobs` batch left out (`null`: an upstream timeout or the batch byte
+  budget) or a batch that failed is retried on its own up to three times, then
+  left blank, never carded. Before this, large `.forkmesh/issues` JSON records
+  in a batch showed as "binary" at random. The gateway also cuts a blob over
+  `MAX_JSON_BLOB` at a UTF-8 character boundary (`_utf8_prefix`), so a cut
+  text file stays text.
+- **HTML entities in markdown** (`MD_ESCAPED_ENTITY` in `renderMarkdownInline`):
+  text is escaped first, so `&rlm;` used to show as the literal "&rlm;" (the
+  net4people/bbs README marks its Persian and Arabic headings with `&rlm;` and
+  `&zwnj;`). After code spans are parked, a well-formed named or numeric
+  entity is restored, as GitHub renders it; an entity only ever yields text,
+  `&lt;script&gt;` stays visible text, and code spans keep the literal.
 - **@mentions in markdown** (`MD_MENTION` in `renderMarkdownInline`): an
   `@login` (letters, digits and single inner hyphens, at most 39) becomes a
   link to its profile, resolved like a timeline name; with no forge account
@@ -373,7 +388,10 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   included: the issue file's `status` is author-controlled and not checked
   against a signature here. The Markdown port escapes before it formats.
 - **Data.** `repo_views` builds an issue bundle (the whole record and the
-  open issues, for mentions and sub-issues) from the local gateway,
+  issue index's `related` answer, for mentions and sub-issues; the open records on a gateway
+  without the index, see
+  [issue-scale-limits.md](issue-scale-limits.md#the-issue-index)) from the
+  local gateway,
   remembered per content; the rendered article is kept on the bundle for a
   minute because its relative times move. The page waits at most
   `ISSUE_BUDGET_SECONDS` (0.3 s) for the issue and the repository's first

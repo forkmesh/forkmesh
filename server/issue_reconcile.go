@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	maxIssueRecordBytes = 2 << 20
-	maxIssueGitOutput   = 256 << 20
+	maxIssueRecordBytes = 16 << 20
+	maxIssueGitOutput   = 1 << 30
 )
 
 var issueDirEntryPattern = regexp.MustCompile(

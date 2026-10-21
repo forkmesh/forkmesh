@@ -172,7 +172,7 @@ def test_dashboard_check_animation_has_reduced_motion_and_touch_fallbacks():
 def test_issue_references_in_portable_relationship_text_are_links():
     inline = _slice(
         REPO_UI,
-        "function renderMarkdownInline(escapedText, context, linkRecordReferences = true)",
+        "function renderMarkdownInline(escapedText, context, linkRecordReferences = true, parked = [])",
         "function htmlTagAttr(tag, name)",
     )
     assert r"#([1-9]\d*)\b" in inline
@@ -246,7 +246,7 @@ console.log(JSON.stringify([
 
 def test_parents_list_sub_issues_with_full_status_and_an_add_action():
     finder = _function(REPO_UI, "issueSubIssueNumbers")
-    assert "issueDependencyNumbers(issue.body).includes(parent)" in finder
+    assert "issueDependencyNumbers(issue.body)" in finder and "dependsOn.includes(parent)" in finder
     assert r"\(sub-issue\s+#([1-9]\d*)\)" in finder
 
     renderer = _function(REPO_UI, "renderRepoIssueSubIssues")

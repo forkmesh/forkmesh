@@ -121,12 +121,28 @@ class AppChangelogTest {
         assertEq(0, AppChangelog.parse("not json").entries.size)
     }
 
-    fun testTheRunningBuildComesFirst() {
+    fun testTheBundledChangelogIsShownAsItIs() {
         assertEq(listOf("10401", "10400"), AppChangelog.load(sample, "1.4.1", "10401").entries.map { it.build })
-        val newer = AppChangelog.load(sample, "1.4.2", "10402")
-        assertEq(listOf("10402", "10401", "10400"), newer.entries.map { it.build })
-        expect(newer.entries[0].sections.isEmpty())
+        assertEq(listOf("10401", "10400"), AppChangelog.load(sample, "1.4.2", "10402").entries.map { it.build })
         assertEq(listOf(AppChangelog.Entry("1.4.1", "10401")), AppChangelog.load("""{"entries": []}""", "1.4.1", "10401").entries)
+    }
+
+    fun testSharedEntriesUseTheirTitleOrDate() {
+        val shared = """
+            {"schema": 1, "entries": [
+              {"version": "", "build": "", "date": "2026-10-21", "title": "", "pitch": "",
+               "sections": [{"title": "Chat", "items": ["Stick stickers on messages."]}]},
+              {"version": "0.7.0", "build": "", "date": "2026-07", "title": "The Living Code City",
+               "pitch": "A shared world.", "sections": [{"title": "Highlights", "items": ["Everyone enters the World."]}]}
+            ]}
+        """.trimIndent()
+        val log = AppChangelog.load(shared, "1.4.1", "303")
+        assertEq(2, log.entries.size)
+        assertEq("October 21, 2026", log.entries[0].formattedDate(Locale.US))
+        assertEq("", log.entries[0].detail(Locale.US))
+        assertEq("The Living Code City", log.entries[1].heading)
+        assertEq("A shared world.", log.entries[1].pitch)
+        assertEq("Version 0.7.0 · July 2026", log.entries[1].detail(Locale.US))
     }
 
     fun testLabelsAndDates() {

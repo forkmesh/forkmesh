@@ -27,6 +27,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | Plugins and the core: which plugins a build adds | `marketplace/plugins.json`, `marketplace/tools/marketplace_lib.py`, `desktop/cmake/ForkMeshPackageModules.cmake`, `app/tools/build_app_plugins.py` | [marketplace/plugins.md](marketplace/plugins.md) |
 | Codebase analysis (Code Map, Size Map, Strata, Ember, Synapse) | `desktop/src/RepoInsight*`, `marketplace/packages/{code-map,size-map,strata,ember,synapse}/`, `native/ios/ForkMeshCore/Sources/FMCodeInsight`, `native/android/core/.../codeinsight`, `native/fixtures/insight` | [marketplace/codebase-analysis.md](marketplace/codebase-analysis.md) |
 | Releases and installers | `tools/package/`, release tooling, `.forkmesh/releases/` | [release/README.md](release/README.md) |
+| Changelog (forkmesh.com/changelog and the apps' What's new) | `changelog/changelog.json`, `tools/changelog.py` | [changelog.md](changelog.md) |
 | Fleet rendering and operator tools | `deploy/`, `tools/next_*.py` | [deploy/README.md](deploy/README.md) |
 | Security | cross-cutting | [security/README.md](security/README.md) |
 | Tools | `tools/` | [tools/README.md](tools/README.md) |

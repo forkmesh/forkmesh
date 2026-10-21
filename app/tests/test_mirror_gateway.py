@@ -1763,6 +1763,22 @@ def test_collaboration_tree_avoids_whole_repo_analysis_and_per_entry_logs(
     assert payload["entries"][0]["dependencies"] == []
 
 
+def test_collaboration_tree_lists_past_the_code_tree_entry_cap(application, monkeypatch):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    monkeypatch.setattr(gateway, "MAX_TREE_ENTRIES", 0)
+    metadata_commit = repository.resolve_commit("forkmesh/pulls")
+
+    code = repository.tree({"path": "", "ref": "main"})
+    metadata = repository.tree({"path": ".forkmesh/pulls", "ref": metadata_commit})
+
+    assert code["truncated"] is True and code["entries"] == []
+    assert metadata["truncated"] is False
+    assert [item["name"] for item in metadata["entries"]] == ["42"]
+    monkeypatch.setattr(gateway, "MAX_COLLABORATION_TREE_ENTRIES", 0)
+    assert repository.tree({"path": ".forkmesh/pulls", "ref": metadata_commit})["truncated"] is True
+
+
 def test_compare_returns_bounded_portable_pull_change_set(application):
     app, commit, _release_hash, _logs = application
     repository = app.repositories[("alice", "project")]
@@ -4184,3 +4200,13 @@ def test_github_noreply_emails_give_contributor_avatars():
     for email in ("github-actions[bot]@users.noreply.github.com", "alice@example.com",
                   "a/b@users.noreply.github.com", "", "x@users.noreply.github.com.evil.test"):
         assert avatar(email) == "", email
+
+
+def test_a_cut_text_blob_stays_text_at_a_character_boundary():
+    data = ("\u0627\u06cc" * 10).encode("utf-8")
+    for cut in range(1, len(data)):
+        prefix = gateway._utf8_prefix(data[:cut])
+        assert data.startswith(prefix) and len(prefix) >= cut - 3
+        prefix.decode("utf-8")
+    broken = b"ok\xff\xfeok"
+    assert gateway._utf8_prefix(broken) == broken

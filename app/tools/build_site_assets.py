@@ -360,6 +360,7 @@ def stage_www() -> Path:
     destination = WWW / "dist"
     reset(destination)
     copy_tree(WWW / "public", destination)
+    copy_file(REPOSITORY / "changelog" / "changelog.json", destination / "changelog.json")
     for name in WWW_APP_MODULES + WWW_APP_PAGES:
         copy_file(APP / "public" / name, destination / name)
     build_www_feeds(destination)

@@ -14,6 +14,7 @@ def _connected():
     call(runtime.use("PUT", body={"zoho": {
         "region": "com", "accountId": "1", "clientId": "c", "clientSecret": "s",
         "refreshToken": "r"}}), "/api/crm/acme/settings")
+    _contacts(runtime)
     return runtime
 
 
@@ -116,6 +117,7 @@ def test_zoho_sync_advances_a_contact_whose_mail_was_already_linked():
 
 def test_an_outbound_link_moves_the_contact_to_contacted_but_an_inbound_one_does_not():
     runtime = harness.Runtime()
+    _contacts(runtime)
     sourced = _contact(runtime, name="Sourced Person", email="sourced@example.com",
                        flow="investment", stage="sourced")
     passed = _contact(runtime, name="Passed Person", email="passed@example.com",

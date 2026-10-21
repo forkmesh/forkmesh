@@ -435,3 +435,62 @@ def test_stale_bundle_is_served_while_one_refresh_runs(monkeypatch):
         first.built -= repo_views.BUNDLE_STALE_SECONDS
         assert repo_views.cached(fast, "forkmesh", "forkmesh", "pulls") is None
     asyncio.run(main())
+
+
+class IndexFastPath(FakeFastPath):
+    """A gateway that serves issue-index, folded by the gateway's own code."""
+
+    async def read(self, url, immutable=False):
+        parts = urllib.parse.urlsplit(url)
+        if parts.path.rsplit("/", 1)[1] != "issue-index":
+            return await super().read(url, immutable)
+        self.urls.append((url, immutable))
+        import sys
+        sys.path.insert(0, str(ROOT.parent / "tools"))
+        import mirror_gateway
+        query = urllib.parse.parse_qs(parts.query)
+        ref = (query.get("ref") or ["main"])[0]
+        commit = REFS.get(ref, ref)
+        issues = []
+        for path, text in sorted(FILES.get(commit, {}).items()):
+            pieces = path.split("/")
+            if pieces[:2] != [".forkmesh", "issues"]:
+                continue
+            number = int(pieces[-2])
+            issues.append(dict(mirror_gateway._issue_index_summary(
+                number, text.encode()), location=pieces[2]))
+        issues.sort(key=lambda item: -item["number"])
+        return self._answer(200, {
+            "ok": True, "commit": commit, "issues": issues, "missing": [],
+            "openFolders": 1, "closedFolders": 1, "truncated": False})
+
+
+def test_issue_list_and_relations_read_the_issue_index():
+    bundle, fast = build("issues", fast=IndexFastPath())
+    data = reads(bundle)
+    assert "issue-index?ref=%s" % MAIN in data
+    assert not any(key.startswith(("blobs?", "tree?path=.forkmesh/issues/"))
+                   for key in data)
+    assert [row["number"] for row in bundle.model["rows"]] == [12]
+    assert bundle.model["open"] == 1 and bundle.model["closed"] == 1
+    assert "Open one" in repo_views.render(bundle)
+    assert any(immutable for url, immutable in fast.urls
+               if "/issue-index?" in url)
+
+    issue, _fast = build("issue", 5, fast=IndexFastPath())
+    data = reads(issue)
+    assert "issue-index?ref=main&related=5" in data
+    assert not any(key.startswith("tree?path=.forkmesh/issues/open")
+                   for key in data)
+    assert issue.model["index"]["issues"][0]["number"] == 12
+
+
+def test_server_rendered_mentions_come_from_the_index():
+    from forkmesh_host import repo_ssr_issue
+    rows = repo_ssr_issue.index_rows({"issues": [{
+        "number": 9, "title": "Source", "status": "closed", "author": "amy",
+        "mentionRefs": [[5, 10, "k", "amy"], [5, 11, "k", "amy"],
+                        [6, 1, "", "bo"]]}]})
+    mentions = repo_ssr_issue.mentions_of(rows, 5)
+    assert [(m["authorName"], m["ts"], m["sourceNumber"], m["sourceStatus"])
+            for m in mentions] == [("amy", 10, 9, "closed")]

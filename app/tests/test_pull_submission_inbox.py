@@ -2,6 +2,8 @@
 """Pull-inbox wire contracts for portable browser submissions."""
 
 import ast
+import copy
+import sys
 import asyncio
 import time
 import hashlib
@@ -21,6 +23,8 @@ ENTRY_TEXT = (
     + ENTRY.read_text(encoding="utf-8")
     + "\n\n\n"
 )
+sys.path.insert(0, str(ROOT / "src"))
+import hidden_unicode as _hidden_unicode  # noqa: E402
 EVENTS = ROOT / "src" / "events.py"
 EVENTS_TEXT = EVENTS.read_text(encoding="utf-8")
 
@@ -36,8 +40,15 @@ def _load_pulls_handler(extra_globals):
     module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
     namespace = dict(extra_globals)
     namespace.setdefault("bounded_json_request", json_from_request_double)
+    namespace.setdefault("bounded_json_request_with_raw", _json_with_raw_double)
+    namespace.setdefault("has_hidden_unicode", _hidden_unicode.has_hidden)
     exec(compile(module, str(ENTRY), "exec"), namespace)
     return namespace["pulls_handler"]
+
+
+async def _json_with_raw_double(request, max_bytes=None):
+    raw = await request.json()
+    return _hidden_unicode.clean_value(copy.deepcopy(raw)), raw
 
 
 def _load_pull_verifier(extra_globals):
@@ -521,3 +532,64 @@ def test_review_signed_without_a_name_is_queued_under_the_signer_username():
 
     assert response["status"] == 201
     assert inserted[0][1]["event"]["authorName"] == "bob"
+
+
+
+def test_signed_code_keeps_hidden_characters_and_is_flagged_not_rejected():
+    inserted, verified = [], []
+    handler = _load_pulls_handler(_runtime(inserted, [], verified))
+    patch = "diff --git a/a.py b/a.py\n+\ufeffWS = '\\u2028 \u200b'\n"
+    pull = {"title": "Keep BOM", "description": "", "base": "main", "head": "x",
+            "patch": patch, "commits": "From x\n" + patch, "author": "web-author",
+            "ts": 1, "sig": "s"}
+    response = asyncio.run(handler(object(), _Request(pull), "alice", "project"))
+    assert response["status"] == 201
+    assert verified[0]["patch"] == patch and verified[0]["commits"] == "From x\n" + patch
+    stored = inserted[0][1]["pull"]
+    assert stored["patch"] == patch and stored["hiddenUnicode"] is True
+
+
+def test_plain_code_is_not_flagged():
+    inserted = []
+    handler = _load_pulls_handler(_runtime(inserted, [], []))
+    pull = {"title": "Plain", "base": "main", "head": "x", "patch": "+ok\n", "commits": "",
+            "author": "web-author", "ts": 1, "sig": "s"}
+    asyncio.run(handler(object(), _Request(pull), "alice", "project"))
+    assert inserted[0][1]["pull"]["hiddenUnicode"] is False
+
+
+def test_a_signed_title_with_hidden_characters_gets_a_clear_error():
+    inserted = []
+    runtime = _runtime(inserted, [], [])
+
+    async def strict(pull, _repo_keys=()):
+        return "\u200b" not in pull.get("title", "") and pull.get("title") == "Fix\u200b it"
+
+    runtime["verify_pull_event"] = strict
+    handler = _load_pulls_handler(runtime)
+    pull = {"title": "Fix\u200b it", "base": "main", "head": "x", "patch": "+a\n",
+            "commits": "", "author": "web-author", "ts": 1, "sig": "s"}
+    response = asyncio.run(handler(object(), _Request(pull), "alice", "project"))
+    assert response == {"status": 400, "data": {"error": "hidden_unicode", "fields": ["title"]}}
+    assert inserted == []
+
+
+def test_a_lone_surrogate_in_signed_code_is_refused_not_a_crash():
+    inserted = []
+    handler = _load_pulls_handler(_runtime(inserted, [], []))
+    pull = {"title": "Bad", "base": "main", "head": "x", "patch": "+\ud800\n", "commits": "",
+            "author": "web-author", "ts": 1, "sig": "s"}
+    response = asyncio.run(handler(object(), _Request(pull), "alice", "project"))
+    assert response == {"status": 400, "data": {"error": "pull_invalid"}}
+    assert inserted == []
+
+
+def test_the_size_cap_counts_the_hidden_characters_kept_in_signed_code():
+    inserted = []
+    runtime = _runtime(inserted, [], [])
+    runtime["MAX_PULL_BYTES"] = 10
+    handler = _load_pulls_handler(runtime)
+    pull = {"title": "Big", "base": "main", "head": "x", "patch": "+a" + chr(0x200B) * 5,
+            "commits": "", "author": "web-author", "ts": 1, "sig": "s"}
+    response = asyncio.run(handler(object(), _Request(pull), "alice", "project"))
+    assert response["status"] == 413 and inserted == []

@@ -652,6 +652,131 @@ def test_report_is_privacy_safe_and_markdown_names_conflicts(tmp_path, forge, sy
     assert result["status"]["schema"] == "forkmesh-sync-status-v1"
 
 
+def test_mirror_mode_imports_every_issue_verbatim_in_any_language(tmp_path, forge, sync_key):
+    checkout = connected(tmp_path, forge, mode="mirror")
+    long_body = ("Отчёт о блокировке. 关于封锁的报告。 گزارش فیلترینگ. " * 2000).strip()
+    forge.add_issue(1, title="ایران: اختلال گسترده در اینترنت", body=long_body, author="روزبه")
+    forge.add_issue(2, title="GFW 封锁 TLS 1.3 ESNI", body="闭合问题\r\n  缩进 ✓", state="closed",
+                    labels=["China", "Censorship-Measurement", "a", "b", "c", "d", "e", "f", "g"])
+    forge.add_comment(1, "שלום עולם 🌍 " * 900, author="alice")
+    forge.add_comment(2, "Türkmenistan: ähli VPN petiklendi", author="bob")
+    run(checkout, forge, sync_key)
+
+    one, two = record(checkout, 1), record(checkout, 2)
+    assert one["title"] == "ایران: اختلال گسترده در اینترنت" and fs.fold(one)["body"] == long_body
+    assert fs.fold(one)["authorName"] == f"{forge.kind}:روزبه"
+    assert [c["body"] for c in fs.fold(one)["comments"].values()] == ["שלום עולם 🌍 " * 900]
+    assert two["status"] == "closed" and fs.fold(two)["body"] == "闭合问题\n  缩进 ✓"
+    assert len(fs.fold(two)["labels"]) == 9
+    assert all(verifies(1, ev) for ev in one["events"])
+    assert forge.writes() == []
+
+
+def test_mirror_mode_never_writes_to_the_provider_and_the_provider_always_wins(
+        tmp_path, forge, sync_key, native_key):
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(3)
+    kept = forge.add_comment(3, "original")
+    gone = forge.add_comment(3, "to be removed")
+    run(checkout, forge, sync_key)
+
+    opener = fs.fold(record(checkout, 3))["openerId"]
+    cid = f"forge-{forge.kind}-comment-{kept['id']}"
+    local_edit(checkout, 3, native_key, "edit", "native-edit", forge.tick(),
+               target=opener, body="local rewrite", attachments=[])
+    local_edit(checkout, 3, native_key, "edit", "native-cedit", forge.tick(),
+               target=f"forge-{forge.kind}-comment-{gone['id']}", body="local", attachments=[])
+    local_edit(checkout, 3, native_key, "comment", "native-c", forge.tick(), body="hi", attachments=[])
+    local_issue(checkout, 40, native_key, ts=forge.tick())
+    forge.edit_issue(3, body="edited upstream", state="closed")
+    forge.comments[kept["id"]]["body"] = "edited comment"
+    forge.comments[kept["id"]]["updated_at"] = forge.tick()
+    del forge.comments[gone["id"]]
+    result = run(checkout, forge, sync_key)
+
+    rec = fs.fold(record(checkout, 3))
+    assert rec["body"] == "edited upstream" and rec["status"] == "closed"
+    assert rec["comments"][cid]["body"] == "edited comment"
+    assert f"forge-{forge.kind}-comment-{gone['id']}" not in rec["comments"]
+    assert "native-c" in rec["comments"]
+    assert result["conflicts"] == [] and forge.writes() == []
+    assert run(checkout, forge, sync_key)["conflicts"] == [] and forge.writes() == []
+
+
+def test_mirror_mode_ignores_markers_that_claim_forkmesh_records(tmp_path, forge, sync_key, native_key):
+    checkout = connected(tmp_path, forge, mode="mirror")
+    local_issue(checkout, 7, native_key, title="Native title", body="Native body",
+                ts=forge.tick(), comments=["native comment"])
+    forge.add_issue(8, title="hijack", body=fs.with_marker("forged", "mallory", issue=7))
+    forge.add_comment(8, fs.with_marker("forged comment", "mallory", issue=7, event="c-7-0"))
+    run(checkout, forge, sync_key)
+
+    native = fs.fold(record(checkout, 7))
+    assert native["title"] == "Native title" and native["body"] == "Native body"
+    assert native["comments"]["c-7-0"]["body"] == "native comment"
+    mirrored = fs.fold(record(checkout, 8))
+    assert mirrored["body"] == "forged"
+    assert [c["body"] for c in mirrored["comments"].values()] == ["forged comment"]
+    assert forge.writes() == []
+
+
+def test_mirror_mode_refuses_provider_writes_even_if_called():
+    guard = fs.ReadOnlyProvider(object())
+    for name in fs.PROVIDER_WRITES:
+        with pytest.raises(fs.SyncError):
+            getattr(guard, name)
+
+
+def test_cli_connect_mirror_switches_the_ledger_mode(tmp_path):
+    assert fs.main(["--checkout", str(tmp_path), "connect", "--provider", "github",
+                    "--repository", REPO, "--mirror"]) == 0
+    assert fs.load_ledger(tmp_path)["mode"] == "mirror"
+    assert fs.main(["--checkout", str(tmp_path), "connect", "--provider", "github",
+                    "--repository", REPO]) == 0
+    assert fs.load_ledger(tmp_path)["mode"] == "mirror"
+    assert fs.main(["--checkout", str(tmp_path), "connect", "--provider", "github",
+                    "--repository", REPO, "--two-way"]) == 0
+    assert fs.load_ledger(tmp_path)["mode"] == "sync"
+
+
+def test_ledger_can_live_outside_the_checkout_and_the_repo_gets_only_the_source(
+        tmp_path, forge, sync_key, monkeypatch):
+    outside = tmp_path / "state" / "forge-sync.json"
+    monkeypatch.setenv(fs.LEDGER_ENV, str(outside))
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(7)
+    forge.add_issue(9)
+    run(checkout, forge, sync_key)
+
+    assert outside.is_file() and not (checkout / fs.LEDGER_REL).exists()
+    source = json.loads((checkout / fs.SOURCE_REL).read_text(encoding="utf-8"))
+    assert source["schema"] == fs.SOURCE_SCHEMA and source["provider"] == forge.kind
+    assert source["repository"] == REPO and source["renumbered"] == {}
+    assert source["issueUrl"].endswith(f"{REPO}/issues/{{number}}")
+    before = snapshot(checkout)
+    run(checkout, forge, sync_key)
+    assert snapshot(checkout) == before
+
+
+def test_source_lists_only_issues_whose_number_differs():
+    ledger = {"provider": "github", "repository": REPO, "issues": {
+        "5": {"remoteNumber": 5}, "12": {"remoteNumber": 3}, "40": {"origin": "forkmesh"}}}
+    record = fs.source_record(ledger)
+    assert record["renumbered"] == {"12": 3}
+    assert record["issueUrl"] == f"https://github.com/{REPO}/issues/{{number}}"
+    assert fs.source_record({"provider": "gitea", "repository": REPO, "issues": {}}) is None
+
+
+def test_cli_ledger_flag_keeps_the_ledger_out_of_the_checkout(tmp_path, monkeypatch):
+    monkeypatch.delenv(fs.LEDGER_ENV, raising=False)
+    outside = tmp_path / "srv" / "ledger.json"
+    checkout = tmp_path / "repo"
+    checkout.mkdir()
+    assert fs.main(["--checkout", str(checkout), "--ledger", str(outside), "connect",
+                    "--provider", "github", "--repository", REPO, "--mirror"]) == 0
+    assert outside.is_file() and not (checkout / fs.LEDGER_REL).exists()
+
+
 def test_cli_rejects_unknown_resolution_and_unconnected_checkout(tmp_path, capsys):
     assert fs.main(["--checkout", str(tmp_path), "status"]) == 2
     assert "connect" in capsys.readouterr().err
@@ -660,6 +785,6 @@ def test_cli_rejects_unknown_resolution_and_unconnected_checkout(tmp_path, capsy
 def test_documentation_covers_the_engine_and_is_indexed():
     doc = (ROOT / "www/docs/forge-sync.md").read_text(encoding="utf-8")
     for phrase in ("forge-sync.json", "sourceOfTruth", "resolve", "pause", "Gitea", "SLO",
-                   "rate limit", "identities"):
+                   "rate limit", "identities", "--mirror", "--ledger", "forge-source.json"):
         assert phrase in doc, phrase
     assert "(forge-sync.md)" in (ROOT / "www/docs/README.md").read_text(encoding="utf-8")

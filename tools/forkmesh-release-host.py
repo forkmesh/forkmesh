@@ -1429,12 +1429,9 @@ if [ ! -x native/android/gradlew ]; then
   exit 1
 fi
 changelog=""
-since="$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)"
 notes="$(mktemp "${TMPDIR:-/tmp}/forkmesh-changelog-XXXXXX")"
 trap 'rm -f "$notes"' EXIT
-if [ -f tools/mobile_changelog.py ] && python3 tools/mobile_changelog.py --repo . --commit HEAD \
-    --platform android --since-ref "$since" --version "$FORKMESH_ANDROID_VERSION_NAME" \
-    --build "$FORKMESH_ANDROID_VERSION_CODE" --out "$notes"; then
+if [ -f tools/changelog.py ] && python3 tools/changelog.py export --platform android --out "$notes"; then
   changelog="$notes"
 else
   echo "No changelog for this APK: it shows its version with no notes." >&2

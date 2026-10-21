@@ -108,6 +108,7 @@ DEFAULT_FLOWS = (
         "researching", "eligible", "drafting", "submitted", "awarded", "declined")},
 )
 CONTACTED_STAGE = "contacted"
+CONTACTED_BACKFILL = "contacted-stages"
 # The kind of pipeline a flow is, shown as an icon on its tab and in every
 # pipeline picker. "pipeline" is the plain funnel a flow gets when none is set.
 FLOW_ICONS = ("pipeline", "investors", "hiring", "partners", "customers",
@@ -697,9 +698,15 @@ DATA_SCHEMA_UP = [
         AFTER INSERT ON crm_list_activity
         BEGIN DELETE FROM crm_list_activity WHERE org_bi=NEW.org_bi
             AND view_id=NEW.view_id AND ts<NEW.ts-%d; END""" % LIST_ACTIVITY_KEEP_MS,
+    """CREATE TABLE IF NOT EXISTS crm_backfills (
+        org_bi TEXT NOT NULL,
+        name TEXT NOT NULL,
+        done_at INTEGER NOT NULL CHECK (done_at >= 0),
+        PRIMARY KEY (org_bi, name))""",
 ]
 # Indexes and triggers drop with their tables; children drop before contacts.
 DATA_SCHEMA_DOWN = [
+    "DROP TABLE IF EXISTS crm_backfills",
     "DROP TABLE IF EXISTS crm_list_activity",
     "DROP TABLE IF EXISTS crm_deck_page_views",
     "DROP TABLE IF EXISTS crm_deck_sessions",
@@ -870,8 +877,27 @@ def _contacted_stage(contact, flows):
     return CONTACTED_STAGE if position < stages.index(CONTACTED_STAGE) else ""
 
 
+def _advance_contacted(contact, flows):
+    advanced = _contacted_stage(contact, flows)
+    if advanced:
+        contact["stage"] = advanced
+    return advanced
+
+
+def _stamp_contacted(contact, sent_at, flows):
+    if sent_at > _integer(contact.get("lastContactedAt")):
+        contact["lastContactedAt"] = sent_at
+    return _advance_contacted(contact, flows)
+
+
 def _pipeline_moved(data):
     return isinstance(data, dict) and ("flow" in data or "stage" in data)
+
+
+def _edit_marks_contacted(data, existing, contact):
+    return ("lastContactedAt" in data and not _pipeline_moved(data)
+            and _integer(contact.get("lastContactedAt"))
+            > _integer(existing.get("lastContactedAt")))
 
 
 async def _org_flows(runtime, org_bi):
@@ -1750,11 +1776,7 @@ async def _mark_contacted(runtime, org_bi, account_bi, actor, flows, contact_id,
     if not isinstance(before, dict):
         return 0
     contact = dict(before)
-    if sent_at > _integer(contact.get("lastContactedAt")):
-        contact["lastContactedAt"] = sent_at
-    advanced = _contacted_stage(contact, flows)
-    if advanced:
-        contact["stage"] = advanced
+    advanced = _stamp_contacted(contact, sent_at, flows)
     if contact == before:
         return 0
     await runtime.d1_run(
@@ -2336,7 +2358,36 @@ async def _activity(runtime, org_bi, members):
     }
 
 
+async def _backfill_contacted_stages(runtime, org_bi, account_bi, actor):
+    if await runtime.d1_first(
+            "SELECT done_at FROM crm_backfills WHERE org_bi=? AND name=?",
+            org_bi, CONTACTED_BACKFILL):
+        return 0
+    flows = await _org_flows(runtime, org_bi)
+    rows = await runtime.d1_all(
+        "SELECT contact_id,data FROM crm_contacts WHERE org_bi=? LIMIT ?",
+        org_bi, MAX_CONTACTS)
+    sealed, changes = {}, []
+    for contact_row in rows or []:
+        before = await runtime.open(contact_row.get("data"))
+        if not isinstance(before, dict) or not _integer(before.get("lastContactedAt")):
+            continue
+        contact = dict(before)
+        if _advance_contacted(contact, flows):
+            sealed[contact_row["contact_id"]] = await runtime.seal(contact)
+            changes.append((before, contact))
+    now = runtime.now()
+    if sealed:
+        await _write_sealed_contacts(runtime, org_bi, account_bi, actor, now, sealed)
+        await _record_contact_changes(runtime, org_bi, account_bi, actor, changes)
+    await runtime.d1_run(
+        "INSERT OR IGNORE INTO crm_backfills(org_bi,name,done_at) VALUES(?,?,?)",
+        org_bi, CONTACTED_BACKFILL, now)
+    return len(sealed)
+
+
 async def _summary(runtime, org_bi, org_name, account_bi, actor, role):
+    await _backfill_contacted_stages(runtime, org_bi, account_bi, actor)
     contacts = await _contacts(runtime, org_bi)
     emails = await _emails(runtime, org_bi)
     mail = await _mail_messages(runtime, org_bi)
@@ -2437,6 +2488,8 @@ async def _update_contact(runtime, row, org_bi, account_bi, actor, data):
     contact = _contact_data(data, existing)
     if _pipeline_moved(data):
         contact = _flow_placement(contact, await _org_flows(runtime, org_bi))
+    elif _edit_marks_contacted(data, existing, contact):
+        _advance_contacted(contact, await _org_flows(runtime, org_bi))
     if not contact.get("name") and not contact.get("email"):
         return _response(runtime, {"error": "name_or_email_required"}, 400)
     if "email" in data and data.get("email") and not contact.get("email"):
@@ -2501,6 +2554,8 @@ async def _bulk_update_contacts(runtime, org_bi, org_name, account_bi, actor, da
         contact = _contact_data(edits[row["contact_id"]], existing)
         if _pipeline_moved(edits[row["contact_id"]]):
             contact = _flow_placement(contact, flows)
+        elif _edit_marks_contacted(edits[row["contact_id"]], existing, contact):
+            _advance_contacted(contact, flows)
         changes.append((existing, contact))
         sealed[row["contact_id"]] = await runtime.seal(contact)
         contacts.append(_contact_fields(
@@ -5448,6 +5503,10 @@ async def _record_external_send(runtime, org_bi, org_name, account_bi, actor, da
     )
     await runtime.audit(actor, "crm.email.link", "crm_email_send", send_id)
     contact_data = {"email": recipient}
+    if contact_id and status not in ("draft", "failed", "reject"):
+        await _mark_contacted(runtime, org_bi, account_bi, actor,
+                              await _org_flows(runtime, org_bi), contact_id,
+                              max(0, _integer(data.get("sentAt"), now)))
     if contact_id:
         contact = await _contact_row(runtime, org_bi, contact_id)
         opened = await runtime.open(contact.get("data")) if contact else None
@@ -5536,15 +5595,19 @@ async def _send_mailtrap(runtime, org_bi, org_name, account_bi, actor, data):
         status, external_id, sent_at if accepted else 0, sent_at,
         await runtime.seal(envelope), org_bi, send_id,
     )
+    advanced, before = "", dict(contact_data)
     if contact:
-        contact_data["lastContactedAt"] = sent_at if accepted else _integer(
-            contact_data.get("lastContactedAt"))
+        if accepted:
+            advanced = _stamp_contacted(contact_data, sent_at, settings["flows"])
         await runtime.d1_run(
             "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
             "data=? WHERE org_bi=? AND contact_id=?",
             account_bi, actor, sent_at, await runtime.seal(contact_data), org_bi,
             contact_id,
         )
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact_data)])
     await runtime.audit(
         actor, "crm.email.send", "crm_email_send", send_id,
         outcome="success" if accepted else "failed",
@@ -5684,7 +5747,8 @@ async def _outreach_send(runtime, org_bi, org_name, account_bi, actor, data):
         return _response(runtime, {
             "error": "daily_limit_reached", "dailyLimit": OUTREACH_DAILY_LIMIT,
         }, 429)
-    from_email, from_name = _outreach_sender(await _settings(runtime, org_bi))
+    settings = await _settings(runtime, org_bi)
+    from_email, from_name = _outreach_sender(settings)
     # The server's Mailtrap key sends outreach: an empty request key means
     # "use the host's configured sender", exactly like transactional mail.
     result = await runtime.send_mailtrap("", {
@@ -5717,13 +5781,17 @@ async def _outreach_send(runtime, org_bi, org_name, account_bi, actor, data):
         contact = await _contact_row_by_email(runtime, org_bi, recipient)
         contact_data = await runtime.open(contact.get("data")) if contact else None
         if contact and isinstance(contact_data, dict):
-            contact_data["lastContactedAt"] = now
+            before = dict(contact_data)
+            advanced = _stamp_contacted(contact_data, now, settings["flows"])
             await runtime.d1_run(
                 "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,"
                 "updated_at=?,data=? WHERE org_bi=? AND contact_id=?",
                 account_bi, actor, now, await runtime.seal(contact_data), org_bi,
                 str(contact.get("contact_id") or ""),
             )
+            if advanced:
+                await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                              [(before, contact_data)])
     await runtime.audit(
         actor, "crm.outreach.send", "crm_outreach", template,
         outcome="success" if accepted else "failed",
@@ -6990,12 +7058,16 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
             detail=("Zoho Mail" if zoho else "The email provider") + " rejected the send"
                    + (" (" + envelope["error"] + ")" if envelope["error"] else "") + "."),
             502)
-    contact["lastContactedAt"] = sent_at
+    before = dict(contact)
+    advanced = _stamp_contacted(contact, sent_at, flows)
     await runtime.d1_run(
         "UPDATE crm_contacts SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
         "data=? WHERE org_bi=? AND contact_id=?",
         account_bi, actor, sent_at, await runtime.seal(contact), org_bi, contact_id,
     )
+    if advanced:
+        await _record_contact_changes(runtime, org_bi, account_bi, actor,
+                                      [(before, contact)])
     await _record_contact_event(runtime, org_bi, account_bi, actor, contact,
                                 "contact.emailed", {"subject": subject})
     await _celebrate_tracked_email(runtime, actor, send_id, subject, contact)
@@ -7722,6 +7794,7 @@ async def purge_org_data(runtime, org_bi):
     await runtime.d1_run("DELETE FROM crm_views WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_contacts WHERE org_bi=?", org_bi)
     await runtime.d1_run("DELETE FROM crm_settings WHERE org_bi=?", org_bi)
+    await runtime.d1_run("DELETE FROM crm_backfills WHERE org_bi=?", org_bi)
 
 
 async def mailtrap_webhook_event(runtime, event, status, now):
