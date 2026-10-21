@@ -103,6 +103,15 @@ Some text has to stay byte for byte:
   `PasswordVisualTransformation`). A password is hashed and never shown, and
   rewriting it would lock out anyone whose saved password already contains
   such a character.
+- **Signed source text.** Values under the keys `patch`, `commits`,
+  `suggestionPatch` and `anchorLines` stay exact on the server. They are git
+  patches, commit mboxes and code lines: their author signs them byte for
+  byte and the owner replays them with git. Code may legitimately contain any
+  of these characters (a test that asserts U+2028 never appears does), and
+  rewriting it both breaks the signature (`bad_signature`) and corrupts the
+  patch. Hidden characters in code are a review concern, not a rewrite. Prose
+  fields of the same events (`title`, `body`) are still cleaned, so a signed
+  title or comment that carries hidden characters is refused.
 - **IME composition.** Text is cleaned only once composition ends, so CJK and
   other input methods are not disturbed.
 - **Read-only desktop views.** These show text exactly as received. Editable
