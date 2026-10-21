@@ -13273,7 +13273,7 @@
       ? entries.map(homeRepositoryRow).join("")
       : `<div class="px-2 py-3 text-sm text-muted-foreground">${query
         ? emptyListHtml("No repositories match this filter.", query)
-        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab or Codeberg, or create one</a>.'}</div>`;
+        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab, Codeberg or Gitea, or create one</a>.'}</div>`;
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
   }
@@ -14307,7 +14307,7 @@
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
+      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg or Gitea profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.textContent = `${platformName()} clones this URL into a bare mirror you then keep in sync.`;
@@ -14370,7 +14370,7 @@
     window.lucide?.createIcons();
   }
 
-  // A bare organization link — a GitLab group or a Codeberg profile — imports
+  // A bare organization link — a GitLab group or a Codeberg or Gitea profile — imports
   // every repository underneath it. GitHub is absent because the relay has no
   // organization walk for it, and a GitLab subgroup path is not matched because
   // group/thing is indistinguishable from a repository URL; the group walk
@@ -14382,7 +14382,7 @@
     } catch (_) {
       return "";
     }
-    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org"];
+    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org", "gitea.com", "www.gitea.com"];
     if (parsed.protocol !== "https:" || !namespaceHosts.includes(parsed.hostname.toLowerCase())) return "";
     return parsed.pathname.split("/").filter(Boolean).length === 1 ? parsed.toString() : "";
   }
@@ -14611,7 +14611,7 @@
       return `This account hosts as many repositories on ${platformName()} as it may. Delete one, or host more from your own node.`;
     }
     if (code === "invalid_import_url") {
-      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org"]).join(", ")}.`;
+      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org", "gitea.com"]).join(", ")}.`;
     }
     if (code === "organization_not_found") return "That organization does not exist.";
     return "Could not create the repository.";
@@ -14661,11 +14661,11 @@
     const sourceValue = String($("[data-new-repo-source-value]")?.value || "").trim();
     if (source === "provider") {
       if (!state.session?.sessionToken) {
-        setNewRepoHint("Sign in to import a GitHub, GitLab, or Codeberg repository.", "bad");
+        setNewRepoHint("Sign in to import a GitHub, GitLab, Codeberg, or Gitea repository.", "bad");
         return;
       }
       if (!sourceValue) {
-        setNewRepoHint("Enter a GitHub, GitLab, or Codeberg repository URL.", "bad");
+        setNewRepoHint("Enter a GitHub, GitLab, Codeberg, or Gitea repository URL.", "bad");
         $("[data-new-repo-source-value]")?.focus();
         return;
       }
@@ -14758,7 +14758,7 @@
         setNewRepoHint(
           code === "provider_rate_limited" ? "The provider rate limit was reached. Try again after its reset time."
             : code.includes("authorization") ? "The provider rejected access. Private repositories require a valid scoped token."
-            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, or codeberg.org repository URL."
+            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, codeberg.org, or gitea.com repository URL."
             : code === "empty_namespace" ? "That organization listed no importable repositories. A private group needs a token with read access."
             : code === "namespace_import_failed" ? "None of that organization's repositories could be read."
             : code === "provider_request_failed" ? "The provider did not recognise that organization. Check the group path, or add a token if it is private."

@@ -17,6 +17,7 @@ SPEC.loader.exec_module(sync)
 
 PROVIDER_URLS = {
     "codeberg": "https://codeberg.org/m33/",
+    "gitea": "https://gitea.com/gitea/",
     "github": "https://github.com/spidertest/",
     "gitlab": "https://gitlab.com/group/subgroup/",
 }
@@ -260,17 +261,20 @@ def test_clean_imports_hosts_every_supported_public_provider(
             _import("from-github", "a", "github"),
             _import("from-gitlab", "b", "gitlab"),
             _import("from-codeberg", "c", "codeberg"),
+            _import("from-gitea", "d", "gitea"),
         ],
         config,
     )
 
     assert [(item["name"], item["provider"]) for item in cleaned] == [
         ("from-codeberg", "codeberg"),
+        ("from-gitea", "gitea"),
         ("from-github", "github"),
         ("from-gitlab", "gitlab"),
     ]
     assert [item["sourceUrl"] for item in cleaned] == [
         "https://codeberg.org/m33/from-codeberg",
+        "https://gitea.com/gitea/from-gitea",
         "https://github.com/spidertest/from-github",
         "https://gitlab.com/group/subgroup/from-gitlab",
     ]

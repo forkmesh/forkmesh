@@ -166,7 +166,7 @@
     "repo": "https://github.com/go-gitea/gitea",
     "category": "forges",
     "summary": "Gitea is a lightweight self-hosted Git service with issues, pull requests and CI.",
-    "watching": "The relay's importer targets the Gitea-compatible API that Codeberg runs through Forgejo, and a certified Gitea provider in tools does two-way issue sync against any base URL. Gitea's backup docs serve as a comparison source.",
+    "watching": "The relay imports repositories from gitea.com through Gitea's API and links its terms, and the mirror node allows gitea.com import URLs by default. The mobile and native apps offer mirror import from gitea.com, and a certified Gitea provider in tools does two-way issue sync against any Gitea instance. Gitea's backup docs serve as a comparison source.",
     "tags": [
       "git",
       "forge",
@@ -178,7 +178,10 @@
     "maker": "Gitea community",
     "integration": "available",
     "integrations": [
-      "App relay: Gitea-compatible import API",
+      "App relay: repository import from gitea.com",
+      "Mirror node: default hosted import source",
+      "Mobile app: mirror import",
+      "Native app: mirror import",
       "Tools: two-way issue sync"
     ],
     "comparison": [
@@ -198,9 +201,14 @@
         "forkmesh": "Issues, pull requests and reviews are signed records stored in the repository under .forkmesh/, not only in a hosted database."
       },
       {
+        "topic": "Backups",
+        "project": "The dump command writes a ZIP while the instance is shut down; restoring is a manual move of files and a database import.",
+        "forkmesh": "Any node can keep a full mirror of a public repository, and the signed .forkmesh/ records travel inside the Git history."
+      },
+      {
         "topic": "Role in ForkMesh",
-        "project": "Its API is an import and sync target.",
-        "forkmesh": "The relay's importer targets the Gitea-compatible API, and a Gitea provider in tools does two-way issue sync against any base URL."
+        "project": "A source of repositories to import and mirror, and an issue sync target.",
+        "forkmesh": "The relay imports from gitea.com, mirror nodes accept gitea.com URLs by default, and a tools provider syncs issues both ways with any Gitea instance."
       },
       {
         "topic": "License",
@@ -208,7 +216,7 @@
         "forkmesh": "MIT."
       }
     ],
-    "reviewed": "2026-09",
+    "reviewed": "2026-10",
     "published": true
   },
   {

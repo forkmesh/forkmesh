@@ -153,7 +153,7 @@ def docs_body(name, origin):
         "license, then create it.</li>"
         "</ol>"
         "<p>To bring in an existing project, give the address of a public "
-        "repository on GitHub, GitLab or Codeberg as the source and "
+        "repository on GitHub, GitLab, Codeberg or Gitea as the source and "
         "%(name)s copies it with its history.</p>"
         '<h2 id="clone">Clone a repository</h2>'
         "<p>Every repository page shows its clone address. Clone it with:</p>"

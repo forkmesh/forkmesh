@@ -2,8 +2,8 @@
 
 The orchestration and D1 policy live in :mod:`repository_imports`; this module
 contains no Worker dependencies.  Keeping provider variance here makes the
-same fixture usable against GitHub, GitLab, and Codeberg and keeps checkpoint,
-identity, and convergence logic provider-neutral.
+same fixture usable against GitHub, GitLab, Codeberg, and Gitea and keeps
+checkpoint, identity, and convergence logic provider-neutral.
 
 Provider credentials are deliberately absent from every value returned by
 this module.  A caller may pass one to its HTTP transport, but it must never be
@@ -421,7 +421,7 @@ def _gitlab_adapter(source, root, context):
     }
 
 
-def _codeberg_adapter(source, root, context):
+def _gitea_api_adapter(source, root, context):
     owner = quote(source["owner"], safe="")
     name = quote(source["name"], safe="")
     base = "/repos/%s/%s" % (owner, name)
@@ -438,7 +438,7 @@ def _codeberg_adapter(source, root, context):
         for number in pulls
     ]
     return {
-        "provider": "codeberg",
+        "provider": source["provider"],
         "repositoryId": str(root.get("id") or ""),
         "streams": {
             "git_refs": [
@@ -481,16 +481,19 @@ def _codeberg_adapter(source, root, context):
             )],
         },
         "unsupported": [
-            "Codeberg wiki pages are a separate Git repository and require a "
-            "separate mirror operation.",
+            "%s wiki pages are a separate Git repository and require a "
+            "separate mirror operation." % _GITEA_API_LABELS[source["provider"]],
         ],
     }
 
 
+_GITEA_API_LABELS = {"codeberg": "Codeberg", "gitea": "Gitea"}
+
 _ADAPTERS = {
     "github": _github_adapter,
     "gitlab": _gitlab_adapter,
-    "codeberg": _codeberg_adapter,
+    "codeberg": _gitea_api_adapter,
+    "gitea": _gitea_api_adapter,
 }
 
 

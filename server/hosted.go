@@ -68,7 +68,7 @@ var (
 	hostedBranchPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$`)
 	hostedFilePattern   = regexp.MustCompile(`^(README\.md|\.gitignore|LICENSE)$`)
 	hostedGrantPattern  = regexp.MustCompile(`^[A-Za-z0-9_-]{16,1000}\.[A-Za-z0-9_-]{86}$`)
-	hostedDefaultImport = []string{"github.com", "gitlab.com", "codeberg.org"}
+	hostedDefaultImport = []string{"github.com", "gitlab.com", "codeberg.org", "gitea.com"}
 )
 
 // HostedConfig turns the replicator on (core role only).
@@ -77,7 +77,7 @@ type HostedConfig struct {
 	// Absolute, owner-only directory holding <id>.git and .trash/.
 	Root string `json:"root,omitempty"`
 	// Hosts an importUrl may name (https only). Default github.com,
-	// gitlab.com, codeberg.org.
+	// gitlab.com, codeberg.org, gitea.com.
 	ImportHosts []string `json:"importHosts,omitempty"`
 	PushHosts   []string `json:"pushHosts,omitempty"`
 	// Largest repository a fetch may produce (bytes); default 256 MiB.

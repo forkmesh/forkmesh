@@ -4211,7 +4211,9 @@ function cleanExternalRepositories(payload) {
               ? "GitLab"
               : provider === "codeberg"
                 ? "Codeberg"
-                : "External",
+                : provider === "gitea"
+                  ? "Gitea"
+                  : "External",
         importId: String(record.id || "").slice(0, 64),
         externalUrl: String(record.originalUrl || "").slice(0, 500),
         isPrivate: record.isPrivate === true,
@@ -7446,19 +7448,21 @@ class ForkMeshWorld extends HTMLElement {
         })
         .filter((owner) => owner.name && owner.name !== account),
     ];
-    const initialProvider = ["github", "gitlab", "codeberg"].includes(
+    const initialProvider = ["github", "gitlab", "codeberg", "gitea"].includes(
       String(options.provider || "").toLowerCase(),
     )
       ? String(options.provider).toLowerCase()
       : "codeberg";
-    // GitLab and Codeberg also accept a bare organization link, which the
-    // submit handler expands into every repository underneath it.
+    // GitLab, Codeberg and Gitea also accept a bare organization link, which
+    // the submit handler expands into every repository underneath it.
     const importPlaceholder = (provider) =>
       provider === "github"
         ? "https://github.com/owner/repository"
         : provider === "gitlab"
           ? "https://gitlab.com/group/repository  ·  https://gitlab.com/group"
-          : "https://codeberg.org/owner/repository  ·  https://codeberg.org/owner";
+          : provider === "gitea"
+            ? "https://gitea.com/owner/repository  ·  https://gitea.com/owner"
+            : "https://codeberg.org/owner/repository  ·  https://codeberg.org/owner";
     const dialog = document.createElement("dialog");
     dialog.dataset.worldCreateRepository = "true";
     dialog.style.cssText = "width:min(620px,calc(100vw - 28px));border:1px solid #e7e9ed;border-radius:20px;background:#fff;color:#111827;padding:0;box-shadow:0 20px 48px -16px rgb(15 23 42 / .24),0 4px 12px rgb(15 23 42 / .06);font-family:'ForkMesh Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
@@ -7466,13 +7470,14 @@ class ForkMeshWorld extends HTMLElement {
       <form style="padding:22px;display:grid;gap:16px">
         <header>
           <strong style="font-size:20px;font-weight:600;letter-spacing:-.01em">Import repositories into the World</strong>
-          <p style="margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5">Paste one repository link per line, or a whole organization — a GitLab group such as gitlab.com/gitlab-org (subgroups included) or a Codeberg profile such as codeberg.org/m33. ForkMesh reads provider metadata without storing your token, then portals arrive around the perimeter one at a time.</p>
+          <p style="margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5">Paste one repository link per line, or a whole organization — a GitLab group such as gitlab.com/gitlab-org (subgroups included) or a Codeberg or Gitea profile such as codeberg.org/m33. ForkMesh reads provider metadata without storing your token, then portals arrive around the perimeter one at a time.</p>
         </header>
-        <div role="group" aria-label="Import provider" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div role="group" aria-label="Import provider" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
           ${[
             ["github", "GitHub", "#1f2328"],
             ["gitlab", "GitLab", "#c2410c"],
             ["codeberg", "Codeberg", "#1e6fbf"],
+            ["gitea", "Gitea", "#4d7c0f"],
           ]
             .map(
               ([id, label, color]) =>
@@ -7569,8 +7574,8 @@ class ForkMeshWorld extends HTMLElement {
           );
         } catch (_) {}
         // A single path segment on a namespace-capable host is an
-        // organization (a GitLab group or a Codeberg profile) rather than a
-        // repository. GitLab subgroups are deliberately not matched here:
+        // organization (a GitLab group or a Codeberg or Gitea profile) rather
+        // than a repository. GitLab subgroups are deliberately not matched here:
         // gitlab.com/group/thing is ambiguous from the URL alone, and the
         // group walk already includes every subgroup beneath it.
         const isNamespace =
@@ -7578,6 +7583,8 @@ class ForkMeshWorld extends HTMLElement {
           [
             "codeberg.org",
             "www.codeberg.org",
+            "gitea.com",
+            "www.gitea.com",
             "gitlab.com",
             "www.gitlab.com",
           ].includes(parsed.hostname.toLowerCase()) &&
