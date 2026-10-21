@@ -45,6 +45,8 @@ _REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 _KEY_ID_RE = re.compile(r"^sk_[A-Za-z0-9_-]{16,80}$")
 _EXECUTABLE_RE = re.compile(r"^/[A-Za-z0-9_./+-]{1,511}$")
 _GATEWAY_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+# SSH_GATEWAY_REPOSITORIES value for a gateway that relays every repository.
+ALL_REPOSITORIES = "*"
 
 
 class SshPublicKeyError(ValueError):
@@ -227,7 +229,8 @@ def configured_gateway_token(value: object) -> str:
 def parse_gateway_repository_allowlist(value: object) -> dict[str, str]:
     """Parse the Worker-side copy of the gateway's explicit repo allowlist.
 
-    Format: ``owner/repo=read-write,owner/other=read-only``.  A single invalid
+    Format: ``owner/repo=read-write,owner/other=read-only``, or ``*`` alone
+    for a relaying gateway (every repository).  A single invalid
     or conflicting entry fails the whole value closed.  Repository names are
     canonicalized only for comparison; the catalog continues to publish the
     repository's own spelling.
@@ -236,6 +239,13 @@ def parse_gateway_repository_allowlist(value: object) -> dict[str, str]:
     raw = str(value or "").strip()
     if not raw or len(raw.encode("utf-8")) > MAX_GATEWAY_ALLOWLIST_BYTES:
         return {}
+    if raw == ALL_REPOSITORIES:
+        # Bridge mode: the gateway serves every repository this deployment's
+        # HTTPS Git routes serve (hosted repositories and new forks included),
+        # by relaying each SSH session to them. Repository permissions are
+        # still decided per operation by the authorization endpoint, and again
+        # by the HTTPS route the session is relayed to.
+        return {ALL_REPOSITORIES: "read-write"}
     repositories: dict[str, str] = {}
     entries = raw.split(",")
     if len(entries) > MAX_GATEWAY_REPOSITORIES:
@@ -308,8 +318,35 @@ def gateway_repository_access(
     clean_repo = str(repository or "").strip().lower()
     if not _OWNER_RE.fullmatch(clean_owner) or not _REPO_RE.fullmatch(clean_repo):
         return ""
+    if repositories.get(ALL_REPOSITORIES) == "read-write":
+        return "read-write"
     access = repositories.get(clean_owner + "/" + clean_repo)
     return access if access in ("read-only", "read-write") else ""
+
+
+def gateway_bridges_all(repositories: object) -> bool:
+    """True when the gateway relays every repository to the HTTPS routes."""
+
+    return (
+        isinstance(repositories, dict)
+        and repositories.get(ALL_REPOSITORIES) == "read-write"
+    )
+
+
+def scp_repository_url(
+    host: object, port: object, owner: object, repository: object
+) -> str:
+    """``git@host:owner/repo.git``; only the standard port has this form."""
+
+    url = ssh_repository_url(host, port, owner, repository)
+    prefix = "ssh://git@"
+    if not url.startswith(prefix):
+        return ""
+    rest = url[len(prefix):]
+    host_part, _slash, path = rest.partition("/")
+    if ":" in host_part or not path:
+        return ""
+    return "git@" + host_part + ":" + path
 
 
 def ssh_repository_url(

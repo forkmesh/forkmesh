@@ -16174,6 +16174,10 @@ hosted_fork_create = _hosted_git.export("hosted_fork_create")
 record_hosted_push_state = _hosted_git.export("record_hosted_push_state")
 record_hosted_branch_count = _hosted_git.export(
     "record_hosted_branch_count")
+# The SSH gateway relays a key-authenticated session to the HTTPS Git routes
+# with a short-lived credential minted by /api/ssh/authorize.
+ssh_git_password = _hosted_git.export("ssh_git_password")
+contributor_push_allowed = _hosted_git.export("contributor_push_allowed")
 # Repositories the Next core nodes host (HOSTED_GIT_CORE_NODES,
 # docs/HOSTED_REPOS.md): push routing, the per-repository size limit, and the
 # private (capability-only) read path.
