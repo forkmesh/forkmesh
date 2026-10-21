@@ -45,13 +45,35 @@ HARDENING = ("CapabilityBoundingSet=\n", "AmbientCapabilities=\n",
              "RestrictSUIDSGID=true", "LockPersonality=true",
              "SystemCallArchitectures=native", "NoNewPrivileges=true")
 
+PROC_HARDENING = ("ProtectProc=invisible", "ProtectKernelTunables=true",
+                  "ProtectKernelLogs=true")
+
 
 def test_the_app_and_git_node_units_are_sandboxed():
     app = _block(INSTANCE, "write_app_unit() {")
     node = INSTANCE.split('cat > "$DAEMON_UNIT" <<EOF', 1)[1].split("\nEOF", 1)[0]
-    for unit in (app, node):
-        for line in HARDENING:
-            assert line in unit, line
+    for line in HARDENING:
+        assert line in app, line
+    for line in HARDENING:
+        if line not in PROC_HARDENING:
+            assert line in node, line
+    for line in PROC_HARDENING:
+        assert line not in node, line
     assert "RestrictNamespaces=true" in app
     # The git node may sandbox jobs with user namespaces (bubblewrap).
     assert "RestrictNamespaces" not in node
+
+
+def test_a_broken_local_runner_rule_file_keeps_the_built_in_rules():
+    runner = RUNNER
+    write = _block(runner, "write_firewall_linux() {")
+    assert '>"$NFT_BASE.new"' in write
+    assert "include" not in write.split('>"$NFT_BASE.new"', 1)[0]
+    assert 'cat "$NFT_BASE.new"' in write
+    assert ("ExecStart=/bin/sh -c '/usr/sbin/nft -c -f "
+            "/etc/forkmesh-runner/jobs.nft && exec /usr/sbin/nft -f "
+            "/etc/forkmesh-runner/jobs.nft;") in runner
+    assert "exec /usr/sbin/nft -f /etc/forkmesh-runner/jobs-base.nft'" in runner
+    start = _block(runner, "start_firewall_linux() {")
+    assert start.index('nft -c -f "$(live_path "$NFT")"') < start.index(
+        'nft -f "$(live_path "$NFT_BASE")"')

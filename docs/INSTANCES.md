@@ -475,8 +475,12 @@ the narrow rules for the operator to remove.
 Keep local changes in the files they include, which the installers never
 touch: `/etc/caddy/conf.d/*.caddy` (top level), `/etc/caddy/site.d/*.caddy`
 (directives inside the instance's site block) and
-`/etc/forkmesh-runner/jobs.d/*.nft` (for example `add rule inet
-forkmesh_runner output ...`).
+`/etc/forkmesh-runner/jobs.d/*.nft`. A runner rule that lets a job reach
+a private address must come before the built-in reject rules, so use
+`insert rule inet forkmesh_runner output ...` there; an `add rule` lands
+after them and never matches. When a `jobs.d` file does not parse, the
+firewall loads its built-in rules (`jobs-base.nft`) alone instead of none,
+and the log says so.
 
 ## Importing a repository on the server (`instance_repo.py`)
 
