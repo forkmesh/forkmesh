@@ -14,6 +14,7 @@
 #include "ForkMeshTerm.h"
 #endif
 #include "ForkMeshIdentity.h"
+#include "HiddenUnicodeGuard.h"
 #include "MainWindow.h"
 #include "MirrorActionsConfiguration.h"
 #include "NoteTools.h"
@@ -775,6 +776,7 @@ int main(int argc, char *argv[])
         QGuiApplication::setDesktopFileName(QStringLiteral("forkmesh"));
         app.setStyle(QStyleFactory::create("Fusion"));
         forkmesh::ui::SplitterHairline::install(&app);
+        forkmesh::hiddenunicode::installInputGuard(&app);
     }
 
     {

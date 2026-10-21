@@ -66,6 +66,7 @@ run_worker_first = [
   "/dashboard-chat.js",
   "/member-welcome.js",
   "/analytics.js",
+  "/safe-input.js",
   "/analytics-sdk.js",
   "/assets/*",
   "!/assets/bot-avatars/*",

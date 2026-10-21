@@ -3,6 +3,7 @@ import hmac
 import json
 import re
 from urllib.parse import parse_qsl, urlparse
+from hidden_unicode import clean_value as clean_hidden_unicode
 
 import instance_features
 import workflow_files as files
@@ -158,7 +159,7 @@ async def _session_account(env, request, data=None, digest=""):
 async def _body(request, limit=BODY_MAX_BYTES):
     try:
         raw = await bounded_request_text(request, limit)
-        data = json.loads(raw or "{}")
+        data = clean_hidden_unicode(json.loads(raw or "{}"))
     except Exception:
         return None, ""
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()

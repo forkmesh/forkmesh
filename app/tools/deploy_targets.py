@@ -77,6 +77,7 @@ def target_inputs(target):
             "www/public/index.html",
             "www/public/install.sh",
             "www/public/analytics.js",
+            "www/public/safe-input.js",
             "www/public/analytics-sdk.js",
             "www/public/genie-spider.js",
             "www/public/site-footer.css",

@@ -2471,6 +2471,8 @@ _request_bodies = _LazyModule("request_bodies")
 bounded_request_text = _request_bodies.export("bounded_request_text")
 bounded_json_request = _request_bodies.export("bounded_json_request")
 _json_request_limit = _request_bodies.export("_json_request_limit")
+_hidden_unicode = _LazyModule("hidden_unicode")
+clean_hidden_unicode = _hidden_unicode.export("clean_value")
 
 
 def _legacy_custody_not_ready_response():
@@ -10920,7 +10922,7 @@ class _WorldCommunityRuntime:
         if not str(raw or "").strip():
             return {}, ""
         try:
-            data = json.loads(raw)
+            data = clean_hidden_unicode(json.loads(raw))
         except Exception:
             return None, "invalid_json"
         return (data, "") if isinstance(data, dict) else (None, "invalid_json")
@@ -11347,7 +11349,7 @@ class _NotesRuntime(_WorldCommunityRuntime):
         if not raw.strip():
             return {}, ""
         try:
-            data = json.loads(raw)
+            data = clean_hidden_unicode(json.loads(raw))
         except Exception:
             return None, "invalid_json"
         return (data, "") if isinstance(data, dict) else (None, "invalid_json")
@@ -11564,7 +11566,7 @@ class _CalendarRuntime(_WorldCommunityRuntime):
         if len(raw.encode("utf-8")) > limit:
             raise RequestBodyTooLarge()
         self._calendar_body_digest = await sha256_hex(raw)
-        return json.loads(raw or "{}")
+        return clean_hidden_unicode(json.loads(raw or "{}"))
 
     def query(self, name):
         if self.request is None:
@@ -11838,7 +11840,7 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         if not raw.strip():
             return {}, ""
         try:
-            data = json.loads(raw)
+            data = clean_hidden_unicode(json.loads(raw))
         except Exception:
             return None, "invalid_json"
         return (data, "") if isinstance(data, dict) else (None, "invalid_json")
@@ -28309,7 +28311,7 @@ class _OrganizationSuccessionRuntime:
         if not str(raw or "").strip():
             return {}, ""
         try:
-            data = json.loads(raw)
+            data = clean_hidden_unicode(json.loads(raw))
         except Exception:
             return None, "invalid_json"
         return (data, "") if isinstance(data, dict) else (None, "invalid_json")

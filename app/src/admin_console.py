@@ -2310,5 +2310,6 @@ def render_admin_html(view, content, banner="", admin_query="", console="",
         subpages=subpages,
         head_extra=(
             "<style>" + CONSOLE_STYLE + "</style>"
-            "<script src=\"/analytics.js\"></script>"),
+            "<script src=\"/analytics.js\"></script>"
+            "<script src=\"/safe-input.js\" defer></script>"),
         body_extra=CONSOLE_SCRIPT)

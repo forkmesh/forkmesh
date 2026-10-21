@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.ui.kit.FmField
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.FmUserActivity
 import com.forkmesh.nativeapp.ui.kit.LocalFmFieldLabel
 import com.forkmesh.nativeapp.ui.navigation.Screen
@@ -115,7 +116,7 @@ fun AccountFilledField(
     )
     BasicTextField(
         value = value,
-        onValueChange = FmUserActivity.typing(onValueChange),
+        onValueChange = if (obscure) FmUserActivity.typing(onValueChange) else FmSafeInput.typing(onValueChange),
         modifier = modifier
             .fillMaxWidth()
             .focusRequester(focus)

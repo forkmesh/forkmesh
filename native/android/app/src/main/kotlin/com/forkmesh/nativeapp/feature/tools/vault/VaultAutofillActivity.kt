@@ -28,6 +28,7 @@ import android.widget.RemoteViews
 import android.widget.TextView
 import androidx.annotation.RequiresApi
 import com.forkmesh.nativeapp.R
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 
 @RequiresApi(Build.VERSION_CODES.O)
 class VaultAutofillActivity : Activity() {
@@ -89,6 +90,7 @@ class VaultAutofillActivity : Activity() {
         val search = EditText(this).apply {
             hint = getString(R.string.vault_autofill_search_hint)
             isSingleLine = true
+            filters = filters + FmSafeInput.Filter
             importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         }
         val list = ListView(this).apply { this.adapter = adapter }

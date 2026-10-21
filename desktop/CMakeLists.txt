@@ -1025,6 +1025,10 @@ set(FORKMESH_APP_SOURCES
     src/SecurityAlarmState.cpp
     src/AdBannerModel.h
     src/AdBannerModel.cpp
+    src/HiddenUnicode.h
+    src/HiddenUnicode.cpp
+    src/HiddenUnicodeGuard.h
+    src/HiddenUnicodeGuard.cpp
     src/AdBannerWidget.h
     src/AdBannerWidget.cpp
     src/SecretDiffBanner.h
@@ -3225,6 +3229,21 @@ forkmesh_link_opengl(forkmesh-window-tests)
     target_link_libraries(forkmesh-ad-banner-model-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-ad-banner-model-tests PRIVATE src)
 
+    qt_add_executable(forkmesh-hidden-unicode-tests
+        tests/test_hidden_unicode.cpp
+        src/HiddenUnicode.h
+        src/HiddenUnicode.cpp
+        src/HiddenUnicodeGuard.h
+        src/HiddenUnicodeGuard.cpp
+    )
+    target_link_libraries(forkmesh-hidden-unicode-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-hidden-unicode-tests PRIVATE src)
+    target_compile_definitions(forkmesh-hidden-unicode-tests PRIVATE
+        FORKMESH_HIDDEN_UNICODE_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../conformance/hidden-unicode/v1/vectors.json")
+    if(APPLE)
+        set_target_properties(forkmesh-hidden-unicode-tests PROPERTIES MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-genie-vitals-tests
         tests/test_genie_vitals.cpp
         src/GenieVitals.h
@@ -3927,6 +3946,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-relay-repository-scope-tests)
     add_test(NAME forkmesh-ad-banner-model-tests
              COMMAND forkmesh-ad-banner-model-tests)
+    add_test(NAME forkmesh-hidden-unicode-tests
+             COMMAND forkmesh-hidden-unicode-tests)
     add_test(NAME forkmesh-genie-vitals-tests
              COMMAND forkmesh-genie-vitals-tests)
     add_test(NAME forkmesh-genie-landmarks-tests
@@ -4246,6 +4267,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-code-map-view-tests
         forkmesh-window-fade-tests
         forkmesh-message-box-clicks-tests
+        forkmesh-hidden-unicode-tests
         forkmesh-tests forkmesh-window-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests

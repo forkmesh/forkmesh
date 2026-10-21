@@ -5,6 +5,9 @@ Split out of entry.py so Cloudflare's startup-memory validation (error
 through a _LazyModule proxy on the first request that needs it.
 """
 
+from hidden_unicode import clean_value as clean_hidden_unicode
+
+
 
 def _bind_runtime(runtime):
     """Supply the entrypoint primitives used by this domain."""
@@ -117,7 +120,7 @@ async def _ssh_json_body(request, max_bytes=32 * 1024):
     if len(str(raw or "").encode("utf-8")) > max_bytes:
         return None, "payload_too_large"
     try:
-        data = json.loads(raw)
+        data = clean_hidden_unicode(json.loads(raw))
     except Exception:
         return None, "invalid_json"
     if not isinstance(data, dict):

@@ -1,5 +1,8 @@
 """Request-lazy, hard-bounded Worker body readers."""
 
+from hidden_unicode import clean_value
+
+
 
 JSON_BODY_DEFAULT_MAX_BYTES = 2 * 1024 * 1024
 JSON_BODY_LARGE_MAX_BYTES = 8 * 1024 * 1024
@@ -76,4 +79,4 @@ async def bounded_json_request(request, max_bytes=None):
     """Read one JSON body with a hard bound even without Content-Length."""
     raw = await bounded_request_text(
         request, int(max_bytes or _json_request_limit(request)))
-    return json.loads(raw or "{}")
+    return clean_value(json.loads(raw or "{}"))

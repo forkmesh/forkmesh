@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
+from hidden_unicode import clean_value
+
 
 ENTRY = Path(__file__).resolve().parents[1] / "src" / "entry.py"
 SOURCE = ENTRY.read_text(encoding="utf-8")
@@ -57,6 +59,7 @@ def _load(record=None, session=("", None)):
     namespace = {
         "re": __import__("re"),
         "json": json,
+        "clean_hidden_unicode": clean_value,
         "urlparse": urlparse,
         "parse_qs": parse_qs,
         "MAX_NODE_NAME": 64,

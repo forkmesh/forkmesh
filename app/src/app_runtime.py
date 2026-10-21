@@ -5,6 +5,9 @@ Split out of entry.py so Cloudflare's startup-memory validation (error
 through a _LazyModule proxy on the first request that needs it.
 """
 
+from hidden_unicode import clean_query as clean_hidden_query
+
+
 
 async def _org_office_resync(env, request, org, response):
     if method_name(request) in ("GET", "HEAD", "OPTIONS"):
@@ -1297,7 +1300,7 @@ class Default:
                 account_cookie_name)
         if method_name(request) == "POST":
             try:
-                form = parse_qs(await request.text(), keep_blank_values=True)
+                form = clean_hidden_query(parse_qs(await request.text(), keep_blank_values=True))
             except Exception:
                 form = {}
             if not _admin_csrf_ok(self.env, form):

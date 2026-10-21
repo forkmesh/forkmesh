@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 
 import pytest
 
+from hidden_unicode import clean_value
+
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "src" / "entry.py"
@@ -49,6 +51,7 @@ def _reader():
         "JSON_BODY_LARGE_PATH_PREFIXES": ("/api/security/",),
         "urlparse": urlparse,
         "json": json,
+        "clean_value": clean_value,
     }
     exec(_source("_json_request_limit"), namespace)
     exec(_source("bounded_request_text"), namespace)

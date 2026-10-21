@@ -73,7 +73,7 @@ import com.forkmesh.nativeapp.code.codeCaretOf
 import com.forkmesh.nativeapp.code.detectIndentUnit
 import com.forkmesh.nativeapp.code.editorStatusText
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
-import com.forkmesh.nativeapp.ui.kit.FmUserActivity
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmPalette
@@ -302,7 +302,7 @@ internal fun FmCodeEditor(state: CodeEditorState, modifier: Modifier = Modifier)
             ) {
                 BasicTextField(
                     value = state.value,
-                    onValueChange = FmUserActivity.typing(state::onEdit),
+                    onValueChange = FmSafeInput.typing(state::onEdit),
                     modifier = Modifier
                         .widthIn(min = viewportWidth - gutterWidth)
                         .heightIn(min = viewportHeight)
