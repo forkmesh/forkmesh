@@ -395,6 +395,30 @@ Rows are plain buttons that set `AgentsScreen.opened`; one
 `navigationDestination(item:)` pushes the page, decided at tap time, so list
 rebuilds never close an open agent.
 
+### Your last prompt, pinned (iOS)
+
+Every agent detail screen pins what you last wrote to the agent above its
+transcript, so the instruction stays in view while the reply scrolls (asked for
+on 2026-10-21): `AgentRunScreen` (desktop, node and runner runs),
+`AgentSessionDetailScreen` (a desktop-pushed session), `LaunchedAgentSessionScreen`
+(a queued run) and `AgentScreen` (the phone's own agent).
+
+- `PromptDeck` (FMControl) holds your prompts newest first: `.prompt` blocks and
+  steers whose sender is you (`TranscriptBlock.steerFromYou`), the user turns
+  of a queued run's history, or `AgentEvent.userMessage`. A prompt still
+  being sent counts as soon as it shows.
+- `AgentPromptDeck` draws it as one compact line, a stack of cards with up to
+  two edges peeking out below for earlier prompts, and `3/5` when there is more
+  than one. Pull the card down to flip back to an earlier prompt (it slides off
+  and the one beneath rises); push it up to come forward. The card tilts as it
+  is dragged and resists past either end. Tap to read the whole prompt, long
+  press to copy it or jump back to the latest.
+- A new prompt drops in on top, and the deck returns to it even when you were
+  reading back. Cards are keyed by the prompt's position from the first, so
+  this animates instead of swapping text.
+- VoiceOver reads it as one adjustable element (swipe up for newer, down for
+  older). Reduce Motion fades between cards without the tilt.
+
 ## Actions on one desktop agent
 
 | Action | Method | iOS | Android |
