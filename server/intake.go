@@ -1568,7 +1568,7 @@ func writeDiscussionModeration(dir string, item collaborationItem) (bool, int, e
 		if target == discussionDeleteTarget {
 			// The whole discussion: its folder leaves the tree, like the
 			// desktop's DiscussionStore::deleteDiscussion.
-			return true, number, os.RemoveAll(dir)
+			return true, number, removeTreeUnder(filepath.Dir(dir), dir)
 		}
 		entries, _ := os.ReadDir(dir)
 		for _, entry := range entries {
