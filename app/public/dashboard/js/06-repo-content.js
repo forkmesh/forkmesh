@@ -172,6 +172,8 @@
   // between them into an <em>, and a code span reading `a_b_c` lost its
   // underscores. Link labels are rendered before their whole anchor is parked,
   // preserving emphasis without allowing record references to become nested links.
+  const MD_ESCAPED_ENTITY = /&amp;(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/g;
+
   function renderMarkdownInline(escapedText, context, linkRecordReferences = true, parked = []) {
     const park = (html) => `\u0001${parked.push(html) - 1}\u0001`;
     const recordReference = (whole, prefix, label, kind, number) => {
@@ -186,6 +188,7 @@
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
         park(mdLinkHtml(renderMarkdownInline(label, context, false, parked), url, context)))
       .replace(/`([^`]+)`/g, (_, code) => park(`<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">${code}</code>`))
+      .replace(MD_ESCAPED_ENTITY, "&$1;")
       .replace(/&lt;(https?:\/\/(?:(?!&[lg]t;)[^\s\u0000\u0001<>"'])+)&gt;/gi, (whole, url) =>
         (linkRecordReferences ? park(mdLinkHtml(url, url, context)) : whole))
       .replace(MD_BARE_URL, (whole, prefix, candidate) => {

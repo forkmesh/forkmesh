@@ -262,6 +262,12 @@ reduced motion).
   beside the name on phones, where the column is hidden. The roster is read
   once per repository and branch (`repoContributorRosterCached`), shared with
   the About rail. Tests: `app/tests/test_issue_timeline_people.py`.
+- **HTML entities in markdown** (`MD_ESCAPED_ENTITY` in `renderMarkdownInline`):
+  text is escaped first, so `&rlm;` used to show as the literal "&rlm;" (the
+  net4people/bbs README marks its Persian and Arabic headings with `&rlm;` and
+  `&zwnj;`). After code spans are parked, a well-formed named or numeric
+  entity is restored, as GitHub renders it; an entity only ever yields text,
+  `&lt;script&gt;` stays visible text, and code spans keep the literal.
 - **@mentions in markdown** (`MD_MENTION` in `renderMarkdownInline`): an
   `@login` (letters, digits and single inner hyphens, at most 39) becomes a
   link to its profile, resolved like a timeline name; with no forge account
