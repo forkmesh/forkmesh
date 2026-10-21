@@ -11190,6 +11190,33 @@ async def _chat_channel_deliver(env, channel_id, key_version, plain):
         raise RuntimeError("chat_webhook_delivery_failed")
 
 
+CHAT_CALL_TICKET_TTL_MS = 60 * 1000
+
+
+def chat_call_room(secret, channel_id):
+    return hmac.new(
+        secret.encode(), ("forkmesh-call-room-v1\n" + str(channel_id)).encode(),
+        "sha256").hexdigest()
+
+
+def chat_call_ticket(secret, channel_id, peer, now_ms):
+    room = chat_call_room(secret, channel_id)
+    body = json.dumps(
+        {"room": room, "peer": peer,
+         "exp": int((now_ms + CHAT_CALL_TICKET_TTL_MS) // 1000)},
+        separators=(",", ":")).encode()
+    payload = base64.urlsafe_b64encode(body).decode().rstrip("=")
+    signature = hmac.new(
+        secret.encode(), ("forkmesh-call-ticket-v1\n" + payload).encode(),
+        "sha256").digest()
+    return {
+        "ticket": payload + "." + base64.urlsafe_b64encode(
+            signature).decode().rstrip("="),
+        "room": room,
+        "peer": peer,
+    }
+
+
 class _ChatChannelsRuntime(_WorldCommunityRuntime):
     async def ensure_schema(self):
         await super().ensure_schema()
@@ -11218,6 +11245,17 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
     def new_webhook_token(self):
         return bytes(
             js_crypto.getRandomValues(Uint8Array.new(32)).to_py()).hex()
+
+    def call_ticket(self, channel_id):
+        secret = str(getattr(self.env, "FORKMESH_CALLS_SECRET", "") or "")
+        url = str(getattr(self.env, "FORKMESH_CALLS_URL", "") or "").strip()
+        if len(secret) < 32 or not url.startswith("wss://"):
+            return None
+        peer = bytes(
+            js_crypto.getRandomValues(Uint8Array.new(16)).to_py()).hex()
+        ticket = chat_call_ticket(secret, channel_id, peer, int(Date.now()))
+        ticket["url"] = url
+        return ticket
 
     def webhook_url(self, token):
         return self.public_origin() + "/api/chat/webhooks/" + str(token)

@@ -30,6 +30,7 @@ pinned toolchain). Paths are relative to `server/`.
 
 | Path | Responsibility |
 | --- | --- |
+| `cmd/forkmesh-calls/main.go`, `rtc/` | The group-call server (SFU) and our own standard-library WebRTC stack: [rtc.md](rtc.md) |
 | `cmd/forkmesh-mirror-node/main.go` | Flags and one-shot modes (`--init`, `--check`, `--preflight`, `--backup`, `--restore`, `--restore-drill`, `--export-identity`, `--import-identity`, `--register-link-code`, helper modes), then `Daemon.Run` |
 | `config.go` | `mirror-node.json` schema, defaults, strict validation; `role`, `runner`, `runnerPool` |
 | `daemon.go`, `supervisor.go` | Loopback API, sync/publish cycle, gateway generation adoption, backoff; child process supervision (`Reload` vs `Restart`) |

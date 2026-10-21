@@ -40,6 +40,11 @@ import {
   createChatCalls,
 } from "./chat-calls.js";
 import {
+  GROUP_CALL_TYPES,
+  createGroupCalls,
+  groupCallEncryptionMode,
+} from "./chat-group-calls.js";
+import {
   CHAT_RETENTION_ENDPOINT,
   CHAT_RETENTION_PRESETS,
   chatRetentionLabel,
@@ -297,6 +302,29 @@ const directDialogClose = document.querySelector("#chat-direct-dialog-close");
 const directAddBtn = document.querySelector("#chat-direct-add");
 const callAudioBtn = document.querySelector("#chat-call-audio");
 const callVideoBtn = document.querySelector("#chat-call-video");
+const groupCallBar = document.querySelector("#chat-group-call-bar");
+const groupCallBarText = document.querySelector("#chat-group-call-bar-text");
+const groupCallJoinAudio = document.querySelector("#chat-group-call-join-audio");
+const groupCallJoinVideo = document.querySelector("#chat-group-call-join-video");
+const groupCallPanel = document.querySelector("#chat-group-call-panel");
+const groupCallTitle = document.querySelector("#chat-group-call-title");
+const groupCallState = document.querySelector("#chat-group-call-state");
+const groupCallGrid = document.querySelector("#chat-group-call-grid");
+const groupCallMute = document.querySelector("#chat-group-call-mute");
+const groupCallCamera = document.querySelector("#chat-group-call-camera");
+const groupCallLeave = document.querySelector("#chat-group-call-leave");
+const groupCalls = createGroupCalls({
+  sendFrame: sendGroupCallFrame,
+  fetchTicket: (channelId) => privateChannelRequest(
+    PRIVATE_CHANNELS_ENDPOINT + "/" + channelId + "/call-ticket",
+    { method: "POST", body: "{}" },
+  ),
+  accountName: () => String(userSession()?.nodeName || "").trim().toLowerCase(),
+  onChange: () => renderGroupCall(),
+});
+
+const groupCallVideos = new Map();
+
 const directSearch = document.querySelector("#chat-direct-search");
 const directOptions = document.querySelector("#chat-direct-options");
 const directEmpty = document.querySelector("#chat-direct-empty");
@@ -2004,9 +2032,28 @@ function updateAdminChannelControls() {
   const direct = directMessageForKey(activeChannel);
   const directActions = Boolean(session && direct && !isOfficeEmbed);
   if (directAddBtn) directAddBtn.hidden = !directActions;
-  const callable = directActions && callsSupported();
-  if (callAudioBtn) callAudioBtn.hidden = !callable;
-  if (callVideoBtn) callVideoBtn.hidden = !callable;
+  const groupCallable = Boolean(
+    session && channel && channel.visibility === "private" && !isOfficeEmbed
+    && groupCallEncryptionMode()
+  );
+  const callable = (directActions && callsSupported()) || groupCallable;
+  if (callAudioBtn) {
+    callAudioBtn.hidden = !callable;
+    const label = groupCallable
+      ? "Start or join an end-to-end encrypted group audio call"
+      : "Start an encrypted peer-to-peer audio call";
+    callAudioBtn.title = label;
+    callAudioBtn.setAttribute("aria-label", label);
+  }
+  if (callVideoBtn) {
+    callVideoBtn.hidden = !callable;
+    const label = groupCallable
+      ? "Start or join an end-to-end encrypted group video call"
+      : "Start an encrypted peer-to-peer video call";
+    callVideoBtn.title = label;
+    callVideoBtn.setAttribute("aria-label", label);
+  }
+  renderGroupCall();
   if (viewOnceVideoBtn) {
     viewOnceVideoBtn.hidden = !(directActions && viewOnceRecordingSupported("video"));
   }
@@ -5973,6 +6020,10 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
     appendSystem(sender + " left");
   } else if (CALL_FRAME_TYPES.has(type)) {
     if (isDirectMessageKey(scope)) void chatCalls.handleFrame(plain, scope);
+  } else if (GROUP_CALL_TYPES.has(type)) {
+    if (privateChannelForKey(scope)?.visibility === "private") {
+      groupCalls.handleFrame({ ...plain, sender: plain.sender || sender }, scope);
+    }
   }
   if (
     isDirectMessageKey(scope)
@@ -6096,6 +6147,93 @@ function sendCallSignal(channelKey, type, extra) {
     channel: channelWireLabel(channelKey),
     ...extra,
   }));
+}
+
+function sendGroupCallFrame(channelKey, type, extra) {
+  if (
+    privateChannelForKey(channelKey)?.visibility !== "private" ||
+    roomScopeForChannel() !== channelKey ||
+    !roomTransport?.connected
+  ) {
+    return Promise.resolve(false);
+  }
+  return send(makePlain(type, {
+    channel: channelWireLabel(channelKey),
+    ...extra,
+  }));
+}
+
+function groupCallTileFor(key, stream, name, self) {
+  let entry = groupCallVideos.get(key);
+  if (!entry) {
+    const tile = document.createElement("div");
+    tile.className = "chat-group-call-tile" + (self ? " is-self" : "");
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = self;
+    const label = document.createElement("span");
+    tile.append(video, label);
+    entry = { tile, video, label };
+    groupCallVideos.set(key, entry);
+  }
+  if (entry.video.srcObject !== stream) entry.video.srcObject = stream;
+  entry.label.textContent = name;
+  return entry.tile;
+}
+
+function renderGroupCall() {
+  if (!groupCallBar || !groupCallPanel) return;
+  const active = groupCalls.active;
+  const channel = privateChannelForKey(activeChannel);
+  const roster = channel?.visibility === "private" ? groupCalls.roster(activeChannel) : [];
+  groupCallBar.hidden = Boolean(active) || roster.length === 0;
+  if (!groupCallBar.hidden) {
+    groupCallBarText.textContent = roster.length === 1
+      ? "A call is in progress here · 1 person"
+      : `A call is in progress here · ${roster.length} people`;
+  }
+  groupCallPanel.hidden = !active;
+  if (!active) {
+    for (const entry of groupCallVideos.values()) entry.video.srcObject = null;
+    groupCallVideos.clear();
+    if (groupCallGrid) groupCallGrid.replaceChildren();
+    return;
+  }
+  const label = privateChannelForKey(active.channelKey)?.name || "Group call";
+  groupCallTitle.textContent = "#" + String(label).replace(/^#/, "");
+  const count = active.tiles.size + 1;
+  groupCallState.textContent = active.state === "live"
+    ? `Connected · end-to-end encrypted · ${count} in call`
+    : "Connecting…";
+  groupCallMute.textContent = active.muted ? "Unmute" : "Mute";
+  groupCallCamera.hidden = active.media !== "video";
+  groupCallCamera.textContent = active.cameraOff ? "Camera on" : "Camera off";
+  const tiles = [groupCallTileFor("self", active.local, "You", true)];
+  const keep = new Set(["self"]);
+  for (const [peer, tile] of active.tiles) {
+    keep.add(peer);
+    tiles.push(groupCallTileFor(peer, tile.stream, tile.name, false));
+  }
+  for (const key of [...groupCallVideos.keys()]) {
+    if (!keep.has(key)) groupCallVideos.delete(key);
+  }
+  groupCallGrid.replaceChildren(...tiles);
+}
+
+async function startGroupCall(media) {
+  const channel = privateChannelForKey(activeChannel);
+  if (!channel || channel.visibility !== "private") return;
+  const result = await groupCalls.join(activeChannel, channel.id, media);
+  if (result?.error) appendSystem(result.error);
+}
+
+function startCall(media) {
+  if (directMessageForKey(activeChannel)) {
+    previewDirectCall(media);
+    return;
+  }
+  void startGroupCall(media);
 }
 
 function sendMissedCallLine(channelKey, media) {
@@ -7498,8 +7636,17 @@ function wireChatControls() {
   sendBtn.addEventListener("click", sendCurrentMessage);
   directCreateBtn?.addEventListener("click", () => openDirectMessageDialog("new"));
   directAddBtn?.addEventListener("click", () => openDirectMessageDialog("add"));
-  callAudioBtn?.addEventListener("click", () => previewDirectCall("audio"));
-  callVideoBtn?.addEventListener("click", () => previewDirectCall("video"));
+  callAudioBtn?.addEventListener("click", () => startCall("audio"));
+  callVideoBtn?.addEventListener("click", () => startCall("video"));
+  groupCallJoinAudio?.addEventListener("click", () => void startGroupCall("audio"));
+  groupCallJoinVideo?.addEventListener("click", () => void startGroupCall("video"));
+  groupCallMute?.addEventListener("click", () => groupCalls.toggleMute());
+  groupCallCamera?.addEventListener("click", () => groupCalls.toggleCamera());
+  groupCallLeave?.addEventListener("click", () => {
+    groupCalls.leave();
+    if (groupCalls.lastError && groupCalls.lastError !== "The call ended.") appendSystem(groupCalls.lastError);
+  });
+  setInterval(renderGroupCall, 15000);
   viewOnceVideoBtn?.addEventListener("click", () => startViewOnceRecording("video"));
   viewOnceVoiceBtn?.addEventListener("click", () => startViewOnceRecording("voice"));
   directSearch?.addEventListener("input", scheduleDirectMessageSearch);

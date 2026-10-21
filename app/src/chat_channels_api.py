@@ -24,6 +24,8 @@ MEMBERS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/members/?$")
 ROOM_ACCESS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/room-access/?$")
+CALL_TICKET_RE = re.compile(
+    r"^/api/chat/channels/([0-9a-f]{32})/call-ticket/?$")
 HISTORY_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/history/?$")
 PENDING_RE = re.compile(
@@ -1142,6 +1144,21 @@ async def _room_access(runtime, account_bi, actor, channel_id, is_admin):
     return _response(runtime, payload)
 
 
+async def _call_ticket(runtime, account_bi, channel_id, is_admin):
+    row, record = await _readable_channel(
+        runtime, account_bi, channel_id, is_admin)
+    if not row:
+        return _response(runtime, {"error": "not_found"}, status=404)
+    if _visibility(record) == "public" or _is_notices(record):
+        return _response(
+            runtime, {"error": "private_channel_required"}, status=409)
+    ticket = runtime.call_ticket(channel_id)
+    if not ticket:
+        return _response(
+            runtime, {"error": "calls_unavailable"}, status=503)
+    return _response(runtime, ticket)
+
+
 def _invite_payload(runtime, row, record):
     token = str((record or {}).get("token") or "")
     return {
@@ -1315,6 +1332,7 @@ async def handle(runtime, path):
     channel = CHANNEL_RE.fullmatch(normalized_path)
     members = MEMBERS_RE.fullmatch(normalized_path)
     room_access = ROOM_ACCESS_RE.fullmatch(normalized_path)
+    call_ticket = CALL_TICKET_RE.fullmatch(normalized_path)
     history = HISTORY_RE.fullmatch(normalized_path)
     pending = PENDING_RE.fullmatch(normalized_path)
     webhooks = WEBHOOKS_RE.fullmatch(normalized_path)
@@ -1325,7 +1343,7 @@ async def handle(runtime, path):
     if not (
         collection or channel or members or room_access or history
         or pending or webhooks or webhook or delivery or invite
-        or invite_token
+        or invite_token or call_ticket
     ):
         return _response(runtime, {"error": "not_found"}, status=404)
     method = runtime.method()
@@ -1394,7 +1412,7 @@ async def handle(runtime, path):
 
     matched_resource = (
         members or room_access or history or pending or webhooks or webhook
-        or invite)
+        or invite or call_ticket)
     if channel:
         return _response(
             runtime,
@@ -1427,6 +1445,16 @@ async def handle(runtime, path):
             return await _add_member(
                 runtime, account_bi, actor, channel_id, data)
         return await _remove_member(runtime, actor, channel_id, data)
+
+    if call_ticket:
+        if method != "POST":
+            return _response(
+                runtime,
+                {"error": "method_not_allowed"},
+                status=405,
+                allow="POST",
+            )
+        return await _call_ticket(runtime, account_bi, channel_id, is_admin)
 
     if webhooks and method in {"GET", "POST"}:
         _row, record, denied = await _require_manager(
