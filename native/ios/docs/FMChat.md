@@ -657,6 +657,39 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     requires.
   - **Our call counts as a call.** `OtherAppCall` (`docs/native/OTHER_APP_CALLS.md`) sees our CallKit
     call too, so interface sounds and chimes stay quiet during it.
+- **Native call engine** (2026-10-21, `Calls/Native/`, compiled only when `canImport(WebRTC)`,
+  i.e. when `native/ios/WebRTCPackage/WebRTC.xcframework` exists and `tools/generate_project.rb`
+  links it; without it the WebView path above is unchanged). The framework is our own build of
+  libwebrtc from `native/webrtc/` (`docs/server/rtc.md`, "Phone media engine").
+  - `NativeCallMedia` owns the one `RTCPeerConnectionFactory`, built by our patch's
+    `RTCFmFactory.factory(withCaptureProcessor:)` so microphone audio passes through
+    `NativeVoicePipeline` (the ported `CallVoiceProcessor`, skipped when the voice is off) after
+    echo cancellation. `RTCAudioSession` runs in manual-audio mode: CallKit's
+    `provider(_:didActivate:)` hands its session to WebRTC (`callKitActivated`), and calls CallKit
+    does not own (outgoing, or the China region) activate it themselves (`beginAudio`/`endAudio`).
+    That is what gives a call answered on the lock screen its audio at once.
+  - `NativeCameraPipeline` wraps `RTCCameraVideoCapturer` (front camera, nearest format) and runs
+    every frame through a `NativeFrameFilter`; `NativeLookFilter` replaces or blurs the
+    background with `VNGeneratePersonSegmentationRequest` and Core Image (pictures in
+    `Resources/CallBackgrounds`, the custom photo from the look). Both follow `FaceChangerLook`
+    through `NativeCallMedia.follow`.
+  - `NativeCallPeer` is the one-to-one `DirectCallPeer`: two `sendrecv` transceivers (audio,
+    video) like `/chat`, the same `{type, sdp}` and candidate JSON, `CallMediaTuning.tune` on every
+    local description (the web page's Opus parameters, checked against the JS output), sender caps,
+    the 8 s disconnect grace and the 4 s route check. `NativeCallPeerFactory` is the engine's
+    `peerFactory`; `DirectCallScreen` draws `NativeCallSurface` (remote video plus a mirrored self
+    view) and `NativePreCallScreen` replaces the WebView pre-call check.
+  - `NativeGroupCall` joins group calls in private channels (`docs/app/chat-group-calls.md`): it
+    asks `OfficeChannelService.callTicket` for a ticket, speaks the call-server protocol over a
+    `URLSessionWebSocketTask`, attaches our patch's `RTCFmFrameEncryptor` to its two senders and an
+    `RTCFmFrameDecryptor` to every forwarded receiver (keyed by the stream's peer id), sends
+    presence and keys with `sendLiveFrame` (sealed, never stored), rotates its key when someone
+    leaves and rejoins on another core when its server goes away. `ChatHub.onGroupCallFrame`
+    feeds it the channel's group-call frames; the roster and key rules are `GroupCallRoster`
+    (`FMChat/Group/GroupCalls.swift`). The channel header shows `GroupCallHeaderButtons` (Join · N
+    while a call runs) and `.groupCallsRoot()` presents `GroupCallPanel`.
+  - Faces are not drawn natively yet: the native math port is in progress, and until its
+    renderer lands a native call shows the camera picture with background and voice applied.
 - **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
   connects and when the selected candidate pair changes. `WebCallPeer` passes it to
   `WebCallPeerFactory.route` (a `DirectCallRoute`, reset for each new call and when the peer
