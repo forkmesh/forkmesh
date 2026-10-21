@@ -19,9 +19,20 @@ thing that can block a merge, each with the action that clears it:
 | Rules | `pulls/<n>/rules` | none: blocking rules cannot be waived |
 
 The footer says whether the pull can merge, why not, and holds the controls.
-Only an owner of the organization that owns the repository sees the merge
-controls (the relay's `_organization_owner_can_merge_repo`); everyone else
-sees the same rows and who can merge.
+Only someone who may merge (the repository's owner, or for an organization's
+repository an owner of the organization) sees the merge controls; everyone
+else sees the same rows and who can merge.
+
+*Re-run failed* is shown only to someone who may merge and only when the
+Actions read named its executor node: `actions/control` refuses a request
+without `requestId`, `action` and `node`, exactly as the Actions tab sends it
+(`sendRepoActionsControl`), and answers 403 to anyone but the owner.
+
+The conflict and "behind" rows print git commands with the pull's branch
+names in them, which the pull's author chose. Git allows `;`, `$`, `|` and
+backticks in branch names, so each name is shell-quoted (`shellWord`) unless
+it is plain `[A-Za-z0-9._/@+=:,-]`, and a pasted command can only name the
+branch.
 
 - **Independent review.** The executor requires one signed approval from
   someone other than the author and no outstanding request for changes. When

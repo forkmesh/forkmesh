@@ -23535,6 +23535,7 @@
     }
     if (payload?.ok !== true) return unavailable;
     const controlAvailable = payload.controlAvailable !== false;
+    const node = String(payload.node || "").trim().slice(0, 80);
     const runs = (Array.isArray(payload.runs) ? payload.runs : [])
       .filter((run) => immutableGitCommit(run?.commit) === headOid)
       .map((run) => ({
@@ -23549,7 +23550,7 @@
       }))
       .sort((left, right) =>
         (right.finishedAt || right.startedAt) - (left.finishedAt || left.startedAt));
-    return { available: true, headOid, runs, controlAvailable };
+    return { available: true, headOid, runs, controlAvailable, node };
   }
 
   // The executor's own status vocabulary, verbatim — the worker rejects any run
@@ -23983,8 +23984,8 @@
         ? `Required before merging: ${requiredNames.join(", ")}.${missingRequired.length ? ` Not yet passed: ${missingRequired.join(", ")}.` : ""} The mirror verifies the signed results at merge time.`
         : required.known ? "No checks are required to merge." : "",
     ].filter(Boolean).join(" ");
-    if (failedRun && checks.controlAvailable !== false && state.session?.sessionToken) {
-      checksRow.actions.push({ kind: "rerun", label: "Re-run failed", runId: failedRun.id });
+    if (failedRun && authorized && checks.node && checks.controlAvailable !== false && state.session?.sessionToken) {
+      checksRow.actions.push({ kind: "rerun", label: "Re-run failed", runId: failedRun.id, node: checks.node });
     }
     checksRow.actions.push({ kind: "actions", label: runs.length ? "Open Actions" : "Run checks" });
     rows.push(checksRow);
@@ -24001,7 +24002,7 @@
       branchRow.conflicts = (readiness.conflicts || []).slice(0, 10);
       branchRow.moreConflicts = Math.max(0, count - branchRow.conflicts.length);
       branchRow.detail = branchBacked
-        ? `Resolve the conflicts locally and push to ${headBranch}: git fetch origin && git switch ${headBranch} && git merge origin/${baseBranch}, fix the files, commit, and git push.`
+        ? `Resolve the conflicts locally and push to ${headBranch}: git fetch origin && git switch ${shellWord(headBranch)} && git merge ${shellWord(`origin/${baseBranch}`)}, fix the files, commit, and git push.`
         : `This pull request was submitted as a patch series, so only its author can resolve the conflicts: rebase the change onto the newest ${baseBranch}, fix the files, and submit it again.`;
     } else if (readiness.behind > 0) {
       const behind = readiness.behind;
@@ -24010,7 +24011,7 @@
       if (branchBacked) {
         branchRow.detail = authorized
           ? `It merges cleanly, so being behind does not block the merge. Update the branch to bring ${baseBranch} into ${headBranch} and re-run the checks on the combined code.`
-          : `It merges cleanly, so being behind does not block the merge. The author can bring ${baseBranch} in with git fetch origin && git merge origin/${baseBranch} && git push; an organization owner can also update the branch here.`;
+          : `It merges cleanly, so being behind does not block the merge. The author can bring ${baseBranch} in with git fetch origin && git merge ${shellWord(`origin/${baseBranch}`)} && git push; an organization owner can also update the branch here.`;
         if (authorized && repoPullUpdateContext(repo, number, values, parsed?.pullMetadataCommit || "", readiness)) {
           branchRow.actions.push({ kind: "update", label: update.state === "processing" ? "Updating branch…" : "Update branch", busy: update.state === "processing" });
         }
@@ -24125,12 +24126,17 @@
     muted: "circle-dashed",
   };
 
+  function shellWord(value) {
+    const text = String(value || "");
+    return /^[A-Za-z0-9._\/@+=:,-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
+  }
+
   function renderRepoPullMergeAction(repo, number, action) {
     if (action.kind === "update") {
       return `<button type="button" data-repo-pull-update ${action.busy ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${action.busy ? "loader-circle" : "git-merge"}"${action.busy ? ' class="animate-spin"' : ""}></i>${escapeHtml(action.label)}</button>`;
     }
     if (action.kind === "rerun") {
-      return `<button type="button" data-repo-pull-check-rerun="${escapeHtml(String(action.runId || ""))}" class="fm-btn fm-btn-sm"><i data-lucide="rotate-ccw"></i>${escapeHtml(action.label)}</button>`;
+      return `<button type="button" data-repo-pull-check-rerun="${escapeHtml(String(action.runId || ""))}" data-repo-pull-check-node="${escapeHtml(action.node || "")}" class="fm-btn fm-btn-sm"><i data-lucide="rotate-ccw"></i>${escapeHtml(action.label)}</button>`;
     }
     if (action.kind === "actions") {
       return `<a href="${escapeHtml(`${repoLinkUrl(repo)}/actions`)}" data-repo-pull-open-actions data-dashboard-repo-tab="actions" class="fm-btn fm-btn-sm"><i data-lucide="play"></i>${escapeHtml(action.label)}</a>`;
@@ -24472,10 +24478,14 @@
     const detail = state.repoRecordDetail;
     if (!repo || detail?.kind !== "pulls" || !runId) return;
     const button = document.querySelector(`[data-repo-pull-check-rerun="${CSS.escape(String(runId))}"]`);
+    const node = button?.getAttribute("data-repo-pull-check-node") || "";
+    if (!node) return;
     if (button) button.disabled = true;
     try {
       await orgAgentRequest("POST", `${repoApiBase(repo)}/actions/control`, {
+        requestId: repoActionsRequestId(),
         action: "rerun",
+        node,
         runId: Number(runId),
       });
       refreshRepoPullActivity(repo, detail.number);

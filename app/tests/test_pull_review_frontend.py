@@ -145,15 +145,11 @@ def test_pull_review_approval_and_owner_only_mirror_merge_are_available():
 
 
 def test_an_unmet_peer_gate_warns_the_owner_instead_of_locking_them_out():
-    # The merge box renders the override only for an owner, as a separate,
-    # distinctly worded control behind a confirmation, never a dead button.
     assert "Merge locked" not in CONTENT
     assert "canOverride: canAct && reviewMissing && !busy," in CONTENT
     assert "data-repo-pull-merge-override" in CONTENT
     assert '>Merge without review</button>' in CONTENT
     assert "Independent review required" in CONTENT
-    # A request asks for the waiver only when the owner chose it and the
-    # gate is actually unmet; the same request id never changes meaning.
     assert "...(waive ? { overrideReview: true } : {})" in CONTENT
     assert "overrideReview === true && !pullReviewPolicy(" in CONTENT
     assert "window.confirm(" in CONTENT

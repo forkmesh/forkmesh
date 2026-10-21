@@ -342,9 +342,6 @@ def test_first_view_tabs_follow_the_cached_about():
 
 
 def test_first_view_tab_strip_matches_the_dashboards_so_hydration_does_not_shift_it():
-    # The dashboard draws every default tab, Security after Actions, a counter
-    # pill on Issues and Pull requests even before their counts arrive, and a
-    # hidden bold copy of each label; the first view reserves the same widths.
     view = _tablist(repo_ssr.render_view(DATA))
     assert "data-repo-tabs" in repo_ssr.render_view(DATA)
     assert 'data-dashboard-repo-tab-count="issues"' in view
