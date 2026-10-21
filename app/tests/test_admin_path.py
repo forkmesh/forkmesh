@@ -285,7 +285,7 @@ def test_the_account_menu_links_admins_to_the_console():
         encoding="utf-8")
     menu = header.split('id="accountMenuDropdown"', 1)[1].split("</div>\n", 1)[0]
     assert ('<a data-account-menu-admin href="#" class="fm-menu-item hidden">'
-            "Admin console</a>") in menu
+            '<i data-lucide="shield" aria-hidden="true"></i><span>Admin console</span></a>') in menu
     script = (APP / "public" / "dashboard" / "js" / "04-account.js").read_text(
         encoding="utf-8")
     block = script.split('const adminMenuLink = $("[data-account-menu-admin]");',

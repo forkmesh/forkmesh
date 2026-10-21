@@ -8609,10 +8609,10 @@
         .filter(Boolean).join(" · ");
     }
     if (statusItem) {
-      statusItem.textContent = label ? "Edit status: " + label : "Set a status…";
+      (statusItem.querySelector("[data-account-menu-label]") || statusItem).textContent = label ? "Edit status: " + label : "Set a status…";
     }
     if (awayItem) {
-      awayItem.textContent = own.away ? "Set yourself active" : "Set yourself away";
+      (awayItem.querySelector("[data-account-menu-label]") || awayItem).textContent = own.away ? "Set yourself active" : "Set yourself away";
     }
   }
 
