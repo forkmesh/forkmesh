@@ -714,6 +714,68 @@ void syncHeaderAlignment(QTableView *table, bool next)
     }
 }
 
+class DataTableRowDelegate final : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt(option);
+        const auto *view = qobject_cast<const QAbstractItemView *>(option.widget);
+        if (view && view->selectionBehavior() == QAbstractItemView::SelectRows) {
+            opt.state &= ~QStyle::State_MouseOver;
+            QWidget *viewport = view->viewport();
+            if (viewport && viewport->underMouse()) {
+                const QModelIndex hovered =
+                    view->indexAt(viewport->mapFromGlobal(QCursor::pos()));
+                if (hovered.isValid() && hovered.row() == index.row() &&
+                    hovered.parent() == index.parent())
+                    opt.state |= QStyle::State_MouseOver;
+            }
+        }
+        QStyledItemDelegate::paint(painter, opt, index);
+    }
+};
+
+void syncDataTableRows(QTableView *table, bool next, QVariantMap *state)
+{
+    QAbstractItemDelegate *current = table->itemDelegate();
+    if (next) {
+        state->insert(QStringLiteral("elide"), static_cast<int>(table->textElideMode()));
+        state->insert(QStringLiteral("hover"),
+                      table->viewport()->testAttribute(Qt::WA_Hover));
+        if (QHeaderView *horizontal = table->horizontalHeader())
+            state->insert(QStringLiteral("stretchLast"), horizontal->stretchLastSection());
+        table->setTextElideMode(Qt::ElideRight);
+        table->viewport()->setAttribute(Qt::WA_Hover, true);
+        if (QHeaderView *horizontal = table->horizontalHeader())
+            horizontal->setStretchLastSection(true);
+        if (current && qstrcmp(current->metaObject()->className(),
+                               "QStyledItemDelegate") == 0) {
+            state->insert(QStringLiteral("delegate"),
+                          QVariant::fromValue<QObject *>(current));
+            table->setItemDelegate(new DataTableRowDelegate(table));
+        }
+        return;
+    }
+    table->setTextElideMode(static_cast<Qt::TextElideMode>(
+        state->value(QStringLiteral("elide"), static_cast<int>(Qt::ElideRight)).toInt()));
+    table->viewport()->setAttribute(
+        Qt::WA_Hover, state->value(QStringLiteral("hover")).toBool());
+    if (QHeaderView *horizontal = table->horizontalHeader();
+        horizontal && state->contains(QStringLiteral("stretchLast")))
+        horizontal->setStretchLastSection(
+            state->value(QStringLiteral("stretchLast")).toBool());
+    auto *original = qobject_cast<QAbstractItemDelegate *>(
+        state->value(QStringLiteral("delegate")).value<QObject *>());
+    if (original && dynamic_cast<DataTableRowDelegate *>(current)) {
+        table->setItemDelegate(original);
+        current->deleteLater();
+    }
+}
+
 void syncDataTable(QTableView *table, bool next)
 {
     if (!table->property(kDataTable).toBool())
@@ -742,6 +804,7 @@ void syncDataTable(QTableView *table, bool next)
         }
         state.insert(QStringLiteral("fitted"), fitted);
         state.insert(QStringLiteral("wordWrap"), table->wordWrap());
+        syncDataTableRows(table, true, &state);
         table->setProperty(kDataTableState, state);
         table->setWordWrap(false);
         table->setShowGrid(false);
@@ -751,7 +814,8 @@ void syncDataTable(QTableView *table, bool next)
             vertical->setDefaultSectionSize(kDataTableRowHeight);
         }
     } else if (!next && stored.isValid()) {
-        const QVariantMap state = stored.toMap();
+        QVariantMap state = stored.toMap();
+        syncDataTableRows(table, false, &state);
         table->setShowGrid(state.value(QStringLiteral("grid")).toBool());
         table->setWordWrap(state.value(QStringLiteral("wordWrap"), true).toBool());
         table->setAlternatingRowColors(

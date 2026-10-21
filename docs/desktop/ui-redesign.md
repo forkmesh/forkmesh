@@ -121,7 +121,18 @@ application event filter applied in Next and undone in Classic):
 - *Combo rows.* `kit::prepareComboPopup` swaps in a `QStyledItemDelegate` so
   `::item` rules apply.
 - *Tables.* Default-centred headers become left aligned; tables with property
-  `dataTable` drop grid, row numbers and alternating rows.
+  `dataTable` drop grid, row numbers and alternating rows, get 38 px rows,
+  right-elided cells, a stretched last column and a delegate that hovers the
+  whole row (a cell-level `::item:hover` is all a sheet can do). The admin
+  Users and Quarantine tables carry `dataTable`. `91-tables.qss` gives every
+  header a 12 px muted caption, 12 px side padding and one hairline, selection
+  `accentSubtle`, and item views slim scrollbars. The column-menu header
+  (`KebabHeaderView`) painted its chevron over the caption: the caption's
+  rectangle never left room for it, so a section narrower than its caption
+  (dragged, capped, or measured before the sheet applied) ran under the
+  glyph. In Next it now elides the caption before the menu button and sort
+  arrow, draws its own sort arrow, and shows the menu chevron only on the
+  hovered column.
 
 **Hooks instead of header edits.** `MainWindow.h` and `MainWindowInternal.h` are
 in the precompiled header. `MainWindow` declares
@@ -141,6 +152,10 @@ and drop and context menus are unchanged.
 `Q_OBJECT`): `Toggle` (a `QCheckBox` subclass), `Card`, `SettingsRow`, `Badge`,
 `KeyHint`, `InlineNotice`, `EmptyState`, `SegmentedControl`, `Spinner`, and
 helpers `groupHeading`, `pageTitle`, `pageLede`, `labeledField`, `tintedIcon`.
+The special agents roster's empty state (`#teammateEmpty`) is an `EmptyState`
+in Next: its own labels painted the page colour as dark boxes on the card, and
+the centred layout sized the wrapped body to its one-line hint, cutting its
+descenders.
 
 ## Shell features
 
