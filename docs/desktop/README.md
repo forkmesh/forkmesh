@@ -528,7 +528,9 @@ approval". Test: `desktop/tests/test_crypto.cpp`.
 - **`on.push.paths` is matched over the whole pushed range.**
   `forkmesh::actions::pushRangeChangedPaths` diffs `<old> <new>` when the old
   value is an ancestor, and otherwise the union of the tip's diffs against
-  every parent. Every push source must carry the ref's old value.
+  every parent. Every push source must carry the ref's old value. Each
+  pattern is compiled once per match, not once per changed path
+  ([diagnostics.md](diagnostics.md#keeping-the-gui-thread-free)).
 - **A push to an old branch runs that branch's copy of a workflow.** When the
   default branch's copy of the same workflow has no `push` trigger, a push to
   any other branch skips it (`ActionFile::defaultBranchRetiresPush`).

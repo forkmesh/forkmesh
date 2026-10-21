@@ -13724,6 +13724,29 @@ private:
     // pulls-tab refresh timer cannot stack git fetches.
     QHash<QString, qint64> m_pullLedgerSweepAtMs;
     bool m_pullLedgerSweepInProgress = false;
+    struct PullsInboxApplyRequest {
+        RepositoryRecord repo;
+        QJsonArray pending;
+        bool interactive = false;
+    };
+    struct PullsInboxOutcome {
+        int merged = 0;
+        QStringList drainedIds;
+        QString lastAuthor;
+        QString lastTitle;
+    };
+    QSet<QString> m_pullsInboxApplyInFlight;
+    QHash<QString, PullsInboxApplyRequest> m_pullsInboxApplyQueued;
+    static QString pullsInboxKey(const RepositoryRecord &repo);
+    static PullsInboxOutcome applyPullsInboxEntries(PullStore store,
+                                                    const QJsonArray &pending);
+    static void mergePullsInboxPending(QJsonArray &into,
+                                       const QJsonArray &more);
+    void queuePullsInboxApply(PullsInboxApplyRequest request);
+    void startQueuedPullsInboxApplies();
+    void finishPullsInboxApply(const RepositoryRecord &repo,
+                               const PullsInboxOutcome &outcome,
+                               bool interactive);
     // Digest of the pull rendered in the detail pane; a background reload
     // whose digest differs re-renders the open detail in place.
     QString m_pullDetailRenderedDigest;
