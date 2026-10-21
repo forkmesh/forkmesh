@@ -26,10 +26,13 @@ slow reload never restarts the whole fleet at once.
 
 ## Issue index
 
-`issue-index?ref=` answers one compact summary per issue record at a commit,
-so the issues list and an issue page's relations do not download every
-record. It is carried by the `blobs` permission (`ISSUE_INDEX_CARRIER_OPERATION`)
-and never advertised on its own; folding, caching and limits are in
+`issue-index?ref=` answers one compact summary per issue record at a commit
+(no descriptions), so the issues list does not download every record;
+`issue-index?ref=&related=<n>` answers only the issues one issue page's
+relations need; `issue-search?ref=&q=` answers the numbers whose title,
+description or live comments contain a text. All three are carried by the
+`blobs` permission (`ISSUE_INDEX_CARRIER_OPERATION`), never advertised on
+their own, and sent as UTF-8 JSON; folding, caching and limits are in
 [issue-scale-limits.md](../app/issue-scale-limits.md#the-issue-index).
 
 ## Traps
