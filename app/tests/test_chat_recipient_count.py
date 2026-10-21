@@ -956,8 +956,8 @@ def _ring_harness():
     rings = []
     clock = {"now": NOW}
 
-    async def ring(_env, conversation_id, caller_bi):
-        rings.append((conversation_id, caller_bi))
+    async def ring(_env, conversation_id, caller_bi, call_id=""):
+        rings.append((conversation_id, caller_bi, call_id))
 
     class _Clock:
         @staticmethod
@@ -974,10 +974,13 @@ def _ring_harness():
     return room_type, stored, rings, clock
 
 
+CALL = "0b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"
+
+
 def _call_frame(**extra):
     return json.dumps(
         {"kind": "cipher", "v": 1, "iv": "i", "data": "d", "ring": True,
-         **extra},
+         "call": CALL, **extra},
         separators=(",", ":"))
 
 
@@ -988,7 +991,7 @@ def test_a_call_invite_rings_the_other_person_without_storing_it():
 
     _relay(room_type, [alice, bob], alice, _call_frame())
 
-    assert rings == [(DIRECT, ALICE)]
+    assert rings == [(DIRECT, ALICE, CALL)]
     assert _kind(bob, "cipher")[0]["data"] == "d"
     assert stored == []
 
@@ -1004,6 +1007,9 @@ def test_resent_invites_ring_at_most_every_twenty_seconds():
     clock["now"] = NOW + 20_000
     _relay(room_type, [alice], alice, _call_frame())
     assert len(rings) == 2
+    _relay(room_type, [alice], alice, _call_frame(
+        call="1b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"))
+    assert len(rings) == 3
 
 
 def test_only_live_direct_room_frames_ring():

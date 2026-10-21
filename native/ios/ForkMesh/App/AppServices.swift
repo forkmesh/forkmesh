@@ -595,6 +595,8 @@ extension AppServicesInstaller {
 @MainActor
 @Observable
 final class AppBoot {
+    static let shared: AppBoot = AppBoot()
+
     private(set) var services: AppServices?
     @ObservationIgnored private var starting: Bool = false
 

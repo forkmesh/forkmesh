@@ -45,6 +45,10 @@ final class CallRinger {
         refresh()
     }
 
+    func recheck() {
+        refresh()
+    }
+
     func hush() {
         guard let invite = engine?.invite else { return }
         hushed = invite.callId
@@ -72,17 +76,18 @@ final class CallRinger {
         }
         let pending: DirectCallInvite? = engine.active ? nil : engine.invite
         if pending?.callId != hushed { hushed = "" }
+        let systemRings: Bool = pending.map { DirectCallKit.shared.ringing($0.callId) } ?? false
         var wanted: CallRingKind?
         if engine.phase == .ringing {
             wanted = .ringback
-        } else if let pending, pending.callId != hushed {
+        } else if let pending, pending.callId != hushed, !systemRings {
             wanted = .incoming
         }
         if wanted != playing {
             stop()
             if let wanted { start(wanted) }
         }
-        notify(pending)
+        notify(systemRings ? nil : pending)
         sweepPushes(pending)
     }
 

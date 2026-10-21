@@ -73,6 +73,7 @@ public final class PushNotificationService {
     public let supported: Bool
 
     public private(set) var token = ""
+    public private(set) var voipToken = ""
     /// `development` for a token minted against the APNs sandbox, `production` otherwise.
     public private(set) var environment = ""
     /// iOS's answer the last time permission was checked, or `unknown` before the first check.
@@ -297,12 +298,12 @@ public final class PushNotificationService {
         // Re-POST whenever the token or the account changes. The origin is part of it: the same
         // account name on two projects is two registrations, on two instances.
         let api = self.api
-        let fingerprint = "\(api.gitOrigin)|\(accountKey):\(token):\(environment)"
+        let fingerprint = "\(api.gitOrigin)|\(accountKey):\(token):\(environment):\(voipToken)"
         if fingerprint == registeredFor || fingerprint == publishingFor { return }
         publishingFor = fingerprint
         let result = await api.registerPushDevice(
             deviceToken: token, environment: environment.isEmpty ? "production" : environment,
-            bundleId: platform?.appBundleId() ?? "")
+            bundleId: platform?.appBundleId() ?? "", voipToken: voipToken)
         if publishingFor == fingerprint { publishingFor = "" }
         // A project switch while the POST was in flight: the answer is about the project that was
         // left, and says nothing about this one.
@@ -369,6 +370,14 @@ public final class PushNotificationService {
         if let environment { self.environment = environment }
         lastError = ""
         log("APNs issued a \(self.environment) token")
+        if started { await publish(accountKeyProvider?() ?? "") }
+        notify()
+    }
+
+    public func didReceiveVoipToken(_ token: String) async {
+        if token == voipToken { return }
+        voipToken = token
+        log(token.isEmpty ? "PushKit withdrew the VoIP token" : "PushKit issued a VoIP token")
         if started { await publish(accountKeyProvider?() ?? "") }
         notify()
     }

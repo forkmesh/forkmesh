@@ -420,7 +420,7 @@ final class DirectCallsTests: XCTestCase {
             .allSatisfy { $0 == 0 })
     }
 
-    @MainActor func testPushRingSoundLoopsTheRingUnderThirtySeconds() {
+    @MainActor func testPushRingSoundLoopsTheRingUnderThirtySeconds() async {
         let rate = 8000
         let pcm = DirectCallTones.ringLoop(seconds: DirectCallEngine.ringSoundSeconds, rate: rate)
         XCTAssertEqual(pcm.count, 9 * 3 * rate)

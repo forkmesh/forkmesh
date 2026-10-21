@@ -68,9 +68,24 @@ not copied: it is end-to-end encrypted to the original two participants.
     `apns-expiration` of 60 s so a phone that was offline never rings for a
     call that is long over.
 
-  The relay learns that a call is ringing in that conversation and when,
-  which it could already infer from the traffic; it does not learn whether
-  it is a voice or video call. A call that is never answered posts a persisted "📞 Missed audio/video call" chat
+  - **VoIP push for iPhones** (2026-10-21). The invite envelope also carries
+    the plaintext `call` id (a random UUID, the same one inside the sealed
+    invite). The iPhone registers a PushKit token beside its alert token
+    (`voipToken` on `POST /api/accounts/register-device`, kept inside the
+    row's encrypted `data`, so no schema change). For a `calls` event
+    `_apns_send_call` sends each phone that has one a VoIP push
+    (`apns.send_voip`: `apns-push-type: voip`, topic `<bundle id>.voip`,
+    `apns-expiration: 0` so it is delivered now or never, payload
+    `{topic, conversation, caller, callId, origin}`) instead of the alert,
+    once per phone and call (`_APNS_VOIP_CALL_MEMO`, 2 min), so the 20 s
+    re-ring does not report the call twice. A phone without a VoIP token, or
+    whose VoIP push fails, gets the alert push as before; a VoIP token Apple
+    calls dead is dropped from the row and the alert token kept. iOS shows the
+    VoIP push as a CallKit call (`native/ios/docs/FMChat.md`).
+
+  The relay learns that a call is ringing in that conversation and when, and
+  the call's random id, which it could already infer from the traffic; it
+  does not learn whether it is a voice or video call. A call that is never answered posts a persisted "📞 Missed audio/video call" chat
   line from the caller, which takes the normal notification path, so the
   person who missed it sees it in the conversation later. That happens both
   when the 45-second ring runs out and when the caller hangs up while it is
@@ -120,12 +135,12 @@ through their `DirectMessageService` and interoperate with `/chat`. Media runs
 in a WebView loading `direct-call.html` from an `https://` app-local origin (a
 secure context for `getUserMedia`); the native side drives it through
 `window.fmCall(id, op, args)` and receives replies through
-`webkit.messageHandlers.fmCall` or `FmCallBridge.post`. There is no CallKit
-or VoIP push, so a call can drop in the background. A ring reaches the phone
-through the `calls` account event and push above: iOS shows the call push
-(ringing, time-sensitive) even when the app is suspended or killed and opens
-the DM when it is tapped; Android's background connection wakes the call
-engine or posts a ringing full-screen call notification
+`webkit.messageHandlers.fmCall` or `FmCallBridge.post`. A ring reaches the
+phone through the `calls` account event and push above: iOS reports incoming
+calls to CallKit (the system call screen, on the lock screen too, and the
+system ringtone), woken by a VoIP push even when the app is suspended or
+killed; Android's background connection wakes the call engine or posts a
+ringing full-screen call notification
 (`native/ios/docs/FMChat.md` and `docs/native/ANDROID.md` have the details).
 
 The page applies the same quality settings as `/chat` (constraints, sender

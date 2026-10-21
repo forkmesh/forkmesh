@@ -1725,7 +1725,10 @@ class DirectMessageService(
         val plain = frame(record, type, extra)
         return try {
             val envelope = LinkedHashMap(holder.crypto.encrypt(holder.seal.seal(plain)))
-            if (type == DirectCallEngine.CALL_INVITE_TYPE) envelope["ring"] = true
+            if (type == DirectCallEngine.CALL_INVITE_TYPE) {
+                envelope["ring"] = true
+                extra["call"]?.let { envelope["call"] = it }
+            }
             socket.sendText(Json.stringify(envelope))
         } catch (_: Exception) {
             false

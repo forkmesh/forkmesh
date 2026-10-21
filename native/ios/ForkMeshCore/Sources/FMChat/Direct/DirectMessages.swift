@@ -1389,7 +1389,10 @@ public final class DirectMessageService {
         let plain = frame(record, type: type, extra: extra)
         do {
             var envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
-            if type == "call-invite" { envelope["ring"] = true }
+            if type == "call-invite" {
+                envelope["ring"] = true
+                if let call = extra["call"] { envelope["call"] = call }
+            }
             try await socket.connection.send(text: JSON.encode(envelope))
             return true
         } catch {

@@ -548,16 +548,37 @@ def test_every_client_rings_with_the_same_topic_and_sound(apns):
     assert 'RING_TOPIC = "' + apns.APNS_CALL_TOPIC + '"' in kotlin_calls
     swift_direct = (repo / "native/ios/ForkMeshCore/Sources/FMChat/Direct"
                     / "DirectMessages.swift").read_text()
-    assert 'if type == "call-invite" { envelope["ring"] = true }' in (
+    assert 'envelope["ring"] = true\n                if let call = extra["call"]' in (
         swift_direct)
     kotlin_direct = (repo / "native/android/core/src/main/kotlin/com/forkmesh"
                      / "nativeapp/chat/DirectMessages.kt").read_text()
-    assert ('if (type == DirectCallEngine.CALL_INVITE_TYPE) '
-            'envelope["ring"] = true') in kotlin_direct
+    assert ('if (type == DirectCallEngine.CALL_INVITE_TYPE) {\n'
+            '                envelope["ring"] = true\n'
+            '                extra["call"]?.let { envelope["call"] = it }'
+            ) in kotlin_direct
     transport = (ROOT / "public" / "chat-room-transport.js").read_text()
     assert ('if (!persist && plain?.type === "call-invite" '
-            '&& isDirectRoom(room)) {\n        envelope.ring = true;'
+            '&& isDirectRoom(room)) {\n        envelope.ring = true;\n'
+            '        if (plain.call) envelope.call = String(plain.call);'
             ) in transport
+
+
+def test_the_iphone_reports_every_voip_push_to_callkit():
+    ios = ROOT.parent / "native" / "ios"
+    plist = (ios / "Config" / "ForkMesh-Info.plist").read_text()
+    modes = plist[plist.index("<key>UIBackgroundModes</key>"):]
+    assert "<string>voip</string>" in modes[:modes.index("</array>")]
+    delegate = (ios / "ForkMesh" / "App" / "AppDelegate.swift").read_text()
+    assert "DirectCallKit.shared.start()" in delegate
+    bridge = (ios / "ForkMesh" / "Features" / "Chat" / "Calls"
+              / "DirectCallKit.swift").read_text()
+    incoming = bridge[bridge.index("didReceiveIncomingPushWith payload"):]
+    assert "received(fields, completion: completion)" in incoming
+    received = bridge[bridge.index("private func received("):]
+    received = received[:received.index("\n    }\n")]
+    assert received.count("apply(") == 2
+    assert ".report(id: id" in received
+    assert "provider.reportNewIncomingCall(" in bridge
 
 
 def test_host_follows_the_tokens_build_environment(apns):
@@ -1026,7 +1047,8 @@ def test_registration_reply_carries_the_relays_push_readiness():
         return "alice"
 
     async def register_apns_device_token(env, account, token, environment,
-                                         device_bi="", bundle_id=""):
+                                         device_bi="", bundle_id="",
+                                         voip_token=""):
         registered.append((account, token, environment, device_bi, bundle_id))
         return True
 
@@ -1092,7 +1114,7 @@ def test_token_lookup_lowercases_and_validates_before_touching_d1():
     assert indexed == ["alice"]
     assert queries[0][1] == ("bi:alice", 8)
     assert rows == [{"token_bi": "bi", "account_bi": "", "token": "ab" * 32,
-                     "environment": "development",
+                     "voip_token": "", "environment": "development",
                      "bundle_id": "com.forkmesh.nativeapp"}]
     # The lookup reads the stored app id alongside the token.
     assert "bundle_id" in queries[0][0]
@@ -1483,7 +1505,8 @@ def _register_runtime(apns):
         return "bi:" + value
 
     async def encrypt_row(env, record):
-        return "sealed:" + record["token"]
+        voip = record.get("voipToken")
+        return "sealed:" + record["token"] + ("|" + voip if voip else "")
 
     async def ensure_schema(env):
         return None
@@ -1530,12 +1553,29 @@ def test_registration_stores_the_allowlisted_app_per_token(apns):
     assert runs[0][1][4] == ""
 
 
+def test_registration_keeps_the_voip_token_in_the_encrypted_row(apns):
+    register, runs = _register_runtime(apns)
+    assert asyncio.run(register(
+        types.SimpleNamespace(), "alice", "cd" * 32, "production",
+        voip_token="EF" * 32))
+    assert runs[0][1][5] == "sealed:" + "cd" * 32 + "|" + "ef" * 32
+    for bad in ("", "zz" * 32, "ef"):
+        runs.clear()
+        assert asyncio.run(register(
+            types.SimpleNamespace(), "alice", "cd" * 32, "production",
+            voip_token=bad))
+        assert runs[0][1][5] == "sealed:" + "cd" * 32
+
+
 def test_the_registration_route_forwards_the_apps_bundle_id():
     registered = []
+    voip = []
 
     async def register_apns_device_token(env, account, token, environment,
-                                         device_bi="", bundle_id=""):
+                                         device_bi="", bundle_id="",
+                                         voip_token=""):
         registered.append(bundle_id)
+        voip.append(voip_token)
         return True
 
     async def _authed(env, request, data=None):
@@ -1562,6 +1602,126 @@ def test_the_registration_route_forwards_the_apps_bundle_id():
         types.SimpleNamespace(),
         _Request(body={"deviceToken": "cd" * 32, "bundleId": NATIVE})))
     assert registered == [NATIVE]
+    asyncio.run(namespace["register_device_handler"](
+        types.SimpleNamespace(),
+        _Request(body={"deviceToken": "cd" * 32, "voipToken": "ef" * 32})))
+    assert voip == ["", "ef" * 32]
+
+
+_CALL_ID = "0b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"
+
+
+def test_a_voip_call_push_names_the_call_for_callkit(apns):
+    alert = apns.direct_call_alert(
+        conversation_id="a" * 32, caller="bob", call_id=_CALL_ID.upper())
+    assert alert["callId"] == _CALL_ID
+    payload = json.loads(apns.voip_payload(alert, "https://app.example"))
+    assert payload == {
+        "topic": "calls", "conversation": "direct:" + "a" * 32,
+        "caller": "bob", "callId": _CALL_ID, "origin": "https://app.example"}
+    assert apns.voip_payload({"callId": _CALL_ID}) == ""
+    assert "callId" not in apns.direct_call_alert(
+        conversation_id="a" * 32, call_id="not-a-uuid")
+
+
+def test_a_voip_push_goes_to_the_voip_topic_now_or_never(apns):
+    fetch_impl = _fetch(_Response(200))
+    result = asyncio.run(apns.send_voip(
+        types.SimpleNamespace(), fetch_impl, "jwt", "ab" * 32, "production",
+        apns.direct_call_alert(conversation_id="a" * 32, call_id=_CALL_ID),
+        bundle_id=NATIVE))
+    assert result == (True, False, 200, "")
+    url, request = fetch_impl.calls[0][0], fetch_impl.calls[0][1]
+    assert url == apns.APNS_HOST_PRODUCTION + "/3/device/" + "ab" * 32
+    headers = request["headers"]
+    assert headers["apns-topic"] == NATIVE + ".voip"
+    assert headers["apns-push-type"] == "voip"
+    assert headers["apns-priority"] == "10"
+    assert headers["apns-expiration"] == "0"
+    assert json.loads(request["body"])["callId"] == _CALL_ID
+
+
+def _call_fan_out(voip_results):
+    sent = []
+    forgotten = []
+
+    async def send_one(env, fetch_impl, jwt, token, environment, alert,
+                       collapse_id="", topic="", bundle_id=""):
+        sent.append(("alert", token, topic, collapse_id))
+        return True, False, 200, ""
+
+    async def send_voip(env, fetch_impl, jwt, token, environment, alert,
+                        bundle_id=""):
+        sent.append(("voip", token, alert.get("callId", "")))
+        return voip_results.pop(0) if voip_results else (
+            True, False, 200, "")
+
+    async def provider_token(env):
+        return "jwt"
+
+    async def forget(env, entry):
+        forgotten.append(entry["token_bi"])
+
+    namespace = {
+        "_apns_module": lambda: types.SimpleNamespace(
+            provider_token=provider_token, send_one=send_one,
+            send_voip=send_voip, APNS_PUSH_BUDGET_MS=3000,
+            APNS_CALL_TOPIC="calls",
+            collapse_id_for=lambda topic, conversation="": "call-" + conversation),
+        "Date": types.SimpleNamespace(now=lambda: 0),
+        "js_fetch_with_timeout": object(),
+        "_apns_prune_token": None,
+        "_apns_forget_voip_token": forget,
+        "_APNS_BROADCAST_MEMO": {},
+        "_APNS_VOIP_CALL_MEMO": {},
+        "APNS_VOIP_CALL_MEMO_MS": 120_000,
+        "APNS_VOIP_CALL_MEMO_MAX": 256,
+    }
+    exec(_entry_function("_apns_send_call"), namespace)
+
+    def ring(tokens, alert):
+        return asyncio.run(namespace["_apns_send_call"](
+            types.SimpleNamespace(), tokens, alert))
+
+    return ring, sent, forgotten
+
+
+def test_call_rings_use_voip_where_the_phone_has_a_token():
+    ring, sent, _forgotten = _call_fan_out([])
+    tokens = [
+        {"token_bi": "a", "token": "aa", "voip_token": "va",
+         "environment": "production"},
+        {"token_bi": "b", "token": "bb", "voip_token": "",
+         "environment": "production"},
+    ]
+    alert = {"title": "t", "conversation": "direct:" + "c" * 32,
+             "callId": _CALL_ID}
+    assert ring(tokens, alert) == 2
+    assert sent == [
+        ("voip", "va", _CALL_ID),
+        ("alert", "bb", "calls", "call-direct:" + "c" * 32)]
+    sent.clear()
+    assert ring(tokens, alert) == 1
+    assert sent == [("alert", "bb", "calls", "call-direct:" + "c" * 32)]
+    sent.clear()
+    ring(tokens, dict(alert, callId="1" + _CALL_ID[1:]))
+    assert sent[0] == ("voip", "va", "1" + _CALL_ID[1:])
+
+
+def test_a_failed_voip_push_falls_back_to_the_alert():
+    ring, sent, forgotten = _call_fan_out([
+        (False, True, 400, "BadDeviceToken"), (False, False, 0, "")])
+    tokens = [{"token_bi": "a", "token": "aa", "voip_token": "va",
+               "environment": "production"}]
+    alert = {"title": "t", "conversation": "direct:" + "c" * 32,
+             "callId": _CALL_ID}
+    ring(tokens, alert)
+    assert [entry[0] for entry in sent] == ["voip", "alert"]
+    assert forgotten == ["a"]
+    sent.clear()
+    ring(tokens, dict(alert, callId="2" + _CALL_ID[1:]))
+    assert [entry[0] for entry in sent] == ["voip", "alert"]
+    assert forgotten == ["a"]
 
 
 def test_the_fan_out_addresses_every_token_as_its_own_app():

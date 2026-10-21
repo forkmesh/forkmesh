@@ -3351,6 +3351,8 @@ async def _apns_tokens_from_rows(env, rows):
             "token_bi": str(row.get("token_bi") or ""),
             "account_bi": str(row.get("account_bi") or ""),
             "token": token,
+            "voip_token": clean_string(
+                record.get("voipToken", ""), 200).strip(),
             "environment": str(row.get("environment") or "production"),
             # The app that minted the token, which is the apns-topic Apple
             # accepts it under; "" for an older build that never said.
@@ -3412,7 +3414,77 @@ async def push_account_apns(env, owner, topic, push_alert=None):
         alert = push_alert
     if not isinstance(alert, dict) or not alert.get("title"):
         return 0
+    if topic == apns.APNS_CALL_TOPIC:
+        return await _apns_send_call(env, tokens, alert)
     return await _apns_send_tokens(env, tokens, topic, alert)
+
+
+_APNS_VOIP_CALL_MEMO = {}
+APNS_VOIP_CALL_MEMO_MS = 2 * 60 * 1000
+APNS_VOIP_CALL_MEMO_MAX = 256
+
+
+async def _apns_send_call(env, tokens, alert):
+    apns = _apns_module()
+    try:
+        jwt = await apns.provider_token(env)
+    except Exception:
+        return 0
+    started = int(Date.now())
+    call_key = str(alert.get("callId") or alert.get("conversation") or "")
+    collapse_id = apns.collapse_id_for(
+        apns.APNS_CALL_TOPIC, alert.get("conversation", ""))
+    delivered = 0
+    for entry in tokens:
+        now = int(Date.now())
+        if now - started > apns.APNS_PUSH_BUDGET_MS:
+            break
+        voip_token = entry.get("voip_token", "")
+        if voip_token:
+            memo_key = entry["token_bi"] + "\n" + call_key
+            last = _APNS_VOIP_CALL_MEMO.get(memo_key)
+            if last is not None and now - last < APNS_VOIP_CALL_MEMO_MS:
+                continue
+            try:
+                ok, dead, _status, _reason = await apns.send_voip(
+                    env, js_fetch_with_timeout, jwt, voip_token,
+                    entry["environment"], alert,
+                    bundle_id=entry.get("bundle_id", ""))
+            except Exception:
+                ok, dead = False, False
+            if ok:
+                if len(_APNS_VOIP_CALL_MEMO) >= APNS_VOIP_CALL_MEMO_MAX:
+                    _APNS_VOIP_CALL_MEMO.clear()
+                _APNS_VOIP_CALL_MEMO[memo_key] = now
+                delivered += 1
+                continue
+            if dead:
+                await _apns_forget_voip_token(env, entry)
+        try:
+            ok, dead, _status, _reason = await apns.send_one(
+                env, js_fetch_with_timeout, jwt,
+                entry["token"], entry["environment"], alert,
+                collapse_id=collapse_id, topic=apns.APNS_CALL_TOPIC,
+                bundle_id=entry.get("bundle_id", ""))
+        except Exception:
+            continue
+        if ok:
+            delivered += 1
+        elif dead:
+            await _apns_prune_token(env, entry["token_bi"])
+            _APNS_BROADCAST_MEMO.clear()
+    print("apns: topic calls delivered %d of %d" % (delivered, len(tokens)))
+    return delivered
+
+
+async def _apns_forget_voip_token(env, entry):
+    try:
+        await d1_run(
+            env, "UPDATE apns_device_tokens SET data=? WHERE token_bi=?",
+            await encrypt_row(env, {"token": entry["token"]}),
+            entry["token_bi"])
+    except Exception:
+        pass
 
 
 async def _apns_ping_alert(env, record):
@@ -3590,7 +3662,8 @@ async def push_chat_room_apns(env, room_key, channel_id="", sender_bi="",
 
 
 async def register_apns_device_token(env, account, token, environment,
-                                     device_bi="", bundle_id=""):
+                                     device_bi="", bundle_id="",
+                                     voip_token=""):
     """Upsert one phone's push token for an account.
 
     Keyed on a blind index of the token itself, so a phone that re-registers
@@ -3617,6 +3690,11 @@ async def register_apns_device_token(env, account, token, environment,
         if str(environment or "").strip().lower() == "development"
         else "production")
     bundle_id = apns.normalize_bundle_id(bundle_id)
+    record = {"token": token}
+    voip_token = clean_string(voip_token, 200).strip().lower()
+    if len(voip_token) >= 32 and all(
+            c in "0123456789abcdef" for c in voip_token):
+        record["voipToken"] = voip_token
     now = int(Date.now())
     account_bi = await blind_index(env, account)
     token_bi = await blind_index(env, "apns:" + token)
@@ -3635,7 +3713,7 @@ async def register_apns_device_token(env, account, token, environment,
              data=excluded.data,
              last_seen=excluded.last_seen""",
         token_bi, account_bi, clean_string(device_bi or "", 128),
-        environment, bundle_id, await encrypt_row(env, {"token": token}),
+        environment, bundle_id, await encrypt_row(env, record),
         now, now,
     )
     # Retire installs that stopped checking in long ago. The app registers on
@@ -3714,6 +3792,7 @@ async def register_device_handler(env, request):
         # The app that minted the token (its apns-topic). Absent from older
         # builds, which then keep the App Store id.
         bundle_id=clean_string(data.get("bundleId", ""), 128),
+        voip_token=clean_string(data.get("voipToken", ""), 200),
     )
     if not ok:
         return json_response(
@@ -10200,14 +10279,15 @@ async def _chat_direct_message_retained(
                 key_version=key_version, frame=frame))
 
 
-async def _chat_direct_call_ring(env, conversation_id, caller_bi):
+async def _chat_direct_call_ring(env, conversation_id, caller_bi, call_id=""):
     recipient, caller = await _chat_direct_message_parties(
         env, conversation_id, caller_bi)
     if recipient:
         await notify_account_event(
             env, recipient, "calls",
             _apns_module().direct_call_alert(
-                conversation_id=conversation_id, caller=caller))
+                conversation_id=conversation_id, caller=caller,
+                call_id=call_id))
 
 
 _CHAT_DIRECT_RING_MEMO = {}
@@ -55818,7 +55898,7 @@ class ForkMeshRoom(DurableObject):
         await durable_object_traffic_flush(self)
         if (envelope.get("ring") is True
                 and envelope.get("persist") is not True):
-            await self._ring_direct(ws)
+            await self._ring_direct(ws, envelope.get("call"))
 
         # Retain durable conversation messages (still encrypted) for late joiners.
         if direct_stored:
@@ -55826,13 +55906,13 @@ class ForkMeshRoom(DurableObject):
         elif not direct_account:
             await self._maybe_retain(ws, message, ref)
 
-    async def _ring_direct(self, ws):
+    async def _ring_direct(self, ws, call_id=None):
         account_bi = self._direct_account(ws)
         if not account_bi:
             return
         direct_id = str(_ws_attr(ws, "direct_id", "") or "")
         now = int(Date.now())
-        memo_key = direct_id + "\n" + account_bi
+        memo_key = direct_id + "\n" + account_bi + "\n" + str(call_id or "")
         last = _CHAT_DIRECT_RING_MEMO.get(memo_key, 0)
         if last and now - last < CHAT_DIRECT_RING_EVERY_MS:
             return
@@ -55840,7 +55920,9 @@ class ForkMeshRoom(DurableObject):
             _CHAT_DIRECT_RING_MEMO.clear()
         _CHAT_DIRECT_RING_MEMO[memo_key] = now
         try:
-            await _chat_direct_call_ring(self.env, direct_id, account_bi)
+            await _chat_direct_call_ring(
+                self.env, direct_id, account_bi,
+                call_id=str(call_id or "")[:64])
         except Exception:
             pass
 

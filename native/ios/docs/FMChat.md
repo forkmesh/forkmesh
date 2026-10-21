@@ -611,6 +611,40 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   phone can read it, and the local call notification uses it too. The notification extension
   delivers a `calls` push as it came (the relay also leaves `mutable-content` off), so it is never
   rewritten into an inbox row.
+- **CallKit and PushKit** (2026-10-21). Incoming calls show on the system call screen.
+  `DirectCallKit` (`Calls/DirectCallKit.swift`) owns one `CXProvider` (video supported, one call,
+  generic handles "@name", kept out of the phone's Recents because those sync through iCloud) and
+  a `PKPushRegistry` for `.voIP`. `AppDelegate` starts the registry in `didFinishLaunching`, so a
+  VoIP push that launches the app is delivered; `installCalls` attaches the engine and the DM
+  service. The decisions live in `DirectCallKitLedger` (FMChat, `Direct/DirectCallKitLedger.swift`,
+  Linux tests in `DirectCallKitLedgerTests`); the app class only turns its effects into CallKit
+  and engine calls.
+  - **Token.** The PushKit token goes to `PushNotificationService.didReceiveVoipToken`, which
+    re-registers the device with `voipToken` beside the alert token.
+  - **VoIP push.** Every VoIP push is reported to CallKit before its completion runs, because iOS
+    ends an app that does not and then stops delivering VoIP pushes. A malformed one is reported
+    and ended at once. The CallKit UUID is the invite's call id. The push then opens the DM
+    (`openRinging`, held until the services are attached; on a cold launch `DirectCallKit.wake`
+    starts `AppBoot.shared`) so the resent invite arrives and fills in the caller and
+    voice/video (`reportCall(updated:)`). With no invite within 20 s
+    (`DirectCallKitLedger.inviteWait`) the call ends as unanswered. A second push for a call
+    still ringing reports the same UUID again, and one for a call already over is reported and
+    ended at once.
+  - **Socket invites** that arrive with no push (app open, or Android or web callers on an old
+    relay) are reported to CallKit too.
+  - **Answer** (CallKit `CXAnswerCallAction`) accepts the invite through the same access check as
+    the in-app Accept, or waits for the invite if it has not arrived yet. **Decline or end**
+    (`CXEndCallAction`) declines the invite, hangs up a live call, or declines the invite once it
+    arrives. **Mute** maps to `toggleMute`. Accepting in the app asks CallKit to mark the call
+    answered (`CXAnswerCallAction` transaction); a call the caller ends, or that ends in the app,
+    is reported ended (`remoteEnded`).
+  - **Ringing.** While CallKit has the call, `CallRinger` neither plays its own ring nor posts the
+    local call notification (`DirectCallKit.ringing`). If CallKit refuses a report for any reason
+    other than Focus or the block list (for example `unentitled`), the ledger drops the call and
+    the in-app ring, notification and incoming screen work as before. A call Focus filters stays
+    silent, as the user asked.
+  - **Our call counts as a call.** `OtherAppCall` (`docs/native/OTHER_APP_CALLS.md`) sees our CallKit
+    call too, so interface sounds and chimes stay quiet during it.
 - **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
   connects and when the selected candidate pair changes. `WebCallPeer` passes it to
   `WebCallPeerFactory.route` (a `DirectCallRoute`, reset for each new call and when the peer
@@ -618,13 +652,15 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   no server in between" or "Relayed · through a TURN relay server (third party)". The live state
   line is "Connected · end-to-end encrypted", since the route is unknown until then. The pre-call
   screen shows the hint "Calls go directly between your devices when possible."
-- **Limits.** A suspended or killed app gets the call push (a ringing alert), not the full-screen
-  call: the full-screen incoming view needs the app opened from the push, because there is no
-  VoIP push (PushKit) or CallKit. The time-sensitive level only breaks through Focus once the
+- **Limits.** Media runs in a WebView, which only captures the camera and microphone while the
+  app is in front, so a call answered on the lock screen connects its signaling at once but its
+  audio and picture start once the user unlocks and opens ForkMesh (the app button on the call
+  screen). CallKit's audio session activation and WebKit's capture session have not been tried
+  together on a device. Outgoing calls are not reported to CallKit. CallKit must not be used in
+  apps sold in mainland China; the app does not switch it off there yet. The alert push (phones
+  without a VoIP token) uses time-sensitive delivery, which only breaks through Focus once the
   app has the Time Sensitive Notifications capability
-  (`com.apple.developer.usernotifications.time-sensitive` in both app entitlements files, and the
-  capability on `com.forkmesh.forkmesh` in the developer portal or `asc_bundle_ids.py`); it is
-  not switched on yet, so under Focus the call push arrives as a normal alert. The root `fullScreenCover` cannot present while another screen of `HomeShell` is
+  (`com.apple.developer.usernotifications.time-sensitive`); it is not switched on yet. The root `fullScreenCover` cannot present while another screen of `HomeShell` is
   showing a sheet or cover; the call then appears when that sheet closes. The ringback plays on
   whatever route WebKit's `.playAndRecord` session uses (often the earpiece).
 

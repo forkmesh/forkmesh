@@ -840,6 +840,7 @@ export function createChatRoomTransport({
       }
       if (!persist && plain?.type === "call-invite" && isDirectRoom(room)) {
         envelope.ring = true;
+        if (plain.call) envelope.call = String(plain.call);
       }
       const text = JSON.stringify(envelope);
       const ref = persist ? await frameRef(text) : "";

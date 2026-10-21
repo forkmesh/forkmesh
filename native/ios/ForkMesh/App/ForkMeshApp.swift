@@ -14,7 +14,7 @@ import SwiftUI
 struct ForkMeshApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) var scenePhase
-    @State var boot: AppBoot = AppBoot()
+    @State var boot: AppBoot = AppBoot.shared
 
     var body: some Scene {
         WindowGroup {
