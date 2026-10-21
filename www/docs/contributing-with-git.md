@@ -52,8 +52,11 @@ Open that link, write a title and a description, and click **Create pull
 request**. The pull request goes to the original repository. Your browser signs
 it, so the maintainer can check it came from your account.
 
-A pull request records your branch as it was when you opened it. If you push
-more commits after review, open a new pull request from the same link.
+A pull request opened from a branch of the same repository follows that
+branch: push more commits (or force-push a rebase) and the pull request shows
+them, with "pushed N commits" in its timeline. A pull request from a fork
+records your branch as it was when you opened it; to update it, open a new pull
+request from the same link.
 
 ## Without a fork
 

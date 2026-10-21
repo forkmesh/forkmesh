@@ -229,6 +229,11 @@ func materializeDirectCollaboration(ctx context.Context, repo Repository,
 			return 0, commitCollaboration(ctx, dir, branchReviewsRoot,
 				"branch "+safeHeader(item.Branch)+": direct mirror intake")
 		}
+		if isPullSynchronize(item) {
+			if _, ok := pullSynchronizeTarget(ctx, repo.GitDir, dir, item.Number, item.Event); !ok {
+				return item.Number, nil
+			}
+		}
 		wrote, number, err := writePullItem(dir, item)
 		if err != nil || !wrote {
 			if err == nil {
@@ -1083,6 +1088,12 @@ func materializePullInbox(ctx context.Context, repo Repository,
 			}
 			item.Number = candidate
 		}
+		if isPullSynchronize(item) {
+			if _, ok := pullSynchronizeTarget(ctx, repo.GitDir, dir, item.Number, item.Event); !ok {
+				ids = append(ids, item.ID)
+				continue
+			}
+		}
 		wrote, number, err := writePullItem(dir, item)
 		if err != nil {
 			return ids, err
@@ -1120,6 +1131,15 @@ func commitPullIntake(ctx context.Context, repo Repository, dir string,
 	head := ""
 	if len(item.Pull) != 0 {
 		head, _ = recordPullHead(ctx, repo.GitDir, dir, number)
+	}
+	if isPullSynchronize(item) {
+		if target, ok := pullSynchronizeTarget(ctx, repo.GitDir, dir, number, item.Event); ok {
+			synced, err := applyPullSynchronize(ctx, repo.GitDir, dir, number, target)
+			if err != nil {
+				return err
+			}
+			head = synced
+		}
 	}
 	if err := commitCollaboration(ctx, dir, ".forkmesh/pulls", message); err != nil {
 		return err
@@ -1372,7 +1392,7 @@ func pullMarkdown(number int, pull map[string]any) string {
 
 func pullEventMarkdown(event map[string]any) string {
 	lines := []string{"---"}
-	for _, key := range []string{"type", "id", "author", "authorName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "appliedCommit", "patchset", "ref", "before", "after", "sig"} {
+	for _, key := range []string{"type", "id", "author", "authorName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "appliedCommit", "patchset", "ref", "before", "after", "commits", "forced", "sig"} {
 		if value, ok := event[key]; ok && fmt.Sprint(value) != "" {
 			lines = append(lines, key+": "+safeHeader(fmt.Sprint(value)))
 		}

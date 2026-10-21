@@ -1323,6 +1323,26 @@ def test_ref_updates_header_is_validated_field_by_field():
          "commits": 2}], "actions": False}
 
 
+def test_ref_updates_keep_the_open_pulls_of_every_branch_update():
+    namespace, *_ = _proxy_harness()
+    parse = namespace["_ref_updates_from"]
+
+    class _Up:
+        def __init__(self, value):
+            self.headers = _Headers({"x-forkmesh-ref-updates": value})
+
+    raw = json.dumps({"total": 3, "updates": [
+        {"ref": "refs/heads/a", "old": "1" * 40, "new": "2" * 40,
+         "commits": 1, "pulls": [4, 3, 4, True, -1, "5"]},
+        {"ref": "refs/heads/b", "old": "1" * 40, "new": "2" * 40,
+         "commits": 1, "pulls": "3"},
+        {"ref": "refs/tags/c", "old": "0" * 40, "new": "2" * 40,
+         "pulls": [3]},
+    ]})
+    assert [update.get("pulls") for update in parse(_Up(raw))["updates"]] == [
+        [3, 4], None, None]
+
+
 def test_a_key_among_the_owners_signers_still_gets_the_org_write_check():
     namespace, audits = _authorize_harness(
         devices={MOBILE_DEVICE_KEY: _mobile_device(

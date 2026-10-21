@@ -1263,6 +1263,7 @@ PUSH_HOOK_REWRITE_ENV = "FORKMESH_PUSH_REWRITE"
 PUSH_HOOK_DEFAULT_ENV = "FORKMESH_PUSH_DEFAULT_REF"
 PUSH_HOOK_DIRECTORY = "push-hooks"
 FORCED_PULLS_MAX = 10
+PULL_SYNC_BRANCHES_MAX = 8
 
 
 def parse_tag_moves(value: Any) -> dict[str, str]:
@@ -11061,6 +11062,7 @@ class GatewayApplication:
         headers = {"Cache-Control": "no-store"}
         if changes:
             updates = []
+            looked_up = 0
             for ref, old, new in changes[:REF_UPDATES_MAX]:
                 update: dict[str, Any] = {"ref": ref, "old": old, "new": new}
                 if ref.startswith("refs/heads/"):
@@ -11069,6 +11071,15 @@ class GatewayApplication:
                     update["forced"] = True
                     if forced[ref]:
                         update["kept"] = forced[ref]
+                if (
+                    ref.startswith("refs/heads/")
+                    and not ref.startswith(REWRITE_EXCLUDED_PREFIXES)
+                    and ref != default_ref
+                    and not _zero_oid(old)
+                    and not _zero_oid(new)
+                    and looked_up < PULL_SYNC_BRANCHES_MAX
+                ):
+                    looked_up += 1
                     pulls = repository.open_pulls_for_head(
                         ref[len("refs/heads/"):])
                     if pulls:

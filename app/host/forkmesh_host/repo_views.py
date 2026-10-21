@@ -455,6 +455,14 @@ async def plan_pull(reader, branch, number):
     async def patch():
         if not is_open:
             return ""
+        synced = str(values.get("syncedHeadOid") or "").strip().lower()
+        onto = str(values.get("headBaseOid") or "").strip().lower()
+        if (is_commit(synced) and is_commit(onto)
+                and synced == str(values.get("headOid") or "").strip().lower()):
+            data = await reader.get("compare", [("base", onto),
+                                                ("head", synced)])
+            if data and str(data.get("patch") or "").strip():
+                return str(data.get("patch") or "")
         data = await reader.get("blob", [
             ("path", "%s/%d/changes.patch" % (PULLS_DIR, number)),
             ("ref", commit)], negative=True)
