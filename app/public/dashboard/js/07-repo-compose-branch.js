@@ -2386,9 +2386,10 @@
             <input data-repo-release-tag required ${editing ? "readonly" : ""} value="${escapeHtml(release?.tag || "")}" placeholder="v1.0.0" autocomplete="off" spellcheck="false" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm text-foreground outline-none focus:border-accent" />
           </label>
           <label class="grid gap-1 text-xs font-medium text-muted-foreground">Target (a new tag points here)
-            <select data-repo-release-target ${editing ? "disabled" : ""} class="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent disabled:opacity-50">${branchOptions}</select>
+            <select data-repo-release-target ${editing && !repoIsCoreHosted(repo) ? "disabled" : ""} class="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus:border-accent disabled:opacity-50">${branchOptions}</select>
           </label>
         </div>
+        ${editing && repoIsCoreHosted(repo) ? `<label class="inline-flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" data-repo-release-move-tag class="h-3.5 w-3.5 rounded border-border accent-primary" />Move the tag to the target's latest commit (recorded as the owner's tag move)</label>` : ""}
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">Release title
           <input data-repo-release-title maxlength="200" value="${escapeHtml(release?.name && release.name !== release.tag ? release.name : "")}" placeholder="What is in this release?" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent" />
         </label>
@@ -2442,6 +2443,7 @@
       forbidden: "You need write access to manage releases.",
       target_not_found: "That branch is not available.",
       too_large: "Release notes are limited to 128 KB.",
+      tag_moves_unavailable: "Tags move only on repositories the core nodes host.",
     })[code] || (error?.status === 401 ? "Sign in to manage releases." : repoFileEditError(error));
   }
 
@@ -2461,6 +2463,13 @@
     if (submit) submit.disabled = true;
     setHint("Publishing…");
     try {
+      if (form.querySelector("[data-repo-release-move-tag]")?.checked) {
+        setHint("Moving the tag…");
+        await releaseEditRequest(repo, {
+          op: "move-tag", tag, branch: repoDefaultBranch(repo) || "main",
+          target: String(form.querySelector("[data-repo-release-target]")?.value || ""),
+        });
+      }
       await releaseEditRequest(repo, {
         op: "save",
         tag,

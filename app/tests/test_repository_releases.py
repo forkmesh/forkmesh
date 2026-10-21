@@ -171,3 +171,32 @@ def test_assets_need_a_web_release(bare_repo):
     missing = release({"op": "asset", "tag": "v4", "branch": "main",
                        "name": "a.bin", "content": base64.b64encode(b"x").decode()})
     assert missing["status"] == 404
+
+
+def test_an_owner_moves_a_tag_with_a_grant_on_core_held_repositories(bare_repo, tmp_path):
+    releases_harness(bare_repo)
+    first = git_out(bare_repo, "rev-parse", "main").strip()
+    release({"op": "save", "tag": "v5", "branch": "main", "title": "Five"})
+    head = git_out(bare_repo, "rev-parse", "main").strip()
+    grants = []
+
+    async def grant(_env, actor, owner, repo, ref, target):
+        grants.append((actor, ref, target))
+        return 1, None
+    repository_releases.core_push_grant_tag_move = grant
+    moved = release({"op": "move-tag", "tag": "v5", "branch": "main",
+                     "target": "main"})
+    assert moved["status"] == 200, moved
+    assert grants == [("jett", "refs/tags/v5", head)]
+    assert git_out(bare_repo, "rev-parse", "refs/tags/v5").strip() == head
+    assert manifest(bare_repo, "v5")["tag_commit"] == head
+    assert first != head
+
+    async def refuse(*_args):
+        return 0, {"status": 409, "data": {"error": "tag_moves_unavailable"}}
+    repository_releases.core_push_grant_tag_move = refuse
+    release({"op": "tag", "tag": "v6", "branch": "main", "target": first})
+    refused = release({"op": "move-tag", "tag": "v6", "branch": "main",
+                       "target": "main"})
+    assert refused["data"]["error"] == "tag_moves_unavailable"
+    assert git_out(bare_repo, "rev-parse", "refs/tags/v6").strip() == first

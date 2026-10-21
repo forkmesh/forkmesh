@@ -55,3 +55,10 @@ def test_files_can_be_attached_to_and_removed_from_web_releases():
     assert 'op: "asset"' in upload and "file.size > 2 * 1024 * 1024" in upload
     assert 'op: "asset-delete"' in _function("handleReleaseAssetRemove")
     assert 'event.target.closest?.("[data-repo-release-asset-upload]")' in DASHBOARD_JS
+
+
+def test_core_hosted_release_tags_can_be_moved_from_the_editor():
+    form = _function("renderReleaseForm")
+    assert "data-repo-release-move-tag" in form and "repoIsCoreHosted(repo)" in form
+    submit = _function("handleReleaseFormSubmit")
+    assert submit.index('op: "move-tag"') < submit.index('op: "save"')

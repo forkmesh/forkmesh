@@ -35,7 +35,8 @@ MAX_TITLE = 200
 MAX_NOTES_BYTES = 128 * 1024
 RELEASES_DIR = ".forkmesh/releases"
 RESERVED_CHANNEL_RE = re.compile(r"^(latest|candidate(-.*)?)$", re.I)
-OPS = frozenset({"tag", "save", "delete", "asset", "asset-delete"})
+OPS = frozenset({"tag", "save", "delete", "asset", "asset-delete",
+                 "move-tag"})
 MAX_ASSET_BYTES = edits.MAX_CONTENT_BYTES
 MAX_ASSETS = 20
 CONTENT_TYPE_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*$")
@@ -260,7 +261,36 @@ async def _save(env, request, owner, repo):
         return _error("invalid_target", "Choose a branch or commit.", 400)
     result = {"ok": True, "op": op, "tag": tag}
     try:
-        if op in ("asset", "asset-delete"):
+        if op == "move-tag":
+            # A tag moves only with an owner's grant, consumed by this push
+            # (core-held repositories; mirrors refuse any other tag move).
+            old_commit = await _resolve(env, owner, repo, "refs/tags/" + tag)
+            new_commit = await _resolve(env, owner, repo, target)
+            if not old_commit:
+                raise edits.FileEditError(
+                    "not_found", "That tag does not exist.", 404)
+            if not new_commit:
+                raise edits.FileEditError(
+                    "target_not_found",
+                    "That branch or commit is not available.", 404)
+            if new_commit != old_commit:
+                _expires, problem = await core_push_grant_tag_move(
+                    env, actor, owner, repo, "refs/tags/" + tag, new_commit)
+                if problem is not None:
+                    return problem
+                body = receive_pack_body(old_commit, new_commit,
+                                         "refs/tags/" + tag, pack([]))
+                await edits._push(env, request, owner, repo, actor, "",
+                                  body, "", ref="refs/tags/" + tag)
+                record = await _previous_record(env, owner, repo, branch, tag)
+                if record and record.get("source") == "web":
+                    record["tag_commit"] = new_commit
+                    record["updated_at"] = int(time.time() * 1000)
+                    result["commit"] = await _commit_release_file(
+                        env, request, owner, repo, actor, branch, tag, record,
+                        "Move the %s release to %s" % (tag, new_commit[:10]))
+            result["tagCommit"] = new_commit
+        elif op in ("asset", "asset-delete"):
             result["commit"], result["release"] = await _save_asset(
                 env, request, owner, repo, actor, branch, tag, data,
                 op == "asset-delete")
