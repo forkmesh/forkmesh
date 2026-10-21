@@ -41186,6 +41186,7 @@ async def _accept_pull_revision(env, request, data, owner, repo, repo_bi,
         "(repo_bi, data, submitter_bi, submission_bi) VALUES (?,?,?,?)",
         repo_bi, await encrypt_row(env, item), submitter_bi, submission_bi,
     )
+    await _branch_protection.dismiss_approvals(env, owner, repo, number)
     actor = clean_string(
         revision.get("authorName", "") or revision.get("author", ""),
         MAX_NODE_NAME).lower()
