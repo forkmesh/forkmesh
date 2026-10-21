@@ -8,6 +8,10 @@ JSON_BODY_DEFAULT_MAX_BYTES = 2 * 1024 * 1024
 JSON_BODY_LARGE_MAX_BYTES = 8 * 1024 * 1024
 JSON_BODY_LARGE_PATH_PREFIXES = (
     "/api/security/", "/api/repositories/import")
+# Collections whose POST carries a whole signed patch series, under
+# /api/repo/<owner>/<repo>/<collection>. A real pull request's patch passes
+# 2 MiB long before the git gateway's 8 MiB request cap.
+JSON_BODY_LARGE_REPO_COLLECTIONS = ("pulls",)
 
 
 def _bind_runtime(runtime):
@@ -22,9 +26,14 @@ def _json_request_limit(request):
         path = urlparse(request.url).path
     except Exception:
         path = ""
-    return (JSON_BODY_LARGE_MAX_BYTES if any(
-        path.startswith(prefix) for prefix in JSON_BODY_LARGE_PATH_PREFIXES)
-        else JSON_BODY_DEFAULT_MAX_BYTES)
+    if any(path.startswith(prefix)
+           for prefix in JSON_BODY_LARGE_PATH_PREFIXES):
+        return JSON_BODY_LARGE_MAX_BYTES
+    parts = path.strip("/").split("/")
+    if (len(parts) == 5 and parts[:2] == ["api", "repo"]
+            and parts[4] in JSON_BODY_LARGE_REPO_COLLECTIONS):
+        return JSON_BODY_LARGE_MAX_BYTES
+    return JSON_BODY_DEFAULT_MAX_BYTES
 
 
 async def bounded_request_text(request, max_bytes):

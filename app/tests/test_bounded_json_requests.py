@@ -49,6 +49,7 @@ def _reader():
         "JSON_BODY_DEFAULT_MAX_BYTES": 64,
         "JSON_BODY_LARGE_MAX_BYTES": 128,
         "JSON_BODY_LARGE_PATH_PREFIXES": ("/api/security/",),
+        "JSON_BODY_LARGE_REPO_COLLECTIONS": ("pulls",),
         "urlparse": urlparse,
         "json": json,
         "clean_value": clean_value,
@@ -119,3 +120,26 @@ def test_no_route_bypasses_the_bounded_json_reader():
     runtime = _default_runtime_source()
     assert "except RequestBodyTooLarge:" in runtime
     assert '"request_too_large"' in runtime
+
+
+def test_pull_submissions_get_the_large_body_allowance():
+    """A signed pull request carries its whole patch series inline."""
+    namespace = {
+        "JSON_BODY_DEFAULT_MAX_BYTES": 64,
+        "JSON_BODY_LARGE_MAX_BYTES": 128,
+        "JSON_BODY_LARGE_PATH_PREFIXES": ("/api/security/",),
+        "JSON_BODY_LARGE_REPO_COLLECTIONS": ("pulls",),
+        "urlparse": urlparse,
+    }
+    exec(_source("_json_request_limit"), namespace)
+    limit = namespace["_json_request_limit"]
+
+    def at(path):
+        return limit(SimpleNamespace(url="https://forkmesh.test" + path))
+
+    assert at("/api/repo/alice/tools/pulls") == 128
+    assert at("/api/repo/alice/tools/pulls/") == 128
+    assert at("/api/repo/alice/tools/issues") == 64
+    assert at("/api/repo/alice/tools/pulls/7/events") == 64
+    assert at("/api/repo/pulls") == 64
+    assert at("/api/security/advisories") == 128
