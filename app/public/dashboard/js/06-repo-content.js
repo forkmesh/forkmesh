@@ -7155,7 +7155,7 @@
       return `<span class="inline-block h-2 w-2 rounded-[2px] ${tone}"></span>`;
     }).join("");
     const recordTabs = isPulls ? `
-        <nav class="mt-6 flex min-w-0 items-end overflow-x-auto border-b border-border" aria-label="Pull request sections">
+        <nav data-repo-record-tabs class="mt-6 flex min-w-0 items-end overflow-x-auto border-b border-border" aria-label="Pull request sections">
           <button type="button" data-repo-record-tab="conversation" ${recordTabAttrs("conversation")}><i data-lucide="messages-square" class="h-4 w-4 text-muted-foreground"></i>Conversation${tabCounter("data-repo-pull-timeline-count", pullTimeline.length)}</button>
           <button type="button" data-repo-record-tab="commits" ${recordTabAttrs("commits")}><i data-lucide="git-commit-horizontal" class="h-4 w-4 text-muted-foreground"></i>Commits${tabCounter("data-repo-pull-commit-count", pullCommitCount)}</button>
           <button type="button" data-repo-record-tab="checks" ${recordTabAttrs("checks")}><i data-lucide="list-checks" class="h-4 w-4 text-muted-foreground"></i>Checks${tabCounter("data-repo-pull-check-count", pullCheckCount)}</button>

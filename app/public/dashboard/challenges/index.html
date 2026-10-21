@@ -500,13 +500,15 @@
         --background: rgb(var(--dashboard-canvas-rgb));
       }
 
-      [data-repo-github-header] [role="tablist"] {
+      [data-repo-github-header] [role="tablist"],
+      [data-repo-record-tabs] {
         overscroll-behavior-x: contain;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
         scroll-padding-inline: 12px;
       }
-      [data-repo-github-header] [role="tablist"]::-webkit-scrollbar { display: none; }
+      [data-repo-github-header] [role="tablist"]::-webkit-scrollbar,
+      [data-repo-record-tabs]::-webkit-scrollbar { display: none; }
       [data-repo-github-header] [role="tab"] i[data-lucide],
       [data-repo-github-header] [role="tab"] svg { display: inline-block; flex: none; width: 16px; height: 16px; }
       [data-repo-tab-label] { display: inline-flex; flex-direction: column; align-items: center; }
