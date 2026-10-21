@@ -5540,6 +5540,164 @@
       return session;
     }
   }
+
+  const MARKDOWN_VIDEO_TEXTAREAS = [
+    "[data-repo-issue-body]", "[data-repo-pull-body]",
+    "[data-repo-issue-comment-body]", "[data-repo-issue-comment-edit-body]",
+    "[data-repo-pull-review-body]", "[data-repo-issue-description-input]",
+    "[data-repo-discussion-reply-body]",
+  ].join(",");
+  const MARKDOWN_VIDEO_TYPES = { "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov" };
+  const MARKDOWN_VIDEO_EXTENSIONS = { mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime" };
+  const MARKDOWN_VIDEO_MAX_BYTES = 25 * 1024 * 1024;
+  const MARKDOWN_VIDEO_PART_BYTES = 512 * 1024;
+
+  function markdownVideoButtonHtml() {
+    return '<button type="button" data-markdown-video-attach class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-foreground hover:bg-secondary"><i data-lucide="video" class="h-3.5 w-3.5 text-muted-foreground"></i>Attach video</button>';
+  }
+
+  function markdownVideoMime(file) {
+    const type = String(file?.type || "").toLowerCase();
+    if (MARKDOWN_VIDEO_TYPES[type]) return type;
+    const extension = String(file?.name || "").split(".").pop().toLowerCase();
+    return MARKDOWN_VIDEO_EXTENSIONS[extension] || "";
+  }
+
+  function markdownVideoFiles(list) {
+    return Array.from(list || []).filter((file) => markdownVideoMime(file));
+  }
+
+  function markdownVideoError(code) {
+    return ({
+      unsupported_media_type: "Attach an MP4, WebM or MOV video.",
+      media_type_mismatch: "That file is not the video type its name says.",
+      media_too_large: `Videos can be at most ${formatSize(MARKDOWN_VIDEO_MAX_BYTES)}.`,
+      media_quota_count: "You have uploaded the most videos allowed today. Try again tomorrow.",
+      media_quota_bytes: "You have used today's video upload allowance. Try again tomorrow.",
+      email_unverified: "Verify your email address before uploading videos.",
+      repository_unavailable: "Videos can only be attached on public repositories.",
+      invalid_session: "Sign in to attach a video.",
+    })[code] || "The video could not be uploaded. Please try again.";
+  }
+
+  function readFileSliceBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || "").replace(/^data:[^,]*,/, ""));
+      reader.onerror = () => reject(reader.error || new Error("read_failed"));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function markdownVideoRequest(url, method, payload) {
+    const response = await fetch(url, {
+      method,
+      credentials: "include",
+      cache: "no-store",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ ...payload, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) {
+      const error = new Error(String(data.error || `HTTP ${response.status}`));
+      error.code = String(data.error || "");
+      throw error;
+    }
+    return data;
+  }
+
+  async function uploadMarkdownVideo(repo, file, onProgress) {
+    const mime = markdownVideoMime(file);
+    if (!mime) throw Object.assign(new Error("unsupported_media_type"), { code: "unsupported_media_type" });
+    if (file.size > MARKDOWN_VIDEO_MAX_BYTES) throw Object.assign(new Error("media_too_large"), { code: "media_too_large" });
+    const base = `${repoApiBase(repo)}/media`;
+    const parts = Math.ceil(file.size / MARKDOWN_VIDEO_PART_BYTES);
+    const created = await markdownVideoRequest(base, "POST", { name: file.name || "", mime, size: file.size, parts });
+    const media = created.media || {};
+    for (let index = 0; index < parts; index += 1) {
+      const slice = file.slice(index * MARKDOWN_VIDEO_PART_BYTES, (index + 1) * MARKDOWN_VIDEO_PART_BYTES);
+      const data = await readFileSliceBase64(slice);
+      await markdownVideoRequest(`${base}/${media.id}/parts/${index}`, "PUT", { data });
+      onProgress?.((index + 1) / parts);
+    }
+    const finished = await markdownVideoRequest(`${base}/${media.id}/finish`, "POST", {});
+    return String(finished.media?.url || media.url || "");
+  }
+
+  function replaceInTextarea(textarea, from, to) {
+    const index = textarea.value.indexOf(from);
+    if (index < 0) return false;
+    textarea.value = textarea.value.slice(0, index) + to + textarea.value.slice(index + from.length);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+
+  async function insertMarkdownVideo(textarea, file) {
+    const repo = state.repoRecordDetail?.repo || state.selectedRepo;
+    if (!repo || !textarea) return;
+    if (!state.session?.nodeName) {
+      showErrorNotice(markdownVideoError("invalid_session"));
+      return;
+    }
+    const name = String(file.name || "video").replace(/[\[\]()<>]/g, "_");
+    const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    let placeholder = `![Uploading ${name} ${token}…]()`;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const insertion = `\n${placeholder}\n`;
+    textarea.value = textarea.value.slice(0, start) + insertion + textarea.value.slice(end);
+    textarea.selectionStart = textarea.selectionEnd = start + insertion.length;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    try {
+      const url = await uploadMarkdownVideo(repo, file, (fraction) => {
+        const next = `![Uploading ${name} ${token} ${Math.round(fraction * 100)}%…]()`;
+        if (replaceInTextarea(textarea, placeholder, next)) placeholder = next;
+      });
+      if (!url) throw new Error("upload_failed");
+      replaceInTextarea(textarea, placeholder, `![${name}](${url})`);
+    } catch (error) {
+      replaceInTextarea(textarea, `\n${placeholder}\n`, "\n") || replaceInTextarea(textarea, placeholder, "");
+      showErrorNotice(markdownVideoError(error?.code || error?.message));
+    }
+  }
+
+  document.addEventListener("paste", (event) => {
+    const textarea = event.target?.closest?.(MARKDOWN_VIDEO_TEXTAREAS);
+    const files = markdownVideoFiles(event.clipboardData?.files);
+    if (!textarea || !files.length) return;
+    event.preventDefault();
+    files.forEach((file) => void insertMarkdownVideo(textarea, file));
+  });
+
+  document.addEventListener("dragover", (event) => {
+    if (!event.target?.closest?.(MARKDOWN_VIDEO_TEXTAREAS)) return;
+    if (!Array.from(event.dataTransfer?.types || []).includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  });
+
+  document.addEventListener("drop", (event) => {
+    const textarea = event.target?.closest?.(MARKDOWN_VIDEO_TEXTAREAS);
+    const files = markdownVideoFiles(event.dataTransfer?.files);
+    if (!textarea || !files.length) return;
+    event.preventDefault();
+    files.forEach((file) => void insertMarkdownVideo(textarea, file));
+  });
+
+  document.addEventListener("click", (event) => {
+    const button = event.target?.closest?.("[data-markdown-video-attach]");
+    if (!button) return;
+    const textarea = button.closest("form")?.querySelector(MARKDOWN_VIDEO_TEXTAREAS);
+    if (!textarea) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "video/mp4,video/webm,video/quicktime,.mp4,.m4v,.webm,.mov";
+    input.multiple = true;
+    input.addEventListener("change", () => {
+      markdownVideoFiles(input.files).forEach((file) => void insertMarkdownVideo(textarea, file));
+    });
+    input.click();
+  });
   // Every top-level page is its own document now (/dashboard, /dashboard/repos,
   // /dashboard/network, ...) — navigation between them is a real page load via
   // plain <a href> links, so there is no client-side section router anymore.
@@ -17325,9 +17483,16 @@
     return `<a href="${escapeHtml(href)}${hash}" data-repo-markdown-link="${kind}" data-repo-markdown-path="${escapeHtml(path)}"${anchor ? ` data-repo-markdown-anchor="${anchor}"` : ""} class="${linkClass}">${labelHtml}</a>`;
   }
 
+  const MD_VIDEO_URL =
+    /^(?:https:\/\/[a-z0-9.-]+(?::\d{1,5})?)?\/api\/repo\/[^\s/?#"'<>]+\/[^\s/?#"'<>]+\/media\/[0-9a-f]{32}\.(?:mp4|m4v|webm|mov)$/i;
+  const MD_VIDEO_CLASS = "my-2 block max-h-[34rem] w-full max-w-3xl rounded-md border border-border bg-black";
+
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
   function mdImageHtml(alt, url, context) {
+    if (MD_VIDEO_URL.test(String(url || "").trim())) {
+      return `<video src="${String(url).trim()}" controls preload="metadata" playsinline aria-label="${alt}" class="${MD_VIDEO_CLASS}"></video>`;
+    }
     const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
     const source = mdImageSource(target, context);
@@ -22577,7 +22742,7 @@
             <div data-repo-issue-comment-preview hidden class="min-h-[6.5rem] px-4 py-3 ${MD_BODY_CLASS}"></div>
             <div class="flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground">
               <span class="inline-flex items-center gap-1.5"><i data-lucide="shield-check" class="h-3.5 w-3.5"></i>Signed in this browser · Markdown is supported</span>
-              <span data-repo-issue-comment-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
+              <span class="inline-flex items-center gap-2">${markdownVideoButtonHtml()}<span data-repo-issue-comment-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span></span>
             </div>
           </div>
           <div class="flex flex-wrap items-center justify-end gap-2">
@@ -23040,7 +23205,7 @@
           ${composeIdentityHtml(state.session, "Reviewing")}
           <textarea data-repo-pull-review-body data-mention-input="record" rows="4" aria-label="Review" placeholder="Leave a comment. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]"></textarea>
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
+            <span class="inline-flex items-center gap-2">${markdownVideoButtonHtml()}<span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span></span>
             <div class="flex flex-wrap items-center gap-2">
               ${renderPullLifecycleButtons(repo, parsed)}
               <button type="submit" data-repo-pull-review-action="changes_requested" class="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="file-diff" class="h-4 w-4 text-muted-foreground"></i>Request changes</button>
@@ -35054,6 +35219,7 @@
         <div class="grid gap-2">
           <div class="flex flex-wrap items-center gap-2">
             <button type="button" data-repo-issue-attach-image class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="paperclip" class="h-3.5 w-3.5"></i>Attach images</button>
+            ${markdownVideoButtonHtml()}
             <span data-repo-issue-attach-hint class="text-[11px] text-muted-foreground"></span>
           </div>
           <input type="file" data-repo-issue-file-input multiple accept="image/png,image/jpeg,image/gif,image/webp" class="hidden" />
@@ -35787,6 +35953,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex min-w-0 flex-col gap-1">
             ${composeIdentityHtml(state.session, "Filing")}
+            <span>${markdownVideoButtonHtml()}</span>
             <span data-repo-pull-hint class="text-[11px] text-muted-foreground">${parent ? `Submitting from your fork to ${escapeHtml(targetLabel)}.` : "Eligible online mirrors commit accepted pull requests directly."}</span>
           </div>
           <button type="submit" data-repo-pull-submit title="Create pull request (Ctrl+Enter / ⌘+Enter)" aria-keyshortcuts="Control+Enter Meta+Enter" class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Create pull request</button>
