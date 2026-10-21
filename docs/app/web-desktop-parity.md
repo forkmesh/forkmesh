@@ -26,7 +26,7 @@ existing route, L = a new route, event type or storage, XL = architectural.
 
 | Feature | Where | Why | Proposed design | Effort |
 |---|---|---|---|---|
-| Volunteering a node to mirror an external listing | `volunteerForExternalMirror` (05-repo-list-explorer.js) | The point is to lend a node; the browser is not one | Offer "Import and host here" beside it for supported forges, through the hosted-repository import | M |
+| Volunteering a node to mirror an external listing | `volunteerForExternalMirror` (05-repo-list-explorer.js) | The point is to lend a node; the browser is not one | Done for accounts without a node: a listing on a supported forge is imported and hosted on the core nodes instead (`volunteerForExternalMirror`) | n/a |
 | New repository from a local folder | new-repo view | Reads the local file system | Inherent; the web offers empty repositories and imports instead | n/a |
 | Private repositories on a forge without core hosting | `hosted_git.py` (`private_hosted_unsupported`) | Private content is sealed with the owner's key, which the relay never holds | Core-hosted private repositories already work; elsewhere this needs key escrow or a browser-held key | XL |
 | Release assets (binaries) | Releases tab | Bytes live in the mirrors' content-addressed store, seeded by a release publisher | An upload route into the store for core-held repositories, recorded in `release.json` | L |

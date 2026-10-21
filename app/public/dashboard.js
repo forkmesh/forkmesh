@@ -13676,6 +13676,22 @@
     }
     const node = externalMirrorNodeName();
     if (!node) {
+      // No node to lend, but this forge's core nodes can host a copy: import
+      // it here instead of sending the visitor to install the desktop app.
+      if (!hostedSettings) await loadHostedSettings();
+      const original = String(repository?.originalUrl || "").trim();
+      if (hostedImportAllowed(original)) {
+        const name = String(repository?.name || "").trim();
+        if (!window.confirm(`Import a public copy of ${original} into your account on ${platformName()}? The core nodes host it; you can push to it afterwards.`)) return;
+        setNewRepoModalOpen(true);
+        await createHostedRepository({
+          name,
+          visibility: "public",
+          description: String(repository?.description || "").slice(0, 300),
+          importUrl: original,
+        });
+        return;
+      }
       // Nothing to volunteer with yet: explain the desktop handoff instead of
       // silently doing nothing (issue #680).
       if (!openExternalMirrorHandoff(repository)) {
