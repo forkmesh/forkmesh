@@ -1367,7 +1367,7 @@ WorkingDirectory=$SRC/app/host
 Environment=HOME=$VAR
 Environment=FORKMESH_PUBLIC_HOSTS=$DOMAIN
 Environment=FORKMESH_HOST_REPO_GATEWAY=http://127.0.0.1:$GATEWAY_PORT
-Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST
+Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST,$DOMAIN
 Environment=MALLOC_ARENA_MAX=2
 Environment=PYTHONUNBUFFERED=1
 ExecStart=$VENV/bin/python -m forkmesh_host serve --no-build --host 127.0.0.1 --port $APP_PORT --env-file $APP_ENV --db sqlite:$VAR/app.db --data-dir $VAR/data
@@ -2172,6 +2172,7 @@ EOF
 
 arm_first_login_timeout() {
   [ "$NEW_INSTANCE" = "1" ] || return 0
+  [ -n "${CFG_launchId:-}" ] || return 0
   [ ! -e "$LOGIN_MARKER" ] || return 0
   [ -z "$(env_value INSTANCE_LOGIN_DEADLINE)" ] || return 0
   local deadline
