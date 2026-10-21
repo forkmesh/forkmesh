@@ -31,6 +31,29 @@ retryable provider failure. A paused connection sends no requests.
 - Synced records carry a `forkmesh-forge-sync:v1` marker so echoes and lost
   ledgers never create duplicates. Issues are never deleted.
 
+## Mirror mode
+
+`connect --mirror` makes a one-way, read-only copy of a provider's issues, for a
+repository that mirrors a project whose home stays on the forge (for example a
+community that discusses in GitHub issues). `--two-way` switches back. The
+ledger stores `"mode": "mirror"`; a ledger without `mode` is two-way.
+
+- Every issue is imported, open and closed, with every comment, labels,
+  assignees and state. Titles, bodies and comments are copied in full, in any
+  language and script: there is no length, label or comment cap beyond the
+  2 MiB per-issue record limit of the git node (`maxIssueRecordBytes`). Line
+  endings are stored as `\n` and leading or trailing blank lines are trimmed,
+  the canonical form every ForkMesh client signs.
+- The provider wins every field. A change made in ForkMesh to a mirrored title,
+  body, state, label set, assignee list or comment is replaced on the next
+  pass by the provider's value, without a conflict. Comments deleted on the
+  provider are deleted in ForkMesh (signed `delete` events).
+- Nothing is written to the provider: no issue is exported, no ForkMesh comment
+  is posted, and no comment is edited or deleted there. The engine wraps the
+  adapter so any write method raises before a request is made, so a read-only
+  token is enough and a token with write scope is never used to write.
+- ForkMesh-only comments and issues stay in ForkMesh.
+
 ## Identities
 
 Imported records are signed by the sync key and credited as
