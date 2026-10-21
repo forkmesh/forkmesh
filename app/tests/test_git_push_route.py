@@ -512,11 +512,11 @@ def _proxy_harness(
         return str(header or "").lower().startswith("basic ")
 
     async def verify_hosted_push_credential(
-            _env, _owner, _repo, header, _method=""):
+            _env, _owner, _repo, header, _method="", request=None):
         return basic_account if has_hosted_push_credential(header) else ""
 
     async def verify_hosted_push_access(
-            _env, _owner, _repo, header, _method="", alias=""):
+            _env, _owner, _repo, header, _method="", alias="", request=None):
         if not has_hosted_push_credential(header) or not basic_account:
             return "", ""
         return basic_account, basic_prefix

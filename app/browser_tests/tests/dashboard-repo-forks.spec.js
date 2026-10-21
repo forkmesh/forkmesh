@@ -6,10 +6,10 @@ const REPO_PAGE_PATH = path.join(PUBLIC, "dashboard", "repo.html");
 const DASHBOARD_JS_PATH = path.join(PUBLIC, "dashboard.js");
 const DASHBOARD_CSS_PATH = path.join(PUBLIC, "dashboard", "tailwind.css");
 
-// Clicking the fork icon on a repo shows who forked it. The button carries the
+// The title row's Fork ▾ shows who forked the repo. The button carries the
 // real count from GET /api/repo/o/r/forks and opens a popover listing each fork
 // as <owner>/<name>, linking to that fork's own repository page.
-test("the fork icon opens the list of people who forked the repo", async ({
+test("the fork menu in the title row lists who forked the repo", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -81,14 +81,24 @@ test("the fork icon opens the list of people who forked the repo", async ({
         };
         body = {
           ok: true,
-          queued: true,
-          created: false,
+          queued: false,
+          created: true,
           fork: {
-            requestId: "0123456789abcdef0123456789abcdef0123",
-            owner: "dana-mirror",
+            owner: "dana",
             name: "proj",
-            status: "pending",
-            url: "/dana-mirror/proj",
+            url: "/dana/proj",
+            forkedFrom: "alice/proj",
+            status: "ready",
+          },
+          push: {
+            remoteUrl: "https://forkmesh.test/dana/proj.git",
+            username: "dana",
+            password: "fmp1_once",
+            expiresAt: 4102444800000,
+            commands: [
+              "git remote add fork https://forkmesh.test/dana/proj.git",
+              "git push -u fork main",
+            ],
           },
         };
       } else {
@@ -113,10 +123,11 @@ test("the fork icon opens the list of people who forked the repo", async ({
 
   await page.goto("/alice/proj");
 
-  const forkButton = page.locator("[data-repo-action-fork]");
+  const forkButton = page.locator("[data-repo-title-row] [data-repo-action-fork]");
   await expect(forkButton).toBeVisible();
+  await expect(page.locator("[data-repo-about] [data-repo-action-fork]")).toHaveCount(0);
   // Real count, not a placeholder and not a mock number.
-  await expect(page.locator("[data-repo-fork-count]")).toHaveText("2");
+  await expect(page.locator("[data-repo-about-actions] [data-repo-fork-count]")).toHaveText("2");
 
   const menu = page.locator("[data-repo-fork-menu]");
   await expect(menu).toBeHidden();
@@ -124,17 +135,26 @@ test("the fork icon opens the list of people who forked the repo", async ({
   await expect(menu).toBeVisible();
   await expect(forkButton).toHaveAttribute("aria-expanded", "true");
 
-  // Forking stays entirely on the website: it records a durable job for the
-  // caller's managed mirror instead of launching a desktop protocol URL.
-  const create = page.locator("[data-repo-fork-create]");
+  const create = menu.locator("[data-repo-fork-create]");
   await expect(create).toHaveAttribute("type", "button");
-  await expect(menu).toContainText("has to be online right now");
+  await expect(create).toHaveText("Create fork");
   await create.click();
-  await expect(create).toContainText("Fork queued");
+  await expect(create).toContainText("Fork created");
   await expect(page.locator("[data-repo-fork-status]")).toContainText(
-    "Queued on dana-mirror",
+    "Your fork dana/proj is ready",
   );
-  await expect(page.locator('[data-repo-fork-status] a[href="/dana-mirror/proj"]')).toBeVisible();
+  await expect(page.locator('[data-repo-fork-status] a[href="/dana/proj"]')).toHaveText("Open fork");
+  const push = page.locator("[data-repo-fork-push]");
+  await expect(push).toBeVisible();
+  await expect(push.locator("[data-repo-fork-push-commands]")).toContainText(
+    "git remote add fork https://forkmesh.test/dana/proj.git",
+  );
+  await expect(push.locator("[data-repo-fork-push-username]")).toHaveText("dana");
+  await expect(push.locator("[data-repo-fork-push-password]")).toHaveText("fmp1_once");
+  await expect(page.locator("[data-repo-fork-primary]")).toHaveAttribute(
+    "data-repo-fork-own-url",
+    "/dana/proj",
+  );
   expect(forkCreate).toEqual({
     authorization: "Bearer test-session",
     body: { sessionToken: "test-session" },
@@ -151,9 +171,140 @@ test("the fork icon opens the list of people who forked the repo", async ({
   expect(forkRequests).toBeGreaterThan(1);
 
   // A click outside closes it again.
-  await page.locator("[data-repo-about-actions]").click({ position: { x: 2, y: 2 } });
+  await page.locator("[data-repo-title-visibility]").click();
   await expect(menu).toBeHidden();
   await expect(forkButton).toHaveAttribute("aria-expanded", "false");
+});
+
+// GitHub-style title row: logo, name, Public, "forked from" under the name,
+// and neutral Fork N ▾ / Star N buttons on the right instead of About rows.
+test("the repo title row forks and stars from the header", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("forkmesh.session", JSON.stringify({
+      nodeName: "dana",
+      sessionToken: "test-session",
+      status: "active",
+    }));
+  });
+  await page.route("https://cdn.tailwindcss.com/**", (route) =>
+    route.fulfill({ contentType: "text/javascript", body: "window.tailwind = {};" }),
+  );
+  await page.route(
+    "https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js",
+    (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: "window.lucide = { createIcons() {} };",
+    }),
+  );
+  await page.route(/https?:\/\/[^/]+\/(?:bob|dana)\/proj$/, (route) =>
+    route.fulfill({ path: REPO_PAGE_PATH, contentType: "text/html; charset=utf-8" }),
+  );
+  await page.route("**/dashboard.js*", (route) =>
+    route.fulfill({ path: DASHBOARD_JS_PATH, contentType: "text/javascript; charset=utf-8" }),
+  );
+  await page.route("**/dashboard/tailwind.css", (route) =>
+    route.fulfill({ path: DASHBOARD_CSS_PATH, contentType: "text/css; charset=utf-8" }),
+  );
+
+  const starCalls = [];
+  let forkPosts = 0;
+  let forked = false;
+  await page.route("**/api/**", (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    let body = { ok: true };
+    let status = 200;
+    if (url.pathname === "/api/repositories") {
+      body = {
+        ok: true,
+        repositories: [
+          {
+            owner: "bob",
+            name: "proj",
+            visibility: "public",
+            source: "local-node",
+            forkedFrom: "alice/proj",
+            rootCommit: "root",
+            updatedAt: "2",
+          },
+        ],
+      };
+    } else if (url.pathname === "/api/repo/bob/proj/star") {
+      starCalls.push(request.method());
+      body = request.method() === "POST"
+        ? { ok: true, starred: true, count: 4 }
+        : { ok: true, starred: false, count: 3 };
+    } else if (url.pathname === "/api/repo/bob/proj/forks") {
+      if (request.method() === "POST") {
+        forkPosts += 1;
+        forked = true;
+        status = 202;
+        body = {
+          ok: true,
+          created: true,
+          queued: false,
+          fork: { owner: "dana", name: "proj", url: "/dana/proj", forkedFrom: "bob/proj", status: "ready" },
+        };
+      } else {
+        body = forked
+          ? { ok: true, count: 1, forks: [{ owner: "dana", name: "proj", url: "/dana/proj" }] }
+          : { ok: true, count: 0, forks: [] };
+      }
+    }
+    return route.fulfill({
+      status,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(body),
+    });
+  });
+
+  await page.goto("/bob/proj");
+
+  const title = page.locator("[data-repo-title-row]");
+  await expect(title).toBeVisible();
+  await expect(title.locator("[data-repo-title-name]")).toHaveText("proj");
+  await expect(title.locator("[data-repo-title-visibility]")).toHaveText("Public");
+  await expect(title.locator('[data-repo-provenance] a[href="/alice/proj"]')).toHaveText("alice/proj");
+  await expect(title.locator("[data-repo-provenance]")).toContainText("forked from");
+  await expect(title.locator("[data-repo-action-watch]")).toHaveCount(0);
+  const tabs = await page.locator("[data-repo-github-header]").boundingBox();
+  const row = await title.boundingBox();
+  const grid = await page.locator("[data-repo-content-grid]").boundingBox();
+  expect(row.y).toBeGreaterThanOrEqual(tabs.y + tabs.height - 1);
+  expect(grid.y).toBeGreaterThanOrEqual(row.y + row.height - 1);
+
+  const about = page.locator("[data-repo-about]");
+  await expect(about.locator("[data-repo-action-watch]")).toBeVisible();
+  await expect(about.locator("[data-repo-action-star]")).toHaveCount(0);
+  await expect(about.locator("[data-repo-fork-wrap]")).toHaveCount(0);
+  await expect(page.locator("[data-repo-tree-panel]").locator("xpath=preceding-sibling::*[@data-repo-provenance]")).toHaveCount(0);
+
+  const star = title.locator("[data-repo-action-star]");
+  await expect(star).toHaveClass(/fm-btn fm-btn-sm/);
+  await expect(star.locator("[data-repo-star-label]")).toHaveText("Star");
+  await expect(star.locator("[data-repo-star-count]")).toHaveText("3");
+  await star.click();
+  await expect(star).toHaveAttribute("aria-pressed", "true");
+  await expect(star.locator("[data-repo-star-label]")).toHaveText("Starred");
+  await expect(star.locator("[data-repo-star-count]")).toHaveText("4");
+  expect(starCalls).toContain("POST");
+
+  const primary = title.locator("[data-repo-fork-primary]");
+  await expect(primary).toContainText("Fork");
+  await expect(title.locator("[data-repo-fork-count]")).toHaveText("0");
+  await primary.click();
+  await expect(page.locator("[data-repo-fork-menu]")).toBeVisible();
+  await expect.poll(() => forkPosts).toBe(1);
+  await expect(page.locator("[data-repo-fork-status]")).toContainText("Your fork dana/proj is ready");
+  await expect(page.locator("[data-repo-fork-push]")).toBeHidden();
+  await expect(title.locator("[data-repo-fork-count]")).toHaveText("1");
+  await expect(primary).toHaveAttribute("data-repo-fork-own-url", "/dana/proj");
+
+  await title.locator("[data-repo-title-visibility]").click();
+  await expect(page.locator("[data-repo-fork-menu]")).toBeHidden();
+  await primary.click();
+  await page.waitForURL("**/dana/proj");
+  expect(forkPosts).toBe(1);
 });
 
 test("a fork submits its portable pull request to an offline parent", async ({

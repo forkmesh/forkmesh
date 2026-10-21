@@ -20,6 +20,11 @@
       "type": "string",
       "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?/?$"
     },
+    "apiConnectAddress": {
+      "type": "string",
+      "pattern": "^(127\\.[0-9.]+|\\[::1\\]):[0-9]{1,5}$",
+      "description": "Optional loopback ip:port of apiOrigin's own TLS front end on this host (e.g. 127.0.0.1:443), so authorization never leaves the host. The certificate is still verified for apiOrigin's host name. Requires apiOrigin. Leave it out on a separate front host: apiOrigin is then resolved through DNS (for example to a CDN proxy) and verified as usual."
+    },
     "gatewayTokenFile": {
       "type": "string",
       "pattern": "^/[^\\r\\n\\u0000]+$",

@@ -22,6 +22,8 @@ import base64
 from contextlib import ExitStack
 import fcntl
 import hashlib
+import http.client
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -30,6 +32,7 @@ import re
 import shlex
 import signal
 import socket
+import ssl
 import stat
 import struct
 import subprocess
@@ -37,6 +40,7 @@ import sys
 import tempfile
 import time
 from typing import Any
+import zlib
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -278,22 +282,28 @@ def _normalize_presented_key(key_type: object, encoded: object) -> str:
 class Config:
     def __init__(self, path: Path):
         source = _read_json(path)
+        relay = "httpGit" in source
         required_fields = {
             "schemaVersion",
             "authorizationSocket",
             "authorizationBrokerUser",
             "gatewayExecutable",
-            "refreshNotifier",
-            "repositoryRoot",
-            "repositories",
         }
-        optional_fields = {
-            "limits",
-            "dynamicRepositoriesFile",
-            "pullSubmissionSpool",
-            "pullSubmissionMaxBytes",
-            "operatorPolicy",
-        }
+        if relay:
+            # Relay mode: every Git session is relayed to the control plane's
+            # own HTTPS Git routes, so there is no local repository, allowlist,
+            # notifier or hook to configure.
+            required_fields |= {"httpGit"}
+            optional_fields = {"limits"}
+        else:
+            required_fields |= {"refreshNotifier", "repositoryRoot", "repositories"}
+            optional_fields = {
+                "limits",
+                "dynamicRepositoriesFile",
+                "pullSubmissionSpool",
+                "pullSubmissionMaxBytes",
+                "operatorPolicy",
+            }
         present = set(source)
         if not (
             required_fields <= present <= required_fields | optional_fields
@@ -320,6 +330,19 @@ class Config:
             or not os.access(gateway_path, os.X_OK)
         ):
             raise GatewayError("invalid gateway executable")
+        self.http_git: HttpGitTarget | None = None
+        if relay:
+            self.http_git = HttpGitTarget(source.get("httpGit"))
+            self._load_broker(source)
+            self.refresh_notifier = None
+            self.repository_root = None
+            self.repositories = {}
+            self.dynamic_repositories_file = None
+            self.pull_submission_spool = None
+            self.pull_submission_max_bytes = DEFAULT_SUBMISSION_MAX_BYTES
+            self.operator_policy_path = None
+            self.operator_policy_state = None
+            return
         self.refresh_notifier = Path(_gateway_command(source.get("refreshNotifier")))
         try:
             notifier_info = self.refresh_notifier.lstat()
@@ -333,22 +356,7 @@ class Config:
             or not os.access(self.refresh_notifier, os.X_OK)
         ):
             raise GatewayError("invalid refresh notifier")
-        socket_path = Path(str(source.get("authorizationSocket") or ""))
-        if (
-            not socket_path.is_absolute()
-            or socket_path.name in {"", ".", ".."}
-            or "\x00" in str(socket_path)
-        ):
-            raise GatewayError("invalid authorization socket")
-        self.authorization_socket = socket_path
-        broker_user = str(source.get("authorizationBrokerUser") or "")
-        try:
-            broker = pwd.getpwnam(broker_user)
-        except KeyError as error:
-            raise GatewayError("authorization broker is unavailable") from error
-        if broker.pw_uid == 0:
-            raise GatewayError("authorization broker is unavailable")
-        self.authorization_broker_uid = broker.pw_uid
+        self._load_broker(source)
         root = Path(str(source.get("repositoryRoot") or "").strip())
         if not root.is_absolute():
             raise GatewayError("invalid repository root")
@@ -476,6 +484,25 @@ class Config:
                 raise GatewayError("invalid gateway configuration")
             self.operator_policy_path = Path(raw_policy["policyPath"])
             self.operator_policy_state = Path(raw_policy["stateDirectory"])
+
+
+    def _load_broker(self, source: dict[str, Any]) -> None:
+        socket_path = Path(str(source.get("authorizationSocket") or ""))
+        if (
+            not socket_path.is_absolute()
+            or socket_path.name in {"", ".", ".."}
+            or "\x00" in str(socket_path)
+        ):
+            raise GatewayError("invalid authorization socket")
+        self.authorization_socket = socket_path
+        broker_user = str(source.get("authorizationBrokerUser") or "")
+        try:
+            broker = pwd.getpwnam(broker_user)
+        except KeyError as error:
+            raise GatewayError("authorization broker is unavailable") from error
+        if broker.pw_uid == 0:
+            raise GatewayError("authorization broker is unavailable")
+        self.authorization_broker_uid = broker.pw_uid
 
 
 def _load_dynamic_repositories(config: "Config") -> list[dict[str, Any]]:
@@ -1774,6 +1801,8 @@ def _serve_fork(
 def _serve(config: Config, key_id: str) -> int:
     if not KEY_ID_RE.fullmatch(str(key_id or "")):
         raise GatewayError("public key is not authorized")
+    if getattr(config, "http_git", None) is not None:
+        return _serve_relay(config, key_id)
     original_command = os.environ.get("SSH_ORIGINAL_COMMAND", "")
     forkmesh_verb = _parse_forkmesh_command(original_command)
     if forkmesh_verb is not None:
@@ -2047,6 +2076,812 @@ def _serve(config: Config, key_id: str) -> int:
     return int(returncode)
 
 
+# ---------------------------------------------------------------------------
+# Relay mode: SSH in front, the control plane's HTTPS Git routes behind
+# ---------------------------------------------------------------------------
+#
+# With "httpGit" configured the gateway runs no Git service of its own. After
+# the per-operation authorization it relays the session, byte for byte, to
+# the same smart-HTTP routes a stock `git` uses over HTTPS, authenticated with
+# the short-lived credential the authorization minted for this key, account,
+# repository and operation. Everything a repository's HTTPS push does then
+# happens for an SSH push too, with no second implementation: the full ref
+# advertisement (so only new objects cross the wire), branch protection,
+# contributor pushes confined to refs/heads/pr/<account>/, quotas, routing to
+# the core node that holds the repository, and the attestation and push
+# bookkeeping recorded after an accepted push. New hosted repositories and
+# forks need no gateway configuration, and the gateway's account needs no
+# access to repository storage.
+#
+# Fetch is relayed as Git protocol v2, which is stateless per request, so each
+# client request maps onto one HTTPS POST. A push is protocol v0/v1: the ref
+# advertisement is one GET, then the commands, push options and pack are one
+# POST whose response is the report git prints. The pack's end is found by
+# parsing it, never by waiting for an end-of-file the client may not send.
+
+RELAY_READ_CHUNK = 64 * 1024
+RELAY_REQUEST_MAX_BYTES = 8 * 1024 * 1024
+RELAY_BUFFERED_PUSH_BYTES = 1024 * 1024
+RELAY_HTTP_TIMEOUT_SECONDS = 600
+# Distinctive, so an operator can recognise (and, behind a CDN, allow) the
+# relay's requests; it starts with "git/" like every stock Git client.
+RELAY_USER_AGENT = "git/forkmesh-ssh-relay"
+RELAY_MIN_REQUEST_CAP = 2 * RELAY_BUFFERED_PUSH_BYTES
+RELAY_MAX_REQUEST_CAP = 64 * 1024 * 1024 * 1024
+RELAY_PROXY_BODY_LIMIT = (
+    "this push is larger than the HTTPS proxy in front of the Git service "
+    "accepts in one request{limit}. Push fewer commits at a time (for "
+    "example `git push <remote> <older-commit>:refs/heads/<branch>`, then "
+    "the rest), or push over HTTPS with a push credential where the server "
+    "offers an address without that limit"
+)
+RELAY_PROXY_TIMEOUT = (
+    "the HTTPS proxy in front of the Git service gave up waiting for it. A "
+    "push may still have been applied: run `git fetch` and check before "
+    "pushing again"
+)
+RELAY_PROXY_BLOCKED = (
+    "the HTTPS proxy in front of the Git service refused this SSH relay "
+    "(bot protection); the server operator needs to allow it"
+)
+ZERO_OBJECT_IDS = frozenset({"0" * 40, "0" * 64})
+RELAY_GREETING = (
+    "ForkMesh SSH: your key is registered. This host serves git clone, "
+    "fetch and push only; there is no shell."
+)
+HTTP_CREDENTIAL_USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+HTTP_CREDENTIAL_PASSWORD_RE = re.compile(
+    r"^fms1\.(sk_[A-Za-z0-9_-]{16,80})\.[0-9]{10,16}\.[0-9a-f]{64}$"
+)
+
+
+class RelayError(VerbError):
+    """A relay failure whose message is safe to show the Git user."""
+
+
+def _loopback_address(value: object) -> tuple[str, int] | None:
+    raw = str(value or "").strip()
+    host, separator, port_text = raw.rpartition(":")
+    if not separator or not port_text.isdigit():
+        return None
+    host = host[1:-1] if host.startswith("[") and host.endswith("]") else host
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+    port = int(port_text)
+    if not address.is_loopback or not 1 <= port <= 65535:
+        return None
+    return str(address), port
+
+
+class HttpGitTarget:
+    """Where relayed sessions go: an HTTPS origin, optionally via loopback.
+
+    ``origin`` is the control plane's public origin (its TLS certificate is
+    verified for that name). Without ``connectAddress`` the gateway resolves
+    that name through DNS like any client, which is how a gateway on a
+    separate front host reaches an origin kept private behind a CDN proxy.
+    ``connectAddress`` instead reaches the same front end on this host
+    (127.0.0.1:443), skipping the CDN and its request-body cap; the
+    certificate is still verified for the origin's name. Plain http:// is
+    accepted only for a loopback origin.
+
+    ``maxRequestBytes`` is the largest request body the path to the origin
+    accepts (a CDN's upload cap, e.g. 100 MB). A push that would exceed it is
+    stopped at the gateway with an explanation, instead of being uploaded
+    only to be refused by the proxy.
+
+    ``maxSessionsPerClient`` caps concurrent sessions from one client
+    address (an IPv6 /64), taken from ``SSH_CLIENT_ADDRESS`` that the
+    entrypoint copies from sshd's SSH_CONNECTION; a public front host sets
+    it so one address cannot hold every session slot.
+    """
+
+    def __init__(self, source: object):
+        if not isinstance(source, dict) or not (
+            {"origin"}
+            <= set(source)
+            <= {
+                "origin",
+                "connectAddress",
+                "maxRequestBytes",
+                "maxSessionsPerClient",
+            }
+        ):
+            raise GatewayError("invalid gateway configuration")
+        try:
+            parsed = urlsplit(str(source.get("origin") or "").strip())
+            port = parsed.port
+        except ValueError as error:
+            raise GatewayError("invalid gateway configuration") from error
+        host = (parsed.hostname or "").lower()
+        if (
+            parsed.scheme not in ("https", "http")
+            or not host
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+            or parsed.path not in ("", "/")
+        ):
+            raise GatewayError("invalid gateway configuration")
+        if parsed.scheme == "http":
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loopback = False
+            if not loopback:
+                raise GatewayError("invalid gateway configuration")
+        self.scheme = parsed.scheme
+        self.host = host
+        self.port = port or (443 if parsed.scheme == "https" else 80)
+        self.connect_address: tuple[str, int] | None = None
+        if "connectAddress" in source:
+            self.connect_address = _loopback_address(source.get("connectAddress"))
+            if self.connect_address is None:
+                raise GatewayError("invalid gateway configuration")
+        self.max_request_bytes: int | None = None
+        if "maxRequestBytes" in source:
+            value = source.get("maxRequestBytes")
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not RELAY_MIN_REQUEST_CAP <= value <= RELAY_MAX_REQUEST_CAP
+            ):
+                raise GatewayError("invalid gateway configuration")
+            self.max_request_bytes = value
+        self.max_sessions_per_client: int | None = None
+        if "maxSessionsPerClient" in source:
+            value = source.get("maxSessionsPerClient")
+            if isinstance(value, bool) or not isinstance(value, int) or not (
+                1 <= value <= 64
+            ):
+                raise GatewayError("invalid gateway configuration")
+            self.max_sessions_per_client = value
+
+    def host_header(self) -> str:
+        default = 443 if self.scheme == "https" else 80
+        return self.host if self.port == default else self.host + ":" + str(self.port)
+
+    def connection(self, timeout: float) -> http.client.HTTPConnection:
+        if self.scheme == "http":
+            connection: http.client.HTTPConnection = http.client.HTTPConnection(
+                self.host, self.port, timeout=timeout
+            )
+        else:
+            connection = http.client.HTTPSConnection(
+                self.host,
+                self.port,
+                timeout=timeout,
+                context=ssl.create_default_context(),
+            )
+        address = self.connect_address
+        if address is not None:
+            plain = self.scheme == "http"
+
+            def connect(target=connection) -> None:
+                sock = socket.create_connection(address, timeout)
+                if plain:
+                    target.sock = sock
+                else:
+                    target.sock = target._context.wrap_socket(  # noqa: SLF001
+                        sock, server_hostname=self.host
+                    )
+
+            connection.connect = connect  # type: ignore[method-assign]
+        return connection
+
+
+def _parse_relay_command(value: object) -> tuple[str, str, str]:
+    """``git-*-pack 'owner/repo.git'`` or a short ``'repo.git'`` address."""
+
+    raw = str(value or "")
+    if len(raw.encode("utf-8", errors="ignore")) > MAX_ORIGINAL_COMMAND_BYTES:
+        raise GatewayError("invalid Git repository request")
+    match = ORIGINAL_COMMAND_RE.fullmatch(raw)
+    if not match:
+        raise GatewayError("only Git SSH operations are allowed")
+    operation = "git-" + match.group(1) + "-pack"
+    try:
+        path_parts = shlex.split(match.group(2), posix=True)
+    except ValueError as error:
+        raise GatewayError("invalid Git repository request") from error
+    if len(path_parts) != 1:
+        raise GatewayError("invalid Git repository request")
+    path = path_parts[0].strip().lstrip("/")
+    if path.endswith("/"):
+        path = path[:-1]
+    if path.endswith(".git"):
+        path = path[:-4]
+    pieces = path.split("/")
+    if len(pieces) == 1 and REPO_RE.fullmatch(pieces[0]) and pieces[0] not in (
+        ".", "..",
+    ):
+        return operation, "", pieces[0]
+    if (
+        len(pieces) != 2
+        or not OWNER_RE.fullmatch(pieces[0].lower())
+        or not REPO_RE.fullmatch(pieces[1])
+        or pieces[1] in (".", "..")
+    ):
+        raise GatewayError("invalid Git repository request")
+    return operation, pieces[0].lower(), pieces[1]
+
+
+def _relay_authorization(
+    config: Config, key_id: str, owner: str, repository: str, operation: str
+) -> tuple[str, str, str]:
+    """Authorize one operation; return (owner, repository, Basic header)."""
+
+    result = _api(
+        config,
+        {
+            "action": "authorize",
+            "keyId": key_id,
+            "owner": owner,
+            "repository": repository,
+            "operation": operation,
+        },
+    )
+    route_owner = str(result.get("owner") or "").strip().lower()
+    name = str(result.get("repository") or "").strip()
+    credential = result.get("httpCredential")
+    if (
+        not OWNER_RE.fullmatch(route_owner)
+        or not REPO_RE.fullmatch(name)
+        or name.lower() != repository.lower()
+        or result.get("keyId") != key_id
+        or result.get("operation") != operation
+        or result.get("repositoryRelativePath") != route_owner + "/" + name + ".git"
+        or not isinstance(credential, dict)
+    ):
+        raise GatewayError("authorization service response is invalid")
+    username = str(credential.get("username") or "")
+    password = str(credential.get("password") or "")
+    password_match = HTTP_CREDENTIAL_PASSWORD_RE.fullmatch(password)
+    if (
+        not HTTP_CREDENTIAL_USERNAME_RE.fullmatch(username)
+        or not password_match
+        or password_match.group(1) != key_id
+    ):
+        raise GatewayError("authorization service response is invalid")
+    basic = "Basic " + base64.b64encode(
+        (username + ":" + password).encode("ascii")
+    ).decode("ascii")
+    return route_owner, name, basic
+
+
+def _read_exact_stream(stream: Any, size: int) -> bytes:
+    content = bytearray()
+    while len(content) < size:
+        chunk = stream.read(size - len(content))
+        if not chunk:
+            break
+        content.extend(chunk)
+    return bytes(content)
+
+
+def _read_pkt(stream: Any) -> bytes | None:
+    """One raw pkt-line (length header included), or None at a clean EOF."""
+
+    header = _read_exact_stream(stream, 4)
+    if not header:
+        return None
+    if len(header) != 4:
+        raise RelayError("the Git client ended the request early")
+    try:
+        length = int(header.decode("ascii"), 16)
+    except (UnicodeDecodeError, ValueError) as error:
+        raise RelayError("the Git client sent an invalid request") from error
+    if length in (0, 1, 2):
+        return header
+    if length < 4 or length > 65520:
+        raise RelayError("the Git client sent an invalid request")
+    payload = _read_exact_stream(stream, length - 4)
+    if len(payload) != length - 4:
+        raise RelayError("the Git client ended the request early")
+    return header + payload
+
+
+def _pkt_payload(pkt: bytes) -> bytes:
+    return pkt[4:] if len(pkt) > 4 else b""
+
+
+def _client_request(stream: Any) -> list[bytes] | None:
+    """pkt-lines up to and including a flush, or None at a clean EOF."""
+
+    pkts: list[bytes] = []
+    total = 0
+    while True:
+        pkt = _read_pkt(stream)
+        if pkt is None:
+            if pkts:
+                raise RelayError("the Git client ended the request early")
+            return None
+        pkts.append(pkt)
+        total += len(pkt)
+        if total > RELAY_REQUEST_MAX_BYTES:
+            raise RelayError("the Git request is too large")
+        if pkt == b"0000":
+            return pkts
+
+
+class PackEnd:
+    """Find where a streamed packfile ends, without holding it in memory.
+
+    The receive-pack request is the commands, then (unless every command is a
+    delete) exactly one packfile; its end is the end of the request. Each
+    object's zlib stream is inflated into a bounded window and discarded.
+    """
+
+    def __init__(self, hash_size: int):
+        self.hash_size = hash_size
+        self.buffer = bytearray()
+        self.state = "header"
+        self.remaining = 0
+        self.inflater: Any = None
+        self.done = False
+
+    def feed(self, data: bytes) -> None:
+        if self.done:
+            if data:
+                raise RelayError("the Git client sent data after its pack")
+            return
+        self.buffer.extend(data)
+        while not self.done and self._step():
+            pass
+
+    def _varint_length(self, start: int) -> int | None:
+        index = start
+        while index < len(self.buffer):
+            if not self.buffer[index] & 0x80:
+                return index + 1 - start
+            index += 1
+            if index - start > 10:
+                raise RelayError("the pushed pack is invalid")
+        return None
+
+    def _step(self) -> bool:
+        if self.state == "header":
+            if len(self.buffer) < 12:
+                return False
+            if bytes(self.buffer[:4]) != b"PACK" or struct.unpack(
+                "!I", bytes(self.buffer[4:8])
+            )[0] not in (2, 3):
+                raise RelayError("the pushed pack is invalid")
+            self.remaining = struct.unpack("!I", bytes(self.buffer[8:12]))[0]
+            del self.buffer[:12]
+            self.state = "object" if self.remaining else "trailer"
+            return True
+        if self.state == "object":
+            header = self._varint_length(0)
+            if header is None:
+                return False
+            kind = (self.buffer[0] >> 4) & 0x07
+            extra = 0
+            if kind == 6:
+                offset = self._varint_length(header)
+                if offset is None:
+                    return False
+                extra = offset
+            elif kind == 7:
+                extra = self.hash_size
+            elif kind not in (1, 2, 3, 4):
+                raise RelayError("the pushed pack is invalid")
+            if len(self.buffer) < header + extra:
+                return False
+            del self.buffer[: header + extra]
+            self.inflater = zlib.decompressobj()
+            self.state = "data"
+            return True
+        if self.state == "data":
+            if not self.buffer:
+                return False
+            data = bytes(self.buffer)
+            self.buffer.clear()
+            try:
+                self.inflater.decompress(data, RELAY_READ_CHUNK)
+                while not self.inflater.eof and self.inflater.unconsumed_tail:
+                    self.inflater.decompress(
+                        self.inflater.unconsumed_tail, RELAY_READ_CHUNK
+                    )
+            except zlib.error as error:
+                raise RelayError("the pushed pack is invalid") from error
+            if not self.inflater.eof:
+                return False
+            self.buffer.extend(self.inflater.unused_data)
+            self.inflater = None
+            self.remaining -= 1
+            self.state = "object" if self.remaining else "trailer"
+            return True
+        if len(self.buffer) < self.hash_size:
+            return False
+        if len(self.buffer) > self.hash_size:
+            raise RelayError("the Git client sent data after its pack")
+        self.buffer.clear()
+        self.done = True
+        return False
+
+
+def _relay_headers(
+    target: HttpGitTarget, authorization: str, extra: dict[str, str]
+) -> dict[str, str]:
+    headers = {
+        "Host": target.host_header(),
+        "Authorization": authorization,
+        "User-Agent": RELAY_USER_AGENT,
+        "Accept-Encoding": "identity",
+        "Pragma": "no-cache",
+    }
+    headers.update(extra)
+    return headers
+
+
+_REFUSALS = {
+    401: "repository access denied",
+    403: "repository access denied",
+    404: "repository access denied",
+    413: "the push is larger than this repository may grow",
+    429: "too many Git requests; try again shortly",
+}
+# Statuses a CDN proxy answers with itself when the origin is slow (504, and
+# Cloudflare's 522/524 for a connect or response timeout).
+_PROXY_TIMEOUTS = frozenset({504, 522, 524})
+
+
+def _proxy_body_limit(limit: int | None = None) -> RelayError:
+    text = ""
+    if limit:
+        text = " (%d MB)" % max(1, limit // 1_000_000)
+    return RelayError(RELAY_PROXY_BODY_LIMIT.format(limit=text))
+
+
+def _relay_refusal(response: Any) -> RelayError:
+    status = int(getattr(response, "status", 0) or 0)
+    message = _REFUSALS.get(status, "the Git service is unavailable; try again")
+    getheader = getattr(response, "getheader", None)
+    mitigated = getheader("cf-mitigated") if callable(getheader) else None
+    if mitigated:
+        # A proxy challenge page, not the Git service's own answer.
+        return RelayError(RELAY_PROXY_BLOCKED)
+    if status in _PROXY_TIMEOUTS:
+        return RelayError(RELAY_PROXY_TIMEOUT)
+    detail = ""
+    try:
+        raw = response.read(16 * 1024)
+        value = json.loads(raw.decode("utf-8"))
+        detail = value.get("message") if isinstance(value, dict) else ""
+        if (
+            isinstance(detail, str)
+            and detail
+            and len(detail) <= 300
+            and not any(ord(char) < 32 for char in detail)
+        ):
+            message = detail
+        else:
+            detail = ""
+    except (OSError, ValueError, UnicodeDecodeError, http.client.HTTPException):
+        detail = ""
+    if status == 413 and not detail:
+        # The Git routes explain their own 413 (a repository quota) in JSON;
+        # a bare or HTML 413 is the request-body cap of a proxy on the way.
+        return _proxy_body_limit()
+    return RelayError(message)
+
+
+def _relay_send(
+    target: HttpGitTarget,
+    method: str,
+    path: str,
+    headers: dict[str, str],
+    body: bytes | None = None,
+    chunks: Any = None,
+) -> Any:
+    """One HTTP request; returns the open response (status 200 only)."""
+
+    connection = target.connection(RELAY_HTTP_TIMEOUT_SECONDS)
+    sending = True
+    try:
+        connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
+        for name, value in headers.items():
+            connection.putheader(name, value)
+        if chunks is not None:
+            connection.putheader("Transfer-Encoding", "chunked")
+            connection.endheaders()
+            for chunk in chunks:
+                if chunk:
+                    connection.send(b"%x\r\n" % len(chunk) + chunk + b"\r\n")
+            connection.send(b"0\r\n\r\n")
+        else:
+            payload = body or b""
+            if method == "POST":
+                connection.putheader("Content-Length", str(len(payload)))
+            connection.endheaders(payload if method == "POST" else None)
+        sending = False
+        response = connection.getresponse()
+    except (OSError, http.client.HTTPException) as error:
+        # A proxy that refuses a body (413) may answer and close while the
+        # upload is still going; read that answer rather than report a
+        # broken connection.
+        early = None
+        if sending and isinstance(error, OSError):
+            try:
+                early = connection.getresponse()
+            except (OSError, http.client.HTTPException):
+                early = None
+        if early is not None and int(early.status) != 200:
+            refusal = _relay_refusal(early)
+            connection.close()
+            raise refusal from error
+        connection.close()
+        if isinstance(error, TimeoutError):
+            raise RelayError(
+                "the Git service did not answer in time; try again"
+            ) from error
+        raise RelayError("the Git service is unavailable; try again") from error
+    except BaseException:
+        connection.close()
+        raise
+    if int(response.status) != 200:
+        refusal = _relay_refusal(response)
+        connection.close()
+        raise refusal
+    return response
+
+
+def _copy_response(response: Any, output: Any) -> None:
+    try:
+        while True:
+            chunk = response.read1(RELAY_READ_CHUNK) if hasattr(
+                response, "read1"
+            ) else response.read(RELAY_READ_CHUNK)
+            if not chunk:
+                break
+            output.write(chunk)
+            output.flush()
+    except (OSError, http.client.HTTPException) as error:
+        raise RelayError("the Git service connection was interrupted") from error
+    finally:
+        response.close()
+
+
+def _strip_service_header(response: Any, output: Any, service: str) -> None:
+    """Drop smart HTTP's "# service=" preamble; copy the rest unchanged."""
+
+    first = _read_pkt(response)
+    if first is None:
+        raise RelayError("the Git service sent an empty advertisement")
+    if _pkt_payload(first).rstrip(b"\n") == ("# service=" + service).encode():
+        flush = _read_pkt(response)
+        if flush != b"0000":
+            raise RelayError("the Git service sent an invalid advertisement")
+    else:
+        output.write(first)
+    _copy_response(response, output)
+
+
+def _relay_upload_pack(
+    target: HttpGitTarget, base: str, authorization: str, stdin: Any, stdout: Any
+) -> int:
+    protocol = str(os.environ.get("GIT_PROTOCOL", "") or "")
+    if "version=2" not in protocol.split(":"):
+        raise RelayError(
+            "fetching over SSH here needs Git protocol v2 (Git 2.26 or newer, "
+            "or `git -c protocol.version=2 ...`)"
+        )
+    v2 = {"Git-Protocol": "version=2"}
+    response = _relay_send(
+        target,
+        "GET",
+        base + "/info/refs?service=git-upload-pack",
+        _relay_headers(target, authorization, v2),
+    )
+    _strip_service_header(response, stdout, "git-upload-pack")
+    while True:
+        request = _client_request(stdin)
+        if request is None or request == [b"0000"]:
+            return 0
+        response = _relay_send(
+            target,
+            "POST",
+            base + "/git-upload-pack",
+            _relay_headers(
+                target,
+                authorization,
+                {
+                    **v2,
+                    "Content-Type": "application/x-git-upload-pack-request",
+                    "Accept": "application/x-git-upload-pack-result",
+                },
+            ),
+            body=b"".join(request),
+        )
+        _copy_response(response, stdout)
+
+
+def _relay_receive_pack(
+    target: HttpGitTarget,
+    base: str,
+    authorization: str,
+    stdin: Any,
+    stdout: Any,
+    max_input_bytes: int,
+) -> int:
+    response = _relay_send(
+        target,
+        "GET",
+        base + "/info/refs?service=git-receive-pack",
+        _relay_headers(target, authorization, {}),
+    )
+    _strip_service_header(response, stdout, "git-receive-pack")
+    request = _client_request(stdin)
+    if request is None or request == [b"0000"]:
+        # Nothing to update: git ends the session after the advertisement.
+        return 0
+    capabilities: set[str] = set()
+    needs_pack = False
+    commands = 0
+    for pkt in request[:-1]:
+        payload = _pkt_payload(pkt)
+        if payload.startswith(b"shallow "):
+            continue
+        if payload.startswith(b"push-cert"):
+            raise RelayError("signed pushes are not supported over SSH here")
+        line, _nul, caps = payload.partition(b"\0")
+        if commands == 0:
+            capabilities = set(caps.decode("utf-8", "replace").split())
+        fields = line.decode("utf-8", "replace").strip().split(" ")
+        if len(fields) != 3:
+            raise RelayError("the Git client sent an invalid request")
+        if fields[1] not in ZERO_OBJECT_IDS:
+            needs_pack = True
+        commands += 1
+    if not commands:
+        raise RelayError("the Git client sent an invalid request")
+    if "push-options" in capabilities:
+        options = _client_request(stdin)
+        if options is None:
+            raise RelayError("the Git client ended the request early")
+        request.extend(options)
+    hash_size = 32 if "object-format=sha256" in capabilities else 20
+    prefix = b"".join(request)
+    headers = _relay_headers(
+        target,
+        authorization,
+        {
+            "Content-Type": "application/x-git-receive-pack-request",
+            "Accept": "application/x-git-receive-pack-result",
+        },
+    )
+    if not needs_pack:
+        response = _relay_send(
+            target, "POST", base + "/git-receive-pack", headers, body=prefix
+        )
+        _copy_response(response, stdout)
+        return 0
+    pack = PackEnd(hash_size)
+    received = 0
+    proxy_cap = target.max_request_bytes
+    buffered = bytearray(prefix)
+
+    def read_more() -> bytes:
+        nonlocal received
+        chunk = stdin.read1(RELAY_READ_CHUNK) if hasattr(
+            stdin, "read1"
+        ) else stdin.read(RELAY_READ_CHUNK)
+        if not chunk:
+            raise RelayError("the Git client ended its pack early")
+        received += len(chunk)
+        if received > max_input_bytes:
+            raise RelayError("the push is larger than this server accepts")
+        if proxy_cap is not None and len(prefix) + received > proxy_cap:
+            raise _proxy_body_limit(proxy_cap)
+        pack.feed(chunk)
+        return chunk
+
+    # Like a stock git over HTTPS: a small push goes with a length, a large
+    # one streams chunked (the route accepts both).
+    while not pack.done and len(buffered) <= RELAY_BUFFERED_PUSH_BYTES:
+        buffered.extend(read_more())
+    if pack.done:
+        response = _relay_send(
+            target, "POST", base + "/git-receive-pack", headers,
+            body=bytes(buffered),
+        )
+    else:
+        def stream() -> Any:
+            yield bytes(buffered)
+            while not pack.done:
+                yield read_more()
+
+        response = _relay_send(
+            target, "POST", base + "/git-receive-pack", headers, chunks=stream()
+        )
+    _copy_response(response, stdout)
+    return 0
+
+
+def _client_slot_prefix(value: object) -> str | None:
+    """A lock-file prefix for one client address (IPv6 by /64), or None."""
+
+    try:
+        address = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return None
+    if address.version == 6 and address.ipv4_mapped is None:
+        key = str(ipaddress.ip_network(str(address) + "/64", strict=False))
+    else:
+        key = str(getattr(address, "ipv4_mapped", None) or address)
+    return "client-" + hashlib.sha256(key.encode("ascii")).hexdigest()[:24]
+
+
+def _relay_deadline(_signum: int, _frame: Any) -> None:
+    raise RelayError("the Git session took too long")
+
+
+def _serve_relay(config: Config, key_id: str) -> int:
+    original_command = os.environ.get("SSH_ORIGINAL_COMMAND", "")
+    if not original_command.strip():
+        print(RELAY_GREETING, file=sys.stderr)
+        return 1
+    operation, requested_owner, requested_repo = _parse_relay_command(
+        original_command
+    )
+    owner, repository, authorization = _relay_authorization(
+        config, key_id, requested_owner, requested_repo, operation
+    )
+    target = config.http_git
+    assert target is not None
+    limits = _limits(config)
+    receive = operation == "git-receive-pack"
+    base = "/" + owner + "/" + repository + ".git"
+    stdin = sys.stdin.buffer
+    stdout = sys.stdout.buffer
+    with ExitStack() as slots:
+        per_client = target.max_sessions_per_client
+        prefix = _client_slot_prefix(os.environ.get("SSH_CLIENT_ADDRESS"))
+        if per_client is not None and prefix is not None:
+            try:
+                slots.enter_context(_acquire_slot(
+                    limits.capacity_directory,
+                    prefix,
+                    maximum=per_client,
+                    reserved_receive=0,
+                    receive=False,
+                ))
+            except GatewayError as error:
+                if str(error) != "Git service is at capacity":
+                    raise
+                raise RelayError(
+                    "too many Git sessions from your address at once; "
+                    "try again when one finishes"
+                ) from error
+        slots.enter_context(_acquire_slot(
+            limits.capacity_directory,
+            "session",
+            maximum=limits.max_concurrent_sessions,
+            reserved_receive=limits.reserved_receive_sessions,
+            receive=receive,
+        ))
+        previous = signal.signal(signal.SIGALRM, _relay_deadline)
+        signal.alarm(
+            limits.receive_pack_deadline_seconds
+            if receive
+            else limits.upload_pack_deadline_seconds
+        )
+        try:
+            if receive:
+                return _relay_receive_pack(
+                    target, base, authorization, stdin, stdout,
+                    limits.receive_max_input_bytes,
+                )
+            return _relay_upload_pack(target, base, authorization, stdin, stdout)
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, previous)
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         del req, fp, code, msg, headers, newurl
@@ -2175,6 +3010,24 @@ def _spool_forward(config: Config, api_origin: str, limit: int) -> int:
 
 
 def _check(config: Config) -> int:
+    if getattr(config, "http_git", None) is not None:
+        try:
+            _capacity_directory(_limits(config).capacity_directory)
+            capacity_available = True
+        except GatewayError:
+            capacity_available = False
+        print(
+            json.dumps(
+                {
+                    "ok": capacity_available,
+                    "mode": "relay",
+                    "capacityAvailable": capacity_available,
+                    "privateKeysLoaded": False,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0 if capacity_available else 1
     unavailable = 0
     writable = 0
     over_quota = 0
@@ -2238,6 +3091,9 @@ def _check(config: Config) -> int:
 def _worker_allowlist(config: Config) -> int:
     """Print the exact fail-closed Worker repository configuration value."""
 
+    if getattr(config, "http_git", None) is not None:
+        print("*")
+        return 0
     entries = []
     for (owner, repository), item in sorted(config.repositories.items()):
         _path, writable, _quota = _repository_entry(config, item)

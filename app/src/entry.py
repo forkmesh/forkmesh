@@ -1249,6 +1249,7 @@ advertised_refs_canonical = _git_http.export("advertised_refs_canonical")
 decode_git_request_body = _git_http.export("decode_git_request_body")
 git_advert_cache_key = _git_http.export("git_advert_cache_key")
 pkt_line = _git_http.export("pkt_line")
+with_sideband_message = _git_http.export("with_sideband_message")
 repo_blob_content_type = _git_http.export("repo_blob_content_type")
 repo_blob_filename = _git_http.export("repo_blob_filename")
 
@@ -16175,6 +16176,10 @@ hosted_fork_create = _hosted_git.export("hosted_fork_create")
 record_hosted_push_state = _hosted_git.export("record_hosted_push_state")
 record_hosted_branch_count = _hosted_git.export(
     "record_hosted_branch_count")
+# The SSH gateway relays a key-authenticated session to the HTTPS Git routes
+# with a short-lived credential minted by /api/ssh/authorize.
+ssh_git_password = _hosted_git.export("ssh_git_password")
+contributor_push_allowed = _hosted_git.export("contributor_push_allowed")
 # Repositories the Next core nodes host (HOSTED_GIT_CORE_NODES,
 # docs/HOSTED_REPOS.md): push routing, the per-repository size limit, and the
 # private (capability-only) read path.
@@ -48528,10 +48533,12 @@ GIT_ERROR_MESSAGES = {
     "push_unavailable": "ForkMesh could not reach the node that accepts "
                         "pushes for this repository. Try again in a minute.",
     "push_unauthorized": "Pushing over HTTPS needs your ForkMesh account "
-                         "name and the repository's push credential.",
+                         "name or email and your password, or the "
+                         "repository's push credential.",
     "authentication_required": "This repository is private. Sign in with "
-                               "your ForkMesh account name and the "
-                               "repository's credential.",
+                               "your ForkMesh account name or email and "
+                               "your password, or the repository's "
+                               "credential.",
     "method_not_allowed": "This Git address does not accept that request.",
 }
 GIT_ERROR_KEPT_HEADERS = (
@@ -52227,6 +52234,41 @@ async def _https_mirror_push_candidates(
     return candidates
 
 
+async def _fork_push_notice(env, request, owner, repo, alias_owner,
+                            upstream):
+    updates = _ref_updates_from(upstream).get("updates") or []
+    branches = [
+        update["ref"][len("refs/heads/"):] for update in updates
+        if update["ref"].startswith("refs/heads/")
+        and update["new"].strip("0")
+    ]
+    if not branches:
+        return None
+    record = await _repo_catalog_record(env, owner, repo)
+    if not isinstance(record, dict):
+        return None
+    fork = bool(clean_string(record.get("forkedFrom", ""), 170))
+    default = clean_string(record.get("branch", ""), 200) or "main"
+    branches = [
+        branch for branch in branches
+        if branch != default and (fork or branch.startswith("pr/"))
+    ][:5]
+    parsed = urlparse(str(getattr(request, "url", "") or ""))
+    if not branches or parsed.scheme not in ("https", "http") or (
+            not parsed.netloc):
+        return None
+    base = parsed.scheme + "://" + parsed.netloc + await _repo_public_path(
+        env, alias_owner or owner, repo)
+    lines = [""]
+    for branch in branches:
+        lines.append("Open a pull request for '%s' by visiting:" % branch)
+        lines.append("     %s/compare/%s...%s" % (
+            base, quote(default, safe="/"), quote(branch, safe="/")))
+        lines.append("")
+    raw = bytes(Uint8Array.new(await upstream.arrayBuffer()).to_py())
+    return with_sideband_message(raw, "\n".join(lines) + "\n") or raw
+
+
 def _git_push_basic_challenge():
     """Refuse an unauthorized push, and tell git how to authenticate.
 
@@ -52335,7 +52377,8 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
             alias_owner=alias_owner)
     else:
         account, push_prefix = await verify_hosted_push_access(
-            env, owner, repo, authorization, method, alias=alias_owner)
+            env, owner, repo, authorization, method, alias=alias_owner,
+            request=request)
     if not account:
         return _git_push_basic_challenge()
     core_held = str(owner or "").strip().lower() in _core_push_nodes(env)
@@ -52382,10 +52425,26 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
             raw_headers[name] = str(value)
     response_headers = https_routing.response_headers(raw_headers)
     response_headers["X-ForkMesh-Served-By"] = endpoint["node"]
+    status = int(getattr(upstream, "status", 0) or 0)
+    notice = globals().get("_fork_push_notice")
+    if method == "POST" and not is_info and status == 200 and callable(
+            notice):
+        try:
+            body = await notice(env, request, owner, repo, alias_owner,
+                                upstream)
+        except Exception:
+            body = None
+        if body is not None:
+            for name in list(response_headers):
+                if str(name).lower() == "content-length":
+                    response_headers.pop(name)
+            return JsResponse.new(
+                Uint8Array.new(_to_js(bytes(body))),
+                to_js({"status": status, "headers": response_headers}),
+            )
     return JsResponse.new(
         upstream.body,
-        to_js({"status": int(getattr(upstream, "status", 0) or 0),
-               "headers": response_headers}),
+        to_js({"status": status, "headers": response_headers}),
     )
 
 
