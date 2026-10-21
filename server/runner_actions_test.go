@@ -532,6 +532,7 @@ jobs:
 
 	untrusted := job
 	untrusted.Trusted = false
+	untrusted.JobToken = ""
 	_, logText, steps, _ = runInstanceWorkflow(t, untrusted, files, func(step capturedStep, sink io.Writer) int {
 		src := step.env["GITHUB_WORKSPACE"]
 		if gitConfigIn(t, src, "http.extraheader") != "" || gitConfigIn(t, src, "remote.origin.url") != job.CloneURL {
@@ -542,6 +543,24 @@ jobs:
 	if steps[0].env["FORKMESH_TOKEN"] != "" || steps[0].env["CLOUDFLARE_API_TOKEN"] != "" ||
 		steps[1].script != `deploy "$FM_EXPR_1"` || steps[1].env["FM_EXPR_1"] != "" {
 		t.Fatalf("untrusted job saw secrets: %+v", steps)
+	}
+
+	// An outside issue or comment job: the job API token only, masked.
+	issueJob := job
+	issueJob.Trusted = false
+	_, logText, steps, _ = runInstanceWorkflow(t, issueJob, files, func(step capturedStep, sink io.Writer) int {
+		io.WriteString(sink, "token "+step.env["FORKMESH_TOKEN"]+"\n")
+		if gitConfigIn(t, step.env["GITHUB_WORKSPACE"], "http.extraheader") != "" {
+			t.Errorf("an untrusted issue job must carry no push credential")
+		}
+		return 0
+	})
+	if steps[0].env["FORKMESH_TOKEN"] != "job-token-abcdef" || steps[0].env["CLOUDFLARE_API_TOKEN"] != "" ||
+		steps[1].env["FM_EXPR_1"] != "" {
+		t.Fatalf("untrusted issue job env: %+v", steps)
+	}
+	if strings.Contains(logText, "job-token-abcdef") {
+		t.Fatalf("the job token leaked:\n%s", logText)
 	}
 
 	readOnly := map[string]string{".forkmesh/deploy.yml": strings.Replace(files[".forkmesh/deploy.yml"],
