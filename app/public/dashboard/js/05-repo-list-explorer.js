@@ -2665,7 +2665,7 @@
       state.repoRecordSection = "conversation";
     }
     navigateHistory(tab === "code"
-      ? (state.repoCodeUrl || repoLinkUrl(state.selectedRepo))
+      ? (state.repoCodeUrl || repoCodeLinkUrl(state.selectedRepo))
       : `${repoLinkUrl(state.selectedRepo)}/${tab}`);
     if (tab === "code") {
       if (!state.loadedRepoTabs) state.loadedRepoTabs = {};
@@ -3473,7 +3473,7 @@
         <div data-repo-file-content>${content}</div>
       </div>`;
     bindRepoPreviewToolbar(viewer, meta);
-    navigateHistory(repoLinkUrl(repo, "blob", path));
+    navigateHistory(repoCodeLinkUrl(repo, "blob", path));
     window.lucide?.createIcons();
     return true;
   }

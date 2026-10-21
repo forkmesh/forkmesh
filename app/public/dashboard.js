@@ -2445,6 +2445,17 @@
     return { base, head };
   }
 
+  function splitRepoCodeRef(kind, parts, refs) {
+    const names = new Set((refs || []).map((ref) => String(ref || "").trim()).filter(Boolean));
+    const segments = (parts || []).map((part) => String(part || "")).filter(Boolean);
+    const longest = segments.length - (kind === "blob" ? 1 : 0);
+    for (let size = longest; size > 0; size -= 1) {
+      const ref = segments.slice(0, size).join("/");
+      if (names.has(ref)) return { ref, path: segments.slice(size).join("/") };
+    }
+    return null;
+  }
+
   function repoCompareRouteOptions(search) {
     const params = new URLSearchParams(String(search || ""));
     const title = String(params.get("title") || "").replace(/\s+/g, " ").trim().slice(0, 240);
@@ -14267,7 +14278,7 @@
       state.repoRecordSection = "conversation";
     }
     navigateHistory(tab === "code"
-      ? (state.repoCodeUrl || repoLinkUrl(state.selectedRepo))
+      ? (state.repoCodeUrl || repoCodeLinkUrl(state.selectedRepo))
       : `${repoLinkUrl(state.selectedRepo)}/${tab}`);
     if (tab === "code") {
       if (!state.loadedRepoTabs) state.loadedRepoTabs = {};
@@ -15075,7 +15086,7 @@
         <div data-repo-file-content>${content}</div>
       </div>`;
     bindRepoPreviewToolbar(viewer, meta);
-    navigateHistory(repoLinkUrl(repo, "blob", path));
+    navigateHistory(repoCodeLinkUrl(repo, "blob", path));
     window.lucide?.createIcons();
     return true;
   }
@@ -17208,12 +17219,12 @@
       if (!background) loadRepoDirAbout(repo, path, data.commit, entries);
       if (!entries.length) {
         treeBody.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">This directory is empty.</div>';
-        if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
+        if (!background) navigateHistory(repoCodeLinkUrl(repo, "tree", path));
         window.lucide?.createIcons();
         return;
       }
       renderRepoTreeRows();
-      if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
+      if (!background) navigateHistory(repoCodeLinkUrl(repo, "tree", path));
       window.lucide?.createIcons();
       if (!path) {
         const readmeEntry = entries.find((e) => e.type === "blob" && /^readme(\.md|\.txt|\.rst)?$/i.test(String(e.name || "")));
@@ -17249,6 +17260,8 @@
         }
       }
     } catch (error) {
+      if (path && options.refFallback && isMissingMirrorFolder(error)
+          && await openRepoCodeRefFallback(repo, "tree", options.refFallback)) return;
       // The tree fetch drives the commit summary; if no mirror answered, still
       // resolve the loading skeleton to the repo-derived fallback metadata.
       updateRepoCommitSummary(null, repo);
@@ -17267,7 +17280,7 @@
     }
   }
 
-  async function loadRepositoryBlob(repo, path) {
+  async function loadRepositoryBlob(repo, path, options = {}) {
     const detail = $("[data-repo-detail]");
     const viewer = detail?.querySelector("[data-repo-blob]");
     const treePanel = detail?.querySelector("[data-repo-tree-panel]");
@@ -17332,7 +17345,7 @@
         </div>`;
       setRepoFileMode(viewer, markdownPreview ? "preview" : "code", lines, path, meta);
       bindRepoFileToolbar(viewer, repo, path, content, lines, meta);
-      navigateHistory(repoLinkUrl(repo, "blob", path));
+      navigateHistory(repoCodeLinkUrl(repo, "blob", path));
       window.lucide?.createIcons();
     } catch (_) {
       // A markdown link to a folder ("[docs](www/docs)") has no trailing slash
@@ -17351,6 +17364,7 @@
           // Not a folder either; fall through to the file error.
         }
       }
+      if (await openRepoCodeRefFallback(repo, "blob", options.refFallback)) return;
       viewer.innerHTML = '<div class="fm-blankslate rounded-lg border border-border"><i data-lucide="file-x"></i><p class="fm-blankslate-title">File unavailable</p><p class="fm-blankslate-desc">Could not load this file from a live host.</p></div>';
       window.lucide?.createIcons();
     }
@@ -36662,6 +36676,81 @@
     state.selectedBranches[repoKey(repo)] = name;
   }
 
+  function repoCodeLinkUrl(repo, kind = "tree", path = "") {
+    const url = repoLinkUrl(repo, kind, path);
+    const ref = repoSelectedBranch(repo);
+    return ref && ref !== repoDefaultBranch(repo) ? `${url}?ref=${encodeURIComponent(ref)}` : url;
+  }
+
+  function repoKnownDefaultBranch(repo) {
+    return String(state.repoBranches[repoKey(repo)]?.defaultBranch
+      || repo?.defaultBranch || repo?.branch || repo?.rootBranch || "").trim();
+  }
+
+  async function resolveRepoCodeRoute(repo, kind, path) {
+    const parts = String(path || "").split("/").filter(Boolean);
+    const literal = { ref: "", path, fallback: null };
+    if (!parts.length || (kind === "blob" && parts.length < 2)) return literal;
+    const known = repoKnownDefaultBranch(repo);
+    const quick = known ? splitRepoCodeRef(kind, parts, [known]) : null;
+    if (quick) return { ...quick, fallback: null };
+    let listed = [];
+    try {
+      listed = (await fetchRepoBranches(repo)).map((branch) => branch.name);
+    } catch (_) {
+      listed = [];
+    }
+    const hit = splitRepoCodeRef(kind, parts, [...listed, repoKnownDefaultBranch(repo)]);
+    if (hit) return { ...hit, fallback: null };
+    return { ...literal, fallback: { ref: parts[0], path: parts.slice(1).join("/") } };
+  }
+
+  function replaceRepoCodeAddress(repo, kind, path) {
+    const url = repoCodeLinkUrl(repo, kind, path);
+    if (`${location.pathname}${location.search}` === url) return;
+    window.history.replaceState(window.history.state, "", `${url}${location.hash || ""}`);
+  }
+
+  function applyRepoCodeRef(repo, ref) {
+    const name = String(ref || "").trim();
+    if (!name || name === repoSelectedBranch(repo)) return;
+    setRepoSelectedBranch(repo, name);
+    updateRepoBranchControls(repo, null);
+  }
+
+  async function openRepoCodeRoute(repo, kind, path, { explicitRef = false } = {}) {
+    const code = kind === "blob" || kind === "tree";
+    let target = { ref: "", path: code ? path : "", fallback: null };
+    if (code && path && !explicitRef) target = await resolveRepoCodeRoute(repo, kind, path);
+    if (state.selectedRepo !== repo) return;
+    if (target.ref) {
+      applyRepoCodeRef(repo, target.ref);
+      replaceRepoCodeAddress(repo, kind, target.path);
+    }
+    const options = target.fallback ? { refFallback: target.fallback } : {};
+    if (kind === "blob" && target.path) await loadRepositoryBlob(repo, target.path, options);
+    else await loadRepositoryTree(repo, kind === "tree" ? target.path : "", options);
+  }
+
+  async function openRepoCodeRefFallback(repo, kind, fallback) {
+    if (!fallback?.ref || state.selectedRepo !== repo) return false;
+    try {
+      const probe = await fetchRepoJson(repoLiveUrl(repo, "tree", {
+        path: kind === "tree" ? fallback.path : "",
+        ref: fallback.ref,
+      }));
+      if (!probe || probe.ok === false) return false;
+    } catch (_) {
+      return false;
+    }
+    if (state.selectedRepo !== repo) return false;
+    applyRepoCodeRef(repo, fallback.ref);
+    replaceRepoCodeAddress(repo, kind, fallback.path);
+    if (kind === "blob") await loadRepositoryBlob(repo, fallback.path);
+    else await loadRepositoryTree(repo, fallback.path);
+    return true;
+  }
+
   function renderRepoBranchButton(branch) {
     return `<button type="button" data-repo-branch-button aria-haspopup="menu" aria-expanded="false" class="inline-flex h-9 w-full max-w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-secondary/80 transition-colors"><i data-lucide="git-branch" class="h-3.5 w-3.5 shrink-0"></i><span data-repo-branch-current class="min-w-0 truncate">${escapeHtml(branch)}</span><i data-lucide="chevron-down" class="h-3 w-3 shrink-0 text-muted-foreground"></i></button>`;
   }
@@ -40130,7 +40219,7 @@
             ? `${repoLinkUrl(repo)}/insights${repoInsightsRouteQuery()}`
             : repoTabRoutesFor(repo).includes(routeKind)
               ? `${repoLinkUrl(repo)}/${routeKind}`
-              : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
+              : repoCodeLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
     navigateHistory(detailPath);
     const branch = repoSelectedBranch(repo);
     const issuesCount = repoCount(repo, ["issueCount", "issues", "issuesCount", "openIssues"]);
@@ -40542,8 +40631,7 @@
     // the requested panel compete with data the visitor could not see.
     if (initialTab === "code") {
       state.loadedRepoTabs.code = true;
-      if (routeKind === "blob" && routePath) loadRepositoryBlob(repo, routePath);
-      else loadRepositoryTree(repo, routeKind === "tree" ? routePath : "");
+      void openRepoCodeRoute(repo, routeKind, routePath, { explicitRef: Boolean(routeRef) });
       scheduleRepoAboutRail(repo);
     }
     // Feature tabs read only their own record folders, while code deep links
@@ -44483,10 +44571,10 @@
               }
             }
           }
-        } else if (kind === "blob" && path) {
-          loadRepositoryBlob(repo, path);
         } else {
-          loadRepositoryTree(repo, kind === "tree" ? path : "");
+          const routeRef = String(new URLSearchParams(location.search).get("ref") || "").trim();
+          applyRepoCodeRef(repo, routeRef || repoDefaultBranch(repo));
+          void openRepoCodeRoute(repo, kind, path, { explicitRef: Boolean(routeRef) });
         }
         return;
       }
