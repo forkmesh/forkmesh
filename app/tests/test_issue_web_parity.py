@@ -333,12 +333,13 @@ def test_web_issue_thread_draws_reactions_instead_of_activity_lines():
     # fold those events into chips; left as activity rows they would bury the
     # conversation they were meant to acknowledge.
     assert "function foldIssueReactions(events)" in REPO_UI
-    assert "function renderIssueReactionChips(tallies)" in REPO_UI
+    assert "function renderCommentReactionBar(subject, comment, ledger = null, extraClass = \"\")" in REPO_UI
     timeline = _slice(REPO_UI, "function renderIssueTimeline(events)",
                       "function projectJsonPath(number)")
     assert 'if (ev.type === "reaction") continue;' in timeline
     assert 'reactionIds.has(String(ev.target))) continue;' in timeline
-    assert "_reactions: renderIssueReactionChips(" in timeline
+    assert "renderCommentReactionBar(commentReactionSubject(\"issues\", options.number)" in timeline
+    assert "reactionsByTarget.get(String(ev.id))" in timeline
     assert "eyes: " in REPO_UI
 
 

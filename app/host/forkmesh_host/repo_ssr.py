@@ -204,6 +204,7 @@ class ViewTicket:
         self.section = section
         self.target = target
         self.root = root
+        self.reactions = None
 
 
 ISSUE_BUDGET_SECONDS = 0.3
@@ -262,6 +263,7 @@ def start(fastpath, scope):
     the ticket is instead the micro-cache key, see fetch()."""
     if fastpath is None:
         return None
+    forget_reactions(scope)
     key = micro_cache_key(scope)
     if key is not None:
         return key
@@ -342,9 +344,136 @@ async def _micro_store(key, response):
     return _js.Response(body, response.status, "", _js.Headers(dict(headers)))
 
 
+REACTIONS_PATH_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/reactions$")
+REACTIONS_FRESH_SECONDS = 5.0
+REACTIONS_STALE_SECONDS = 300.0
+REACTIONS_BUDGET_SECONDS = 0.15
+REACTIONS_MAX_ENTRIES = 1024
+REACTIONS_MAX_BODY = 256 * 1024
+REACTION_SUBJECTS = {"issue": "issue", "pull": "pull", "discussion": "discussion"}
+_reactions = {}
+_reactions_loading = {}
+
+
+class ReactionRead:
+    def __init__(self, key, subject, task, stale):
+        self.key = key
+        self.subject = subject
+        self.task = task
+        self.stale = stale
+
+
+def reaction_subject(view, number):
+    name = REACTION_SUBJECTS.get(view, "")
+    return "%s:%d" % (name, number) if name and number else ""
+
+
+def _reactions_key(owner, repo, subject):
+    return ("%s/%s|%s" % (owner, repo, subject)).lower()
+
+
+def forget_reactions(scope):
+    if scope.get("method", "GET").upper() == "GET":
+        return
+    match = REACTIONS_PATH_RE.match(scope.get("path") or "")
+    if not match:
+        return
+    prefix = ("%s/%s|" % (urllib.parse.unquote(match.group(1)),
+                          urllib.parse.unquote(match.group(2)))).lower()
+    for key in [k for k in _reactions if k.startswith(prefix)]:
+        _reactions.pop(key, None)
+
+
+def _clean_reactions(data):
+    reactions = data.get("reactions") if isinstance(data, dict) else None
+    if not isinstance(reactions, dict):
+        return None
+    return {str(comment): tallies for comment, tallies in reactions.items()
+            if isinstance(tallies, list)}
+
+
+async def _read_reactions(worker_fetch, origin, owner, repo, subject, key):
+    from . import js as _js
+    kind, _, number = subject.partition(":")
+    parts = urllib.parse.urlsplit(origin)
+    headers = _js.Headers({"host": parts.netloc,
+                           "user-agent": "forkmesh-host-first-view",
+                           "cf-connecting-ip": "127.0.0.1",
+                           "accept": "application/json"})
+    url = "%s/api/repo/%s/%s/reactions?%s" % (
+        origin, urllib.parse.quote(owner, safe=""),
+        urllib.parse.quote(repo, safe=""),
+        urllib.parse.urlencode([("kind", kind), ("number", number)]))
+    response = await worker_fetch(_js.Request(url, "GET", headers))
+    if int(response.status) != 200:
+        return None
+    body = await response._read()
+    if len(body) > REACTIONS_MAX_BODY:
+        return None
+    reactions = _clean_reactions(json.loads(body))
+    if reactions is None:
+        return None
+    if len(_reactions) >= REACTIONS_MAX_ENTRIES:
+        _reactions.clear()
+    _reactions[key] = (asyncio.get_running_loop().time(), reactions)
+    return reactions
+
+
+def read_reactions(worker_fetch, origin, owner, repo, view, number):
+    subject = reaction_subject(view, number)
+    if not subject or not origin or worker_fetch is None:
+        return None
+    key = _reactions_key(owner, repo, subject)
+    loop = asyncio.get_running_loop()
+    entry = _reactions.get(key)
+    age = loop.time() - entry[0] if entry is not None else None
+    stale = entry[1] if age is not None and age < REACTIONS_STALE_SECONDS else None
+    if age is not None and age < REACTIONS_FRESH_SECONDS:
+        done = loop.create_future()
+        done.set_result(entry[1])
+        return ReactionRead(key, subject, done, stale)
+    task = _reactions_loading.get(key)
+    if task is None:
+        task = asyncio.ensure_future(_read_reactions(
+            worker_fetch, origin, owner, repo, subject, key))
+        _reactions_loading[key] = task
+        task.add_done_callback(lambda _t: _reactions_loading.pop(key, None))
+    return ReactionRead(key, subject, task, stale)
+
+
+async def reactions_within(read, seconds=REACTIONS_BUDGET_SECONDS):
+    if read is None:
+        return None
+    found = await _within(read.task, seconds)
+    return found if found is not None else read.stale
+
+
+def reactions_seed(base, subject, reactions):
+    if reactions is None or not subject:
+        return ""
+    return ('\n    <script type="application/json" id="forkmesh-comment-reactions">'
+            + _json_for_script({"base": base, "subject": subject,
+                                "reactions": reactions}) + "</script>")
+
+
+def request_origin(request):
+    try:
+        parts = urllib.parse.urlsplit(str(request.url))
+    except Exception:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return ""
+    return "%s://%s" % (parts.scheme, parts.netloc)
+
+
 async def fetch(ticket, worker_fetch, request):
     """The Worker's answer, or the micro-cache's for an anonymous read."""
     if not isinstance(ticket, MicroKey):
+        if isinstance(ticket, ViewTicket) and ticket.target is not None:
+            owner, repo, view, number = ticket.target
+            ticket.reactions = read_reactions(
+                worker_fetch, request_origin(request), owner, repo, view,
+                number)
         return await worker_fetch(request)
     entry = _micro.get(ticket)
     now = asyncio.get_running_loop().time()
@@ -401,14 +530,16 @@ async def finish(task, response):
         body = await response._read()
         page = body.decode("utf-8")
         rendered = None
+        reactions = await reactions_within(view.reactions) \
+            if view is not None else None
         if view is not None and view.root is not None:
             root = await _within(view.root, ISSUE_BUDGET_SECONDS - (
                 asyncio.get_running_loop().time() - started))
             if root:
-                rendered = inject_issue(page, root, data)
+                rendered = inject_issue(page, root, data, reactions=reactions)
         if rendered is None:
-            rendered = inject_view(page, data, view.section) if view \
-                else inject(page, data)
+            rendered = inject_view(page, data, view.section, reactions) \
+                if view else inject(page, data)
         if rendered is None:
             return _js.Response(body, response.status, "", response.headers)
         headers = response.headers
@@ -482,12 +613,12 @@ def inject(page, data, short=False):
 ISSUE_RENDER_SECONDS = 60.0
 
 
-def issue_article(bundle, data, short=False):
-    from . import repo_ssr_issue
+def issue_article(bundle, data, short=False, reactions=None):
+    from . import repo_ssr_issue, repo_views
     model = bundle.model or {}
     if not model.get("issue") or not model.get("issueJson"):
         return None
-    key = ("dashboard", bool(short))
+    key = ("dashboard", bool(short), repo_views.reactions_digest(reactions))
     now = time.time()
     kept = bundle.rendered.get(key)
     if kept and now - kept[0] < ISSUE_RENDER_SECONDS:
@@ -503,18 +634,21 @@ def issue_article(bundle, data, short=False):
         return None
     article = repo_ssr_issue.render_issue(
         issue, ctx, owner, "%s/issues/%d" % (link, bundle.number),
-        index=repo_ssr_issue.index_rows(model.get("index")), now=now)
+        index=repo_ssr_issue.index_rows(model.get("index")), now=now,
+        reactions=reactions)
+    if len(bundle.rendered) >= repo_views.RENDERED_PER_BUNDLE:
+        bundle.rendered.clear()
     bundle.rendered[key] = (now, article)
     return article
 
 
-def inject_issue(page, data, bundle, short=False):
+def inject_issue(page, data, bundle, short=False, reactions=None):
     if 'data-page="repo"' not in page or PLACEHOLDER not in page \
             or CHARSET not in page or bundle is None or bundle.view != "issue":
         return None
     from . import repo_ssr_issue
     try:
-        article = issue_article(bundle, data, short)
+        article = issue_article(bundle, data, short, reactions)
     except Exception as error:  # the bundle's own first view is still correct
         print("issue ssr skipped: %r" % (error,))
         article = None
@@ -530,8 +664,9 @@ def inject_issue(page, data, bundle, short=False):
         urllib.parse.quote(bundle.owner, safe=""),
         urllib.parse.quote(bundle.repo, safe=""))).lower(),
         "view": bundle.view, "number": bundle.number, "url": bundle.url()}
-    page = page.replace(CHARSET, _view_reads_head(meta) + "\n    " + STYLE
-                        + repo_ssr_issue.VIEWER_STYLE, 1)
+    page = page.replace(CHARSET, _view_reads_head(meta) + reactions_seed(
+        meta["base"], reaction_subject("issue", bundle.number), reactions)
+        + "\n    " + STYLE + repo_ssr_issue.VIEWER_STYLE, 1)
     page = page.replace(HEADER_CONTEXT, header_context(data, short), 1)
     page = page.replace(HEADER_META, HEADER_META.replace(
         '"hidden shrink-0', '"hidden sm:flex shrink-0'), 1)
@@ -565,7 +700,7 @@ def inject_view_reads(page, owner, repo, view, number):
     return page.replace(CHARSET, _view_reads_head(meta), 1)
 
 
-def inject_view(page, bundle, section=""):
+def inject_view(page, bundle, section="", reactions=None):
     """A pull request, issue or discussion page with its first view
     (repo_views.render) and the address of its read bundle, which a small
     head script starts fetching at once; the dashboard takes its reads from
@@ -574,15 +709,16 @@ def inject_view(page, bundle, section=""):
             or CHARSET not in page:
         return None
     from . import repo_views
-    view = repo_views.render(bundle, section)
+    view = repo_views.render(bundle, section, reactions)
     if view is None:
         return None
     meta = {"base": ("/api/repo/%s/%s" % (
         urllib.parse.quote(bundle.owner, safe=""),
         urllib.parse.quote(bundle.repo, safe=""))).lower(),
         "view": bundle.view, "number": bundle.number, "url": bundle.url()}
-    head = (_view_reads_head(meta) + "\n    " + STYLE
-            + repo_views.VIEW_STYLE)
+    head = (_view_reads_head(meta) + reactions_seed(
+        meta["base"], repo_views.reaction_subject(bundle), reactions)
+        + "\n    " + STYLE + repo_views.VIEW_STYLE)
     page = page.replace(CHARSET, head, 1)
     return page.replace(PLACEHOLDER, view, 1)
 

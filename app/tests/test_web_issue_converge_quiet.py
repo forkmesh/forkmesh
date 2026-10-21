@@ -95,6 +95,8 @@ const setRepoIssueRecordOpen = () => {};
 const setRepoRecordOpen = () => {};
 const mountIssueStickyHeader = () => {};
 const primeRepoViewReads = async () => {};
+const prepareCommentReactions = () => "";
+const loadCommentReactions = async () => null;
 
 __LOADER__
 

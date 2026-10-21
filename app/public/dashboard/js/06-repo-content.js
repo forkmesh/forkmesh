@@ -1339,12 +1339,91 @@
     return byTarget;
   }
 
-  // A slug this build has never heard of still renders: the chip falls back to
-  // the slug itself rather than an empty pill.
-  function renderIssueReactionChips(tallies) {
-    if (!Array.isArray(tallies) || !tallies.length) return "";
-    const chips = tallies.map((tally) => `<span title="${escapeHtml(tally.names.join(", "))}" class="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[12px] text-foreground"><span>${escapeHtml(ISSUE_REACTION_EMOJI[tally.value] || tally.value)}</span><span class="text-muted-foreground">${tally.names.length}</span></span>`).join("");
-    return `<div class="flex flex-wrap items-center gap-1.5 px-4 pb-3">${chips}</div>`;
+  const COMMENT_REACTIONS = Object.freeze([
+    ["like", "Like", "thumbs up yes agree +1"],
+    ["love", "Love", "heart"],
+    ["laugh", "Laugh", "joy lol funny"],
+    ["celebrate", "Celebrate", "tada hooray party confetti"],
+    ["hot", "Hot", "fire lit"],
+    ["thanks", "Thanks", "pray please grateful"],
+    ["smile", "Smile", "happy"],
+    ["wink", "Wink", ""],
+    ["cool", "Cool", "sunglasses"],
+    ["thinking", "Thinking", "hmm confused"],
+    ["surprised", "Surprised", "wow"],
+    ["sad", "Sad", "cry"],
+    ["angry", "Angry", "mad"],
+    ["dislike", "Dislike", "thumbs down no -1"],
+    ["eyes", "Eyes", "looking watching"],
+    ["star", "Star", "favorite"],
+    ["rocket", "Rocket", "ship launch"],
+    ["check", "Done", "check tick yes"],
+  ]);
+  const COMMENT_REACTION_QUICK = Object.freeze(["like", "love", "laugh", "celebrate", "eyes", "rocket"]);
+  const COMMENT_REACTION_KINDS = Object.freeze({ issues: "issue", pulls: "pull", discussions: "discussion" });
+
+  function commentReactionSubject(kind, number) {
+    const name = COMMENT_REACTION_KINDS[kind] || "";
+    const value = Number(number);
+    return name && Number.isInteger(value) && value > 0 ? `${name}:${value}` : "";
+  }
+
+  function commentReactionLabel(emoji) {
+    const entry = COMMENT_REACTIONS.find((row) => row[0] === emoji);
+    return entry ? entry[1] : String(emoji || "");
+  }
+
+  function commentReactionTallies(subject, comment, ledger) {
+    const stored = state.commentReactions?.[subject]?.reactions?.[comment];
+    const tallies = (Array.isArray(stored) ? stored : [])
+      .filter((tally) => tally && ISSUE_REACTION_EMOJI[tally.emoji])
+      .map((tally) => ({
+        emoji: String(tally.emoji),
+        count: Math.max(0, Math.floor(Number(tally.count) || 0)),
+        mine: tally.mine === true,
+        people: (Array.isArray(tally.people) ? tally.people : [])
+          .filter((person) => person && person.name)
+          .map((person) => ({ name: String(person.name), agent: person.agent === true })),
+      }));
+    for (const entry of Array.isArray(ledger) ? ledger : []) {
+      let tally = tallies.find((item) => item.emoji === String(entry.value));
+      if (!tally) {
+        tally = { emoji: String(entry.value), count: 0, mine: false, people: [] };
+        tallies.push(tally);
+      }
+      for (const name of Array.isArray(entry.names) ? entry.names : []) {
+        const label = String(name);
+        if (tally.people.some((person) => person.name.toLowerCase() === label.toLowerCase())) continue;
+        tally.people.push({ name: label, agent: false });
+        tally.count += 1;
+      }
+    }
+    return tallies.filter((tally) => tally.count > 0);
+  }
+
+  function commentReactionWho(tally) {
+    const names = tally.people.map((person) => person.agent ? `${person.name} (agent)` : person.name);
+    const others = Math.max(0, tally.count - names.length);
+    if (others) names.push(`${others} other${others === 1 ? "" : "s"}`);
+    const list = names.length > 1
+      ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
+      : names.join("");
+    return `${list} reacted with ${commentReactionLabel(tally.emoji)}`;
+  }
+
+  function renderCommentReactionChip(tally) {
+    const agent = tally.people.some((person) => person.agent);
+    return `<button type="button" data-reaction="${escapeHtml(tally.emoji)}" aria-pressed="${tally.mine ? "true" : "false"}" aria-label="${escapeHtml(`${commentReactionLabel(tally.emoji)} ${tally.count}: ${commentReactionWho(tally)}`)}" class="fm-reaction${agent ? " fm-reaction-agent" : ""}"><span aria-hidden="true" class="fm-reaction-emoji">${escapeHtml(ISSUE_REACTION_EMOJI[tally.emoji] || tally.emoji)}</span><span class="fm-reaction-count">${escapeHtml(formatCount(tally.count))}</span></button>`;
+  }
+
+  function renderCommentReactionBar(subject, comment, ledger = null, extraClass = "") {
+    if (!subject || !comment) return "";
+    if (Array.isArray(ledger) && ledger.length) {
+      if (!state.commentReactionLedger) state.commentReactionLedger = {};
+      state.commentReactionLedger[`${subject}\u0000${comment}`] = ledger;
+    }
+    const chips = commentReactionTallies(subject, comment, ledger).map(renderCommentReactionChip).join("");
+    return `<div data-comment-reactions="${escapeHtml(subject)}" data-comment-id="${escapeHtml(comment)}" role="group" aria-label="Reactions" class="fm-reactions${extraClass ? ` ${extraClass}` : ""}">${chips}<button type="button" data-reaction-add aria-label="Add reaction" aria-haspopup="dialog" aria-expanded="false" class="fm-reaction-add"><i data-lucide="smile-plus" class="h-4 w-4"></i></button></div>`;
   }
 
   function issueEventDescription(ev) {
@@ -1508,8 +1587,10 @@
           ...(edit ? { body: edit.body } : {}),
           _canManage: Boolean(options.canManage),
           _edited: Boolean(edit),
-          _reactions: renderIssueReactionChips(
-            reactionsByTarget.get(String(ev.id || ""))),
+          _reactions: ev.id
+            ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(ev.id),
+              reactionsByTarget.get(String(ev.id)), "px-4 pb-3")
+            : "",
         };
         items.push(renderIssueTimelineComment(ev));
         continue;
@@ -3219,6 +3300,7 @@
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${issuePersonNameHtml(author, "")}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
         <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
+        ${commentReactionEventBar(event, "mt-2")}
       </div>
     </article>`;
   }
@@ -4262,8 +4344,17 @@
             ${ev.type !== "review" && ev.type !== "comment" ? `<span class="ml-auto rounded-full border px-2 text-[12px] font-medium leading-5 ${meta.tone}">${escapeHtml(meta.label)}</span>` : ""}
           </div>
           <div class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>
+          ${commentReactionEventBar(ev, "px-4 pb-3")}
         </div>
       </div>`;
+  }
+
+  const COMMENT_REACTION_EVENT_TYPES = new Set(["comment", "review", "line-comment", "thread-comment", "thread-reply"]);
+
+  function commentReactionEventBar(ev, extraClass) {
+    const detail = state.repoRecordDetail;
+    if (!ev?.id || ev.draft || !COMMENT_REACTION_EVENT_TYPES.has(String(ev.type || "comment"))) return "";
+    return renderCommentReactionBar(commentReactionSubject(detail?.kind, detail?.number), String(ev.id), null, extraClass);
   }
 
   function renderRepoPullConversation(events) {
@@ -6705,6 +6796,7 @@
                       </span>
                     </div>
                     ${openingBody}
+                    ${hasBody ? renderCommentReactionBar(commentReactionSubject(kind, number), "body", null, "px-4 pb-3") : ""}
                   </div>
                 </div>`;
     // The conversation column opts out of the row stretch, the way the sidebar
@@ -6915,12 +7007,13 @@
       canManage,
       mentions: parsed.issueMentions,
       repo,
+      number,
     });
-    const bodyReactions = renderIssueReactionChips(foldIssueReactions(events)
-      .get(String(parsed.issueOpenEventId || "")));
+    const bodyReactions = renderCommentReactionBar(commentReactionSubject("issues", number), "body",
+      foldIssueReactions(events).get(String(parsed.issueOpenEventId || "")));
     const reactionRow = `<div data-repo-issue-reactions class="flex flex-wrap items-center gap-1.5 px-4 pb-4">
           <button type="button" data-repo-issue-vote title="Vote for this issue" class="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[12px] text-foreground transition-colors hover:border-[var(--dashboard-link)] hover:bg-[color-mix(in_srgb,var(--dashboard-link)_12%,transparent)]"><i data-lucide="arrow-big-up" class="h-4 w-4 text-muted-foreground"></i>Vote<span data-repo-issue-vote-count class="text-muted-foreground">${formatCount(Number(values.votes) || 0)}</span></button>
-          ${bodyReactions.replace(/^<div class="[^"]*">/, "").replace(/<\/div>$/, "")}
+          ${bodyReactions}
         </div>`;
 
     const descriptionForm = `
@@ -7747,6 +7840,8 @@
     stopRepoPullActivityRefresh();
     stopRepoRecordConvergeRetry();
     if (!preferMirror) state.repoRecordConvergeAttempt = 0;
+    prepareCommentReactions(repo, kind, number);
+    loadCommentReactions(repo, kind, number);
     const optimistic = optimisticRepoRecords()[
       optimisticRepoRecordKey(repo, kind, number)];
     if (optimistic && !preferMirror) {

@@ -4238,6 +4238,7 @@
     { key: "conversations", label: "Conversations", kinds: [
       { kind: "mention", label: "Mentions", email: true },
       { kind: "subscribed", label: "Activity on things you follow", email: true },
+      { kind: "reaction", label: "Reactions to your comments", email: false },
       { kind: "chat_webhook", label: "Chat webhook posts", email: false },
       { kind: "channel_unread", label: "Unread channel messages", email: true },
       { kind: "direct_unread", label: "Unread direct messages", email: true },
