@@ -5,6 +5,7 @@
 
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "PingSettings.h"
 #include "MainWindowReposInternal.h"
 #include "ControlNode.h"
 #include "NodeEventSocket.h"
@@ -1498,7 +1499,8 @@ void MainWindow::onPeerMirrorUpdated(const QString &ownerName,
             syncRepository(matchIndex, /*quiet=*/true);
     }
     if (notifyEnabled(kMirrorUpdateAlertSetting))
-        showPingTrayMessage(QStringLiteral("ForkMesh — mirror updated"), msg);
+        showPingTrayMessage(forkmesh::pings::alertLeadTitle(who, ownerName),
+                            QStringLiteral("Updated this mirror from its source"));
 }
 
 void MainWindow::onPeerMirrorSynced(const QString &ownerName,

@@ -43933,19 +43933,42 @@
       list.innerHTML = '<div class="px-3 py-4 text-xs text-muted-foreground">No pings yet. Mentions, PRs, assignments, shares, bounties, releases, and host status changes will appear here.</div>';
       return;
     }
-    list.innerHTML = items.map((item) => `
-      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full px-3 py-2 text-left hover:bg-secondary transition-colors ${item.readAt ? "opacity-70" : ""}">
-        <div class="flex items-start gap-2">
-          <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
+    list.innerHTML = items.map((item) => {
+      const lead = notificationLead(item);
+      const unreadItem = !item.readAt;
+      const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
+      const avatar = lead.actor
+        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
+          <span class="absolute bottom-0 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">${icon}</span>`
+        : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
+      return `
+      <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full rounded-md px-2.5 py-2 text-left hover:bg-secondary transition-colors">
+        <div class="flex items-start gap-2.5">
+          <span class="relative mt-0.5 shrink-0">${avatar}</span>
           <div class="min-w-0 flex-1">
-            <p class="truncate text-xs font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
-            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || `${platformName()} update`)}</p>
+            <div class="flex items-center gap-2">
+              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
+              <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
+              ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
+            </div>
+            <p class="mt-0.5 line-clamp-2 break-words text-xs leading-5 ${unreadItem ? "text-foreground" : "text-muted-foreground"}">${escapeHtml(lead.text)}</p>
           </div>
-          <span class="shrink-0 text-[10px] text-muted-foreground font-mono">${escapeHtml(notificationTimeLabel(item.ts))}</span>
         </div>
       </button>
-    `).join("");
+    `;
+    }).join("");
     window.lucide?.createIcons();
+  }
+
+  function notificationLead(item) {
+    const actor = String(item?.actor || "").trim();
+    const number = Number(item?.meta?.number) || 0;
+    const repo = item?.repo ? repoPublicKey(item.repo) : "";
+    const where = [repo, number > 0 ? `#${number}` : ""].filter(Boolean).join(" ");
+    const title = repoPublicText(item?.title) || "Ping";
+    const body = String(repoPublicText(item?.body) || "").replace(/\s+/g, " ").trim();
+    if (actor) return { actor, head: actor, where, text: body || title };
+    return { actor: "", head: title, where, text: body || `${platformName()} update` };
   }
 
   function renderNotificationDetail(item) {
@@ -44158,6 +44181,7 @@
     state.selectedNotificationId = selected?.id || "";
     list.innerHTML = state.notifications.map((item) => {
       const active = item.id === state.selectedNotificationId;
+      const lead = notificationLead(item);
       const settingsTitle = pingKindLabel(item.kind)
         ? `${pingKindLabel(item.kind)}: ping settings`
         : "Ping settings";
@@ -44171,8 +44195,8 @@
                 <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
               </span>
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-xs font-medium">${escapeHtml(item.title || "Ping")}</span>
-                <span class="mt-1 block truncate text-[11px] font-mono">${escapeHtml(item.repo || item.kind || "forkmesh")}</span>
+                <span class="block truncate text-[11px]"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
               </span>
             </span>
           </button>

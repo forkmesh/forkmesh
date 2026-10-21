@@ -1089,6 +1089,7 @@ NOTIFICATION_ITEM_NOUNS = {
 # missing, or held by an account the digest cannot read — falls back to the
 # actor's name, which every item renders either way.
 NOTIFICATION_EMAIL_AVATAR_MAX_B64 = 12 * 1024
+NOTIFICATION_EMAIL_SNIPPET_MAX = 90
 # The same portrait, for the phone's lock screen. A push alert carries it as a
 # UNNotificationAttachment thumbnail roughly 40pt square, so this only has to
 # be big enough to look sharp there — and the whole response is read inside an
@@ -38989,12 +38990,13 @@ def _forkmesh_email_card_html(
         "<img class=\"fm-brand\" "
         "src=\"https://app.forkmesh.com/assets/logo-96.png\" "
         "width=\"32\" alt=\"ForkMesh\" style=\"display:block;border:0;"
-        "outline:none;width:32px;height:auto\">"
-        "<h1 class=\"fm-h1\" style=\"margin:28px 0 12px;color:#171717;"
-        "font-size:22px;line-height:1.3;font-weight:600;"
-        "letter-spacing:-0.01em\">" + heading + "</h1>"
-        "<p class=\"fm-text\" style=\"margin:0 0 20px;color:#525252;font-size:14px\">" +
-        intro_html + "</p>" + body_html +
+        "outline:none;width:32px;height:auto\">" +
+        ("<h1 class=\"fm-h1\" style=\"margin:28px 0 12px;color:#171717;"
+         "font-size:22px;line-height:1.3;font-weight:600;"
+         "letter-spacing:-0.01em\">" + heading + "</h1>"
+         if heading else "<div style=\"height:24px\"></div>") +
+        ("<p class=\"fm-text\" style=\"margin:0 0 20px;color:#525252;font-size:14px\">" +
+         intro_html + "</p>" if intro_html else "") + body_html +
         (footer_html if footer_html else "") +
         _forkmesh_email_action_html(action_label, action_url) +
         "<p data-forkmesh-email-link style=\"margin:20px 0 0;color:#737373;"
@@ -39186,6 +39188,14 @@ def _push_alert_item(it, aliases=None, avatars=None):
         title = ("#" + str(number) + " " + title).strip()
     subtitle = " \xb7 ".join(
         [part for part in (repo, ("by " + actor) if actor else "") if part])
+    body = clean_string(it.get("body", ""), PUSH_ALERT_BODY_MAX).strip()
+    if actor:
+        where = " ".join(part for part in (
+            repo, ("#" + str(number)) if number > 0 else "") if part)
+        title = actor + ((" \xb7 " + where) if where else "")
+        body = body or _notification_digest_title(
+            clean_string(it.get("title", ""), 160), repo, stored_repo)
+        subtitle = ""
     meta = it.get("meta")
     if (kind == "desktop_ping" and isinstance(meta, dict)
             and meta.get("desktopKind") == "agent-done"):
@@ -39207,7 +39217,7 @@ def _push_alert_item(it, aliases=None, avatars=None):
         "id": clean_string(it.get("id", ""), 160),
         "title": with_icon(title or "Notification", alert_icon(kind, meta)),
         "subtitle": subtitle,
-        "body": clean_string(it.get("body", ""), PUSH_ALERT_BODY_MAX).strip(),
+        "body": body,
         "actor": actor,
         "repo": repo,
         "kind": kind,
@@ -39258,7 +39268,6 @@ def _notification_actor_html(actor, avatar_b64="", base_url=""):
             "<a href=\"" + _html_escape(_notification_item_url(
                 base_url, "/@" + quote(handle, safe=""))) + "\" "
             "style=\"color:#0969da;text-decoration:none\">" + name_html + "</a>")
-    name_html = "by " + name_html
     # Rejected, never truncated: half a base64 blob is a broken image, and
     # the byline reads correctly without one.
     avatar = clean_string(avatar_b64 or "", MAX_AVATAR_B64).strip()
@@ -39266,10 +39275,10 @@ def _notification_actor_html(actor, avatar_b64="", base_url=""):
             or not AVATAR_B64_RE.match(avatar)):
         return name_html
     return (
-        "<img src=\"data:image/png;base64," + avatar + "\" width=\"18\" "
-        "height=\"18\" alt=\"" + _html_escape(actor) + "\" "
-        "style=\"width:18px;height:18px;border-radius:9px;"
-        "vertical-align:middle;border:1px solid #d0d7de;margin-right:5px\">"
+        "<img src=\"data:image/png;base64," + avatar + "\" width=\"20\" "
+        "height=\"20\" alt=\"" + _html_escape(actor) + "\" "
+        "style=\"width:20px;height:20px;border-radius:10px;"
+        "vertical-align:middle;border:1px solid #d0d7de;margin-right:6px\">"
         + name_html)
 
 
@@ -39320,32 +39329,55 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
     if url:
         lines.append("    " + url)
     record = _notification_record_label(repo, segment, number)
+    where = " ".join(filter(None, [
+        repo, ("#" + str(number)) if number > 0 else ""]))
     meta_html = " &middot; ".join(filter(None, [
-        _html_escape("#" + str(number)) if number > 0 else "",
         _notification_actor_html(actor, avatars.get(actor.lower(), ""), base_url),
+        _html_escape(where) if where else "",
         _html_escape(when) if when else "",
     ]))
-    # The number rides the meta line below in HTML, so the heading keeps
-    # the plain-text form's "[owner/repo] Title" without repeating it.
-    heading_html = _html_escape(prefix + title)
+    label_html = _html_escape(title)
     if url:
-        heading_html = (
+        label_html = (
             "<a href=\"" + _html_escape(url) + "\" "
-            "style=\"color:#0969da;text-decoration:none\">" +
-            heading_html + "</a>")
+            "style=\"color:" + ("#0969da" if body else "#24292f") +
+            ";text-decoration:none\">" + label_html +
+            (" &rarr;" if body else "") + "</a>")
+    head_html = (
+        "<p class=\"fm-muted\" style=\"margin:0 0 8px;color:#8a8a93;font-size:12px;"
+        "line-height:20px\">" + meta_html + "</p>" if meta_html else "")
+    if body:
+        content_html = (
+            "<div class=\"fm-item-body\" style=\"margin:0;color:#f5f5f5;"
+            "font-size:15px;line-height:1.55\">" + _chat_format.to_html(
+                body, _notification_item_url(base_url, "/")) + "</div>"
+            "<p class=\"fm-item-title\" style=\"margin:10px 0 0;font-size:12px;"
+            "font-weight:600\">" + label_html + "</p>")
+    else:
+        content_html = (
+            "<p class=\"fm-item-title\" style=\"margin:0;color:#f5f5f5;"
+            "font-size:15px;font-weight:600\">" + label_html + "</p>")
     item_html = (
-        "<div class=\"fm-item\" style=\"border:1px solid #313134;border-radius:8px;"
-        "background:#0f0f11;padding:12px 14px;margin:0 0 10px\">"
-        "<p class=\"fm-item-title\" style=\"margin:0;color:#f5f5f5;font-size:14px;"
-        "font-weight:800\">" + heading_html + "</p>" +
-        ("<p class=\"fm-muted\" style=\"margin:4px 0 0;color:#8a8a93;font-size:12px\">" +
-         meta_html + "</p>" if meta_html else "") +
-        ("<div class=\"fm-item-body\" style=\"margin:6px 0 0;color:#a3a3a3;font-size:13px;"
-         "line-height:1.45\">" + _chat_format.to_html(
-             body, _notification_item_url(base_url, "/")) + "</div>"
-         if body else "") + "</div>")
+        "<div class=\"fm-item\" style=\"border:1px solid #313134;border-radius:12px;"
+        "background:#141416;padding:14px 16px;margin:0 0 12px\">" +
+        head_html + content_html + "</div>")
+    snippet = " \xb7 ".join(filter(None, (
+        line.strip() for line in _chat_format.to_text(body).split("\n"))))
+    if len(snippet) > NOTIFICATION_EMAIL_SNIPPET_MAX:
+        snippet = snippet[:NOTIFICATION_EMAIL_SNIPPET_MAX - 1].rstrip() + "\u2026"
+    if actor:
+        lead = actor + ": " + (snippet or title) + (
+            (" \xb7 " + prefix + number_prefix).rstrip() if prefix or number_prefix
+            else "")
+    elif snippet:
+        lead = headline + " \xb7 " + snippet
+    else:
+        lead = headline
     return {
         "headline": headline,
+        "lead": lead,
+        "snippet": snippet,
+        "actor": actor,
         "url": url,
         "action_label": ("Open " + record) if (url and record) else "",
         "lines": lines,
@@ -39354,94 +39386,102 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
 
 
 def _notification_digest_email(node, items, identity=None, base_url=""):
-    """Subject/text/HTML for one recipient's unread-notification digest.
-
-    `node` is the ACCOUNT to greet — the human who owns the mailbox, not the
-    node that happens to hold the notification rows. `identity` carries what
-    only a database read can answer (see _notification_digest_identity): the
-    public slug per stored repo slug, and an actor's avatar. Rendering stays a
-    pure function of those inputs so every branch below is directly testable.
-    """
     identity = identity if isinstance(identity, dict) else {}
     aliases = identity.get("repos") if isinstance(
         identity.get("repos"), dict) else {}
     avatars = identity.get("avatars") if isinstance(
         identity.get("avatars"), dict) else {}
     n = len(items)
-    subject = ("ForkMesh: " + str(n) + " new notification" +
-               ("s" if n != 1 else ""))
-    lines = ["Hi " + (node or "there") + ",", "",
-             "You have " + str(n) + " unread ForkMesh notification" +
-             ("s" if n != 1 else "") + ":", ""]
+    lines = []
     html_items = []
     action_url = ""
     action_label = ""
+    first = None
+    actors = []
     for it in items:
         rendered = _notification_email_item(it, aliases, avatars, base_url)
+        if lines:
+            lines.append("")
         lines.extend(rendered["lines"])
         html_items.append(rendered["html"])
-        # The first item is the newest (the digest query orders ts DESC), so
-        # it is what the primary action opens.
+        first = first or rendered
+        if rendered["actor"] and rendered["actor"].lower() not in (
+                a.lower() for a in actors):
+            actors.append(rendered["actor"])
         if rendered["url"] and not action_url:
             action_url = rendered["url"]
             action_label = rendered["action_label"]
+    first = first or {"lead": "", "actor": "", "snippet": ""}
+    subject = _notification_email_subject(first) + (
+        " (+" + str(n - 1) + " more)" if n > 1 else "")
+    if len(actors) > 2:
+        heading = (actors[0] + ", " + actors[1] + " and " +
+                   str(len(actors) - 2) + " more")
+    elif actors:
+        heading = " and ".join(actors)
+    else:
+        heading = ""
+    if heading and n > 1:
+        heading += " \xb7 " + str(n) + " pings"
+    elif n > 1:
+        heading = str(n) + " pings"
+    who = clean_string(node or "", MAX_NODE_NAME)
     lines += ["", "Open ForkMesh to read and reply.",
+              ("Sent to " + who + ". " if who else "") +
               "To stop these emails, turn off email notifications in your "
               "profile settings."]
     text = "\n".join(lines)
     html = _forkmesh_email_card_html(
-        _html_escape(str(n) + " new notification" + ("s" if n != 1 else "")),
-        "Hi <strong class=\"fm-strong\" style=\"color:#f5f5f5\">" +
-        _html_escape(node or "there") +
-        "</strong>, you have " + str(n) + " unread ForkMesh notification" +
-        ("s" if n != 1 else "") + ".",
-        "<div style=\"margin:0 0 18px\">" + "".join(html_items) + "</div>"
-        "<p class=\"fm-text\" style=\"margin:0 0 16px;color:#d4d4d8;font-size:14px\">Open "
-        "ForkMesh to read and reply.</p>",
-        "<p class=\"fm-muted\" style=\"margin:22px 0 0;color:#8a8a93;font-size:12px\">To stop "
-        "these emails, update email notifications in your profile settings."
-        "</p>",
+        _html_escape(heading),
+        "",
+        "<div style=\"margin:0 0 18px\">" + "".join(html_items) + "</div>",
+        _notification_email_footer_html(
+            who, "To stop these emails, update email notifications in your "
+                 "profile settings."),
         action_label=action_label or "Open ForkMesh",
         action_url=action_url or FORKMESH_SITE_URL,
+        preheader=first["snippet"],
     )
     return subject, text, html
 
 
-def _notification_instant_email(node, item, identity=None, base_url=""):
-    """One notification, one email — the instant-delivery counterpart.
+def _notification_email_subject(rendered):
+    lead = rendered.get("lead") or "Notification"
+    if rendered.get("actor") or rendered.get("snippet"):
+        return lead
+    return "ForkMesh: " + lead
 
-    The subject carries the event itself rather than a count, which is the
-    reason to choose instant over the rollup: the mail is readable without
-    opening it. Everything below the subject is the digest's own item card, on
-    the same resolved identity (issue #652), so the two modes name a repository,
-    an actor and a deep link identically — and the single item's own record is
-    what the primary action opens.
-    """
+
+def _notification_email_footer_html(who, sentence):
+    return (
+        "<p class=\"fm-muted\" style=\"margin:22px 0 0;color:#8a8a93;font-size:12px\">" +
+        ("Sent to <strong>" + _html_escape(who) + "</strong>. " if who else "") +
+        _html_escape(sentence) + "</p>")
+
+
+def _notification_instant_email(node, item, identity=None, base_url=""):
     identity = identity if isinstance(identity, dict) else {}
     aliases = identity.get("repos") if isinstance(
         identity.get("repos"), dict) else {}
     avatars = identity.get("avatars") if isinstance(
         identity.get("avatars"), dict) else {}
     rendered = _notification_email_item(item, aliases, avatars, base_url)
-    subject = "ForkMesh: " + (rendered["headline"] or "New notification")
+    subject = _notification_email_subject(rendered)
+    who = clean_string(node or "", MAX_NODE_NAME)
+    sentence = ("To switch back to a periodic digest, or stop these emails, "
+                "update email notifications in your profile settings.")
     text = "\n".join(
-        ["Hi " + (node or "there") + ",", ""] + rendered["lines"] +
+        rendered["lines"] +
         ["", "Open ForkMesh to read and reply.",
-         "To switch back to a periodic digest, or stop these emails, update "
-         "email notifications in your profile settings."])
+         ("Sent to " + who + ". " if who else "") + sentence])
     html = _forkmesh_email_card_html(
-        _html_escape("New notification"),
-        "Hi <strong class=\"fm-strong\" style=\"color:#f5f5f5\">" +
-        _html_escape(node or "there") +
-        "</strong>, you have a new ForkMesh notification.",
-        "<div style=\"margin:0 0 18px\">" + rendered["html"] + "</div>"
-        "<p class=\"fm-text\" style=\"margin:0 0 16px;color:#d4d4d8;font-size:14px\">Open "
-        "ForkMesh to read and reply.</p>",
-        "<p class=\"fm-muted\" style=\"margin:22px 0 0;color:#8a8a93;font-size:12px\">To "
-        "switch back to a periodic digest, or stop these emails, update email "
-        "notifications in your profile settings.</p>",
+        "",
+        "",
+        "<div style=\"margin:0 0 18px\">" + rendered["html"] + "</div>",
+        _notification_email_footer_html(who, sentence),
         action_label=rendered["action_label"] or "Open ForkMesh",
         action_url=rendered["url"] or FORKMESH_SITE_URL,
+        preheader=rendered["snippet"],
     )
     return subject, text, html
 

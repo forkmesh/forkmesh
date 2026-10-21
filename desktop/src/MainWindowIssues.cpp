@@ -1,6 +1,7 @@
 
 #include "MainWindow.h"
 #include "OfficeChannelMirror.h"
+#include "PingSettings.h"
 #include "Tooltips.h"
 #include "MainWindowInternal.h"
 #include "ChatListPreview.h"
@@ -12450,49 +12451,54 @@ void MainWindow::applyIssuesInboxPayload(const RepositoryRecord &repo,
                 : QStringLiteral("%1 new issues filed on %2/%3")
                       .arg(newIssues)
                       .arg(repo.owner, repo.name);
+        const QString where = repo.owner + QLatin1Char('/') + repo.name;
+        const QString alertTitle =
+            newIssues == 1
+                ? forkmesh::pings::alertLeadTitle(lastIssueAuthor, where,
+                                                  lastIssueNumber)
+                : where;
+        const QString alertBody =
+            newIssues == 1 && !lastIssueTitle.trimmed().isEmpty()
+                ? forkmesh::pings::alertSnippet(lastIssueTitle)
+                : QStringLiteral("%1 new issues").arg(newIssues);
         flashPingMessage(body);
         if (notifyEnabled(kIssueAlertSetting))
-            notifyIfInactive(QString::fromUtf8("ForkMesh \xE2\x80\x94 new issue"),
-                             body);
+            notifyIfInactive(alertTitle, alertBody);
         NotificationLink link;
         link.kind = QStringLiteral("issue");
         link.owner = repo.owner;
         link.name = repo.name;
         link.number = newIssues == 1 ? lastIssueNumber : -1;
-        addNotification(QStringLiteral("New issue"), body, false, link);
+        addNotification(alertTitle, alertBody, false, link);
         if (notifyEnabled(kIssueAlertSetting))
-            showPingTrayMessage(QStringLiteral("ForkMesh — new issue"), body);
+            showPingTrayMessage(alertTitle, alertBody);
         if (m_repoDetailIndex == repoIndexFor(repo.owner, repo.name))
             triggerTeammatesForEvent(QStringLiteral("new-issues"), body);
     }
 	if (comments > 0) {
-        QString body;
-        if (comments == 1) {
-            body = QStringLiteral("%1 commented on %2/%3 issue #%4")
-                       .arg(lastCommentAuthor, repo.owner, repo.name)
-                       .arg(lastCommentNumber);
-            if (!lastCommentBody.isEmpty()) {
-                const QString snippet = lastCommentBody.left(140) +
-                    (lastCommentBody.size() > 140 ? QString::fromUtf8("\xE2\x80\xA6")
-                                                  : QString());
-                body += QString::fromUtf8(": \xE2\x80\x9C%1\xE2\x80\x9D").arg(snippet);
-            }
-        } else {
-            body = QStringLiteral("%1 new comments on %2/%3 issues")
-                       .arg(comments)
-                       .arg(repo.owner, repo.name);
-        }
+        const QString where = repo.owner + QLatin1Char('/') + repo.name;
+        const QString alertTitle =
+            comments == 1
+                ? forkmesh::pings::alertLeadTitle(lastCommentAuthor, where,
+                                                  lastCommentNumber)
+                : where;
+        const QString alertBody =
+            comments == 1 && !lastCommentBody.isEmpty()
+                ? forkmesh::pings::alertSnippet(lastCommentBody)
+                : (comments == 1 ? QStringLiteral("Commented on issue #%1")
+                                       .arg(lastCommentNumber)
+                                 : QStringLiteral("%1 new comments on issues")
+                                       .arg(comments));
         if (notifyEnabled(kCommentAlertSetting))
-            notifyIfInactive(QString::fromUtf8("ForkMesh \xE2\x80\x94 new comment"),
-                             body);
+            notifyIfInactive(alertTitle, alertBody);
         NotificationLink link;
         link.kind = QStringLiteral("issue");
         link.owner = repo.owner;
         link.name = repo.name;
         link.number = comments == 1 ? lastCommentNumber : -1;
-        addNotification(QStringLiteral("New comment"), body, false, link);
+        addNotification(alertTitle, alertBody, false, link);
         if (notifyEnabled(kCommentAlertSetting))
-            showPingTrayMessage(QStringLiteral("ForkMesh — new comment"), body);
+            showPingTrayMessage(alertTitle, alertBody);
     }
 }
 

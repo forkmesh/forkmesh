@@ -1,6 +1,7 @@
 
 #include "MainWindow.h"
 #include "ProcessReaper.h"
+#include "PingSettings.h"
 #include "MainWindowInternal.h"
 #include "PullDecision.h"
 #include "SafeDelete.h"
@@ -12916,13 +12917,19 @@ void MainWindow::finishPullsInboxApply(const RepositoryRecord &repo,
                 : QStringLiteral("%1 new pull requests on %2/%3")
                       .arg(merged)
                       .arg(repo.owner, repo.name);
+        const QString where = repo.owner + QLatin1Char('/') + repo.name;
+        const QString alertTitle =
+            merged == 1 ? forkmesh::pings::alertLeadTitle(outcome.lastAuthor, where)
+                        : where;
+        const QString alertBody =
+            merged == 1 && !outcome.lastTitle.trimmed().isEmpty()
+                ? forkmesh::pings::alertSnippet(outcome.lastTitle)
+                : QStringLiteral("%1 new pull requests").arg(merged);
         flashPingMessage(body);
         if (notifyEnabled(kPullAlertSetting))
-            notifyIfInactive(
-                QString::fromUtf8("ForkMesh \xE2\x80\x94 new pull request"), body);
+            notifyIfInactive(alertTitle, alertBody);
         if (notifyEnabled(kPullAlertSetting))
-            showPingTrayMessage(QStringLiteral("ForkMesh — new pull request"),
-                                body);
+            showPingTrayMessage(alertTitle, alertBody);
         if (onThisRepo)
             triggerTeammatesForEvent(QStringLiteral("new-pulls"), body);
     }
