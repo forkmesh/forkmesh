@@ -5044,4 +5044,25 @@ SCHEMA_STATEMENTS = [
     "ON repo_provider_mirror_outbox(next_ts)",
     "CREATE INDEX IF NOT EXISTS idx_repo_provider_mirror_outbox_repo "
     "ON repo_provider_mirror_outbox(repo_bi)",
+    """CREATE TABLE IF NOT EXISTS repo_uploads (
+        media_id TEXT PRIMARY KEY,
+        repo_bi TEXT NOT NULL,
+        uploader_bi TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('uploading', 'ready', 'removed')),
+        mime TEXT NOT NULL,
+        size INTEGER NOT NULL CHECK (size >= 0),
+        parts INTEGER NOT NULL CHECK (parts >= 0),
+        created_at INTEGER NOT NULL,
+        ready_at INTEGER NOT NULL DEFAULT 0,
+        data TEXT NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS idx_repo_uploads_uploader "
+    "ON repo_uploads(uploader_bi, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_repo_uploads_state "
+    "ON repo_uploads(state, created_at)",
+    """CREATE TABLE IF NOT EXISTS repo_upload_parts (
+        media_id TEXT NOT NULL,
+        part_index INTEGER NOT NULL CHECK (part_index >= 0),
+        size INTEGER NOT NULL CHECK (size >= 0),
+        data TEXT NOT NULL,
+        PRIMARY KEY (media_id, part_index))""",
 ]

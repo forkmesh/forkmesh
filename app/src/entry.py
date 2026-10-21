@@ -1623,6 +1623,7 @@ async def agent_notes_handler(env, request):
 # therefore use a separate pure API module instead of channel admin semantics.
 chat_direct_messages_api = _LazyModule("chat_direct_messages_api")
 chat_direct_media_api = _LazyModule("chat_direct_media_api")
+repo_media_api = _LazyModule("repo_media_api")
 chat_reads_api = _LazyModule("chat_reads_api")
 # Pull-request badge generation is deferred until a federated PR needs it.
 _pull_badge = _LazyModule("pull_badge")
@@ -11314,6 +11315,28 @@ class _ChatDirectMessagesRuntime(_WorldCommunityRuntime):
             state)
 
 
+class _RepoMediaRuntime(_WorldCommunityRuntime):
+    def segment(self, value):
+        return safe_segment(value) or ""
+
+    def header(self, name):
+        if self.request is None:
+            return ""
+        return str(self.request.headers.get(name) or "")
+
+    async def public_repository(self, owner, repo):
+        owner = safe_segment(owner or "")
+        repo = safe_segment(repo or "")
+        if not owner or not repo or await _repo_is_private(self.env, owner, repo):
+            return ""
+        return await blind_index(self.env, owner.lower() + "/" + repo.lower())
+
+    def binary(self, body, status, headers):
+        return JsResponse.new(
+            Uint8Array.new(_to_js(bytes(body or b""))) if body else None,
+            to_js({"status": int(status), "headers": dict(headers)}))
+
+
 async def organization_tasks_handler(env, request, path):
     bot_context = None
     authorization = str(
@@ -13537,7 +13560,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "3b8bc5e5cb64ddbaf9109154e323fe92b056c032d93415799bae6afe28a8ecbc"
+    "af3db7532a65ca75fe044f52c5b7bdf51c22bc662cfb4c1d196eb6f93dec24c9"
 )
 
 
@@ -53036,6 +53059,7 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _instance_console.announce_cron(env)
     if phase == "chat-prune":
         await chat_history_prune_expired(env)
+        await repo_media_api.sweep(_RepoMediaRuntime(env))
         return await chat_direct_media_api.sweep(
             _ChatDirectMessagesRuntime(env))
     if phase == "account-device-prune":
