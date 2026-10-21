@@ -2207,6 +2207,7 @@
   // Feature-tab route segments (mirrors 404.html's `featureTabs` list) - tells
   // a tab route (e.g. /owner/repo/issues) apart from a tree/blob code deep link.
   const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];
+  const REPO_ROUTE_SEGMENTS = [...REPO_TAB_ROUTES, "pull", "agents", "settings", "tree", "blob", "compare"];
 
   // Owner/admin Agents and owner-only Settings are only recognized for an
   // account that can actually see them. A non-owner deep link falls through
@@ -2232,7 +2233,7 @@
     const owner = safeDecodeURIComponent(parts[0]);
     const name = safeDecodeURIComponent(parts[1]);
     const rest = parts.slice(2);
-    if (rest.length && ![...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0])) return value;
+    if (rest.length && !REPO_ROUTE_SEGMENTS.includes(rest[0])) return value;
     if (!repoShortName(owner, name)) return value;
     return [repoPathUrl({ owner, name }), ...rest].join("/") + tail.join("");
   }
@@ -2346,10 +2347,10 @@
     const short = prefixed ? null : repoShortRoute(first);
     if (short && parts.length && first.toLowerCase() === short.name.toLowerCase()) {
       const rest = parts.slice(1);
-      const routed = !rest.length || [...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0]);
-      return [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
+      const routed = !rest.length || REPO_ROUTE_SEGMENTS.includes(rest[0]);
+      parts = [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
     }
-    return parts;
+    return parts[2] === "pull" ? [...parts.slice(0, 2), "pulls", ...parts.slice(3)] : parts;
   }
 
   function requestedRepoKey() {
@@ -2364,7 +2365,7 @@
   }
 
   // Pull-detail sections are addressable in their own right
-  // (/owner/repo/pulls/93/files) so a link to the Files changed review opens
+  // (/owner/repo/pull/93/files) so a link to the Files changed review opens
   // there for whoever it is sent to. Conversation is the default and stays on
   // the bare record URL.
   const REPO_RECORD_SECTIONS = [
@@ -2383,7 +2384,7 @@
   }
 
   function repoRecordUrl(repo, kind, number, section) {
-    const url = `${repoLinkUrl(repo)}/${kind}/${number}`;
+    const url = `${repoLinkUrl(repo)}/${kind === "pulls" ? "pull" : kind}/${number}`;
     // Only pulls have sections; an issue/discussion URL never grows a suffix.
     const suffix = kind === "pulls" ? normalizeRepoRecordSection(section) : "conversation";
     return suffix === "conversation" ? url : `${url}/${suffix}`;
@@ -16097,7 +16098,7 @@
         ? `<button type="button" data-dashboard-commit-hash="${escapeHtml(run.commit)}" class="font-mono hover:text-foreground hover:underline">${escapeHtml(run.commit.slice(0, 10))}</button>`
         : "";
       const pullLink = run.pullNumber
-        ? `<a href="${escapeHtml(`${repoLinkUrl(repo)}/pulls/${run.pullNumber}`)}" data-repo-actions-link class="hover:text-foreground hover:underline">#${run.pullNumber}</a>`
+        ? `<a href="${escapeHtml(repoRecordUrl(repo, "pulls", run.pullNumber))}" data-repo-actions-link class="hover:text-foreground hover:underline">#${run.pullNumber}</a>`
         : "";
       const facts = [
         `run ${run.id}`, commitLink, escapeHtml(repoActionsRefLabel(run.ref)), pullLink,
@@ -23173,7 +23174,7 @@
           <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation, { answer: parsed.discussionAnswer, canMark: parsed.discussionAnswerAuthorized, number })}</div>
           ${renderDiscussionReplyForm(number)}
         </section>` : "";
-    // The open section comes from the URL (/owner/repo/pulls/93/files), so a
+    // The open section comes from the URL (/owner/repo/pull/93/files), so a
     // shared link and a re-render both land on the same tab the sender saw.
     const activeSection = isPulls
       ? normalizeRepoRecordSection(state.repoRecordSection)
@@ -35415,7 +35416,7 @@
       }
     } else if (active === "pulls" || active === "discussions") {
       state.loadedRepoTabs[active] = true;
-      // A record deep link (/owner/repo/pulls/<N> — e.g. the desktop client's
+      // A record deep link (/owner/repo/pull/<N> — e.g. the desktop client's
       // "View on website" button) opens the record's detail page directly
       // instead of the list; Back to the list loads it lazily from there.
       if (recordRoute && recordRoute.kind === active && recordRoute.number) {
@@ -38715,7 +38716,7 @@
     const collaboratorForm = perms.manage ? `<form data-security-inline="collaborator" class="mt-2 flex gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" />${button("collaborator-add", "Add")}</form>` : "";
     const fixLinks = [
       fix.branch ? `<a class="font-mono text-primary hover:underline" href="${escapeHtml(repoLinkUrl(repo, "tree", "") + "?branch=" + encodeURIComponent(fix.branch))}">${escapeHtml(fix.branch)}</a>` : "",
-      fix.pull ? `<a class="text-primary hover:underline" href="${escapeHtml(`${repoLinkUrl(repo)}/pulls/${fix.pull}`)}">#${escapeHtml(String(fix.pull))}</a>` : "",
+      fix.pull ? `<a class="text-primary hover:underline" href="${escapeHtml(repoRecordUrl(repo, "pulls", fix.pull))}">#${escapeHtml(String(fix.pull))}</a>` : "",
       fix.commit ? `<a class="font-mono text-primary hover:underline" href="${escapeHtml(`${repoLinkUrl(repo)}/commits/${fix.commit}`)}">${escapeHtml(fix.commit.slice(0, 10))}</a>` : "",
     ].filter(Boolean).join(" · ");
     const ledgerBody = ledger.state === "recorded"
@@ -38980,11 +38981,11 @@
       && repoMatchesKey(repo, routeRepoKey);
     const routeKind = routeMatchesRepo ? routeParts[2] : undefined;
     const routePath = routeMatchesRepo && routeParts.length > 3 ? routeParts.slice(3).map(decodeURIComponent).join("/") : "";
-    // /owner/repo/pulls/<N> is a record deep link (the desktop client's
+    // /owner/repo/pull/<N> is a record deep link (the desktop client's
     // "View on website" button, or a refreshed/shared PR detail URL): keep
     // the number in the address bar and open that record's detail page below.
     // Issues deep-link the same way so a refresh on an open issue stays on it.
-    // A pull may carry its open section too (/pulls/<N>/files), so a link
+    // A pull may carry its open section too (/pull/<N>/files), so a link
     // copied from the Files changed review reopens on that tab.
     const recordNumber = routeMatchesRepo && routeParts.length > 3
       ? safeDecodeURIComponent(routeParts[3])
@@ -42039,7 +42040,7 @@
         }
         const kind = recordButton.dataset.repoRecordKind || "";
         const number = recordButton.dataset.repoRecordNumber || "";
-        // Mirror the opened record into the address bar (/owner/repo/pulls/4)
+        // Mirror the opened record into the address bar (/owner/repo/pull/4)
         // so refresh and the desktop client's "View on website" button land on
         // this same detail page. Pending records have no mirror number yet.
         // Opening a record from the list always starts on Conversation.
@@ -43225,8 +43226,8 @@
               loadRepoCommits(repo);
             }
           }
-          // Step Back/Forward between a record detail (/pulls/4), one of its
-          // sections (/pulls/4/files) and the list.
+          // Step Back/Forward between a record detail (/pull/4), one of its
+          // sections (/pull/4/files) and the list.
           if (["pulls", "discussions", "issues"].includes(kind)) {
             const recordNumber = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
             if (kind === "pulls" && recordNumber === "send") {
@@ -47348,7 +47349,7 @@
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=915f8761c02c",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=befe2a1621ea",
+    "notes": "/dashboard-page-notes.js?v=c4a2fb6af7f8",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "tasks": "/dashboard-page-tasks.js?v=21e0b6211e46",
     "workflows": "/dashboard-page-workflows.js?v=9cec7cd9e87f",

@@ -2528,7 +2528,7 @@
       }
     } else if (active === "pulls" || active === "discussions") {
       state.loadedRepoTabs[active] = true;
-      // A record deep link (/owner/repo/pulls/<N> — e.g. the desktop client's
+      // A record deep link (/owner/repo/pull/<N> — e.g. the desktop client's
       // "View on website" button) opens the record's detail page directly
       // instead of the list; Back to the list loads it lazily from there.
       if (recordRoute && recordRoute.kind === active && recordRoute.number) {

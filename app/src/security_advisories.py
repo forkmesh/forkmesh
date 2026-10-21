@@ -389,7 +389,7 @@ def osv_record(view, origin):
     references.extend({"type": "WEB", "url": url}
                       for url in view.get("references") or [])
     if fix.get("pull"):
-        references.append({"type": "FIX", "url": "%s/pulls/%d" % (
+        references.append({"type": "FIX", "url": "%s/pull/%d" % (
             repo_url, int(fix["pull"]))})
     if fix.get("commit"):
         references.append({"type": "FIX",

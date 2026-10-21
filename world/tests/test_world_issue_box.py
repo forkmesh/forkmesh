@@ -68,7 +68,7 @@ def test_commit_pinned_issue_and_pull_workbenches_remain_available():
     issue_workbench = _function_body(APP, "openRepositoryIssueWorkbench")
     assert 'this.openRepositoryRecordWebWorkbench("issue", page)' in issue_workbench
     workbench = _function_body(APP, "openRepositoryRecordWebWorkbench")
-    assert '"pulls" : "issues"' in workbench
+    assert '(number ? "pull" : "pulls") : "issues"' in workbench
     assert "data-world-repository-web-workbench" in workbench
     assert "<iframe" in workbench
 
@@ -78,5 +78,5 @@ def test_pull_records_still_route_to_the_canonical_web_workbench():
     assert 'this.openRepositoryRecordWebWorkbench("pull"' in pull_workbench
     generic = _function_body(APP, "openRepositoryRecordWebWorkbench")
     assert 'detail.dataset.openLandmark = `repository-${recordKind}`' in generic
-    assert '"pulls" : "issues"' in generic
+    assert '(number ? "pull" : "pulls") : "issues"' in generic
     assert "Repository portals" not in generic

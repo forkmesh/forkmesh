@@ -89,7 +89,7 @@ Tests: `app/tests/test_repository_file_edits.py` (proposals replay with
 `git am --3way`, the patch matches `git diff`, writers still commit, direct
 writes by readers are refused, signed-out callers get 401),
 `app/browser_tests/tests/dashboard-file-edit.spec.js` (writer save, reader
-proposal opening `/pulls/<n>`).
+proposal opening `/pull/<n>`).
 `app/tests/test_dashboard_landing_migration.py` checks that the viewer's
 toolbar wires **Edit file** to this endpoint and that the retired browser-only
 draft editor (**Edit local draft**, copy and download draft) stays gone.

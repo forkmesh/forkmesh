@@ -475,7 +475,7 @@
     const collaboratorForm = perms.manage ? `<form data-security-inline="collaborator" class="mt-2 flex gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" />${button("collaborator-add", "Add")}</form>` : "";
     const fixLinks = [
       fix.branch ? `<a class="font-mono text-primary hover:underline" href="${escapeHtml(repoLinkUrl(repo, "tree", "") + "?branch=" + encodeURIComponent(fix.branch))}">${escapeHtml(fix.branch)}</a>` : "",
-      fix.pull ? `<a class="text-primary hover:underline" href="${escapeHtml(`${repoLinkUrl(repo)}/pulls/${fix.pull}`)}">#${escapeHtml(String(fix.pull))}</a>` : "",
+      fix.pull ? `<a class="text-primary hover:underline" href="${escapeHtml(repoRecordUrl(repo, "pulls", fix.pull))}">#${escapeHtml(String(fix.pull))}</a>` : "",
       fix.commit ? `<a class="font-mono text-primary hover:underline" href="${escapeHtml(`${repoLinkUrl(repo)}/commits/${fix.commit}`)}">${escapeHtml(fix.commit.slice(0, 10))}</a>` : "",
     ].filter(Boolean).join(" · ");
     const ledgerBody = ledger.state === "recorded"

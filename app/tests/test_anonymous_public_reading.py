@@ -48,12 +48,12 @@ def test_every_public_repository_view_is_a_worker_served_repo_document():
         assert static_routes.looks_like_repo_route(path), path
         assert static_routes.external_site_route(path) is None, path
     assert static_routes.looks_like_repo_route("/acme/widgets")
-    assert static_routes.looks_like_repo_route("/acme/widgets/pulls/93")
+    assert static_routes.looks_like_repo_route("/acme/widgets/pull/93")
     assert static_routes.looks_like_repo_route("/acme/widgets/blob/main/README.md")
     # The alias table sends familiar forge URLs to the readable page, never to
     # an auth page.
-    assert static_routes.repo_alias_redirect("/acme/widgets/pull/7", "") == (
-        "/acme/widgets/pulls/7")
+    assert static_routes.repo_alias_redirect("/acme/widgets/pulls/7", "") == (
+        "/acme/widgets/pull/7")
 
 
 def test_worker_login_redirects_are_admin_only():

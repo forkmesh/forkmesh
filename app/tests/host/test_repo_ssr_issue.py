@@ -104,7 +104,7 @@ function publicProfileUrl(name, suffix = "") {
 function repoLinkUrl(repo, kind = "tree", path = "") {
   return `%(link)s${path ? `/${kind}/${path.split("/").map(encodeURIComponent).join("/")}` : ""}`;
 }
-function repoRecordUrl(repo, kind, number) { return `%(link)s/${kind}/${number}`; }
+function repoRecordUrl(repo, kind, number) { return `%(link)s/${kind === "pulls" ? "pull" : kind}/${number}`; }
 function repoRawUrl(repo, path) { return `%(api)s/raw?path=${encodeURIComponent(path)}&ref=main`; }
 const navigator = { platform: "Linux" };
 const location = { pathname: %(path)s, search: "" };

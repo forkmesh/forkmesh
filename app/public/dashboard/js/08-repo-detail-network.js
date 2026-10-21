@@ -102,11 +102,11 @@
       && repoMatchesKey(repo, routeRepoKey);
     const routeKind = routeMatchesRepo ? routeParts[2] : undefined;
     const routePath = routeMatchesRepo && routeParts.length > 3 ? routeParts.slice(3).map(decodeURIComponent).join("/") : "";
-    // /owner/repo/pulls/<N> is a record deep link (the desktop client's
+    // /owner/repo/pull/<N> is a record deep link (the desktop client's
     // "View on website" button, or a refreshed/shared PR detail URL): keep
     // the number in the address bar and open that record's detail page below.
     // Issues deep-link the same way so a refresh on an open issue stays on it.
-    // A pull may carry its open section too (/pulls/<N>/files), so a link
+    // A pull may carry its open section too (/pull/<N>/files), so a link
     // copied from the Files changed review reopens on that tab.
     const recordNumber = routeMatchesRepo && routeParts.length > 3
       ? safeDecodeURIComponent(routeParts[3])
@@ -3161,7 +3161,7 @@
         }
         const kind = recordButton.dataset.repoRecordKind || "";
         const number = recordButton.dataset.repoRecordNumber || "";
-        // Mirror the opened record into the address bar (/owner/repo/pulls/4)
+        // Mirror the opened record into the address bar (/owner/repo/pull/4)
         // so refresh and the desktop client's "View on website" button land on
         // this same detail page. Pending records have no mirror number yet.
         // Opening a record from the list always starts on Conversation.
@@ -4347,8 +4347,8 @@
               loadRepoCommits(repo);
             }
           }
-          // Step Back/Forward between a record detail (/pulls/4), one of its
-          // sections (/pulls/4/files) and the list.
+          // Step Back/Forward between a record detail (/pull/4), one of its
+          // sections (/pull/4/files) and the list.
           if (["pulls", "discussions", "issues"].includes(kind)) {
             const recordNumber = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
             if (kind === "pulls" && recordNumber === "send") {

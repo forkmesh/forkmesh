@@ -29,7 +29,7 @@ function repoLinkUrl(repo, kind, path) {
   return `/${repo.owner}/${repo.name}/${kind}/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 function repoRecordUrl(repo, kind, number) {
-  return `/${repo.owner}/${repo.name}/${kind}/${number}`;
+  return `/${repo.owner}/${repo.name}/${kind === "pulls" ? "pull" : kind}/${number}`;
 }
 function publicProfileUrl(name) {
   return `https://code.example.test/@${encodeURIComponent(String(name).toLowerCase())}`;
@@ -97,10 +97,10 @@ def test_numbered_record_references_link_to_the_named_item_type():
         'hover:text-foreground">'
     )
     assert f'href="/forkmesh/forkmesh/issues/12"{link_class}issue #12</a>' in html
-    assert f'href="/forkmesh/forkmesh/pulls/12"{link_class}PR #12</a>' in html
-    assert f'href="/forkmesh/forkmesh/pulls/13"{link_class}pull #13</a>' in html
+    assert f'href="/forkmesh/forkmesh/pull/12"{link_class}PR #12</a>' in html
+    assert f'href="/forkmesh/forkmesh/pull/13"{link_class}pull #13</a>' in html
     assert (
-        f'href="/forkmesh/forkmesh/pulls/14"{link_class}pull request #14</a>'
+        f'href="/forkmesh/forkmesh/pull/14"{link_class}pull request #14</a>'
         in html
     )
     assert f'href="/forkmesh/forkmesh/issues/15"{link_class}#15</a>' in html

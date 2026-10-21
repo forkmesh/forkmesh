@@ -1062,21 +1062,22 @@ _NOTIFICATION_QUEUE_MEMO = {}
 # holds the cron slice inside its phase budget.
 NOTIFICATION_DIGEST_MAX_LOOKUPS = 8
 # A stored notification records the SINGULAR source the signed event used
-# ("issue"/"pull"/"discussion"), while the public web route is plural
-# (/owner/repo/pulls/93). Anything that wants to deep-link the exact record has
-# to map one onto the other rather than interpolating `source` directly, so an
-# email lands on the item instead of the site root (issue #652).
+# ("issue"/"pull"/"discussion"), while the public web route of one record is
+# /owner/repo/issues/12, /owner/repo/pull/93 or /owner/repo/discussions/4.
+# Anything that wants to deep-link the exact record has to map one onto the
+# other rather than interpolating `source` directly, so an email lands on the
+# item instead of the site root (issue #652).
 NOTIFICATION_ITEM_URL_SEGMENTS = {
     "issue": "issues",
     "issue_assigned": "issues",
     "bounty": "issues",
-    "pull": "pulls",
+    "pull": "pull",
     "discussion": "discussions",
 }
 # Human noun per route segment, for the digest's primary action label.
 NOTIFICATION_ITEM_NOUNS = {
     "issues": "issue",
-    "pulls": "pull request",
+    "pull": "pull request",
     "discussions": "discussion",
 }
 # Actor portraits are stored at up to 256 KB and Gmail clips a message past
@@ -20257,7 +20258,7 @@ def _apply_browser_security_headers(response, pathname):
     frameable = (
         path in ("/chat", "/chat.html")
         or path.startswith("/dashboard/chat")
-        or re.fullmatch(r"/[^/]+/[^/]+/(?:issues|pulls)/[^/]+", path)
+        or re.fullmatch(r"/[^/]+/[^/]+/(?:issues|pull)/[^/]+", path)
     )
     csp = _BROWSER_CSP.format(
         frame_ancestors="'self'" if frameable else "'none'"

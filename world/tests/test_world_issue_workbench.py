@@ -37,7 +37,7 @@ def test_repo_issue_cards_and_board_open_the_full_web_workbench():
     workbench = _function_body(WORLD, "openRepositoryIssueWorkbench")
     assert 'this.openRepositoryRecordWebWorkbench("issue", page)' in workbench
     generic = _function_body(WORLD, "openRepositoryRecordWebWorkbench")
-    assert '"pulls" : "issues"' in generic
+    assert '(number ? "pull" : "pulls") : "issues"' in generic
     assert "data-world-repository-web-workbench" in generic
     assert "<iframe" in generic
     assert "loading=\"eager\"" in generic
@@ -50,7 +50,7 @@ def test_repo_issue_cards_and_board_open_the_full_web_workbench():
 def test_record_detail_frame_exceptions_are_narrow_and_same_origin_only():
     for marker in (
         "/:owner/:repo/issues/:number\n",
-        "/:owner/:repo/pulls/:number\n",
+        "/:owner/:repo/pull/:number\n",
     ):
         start = HEADERS.index(marker)
         rule = HEADERS[start:].split("\n\n", 1)[0]

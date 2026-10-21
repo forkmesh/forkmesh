@@ -343,14 +343,20 @@ def test_ssr_injects_the_view_and_its_bundle_address():
 
 @pytest.mark.parametrize("path,expected", [
     ("/forkmesh/forkmesh/pulls", ("forkmesh", "forkmesh", "pulls", 0, "")),
-    ("/ForkMesh/forkmesh/pulls/12/files",
+    ("/ForkMesh/forkmesh/pull/12/files",
      ("forkmesh", "forkmesh", "pull", 12, "files")),
+    ("/forkmesh/forkmesh/pull/12", ("forkmesh", "forkmesh", "pull", 12, "")),
+    ("/forkmesh/forkmesh/pull/12/commits",
+     ("forkmesh", "forkmesh", "pull", 12, "commits")),
+    ("/forkmesh/forkmesh/pulls/12/files", None),
+    ("/forkmesh/forkmesh/pulls/12", None),
+    ("/forkmesh/forkmesh/pull", None),
     ("/forkmesh/forkmesh/issues/5", ("forkmesh", "forkmesh", "issue", 5, "")),
     ("/forkmesh/forkmesh/discussions", ("forkmesh", "forkmesh",
                                         "discussions", 0, "")),
     ("/forkmesh/forkmesh/tree/main", None),
     ("/api/forkmesh/pulls", None),
-    ("/forkmesh/forkmesh/pulls/12/nope", None),
+    ("/forkmesh/forkmesh/pull/12/nope", None),
 ])
 def test_view_target(path, expected):
     scope = {"method": "GET", "path": path, "raw_path": path.encode(),
