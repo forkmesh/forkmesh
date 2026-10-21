@@ -137,6 +137,8 @@
           ? `${repoLinkUrl(repo)}/actions/runs/${actionsRunId}`
           : routeKind === "pulls" && routeParts[3] === "send"
             ? pullBatchUrl(repo)
+          : routeKind === "issues" && routeParts[3] === "new" && state.session?.nodeName
+            ? issueComposeUrl(repo)
           : routeKind === "security"
             ? `${repoLinkUrl(repo)}/security${routeParts.slice(3).map((part) => `/${part}`).join("")}`
             : repoTabRoutesFor(repo).includes(routeKind)
@@ -3200,7 +3202,8 @@
 
       const issueCancelButton = event.target.closest("[data-repo-issue-cancel]");
       if (issueCancelButton && state.selectedRepo) {
-        renderRepoIssues();
+        if (issueComposeRouteActive(state.selectedRepo)) navigateHistory(`${repoLinkUrl(state.selectedRepo)}/issues`);
+        showRepoIssueList(state.selectedRepo);
         return;
       }
 
@@ -4392,6 +4395,9 @@
             const recordNumber = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
             if (kind === "pulls" && recordNumber === "send") {
               void openPullBatch(repo, { navigate: false });
+            } else if (kind === "issues" && issueComposeRouteActive(repo)) {
+              state.repoRecordDetail = null;
+              openIssueCompose(repo);
             } else if (/^\d+$/.test(recordNumber)) {
               const section = kind === "pulls"
                 ? normalizeRepoRecordSection(parts[4])
@@ -4404,6 +4410,7 @@
               if (sameRecord) setRepoRecordSection(section);
               else loadRepoRecordDetail(repo, kind, recordNumber);
             } else if (state.repoRecordDetail?.kind === kind
+                || (kind === "issues" && document.querySelector("[data-repo-issues] [data-repo-issue-form]"))
                 || (kind === "pulls" && (state.repoCompare || document.querySelector("[data-pull-batch], [data-pull-batch-message]")))) {
               if (kind === "pulls") stopRepoPullActivityRefresh();
               state.repoRecordDetail = null;
@@ -4413,8 +4420,7 @@
               // would leak closed issues into the default Open view); fetch it
               // if a deep-link landing never populated the list.
               if (kind === "issues") {
-                if (state.issuesView.items.length) renderRepoIssues();
-                else loadRepoIssues(repo);
+                showRepoIssueList(repo);
               } else {
                 loadRepoCollection(repo, kind, `[data-repo-${kind}]`);
               }
