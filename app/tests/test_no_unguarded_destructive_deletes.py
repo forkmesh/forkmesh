@@ -63,6 +63,9 @@ KEYWORDS = re.compile(
     r"|prune=now|filter-branch")
 
 ALLOW: list[tuple[str, str, str]] = [
+    ("app/src/entry.py",
+     'git push --force-with-lease',
+     'user-facing help recommending git push --force-with-lease to update a pull request branch; it runs nothing'),
     ("desktop/src/DestructiveCommandReview.cpp",
      '^\\.arg\\(code\\(',
      'prompt text that names the command being reviewed; this file runs nothing'),

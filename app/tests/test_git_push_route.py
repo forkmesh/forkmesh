@@ -448,6 +448,7 @@ def _proxy_harness(
     fetch_timeouts = []
     pinned = []
     pushers = []
+    forced_updates = []
     admitted = []
     candidate_pubkeys = []
     authorized_digests = []
@@ -522,7 +523,8 @@ def _proxy_harness(
         return basic_account, basic_prefix
 
     async def record_hosted_push_state(_env, owner, repo, endpoint,
-                                       pusher=""):
+                                       pusher="", forced=None):
+        forced_updates.append(forced)
         pinned.append((owner, repo, endpoint["node"]))
         pushers.append(pusher)
         return "d" * 64
@@ -747,7 +749,8 @@ def test_post_capability_binds_receive_pack_masked_target():
     assert lines[0] == "forkmesh-masked-proxy-v1"
     assert lines[1] == "write-node"
     assert lines[2] == "POST"
-    assert lines[3] == "/v1/repositories/alice/app/git-receive-pack"
+    assert lines[3] == (
+        "/v1/repositories/alice/app/git-receive-pack?rewrite=refs%2Fheads%2F")
     assert lines[4] == hashlib.sha256(body).hexdigest()
     assert re.fullmatch(r"[A-Za-z0-9_-]{12,80}", lines[5])
     assert lines[6] == str(NOW)
@@ -755,7 +758,7 @@ def test_post_capability_binds_receive_pack_masked_target():
     target, init = fetches[0]
     assert target == (
         "https://write-node.example.test"
-        "/v1/repositories/alice/app/git-receive-pack")
+        "/v1/repositories/alice/app/git-receive-pack?rewrite=refs%2Fheads%2F")
     assert init["method"] == "POST"
     assert init["body"] == body
     assert init["headers"]["Content-Type"] == (
@@ -1269,7 +1272,8 @@ def test_pending_tag_moves_ride_the_signed_capability_target():
     target = fetches[0][0]
     query = parse_qs(urlparse(target).query)
     assert query == {"tagMoves": [
-        "refs/tags/v1:%s refs/tags/v1.2.4:%s" % ("b" * 40, "a" * 40)]}
+        "refs/tags/v1:%s refs/tags/v1.2.4:%s" % ("b" * 40, "a" * 40)],
+        "rewrite": ["refs/heads/"]}
     signed_path = urlparse(target).path + "?" + urlparse(target).query
     assert signed_path in messages[0]
     assert namespace["_recorded_pushes"][0][5]["tag_moves"] == {
@@ -1470,6 +1474,7 @@ def test_a_contributor_push_signs_its_namespace_and_skips_owner_paths():
     assert response["init"]["status"] == 200
     target = fetches[0][0]
     assert "pushPrefix=refs%2Fheads%2Fpr%2Fbob%2F" in target
+    assert "rewrite=refs%2Fheads%2Fpr%2Fbob%2F" in target
     assert "tagMoves" not in target
     assert any("pushPrefix=" in message for message in messages)
     recorded = namespace["_recorded_pushes"][0]

@@ -938,7 +938,7 @@ def test_receive_pack_accepts_the_basic_credential_and_challenges_for_it():
     assert "_git_push_basic_challenge()" in push_proxy
     # A successful push is where a hosted repository's refs pin comes from.
     assert ("await record_hosted_push_state(\n"
-            "                    env, owner, repo, endpoint, pusher=account)"
+            "                    env, owner, repo, endpoint, pusher=account,"
             ) in push_proxy
     # git only sends credentials after a challenge naming the scheme.
     challenge = ENTRY[
