@@ -1,35 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import datetime as dt
-import importlib.util
-import json
 import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-NOTES = ROOT / "native" / "changelog" / "notes.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import changelog  # noqa: E402
+
 MAX_ITEM_CHARS = 140
-MAX_HISTORY = 12
-
-
-def load_stamp():
-    path = ROOT / "native" / "ios" / "tools" / "changelog_stamp.py"
-    spec = importlib.util.spec_from_file_location("changelog_stamp", path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules.setdefault("changelog_stamp", module)
-    spec.loader.exec_module(module)
-    return module
-
-
-stamp_tool = load_stamp()
-
-AREAS = ("Market", "Calls", "Projects", "Chat", "Agents", "World", "Settings",
-         "iPhone", "Android", "Desktop", "Server", "Other improvements")
+AREAS = changelog.AREAS
 
 PLATFORM_WORDS = {"ios": "iPhone", "iphone": "iPhone", "ipad": "iPhone", "android": "Android",
                   "desktop": "Desktop", "qt": "Desktop", "mobile": "", "native": "",
@@ -114,15 +97,6 @@ class Commit:
     paths: list[str] = field(default_factory=list)
 
 
-@dataclass
-class Build:
-    build: int
-    version: str
-    commit: str
-    since: int
-    date: str
-
-
 def git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
                           check=True).stdout
@@ -156,12 +130,13 @@ def parse_log(text: str) -> list[Commit]:
     return commits
 
 
-def commits_between(repo: Path, target: str, after_commit: str = "", after_time: int = 0) -> list[Commit]:
+def commits_between(repo: Path, target: str, after_commit: str = "", after_date: str = "") -> list[Commit]:
     fmt = "--format=%x1e%H%x1f%P%x1f%s"
     if after_commit and has_commit(repo, after_commit) and is_ancestor(repo, after_commit, target):
         out = git(repo, "log", "--no-merges", "--name-only", fmt, f"{after_commit}..{target}")
-    elif after_time:
-        out = git(repo, "log", "--no-merges", "--name-only", fmt, f"--since=@{after_time}", target)
+    elif after_date:
+        day = after_date if len(after_date) == 10 else f"{after_date}-01"
+        out = git(repo, "log", "--no-merges", "--name-only", fmt, f"--since={day} 00:00", target)
     else:
         return []
     return parse_log(out)
@@ -278,72 +253,7 @@ def sections_for(commits: list[Commit], platform: str = "") -> list[dict]:
     hidden = {"ios": "Android", "android": "iPhone"}.get(platform)
     ordered = [{"title": area, "items": grouped[area]} for area in AREAS
                if area in grouped and area != hidden]
-    return stamp_tool.clean_sections(ordered)
-
-
-def build_from_ipa(ipa: str) -> tuple[str, int] | None:
-    match = re.search(r"-([0-9][0-9.]*)-(\d+)-adhoc\.ipa$", ipa or "")
-    return (match.group(1), int(match.group(2))) if match else None
-
-
-def run_time(ipa: str) -> int:
-    match = re.search(r"/(\d{14})/", ipa or "")
-    if not match:
-        return 0
-    return int(dt.datetime.strptime(match.group(1), "%Y%m%d%H%M%S").timestamp())
-
-
-def day(stamp: int) -> str:
-    return dt.datetime.fromtimestamp(stamp).strftime("%Y-%m-%d") if stamp else ""
-
-
-def ledger(published: dict) -> list[Build]:
-    builds: dict[int, Build] = {}
-    for record in (published or {}).values():
-        if not isinstance(record, dict) or not record.get("commit"):
-            continue
-        parsed = build_from_ipa(str(record.get("ipa") or ""))
-        if not parsed:
-            continue
-        version, number = parsed
-        sent = int(record.get("sentAt") or 0)
-        since = run_time(str(record.get("ipa"))) or sent
-        if number not in builds:
-            builds[number] = Build(number, version, str(record["commit"]), since, day(sent))
-    return [builds[number] for number in sorted(builds)]
-
-
-def read_json(path: Path | None) -> dict:
-    if not path:
-        return {}
-    try:
-        value = json.loads(Path(path).read_text())
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
-def entry_sections(repo: Path, target: str, previous: Build | None, platform: str) -> list[dict]:
-    if previous is None:
-        return []
-    return sections_for(commits_between(repo, target, previous.commit, previous.since), platform)
-
-
-def history(repo: Path, builds: list[Build], notes: dict, platform: str,
-            limit: int = MAX_HISTORY) -> list[dict]:
-    entries: list[dict] = []
-    for index in range(len(builds) - 1, -1, -1):
-        if len(entries) >= limit:
-            break
-        build = builds[index]
-        previous = builds[index - 1] if index > 0 else None
-        generated = entry_sections(repo, build.commit, previous, platform) if has_commit(repo, build.commit) else []
-        sections = stamp_tool.apply_notes(generated, stamp_tool.notes_between(
-            notes, previous.build if previous else None, build.build))
-        if sections:
-            entries.append({"version": build.version, "build": str(build.build),
-                            "date": build.date, "sections": sections})
-    return entries
+    return changelog.clean_sections(ordered)
 
 
 def resolve_target(repo: Path, commit: str) -> str:
@@ -353,55 +263,8 @@ def resolve_target(repo: Path, commit: str) -> str:
     raise SystemExit(f"no commit {commit!r} in {repo}")
 
 
-def draft(repo: Path, commit: str, published: dict, notes_file: dict, platform: str = "ios",
-          today: str = "") -> dict:
-    notes = notes_file.get(platform) or {}
-    builds = ledger(published)
+def sections_since(repo: Path, since: str, commit: str = "HEAD", platform: str = "") -> list[dict]:
     target = resolve_target(repo, commit)
-    last = builds[-1] if builds else None
-    current = {"pending": True, "after": str(last.build) if last else "",
-               "date": today or dt.date.today().isoformat(),
-               "sections": entry_sections(repo, target, last, platform)}
-    return {"schema": stamp_tool.SCHEMA, "notes": notes,
-            "entries": [current, *history(repo, builds, notes, platform)]}
-
-
-def since_ref_draft(repo: Path, commit: str, since_ref: str, notes_file: dict,
-                    platform: str, today: str = "") -> dict:
-    target = resolve_target(repo, commit)
-    commits = commits_between(repo, target, since_ref) if since_ref else []
-    current = {"pending": True, "after": "", "date": today or dt.date.today().isoformat(),
-               "sections": sections_for(commits, platform)}
-    return {"schema": stamp_tool.SCHEMA, "notes": notes_file.get(platform) or {},
-            "entries": [current]}
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Write the phone apps' What's new changelog.")
-    parser.add_argument("--repo", type=Path, default=ROOT)
-    parser.add_argument("--commit", default="main")
-    parser.add_argument("--platform", choices=("ios", "android"), default="ios")
-    parser.add_argument("--published", type=Path)
-    parser.add_argument("--since-ref", default="")
-    parser.add_argument("--notes", type=Path, default=NOTES)
-    parser.add_argument("--version", default="")
-    parser.add_argument("--build", default="")
-    parser.add_argument("--out", type=Path, required=True)
-    args = parser.parse_args(argv)
-    notes = read_json(args.notes)
-    if args.published:
-        result = draft(args.repo, args.commit, read_json(args.published), notes, args.platform)
-    else:
-        result = since_ref_draft(args.repo, args.commit, args.since_ref, notes, args.platform)
-    if args.build:
-        result = stamp_tool.stamp(result, args.version, args.build)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(result, indent=1, ensure_ascii=False) + "\n")
-    head = result["entries"][0] if result["entries"] else {"sections": []}
-    print(f"{args.out}: {sum(len(s['items']) for s in head['sections'])} notes for this build, "
-          f"{len(result['entries']) - 1} earlier builds")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    if changelog.DATE.match(since):
+        return sections_for(commits_between(repo, target, after_date=since), platform)
+    return sections_for(commits_between(repo, target, since), platform)

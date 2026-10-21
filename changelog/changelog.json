@@ -1,0 +1,230 @@
+{
+ "schema": 2,
+ "entries": [
+  {
+   "date": "2026-10-21",
+   "version": "",
+   "title": "Neighbours, stickers and runners",
+   "pitch": "Walk between ForkMesh Worlds, react to messages with stickers, and keep runners in hand from the desktop and the iPhone.",
+   "sections": [
+    {
+     "title": "Market",
+     "items": [
+      "Feed is a Market package, with its own screens on iPhone and Android.",
+      "NEXUS and runners joined the Market.",
+      "The CRM moves a contact to Contacted every time you reach out to them."
+     ]
+    },
+    {
+     "title": "Calls",
+     "items": [
+      "A missed-call line is posted when the caller hangs up before you answer."
+     ]
+    },
+    {
+     "title": "Projects",
+     "items": [
+      "An instance belongs to only one project.",
+      "Add your own instance from the Federated instances list."
+     ]
+    },
+    {
+     "title": "Chat",
+     "items": [
+      "Stick stickers on messages.",
+      "Swipe left on a message for Message Info; your last sent message shows when it was delivered and read.",
+      "Each project keeps its own chat when you switch projects."
+     ]
+    },
+    {
+     "title": "Agents",
+     "items": [
+      "Pause and resume runners from the new Runners pages on the desktop and the iPhone.",
+      "Your last prompt stays pinned above every agent transcript.",
+      "Scrolling back through a transcript no longer snaps to the bottom.",
+      "Review with AI uses the agent and model picked in the composer."
+     ]
+    },
+    {
+     "title": "World",
+     "items": [
+      "Walk from your World onto a neighbouring instance's hexagon and see its scene, without reloading.",
+      "Visitors can walk into a neighbour's Office."
+     ]
+    },
+    {
+     "title": "Settings",
+     "items": [
+      "What's new in the app and forkmesh.com/changelog now show the same notes."
+     ]
+    },
+    {
+     "title": "iPhone",
+     "items": [
+      "AUTO DJ plays a related song people liked on the next deck."
+     ]
+    },
+    {
+     "title": "Server",
+     "items": [
+      "Issues and pull requests link up from Development and from \"fixes #N\" comments.",
+      "Mirrors fetch issue, pull request and discussion changes as soon as they are committed.",
+      "Delete branches one at a time or several at once."
+     ]
+    },
+    {
+     "title": "Other improvements",
+     "items": [
+      "Hidden Unicode characters are stripped from every input on the web, desktop, phones and server."
+     ]
+    }
+   ]
+  },
+  {
+   "date": "2026-10-13",
+   "version": "",
+   "title": "Face swap, a new Market and What's new",
+   "pitch": "Calls get face swap and background blur, the Market gets a fresh look, and the app tells you what changed.",
+   "sections": [
+    {
+     "title": "Calls",
+     "items": [
+      "Face swap in video calls now covers your whole head, hair included, and follows your movements naturally.",
+      "Your voice changes to match the face you pick.",
+      "Blur your background during a call, or replace it with a picture of your own."
+     ]
+    },
+    {
+     "title": "Market",
+     "items": [
+      "The Market has a fresh look, with sorting, filters, usage numbers and one-tap install.",
+      "Packages you have installed now show as installed, every time."
+     ]
+    },
+    {
+     "title": "Projects",
+     "items": [
+      "A new project no longer shows repositories from app.forkmesh.com until you choose an instance for it."
+     ]
+    },
+    {
+     "title": "Settings",
+     "items": [
+      "Your app version and build number now show at the bottom of the You menu. Tap it to see what is new."
+     ]
+    }
+   ]
+  },
+  {
+   "date": "2026-07",
+   "version": "0.7.0",
+   "title": "The Living Code City",
+   "pitch": "ForkMesh becomes a shared three-dimensional developer world backed by independently operated repository mirrors.",
+   "sections": [
+    {
+     "title": "Highlights",
+     "items": [
+      "**Everyone enters the World.** Guests and members share the Town Square, see live avatar movement, and can use the embedded public World chat without leaving the scene.",
+      "**Resilient repository routes.** Public smart-HTTP traffic is proxied through healthy, signed mirrors with automatic failover and round-robin selection.",
+      "**SSH Git access.** Users can register an OpenSSH public key and clone or push through the permission-checked Git gateway; private keys remain on their own device.",
+      "**Non-custodial community rewards.** Contributors can fund the transparent public Solana pool directly from a self-custodial wallet. ForkMesh never stores contributor or node-operator private keys.",
+      "**Privacy-safe identity.** Clothing badges use optional approximate country, browser, and operating-system symbols without publishing raw IP addresses or precise location.",
+      "**Operational clarity.** World notifications, repository integrity proofs, security scan scope, and infrastructure metaphors link back to the technical state they represent."
+     ]
+    }
+   ]
+  },
+  {
+   "date": "2026-06",
+   "version": "0.5.0",
+   "title": "The Agent Mesh",
+   "pitch": "The release where ForkMesh starts to feel alive. Open an issue, hand it to an AI agent, and watch a real pull request show up — all without leaving the mesh.",
+   "sections": [
+    {
+     "title": "Highlights",
+     "items": [
+      "**Built-in coding agents.** Assign any issue to Claude Code or Codex from the issue detail or quick-add box. The agent works on your connected fork and opens a pull request when it's done.",
+      "**A real terminal, in the app.** A native VT100 terminal renders every agent and workflow run with full color output and emoji.",
+      "**Legacy issue bounties.** This release originally added a custodial issue-bounty flow. That flow has since been retired: please do not send funds to historical bounty addresses.",
+      "**VS Code Marketplace plugin.** Optionally browse issues and kick off ForkMesh agents from your editor without installing the plugin in the base desktop app.",
+      "**Profile pages.** Click any node to see its full public profile — repos, identity, and version.",
+      "**Hardened by default.** Tighter signup and relay security, with auto-publish off until you say so."
+     ]
+    }
+   ]
+  },
+  {
+   "date": "2026-06",
+   "version": "0.4.0",
+   "title": "Autonomous Agents",
+   "pitch": "Collaboration stopped being a one-person job.",
+   "sections": [
+    {
+     "title": "Highlights",
+     "items": [
+      "**Parallel agents, no queue.** Run multiple agents at once across your issues.",
+      "**Continue the conversation.** Pick a session back up where it left off, with auto-PR creation on quick tasks.",
+      "**Live activity indicators.** See which agents are working right now.",
+      "**Issues and PRs that talk to each other.** Merge a PR and its linked issue closes itself; sync straight to main with one checkbox.",
+      "**One-click delegation.** Send any issue to your agent of choice — pre-filled and ready to go."
+     ]
+    }
+   ]
+  },
+  {
+   "date": "2026-06",
+   "version": "0.3.0",
+   "title": "Identity & Rewards",
+   "pitch": "ForkMesh added optional community-funded incentives for healthy mirror operators.",
+   "sections": [
+    {
+     "title": "Highlights",
+     "items": [
+      "**Guest-first access.** Visitors enter the world immediately; registered accounts use email, password, and email verification.",
+      "**Solana payouts and contributions.** Publish a self-custodial payout address or voluntarily fund the public mainnet-beta community pool with a direct transfer signed in your own wallet. ForkMesh never receives a community member’s wallet key.",
+      "**Rewards for mirroring.** Eligible, integrity-verified nodes may be selected for a community incentive; participation, payment, and financial returns are never guaranteed.",
+      "**Network presence, done right.** Mirror-sync notices moved into a proper network log, with live connection alerts."
+     ]
+    }
+   ]
+  },
+  {
+   "date": "2026-06",
+   "version": "0.2.0",
+   "title": "Collaborate Anywhere",
+   "pitch": "The web caught up to the desktop, and ForkMesh went mobile.",
+   "sections": [
+    {
+     "title": "Highlights",
+     "items": [
+      "**Pull requests.** Signed patch submissions, browsable on the web and mergeable from the client.",
+      "**Actions.** Run shell-step workflows on push on your own desktop, with the latest live log one click away.",
+      "**Releases and tags.** See your tags, mark the current one, and cut new releases in seconds.",
+      "**Browse before you mirror.** Explore files, commits, and rich diffs (images side by side) — no clone required.",
+      "**ForkMesh on your phone.** Browse repositories, follow activity, chat, and submit signed collaboration updates. The mobile app is an access client; Git mirroring remains a desktop/headless-node job.",
+      "**Fork with intent.** Choose exactly where a fork lands in your working tree."
+     ]
+    }
+   ]
+  },
+  {
+   "date": "2026-06",
+   "version": "0.1.0",
+   "title": "Genesis",
+   "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge.",
+   "sections": [
+    {
+     "title": "Highlights",
+     "items": [
+      "**A distributed mirror network.** Local Git mirrors, signed identities, and a Cloudflare relay that coordinates without ever holding your objects.",
+      "**A public catalog.** Public repositories and clearly labeled external stubs, with actively mirrored repository bytes streamed over HTTPS from a selected healthy origin.",
+      "**Issues that grow with you.** Open/closed states, priorities, custom fields, a Kanban board, and milestones with progress bars.",
+      "**Commit history and diffs**, viewable right in the browser.",
+      "**Authenticated shared-key room chat.** Genesis shipped client-encrypted transport whose default passphrase the relay could derive. Current public channels intentionally retain that integration-compatible boundary; private channels and direct messages now add automatic device-recipient encryption beyond it. Persisted frames remain limited to 500 per room for 7 days.",
+      "**One-click hand-off to your AI tools**, baked in from day one."
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -661,8 +661,7 @@ workflows:
           set -e
           name="$(sed -n 's/^MARKETING_VERSION *= *\([0-9.]*\) *$/\1/p' Config/Version.xcconfig)"
           build="$(sed -n 's/^CURRENT_PROJECT_VERSION *= *\([0-9]*\) *$/\1/p' Config/Version.xcconfig)"
-          python3 tools/changelog_stamp.py --draft "${FORKMESH_CHANGELOG_DRAFT:-}" \
-            --version "$name" --build "$build" --date "$(date +%Y-%m-%d)" \
+          python3 tools/changelog_stamp.py --version "$name" --build "$build" \
             --out ForkMesh/Resources/Changelog.json
       - *native_project
       - *native_watch_platform
