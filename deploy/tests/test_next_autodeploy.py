@@ -1111,3 +1111,328 @@ def test_gate_one_fails_at_once_when_a_node_answers_with_an_error():
 def test_the_busy_exit_code_matches_next_fleet():
     import next_fleet
     assert auto.RUNNERS_BUSY_EXIT == next_fleet.RUNNERS_BUSY_EXIT
+
+
+def agent_files(version):
+    return {source: "%s %s\n" % (name, version) for source, name in auto.installed_sources()}
+
+
+def agent_layout(tmp_path, repo):
+    return SimpleNamespace(node_deploy_bin=tmp_path / "bin" / "node-deploy",
+                           node_deploy_worktree=tmp_path / "worktrees" / "node-deploy",
+                           cache=tmp_path / "cache", systemd_units=tmp_path / "units",
+                           source=repo)
+
+
+def install_files(directory, files):
+    directory.mkdir(parents=True, exist_ok=True)
+    for source, name in auto.installed_sources():
+        (directory / name).write_text(files[source])
+
+
+class FakeSelfRun:
+    def __init__(self, layout, check_code=0, restart_code=0, watch_code=0):
+        self.layout = layout
+        self.check_code = check_code
+        self.restart_code = restart_code
+        self.watch_code = watch_code
+        self.commands = []
+
+    def __call__(self, command, cwd=None, **kwargs):
+        if command[0] == "git":
+            return subprocess.run(command, cwd=cwd, **kwargs)
+        self.commands.append(command)
+        code = 0
+        if command[0] == "systemd-run":
+            code = self.watch_code
+        elif command[:4] == ["systemctl", "--user", "restart", "--no-block"]:
+            code = self.restart_code
+        elif "self-check" in command:
+            code = self.check_code
+            out = "" if code else auto.SELF_CHECK_MARK
+            return subprocess.CompletedProcess(command, code, out, "boom" if code else "")
+        elif "install" in command:
+            target = (Path(command[command.index("--stage") + 1]) if "--stage" in command
+                      else self.layout.node_deploy_bin)
+            target.mkdir(parents=True, exist_ok=True)
+            for source, name in auto.installed_sources():
+                (target / name).write_bytes((Path(cwd) / source).read_bytes())
+            if "--stage" not in command:
+                self.layout.systemd_units.mkdir(parents=True, exist_ok=True)
+                (self.layout.systemd_units / auto.UNIT_NAME).write_text("new unit\n")
+        return subprocess.CompletedProcess(command, code, "", "")
+
+    def kinds(self):
+        names = []
+        for command in self.commands:
+            if command[0] == "systemd-run":
+                names.append("systemd-run")
+            elif command[0] == "systemctl":
+                names.append(" ".join(c for c in command[:4] if not c.startswith("--user")))
+            else:
+                names.append(next(c for c in ("--stage", "self-check", "--no-restart")
+                                  if c in command))
+        return names
+
+
+def self_update_setup(repo, tmp_path):
+    base = commit(repo, agent_files("v1"), "agent v1")
+    layout = agent_layout(tmp_path, repo)
+    install_files(layout.node_deploy_bin, agent_files("v1"))
+    layout.systemd_units.mkdir(parents=True)
+    (layout.systemd_units / auto.UNIT_NAME).write_text("old unit\n")
+    return base, layout
+
+
+def test_self_update_reinstalls_when_the_agent_file_changed(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    files = dict(agent_files("v1"), **{"tools/next_autodeploy.py": "next_autodeploy.py v2\n"})
+    target = commit(repo, files, "agent v2")
+    run, notifier, state_dir = FakeSelfRun(layout), FakeNotifier(), tmp_path / "state"
+    outcome = auto.self_update(repo, target, layout, auto.Log(echo=False),
+                               state_dir=state_dir, notifier=notifier, run=run)
+    assert outcome["status"] == "restarting"
+    assert run.kinds() == ["--stage", "self-check", "--no-restart", "systemd-run",
+                           "systemctl restart --no-block"]
+    assert (layout.node_deploy_bin / "next_autodeploy.py").read_text() == "next_autodeploy.py v2\n"
+    previous = auto.previous_dir(layout)
+    assert (previous / "next_autodeploy.py").read_text() == "next_autodeploy.py v1\n"
+    assert (previous / auto.UNIT_NAME).read_text() == "old unit\n"
+    watch = run.commands[3]
+    assert watch[-4:] == [str(previous / "next_autodeploy.py"), "self-update-watch",
+                          "--digest", outcome["digest"]]
+    record = auto.load_state(state_dir)["selfUpdate"]
+    assert record["status"] == "restarting" and record["files"] == ["next_autodeploy.py"]
+    confirmed = auto.confirm_self_update(repo, layout, print, state_dir=state_dir,
+                                         notifier=notifier, run=run)
+    assert confirmed["status"] == "ok"
+    assert auto.load_state(state_dir)["agent"]["commit"] == target
+    assert notifier.sent == [("Node deploy agent updated to %s" % target[:12],
+                              "agent-updated:%s" % target[:12], False)]
+    assert auto.watch_self_update(outcome["digest"], layout, state_dir=state_dir,
+                                  run=run, source=previous) == 0
+    assert (layout.node_deploy_bin / "next_autodeploy.py").read_text() == "next_autodeploy.py v2\n"
+    again = FakeSelfRun(layout)
+    assert auto.self_update(repo, target, layout, auto.Log(echo=False), state_dir=state_dir,
+                            run=again)["status"] == "current"
+    assert again.commands == []
+
+
+def test_self_update_leaves_the_agent_alone_when_its_files_are_unchanged(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    target = commit(repo, {"app/a.py": "changed\n", "tools/next_deploy.py": "d\n"}, "app")
+    run = FakeSelfRun(layout)
+    outcome = auto.self_update(repo, target, layout, auto.Log(echo=False),
+                               state_dir=tmp_path / "state", run=run)
+    assert outcome == {"status": "current"} and run.commands == []
+    assert not auto.previous_dir(layout).exists()
+    assert "selfUpdate" not in auto.load_state(tmp_path / "state")
+
+
+def test_self_update_tries_each_set_of_agent_files_once(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    broken = commit(repo, {"deploy/core/render.py": "render.py broken\n"}, "broken render")
+    run, notifier, state_dir = FakeSelfRun(layout, check_code=1), FakeNotifier(), tmp_path / "s"
+    outcome = auto.self_update(repo, broken, layout, auto.Log(echo=False),
+                               state_dir=state_dir, notifier=notifier, run=run)
+    assert outcome["status"] == "failed" and "start-up check" in outcome["message"]
+    assert run.kinds() == ["--stage", "self-check"]
+    assert (layout.node_deploy_bin / "render.py").read_text() == "render.py v1\n"
+    assert notifier.sent == [("Node deploy agent update to %s failed" % broken[:12],
+                              "agent-update-failed:%s" % broken[:12], True)]
+    later = commit(repo, {"app/a.py": "later\n"}, "app on top of the broken agent")
+    for target in (broken, later):
+        retry = FakeSelfRun(layout)
+        assert auto.self_update(repo, target, layout, auto.Log(echo=False),
+                                state_dir=state_dir, notifier=notifier,
+                                run=retry)["status"] == "tried"
+        assert retry.commands == []
+    assert len(notifier.sent) == 1
+    fixed = commit(repo, {"deploy/core/render.py": "render.py fixed\n"}, "fixed render")
+    run = FakeSelfRun(layout)
+    assert auto.self_update(repo, fixed, layout, auto.Log(echo=False), state_dir=state_dir,
+                            run=run)["status"] == "restarting"
+    assert (layout.node_deploy_bin / "render.py").read_text() == "render.py fixed\n"
+
+
+def test_a_new_agent_that_never_confirms_is_replaced_by_the_previous_one(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    target = commit(repo, {"tools/next_common.py": "next_common.py v2\n"}, "common v2")
+    run, notifier, state_dir = FakeSelfRun(layout), FakeNotifier(), tmp_path / "state"
+    outcome = auto.self_update(repo, target, layout, auto.Log(echo=False),
+                               state_dir=state_dir, run=run)
+    assert outcome["status"] == "restarting"
+    watch = FakeSelfRun(layout)
+    assert auto.watch_self_update(outcome["digest"], layout, state_dir=state_dir,
+                                  notifier=notifier, run=watch,
+                                  source=auto.previous_dir(layout)) == 1
+    assert (layout.node_deploy_bin / "next_common.py").read_text() == "next_common.py v1\n"
+    assert (layout.systemd_units / auto.UNIT_NAME).read_text() == "old unit\n"
+    assert watch.kinds() == ["systemctl daemon-reload", "systemctl restart forkmesh-node-deploy.service"]
+    assert auto.load_state(state_dir)["selfUpdate"]["status"] == "failed"
+    assert notifier.sent[-1][1:] == ("agent-update-failed:%s" % target[:12], True)
+    assert auto.confirm_self_update(repo, layout, print, state_dir=state_dir, run=run) is None
+    retry = FakeSelfRun(layout)
+    assert auto.self_update(repo, target, layout, auto.Log(echo=False), state_dir=state_dir,
+                            run=retry)["status"] == "tried"
+    assert retry.commands == []
+
+
+def test_a_failed_restart_puts_the_previous_agent_files_back(repo, tmp_path):
+    _base, layout = self_update_setup(repo, tmp_path)
+    target = commit(repo, {"tools/forkmesh_paths.py": "forkmesh_paths.py v2\n"}, "paths v2")
+    run = FakeSelfRun(layout, restart_code=1)
+    outcome = auto.self_update(repo, target, layout, auto.Log(echo=False),
+                               state_dir=tmp_path / "state", notifier=FakeNotifier(), run=run)
+    assert outcome["status"] == "failed"
+    assert (layout.node_deploy_bin / "forkmesh_paths.py").read_text() == "forkmesh_paths.py v1\n"
+    assert run.kinds()[-2:] == ["systemctl stop " + auto.WATCH_UNIT_PREFIX
+                                + auto.load_state(tmp_path / "state")["selfUpdate"]["digest"][:12]
+                                + ".timer", "systemctl daemon-reload"]
+
+
+def test_self_update_waits_for_the_deploy_lock(repo, tmp_path, monkeypatch):
+    _base, layout = self_update_setup(repo, tmp_path)
+    target = commit(repo, {"tools/next_autodeploy.py": "next_autodeploy.py v2\n"}, "v2")
+
+    class Busy:
+        def __init__(self, what=""):
+            pass
+
+        def acquire(self, wait=0, **kwargs):
+            raise common.LockBusy({"what": "next_deploy restart"})
+    monkeypatch.setattr(auto.common, "DeployLock", Busy)
+    run = FakeSelfRun(layout)
+    assert auto.self_update(repo, target, layout, auto.Log(echo=False),
+                            state_dir=tmp_path / "state", run=run) == {"status": "busy"}
+    assert run.commands == [] and "selfUpdate" not in auto.load_state(tmp_path / "state")
+
+
+def test_only_tested_forward_deploys_offer_the_agent_an_update(tmp_path):
+    ok = {"ok": True, "rev": "a" * 12, "target": "a" * 40, "deployed": True, "roll": []}
+    auto.record_outcome(dict(ok), None, print, state_dir=tmp_path)
+    assert "tested" not in auto.load_state(tmp_path)
+    auto.record_outcome(dict(ok, tested=True), None, print, state_dir=tmp_path,
+                        mode="rollback")
+    assert "tested" not in auto.load_state(tmp_path)
+    auto.record_outcome(dict(ok, tested=True, ok=False), None, print, state_dir=tmp_path)
+    assert "tested" not in auto.load_state(tmp_path)
+    auto.record_outcome(dict(ok, tested=True), None, print, state_dir=tmp_path)
+    assert auto.load_state(tmp_path)["tested"]["commit"] == "a" * 40
+
+
+def test_the_agent_updates_itself_only_once_idle_and_once_per_revision(repo, tmp_path):
+    clock, calls, updates = Clock(), [], []
+    gate = __import__("threading").Event()
+    agent = agent_for(repo, tmp_path, clock, calls)
+    agent.layout = agent_layout(tmp_path, repo)
+
+    def pipeline(repo_path, target, mode, log, notifier=None, state_dir=None):
+        gate.wait(5)
+        calls.append(target)
+        result = {"ok": True, "target": target, "rev": target[:12], "deployed": True,
+                  "tested": True, "roll": [], "message": "deployed %s" % target[:12]}
+        auto.record_outcome(result, None, log.say, state_dir=state_dir)
+        return result
+
+    def updater(repo_path, target, layout, log, **kwargs):
+        assert agent.worker is None and not agent.pending
+        updates.append(target)
+        return {"status": "restarting"}
+    agent.pipeline, agent.self_updater = pipeline, updater
+    root = tmp_path / "actions"
+    first = commit(repo, {"tools/next_autodeploy.py": "v2\n"}, "agent v2")
+    make_run(root, 1, first)
+    agent.tick()
+    clock.now += auto.DEBOUNCE_SECONDS + 1
+    agent.tick()
+    assert agent.worker is not None
+    second = commit(repo, {"app/a.py": "2\n"}, "2")
+    make_run(root, 2, second)
+    for _ in range(3):
+        agent.tick()
+    assert updates == []
+    gate.set()
+    agent.worker.join(5)
+    agent.tick()
+    assert calls == [first] and list(agent.pending.values()) == [second]
+    assert updates == []
+    settle(agent, clock, auto.DEPLOY_COOLDOWN_SECONDS)
+    assert calls == [first, second] and agent.pending == {}
+    assert updates == [second] and agent.restarting
+    third = commit(repo, {"app/a.py": "3\n"}, "3")
+    late = make_run(root, 3, third)
+    settle(agent, clock, auto.DEPLOY_COOLDOWN_SECONDS)
+    assert calls == [first, second] and updates == [second]
+    assert not (late / auto.SINK_NAME).exists()
+
+
+def test_the_agent_retries_a_busy_lock_but_not_a_finished_attempt(repo, tmp_path):
+    clock, calls, updates = Clock(), [], []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    agent.layout = agent_layout(tmp_path, repo)
+    statuses = ["busy", "failed"]
+
+    def updater(repo_path, target, layout, log, **kwargs):
+        updates.append(target)
+        return {"status": statuses.pop(0)}
+    agent.self_updater = updater
+    auto.save_state({"tested": {"commit": "b" * 40}}, tmp_path / "switch")
+    agent.tick()
+    agent.tick()
+    assert updates == ["b" * 40]
+    clock.now += auto.SELF_UPDATE_RETRY_SECONDS + 1
+    agent.tick()
+    clock.now += auto.SELF_UPDATE_RETRY_SECONDS + 1
+    agent.tick()
+    assert updates == ["b" * 40, "b" * 40] and not agent.restarting
+    auto.pause("hold", tmp_path / "switch")
+    auto.save_state({"tested": {"commit": "c" * 40}}, tmp_path / "switch")
+    agent.tick()
+    assert updates == ["b" * 40, "b" * 40]
+
+
+def test_install_can_stage_or_skip_the_restart(tmp_path, monkeypatch):
+    layout = SimpleNamespace(node_deploy_bin=tmp_path / "bin", systemd_units=tmp_path / "units")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(common, "autodeploy_dir", lambda: tmp_path / "autodeploy")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+    stage = tmp_path / "stage"
+    assert auto.install(layout=layout, run=run, stage=stage, say=lambda m: None) == 0
+    assert sorted(p.name for p in stage.iterdir()) == sorted(
+        name for _source, name in auto.installed_sources())
+    assert calls == [] and not layout.node_deploy_bin.exists()
+    assert auto.install(layout=layout, run=run, restart=False, say=lambda m: None) == 0
+    assert calls == [["systemctl", "--user", "daemon-reload"],
+                     ["systemctl", "--user", "enable", auto.UNIT_NAME]]
+    assert (layout.systemd_units / auto.UNIT_NAME).is_file()
+
+
+def test_the_staged_agent_passes_its_own_start_up_check(tmp_path):
+    import forkmesh_paths
+    layout = forkmesh_paths.resolve()
+    assert Path(layout.source).resolve().is_relative_to(tmp_path.resolve())
+    source = Path(layout.source)
+    source.mkdir(parents=True)
+    git(source, "init", "-q", "-b", "main")
+    git(source, "config", "user.email", "t@example.com")
+    git(source, "config", "user.name", "t")
+    commit(source, {"deploy/fleet.toml": FLEET_TOML}, "fleet")
+    stage = tmp_path / "stage"
+    assert auto.install(stage=stage, say=lambda m: None) == 0
+    done = subprocess.run([sys.executable, str(stage / "next_autodeploy.py"), "self-check"],
+                          cwd=stage, capture_output=True, text=True, timeout=120, check=False)
+    assert done.returncode == 0, done.stderr
+    assert auto.SELF_CHECK_MARK in done.stdout
+
+
+def test_caddy_settings_reach_the_cores_through_the_automatic_roll():
+    import next_fleet
+    for path in ("deploy/core/render.py", "deploy/core/caddy_routes.py",
+                 "deploy/core/templates/caddy-dropin.conf"):
+        assert auto.roll_path(path), path
+    assert {"files", "start"} <= set(next_fleet.ROLL_STEPS)
