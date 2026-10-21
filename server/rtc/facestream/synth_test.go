@@ -8,6 +8,7 @@ type synthOptions struct {
 	noise  float64
 	seed   uint32
 	jitter bool
+	still  bool
 }
 
 type xorshift uint32
@@ -62,6 +63,9 @@ func synthSequence(o synthOptions) ([]Input, [][LandmarkCount][2]float64) {
 	var clock float64
 	for f := 0; f < o.frames; f++ {
 		t := float64(f) / float64(o.fps)
+		if o.still {
+			t = 0
+		}
 		yaw := 0.3 * math.Sin(2*math.Pi*t/4.3)
 		pitch := 0.12 * math.Sin(2*math.Pi*t/3.1+0.7)
 		roll := 0.07 * math.Sin(2*math.Pi*t/5.3+1.3)

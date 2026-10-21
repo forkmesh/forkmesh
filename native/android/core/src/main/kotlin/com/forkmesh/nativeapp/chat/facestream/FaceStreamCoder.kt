@@ -6,6 +6,7 @@ internal object FaceStreamBits {
     const val TOP = 1L shl 24
     const val MAX_LENGTH = 16
     const val MAX_INT = 65535
+    const val MAX_TRIM = 8
     const val MASK32 = 0xFFFFFFFFL
 }
 
@@ -98,8 +99,9 @@ internal class FaceStreamRangeEncoder(prefix: List<Byte> = emptyList()) {
             }
         }
         repeat(5) { shiftLow() }
-        var end = out.size
-        while (end > 0 && out[end - 1] == 0.toByte()) end -= 1
+        val full = out.size
+        var end = full
+        while (end > 0 && out[end - 1] == 0.toByte() && full - end < FaceStreamBits.MAX_TRIM) end -= 1
         return ByteArray(end) { out[it] }
     }
 
@@ -199,7 +201,7 @@ internal class FaceStreamRangeDecoder(private val data: ByteArray, private val s
         return value
     }
 
-    val overrun: Boolean get() = pos - start > data.size - start + 8
+    val overrun: Boolean get() = pos - start > data.size - start + FaceStreamBits.MAX_TRIM
 
     private fun magnitude(model: FaceStreamIntModel): Int {
         var n = 1

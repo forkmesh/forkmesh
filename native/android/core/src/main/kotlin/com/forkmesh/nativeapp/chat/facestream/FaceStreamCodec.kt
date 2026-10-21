@@ -64,6 +64,7 @@ object FaceStream {
     const val KIND_DELTA = 0
     const val KIND_KEY = 1
     const val KIND_REFERENCE = 2
+    const val KIND_ATLAS = 3
     const val DEFAULT_PRECISION = 96
     const val DEFAULT_KEY_INTERVAL = 30
     const val DEFAULT_FPS = 30
@@ -335,7 +336,7 @@ class FaceStreamDecoder {
         if (packet.size > FaceStream.MAX_FRAME_PACKET) throw FaceStreamException("long")
         if ((u8(packet, 0) shr 4) and 3 != FaceStream.VERSION) throw FaceStreamException("version")
         val kind = u8(packet, 0) shr 6
-        if (kind != FaceStream.KIND_KEY && kind != FaceStream.KIND_DELTA) throw FaceStreamException(if (kind == FaceStream.KIND_REFERENCE) "not-a-frame" else "kind")
+        if (kind != FaceStream.KIND_KEY && kind != FaceStream.KIND_DELTA) throw FaceStreamException(if (kind == FaceStream.KIND_REFERENCE || kind == FaceStream.KIND_ATLAS) "not-a-frame" else "kind")
         val id = u8(packet, 0) and 15
         val frameSeq = u8(packet, 1)
         val key = kind == FaceStream.KIND_KEY
@@ -556,6 +557,97 @@ class FaceStreamReference(
                 packet.copyOfRange(at, packet.size))
             if (!reference.valid) throw FaceStreamException("corrupt")
             return reference
+        }
+    }
+}
+
+class FaceStreamAtlasTile(val state: Int, val mouth: Double, val smile: Double, val points: List<CallFacePoint>)
+
+class FaceStreamAtlas(
+    val id: Int,
+    val time: Long,
+    val tileW: Int,
+    val tileH: Int,
+    val format: Int,
+    val tiles: List<FaceStreamAtlasTile>,
+    val image: ByteArray,
+) {
+    private val valid: Boolean
+        get() = id in 0..15 && format in 0..2 && tileW in MIN_SIDE..MAX_SIDE && tileH in MIN_SIDE..MAX_SIDE && tiles.size in 1..MAX_TILES &&
+            tiles.all { it.state in CLOSED..ROUND } && image.isNotEmpty()
+
+    fun encoded(): ByteArray {
+        if (!valid) throw FaceStreamException("input")
+        val out = ArrayList<Byte>()
+        out.add(FaceStream.header(FaceStream.KIND_ATLAS, id))
+        for (shift in intArrayOf(24, 16, 8, 0)) out.add((time ushr shift).toByte())
+        out.add(tileW.toByte())
+        out.add(tileH.toByte())
+        out.add(tiles.size.toByte())
+        out.add(format.toByte())
+        for (tile in tiles) {
+            if (!tile.mouth.isFinite() || !tile.smile.isFinite() || tile.points.size < POINTS) throw FaceStreamException("input")
+            out.add(tile.state.toByte())
+            out.add(clampInt(FaceStream.floorHalf(tile.mouth * STEPS), 0, STEPS.toInt()).toByte())
+            out.add(clampInt(FaceStream.floorHalf(tile.smile * STEPS), 0, STEPS.toInt()).toByte())
+            for (p in tile.points.take(POINTS)) {
+                for (v in doubleArrayOf(p.x, p.y)) {
+                    if (!v.isFinite()) throw FaceStreamException("input")
+                    val q = clampInt(FaceStream.floorHalf(v * STEPS), -32768, 32767) and 0xFFFF
+                    out.add((q shr 8).toByte())
+                    out.add(q.toByte())
+                }
+            }
+        }
+        val packet = ByteArray(out.size + image.size)
+        out.forEachIndexed { i, b -> packet[i] = b }
+        image.copyInto(packet, out.size)
+        if (packet.size > MAX_PACKET) throw FaceStreamException("long")
+        return packet
+    }
+
+    companion object {
+        const val CLOSED = 0
+        const val OPEN = 1
+        const val WIDE = 2
+        const val ROUND = 3
+        const val MIN_SIDE = 8
+        const val MAX_SIDE = 128
+        const val MAX_TILES = 8
+        const val MAX_PACKET = 64 * 1024
+        const val POINTS = 20
+        private const val FIXED = 9
+        private const val TILE = 3 + POINTS * 4
+        private const val STEPS = 16.0
+
+        fun decode(packet: ByteArray): FaceStreamAtlas {
+            if (packet.size < FIXED + TILE + 1) throw FaceStreamException("short")
+            if (packet.size > MAX_PACKET) throw FaceStreamException("long")
+            val first = packet[0].toInt() and 0xFF
+            if ((first shr 4) and 3 != FaceStream.VERSION) throw FaceStreamException("version")
+            if (first shr 6 != FaceStream.KIND_ATLAS) throw FaceStreamException("not-an-atlas")
+            fun u8(i: Int) = packet[i].toInt() and 0xFF
+            val count = u8(7)
+            if (count < 1 || count > MAX_TILES || packet.size <= FIXED + count * TILE) throw FaceStreamException("corrupt")
+            var at = FIXED
+            val tiles = List(count) {
+                val state = u8(at)
+                val mouth = u8(at + 1)
+                val smile = u8(at + 2)
+                if (mouth > STEPS || smile > STEPS) throw FaceStreamException("corrupt")
+                at += 3
+                val points = List(POINTS) {
+                    val x = ((u8(at) shl 8) or u8(at + 1)).toShort() / STEPS
+                    val y = ((u8(at + 2) shl 8) or u8(at + 3)).toShort() / STEPS
+                    at += 4
+                    CallFacePoint(x, y)
+                }
+                FaceStreamAtlasTile(state, mouth / STEPS, smile / STEPS, points)
+            }
+            val time = (u8(1).toLong() shl 24) or (u8(2).toLong() shl 16) or (u8(3).toLong() shl 8) or u8(4).toLong()
+            val atlas = FaceStreamAtlas(first and 15, time, u8(5), u8(6), u8(8), tiles, packet.copyOfRange(at, packet.size))
+            if (!atlas.valid) throw FaceStreamException("corrupt")
+            return atlas
         }
     }
 }

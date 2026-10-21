@@ -105,6 +105,36 @@ class FaceStreamParityTest {
         }
     }
 
+    fun testAtlasesMatchTheGoReference() {
+        val atlases = list(fixture["atlases"]).map(::obj)
+        assertEq(2, atlases.size, "atlas cases")
+        for (entry in atlases) {
+            val input = obj(entry["input"])
+            val tiles = list(input["tiles"]).map(::obj).map { FaceStreamAtlasTile(int(it["state"]), num(it["mouth"]), num(it["smile"]), points(it["points"])) }
+            val atlas = FaceStreamAtlas(int(input["id"]), num(input["time"]).toLong(), int(input["tileW"]), int(input["tileH"]), int(input["format"]), tiles,
+                bytesOfHex(input["image"] as String))
+            assertEq(entry["packet"], hexOf(atlas.encoded()), "atlas packet")
+            val got = FaceStreamAtlas.decode(bytesOfHex(entry["packet"] as String))
+            val want = obj(entry["decoded"])
+            assertEq(int(want["tileW"]), got.tileW, "tileW")
+            assertEq(int(want["tileH"]), got.tileH, "tileH")
+            list(want["tiles"]).map(::obj).forEachIndexed { k, tile ->
+                assertEq(int(tile["state"]), got.tiles[k].state, "state $k")
+                close(got.tiles[k].mouth, num(tile["mouth"]), "mouth $k")
+                close(got.tiles[k].smile, num(tile["smile"]), "smile $k")
+                nums(tile["points"]).forEachIndexed { j, v -> close(if (j % 2 == 0) got.tiles[k].points[j / 2].x else got.tiles[k].points[j / 2].y, v, "atlas point $k.$j") }
+            }
+            assertEq(want["image"], hexOf(got.image), "atlas image")
+            var refused = false
+            try {
+                FaceStreamDecoder().decode(bytesOfHex(entry["packet"] as String).copyOfRange(0, 64))
+            } catch (error: FaceStreamException) {
+                refused = error.code == "not-a-frame"
+            }
+            expect(refused, "frame decoder must refuse an atlas")
+        }
+    }
+
     fun testRandomBytesNeverCrash() {
         var state = 0x2390
         fun next(): Byte {
@@ -126,6 +156,12 @@ class FaceStreamParityTest {
             }
             try {
                 FaceStreamReference.decode(packet + ByteArray(round * 3) { next() })
+            } catch (_: FaceStreamException) {
+            }
+            try {
+                val bytes = packet + ByteArray(round) { next() }
+                bytes[0] = ((bytes[0].toInt() and 0x0F) or 0xD0).toByte()
+                FaceStreamAtlas.decode(bytes)
             } catch (_: FaceStreamException) {
             }
         }

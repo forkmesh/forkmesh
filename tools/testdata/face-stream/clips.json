@@ -1,0 +1,34 @@
+{
+  "keshav": {
+    "file": "keshav-talking.webm",
+    "sha256": "c9aac81ccda5c18c79e51cdd7520d7d06766dd3bc7724b93713c864112b249a6",
+    "width": 1080,
+    "height": 606,
+    "fps": 25,
+    "frames": 200,
+    "licence": "CC BY-SA 4.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "author": "Wikitongues, recorded by Hardeep Singh",
+    "title": "WIKITONGUES- Keshav speaking Maithili",
+    "page": "https://commons.wikimedia.org/wiki/File:WIKITONGUES-_Keshav_speaking_Maithili.webm",
+    "download": "https://upload.wikimedia.org/wikipedia/commons/a/a3/WIKITONGUES-_Keshav_speaking_Maithili.webm",
+    "sourceSha1": "05c26f9ce6ce9b340eca5159bb00c72f71dc1acb",
+    "changes": "8 s from 12.0 s, audio removed, re-encoded as VP9 (libvpx-vp9 -crf 30 -b:v 0 -g 50)"
+  },
+  "frania": {
+    "file": "frania-talking.webm",
+    "sha256": "f236c0c56ac0db1bf1696d6fed260b24870f489bc204e7cc304498a952f54b87",
+    "width": 1080,
+    "height": 606,
+    "fps": 25,
+    "frames": 200,
+    "licence": "CC BY-SA 3.0",
+    "licenceUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "author": "Subhashish Panigrahi",
+    "title": "Wikipedians speak - Konkani Wikipedian Frania Pereira",
+    "page": "https://commons.wikimedia.org/wiki/File:Wikipedians_speak_-_Konkani_Wikipedian_Frania_Pereira.webm",
+    "download": "https://upload.wikimedia.org/wikipedia/commons/d/de/Wikipedians_speak_-_Konkani_Wikipedian_Frania_Pereira.webm",
+    "sourceSha1": "7564253ecb8f37a1ae3237dd412acf5a592211f7",
+    "changes": "8 s from 52.0 s, audio removed, re-encoded as VP9 (libvpx-vp9 -crf 30 -b:v 0 -g 50)"
+  }
+}

@@ -427,7 +427,7 @@ func (d *Decoder) Decode(packet []byte) (*Frame, error) {
 	}
 	kind := int(packet[0] >> 6)
 	if kind != KindKey && kind != KindDelta {
-		if kind == KindReference {
+		if kind == KindReference || kind == KindAtlas {
 			return nil, ErrNotAFrame
 		}
 		return nil, ErrKind

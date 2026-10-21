@@ -6,6 +6,7 @@ enum FaceStreamBits {
     static let top: UInt32 = 1 << 24
     static let maxLength = 16
     static let maxInt = 65535
+    static let maxTrim = 8
 }
 
 struct FaceStreamIntModel {
@@ -99,7 +100,8 @@ struct FaceStreamRangeEncoder {
             }
         }
         for _ in 0..<5 { shiftLow() }
-        while let last = out.last, last == 0 { out.removeLast() }
+        let full = out.count
+        while let last = out.last, last == 0, full - out.count < FaceStreamBits.maxTrim { out.removeLast() }
         return out
     }
 
@@ -202,7 +204,7 @@ struct FaceStreamRangeDecoder {
         return value
     }
 
-    var overrun: Bool { pos > data.count + 8 }
+    var overrun: Bool { pos > data.count + FaceStreamBits.maxTrim }
 
     private mutating func magnitude(_ model: inout FaceStreamIntModel) -> Int {
         var n = 1

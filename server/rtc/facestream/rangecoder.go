@@ -8,6 +8,7 @@ const (
 	topValue  = 1 << 24
 	maxIntLen = 16
 	maxInt    = 1<<maxIntLen - 1
+	maxTrim   = 8
 )
 
 type prob uint16
@@ -93,8 +94,9 @@ func (e *rangeEncoder) finish() []byte {
 	for i := 0; i < 5; i++ {
 		e.shiftLow()
 	}
-	end := len(e.out)
-	for end > 0 && e.out[end-1] == 0 {
+	full := len(e.out)
+	end := full
+	for end > 0 && e.out[end-1] == 0 && full-end < maxTrim {
 		end--
 	}
 	return e.out[:end]
@@ -163,7 +165,7 @@ func (d *rangeDecoder) direct(count int) uint32 {
 }
 
 func (d *rangeDecoder) overrun() bool {
-	return d.pos > len(d.data)+8
+	return d.pos > len(d.data)+maxTrim
 }
 
 type intModel struct {

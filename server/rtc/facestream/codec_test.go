@@ -229,6 +229,22 @@ func TestExtremePosesStayBounded(t *testing.T) {
 	}
 }
 
+func TestStillFaceKeepsDecoding(t *testing.T) {
+	inputs, _ := synthSequence(synthOptions{frames: 45, fps: 30, seed: 5, still: true})
+	packets, _ := encodeAll(t, Config{Width: 1280, Height: 720}, inputs)
+	dec := NewDecoder()
+	shortest := MaxFramePacket
+	for i, p := range packets {
+		if _, err := dec.Decode(p); err != nil {
+			t.Fatalf("frame %d (%d bytes): %v", i, len(p), err)
+		}
+		shortest = min(shortest, len(p))
+	}
+	if shortest > 12 {
+		t.Fatalf("a still face should cost almost nothing, shortest frame %d bytes", shortest)
+	}
+}
+
 func referenceSample() *Reference {
 	r := &Reference{ID: 3, Format: FormatJPEG, Time: 123456, CropX: 500, CropY: 120, CropW: 320, CropH: 400, Width: 256, Height: 320,
 		MaskW: 64, MaskH: 80, Image: bytes.Repeat([]byte{0xFF, 0xD8, 0x11}, 100)}

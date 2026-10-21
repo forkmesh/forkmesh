@@ -1,11 +1,12 @@
-import { clampValue, faceFrame, liveHead, mouthGap, solvePose, vertexDepths } from "./chat-call-face-geometry.js";
+import { buildHeadMesh, clampValue, faceFrame, headLayout, headModel, liveHead, MOUTH_EXTRA_COUNT, mouthExtras, mouthGap, pointsFromFlat, solvePose, vertexDepths } from "./chat-call-face-geometry.js";
 import { closeLids } from "./chat-call-face-expression.js";
-import { buildCustomFace } from "./chat-call-face-custom.js";
-import { faceHead } from "./chat-call-faces.js";
+import { applyTransform, buildCustomFace, buildCustomMatte, customFaceTransform, headRing } from "./chat-call-face-custom.js";
+import { faceHead, faceTemplate } from "./chat-call-faces.js";
 import { FACE_WARP, VERTEX_FLOATS, faceWebGL, lookUniform, photoEyes, warpVertices } from "./chat-call-face-render.js";
 
 export const FACE_STREAM_VERSION = 1;
-export const FACE_STREAM_KIND = Object.freeze({ delta: 0, key: 1, reference: 2 });
+export const FACE_STREAM_KIND = Object.freeze({ delta: 0, key: 1, reference: 2, atlas: 3 });
+export const FACE_STREAM_MOUTH = Object.freeze({ closed: 0, open: 1, wide: 2, round: 3 });
 export const FACE_STREAM_FORMAT = Object.freeze({ jpeg: 0, heic: 1, webp: 2 });
 export const FACE_STREAM_DEFAULTS = Object.freeze({ fps: 30, precision: 96, keyInterval: 30 });
 export const FACE_STREAM_LIMITS = Object.freeze({
@@ -14,6 +15,10 @@ export const FACE_STREAM_LIMITS = Object.freeze({
   maxSide: 4096,
   maxReferenceSide: 1024,
   maxMaskSide: 128,
+  maxAtlasPacket: 64 * 1024,
+  maxAtlasTiles: 8,
+  minAtlasSide: 8,
+  maxAtlasSide: 128,
   minPrecision: 16,
   maxPrecision: 255,
 });
@@ -24,7 +29,7 @@ export const FACE_STREAM_REFERENCE = Object.freeze({
   width: 256,
   height: 320,
   quality: 0.72,
-  minIntervalMs: 2000,
+  minIntervalMs: 4000,
   refreshMs: 10000,
   better: 0.15,
   maxYaw: 0.26,
@@ -35,10 +40,36 @@ export const FACE_STREAM_REFERENCE = Object.freeze({
   luma: Object.freeze([0.22, 0.85]),
   minContrast: 0.035,
   minSpan: 36,
-  mask: Object.freeze([64, 80]),
+  mask: Object.freeze([96, 120]),
   cropHeight: 4.6,
   cropDrop: 0.35,
-  restRise: 0.002,
+  restRise: 0.006,
+  eyeOpen: 0.25,
+  eyeFall: 0.0005,
+  budgetBurst: 10500,
+  budgetRate: 1400,
+  expectReference: 9000,
+  expectAtlas: 2500,
+});
+
+export const FACE_STREAM_ATLAS = Object.freeze({
+  tileW: 64,
+  tileH: 48,
+  quality: 0.82,
+  reach: 1.6,
+  minIntervalMs: 3000,
+  refreshMs: 60000,
+  better: 0.15,
+  maxYaw: 0.35,
+  maxPitch: 0.35,
+  maxRoll: 0.4,
+  minWidth: 20,
+  closed: 0.05,
+  open: 0.25,
+  mid: 0.1,
+  wide: 0.06,
+  round: 0.06,
+  restRate: 0.05,
 });
 
 export const FACE_STREAM_TEMPLATE = Object.freeze([
@@ -68,6 +99,7 @@ const TOP = 16777216;
 const TWO32 = 4294967296;
 const MAX_LEN = 16;
 const MAX_INT = 65535;
+const MAX_TRIM = 8;
 const QUAT_STEPS = 512;
 const TRANS_STEPS = 2;
 const SCALE_STEPS = 8;
@@ -75,6 +107,10 @@ const MAX_TIME_JUMP = 4000;
 const KEY_HEADER = 12;
 const POINT_STEPS = 16;
 const REFERENCE_FIXED = 1 + 4 + 12 + COUNT * 4 + 3 + 2;
+const MOUTH_POINTS = 20;
+const ATLAS_FIXED = 9;
+const ATLAS_TILE = 3 + MOUTH_POINTS * 4;
+const ATLAS_STEPS = 16;
 const EXPRESSION = Object.freeze([
   ["lidLeft", 16, 0, 16, false, 3600],
   ["lidRight", 16, 0, 16, false, 3600],
@@ -170,8 +206,9 @@ class RangeEncoder {
       }
     }
     for (let i = 0; i < 5; i += 1) this.shiftLow();
-    let end = this.out.length;
-    while (end > 0 && this.out[end - 1] === 0) end -= 1;
+    const full = this.out.length;
+    let end = full;
+    while (end > 0 && this.out[end - 1] === 0 && full - end < MAX_TRIM) end -= 1;
     this.out.length = end;
     return this.out;
   }
@@ -232,7 +269,7 @@ class RangeDecoder {
   }
 
   overrun() {
-    return this.pos > this.data.length + 8;
+    return this.pos > this.data.length + MAX_TRIM;
   }
 }
 
@@ -601,7 +638,7 @@ export function createFaceStreamDecoder() {
     if (packet.length > FACE_STREAM_LIMITS.maxFramePacket) fail("long");
     if (((packet[0] >> 4) & 3) !== FACE_STREAM_VERSION) fail("version");
     const kind = packet[0] >> 6;
-    if (kind !== FACE_STREAM_KIND.key && kind !== FACE_STREAM_KIND.delta) fail(kind === FACE_STREAM_KIND.reference ? "not-a-frame" : "kind");
+    if (kind !== FACE_STREAM_KIND.key && kind !== FACE_STREAM_KIND.delta) fail(kind === FACE_STREAM_KIND.reference || kind === FACE_STREAM_KIND.atlas ? "not-a-frame" : "kind");
     const keyId = packet[0] & 15;
     const seq = packet[1];
     const key = kind === FACE_STREAM_KIND.key;
@@ -805,6 +842,70 @@ export function decodeFaceStreamReference(packet) {
   return r;
 }
 
+function validAtlas(a) {
+  const int = Number.isInteger;
+  if (![a.id, a.format, a.tileW, a.tileH].every(int)) return false;
+  if (a.id < 0 || a.id > 15 || a.format < 0 || a.format > 2) return false;
+  const { minAtlasSide: low, maxAtlasSide: high, maxAtlasTiles } = FACE_STREAM_LIMITS;
+  if (a.tileW < low || a.tileW > high || a.tileH < low || a.tileH > high) return false;
+  if (!Array.isArray(a.tiles) || a.tiles.length < 1 || a.tiles.length > maxAtlasTiles) return false;
+  if (!a.tiles.every((t) => int(t.state) && t.state >= 0 && t.state <= 3)) return false;
+  return Boolean(a.image && a.image.length > 0);
+}
+
+export function encodeFaceStreamAtlas(atlas) {
+  const a = { format: 0, ...atlas };
+  if (!validAtlas(a)) fail("input");
+  const out = [headerByte(FACE_STREAM_KIND.atlas, a.id)];
+  pushU32(out, a.time >>> 0);
+  out.push(a.tileW, a.tileH, a.tiles.length, a.format);
+  for (const t of a.tiles) {
+    if (!finite(t.mouth) || !finite(t.smile) || !Array.isArray(t.points) || t.points.length < MOUTH_POINTS) fail("input");
+    out.push(t.state, clampInt(floorHalf(t.mouth * ATLAS_STEPS), 0, ATLAS_STEPS), clampInt(floorHalf(t.smile * ATLAS_STEPS), 0, ATLAS_STEPS));
+    for (let i = 0; i < MOUTH_POINTS; i += 1) {
+      for (let axis = 0; axis < 2; axis += 1) {
+        const v = t.points[i][axis];
+        if (!finite(v)) fail("input");
+        pushU16(out, clampInt(floorHalf(v * ATLAS_STEPS), -32768, 32767) & 0xFFFF);
+      }
+    }
+  }
+  const packet = new Uint8Array(out.length + a.image.length);
+  packet.set(out, 0);
+  packet.set(a.image, out.length);
+  if (packet.length > FACE_STREAM_LIMITS.maxAtlasPacket) fail("long");
+  return packet;
+}
+
+export function decodeFaceStreamAtlas(packet) {
+  if (!packet || packet.length < ATLAS_FIXED + ATLAS_TILE + 1) fail("short");
+  if (packet.length > FACE_STREAM_LIMITS.maxAtlasPacket) fail("long");
+  if (((packet[0] >> 4) & 3) !== FACE_STREAM_VERSION) fail("version");
+  if (packet[0] >> 6 !== FACE_STREAM_KIND.atlas) fail("not-an-atlas");
+  const a = { id: packet[0] & 15, time: readU32(packet, 1), tileW: packet[5], tileH: packet[6], format: packet[8], tiles: [] };
+  const n = packet[7];
+  if (n < 1 || n > FACE_STREAM_LIMITS.maxAtlasTiles || packet.length <= ATLAS_FIXED + n * ATLAS_TILE) fail("corrupt");
+  let at = ATLAS_FIXED;
+  for (let k = 0; k < n; k += 1) {
+    const state = packet[at];
+    const mouth = packet[at + 1];
+    const smile = packet[at + 2];
+    if (mouth > ATLAS_STEPS || smile > ATLAS_STEPS) fail("corrupt");
+    at += 3;
+    const points = [];
+    for (let i = 0; i < MOUTH_POINTS; i += 1) {
+      const x = readU16(packet, at);
+      const y = readU16(packet, at + 2);
+      at += 4;
+      points.push([(x >= 32768 ? x - 65536 : x) / ATLAS_STEPS, (y >= 32768 ? y - 65536 : y) / ATLAS_STEPS]);
+    }
+    a.tiles.push({ state, mouth: mouth / ATLAS_STEPS, smile: smile / ATLAS_STEPS, points });
+  }
+  a.image = packet.subarray(at);
+  if (!validAtlas(a)) fail("corrupt");
+  return a;
+}
+
 export function quatFromRows(r) {
   const trace = r[0][0] + r[1][1] + r[2][2];
   let q;
@@ -858,6 +959,12 @@ export function faceStreamExpression(reading, points) {
     smile: faceStreamSmile(points),
     tongue: clampValue(reading?.tongue || 0, 0, 1),
   };
+}
+
+export function faceStreamEyeOpening(points) {
+  const d = (a, b) => Math.hypot(points[a][0] - points[b][0], points[a][1] - points[b][1]);
+  const eye = (o) => (d(o + 1, o + 5) + d(o + 2, o + 4)) / (2 * Math.max(d(o, o + 3), 1e-6));
+  return (eye(36) + eye(42)) / 2;
 }
 
 export function faceLight(pixels, width, height, points) {
@@ -952,12 +1059,90 @@ function canvasBytes(canvas, type, quality) {
   });
 }
 
-export function createFaceStreamSender({ width, height, fps, precision, keyInterval, policy = FACE_STREAM_REFERENCE, documentRef = globalThis.document } = {}) {
+export function mouthTileCrop(points, policy = FACE_STREAM_ATLAS) {
+  let cx = 0;
+  let cy = 0;
+  for (let i = 48; i < 60; i += 1) {
+    cx += points[i][0] / 12;
+    cy += points[i][1] / 12;
+  }
+  const dx = points[54][0] - points[48][0];
+  const dy = points[54][1] - points[48][1];
+  const width = Math.hypot(dx, dy);
+  const ux = width > 0 ? [dx / width, dy / width] : [1, 0];
+  return { center: [cx, cy], ux, uy: [-ux[1], ux[0]], width, scale: Math.max(1e-6, (policy.reach * width) / policy.tileW) };
+}
+
+export function mouthTilePoints(points, crop, policy = FACE_STREAM_ATLAS) {
+  const out = [];
+  for (let i = 48; i < 68; i += 1) {
+    const dx = points[i][0] - crop.center[0];
+    const dy = points[i][1] - crop.center[1];
+    out.push([(dx * crop.ux[0] + dy * crop.ux[1]) / crop.scale + policy.tileW / 2, (dx * crop.uy[0] + dy * crop.uy[1]) / crop.scale + policy.tileH / 2]);
+  }
+  return out;
+}
+
+export function faceStreamMouthWidth(points) {
+  return Math.hypot(points[54][0] - points[48][0], points[54][1] - points[48][1]) / faceFrame(points).span;
+}
+
+export function faceStreamLipRatio(points, offset = 0) {
+  const at = (i) => points[i - offset];
+  const width = Math.hypot(at(64)[0] - at(60)[0], at(64)[1] - at(60)[1]);
+  const gap = Math.hypot(at(66)[0] - at(62)[0], at(66)[1] - at(62)[1]);
+  return width > 0 ? gap / width : 0;
+}
+
+export function mouthState({ pose, expression, width = null, restWidth = null }, policy = FACE_STREAM_ATLAS) {
+  if (!pose || !expression) return null;
+  const turn = Math.max(Math.abs(pose.yaw || 0) / policy.maxYaw, Math.abs(pose.pitch || 0) / policy.maxPitch, Math.abs(pose.roll || 0) / policy.maxRoll);
+  if (turn >= 1) return null;
+  const m = expression.mouth || 0;
+  const s = restWidth === null || width === null ? 0 : width / restWidth - 1;
+  let state;
+  let fit;
+  if (m <= policy.closed) {
+    state = FACE_STREAM_MOUTH.closed;
+    fit = 1 - m / policy.closed;
+  } else if (m >= policy.open) {
+    state = FACE_STREAM_MOUTH.open;
+    fit = Math.min(1, 0.5 + (m - policy.open) / 0.4);
+  } else if (m >= policy.mid && restWidth !== null && s >= policy.wide) {
+    state = FACE_STREAM_MOUTH.wide;
+    fit = Math.min(1, 0.5 + (s - policy.wide) / 0.1);
+  } else if (m >= policy.mid && restWidth !== null && s <= -policy.round) {
+    state = FACE_STREAM_MOUTH.round;
+    fit = Math.min(1, 0.5 + (-s - policy.round) / 0.1);
+  } else {
+    return null;
+  }
+  return { state, score: clampValue(fit, 0, 1) * (1 - 0.5 * turn) };
+}
+
+export function createFaceStreamSender({ width, height, fps, precision, keyInterval, policy = FACE_STREAM_REFERENCE, atlasPolicy = FACE_STREAM_ATLAS, documentRef = globalThis.document } = {}) {
   const encoder = createFaceStreamEncoder({ width, height, fps, precision, keyInterval });
   let last = null;
   let nextId = 0;
   let canvas = null;
   let restMouth = null;
+  let openMax = null;
+  let restWidth = null;
+  const tiles = new Map();
+  let tileCanvas = null;
+  let atlasId = 0;
+  let atlasTime = null;
+  let atlasDirty = false;
+  let credit = policy.budgetBurst;
+  let creditTime = null;
+  let referenceSize = policy.expectReference;
+  let atlasSize = policy.expectAtlas;
+
+  function refill(time) {
+    if (creditTime !== null) credit = Math.min(policy.budgetBurst, credit + (policy.budgetRate * Math.max(0, time - creditTime)) / 1000);
+    creditTime = time;
+    return credit;
+  }
 
   return {
     encoder,
@@ -968,12 +1153,18 @@ export function createFaceStreamSender({ width, height, fps, precision, keyInter
     score({ points, pose = null, reading = null, expression = null, light = null }) {
       const solved = pose || faceStreamPose(points);
       const measured = expression || faceStreamExpression(reading, points);
-      restMouth = restMouth === null ? measured.mouth : Math.min(measured.mouth, restMouth + policy.restRise);
-      const relative = { ...measured, mouth: Math.max(0, measured.mouth - restMouth) };
+      restMouth = restMouth === null ? 0 : Math.min(measured.mouth, restMouth + policy.restRise);
+      const opening = faceStreamEyeOpening(points);
+      openMax = openMax === null ? Math.max(opening, policy.eyeOpen) : Math.max(opening, openMax - policy.eyeFall);
+      const shut = clampValue(1 - opening / openMax, 0, 1);
+      const relative = { ...measured, mouth: Math.max(0, measured.mouth - restMouth), lidLeft: Math.max(measured.lidLeft || 0, shut), lidRight: Math.max(measured.lidRight || 0, shut) };
       return referenceScore({ pose: solved, expression: relative, light, span: faceFrame(points).span }, policy);
     },
     due(time, score) {
-      return referenceDue(last, time, score, policy);
+      return referenceDue(last, time, score, policy) && refill(time) >= Math.min(referenceSize, policy.budgetBurst);
+    },
+    get credit() {
+      return credit;
     },
     async reference({ time, source, points, mask = null, score = 1 }) {
       const crop = referenceCrop(points, width, height, policy);
@@ -1005,13 +1196,91 @@ export function createFaceStreamSender({ width, height, fps, precision, keyInter
       });
       nextId = (nextId + 1) & 15;
       last = { time, score };
+      refill(time);
+      credit -= packet.length;
+      referenceSize = packet.length;
       return packet;
+    },
+    mouthTile({ time, source, points, pose = null, reading = null, expression = null }) {
+      const solved = pose || faceStreamPose(points);
+      const measured = expression || faceStreamExpression(reading, points);
+      const width = faceStreamMouthWidth(points);
+      if (measured.mouth <= atlasPolicy.closed) restWidth = restWidth === null ? width : restWidth + atlasPolicy.restRate * (width - restWidth);
+      const pick = mouthState({ pose: solved, expression: measured, width, restWidth }, atlasPolicy);
+      if (!pick || !(pick.score > 0)) return false;
+      const crop = mouthTileCrop(points, atlasPolicy);
+      if (crop.width < atlasPolicy.minWidth) return false;
+      const have = tiles.get(pick.state);
+      if (have && time - have.time < atlasPolicy.refreshMs && pick.score <= have.score + atlasPolicy.better) return false;
+      if (!tileCanvas) {
+        tileCanvas = documentRef.createElement("canvas");
+        tileCanvas.width = atlasPolicy.tileW;
+        tileCanvas.height = atlasPolicy.tileH;
+      }
+      const ctx = tileCanvas.getContext("2d", { willReadFrequently: true });
+      const { center, ux, uy, scale } = crop;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, atlasPolicy.tileW, atlasPolicy.tileH);
+      ctx.imageSmoothingQuality = "high";
+      ctx.setTransform(ux[0] / scale, uy[0] / scale, ux[1] / scale, uy[1] / scale,
+        atlasPolicy.tileW / 2 - (center[0] * ux[0] + center[1] * ux[1]) / scale,
+        atlasPolicy.tileH / 2 - (center[0] * uy[0] + center[1] * uy[1]) / scale);
+      ctx.drawImage(source, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      tiles.set(pick.state, {
+        state: pick.state,
+        time,
+        score: pick.score,
+        mouth: measured.mouth,
+        smile: measured.smile,
+        points: mouthTilePoints(points, crop, atlasPolicy),
+        pixels: ctx.getImageData(0, 0, atlasPolicy.tileW, atlasPolicy.tileH),
+      });
+      if (pick.state !== FACE_STREAM_MOUTH.closed || tiles.size > 1) atlasDirty = true;
+      return true;
+    },
+    atlasDue(time) {
+      const useful = [...tiles.keys()].some((state) => state !== FACE_STREAM_MOUTH.closed);
+      return atlasDirty && useful && (atlasTime === null || time - atlasTime >= atlasPolicy.minIntervalMs) && refill(time) >= atlasSize;
+    },
+    async atlas(time) {
+      const list = [...tiles.values()].sort((a, b) => a.state - b.state);
+      const sheet = documentRef.createElement("canvas");
+      sheet.width = atlasPolicy.tileW * list.length;
+      sheet.height = atlasPolicy.tileH;
+      const ctx = sheet.getContext("2d");
+      list.forEach((tile, k) => ctx.putImageData(tile.pixels, k * atlasPolicy.tileW, 0));
+      const image = new Uint8Array(await canvasBytes(sheet, "image/jpeg", atlasPolicy.quality));
+      const packet = encodeFaceStreamAtlas({
+        id: atlasId,
+        time: time >>> 0,
+        tileW: atlasPolicy.tileW,
+        tileH: atlasPolicy.tileH,
+        format: FACE_STREAM_FORMAT.jpeg,
+        tiles: list.map(({ state, mouth, smile, points }) => ({ state, mouth, smile, points })),
+        image,
+      });
+      atlasId = (atlasId + 1) & 15;
+      atlasTime = time;
+      atlasDirty = false;
+      refill(time);
+      credit -= packet.length;
+      atlasSize = packet.length;
+      return packet;
+    },
+    requestAtlas() {
+      atlasDirty = tiles.size > 0;
+      atlasTime = null;
+    },
+    get tiles() {
+      return tiles.size;
     },
     requestKey() {
       encoder.requestKey();
     },
   };
 }
+
 
 export function faceStreamLivePoints(frame, reference, width, height) {
   if (!frame?.points || !reference) return null;
@@ -1041,6 +1310,26 @@ export function faceStreamMouthFrame(points) {
   return { center: [cx, cy], x: [ux[0] / halfX, ux[1] / halfX], y: [uy[0] / halfY, uy[1] / halfY] };
 }
 
+export function faceStreamMouthShape(points) {
+  const frame = faceFrame(points);
+  let cx = 0;
+  let cy = 0;
+  for (let i = 60; i < 68; i += 1) {
+    cx += points[i][0] / 8;
+    cy += points[i][1] / 8;
+  }
+  const dx = points[64][0] - points[60][0];
+  const dy = points[64][1] - points[60][1];
+  const width = Math.hypot(dx, dy) || frame.span * 0.8;
+  const axis = [dx / width, dy / width];
+  const uy = [-axis[1], axis[0]];
+  let gap = 0;
+  for (const [up, down] of [[61, 67], [62, 66], [63, 65]]) {
+    gap = Math.max(gap, (points[down][0] - points[up][0]) * uy[0] + (points[down][1] - points[up][1]) * uy[1]);
+  }
+  return { center: [cx, cy], axis, halfWidth: Math.max(width / 2, 1e-3), halfGap: Math.max(gap / 2, 0), span: frame.span };
+}
+
 const CONCEAL_MOUTH = Object.freeze([[56, 1], [57, 1], [58, 1], [65, 1], [66, 1], [67, 1], [55, 0.6], [59, 0.6], [7, 0.7], [8, 0.8], [9, 0.7], [6, 0.4], [10, 0.4]]);
 
 export function faceStreamConceal(frame, goodMouth) {
@@ -1061,14 +1350,20 @@ export function createFaceStreamReceiver() {
   const decoder = createFaceStreamDecoder();
   let frame = null;
   let reference = null;
+  let atlas = null;
   let errors = 0;
   let goodMouth = NaN;
   return {
     receive(packet) {
       try {
-        if (faceStreamPacketKind(packet) === FACE_STREAM_KIND.reference) {
+        const kind = faceStreamPacketKind(packet);
+        if (kind === FACE_STREAM_KIND.reference) {
           reference = decodeFaceStreamReference(packet);
           return { type: "reference", reference };
+        }
+        if (kind === FACE_STREAM_KIND.atlas) {
+          atlas = decodeFaceStreamAtlas(packet);
+          return { type: "atlas", atlas };
         }
         const decoded = decoder.decode(packet);
         if (!decoded.stale) goodMouth = decoded.expression.mouth;
@@ -1084,6 +1379,9 @@ export function createFaceStreamReceiver() {
     },
     get reference() {
       return reference;
+    },
+    get atlas() {
+      return atlas;
     },
     get errors() {
       return errors;
@@ -1125,6 +1423,128 @@ function boxBlurRGBA(data, w, h, radius) {
   return out;
 }
 
+export function faceStreamBoxMean(values, w, h, radius) {
+  const tmp = new Float32Array(w * h);
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      let sum = 0;
+      let n = 0;
+      for (let k = Math.max(0, x - radius); k <= Math.min(w - 1, x + radius); k += 1) {
+        sum += values[y * w + k];
+        n += 1;
+      }
+      tmp[y * w + x] = sum / n;
+    }
+  }
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      let sum = 0;
+      let n = 0;
+      for (let k = Math.max(0, y - radius); k <= Math.min(h - 1, y + radius); k += 1) {
+        sum += tmp[k * w + x];
+        n += 1;
+      }
+      out[y * w + x] = sum / n;
+    }
+  }
+  return out;
+}
+
+function maxFilter(values, w, h, radius) {
+  const tmp = new Float32Array(w * h);
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      let m = 0;
+      for (let k = Math.max(0, x - radius); k <= Math.min(w - 1, x + radius); k += 1) m = Math.max(m, values[y * w + k]);
+      tmp[y * w + x] = m;
+    }
+  }
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      let m = 0;
+      for (let k = Math.max(0, y - radius); k <= Math.min(h - 1, y + radius); k += 1) m = Math.max(m, tmp[k * w + x]);
+      out[y * w + x] = m;
+    }
+  }
+  return out;
+}
+
+export function faceStreamCoarseMask(reference) {
+  const { width: w, height: h, maskW: mw, maskH: mh, mask } = reference;
+  const out = new Float32Array(w * h);
+  if (!mask || !mw || !mh) return out;
+  const at = (x, y) => mask[clampValue(y, 0, mh - 1) * mw + clampValue(x, 0, mw - 1)];
+  for (let y = 0; y < h; y += 1) {
+    const fy = ((y + 0.5) / h) * mh - 0.5;
+    const y0 = Math.floor(fy);
+    const ty = fy - y0;
+    for (let x = 0; x < w; x += 1) {
+      const fx = ((x + 0.5) / w) * mw - 0.5;
+      const x0 = Math.floor(fx);
+      const tx = fx - x0;
+      const top = at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx;
+      const bottom = at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx;
+      out[y * w + x] = top * (1 - ty) + bottom * ty;
+    }
+  }
+  return out;
+}
+
+export function faceStreamMatte(reference, pixels) {
+  const { width: w, height: h } = reference;
+  if (!reference.mask || !reference.maskW) return null;
+  const coarse = faceStreamCoarseMask(reference);
+  const guide = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i += 1) guide[i] = (0.299 * pixels[i * 4] + 0.587 * pixels[i * 4 + 1] + 0.114 * pixels[i * 4 + 2]) / 255;
+  const radius = Math.max(2, Math.round(w / 64));
+  const eps = 0.002;
+  const ii = new Float32Array(w * h);
+  const ip = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i += 1) {
+    ii[i] = guide[i] * guide[i];
+    ip[i] = guide[i] * coarse[i];
+  }
+  const meanI = faceStreamBoxMean(guide, w, h, radius);
+  const meanP = faceStreamBoxMean(coarse, w, h, radius);
+  const meanII = faceStreamBoxMean(ii, w, h, radius);
+  const meanIP = faceStreamBoxMean(ip, w, h, radius);
+  const a = new Float32Array(w * h);
+  const b = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i += 1) {
+    const variance = meanII[i] - meanI[i] * meanI[i];
+    a[i] = (meanIP[i] - meanI[i] * meanP[i]) / (variance + eps);
+    b[i] = meanP[i] - a[i] * meanI[i];
+  }
+  const meanA = faceStreamBoxMean(a, w, h, radius);
+  const meanB = faceStreamBoxMean(b, w, h, radius);
+  const band = faceStreamBoxMean(coarse, w, h, Math.max(1, Math.round(w / reference.maskW)));
+  const out = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i += 1) {
+    const q = clampValue(meanA[i] * guide[i] + meanB[i], 0, 1);
+    out[i] = Math.max(q * smoothstep(0, 0.3, band[i]), smoothstep(0.7, 1, band[i]));
+  }
+  return out;
+}
+
+export function faceStreamLayers(reference, alpha) {
+  const { width: w, height: h } = reference;
+  const frame = faceFrame(reference.points);
+  const chin = ((reference.points[8][0] - frame.mid[0]) * frame.uy[0] + (reference.points[8][1] - frame.mid[1]) * frame.uy[1]) / frame.span;
+  const head = new Float32Array(w * h);
+  const removal = new Float32Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = y * w + x;
+      const qy = ((x + 0.5 - frame.mid[0]) * frame.uy[0] + (y + 0.5 - frame.mid[1]) * frame.uy[1]) / frame.span;
+      head[i] = alpha[i] * (1 - smoothstep(chin + 0.25, chin + 0.9, qy));
+      removal[i] = alpha[i] * (1 - smoothstep(chin + 0.15, chin + 0.6, qy));
+    }
+  }
+  return { head, removal };
+}
+
 export function faceStreamRemoval(reference, maskAt) {
   const frame = faceFrame(reference.points);
   const { width: w, height: h } = reference;
@@ -1144,7 +1564,16 @@ export function faceStreamRemoval(reference, maskAt) {
   return out;
 }
 
-export function faceStreamBackdrop(pixels, w, h, removal, blur = 2) {
+export function faceStreamGrow(values, w, h) {
+  const radius = Math.max(1, Math.round(w / 128));
+  const grown = maxFilter(values, w, h, radius);
+  const soft = faceStreamBoxMean(grown, w, h, radius);
+  const out = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i += 1) out[i] = Math.min(1, Math.max(grown[i], soft[i] * 1.5));
+  return out;
+}
+
+function pushPull(pixels, w, h, removal) {
   const levels = [];
   let lw = w;
   let lh = h;
@@ -1182,13 +1611,26 @@ export function faceStreamBackdrop(pixels, w, h, removal, blur = 2) {
         const at = (y * cw + x) * 4;
         const a = data[at + 3];
         const trust = coarse ? clampValue(a * 3, 0, 1) : 1;
+        let fx = 0;
+        let fy = 0;
+        let x0 = 0;
+        let y0 = 0;
+        if (coarse) {
+          const sx = clampValue((x + 0.5) / 2 - 0.5, 0, coarse.w - 1);
+          const sy = clampValue((y + 0.5) / 2 - 0.5, 0, coarse.h - 1);
+          x0 = Math.floor(sx);
+          y0 = Math.floor(sy);
+          fx = sx - x0;
+          fy = sy - y0;
+        }
         for (let c = 0; c < 3; c += 1) {
           const mine = a > 1e-4 ? data[at + c] / a : 0.5;
           let under = mine;
           if (coarse) {
-            const px = Math.min(coarse.w - 1, x >> 1);
-            const py = Math.min(coarse.h - 1, y >> 1);
-            under = coarse.data[(py * coarse.w + px) * 4 + c];
+            const x1 = Math.min(coarse.w - 1, x0 + 1);
+            const y1 = Math.min(coarse.h - 1, y0 + 1);
+            const tap = (px, py) => coarse.data[(py * coarse.w + px) * 4 + c];
+            under = (tap(x0, y0) * (1 - fx) + tap(x1, y0) * fx) * (1 - fy) + (tap(x0, y1) * (1 - fx) + tap(x1, y1) * fx) * fy;
           }
           filled[at + c] = under + (mine - under) * trust;
         }
@@ -1197,13 +1639,277 @@ export function faceStreamBackdrop(pixels, w, h, removal, blur = 2) {
     }
     coarse = { data: filled, w: cw, h: ch };
   }
-  const soft = blur > 0 ? boxBlurRGBA(boxBlurRGBA(coarse.data, w, h, blur), w, h, blur) : coarse.data;
+  return coarse.data;
+}
+
+export function faceStreamBackdrop(pixels, w, h, removal, blur = 2) {
+  const filled = pushPull(pixels, w, h, removal);
+  const soft = blur > 0 ? boxBlurRGBA(boxBlurRGBA(filled, w, h, blur), w, h, blur) : filled;
   const out = new Uint8ClampedArray(w * h * 4);
   for (let i = 0; i < w * h; i += 1) {
     for (let c = 0; c < 3; c += 1) out[i * 4 + c] = Math.round(soft[i * 4 + c] * 255);
     out[i * 4 + 3] = 255;
   }
   return out;
+}
+
+export function faceStreamPlate(pixels, w, h, removal) {
+  const filled = pushPull(pixels, w, h, removal);
+  const radius = Math.max(1, Math.round(w / 100));
+  const soft = boxBlurRGBA(boxBlurRGBA(filled, w, h, radius), w, h, radius);
+  const out = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i += 1) {
+    const r = clampValue(removal[i], 0, 1);
+    for (let c = 0; c < 3; c += 1) out[i * 4 + c] = Math.round(pixels[i * 4 + c] * (1 - r) + soft[i * 4 + c] * 255 * r);
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+export function faceStreamUnmix(pixels, plate, alpha) {
+  const out = new Uint8ClampedArray(pixels.length);
+  for (let i = 0; i < alpha.length; i += 1) {
+    const a = alpha[i];
+    for (let c = 0; c < 3; c += 1) {
+      const at = i * 4 + c;
+      out[at] = a > 0.98 || a < 0.01 ? pixels[at] : Math.round((pixels[at] - (1 - a) * plate[at]) / Math.max(a, 0.05));
+    }
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+function insideRing(points, ring, x, y) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const [xi, yi] = points[ring[i]];
+    const [xj, yj] = points[ring[j]];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+const OUTER_RING = Object.freeze([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]);
+const INNER_RING = Object.freeze([60, 61, 62, 63, 64, 65, 66, 67]);
+
+function lipRingPoints(points, offset = 0) {
+  const at = (i) => points[i - offset];
+  let cx = 0;
+  let cy = 0;
+  for (const i of OUTER_RING) {
+    cx += at(i)[0] / 12;
+    cy += at(i)[1] / 12;
+  }
+  const out = [];
+  for (let i = 0; i < 68; i += 1) out.push(i >= offset && i < offset + points.length ? at(i) : [0, 0]);
+  const feather = OUTER_RING.map((i) => [cx + (at(i)[0] - cx) * 1.35, cy + (at(i)[1] - cy) * 1.35]);
+  return { points: out, feather };
+}
+
+function regionMean(pixels, w, h, test, bounds) {
+  const sum = [0, 0, 0];
+  let n = 0;
+  const x0 = clampValue(Math.floor(bounds[0]), 0, w - 1);
+  const x1 = clampValue(Math.ceil(bounds[2]), 0, w - 1);
+  const y0 = clampValue(Math.floor(bounds[1]), 0, h - 1);
+  const y1 = clampValue(Math.ceil(bounds[3]), 0, h - 1);
+  const values = [];
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
+      if (!test(x + 0.5, y + 0.5)) continue;
+      const at = (y * w + x) * 4;
+      values.push([pixels[at] / 255, pixels[at + 1] / 255, pixels[at + 2] / 255]);
+      for (let c = 0; c < 3; c += 1) sum[c] += pixels[at + c] / 255;
+      n += 1;
+    }
+  }
+  return n ? { mean: sum.map((v) => v / n), values } : null;
+}
+
+function boundsOf(list) {
+  const xs = list.map((p) => p[0]);
+  const ys = list.map((p) => p[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+function featherTest(ring) {
+  return (x, y) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+}
+
+function lipSkinMean(pixels, w, h, points, offset = 0) {
+  const { points: all, feather } = lipRingPoints(points, offset);
+  const outside = featherTest(feather);
+  return regionMean(pixels, w, h, (x, y) => outside(x, y) && !insideRing(all, OUTER_RING, x, y), boundsOf(feather))?.mean || null;
+}
+
+export function faceStreamMouthColours(pixels, w, h, points) {
+  const lips = regionMean(pixels, w, h, (x, y) => insideRing(points, OUTER_RING, x, y) && !insideRing(points, INNER_RING, x, y), boundsOf(OUTER_RING.map((i) => points[i])));
+  const skin = lipSkinMean(pixels, w, h, points) || [0.62, 0.48, 0.4];
+  const luma = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+  const lip = lips?.mean || [skin[0] * 0.85, skin[1] * 0.6, skin[2] * 0.62];
+  let teeth = null;
+  if (mouthGap(points) > 0.06) {
+    const inner = regionMean(pixels, w, h, (x, y) => insideRing(points, INNER_RING, x, y), boundsOf(INNER_RING.map((i) => points[i])));
+    if (inner && inner.values.length >= 6) {
+      const sorted = inner.values.slice().sort((a, b) => luma(b) - luma(a));
+      const top = sorted.slice(0, Math.max(2, Math.floor(sorted.length * 0.3)));
+      const mean = [0, 1, 2].map((c) => top.reduce((sum, v) => sum + v[c], 0) / top.length);
+      if (luma(mean) > luma(skin) * 0.9) teeth = mean;
+    }
+  }
+  if (!teeth) {
+    const level = clampValue(luma(skin) / 0.55, 0.55, 1.15);
+    teeth = [0.86 * level, 0.83 * level, 0.76 * level].map((v) => clampValue(v, 0, 1));
+  }
+  return { lip, teeth, skin };
+}
+
+export function faceStreamAtlasGains(atlasPixels, atlas, pixels, w, h, points) {
+  const reference = lipSkinMean(pixels, w, h, points);
+  return atlas.tiles.map((tile, k) => {
+    if (!reference) return [1, 1, 1];
+    const tilePixels = new Uint8ClampedArray(atlas.tileW * atlas.tileH * 4);
+    for (let y = 0; y < atlas.tileH; y += 1) {
+      for (let x = 0; x < atlas.tileW; x += 1) {
+        const from = (y * atlasPixels.width + k * atlas.tileW + x) * 4;
+        const to = (y * atlas.tileW + x) * 4;
+        for (let c = 0; c < 4; c += 1) tilePixels[to + c] = atlasPixels.data[from + c];
+      }
+    }
+    const mine = lipSkinMean(tilePixels, atlas.tileW, atlas.tileH, tile.points, 48);
+    if (!mine) return [1, 1, 1];
+    return mine.map((v, c) => clampValue((reference[c] + 0.01) / (v + 0.01), 0.6, 1.6));
+  });
+}
+
+export function faceStreamMouthBlend(tiles, expression, points = null) {
+  if (!tiles?.length || !expression) return null;
+  const m = expression.mouth || 0;
+  const s = expression.smile || 0;
+  const r = points ? faceStreamLipRatio(points) : null;
+  const floor = Math.max(0.08, 0.5 * m);
+  const ranked = tiles.map((tile, i) => ({
+    i,
+    d: Math.abs(m - tile.mouth) + 0.5 * Math.abs(s - tile.smile) + (r === null ? 0 : 0.5 * Math.abs(r - faceStreamLipRatio(tile.points, 48))),
+    open: tile.mouth >= floor,
+  })).filter((entry) => entry.open).sort((a, b) => a.d - b.d || a.i - b.i);
+  if (!ranked.length) return null;
+  const a = ranked[0];
+  const b = ranked[1] || a;
+  const mix = a === b || a.d + b.d < 1e-9 ? 0 : a.d / (a.d + b.d);
+  const opacity = smoothstep(0.08, 0.2, m) * (1 - smoothstep(0.3, 0.6, a.d));
+  return { a: a.i, b: b.i, mix, opacity };
+}
+
+const MOUTH_BAND = Object.freeze([[48, 60], [49, 61], [50, 61], [51, 62], [52, 63], [53, 63], [54, 64], [55, 65], [56, 65], [57, 66], [58, 67], [59, 67]]);
+export const MOUTH_VERTEX_FLOATS = 7;
+
+export function faceStreamMouthMesh(points, tileA, tileB, tileW, tileH, lipAlpha = 0.85) {
+  const live = lipRingPoints(points.slice(48, 68), 48);
+  const a = lipRingPoints(tileA.points, 48);
+  const b = lipRingPoints(tileB.points, 48);
+  const centre = (set) => {
+    let cx = 0;
+    let cy = 0;
+    for (const i of INNER_RING) {
+      cx += set.points[i][0] / 8;
+      cy += set.points[i][1] / 8;
+    }
+    return [cx, cy];
+  };
+  const vertex = (key) => {
+    if (key === "c") return [centre(live), centre(a), centre(b), 1];
+    if (key[0] === "f") {
+      const k = Number(key.slice(1));
+      return [live.feather[k], a.feather[k], b.feather[k], 0];
+    }
+    return [live.points[key], a.points[key], b.points[key], key >= 60 ? 1 : lipAlpha];
+  };
+  const triangles = [];
+  for (let k = 0; k < 8; k += 1) triangles.push(["c", INNER_RING[k], INNER_RING[(k + 1) % 8]]);
+  for (let j = 0; j < 12; j += 1) {
+    const [o1, i1] = MOUTH_BAND[j];
+    const [o2, i2] = MOUTH_BAND[(j + 1) % 12];
+    triangles.push([o1, o2, i2]);
+    if (i1 !== i2) triangles.push([o1, i2, i1]);
+  }
+  for (let j = 0; j < 12; j += 1) {
+    const o1 = OUTER_RING[j];
+    const o2 = OUTER_RING[(j + 1) % 12];
+    triangles.push([o1, o2, `f${(j + 1) % 12}`]);
+    triangles.push([o1, `f${(j + 1) % 12}`, `f${j}`]);
+  }
+  const out = new Float32Array(triangles.length * 3 * MOUTH_VERTEX_FLOATS);
+  let at = 0;
+  for (const triangle of triangles) {
+    for (const key of triangle) {
+      const [p, ua, ub, alpha] = vertex(key);
+      out[at++] = p[0];
+      out[at++] = p[1];
+      out[at++] = ua[0] / tileW;
+      out[at++] = ua[1] / tileH;
+      out[at++] = ub[0] / tileW;
+      out[at++] = ub[1] / tileH;
+      out[at++] = alpha;
+    }
+  }
+  return out;
+}
+
+export function faceStreamWarpPoints(headPoints, drawn, mouthStart, anchor = null) {
+  const out = headPoints.slice(0, mouthStart).map((p) => [p[0], p[1]]);
+  if (anchor) {
+    const live = faceFrame(drawn);
+    const turn = live.roll - anchor.roll;
+    const grow = live.span / anchor.span;
+    const c = Math.cos(turn) * grow;
+    const sn = Math.sin(turn) * grow;
+    for (let v = 0; v < mouthStart; v += 1) {
+      const [dx, dy] = anchor.offsets[v];
+      out[v] = [out[v][0] + c * dx - sn * dy, out[v][1] + sn * dx + c * dy];
+    }
+  }
+  for (let i = 17; i < COUNT; i += 1) out[i] = [drawn[i][0], drawn[i][1]];
+  const frame = faceFrame(out);
+  for (const [up, down] of [[61, 67], [62, 66], [63, 65]]) {
+    const gap = (out[down][0] - out[up][0]) * frame.uy[0] + (out[down][1] - out[up][1]) * frame.uy[1];
+    if (gap < 0) {
+      const mid = [(out[up][0] + out[down][0]) / 2, (out[up][1] + out[down][1]) / 2];
+      out[up] = mid.slice();
+      out[down] = mid.slice();
+    }
+  }
+  return out.concat(mouthExtras(out));
+}
+
+export function faceStreamAnchor(face, place, width, height) {
+  const sx = width / place.width;
+  const sy = height / place.height;
+  const pose = place.pose;
+  const r3 = rotationRows(pose.rotation)[2];
+  const depth = pose.scale * (sx + sy) * 0.5;
+  const live = place.points.map(([x, y], i) => [x * sx, y * sy, depth * dot3(r3, FACE_STREAM_TEMPLATE[i])]);
+  const head = liveHead(face.model, live);
+  const [a, b, c, d, e, f] = place.matrix;
+  const det = a * d - b * c || 1e-9;
+  const mouthStart = face.mesh.mouthStart ?? head.points.length - MOUTH_EXTRA_COUNT;
+  const offsets = [];
+  for (let v = 0; v < mouthStart; v += 1) {
+    const [lx, ly] = face.layout[v];
+    const px = (d * (lx - e) - c * (ly - f)) / det - place.pad;
+    const py = (-b * (lx - e) + a * (ly - f)) / det - place.pad;
+    offsets.push([px * sx - head.points[v][0], py * sy - head.points[v][1]]);
+  }
+  const frame = faceFrame(live);
+  return { offsets, roll: frame.roll, span: frame.span, width, height };
 }
 
 const STREAM_QUAD = `
@@ -1214,59 +1920,130 @@ void main() {
   gl_Position = vec4(aPos, 0.0, 1.0);
 }`;
 
+const STREAM_MOUTH_VERTEX = `
+attribute vec2 aPos;
+attribute vec2 aUvA;
+attribute vec2 aUvB;
+attribute float aAlpha;
+uniform vec2 uSize;
+varying vec2 vUvA;
+varying vec2 vUvB;
+varying float vAlpha;
+void main() {
+  vUvA = aUvA;
+  vUvB = aUvB;
+  vAlpha = aAlpha;
+  gl_Position = vec4(aPos / uSize * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const STREAM_MOUTH_FRAGMENT = `
+precision highp float;
+uniform sampler2D uAtlas;
+uniform float uTiles;
+uniform float uTileA;
+uniform float uTileB;
+uniform float uMix;
+uniform vec2 uHalf;
+uniform vec3 uGainA;
+uniform vec3 uGainB;
+varying vec2 vUvA;
+varying vec2 vUvB;
+varying float vAlpha;
+vec3 tile(float index, vec2 uv) {
+  vec2 q = clamp(uv, uHalf, vec2(1.0) - uHalf);
+  return texture2D(uAtlas, vec2((index + q.x) / uTiles, q.y)).rgb;
+}
+void main() {
+  vec3 a = tile(uTileA, vUvA) * uGainA;
+  vec3 b = tile(uTileB, vUvB) * uGainB;
+  gl_FragColor = vec4(clamp(mix(a, b, uMix), 0.0, 1.0), vAlpha);
+}`;
+
 const STREAM_COMPOSITE = `
 precision highp float;
 uniform sampler2D uBackdrop;
 uniform sampler2D uWarp;
 uniform sampler2D uAux;
+uniform sampler2D uMouth;
 uniform vec2 uPixels;
 uniform vec2 uMouthCenter;
-uniform vec2 uMouthX;
-uniform vec2 uMouthY;
+uniform vec2 uMouthAxis;
+uniform vec3 uMouthSize;
+uniform vec3 uLip;
+uniform vec3 uTeeth;
 uniform float uTongue;
 uniform float uFace;
 uniform float uSeed;
+uniform float uMouthOn;
 varying vec2 vUv;
 float grain(vec2 at) {
   return fract(sin(dot(floor(at) + vec2(uSeed, uSeed * 0.61), vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
 }
+vec3 interior(vec2 p, float cavity) {
+  vec2 d = p - uMouthCenter;
+  vec2 ay = vec2(-uMouthAxis.y, uMouthAxis.x);
+  float x = dot(d, uMouthAxis) / uMouthSize.x;
+  float y = dot(d, ay);
+  float opening = uMouthSize.y;
+  float span = uMouthSize.z;
+  float top = y + opening;
+  float bottom = opening - y;
+  float gap = 2.0 * opening / span;
+  vec3 c = mix(uLip * 0.3, uLip * 0.07, smoothstep(0.0, 1.0, cavity));
+  c *= mix(0.55, 1.0, smoothstep(0.0, 0.6, abs(x)));
+  float floorShow = max(uTongue, 0.6 * smoothstep(0.18, 0.4, gap));
+  vec2 tq = vec2(x / 0.7, (bottom - 0.3 * opening) / (0.55 * opening + 0.5));
+  float tongue = (1.0 - smoothstep(0.5, 1.0, length(tq))) * floorShow;
+  c = mix(c, uLip * vec3(0.95, 0.62, 0.66), tongue);
+  float height = 0.12 * span * max(1.0 - 1.2 * x * x, 0.0);
+  float upper = (1.0 - smoothstep(height * 0.75, height, top)) * (1.0 - smoothstep(0.6, 0.85, abs(x))) * smoothstep(0.04, 0.16, gap);
+  float gaps = 1.0 - 0.15 * smoothstep(0.9, 1.0, cos(x * 18.85));
+  vec3 tooth = uTeeth * mix(0.55, 0.85, smoothstep(0.0, height + 0.01, top)) * (1.0 - 0.45 * x * x) * gaps;
+  c = mix(c, tooth, upper);
+  float lowHeight = 0.07 * span * max(1.0 - 1.6 * x * x, 0.0);
+  float lower = (1.0 - smoothstep(lowHeight * 0.75, lowHeight, bottom)) * smoothstep(0.22, 0.4, gap) * (1.0 - smoothstep(0.45, 0.65, abs(x)));
+  c = mix(c, uTeeth * 0.55, lower * 0.6);
+  c *= mix(0.6, 1.0, smoothstep(0.0, 0.03 * span, top));
+  return mix(uLip * 0.62, c, smoothstep(0.03, 0.1, gap));
+}
 void main() {
+  vec2 p = vUv * uPixels;
   vec3 color = texture2D(uBackdrop, vUv).rgb;
   if (uFace > 0.5) {
     vec4 warp = texture2D(uWarp, vUv);
     vec4 aux = texture2D(uAux, vUv);
     float hole = min(aux.b * 2.0, 1.0);
     float cavity = max(aux.b * 2.0 - 1.0, 0.0);
-    vec2 d = vUv * uPixels - uMouthCenter;
-    vec2 q = vec2(dot(d, uMouthX), dot(d, uMouthY));
-    vec3 inside = mix(vec3(0.32, 0.12, 0.12), vec3(0.09, 0.03, 0.04), smoothstep(0.0, 1.0, cavity));
-    float teeth = (1.0 - smoothstep(-0.5, -0.15, q.y)) * (1.0 - smoothstep(0.45, 0.85, abs(q.x)));
-    inside = mix(inside, vec3(0.86, 0.84, 0.79), teeth * 0.85);
-    float lower = smoothstep(0.55, 0.9, q.y) * (1.0 - smoothstep(0.3, 0.65, abs(q.x)));
-    inside = mix(inside, vec3(0.76, 0.74, 0.69), lower * 0.3);
-    float tongue = uTongue * (1.0 - smoothstep(0.55, 1.0, length((q - vec2(0.0, 0.55)) / vec2(0.75, 0.6))));
-    inside = mix(inside, vec3(0.78, 0.36, 0.4), tongue);
-    color = mix(color, inside, hole);
-    color *= 1.0 - 0.22 * hole * (1.0 - hole) * 4.0;
-    vec3 face = clamp(warp.rgb + grain(vUv * uPixels) * 0.008, 0.0, 1.0);
+    color = mix(color, interior(p, cavity), hole);
+    color *= 1.0 - 0.18 * hole * (1.0 - hole) * 4.0;
+    vec3 face = clamp(warp.rgb + grain(p) * 0.006, 0.0, 1.0);
     color = mix(color, face, warp.a);
+    if (uMouthOn > 0.001) {
+      vec4 mouth = texture2D(uMouth, vUv);
+      color = mix(color, mouth.rgb, mouth.a * uMouthOn);
+    }
   }
   gl_FragColor = vec4(color, 1.0);
 }`;
+
+export const FACE_STREAM_WARP_FRAGMENT = FACE_WARP.fragment.replace(/const float SOFTEN = [0-9.]+;/, "const float SOFTEN = 0.0;");
 
 export function createFaceStreamRenderer(canvas) {
   const gl = faceWebGL(canvas);
   if (!gl) throw new Error("WebGL is unavailable");
   const { compile, texture, target } = FACE_WARP;
-  const warp = compile(gl, FACE_WARP.vertex, FACE_WARP.fragment);
+  const warp = compile(gl, FACE_WARP.vertex, FACE_STREAM_WARP_FRAGMENT);
+  const mouthProgram = compile(gl, STREAM_MOUTH_VERTEX, STREAM_MOUTH_FRAGMENT);
   const composite = compile(gl, STREAM_QUAD, STREAM_COMPOSITE);
   const quad = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const meshBuffer = gl.createBuffer();
+  const mouthBuffer = gl.createBuffer();
   const photo = texture(gl, gl.LINEAR_MIPMAP_LINEAR);
   const aux = texture(gl, gl.LINEAR_MIPMAP_LINEAR);
   const backdrop = texture(gl);
+  const atlasTexture = texture(gl);
   gl.bindTexture(gl.TEXTURE_2D, backdrop);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([44, 46, 52, 255]));
   let face = null;
@@ -1274,6 +2051,8 @@ export function createFaceStreamRenderer(canvas) {
   let width = 0;
   let height = 0;
   let count = 0;
+  let atlas = null;
+  let colours = { lip: [0.55, 0.3, 0.3], teeth: [0.86, 0.83, 0.76] };
 
   function resize(w, h) {
     if (targets && w === width && h === height) return;
@@ -1281,7 +2060,7 @@ export function createFaceStreamRenderer(canvas) {
     height = h;
     canvas.width = w;
     canvas.height = h;
-    targets = { warp: target(gl, w, h, gl.UNSIGNED_BYTE, true), aux: target(gl, w, h, gl.UNSIGNED_BYTE, true) };
+    targets = { warp: target(gl, w, h, gl.UNSIGNED_BYTE, true), aux: target(gl, w, h, gl.UNSIGNED_BYTE, true), mouth: target(gl, w, h, gl.UNSIGNED_BYTE) };
   }
 
   function bind(program, entries) {
@@ -1304,12 +2083,49 @@ export function createFaceStreamRenderer(canvas) {
     if (mip) gl.generateMipmap(gl.TEXTURE_2D);
   }
 
+  function attributes(program, layout, stride) {
+    return layout.map(([name, size, offset]) => {
+      const at = gl.getAttribLocation(program.program, name);
+      if (at >= 0) {
+        gl.enableVertexAttribArray(at);
+        gl.vertexAttribPointer(at, size, gl.FLOAT, false, stride * 4, offset);
+      }
+      return at;
+    }).filter((at) => at >= 0);
+  }
+
+  function drawMouth(points, mouth) {
+    const tileA = atlas.atlas.tiles[mouth.a];
+    const tileB = atlas.atlas.tiles[mouth.b];
+    const vertices = faceStreamMouthMesh(points, tileA, tileB, atlas.atlas.tileW, atlas.atlas.tileH);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, targets.mouth.framebuffer);
+    gl.viewport(0, 0, width, height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(mouthProgram.program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, mouthBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+    const attrs = attributes(mouthProgram, [["aPos", 2, 0], ["aUvA", 2, 8], ["aUvB", 2, 16], ["aAlpha", 1, 24]], MOUTH_VERTEX_FLOATS);
+    bind(mouthProgram, [["uAtlas", atlasTexture]]);
+    const u = mouthProgram.uniforms;
+    gl.uniform2f(u.uSize, width, height);
+    gl.uniform1f(u.uTiles, atlas.atlas.tiles.length);
+    gl.uniform1f(u.uTileA, mouth.a);
+    gl.uniform1f(u.uTileB, mouth.b);
+    gl.uniform1f(u.uMix, mouth.mix);
+    gl.uniform2f(u.uHalf, 0.5 / atlas.atlas.tileW, 0.5 / atlas.atlas.tileH);
+    gl.uniform3f(u.uGainA, ...(atlas.gains[mouth.a] || [1, 1, 1]));
+    gl.uniform3f(u.uGainB, ...(atlas.gains[mouth.b] || [1, 1, 1]));
+    gl.drawArrays(gl.TRIANGLES, 0, vertices.length / MOUTH_VERTEX_FLOATS);
+    for (const at of attrs) gl.disableVertexAttribArray(at);
+  }
+
   return {
     gl,
-    setFace({ photo: image, matte, mesh, layout, model, size }) {
+    setFace({ photo: image, matte, mesh, layout, model, size, place = null }) {
       upload(photo, image, true);
       upload(aux, matte, true);
-      face = { mesh, layout, model, size, eyes: photoEyes(layout, size) };
+      face = { mesh, layout, model, size, eyes: photoEyes(layout, size), place, anchor: null };
     },
     clearFace() {
       face = null;
@@ -1317,28 +2133,43 @@ export function createFaceStreamRenderer(canvas) {
     setBackdrop(image) {
       upload(backdrop, image, false);
     },
-    draw(w, h, live, expression = null) {
+    setColours(next) {
+      colours = { ...colours, ...next };
+    },
+    setReference(prepared) {
+      this.setBackdrop(prepared.backdrop);
+      this.setFace({ photo: prepared.built.photo, matte: prepared.built.matte, mesh: prepared.head.mesh, layout: prepared.head.layout, model: prepared.head.model, size: 512, place: prepared.place || null });
+      if (prepared.colours) this.setColours(prepared.colours);
+    },
+    setAtlas(prepared, gains) {
+      if (!prepared) {
+        atlas = null;
+        return;
+      }
+      upload(atlasTexture, prepared.image, false);
+      atlas = { atlas: prepared.atlas, gains: gains || prepared.atlas.tiles.map(() => [1, 1, 1]) };
+    },
+    get hasAtlas() {
+      return Boolean(atlas);
+    },
+    draw(w, h, live, expression = null, { mouth = null } = {}) {
       if (gl.isContextLost()) return null;
       resize(w, h);
       gl.disable(gl.BLEND);
       let head = null;
+      let points = null;
       const showFace = Boolean(face && live);
       if (showFace) {
         const close = [expression?.lidLeft || 0, expression?.lidRight || 0];
         const drawn = closeLids(live, close);
         head = liveHead(face.model, drawn);
-        const vertices = warpVertices(face.mesh, face.layout, head.points, face.size, vertexDepths(face.model, head.pose));
+        if (face.place && (!face.anchor || face.anchor.width !== w || face.anchor.height !== h)) face.anchor = faceStreamAnchor(face, face.place, w, h);
+        points = faceStreamWarpPoints(head.points, drawn, face.mesh.mouthStart ?? head.points.length - MOUTH_EXTRA_COUNT, face.anchor);
+        const vertices = warpVertices(face.mesh, face.layout, points, face.size, vertexDepths(face.model, head.pose));
         gl.useProgram(warp.program);
         gl.bindBuffer(gl.ARRAY_BUFFER, meshBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-        const attrs = [["aPos", 2, 0], ["aUv", 2, 8], ["aHole", 1, 16], ["aRegion", 1, 20], ["aDepth", 1, 24]].map(([name, size, offset]) => {
-          const at = gl.getAttribLocation(warp.program, name);
-          if (at >= 0) {
-            gl.enableVertexAttribArray(at);
-            gl.vertexAttribPointer(at, size, gl.FLOAT, false, VERTEX_FLOATS * 4, offset);
-          }
-          return at;
-        }).filter((at) => at >= 0);
+        const attrs = attributes(warp, [["aPos", 2, 0], ["aUv", 2, 8], ["aHole", 1, 16], ["aRegion", 1, 20], ["aDepth", 1, 24]], VERTEX_FLOATS);
         bind(warp, [["uPhoto", photo], ["uAux", aux]]);
         const look = [[expression?.gazeX || 0, expression?.gazeY || 0], [expression?.gazeX || 0, expression?.gazeY || 0]];
         gl.uniform2f(warp.uniforms.uSize, w, h);
@@ -1365,18 +2196,23 @@ export function createFaceStreamRenderer(canvas) {
         }
         for (const at of attrs) gl.disableVertexAttribArray(at);
       }
+      const mouthOn = showFace && atlas && mouth && mouth.opacity > 0.001 ? mouth.opacity : 0;
+      if (mouthOn > 0) drawMouth(points, mouth);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, w, h);
       gl.useProgram(composite.program);
-      bind(composite, [["uBackdrop", backdrop], ["uWarp", targets.warp.texture], ["uAux", targets.aux.texture]]);
-      const mouth = head ? faceStreamMouthFrame(head.points) : { center: [-1e5, -1e5], x: [0, 0], y: [0, 0] };
+      bind(composite, [["uBackdrop", backdrop], ["uWarp", targets.warp.texture], ["uAux", targets.aux.texture], ["uMouth", targets.mouth.texture]]);
+      const shape = points ? faceStreamMouthShape(points) : { center: [-1e5, -1e5], axis: [1, 0], halfWidth: 1, halfGap: 0, span: 1 };
       const u = composite.uniforms;
       gl.uniform2f(u.uPixels, w, h);
-      gl.uniform2f(u.uMouthCenter, mouth.center[0], mouth.center[1]);
-      gl.uniform2f(u.uMouthX, mouth.x[0], mouth.x[1]);
-      gl.uniform2f(u.uMouthY, mouth.y[0], mouth.y[1]);
+      gl.uniform2f(u.uMouthCenter, shape.center[0], shape.center[1]);
+      gl.uniform2f(u.uMouthAxis, shape.axis[0], shape.axis[1]);
+      gl.uniform3f(u.uMouthSize, shape.halfWidth, shape.halfGap, shape.span);
+      gl.uniform3f(u.uLip, ...colours.lip);
+      gl.uniform3f(u.uTeeth, ...colours.teeth);
       gl.uniform1f(u.uTongue, showFace ? clampValue(expression?.tongue || 0, 0, 1) : 0);
       gl.uniform1f(u.uFace, showFace ? 1 : 0);
+      gl.uniform1f(u.uMouthOn, mouthOn);
       count = (count + 1) % 4096;
       gl.uniform1f(u.uSeed, (count * 7.31) % 97);
       gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -1385,7 +2221,7 @@ export function createFaceStreamRenderer(canvas) {
       gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.disableVertexAttribArray(at);
-      return head;
+      return head ? { ...head, points } : null;
     },
     dispose() {
       gl.getExtension("WEBGL_lose_context")?.loseContext();
@@ -1409,6 +2245,127 @@ async function decodeImage(bytes, format, ImageImpl) {
   }
 }
 
+function pixelCanvas(documentRef, data, w, h) {
+  const canvas = documentRef.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  const image = ctx.createImageData(w, h);
+  image.data.set(data);
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+export const FACE_STREAM_PAD = 0.2;
+
+function padFloats(values, w, h, pad) {
+  const pw = w + 2 * pad;
+  const ph = h + 2 * pad;
+  const out = new Float32Array(pw * ph);
+  for (let y = 0; y < ph; y += 1) {
+    const sy = clampValue(y - pad, 0, h - 1);
+    for (let x = 0; x < pw; x += 1) out[y * pw + x] = values[sy * w + clampValue(x - pad, 0, w - 1)];
+  }
+  return out;
+}
+
+function padPixels(pixels, w, h, pad) {
+  const pw = w + 2 * pad;
+  const ph = h + 2 * pad;
+  const out = new Uint8ClampedArray(pw * ph * 4);
+  for (let y = 0; y < ph; y += 1) {
+    const sy = clampValue(y - pad, 0, h - 1);
+    for (let x = 0; x < pw; x += 1) {
+      const from = (sy * w + clampValue(x - pad, 0, w - 1)) * 4;
+      const to = (y * pw + x) * 4;
+      for (let c = 0; c < 4; c += 1) out[to + c] = pixels[from + c];
+    }
+  }
+  return out;
+}
+
+export const FACE_STREAM_PHOTO = Object.freeze({ size: 512, span: 96, mid: Object.freeze([256, 210]) });
+
+export function faceStreamPhotoTransform(points, photo = FACE_STREAM_PHOTO) {
+  const frame = faceFrame(points);
+  const scale = photo.span / frame.span;
+  const cos = Math.cos(-frame.roll) * scale;
+  const sin = Math.sin(-frame.roll) * scale;
+  return [cos, sin, -sin, cos, photo.mid[0] - (cos * frame.mid[0] - sin * frame.mid[1]), photo.mid[1] - (sin * frame.mid[0] + cos * frame.mid[1])];
+}
+
+function placeLayer(documentRef, source, w, h, matrix, size, background = "#000") {
+  const canvas = documentRef.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = background;
+  ctx.fillRect(0, 0, size, size);
+  ctx.setTransform(...matrix);
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(source, 0, 0, w, h);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  return canvas;
+}
+
+function greyCanvas(documentRef, values, w, h) {
+  const grey = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i += 1) {
+    const v = Math.round(values[i] * 255);
+    grey[i * 4] = v;
+    grey[i * 4 + 1] = v;
+    grey[i * 4 + 2] = v;
+    grey[i * 4 + 3] = 255;
+  }
+  return pixelCanvas(documentRef, grey, w, h);
+}
+
+export function buildFaceStreamFace({ image, width: w, height: h, points, alpha, head, documentRef = globalThis.document, photo: layout = FACE_STREAM_PHOTO }) {
+  const size = layout.size;
+  const matrix = faceStreamPhotoTransform(points, layout);
+  const photo = placeLayer(documentRef, image, w, h, matrix, size);
+  const pixels = photo.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, size, size).data;
+  const read = (values) => {
+    const data = placeLayer(documentRef, greyCanvas(documentRef, values, w, h), w, h, matrix, size).getContext("2d", { willReadFrequently: true }).getImageData(0, 0, size, size).data;
+    const out = new Float32Array(size * size);
+    for (let i = 0; i < out.length; i += 1) out[i] = data[i * 4] / 255;
+    return out;
+  };
+  const person = read(alpha);
+  const headMask = read(head);
+  const placed = points.map((p) => applyTransform(matrix, p));
+  const parts = buildCustomMatte({ pixels, size, points: placed, person, documentRef });
+  const matte = documentRef.createElement("canvas");
+  matte.width = size;
+  matte.height = size;
+  const mctx = matte.getContext("2d");
+  const out = mctx.createImageData(size, size);
+  for (let i = 0; i < size * size; i += 1) {
+    out.data[i * 4] = Math.round(headMask[i] * 255);
+    out.data[i * 4 + 1] = Math.round(parts.skin[i] * 255);
+    out.data[i * 4 + 2] = Math.round(parts.hair[i] * 255);
+    out.data[i * 4 + 3] = 255;
+  }
+  mctx.putImageData(out, 0, 0);
+  const frame = faceFrame(placed);
+  return {
+    id: "face-stream",
+    custom: true,
+    points: placed.flatMap(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]),
+    head: headRing(headMask, size, frame.mid, frame.span),
+    photo,
+    matte,
+    matrix,
+  };
+}
+
+export function faceStreamHead(built) {
+  const points = pointsFromFlat(built.points);
+  const ring = pointsFromFlat(built.head);
+  const model = headModel(points, ring);
+  return { layout: headLayout(points, ring), model, mesh: buildHeadMesh(model, faceTemplate()) };
+}
+
 export async function prepareFaceStreamReference(reference, { documentRef = globalThis.document, ImageImpl = globalThis.Image, image = null } = {}) {
   const picture = image || await decodeImage(reference.image, reference.format, ImageImpl);
   const { width: w, height: h } = reference;
@@ -1418,30 +2375,58 @@ export async function prepareFaceStreamReference(reference, { documentRef = glob
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.drawImage(picture, 0, 0, w, h);
   const pixels = ctx.getImageData(0, 0, w, h).data;
-  let mask = null;
-  let maskAt = null;
-  if (reference.mask) {
-    const bytes = new Uint8Array(reference.mask.length);
-    for (let i = 0; i < bytes.length; i += 1) bytes[i] = reference.mask[i] ? 255 : 0;
-    mask = { bytes, width: reference.maskW, height: reference.maskH };
-    maskAt = (x, y) => {
-      const mx = clampValue(Math.floor(((x + 0.5) / w) * reference.maskW), 0, reference.maskW - 1);
-      const my = clampValue(Math.floor(((y + 0.5) / h) * reference.maskH), 0, reference.maskH - 1);
-      return reference.mask[my * reference.maskW + mx];
-    };
+  const alpha = faceStreamMatte(reference, pixels);
+  let backdrop;
+  let built;
+  let place = null;
+  if (alpha) {
+    const layers = faceStreamLayers(reference, alpha);
+    const plate = faceStreamPlate(pixels, w, h, faceStreamGrow(layers.removal, w, h));
+    const unmixed = faceStreamUnmix(pixels, plate, alpha);
+    backdrop = { data: plate, width: w, height: h };
+    const pad = Math.round(FACE_STREAM_PAD * w);
+    const pw = w + 2 * pad;
+    const ph = h + 2 * pad;
+    const shifted = reference.points.map(([x, y]) => [x + pad, y + pad]);
+    built = buildFaceStreamFace({
+      image: pixelCanvas(documentRef, padPixels(unmixed, w, h, pad), pw, ph),
+      width: pw,
+      height: ph,
+      points: shifted,
+      alpha: padFloats(alpha, w, h, pad),
+      head: padFloats(layers.head, w, h, pad),
+      documentRef,
+    });
+    place = { points: reference.points, pose: faceStreamPose(reference.points), matrix: built.matrix, pad, width: w, height: h };
+  } else {
+    backdrop = { data: faceStreamBackdrop(pixels, w, h, new Float32Array(w * h)), width: w, height: h };
+    built = buildCustomFace({ image: canvas, width: w, height: h, points: reference.points, mask: null, documentRef });
+    place = { points: reference.points, pose: faceStreamPose(reference.points), matrix: customFaceTransform(reference.points).matrix, pad: 0, width: w, height: h };
   }
-  const removal = faceStreamRemoval(reference, maskAt);
-  const soft = new Float32Array(removal.length);
-  if (maskAt) {
-    const plane = new Float32Array(removal.length * 4);
-    for (let i = 0; i < removal.length; i += 1) plane[i * 4] = removal[i];
-    const spread = boxBlurRGBA(plane, w, h, 3);
-    for (let i = 0; i < removal.length; i += 1) soft[i] = Math.max(removal[i], Math.min(1, spread[i * 4] * 1.6));
-  }
-  const backdrop = { data: faceStreamBackdrop(pixels, w, h, soft), width: w, height: h };
-  const built = buildCustomFace({ image: canvas, width: w, height: h, points: reference.points, mask, documentRef });
-  const head = faceHead(built);
-  return { id: reference.id, built, head, backdrop, reference };
+  const head = alpha ? faceStreamHead(built) : faceHead(built);
+  return {
+    id: reference.id,
+    built,
+    head,
+    backdrop,
+    place,
+    reference,
+    pixels,
+    alpha,
+    colours: faceStreamMouthColours(pixels, w, h, reference.points),
+  };
+}
+
+export async function prepareFaceStreamAtlas(atlas, { documentRef = globalThis.document, ImageImpl = globalThis.Image, image = null } = {}) {
+  const picture = image || await decodeImage(atlas.image, atlas.format, ImageImpl);
+  const w = atlas.tileW * atlas.tiles.length;
+  const h = atlas.tileH;
+  const canvas = documentRef.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(picture, 0, 0, w, h);
+  return { atlas, image: canvas, pixels: ctx.getImageData(0, 0, w, h) };
 }
 
 export function createFaceStreamView({ documentRef = globalThis.document, width = 320, height = 400, ImageImpl = globalThis.Image } = {}) {
@@ -1462,13 +2447,26 @@ export function createFaceStreamView({ documentRef = globalThis.document, width 
   const renderer = createFaceStreamRenderer(canvas);
   const receiver = createFaceStreamReceiver();
   let prepared = null;
+  let mouths = null;
   let loading = 0;
+  let atlasLoading = 0;
   let lastHead = null;
 
-  function draw() {
-    const live = prepared ? faceStreamLivePoints(receiver.frame, prepared.reference, width, height) : null;
-    lastHead = renderer.draw(width, height, live, receiver.frame?.expression || null);
-    const stale = Boolean(receiver.frame?.stale);
+  function applyAtlas() {
+    if (!mouths) {
+      renderer.setAtlas(null);
+      return;
+    }
+    const gains = prepared ? faceStreamAtlasGains(mouths.pixels, mouths.atlas, prepared.pixels, prepared.reference.width, prepared.reference.height, prepared.reference.points) : null;
+    renderer.setAtlas(mouths, gains);
+  }
+
+  function draw(override = null) {
+    const frame = override || receiver.frame;
+    const live = prepared ? faceStreamLivePoints(frame, prepared.reference, width, height) : null;
+    const mouth = live && mouths ? faceStreamMouthBlend(mouths.atlas.tiles, frame.expression, live) : null;
+    lastHead = renderer.draw(width, height, live, frame?.expression || null, { mouth });
+    const stale = Boolean(frame?.stale);
     badge.textContent = stale ? FACE_STREAM_STALE_DETAIL : FACE_STREAM_LABEL;
     return Boolean(live);
   }
@@ -1478,9 +2476,18 @@ export function createFaceStreamView({ documentRef = globalThis.document, width 
     const next = await prepareFaceStreamReference(reference, { documentRef, ImageImpl, image });
     if (token !== loading) return false;
     prepared = next;
-    renderer.setBackdrop(next.backdrop);
-    renderer.setFace({ photo: next.built.photo, matte: next.built.matte, mesh: next.head.mesh, layout: next.head.layout, model: next.head.model, size: 512 });
+    renderer.setReference(next);
+    applyAtlas();
     draw();
+    return true;
+  }
+
+  async function useAtlas(atlas, image = null) {
+    const token = ++atlasLoading;
+    const next = await prepareFaceStreamAtlas(atlas, { documentRef, ImageImpl, image });
+    if (token !== atlasLoading) return false;
+    mouths = next;
+    applyAtlas();
     return true;
   }
 
@@ -1489,14 +2496,20 @@ export function createFaceStreamView({ documentRef = globalThis.document, width 
     canvas,
     badge,
     receiver,
+    renderer,
     async receive(packet) {
       const result = receiver.receive(packet);
       if (result.type === "reference") await useReference(result.reference).catch(() => false);
+      else if (result.type === "atlas") await useAtlas(result.atlas).catch(() => false);
       else if (result.type === "frame") draw();
       return result;
     },
     useReference,
+    useAtlas,
     draw,
+    get prepared() {
+      return prepared;
+    },
     get lastHead() {
       return lastHead;
     },

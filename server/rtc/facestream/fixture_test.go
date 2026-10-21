@@ -75,12 +75,36 @@ type fixtureReferenceCase struct {
 	Decoded fixtureReference `json:"decoded"`
 }
 
+type fixtureTile struct {
+	State  int       `json:"state"`
+	Mouth  float64   `json:"mouth"`
+	Smile  float64   `json:"smile"`
+	Points []float64 `json:"points"`
+}
+
+type fixtureAtlas struct {
+	ID     int           `json:"id"`
+	Time   uint32        `json:"time"`
+	TileW  int           `json:"tileW"`
+	TileH  int           `json:"tileH"`
+	Format int           `json:"format"`
+	Tiles  []fixtureTile `json:"tiles"`
+	Image  string        `json:"image"`
+}
+
+type fixtureAtlasCase struct {
+	Input   fixtureAtlas `json:"input"`
+	Packet  string       `json:"packet"`
+	Decoded fixtureAtlas `json:"decoded"`
+}
+
 type fixtureFile struct {
 	Format     string                 `json:"format"`
 	Version    int                    `json:"version"`
 	Template   [][]float64            `json:"template"`
 	Streams    []fixtureStream        `json:"streams"`
 	References []fixtureReferenceCase `json:"references"`
+	Atlases    []fixtureAtlasCase     `json:"atlases"`
 }
 
 func flatPoints(p [LandmarkCount][2]float64) []float64 {
@@ -172,6 +196,18 @@ func toFixtureReference(r *Reference) fixtureReference {
 		r.MaskW, r.MaskH, string(mask), hex.EncodeToString(r.Image)}
 }
 
+func toFixtureAtlas(a *Atlas) fixtureAtlas {
+	out := fixtureAtlas{a.ID, a.Time, a.TileW, a.TileH, a.Format, nil, hex.EncodeToString(a.Image)}
+	for _, t := range a.Tiles {
+		points := make([]float64, 0, MouthPointCount*2)
+		for _, p := range t.Points {
+			points = append(points, p[0], p[1])
+		}
+		out.Tiles = append(out.Tiles, fixtureTile{t.State, t.Mouth, t.Smile, points})
+	}
+	return out
+}
+
 func buildFixture(t *testing.T) []byte {
 	f := fixtureFile{Format: "face-stream-parity", Version: Version}
 	for _, p := range Template {
@@ -180,6 +216,7 @@ func buildFixture(t *testing.T) []byte {
 	f.Streams = append(f.Streams,
 		buildStream(t, "talking", Config{Width: 1280, Height: 720}, synthOptions{frames: 75, fps: 30, noise: 0.5, seed: 7, jitter: true}, []int{40}, 0, 0, []int{50, 51}),
 		buildStream(t, "small", Config{Width: 640, Height: 480, FPS: 24, Precision: 48, KeyInterval: 12}, synthOptions{frames: 40, fps: 24, noise: 0.8, seed: 21}, nil, 20, 3, []int{30}),
+		buildStream(t, "still", Config{Width: 1280, Height: 720}, synthOptions{frames: 40, fps: 30, seed: 5, still: true}, []int{}, 0, 0, []int{}),
 	)
 	plain := referenceSample()
 	plain.ID, plain.Format, plain.MaskW, plain.MaskH, plain.Mask = 15, FormatHEIC, 0, 0, nil
@@ -193,6 +230,19 @@ func buildFixture(t *testing.T) []byte {
 			t.Fatal(err)
 		}
 		f.References = append(f.References, fixtureReferenceCase{toFixtureReference(r), hex.EncodeToString(packet), toFixtureReference(got)})
+	}
+	single := atlasSample()
+	single.ID, single.Format, single.TileW, single.TileH, single.Tiles = 15, FormatWebP, 32, 20, single.Tiles[1:2]
+	for _, a := range []*Atlas{atlasSample(), single} {
+		packet, err := EncodeAtlas(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := DecodeAtlas(packet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Atlases = append(f.Atlases, fixtureAtlasCase{toFixtureAtlas(a), hex.EncodeToString(packet), toFixtureAtlas(got)})
 	}
 	out, err := json.Marshal(f)
 	if err != nil {

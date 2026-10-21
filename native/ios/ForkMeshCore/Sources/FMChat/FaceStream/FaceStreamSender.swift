@@ -28,7 +28,7 @@ public struct FaceStreamPolicy: Equatable, Sendable {
     public var width = 256
     public var height = 320
     public var quality = 0.72
-    public var minIntervalMs = 2000.0
+    public var minIntervalMs = 4000.0
     public var refreshMs = 10000.0
     public var better = 0.15
     public var maxYaw = 0.26
@@ -39,17 +39,67 @@ public struct FaceStreamPolicy: Equatable, Sendable {
     public var luma = (0.22, 0.85)
     public var minContrast = 0.035
     public var minSpan = 36.0
-    public var maskW = 64
-    public var maskH = 80
+    public var maskW = 96
+    public var maskH = 120
     public var cropHeight = 4.6
     public var cropDrop = 0.35
-    public var restRise = 0.002
+    public var restRise = 0.006
+    public var eyeOpen = 0.25
+    public var eyeFall = 0.0005
+    public var budgetBurst = 10500.0
+    public var budgetRate = 1400.0
+    public var expectReference = 9000.0
+    public var expectAtlas = 2500.0
 
     public init() {}
 
     public static func == (a: FaceStreamPolicy, b: FaceStreamPolicy) -> Bool {
         a.width == b.width && a.height == b.height && a.minIntervalMs == b.minIntervalMs && a.refreshMs == b.refreshMs && a.luma == b.luma
     }
+}
+
+public struct FaceStreamAtlasPolicy: Equatable, Sendable {
+    public var tileW = 64
+    public var tileH = 48
+    public var quality = 0.82
+    public var reach = 1.6
+    public var minIntervalMs = 3000.0
+    public var refreshMs = 60000.0
+    public var better = 0.15
+    public var maxYaw = 0.35
+    public var maxPitch = 0.35
+    public var maxRoll = 0.4
+    public var minWidth = 20.0
+    public var closed = 0.05
+    public var open = 0.25
+    public var mid = 0.1
+    public var wide = 0.06
+    public var round = 0.06
+    public var restRate = 0.05
+
+    public init() {}
+}
+
+public struct FaceStreamMouthCrop: Equatable, Sendable {
+    public let center: CallFacePoint
+    public let ux: CallFacePoint
+    public let uy: CallFacePoint
+    public let width: Double
+    public let scale: Double
+}
+
+public struct FaceStreamMouthPick: Equatable, Sendable {
+    public let state: Int
+    public let score: Double
+}
+
+public struct FaceStreamMouthCandidate: Equatable, Sendable {
+    public let time: Double
+    public let pick: FaceStreamMouthPick
+    public let crop: FaceStreamMouthCrop
+    public let mouth: Double
+    public let smile: Double
+    public let points: [CallFacePoint]
 }
 
 public struct FaceStreamMouthFrame: Equatable, Sendable {
@@ -173,6 +223,74 @@ public enum FaceStreamSending {
         return out
     }
 
+    public static func eyeOpening(_ points: [CallFacePoint]) -> Double {
+        func d(_ a: Int, _ b: Int) -> Double { ((points[a].x - points[b].x) * (points[a].x - points[b].x) + (points[a].y - points[b].y) * (points[a].y - points[b].y)).squareRoot() }
+        func eye(_ o: Int) -> Double { (d(o + 1, o + 5) + d(o + 2, o + 4)) / (2 * max(d(o, o + 3), 1e-6)) }
+        return (eye(36) + eye(42)) / 2
+    }
+
+    public static func mouthWidth(_ points: [CallFacePoint]) -> Double {
+        ((points[54].x - points[48].x) * (points[54].x - points[48].x) + (points[54].y - points[48].y) * (points[54].y - points[48].y)).squareRoot()
+            / CallFaceGeometry.faceFrame(points).span
+    }
+
+    public static func lipRatio(_ points: [CallFacePoint], offset: Int = 0) -> Double {
+        func at(_ i: Int) -> CallFacePoint { points[i - offset] }
+        let width = ((at(64).x - at(60).x) * (at(64).x - at(60).x) + (at(64).y - at(60).y) * (at(64).y - at(60).y)).squareRoot()
+        let gap = ((at(66).x - at(62).x) * (at(66).x - at(62).x) + (at(66).y - at(62).y) * (at(66).y - at(62).y)).squareRoot()
+        return width > 0 ? gap / width : 0
+    }
+
+    public static func mouthTileCrop(_ points: [CallFacePoint], policy: FaceStreamAtlasPolicy = FaceStreamAtlasPolicy()) -> FaceStreamMouthCrop {
+        var cx = 0.0, cy = 0.0
+        for i in 48..<60 {
+            cx += points[i].x / 12
+            cy += points[i].y / 12
+        }
+        let dx = points[54].x - points[48].x
+        let dy = points[54].y - points[48].y
+        let width = (dx * dx + dy * dy).squareRoot()
+        let ux = width > 0 ? CallFacePoint(dx / width, dy / width) : CallFacePoint(1, 0)
+        return FaceStreamMouthCrop(center: CallFacePoint(cx, cy), ux: ux, uy: CallFacePoint(-ux.y, ux.x), width: width,
+            scale: max(1e-6, policy.reach * width / Double(policy.tileW)))
+    }
+
+    public static func mouthTilePoints(_ points: [CallFacePoint], crop: FaceStreamMouthCrop, policy: FaceStreamAtlasPolicy = FaceStreamAtlasPolicy()) -> [CallFacePoint] {
+        (48..<68).map { i in
+            let dx = points[i].x - crop.center.x
+            let dy = points[i].y - crop.center.y
+            return CallFacePoint((dx * crop.ux.x + dy * crop.ux.y) / crop.scale + Double(policy.tileW) / 2, (dx * crop.uy.x + dy * crop.uy.y) / crop.scale + Double(policy.tileH) / 2)
+        }
+    }
+
+    public static func mouthState(pose: FaceStreamSolvedPose, expression: FaceStreamExpression, width: Double?, restWidth: Double?,
+                                  policy: FaceStreamAtlasPolicy = FaceStreamAtlasPolicy()) -> FaceStreamMouthPick? {
+        let turn = max(abs(pose.yaw) / policy.maxYaw, abs(pose.pitch) / policy.maxPitch, abs(pose.roll) / policy.maxRoll)
+        if turn >= 1 { return nil }
+        let m = expression.mouth
+        var s = 0.0
+        if let width, let restWidth { s = width / restWidth - 1 }
+        let known = width != nil && restWidth != nil
+        let state: Int
+        let fit: Double
+        if m <= policy.closed {
+            state = FaceStreamAtlas.closed
+            fit = 1 - m / policy.closed
+        } else if m >= policy.open {
+            state = FaceStreamAtlas.open
+            fit = min(1, 0.5 + (m - policy.open) / 0.4)
+        } else if m >= policy.mid && known && s >= policy.wide {
+            state = FaceStreamAtlas.wide
+            fit = min(1, 0.5 + (s - policy.wide) / 0.1)
+        } else if m >= policy.mid && known && s <= -policy.round {
+            state = FaceStreamAtlas.round
+            fit = min(1, 0.5 + (-s - policy.round) / 0.1)
+        } else {
+            return nil
+        }
+        return FaceStreamMouthPick(state: state, score: clamp(fit, 0, 1) * (1 - 0.5 * turn))
+    }
+
     public static func light(rgba: [UInt8], width: Int, height: Int, points: [CallFacePoint]) -> FaceStreamLight {
         let xs = [36, 39, 42, 45, 48, 54].map { points[$0].x }
         let ys = [19, 24, 33, 57].map { points[$0].y }
@@ -205,14 +323,38 @@ public enum FaceStreamSending {
 public final class FaceStreamSender {
     public let encoder: FaceStreamEncoder
     public let policy: FaceStreamPolicy
+    public let atlasPolicy: FaceStreamAtlasPolicy
     private var lastTime: Double?
     private var lastScore = 0.0
     private var nextId = 0
     private var restMouth: Double?
+    private var openMax: Double?
+    private var restWidth: Double?
+    private var credit: Double
+    private var creditTime: Double?
+    private var referenceSize: Double
+    private var atlasSize: Double
+    private var tiles: [Int: (candidate: FaceStreamMouthCandidate, rgba: [UInt8])] = [:]
+    private var atlasId = 0
+    private var atlasTime: Double?
+    private var atlasDirty = false
 
-    public init(_ config: FaceStreamConfig, policy: FaceStreamPolicy = FaceStreamPolicy()) throws {
+    public init(_ config: FaceStreamConfig, policy: FaceStreamPolicy = FaceStreamPolicy(), atlasPolicy: FaceStreamAtlasPolicy = FaceStreamAtlasPolicy()) throws {
         encoder = try FaceStreamEncoder(config)
         self.policy = policy
+        self.atlasPolicy = atlasPolicy
+        credit = policy.budgetBurst
+        referenceSize = policy.expectReference
+        atlasSize = policy.expectAtlas
+    }
+
+    public var budget: Double { credit }
+    public var tileCount: Int { tiles.count }
+
+    private func refill(_ time: Double) -> Double {
+        if let creditTime { credit = min(policy.budgetBurst, credit + policy.budgetRate * max(0, time - creditTime) / 1000) }
+        creditTime = time
+        return credit
     }
 
     public func frame(time: UInt32, points: [CallFacePoint], reading: CallFaceExpressionReading?) throws -> [UInt8] {
@@ -222,15 +364,21 @@ public final class FaceStreamSender {
 
     public func score(points: [CallFacePoint], reading: CallFaceExpressionReading?, light: FaceStreamLight?) -> Double {
         var expression = FaceStreamSending.expression(reading, points: points)
-        let rest = min(expression.mouth, (restMouth ?? expression.mouth) + policy.restRise)
+        let rest = restMouth.map { min(expression.mouth, $0 + policy.restRise) } ?? 0
         restMouth = rest
+        let opening = FaceStreamSending.eyeOpening(points)
+        let top = openMax.map { max(opening, $0 - policy.eyeFall) } ?? max(opening, policy.eyeOpen)
+        openMax = top
+        let shut = FaceStreamSending.clamp(1 - opening / top, 0, 1)
         expression.mouth = max(0, expression.mouth - rest)
+        expression.lidLeft = max(expression.lidLeft, shut)
+        expression.lidRight = max(expression.lidRight, shut)
         return FaceStreamSending.score(pose: FaceStreamSending.pose(points), expression: expression, light: light,
             span: CallFaceGeometry.faceFrame(points).span, policy: policy)
     }
 
     public func due(time: Double, score: Double) -> Bool {
-        FaceStreamSending.due(lastTime: lastTime, lastScore: lastScore, time: time, score: score, policy: policy)
+        FaceStreamSending.due(lastTime: lastTime, lastScore: lastScore, time: time, score: score, policy: policy) && refill(time) >= min(referenceSize, policy.budgetBurst)
     }
 
     public func crop(_ points: [CallFacePoint]) -> FaceStreamCrop {
@@ -246,6 +394,63 @@ public final class FaceStreamSender {
         nextId = (nextId + 1) & 15
         lastTime = time
         lastScore = score
+        _ = refill(time)
+        credit -= Double(packet.count)
+        referenceSize = Double(packet.count)
+        return packet
+    }
+
+    public func mouthCandidate(time: Double, points: [CallFacePoint], reading: CallFaceExpressionReading?) -> FaceStreamMouthCandidate? {
+        let solved = FaceStreamSending.pose(points)
+        let expression = FaceStreamSending.expression(reading, points: points)
+        let width = FaceStreamSending.mouthWidth(points)
+        if expression.mouth <= atlasPolicy.closed { restWidth = restWidth.map { $0 + atlasPolicy.restRate * (width - $0) } ?? width }
+        guard let pick = FaceStreamSending.mouthState(pose: solved, expression: expression, width: width, restWidth: restWidth, policy: atlasPolicy),
+            pick.score > 0
+        else { return nil }
+        let crop = FaceStreamSending.mouthTileCrop(points, policy: atlasPolicy)
+        guard crop.width >= atlasPolicy.minWidth else { return nil }
+        if let have = tiles[pick.state]?.candidate, time - have.time < atlasPolicy.refreshMs, pick.score <= have.pick.score + atlasPolicy.better { return nil }
+        return FaceStreamMouthCandidate(time: time, pick: pick, crop: crop, mouth: expression.mouth, smile: expression.smile,
+            points: FaceStreamSending.mouthTilePoints(points, crop: crop, policy: atlasPolicy))
+    }
+
+    public func storeMouthTile(_ candidate: FaceStreamMouthCandidate, rgba: [UInt8]) {
+        guard rgba.count >= atlasPolicy.tileW * atlasPolicy.tileH * 4 else { return }
+        tiles[candidate.pick.state] = (candidate, rgba)
+        if candidate.pick.state != FaceStreamAtlas.closed || tiles.count > 1 { atlasDirty = true }
+    }
+
+    public func atlasDue(time: Double) -> Bool {
+        let useful = tiles.keys.contains { $0 != FaceStreamAtlas.closed }
+        return atlasDirty && useful && (atlasTime.map { time - $0 >= atlasPolicy.minIntervalMs } ?? true) && refill(time) >= atlasSize
+    }
+
+    public func atlasSheet() -> (tiles: [FaceStreamAtlasTile], rgba: [UInt8], width: Int, height: Int) {
+        let list = tiles.keys.sorted().compactMap { tiles[$0] }
+        let tw = atlasPolicy.tileW, th = atlasPolicy.tileH
+        let width = tw * list.count
+        var rgba = [UInt8](repeating: 255, count: width * th * 4)
+        for (k, entry) in list.enumerated() {
+            for y in 0..<th {
+                for x in 0..<tw {
+                    for c in 0..<4 { rgba[(y * width + k * tw + x) * 4 + c] = entry.rgba[(y * tw + x) * 4 + c] }
+                }
+            }
+        }
+        let meta = list.map { FaceStreamAtlasTile(state: $0.candidate.pick.state, mouth: $0.candidate.mouth, smile: $0.candidate.smile, points: $0.candidate.points) }
+        return (meta, rgba, width, th)
+    }
+
+    public func atlas(time: Double, tiles meta: [FaceStreamAtlasTile], image: [UInt8], format: Int = FaceStreamReference.jpeg) throws -> [UInt8] {
+        let packet = try FaceStreamAtlas(id: atlasId, time: UInt32(truncatingIfNeeded: Int64(time)), tileW: atlasPolicy.tileW, tileH: atlasPolicy.tileH,
+            format: format, tiles: meta, image: image).encoded()
+        atlasId = (atlasId + 1) & 15
+        atlasTime = time
+        atlasDirty = false
+        _ = refill(time)
+        credit -= Double(packet.count)
+        atlasSize = Double(packet.count)
         return packet
     }
 
@@ -255,6 +460,7 @@ public final class FaceStreamSender {
 public enum FaceStreamResult: Equatable {
     case frame(FaceStreamFrame)
     case reference(FaceStreamReference)
+    case atlas(FaceStreamAtlas)
     case failed(String)
 }
 
@@ -262,6 +468,7 @@ public final class FaceStreamReceiver {
     private let decoder = FaceStreamDecoder()
     public private(set) var frame: FaceStreamFrame?
     public private(set) var reference: FaceStreamReference?
+    public private(set) var atlas: FaceStreamAtlas?
     public private(set) var errors = 0
     public private(set) var needsKey = false
     private var goodMouth = Double.nan
@@ -275,6 +482,11 @@ public final class FaceStreamReceiver {
                 let r = try FaceStreamReference.decode(packet)
                 reference = r
                 return .reference(r)
+            }
+            if FaceStream.packetKind(packet) == FaceStream.kindAtlas {
+                let a = try FaceStreamAtlas.decode(packet)
+                atlas = a
+                return .atlas(a)
             }
             let decoded = try decoder.decode(packet)
             if !decoded.stale { goodMouth = decoded.expression.mouth }
@@ -395,7 +607,7 @@ public enum FaceStreamView {
         return out
     }
 
-    public static func backdrop(rgba: [UInt8], width w: Int, height h: Int, removal: [Float], blurRadius: Int = 2) -> [UInt8] {
+    static func pushPull(rgba: [UInt8], width w: Int, height h: Int, removal: [Float]) -> [Float] {
         struct Level {
             var data: [Float]
             let w: Int
@@ -430,13 +642,24 @@ public enum FaceStreamView {
                     let at = (y * level.w + x) * 4
                     let a = level.data[at + 3]
                     let trust: Float = coarse == nil ? 1 : min(max(a * 3, 0), 1)
+                    var x0 = 0, y0 = 0, x1 = 0, y1 = 0
+                    var fx: Float = 0, fy: Float = 0
+                    if let coarse {
+                        let sx = min(max((Float(x) + 0.5) / 2 - 0.5, 0), Float(coarse.w - 1))
+                        let sy = min(max((Float(y) + 0.5) / 2 - 0.5, 0), Float(coarse.h - 1))
+                        x0 = Int(sx.rounded(.down))
+                        y0 = Int(sy.rounded(.down))
+                        fx = sx - Float(x0)
+                        fy = sy - Float(y0)
+                        x1 = min(coarse.w - 1, x0 + 1)
+                        y1 = min(coarse.h - 1, y0 + 1)
+                    }
                     for c in 0..<3 {
                         let mine: Float = a > 1e-4 ? level.data[at + c] / a : 0.5
                         var under = mine
                         if let coarse {
-                            let px = min(coarse.w - 1, x >> 1)
-                            let py = min(coarse.h - 1, y >> 1)
-                            under = coarse.data[(py * coarse.w + px) * 4 + c]
+                            func tap(_ px: Int, _ py: Int) -> Float { coarse.data[(py * coarse.w + px) * 4 + c] }
+                            under = (tap(x0, y0) * (1 - fx) + tap(x1, y0) * fx) * (1 - fy) + (tap(x0, y1) * (1 - fx) + tap(x1, y1) * fx) * fy
                         }
                         filled[at + c] = under + (mine - under) * trust
                     }
@@ -444,11 +667,19 @@ public enum FaceStreamView {
             }
             coarse = Level(data: filled, w: level.w, h: level.h)
         }
-        var planes = (0..<3).map { c in (0..<(w * h)).map { coarse!.data[$0 * 4 + c] } }
-        if blurRadius > 0 { planes = planes.map { blur(blur($0, w, h, blurRadius), w, h, blurRadius) } }
+        return coarse?.data ?? first
+    }
+
+    static func planes(_ data: [Float], _ w: Int, _ h: Int) -> [[Float]] {
+        (0..<3).map { c in (0..<(w * h)).map { data[$0 * 4 + c] } }
+    }
+
+    public static func backdrop(rgba: [UInt8], width w: Int, height h: Int, removal: [Float], blurRadius: Int = 2) -> [UInt8] {
+        var layers = planes(pushPull(rgba: rgba, width: w, height: h, removal: removal), w, h)
+        if blurRadius > 0 { layers = layers.map { blur(blur($0, w, h, blurRadius), w, h, blurRadius) } }
         var out = [UInt8](repeating: 255, count: w * h * 4)
         for i in 0..<(w * h) {
-            for c in 0..<3 { out[i * 4 + c] = UInt8(min(max((planes[c][i] * 255).rounded(), 0), 255)) }
+            for c in 0..<3 { out[i * 4 + c] = UInt8(min(max((layers[c][i] * 255).rounded(), 0), 255)) }
         }
         return out
     }

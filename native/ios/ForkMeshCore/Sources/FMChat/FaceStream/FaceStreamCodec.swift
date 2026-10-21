@@ -13,6 +13,7 @@ public enum FaceStreamError: Error, Equatable {
     case corrupt
     case notAFrame
     case notAReference
+    case notAnAtlas
 
     public var code: String {
         switch self {
@@ -28,6 +29,7 @@ public enum FaceStreamError: Error, Equatable {
         case .corrupt: return "corrupt"
         case .notAFrame: return "not-a-frame"
         case .notAReference: return "not-a-reference"
+        case .notAnAtlas: return "not-an-atlas"
         }
     }
 }
@@ -133,6 +135,7 @@ public enum FaceStream {
     public static let kindDelta = 0
     public static let kindKey = 1
     public static let kindReference = 2
+    public static let kindAtlas = 3
     public static let defaultPrecision = 96
     public static let defaultKeyInterval = 30
     public static let defaultFPS = 30
@@ -433,7 +436,7 @@ public final class FaceStreamDecoder {
         guard Int(packet[0] >> 4) & 3 == FaceStream.version else { throw FaceStreamError.version }
         let kind = Int(packet[0] >> 6)
         guard kind == FaceStream.kindKey || kind == FaceStream.kindDelta else {
-            throw kind == FaceStream.kindReference ? FaceStreamError.notAFrame : FaceStreamError.kind
+            throw kind == FaceStream.kindReference || kind == FaceStream.kindAtlas ? FaceStreamError.notAFrame : FaceStreamError.kind
         }
         let id = Int(packet[0] & 15)
         let frameSeq = Int(packet[1])

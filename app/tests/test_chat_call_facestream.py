@@ -78,6 +78,25 @@ for (const c of fixture.references) {
   got.points.flat().forEach((v, k) => close(v, c.decoded.points[k], "reference point"));
   if (hex(got.image) !== c.decoded.image) mismatches.push("reference image");
 }
+for (const c of fixture.atlases) {
+  const i = c.input;
+  const packet = fs.encodeFaceStreamAtlas({
+    id: i.id, time: i.time, tileW: i.tileW, tileH: i.tileH, format: i.format,
+    tiles: i.tiles.map((t) => ({ state: t.state, mouth: t.mouth, smile: t.smile, points: pts(t.points) })), image: unhex(i.image),
+  });
+  packets += 1;
+  if (hex(packet) !== c.packet) mismatches.push("atlas packet");
+  const got = fs.decodeFaceStreamAtlas(unhex(c.packet));
+  for (const k of ["id", "time", "tileW", "tileH", "format"]) if (got[k] !== c.decoded[k]) mismatches.push(`atlas ${k}`);
+  got.tiles.forEach((t, k) => {
+    const want = c.decoded.tiles[k];
+    if (t.state !== want.state) mismatches.push("atlas state");
+    close(t.mouth, want.mouth, "atlas mouth");
+    close(t.smile, want.smile, "atlas smile");
+    t.points.flat().forEach((v, j) => close(v, want.points[j], "atlas point"));
+  });
+  if (hex(got.image) !== c.decoded.image) mismatches.push("atlas image");
+}
 console.log(JSON.stringify({ packets, worst, mismatches: mismatches.slice(0, 10), count: mismatches.length }));
 '''
 
@@ -115,8 +134,8 @@ out.scores = {
 out.due = [
   fs.referenceDue(null, 0, 0.9),
   fs.referenceDue({ time: 0, score: 0.5 }, 1500, 1),
-  fs.referenceDue({ time: 0, score: 0.5 }, 2500, 0.9),
-  fs.referenceDue({ time: 0, score: 0.85 }, 2500, 0.9),
+  fs.referenceDue({ time: 0, score: 0.5 }, 4500, 0.9),
+  fs.referenceDue({ time: 0, score: 0.85 }, 4500, 0.9),
   fs.referenceDue({ time: 0, score: 0.95 }, 10000, 0.5),
   fs.referenceDue(null, 0, 0),
 ];
@@ -182,6 +201,43 @@ for (let round = 0; round < 600; round += 1) {
 }
 out.fuzz = { thrown, foreign };
 out.smile = { neutral: fs.faceStreamSmile(face), wide: fs.faceStreamSmile(face.map(([x, y], i) => (i === 48 ? [x - 20, y] : i === 54 ? [x + 20, y] : [x, y]))) };
+const atlasPacket = unhex(fixture.atlases[0].packet);
+const withAtlas = fs.createFaceStreamReceiver();
+const atlasResult = withAtlas.receive(atlasPacket);
+const tiles = withAtlas.atlas.tiles;
+const blend = (mouth, smile) => fs.faceStreamMouthBlend(tiles, { mouth, smile });
+const policy = fs.FACE_STREAM_ATLAS;
+const frontalPose = { yaw: 0, pitch: 0, roll: 0 };
+const mouthCrop = fs.mouthTileCrop(face);
+const tilePoints = fs.mouthTilePoints(face, mouthCrop);
+out.atlas = {
+  type: atlasResult.type,
+  frameDecoder: (() => { try { fs.createFaceStreamDecoder().decode(atlasPacket.subarray(0, 64)); return "accepted"; } catch (error) { return error.code; } })(),
+  closed: blend(0.0, 0.4),
+  open: blend(0.6, 0.3),
+  wide: blend(0.3, 0.9),
+  states: [
+    fs.mouthState({ pose: frontalPose, expression: { mouth: 0.01 }, width: 1, restWidth: 1 })?.state,
+    fs.mouthState({ pose: frontalPose, expression: { mouth: 0.5 }, width: 1, restWidth: 1 })?.state,
+    fs.mouthState({ pose: frontalPose, expression: { mouth: 0.15 }, width: 1.1, restWidth: 1 })?.state,
+    fs.mouthState({ pose: frontalPose, expression: { mouth: 0.15 }, width: 0.9, restWidth: 1 })?.state,
+    fs.mouthState({ pose: frontalPose, expression: { mouth: 0.15 }, width: 1, restWidth: 1 }),
+    fs.mouthState({ pose: { yaw: 0.5, pitch: 0, roll: 0 }, expression: { mouth: 0.5 }, width: 1, restWidth: 1 }),
+  ],
+  tileInside: tilePoints.every(([x, y]) => x > 0 && x < policy.tileW && y > 0 && y < policy.tileH),
+  tileWidth: Math.hypot(tilePoints[6][0] - tilePoints[0][0], tilePoints[6][1] - tilePoints[0][1]),
+};
+const still = fs.createFaceStreamEncoder({ width: 1280, height: 720 });
+const stillDecoder = fs.createFaceStreamDecoder();
+let stillErrors = 0;
+let shortest = 1024;
+for (let i = 0; i < 40; i += 1) {
+  const packet = still.encode({ time: 1000 + i * 33, points: face, pose: { rotation: [1, 0, 0, 0], x: 640, y: 330, scale: 96 } });
+  shortest = Math.min(shortest, packet.length);
+  try { stillDecoder.decode(packet); } catch (_) { stillErrors += 1; }
+}
+out.still = { stillErrors, shortest };
+out.eye = { open: fs.faceStreamEyeOpening(face) };
 out.labels = { label: fs.FACE_STREAM_LABEL, detail: fs.FACE_STREAM_DETAIL, stale: fs.FACE_STREAM_STALE_DETAIL };
 out.encodeErrors = [];
 for (const bad of [{ width: 0, height: 10 }, { width: 10, height: 10, precision: 8 }]) {
@@ -217,7 +273,7 @@ def behaviour():
 def test_js_codec_is_byte_identical_to_the_go_reference():
     data = _node(PARITY_HARNESS)
     assert data["count"] == 0, data["mismatches"]
-    assert data["packets"] == 115
+    assert data["packets"] == 157
     assert data["worst"] <= 1e-12
 
 
@@ -282,6 +338,24 @@ def test_bad_configs_and_inputs_are_refused(behaviour):
     assert behaviour["smile"]["wide"] > 0.5
 
 
+def test_mouth_atlas_round_trips_and_blends_open_tiles(behaviour):
+    a = behaviour["atlas"]
+    assert a["type"] == "atlas"
+    assert a["frameDecoder"] == "not-a-frame"
+    assert a["closed"]["opacity"] == 0
+    assert a["open"]["a"] == 1 and a["open"]["opacity"] > 0.9
+    assert a["wide"]["a"] in (2, 3) and a["wide"]["opacity"] > 0.5
+    assert a["states"][:4] == [0, 1, 2, 3]
+    assert a["states"][4] is None and a["states"][5] is None
+    assert a["tileInside"]
+    assert abs(a["tileWidth"] - 40) < 1
+
+
+def test_a_still_face_never_trips_the_overrun_check(behaviour):
+    assert behaviour["still"]["stillErrors"] == 0
+    assert behaviour["still"]["shortest"] <= 12
+
+
 def test_tile_label_is_the_same_on_every_platform(behaviour):
     labels = behaviour["labels"]
     swift = SWIFT.read_text(encoding="utf-8")
@@ -296,8 +370,10 @@ def test_face_changer_still_exports_its_renderer_and_warp():
     render = (PUBLIC / "chat-call-face-render.js").read_text(encoding="utf-8")
     assert "export function createFaceRenderer" in render
     assert re.search(r"export const FACE_WARP = Object\.freeze\(\{ vertex: WARP_VERTEX, fragment: WARP_FRAGMENT, compile, texture, target \}\);", render)
+    assert "const float SOFTEN = ${PHOTO_SOFTEN.toFixed(2)};" in render
     module = MODULE.read_text(encoding="utf-8")
-    assert "FACE_WARP.vertex, FACE_WARP.fragment" in module
+    assert "compile(gl, FACE_WARP.vertex, FACE_STREAM_WARP_FRAGMENT)" in module
+    assert "FACE_WARP.fragment.replace(/const float SOFTEN = [0-9.]+;/" in module
 
 
 def test_face_stream_renders_a_live_face_in_headless_chromium(tmp_path):
@@ -318,5 +394,7 @@ def test_face_stream_renders_a_live_face_in_headless_chromium(tmp_path):
     assert summary["references"] >= 1
     assert summary["psnrCodecOnly"] > 35
     assert summary["psnrFace"] > summary["psnrFaceFrozen"] + 3
-    assert summary["ssimFace"] > 0.6
+    assert summary["ssimFace"] > 0.7
+    assert summary["frameKbps"] <= 12
+    assert summary["references"] == 1
     assert (tmp_path / "face-stream-000.png").exists()
