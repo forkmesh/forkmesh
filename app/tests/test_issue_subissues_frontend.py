@@ -172,7 +172,7 @@ def test_dashboard_check_animation_has_reduced_motion_and_touch_fallbacks():
 def test_issue_references_in_portable_relationship_text_are_links():
     inline = _slice(
         REPO_UI,
-        "function renderMarkdownInline(escapedText, context, linkRecordReferences = true)",
+        "function renderMarkdownInline(escapedText, context, linkRecordReferences = true, parked = [])",
         "function htmlTagAttr(tag, name)",
     )
     assert r"#([1-9]\d*)\b" in inline
