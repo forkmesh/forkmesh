@@ -314,6 +314,55 @@ def test_issue_mirror_ack_deletes_only_leased_rows():
     assert len(logs) == 1 and logs[0][2][2] == "issues"
 
 
+def test_every_mirror_drain_ack_wakes_the_fleet_to_fetch_the_new_commit():
+    for handler_name in (
+            "issues_handler", "pulls_handler", "discussions_handler"):
+        source = _function_source(handler_name)
+        attest = source.index("await _record_mirror_attested_state(")
+        drained = source.rindex("if drained:", 0, attest)
+        respond = source.index("return json_response(", attest)
+        assert "await _wake_mirrors_after_intake(env, owner, repo)" in (
+            source[drained:respond])
+
+
+def test_intake_wake_is_a_stateless_commits_doorbell_with_a_direct_fallback():
+    for scheduled in (True, False):
+        calls = []
+
+        async def schedule(_env, owner, repo, topic, state="", generation=0):
+            calls.append(("schedule", owner, repo, topic, state, generation))
+            return scheduled
+
+        async def notify(_env, owner, repo, topic, state="", generation=0):
+            calls.append(("notify", owner, repo, topic, state, generation))
+            return True
+
+        ns = _load_helpers(
+            {"_wake_mirrors_after_intake"},
+            extra_globals={
+                "schedule_repo_mirror_wake": schedule,
+                "notify_repo_mirrors": notify,
+            },
+        )
+        asyncio.run(ns["_wake_mirrors_after_intake"](object(), "o", "r"))
+        expected = [("schedule", "o", "r", "commits", "", 0)]
+        if not scheduled:
+            expected.append(("notify", "o", "r", "commits", "", 0))
+        assert calls == expected
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("doorbell down")
+
+    ns = _load_helpers(
+        {"_wake_mirrors_after_intake"},
+        extra_globals={
+            "schedule_repo_mirror_wake": broken,
+            "notify_repo_mirrors": broken,
+        },
+    )
+    asyncio.run(ns["_wake_mirrors_after_intake"](object(), "o", "r"))
+
+
 def _attestation_namespace(runs, verify_result=True, org_node=""):
     async def blind_index(_env, value):
         return "bi:" + value

@@ -62,7 +62,7 @@ broker ([gateways.md](gateways.md)), the desktop host installer, and
   each core converges its own copy.
 - **One cycle, many doorbells.** `syncLoop` runs `cycle()`; node socket events
   (`commits`, collaboration kinds, `org-agents`, `forks`, `replica`, and a
-  catch-up on reconnect) mark work pending. App-fed nodes reconcile every 30
+  catch-up on reconnect) mark work pending. App-fed nodes reconcile every 5
   minutes as a safety net (`relaySafetySyncInterval`), third-party upstreams
   every `syncInterval` (default 15 s); the endpoint lease renews every 4
   minutes.
@@ -112,7 +112,7 @@ Environment: `/etc/forkmesh/node.env`, `FORKMESH_MIRROR_NODE_CONFIG`.
 `eventDrivenUpstreams` names upstreams whose changes arrive as `commits`
 doorbells. An upstream on the node's own relay (same host as `catalogUrl`
 once `app.`/`api.`/`www.` is dropped, or a subdomain of it) is announced on
-the node's signed account socket and keeps the 30-minute safety fetch. An
+the node's signed account socket and keeps the 5-minute safety fetch. An
 upstream on another relay (a self-hosted instance following forkmesh.com) gets
 an unsigned watch socket on that relay,
 `/api/nodes/events?watch=<owner>/<repo>` (`upstreamwatch.go`); a doorbell or

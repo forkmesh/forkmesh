@@ -653,6 +653,8 @@ func (a *runnerActions) runWorkflow(ctx context.Context, job runnerActionsJob, c
 	}
 	if job.Trusted {
 		masks = append(masks, job.JobToken, job.PushGrant)
+	} else if job.JobToken != "" {
+		masks = append(masks, job.JobToken)
 	}
 	sink := newMaskingWriter(live, masks)
 	defer sink.Flush()
@@ -728,7 +730,9 @@ func (a *runnerActions) runWorkflow(ctx context.Context, job runnerActionsJob, c
 	} {
 		base.set(pair[0], pair[1])
 	}
-	if job.Trusted && job.JobToken != "" {
+	// A trusted job's token, or the one an untrusted issue or comment job
+	// carries for the job API (this repository's issues only).
+	if job.JobToken != "" {
 		base.set("FORKMESH_TOKEN", job.JobToken)
 		base.set("GITHUB_TOKEN", job.JobToken)
 	}
@@ -935,8 +939,7 @@ func (a *runnerActions) runStep(ctx context.Context, work string, env []string, 
 	if !strings.HasSuffix(script, "\n") {
 		script += "\n"
 	}
-	args := append(append([]string{"-i"}, env...), shell, "-e", "-s")
-	stdin := "exec 2>&1\nulimit -c 0 2>/dev/null || true\nulimit -f 2097152 2>/dev/null || true\n" + script
+	args, stdin := runnerStepInvocation(shell, env, script)
 	stderr, err := a.b.box.runner()(ctx, work, stdin, sink, "/usr/bin/env", args...)
 	_, _ = sink.Write(stderr)
 	var exit *exec.ExitError
@@ -944,6 +947,28 @@ func (a *runnerActions) runStep(ctx context.Context, work string, env []string, 
 		return exit.ExitCode(), nil
 	}
 	return 0, err
+}
+
+var runnerStepEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// runnerStepInvocation is the `env` argv and the stdin script of one step.
+// The step's environment (secrets, the job token) travels in the script on
+// stdin, never in argv: a process's command line is readable by every local
+// user through /proc/<pid>/cmdline and ps, and is what exec auditing logs,
+// while the pipe and the shell's own environment are not.
+func runnerStepInvocation(shell string, env []string, script string) ([]string, string) {
+	var prelude strings.Builder
+	prelude.WriteString("exec 2>&1\n")
+	for _, pair := range env {
+		name, value, ok := strings.Cut(pair, "=")
+		if !ok || !runnerStepEnvName.MatchString(name) {
+			continue
+		}
+		prelude.WriteString("export " + name + "='" +
+			strings.ReplaceAll(value, "'", `'\''`) + "' || :\n")
+	}
+	prelude.WriteString("ulimit -c 0 2>/dev/null || true\nulimit -f 2097152 2>/dev/null || true\n")
+	return []string{"-i", shell, "-e", "-s"}, prelude.String() + script
 }
 
 type runnerActionsRunWire struct {

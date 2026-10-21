@@ -52,7 +52,9 @@ FRAGMENTS = (
     "09-microjobs.js",
     "09-notes.js",
     "09-plugin-menu.js",
+    "09-recent-pushes.js",
     "09-referrals.js",
+    "09-repo-activity.js",
     "09-runners.js",
     "09-tasks.js",
     "09-update-notice.js",
@@ -106,6 +108,7 @@ LAZY_CHUNKS = {
     "links": "09-links.js",
     "notes": "09-notes.js",
     "referrals": "09-referrals.js",
+    "repo-activity": "09-repo-activity.js",
     "tasks": "09-tasks.js",
     "workflows": "09-workflows.js",
 }

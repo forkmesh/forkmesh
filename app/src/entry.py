@@ -13507,7 +13507,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "285eaede8b90626859ed5c987c70ff0a689f5f9f61fd5ebe9634b9558ee14933"
+    "809f8ba0db32b4ca902b82f56c42fc89ccf03eb50dbf54e3b7e509c9cbc1e5da"
 )
 
 
@@ -16196,6 +16196,11 @@ queue_runner_actions = _core_push.export("queue_runner_actions")
 core_push_tag_moves_handler = _core_push.export("tag_moves_handler")
 core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
+_recent_pushes = _LazyModule("recent_pushes")
+recent_push_remember = _recent_pushes.export("remember")
+recent_push_forget = _recent_pushes.export("forget_branches")
+recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
+recent_pushes_handler = _recent_pushes.export("handler")
 
 
 def _repo_identity_from_clone_url(value):
@@ -18792,6 +18797,7 @@ _REPO_SCOPED_TABLES = (
     ("private_mirror_routes", "repo_bi"),
     ("pull_batch_sent", "repo_bi"),
     ("pull_submission_receipts", "repo_bi"),
+    ("recent_pushes", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
@@ -18986,6 +18992,7 @@ async def _delete_account_namespace(env, name_bi, rec):
         env, "DELETE FROM referral_click_seen WHERE referrer_bi=?", name_bi)
     await d1_run(env, "DELETE FROM referral_stats WHERE referrer_bi=?", name_bi)
     await d1_run(env, "DELETE FROM notifications WHERE recipient_bi=?", name_bi)
+    await d1_run(env, "DELETE FROM recent_pushes WHERE account_bi=?", name_bi)
     await d1_run(env, "DELETE FROM profile_follows WHERE follower_bi=? OR target_bi=?", name_bi, name_bi)
     await d1_run(env, "DELETE FROM login_attempts WHERE id_bi=?", name_bi)
     await d1_run(
@@ -40215,6 +40222,14 @@ async def _record_mirror_attested_state(env, request, owner, repo, mirror_node):
         return False
 
 
+async def _wake_mirrors_after_intake(env, owner, repo):
+    try:
+        if not await schedule_repo_mirror_wake(env, owner, repo, "commits"):
+            await notify_repo_mirrors(env, owner, repo, "commits")
+    except Exception:
+        pass
+
+
 async def _rekey_alias_inbox(env, alias_owner, host_owner, repo, repo_bi):
     """Move issue/pull/discussion inbox rows off an organization alias's blind
     index and onto the backing node's key, where every drain actually reads.
@@ -40675,6 +40690,7 @@ async def issues_handler(env, request, owner, repo):
             if drained:
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
+                await _wake_mirrors_after_intake(env, owner, repo)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -41049,6 +41065,11 @@ async def pulls_handler(env, request, owner, repo):
         await _record_contributor(
             env, pull.get("author", ""), "pulls",
             pull.get("authorName", ""))
+        try:
+            await recent_push_mark_pulled(
+                env, repo_bi, clean_string(pull.get("head", ""), 260))
+        except Exception:
+            pass
         actor = clean_string(pull.get("authorName", "") or pull.get("author", ""), MAX_NODE_NAME).lower()
         title = clean_string(pull.get("title", "") or pull.get("subject", ""), 240)
         await notify_pending_inbox(
@@ -41162,6 +41183,7 @@ async def pulls_handler(env, request, owner, repo):
             if drained:
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
+                await _wake_mirrors_after_intake(env, owner, repo)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -41347,6 +41369,7 @@ async def discussions_handler(env, request, owner, repo):
             if drained:
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
+                await _wake_mirrors_after_intake(env, owner, repo)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -49651,6 +49674,10 @@ def _https_mirror_request_query(url, operation, release_sha=""):
     elif operation in ("tree", "blob", "raw", "commit", "history"):
         if params.get("path"):
             output["path"] = _repository_read_path(params["path"][0])
+    elif operation == "pulse":
+        for key in ("period", "person"):
+            if params.get(key):
+                output[key] = params[key][0]
     # Only operations that resolve a ref accept one. compare/merge-preview
     # resolve both endpoints from base/head, and `commit` addresses one object
     # by path, so forwarding the browser's ambient branch selection to them is
@@ -52567,7 +52594,8 @@ async def _https_mirror_push_send(
                     env, owner, repo, endpoint, account,
                     _ref_updates_from(upstream), core=core_push,
                     state=state, tag_moves=tag_moves,
-                    credential=credential, contributor=bool(push_prefix))
+                    credential=credential, contributor=bool(push_prefix),
+                    alias=alias_owner)
             except Exception:
                 pass
         return upstream, endpoint
@@ -54733,6 +54761,9 @@ class ForkMeshCronRunner(DurableObject):
             return json_response({"error": "invalid_mirror_wake"}, status=400)
         pending = await self._load_json_state(MIRROR_WAKE_REQUESTED_PREFIX)
         key = owner + "/" + repo + "/" + topic
+        prior = pending.get(key)
+        if not state and isinstance(prior, dict) and prior.get("state"):
+            return json_response({"ok": True, "coalesced": True}, status=202)
         now = int(Date.now())
         if key not in pending and len(pending) >= 128:
             oldest = min(

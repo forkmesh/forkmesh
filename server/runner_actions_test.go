@@ -532,6 +532,7 @@ jobs:
 
 	untrusted := job
 	untrusted.Trusted = false
+	untrusted.JobToken = ""
 	_, logText, steps, _ = runInstanceWorkflow(t, untrusted, files, func(step capturedStep, sink io.Writer) int {
 		src := step.env["GITHUB_WORKSPACE"]
 		if gitConfigIn(t, src, "http.extraheader") != "" || gitConfigIn(t, src, "remote.origin.url") != job.CloneURL {
@@ -542,6 +543,24 @@ jobs:
 	if steps[0].env["FORKMESH_TOKEN"] != "" || steps[0].env["CLOUDFLARE_API_TOKEN"] != "" ||
 		steps[1].script != `deploy "$FM_EXPR_1"` || steps[1].env["FM_EXPR_1"] != "" {
 		t.Fatalf("untrusted job saw secrets: %+v", steps)
+	}
+
+	// An outside issue or comment job: the job API token only, masked.
+	issueJob := job
+	issueJob.Trusted = false
+	_, logText, steps, _ = runInstanceWorkflow(t, issueJob, files, func(step capturedStep, sink io.Writer) int {
+		io.WriteString(sink, "token "+step.env["FORKMESH_TOKEN"]+"\n")
+		if gitConfigIn(t, step.env["GITHUB_WORKSPACE"], "http.extraheader") != "" {
+			t.Errorf("an untrusted issue job must carry no push credential")
+		}
+		return 0
+	})
+	if steps[0].env["FORKMESH_TOKEN"] != "job-token-abcdef" || steps[0].env["CLOUDFLARE_API_TOKEN"] != "" ||
+		steps[1].env["FM_EXPR_1"] != "" {
+		t.Fatalf("untrusted issue job env: %+v", steps)
+	}
+	if strings.Contains(logText, "job-token-abcdef") {
+		t.Fatalf("the job token leaked:\n%s", logText)
 	}
 
 	readOnly := map[string]string{".forkmesh/deploy.yml": strings.Replace(files[".forkmesh/deploy.yml"],
@@ -764,5 +783,30 @@ func TestRunnerActionsLogCapsAndMasks(t *testing.T) {
 	mask.Flush()
 	if !strings.HasSuffix(out.String(), "partial ***") {
 		t.Fatalf("flush %q", out.String())
+	}
+}
+
+func TestRunnerStepsReceiveTheirEnvironmentOnStdinNotArgv(t *testing.T) {
+	secret := "s3cr3t 'quoted' $HOME `x`\nsecond line"
+	env := []string{"PATH=/usr/bin:/bin", "API_TOKEN=" + secret, "EMPTY=",
+		"bad-name=ignored", "HOME=/tmp"}
+	args, stdin := runnerStepInvocation("/bin/sh", env,
+		"printf '%s|%s|%s' \"$API_TOKEN\" \"${EMPTY-unset}\" \"$PATH\"\n")
+	for _, arg := range args {
+		if strings.Contains(arg, "s3cr3t") || strings.Contains(arg, "=") {
+			t.Fatalf("argv carries the environment: %q", args)
+		}
+	}
+	if want := []string{"-i", "/bin/sh", "-e", "-s"}; strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("args = %q", args)
+	}
+	command := exec.Command("/usr/bin/env", args...)
+	command.Stdin = strings.NewReader(stdin)
+	out, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("step failed: %v\n%s", err, out)
+	}
+	if got := string(out); got != secret+"||/usr/bin:/bin" {
+		t.Fatalf("step saw %q", got)
 	}
 }

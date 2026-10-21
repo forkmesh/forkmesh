@@ -29,6 +29,7 @@ def _bind_runtime(runtime):
 REPO_HOST_READ_ACTIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "commit",
     "compare", "merge-preview", "branches", "search", "stats", "sizes",
+    "pulse",
 })
 SITE_DOCUMENT_PROXY_TIMEOUT_SECONDS = 8
 SITE_DOCUMENT_PROXY_MAX_BYTES = 1024 * 1024
@@ -2981,6 +2982,9 @@ class Default:
 
         if url.path in ("/api/notifications", "/api/notifications/"):
             return await notifications_handler(self.env, request)
+
+        if url.path in ("/api/me/recent-pushes", "/api/me/recent-pushes/"):
+            return await recent_pushes_handler(self.env, request)
 
         # A countdown or alarm ran out on the desktop's clock; the ping it
         # raises is what reaches the phone over APNs.

@@ -107,12 +107,14 @@ func newRunnerAgentJobs(d *Daemon) (*agentJobRunner, error) {
 	if err != nil {
 		return nil, err
 	}
+	runnerAccount := false
 	if box.uid != 0 {
 		account, err := user.LookupId(strconv.Itoa(box.uid))
 		if err != nil || account.HomeDir == "" || account.HomeDir == "/" {
 			return nil, fmt.Errorf("runner.jobUid %d needs a passwd entry with its own home (e.g. /var/lib/forkmesh-job)", box.uid)
 		}
 		box.home, box.userName = account.HomeDir, account.Username
+		runnerAccount = isRunnerJobAccount(account.Name)
 		if gid, err := strconv.Atoi(account.Gid); err == nil && gid > 0 {
 			box.gid = gid
 		}
@@ -128,6 +130,15 @@ func newRunnerAgentJobs(d *Daemon) (*agentJobRunner, error) {
 	}
 	box.accounts = newRunnerAccounts(filepath.Join(cfg.WorkRoot, runnerAccountsDir), box.persistentHome(),
 		box.uid, box.gidOrUID())
+	if box.uid != 0 && runnerAccount {
+		box.homeGate = &persistentHomeGate{}
+		if err := box.lockPersistentHome(); err != nil {
+			log.Printf("runner: the job user's home could not be locked: %v", err)
+		}
+	} else if box.uid != 0 {
+		log.Printf("runner: WARNING the job user %s is not a %q account, so its home %s is left as it is and stays open to jobs",
+			box.userName, runnerJobAccountComment, box.home)
+	}
 	box.sweepIdle()
 	r := newAgentJobRunner(d)
 	r.maxRuns = cfg.MaxConcurrentRuns

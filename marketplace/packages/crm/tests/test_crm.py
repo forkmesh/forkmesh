@@ -945,6 +945,34 @@ def test_a_split_csv_import_pings_start_and_finish_and_explains_skipped_rows():
         "CRM import started: one.csv", "CRM import finished: one.csv"]
 
 
+def test_a_full_crm_skips_new_import_rows_and_still_updates_known_ones():
+    runtime = Runtime()
+    call(runtime.use("POST", body={"name": "Ada", "email": "ada@example.com"}),
+         "/api/crm/acme/contacts")
+    runtime.db.executemany(
+        "INSERT INTO crm_contacts VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        [("filler%04d" % index, "org:acme", "acme", "", "", "", "", "", 1, 1,
+          'sealed:{"name":"x"}') for index in range(crm.MAX_CONTACTS - 1)])
+    imported = call(runtime.use("POST", body={
+        "fileName": "leads.csv",
+        "csv": "name,email,company\nAda,ada@example.com,Engines\n"
+               "Bob,bob@example.com,Looms\n",
+    }), "/api/crm/acme/contacts/import")
+    assert imported["status"] == 200
+    data = imported["data"]
+    assert (data["created"], data["updated"], data["skipped"]) == (0, 1, 1)
+    assert data["errors"] == [{
+        "row": 3, "error": "crm_full",
+        "message": "Row 3 was not added because the CRM already holds %d contacts."
+                   % crm.MAX_CONTACTS}]
+    assert runtime.pings[-1]["title"] == (
+        "CRM import finished with 1 skipped row: leads.csv")
+
+    created = call(runtime.use("POST", body={"name": "Grace"}),
+                   "/api/crm/acme/contacts")
+    assert (created["status"], created["data"]) == (409, {"error": "crm_full"})
+
+
 def test_an_abandoned_split_import_pings_failure_and_drops_its_empty_sheet():
     runtime = Runtime()
     envelope = {"id": "import-0002", "parts": 3, "rows": 250}
@@ -974,6 +1002,31 @@ def test_an_abandoned_split_import_pings_failure_and_drops_its_empty_sheet():
     assert (over["status"], over["data"]["error"]) == (413, "too_many_csv_rows")
     assert runtime.pings[-1]["title"] == "CRM import failed: huge.csv"
     assert runtime.pings[-1]["body"].startswith("The file has more than 2000 rows.")
+
+
+def test_an_import_past_the_contact_cap_skips_the_rows_that_do_not_fit():
+    runtime = Runtime()
+    call(runtime.use("GET"), "/api/crm/acme")
+    triggers = {row[0] for row in runtime.db.execute(
+        "SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert "trg_crm_contact_limit_5000" in triggers
+    assert "trg_crm_contact_limit" not in triggers
+    runtime.db.executemany(
+        "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
+        "created_by_bi,created_by_name,updated_by_bi,updated_by_name,"
+        "created_at,updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        [("seed%028d" % index, "org:acme", "acme", "", "", "alice", "", "alice",
+          1, 1, "{}") for index in range(crm.MAX_CONTACTS - 1)])
+    result = call(runtime.use("POST", body={
+        "fileName": "late.csv",
+        "csv": "name,email\nAda,ada@example.com\nBob,bob@example.com\n",
+    }), "/api/crm/acme/contacts/import")
+    assert result["status"] == 200
+    data = result["data"]
+    assert (data["created"], data["skipped"]) == (1, 1)
+    assert data["errors"] == [{
+        "row": 3, "error": "crm_full",
+        "message": "Row 3 was not added because the CRM already holds 5000 contacts."}]
 
 
 def test_sheets_are_renamed_reordered_and_shared_within_the_organization():

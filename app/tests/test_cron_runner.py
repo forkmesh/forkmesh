@@ -1085,6 +1085,35 @@ def test_commit_mirror_wake_is_coalesced_and_retried_until_durable():
         storage.data[ns["MIRROR_WAKE_REQUESTED_PREFIX"]]) == {}
 
 
+def test_stateless_commit_wake_keeps_a_pending_convergence_target():
+    ns = _load_runner()
+    calls = []
+
+    async def notify(_env, owner, repo, topic, state="", generation=0):
+        calls.append((owner, repo, topic, state, generation))
+        return True
+
+    ns["notify_repo_mirrors"] = notify
+    runner, storage = _runner(ns, ns["MIRROR_WAKE_NAME"])
+    state = "b" * 64
+    base = (ns["MIRROR_WAKE_PATH"]
+            + "?owner=forkmesh&repo=forkmesh&topic=commits")
+    assert asyncio.run(runner.fetch(_request(
+        base + "&state=" + state + "&generation=77"))).status == 202
+    assert asyncio.run(runner.fetch(_request(base))).status == 202
+    pending = json.loads(storage.data[ns["MIRROR_WAKE_REQUESTED_PREFIX"]])
+    assert pending["forkmesh/forkmesh/commits"]["state"] == state
+
+    ns["Date"].value = storage.alarm_at
+    _fire(runner, storage)
+    assert calls == [("forkmesh", "forkmesh", "commits", state, 77)]
+
+    assert asyncio.run(runner.fetch(_request(base))).status == 202
+    ns["Date"].value = storage.alarm_at
+    _fire(runner, storage)
+    assert calls[-1] == ("forkmesh", "forkmesh", "commits", "", 0)
+
+
 def test_republish_doorbell_records_paths_and_arms_only_the_lead_alarm():
     ns, calls = _republish_ns()
     runner, storage = _runner(ns, ns["SNAPSHOT_REPUBLISH_NAME"])

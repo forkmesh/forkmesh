@@ -28,6 +28,8 @@
     invalid_ecosystem: "Choose an ecosystem from the list.",
     invalid_fix: "The fix branch, pull request number or commit is not valid.",
     too_many_open_reports: "You already have ten open reports for this repository.",
+    too_many_reports: "You have sent the most reports allowed in one day. Try again tomorrow.",
+    already_recorded: "This advisory is already recorded in the repository.",
     inbox_full: "This repository has too many reports waiting for triage.",
     bad_signature: "The signature did not verify. Reload the page and try again.",
     content_changed: "The advisory changed while you were publishing. Try again.",
