@@ -10180,7 +10180,7 @@
     if (!container || !config) return;
     // A background refresh must not wipe a New discussion draft, the same
     // rule loadRepoIssues keeps for the New issue form.
-    if (kind === "discussions" && container.querySelector("[data-repo-discussion-form]")) return;
+    if (kind === "discussions" && container.querySelector?.("[data-repo-discussion-form]")) return;
     // The pull ledger advances independently from the selected source branch.
     // A commit cached while this repository page was open would otherwise keep
     // a newly opened pull invisible even when the list is explicitly reloaded.
