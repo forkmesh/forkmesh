@@ -53,6 +53,16 @@ account has installed. A row no installed check claims is hidden. A new
 one), or nobody sees its dot; `test_checks_cover_every_status_row` fails
 until it has one.
 
+The `flagship_repository` probe (`_flagship_repository_probe` in
+`app/src/entry.py`) reads the same pages a visitor opens: README, an issue, a
+discussion and a pull request, each from an eligible mirror. A repository
+with no discussions or no pull requests is healthy, because those tabs show
+zero rows. Deleting the last discussion removes `.forkmesh/discussions`
+entirely, so the probe first lists `.forkmesh` and only reads the folder if
+it is there; asking for the missing folder directly answered 404 and turned
+the row red ("Discussions collection failed (HTTP 404)", 2026-10-21). A
+failed or unattributed read of `.forkmesh` itself still counts as an outage.
+
 A third-party package can add dots the same way: depend on `status-page`,
 set `install.sync: "account"`, and declare a `status.monitor` contribution.
 
