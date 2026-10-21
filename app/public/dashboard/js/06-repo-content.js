@@ -2410,7 +2410,7 @@
         number,
         title: values.title || `${config.itemLabel} #${number}`,
         state: values.status || values.state || values.category || "open",
-        author: values.authorName || values.author || "unknown",
+        author: recordAuthorName(values) || values.author || "unknown",
         date: formatRecordDate(values.updatedAt || values.createdAt || values.ts),
         updatedAtMs: Number(values.updatedAt || values.createdAt || values.ts || 0) || 0,
         createdAtMs: Number(values.createdAt || values.ts || values.updatedAt || 0) || 0,
@@ -4618,7 +4618,7 @@
       id: "open",
       type: "open",
       author: values?.author || "",
-      authorName: values?.authorName || values?.author || "unknown",
+      authorName: recordAuthorName(values) || values?.author || "unknown",
       ts: values?.ts || values?.createdAt || 0,
       body: "",
     };
@@ -4816,7 +4816,7 @@
         type: values.type || "comment",
         id: values.id || "",
         author: values.author || "",
-        authorName: values.authorName || "",
+        authorName: recordAuthorName(values),
         ts: values.ts || "",
         state: values.state || "",
         path: values.path || "",
@@ -6757,7 +6757,7 @@
     const values = parsed.values || {};
     const title = values.title || `${config.itemLabel} #${number}`;
     const recordState = values.status || values.state || values.category || "open";
-    const author = values.authorName || values.author || "unknown";
+    const author = recordAuthorName(values) || values.author || "unknown";
     const timestamp = values.updatedAt || values.createdAt || values.ts;
     const date = isFinite(Number(timestamp)) || timestamp
       ? formatTimeAgo(timestamp)

@@ -40754,6 +40754,11 @@ async def _bind_session_author(env, request, data, record, session=None):
     if session and bound and bound != session:
         return json_response({"error": "author_mismatch"}, status=403)
     name = session or bound
+    claimed = clean_string(
+        record.get("authorName", "") or "", MAX_NODE_NAME).strip().lower()
+    record.pop("authorClaimedName", None)
+    if not name and valid_node_name(claimed):
+        record["authorClaimedName"] = claimed
     record["authorName"] = name
     record["authorVerified"] = bool(name)
     return None

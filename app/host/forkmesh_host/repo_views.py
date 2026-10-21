@@ -61,6 +61,7 @@ PUBLIC_CHECK_SECONDS = 5.0
 MAX_BUNDLE_BYTES = 8 * 1024 * 1024
 SEED_ERROR = "__seedError"
 NUMBERED = re.compile(r"^\d+$")
+CLAIMED_NAME = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
 def read_key(operation, pairs):
@@ -180,6 +181,16 @@ async def _blobs(reader, paths, ref):
     return found
 
 
+def _record_author(values):
+    name = str(values.get("authorName") or "").strip()
+    if name:
+        return name
+    claimed = str(values.get("authorClaimedName") or "").strip().lower()
+    if CLAIMED_NAME.match(claimed):
+        return "%s (unverified)" % claimed
+    return values.get("author") or "unknown"
+
+
 def _record_row(number, values, body, kind):
     return {
         "number": number,
@@ -188,8 +199,7 @@ def _record_row(number, values, body, kind):
                 kind, "record"), number),
         "state": values.get("status") or values.get("state")
         or values.get("category") or "open",
-        "author": values.get("authorName") or values.get("author")
-        or "unknown",
+        "author": _record_author(values),
         "ts": values.get("updatedAt") or values.get("createdAt")
         or values.get("ts") or "",
         "base": values.get("base", ""),
@@ -419,8 +429,7 @@ async def _pull_conversation(reader, number, commit):
             continue
         values, body = parse_front_matter(blob_text(blob))
         events.append({"type": values.get("type") or "comment",
-                       "author": values.get("authorName")
-                       or values.get("author") or "unknown",
+                       "author": _record_author(values),
                        "ts": values.get("ts") or "", "state":
                        values.get("state", ""), "path": values.get("path", ""),
                        "body": body})
@@ -483,8 +492,7 @@ async def plan_pull(reader, branch, number):
     return {"pull": {
         "number": number, "title": values.get("title") or
         "pull request #%d" % number, "state": values.get("status") or "open",
-        "author": values.get("authorName") or values.get("author")
-        or "unknown", "ts": values.get("ts") or values.get("createdAt") or "",
+        "author": _record_author(values), "ts": values.get("ts") or values.get("createdAt") or "",
         "base": values.get("base", ""), "head": values.get("head", ""),
         "body": body, "conversation": conversation, "patch": diff}}
 
