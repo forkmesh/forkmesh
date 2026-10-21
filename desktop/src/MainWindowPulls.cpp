@@ -8306,22 +8306,44 @@ void MainWindow::reviewCurrentPullWithAi()
         return;
     }
 
-    // Provider: a configured API key wins (one request over the diff suffices
-    // and the reply is easiest to keep to strict JSON); without one, fall back
-    // to the Claude Code CLI, which authenticates through its local login.
     const QString claudeKey =
         QSettings().value(kClaudeApiKeySetting).toString().trimmed();
     const QString openAiKey =
         QSettings().value(kCodexApiKeySetting).toString().trimmed();
+    const QString composerProvider =
+        m_quickAddAgentProvider ? m_quickAddAgentProvider->currentData().toString()
+                                : QString();
     QString provider = QStringLiteral("claude-code");
     QString model;
-    if (!claudeKey.isEmpty()) {
+    if (!composerProvider.isEmpty() &&
+        !quickAddProviderIsPromptAction(composerProvider)) {
+        provider = composerProvider;
+        if (agentSelectorTakesModel(provider) && m_quickAddClaudeModel) {
+            const QString selected = selectedModelComboValue(m_quickAddClaudeModel);
+            model = (provider == QLatin1String("claude-code") ||
+                     agentIsCodexProvider(provider))
+                        ? codexChatGptModelId(selected)
+                        : selected.trimmed();
+            if (!agentModelMatchesProvider(provider, model))
+                model.clear();
+        }
+        if (agentIsClaudeProvider(provider) &&
+            provider != QLatin1String("claude-code") && !claudeKey.isEmpty())
+            model = QStringLiteral("claude-opus-5");
+        else if (provider == QLatin1String("openai") && !openAiKey.isEmpty())
+            model = QStringLiteral("gpt-4.1-mini");
+    } else if (!claudeKey.isEmpty()) {
         provider = QStringLiteral("claude");
         model = QStringLiteral("claude-opus-5");
     } else if (!openAiKey.isEmpty()) {
         provider = QStringLiteral("openai");
         model = QStringLiteral("gpt-4.1-mini");
     }
+    const bool claudeApi = agentIsClaudeProvider(provider) &&
+                           provider != QLatin1String("claude-code") &&
+                           !claudeKey.isEmpty();
+    const bool openAiApi =
+        provider == QLatin1String("openai") && !openAiKey.isEmpty();
 
     const RepositoryRecord &repo = m_repositories.at(m_repoDetailIndex);
     AgentSession session;
@@ -8366,12 +8388,12 @@ void MainWindow::reviewCurrentPullWithAi()
     const QString prompt =
         buildAiReviewPrompt(current.title, current.description, current.patch);
 
-    if (provider == QLatin1String("claude-code")) {
-        aiReviewRunClaudeCode(prompt);
+    if (!claudeApi && !openAiApi) {
+        aiReviewRunAgentCli(prompt);
         return;
     }
 
-    const bool claude = provider == QLatin1String("claude");
+    const bool claude = claudeApi;
     constexpr int kReviewOutTokens = 8000;
     QNetworkReply *reply = nullptr;
     if (claude) {
@@ -8439,14 +8461,15 @@ void MainWindow::reviewCurrentPullWithAi()
     });
 }
 
-void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
+void MainWindow::aiReviewRunAgentCli(const QString &prompt)
 {
     if (!m_aiReview)
         return;
-    const QString workTree =
+    const RepositoryRecord *repo =
         (m_aiReview->repoIndex >= 0 && m_aiReview->repoIndex < m_repositories.size())
-            ? writableRecordFor(m_repositories.at(m_aiReview->repoIndex)).localPath
-            : QString();
+            ? &m_repositories.at(m_aiReview->repoIndex)
+            : nullptr;
+    const QString workTree = repo ? writableRecordFor(*repo).localPath : QString();
     const QString promptPath = QDir::temp().filePath(
         QStringLiteral("forkmesh-review-%1.md").arg(m_aiReview->number));
     m_aiReview->promptFile = promptPath;
@@ -8461,14 +8484,36 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
                         "JSON array as your final output.\n"));
     pf.close();
 
-    QString promptQuoted = promptPath;
-    promptQuoted.replace(QLatin1Char('\''), QStringLiteral("'\\''"));
-    promptQuoted = QLatin1Char('\'') + promptQuoted + QLatin1Char('\'');
-    QString command = claudeCodeCommandSetting();
+    const QString provider = m_aiReview->provider;
+    AgentRunner::Config config =
+        agentConfigForProvider(provider, m_aiReview->model, repo);
+    if (!m_aiReview->model.isEmpty())
+        config.model = m_aiReview->model;
+    const auto quote = [](QString text) -> QString {
+        text.replace(QLatin1Char('\''), QStringLiteral("'\\''"));
+        return QLatin1Char('\'') + text + QLatin1Char('\'');
+    };
+    const QString model = config.model.trimmed();
+    QString command = config.command.trimmed();
+    const bool modelPlaceholder = command.contains(QStringLiteral("{modelArg}")) ||
+                                  command.contains(QStringLiteral("{model}"));
+    command.replace(QStringLiteral("{modelArg}"),
+                    model.isEmpty() ? QString()
+                                    : QStringLiteral("-m %1").arg(quote(model)));
+    command.replace(QStringLiteral("{model}"), quote(model));
+    command.replace(QStringLiteral("{provider}"), quote(provider));
+    command.replace(QStringLiteral("{issueNumber}"), QStringLiteral("0"));
+    command.replace(QStringLiteral("{contextWindow}"),
+                    QString::number(config.contextWindow));
+    command.replace(QStringLiteral("{maxOutputTokens}"),
+                    QString::number(config.maxOutputTokens));
+    if (provider == QLatin1String("claude-code") && !modelPlaceholder &&
+        !model.isEmpty())
+        command += QStringLiteral(" --model ") + quote(model);
     if (command.contains(QStringLiteral("{promptFile}")))
-        command.replace(QStringLiteral("{promptFile}"), promptQuoted);
+        command.replace(QStringLiteral("{promptFile}"), quote(promptPath));
     else
-        command += QStringLiteral(" < ") + promptQuoted;
+        command += QStringLiteral(" < ") + quote(promptPath);
 
     auto *process = new QProcess(this);
     m_aiReview->process = process;
@@ -8476,7 +8521,40 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
     process->setWorkingDirectory(workTree.isEmpty() ? QDir::tempPath() : workTree);
     process->setStandardInputFile(QProcess::nullDevice());
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    env.remove(QStringLiteral("ANTHROPIC_API_KEY"));
+    for (const char *name :
+         {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_ADMIN_KEY",
+          "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_API_KEY", "OPENAI_API_KEY",
+          "OPENAI_ACCESS_TOKEN", "OPENAI_ADMIN_KEY"})
+        env.remove(QString::fromLatin1(name));
+    if (!config.apiKeyName.isEmpty())
+        env.remove(config.apiKeyName);
+    if (!config.apiKeyName.isEmpty() && !config.apiKey.trimmed().isEmpty()) {
+        env.insert(config.apiKeyName, config.apiKey.trimmed());
+        if (provider == QLatin1String("openai") || agentIsCodexProvider(provider))
+            env.insert(QStringLiteral("OPENAI_API_KEY"), config.apiKey.trimmed());
+    }
+    if (config.preferApiKeyAuth && !config.isolatedHome.isEmpty()) {
+        QDir().mkpath(config.isolatedHome);
+        env.insert(QStringLiteral("CODEX_HOME"), config.isolatedHome);
+    }
+    if (!model.isEmpty())
+        env.insert(QStringLiteral("FORKMESH_AGENT_MODEL"), model);
+    env.insert(QStringLiteral("FORKMESH_AGENT_PROVIDER"), provider);
+    if (!config.endpoint.trimmed().isEmpty())
+        env.insert(QStringLiteral("FORKMESH_AGENT_ENDPOINT"),
+                   config.endpoint.trimmed());
+    if (!config.thinking.trimmed().isEmpty())
+        env.insert(QStringLiteral("FORKMESH_AGENT_THINKING"),
+                   config.thinking.trimmed());
+    env.insert(QStringLiteral("FORKMESH_AGENT_CONTEXT_WINDOW"),
+               QString::number(config.contextWindow));
+    env.insert(QStringLiteral("FORKMESH_AGENT_MAX_OUTPUT_TOKENS"),
+               QString::number(config.maxOutputTokens));
+    for (const QString &kv : std::as_const(config.extraEnvironment)) {
+        const int eq = kv.indexOf(QLatin1Char('='));
+        if (eq > 0)
+            env.insert(kv.left(eq), kv.mid(eq + 1));
+    }
     forkmesh::agentcli::widenPath(env);
     process->setProcessEnvironment(env);
 
@@ -8496,8 +8574,9 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
                     process->deleteLater();
                     QFile::remove(m_aiReview->promptFile);
                     aiReviewFail(QString::fromUtf8(
-                        "Could not start the `claude` CLI \xE2\x80\x94 install "
-                        "Claude Code or set its command in Settings."));
+                                     "Could not start %1 \xE2\x80\x94 install "
+                                     "it or set its command in Settings.")
+                                     .arg(agentProviderName(m_aiReview->provider)));
                 }
             });
     connect(process, &QProcess::finished, this,
@@ -8514,8 +8593,9 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
                 QFile::remove(m_aiReview->promptFile);
                 if (exitCode != 0) {
                     aiReviewFail(QStringLiteral(
-                                     "Claude Code exited with code %1 before "
+                                     "%1 exited with code %2 before "
                                      "finishing the review.")
+                                     .arg(agentProviderName(m_aiReview->provider))
                                      .arg(exitCode));
                     return;
                 }
@@ -8523,7 +8603,8 @@ void MainWindow::aiReviewRunClaudeCode(const QString &prompt)
             });
 
     aiReviewLog(QString::fromUtf8(
-        "==> Running Claude Code over the pull request diff\xE2\x80\xA6\n"));
+                    "==> Running %1 over the pull request diff\xE2\x80\xA6\n")
+                    .arg(agentProviderName(provider)));
     trackProcessActivity(process, QStringLiteral("review"),
                          QStringLiteral("AI review of the pull request diff"));
 #ifdef Q_OS_WIN
