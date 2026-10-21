@@ -179,8 +179,11 @@ helpers `groupHeading`, `pageTitle`, `pageLede`, `labeledField`, `tintedIcon`.
   `informativeText` get a heading; the rest show the message alone. Qt's macOS
   box adds a 24 px widget margin and re-inserts the icon on a style change, so
   the layout is fixed on `Show`, just before `QMessageBox::showEvent` sizes it.
-  Frameless alerts cannot be dragged. Classic is unchanged.
-
+  Frameless alerts cannot be dragged. The scrim follows the parent window
+  when it is resized while the alert is open (`fitMessageScrims` on
+  `Resize`), and a title moved into the heading is set as plain text unless
+  the box is already rich text, so a title containing `<` is never read as
+  markup. Classic is unchanged.
 
 ## Must not break
 

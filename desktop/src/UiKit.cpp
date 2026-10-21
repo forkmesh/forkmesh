@@ -833,7 +833,12 @@ void dressMessageCard(QMessageBox *box)
         title != QApplication::applicationDisplayName()) {
         const Qt::TextFormat format = box->textFormat();
         box->setInformativeText(box->text());
-        box->setText(format == Qt::RichText ? title.toHtmlEscaped() : title);
+        if (format == Qt::RichText) {
+            box->setText(title.toHtmlEscaped());
+        } else {
+            box->setTextFormat(Qt::PlainText);
+            box->setText(title);
+        }
         if (auto *info = box->findChild<QLabel *>(
                 QStringLiteral("qt_msgbox_informativelabel")))
             info->setTextFormat(format);
@@ -863,6 +868,19 @@ void showMessageScrim(QMessageBox *box)
     messageScrims().insert(box, scrim);
     QObject::connect(box, &QObject::destroyed, scrim,
                      [box] { hideMessageScrim(box); });
+}
+
+void fitMessageScrims(QObject *watched)
+{
+    if (messageScrims().isEmpty() || !watched->isWidgetType())
+        return;
+    auto *host = static_cast<QWidget *>(watched);
+    if (!host->isWindow())
+        return;
+    for (const QPointer<QWidget> &scrim : std::as_const(messageScrims())) {
+        if (scrim && scrim->parentWidget() == host)
+            scrim->setGeometry(host->rect());
+    }
 }
 
 void layoutMessageCard(QMessageBox *box)
@@ -913,6 +931,9 @@ protected:
         case QEvent::Hide:
             if (messageCard(watched))
                 hideMessageScrim(static_cast<QWidget *>(watched));
+            break;
+        case QEvent::Resize:
+            fitMessageScrims(watched);
             break;
         case QEvent::Paint:
             if (QMessageBox *box = messageCard(watched))
