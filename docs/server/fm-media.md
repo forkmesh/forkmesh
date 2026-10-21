@@ -74,7 +74,8 @@ takes ideas it does not use. Five of them, each measurable on the bench:
    changer's warp renderer, which already exists in the browser and on
    iPhone. A call on a bad cellular link shows a live, talking face instead
    of a frozen frame, at a twentieth of the bitrate. It switches back as soon
-   as real video fits, and the receiver is told which it is seeing.
+   as real video fits, and the receiver is told which it is seeing. Format,
+   codec, renderers and measurements: [../app/face-stream.md](../app/face-stream.md).
 2. **Audio that survives a third of its packets lost.** Opus 1.5 built with
    deep redundancy (DRED: up to a second of history in every packet, a few
    kbps), deep concealment and decoder enhancement. The jitter buffer
