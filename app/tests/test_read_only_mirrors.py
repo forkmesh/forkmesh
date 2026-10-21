@@ -180,3 +180,22 @@ def test_about_closes_collaboration_on_a_mirror_only():
     source = ast.get_source_segment(ENTRY_TEXT, handler)
     assert "_read_only_mirrors.about_fields(" in source
     assert "_read_only_mirror_fields(env, owner, repo, rec or {})" in source
+
+
+def test_about_lists_the_upstream_and_provider_mirrors_once():
+    github = mirrors.upstream_link("https://github.com/octo/engine.git")
+    assert github == {"provider": "github", "label": "GitHub",
+                      "url": "https://github.com/octo/engine",
+                      "role": "upstream"}
+    assert mirrors.upstream_link(UPSTREAM)["label"] == "forkmesh.com"
+    assert mirrors.upstream_link("") is None
+    assert mirrors.upstream_link("javascript:alert(1)") is None
+    pushed = {"provider": "github", "label": "GitHub",
+              "url": "https://github.com/Octo/Engine", "role": "mirror"}
+    assert mirrors.external_mirrors(github, pushed, None) == [github]
+    assert mirrors.external_mirrors(None, pushed) == [pushed]
+    assert mirrors.external_mirrors() == []
+    source = ast.get_source_segment(
+        ENTRY_TEXT, _function(ENTRY_TEXT, "_repo_about_public"))
+    assert '"externalMirrors": _read_only_mirrors.external_mirrors(' in source
+    assert "_repository_provider_mirror.public_about_link(" in source

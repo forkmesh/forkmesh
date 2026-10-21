@@ -528,13 +528,17 @@
               </div>
               <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5">${'<span class="h-7 w-7 rounded-full border-2 border-background bg-secondary"></span>'.repeat(8)}</div>
             </div>
-            ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
+            ${dashboardOnInstance() ? `<div data-repo-external-mirrors hidden class="mt-3 border-t border-border pt-3">
+              <h4 class="text-xs font-semibold text-foreground">Mirrors</h4>
+              <div data-repo-external-mirror-list class="-mx-2 mt-2 grid"></div>
+            </div>` : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
                 <span class="font-mono text-[11px] text-muted-foreground"><span data-dashboard-repo-count="mirrors">${tabCountLabel(mirrorsCount)}</span> online</span>
               </div>
               <p class="mt-1 text-[11px] leading-4 text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
               <div data-repo-live-mirror-list class="-mx-2 mt-2 grid"></div>
+              <div data-repo-external-mirrors hidden><div data-repo-external-mirror-list class="-mx-2 grid"></div></div>
             </div>`}
             ${canEditAbout && !repo.isPrivate ? `
             <details data-repo-fedi-posts class="mt-4 border-t border-border pt-4">
