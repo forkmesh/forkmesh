@@ -1,6 +1,7 @@
 package quic
 
 import (
+	"math"
 	"time"
 )
 
@@ -141,7 +142,7 @@ type congestion struct {
 }
 
 func newCongestion(maxDatagram int) congestion {
-	c := congestion{maxDatagram: maxDatagram, ssthresh: 1 << 62}
+	c := congestion{maxDatagram: maxDatagram, ssthresh: math.MaxInt >> 1}
 	c.cwnd = c.initialWindow()
 	return c
 }

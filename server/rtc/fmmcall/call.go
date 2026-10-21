@@ -108,7 +108,7 @@ func (s *Session) SendControl(p []byte) error {
 	if len(p) > 0 && p[0] == wire.MsgPublish {
 		if m, _, err := wire.Decode(p); err == nil {
 			if v, ok := m.(wire.Publish); ok {
-				s.audio[v.Stream].Store(v.Kind == wire.TrackAudio)
+				s.audio[v.Stream].Store(wire.AudioLike(v.Kind))
 			}
 		}
 	}

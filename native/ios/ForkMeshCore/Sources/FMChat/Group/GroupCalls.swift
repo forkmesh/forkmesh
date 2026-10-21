@@ -4,7 +4,8 @@ import Foundation
 public enum GroupCallFrames {
     public static let presenceType = "group-call-presence"
     public static let keyType = "group-call-key"
-    public static let types: Set<String> = [presenceType, keyType]
+    public static let verifyType = "group-call-verify"
+    public static let types: Set<String> = [presenceType, keyType, verifyType]
     public static let heartbeat: TimeInterval = 20
     public static let presenceTTL: TimeInterval = 60
     public static let rotateDelay: TimeInterval = 1
@@ -31,6 +32,7 @@ public struct GroupCallTicket: Equatable, Sendable {
     public let url: String
     public let peer: String
     public let room: String
+    public let fmm: GroupCallFmmAccess?
 
     public init?(json: JSONObject) {
         let ticket = json["ticket"]?.text ?? ""
@@ -41,6 +43,7 @@ public struct GroupCallTicket: Equatable, Sendable {
         self.url = url
         self.peer = peer
         self.room = json["room"]?.text ?? ""
+        self.fmm = GroupCallFmmAccess(json: json["fmm"])
     }
 }
 
@@ -93,7 +96,7 @@ public final class GroupCallRoster {
             presence[conversation] = entries
             return out ? .left(peer: peer) : .joined(peer: peer, isNew: !known)
         }
-        guard let keyId = plain["keyId"]?.intValue, (0...255).contains(keyId),
+        guard type == GroupCallFrames.keyType, let keyId = plain["keyId"]?.intValue, (0...255).contains(keyId),
             let text = plain["key"]?.text, let decoded = Data(base64Encoded: text),
             decoded.count == GroupCallFrames.keyBytes,
             claim(conversation, peer: peer, name: name)

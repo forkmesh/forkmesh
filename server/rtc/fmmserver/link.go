@@ -237,7 +237,7 @@ func (t *transport) SendControl(p []byte) error {
 		if m, _, err := wire.Decode(p); err == nil {
 			switch v := m.(type) {
 			case wire.TrackAdded:
-				t.audio[v.Stream].Store(v.Kind == wire.TrackAudio)
+				t.audio[v.Stream].Store(wire.AudioLike(v.Kind))
 			case wire.TrackRemoved:
 				t.audio[v.Stream].Store(false)
 			}

@@ -9,11 +9,28 @@ struct GroupCallTile: Identifiable, Equatable {
     let peer: String
     var name: String
     var video: RTCVideoTrack?
+    #if canImport(Fmm) && canImport(Opus)
+    var feed: FmmTileFeed?
+    #endif
+    var auth: GroupCallAuthState = .pending
+    var face = false
+    var faceStale = false
 
     var id: String { peer }
 
+    var hasPicture: Bool {
+        #if canImport(Fmm) && canImport(Opus)
+        if feed != nil { return true }
+        #endif
+        return video != nil
+    }
+
     static func == (a: GroupCallTile, b: GroupCallTile) -> Bool {
-        a.peer == b.peer && a.name == b.name && a.video === b.video
+        #if canImport(Fmm) && canImport(Opus)
+        guard a.feed === b.feed else { return false }
+        #endif
+        return a.peer == b.peer && a.name == b.name && a.video === b.video && a.auth == b.auth && a.face == b.face
+            && a.faceStale == b.faceStale
     }
 }
 
@@ -33,6 +50,9 @@ final class NativeGroupCall {
     private(set) var lastError = ""
     private(set) var localVideo: RTCVideoTrack?
     private(set) var rosterTick = 0
+    private(set) var engine: GroupCallEngine = .webrtc
+    private(set) var verify: GroupCallVerifyState?
+    private(set) var verifyRejected = false
 
     @ObservationIgnored let roster = GroupCallRoster()
     @ObservationIgnored weak var office: OfficeChannelService?
@@ -50,6 +70,17 @@ final class NativeGroupCall {
     @ObservationIgnored private var reconnecting: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var audioStarted = false
+    #if canImport(Fmm) && canImport(Opus)
+    @ObservationIgnored private var fmm: FmmGroupSession?
+    #endif
+
+    private var usingFmm: Bool {
+        #if canImport(Fmm) && canImport(Opus)
+        return fmm != nil
+        #else
+        return false
+        #endif
+    }
 
     var active: Bool { !conversation.isEmpty }
 
@@ -59,22 +90,56 @@ final class NativeGroupCall {
     }
 
     func handleFrame(_ plain: JSONObject, conversation scope: String) {
+        #if canImport(Fmm) && canImport(Opus)
+        if let fmm, active, scope == conversation, let message = GroupCallE2ee.message(plain), message.peer != peer {
+            fmm.receiveChat(message)
+        }
+        #endif
         guard let event = roster.handle(plain, conversation: scope, selfPeer: peer) else { return }
         rosterTick += 1
         guard active, scope == conversation else { return }
         switch event {
         case let .joined(_, isNew):
-            if isNew { shareKey() }
+            if isNew && !usingFmm { shareKey() }
             relabel()
         case let .left(peer):
+            #if canImport(Fmm) && canImport(Opus)
+            if let fmm {
+                fmm.peerLeft(peer)
+                tiles.removeAll { $0.peer == peer }
+                relabel()
+                return
+            }
+            #endif
             forget(peer)
             rotateKey()
             relabel()
         case let .key(peer, key):
+            guard !usingFmm else { return }
             for decryptor in decryptors[peer] ?? [] {
                 decryptor.setKey(Data(key.raw), keyId: UInt8(key.keyId))
             }
         }
+    }
+
+    func displayName(_ peer: String) -> String {
+        let name = roster.name(conversation, peer: peer)
+        return name.isEmpty ? "Someone" : name
+    }
+
+    func confirmCode() {
+        #if canImport(Fmm) && canImport(Opus)
+        guard let fmm, let verify, fmm.markVerified(verify.round) else { return }
+        refreshVerify()
+        #endif
+    }
+
+    func rejectCode() {
+        verifyRejected = true
+        #if canImport(Fmm) && canImport(Opus)
+        fmm?.unverify()
+        refreshVerify()
+        #endif
     }
 
     func join(_ scope: String, media kind: DirectCallKind) async -> String? {
@@ -88,6 +153,9 @@ final class NativeGroupCall {
         conversation = scope
         media = kind
         state = "joining"
+        engine = .webrtc
+        verify = nil
+        verifyRejected = false
         lastError = ""
         muted = false
         cameraOff = false
@@ -136,12 +204,18 @@ final class NativeGroupCall {
     func toggleMute() {
         muted.toggle()
         audioTrack?.isEnabled = !muted
+        #if canImport(Fmm) && canImport(Opus)
+        fmm?.muted = muted
+        #endif
     }
 
     func toggleCamera() {
         guard media == .video else { return }
         cameraOff.toggle()
         video?.0.isEnabled = !cameraOff
+        #if canImport(Fmm) && canImport(Opus)
+        fmm?.video?.paused = cameraOff
+        #endif
         if cameraOff {
             video?.1.stop()
         } else if let pipeline = video?.1 {
@@ -169,14 +243,14 @@ final class NativeGroupCall {
     }
 
     private func announce(_ value: String) {
-        guard !peer.isEmpty, let office else { return }
+        guard !peer.isEmpty, let office, !usingFmm || value == "out" else { return }
         let fields = GroupCallFrames.presence(peer: peer, state: value, media: media.rawValue)
         let scope = conversation
         Task { await office.sendLiveFrame(scope, type: GroupCallFrames.presenceType, fields: fields) }
     }
 
     private func shareKey() {
-        guard !peer.isEmpty, let office else { return }
+        guard !peer.isEmpty, let office, !usingFmm else { return }
         let fields = GroupCallFrames.key(peer: peer, keyId: sendKey.keyId, raw: sendKey.raw)
         let scope = conversation
         Task { await office.sendLiveFrame(scope, type: GroupCallFrames.keyType, fields: fields) }
@@ -187,6 +261,7 @@ final class NativeGroupCall {
     }
 
     private func rotateKey() {
+        guard !usingFmm else { return }
         sendKey.rotate()
         shareKey()
         let keyId = sendKey.keyId
@@ -212,9 +287,62 @@ final class NativeGroupCall {
     }
 
     private func connect() async -> Bool {
-        guard let office, let encryptor, let ticket = try? await office.callTicket(conversation),
-            let url = URL(string: ticket.url)
-        else { return false }
+        guard let office else { return false }
+        #if canImport(Fmm) && canImport(Opus)
+        let ticket = try? await office.callTicket(conversation, engines: GroupCallEngine.request)
+        if let ticket, let access = ticket.fmm, let identity = await office.callIdentity(conversation) {
+            generation += 1
+            let current = generation
+            switch await FmmGroupSession.join(access: access, identity: identity, peer: ticket.peer) {
+            case let .joined(session):
+                guard active, current == generation else {
+                    session.close(sessionOwned: NativeCallMedia.shared.callKitOwnsAudio)
+                    return false
+                }
+                if startFmm(session) { return true }
+            case .otherEngine, .failed:
+                break
+            }
+        }
+        guard let ticket else { return false }
+        return connectWebRTC(ticket)
+        #else
+        guard let ticket = try? await office.callTicket(conversation) else { return false }
+        return connectWebRTC(ticket)
+        #endif
+    }
+
+    #if canImport(Fmm) && canImport(Opus)
+    private func startFmm(_ session: FmmGroupSession) -> Bool {
+        let owned = NativeCallMedia.shared.callKitOwnsAudio
+        guard session.start(owner: self, sessionOwned: owned) else {
+            session.close(sessionOwned: owned)
+            return false
+        }
+        fmm = session
+        engine = .fmm
+        peer = session.peer
+        session.muted = muted
+        if let pipeline = video?.1, let sender = session.startVideo() {
+            sender.paused = cameraOff
+            pipeline.setTap { buffer, degrees, time in sender.submit(buffer, degrees: degrees, timeNs: time) }
+        }
+        state = "live"
+        retries = 0
+        refreshVerify()
+        return true
+    }
+
+    private func refreshVerify() {
+        guard let v = fmm?.verification() else { return }
+        verify = GroupCallVerifyState(
+            round: v.round, hasCode: v.hasCode, emoji: v.emoji, names: v.emojiNames, digits: v.digits, waiting: v.waiting,
+            late: v.late, verified: v.verified, newcomers: v.newcomers, unfinished: v.unfinished, rounds: v.rounds)
+    }
+    #endif
+
+    private func connectWebRTC(_ ticket: GroupCallTicket) -> Bool {
+        guard let encryptor, let url = URL(string: ticket.url) else { return false }
         generation += 1
         let current = generation
         let shared = NativeCallMedia.shared
@@ -252,6 +380,14 @@ final class NativeGroupCall {
 
     private func dropConnection() {
         if !peer.isEmpty { announce("out") }
+        #if canImport(Fmm) && canImport(Opus)
+        if let session = fmm {
+            video?.1.setTap(nil)
+            session.close(sessionOwned: NativeCallMedia.shared.callKitOwnsAudio)
+            fmm = nil
+        }
+        #endif
+        engine = .webrtc
         peer = ""
         generation += 1
         if let socket {
@@ -416,6 +552,55 @@ final class NativeGroupCall {
         }
     }
 }
+
+#if canImport(Fmm) && canImport(Opus)
+extension NativeGroupCall: FmmGroupOwner {
+    func fmmChat(_ kind: GroupCallE2eeKind, data: Data) {
+        guard active, !peer.isEmpty, let office,
+            let fields = GroupCallE2ee.fields(kind, peer: peer, message: data, media: media.rawValue)
+        else { return }
+        let scope = conversation
+        Task { await office.sendLiveFrame(scope, type: GroupCallE2ee.type(kind), fields: fields) }
+    }
+
+    func fmmTile(peer remote: String, feed: FmmTileFeed?) {
+        guard active, GroupCallFrames.validPeer(remote) else { return }
+        var tile = tiles.first { $0.peer == remote } ?? GroupCallTile(peer: remote, name: displayName(remote))
+        tile.feed = feed
+        if let index = tiles.firstIndex(where: { $0.peer == remote }) {
+            tiles[index] = tile
+        } else {
+            tiles.append(tile)
+        }
+    }
+
+    func fmmFace(peer remote: String, active shown: Bool, stale: Bool) {
+        guard let index = tiles.firstIndex(where: { $0.peer == remote }) else { return }
+        tiles[index].face = shown
+        tiles[index].faceStale = stale
+    }
+
+    func fmmAuth(peer remote: String, state next: GroupCallAuthState) {
+        if let index = tiles.firstIndex(where: { $0.peer == remote }) {
+            tiles[index].auth = next
+        } else if active, GroupCallFrames.validPeer(remote) {
+            var tile = GroupCallTile(peer: remote, name: displayName(remote))
+            tile.auth = next
+            tiles.append(tile)
+        }
+    }
+
+    func fmmVerify() { refreshVerify() }
+
+    func fmmMoved() {
+        state = "live"
+    }
+
+    func fmmClosed(_ reason: String) {
+        connectionLost("The call ended.")
+    }
+}
+#endif
 
 final class GroupPeerDelegate: NSObject, RTCPeerConnectionDelegate {
     weak var call: NativeGroupCall?

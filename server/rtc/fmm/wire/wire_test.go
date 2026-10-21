@@ -181,7 +181,7 @@ func TestControlBoundsAreEnforced(t *testing.T) {
 	long := string(bytes.Repeat([]byte{'a'}, MaxName+1))
 	bad := []Message{
 		Join{}, Joined{Peer: ""}, Joined{Peer: long},
-		Publish{Kind: TrackAudio, Layers: 2}, Publish{Kind: TrackVideo, Layers: 9}, Publish{Kind: 3, Layers: 1},
+		Publish{Kind: TrackAudio, Layers: 2}, Publish{Kind: TrackVideo, Layers: 9}, Publish{Kind: 4, Layers: 1}, Publish{Kind: TrackAuth, Layers: 2},
 		Subscribe{MaxLayer: 8}, Joined{Peer: "\xff"},
 		&Report{}, &Report{Received: []bool{false}, Arrival: []int64{0}},
 		&Report{Received: []bool{true}, Arrival: []int64{5}},

@@ -100,6 +100,10 @@ sends `{"engines": ["fmm", "webrtc"]}` as the body of the same
 vector, the primary and standby choice, health validation, and that old
 clients get the old response.
 
+The browser's FM Media client (WebTransport, WebCodecs, call e2ee v2, the
+standby move) and how `chat-group-calls.js` chooses between the engines are in
+[fmm-browser.md](fmm-browser.md).
+
 ## Who is in the call
 
 The call server knows peer ids, not names. Participants announce themselves

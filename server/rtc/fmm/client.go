@@ -24,6 +24,7 @@ type Transport interface {
 const (
 	KindAudio = wire.TrackAudio
 	KindVideo = wire.TrackVideo
+	KindAuth  = wire.TrackAuth
 
 	EventJoined             = 1
 	EventTrackAdded         = 2
@@ -53,6 +54,8 @@ const (
 	minVideoBps     = 30_000
 	headerFactor    = 0.97
 	nominalAudio    = 40_000
+	nominalAuth     = 8_000
+	maxAuthQueue    = 64
 	maxLongTerm     = 32
 	ackRepeat       = 2
 	trackEveryUs    = 100_000
@@ -217,6 +220,8 @@ type remote struct {
 	building   *refPicture
 	acks       []int64
 	ackSent    []int
+	authOn     bool
+	auth       [][]byte
 }
 
 type Client struct {
@@ -311,7 +316,7 @@ func (c *Client) publish(kind, layers int, name string, track uint8, rank int) (
 	}
 	c.next++
 	c.pubs[id] = &published{kind: kind, layers: layers, pk: frag.NewPacketizer(id, c.snd.MaxPayload()), sending: RepVideo, recRef: -1}
-	c.snd.AddStream(id, kind == KindAudio)
+	c.snd.AddStream(id, kind != KindVideo)
 	return id, nil
 }
 
@@ -320,6 +325,42 @@ func (c *Client) PublishAudio(name string, now int64) (int, error) {
 	defer c.mu.Unlock()
 	id, err := c.publish(KindAudio, 1, name, 0, 0)
 	return int(id), err
+}
+
+func (c *Client) PublishAuth(name string, now int64) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	id, err := c.publish(KindAuth, 1, name, 0, 0)
+	return int(id), err
+}
+
+func (c *Client) SendAuth(stream int, data []byte, now int64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	p := c.pubs[uint8(stream)]
+	if p == nil || p.kind != KindAuth {
+		return ErrUnknownTrack
+	}
+	pkts, err := p.pk.PacketizeFrame(data, frag.Opts{Independent: true, Ref: -1}, uint32(now))
+	if err != nil {
+		return err
+	}
+	for _, b := range pkts {
+		c.snd.Send(b, now)
+	}
+	return nil
+}
+
+func (c *Client) PollAuth(stream int) []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	r := c.remotes[uint8(stream)]
+	if r == nil || len(r.auth) == 0 {
+		return nil
+	}
+	b := r.auth[0]
+	r.auth = r.auth[1:]
+	return b
 }
 
 func (c *Client) PublishVideo(name string, layers int, now int64) (int, error) {
@@ -561,9 +602,12 @@ func (c *Client) Subscribe(stream int, maxLayer int, now int64) error {
 	if !r.subscribed {
 		r.subscribed = true
 		r.ra = frag.NewReassembler()
-		if r.kind == KindAudio {
+		switch r.kind {
+		case KindAudio:
 			r.audio = jitter.NewAudio(jitter.AudioConfig{NoLookAhead: c.cfg.NoLookAhead})
-		} else {
+		case KindAuth:
+			r.authOn = true
+		default:
 			r.video = jitter.NewVideo(jitter.VideoConfig{NoRecovery: c.cfg.NoRecovery})
 			c.rcv.EnableNack(uint8(stream))
 		}
@@ -579,6 +623,7 @@ func (c *Client) Unsubscribe(stream int, now int64) error {
 		return ErrUnknownTrack
 	}
 	r.subscribed, r.ra, r.audio, r.video = false, nil, nil, nil
+	r.authOn, r.auth = false, nil
 	r.acks, r.ackSent, r.rep, r.building = nil, nil, RepOff, nil
 	c.rcv.RemoveStream(uint8(stream))
 	return c.send(wire.Unsubscribe{Stream: uint8(stream)})
@@ -620,6 +665,8 @@ func (c *Client) HandleDatagram(p []byte, now int64) {
 			r.audio.PushDepth(f.ID, f.Timestamp, f.Data, int64(f.Aux)*wire.DepthUnitUs, now)
 		} else if r.video != nil {
 			r.video.Push(f, now)
+		} else if r.authOn && len(r.auth) < maxAuthQueue {
+			r.auth = append(r.auth, f.Data)
 		}
 	}
 }
@@ -1049,10 +1096,14 @@ func (c *Client) trackBudget(vt *vtrack) float64 {
 	avail := float64(c.snd.Target())
 	videos := 0
 	for sid, q := range c.pubs {
-		if q.kind == KindAudio {
+		if q.kind != KindVideo {
+			nominal := float64(nominalAudio)
+			if q.kind == KindAuth {
+				nominal = nominalAuth
+			}
 			media, repair := c.snd.StreamRate(sid)
 			if media == 0 {
-				media, repair = nominalAudio, nominalAudio*c.snd.FECRatio(sid)
+				media, repair = nominal, nominal*c.snd.FECRatio(sid)
 			}
 			avail -= media + repair + c.snd.StreamOverheadBps(sid)
 			continue

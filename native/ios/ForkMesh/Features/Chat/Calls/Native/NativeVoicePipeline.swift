@@ -5,6 +5,10 @@ import WebRTC
 
 final class NativeVoicePipeline: @unchecked Sendable {
     static let scale: Float = 32768
+    private static let chosenLock = NSLock()
+    nonisolated(unsafe) private static var chosen = CallVoiceCatalog.off
+
+    static var currentVoice: String { chosenLock.withLock { chosen } }
 
     let capture = RTCFmCaptureProcessor()
     private let lock = NSLock()
@@ -24,6 +28,7 @@ final class NativeVoicePipeline: @unchecked Sendable {
         voice = id
         processor.setVoice(id)
         lock.unlock()
+        Self.chosenLock.withLock { Self.chosen = id }
     }
 
     private func process(_ samples: UnsafeMutablePointer<Float>, frames: Int, sampleRate: Int) {

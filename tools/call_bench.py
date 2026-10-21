@@ -196,6 +196,8 @@ def run(args):
         env["FORKMESH_CALL_BENCH_SECONDS"] = str(args.seconds)
     if args.chromium:
         env["FORKMESH_TEST_CHROMIUM"] = args.chromium
+    if args.engine:
+        env["FORKMESH_CALL_BENCH_ENGINE"] = args.engine
     command = ["go", "test", "-count=1", "-run", "^TestCallBench$", "-timeout", args.timeout, "-v", "./rtc/bench/"]
     code = subprocess.call(command, cwd=SERVER, env=env)
     results = out / "results.json"
@@ -217,6 +219,7 @@ def main():
     runner.add_argument("--seconds", type=int, help="measured seconds per profile (default 30)")
     runner.add_argument("--out", help="results folder (default: $FORKMESH_AGENT_SCRATCH/call-bench/<time> or a temp dir)")
     runner.add_argument("--chromium", help="headless Chromium binary")
+    runner.add_argument("--engine", choices=["webrtc", "fmm"], help="call engine to bench (default: webrtc)")
     runner.add_argument("--timeout", default="90m", help="go test timeout")
     renderer = sub.add_parser("render", help="write results.md from an existing results.json")
     renderer.add_argument("results", help="path to results.json")

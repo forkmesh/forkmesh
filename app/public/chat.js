@@ -31,6 +31,7 @@ import {
 import { createAccountEventChannel } from "./account-events.js";
 import { createChatRoomTransport } from "./chat-room-transport.js";
 import { createRoomSealStore } from "./chat-seal.js";
+import { createFmmLocal } from "./fmm/fmm-local.js";
 import { moderateChatPlain, moderateChatText } from "./chat-moderation.js";
 import { celebrateNewMember, NEW_MEMBER_GREETING } from "./member-welcome.js";
 import { createThreadStore } from "./chat-thread-model.js";
@@ -313,15 +314,35 @@ const groupCallGrid = document.querySelector("#chat-group-call-grid");
 const groupCallMute = document.querySelector("#chat-group-call-mute");
 const groupCallCamera = document.querySelector("#chat-group-call-camera");
 const groupCallLeave = document.querySelector("#chat-group-call-leave");
+const groupCallVerify = document.querySelector("#chat-group-call-verify");
+const groupCallVerifyTitle = document.querySelector("#chat-group-call-verify-title");
+const groupCallVerifyEmoji = document.querySelector("#chat-group-call-verify-emoji");
+const groupCallVerifyDigits = document.querySelector("#chat-group-call-verify-digits");
+const groupCallVerifyNote = document.querySelector("#chat-group-call-verify-note");
+const groupCallVerifyActions = document.querySelector("#chat-group-call-verify-actions");
+const groupCallVerifyMatch = document.querySelector("#chat-group-call-verify-match");
+const groupCallVerifyMismatch = document.querySelector("#chat-group-call-verify-mismatch");
 const groupCalls = createGroupCalls({
   sendFrame: sendGroupCallFrame,
-  fetchTicket: (channelId) => privateChannelRequest(
+  fetchTicket: (channelId, body = {}) => privateChannelRequest(
     PRIVATE_CHANNELS_ENDPOINT + "/" + channelId + "/call-ticket",
-    { method: "POST", body: "{}" },
+    { method: "POST", body: JSON.stringify(body || {}) },
   ),
   accountName: () => String(userSession()?.nodeName || "").trim().toLowerCase(),
   onChange: () => renderGroupCall(),
+  callSigner: groupCallSigner,
+  callAccount: () => roomSeals.account(),
+  callId: (channelKey) => (roomTransport?.room?.scope === channelKey ? String(roomTransport?.access?.roomName || "") : ""),
+  prepareLocal: createFmmLocal(),
 });
+
+async function groupCallSigner() {
+  if (typeof roomSeals?.signCall !== "function") return null;
+  const identity = await roomSeals.identity();
+  const idk = b64urlToBytes(identity.idk);
+  if (!(idk instanceof Uint8Array) || idk.length !== 32) return null;
+  return { idk, sign: (bytes) => roomSeals.signCall(bytes) };
+}
 
 const groupCallVideos = new Map();
 
@@ -6163,7 +6184,10 @@ function sendGroupCallFrame(channelKey, type, extra) {
   }));
 }
 
-function groupCallTileFor(key, stream, name, self) {
+const GROUP_CALL_FACE_LABEL = "Face stream";
+const GROUP_CALL_FACE_DETAIL = "Face stream. Animated from a recent photo while the connection is weak";
+
+function groupCallTileFor(key, stream, name, self, state = {}) {
   let entry = groupCallVideos.get(key);
   if (!entry) {
     const tile = document.createElement("div");
@@ -6173,13 +6197,71 @@ function groupCallTileFor(key, stream, name, self) {
     video.playsInline = true;
     video.muted = self;
     const label = document.createElement("span");
-    tile.append(video, label);
-    entry = { tile, video, label };
+    const badge = document.createElement("span");
+    badge.className = "chat-group-call-badge";
+    badge.setAttribute("role", "note");
+    badge.hidden = true;
+    const warning = document.createElement("span");
+    warning.className = "chat-group-call-warning";
+    warning.setAttribute("role", "alert");
+    warning.hidden = true;
+    tile.append(video, label, badge, warning);
+    entry = { tile, video, label, badge, warning };
     groupCallVideos.set(key, entry);
   }
   if (entry.video.srcObject !== stream) entry.video.srcObject = stream;
   entry.label.textContent = name;
+  const face = state.rep === "face";
+  entry.badge.hidden = !face;
+  entry.badge.textContent = face ? GROUP_CALL_FACE_LABEL : "";
+  entry.badge.title = face ? GROUP_CALL_FACE_DETAIL : "";
+  const auth = state.auth || "";
+  entry.tile.classList.toggle("is-auth-missing", auth === "missing");
+  entry.tile.classList.toggle("is-auth-forged", auth === "forged");
+  entry.warning.hidden = auth !== "missing" && auth !== "forged";
+  entry.warning.textContent = auth === "forged"
+    ? `${name}'s video failed a check. Someone in this call may be faking it.`
+    : auth === "missing" ? `Can't confirm this is ${name} right now` : "";
   return entry.tile;
+}
+
+function groupCallNames(active, peers) {
+  const names = [];
+  for (const peer of peers || []) names.push(active.tiles.get(peer)?.name || "someone");
+  if (names.length <= 1) return names.join("");
+  return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+}
+
+function renderGroupCallVerification(active) {
+  if (!groupCallVerify) return;
+  const view = active?.engine === "fmm" ? active.verification : null;
+  groupCallVerify.hidden = !view;
+  if (!view) return;
+  const code = view.code;
+  groupCallVerify.classList.toggle("is-mismatch", Boolean(view.mismatch));
+  groupCallVerifyTitle.textContent = code ? "Compare these with everyone in the call" : "Preparing a verification code…";
+  const glyphs = code ? code.emojiText.split(" ") : [];
+  const items = code ? code.emojiNames.map((name, i) => {
+    const figure = document.createElement("figure");
+    const glyph = document.createElement("span");
+    glyph.className = "glyph";
+    glyph.textContent = glyphs[i] || "";
+    glyph.setAttribute("aria-hidden", "true");
+    const caption = document.createElement("figcaption");
+    caption.textContent = name;
+    figure.append(glyph, caption);
+    return figure;
+  }) : [];
+  groupCallVerifyEmoji.replaceChildren(...items);
+  groupCallVerifyDigits.textContent = code ? "Or compare numbers: " + code.digits : "";
+  let note = "";
+  if (view.mismatch) note = "The codes don't match. Someone may be listening in: leave the call and tell the others another way.";
+  else if (view.waiting.length) note = `Waiting for ${groupCallNames(active, view.waiting)} to confirm…`;
+  else if (view.newcomers.length && view.peers.length) note = `${groupCallNames(active, view.newcomers)} ${view.newcomers.length === 1 ? "is" : "are"} not verified. Compare the new code to verify everyone.`;
+  else if (view.verified) note = "Everyone in this call is verified.";
+  else if (view.changedBy && code) note = `The verification code changed because ${groupCallNames(active, [view.changedBy])} joined`;
+  groupCallVerifyNote.textContent = note;
+  groupCallVerifyActions.hidden = !code || view.verified;
 }
 
 function renderGroupCall() {
@@ -6209,12 +6291,13 @@ function renderGroupCall() {
   groupCallMute.textContent = active.muted ? "Unmute" : "Mute";
   groupCallCamera.hidden = active.media !== "video";
   groupCallCamera.textContent = active.cameraOff ? "Camera on" : "Camera off";
-  const tiles = [groupCallTileFor("self", active.local, "You", true)];
+  const tiles = [groupCallTileFor("self", active.outgoing?.stream || active.local, "You", true)];
   const keep = new Set(["self"]);
   for (const [peer, tile] of active.tiles) {
     keep.add(peer);
-    tiles.push(groupCallTileFor(peer, tile.stream, tile.name, false));
+    tiles.push(groupCallTileFor(peer, tile.stream, tile.name, false, { auth: tile.auth, rep: tile.rep }));
   }
+  renderGroupCallVerification(active);
   for (const key of [...groupCallVideos.keys()]) {
     if (!keep.has(key)) groupCallVideos.delete(key);
   }
@@ -7641,6 +7724,11 @@ function wireChatControls() {
   groupCallJoinAudio?.addEventListener("click", () => void startGroupCall("audio"));
   groupCallJoinVideo?.addEventListener("click", () => void startGroupCall("video"));
   groupCallMute?.addEventListener("click", () => groupCalls.toggleMute());
+  groupCallVerifyMatch?.addEventListener("click", () => void groupCalls.confirmCode(true).then(() => renderGroupCall()));
+  groupCallVerifyMismatch?.addEventListener("click", () => {
+    void groupCalls.confirmCode(false);
+    renderGroupCall();
+  });
   groupCallCamera?.addEventListener("click", () => groupCalls.toggleCamera());
   groupCallLeave?.addEventListener("click", () => {
     groupCalls.leave();

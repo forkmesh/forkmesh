@@ -22,6 +22,15 @@ signal processing, the same split FaceTime uses:
 
 Everything else is ours.
 
+In the browser two of these fall short (measured 2026-10-21 on Chromium 151,
+[../app/fmm-browser.md](../app/fmm-browser.md)): WebCodecs Opus has no DRED
+and no in-band FEC decoding, so the browser conceals with plain Opus PLC, and
+WebCodecs has no long-term reference control, so the browser's encoder
+answers recovery requests with keyframes. Chromium's echo canceller offers
+`true`, `false` and `"remote-only"`; under `true` the Chrome-wide canceller
+takes the AudioWorklet's playout as its reference, which could not be
+checked acoustically headless and is the open risk there.
+
 ## Layers
 
 1. **Transport: QUIC v1** (RFC 9000/9001/9002) with DATAGRAM (RFC 9221),
@@ -121,7 +130,7 @@ test):
 | 3. Engine core | Go clients hold a call through the bench's impaired networks |
 | 4. SFU over QUIC | Go clients hold a call through the server over impaired links; a core's death moves the call to the standby core with audio back in under 500 ms; headless Chromium joins over WebTransport; one engine per room (the WebRTC bridge waits for phase 8) |
 | 5. iPhone engine | the iPhone app calls on FM Media; voice changer, backgrounds and faces still apply |
-| 6. Browser engine | WebTransport + WebCodecs client; browsers without WebTransport stay on WebRTC |
+| 6. Browser engine | WebTransport + WebCodecs client in a worker, its engine core replaying the Go core's fixtures; three headless Chromiums hold an e2ee v2 call through the call server and move to the standby core with audio back in under 500 ms; browsers without WebTransport, WebCodecs or a call signer stay on WebRTC ([../app/fmm-browser.md](../app/fmm-browser.md)) |
 | 7. Android engine | same as iPhone |
 | 8. Switch | FM Media is the default wherever it beats the baseline on the bench |
 | 9. Beyond FaceTime | every target in the table above is met on the bench |

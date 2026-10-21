@@ -374,6 +374,20 @@ if File.directory?(File.join(__dir__, '..', 'WebRTCPackage', 'WebRTC.xcframework
   app.frameworks_build_phase.files << webrtc_build_file
 end
 
+[%w[FmmPackage Fmm], %w[OpusPackage Opus]].each do |folder, name|
+  next unless File.directory?(File.join(__dir__, '..', folder, "#{name}.xcframework"))
+
+  binary_package = project.new(Obj::XCLocalSwiftPackageReference)
+  binary_package.relative_path = folder
+  project.root_object.package_references << binary_package
+  binary_product = project.new(Obj::XCSwiftPackageProductDependency)
+  binary_product.product_name = name
+  app.package_product_dependencies << binary_product
+  binary_build_file = project.new(Obj::PBXBuildFile)
+  binary_build_file.product_ref = binary_product
+  app.frameworks_build_phase.files << binary_build_file
+end
+
 nexus_package = project.new(Obj::XCLocalSwiftPackageReference)
 nexus_package.relative_path = 'Nexus'
 project.root_object.package_references << nexus_package

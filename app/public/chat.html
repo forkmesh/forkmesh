@@ -1903,6 +1903,16 @@
           <span id="chat-group-call-state" role="status" aria-live="polite"></span>
         </div>
         <div id="chat-group-call-grid" class="chat-group-call-grid"></div>
+        <div id="chat-group-call-verify" class="chat-group-call-verify" hidden>
+          <p id="chat-group-call-verify-title" class="chat-group-call-verify-title">Compare these with everyone in the call</p>
+          <div id="chat-group-call-verify-emoji" class="chat-group-call-verify-emoji" role="group" aria-label="Verification code"></div>
+          <p id="chat-group-call-verify-digits" class="chat-group-call-verify-digits"></p>
+          <p id="chat-group-call-verify-note" class="chat-group-call-verify-note" role="status" aria-live="polite"></p>
+          <div id="chat-group-call-verify-actions" class="chat-group-call-verify-actions">
+            <button id="chat-group-call-verify-match" type="button">They match</button>
+            <button id="chat-group-call-verify-mismatch" type="button">They don't match</button>
+          </div>
+        </div>
         <p class="chat-call-meta">
           Group calls are end-to-end encrypted: ForkMesh's call server forwards
           everyone's audio and video without being able to see or hear them.

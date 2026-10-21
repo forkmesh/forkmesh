@@ -78,6 +78,7 @@ extension View {
 #if canImport(WebRTC)
 struct GroupCallPanel: View {
     let call: NativeGroupCall
+    @State private var showVerify = false
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 6)]
 
@@ -95,11 +96,23 @@ struct GroupCallPanel: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.top, FmSpace.x4)
+                if call.engine == .fmm {
+                    Button { showVerify = true } label: {
+                        Label(verifyLabel, systemImage: call.verify?.verified == true ? "checkmark.shield.fill" : "lock.shield")
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(Color(white: 0.2)))
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("chat-group-call-verify")
+                }
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 6) {
-                        tile(name: "You", track: call.localVideo, mirrored: true)
+                        tile(GroupCallTile(peer: "self", name: "You", video: call.localVideo), mirrored: true)
                         ForEach(call.tiles) { member in
-                            tile(name: member.name, track: member.video, mirrored: false)
+                            tile(member, mirrored: false)
                         }
                     }
                     .padding(.horizontal, FmSpace.x3)
@@ -124,6 +137,15 @@ struct GroupCallPanel: View {
                 .padding(.bottom, FmSpace.x5)
             }
         }
+        .sheet(isPresented: $showVerify) {
+            GroupCallVerifySheet(call: call)
+        }
+    }
+
+    private var verifyLabel: String {
+        guard let verify = call.verify else { return "Verify" }
+        if verify.verified { return "Verified" }
+        return verify.hasCode ? "Compare the code" : "Verify"
     }
 
     private var stateLine: String {
@@ -134,16 +156,45 @@ struct GroupCallPanel: View {
         }
     }
 
-    private func tile(name: String, track: RTCVideoTrack?, mirrored: Bool) -> some View {
-        ZStack(alignment: .bottomLeading) {
+    @ViewBuilder
+    private func picture(_ member: GroupCallTile, mirrored: Bool) -> some View {
+        #if canImport(Fmm) && canImport(Opus)
+        if let feed = member.feed {
+            FmmVideoView(feed: feed, mirrored: mirrored)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        } else if let track = member.video {
+            NativeVideoView(track: track, mirrored: mirrored)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        } else {
+            FmAvatar(name: member.name, size: 56, fontSize: 22)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        #else
+        if let track = member.video {
+            NativeVideoView(track: track, mirrored: mirrored)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        } else {
+            FmAvatar(name: member.name, size: 56, fontSize: 22)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        #endif
+    }
+
+    private func tile(_ member: GroupCallTile, mirrored: Bool) -> some View {
+        let name = member.name
+        return ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 10).fill(Color(white: 0.12))
-            if let track {
-                NativeVideoView(track: track, mirrored: mirrored)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            } else {
-                FmAvatar(name: name, size: 56, fontSize: 22)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            picture(member, mirrored: mirrored)
+            VStack(alignment: .leading, spacing: 0) {
+                GroupCallAuthNote(state: member.auth, name: name)
+                Spacer(minLength: 0)
+                if member.face {
+                    NativeFaceStreamBadge(stale: member.faceStale)
+                        .padding(.horizontal, 6)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.bottom, 26)
             Text(name)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white)

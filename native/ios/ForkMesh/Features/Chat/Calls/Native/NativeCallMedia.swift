@@ -20,6 +20,7 @@ final class NativeCameraPipeline: NSObject, RTCVideoCapturerDelegate, @unchecked
     let source: RTCVideoSource
     private(set) var capturer: RTCCameraVideoCapturer?
     weak var filter: NativeFrameFilter?
+    private var tap: ((CVPixelBuffer, Int, Int64) -> Void)?
     private let lock = NSLock()
     private var running = false
     private var request = (width: 0, height: 0, fps: 0)
@@ -38,19 +39,31 @@ final class NativeCameraPipeline: NSObject, RTCVideoCapturerDelegate, @unchecked
         super.init()
     }
 
+    func setTap(_ next: ((CVPixelBuffer, Int, Int64) -> Void)?) {
+        lock.withLock { tap = next }
+    }
+
+    private func deliver(_ frame: RTCVideoFrame, from capturer: RTCVideoCapturer) {
+        source.capturer(capturer, didCapture: frame)
+        let sink = lock.withLock { tap }
+        if let sink, let buffer = frame.buffer as? RTCCVPixelBuffer {
+            sink(buffer.pixelBuffer, frame.rotation.rawValue, frame.timeStampNs)
+        }
+    }
+
     func capturer(_ capturer: RTCVideoCapturer, didCapture frame: RTCVideoFrame) {
         lock.lock()
         let current = filter
         lock.unlock()
         guard let current, let buffer = frame.buffer as? RTCCVPixelBuffer else {
-            source.capturer(capturer, didCapture: frame)
+            deliver(frame, from: capturer)
             return
         }
         guard admit(frame.timeStampNs, filter: current) else { return }
         if current.wantsFaceTracking { considerTracking() }
         let filtered = current.filter(buffer.pixelBuffer, rotation: frame.rotation, timeNs: frame.timeStampNs, tracking: nil)
         let out = RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: filtered), rotation: frame.rotation, timeStampNs: frame.timeStampNs)
-        source.capturer(capturer, didCapture: out)
+        deliver(out, from: capturer)
     }
 
     private func tracked(_ buffer: CVPixelBuffer, rotation degrees: Int, timeNs: Int64, tracking: NativeFaceTrackingFrame) {
@@ -63,12 +76,12 @@ final class NativeCameraPipeline: NSObject, RTCVideoCapturerDelegate, @unchecked
         let rotation = RTCVideoRotation(rawValue: degrees) ?? ._90
         guard let current, current.wantsFaceTracking else {
             considerCamera()
-            source.capturer(trackerCapturer, didCapture: RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: buffer), rotation: rotation, timeStampNs: timeNs))
+            deliver(RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: buffer), rotation: rotation, timeStampNs: timeNs), from: trackerCapturer)
             return
         }
         guard admit(timeNs, filter: current) else { return }
         let filtered = current.filter(buffer, rotation: rotation, timeNs: timeNs, tracking: tracking)
-        source.capturer(trackerCapturer, didCapture: RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: filtered), rotation: rotation, timeStampNs: timeNs))
+        deliver(RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: filtered), rotation: rotation, timeStampNs: timeNs), from: trackerCapturer)
     }
 
     private func admit(_ timeNs: Int64, filter: NativeFrameFilter) -> Bool {
@@ -295,7 +308,8 @@ final class NativeCallMedia {
     let factory: RTCPeerConnectionFactory
     let voice = NativeVoicePipeline()
     let lookFilter = NativeLookFilter()
-    private var callKitOwnsAudio = false
+    private(set) var callKitOwnsAudio = false
+    var onCallKitAudio: ((Bool) -> Void)?
     private var audioUsers = 0
     private var lookToken: UUID?
 
@@ -369,6 +383,7 @@ final class NativeCallMedia {
         let session = RTCAudioSession.sharedInstance()
         session.audioSessionDidActivate(audioSession)
         session.isAudioEnabled = true
+        onCallKitAudio?(true)
     }
 
     func callKitDeactivated(_ audioSession: AVAudioSession) {
@@ -376,6 +391,7 @@ final class NativeCallMedia {
         session.audioSessionDidDeactivate(audioSession)
         session.isAudioEnabled = false
         callKitOwnsAudio = false
+        onCallKitAudio?(false)
     }
 
     static func iceServers(_ urls: [String]) -> [RTCIceServer] {

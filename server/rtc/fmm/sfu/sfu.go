@@ -284,7 +284,7 @@ type track struct {
 	fwds   []*forwarder
 }
 
-func (t *track) audio() bool { return t.kind == wire.TrackAudio }
+func (t *track) audio() bool { return wire.AudioLike(uint8(t.kind)) }
 
 func (t *track) startEncoding(now int64) *encoding {
 	for _, e := range t.encs {

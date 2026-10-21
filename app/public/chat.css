@@ -3560,6 +3560,27 @@
 .chat-group-call-tile video { width: 100%; height: 100%; object-fit: cover; }
 .chat-group-call-tile.is-self video { transform: scaleX(-1); }
 .chat-group-call-tile span { position: absolute; left: 6px; bottom: 4px; padding: 1px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 12px; }
+.chat-group-call-tile .chat-group-call-badge { left: auto; right: 6px; }
+.chat-group-call-tile .chat-group-call-warning { left: 6px; right: 6px; top: 4px; bottom: auto; white-space: normal; }
+.chat-group-call-tile .chat-group-call-warning[hidden], .chat-group-call-tile .chat-group-call-badge[hidden] { display: none; }
+.chat-group-call-tile.is-auth-missing { box-shadow: inset 0 0 0 2px var(--attention); }
+.chat-group-call-tile.is-auth-missing .chat-group-call-warning { background: color-mix(in srgb, var(--attention) 85%, #000); }
+.chat-group-call-tile.is-auth-forged { box-shadow: inset 0 0 0 2px var(--danger); }
+.chat-group-call-tile.is-auth-forged .chat-group-call-warning { background: color-mix(in srgb, var(--danger) 85%, #000); }
+.chat-group-call-verify { margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--fg); font-size: 13px; }
+.chat-group-call-verify[hidden] { display: none; }
+.chat-group-call-verify p { margin: 0 0 6px; }
+.chat-group-call-verify-emoji { display: flex; gap: 12px; justify-content: center; margin: 4px 0 6px; }
+.chat-group-call-verify-emoji figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.chat-group-call-verify-emoji .glyph { font-size: 28px; line-height: 1.1; }
+.chat-group-call-verify-emoji figcaption { color: var(--muted); font-size: 12px; }
+.chat-group-call-verify-digits { color: var(--muted); text-align: center; }
+.chat-group-call-verify-note { color: var(--muted); }
+.chat-group-call-verify.is-mismatch .chat-group-call-verify-note { color: var(--danger); }
+.chat-group-call-verify-actions { display: flex; gap: 8px; justify-content: center; }
+.chat-group-call-verify-actions[hidden] { display: none; }
+.chat-group-call-verify-actions button { min-height: 26px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 999px; background: transparent; color: var(--fg); cursor: pointer; }
+.chat-group-call-verify-actions button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .chat-call-head { display: flex; align-items: baseline; gap: 8px; }
 .chat-call-head strong { font-size: 14px; }
 #chat-call-state { font-size: 12px; color: var(--muted); }

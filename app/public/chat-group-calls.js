@@ -1,4 +1,8 @@
-export const GROUP_CALL_TYPES = new Set(["group-call-presence", "group-call-key"]);
+import { fmmSupported, fmmUsable, startFmmCall } from "./fmm/fmm-call.js";
+import { createFmmE2ee } from "./fmm/fmm-e2ee.js";
+
+export const GROUP_CALL_TYPES = new Set(["group-call-presence", "group-call-key", "group-call-verify"]);
+export const FMM_ENGINES = Object.freeze(["fmm", "webrtc"]);
 
 const HEARTBEAT_MS = 20000;
 const PRESENCE_TTL_MS = 60000;
@@ -35,6 +39,11 @@ export function createGroupCalls({
   onChange = () => {},
   workerUrl = "/chat-group-call-crypto.js",
   scope = globalThis,
+  callSigner = null,
+  callAccount = () => "",
+  callId = () => "",
+  prepareLocal = null,
+  fmm = {},
 }) {
   const presence = new Map();
   const owners = new Map();
@@ -86,11 +95,16 @@ export function createGroupCalls({
 
   function announce(state) {
     if (!call) return;
-    void sendFrame(call.channelKey, "group-call-presence", {
-      peer: call.peer,
-      call: state,
-      media: call.media,
-    });
+    const current = call;
+    const frame = { peer: current.peer, call: state, media: current.media };
+    if (current.engine === "fmm" && current.e2ee && state === "in") {
+      void current.e2ee.presence().then((presence) => {
+        if (call !== current || !presence) return;
+        void sendFrame(current.channelKey, "group-call-presence", { ...frame, e2ee: presence });
+      });
+      return;
+    }
+    void sendFrame(current.channelKey, "group-call-presence", frame);
   }
 
   function shareKey() {
@@ -137,6 +151,11 @@ export function createGroupCalls({
     call.worker.postMessage({ op: "key", peer, keyId, raw: raw.buffer.slice(0) });
   }
 
+  function sealedSender(plain) {
+    const kid = typeof plain.sealKid === "string" ? plain.sealKid : "";
+    return kid ? { kid, acct: typeof plain.sealAcct === "string" ? plain.sealAcct : "" } : null;
+  }
+
   function handleFrame(plain, channelKey) {
     if (!plain || !GROUP_CALL_TYPES.has(plain.type)) return;
     const peer = String(plain.peer || "");
@@ -144,16 +163,30 @@ export function createGroupCalls({
     if (call && peer === call.peer) return;
     const name = String(plain.sender || "").trim().toLowerCase();
     if (!name) return;
+    const fmmCall = call && call.channelKey === channelKey && call.engine === "fmm" && call.e2ee ? call : null;
+    if (plain.type === "group-call-verify") {
+      if (fmmCall && claim(channelKey, peer, name)) void fmmCall.e2ee.handle(plain.type, plain, sealedSender(plain));
+      return;
+    }
+    if (fmmCall && plain.e2ee && claim(channelKey, peer, name)) {
+      void fmmCall.e2ee.handle(plain.type, plain, sealedSender(plain));
+      if (plain.type === "group-call-key") return;
+    }
     if (plain.type === "group-call-presence") {
       const state = plain.call === "out" ? "out" : "in";
       if (!claim(channelKey, peer, name)) return;
       const known = presence.get(channelKey)?.has(peer);
       notePresence(channelKey, peer, name, state);
       if (call && call.channelKey === channelKey) {
-        if (state === "in" && !known) shareKey();
-        if (state === "out") {
-          call.worker.postMessage({ op: "forget", peer });
-          rotateKey();
+        if (call.engine === "fmm") {
+          if (state === "out" && call.e2ee) call.e2ee.handle(plain.type, { peer, call: "out" });
+          if (state === "in" && !known) announce("in");
+        } else {
+          if (state === "in" && !known) shareKey();
+          if (state === "out") {
+            call.worker.postMessage({ op: "forget", peer });
+            rotateKey();
+          }
         }
         labelTiles();
       }
@@ -172,7 +205,7 @@ export function createGroupCalls({
     if (!claim(channelKey, peer, name)) return;
     if (!keyring.has(channelKey)) keyring.set(channelKey, new Map());
     keyring.get(channelKey).set(peer, { keyId, raw, name });
-    if (call && call.channelKey === channelKey) handKey(peer, keyId, raw);
+    if (call && call.channelKey === channelKey && call.engine !== "fmm") handKey(peer, keyId, raw);
   }
 
   function attachSender(sender, kind) {
@@ -261,7 +294,8 @@ export function createGroupCalls({
   async function join(channelKey, channelId, media) {
     if (call) return { error: "Leave the current call first." };
     const mode = groupCallEncryptionMode(scope);
-    if (!mode) return { error: "This browser cannot join end-to-end encrypted group calls." };
+    const fmmReady = fmm.enabled !== false && typeof callSigner === "function" && fmmSupported(scope);
+    if (!mode && !fmmReady) return { error: "This browser cannot join end-to-end encrypted group calls." };
     let local;
     try {
       local = await scope.navigator.mediaDevices.getUserMedia({
@@ -281,6 +315,11 @@ export function createGroupCalls({
       ws: null,
       worker: new scope.Worker(workerUrl, { name: "forkmesh-group-call-crypto" }),
       local,
+      outgoing: null,
+      engine: "",
+      fmmReady,
+      fmm: null,
+      e2ee: null,
       tiles: new Map(),
       decorated: new WeakSet(),
       sendKey: newKey(),
@@ -312,6 +351,15 @@ export function createGroupCalls({
     if (current.peer) {
       void sendFrame(current.channelKey, "group-call-presence", { peer: current.peer, call: "out" });
     }
+    if (current.fmm) {
+      current.fmm.leave();
+      current.fmm = null;
+    }
+    if (current.e2ee) {
+      current.e2ee.close();
+      current.e2ee = null;
+    }
+    current.engine = "";
     current.peer = "";
     const { ws, pc } = current;
     current.ws = null;
@@ -355,11 +403,155 @@ export function createGroupCalls({
   async function connect(current) {
     let access;
     try {
-      access = await fetchTicket(current.channelId);
+      access = current.fmmReady
+        ? await fetchTicket(current.channelId, { engines: [...FMM_ENGINES] })
+        : await fetchTicket(current.channelId);
     } catch (_) {
       return false;
     }
-    if (call !== current || !access?.url || !access?.ticket) return false;
+    if (call !== current) return false;
+    if (current.fmmReady && fmmUsable(access, scope) && PEER_RE.test(String(access.peer || ""))) {
+      if (await connectFmm(current, access)) return true;
+      if (call !== current) return false;
+    }
+    return connectWebRtc(current, access);
+  }
+
+  async function localForFmm(current) {
+    if (current.outgoing) return current.outgoing;
+    let prepared = null;
+    if (typeof prepareLocal === "function") {
+      try {
+        prepared = await prepareLocal(current.local, current.media);
+      } catch (_) {
+        prepared = null;
+      }
+    }
+    current.outgoing = prepared || { stream: current.local, stage: null, stop() {} };
+    return current.outgoing;
+  }
+
+  async function connectFmm(current, access) {
+    let signer = null;
+    try {
+      signer = await callSigner();
+    } catch (_) {
+      signer = null;
+    }
+    const callName = String(callId(current.channelKey) || "");
+    const acct = String(callAccount() || "");
+    if (!signer || !callName || !acct || call !== current) return false;
+    const peer = String(access.peer);
+    current.engine = "fmm";
+    current.peer = peer;
+    const held = [];
+    const keyOp = (op) => {
+      if (current.fmm) op(current.fmm);
+      else held.push(op);
+    };
+    const e2ee = createFmmE2ee({
+      call: callName,
+      peer,
+      acct,
+      signer,
+      send: (type, body) => sendFrame(current.channelKey, type, body),
+      announce: () => announce("in"),
+      onSendKey: (key) => keyOp((session) => session.setSendKey(key)),
+      onPeerKey: (key) => keyOp((session) => session.setPeerKey(key)),
+      onForget: (who) => keyOp((session) => session.forget(who)),
+      onChange: (view) => {
+        current.verification = view;
+        onChange();
+      },
+    });
+    current.e2ee = e2ee;
+    try {
+      await e2ee.start();
+    } catch (_) {
+      current.e2ee = null;
+      current.engine = "";
+      current.peer = "";
+      return false;
+    }
+    const outgoing = await localForFmm(current);
+    let session;
+    try {
+      session = await startFmmCall({
+        access,
+        local: outgoing.stream,
+        media: current.media,
+        scope,
+        stage: outgoing.stage,
+        workerUrl: fmm.workerUrl,
+        workletUrl: fmm.workletUrl,
+        faceStreamUrl: fmm.faceStreamUrl,
+        simulcast: fmm.simulcast || 1,
+        codec: fmm.codec || "",
+        playout: fmm.playout || "context",
+        onEvent: (event) => {
+          if (call !== current || current.fmm !== session) return;
+          if (event.type === "joined") {
+            current.state = "live";
+            current.retries = 0;
+            announce("in");
+          } else if (event.type === "error" && event.code === 409) {
+            void fallBackToWebRtc(current, session, access);
+            return;
+          } else if (event.type === "error") {
+            current.error = event.code === 503 ? "This call is full." : "The call could not connect.";
+            if (event.code === 503) leave();
+          } else if (event.type === "state" && event.state === "failed") {
+            connectionLost(current, "The call connection failed.");
+          } else if (event.type === "state" && event.state === "moving") {
+            current.state = "reconnecting";
+          } else if (event.type === "state" && event.state === "moved") {
+            current.state = "live";
+            current.moved = (current.moved || 0) + 1;
+          }
+          fmm.onEvent?.(event);
+          onChange();
+        },
+        onChange: () => {
+          if (call === current) labelTiles();
+        },
+      });
+    } catch (_) {
+      e2ee.close();
+      current.e2ee = null;
+      current.engine = "";
+      current.peer = "";
+      return false;
+    }
+    if (call !== current) {
+      session.leave();
+      e2ee.close();
+      return false;
+    }
+    current.fmm = session;
+    current.tiles = session.tiles;
+    for (const op of held.splice(0)) op(session);
+    announce("in");
+    return true;
+  }
+
+  async function fallBackToWebRtc(current, session, access) {
+    if (call !== current || current.fmm !== session) return;
+    session.leave();
+    current.e2ee?.close();
+    current.fmm = null;
+    current.e2ee = null;
+    current.engine = "";
+    current.tiles = new Map();
+    void sendFrame(current.channelKey, "group-call-presence", { peer: current.peer, call: "out" });
+    current.peer = "";
+    current.fmmReady = false;
+    if (!(await connectWebRtc(current, access)) && call === current) connectionLost(current, "The call could not connect.");
+    onChange();
+  }
+
+  async function connectWebRtc(current, access) {
+    if (!access?.url || !access?.ticket || !current.mode) return false;
+    current.engine = "webrtc";
     const config = { bundlePolicy: "max-bundle", rtcpMuxPolicy: "require" };
     if (current.mode === "streams") config.encodedInsertableStreams = true;
     const pc = new scope.RTCPeerConnection(config);
@@ -406,6 +598,7 @@ export function createGroupCalls({
     if (current.reconnecting) clearTimeout(current.reconnecting);
     for (const timer of current.timers) clearInterval(timer);
     dropConnection(current);
+    current.outgoing?.stop?.();
     current.local.getTracks().forEach((track) => track.stop());
     current.worker.terminate();
     lastError = current.error;
@@ -416,6 +609,7 @@ export function createGroupCalls({
     if (!call) return;
     call.muted = !call.muted;
     call.local.getAudioTracks().forEach((track) => { track.enabled = !call.muted; });
+    call.fmm?.mute(call.muted, call.cameraOff);
     onChange();
   }
 
@@ -423,7 +617,18 @@ export function createGroupCalls({
     if (!call) return;
     call.cameraOff = !call.cameraOff;
     call.local.getVideoTracks().forEach((track) => { track.enabled = !call.cameraOff; });
+    call.fmm?.mute(call.muted, call.cameraOff);
     onChange();
+  }
+
+  async function confirmCode(match) {
+    const e2ee = call?.e2ee;
+    if (!e2ee) return false;
+    if (!match) {
+      e2ee.reject();
+      return false;
+    }
+    return e2ee.confirm();
   }
 
   return {
@@ -432,6 +637,7 @@ export function createGroupCalls({
     leave,
     toggleMute,
     toggleCamera,
+    confirmCode,
     roster,
     get active() { return call; },
     get lastError() { return lastError; },

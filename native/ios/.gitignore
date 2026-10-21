@@ -11,3 +11,5 @@ xcuserdata/
 # Built from source by native/webrtc/build.sh ios; never committed.
 WebRTCPackage/WebRTC.xcframework/
 WebRTCPackage/WebRTC.xcframework.zip
+FmmPackage/Fmm.xcframework/
+OpusPackage/Opus.xcframework/

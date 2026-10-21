@@ -36,7 +36,10 @@ func TestCallBench(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("results in %s", out)
-	engine := WebRTC()
+	engine, ok := EngineNamed(os.Getenv("FORKMESH_CALL_BENCH_ENGINE"))
+	if !ok {
+		t.Fatalf("FORKMESH_CALL_BENCH_ENGINE names no engine: %q", os.Getenv("FORKMESH_CALL_BENCH_ENGINE"))
+	}
 	var results []Result
 	for _, profile := range profiles {
 		t.Run(profile.Name, func(t *testing.T) {

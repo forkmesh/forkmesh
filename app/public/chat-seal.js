@@ -39,6 +39,7 @@ const OPEN_RECORDS_PER_SCOPE = 128;
 const SAFETY_ITERATIONS = 5199;
 const ANNOUNCE_DURABLE_MS = DAY_MS;
 const STORE_PREFIX = "forkmesh.chat/e2ee/";
+const CALL_SIGNING_PREFIX = "forkmesh-call-e2ee-";
 const IDENTITY_KEY = STORE_PREFIX + "ed25519IdentityV3";
 const PREKEYS_KEY = STORE_PREFIX + "prekeysV3";
 const LEGACY_KEYS = [
@@ -1633,8 +1634,11 @@ class RoomSeal {
 }
 
 export function authenticatedPlain(result) {
-  const plain = result?.plain;
+  let plain = result?.plain;
   if (!plain || typeof plain !== "object") return null;
+  if (typeof plain.type === "string" && plain.type.startsWith("group-call-")) {
+    plain = { ...plain, sealKid: String(result.kid || ""), sealAcct: String(result.acct || "") };
+  }
   const node = String(result.node || "");
   if (!node) return plain;
   if (Object.hasOwn(plain, "reactorId") && plain.reactorId !== node) return null;
@@ -1699,6 +1703,17 @@ export function createRoomSealStore({
     async identity() {
       const identity = await loadIdentity(ctx);
       return { kid: identity.kid, idk: identity.idk };
+    },
+    async signCall(bytes) {
+      const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+      const prefix = new TextEncoder().encode(CALL_SIGNING_PREFIX);
+      if (data.length < prefix.length || prefix.some((byte, i) => data[i] !== byte)) {
+        throw new TypeError("Only call messages can be signed here.");
+      }
+      return ctx.exclusive(async () => {
+        const identity = await loadIdentity(ctx);
+        return new Uint8Array(await subtle().sign("Ed25519", identity.privateKey, data));
+      });
     },
     subscribe(listener) {
       ctx.listeners.add(listener);

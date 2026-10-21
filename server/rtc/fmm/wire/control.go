@@ -38,6 +38,7 @@ const (
 
 	TrackAudio = 1
 	TrackVideo = 2
+	TrackAuth  = 3
 
 	AllStreams = 0xFF
 )
@@ -139,13 +140,15 @@ func (Recovery) Type() uint8        { return MsgRecovery }
 
 func validTrack(kind, layers uint8) bool {
 	switch kind {
-	case TrackAudio:
+	case TrackAudio, TrackAuth:
 		return layers == 1
 	case TrackVideo:
 		return layers >= 1 && layers <= MaxLayer+1
 	}
 	return false
 }
+
+func AudioLike(kind uint8) bool { return kind == TrackAudio || kind == TrackAuth }
 
 func validEncoding(v Publish) bool {
 	if v.Track == 0 {
