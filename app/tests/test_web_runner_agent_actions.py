@@ -194,6 +194,7 @@ def _open_pull(submit):
     script = "\n".join([
         stubs,
         _function(REPO_UI, "orgAgentPullDescription"),
+        _function(REPO_UI, "orgAgentProviderLabel"),
         "async " + _function(REPO_UI, "orgAgentOpenPull"),
         "let result;",
         f"try {{ result = await orgAgentOpenPull({{}}, {json.dumps(session)}, {json.dumps(facts)}); }}",

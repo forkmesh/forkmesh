@@ -8068,6 +8068,75 @@ def _pull_record_fields(text: str) -> dict[str, str]:
     return fields
 
 
+AI_MODEL_MAX = 80
+AI_DISCLOSURE_MESSAGE = (
+    "This repository asks every pull request to say which AI model "
+    "was used. Send \"aiModel\" with the pull request (for example "
+    "\"Claude Opus 5.5\", or \"None\"), add a line \"AI model: <name>\" "
+    "to the description, or add a Co-Authored-By trailer naming the "
+    "model to the head commit.")
+AI_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]")
+AI_BODY_LINE_RE = re.compile(
+    r"^\s*(?:[-*+>]\s+)?AI[ -]?models?(?:\(s\))?(?:\s+used)?\s*:\s*(.+?)\s*$",
+    re.I)
+AI_COMMIT_SPLIT_RE = re.compile(r"(?=^From [0-9a-f]{7,64} )", re.M | re.I)
+AI_CO_AUTHOR_RE = re.compile(
+    r"^\s*Co-authored-by:\s*([^<\n]+?)\s*(?:<[^>\n]*>)?\s*$", re.I | re.M)
+AI_AGENT_TRAILER_RE = re.compile(
+    r"^\s*ForkMesh-Agent:\s*([A-Za-z0-9._-]{1,40})/([A-Za-z0-9._:-]{1,64})\s*$",
+    re.I | re.M)
+AI_MODEL_NAME_RE = re.compile(
+    r"\b(?:claude|opus|sonnet|haiku|gpt|chatgpt|openai|o[1-9]|gemini|copilot|"
+    r"codex|cursor|llama|mistral|mixtral|deepseek|qwen|grok|devin|aider|"
+    r"windsurf|jules|kimi|phi|glm)\b", re.I)
+
+
+def _clean_ai_model(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = " ".join(AI_CONTROL_RE.sub(
+        " ", value.replace("*", "").replace("`", "")).split())
+    return text[:AI_MODEL_MAX].strip()
+
+
+def _pull_ai_model(pull: Mapping[str, Any]) -> str:
+    model = _clean_ai_model(pull.get("aiModel"))
+    if model:
+        return model
+    description = pull.get("description", pull.get("body", ""))
+    for line in re.split(r"\r\n|[\r\n\u2028\u2029]", str(description or "")):
+        match = AI_BODY_LINE_RE.match(line.replace("*", ""))
+        if match and _clean_ai_model(match.group(1)):
+            return _clean_ai_model(match.group(1))
+    messages = [part for part in AI_COMMIT_SPLIT_RE.split(
+        str(pull.get("commits") or "")) if part.strip()]
+    for message in reversed(messages):
+        attested = AI_AGENT_TRAILER_RE.search(message)
+        if attested:
+            return _clean_ai_model(attested.group(2))
+        for match in AI_CO_AUTHOR_RE.finditer(message):
+            name = _clean_ai_model(match.group(1))
+            if name and AI_MODEL_NAME_RE.search(name):
+                return name
+    return ""
+
+
+def _repository_requires_ai_disclosure(repository: Any, base: str) -> bool:
+    try:
+        payload = repository.blob(
+            {"path": ".forkmesh/pulls.json", "ref": str(base or "")})
+    except (GatewayError, GitError):
+        return False
+    if payload.get("encoding") != "utf8":
+        return False
+    try:
+        settings = json.loads(str(payload.get("content") or ""))
+    except ValueError:
+        return False
+    return isinstance(settings, dict) and settings.get(
+        "requireAiDisclosure") is True
+
+
 def _pull_lifecycle_record(repository: Any, number: int) -> dict[str, str]:
     path = ".forkmesh/pulls/%d/pull.md" % number
     for ref in (
@@ -9136,6 +9205,23 @@ class DashboardService:
                     pull.get("description", pull.get("body", "")) or ""
                 )[: 256 * 1024]
                 pull.pop("body", None)
+                ai_model = _pull_ai_model(pull)
+                if ai_model:
+                    pull["aiModel"] = ai_model
+                else:
+                    pull.pop("aiModel", None)
+                    if _repository_requires_ai_disclosure(
+                        repository, str(pull.get("base") or "")
+                    ):
+                        return json_response(
+                            {
+                                "ok": False,
+                                "error": "ai_disclosure_required",
+                                "message": AI_DISCLOSURE_MESSAGE,
+                                "field": "aiModel",
+                            },
+                            422,
+                        )
                 item = {"number": number, "pull": pull}
             else:
                 return json_response(

@@ -58,7 +58,8 @@ FUNCTIONS = {
         "issueSubIssueNumbers", "renderRecordRewardEstimate", "formatRewardSol",
         "issueDateInputValue", "mdMentionHtml", "issueCardAuthorHtml", "developmentProse",
         "pullClosingIssueNumbers", "pullOwnIssueNumbers", "issueDevelopmentPullStates",
-        "issueLinkedPullNumbers", "developmentPulls", "developmentRow", "renderIssueDevelopment"),
+        "issueLinkedPullNumbers", "developmentPulls", "developmentRow", "renderIssueDevelopment",
+        "issueAiPromptText", "renderIssueAiPrompt"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE"),
@@ -66,7 +67,7 @@ CONSTANTS = {
         "MD_DATA_IMAGE_URL", "MD_BARE_URL", "MD_ENTITIES", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
         "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
-        "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT"),
+        "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT"),
 }
 
 
@@ -100,7 +101,7 @@ const state = { session: VIEWER === "member" ? { nodeName: "me" } : null,
 let countFormatter = null;
 function watchIssueActorAvatars() {}
 function platformName() { return "Acme Code"; }
-function publicSiteOrigin() { return ""; }
+function publicSiteOrigin() { return %(origin)s; }
 function publicProfileUrl(name, suffix = "") {
   return `/@${encodeURIComponent(String(name || "").trim().toLowerCase())}${suffix}`;
 }
@@ -126,20 +127,22 @@ parsed.issueSubIssues = issueSubIssueNumbers(index, input.number, parsed.body)
 parsed.issueMentions = issueMentionsOf(index, input.number);
 parsed.issueMutationAuthorized = false;
 parsed.issueSubscribed = false;
+parsed.repoCollabSettings = { aiPromptTemplate: input.template || "" };
 state.repoRecordDetail = { repo, kind: "issues", number: input.number, parsed };
 process.stdout.write(renderRepoIssueDetail(repo, input.number, parsed));
 """
 
 
-def js_render(issue, number, index=(), viewer="guest"):
+def js_render(issue, number, index=(), viewer="guest", origin="", template=""):
     code = "\n".join(
         [_const(SOURCES[name], const) for name, consts in CONSTANTS.items() for const in consts]
         + [_function(SOURCES[name], fn) for name, fns in FUNCTIONS.items() for fn in fns])
     script = HARNESS % {
         "now": NOW_MS, "viewer": json.dumps(viewer), "link": LINK_BASE, "api": API_BASE,
+        "origin": json.dumps(origin),
         "path": json.dumps(PAGE_PATH), "code": code, "owner": json.dumps(OWNER),
         "name": json.dumps(NAME), "input": json.dumps(json.dumps({
-            "issue": json.dumps(issue), "number": number,
+            "issue": json.dumps(issue), "number": number, "template": template,
             "index": [json.dumps(row) for row in index]}))}
     return subprocess.run(["node", "-"], input=script, check=True, capture_output=True,
                           text=True, env={"TZ": "UTC", "LANG": "en_US.UTF-8",
@@ -147,12 +150,12 @@ def js_render(issue, number, index=(), viewer="guest"):
                           ).stdout
 
 
-def py_render(issue, number, index=(), viewer="guest"):
-    ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, "main")
+def py_render(issue, number, index=(), viewer="guest", origin="", template=""):
+    ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, "main", origin=origin)
     rows = [repo_ssr_issue.parse_issue(json.dumps(row), 0) for row in index]
     return repo_ssr_issue.render_issue(
         repo_ssr_issue.parse_issue(json.dumps(issue), number), ctx, OWNER, PAGE_PATH,
-        index=rows, now=NOW_MS / 1000, viewer=viewer)
+        index=rows, now=NOW_MS / 1000, viewer=viewer, repo=NAME, prompt=template)
 
 
 ICON_RE = re.compile(r'<svg xmlns="http://www.w3.org/2000/svg"[^>]*class="lucide lucide-'
@@ -422,3 +425,89 @@ def test_a_long_address_issue_page_uses_the_same_first_view():
     assert 'data-repo-ssr-issue="27"' in view
     assert 'href="/acme-bolt/Bolt/issues" role="tab" aria-selected="true"' in view
     assert 'href="/acme-bolt/Bolt/issues/31"' in view
+
+
+ORIGIN = "https://git.example.test"
+TEMPLATE = "Work on {repo} #{number} ({title}) at {url} via {host} {unknown}"
+
+
+def _prompt_of(markup):
+    match = re.search(r'data-repo-issue-ai-prompt-text title="([^"]*)"', markup)
+    return match.group(1) if match else None
+
+
+@needs_node
+@pytest.mark.parametrize("template", ["", TEMPLATE])
+def test_the_ai_prompt_box_matches_the_dashboard(template):
+    issue = issue27()
+    expected = normalize(js_render(issue, 27, index_rows(), "guest", ORIGIN, template))
+    got = normalize(py_render(issue, 27, index_rows(), "guest", ORIGIN, template))
+    assert got == expected
+    assert "data-repo-issue-ai-prompt " in got
+
+
+def test_the_default_ai_prompt_is_one_agent_neutral_line():
+    prompt = _prompt_of(py_render(issue27(), 27, origin=ORIGIN))
+    assert prompt == ("Fix https://git.example.test/Bolt/issues/27: read the issue, make the "
+                      "change with tests, and open a pull request on git.example.test "
+                      "following the repository&#039;s AI policy.")
+    assert "\n" not in prompt and "Claude" not in prompt
+
+
+def test_the_ai_prompt_template_fills_its_placeholders_once():
+    issue = issue27()
+    issue["title"] = "Fix {url} <b>now</b>\nplease"
+    html = py_render(issue, 27, origin=ORIGIN, template=TEMPLATE)
+    assert _prompt_of(html) == (
+        "Work on Bolt #27 (Fix {url} &lt;b&gt;now&lt;/b&gt; please) at "
+        "https://git.example.test/Bolt/issues/27 via git.example.test {unknown}")
+    assert "<b>now" not in html
+
+
+def test_the_ai_prompt_is_escaped_in_every_attribute():
+    issue = issue27()
+    issue["title"] = '"><img src=x onerror=alert(1)>'
+    html = py_render(issue, 27, origin=ORIGIN, template='{title} " onclick="x')
+    assert not re.search(r"<img[^>]*onerror", html)
+    assert 'onclick="x' not in html
+    box = html[html.index("data-repo-issue-ai-prompt "):]
+    box = box[:box.index("</div>")]
+    assert box.count("&quot;&gt;&lt;img src=x onerror=alert(1)&gt; &quot; onclick=&quot;x") == 3
+
+
+def test_a_closed_issue_has_no_ai_prompt():
+    issue = issue27()
+    issue["status"] = "closed"
+    issue["events"] = [event for event in issue["events"] if event.get("type") != "status"]
+    assert "data-repo-issue-ai-prompt" not in py_render(issue, 27, origin=ORIGIN)
+    assert "data-repo-issue-ai-prompt" in py_render(issue27(), 27, origin=ORIGIN)
+
+
+def test_signed_out_visitors_get_the_ai_prompt_too():
+    html = py_render(issue27(), 27, viewer="both", origin=ORIGIN)
+    box = html[html.index("data-repo-issue-ai-prompt "):]
+    assert "data-ssr-member" not in box[:box.index("</div>")]
+
+
+def test_the_ai_prompt_template_comes_from_the_repository_settings():
+    blob = {"encoding": "utf8", "content": json.dumps(
+        {"aiPromptTemplate": "  Fix\n{url}\tnow  " + "x" * 600})}
+    template = repo_ssr_issue.prompt_template({".forkmesh/issues.json": blob})
+    assert template.startswith("Fix {url} now x") and len(template) == 500
+    assert repo_ssr_issue.prompt_template({}) == ""
+    assert repo_ssr_issue.prompt_template({".forkmesh/issues.json": {
+        "encoding": "utf8", "content": "[1]"}}) == ""
+    assert repo_ssr_issue.public_site_origin("https://app.forkmesh.com/") == "https://forkmesh.com"
+    assert repo_ssr_issue.public_site_origin("https://git.example.test") == ORIGIN
+
+
+def test_the_issue_bundle_reads_the_settings_the_dashboard_reads():
+    views = (ROOT / "host" / "forkmesh_host" / "repo_views.py").read_text("utf-8")
+    content = SOURCES["06-repo-content.js"]
+    assert ('const REPO_COLLAB_SETTINGS_PATHS = [".forkmesh/issues.json", '
+            '".forkmesh/pulls.json", "AI_POLICY.md"];') in content
+    assert "fetchRepoBlobs(repo, REPO_COLLAB_SETTINGS_PATHS, { ref: repoDefaultBranch(repo) })" \
+        in content
+    assert repo_views.COLLAB_SETTINGS_PATHS == (
+        ".forkmesh/issues.json", ".forkmesh/pulls.json", "AI_POLICY.md")
+    assert '"settings": (settings_data or {}).get("blobs") or {}' in views

@@ -204,6 +204,7 @@ class ViewTicket:
         self.section = section
         self.target = target
         self.root = root
+        self.origin = ""
 
 
 ISSUE_BUDGET_SECONDS = 0.3
@@ -342,9 +343,21 @@ async def _micro_store(key, response):
     return _js.Response(body, response.status, "", _js.Headers(dict(headers)))
 
 
+def request_origin(request):
+    try:
+        parts = urllib.parse.urlsplit(str(request.url))
+    except Exception:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return ""
+    return "%s://%s" % (parts.scheme, parts.netloc)
+
+
 async def fetch(ticket, worker_fetch, request):
     """The Worker's answer, or the micro-cache's for an anonymous read."""
     if not isinstance(ticket, MicroKey):
+        if isinstance(ticket, ViewTicket):
+            ticket.origin = request_origin(request)
         return await worker_fetch(request)
     entry = _micro.get(ticket)
     now = asyncio.get_running_loop().time()
@@ -405,7 +418,7 @@ async def finish(task, response):
             root = await _within(view.root, ISSUE_BUDGET_SECONDS - (
                 asyncio.get_running_loop().time() - started))
             if root:
-                rendered = inject_issue(page, root, data)
+                rendered = inject_issue(page, root, data, origin=view.origin)
         if rendered is None:
             rendered = inject_view(page, data, view.section) if view \
                 else inject(page, data)
@@ -482,12 +495,13 @@ def inject(page, data, short=False):
 ISSUE_RENDER_SECONDS = 60.0
 
 
-def issue_article(bundle, data, short=False):
+def issue_article(bundle, data, short=False, origin=""):
     from . import repo_ssr_issue
     model = bundle.model or {}
     if not model.get("issue") or not model.get("issueJson"):
         return None
-    key = ("dashboard", bool(short))
+    origin = repo_ssr_issue.public_site_origin(origin)
+    key = ("dashboard", bool(short), origin)
     now = time.time()
     kept = bundle.rendered.get(key)
     if kept and now - kept[0] < ISSUE_RENDER_SECONDS:
@@ -497,24 +511,25 @@ def issue_article(bundle, data, short=False):
         urllib.parse.quote(owner), urllib.parse.quote(repo))
     ctx = repo_ssr_issue.Context(link, "/api/repo/%s/%s" % (
         urllib.parse.quote(owner, safe=""), urllib.parse.quote(repo, safe="")),
-        str(bundle.ref or data.get("ref") or "main"))
+        str(bundle.ref or data.get("ref") or "main"), origin=origin)
     issue = repo_ssr_issue.parse_issue(model["issueJson"], bundle.number)
     if issue["deleted"]:
         return None
     article = repo_ssr_issue.render_issue(
         issue, ctx, owner, "%s/issues/%d" % (link, bundle.number),
-        index=repo_ssr_issue.index_rows(model.get("index")), now=now)
+        index=repo_ssr_issue.index_rows(model.get("index")), now=now, repo=repo,
+        prompt=repo_ssr_issue.prompt_template(model.get("settings")))
     bundle.rendered[key] = (now, article)
     return article
 
 
-def inject_issue(page, data, bundle, short=False):
+def inject_issue(page, data, bundle, short=False, origin=""):
     if 'data-page="repo"' not in page or PLACEHOLDER not in page \
             or CHARSET not in page or bundle is None or bundle.view != "issue":
         return None
     from . import repo_ssr_issue
     try:
-        article = issue_article(bundle, data, short)
+        article = issue_article(bundle, data, short, origin)
     except Exception as error:  # the bundle's own first view is still correct
         print("issue ssr skipped: %r" % (error,))
         article = None

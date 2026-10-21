@@ -96,6 +96,7 @@ const setRepoIssueRecordOpen = () => {};
 const setRepoRecordOpen = () => {};
 const mountIssueStickyHeader = () => {};
 const primeRepoViewReads = async () => {};
+const loadRepoCollabSettings = async () => ({});
 
 __LOADER__
 

@@ -97,6 +97,7 @@ struct PullRequest {
     // not erase the marker the microjob payout check reads.
     QString client;
     QString clientSig;
+    QString aiModel;
     // Owner-authored merge reward estimate. It is intentionally outside the
     // contributor's immutable PR signature, like status and merge metadata.
     qint64 rewardEstimateLamports = 0;

@@ -3115,7 +3115,7 @@
         const { base, head } = state.repoCompare;
         const title = state.repoCompare.title || state.repoCompare.result?.title || "";
         navigateHistory(`${repoLinkUrl(state.selectedRepo)}/pulls`);
-        openPullCompose(state.selectedRepo, { base, head, title });
+        openPullCompose(state.selectedRepo, { base, head, title, aiModel: state.repoCompare.result?.aiModel || "" });
         return;
       }
 

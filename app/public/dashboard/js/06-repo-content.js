@@ -7193,6 +7193,7 @@
             <span class="min-w-0">${isPulls
               ? `${issuePersonNameHtml(author)} wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
               : `${issuePersonNameHtml(author)} started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
+            ${isPulls ? renderPullAiModelChip(values, body, parsed.repoCollabSettings) : ""}
           </div>
           ${recordTabs}
         </header>
@@ -7276,6 +7277,122 @@
   // opening comment as the first card of the conversation (the only place the
   // author is named, issue #651), the composer at the foot of the thread, and
   // metadata in the sidebar. Rare actions live at the bottom of the sidebar.
+  const REPO_COLLAB_SETTINGS_PATHS = [".forkmesh/issues.json", ".forkmesh/pulls.json", "AI_POLICY.md"];
+  const AI_MODEL_MAX = 80;
+  const AI_MODEL_SUGGESTIONS = ["Claude Opus 5.5", "Claude Sonnet 5.5", "GPT-5", "Gemini", "GitHub Copilot", "OpenAI Codex", "Cursor", "A local model", "None"];
+  const ISSUE_AI_PROMPT_DEFAULT = "Fix {url}: read the issue, make the change with tests, and open a pull request on {host} following the repository's AI policy.";
+  const ISSUE_AI_PROMPT_MAX = 500;
+
+  function repoCollabSettingsFromBlobs(blobs) {
+    const json = (path) => {
+      const blob = blobs?.[path];
+      if (!blob) return {};
+      try {
+        const value = JSON.parse(blobText(blob));
+        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      } catch (_) {
+        return {};
+      }
+    };
+    const issues = json(".forkmesh/issues.json");
+    const pulls = json(".forkmesh/pulls.json");
+    const template = typeof issues.aiPromptTemplate === "string"
+      ? issues.aiPromptTemplate.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim().slice(0, ISSUE_AI_PROMPT_MAX)
+      : "";
+    return {
+      aiPromptTemplate: template,
+      requireAiDisclosure: pulls.requireAiDisclosure === true,
+      aiPolicy: Boolean(blobs?.["AI_POLICY.md"]),
+    };
+  }
+
+  async function loadRepoCollabSettings(repo) {
+    if (!repo) return repoCollabSettingsFromBlobs({});
+    state.repoCollabSettings = state.repoCollabSettings || {};
+    const key = repoKey(repo).toLowerCase();
+    const cached = state.repoCollabSettings[key];
+    if (cached && Date.now() - cached.at < 60000) return cached.settings;
+    try {
+      const settings = repoCollabSettingsFromBlobs(
+        await fetchRepoBlobs(repo, REPO_COLLAB_SETTINGS_PATHS, { ref: repoDefaultBranch(repo) }));
+      state.repoCollabSettings[key] = { at: Date.now(), settings };
+      return settings;
+    } catch (_) {
+      return cached?.settings || repoCollabSettingsFromBlobs({});
+    }
+  }
+
+  function cleanAiModel(value) {
+    if (typeof value !== "string") return "";
+    return value.replace(/[*`]/g, "").replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ")
+      .replace(/\s+/g, " ").trim().slice(0, AI_MODEL_MAX).trim();
+  }
+
+  function aiModelIsNone(value) {
+    return /^(?:none|no|no ai|no ai used|not used|n\/?a|nothing|human|human only|no model|-)$/i.test(cleanAiModel(value));
+  }
+
+  function aiModelFromBody(body) {
+    for (const line of String(body || "").split(/\r\n|[\r\n\u2028\u2029]/)) {
+      const match = /^\s*(?:[-*+>]\s+)?AI[ -]?models?(?:\(s\))?(?:\s+used)?\s*:\s*(.+?)\s*$/i.exec(line.replace(/\*/g, ""));
+      const value = match ? cleanAiModel(match[1]) : "";
+      if (value) return value;
+    }
+    return "";
+  }
+
+  function aiModelFromCommits(mbox) {
+    const messages = String(mbox || "").split(/(?=^From [0-9a-f]{7,64} )/mi).filter((part) => part.trim());
+    for (const message of messages.reverse()) {
+      const attested = /^\s*ForkMesh-Agent:\s*([A-Za-z0-9._-]{1,40})\/([A-Za-z0-9._:-]{1,64})\s*$/mi.exec(message);
+      if (attested) return cleanAiModel(attested[2]);
+      for (const match of message.matchAll(/^\s*Co-authored-by:\s*([^<\n]+?)\s*(?:<[^>\n]*>)?\s*$/gmi)) {
+        const name = cleanAiModel(match[1]);
+        if (name && /\b(?:claude|opus|sonnet|haiku|gpt|chatgpt|openai|o[1-9]|gemini|copilot|codex|cursor|llama|mistral|mixtral|deepseek|qwen|grok|devin|aider|windsurf|jules|kimi|phi|glm)\b/i.test(name)) return name;
+      }
+    }
+    return "";
+  }
+
+  function pullAiModel(values, body) {
+    return cleanAiModel(values?.aiModel) || aiModelFromBody(body);
+  }
+
+  function renderPullAiModelChip(values, body, settings) {
+    const model = pullAiModel(values, body);
+    const chip = "inline-flex h-6 max-w-full items-center gap-1 rounded-full border px-2 text-[12px] font-medium";
+    if (model) {
+      const none = aiModelIsNone(model);
+      const label = none ? "No AI" : `AI: ${model}`;
+      return `<span data-repo-pull-ai-model="${none ? "none" : "stated"}" title="${escapeHtml(none ? "The author says no AI model was used." : `AI model(s) used, as stated by the author: ${model}`)}" class="${chip} min-w-0 border-border text-muted-foreground"><i data-lucide="${none ? "user" : "bot"}" class="h-3.5 w-3.5 shrink-0"></i><span class="truncate">${escapeHtml(label)}</span></span>`;
+    }
+    if (!settings?.requireAiDisclosure) return "";
+    return `<span data-repo-pull-ai-model="missing" title="This repository asks every pull request to say which AI model was used, and this one does not." class="${chip} border-attention/40 text-attention"><i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0"></i>AI model: not stated</span>`;
+  }
+
+  function issueAiPromptText(repo, number, title, template = "") {
+    const origin = publicSiteOrigin();
+    const fields = {
+      url: `${origin}${repoRecordUrl(repo, "issues", number)}`,
+      number: String(number),
+      title: String(title || ""),
+      repo: String(repo?.name || ""),
+      host: origin.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/\/.*$/, ""),
+    };
+    return String(template || ISSUE_AI_PROMPT_DEFAULT)
+      .replace(/\{(url|number|title|repo|host)\}/g, (_, name) => fields[name])
+      .replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  function renderIssueAiPrompt(repo, number, title, template = "") {
+    const prompt = issueAiPromptText(repo, number, title, template);
+    return `<div data-repo-issue-ai-prompt class="mt-3 flex min-w-0 items-center gap-2 rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1 pl-3 pr-1 text-[12px] text-muted-foreground">
+            <i data-lucide="bot" class="h-4 w-4 shrink-0"></i>
+            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 flex-1 truncate font-mono text-foreground">${escapeHtml(prompt)}</code>
+            <button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>
+          </div>`;
+  }
+
   function renderRepoIssueDetail(repo, number, parsed) {
     const values = parsed.values || {};
     const title = values.title || `Issue #${number}`;
@@ -7430,6 +7547,7 @@
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
           </p>
+          ${closed ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
         <div data-repo-record-layout class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -7487,6 +7605,7 @@
       </div>`;
     const labels = Array.isArray(item?.labels) ? item.labels : [];
     const assignees = Array.isArray(item?.assignees) ? item.assignees : [];
+    const cachedSettings = state.repoCollabSettings?.[repoKey(repo).toLowerCase()]?.settings;
     return `
       <article data-repo-issue-skeleton="${escapeHtml(number)}" aria-busy="true" aria-label="Loading issue #${escapeHtml(number)}" class="min-w-0">
         <header class="border-b border-border pb-4">
@@ -7503,6 +7622,7 @@
               ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
               : `${bar("w-20", "h-8 rounded-full")}${bar("w-24")}`}
           </p>
+          ${item && !closed ? renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "") : ""}
         </header>
         <div class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -8424,6 +8544,7 @@
         ])
         : null;
       issueAccess?.catch(() => {});
+      const collabSettings = kind === "discussions" ? null : loadRepoCollabSettings(repo);
       let blob;
       if (kind === "issues") {
         blob = await fetchRepoIssueBlob(repo, Number(number));
@@ -8457,6 +8578,7 @@
         parsed.issueSubIssues = subIssues;
         parsed.issueMentions = issueMentionsOf(relationIndex, number);
       }
+      if (collabSettings) parsed.repoCollabSettings = await collabSettings;
       if (kind === "pulls") {
         parsed.pullMetadataCommit = pullMetadataCommit;
         const values = parsed.values || {};
@@ -14835,7 +14957,8 @@
     const title = String(session?.title || branchFacts.branch).trim().slice(0, 160) || branchFacts.branch;
     let opened;
     try {
-      opened = await submitWebPullOpen(repo, title, orgAgentPullDescription(session, branchFacts), base, branchFacts.branch);
+      opened = await submitWebPullOpen(repo, title, orgAgentPullDescription(session, branchFacts), base, branchFacts.branch,
+        String(session?.model || "").trim() || orgAgentProviderLabel(session));
     } catch (error) {
       const code = String(error?.message || "");
       throw new Error(code === "no_changes"
