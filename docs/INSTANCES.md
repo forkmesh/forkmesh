@@ -866,7 +866,9 @@ Three layers do it, so that nothing depends on the browser alone:
   wrapped in `<span data-platform-name>`, which `applyPlatformName()` fills
   at boot. `instance-brand.js` still renames chrome and the other pages; its
   pattern skips identifiers (`X-ForkMesh-Ref`, `ForkMesh-Attestation`) and
-  "ForkMesh, Inc.", and drops the word before "desktop".
+  "ForkMesh, Inc.", and drops the word before "desktop". Elements marked
+  `data-user-content` hold text a person or repository wrote (descriptions,
+  names) and keep their own words even where they say "ForkMesh".
 
 Beyond the dashboard, a branded instance also names itself in: the `/docs`
 and `/desktop` pages (which no longer say "ForkMesh desktop app" or

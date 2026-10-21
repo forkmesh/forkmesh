@@ -2338,9 +2338,6 @@ def repo_web_href(owner, repo):
 
 
 def repo_record_href(owner, repo, section, number=0):
-    """Link to the thing a notification is about: one issue or pull request
-    (section "issues" or "pull") when its number is known, otherwise a repo
-    section such as "releases" or "commits", otherwise the repository."""
     base = repo_web_href(owner, repo)
     try:
         number = int(number or 0)

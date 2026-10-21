@@ -12730,8 +12730,6 @@
       .slice(0, HOME_FEED_CARD_LIMIT);
   }
 
-  // Older pings point at the repository root although they are about one
-  // issue, pull request, release or push; send the card to that thing.
   function homeFeedHref(item) {
     const href = String(item?.href || "").trim();
     const meta = item?.meta && typeof item.meta === "object" ? item.meta : {};
@@ -26078,9 +26076,6 @@
       ${renderCollectionViewsFooter()}</div>`;
   }
 
-  // A label's swatch: its colour dot, or for Hacktoberfest a small pumpkin
-  // that wiggles a few times when the list first paints (still for viewers
-  // who ask for reduced motion).
   function issueLabelSwatch(label) {
     if (!/^hacktoberfest\b/i.test(String(label || ""))) {
       return `<span aria-hidden="true" class="h-3 w-3 shrink-0 rounded-full" style="background:hsl(${issueLabelHue(label)} 70% 55%)"></span>`;
@@ -26227,9 +26222,6 @@
     }
   }
 
-  // The issue list's label filter lives in the address bar (?label=…), so a
-  // filtered list can be linked and survives a refresh. Only the list route
-  // is touched; an open issue keeps its own address.
   function syncIssueLabelAddress() {
     if (!/\/issues\/?$/.test(location.pathname)) return;
     const label = String(issueFilterState().label || "");

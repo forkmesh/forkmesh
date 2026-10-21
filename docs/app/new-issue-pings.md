@@ -52,3 +52,13 @@ local N, the desktop moves the web issue to N+1. The catalog then pings N+1
 (already pinged through the inbox as N), and the local N goes unpinged.
 
 Tests: `app/tests/test_catalog_issue_pings.py`.
+
+## Where a ping's card links
+
+`repo_record_href` (`app/src/entry.py`) links a notification to the thing it
+is about: one issue or pull request (`/issues/<n>`, `/pull/<n>`) when its
+number is known, otherwise a repository section such as `/releases` or
+`/commits`, otherwise the repository. Older pings stored only the repository
+root although they were about one issue, pull request, release or push; the
+home feed (`homeFeedHref` in `05-repo-list-explorer.js`) sends those cards to
+that record instead of the repository.
