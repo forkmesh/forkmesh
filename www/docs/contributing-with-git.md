@@ -66,8 +66,15 @@ request from the link git prints. See
 
 - You can fork public repositories hosted on ForkMesh's servers. A repository
   published from someone's own node cannot be forked from the website yet.
-- Pushes are fast-forward only: you cannot force-push or delete a branch over
-  git. Delete branches on the fork's **Branches** page.
+- You can force-push your own branches after a rebase, amend or squash, which
+  updates an open pull request. Use `git push --force-with-lease`: it refuses
+  when the branch has commits you have not fetched (say, after **Update
+  branch** on the pull request). If that happens, run `git pull --rebase` and
+  push again. The default branch and protected branches only move forward,
+  and the previous tip of a force-pushed branch is kept, so reviews of older
+  commits still resolve.
+- A push never deletes a branch. Delete branches on the fork's **Branches**
+  page.
 - Forks have their own per-account limit, separate from the repositories you
   create.
 - If git says `Authentication failed`, check the account name or email and the
