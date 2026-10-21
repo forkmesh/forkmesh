@@ -43,9 +43,9 @@ DASHBOARD_SOURCE = (
     / "06-repo-content.js"
 )
 DASHBOARD_BUNDLE = ROOT / "app" / "public" / "dashboard.js"
-DASHBOARD_HEADER = (
+DASHBOARD_AGENT_MODAL = (
     ROOT / "app" / "public" / "dashboard" / "partials"
-    / "header.html"
+    / "agent-modal.html"
 )
 
 
@@ -214,7 +214,7 @@ def test_worker_agent_boundary_has_no_silent_missing_policy_downgrade():
 def test_browser_agent_surface_keeps_owner_sealed_data_separate_from_commands():
     source = DASHBOARD_SOURCE.read_text(encoding="utf-8")
     bundle = DASHBOARD_BUNDLE.read_text(encoding="utf-8")
-    header = DASHBOARD_HEADER.read_text(encoding="utf-8")
+    header = DASHBOARD_AGENT_MODAL.read_text(encoding="utf-8")
     for text in (source, bundle):
         assert "/agents/new/prompt" not in text
         assert "/agents/${encodeURIComponent(agentId)}/prompt" not in text

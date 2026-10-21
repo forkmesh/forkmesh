@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from _dashboard_bundle import assembled_dashboard_js
-from _dashboard_shell import assembled_dashboard_page
+from _dashboard_shell import assembled_dashboard_page, deferred_dialogs
 
 ROOT = Path(__file__).resolve().parents[1]
 SETTINGS_VIEW = (
@@ -57,7 +57,7 @@ def test_the_settings_page_has_an_agents_and_runners_tab():
     assert "data-runners-panel" not in panel
     page = assembled_dashboard_page("settings")
     assert 'data-settings-section="agents"' in page
-    assert "data-agent-login-modal" in page
+    assert "data-agent-login-modal" in deferred_dialogs()
 
 
 def test_the_tab_is_a_known_section_that_loads_desktops_and_runners():

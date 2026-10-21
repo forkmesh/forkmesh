@@ -24,6 +24,7 @@
   }
 
   function setFeedbackModalOpen(open, plugin = null) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-feedback-modal]");
     if (!modal) return;
     window.clearTimeout(feedbackCloseTimer);
@@ -120,7 +121,8 @@
   }
 
   function initDashboardFeedback() {
-    if (!$("[data-feedback-modal]")) return;
+    // The dialog itself is added on first open (ensureDeferredMarkup), so its
+    // controls are reached through the document.
     document.addEventListener("click", (event) => {
       if (event.target.closest("[data-feedback-open]")) {
         event.preventDefault();
@@ -137,9 +139,11 @@
       if ($("[data-feedback-modal]")?.classList.contains("hidden")) return;
       setFeedbackModalOpen(false);
     });
-    $("[data-feedback-form]")?.addEventListener("submit", (event) => {
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest?.("[data-feedback-form]");
+      if (!form) return;
       event.preventDefault();
-      void submitDashboardFeedback(event.currentTarget);
+      void submitDashboardFeedback(form);
     });
     openFeedbackFromQuery();
   }

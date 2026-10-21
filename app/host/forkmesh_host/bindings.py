@@ -7,7 +7,8 @@
   with max_batch_size / max_batch_timeout / max_retries from wrangler.toml.
 * ``StaticAssets``: ``ASSETS.fetch`` over app/dist with
   ``html_handling = "drop-trailing-slash"`` and ``not_found_handling =
-  "404-page"``.
+  "404-page"``. A browser request is answered from a file's brotli or gzip
+  copy when its Accept-Encoding allows one (``precompressed_variant``).
 * ``OpenAICompatibleAI``: ``AI.run(model, inputs)`` against an
   OpenAI-compatible HTTP endpoint, only when ``AI_API_URL`` is configured.
 """
@@ -241,6 +242,61 @@ class LocalQueue:
 # Static assets
 
 _CONTROL_FILES = frozenset({"_headers", "_redirects", "_routes.json"})
+# Precompressed copies (app/tools/precompress_assets.py), best first: a file
+# is answered from ``<file>.br`` or ``<file>.gz`` when the request accepts
+# that coding and the copy is not older than the file.
+PRECOMPRESSED = (("br", ".br"), ("gzip", ".gz"))
+
+
+def accepted_codings(header):
+    """{coding: q} from an Accept-Encoding value (``*`` kept as is)."""
+    out = {}
+    for part in str(header or "").split(","):
+        name, _, params = part.strip().partition(";")
+        name = name.strip().lower()
+        if not name:
+            continue
+        q = 1.0
+        for param in params.split(";"):
+            key, _, value = param.strip().partition("=")
+            if key.strip().lower() == "q":
+                try:
+                    q = float(value)
+                except ValueError:
+                    q = 0.0
+        out[name] = max(0.0, min(1.0, q))
+    return out
+
+
+def precompressed_variant(found, accept_encoding):
+    """(coding, copy path, has fresh copies) for a file and Accept-Encoding.
+
+    The coding is None when no fresh copy is acceptable; the flag says the
+    response varies by Accept-Encoding at all."""
+    try:
+        mtime = found.stat().st_mtime_ns
+    except OSError:
+        return None, None, False
+    copies = []
+    for coding, suffix in PRECOMPRESSED:
+        copy = found.with_name(found.name + suffix)
+        try:
+            stat = copy.stat()
+        except OSError:
+            continue
+        if stat.st_mtime_ns >= mtime and copy.is_file():
+            copies.append((coding, copy))
+    if not copies:
+        return None, None, False
+    accepted = accepted_codings(accept_encoding)
+    best = (0.0, None, None)
+    for coding, copy in copies:
+        q = accepted.get(coding, accepted.get("*", 0.0))
+        if q > best[0]:
+            best = (q, coding, copy)
+    return best[1], best[2], True
+
+
 _HEADER_NAME = re.compile(r"^[A-Za-z0-9-]+$")
 
 
@@ -426,7 +482,8 @@ class StaticAssets:
         self._versions[found] = (key, version)
         return version
 
-    def serve(self, path, method="GET", if_none_match=None, redirects=True):
+    def serve(self, path, method="GET", if_none_match=None, redirects=True,
+              accept_encoding=None):
         kind, value = self.resolve(path, redirects)
         status = 200
         if kind == "redirect":
@@ -439,12 +496,22 @@ class StaticAssets:
             status = 404 if self.not_found_handling == "404-page" else 200
         stat = value.stat()
         headers = self._headers(value, stat)
+        source = value
+        if status == 200 and accept_encoding is not None:
+            coding, copy, varies = precompressed_variant(value,
+                                                         accept_encoding)
+            if varies:
+                headers["vary"] = "accept-encoding"
+            if coding:
+                source = copy
+                headers["content-encoding"] = coding
+                headers["etag"] = headers["etag"][:-1] + "-%s\"" % coding
         if redirects:
             self.apply_header_rules(path, headers)
         if status == 200 and if_none_match and \
                 headers["etag"] in if_none_match:
             return _js.Response(None, 304, "", _js.Headers(headers))
-        body = None if method == "HEAD" else value.read_bytes()
+        body = None if method == "HEAD" else source.read_bytes()
         return _js.Response(body, status, "", _js.Headers(headers))
 
     async def fetch(self, resource, init=None):

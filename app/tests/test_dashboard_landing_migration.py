@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import tomllib
 
-from _dashboard_shell import assembled_dashboard, assembled_dashboard_page
+from _dashboard_shell import assembled_dashboard, assembled_dashboard_page, deferred_dialogs
 from _dashboard_bundle import assembled_dashboard_js
 import dashboard_shell
 from dashboard_shell import PAGES
@@ -49,9 +49,13 @@ def test_dashboard_shell_is_split_into_composable_partials():
     # The authored shell stays split - it references partials rather than
     # inlining the chrome.
     assert "<!--#include" in source_shell
-    for name in ("header", "sidebar", "main", "modals"):
+    for name in ("header", "sidebar", "main"):
         assert (PUBLIC / "dashboard" / "partials" / (name + ".html")).is_file()
         assert ('<!--#include partial="%s"-->' % name) in source_shell
+    # The dialogs are not in the documents: dashboard.js adds them on first
+    # open (dashboard_bundle.DEFERRED_MARKUP).
+    assert (PUBLIC / "dashboard" / "partials" / "modals.html").is_file()
+    assert '<!--#include partial="modals"-->' not in source_shell
     assert '<!--#include partial="network-rail"-->' not in source_shell
 
     # One prebuilt static document per PAGES entry, each carrying its page id
@@ -347,9 +351,10 @@ def test_dashboard_home_left_rail_uses_theme_aware_panel_background():
 
 
 def test_dashboard_profile_about_is_editable_for_logged_in_user():
-    # The about modal lives in the shared modals partial; the panel is in the
+    # The about modal lives in the shared modals partial (added on first
+    # open, dashboard_bundle.DEFERRED_MARKUP); the panel is in the
     # profile-overview view, which is the profile page's only view.
-    dashboard = assembled_dashboard_page("profile")
+    dashboard = assembled_dashboard_page("profile") + deferred_dialogs()
     dashboard_js = _read(PUBLIC / "dashboard.js")
     profile = _read(VIEWS / "profile-overview.html")
 
@@ -2802,7 +2807,7 @@ def test_dashboard_network_chat_uses_real_room_integration_without_mock_messages
     assert "const fullMessages" not in dashboard
     assert "const sideMessages" not in dashboard
     assert "notificationToggle" in visible
-    assert "notificationModal" in visible
+    assert "notificationModal" in deferred_dialogs()
     assert "data-notification-count" in visible
     for mock in (
         "alice-node",

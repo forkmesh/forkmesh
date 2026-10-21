@@ -273,6 +273,41 @@ def _core_stub(chunk, exports):
         for name in exports)
 
 
+# -- deferred dialog markup ---------------------------------------------------
+# Dialogs no page shows on load stay out of the page documents: their partial
+# is embedded in dashboard.js (cached across pages) and added to the document
+# the first time one of them is opened (02-helpers.js ensureDeferredMarkup).
+# ``marker`` is an element of the partial that tells it is already there;
+# ``after`` is where it goes (after that element), else the end of <body>.
+DEFERRED_MARKUP = {
+    # Profile, about, pings, provider sign-in and feedback dialogs.
+    "dialogs": {"partial": "modals", "marker": "#notificationModal",
+                "after": None},
+    # The header's "Start an agent" popover, positioned under its toggle.
+    "agent": {"partial": "agent-modal", "marker": "#agentModal",
+              "after": "#agentModalToggle"},
+}
+
+
+def deferred_markup_path(name):
+    return "dashboard/partials/%s.html" % DEFERRED_MARKUP[name]["partial"]
+
+
+def _deferred_markup(read):
+    entries = "".join(
+        "      %s: { marker: %s, after: %s, html: %s },\n" % (
+            json.dumps(name), json.dumps(spec["marker"]),
+            json.dumps(spec["after"]),
+            json.dumps(read(deferred_markup_path(name))))
+        for name, spec in DEFERRED_MARKUP.items())
+    return (
+        "  // Dialog markup the page documents leave out (dashboard_bundle.py\n"
+        "  // DEFERRED_MARKUP); ensureDeferredMarkup adds it on first use.\n"
+        "  function deferredMarkup(name) {\n"
+        "    return {\n%s    }[name] || null;\n"
+        "  }\n\n" % entries)
+
+
 def compose_split_from_reader(read, version=None):
     """(core dashboard.js, {asset: chunk script}) from the fragments.
 
@@ -292,6 +327,7 @@ def compose_split_from_reader(read, version=None):
     for name in FRAGMENTS:
         if name == "10-boot.js":
             parts.append(_core_loader(plans, versions))
+            parts.append(_deferred_markup(read))
         if name in by_fragment:
             chunk = by_fragment[name]
             parts.append(_core_stub(chunk, plans[chunk][2]))
