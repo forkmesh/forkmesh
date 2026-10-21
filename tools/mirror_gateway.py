@@ -123,6 +123,7 @@ MAX_CHERRY_UPSTREAM_COMMITS = 2000
 # bounded well below the patch limits above.
 MAX_PREVIEW_CONFLICTS = 200
 MAX_TREE_ENTRIES = 500
+MAX_COLLABORATION_TREE_ENTRIES = 50000
 MAX_SEARCH_RESULTS = 60
 MAX_SEARCH_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_ANALYSIS_FILES = 320
@@ -4957,8 +4958,9 @@ class GitRepository:
             raise GatewayError("repository path was not found")
         entries = []
         records = output.split(b"\0")
-        if len(records) > MAX_TREE_ENTRIES + 1:
-            records = records[:MAX_TREE_ENTRIES]
+        limit = MAX_COLLABORATION_TREE_ENTRIES if collaboration_tree else MAX_TREE_ENTRIES
+        if len(records) > limit + 1:
+            records = records[:limit]
             truncated = True
         else:
             truncated = False
