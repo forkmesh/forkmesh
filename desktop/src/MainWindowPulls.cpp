@@ -12765,10 +12765,6 @@ MainWindow::applyPullsInboxEntries(PullStore store, const QJsonArray &pending)
                 if (!inboxId.isEmpty())
                     outcome.drainedIds << inboxId;
                 ++outcome.merged;
-                outcome.lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
-                                                             : ev.authorName;
-                outcome.lastTitle =
-                    QStringLiteral("review on %1").arg(reviewBranch);
             }
             continue;
         }
@@ -12783,21 +12779,22 @@ MainWindow::applyPullsInboxEntries(PullStore store, const QJsonArray &pending)
                 if (!inboxId.isEmpty())
                     outcome.drainedIds << inboxId;
                 ++outcome.merged;
-                outcome.lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
-                                                             : ev.authorName;
-                outcome.lastTitle = QStringLiteral("review on #%1").arg(number);
             }
             continue;
         }
         const PullRequest pr =
             PullRequest::fromJson(obj.value("pull").toObject());
-        if (store.applyRemotePull(pr)) {
+        bool opened = false;
+        if (store.applyRemotePull(pr, nullptr, &opened)) {
             if (!inboxId.isEmpty())
                 outcome.drainedIds << inboxId;
             ++outcome.merged;
-            outcome.lastAuthor = pr.authorName.isEmpty() ? pr.author.left(8)
-                                                         : pr.authorName;
-            outcome.lastTitle = pr.title;
+            if (opened) {
+                ++outcome.opened;
+                outcome.lastAuthor = pr.authorName.isEmpty() ? pr.author.left(8)
+                                                             : pr.authorName;
+                outcome.lastTitle = pr.title;
+            }
         }
     }
     return outcome;
@@ -12908,13 +12905,13 @@ void MainWindow::finishPullsInboxApply(const RepositoryRecord &repo,
             this, "Sync inbox",
             QStringLiteral("Merged %1 pull request(s) into .forkmesh/pulls/.")
                 .arg(merged));
-    } else if (merged > 0) {
+    } else if (outcome.opened > 0) {
         const QString body =
-            merged == 1
+            outcome.opened == 1
                 ? QStringLiteral("%1 opened a pull request: %2")
                       .arg(outcome.lastAuthor, outcome.lastTitle)
                 : QStringLiteral("%1 new pull requests on %2/%3")
-                      .arg(merged)
+                      .arg(outcome.opened)
                       .arg(repo.owner, repo.name);
         flashPingMessage(body);
         if (notifyEnabled(kPullAlertSetting))

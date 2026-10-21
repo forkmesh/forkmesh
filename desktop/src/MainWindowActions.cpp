@@ -1583,6 +1583,7 @@ void MainWindow::applyWorkflowScan(const QString &owner, const QString &name,
     }
 
     bool added = false;
+    QList<QPair<QString, int>> held;
     for (const WorkflowScanEntry &entry : scan.workflows) {
         const QString &path = entry.path;
         const QString &content = entry.content;
@@ -1672,37 +1673,8 @@ void MainWindow::applyWorkflowScan(const QString &owner, const QString &name,
         cancelSupersededRuns(created);
         if (approved)
             m_actionQueue.append(created.id);
-        else if (run.firstTimePullAuthor && pull.authorPullOrdinal > 1)
-            notifyActionEvent(
-                ActionPingEvent::Approval,
-                QStringLiteral("%1 pull request needs your approval")
-                    .arg(PullAuthorTrust::ordinal(pull.authorPullOrdinal)),
-                QString::fromUtf8(
-                    "%1 \xC2\xB7 %2/%3 #%4 by %5 \xE2\x80\x94 their %6 pull "
-                    "request here and none merged yet, so this run stays held "
-                    "until you approve it")
-                    .arg(wf.name, owner, name)
-                    .arg(run.pullNumber)
-                    .arg(run.pullAuthor,
-                         PullAuthorTrust::ordinal(pull.authorPullOrdinal)),
-                false, created.id);
         else
-            notifyActionEvent(
-                ActionPingEvent::Approval,
-                run.firstTimePullAuthor
-                    ? QStringLiteral("First pull request needs your approval")
-                    : QStringLiteral("Action waiting for approval"),
-                run.firstTimePullAuthor
-                    ? QString::fromUtf8(
-                          "%1 \xC2\xB7 %2/%3 #%4 by %5 \xE2\x80\x94 their first "
-                          "pull request here, so this run stays held until you "
-                          "approve it")
-                          .arg(wf.name, owner, name)
-                          .arg(run.pullNumber)
-                          .arg(run.pullAuthor)
-                    : QString::fromUtf8("%1 \xC2\xB7 %2/%3 at %4")
-                          .arg(wf.name, owner, name, commit.left(8)),
-                false, created.id);
+            held.append({wf.name, created.id});
         added = true;
         logSystem(QStringLiteral("Actions: %1 \"%2\" for %3/%4 @ %5%6")
                       .arg(approved ? QStringLiteral("queued")
@@ -1713,6 +1685,8 @@ void MainWindow::applyWorkflowScan(const QString &owner, const QString &name,
                                      .arg(run.pullNumber)
                                : QString()));
     }
+    if (!held.isEmpty())
+        notifyHeldActionRuns(owner, name, commit, pull, held);
     if (added) {
         refreshActionsTable();
         if (m_actionWorkflowList && repoIndex == m_repoDetailIndex)
@@ -3496,6 +3470,59 @@ void MainWindow::refreshOpenPullChecks()
         updatePullSubTabCounts(pr);
         return;
     }
+}
+
+void MainWindow::notifyHeldActionRuns(const QString &owner, const QString &name,
+                                      const QString &commit,
+                                      const ActionPullContext &pull,
+                                      const QList<QPair<QString, int>> &held)
+{
+    QStringList workflows;
+    for (const auto &run : held)
+        workflows << run.first;
+    const QString names =
+        workflows.size() == 1
+            ? workflows.first()
+            : QStringList(workflows.mid(0, workflows.size() - 1))
+                      .join(QStringLiteral(", ")) +
+                  QStringLiteral(" and ") + workflows.last();
+    const QString hold = held.size() == 1
+                             ? QStringLiteral("this run stays held until you "
+                                              "approve it")
+                             : QStringLiteral("these %1 runs stay held until "
+                                              "you approve them")
+                                   .arg(held.size());
+    const bool firstTime = pull.number > 0 && pull.firstTimeAuthor;
+    QString title;
+    QString body;
+    if (firstTime && pull.authorPullOrdinal > 1) {
+        title = QStringLiteral("%1 pull request needs your approval")
+                    .arg(PullAuthorTrust::ordinal(pull.authorPullOrdinal));
+        body = QString::fromUtf8(
+                   "%1 \xC2\xB7 %2/%3 #%4 by %5 \xE2\x80\x94 their %6 pull "
+                   "request here and none merged yet, so %7")
+                   .arg(names, owner, name)
+                   .arg(pull.number)
+                   .arg(pull.author,
+                        PullAuthorTrust::ordinal(pull.authorPullOrdinal), hold);
+    } else if (firstTime) {
+        title = QStringLiteral("First pull request needs your approval");
+        body = QString::fromUtf8(
+                   "%1 \xC2\xB7 %2/%3 #%4 by %5 \xE2\x80\x94 their first "
+                   "pull request here, so %6")
+                   .arg(names, owner, name)
+                   .arg(pull.number)
+                   .arg(pull.author, hold);
+    } else {
+        title = held.size() == 1
+                    ? QStringLiteral("Action waiting for approval")
+                    : QStringLiteral("%1 actions waiting for approval")
+                          .arg(held.size());
+        body = QString::fromUtf8("%1 \xC2\xB7 %2/%3 at %4")
+                   .arg(names, owner, name, commit.left(8));
+    }
+    notifyActionEvent(ActionPingEvent::Approval, title, body, false,
+                      held.first().second);
 }
 
 void MainWindow::notifyActionEvent(ActionPingEvent event, const QString &title,

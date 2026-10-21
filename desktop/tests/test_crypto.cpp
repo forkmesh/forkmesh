@@ -6085,8 +6085,14 @@ int main(int argc, char *argv[])
                             drainedBrowserPull.sig,
                             PullStore::canonicalString(drainedBrowserPull)),
               "drained browser change bytes retain their valid signature");
-        check(pulls.applyRemotePull(drainedBrowserPull, &err),
+        bool browserPullOpened = false;
+        check(pulls.applyRemotePull(drainedBrowserPull, &err, &browserPullOpened),
               "owner drain stores a portable browser pull");
+        check(browserPullOpened, "a first delivery reports the pull as opened");
+        bool replayOpened = true;
+        check(pulls.applyRemotePull(drainedBrowserPull, &err, &replayOpened) &&
+                  !replayOpened,
+              "a replayed delivery is accepted but not reported as a new pull");
         int browserPullNumber = 0;
         for (const PullRequest &candidate : pulls.loadAll()) {
             if (candidate.title == browserPull.title) {
