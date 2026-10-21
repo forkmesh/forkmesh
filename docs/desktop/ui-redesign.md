@@ -124,9 +124,12 @@ application event filter applied in Next and undone in Classic):
   `dataTable` drop grid, row numbers and alternating rows, get 38 px rows,
   right-elided cells, a stretched last column and a delegate that hovers the
   whole row (a cell-level `::item:hover` is all a sheet can do). The admin
-  Users and Quarantine tables carry `dataTable`. `91-tables.qss` gives every
-  header a 12 px muted caption, 12 px side padding and one hairline, selection
-  `accentSubtle`, and item views slim scrollbars. The column-menu header
+  Users and Quarantine tables carry `dataTable`. The table rules in
+  `00-base.qss` give every header a 12 px muted caption, 12 px side padding
+  and one hairline on a transparent band, and table selection `accentSubtle`
+  (`#issueTable` keeps `surfaceActive`, `40-issues.qss`); `91-tables.qss`
+  only adds the slim item-view scrollbars and corner, so a rule lives in one
+  place instead of being overridden by a later file. The column-menu header
   (`KebabHeaderView`) painted its chevron over the caption: the caption's
   rectangle never left room for it, so a section narrower than its caption
   (dragged, capped, or measured before the sheet applied) ran under the
