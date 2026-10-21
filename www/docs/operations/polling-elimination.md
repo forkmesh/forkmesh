@@ -43,7 +43,7 @@ The chat header badge advances locally from the room socket
 | Mirror collaboration intake `GET /api/repo/*/pending` | Node event socket; push leases the changed inbox, catch-up on reconnect |
 | Desktop inbox sync and `/pending` badge fetch | Socket-driven sync; badge fetched once and invalidated by push, drain or open |
 | Unread counts: `refreshWebAlerts`, `startNotificationPolling`, `refreshDirectMessages`, `markChatActivitySeen` | One read on open, then account event pushes |
-| Mirror git sync loop | `commits` push carrying the signed refs digest; 30-minute reconciliation backstop |
+| Mirror git sync loop | `commits` push carrying the signed refs digest; 5-minute reconciliation backstop |
 | Account heartbeat and endpoint lease over HTTP | Frames on the node socket, HTTPS fallback |
 | Session validity, dashboard and World (`validateActiveWorldSession`) | Event-ticket handshake refusal; focus/visibility check behind a 5-minute floor (`WORLD_SESSION_REVALIDATE_MIN_MS`) |
 | Signed-out session restore on every page | 401 remembered per tab (`forkmesh.sessionRestoreMiss`) |

@@ -279,7 +279,8 @@ async def _queue_pushed_actions(env, owner, repo, node, account, updates):
 
 async def record_accepted_push(env, owner, repo, endpoint, account, report,
                                core=False, state="", tag_moves=None,
-                               credential="", contributor=False):
+                               credential="", contributor=False,
+                               alias=""):
     owner = str(owner or "").strip().lower()
     repo = str(repo or "").strip()
     account = str(account or "").strip().lower()
@@ -310,6 +311,12 @@ async def record_accepted_push(env, owner, repo, endpoint, account, report,
                 await _consume_tag_move(env, owner, repo, account, update)
             except Exception:
                 pass
+    if account and updates:
+        try:
+            await recent_push_remember(
+                env, owner, repo, account, updates, alias=alias)
+        except Exception:
+            pass
     if core and updates:
         try:
             await _fire_push_hooks(env, owner, repo, account, updates, state)

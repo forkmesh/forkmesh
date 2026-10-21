@@ -909,6 +909,7 @@ PING_OPENED_KINDS = {"issue": "issue_opened", "pull": "pull_submitted"}
 # Organization owners/admins/maintainers pinged per new item, beyond the
 # hosting account. Bounds the request-time fan-out for a large organization.
 PING_OPENED_MAX_ORG_RECIPIENTS = 25
+PING_CATALOG_ISSUES_MAX = 5
 # repo_activity vocabulary (adhoc #295): event key -> (headline, fallback
 # body). The keys are deliberately the outbound-webhook event names
 # (repository_webhooks.EVENT_CATALOG), because the ping and the webhook are
@@ -1248,6 +1249,7 @@ advertised_refs_canonical = _git_http.export("advertised_refs_canonical")
 decode_git_request_body = _git_http.export("decode_git_request_body")
 git_advert_cache_key = _git_http.export("git_advert_cache_key")
 pkt_line = _git_http.export("pkt_line")
+with_sideband_message = _git_http.export("with_sideband_message")
 repo_blob_content_type = _git_http.export("repo_blob_content_type")
 repo_blob_filename = _git_http.export("repo_blob_filename")
 
@@ -13507,7 +13509,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "285eaede8b90626859ed5c987c70ff0a689f5f9f61fd5ebe9634b9558ee14933"
+    "809f8ba0db32b4ca902b82f56c42fc89ccf03eb50dbf54e3b7e509c9cbc1e5da"
 )
 
 
@@ -16196,6 +16198,11 @@ queue_runner_actions = _core_push.export("queue_runner_actions")
 core_push_tag_moves_handler = _core_push.export("tag_moves_handler")
 core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
+_recent_pushes = _LazyModule("recent_pushes")
+recent_push_remember = _recent_pushes.export("remember")
+recent_push_forget = _recent_pushes.export("forget_branches")
+recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
+recent_pushes_handler = _recent_pushes.export("handler")
 
 
 def _repo_identity_from_clone_url(value):
@@ -18792,6 +18799,7 @@ _REPO_SCOPED_TABLES = (
     ("private_mirror_routes", "repo_bi"),
     ("pull_batch_sent", "repo_bi"),
     ("pull_submission_receipts", "repo_bi"),
+    ("recent_pushes", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
@@ -18986,6 +18994,7 @@ async def _delete_account_namespace(env, name_bi, rec):
         env, "DELETE FROM referral_click_seen WHERE referrer_bi=?", name_bi)
     await d1_run(env, "DELETE FROM referral_stats WHERE referrer_bi=?", name_bi)
     await d1_run(env, "DELETE FROM notifications WHERE recipient_bi=?", name_bi)
+    await d1_run(env, "DELETE FROM recent_pushes WHERE account_bi=?", name_bi)
     await d1_run(env, "DELETE FROM profile_follows WHERE follower_bi=? OR target_bi=?", name_bi, name_bi)
     await d1_run(env, "DELETE FROM login_attempts WHERE id_bi=?", name_bi)
     await d1_run(
@@ -37161,6 +37170,48 @@ async def _org_repo_maintainers(env, host_owner, repo):
     return sorted(found)[:PING_OPENED_MAX_ORG_RECIPIENTS]
 
 
+def _catalog_issue_max(rec):
+    try:
+        return int(str((rec or {}).get("issueMaxNumber", "")).strip())
+    except (TypeError, ValueError):
+        return -1
+
+
+async def notify_catalog_issues_opened(env, owner, repo, repo_bi, prior,
+                                       record):
+    owner = clean_string(owner, MAX_NODE_NAME).lower()
+    repo = clean_string(repo, MAX_REPO_SEGMENT)
+    before = _catalog_issue_max(prior)
+    after = _catalog_issue_max(record)
+    if not valid_node_name(owner) or not repo or before < 0 or after <= before:
+        return 0
+    maintainers = [name for name in await _org_repo_maintainers(env, owner, repo)
+                   if name != owner]
+    if not maintainers:
+        return 0
+    try:
+        row = await d1_first(
+            env, "SELECT next_number FROM issue_seq WHERE repo_bi=?", repo_bi)
+        reserved = int((row or {}).get("next_number") or 0)
+    except Exception:
+        return 0
+    first = max(before + 1, reserved, after - PING_CATALOG_ISSUES_MAX + 1)
+    slug = owner + "/" + repo
+    filed = 0
+    for number in range(first, after + 1):
+        href = repo_web_href(owner, repo) + "/issues/" + str(number)
+        for maintainer in maintainers:
+            if await enqueue_notification(
+                    env, maintainer, "issue_opened", "New issue in " + slug,
+                    body="Issue #" + str(number), repo=slug, href=href,
+                    actor=owner, source="issue",
+                    dedupe="issue-opened:" + slug + ":" + str(number),
+                    meta={"number": number, "source": "issue",
+                          "hostOwner": owner, "via": "catalog"}):
+                filed += 1
+    return filed
+
+
 async def notify_issue_assignees(env, owner, repo, assignees, actor, title, number=0):
     for assignee in sorted({clean_string(a, MAX_NODE_NAME).lower() for a in (assignees or [])}):
         if not valid_node_name(assignee):
@@ -40173,6 +40224,14 @@ async def _record_mirror_attested_state(env, request, owner, repo, mirror_node):
         return False
 
 
+async def _wake_mirrors_after_intake(env, owner, repo):
+    try:
+        if not await schedule_repo_mirror_wake(env, owner, repo, "commits"):
+            await notify_repo_mirrors(env, owner, repo, "commits")
+    except Exception:
+        pass
+
+
 async def _rekey_alias_inbox(env, alias_owner, host_owner, repo, repo_bi):
     """Move issue/pull/discussion inbox rows off an organization alias's blind
     index and onto the backing node's key, where every drain actually reads.
@@ -40633,6 +40692,7 @@ async def issues_handler(env, request, owner, repo):
             if drained:
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
+                await _wake_mirrors_after_intake(env, owner, repo)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -41007,6 +41067,11 @@ async def pulls_handler(env, request, owner, repo):
         await _record_contributor(
             env, pull.get("author", ""), "pulls",
             pull.get("authorName", ""))
+        try:
+            await recent_push_mark_pulled(
+                env, repo_bi, clean_string(pull.get("head", ""), 260))
+        except Exception:
+            pass
         actor = clean_string(pull.get("authorName", "") or pull.get("author", ""), MAX_NODE_NAME).lower()
         title = clean_string(pull.get("title", "") or pull.get("subject", ""), 240)
         await notify_pending_inbox(
@@ -41120,6 +41185,7 @@ async def pulls_handler(env, request, owner, repo):
             if drained:
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
+                await _wake_mirrors_after_intake(env, owner, repo)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -41305,6 +41371,7 @@ async def discussions_handler(env, request, owner, repo):
             if drained:
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
+                await _wake_mirrors_after_intake(env, owner, repo)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -48491,10 +48558,12 @@ GIT_ERROR_MESSAGES = {
     "push_unavailable": "ForkMesh could not reach the node that accepts "
                         "pushes for this repository. Try again in a minute.",
     "push_unauthorized": "Pushing over HTTPS needs your ForkMesh account "
-                         "name and the repository's push credential.",
+                         "name or email and your password, or the "
+                         "repository's push credential.",
     "authentication_required": "This repository is private. Sign in with "
-                               "your ForkMesh account name and the "
-                               "repository's credential.",
+                               "your ForkMesh account name or email and "
+                               "your password, or the repository's "
+                               "credential.",
     "method_not_allowed": "This Git address does not accept that request.",
 }
 GIT_ERROR_KEPT_HEADERS = (
@@ -49607,6 +49676,10 @@ def _https_mirror_request_query(url, operation, release_sha=""):
     elif operation in ("tree", "blob", "raw", "commit", "history"):
         if params.get("path"):
             output["path"] = _repository_read_path(params["path"][0])
+    elif operation == "pulse":
+        for key in ("period", "person"):
+            if params.get(key):
+                output[key] = params[key][0]
     # Only operations that resolve a ref accept one. compare/merge-preview
     # resolve both endpoints from base/head, and `commit` addresses one object
     # by path, so forwarding the browser's ambient branch selection to them is
@@ -52190,6 +52263,41 @@ async def _https_mirror_push_candidates(
     return candidates
 
 
+async def _fork_push_notice(env, request, owner, repo, alias_owner,
+                            upstream):
+    updates = _ref_updates_from(upstream).get("updates") or []
+    branches = [
+        update["ref"][len("refs/heads/"):] for update in updates
+        if update["ref"].startswith("refs/heads/")
+        and update["new"].strip("0")
+    ]
+    if not branches:
+        return None
+    record = await _repo_catalog_record(env, owner, repo)
+    if not isinstance(record, dict):
+        return None
+    fork = bool(clean_string(record.get("forkedFrom", ""), 170))
+    default = clean_string(record.get("branch", ""), 200) or "main"
+    branches = [
+        branch for branch in branches
+        if branch != default and (fork or branch.startswith("pr/"))
+    ][:5]
+    parsed = urlparse(str(getattr(request, "url", "") or ""))
+    if not branches or parsed.scheme not in ("https", "http") or (
+            not parsed.netloc):
+        return None
+    base = parsed.scheme + "://" + parsed.netloc + await _repo_public_path(
+        env, alias_owner or owner, repo)
+    lines = [""]
+    for branch in branches:
+        lines.append("Open a pull request for '%s' by visiting:" % branch)
+        lines.append("     %s/compare/%s...%s" % (
+            base, quote(default, safe="/"), quote(branch, safe="/")))
+        lines.append("")
+    raw = bytes(Uint8Array.new(await upstream.arrayBuffer()).to_py())
+    return with_sideband_message(raw, "\n".join(lines) + "\n") or raw
+
+
 def _git_push_basic_challenge():
     """Refuse an unauthorized push, and tell git how to authenticate.
 
@@ -52298,7 +52406,8 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
             alias_owner=alias_owner)
     else:
         account, push_prefix = await verify_hosted_push_access(
-            env, owner, repo, authorization, method, alias=alias_owner)
+            env, owner, repo, authorization, method, alias=alias_owner,
+            request=request)
     if not account:
         return _git_push_basic_challenge()
     core_held = str(owner or "").strip().lower() in _core_push_nodes(env)
@@ -52345,10 +52454,26 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
             raw_headers[name] = str(value)
     response_headers = https_routing.response_headers(raw_headers)
     response_headers["X-ForkMesh-Served-By"] = endpoint["node"]
+    status = int(getattr(upstream, "status", 0) or 0)
+    notice = globals().get("_fork_push_notice")
+    if method == "POST" and not is_info and status == 200 and callable(
+            notice):
+        try:
+            body = await notice(env, request, owner, repo, alias_owner,
+                                upstream)
+        except Exception:
+            body = None
+        if body is not None:
+            for name in list(response_headers):
+                if str(name).lower() == "content-length":
+                    response_headers.pop(name)
+            return JsResponse.new(
+                Uint8Array.new(_to_js(bytes(body))),
+                to_js({"status": status, "headers": response_headers}),
+            )
     return JsResponse.new(
         upstream.body,
-        to_js({"status": int(getattr(upstream, "status", 0) or 0),
-               "headers": response_headers}),
+        to_js({"status": status, "headers": response_headers}),
     )
 
 
@@ -52471,7 +52596,8 @@ async def _https_mirror_push_send(
                     env, owner, repo, endpoint, account,
                     _ref_updates_from(upstream), core=core_push,
                     state=state, tag_moves=tag_moves,
-                    credential=credential, contributor=bool(push_prefix))
+                    credential=credential, contributor=bool(push_prefix),
+                    alias=alias_owner)
             except Exception:
                 pass
         return upstream, endpoint
@@ -54637,6 +54763,9 @@ class ForkMeshCronRunner(DurableObject):
             return json_response({"error": "invalid_mirror_wake"}, status=400)
         pending = await self._load_json_state(MIRROR_WAKE_REQUESTED_PREFIX)
         key = owner + "/" + repo + "/" + topic
+        prior = pending.get(key)
+        if not state and isinstance(prior, dict) and prior.get("state"):
+            return json_response({"ok": True, "coalesced": True}, status=202)
         now = int(Date.now())
         if key not in pending and len(pending) >= 128:
             oldest = min(

@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from _dashboard_shell import assembled_dashboard
+from _dashboard_shell import assembled_dashboard, deferred_dialogs
 from _dashboard_bundle import assembled_dashboard_js
 
 
@@ -234,8 +234,9 @@ def test_login_rejects_malformed_email_before_calling_the_api():
 
 
 def test_dashboard_profile_has_email_verification_and_payout_wallet_controls():
-    # Assert against the composed dashboard shell (see _dashboard_shell).
-    dashboard = assembled_dashboard()
+    # Assert against the composed dashboard shell (see _dashboard_shell) and
+    # the dialogs dashboard.js adds on first open.
+    dashboard = assembled_dashboard() + deferred_dialogs()
     dashboard_js = _read(PUBLIC / "dashboard.js")
 
     assert "data-profile-settings-button" in dashboard

@@ -2103,7 +2103,27 @@ RELAY_READ_CHUNK = 64 * 1024
 RELAY_REQUEST_MAX_BYTES = 8 * 1024 * 1024
 RELAY_BUFFERED_PUSH_BYTES = 1024 * 1024
 RELAY_HTTP_TIMEOUT_SECONDS = 600
+# Distinctive, so an operator can recognise (and, behind a CDN, allow) the
+# relay's requests; it starts with "git/" like every stock Git client.
 RELAY_USER_AGENT = "git/forkmesh-ssh-relay"
+RELAY_MIN_REQUEST_CAP = 2 * RELAY_BUFFERED_PUSH_BYTES
+RELAY_MAX_REQUEST_CAP = 64 * 1024 * 1024 * 1024
+RELAY_PROXY_BODY_LIMIT = (
+    "this push is larger than the HTTPS proxy in front of the Git service "
+    "accepts in one request{limit}. Push fewer commits at a time (for "
+    "example `git push <remote> <older-commit>:refs/heads/<branch>`, then "
+    "the rest), or push over HTTPS with a push credential where the server "
+    "offers an address without that limit"
+)
+RELAY_PROXY_TIMEOUT = (
+    "the HTTPS proxy in front of the Git service gave up waiting for it. A "
+    "push may still have been applied: run `git fetch` and check before "
+    "pushing again"
+)
+RELAY_PROXY_BLOCKED = (
+    "the HTTPS proxy in front of the Git service refused this SSH relay "
+    "(bot protection); the server operator needs to allow it"
+)
 ZERO_OBJECT_IDS = frozenset({"0" * 40, "0" * 64})
 RELAY_GREETING = (
     "ForkMesh SSH: your key is registered. This host serves git clone, "
@@ -2139,14 +2159,35 @@ class HttpGitTarget:
     """Where relayed sessions go: an HTTPS origin, optionally via loopback.
 
     ``origin`` is the control plane's public origin (its TLS certificate is
-    verified for that name). ``connectAddress`` reaches the same front end on
-    this host (127.0.0.1:443) instead of through a CDN, which would otherwise
-    cap request bodies. Plain http:// is accepted only for a loopback origin.
+    verified for that name). Without ``connectAddress`` the gateway resolves
+    that name through DNS like any client, which is how a gateway on a
+    separate front host reaches an origin kept private behind a CDN proxy.
+    ``connectAddress`` instead reaches the same front end on this host
+    (127.0.0.1:443), skipping the CDN and its request-body cap; the
+    certificate is still verified for the origin's name. Plain http:// is
+    accepted only for a loopback origin.
+
+    ``maxRequestBytes`` is the largest request body the path to the origin
+    accepts (a CDN's upload cap, e.g. 100 MB). A push that would exceed it is
+    stopped at the gateway with an explanation, instead of being uploaded
+    only to be refused by the proxy.
+
+    ``maxSessionsPerClient`` caps concurrent sessions from one client
+    address (an IPv6 /64), taken from ``SSH_CLIENT_ADDRESS`` that the
+    entrypoint copies from sshd's SSH_CONNECTION; a public front host sets
+    it so one address cannot hold every session slot.
     """
 
     def __init__(self, source: object):
         if not isinstance(source, dict) or not (
-            {"origin"} <= set(source) <= {"origin", "connectAddress"}
+            {"origin"}
+            <= set(source)
+            <= {
+                "origin",
+                "connectAddress",
+                "maxRequestBytes",
+                "maxSessionsPerClient",
+            }
         ):
             raise GatewayError("invalid gateway configuration")
         try:
@@ -2180,6 +2221,24 @@ class HttpGitTarget:
             self.connect_address = _loopback_address(source.get("connectAddress"))
             if self.connect_address is None:
                 raise GatewayError("invalid gateway configuration")
+        self.max_request_bytes: int | None = None
+        if "maxRequestBytes" in source:
+            value = source.get("maxRequestBytes")
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not RELAY_MIN_REQUEST_CAP <= value <= RELAY_MAX_REQUEST_CAP
+            ):
+                raise GatewayError("invalid gateway configuration")
+            self.max_request_bytes = value
+        self.max_sessions_per_client: int | None = None
+        if "maxSessionsPerClient" in source:
+            value = source.get("maxSessionsPerClient")
+            if isinstance(value, bool) or not isinstance(value, int) or not (
+                1 <= value <= 64
+            ):
+                raise GatewayError("invalid gateway configuration")
+            self.max_sessions_per_client = value
 
     def host_header(self) -> str:
         default = 443 if self.scheme == "https" else 80
@@ -2466,11 +2525,29 @@ _REFUSALS = {
     413: "the push is larger than this repository may grow",
     429: "too many Git requests; try again shortly",
 }
+# Statuses a CDN proxy answers with itself when the origin is slow (504, and
+# Cloudflare's 522/524 for a connect or response timeout).
+_PROXY_TIMEOUTS = frozenset({504, 522, 524})
+
+
+def _proxy_body_limit(limit: int | None = None) -> RelayError:
+    text = ""
+    if limit:
+        text = " (%d MB)" % max(1, limit // 1_000_000)
+    return RelayError(RELAY_PROXY_BODY_LIMIT.format(limit=text))
 
 
 def _relay_refusal(response: Any) -> RelayError:
     status = int(getattr(response, "status", 0) or 0)
     message = _REFUSALS.get(status, "the Git service is unavailable; try again")
+    getheader = getattr(response, "getheader", None)
+    mitigated = getheader("cf-mitigated") if callable(getheader) else None
+    if mitigated:
+        # A proxy challenge page, not the Git service's own answer.
+        return RelayError(RELAY_PROXY_BLOCKED)
+    if status in _PROXY_TIMEOUTS:
+        return RelayError(RELAY_PROXY_TIMEOUT)
+    detail = ""
     try:
         raw = response.read(16 * 1024)
         value = json.loads(raw.decode("utf-8"))
@@ -2482,8 +2559,14 @@ def _relay_refusal(response: Any) -> RelayError:
             and not any(ord(char) < 32 for char in detail)
         ):
             message = detail
+        else:
+            detail = ""
     except (OSError, ValueError, UnicodeDecodeError, http.client.HTTPException):
-        pass
+        detail = ""
+    if status == 413 and not detail:
+        # The Git routes explain their own 413 (a repository quota) in JSON;
+        # a bare or HTML 413 is the request-body cap of a proxy on the way.
+        return _proxy_body_limit()
     return RelayError(message)
 
 
@@ -2498,6 +2581,7 @@ def _relay_send(
     """One HTTP request; returns the open response (status 200 only)."""
 
     connection = target.connection(RELAY_HTTP_TIMEOUT_SECONDS)
+    sending = True
     try:
         connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
         for name, value in headers.items():
@@ -2514,10 +2598,31 @@ def _relay_send(
             if method == "POST":
                 connection.putheader("Content-Length", str(len(payload)))
             connection.endheaders(payload if method == "POST" else None)
+        sending = False
         response = connection.getresponse()
     except (OSError, http.client.HTTPException) as error:
+        # A proxy that refuses a body (413) may answer and close while the
+        # upload is still going; read that answer rather than report a
+        # broken connection.
+        early = None
+        if sending and isinstance(error, OSError):
+            try:
+                early = connection.getresponse()
+            except (OSError, http.client.HTTPException):
+                early = None
+        if early is not None and int(early.status) != 200:
+            refusal = _relay_refusal(early)
+            connection.close()
+            raise refusal from error
         connection.close()
+        if isinstance(error, TimeoutError):
+            raise RelayError(
+                "the Git service did not answer in time; try again"
+            ) from error
         raise RelayError("the Git service is unavailable; try again") from error
+    except BaseException:
+        connection.close()
+        raise
     if int(response.status) != 200:
         refusal = _relay_refusal(response)
         connection.close()
@@ -2657,6 +2762,7 @@ def _relay_receive_pack(
         return 0
     pack = PackEnd(hash_size)
     received = 0
+    proxy_cap = target.max_request_bytes
     buffered = bytearray(prefix)
 
     def read_more() -> bytes:
@@ -2669,6 +2775,8 @@ def _relay_receive_pack(
         received += len(chunk)
         if received > max_input_bytes:
             raise RelayError("the push is larger than this server accepts")
+        if proxy_cap is not None and len(prefix) + received > proxy_cap:
+            raise _proxy_body_limit(proxy_cap)
         pack.feed(chunk)
         return chunk
 
@@ -2694,6 +2802,20 @@ def _relay_receive_pack(
     return 0
 
 
+def _client_slot_prefix(value: object) -> str | None:
+    """A lock-file prefix for one client address (IPv6 by /64), or None."""
+
+    try:
+        address = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return None
+    if address.version == 6 and address.ipv4_mapped is None:
+        key = str(ipaddress.ip_network(str(address) + "/64", strict=False))
+    else:
+        key = str(getattr(address, "ipv4_mapped", None) or address)
+    return "client-" + hashlib.sha256(key.encode("ascii")).hexdigest()[:24]
+
+
 def _relay_deadline(_signum: int, _frame: Any) -> None:
     raise RelayError("the Git session took too long")
 
@@ -2716,13 +2838,32 @@ def _serve_relay(config: Config, key_id: str) -> int:
     base = "/" + owner + "/" + repository + ".git"
     stdin = sys.stdin.buffer
     stdout = sys.stdout.buffer
-    with _acquire_slot(
-        limits.capacity_directory,
-        "session",
-        maximum=limits.max_concurrent_sessions,
-        reserved_receive=limits.reserved_receive_sessions,
-        receive=receive,
-    ):
+    with ExitStack() as slots:
+        per_client = target.max_sessions_per_client
+        prefix = _client_slot_prefix(os.environ.get("SSH_CLIENT_ADDRESS"))
+        if per_client is not None and prefix is not None:
+            try:
+                slots.enter_context(_acquire_slot(
+                    limits.capacity_directory,
+                    prefix,
+                    maximum=per_client,
+                    reserved_receive=0,
+                    receive=False,
+                ))
+            except GatewayError as error:
+                if str(error) != "Git service is at capacity":
+                    raise
+                raise RelayError(
+                    "too many Git sessions from your address at once; "
+                    "try again when one finishes"
+                ) from error
+        slots.enter_context(_acquire_slot(
+            limits.capacity_directory,
+            "session",
+            maximum=limits.max_concurrent_sessions,
+            reserved_receive=limits.reserved_receive_sessions,
+            receive=receive,
+        ))
         previous = signal.signal(signal.SIGALRM, _relay_deadline)
         signal.alarm(
             limits.receive_pack_deadline_seconds

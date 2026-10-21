@@ -45,11 +45,19 @@
     if (next !== node.nodeValue) node.nodeValue = next;
   };
 
+  // Every element of the page passes through here, so the cheap attribute
+  // test comes first: leaveAlone walks the ancestors with a long selector and
+  // is only asked about the rare element that names ForkMesh.
   const brandElement = (element) => {
-    if (leaveAlone(element)) return;
+    let checked = false;
     for (const attribute of ATTRIBUTES) {
       const value = element.getAttribute(attribute);
-      if (value && value.indexOf("ForkMesh") !== -1) element.setAttribute(attribute, swap(value));
+      if (!value || value.indexOf("ForkMesh") === -1) continue;
+      if (!checked) {
+        if (leaveAlone(element)) return;
+        checked = true;
+      }
+      element.setAttribute(attribute, swap(value));
     }
   };
 
@@ -128,8 +136,7 @@
   const hideLinks = (root) => {
     if (!ready || !root.querySelectorAll) return;
     for (const link of root.querySelectorAll("a[href]")) {
-      if (leaveAlone(link) || link.hasAttribute("data-instance-legal")) continue;
-      if (link.closest("[data-instance-legal-consent]")) continue;
+      if (link.hasAttribute("data-instance-legal")) continue;
       let url;
       try {
         url = new URL(link.getAttribute("href"), location.href);
@@ -137,11 +144,16 @@
         continue;
       }
       const page = legal ? legalPage(url) : "";
+      const offsite = !page && offsiteHosts.includes(url.hostname);
+      const local = !page && !offsite && url.origin === location.origin && isHidden(url.pathname);
+      // Most links need nothing; the ancestor checks run only for one that does.
+      if (!page && !offsite && !local) continue;
+      if (leaveAlone(link) || link.closest("[data-instance-legal-consent]")) continue;
       if (page) {
         showLegal(link, page);
         continue;
       }
-      if (offsiteHosts.includes(url.hostname)) {
+      if (offsite) {
         if (url.hostname === "world.forkmesh.com") {
           if (isHidden("/world")) hide(link);
           else link.setAttribute("href", "/world");
@@ -152,7 +164,7 @@
         }
         continue;
       }
-      if (url.origin === location.origin && isHidden(url.pathname)) hide(link);
+      hide(link);
     }
     legalGroups(root);
     legalConsent();
@@ -276,8 +288,16 @@
       attributes: true,
       attributeFilter: ATTRIBUTES,
     });
-    fetch("/api/instance", { credentials: "same-origin" })
-      .then((response) => (response.ok ? response.json() : null))
+    // One /api/instance request per page, shared with the dashboard
+    // (02-helpers.js sharedInstanceDocument) and genie-spider.js.
+    let shared = window.__forkmeshInstanceInfo;
+    if (!shared || typeof shared.then !== "function") {
+      shared = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+      window.__forkmeshInstanceInfo = shared;
+    }
+    shared
       .then((data) => {
         legal = (data && data.legal && typeof data.legal === "object") ? data.legal : {};
         if (!data || !Array.isArray(data.plugins)) {

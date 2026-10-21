@@ -1384,7 +1384,7 @@
     return before !== `${repoMirrorOf(repo)}|${repoReadOnlyMirror(repo)}|${repoMirrorSyncedAt(repo)}|${repo.upstreamCommit || ""}`;
   }
 
-  function repoProvenanceHtml(repo) {
+  function repoProvenanceHtml(repo, { forkButton = true } = {}) {
     const mirrorOf = repoMirrorOf(repo);
     const parent = mirrorOf ? null : repoForkParent(repo);
     if (!mirrorOf && !parent) return "";
@@ -1403,7 +1403,7 @@
       ? `<span data-repo-mirror-synced${syncedTitle ? ` title="${escapeHtml(syncedTitle)}"` : ""} class="shrink-0 text-muted-foreground">· synced ${escapeHtml(formatTimeAgo(syncedAt))}</span>`
       : "";
     const notice = `<span data-repo-mirror-notice class="min-w-0 text-[11px] text-muted-foreground">Read-only. Send changes <a href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="dashboard-accent-link hover:underline">upstream</a> or into a fork.</span>`;
-    const fork = `<button type="button" data-repo-mirror-fork title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-fork"></i>Fork</button>`;
+    const fork = forkButton ? `<button type="button" data-repo-mirror-fork title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-fork"></i>Fork</button>` : "";
     const line = `<span data-repo-provenance-line="mirror" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="refresh-cw" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">Mirror of</span><a data-repo-provenance-link href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="${linkClass}">${escapeHtml(repoMirrorUpstreamPath(mirrorOf) || mirrorOf)}</a>${synced}</span>`;
     return `${line}${notice}${fork}`;
   }
@@ -1568,14 +1568,45 @@
     });
   }
 
+  // Dialogs no page shows on load are not in the page documents
+  // (dashboard_bundle.py DEFERRED_MARKUP): the first open adds their markup,
+  // then the caller finds and opens the dialog as before.
+  function ensureDeferredMarkup(name) {
+    const spec = deferredMarkup(name);
+    if (!spec || !document.body || document.querySelector(spec.marker)) return;
+    const template = document.createElement("template");
+    template.innerHTML = spec.html;
+    const added = [...template.content.children];
+    const anchor = spec.after ? document.querySelector(spec.after) : null;
+    if (anchor) anchor.after(template.content);
+    else document.body.append(template.content);
+    added.forEach((element) => applyPlatformName(element));
+    window.lucide?.createIcons();
+  }
+
   let instanceInfoRequest = null;
   let instanceGitNode = "";
+
+  // GET /api/instance is the same public document for every visitor. One
+  // request per page serves every reader: an instance page starts it from
+  // the first inline script (tools/apply_instance_brand.py), and
+  // instance-brand.js and genie-spider.js share the same window promise, so
+  // whichever asks first sends it and the rest wait on that answer.
+  function sharedInstanceDocument() {
+    let pending = window.__forkmeshInstanceInfo;
+    if (!pending || typeof pending.then !== "function") {
+      pending = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+      window.__forkmeshInstanceInfo = pending;
+    }
+    return pending;
+  }
 
   function instanceInfo() {
     if (!dashboardOnInstance()) return Promise.resolve(null);
     if (!instanceInfoRequest) {
-      instanceInfoRequest = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
+      instanceInfoRequest = sharedInstanceDocument()
         .then((info) => {
           instanceGitNode = String(info?.gitNode || "").toLowerCase();
           return info;
@@ -1755,8 +1786,7 @@
   async function loadRepoAddresses() {
     if (REPO_CORE_HOSTS.includes(location.hostname.toLowerCase())) return null;
     try {
-      const response = await fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } });
-      const data = response.ok ? await response.json() : null;
+      const data = await sharedInstanceDocument();
       if (data && typeof data === "object" && data.ok !== false) return applyRepoAddresses(data.repoAddresses || null);
     } catch (_) {}
     return repoAddresses();
@@ -2032,6 +2062,12 @@
     return { base, head };
   }
 
+  function repoCompareRouteOptions(search) {
+    const params = new URLSearchParams(String(search || ""));
+    const title = String(params.get("title") || "").replace(/\s+/g, " ").trim().slice(0, 240);
+    return { expand: params.get("expand") === "1", title };
+  }
+
   // Pushes a new history entry for real in-app navigations (opening a repo,
   // browsing into a folder/file, leaving a repo for another section) so the
   // browser Back/Forward buttons step through them one at a time instead of
@@ -2101,6 +2137,19 @@
     return data && typeof data === "object" && data.ok !== false ? data : null;
   }
 
+  // One-shot: a JSON read the repository page started before this script ran
+  // (partials/repo-early-reads.html early.json), taken over by exact path. It
+  // was sent with the page's cookies and no bearer token, so it only stands in
+  // for a request that would carry the same identity.
+  async function takeEarlyJsonRead(path) {
+    const early = globalThis.__forkmeshEarly;
+    const pending = early?.json?.[path];
+    if (!pending) return null;
+    delete early.json[path];
+    const data = await pending;
+    return data && typeof data === "object" && data.ok !== false ? data : null;
+  }
+
   async function fetchJson(path, options = {}) {
     const fresh = options.fresh === true;
     const cacheBust = options.cacheBust !== false;
@@ -2142,6 +2191,9 @@
       // (partials/views/repo.html); take that answer over instead of asking
       // again.
       let data = anonymousPublicRead && !noStore ? await takeEarlyPublicRead() : null;
+      if (!data && !noStore && !anonymousPublicRead && (!token || token === "cookie")) {
+        data = await takeEarlyJsonRead(path);
+      }
       if (!data) for (let attempt = 0; ; attempt += 1) {
         const last = attempt >= FETCH_JSON_RETRY_DELAYS_MS.length;
         let response;

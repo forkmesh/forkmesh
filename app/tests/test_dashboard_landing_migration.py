@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import tomllib
 
-from _dashboard_shell import assembled_dashboard, assembled_dashboard_page
+from _dashboard_shell import assembled_dashboard, assembled_dashboard_page, deferred_dialogs
 from _dashboard_bundle import assembled_dashboard_js
 import dashboard_shell
 from dashboard_shell import PAGES
@@ -27,7 +27,7 @@ STATIC_ROUTES_TEXT = (ROOT / "src" / "static_routes.py").read_text(encoding="utf
 WRANGLER = tomllib.loads((ROOT / "wrangler.toml").read_text(encoding="utf-8"))
 REDIRECTS = (WWW_PUBLIC / "_redirects").read_text(encoding="utf-8")
 REPO_HOST_ROUTE_RE = (
-    'r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes)$"'
+    'r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes|pulse)$"'
 )
 REPO_DIRECT_BROWSE_GATE = "and action in REPO_HOST_READ_ACTIONS"
 
@@ -49,9 +49,13 @@ def test_dashboard_shell_is_split_into_composable_partials():
     # The authored shell stays split - it references partials rather than
     # inlining the chrome.
     assert "<!--#include" in source_shell
-    for name in ("header", "sidebar", "main", "modals"):
+    for name in ("header", "sidebar", "main"):
         assert (PUBLIC / "dashboard" / "partials" / (name + ".html")).is_file()
         assert ('<!--#include partial="%s"-->' % name) in source_shell
+    # The dialogs are not in the documents: dashboard.js adds them on first
+    # open (dashboard_bundle.DEFERRED_MARKUP).
+    assert (PUBLIC / "dashboard" / "partials" / "modals.html").is_file()
+    assert '<!--#include partial="modals"-->' not in source_shell
     assert '<!--#include partial="network-rail"-->' not in source_shell
 
     # One prebuilt static document per PAGES entry, each carrying its page id
@@ -347,9 +351,10 @@ def test_dashboard_home_left_rail_uses_theme_aware_panel_background():
 
 
 def test_dashboard_profile_about_is_editable_for_logged_in_user():
-    # The about modal lives in the shared modals partial; the panel is in the
+    # The about modal lives in the shared modals partial (added on first
+    # open, dashboard_bundle.DEFERRED_MARKUP); the panel is in the
     # profile-overview view, which is the profile page's only view.
-    dashboard = assembled_dashboard_page("profile")
+    dashboard = assembled_dashboard_page("profile") + deferred_dialogs()
     dashboard_js = _read(PUBLIC / "dashboard.js")
     profile = _read(VIEWS / "profile-overview.html")
 
@@ -1330,18 +1335,146 @@ def test_repository_header_is_compact_and_actions_live_in_about():
     ]
     for marker in (
         "data-repo-action-watch",
-        "data-repo-action-fork",
-        "data-repo-action-star",
         'data-dashboard-repo-tab="mirrors"',
         'data-repo-about-actions aria-label="Repository details"',
         'data-repo-about-website',
         'data-repo-about-release',
         'data-repo-watch-count class="font-mono"',
-        'data-repo-fork-count class="font-mono"',
-        'data-repo-star-count class="font-mono"',
         'data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors"',
     ):
         assert marker in about_actions
+    for marker in ("data-repo-action-fork", "data-repo-action-star", "data-repo-fork-wrap"):
+        assert marker not in about_actions
+
+    title_row = render[
+        render.index("function renderRepoTitleRow")
+        : render.index("function startRepoForkFromTitle")
+    ]
+    for marker in (
+        "data-repo-fork-primary",
+        "data-repo-action-fork",
+        "data-repo-fork-menu",
+        "data-repo-action-star",
+        'data-repo-fork-count class="fm-counter"',
+        'data-repo-star-count class="fm-counter"',
+        "fm-btn fm-btn-sm",
+    ):
+        assert marker in title_row
+    assert "data-repo-action-watch" not in title_row
+    assert title_row.count("fm-btn-cta") == 1
+
+
+def test_repository_code_toolbar_carries_fork_and_about_carries_code_map():
+    dashboard_js = _read(PUBLIC / "dashboard.js")
+    render = dashboard_js[
+        dashboard_js.index("function renderRepoDetail")
+        : dashboard_js.index("function findRepository")
+    ]
+    tab_band = render[
+        render.index("<div data-repo-github-header")
+        : render.index("<div data-repo-content-grid")
+    ]
+    # The tab bar holds only the tabs; Fork lives by the code.
+    assert "data-repo-fork" not in tab_band
+    assert "forkSplitButton" not in tab_band
+
+    toolbar = render[
+        render.index("<div data-repo-root-toolbar")
+        : render.index("<div data-repo-pathbar")
+    ]
+    focus_actions = render[
+        render.index("<div data-repo-focus-actions")
+        : render.index("<div data-repo-code-workspace")
+    ]
+    # Fork | count sits directly left of "Add file", in both toolbars.
+    for bar, compact in ((toolbar, "false"), (focus_actions, "true")):
+        fork = bar.index("${forkSplitButton(%s)}" % compact)
+        assert fork < bar.index("Add file")
+        assert "data-repo-codemap-open" not in bar[fork:bar.index("Add file")]
+    assert "md:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto]" in toolbar
+    # The main toolbar lost Code map to the About box; the file view keeps it,
+    # since About is hidden there.
+    assert "data-repo-codemap-open" not in toolbar
+    assert "data-repo-codemap-open" in focus_actions
+
+    fork_split = render[
+        render.index("const forkSplitButton = (compact) =>")
+        : render.index("const settingsPanel")
+    ]
+    assert "websiteForkAvailable" in fork_split
+    assert "data-repo-fork-split" in fork_split
+    assert "data-repo-fork-create data-repo-fork-go" in fork_split
+    assert "data-repo-fork-split-count" in fork_split
+    assert "<span data-repo-fork-count>" in fork_split
+    # The count keeps its width so the number arriving does not shift the row.
+    assert 'style="min-width:2.25rem"' in fork_split
+    assert "const websiteForkAvailable = !repo.isPrivate;" in render
+    assert 'event.target.closest("[data-repo-fork-split-count]")' in dashboard_js
+
+    about = render[
+        render.index("<aside data-repo-about")
+        : render.index("<aside data-repo-dir-about")
+    ]
+    code_map = about.index("data-repo-about-codemap")
+    assert about.index("data-repo-about-actions") < code_map
+    assert code_map < about.index("data-repo-about-langs")
+    assert 'data-repo-codemap-open title="See the whole codebase' in about
+    assert "w-full" in about[code_map:about.index("data-repo-about-langs")]
+    assert "[data-repo-about-codemap]" in dashboard_js[
+        dashboard_js.index("function repoCodeMapNotice")
+        : dashboard_js.index("async function openRepoCodeMap")
+    ]
+
+
+def test_repository_logo_moved_from_about_to_settings():
+    dashboard_js = _read(PUBLIC / "dashboard.js")
+    render = dashboard_js[
+        dashboard_js.index("function renderRepoDetail")
+        : dashboard_js.index("function findRepository")
+    ]
+    about = render[
+        render.index("<aside data-repo-about")
+        : render.index("<aside data-repo-dir-about")
+    ]
+    assert "data-repo-logo-workflow" not in dashboard_js
+    assert "Repository logo" not in about
+    assert "data-repo-about-logo" not in dashboard_js
+    assert "data-repo-logo-suggestion-form" not in dashboard_js
+    # Banner stays in the About form.
+    assert "data-repo-about-banner" in about
+
+    settings = render[
+        render.index("const settingsPanel = canSeeSettingsTab ?")
+        : render.index("detail.innerHTML = ")
+    ]
+    assert "const canSeeSettingsTab = canEditAbout;" in render
+    assert "const canEditAbout = sessionAdministersRepo(repo);" in render
+    logo = settings[
+        settings.index("data-repo-settings-logo class")
+        : settings.index("data-repo-pull-rules-card")
+    ]
+    for marker in (
+        "Repository logo",
+        "data-repo-settings-logo-current",
+        'nativeRepositoryLogoMarkup(repo, "h-16 w-16")',
+        "data-repo-settings-logo-form",
+        'data-repo-settings-logo-file type="file" accept="image/png"',
+        "data-repo-settings-logo-remove",
+        "data-repo-logo-suggestions",
+        "data-repo-logo-suggestion-status",
+    ):
+        assert marker in logo, marker
+    assert '${repo.isPrivate ? "" : `<div data-repo-settings-logo' in settings
+
+    loader = dashboard_js[
+        dashboard_js.index("async function loadRepoSettingsLogo")
+        : dashboard_js.index("async function reviewRepoLogoSuggestion")
+    ]
+    # The upload is the About endpoint's logoPng, behind its owner/admin check.
+    assert "saveRepoSettingsFromWeb(repo, { logoPng })" in loader
+    assert "loadRepoLogoSuggestions(repo)" in loader
+    assert 'logo?.source !== "owner"' in loader
+    assert "void loadRepoSettingsLogo(state.selectedRepo);" in dashboard_js
 
 
 def test_repository_context_links_and_fediverse_avatars_replace_redundant_ui():
@@ -2674,7 +2807,7 @@ def test_dashboard_network_chat_uses_real_room_integration_without_mock_messages
     assert "const fullMessages" not in dashboard
     assert "const sideMessages" not in dashboard
     assert "notificationToggle" in visible
-    assert "notificationModal" in visible
+    assert "notificationModal" in deferred_dialogs()
     assert "data-notification-count" in visible
     for mock in (
         "alice-node",

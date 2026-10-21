@@ -457,6 +457,31 @@ instance is converted with `python -m forkmesh_host instance-single-org --org
 <org>` (idempotent, `--off` to switch back); the full command and the rules
 are in [app/server-update.md](app/server-update.md).
 
+**Web ports and ufw.** When ufw is active, the installer opens port 80 or
+443 only if no ufw rule mentions that port at all. A port the operator has
+narrowed, for example `ufw allow proto tcp from <cidr> to any port 80,443`,
+is left exactly as it is on every `--update`. With `"webFirewall":
+"cloudflare"` in `/etc/forkmesh-instance/instance.json` the installer keeps
+80 and 443 open to Cloudflare's published address ranges only: it allows
+the current ranges, removes the ones Cloudflare retired and then the plain
+`80/tcp` and `443/tcp` allow rules, and refreshes the list weekly
+(`forkmesh-web-firewall.timer`). Nothing changes when the list cannot be
+fetched. SSH is never touched. The instance must then be reached through
+Cloudflare's proxy. Switching back to `"open"` removes the timer but leaves
+the narrow rules for the operator to remove.
+
+**Local Caddy and runner firewall changes.** `--update` rewrites
+`/etc/caddy/Caddyfile` and the runner's `/etc/forkmesh-runner/jobs.nft`.
+Keep local changes in the files they include, which the installers never
+touch: `/etc/caddy/conf.d/*.caddy` (top level), `/etc/caddy/site.d/*.caddy`
+(directives inside the instance's site block) and
+`/etc/forkmesh-runner/jobs.d/*.nft`. A runner rule that lets a job reach
+a private address must come before the built-in reject rules, so use
+`insert rule inet forkmesh_runner output ...` there; an `add rule` lands
+after them and never matches. When a `jobs.d` file does not parse, the
+firewall loads its built-in rules (`jobs-base.nft`) alone instead of none,
+and the log says so.
+
 ## Importing a repository on the server (`instance_repo.py`)
 
 `python -m forkmesh_host instance-repo` creates a hosted repository on the

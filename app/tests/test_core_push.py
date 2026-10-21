@@ -725,6 +725,47 @@ def test_an_instance_queues_every_pushed_branch_with_before_and_skips_actions_pu
             sys.modules.pop(name, None)
 
 
+def test_a_contributor_push_queues_no_workflows(module):
+    """A pr/<account>/ push by a contributor runs nobody's workflows: on:
+    push would execute the contributor's own workflow files with the
+    repository's runner access."""
+    loaded, ctx = module
+    db = ctx["db"]
+    db.execute("CREATE TABLE repositories (key_bi TEXT, data TEXT)")
+    for name in ("0193_runner_nodes.sql", "0248_repo_action_jobs.sql",
+                 "0272_actions_instance.sql"):
+        db.executescript(
+            (ROOT / "migrations" / name).read_text()
+            .split("-- The runtime schema text changed")[0]
+            .split("INSERT INTO schema_meta")[0])
+
+    async def holds(_env, _name):
+        return True
+
+    for name in ("runner_leases", "runner_actions"):
+        sys.modules.pop(name, None)
+    loaded._bind_runtime({"_node_events_object_holds_node": holds,
+                          "_branch_protection": UNPROTECTED})
+    env = type("Env", (), {"RUNNER_POOL_TARGET_NODES": "forkmesh",
+                           "ACTIONS_INSTANCE_RUNNER": "box-runner"})()
+
+    def push(new, contributor):
+        asyncio.run(loaded.record_accepted_push(
+            env, "forkmesh", "site", {"node": "forkmesh"}, "bob",
+            _report(("refs/heads/pr/bob/change", "0" * 40, new, 1)),
+            core=True, state="e" * 64, credential="contributor",
+            contributor=contributor))
+        return db.execute("SELECT COUNT(*) FROM repo_action_jobs").fetchone()[0]
+
+    try:
+        assert push("4" * 40, contributor=True) == 0
+        # The same update by a writer would have queued a run.
+        assert push("5" * 40, contributor=False) == 1
+    finally:
+        for name in ("runner_leases", "runner_actions"):
+            sys.modules.pop(name, None)
+
+
 def test_an_instance_queues_only_the_default_branch_for_an_import_and_caps_bulk_pushes(
         module):
     loaded, _ctx = module

@@ -205,6 +205,13 @@ purges them (`_REPO_SCOPED_TABLES`), and all are in the re-key inventory
 deployed instance branch at 0276, so this is 0277 on both; whichever of two
 branches lands second renumbers and re-stamps the schema fingerprint.
 
+The access record that `context()` builds is passed around as `ctx` and is read
+by key only (`ctx["admin"]`, never `ctx.get(...)`): the
+`test_host_js_surface` inventory takes any `ctx.<attr>` chain in `app/src` to
+be a Durable Object state, and the deploy agent's gate 2 refused
+`ceb51dfce0b4` on 2026-10-20 because `ctx.get` is not on one. `context()`
+always sets every key, so subscripting is safe.
+
 ## Not built yet
 
 - CVE requests through a CNA.

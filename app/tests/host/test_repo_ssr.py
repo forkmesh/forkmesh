@@ -299,7 +299,7 @@ def test_first_view_uses_dashboard_classes_that_the_stylesheet_has():
     css = (DASHBOARD / "tailwind.css").read_text("utf-8")
     tokens = {token for match in re.finditer(r'class="([^"]*)"', view)
               for token in match.group(1).split()}
-    own = ("fm-ssr", "lucide", "dashboard-accent-link", "fm-btn", "group")
+    own = ("fm-ssr", "lucide", "dashboard-accent-link", "fm-btn", "fm-label", "fm-counter", "group")
     missing = sorted(token for token in tokens if not token.startswith(own)
                      and _tailwind_selector(token) not in css)
     assert missing == []
@@ -352,6 +352,19 @@ def test_first_view_about_rail_and_mirror_line():
                                 about={"ok": True, "mirrorOf": "javascript:alert(1)"})
     assert "javascript:" not in bare and "Mirror of" not in bare
     assert bare.count('class="h-7 w-7 rounded-full border-2 border-background bg-secondary"') == 8
+
+
+def test_first_view_draws_the_title_row_without_stars_or_forks_in_about():
+    detail = (DASHBOARD / "js" / "08-repo-detail-network.js").read_text("utf-8")
+    fragment = 'class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-5"'
+    assert fragment in detail
+    view = repo_ssr.render_view(DATA, about={"ok": True, "forkedFrom": "alice/upstream"})
+    assert "data-repo-title-row " + fragment in view
+    assert view.index("data-repo-github-header") < view.index("data-repo-title-row") < view.index("data-repo-content-grid")
+    assert "<span>Fork</span>" in view and "<span>Star</span>" in view and ">Public</span>" in view
+    assert 'forked from</span><a href="/alice/upstream"' in view
+    assert ">Stars<" not in view and ">Forks<" not in view and ">Watchers<" in view
+    assert "forked from" not in repo_ssr.render_view(DATA, about={"ok": True, "forkedFrom": "x/../y\"<"})
 
 
 def test_time_ago_matches_the_dashboard_wording():

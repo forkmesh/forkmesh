@@ -1,5 +1,23 @@
   // `parentNumber` files a sub-issue: the description starts with the same
   // portable "Parent issue: #N" line a converted checklist row gets.
+  function issueComposeRouteActive(repo) {
+    const parts = repoRouteParts();
+    return Boolean(repo && state.session?.nodeName) && parts[2] === "issues" && parts[3] === "new";
+  }
+
+  function issueComposeUrl(repo) {
+    return `${repoLinkUrl(repo)}/issues/new`;
+  }
+
+  function showRepoIssueList(repo) {
+    if (state.issuesView.repo || state.issuesView.items.length) {
+      renderRepoIssues();
+      return;
+    }
+    $("[data-repo-issues] [data-repo-issue-form]")?.remove();
+    loadRepoIssues(repo);
+  }
+
   function openIssueCompose(repo, { parentNumber = 0 } = {}) {
     const container = $("[data-repo-issues]");
     if (!container || !repo) return;
@@ -764,7 +782,9 @@
     const headSelect = container.querySelector("[data-repo-pull-head]");
     if (baseSelect) baseSelect.value = presetBase || defaultBranch;
     if (headSelect) headSelect.value = headDefault;
-    container.querySelector("[data-repo-pull-title]")?.focus();
+    const titleInput = container.querySelector("[data-repo-pull-title]");
+    if (titleInput && preset?.title) titleInput.value = String(preset.title).slice(0, 240);
+    titleInput?.focus();
     void fillPullComposeTargets(repo, container.querySelector("[data-repo-pull-new-form]"));
   }
 
@@ -837,10 +857,10 @@
     return "This comparison could not be read from a live mirror right now. Refresh to try again.";
   }
 
-  async function openRepoCompare(repo, base, head, { navigate = true } = {}) {
+  async function openRepoCompare(repo, base, head, { navigate = true, expand = false, title = "" } = {}) {
     const container = $("[data-repo-pulls]");
     if (!container || !repo || !base || !head) return;
-    const compare = { base, head };
+    const compare = { base, head, title };
     state.repoCompare = compare;
     state.repoRecordDetail = null;
     state.loadedRepoTabs = state.loadedRepoTabs || {};
@@ -903,6 +923,7 @@
       baseOid: String(comparison?.baseOid || ""),
       headOid: String(comparison?.headOid || ""),
       mergeBaseOid: String(comparison?.mergeBaseOid || ""),
+      title: commits.length ? String(commits[commits.length - 1].body || "").trim().slice(0, 240) : "",
     };
     const viewed = loadRepoCompareViewed(repo, compare);
     const painted = paint(`
@@ -924,6 +945,10 @@
     // A freshly painted pane starts on its first file, as the pull review does.
     const first = files[0]?.path || "";
     if (first) setRepoPullActiveFile(first, { revealRow: true });
+    if (expand && state.session?.nodeName && !repoReadOnlyMirror(repo)) {
+      navigateHistory(`${repoLinkUrl(repo)}/pulls`);
+      openPullCompose(repo, { base, head, title: title || compare.result.title });
+    }
   }
 
   async function handleRemotePullSubmit(repo, remote, { title, body, base, head, submit, setHint, titleInput, bodyInput }) {
@@ -993,6 +1018,7 @@
       }
       const targetRepo = result.targetRepo || repo;
       const crossFork = targetRepo !== repo;
+      noteRecentPushPullOpened(repo, head);
       const item = {
         number,
         title,
@@ -2230,7 +2256,7 @@
     const shown = value === null || value === undefined
       ? "—"
       : typeof value === "number" ? formatCount(value) : String(value);
-    return `<div data-repo-insights-metric="${escapeHtml(label.toLowerCase().replace(/\s+/g, "-"))}" class="min-w-0 rounded-md border border-border bg-secondary/30 p-3">
+    return `<div data-repo-insights-metric="${escapeHtml(label.toLowerCase().replace(/\s+/g, "-"))}" class="min-w-0 rounded-md bg-secondary/40 p-3">
       <div class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">${escapeHtml(label)}</div>
       <div class="mt-2 font-mono text-xl font-semibold text-foreground">${escapeHtml(shown)}</div>
       <div class="mt-1 truncate text-[10px] text-muted-foreground">${escapeHtml(detail)}</div>
@@ -2261,8 +2287,8 @@
         ${pct.toFixed(1)}% <span class="text-muted-foreground">(${escapeHtml(formatSize(bytes))})</span>
       </span>`;
     }).join("");
-    return `<section aria-labelledby="repo-insights-languages">
-      <h3 id="repo-insights-languages" class="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Languages</h3>
+    return `<section class="min-w-0 rounded-md border border-border p-4" aria-labelledby="repo-insights-languages">
+      <h3 id="repo-insights-languages" class="mb-2 text-[14px] font-semibold text-foreground">Languages</h3>
       <div class="flex h-2 overflow-hidden rounded-full bg-secondary">${segments}</div>
       <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">${legend}</div>
     </section>`;
@@ -2429,13 +2455,13 @@
       ? `${formatCount(contributors.length)} of ${formatCount(contributorTotal)}`
       : formatCount(contributorTotal);
     return `
-      <div class="grid gap-4 p-4">
+      <div class="grid min-w-0 gap-5">
         ${unavailable ? '<div role="status" class="fm-flash fm-flash-warning"><i data-lucide="cloud-off"></i><p class="fm-flash-body text-foreground">The live mirror is unavailable; showing the latest catalog activity.</p></div>' : ""}
         ${!stats && !unavailable ? '<div class="fm-flash fm-flash-neutral"><i data-lucide="info"></i><p class="fm-flash-body text-muted-foreground">This mirror provides only its latest 60 commits. Upgrade it to see complete contributor, language, and code-size insights.</p></div>' : ""}
         <div class="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
-          <section class="rounded-lg border border-border p-3" aria-labelledby="repo-insights-summary">
-            <h3 id="repo-insights-summary" class="mb-3 text-xs font-semibold text-foreground">Repository summary</h3>
-            <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+          <section class="min-w-0 overflow-hidden rounded-md border border-border" aria-labelledby="repo-insights-summary">
+            <h3 id="repo-insights-summary" class="border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground">Repository summary</h3>
+            <div class="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
               ${repoInsightsMetric("Contributors", contributorTotal, "current branch")}
               ${repoInsightsMetric("Files", fileCount, "tracked blobs")}
               ${repoInsightsMetric("Code size", totalBytes === null ? null : formatSize(totalBytes), "tracked bytes")}
@@ -2443,16 +2469,16 @@
               ${repoInsightsMetric("Pull requests", pullsTotal, pullDetail)}
             </div>
           </section>
-          <aside class="rounded-lg border border-border bg-secondary/20 p-4">
+          <aside class="min-w-0 rounded-md border border-border p-4">
             <div class="flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="network" class="h-4 w-4 text-muted-foreground"></i>${escapeHtml(platformName())} traffic</div>
             ${repoTrafficChart(traffic)}
             <p class="mt-3 text-[10px] leading-4 text-muted-foreground">Daily Git clone requests reported by managed mirror nodes.</p>
           </aside>
         </div>
         ${repoInsightsLanguages(stats)}
-        <section class="overflow-hidden rounded-lg border border-border">
-          <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-            <span class="text-xs font-medium text-foreground">Repository activity</span>
+        <section class="min-w-0 overflow-hidden rounded-md border border-border">
+          <div class="flex items-center justify-between gap-3 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2">
+            <span class="text-[14px] font-semibold text-foreground">Repository activity</span>
             <span class="font-mono text-[10px] text-muted-foreground">52 weeks · ${formatCount(displayedCommitTotal)} commits total</span>
           </div>
           <div class="p-4">${repoActivitySparkline(repo.activityWeeks, {
@@ -2463,9 +2489,9 @@
             anchor: repo.updatedAt || repo.lastSync,
           })}</div>
         </section>
-        <section class="overflow-hidden rounded-lg border border-border">
-          <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-            <span class="text-xs font-medium text-foreground">Contributors &amp; activity</span>
+        <section class="min-w-0 overflow-hidden rounded-md border border-border">
+          <div class="flex items-center justify-between gap-3 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2">
+            <span class="text-[14px] font-semibold text-foreground">Contributors &amp; activity</span>
             <span class="font-mono text-[10px] text-muted-foreground">${shownLabel}</span>
           </div>
           <div class="overflow-x-auto">
@@ -2478,31 +2504,19 @@
       </div>`;
   }
 
-  async function loadRepoInsights(repo) {
-    const container = $("[data-repo-insights]");
-    if (!container || !repo) return;
-    container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading insights from the live mirror...")}</div>`;
-    try {
-      const [historyResult, statsResult, trafficResult] = await Promise.allSettled([
-        fetchRepoJson(repoLiveUrl(repo, "history")),
-        fetchRepoJson(repoLiveUrl(repo, "stats")),
-        fetchJson(`${repoApiBase(repo)}/traffic`),
-      ]);
-      if (historyResult.status === "rejected" && statsResult.status === "rejected") throw new Error("mirror unavailable");
-      const history = historyResult.status === "fulfilled" ? historyResult.value : {};
-      const stats = statsResult.status === "fulfilled" ? statsResult.value : null;
-      const traffic = trafficResult.status === "fulfilled" && trafficResult.value?.ok
-        ? trafficResult.value
-        : null;
-      const commits = Array.isArray(history?.commits) ? history.commits : [];
-      container.innerHTML = renderRepoInsights(repo, commits, stats, false, traffic);
-      void linkRepoInsightsContributors(container);
-    } catch (_) {
-      container.innerHTML = renderRepoInsights(repo, [], null, true);
-    } finally {
-      hydrateRepoActivityGraphs(container);
-      window.lucide?.createIcons();
-    }
+  function loadRepoInsights(repo) {
+    return loadRepoActivity(repo);
+  }
+
+  function repoInsightsRouteQuery() {
+    const current = new URLSearchParams(location.search || "");
+    const kept = new URLSearchParams();
+    ["view", "period", "scope"].forEach((name) => {
+      const value = current.get(name);
+      if (value && /^[a-z0-9]{1,16}$/.test(value)) kept.set(name, value);
+    });
+    const query = kept.toString();
+    return query ? `?${query}` : "";
   }
 
   function loadRepoFeaturePanels(repo, recordRoute = null, compareRoute = null, commitHash = "") {
@@ -2523,6 +2537,8 @@
       // issue's detail straight away; Back re-fetches the list lazily.
       if (recordRoute && recordRoute.kind === "issues" && recordRoute.number) {
         loadRepoRecordDetail(repo, "issues", recordRoute.number);
+      } else if (issueComposeRouteActive(repo) && !$("[data-repo-issues] [data-repo-issue-form]")) {
+        openIssueCompose(repo);
       } else {
         loadRepoIssues(repo);
       }
@@ -2538,7 +2554,9 @@
       } else if (active === "pulls" && compareRoute) {
         // A comparison deep link (/owner/repo/compare/base...head) opens the
         // diff viewer directly; Back to the list loads it lazily from there.
-        openRepoCompare(repo, compareRoute.base, compareRoute.head, { navigate: false });
+        openRepoCompare(repo, compareRoute.base, compareRoute.head, {
+          navigate: false, expand: compareRoute.expand, title: compareRoute.title,
+        });
       } else {
         loadRepoCollection(repo, active, `[data-repo-${active}]`);
       }

@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"time"
 	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 type CatalogPublisher struct {
@@ -272,20 +274,65 @@ func (p *CatalogPublisher) record(ctx context.Context, repo Repository, stateHas
 	}
 	statePayload := "forkmesh-repostate-v1\n" + p.Owner + "\n" + repo.Name + "\n" + stateHash + "\n" + now
 	record["stateSig"] = p.Identity.Sign([]byte(statePayload))
-	signed := make(map[string]any, len(record)-1)
+	if err := signCatalogRecord(p.Identity, record); err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+// signCatalogRecord adds the catalog-v2 signature to a record. It binds every
+// field except the descriptive legacy "signature", hashed in the form the
+// catalog verifies (catalogCanonicalJSON).
+func signCatalogRecord(identity *Identity, record map[string]any) error {
+	signed := make(map[string]any, len(record))
 	for key, value := range record {
-		if key != "signature" {
+		if key != "signature" && key != "catalogSig" && key != "catalogSigVersion" {
 			signed[key] = value
 		}
 	}
-	canonical, err := json.Marshal(signed)
+	canonical, err := catalogCanonicalJSON(signed)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	digest := sha256.Sum256(canonical)
 	record["catalogSigVersion"] = 2
-	record["catalogSig"] = p.Identity.Sign([]byte("forkmesh-catalog-v2\n" + hex.EncodeToString(digest[:])))
-	return record, nil
+	record["catalogSig"] = identity.Sign([]byte("forkmesh-catalog-v2\n" + hex.EncodeToString(digest[:])))
+	return nil
+}
+
+// catalogCanonicalJSON serializes a catalog record the way the catalog hashes
+// it for a catalog-v2 signature: Python's json.dumps(record, sort_keys=True,
+// separators=(",", ":")) with its default ASCII escaping. encoding/json
+// differs from that in two ways, and either one breaks the signature of any
+// record that holds such a character (a description with an em dash, say):
+// it writes non-ASCII characters (and DEL) literally instead of as \uXXXX,
+// and it escapes <, > and & as \u003c, \u003e and \u0026.
+func catalogCanonicalJSON(value any) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	// Outside strings, encoding/json output is ASCII, so every non-ASCII
+	// rune (and DEL) below is string content. Map keys come out sorted.
+	raw := bytes.TrimSuffix(buffer.Bytes(), []byte("\n"))
+	out := make([]byte, 0, len(raw))
+	for len(raw) > 0 {
+		r, size := utf8.DecodeRune(raw)
+		switch {
+		case r < utf8.RuneSelf && r != 0x7f:
+			out = append(out, raw[0])
+		case r > 0xffff:
+			high, low := utf16.EncodeRune(r)
+			out = fmt.Appendf(out, "\\u%04x\\u%04x", high, low)
+		default:
+			// encoding/json has already replaced invalid UTF-8 with U+FFFD.
+			out = fmt.Appendf(out, "\\u%04x", r)
+		}
+		raw = raw[size:]
+	}
+	return out, nil
 }
 
 func (p *CatalogPublisher) agentProviders() []string {

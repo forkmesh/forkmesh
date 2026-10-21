@@ -11,6 +11,32 @@ export const FEDERATED_PATHS = Object.freeze([
   "/api/world/office/general/entry",
   "/api/repositories",
   "/api/leaderboards",
+  "/api/accounts/users",
+  "/api/world/inactive",
+  "/api/world/visitors",
+  "/api/world/fediverse",
+  "/api/world/fediverse-mentions",
+  "/api/network/overview",
+]);
+export const MESH_ROOT_READS = Object.freeze([
+  "/api/accounts/users",
+  "/api/world/inactive",
+  "/api/world/visitors",
+  "/api/world/organizations",
+  "/api/world/events",
+  "/api/world/fediverse",
+  "/api/world/fediverse-mentions",
+  "/api/network/overview",
+  "/api/repositories",
+  "/api/leaderboards",
+]);
+export const MESH_ROOT_HIDDEN = Object.freeze([
+  "/api/repository-imports",
+  "/api/repo",
+  "/api/world/community-ads/placements",
+  "/api/accounts/central-fund",
+  "/security/latest.json",
+  "/api/world/media/spaces",
 ]);
 const TOKEN_RE = /^fmwv1\.[A-Za-z0-9_-]{1,1950}\.[0-9a-f]{64}$/;
 const RENEW_MARGIN_MS = 60 * 1000;
@@ -32,6 +58,15 @@ export function federatedPath(path) {
   const raw = String(path || "");
   const bare = raw.split("?")[0].replace(/\/+$/, "");
   return FEDERATED_PATHS.includes(bare) && !/[\s#]/.test(raw) ? raw : "";
+}
+
+export function meshRootRoute(path) {
+  const bare = String(path || "").split("?")[0].replace(/\/+$/, "");
+  if (MESH_ROOT_READS.includes(bare)) return "read";
+  if (MESH_ROOT_HIDDEN.some((prefix) => bare === prefix || bare.startsWith(`${prefix}/`))) {
+    return "hidden";
+  }
+  return "";
 }
 
 export class WorldFederation {

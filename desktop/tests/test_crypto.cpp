@@ -4100,6 +4100,14 @@ int main(int argc, char *argv[])
         check(ok && findings.size() == 1,
               "findings parse out of surrounding chatter and fences");
         findings = parseAiReviewFindings(
+            QStringLiteral("user\n+int a[3] = {0};\n[ ] checklist\ncodex\n"
+                           "[{\"path\": \"x\", \"line_start\": 4,"
+                           " \"comment\": \"c\", \"original\": [\"a\"],"
+                           " \"fix\": [\"b\"]}]\ntokens used: 12"),
+            &ok);
+        check(ok && findings.size() == 1 && findings.at(0).lineStart == 4,
+              "findings parse after an echoed prompt that carries brackets");
+        findings = parseAiReviewFindings(
             QStringLiteral("{\"findings\": [{\"path\": \"x\", \"line_start\": 2,"
                            " \"comment\": \"c\"}]}"),
             &ok);
@@ -8575,6 +8583,24 @@ int main(int argc, char *argv[])
         check(!pathFiltered.matchesPushChangedPaths(
                   {QStringLiteral("app/main.dart")}),
               "non-mobile changes do not match mobile/ push path filter");
+        QStringList manyPaths;
+        for (int i = 0; i < 20000; ++i)
+            manyPaths.append(QStringLiteral("app/src/file%1.py").arg(i));
+        check(!pathFiltered.matchesPushChangedPaths(manyPaths),
+              "a large push outside mobile/ does not match");
+        manyPaths.append(QStringLiteral("mobile/late.dart"));
+        check(pathFiltered.matchesPushChangedPaths(manyPaths),
+              "the last changed path of a large push still matches");
+        const ActionWorkflow blankPattern = ActionFile::parse(
+            QStringLiteral(".forkmesh/blank.yml"),
+            QStringLiteral("name: Blank\n"
+                           "on:\n  push:\n    paths:\n      - \"  \"\n"
+                           "      - docs/*.md\n"
+                           "jobs:\n  build:\n    steps:\n      - run: echo hi\n"));
+        check(blankPattern.matchesPushChangedPaths({QStringLiteral("docs/a.md")}) &&
+                  !blankPattern.matchesPushChangedPaths(
+                      {QStringLiteral("docs/sub/a.md")}),
+              "a blank path pattern is skipped and * stays inside one folder");
     }
 
     {

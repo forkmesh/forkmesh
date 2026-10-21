@@ -93,6 +93,33 @@ def icon_links(logo: str) -> str:
             '<link rel="apple-touch-icon" href="%s" data-instance-logo />') % (logo, kind, logo)
 
 
+# GET /api/instance is one public document that the dashboard, instance-brand.js
+# and genie-spider.js all read. A dashboard page asks for it from its first
+# script, in parallel with the bundle download, instead of after the ~2 MB
+# bundle has run (bootDashboard waits for the repository addresses in it on a
+# first visit). The readers take this promise over (window.__forkmeshInstanceInfo).
+INFO_EARLY = (
+    '<script data-instance-info-early>try{window.__forkmeshInstanceInfo='
+    'fetch("/api/instance",{credentials:"omit",headers:{accept:"application/json"}})'
+    '.then(function(r){return r.ok?r.json():null}).catch(function(){return null})'
+    '}catch(_){}</script>')
+INFO_EARLY_RE = re.compile(r"<script data-instance-info-early>.*?</script>", re.DOTALL)
+DASHBOARD_SCRIPT_RE = re.compile(r'<script\b[^>]*\bsrc="/dashboard\.js[?"]', re.IGNORECASE)
+SCRIPT_OPEN_RE = re.compile(r"<script\b", re.IGNORECASE)
+
+
+def instance_info_early(text: str) -> str:
+    text = INFO_EARLY_RE.sub("", text)
+    if not DASHBOARD_SCRIPT_RE.search(text):
+        return text
+    head_end = text.lower().find("</head>")
+    if head_end == -1:
+        return text
+    first = SCRIPT_OPEN_RE.search(text, 0, head_end)
+    at = first.start() if first else head_end
+    return text[:at] + INFO_EARLY + text[at:]
+
+
 def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
     escaped = html.escape(name, quote=True)
     text = OLD_TAG_RE.sub("", text)
@@ -109,6 +136,7 @@ def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
     text = rename_markup(text, escaped)
     off = ' data-instance-powered-by="off"' if not powered_by else ""
     tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
+    text = instance_info_early(text)
     lower = text.lower()
     index = lower.rfind("</head>")
     if index == -1:

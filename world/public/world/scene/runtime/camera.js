@@ -420,8 +420,31 @@ export function functions({
     return true;
   }
 
+  function shiftPlayer(dx, dz) {
+    const x = Number(dx);
+    const z = Number(dz);
+    if (ctx.officeSceneMode !== "town" || !Number.isFinite(x) || !Number.isFinite(z)) {
+      return false;
+    }
+    const space = String(ctx.currentSpace || "town-square");
+    if (packageSpace(space) || officeCampusSpace(space)) return false;
+    if (ctx.bikeRide || ctx.coasterRide || ctx.quadcopterRide) return false;
+    ctx.player.position.x += x;
+    ctx.player.position.z += z;
+    ctx.currentFloorY = fns.outdoorFloorYAt(ctx.player.position.x, ctx.player.position.z);
+    ctx.player.position.y = ctx.currentFloorY;
+    ctx.lastPosition.copy(ctx.player.position);
+    ctx.camera.position.x += x;
+    ctx.camera.position.z += z;
+    ctx.cameraFocus = null;
+    ctx.focusedRepositoryKey = "";
+    fns.nearestLandmark();
+    return true;
+  }
+
   return {
     updateCamera,
     setSpawn,
+    shiftPlayer,
   };
 }

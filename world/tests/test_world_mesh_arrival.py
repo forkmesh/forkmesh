@@ -101,3 +101,75 @@ def test_the_socket_and_page_spend_an_arrival_visa_once():
     assert 'socketURL.searchParams.set("visa", this.arrivalVisa);' in APP
     assert APP.count('this.arrivalVisa = "";') == 1
     assert "history.replaceState(history.state, \"\", url.href);" in APP
+
+
+class _Stream:
+    """A ReadableStream reader handing out `chunks`, recording a cancel."""
+
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.read_count = 0
+        self.cancelled = False
+
+    def getReader(self):  # noqa: N802 - the JavaScript name
+        return self
+
+    async def read(self):
+        self.read_count += 1
+        if not self.chunks:
+            return SimpleNamespace(done=True, value=None)
+        return SimpleNamespace(done=False, value=self.chunks.pop(0))
+
+    def cancel(self):
+        self.cancelled = True
+
+
+def _streamed_visitor(monkeypatch, chunks, headers=None):
+    stream = _Stream(chunks)
+
+    async def directory(_env):
+        return WORLDS
+
+    async def fetch(url, options, _timeout):
+        return SimpleNamespace(status=200, headers=headers or {}, body=stream)
+
+    monkeypatch.setattr(world_routes, "json", json, raising=False)
+    monkeypatch.setattr(world_routes, "world_mesh", world_mesh, raising=False)
+    monkeypatch.setattr(world_routes, "world_protocol", world_protocol,
+                        raising=False)
+    monkeypatch.setattr(world_routes, "world_mesh_directory", directory,
+                        raising=False)
+    monkeypatch.setattr(world_routes, "js_fetch_with_timeout", fetch,
+                        raising=False)
+    return stream
+
+
+def test_a_neighbours_oversized_verdict_is_abandoned_mid_stream(monkeypatch):
+    chunk = b" " * 1024
+    stream = _streamed_visitor(monkeypatch, [chunk] * 1000)
+    visitor = asyncio.run(world_routes.world_mesh_visitor(
+        HUB_ENV, same_origin_request(), visa_from("https://code.example.org"),
+        arrival=True))
+    assert visitor == {"error": "invalid_visa"}
+    assert stream.cancelled
+    assert stream.read_count <= world_routes.WORLD_MESH_REPLY_MAX_BYTES // 1024 + 1
+
+
+def test_a_declared_oversized_verdict_is_not_read(monkeypatch):
+    stream = _streamed_visitor(monkeypatch, [b"{}"], headers={
+        "content-length": str(10 ** 9)})
+    visitor = asyncio.run(world_routes.world_mesh_visitor(
+        HUB_ENV, same_origin_request(), visa_from("https://code.example.org"),
+        arrival=True))
+    assert visitor == {"error": "invalid_visa"}
+    assert stream.read_count == 0
+
+
+def test_a_streamed_verdict_within_the_cap_still_signs_in(monkeypatch):
+    reply = json.dumps({"ok": True, "name": "alice",
+                        "nonce": "nonce1234"}).encode()
+    _streamed_visitor(monkeypatch, [reply[:10], reply[10:]])
+    visitor = asyncio.run(world_routes.world_mesh_visitor(
+        HUB_ENV, same_origin_request(), visa_from("https://code.example.org"),
+        arrival=True))
+    assert visitor["claim"]["name"] == "alice"

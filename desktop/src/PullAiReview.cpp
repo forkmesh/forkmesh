@@ -85,8 +85,12 @@ QList<AiReviewFinding> parseAiReviewFindings(const QString &text, bool *ok)
         const int close = text.lastIndexOf(QLatin1Char(']'));
         if (open < 0 || close <= open)
             return findings;
-        const QJsonDocument inner =
+        QJsonDocument inner =
             QJsonDocument::fromJson(text.mid(open, close - open + 1).toUtf8());
+        for (int from = text.lastIndexOf(QLatin1Char('['), close);
+             !inner.isArray() && from >= 0;
+             from = from > 0 ? text.lastIndexOf(QLatin1Char('['), from - 1) : -1)
+            inner = QJsonDocument::fromJson(text.mid(from, close - from + 1).toUtf8());
         if (!inner.isArray())
             return findings;
         arr = inner.array();

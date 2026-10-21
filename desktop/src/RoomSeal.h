@@ -55,6 +55,7 @@ bool mlkemEncapsulate(const QByteArray &publicKey, QByteArray *ciphertext,
 QByteArray mlkemDecapsulate(const QByteArray &seed, const QByteArray &ciphertext);
 
 QString storedStateFile();
+QString storedStateKeyFile(const QString &key);
 bool migrateStoredState();
 QVariant storedSetting(const QString &key);
 void clearStoredState();

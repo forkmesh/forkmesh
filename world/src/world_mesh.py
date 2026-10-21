@@ -504,11 +504,36 @@ FEDERATED_PATHS = frozenset({
     "/api/world/office/general/entry",
     "/api/repositories",
     "/api/leaderboards",
+    "/api/accounts/users",
+    "/api/world/inactive",
+    "/api/world/visitors",
+    "/api/world/fediverse",
+    "/api/world/fediverse-mentions",
+    "/api/network/overview",
+})
+
+
+FEDERATED_READ_ONLY_PATHS = frozenset({
+    "/api/accounts/users",
+    "/api/world/inactive",
+    "/api/world/visitors",
+    "/api/world/fediverse",
+    "/api/world/fediverse-mentions",
+    "/api/network/overview",
 })
 
 
 def federated_path(path):
     return str(path or "").rstrip("/") in FEDERATED_PATHS
+
+
+def federated_method_allowed(path, method, requested=""):
+    if str(path or "").rstrip("/") not in FEDERATED_READ_ONLY_PATHS:
+        return True
+    verb = str(method or "").upper()
+    if verb == "OPTIONS":
+        verb = str(requested or "").upper()
+    return verb in ("GET", "HEAD")
 
 
 def neighbour_world_origin(env, worlds, origin):
@@ -522,14 +547,15 @@ def neighbour_world_origin(env, worlds, origin):
     return None
 
 
-def federation_cors_headers(origin, preflight=False):
+def federation_cors_headers(origin, preflight=False, read_only=False):
     headers = {
         "access-control-allow-origin": origin,
         "vary": "Origin",
     }
     if preflight:
         headers.update({
-            "access-control-allow-methods": "GET, POST, OPTIONS",
+            "access-control-allow-methods":
+                "GET, OPTIONS" if read_only else "GET, POST, OPTIONS",
             "access-control-allow-headers":
                 "authorization, content-type, accept",
             "access-control-max-age": "600",

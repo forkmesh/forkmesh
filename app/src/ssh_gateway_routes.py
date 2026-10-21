@@ -310,15 +310,65 @@ async def ssh_keys_handler(env, request, key_id=""):
             cache_control="no-store")
 
     return json_response({"error": "method_not_allowed"}, status=405)
+def _ssh_gateway_tokens(env):
+    """The gateway bearer tokens accepted now.
+
+    ``SSH_GATEWAY_TOKEN`` plus, during a rotation, ``SSH_GATEWAY_TOKEN_NEXT``:
+    set the new token as NEXT, move the gateway host to it, then promote it
+    to SSH_GATEWAY_TOKEN and drop NEXT. Neither step interrupts a gateway.
+    """
+    tokens = []
+    for name in ("SSH_GATEWAY_TOKEN", "SSH_GATEWAY_TOKEN_NEXT"):
+        token = ssh_auth.configured_gateway_token(getattr(env, name, ""))
+        if token:
+            tokens.append(token)
+    return tokens
+
+
+def _ssh_gateway_address_allowed(env, request):
+    """Optional pin of the gateway host's address(es).
+
+    ``SSH_GATEWAY_ALLOWED_ADDRESSES`` is a comma-separated list of IP
+    addresses or networks. When it is set, an authorize call must come from
+    one of them as seen by the edge (``cf-connecting-ip``, set by the CDN or
+    by the instance's own front end). Unset, the bearer token alone decides;
+    a malformed list admits nobody rather than everybody.
+    """
+    import ipaddress
+    raw = str(getattr(env, "SSH_GATEWAY_ALLOWED_ADDRESSES", "") or "").strip()
+    if not raw:
+        return True
+    networks = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            return False
+    try:
+        address = ipaddress.ip_address(str(
+            request.headers.get("cf-connecting-ip") or "").strip().strip("[]"))
+    except ValueError:
+        return False
+    return any(address in network for network in networks)
+
+
 def _ssh_gateway_token_ok(env, request):
-    expected = ssh_auth.configured_gateway_token(
-        getattr(env, "SSH_GATEWAY_TOKEN", ""))
+    expected = _ssh_gateway_tokens(env)
     if not expected:
         return False
     supplied = str(request.headers.get("authorization") or "")
     if not supplied.lower().startswith("bearer "):
         return False
-    return hmac.compare_digest(supplied[7:].strip(), expected)
+    supplied = supplied[7:].strip()
+    # Compare against every configured token so the time taken does not say
+    # which one matched.
+    matched = False
+    for token in expected:
+        matched = hmac.compare_digest(supplied, token) or matched
+    return matched and _ssh_gateway_address_allowed(env, request)
 async def _ssh_key_gateway_record(env, key_id="", public_key=""):
     row = None
     if key_id:
