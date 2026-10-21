@@ -1361,8 +1361,14 @@ func pullMarkdown(number int, pull map[string]any) string {
 		"authorName: " + safeHeader(stringValue(pull["authorName"])),
 		"sig: " + safeHeader(stringValue(pull["sig"])),
 	}
-	for _, key := range []string{"authorClaimedName", "creationBaseOid", "creationHeadOid", "client", "clientSig"} {
-		if value := safeHeader(stringValue(pull[key])); value != "" {
+	for _, key := range []string{"authorClaimedName", "creationBaseOid", "creationHeadOid", "client", "clientSig", "aiModel"} {
+		value := safeHeader(stringValue(pull[key]))
+		if key == "aiModel" {
+			if runes := []rune(value); len(runes) > 80 {
+				value = strings.TrimSpace(string(runes[:80]))
+			}
+		}
+		if value != "" {
 			lines = append(lines, key+": "+value)
 		}
 	}
@@ -1559,8 +1565,11 @@ func writeDiscussionAnswer(dir string, item collaborationItem) (bool, int, error
 		[]byte(strings.Join(lines, "\n")), 0600)
 }
 
+var headerLineBreaks = strings.NewReplacer("\r", " ", "\n", " ", "\v", " ", "\f", " ",
+	"\x1c", " ", "\x1d", " ", "\x1e", " ", "\u0085", " ", "\u2028", " ", "\u2029", " ")
+
 func safeHeader(value string) string {
-	return strings.TrimSpace(strings.NewReplacer("\r", " ", "\n", " ").Replace(value))
+	return strings.TrimSpace(headerLineBreaks.Replace(value))
 }
 
 func firstNonEmpty(values ...string) string {

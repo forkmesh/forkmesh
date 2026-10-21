@@ -42,8 +42,12 @@ place. The contract is [`terminology.json`](terminology.json);
 
 ## Compatibility aliases
 
-Familiar forge URLs (`/pull/12`, `/merge_requests/12`, `/-/issues/5`) redirect
-with 308. Routes, JSON fields, event kinds, config keys and flags are never renamed for wording; aliases are never removed. **Rollback.** Revert the copy change; aliases stay.
+One pull request lives at `/OWNER/REPOSITORY/pull/12` (its sections at
+`/pull/12/files`, `/pull/12/commits`, `/pull/12/checks`) and the list at
+`/OWNER/REPOSITORY/pulls`, the split GitHub uses, so a pull request link copied
+from GitHub works after swapping the host. Other familiar forge URLs
+(`/pulls/12`, `/pull-requests/12`, `/merge_requests/12`, `/-/issues/5`)
+redirect with 308, keeping the rest of the path and the query. Routes, JSON fields, event kinds, config keys and flags are never renamed for wording; aliases are never removed. **Rollback.** Revert the copy change; aliases stay.
 
 ## Measurement
 

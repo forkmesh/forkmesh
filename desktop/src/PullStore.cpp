@@ -1201,6 +1201,7 @@ QJsonObject PullRequest::toJson() const
             {"creationBaseOid", creationBaseOid},
             {"creationHeadOid", creationHeadOid},
             {"client", client}, {"clientSig", clientSig},
+            {"aiModel", aiModel},
             {"rewardEstimateLamports", double(rewardEstimateLamports)},
             {"rewardRecipient", rewardRecipient}, {"rewardId", rewardId},
             {"rewardCondition", rewardCondition},
@@ -1229,6 +1230,7 @@ PullRequest PullRequest::fromJson(const QJsonObject &obj)
     pr.creationHeadOid = obj.value("creationHeadOid").toString();
     pr.client = obj.value("client").toString();
     pr.clientSig = obj.value("clientSig").toString();
+    pr.aiModel = obj.value("aiModel").toString().simplified().left(80);
     pr.rewardEstimateLamports =
         qint64(obj.value("rewardEstimateLamports").toDouble());
     pr.rewardRecipient = obj.value("rewardRecipient").toString();
@@ -2746,6 +2748,8 @@ bool PullStore::writePull(const PullRequest &pr, QString *error) const
         lines << "client: " + pr.client;
     if (!pr.clientSig.isEmpty())
         lines << "clientSig: " + pr.clientSig;
+    if (!pr.aiModel.simplified().isEmpty())
+        lines << "aiModel: " + pr.aiModel.simplified();
     if (pr.rewardEstimateLamports > 0)
         lines << "rewardEstimateLamports: "
                      + QString::number(pr.rewardEstimateLamports);
@@ -2804,6 +2808,7 @@ bool PullStore::readPull(int number, PullRequest &out) const
     out.coAuthors = fm.get("coAuthors");
     out.client = fm.get("client");
     out.clientSig = fm.get("clientSig");
+    out.aiModel = fm.get("aiModel");
     out.rewardEstimateLamports = fm.num("rewardEstimateLamports");
     out.rewardRecipient = fm.get("rewardRecipient");
     out.rewardId = fm.get("rewardId");

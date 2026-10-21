@@ -83,13 +83,13 @@ def test_compare_page_renders_the_pull_review_files_pane():
         : DASHBOARD_JS.index("function repoPullFilesContext")
     ]
     assert "const reviewable = options.reviewable !== false;" in section
-    assert "renderRepoComparePatch(pullPatch.patch, viewed, effectivePullDiffMode(layout.diff))" in section
+    assert "renderRepoComparePatch(pullPatch.patch, viewed, mode, pullPatch.imageDiffs)" in section
     # The comparison's renderer draws the same file blocks with review off.
     assert (
-        'function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified")'
+        'function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified", imageDiffs = [])'
         in DASHBOARD_JS
     )
-    assert "renderDiffFiles(parseDiffFiles(patch), [], viewed, mode, false)" in DASHBOARD_JS
+    assert "renderDiffFiles(parseDiffFiles(patch), imageDiffs, viewed, mode, false)" in DASHBOARD_JS
 
     # The toolbar handlers (layout toggles, filter, viewed, scroll-spy) all go
     # through repoPullFilesContext(), which now serves the comparison too.
@@ -97,7 +97,7 @@ def test_compare_page_renders_the_pull_review_files_pane():
         DASHBOARD_JS.index("function repoPullFilesContext")
         : DASHBOARD_JS.index("function refreshRepoPullExplorer")
     ]
-    assert 'if (detail?.kind === "pulls") {' in context
+    assert 'if (detail?.kind === "pulls" && section.closest("[data-repo-record-detail]")) {' in context
     assert 'compare?.result && section.closest("[data-repo-compare]")' in context
     assert "reviewable: false," in context
     assert "viewed: loadRepoCompareViewed(repo, compare)," in context
@@ -181,7 +181,7 @@ def test_boot_only_loads_code_tree_when_code_is_visible():
     ]
     assert 'if (initialTab === "code") {' in render
     assert 'state.loadedRepoTabs.code = true;' in render
-    assert 'else loadRepositoryTree(repo, routeKind === "tree" ? routePath : "");' in render
+    assert 'void openRepoCodeRoute(repo, routeKind, routePath, { explicitRef: Boolean(routeRef) });' in render
     assert '{ background: initialTab !== "code" }' not in render
     tree = DASHBOARD_JS[
         DASHBOARD_JS.index("async function loadRepositoryTree")
@@ -189,5 +189,5 @@ def test_boot_only_loads_code_tree_when_code_is_visible():
     ]
     assert 'if (!background) setRepoTab("code");' in tree
     # Both URL rewrites (empty tree and populated tree) are background-gated.
-    assert tree.count('navigateHistory(repoLinkUrl(repo, "tree", path))') == 2
-    assert tree.count('if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));') == 2
+    assert tree.count('navigateHistory(repoCodeLinkUrl(repo, "tree", path))') == 2
+    assert tree.count('if (!background) navigateHistory(repoCodeLinkUrl(repo, "tree", path));') == 2

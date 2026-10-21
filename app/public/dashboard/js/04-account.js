@@ -2841,7 +2841,7 @@
         <a href="${escapeHtml(groupLinkUrl(group))}" class="min-w-0 truncate text-sm font-semibold text-accent hover:underline">${escapeHtml(repo.name || "repository")}</a>
         <span class="inline-flex shrink-0 items-center rounded-full border border-border px-[7px] text-xs font-medium leading-[18px] text-muted-foreground">${repo.isPrivate ? "Private" : "Public"}</span>
       </div>
-      <p class="mb-4 mt-2 flex-1 break-words text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</p>
+      <p data-user-content class="mb-4 mt-2 flex-1 break-words text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</p>
       <p class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         ${language ? `<span class="inline-flex items-center gap-1"><span data-repo-language-dot class="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style="background-color:${escapeHtml(color)}"></span><span>${escapeHtml(language)}</span></span>` : ""}
         <span data-org-popular-star data-repo-key="${escapeHtml(repoKey(repo))}" class="hidden inline-flex items-center gap-1"><i data-lucide="star" class="h-4 w-4"></i><span data-org-popular-star-count>0</span></span>
@@ -4238,6 +4238,7 @@
     { key: "conversations", label: "Conversations", kinds: [
       { kind: "mention", label: "Mentions", email: true },
       { kind: "subscribed", label: "Activity on things you follow", email: true },
+      { kind: "reaction", label: "Reactions to your comments", email: false },
       { kind: "chat_webhook", label: "Chat webhook posts", email: false },
       { kind: "channel_unread", label: "Unread channel messages", email: true },
       { kind: "direct_unread", label: "Unread direct messages", email: true },

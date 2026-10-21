@@ -57,6 +57,12 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   listens on loopback. `request_guard.py` rejects unknown hosts and oversized
   bodies and verifies the homepage Worker's signed visitor header
   (`deploy/core/edge_client.md`), once per request.
+- **JSON body limits.** Behind the front door, `app/src/request_bodies.py`
+  reads JSON bodies up to 2 MiB, or 8 MiB for security reports, repository
+  imports and `POST /api/repo/<owner>/<repo>/pulls`. A pull submission
+  carries its whole signed patch series inline, and a real one passes 2 MiB
+  long before the git gateway's 8 MiB request cap. Only that exact path gets
+  the allowance (no trailing slash, no sub-path such as `/pulls/<n>/events`).
 - **Static headers without a fleet Caddy.** A single-server instance
   (`install-instance.sh`) proxies everything to the app, so the app's
   `StaticAssets` serves the static pages itself. It applies the dist's

@@ -48,6 +48,7 @@ public func notificationIconForKind(_ kind: String) -> String {
     case "hackathon_reward": return "card_giftcard_outlined"
     case "badge": return "emoji_events_outlined"
     case "package_review": return "rate_review_outlined"
+    case "reaction": return "add_reaction_outlined"
     default: return notificationLineIcon
     }
 }
@@ -63,7 +64,8 @@ public func notificationToneForKind(_ kind: String) -> PingTone {
     case "issue", "issue_opened", "issue_assigned", "host_offline", "agent_approval", "agent-approval": return .warning
     case "mention", "subscribed", "repo", "repo_shared", "repo_activity", "code_push", "pending_inbox",
          "mirror", "mirror_request", "calendar_invitation", "calendar_reminder", "calendar_rsvp",
-         "plugin_activity", "timer_finished", "account_email_sent", "prompt", "device_added", "package_review":
+         "plugin_activity", "timer_finished", "account_email_sent", "prompt", "device_added", "package_review",
+         "reaction":
         return .info
     case "action", "organization_task_started", "organization_task_activity", "organization_task_update",
          "pull", "pull_submitted", "review_requested", "pull_review_requested", "bounty_funded", "bounty_paid",

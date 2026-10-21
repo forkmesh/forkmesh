@@ -627,7 +627,7 @@ async def contributor_reward_estimates_handler(env, request):
                 RESOURCE_SUMMARY_MAX],
             "subjectUrl": "/%s/%s/%s/%d" % (
                 quote(owner, safe=""), quote(repo, safe=""),
-                "pulls" if kind == "pull" else "issues", number),
+                "pull" if kind == "pull" else "issues", number),
             "amountLamports": int(row.get("amount_lamports") or 0),
             "amountSol": _sol_text(int(row.get("amount_lamports") or 0)),
             "condition": str(row.get("condition") or ""),
@@ -1453,7 +1453,7 @@ def _microjob_subject(envelope, job):
                 repository + "#" + str(number),
                 repository + " pull #" + str(number),
                 "/" + quote(owner, safe="") + "/" + quote(repo, safe="")
-                + "/pulls/" + str(number),
+                + "/pull/" + str(number),
                 title=title,
             )
     if job == "issue_report":
@@ -1923,7 +1923,7 @@ async def _contributor_reward_entries(
         repo = str(row.get("repo_name") or "")
         kind = "pull" if row.get("source_kind") == "pull" else "issue"
         number = _integer(row.get("subject_number"), minimum=1)
-        plural = "pulls" if kind == "pull" else "issues"
+        segment = "pull" if kind == "pull" else "issues"
         signature = str(row.get("tx_signature") or "")
         status = str(row.get("status") or "")
         destination = str(row.get("destination_address") or "")
@@ -1968,7 +1968,7 @@ async def _contributor_reward_entries(
                     kind, owner + "/" + repo + "#" + str(number),
                     owner + "/" + repo + " " + kind + " #" + str(number),
                     "/" + quote(owner, safe="") + "/"
-                    + quote(repo, safe="") + "/" + plural + "/"
+                    + quote(repo, safe="") + "/" + segment + "/"
                     + str(number), role="subject",
                     title=row.get("subject_title"),
                     summary=row.get("subject_summary")),
@@ -2591,13 +2591,13 @@ async def _backfill_subject_link(env, row):
     if not owner or not repo or not number:
         return None
     kind = "pull" if row.get("subject_kind") == "pull" else "issue"
-    plural = "pulls" if kind == "pull" else "issues"
+    segment = "pull" if kind == "pull" else "issues"
     return _resource_link(
         kind,
         owner + "/" + repo + "#" + str(number),
         owner + "/" + repo + " " + kind + " #" + str(number),
         "/" + quote(owner, safe="") + "/" + quote(repo, safe="")
-        + "/" + plural + "/" + str(number),
+        + "/" + segment + "/" + str(number),
     )
 
 

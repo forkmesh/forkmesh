@@ -48,7 +48,7 @@ data class NotificationDeepLink(
             if (parts.size >= 3) {
                 when (parts[2]) {
                     "issues" -> { tab = RepoDetailTab.Issues; number = number(parts) }
-                    "pulls" -> { tab = RepoDetailTab.Pulls; number = number(parts) }
+                    "pulls", "pull" -> { tab = RepoDetailTab.Pulls; number = number(parts) }
                     "discussions" -> { tab = RepoDetailTab.Discussions; number = number(parts) }
                     "commit" -> {
                         tab = RepoDetailTab.Commits

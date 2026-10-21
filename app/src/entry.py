@@ -893,6 +893,7 @@ NOTIFICATION_KINDS = frozenset({
     # review) landed on a package you maintain, or a maintainer replied to
     # your review (app/src/marketplace_reviews.py).
     "package_review",
+    "reaction",
 })
 # The ping kinds a marketplace package's Worker API may raise.
 PLUGIN_NOTIFICATION_KINDS = frozenset({"plugin_activity"})
@@ -1063,21 +1064,22 @@ _NOTIFICATION_QUEUE_MEMO = {}
 # holds the cron slice inside its phase budget.
 NOTIFICATION_DIGEST_MAX_LOOKUPS = 8
 # A stored notification records the SINGULAR source the signed event used
-# ("issue"/"pull"/"discussion"), while the public web route is plural
-# (/owner/repo/pulls/93). Anything that wants to deep-link the exact record has
-# to map one onto the other rather than interpolating `source` directly, so an
-# email lands on the item instead of the site root (issue #652).
+# ("issue"/"pull"/"discussion"), while the public web route of one record is
+# /owner/repo/issues/12, /owner/repo/pull/93 or /owner/repo/discussions/4.
+# Anything that wants to deep-link the exact record has to map one onto the
+# other rather than interpolating `source` directly, so an email lands on the
+# item instead of the site root (issue #652).
 NOTIFICATION_ITEM_URL_SEGMENTS = {
     "issue": "issues",
     "issue_assigned": "issues",
     "bounty": "issues",
-    "pull": "pulls",
+    "pull": "pull",
     "discussion": "discussions",
 }
 # Human noun per route segment, for the digest's primary action label.
 NOTIFICATION_ITEM_NOUNS = {
     "issues": "issue",
-    "pulls": "pull request",
+    "pull": "pull request",
     "discussions": "discussion",
 }
 # Actor portraits are stored at up to 256 KB and Gmail clips a message past
@@ -1179,7 +1181,8 @@ _URL_EXPORT_NAMES = (
     "REPO_AP_DIGEST_RE", "REPO_AP_POSTS_RE", "REPO_WEBHOOKS_RE",
     "REPO_PROVIDER_MIRROR_RE",
     "REPO_CARD_RE",
-    "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_VIEW_RE", "REPO_VIEWS_RE",
+    "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
+    "REPO_VIEWS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
@@ -2332,6 +2335,20 @@ def repo_web_href(owner, repo):
     # keeps the clean path in the address bar, so links read forkmesh.com/owner/repo
     # rather than the old forkmesh.com/dashboard?repo=owner/repo form.
     return "/" + quote(owner) + "/" + quote(repo)
+
+
+def repo_record_href(owner, repo, section, number=0):
+    """Link to the thing a notification is about: one issue or pull request
+    (section "issues" or "pull") when its number is known, otherwise a repo
+    section such as "releases" or "commits", otherwise the repository."""
+    base = repo_web_href(owner, repo)
+    try:
+        number = int(number or 0)
+    except (TypeError, ValueError):
+        number = 0
+    if section in ("issues", "pull"):
+        return base + "/" + section + "/" + str(number) if number > 0 else base
+    return base + "/" + section if section else base
 
 
 # The signed-event crypto + canonical-content helpers (b64url_decode,
@@ -13509,7 +13526,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "809f8ba0db32b4ca902b82f56c42fc89ccf03eb50dbf54e3b7e509c9cbc1e5da"
+    "32fe1f7b51cfe6b5e1d0faabc48b4ad6e7ac0f7099979b3b0f3e5b924b98c8a4"
 )
 
 
@@ -16203,6 +16220,8 @@ recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
 recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
 recent_pushes_handler = _recent_pushes.export("handler")
+_comment_reactions = _LazyModule("comment_reactions")
+comment_reactions_handler = _comment_reactions.export("handler")
 
 
 def _repo_identity_from_clone_url(value):
@@ -18800,6 +18819,7 @@ _REPO_SCOPED_TABLES = (
     ("pull_batch_sent", "repo_bi"),
     ("pull_submission_receipts", "repo_bi"),
     ("recent_pushes", "repo_bi"),
+    ("comment_reactions", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
@@ -18995,6 +19015,9 @@ async def _delete_account_namespace(env, name_bi, rec):
     await d1_run(env, "DELETE FROM referral_stats WHERE referrer_bi=?", name_bi)
     await d1_run(env, "DELETE FROM notifications WHERE recipient_bi=?", name_bi)
     await d1_run(env, "DELETE FROM recent_pushes WHERE account_bi=?", name_bi)
+    await d1_run(env, "DELETE FROM comment_reactions WHERE account_bi=?", name_bi)
+    await d1_run(
+        env, "DELETE FROM comment_reaction_rate WHERE account_bi=?", name_bi)
     await d1_run(env, "DELETE FROM profile_follows WHERE follower_bi=? OR target_bi=?", name_bi, name_bi)
     await d1_run(env, "DELETE FROM login_attempts WHERE id_bi=?", name_bi)
     await d1_run(
@@ -20272,7 +20295,7 @@ def _apply_browser_security_headers(response, pathname):
     frameable = (
         path in ("/chat", "/chat.html")
         or path.startswith("/dashboard/chat")
-        or re.fullmatch(r"/[^/]+/[^/]+/(?:issues|pulls)/[^/]+", path)
+        or re.fullmatch(r"/[^/]+/[^/]+/(?:issues|pull)/[^/]+", path)
     )
     csp = _BROWSER_CSP.format(
         frame_ancestors="'self'" if frameable else "'none'"
@@ -37221,7 +37244,7 @@ async def notify_issue_assignees(env, owner, repo, assignees, actor, title, numb
             "Issue assigned in " + owner + "/" + repo,
             body=title or "You were assigned to an issue.",
             repo=owner + "/" + repo,
-            href=repo_web_href(owner, repo),
+            href=repo_record_href(owner, repo, "issues", number),
             actor=actor, source="issue_assigned",
             dedupe="issue-assigned:" + owner + "/" + repo + ":" + str(number) +
                    ":" + assignee,
@@ -37241,7 +37264,7 @@ async def notify_bounty_event(env, rec, kind):
         body=("Issue #" + str(number) + " bounty is " +
               ("funded." if kind == "bounty_funded" else "paid.")),
         repo=owner + "/" + repo,
-        href=repo_web_href(owner, repo),
+        href=repo_record_href(owner, repo, "issues", number),
         source="bounty", dedupe=kind + ":" + owner + "/" + repo + ":" + str(number),
         meta={"number": number, "status": rec.get("status", "")},
     )
@@ -37282,7 +37305,9 @@ async def notify_repo_activity(env, owner, repo, event, body="", actor="",
     slug = owner + "/" + repo
     title = label[0] + " in " + slug
     text = clean_string(body, NOTIFICATION_BODY_MAX) or label[1]
-    href = repo_web_href(owner, repo)
+    href = (repo_record_href(owner, repo, "pull", (meta or {}).get("number"))
+            if event == "pull.merged"
+            else repo_record_href(owner, repo, "commits"))
     dedupe = ("repo-activity:" + slug + ":" + event + ":" +
               clean_string(key, 80))
     payload_meta = dict(meta or {})
@@ -37558,7 +37583,7 @@ async def notify_release_published(env, owner, repo, release):
             env, recipient, "release_published", title,
             body=body,
             repo=owner + "/" + repo,
-            href=repo_web_href(owner, repo),
+            href=repo_record_href(owner, repo, "releases"),
             actor=actor, source="release",
             dedupe=dedupe,
             ts=ts,
@@ -40980,6 +41005,11 @@ async def pulls_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, pull)
         if refused is not None:
             return refused
+        disclosure_check = globals().get("pull_ai_disclosure_check")
+        if disclosure_check is not None:
+            refusal = await disclosure_check(env, owner, repo, pull)
+            if refusal is not None:
+                return json_response(refusal, status=422)
         submission_bi = await blind_index(
             env, "pull-submission:" + pull.get("author", "") + ":" +
             pull.get("sig", ""))
@@ -51275,6 +51305,8 @@ repository_pull_merge_handler = _route_handlers.export("repository_pull_merge_ha
 _pull_rules = _LazyModule("pull_rules")
 _branch_protection = _LazyModule("branch_protection")
 repo_pull_rules_handler = _pull_rules.export("repo_pull_rules_handler")
+_ai_disclosure = _LazyModule("ai_disclosure")
+pull_ai_disclosure_check = _ai_disclosure.export("pull_ai_disclosure_check")
 org_pull_rules_handler = _pull_rules.export("org_pull_rules_handler")
 repository_branch_ops_handler = _route_handlers.export("repository_branch_ops_handler")
 repository_branch_op_results_handler = _route_handlers.export(

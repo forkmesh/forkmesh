@@ -52,6 +52,7 @@ REPO_DOCUMENT_ROUTES = frozenset({
     "tree",
     "blob",
     "compare",
+    "pull",
 })
 
 CORE_RESERVED_ROUTE_PREFIXES = frozenset({
@@ -274,17 +275,21 @@ def legacy_page_redirect(path, query):
 
 
 # Familiar repository URLs from other forges -> the canonical repo route
-# (issue #508). Scripts and pasted links that say /pull/12, /pull-requests/12
-# or GitLab's /-/merge_requests/12 land on /owner/repo/pulls/12. Like the page
-# redirects above these are permanent 308s, so an alias is never removed; see
+# (issue #508). One pull request lives at /owner/repo/pull/12, GitHub style,
+# and the list at /owner/repo/pulls; /pulls/12, /pull-requests/12 and GitLab's
+# /-/merge_requests/12 land on /pull/12. Like the page redirects above these
+# are permanent 308s, so an alias is never removed; see
 # www/docs/terminology.json for the full compatibility table.
 REPO_ROUTE_ALIASES = {
     "commit": "commits",
     "pull": "pulls",
+    "pulls": "pulls",
     "pull-requests": "pulls",
     "merge_requests": "pulls",
     "merge-requests": "pulls",
 }
+PULL_RECORD_ROUTE = "pull"
+PULL_NUMBER_RE = re.compile(r"^[1-9][0-9]{0,8}$")
 
 
 def repo_alias_redirect(path, query):
@@ -298,10 +303,13 @@ def repo_alias_redirect(path, query):
         rest = rest[1:]
     kind = unquote(rest[0])
     canonical = REPO_ROUTE_ALIASES.get(kind)
+    if canonical == "pulls" and len(rest) > 1 and PULL_NUMBER_RE.match(
+            unquote(rest[1])):
+        canonical = PULL_RECORD_ROUTE
     if canonical is None and gitlab_scope and (
             kind in REPO_TAB_ROUTES or kind in REPO_DOCUMENT_ROUTES):
         canonical = kind
-    if canonical is None:
+    if canonical is None or (canonical == kind and not gitlab_scope):
         return None
     target = "/" + "/".join([parts[0], parts[1], canonical, *rest[1:]])
     return target + ("?" + query if query else "")

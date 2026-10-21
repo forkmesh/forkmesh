@@ -406,6 +406,7 @@ REPO_CARD_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/card\.png$")
 # state when a session is supplied); POST/DELETE toggle it for the logged-in
 # account (session-token authenticated, same as ACCOUNT_FOLLOW_RE).
 REPO_STAR_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/star$")
+REPO_REACTIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/reactions$")
 REPO_VIEW_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/view$")
 REPO_VIEWS_RE = re.compile(r"^/api/repo-views/?$")
 # Forks for this repo: GET returns the public list of repositories that publish

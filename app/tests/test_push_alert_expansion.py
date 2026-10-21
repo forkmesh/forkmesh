@@ -223,7 +223,7 @@ def test_a_tap_lands_on_the_record_the_banner_names():
     assert ns["_push_alert_item"](_issue_ping())["href"] == (
         "/acme/widgets/issues/42")
     pull = _issue_ping(meta={"number": 7, "source": "pull"})
-    assert ns["_push_alert_item"](pull)["href"] == "/acme/widgets/pulls/7"
+    assert ns["_push_alert_item"](pull)["href"] == "/acme/widgets/pull/7"
     # No number yet: the repository itself.
     fresh = _issue_ping(meta={"source": "issue"})
     assert ns["_push_alert_item"](fresh)["href"] == "/acme/widgets"

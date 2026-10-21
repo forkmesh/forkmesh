@@ -73,7 +73,7 @@ public struct NotificationDeepLink: Equatable, Hashable, Sendable {
             case "issues":
                 tab = .issues
                 number = Self.number(parts)
-            case "pulls":
+            case "pulls", "pull":
                 tab = .pulls
                 number = Self.number(parts)
             case "discussions":

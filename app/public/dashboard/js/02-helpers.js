@@ -1862,6 +1862,7 @@
   // Feature-tab route segments (mirrors 404.html's `featureTabs` list) - tells
   // a tab route (e.g. /owner/repo/issues) apart from a tree/blob code deep link.
   const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];
+  const REPO_ROUTE_SEGMENTS = [...REPO_TAB_ROUTES, "pull", "agents", "settings", "tree", "blob", "compare"];
 
   // Owner/admin Agents and owner-only Settings are only recognized for an
   // account that can actually see them. A non-owner deep link falls through
@@ -1887,7 +1888,7 @@
     const owner = safeDecodeURIComponent(parts[0]);
     const name = safeDecodeURIComponent(parts[1]);
     const rest = parts.slice(2);
-    if (rest.length && ![...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0])) return value;
+    if (rest.length && !REPO_ROUTE_SEGMENTS.includes(rest[0])) return value;
     if (!repoShortName(owner, name)) return value;
     return [repoPathUrl({ owner, name }), ...rest].join("/") + tail.join("");
   }
@@ -2001,10 +2002,10 @@
     const short = prefixed ? null : repoShortRoute(first);
     if (short && parts.length && first.toLowerCase() === short.name.toLowerCase()) {
       const rest = parts.slice(1);
-      const routed = !rest.length || [...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0]);
-      return [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
+      const routed = !rest.length || REPO_ROUTE_SEGMENTS.includes(rest[0]);
+      parts = [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
     }
-    return parts;
+    return parts[2] === "pull" ? [...parts.slice(0, 2), "pulls", ...parts.slice(3)] : parts;
   }
 
   function requestedRepoKey() {
@@ -2019,7 +2020,7 @@
   }
 
   // Pull-detail sections are addressable in their own right
-  // (/owner/repo/pulls/93/files) so a link to the Files changed review opens
+  // (/owner/repo/pull/93/files) so a link to the Files changed review opens
   // there for whoever it is sent to. Conversation is the default and stays on
   // the bare record URL.
   const REPO_RECORD_SECTIONS = [
@@ -2038,7 +2039,7 @@
   }
 
   function repoRecordUrl(repo, kind, number, section) {
-    const url = `${repoLinkUrl(repo)}/${kind}/${number}`;
+    const url = `${repoLinkUrl(repo)}/${kind === "pulls" ? "pull" : kind}/${number}`;
     // Only pulls have sections; an issue/discussion URL never grows a suffix.
     const suffix = kind === "pulls" ? normalizeRepoRecordSection(section) : "conversation";
     return suffix === "conversation" ? url : `${url}/${suffix}`;
@@ -2067,6 +2068,17 @@
     const head = spec.slice(separator + 3).trim();
     if (!base || !head || base.length > 250 || head.length > 250) return null;
     return { base, head };
+  }
+
+  function splitRepoCodeRef(kind, parts, refs) {
+    const names = new Set((refs || []).map((ref) => String(ref || "").trim()).filter(Boolean));
+    const segments = (parts || []).map((part) => String(part || "")).filter(Boolean);
+    const longest = segments.length - (kind === "blob" ? 1 : 0);
+    for (let size = longest; size > 0; size -= 1) {
+      const ref = segments.slice(0, size).join("/");
+      if (names.has(ref)) return { ref, path: segments.slice(size).join("/") };
+    }
+    return null;
   }
 
   function repoCompareRouteOptions(search) {

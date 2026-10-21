@@ -272,7 +272,7 @@ def test_microjob_subjects_link_directly_to_the_issue_or_pull_request():
         },
     }, "issue_report")
     assert pull["type"] == "pull"
-    assert pull["url"] == "/forkmesh/app/pulls/17"
+    assert pull["url"] == "/forkmesh/app/pull/17"
     assert pull["title"] == "Ship the ledger title links"
     assert issue["type"] == "issue"
     assert issue["url"] == "/forkmesh/app/issues/23"
@@ -442,7 +442,7 @@ def test_public_handler_projects_canonical_sources_and_links_paid_work(monkeypat
         for link in payout["links"])
     assert any(
         link["type"] == "pull"
-        and link["url"] == "/forkmesh/app/pulls/17"
+        and link["url"] == "/forkmesh/app/pull/17"
         for link in payout["links"])
 
     advertising = by_id["advertising-revenue:ad-1"]

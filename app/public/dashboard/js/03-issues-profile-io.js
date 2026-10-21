@@ -1047,13 +1047,13 @@
   // resulting portable binary patch + commit series. For a fork, comparison
   // happens on the fork's mirror while the signed, self-contained proposal is
   // delivered to the parent's durable inbox; the parent node can be offline.
-  async function submitWebPullOpen(repo, title, body, base, head) {
+  async function submitWebPullOpen(repo, title, body, base, head, aiModel = "") {
     const targetRepo = pullRequestTargetRepo(repo);
     const parent = pullRequestParent(repo);
     const signedHead = parent
       ? `${repoDisplayOwner(repo) || repo.owner}:${head}`
       : head;
-    const pull = await signWebPull(repo, targetRepo, title, body, base, head, signedHead);
+    const pull = withPullAiModel(await signWebPull(repo, targetRepo, title, body, base, head, signedHead), aiModel);
     const payload = { owner: targetRepo.owner, repo: targetRepo.name, pull };
     try {
       const data = await fetchRepoMutation(targetRepo, "pulls", payload);
@@ -1061,14 +1061,19 @@
     } catch (error) {
       if (targetRepo === repo || String(error?.code || error?.message || "") !== "read_only_mirror") throw error;
     }
-    const ownPull = await signWebPull(repo, repo, title, body, base, head, head);
+    const ownPull = withPullAiModel(await signWebPull(repo, repo, title, body, base, head, head), aiModel);
     const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull: ownPull });
     return { ...data, pull: ownPull, targetRepo: repo };
   }
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
 
-  async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = "") {
+  function withPullAiModel(pull, aiModel) {
+    const model = cleanAiModel(String(aiModel || ""));
+    return model ? { ...pull, aiModel: model } : pull;
+  }
+
+  async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = "", aiModel = "") {
     const origin = String(remote?.origin || "").toLowerCase();
     const owner = String(remote?.owner || "");
     const name = String(remote?.name || "");
@@ -1076,7 +1081,7 @@
       throw new Error("invalid_remote_fork");
     }
     const signedHead = `${location.host}/${repoDisplayKey(repo)}:${head}`;
-    const pull = await signWebPull(repo, { owner, name }, title, body, base, head, signedHead, compareBase);
+    const pull = withPullAiModel(await signWebPull(repo, { owner, name }, title, body, base, head, signedHead, compareBase), aiModel);
     let response;
     try {
       response = await fetch(`${origin}/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls`, {

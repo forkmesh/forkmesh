@@ -98,11 +98,11 @@
       && repoMatchesKey(repo, routeRepoKey);
     const routeKind = routeMatchesRepo ? routeParts[2] : undefined;
     const routePath = routeMatchesRepo && routeParts.length > 3 ? routeParts.slice(3).map(decodeURIComponent).join("/") : "";
-    // /owner/repo/pulls/<N> is a record deep link (the desktop client's
+    // /owner/repo/pull/<N> is a record deep link (the desktop client's
     // "View on website" button, or a refreshed/shared PR detail URL): keep
     // the number in the address bar and open that record's detail page below.
     // Issues deep-link the same way so a refresh on an open issue stays on it.
-    // A pull may carry its open section too (/pulls/<N>/files), so a link
+    // A pull may carry its open section too (/pull/<N>/files), so a link
     // copied from the Files changed review reopens on that tab.
     const recordNumber = routeMatchesRepo && routeParts.length > 3
       ? safeDecodeURIComponent(routeParts[3])
@@ -146,7 +146,7 @@
             ? `${repoLinkUrl(repo)}/insights${repoInsightsRouteQuery()}`
             : repoTabRoutesFor(repo).includes(routeKind)
               ? `${repoLinkUrl(repo)}/${routeKind}`
-              : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
+              : repoCodeLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
     navigateHistory(detailPath);
     const branch = repoSelectedBranch(repo);
     const issuesCount = repoCount(repo, ["issueCount", "issues", "issuesCount", "openIssues"]);
@@ -558,8 +558,7 @@
     // the requested panel compete with data the visitor could not see.
     if (initialTab === "code") {
       state.loadedRepoTabs.code = true;
-      if (routeKind === "blob" && routePath) loadRepositoryBlob(repo, routePath);
-      else loadRepositoryTree(repo, routeKind === "tree" ? routePath : "");
+      void openRepoCodeRoute(repo, routeKind, routePath, { explicitRef: Boolean(routeRef) });
       scheduleRepoAboutRail(repo);
     }
     // Feature tabs read only their own record folders, while code deep links
@@ -1163,6 +1162,7 @@
     const icons = {
       mention: "at-sign",
       subscribed: "bell-ring",
+      reaction: "smile-plus",
       issue_opened: "circle-dot",
       pull_submitted: "git-pull-request",
       repo_activity: "git-commit-horizontal",
@@ -3115,7 +3115,7 @@
         const { base, head } = state.repoCompare;
         const title = state.repoCompare.title || state.repoCompare.result?.title || "";
         navigateHistory(`${repoLinkUrl(state.selectedRepo)}/pulls`);
-        openPullCompose(state.selectedRepo, { base, head, title });
+        openPullCompose(state.selectedRepo, { base, head, title, aiModel: state.repoCompare.result?.aiModel || "" });
         return;
       }
 
@@ -3230,7 +3230,7 @@
         }
         const kind = recordButton.dataset.repoRecordKind || "";
         const number = recordButton.dataset.repoRecordNumber || "";
-        // Mirror the opened record into the address bar (/owner/repo/pulls/4)
+        // Mirror the opened record into the address bar (/owner/repo/pull/4)
         // so refresh and the desktop client's "View on website" button land on
         // this same detail page. Pending records have no mirror number yet.
         // Opening a record from the list always starts on Conversation.
@@ -3500,6 +3500,56 @@
         return;
       }
 
+      const diffExplorerToggle = event.target.closest("[data-repo-diff-explorer-toggle]");
+      if (diffExplorerToggle) {
+        setRepoDiffExplorerOpen(diffExplorerToggle.getAttribute("aria-pressed") !== "true");
+        return;
+      }
+
+      const diffWrapButton = event.target.closest("[data-repo-diff-wrap]");
+      if (diffWrapButton) {
+        setRepoDiffWrap(diffWrapButton.getAttribute("aria-pressed") !== "true");
+        return;
+      }
+
+      const diffStepButton = event.target.closest("[data-repo-diff-step]");
+      if (diffStepButton) {
+        stepRepoDiffFile(Number(diffStepButton.dataset.repoDiffStep) || 1);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-current-jump]")) {
+        jumpToRepoDiffFile(repoPullFilesSection()?.dataset.activeFile || "");
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-current-collapse]")) {
+        toggleRepoDiffCurrentCollapse();
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-collapse-all]")) {
+        toggleRepoDiffCollapseAll();
+        return;
+      }
+
+      const diffCurrentViewed = event.target.closest("[data-repo-diff-current-viewed]");
+      if (diffCurrentViewed && state.selectedRepo) {
+        setRepoDiffCurrentViewed(state.selectedRepo, diffCurrentViewed.dataset.repoDiffCurrentViewed || "");
+        return;
+      }
+
+      const diffFlagButton = event.target.closest("[data-repo-diff-flag]");
+      if (diffFlagButton) {
+        jumpToRepoDiffFile(diffFlagButton.dataset.repoDiffFlag || "");
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-open-checks]")) {
+        event.target.closest("[data-repo-record-detail]")?.querySelector('[data-repo-record-tab="checks"]')?.click();
+        return;
+      }
+
       const pullExplorerModeButton = event.target.closest("[data-repo-pull-explorer-mode]");
       if (pullExplorerModeButton) {
         setRepoPullExplorerMode(pullExplorerModeButton.dataset.repoPullExplorerMode || "tree");
@@ -3519,6 +3569,7 @@
         // Scroll-spy would otherwise fight the jump it just triggered.
         if (section) section.dataset.activeFile = path;
         setRepoPullActiveFile(path, { revealDiff: true });
+        if (window.matchMedia?.("(max-width: 1023px)")?.matches) setRepoDiffExplorerOpen(false);
         return;
       }
 
@@ -4036,10 +4087,19 @@
   // Rotating a phone (or resizing a window) across the split breakpoint
   // re-lays the diff in the layout that fits.
   window.matchMedia?.(PULL_DIFF_NARROW_QUERY)?.addEventListener?.("change", () => {
-    const list = document.querySelector("[data-repo-pull-diff-list]");
-    if (list && list.dataset.diffMode !== effectivePullDiffMode(pullLayoutPrefs().diff)) {
+    const section = repoPullFilesSection();
+    const list = section?.querySelector("[data-repo-pull-diff-list]");
+    const mode = effectivePullDiffMode(pullLayoutPrefs().diff);
+    if (list && (list.dataset.diffMode !== mode
+        || section.dataset.diffWrap !== (pullDiffWraps(mode) ? "true" : "false"))) {
       refreshRepoPullDiff();
     }
+  });
+
+  document.addEventListener("click", (event) => {
+    document.querySelectorAll("[data-repo-diff-settings][open]").forEach((menu) => {
+      if (!menu.contains(event.target) || event.target.closest(".fm-menu-item")) menu.open = false;
+    });
   });
 
   $("#repoSearch")?.addEventListener("input", () => {
@@ -4346,6 +4406,12 @@
         return;
       }
     }
+    if (!typingTarget && !event.metaKey && !event.ctrlKey && !event.altKey
+        && (event.key === "j" || event.key === "k")
+        && stepRepoDiffFile(event.key === "j" ? 1 : -1)) {
+      event.preventDefault();
+      return;
+    }
     if (!typingTarget && event.key.toLowerCase() === "t" && state.selectedRepo) {
       event.preventDefault();
       openRepoFileFinder(event.target);
@@ -4395,8 +4461,8 @@
               loadRepoCommits(repo);
             }
           }
-          // Step Back/Forward between a record detail (/pulls/4), one of its
-          // sections (/pulls/4/files) and the list.
+          // Step Back/Forward between a record detail (/pull/4), one of its
+          // sections (/pull/4/files) and the list.
           if (["pulls", "discussions", "issues"].includes(kind)) {
             const recordNumber = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
             if (kind === "pulls" && recordNumber === "send") {
@@ -4432,10 +4498,10 @@
               }
             }
           }
-        } else if (kind === "blob" && path) {
-          loadRepositoryBlob(repo, path);
         } else {
-          loadRepositoryTree(repo, kind === "tree" ? path : "");
+          const routeRef = String(new URLSearchParams(location.search).get("ref") || "").trim();
+          applyRepoCodeRef(repo, routeRef || repoDefaultBranch(repo));
+          void openRepoCodeRoute(repo, kind, path, { explicitRef: Boolean(routeRef) });
         }
         return;
       }

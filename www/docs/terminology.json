@@ -227,11 +227,19 @@
   ],
   "compatibilityAliases": [
     {
-      "id": "repo-pull-singular",
+      "id": "repo-pulls-record",
       "kind": "route",
       "resolver": "repo_alias_redirect",
-      "alias": "/OWNER/REPOSITORY/pull/NUMBER",
-      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "alias": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pull/NUMBER",
+      "policy": "Permanent 308 that keeps the query and any section such as /files; never removed. One pull request lives at /OWNER/REPOSITORY/pull/NUMBER and the list stays at /OWNER/REPOSITORY/pulls, as on GitHub."
+    },
+    {
+      "id": "repo-pull-list",
+      "kind": "route",
+      "resolver": "repo_alias_redirect",
+      "alias": "/OWNER/REPOSITORY/pull",
+      "canonical": "/OWNER/REPOSITORY/pulls",
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {
@@ -247,7 +255,7 @@
       "kind": "route",
       "resolver": "repo_alias_redirect",
       "alias": "/OWNER/REPOSITORY/pull-requests/NUMBER",
-      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pull/NUMBER",
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {
@@ -255,7 +263,7 @@
       "kind": "route",
       "resolver": "repo_alias_redirect",
       "alias": "/OWNER/REPOSITORY/merge_requests/NUMBER",
-      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pull/NUMBER",
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {
@@ -271,7 +279,7 @@
       "kind": "route",
       "resolver": "repo_alias_redirect",
       "alias": "/OWNER/REPOSITORY/-/merge_requests/NUMBER",
-      "canonical": "/OWNER/REPOSITORY/pulls/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/pull/NUMBER",
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {
