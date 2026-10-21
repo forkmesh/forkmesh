@@ -35491,11 +35491,13 @@ async def _web_fork_eligible_nodes(env, actor, account):
     return [node for node in active if node in headless]
 
 
-async def _web_fork_create(env, request, source_owner, source_name):
-    try:
-        data = await bounded_json_request(request)
-    except Exception:
-        return json_response({"error": "invalid_json"}, status=400)
+async def _web_fork_create(env, request, source_owner, source_name,
+                           data=None):
+    if data is None:
+        try:
+            data = await bounded_json_request(request)
+        except Exception:
+            return json_response({"error": "invalid_json"}, status=400)
     actor_bi, account = await _account_session_record(env, request, data)
     actor = safe_segment(clean_string(
         (account or {}).get("name", ""), MAX_NODE_NAME).lower())
