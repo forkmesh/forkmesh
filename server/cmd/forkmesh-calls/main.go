@@ -50,7 +50,7 @@ func origins(list string) func(string) bool {
 			allowed[item] = true
 		}
 	}
-	return func(origin string) bool { return allowed[origin] }
+	return func(origin string) bool { return origin == "" || allowed[origin] }
 }
 
 func readSecret() string {

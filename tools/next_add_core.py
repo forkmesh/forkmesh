@@ -835,7 +835,7 @@ class FleetBackend:
         import next_fleet
         fleet = self.fleet(job)
         next_fleet.install(fleet, job.name, self.ssh, job.runner,
-                           ("daemon", "files", "start"), vultr=self.vultr,
+                           ("daemon", "calls", "files", "start"), vultr=self.vultr,
                            replacement=self.voter(job))
         job.runner.step("%s: ask the mirror daemon to sync every served repository "
                         "from its peers" % job.name,
@@ -1131,7 +1131,7 @@ class FleetBackend:
                         JOIN_TIMEOUT, name, role,
                         ", ".join(job.state.get("voters_before") or []))]
         if step == "services":
-            return ["%s: install --steps daemon,files,start, then POST "
+            return ["%s: install --steps daemon,calls,files,start, then POST "
                     "/v1/control/sync" % name,
                     "%s: next_deploy.py upload %s --rev %s (wheelhouse and venv "
                     "caches reused)" % (name, name, job.state.get("rev"))]
