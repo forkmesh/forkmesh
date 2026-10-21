@@ -38,6 +38,7 @@ client joins again and lands on a surviving node.
 | Allowed browser origins | `FORKMESH_CALLS_ORIGINS`: `https://<served app host>` (`app.forkmesh.com`), `https://app.next.forkmesh.com`, plus any `[calls] origins` |
 | Outbound | `IPAddressDeny=` blocks the private, CGNAT, link-local, documentation and reserved ranges, the same list as the TURN relay. Loopback stays open because Caddy proxies over it. |
 | IDS | service user `fmnext-calls` (unit `fmnext-calls.service`, exe the binary), TCP listener 7881, UDP listener 3479, and the unit in the lockdown stop list with its `50-fmnext-ids.conf` drop-in |
+| FM Media (off) | with `[calls] fmm = true`: QUIC and WebTransport on UDP `<fmm_port>` (default 4433), certificates in `/var/lib/fmnext-calls` ([FM Media](#fm-media)) |
 
 Memory: a core has about 1 GB. These limits sit beside the app (340M max),
 rqlite (320M max), the daemon (128M max) and coturn (200M max). They follow
@@ -51,13 +52,17 @@ enabled = true
 udp_port = 3479
 http_port = 7881
 # origins = ["https://forkmesh.com"]   # extra browser origins, https only
+fmm = false        # FM Media listener (below); off until clients exist
+fmm_port = 4433
 ```
 
 The renderer refuses the following:
 
 - unknown keys, including the old `node`;
-- a UDP port outside 1025-10239, which keeps it inside the range the IDS
-  watches (`udp_max_port`);
+- a UDP port (`udp_port` or `fmm_port`) outside 1025-10239, which keeps it
+  inside the range the IDS watches (`udp_max_port`);
+- `fmm` that is not true or false, or an `fmm_port` that another core
+  service or `udp_port` already uses;
 - a port another core service already uses (TURN, WireGuard, rqlite, the app
   ports);
 - `FORKMESH_CALLS_SECRET` missing from `[app] secrets`/`optional_secrets`;
@@ -150,6 +155,58 @@ The `calls` step sees that the running process loaded a different secret and
 restarts the server. Calls in progress drop and rejoin. Tickets the app
 signed with the old secret stop working on cores that already restarted, but
 tickets live only 60 s.
+
+## FM Media
+
+The same binary also serves FM Media, our own call engine over QUIC
+([../server/fmm-server.md](../server/fmm-server.md)), when `[calls] fmm =
+true`. It ships **off** (`deploy/fleet.toml` has `fmm = false`, and
+`test_live_fleet_ships_fm_media_disabled` keeps it so) until clients that
+speak it exist. With it off, nothing renders or opens.
+
+With it on, every core gets:
+
+- `Environment=FORKMESH_CALLS_FMM=:4433`, `StateDirectory=fmnext-calls` and
+  `StateDirectoryMode=0700` in `fmnext-calls.service`. The binary keeps its
+  two certificates and their private keys in `/var/lib/fmnext-calls`
+  (0600). The keys never leave the core, and nothing else uses them.
+- UDP 4433 in nftables (`udp dport { 443, 51820, 3479, 4433 }`), in the AWS
+  security group (`next_aws.py ingress_rules`) and in the IDS UDP listener
+  list (`calls_ports`). The port is not 443, because Caddy already holds
+  443/udp for HTTP/3.
+- `/calls/health` adds `"fmm": {"port", "path", "alpn", "hashes"}`. The app
+  reads it with its usual 10 s probe and passes the URL and hashes in the
+  ticket response.
+
+No new step and no new secret. The certificates make themselves (a new one
+every 6 days, two published at a time), and the tickets use
+`FORKMESH_CALLS_SECRET`. The `calls` step installs the binary as before, and
+the `files` step restarts the unit because its file changed.
+`/var/lib/fmnext-calls` is outside every IDS integrity root, so certificate
+rotation raises no alert.
+
+Rollout, once clients exist:
+
+1. Set `fmm = true` in `deploy/fleet.toml`, drop the
+   `test_live_fleet_ships_fm_media_disabled` assertion, and merge. The
+   auto-deploy roll renders the new unit and firewall on every core. (For
+   AWS cores, also apply `next_aws.py`'s ingress rules.)
+2. Check every core advertises it:
+
+   ```sh
+   for n in n2 n3 n4; do curl -fsS https://$n.next.forkmesh.com/calls/health; echo; done
+   ```
+
+   Each should list `fmm` with two hashes.
+3. Clients that send `"engines": ["fmm", ...]` now get the `fmm` block;
+   everybody else is unchanged. The first joiner's engine holds a room until
+   it empties, so an old client cannot join a call that started on FM Media.
+   Ship the FM Media clients before turning it on for everyone.
+
+To turn FM Media off again, set `fmm = false` and roll. The health block
+disappears at once, so the app stops offering it within 10 s. Calls on FM
+Media end when the unit restarts. Their clients ask for a new ticket, and
+since it has no `fmm` block they rejoin over WebRTC.
 
 ## Turn it off
 

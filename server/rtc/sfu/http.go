@@ -3,6 +3,7 @@ package sfu
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -78,11 +79,19 @@ func (s *Server) serveSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ticket, err := signal.VerifyTicket(s.cfg.Secret, join.Ticket, time.Now())
+	if err == nil && (signal.TicketEngine(ticket) != signal.EngineWebRTC || ticket.Standby) {
+		err = signal.ErrTicketMalformed
+	}
 	if err != nil {
 		_ = conn.WriteJSON(map[string]any{"type": "error", "error": "ticket_invalid"})
 		return
 	}
 	room, participant, others, err := s.join(ticket.Room, ticket.Peer, ticket.Acct)
+	if errors.Is(err, ErrRoomEngine) {
+		_ = conn.WriteJSON(map[string]any{"type": "error", "error": "room_engine",
+			"engine": s.cfg.Engines.Engine(ticket.Room)})
+		return
+	}
 	if err != nil {
 		_ = conn.WriteJSON(map[string]any{"type": "error", "error": "room_full"})
 		return

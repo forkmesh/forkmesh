@@ -24,6 +24,7 @@ MEMBERS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/members/?$")
 ROOM_ACCESS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/room-access/?$")
+CALL_ENGINE_FMM = "fmm"
 CALL_TICKET_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/call-ticket/?$")
 HISTORY_RE = re.compile(
@@ -1144,7 +1145,14 @@ async def _room_access(runtime, account_bi, actor, channel_id, is_admin):
     return _response(runtime, payload)
 
 
-async def _call_ticket(runtime, account_bi, channel_id, is_admin):
+def _call_engines(data):
+    engines = (data or {}).get("engines") if isinstance(data, dict) else None
+    if not isinstance(engines, list):
+        return set()
+    return {str(e) for e in engines[:8] if isinstance(e, str)}
+
+
+async def _call_ticket(runtime, account_bi, channel_id, is_admin, data=None):
     row, record = await _readable_channel(
         runtime, account_bi, channel_id, is_admin)
     if not row:
@@ -1156,6 +1164,10 @@ async def _call_ticket(runtime, account_bi, channel_id, is_admin):
     if not ticket:
         return _response(
             runtime, {"error": "calls_unavailable"}, status=503)
+    if CALL_ENGINE_FMM in _call_engines(data):
+        media = await runtime.call_fm_media(channel_id, account_bi, ticket)
+        if media:
+            ticket["fmm"] = media
     return _response(runtime, ticket)
 
 
@@ -1454,7 +1466,8 @@ async def handle(runtime, path):
                 status=405,
                 allow="POST",
             )
-        return await _call_ticket(runtime, account_bi, channel_id, is_admin)
+        return await _call_ticket(
+            runtime, account_bi, channel_id, is_admin, data)
 
     if webhooks and method in {"GET", "POST"}:
         _row, record, denied = await _require_manager(

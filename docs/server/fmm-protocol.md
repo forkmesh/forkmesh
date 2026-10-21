@@ -218,7 +218,8 @@ should close.
 | 0x0F | Ack | receiver → SFU, SFU → publisher | stream (1), count (1..16), count × frame id (2) |
 | 0x10 | Recovery | receiver → SFU, SFU → publisher | stream (1), frame id (2) |
 
-Error codes: 400 track refused, 401 ticket refused or not joined, 503 room
+Error codes: 400 track refused, 401 ticket refused or not joined, 409 room
+runs on the other engine (from the call server, [fmm-server.md](fmm-server.md)), 503 room
 full. Any message other than Join before joining is refused and closes the
 connection.
 
@@ -668,10 +669,13 @@ payloads without reading them; it reads only the datagram header.
 
 - **Rooms and admission.** `NewRoom(Config{Admit: func(ticket) (peerID, error)})`;
   `Connect(transport)` returns a `Peer` that handles that connection's
-  datagrams and control. Wiring `Admit` to the ticket check of
-  [rtc.md](rtc.md#signal) and choosing the room from the ticket is left for
-  the SFU-over-QUIC phase. Limits: 16 peers, 4 tracks per peer, 4 encodings
-  per track, peer ids unique in the room.
+  datagrams and control. The call server ([fmm-server.md](fmm-server.md))
+  checks the ticket of [rtc.md](rtc.md#signal), picks the room from it and
+  answers `Admit` with the ticket's peer id; `Peer.Closed` tells it when the
+  core closed a peer. `wire.DedupKey` (kind and transport sequence) is the
+  key the QUIC transport uses to drop copies of redundantly sent datagrams.
+  Limits: 16 peers, 4 tracks per peer, 4 encodings per track, peer ids
+  unique in the room.
 - **Tracks and encodings.** A Publish announces a TrackAdded to every other
   peer with a downstream stream id chosen per subscriber (1..254); a
   subscription starts forwarding. Additional encodings of a track are
@@ -1127,5 +1131,6 @@ heavily loaded machine (from about 7 000 executions for the reassembler to
   DRED off for now (docs/native/opus.md).
 - A per-track packet cache shared by all subscribers at the SFU. Today each
   subscriber's downstream sender keeps its own 512-packet video history.
-- Room and ticket integration, failover and the WebRTC bridge (phase 4).
+- The WebRTC bridge. Room and ticket integration and failover are in the
+  call server ([fmm-server.md](fmm-server.md)).
 - Audio time-stretching instead of whole-frame drop and insert.

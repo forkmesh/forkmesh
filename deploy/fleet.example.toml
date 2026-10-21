@@ -97,6 +97,8 @@ enabled = false
 
 [calls]
 enabled = false
+# fmm = false        # FM Media over QUIC/WebTransport (docs/deploy/calls.md)
+# fmm_port = 4433
 
 [dns]
 # Leaderless DNS health on the core nodes (app/host/forkmesh_host/

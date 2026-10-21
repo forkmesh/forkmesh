@@ -568,6 +568,15 @@ is the first 32 hex digits of an HMAC of the account under the same secret: it
 lets the SFU count one account's places in a room without learning who the
 account is.
 
+Two optional ticket fields belong to FM Media ([fmm-server.md](fmm-server.md)):
+`"engine":"fmm"` and `"standby":true`. They are left out of WebRTC tickets,
+so those are byte for byte what they were. The WebRTC SFU refuses a ticket
+that has either field (`ticket_invalid`). Both servers in `forkmesh-calls`
+share `signal.RoomEngines`: the server cap counts people on both engines,
+and a room belongs to the engine of its first joiner until it empties. A
+WebRTC join to a room that runs on FM Media gets
+`{"type":"error","error":"room_engine","engine":"fmm"}`.
+
 ## Frame encryption
 
 Each sender encrypts every encoded frame with AES-GCM before packetization:

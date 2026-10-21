@@ -16,6 +16,7 @@ import (
 	"forkmesh.com/mirror-node/rtc/ice"
 	"forkmesh.com/mirror-node/rtc/rtp"
 	"forkmesh.com/mirror-node/rtc/sdp"
+	"forkmesh.com/mirror-node/rtc/signal"
 	"forkmesh.com/mirror-node/rtc/srtp"
 )
 
@@ -56,6 +57,7 @@ var (
 	ErrBadOffer    = errors.New("offer unusable")
 	ErrNotJoined   = errors.New("not joined")
 	ErrAlreadyLive = errors.New("already negotiated")
+	ErrRoomEngine  = signal.ErrRoomEngine
 )
 
 type Config struct {
@@ -64,6 +66,7 @@ type Config struct {
 	AllowOrigin     func(string) bool
 	VideoBitrate    uint64
 	MaxParticipants int
+	Engines         *signal.RoomEngines
 }
 
 type Server struct {
@@ -297,9 +300,16 @@ func (s *Server) join(id, peerID, account string) (*Room, *Participant, []string
 	if s.people() >= MaxServerPeople {
 		return nil, nil, nil, ErrRoomFull
 	}
+	if _, err := s.cfg.Engines.Join(id, signal.EngineWebRTC); err != nil {
+		if errors.Is(err, signal.ErrRoomEngine) {
+			return nil, nil, nil, ErrRoomEngine
+		}
+		return nil, nil, nil, ErrRoomFull
+	}
 	room := s.room(id)
 	participant, others, err := room.join(peerID, account)
 	if err != nil {
+		s.cfg.Engines.Leave(id, signal.EngineWebRTC)
 		room.mu.Lock()
 		empty := len(room.participants) == 0
 		room.mu.Unlock()
@@ -663,6 +673,7 @@ func (r *Room) leave(p *Participant) {
 		r.renegotiateLocked(other)
 	}
 	r.mu.Unlock()
+	r.server.cfg.Engines.Leave(r.id, signal.EngineWebRTC)
 	r.server.dropRoomIfEmpty(r)
 }
 

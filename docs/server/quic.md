@@ -389,6 +389,32 @@ traffic (824 and 2,255 packets in one run), 15 key updates on one side and
   previous update is acknowledged, not after 3 × the largest PTO (draft 2.5
   SHOULD). At the default 2^22 packets this never comes early.
 
+## Datagram loss and the media layer
+
+`Config.DatagramLossExempt` (added 2026-10-21 for the FM Media call server,
+[fmm-server.md](fmm-server.md#datagrams-and-quics-own-congestion-control)):
+when a lost packet carried only DATAGRAM, ACK or PING frames, the loss does
+not start a congestion event. Persistent congestion still collapses the
+window, and a lost packet with any other frame (stream data, flow control,
+connection ids) still halves it.
+
+Why: FM Media runs its own congestion control for media (receiver reports,
+delay gradient plus loss, FEC sized from measured loss). Under it, NewReno's
+reaction to random loss was harmful. At 5% loss there is a loss event every
+round trip, so the window stayed at its 2-packet minimum. About 26 kB/s got
+through at a 90 ms RTT, and the rest of the media waited in the datagram send
+queue: the measured RTT reached 1.87 s and the call broke. With the
+exemption the same link ran at a 92 to 117 ms RTT. `TestDatagramLossExemptKeepsTheWindowOpen`
+(10% loss) keeps the window at 12,000 bytes against 2,400 without it, and
+`TestDatagramLossExemptStillBacksOffForStreams` shows a stream still
+shrinks it.
+
+This is a deviation. RFC 9221 puts DATAGRAM frames under the connection's
+congestion controller, and they still are: they wait for window and pacing
+like any packet. What changes is what counts as congestion. Only senders
+that run their own media congestion control may turn it on. Off by
+default.
+
 ## What is not implemented
 
 - 0-RTT and session resumption: the server sends no session tickets and

@@ -46,8 +46,9 @@ Everything else is ours.
    Opus concealment and in-band FEC; a video frame buffer that releases
    whole decodable frames and asks for a keyframe only when it must.
 5. **SFU.** The rooms, tickets, account caps and failover of the current SFU,
-   over QUIC. During the move it bridges to WebRTC participants in the same
-   room, so old and new clients can share a call.
+   over QUIC ([fmm-server.md](fmm-server.md)). Decided 2026-10-21: no
+   bridge to WebRTC participants for now. A room runs on the engine of its
+   first joiner until it empties, and clients that speak both follow it.
 
 ## One engine core for every client
 
@@ -118,7 +119,7 @@ test):
 | 1. Bench | baseline numbers for the WebRTC path on every network profile |
 | 2. QUIC and WebTransport | headless Chromium holds a WebTransport session with our server; migration and loss tests pass |
 | 3. Engine core | Go clients hold a call through the bench's impaired networks |
-| 4. SFU over QUIC, bridged to WebRTC | mixed rooms work; failover still moves a call |
+| 4. SFU over QUIC | Go clients hold a call through the server over impaired links; a core's death moves the call to the standby core with audio back in under 500 ms; headless Chromium joins over WebTransport; one engine per room (the WebRTC bridge waits for phase 8) |
 | 5. iPhone engine | the iPhone app calls on FM Media; voice changer, backgrounds and faces still apply |
 | 6. Browser engine | WebTransport + WebCodecs client; browsers without WebTransport stay on WebRTC |
 | 7. Android engine | same as iPhone |

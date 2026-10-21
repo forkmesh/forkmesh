@@ -346,3 +346,14 @@ func ParseFeedback(b []byte) ([]Message, error) {
 func FeedbackType(t uint8) bool {
 	return t == MsgReport || t == MsgNack || t == MsgAck || t == MsgRecovery
 }
+
+func DedupKey(b []byte) (uint64, bool) {
+	if len(b) < 4 || b[0]>>4 != Version {
+		return 0, false
+	}
+	kind := b[0] & 0x0F
+	if kind != KindMedia && kind != KindRepair && kind != KindPadding {
+		return 0, false
+	}
+	return uint64(kind)<<16 | uint64(binary.BigEndian.Uint16(b[2:4])), true
+}

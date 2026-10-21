@@ -11194,6 +11194,10 @@ CHAT_CALL_TICKET_TTL_MS = 60 * 1000
 CHAT_CALL_HEALTH_TTL_MS = 10 * 1000
 CHAT_CALL_HEALTH_TIMEOUT_SECONDS = 1.5
 CHAT_CALL_NODES_MAX = 16
+CHAT_CALL_FMM_ENGINE = "fmm"
+CHAT_CALL_FMM_PATH = "/calls/fmm"
+CHAT_CALL_FMM_ALPN = "fmm/1"
+CHAT_CALL_FMM_HASHES_MAX = 4
 _CHAT_CALL_HEALTH = {}
 
 
@@ -11220,6 +11224,101 @@ def chat_call_pick(room, nodes, healthy):
         (str(room) + "\n" + node).encode()).hexdigest())
 
 
+def chat_call_rank(room, nodes, healthy):
+    candidates = [node for node in nodes if node in healthy] or list(nodes)
+    return sorted(candidates, key=lambda node: hashlib.sha256(
+        (str(room) + "\n" + node).encode()).hexdigest(), reverse=True)
+
+
+def chat_call_fm_media_info(body):
+    fmm = body.get("fmm") if isinstance(body, dict) else None
+    if not isinstance(fmm, dict):
+        return None
+    port = fmm.get("port")
+    hashes = fmm.get("hashes")
+    if (isinstance(port, bool) or not isinstance(port, int)
+            or not 0 < port < 65536
+            or fmm.get("path") != CHAT_CALL_FMM_PATH
+            or fmm.get("alpn") != CHAT_CALL_FMM_ALPN
+            or not isinstance(hashes, list)
+            or not 0 < len(hashes) <= CHAT_CALL_FMM_HASHES_MAX):
+        return None
+    kept = []
+    for value in hashes:
+        if not isinstance(value, str):
+            return None
+        try:
+            raw = base64.b64decode(value, validate=True)
+        except Exception:
+            return None
+        if len(raw) != 32:
+            return None
+        kept.append(value)
+    return {"port": port, "hashes": kept}
+
+
+def chat_call_host(node):
+    return node[len("wss://"):-len("/calls/ws")]
+
+
+def chat_call_sign(secret, body):
+    payload = base64.urlsafe_b64encode(json.dumps(
+        body, separators=(",", ":")).encode()).decode().rstrip("=")
+    signature = hmac.new(
+        secret.encode(), ("forkmesh-call-ticket-v1\n" + payload).encode(),
+        "sha256").digest()
+    return payload + "." + base64.urlsafe_b64encode(
+        signature).decode().rstrip("=")
+
+
+def chat_call_fm_ticket(secret, room, peer, account, now_ms, standby):
+    body = {"room": room, "peer": peer, "acct": account,
+            "exp": int((now_ms + CHAT_CALL_TICKET_TTL_MS) // 1000),
+            "engine": CHAT_CALL_FMM_ENGINE}
+    if standby:
+        body["standby"] = True
+    return chat_call_sign(secret, body)
+
+
+def chat_call_fm_media(secret, room, peer, account, now_ms, nodes, healthy,
+                       info):
+    ranked = chat_call_rank(room, nodes, healthy)
+    if not ranked or ranked[0] not in info:
+        return None
+
+    def endpoint(node, standby):
+        host, media = chat_call_host(node), info[node]
+        return {
+            "url": "https://%s:%d%s" % (host, media["port"], CHAT_CALL_FMM_PATH),
+            "addr": "%s:%d" % (host, media["port"]),
+            "alpn": CHAT_CALL_FMM_ALPN,
+            "hashes": list(media["hashes"]),
+            "ticket": chat_call_fm_ticket(
+                secret, room, peer, account, now_ms, standby),
+        }
+
+    access = dict(endpoint(ranked[0], False), engine=CHAT_CALL_FMM_ENGINE)
+    if len(ranked) > 1 and ranked[1] in info:
+        access["standby"] = endpoint(ranked[1], True)
+    return access
+
+
+async def _chat_call_probe(node):
+    try:
+        response = await js_fetch_with_timeout(
+            chat_call_health_url(node), {"method": "GET"},
+            CHAT_CALL_HEALTH_TIMEOUT_SECONDS)
+        if int(getattr(response, "status", 0) or 0) != 200:
+            return False, None
+    except Exception:
+        return False, None
+    try:
+        return True, chat_call_fm_media_info(
+            json.loads(str(await response.text()) or "{}"))
+    except Exception:
+        return True, None
+
+
 async def _chat_call_healthy(nodes):
     now = int(Date.now())
     healthy = set()
@@ -11228,17 +11327,20 @@ async def _chat_call_healthy(nodes):
         if checked and now - checked[0] < CHAT_CALL_HEALTH_TTL_MS:
             ok = checked[1]
         else:
-            try:
-                response = await js_fetch_with_timeout(
-                    chat_call_health_url(node), {"method": "GET"},
-                    CHAT_CALL_HEALTH_TIMEOUT_SECONDS)
-                ok = int(getattr(response, "status", 0) or 0) == 200
-            except Exception:
-                ok = False
-            _CHAT_CALL_HEALTH[node] = (now, ok)
+            ok, media = await _chat_call_probe(node)
+            _CHAT_CALL_HEALTH[node] = (now, ok, media)
         if ok:
             healthy.add(node)
     return healthy
+
+
+def _chat_call_fm_info(nodes):
+    info = {}
+    for node in nodes:
+        checked = _CHAT_CALL_HEALTH.get(node)
+        if checked and checked[1] and len(checked) > 2 and checked[2]:
+            info[node] = checked[2]
+    return info
 
 
 def chat_call_room(secret, channel_id):
@@ -11256,18 +11358,11 @@ def chat_call_account(secret, account_bi):
 
 def chat_call_ticket(secret, channel_id, peer, now_ms, account_bi):
     room = chat_call_room(secret, channel_id)
-    body = json.dumps(
-        {"room": room, "peer": peer,
-         "acct": chat_call_account(secret, account_bi),
-         "exp": int((now_ms + CHAT_CALL_TICKET_TTL_MS) // 1000)},
-        separators=(",", ":")).encode()
-    payload = base64.urlsafe_b64encode(body).decode().rstrip("=")
-    signature = hmac.new(
-        secret.encode(), ("forkmesh-call-ticket-v1\n" + payload).encode(),
-        "sha256").digest()
     return {
-        "ticket": payload + "." + base64.urlsafe_b64encode(
-            signature).decode().rstrip("="),
+        "ticket": chat_call_sign(secret, {
+            "room": room, "peer": peer,
+            "acct": chat_call_account(secret, account_bi),
+            "exp": int((now_ms + CHAT_CALL_TICKET_TTL_MS) // 1000)}),
         "room": room,
         "peer": peer,
     }
@@ -11315,6 +11410,18 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
         ticket["url"] = chat_call_pick(
             ticket["room"], nodes, await _chat_call_healthy(nodes))
         return ticket
+
+    async def call_fm_media(self, channel_id, account_bi, ticket):
+        secret = str(getattr(self.env, "FORKMESH_CALLS_SECRET", "") or "")
+        nodes = chat_call_nodes(
+            getattr(self.env, "FORKMESH_CALLS_NODES", "") or "")
+        if len(secret) < 32 or not nodes or not ticket:
+            return None
+        healthy = await _chat_call_healthy(nodes)
+        return chat_call_fm_media(
+            secret, ticket["room"], ticket["peer"],
+            chat_call_account(secret, account_bi), int(Date.now()), nodes,
+            healthy, _chat_call_fm_info(nodes))
 
     def webhook_url(self, token):
         return self.public_origin() + "/api/chat/webhooks/" + str(token)

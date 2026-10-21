@@ -25,10 +25,12 @@ var (
 )
 
 type Ticket struct {
-	Room string `json:"room"`
-	Peer string `json:"peer"`
-	Acct string `json:"acct"`
-	Exp  int64  `json:"exp"`
+	Room    string `json:"room"`
+	Peer    string `json:"peer"`
+	Acct    string `json:"acct"`
+	Exp     int64  `json:"exp"`
+	Engine  string `json:"engine,omitempty"`
+	Standby bool   `json:"standby,omitempty"`
 }
 
 func RoomID(secret []byte, channelID string) string {

@@ -156,6 +156,10 @@ total_quota = 1200
 enabled = true
 udp_port = 3479
 http_port = 7881
+# FM Media (QUIC and WebTransport) beside the WebRTC SFU; off until clients
+# exist (docs/deploy/calls.md "FM Media").
+fmm = false
+fmm_port = 4433
 
 [dns]
 # Leaderless DNS health on the core nodes (app/host/forkmesh_host/

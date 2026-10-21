@@ -133,6 +133,78 @@ def test_firewall_ids_and_app_env_on_every_core(tmp_path):
         assert "FORKMESH_CALLS_SECRET" not in env
 
 
+FMM_UNIT_LINES = ("Environment=FORKMESH_CALLS_FMM=:4433",
+                  "StateDirectory=fmnext-calls", "StateDirectoryMode=0700")
+
+
+def test_fm_media_is_off_unless_asked_for(tmp_path):
+    files, _ = rendered(calls_fleet(tmp_path))
+    unit = files[UNIT]
+    assert "FORKMESH_CALLS_FMM" not in unit and "StateDirectory" not in unit
+    assert "4433" not in files["/etc/nftables.conf"]
+    ids = json.loads(files["/etc/forkmesh-next/ids.json"])
+    assert 4433 not in ids["listeners"]["udp"]
+    assert ("udp", 4433, 4433, "0.0.0.0/0") not in next_aws.ingress_rules(
+        "core", calls_fleet(tmp_path))
+
+
+def test_fm_media_opens_its_port_on_every_core(tmp_path):
+    fleet = calls_fleet(tmp_path, fmm=True)
+    units = {}
+    for name in CORES:
+        files, manifest = rendered(fleet, name)
+        unit = files[UNIT]
+        lines = unit.splitlines()
+        for line in FMM_UNIT_LINES:
+            assert line in lines, line
+        origins = lines.index(next(x for x in lines
+                                   if x.startswith("Environment=FORKMESH_CALLS_ORIGINS=")))
+        assert lines[origins + 1:origins + 4] == list(FMM_UNIT_LINES)
+        assert "ProtectSystem=strict" in lines
+        assert ("udp dport { 443, 51820, 3479, 4433 } accept"
+                in files["/etc/nftables.conf"])
+        ids = json.loads(files["/etc/forkmesh-next/ids.json"])
+        assert {3479, 4433} <= set(ids["listeners"]["udp"])
+        assert ids["listeners"]["udp_max_port"] > 4433
+        assert 4433 not in ids["listeners"]["tcp"]
+        assert "/var/lib" not in json.dumps(ids["integrity"])
+        units[name] = re.sub(r"\bn[0-9]\b|203\.0\.113\.[0-9]+|2001:db8:[0-9a-f:]*",
+                             "X", unit)
+    assert len(set(units.values())) == 1
+    assert ("udp", 4433, 4433, "0.0.0.0/0") in next_aws.ingress_rules("core", fleet)
+    assert ("udp", 3479, 3479, "0.0.0.0/0") in next_aws.ingress_rules("core", fleet)
+
+
+def test_fm_media_port_moves_with_the_setting(tmp_path):
+    files, _ = rendered(calls_fleet(tmp_path, fmm=True, fmm_port=4500))
+    assert "Environment=FORKMESH_CALLS_FMM=:4500" in files[UNIT].splitlines()
+    assert "udp dport { 443, 51820, 3479, 4500 } accept" in files["/etc/nftables.conf"]
+
+
+@pytest.mark.parametrize("calls, message", [
+    ({"fmm": True, "fmm_port": 3479}, "fmm_port 3479 is already used"),
+    ({"fmm": True, "fmm_port": 443}, "1025-10239"),
+    ({"fmm": True, "fmm_port": 51820}, "1025-10239"),
+    ({"fmm": True, "fmm_port": "4433"}, "integer"),
+    ({"fmm": "on"}, "calls.fmm must be true or false"),
+])
+def test_bad_fm_media_settings_are_refused(tmp_path, calls, message):
+    with pytest.raises(render.RenderError, match=message):
+        render.render_core(calls_fleet(tmp_path, **calls), "n1")
+
+
+def test_fm_media_port_must_not_clash_with_turn(tmp_path):
+    with pytest.raises(render.RenderError, match="fmm_port 3478"):
+        render.render_core(calls_fleet(tmp_path, turn=True, fmm=True,
+                                       fmm_port=3478), "n1")
+
+
+def test_live_fleet_ships_fm_media_disabled():
+    with open(REPO / "deploy" / "fleet.toml", "rb") as handle:
+        live = tomllib.load(handle)
+    assert live["calls"].get("fmm", False) is False
+
+
 def test_turn_and_calls_ports_live_side_by_side(tmp_path):
     files, _ = rendered(calls_fleet(tmp_path, turn=True))
     assert "udp dport { 443, 51820, 3478, 49160-49999, 3479 } accept" in \

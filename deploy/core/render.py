@@ -1261,7 +1261,7 @@ CALLS_BIN = "/usr/local/bin/forkmesh-calls"
 CALLS_UNIT = "fmnext-calls.service"
 CALLS_UNIT_PATH = "/etc/systemd/system/" + CALLS_UNIT
 CALLS_DEFAULTS = {"enabled": False, "udp_port": 3479, "http_port": 7881,
-                  "origins": []}
+                  "origins": [], "fmm": False, "fmm_port": 4433}
 CALLS_RESERVED_UDP = (53, 68, 123, 323, 443, 546)
 CALLS_RESERVED_TCP = (22, 25, 53, 80, 443, 8791)
 CALLS_ORIGIN = re.compile(r"^https://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
@@ -1276,14 +1276,16 @@ def calls_settings(fleet):
     if unknown:
         raise RenderError("unknown [calls] keys: %s" % ", ".join(sorted(unknown)))
     settings = dict(CALLS_DEFAULTS, **raw)
-    if not isinstance(settings["enabled"], bool):
-        raise RenderError("calls.enabled must be true or false")
-    for key in ("udp_port", "http_port"):
+    for key in ("enabled", "fmm"):
+        if not isinstance(settings[key], bool):
+            raise RenderError("calls.%s must be true or false" % key)
+    for key in ("udp_port", "http_port", "fmm_port"):
         value = settings[key]
         if isinstance(value, bool) or not isinstance(value, int):
             raise RenderError("calls.%s must be an integer" % key)
-    if not 1024 < settings["udp_port"] < 10240:
-        raise RenderError("calls.udp_port must be in 1025-10239")
+    for key in ("udp_port", "fmm_port"):
+        if not 1024 < settings[key] < 10240:
+            raise RenderError("calls.%s must be in 1025-10239" % key)
     if not 1024 < settings["http_port"] < 65536:
         raise RenderError("calls.http_port must be in 1025-65535")
     origins = settings["origins"]
@@ -1308,6 +1310,10 @@ def calls_settings(fleet):
     if settings["udp_port"] in udp_taken:
         raise RenderError("calls.udp_port %d is already used on the cores"
                           % settings["udp_port"])
+    if settings["fmm"] and settings["fmm_port"] in udp_taken | {
+            settings["udp_port"]}:
+        raise RenderError("calls.fmm_port %d is already used on the cores"
+                          % settings["fmm_port"])
     if settings["http_port"] in tcp_taken:
         raise RenderError("calls.http_port %d is already used on the cores"
                           % settings["http_port"])
@@ -1342,11 +1348,28 @@ def calls_app_settings(fleet):
                          ",".join(calls_urls(fleet)))
 
 
+def calls_fmm_enabled(fleet):
+    settings = calls_settings(fleet)
+    return settings["enabled"] and settings["fmm"]
+
+
 def calls_ports(fleet):
     settings = calls_settings(fleet)
     if not settings["enabled"]:
         return [], []
-    return [settings["http_port"]], [settings["udp_port"]]
+    udp = [settings["udp_port"]]
+    if settings["fmm"]:
+        udp.append(settings["fmm_port"])
+    return [settings["http_port"]], udp
+
+
+def calls_fmm_unit_lines(fleet):
+    if not calls_fmm_enabled(fleet):
+        return ""
+    return "".join("\n" + line for line in (
+        "Environment=FORKMESH_CALLS_FMM=:%d" % calls_settings(fleet)["fmm_port"],
+        "StateDirectory=" + CALLS_USER,
+        "StateDirectoryMode=0700"))
 
 
 def calls_ip_deny():
@@ -1381,6 +1404,7 @@ def add_calls_files(fleet, node, paths, values, add, units,
                   CALLS_UDP_PORT=settings["udp_port"],
                   CALLS_ADDRESSES=",".join(addresses),
                   CALLS_ORIGINS=",".join(calls_origins(fleet)),
+                  CALLS_FMM=calls_fmm_unit_lines(fleet),
                   CALLS_IP_DENY=calls_ip_deny())
     add(CALLS_UNIT_PATH, template(CALLS_UNIT, values))
     units.append(CALLS_UNIT)

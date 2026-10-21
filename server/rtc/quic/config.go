@@ -34,6 +34,7 @@ type Config struct {
 	MaxPaths                    int
 	PathKeepAlivePeriod         time.Duration
 	DatagramDedupKey            func(datagram []byte) (uint64, bool)
+	DatagramLossExempt          bool
 }
 
 const (

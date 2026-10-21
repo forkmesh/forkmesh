@@ -686,7 +686,11 @@ func (c *Conn) detectLost(pc *pathCtx, space int, now time.Time) {
 	}
 	var first, last time.Time
 	anyInFlight := false
+	reliable := !c.config.DatagramLossExempt
 	for _, p := range lost {
+		if !reliable && carriesReliable(p) {
+			reliable = true
+		}
 		if p.inFlight {
 			anyInFlight = true
 			if first.IsZero() {
@@ -698,7 +702,9 @@ func (c *Conn) detectLost(pc *pathCtx, space int, now time.Time) {
 	}
 	c.removeSent(sp)
 	if anyInFlight {
-		rec.cc.onCongestionEvent(last, now)
+		if reliable {
+			rec.cc.onCongestionEvent(last, now)
+		}
 		limit := persistentThreshold * c.pathPTO(pc)
 		if rec.rtt.hasSample && first.After(rec.rtt.firstAt) && last.Sub(first) > limit {
 			rec.cc.onPersistentCongestion()
@@ -932,4 +938,15 @@ func (c *Conn) requeueUnacked(pc *pathCtx, space int, limit int) {
 			return
 		}
 	}
+}
+
+func carriesReliable(p *sentPacket) bool {
+	for _, f := range p.frames {
+		switch f.kind {
+		case sfDatagram, sfAck, sfPing:
+		default:
+			return true
+		}
+	}
+	return false
 }

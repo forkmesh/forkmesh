@@ -23,7 +23,7 @@ def _ticket_functions():
         named = (
             isinstance(node, ast.FunctionDef)
             and node.name in ("chat_call_room", "chat_call_ticket", "chat_call_nodes", "chat_call_account",
-                              "chat_call_health_url", "chat_call_pick"))
+                              "chat_call_health_url", "chat_call_pick", "chat_call_sign"))
         constant = isinstance(node, ast.Assign) and any(
             getattr(target, "id", "") in ("CHAT_CALL_TICKET_TTL_MS", "CHAT_CALL_NODES_MAX")
             for target in node.targets)

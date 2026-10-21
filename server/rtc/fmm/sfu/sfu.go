@@ -551,6 +551,12 @@ func (r *Room) Peers() []string {
 
 func (p *Peer) ID() string { return p.id }
 
+func (p *Peer) Closed() bool {
+	p.room.mu.Lock()
+	defer p.room.mu.Unlock()
+	return p.closed
+}
+
 func (p *Peer) Downstream() *hop.Sender { return p.down }
 
 func (p *Peer) send(m wire.Message) {

@@ -56,6 +56,50 @@ server; every join draws and shares a new key (see "Keys" below). The panel says
 (`server/rtc/sfu`) kills the server under a three-browser encrypted call and
 checks that all three decode each other again on the other one.
 
+## FM Media tickets
+
+A client that can speak FM Media ([../server/fmm-server.md](../server/fmm-server.md))
+sends `{"engines": ["fmm", "webrtc"]}` as the body of the same
+`call-ticket` POST. The response then has every usual field, unchanged, plus
+`fmm` (`call_fm_media` in `entry.py`):
+
+```json
+"fmm": {
+  "engine": "fmm",
+  "url": "https://n2.next.forkmesh.com:4433/calls/fmm",
+  "addr": "n2.next.forkmesh.com:4433",
+  "alpn": "fmm/1",
+  "hashes": ["<base64 SHA-256 of the current certificate>", "<of the next one>"],
+  "ticket": "<ticket with \"engine\":\"fmm\">",
+  "standby": {"url": "...", "addr": "...", "alpn": "fmm/1", "hashes": [...],
+              "ticket": "<ticket with \"engine\":\"fmm\",\"standby\":true>"}
+}
+```
+
+- Browsers open `url` with WebTransport and `serverCertificateHashes` built
+  from `hashes`. Phones dial `addr` over QUIC with ALPN `alpn` and pin the
+  same hashes.
+- The primary is the core `url` names for WebRTC, the first rendezvous
+  choice. The standby is the second choice, the core every client of the
+  room moves to if the first dies. Both tickets carry the WebRTC ticket's
+  peer id.
+- The block appears only when the picked core advertises FM Media in its
+  `/calls/health` (`{"ok": true, "fmm": {"port", "path", "alpn", "hashes"}}`,
+  read by the same cached probe and checked by `chat_call_fm_media_info`).
+  `standby` appears only when the second choice advertises it too: a standby
+  anywhere else would split the call when the first core dies.
+- No body, or `engines` without `"fmm"`, gives exactly the old response, so
+  old clients see no change.
+- The client tries FM Media first. If the core answers Error 409 (`engine
+  webrtc`), the room is a WebRTC call already and the client joins with
+  `ticket`/`url` from the same response. The first joiner's engine holds a
+  room until it empties. An old client asking to join a room that runs on
+  FM Media gets `room_engine` from the WebRTC server.
+
+`app/tests/test_chat_call_fm_media.py` checks the ticket against the Go
+vector, the primary and standby choice, health validation, and that old
+clients get the old response.
+
 ## Who is in the call
 
 The call server knows peer ids, not names. Participants announce themselves
