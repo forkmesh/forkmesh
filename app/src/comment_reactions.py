@@ -25,6 +25,8 @@ MAX_NUMBER = 1_000_000_000
 MAX_PEOPLE = 10
 MAX_PER_ACCOUNT_PER_COMMENT = 8
 MAX_ROWS_PER_RECORD = 5000
+MAX_ROWS_PER_ACCOUNT_PER_RECORD = 200
+MAX_PINGED_COMMENTS_PER_DAY = 30
 RATE_WINDOW_MS = 60 * 1000
 RATE_MAX_PER_WINDOW = 60
 DAY_MS = 24 * 60 * 60 * 1000
@@ -154,6 +156,13 @@ async def _rate_limited(env, account_bi, now):
         extra_headers={"Retry-After": str(max(1, (retry_ms + 999) // 1000))})
 
 
+async def _ping_budget_left(env, account_bi, now):
+    return await _count(
+        env, "SELECT COUNT(DISTINCT repo_bi || '/' || subject || '/' || comment) "
+        "AS n FROM comment_reactions WHERE account_bi=? AND created_at>=?",
+        account_bi, now - DAY_MS) <= MAX_PINGED_COMMENTS_PER_DAY
+
+
 async def _count(env, sql, *args):
     row = await d1_first(env, sql, *args)
     return int((row or {}).get("n") or 0)
@@ -164,6 +173,11 @@ async def _refusal(env, repo_bi, subject, comment, account_bi, now):
             env, "SELECT COUNT(*) AS n FROM comment_reactions WHERE repo_bi=? "
             "AND subject=? AND comment=? AND account_bi=?",
             repo_bi, subject, comment, account_bi) >= MAX_PER_ACCOUNT_PER_COMMENT:
+        return "too_many_reactions", 409
+    if await _count(
+            env, "SELECT COUNT(*) AS n FROM comment_reactions WHERE repo_bi=? "
+            "AND subject=? AND account_bi=?",
+            repo_bi, subject, account_bi) >= MAX_ROWS_PER_ACCOUNT_PER_RECORD:
         return "too_many_reactions", 409
     if await _count(
             env, "SELECT COUNT(*) AS n FROM comment_reactions WHERE repo_bi=? "
@@ -337,7 +351,8 @@ async def _write(env, request, owner, repo):
             repo_bi, subject, comment, emoji, account_bi)
     rows = await _rows(env, repo_bi, subject, comment)
     tallies = (await summarize(env, rows, account_bi)).get(comment, [])
-    if added and data.get("author"):
+    if added and data.get("author") and await _ping_budget_left(
+            env, account_bi, now):
         try:
             await notify_author(env, request, owner, repo, access, kind, number,
                                 comment, account, data.get("author"))

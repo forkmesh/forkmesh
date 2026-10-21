@@ -107,12 +107,15 @@ Checks, in order:
 5. 60 writes a minute per account (`comment_reaction_rate`): 429 with
    `Retry-After`.
 6. For a new reaction: at most 8 reactions per account on one comment (409
+   `too_many_reactions`), 200 per account on one record (409
    `too_many_reactions`), 5000 per record (409 `record_full`) and 1000 new
    reactions per account per day (429 `daily_limit`). Together with the
    per-account uniqueness these bound the table.
 
 The comment id is not checked against the ledger (the App does not read
-repository content); the caps bound what a made-up id can cost.
+repository content); the caps bound what a made-up id can cost. The
+per-account cap on one record means a single account cannot fill a real
+record's 5000 rows with invented ids and lock everyone else out.
 
 ## Notifications
 
@@ -130,6 +133,12 @@ cannot read it.
 The author comes from the dashboard (the loaded record's `authorName` for the
 comment), because the App cannot read the ledger. Naming someone else only
 files that collapsed ping for that comment, the same reach an @mention has.
+Because a made-up comment id gets its own dedupe key, a reaction only pings
+while the reacting account has reacted to at most 30 distinct comments in
+the last 24 hours (`MAX_PINGED_COMMENTS_PER_DAY`, counted across every
+repository from the account's own rows). Past that the reaction is still
+stored and shown, but nobody is pinged, so one account cannot flood someone's
+inbox by inventing ids.
 
 ## Agents
 

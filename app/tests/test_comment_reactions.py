@@ -269,6 +269,29 @@ def test_daily_and_per_record_caps_bound_the_table(rt, monkeypatch):
     assert full.status == 409 and full.data["error"] == "record_full"
 
 
+def test_one_account_cannot_fill_a_record_with_made_up_comment_ids(rt, monkeypatch):
+    monkeypatch.setattr(comment_reactions, "RATE_MAX_PER_WINDOW", 1000)
+    monkeypatch.setattr(comment_reactions, "MAX_ROWS_PER_ACCOUNT_PER_RECORD", 3)
+    for index in range(3):
+        assert post("alice", "app", "bob", comment="x%d" % index).status == 200
+    over = post("alice", "app", "bob", comment="x9")
+    assert over.status == 409 and over.data["error"] == "too_many_reactions"
+    assert post("alice", "app", "carol", comment="x9").status == 200
+    assert post("alice", "app", "bob", comment="x9", number=8).status == 200
+
+
+def test_made_up_comment_ids_stop_pinging_after_the_daily_budget(rt, monkeypatch):
+    monkeypatch.setattr(comment_reactions, "RATE_MAX_PER_WINDOW", 1000)
+    monkeypatch.setattr(comment_reactions, "MAX_PINGED_COMMENTS_PER_DAY", 2)
+    for index in range(5):
+        post("alice", "app", "mallory", comment="fake%d" % index, author="victim")
+    pings = [p for p in rt.pings if p["recipient"] == "victim"]
+    assert len({p["dedupe"] for p in pings}) == 2
+    rt.clock.now += comment_reactions.DAY_MS + 1
+    post("alice", "app", "mallory", comment="fake9", author="victim")
+    assert len({p["dedupe"] for p in rt.pings if p["recipient"] == "victim"}) == 3
+
+
 def test_people_lists_are_bounded_and_names_are_encrypted(rt, monkeypatch):
     monkeypatch.setattr(comment_reactions, "RATE_MAX_PER_WINDOW", 1000)
     for index in range(15):
