@@ -52,8 +52,12 @@ Open that link, write a title and a description, and click **Create pull
 request**. The pull request goes to the original repository. Your browser signs
 it, so the maintainer can check it came from your account.
 
-A pull request records your branch as it was when you opened it. If you push
-more commits after review, open a new pull request from the same link.
+A pull request records your branch as it was when you opened it. After you
+push more commits, open the pull request and click **Update pull request**: it
+sends your branch's current state as a new revision, and the comments and
+reviews stay. If you rewrote your branch (amend or rebase), push it under a new
+name, for example `git push fork my-change-2`, and update the pull request
+from that branch. You never need to force-push.
 
 ## Without a fork
 
@@ -67,7 +71,8 @@ request from the link git prints. See
 - You can fork public repositories hosted on ForkMesh's servers. A repository
   published from someone's own node cannot be forked from the website yet.
 - Pushes are fast-forward only: you cannot force-push or delete a branch over
-  git. Delete branches on the fork's **Branches** page.
+  git. To change history in a pull request, push a new branch and use **Update
+  pull request**. Delete branches on the fork's **Branches** page.
 - Forks have their own per-account limit, separate from the repositories you
   create.
 - If git says `Authentication failed`, check the account name or email and the
