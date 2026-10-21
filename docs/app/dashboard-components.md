@@ -83,7 +83,9 @@ would stay on screen. With the display under `:where`, `hidden`, responsive
   `fm-menu-item-danger`. Every account menu row leads with a Lucide icon
   and keeps its text in a `span`; the status and away rows mark theirs
   `data-account-menu-label`, which is what `04-account.js` rewrites, so the
-  icon survives a status change. Instance themes restyle the rows (the Google
+  icon survives a status change. The underline of the profile and network
+  page tabs is `border-[var(--dashboard-tab-underline)]`, not a fixed
+  `#f78166`, so instance themes recolour it like the repository tabs. Instance themes restyle the rows (the Google
   theme draws 40 px full-bleed rows with 20 px icons, as in Drive's menus).
 - Profile settings, about, pings, feedback, agent sign-in terminal and new
   repository dialogs: `fm-dialog`. The new repository source picker is an
