@@ -382,7 +382,7 @@ def stage_app() -> Path:
     # is staged here rather than duplicated into app/public.
     copy_file(WORLD / "public" / "qr.js", destination / "qr.js")
     build_app_plugins.stage_web(destination)
-    build_dashboard_assets.minify_staged(destination, esbuild_binary())
+    minify_dashboard(destination)
     finish_stage(destination, "app")
     stage_office(destination)
     return destination
@@ -460,7 +460,7 @@ def stage_cutover() -> Path:
     docs_site.stage_docs(destination)
     world_marketplace_packages(destination)
     build_app_plugins.stage_web(destination)
-    build_dashboard_assets.minify_staged(destination, esbuild_binary())
+    minify_dashboard(destination)
     return finish_stage(destination, "app")
 
 
@@ -573,6 +573,15 @@ def esbuild_binary() -> str:
     if not binary.exists():
         raise RuntimeError("esbuild is missing from world/tools/node_modules")
     return str(binary)
+
+
+def minify_dashboard(destination: Path) -> list[str]:
+    try:
+        esbuild = esbuild_binary()
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        print("dashboard bundle left unminified: %s" % error, file=sys.stderr)
+        return []
+    return build_dashboard_assets.minify_staged(destination, esbuild)
 
 
 def esbuild_package() -> Path:

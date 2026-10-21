@@ -121,5 +121,17 @@ def _function(name):
 def test_app_and_cutover_stages_minify_before_stamping_versions():
     for stager in ("stage_app", "stage_cutover"):
         body = _function(stager)
-        minify = body.index("build_dashboard_assets.minify_staged(destination, esbuild_binary())")
+        minify = body.index("minify_dashboard(destination)")
         assert minify < body.index("finish_stage(destination"), stager
+
+
+def test_a_stage_without_esbuild_keeps_the_readable_bundle(tmp_path, monkeypatch):
+    import build_site_assets
+
+    def missing():
+        raise RuntimeError("World build needs npm to install esbuild (world/tools)")
+
+    monkeypatch.setattr(build_site_assets, "esbuild_binary", missing)
+    (tmp_path / "dashboard.js").write_text("const readable = 1;\n")
+    assert build_site_assets.minify_dashboard(tmp_path) == []
+    assert (tmp_path / "dashboard.js").read_text() == "const readable = 1;\n"
