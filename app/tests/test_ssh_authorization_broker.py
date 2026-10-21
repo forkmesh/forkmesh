@@ -247,7 +247,7 @@ def test_packaging_separates_token_git_lookup_and_mirror_accounts():
 
 
 def _relay_response(request, **credential):
-    password = "fms1.%s.1783000000000.%s" % (request["keyId"], "a" * 64)
+    password = "fms1.%s.1783000000000.%s" % (request["keyId"], "a" * 64)  # forkmesh-secret-scan:ignore-line
     return {
         "ok": True,
         "authorized": True,

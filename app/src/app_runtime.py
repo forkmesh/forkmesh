@@ -2983,6 +2983,9 @@ class Default:
         if url.path in ("/api/notifications", "/api/notifications/"):
             return await notifications_handler(self.env, request)
 
+        if url.path in ("/api/me/recent-pushes", "/api/me/recent-pushes/"):
+            return await recent_pushes_handler(self.env, request)
+
         # A countdown or alarm ran out on the desktop's clock; the ping it
         # raises is what reaches the phone over APNs.
         if url.path in ("/api/notifications/timer",

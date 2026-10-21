@@ -127,6 +127,7 @@
     // /owner/repo/compare/<base>...<head> opens the branch diff viewer on the
     // Pull requests tab (the Agents tab links an agent's branch there).
     const compareRoute = routeMatchesRepo ? parseRepoCompareRoute(routeParts) : null;
+    if (compareRoute) Object.assign(compareRoute, repoCompareRouteOptions(location.search));
     const detailPath = recordRoute
       ? repoRecordUrl(repo, recordRoute.kind, recordRoute.number, recordRoute.section)
       : commitHash
@@ -3111,8 +3112,9 @@
           return;
         }
         const { base, head } = state.repoCompare;
+        const title = state.repoCompare.title || state.repoCompare.result?.title || "";
         navigateHistory(`${repoLinkUrl(state.selectedRepo)}/pulls`);
-        openPullCompose(state.selectedRepo, { base, head });
+        openPullCompose(state.selectedRepo, { base, head, title });
         return;
       }
 

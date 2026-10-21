@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -209,6 +210,203 @@ func (b jobSandbox) pruneSessionHomes(homes, keep string) {
 		}
 		if info, err := os.Lstat(path); err == nil && time.Since(info.ModTime()) > jobSessionHomeTTL {
 			_ = removeOwnCloneUnder(homes, path)
+		}
+	}
+}
+
+// --- the persistent home -------------------------------------------------
+//
+// The job user's persistent HOME holds the provider sign-ins, and every job
+// runs as that same user. Left owned by the job user, any job (a pull
+// request's workflow, another tenant's agent run) could read the stored
+// credentials, or plant files there (a .claude.json MCP server, a shell rc
+// file, CLI settings hooks) that the next sign-in or terminal session in
+// that home would run. So between those sessions the home belongs to the
+// daemon with mode 0700: the daemon (root) still copies credentials in and
+// out, and the job user cannot even traverse it. A sign-in or terminal
+// session first scrubs it down to the credential files, then hands it to
+// the job user until the last such session ends.
+
+const runnerJobAccountComment = "ForkMesh runner jobs"
+
+type persistentHomeGate struct {
+	mu   sync.Mutex
+	open int
+}
+
+// scrubPersistentHome removes everything from home except the provider
+// credential files (jobCredentialFiles). Symlinks are removed, never
+// followed.
+func scrubPersistentHome(home string) error {
+	keep := map[string]map[string]bool{}
+	for _, rel := range jobCredentialFiles {
+		dir, name := filepath.Split(rel)
+		dir = filepath.Clean(dir)
+		if keep[dir] == nil {
+			keep[dir] = map[string]bool{}
+		}
+		keep[dir][name] = true
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		return err
+	}
+	var failed error
+	for _, entry := range entries {
+		path := filepath.Join(home, entry.Name())
+		files, kept := keep[entry.Name()]
+		info, err := os.Lstat(path)
+		if err == nil && kept && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			inner, err := os.ReadDir(path)
+			if err != nil {
+				failed = err
+				continue
+			}
+			for _, item := range inner {
+				child := filepath.Join(path, item.Name())
+				if childInfo, err := os.Lstat(child); err == nil && files[item.Name()] &&
+					childInfo.Mode().IsRegular() {
+					continue
+				}
+				if err := removeTreeUnder(path, child); err != nil {
+					failed = err
+				}
+			}
+			continue
+		}
+		if err == nil && entry.Name() == claudeConfigFile && info.Mode().IsRegular() &&
+			trimClaudeConfig(path, info) == nil {
+			continue
+		}
+		if err := removeTreeUnder(home, path); err != nil {
+			failed = err
+		}
+	}
+	return failed
+}
+
+const claudeConfigFile = ".claude.json"
+
+var claudeConfigKeys = []string{"oauthAccount", "userID", "hasCompletedOnboarding", "lastOnboardingVersion"}
+
+func trimClaudeConfig(path string, info os.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || info.Size() > runnerClaudeConfigLimit {
+		return errors.New("not a trimmable config")
+	}
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return err
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, runnerClaudeConfigLimit+1))
+	file.Close()
+	if err != nil {
+		return err
+	}
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &config); err != nil {
+		return err
+	}
+	kept := map[string]json.RawMessage{}
+	for _, key := range claudeConfigKeys {
+		if value, ok := config[key]; ok {
+			kept[key] = value
+		}
+	}
+	out, err := json.Marshal(kept)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".trim"
+	_ = os.Remove(tmp)
+	next, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := next.Write(out); err != nil {
+		next.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := next.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Lchown(tmp, int(stat.Uid), int(stat.Gid)); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func isRunnerJobAccount(comment string) bool {
+	return strings.HasPrefix(comment, runnerJobAccountComment)
+}
+
+func (b jobSandbox) setPersistentHomeOwner(uid, gid int) error {
+	home := b.persistentHome()
+	info, err := os.Lstat(home)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s is not a directory", home)
+	}
+	if err := os.Lchown(home, uid, gid); err != nil {
+		return err
+	}
+	return os.Chmod(home, jobHomeLockedMode)
+}
+
+// lockPersistentHome scrubs the home and gives it to the daemon, unless a
+// sign-in or terminal session holds it open.
+func (b jobSandbox) lockPersistentHome() error {
+	if b.homeGate == nil || b.persistentHome() == "" {
+		return nil
+	}
+	b.homeGate.mu.Lock()
+	defer b.homeGate.mu.Unlock()
+	if b.homeGate.open > 0 {
+		return nil
+	}
+	if err := b.setPersistentHomeOwner(os.Geteuid(), os.Getegid()); err != nil {
+		return err
+	}
+	return scrubPersistentHome(b.persistentHome())
+}
+
+// openPersistentHome hands the scrubbed home to the job user for one
+// sign-in or terminal session; closePersistentHome takes it back.
+func (b jobSandbox) openPersistentHome() error {
+	if b.homeGate == nil || b.persistentHome() == "" {
+		return nil
+	}
+	b.homeGate.mu.Lock()
+	defer b.homeGate.mu.Unlock()
+	if b.homeGate.open == 0 {
+		if err := scrubPersistentHome(b.persistentHome()); err != nil {
+			return err
+		}
+		if err := b.setPersistentHomeOwner(b.uid, b.gidOrUID()); err != nil {
+			return err
+		}
+	}
+	b.homeGate.open++
+	return nil
+}
+
+func (b jobSandbox) closePersistentHome() {
+	if b.homeGate == nil || b.persistentHome() == "" {
+		return
+	}
+	b.homeGate.mu.Lock()
+	defer b.homeGate.mu.Unlock()
+	if b.homeGate.open > 0 {
+		b.homeGate.open--
+	}
+	if b.homeGate.open == 0 {
+		if err := b.setPersistentHomeOwner(os.Geteuid(), os.Getegid()); err != nil {
+			log.Printf("runner: the job user's home could not be locked: %v", err)
 		}
 	}
 }

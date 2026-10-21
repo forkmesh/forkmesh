@@ -70,15 +70,17 @@ generic package sockets and generated registries.
 - **CSV import**: up to 2000 rows per file; contacts are matched by email, so
   re-importing updates them; columns the CRM has no field for become custom
   columns.
-- An organization holds at most 5000 contacts (`MAX_CONTACTS`; the D1 trigger
+- An organization holds at most 5000 contacts (`MAX_CONTACTS`; 1.42.0, 2000
+  before, raised when the forkmesh org filled up mid-import). The D1 trigger
   `trg_crm_contact_limit_5000` aborts the insert with
-  `crm_contact_catalog_full`, and replaced the 2000-contact
-  `trg_crm_contact_limit` on 2026-10-20). Once it is full, an import still
-  updates the contacts it already knows and skips each new row with the row
-  error `crm_full` ("was not added because the CRM already holds 5000
-  contacts"), which the finish ping lists. Adding one contact by hand, from a shared sheet or
-  from a linked mail message answers `409 {"error": "crm_full"}`. Before
-  2026-10-20 the import let the trigger's D1 error escape as a 500.
+  `crm_contact_catalog_full`; the schema replay drops the old 2000-contact
+  `trg_crm_contact_limit`. Once it is full, an import still updates the
+  contacts it already knows and skips each new row with the row error
+  `crm_full` ("Row N was not added because the CRM already holds 5000
+  contacts."), which the finish ping lists. Adding one contact by hand, from a
+  shared sheet or from a linked mail message answers
+  `409 {"error": "crm_full"}`. Before 2026-10-20 the trigger's D1 error escaped
+  the import request as a 500 or 503.
 - A file whose every row names the same pipeline in its **Flow** or
   **Pipeline** column opens its new list bound to that pipeline. When an owner
   or admin imports such a file for a starter pipeline the organization does

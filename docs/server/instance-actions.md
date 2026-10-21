@@ -115,7 +115,7 @@ Every step gets the runner Actions environment plus:
 | `FORKMESH_BEFORE` | the push's previous commit (`before`), empty when unknown |
 | `FORKMESH_EVENT`, `GITHUB_EVENT_NAME` | `push`, `schedule`, `workflow_dispatch`, `issues`, `issue_comment` |
 | `FORKMESH_EVENT_PATH`, `GITHUB_EVENT_PATH` | JSON event payload file |
-| `FORKMESH_TOKEN`, `GITHUB_TOKEN` | job token for the job API (trusted jobs only) |
+| `FORKMESH_TOKEN`, `GITHUB_TOKEN` | job token for the job API (trusted jobs, and outside issue jobs scoped to their issue; see Secrets) |
 | `FORKMESH_API_URL` | instance origin, e.g. `https://git.example.org` |
 | `GITHUB_REPOSITORY` | `<owner>/<repo>` |
 | `GITHUB_SHA`, `GITHUB_REF`, `GITHUB_REF_NAME` | commit and ref |
@@ -372,10 +372,22 @@ name and update time only. Every change is audited. Repository secrets win
 over organization secrets with the same name. The repository Settings page
 has an Actions secrets section.
 
-Secrets, the job token and the push grant go only to **trusted** jobs: every
-event except a `pull_request` from someone without write access, on a runner
-row with `actions_trusted=1`. The runner masks every secret value of four or
-more bytes as `***` line by line, and the app masks again on report.
+Secrets, the job token and the push grant go only to **trusted** jobs, on a
+runner row with `actions_trusted=1`. Untrusted are: a `pull_request` from
+someone without write access; an `issues` or `issue_comment` event whose
+author is not a verified repository writer (a claimed name never counts);
+and any run on a `pr/<account>/` contributor branch, whoever queued it.
+The runner masks every secret value of four or more bytes as `***` line by
+line, and the app masks again on report.
+
+An untrusted `issues` or `issue_comment` job on a trusted runner still gets
+a job token, so triage and `/assign` workflows work on outside reports, but
+never secrets, a push grant or the bot's commit identity. Because a workflow
+may paste the outside text into a run step, that token is scoped in the job
+API: it reads the event and the issue that started the job, and may comment
+on, label, or assign and unassign the event's own verified sender on that
+issue only. Any other issue, opening an issue, closing or reopening, and
+assigning anyone else answer 403.
 
 ## Queue, lease, report
 

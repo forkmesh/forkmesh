@@ -131,12 +131,25 @@ Residual risks:
   swept between jobs.
 - The provider login is readable by agent code. Use a dedicated provider
   account for a pool that serves other people.
-- **Runner HOME isolation gap (open).** `systemd-run --scope --uid` resets
-  `HOME` from the job user's passwd entry, so a job runs with the job user's
-  persistent home rather than its per-session home. Credential copy-back is
-  guarded (only when the job's copy changed and never over a newer
-  credential), but per-session HOME isolation is not in effect until the
-  sandbox sets `HOME` after the uid switch.
+- **The persistent home is closed to jobs.** `systemd-run --scope --uid`
+  resets `HOME` from the job user's passwd entry, so the sandbox restores the
+  per-session `HOME` after the uid switch (`env -- HOME=<session home>`).
+  Between sign-in and terminal sessions the job user's persistent home is
+  owned by the daemon with mode 0700, so no job can read the stored
+  sign-ins or plant files there. A sign-in or terminal session first scrubs
+  it down to the credential files (`.claude/.credentials.json`,
+  `.codex/auth.json`), then hands it to the job user until the last session
+  ends. A job running at the same time as a sign-in can still reach it.
+  `.claude.json` is kept but cut down to `oauthAccount`, `userID` and the
+  onboarding flags: the runner reads `oauthAccount` to tell Claude accounts
+  apart, and dropping it would put every terminal back through first-run
+  setup; `mcpServers`, `projects` and hooks are what a job could plant, and
+  they go. An unparsable one is removed.
+  The daemon only locks and scrubs a job user whose passwd comment starts
+  with `ForkMesh runner jobs` (what `install-runner.sh` creates, and the only
+  existing account it accepts). A `runner.jobUser`/`jobUid` set by hand to
+  any other account, a person's own for example, has its home left as it
+  is and a warning in the log, since scrubbing would erase it.
 - The read grant exposes the whole repository; loopback is blocked for jobs,
   so agents cannot reach dev servers on `127.0.0.1`.
 - A non-root daemon runs jobs as its own user; a root daemon refuses to start

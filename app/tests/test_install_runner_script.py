@@ -156,6 +156,8 @@ def test_registers_with_a_signed_proof_and_writes_a_runner_config(tmp_path):
     nft = (root / "etc/forkmesh-runner/jobs.nft").read_text()
     assert 'meta skuid "fmjob-alice"' in nft and "192.168.0.0/16" in nft
     assert "flush ruleset" not in nft
+    assert nft.endswith('include "/etc/forkmesh-runner/jobs.d/*.nft"\n')
+    assert (root / "etc/forkmesh-runner/jobs.d").is_dir()
     assert TOKEN not in json.dumps(config) and TOKEN not in unit
     assert (root / "usr/local/bin/forkmesh-mirror-node").is_file()
     assert "forkmesh-runner@alice.service" in result.stdout

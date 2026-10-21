@@ -37,7 +37,7 @@
   const ACTIVITY_STYLE = `
 .fm-activity-nav a{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:6px;font-size:14px;color:rgb(var(--dashboard-muted-foreground-rgb));white-space:nowrap}
 .fm-activity-nav a:hover{background:rgb(var(--dashboard-secondary-rgb));color:rgb(var(--dashboard-foreground-rgb))}
-.fm-activity-nav a[aria-current="page"]{background:rgb(var(--dashboard-secondary-rgb));color:rgb(var(--dashboard-foreground-rgb));font-weight:600}
+.fm-activity-nav a[aria-current="page"]{background:rgb(var(--dashboard-secondary-rgb));color:var(--dashboard-link);box-shadow:inset 2px 0 0 var(--dashboard-link);font-weight:600}
 .fm-activity-nav svg,.fm-activity-nav i{width:16px;height:16px;flex:none}
 @media (min-width:768px){.fm-activity-nav ul{display:grid;gap:2px}}
 .fm-label.fm-activity-done{border-color:var(--contribution-pulls);color:var(--contribution-pulls)}
