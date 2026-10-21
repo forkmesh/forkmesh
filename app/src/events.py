@@ -343,11 +343,6 @@ def discussion_event_content(ev):
     return ""
 
 
-# Owner-only discussion events: they change repository-owned state (the
-# discussion's status, or a reply removed by moderation), so the relay and the
-# mirror gateway only queue them with proof of repository authority, and every
-# materializer refuses them without that approval (DiscussionStore and
-# writeDiscussionItem in server/intake.go).
 DISCUSSION_OWNER_EVENT_TYPES = ("status", "delete")
 DISCUSSION_EVENT_TYPES = ("open", "comment", "answer") + DISCUSSION_OWNER_EVENT_TYPES
 DISCUSSION_STATUSES = ("open", "closed", "archived")
@@ -367,8 +362,6 @@ async def verify_discussion_event(number, ev, repo_keys=(), allow_v1=None):
         number = int(number or 0)
     except (TypeError, ValueError):
         return False
-    # Everything but a new discussion names the durable discussion it acts on;
-    # a new one is signed against 0 and numbered when it is written.
     if event_type == "open":
         if number != 0:
             return False

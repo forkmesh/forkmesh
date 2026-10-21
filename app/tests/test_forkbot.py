@@ -452,6 +452,8 @@ def _env_and_calls(ai=None, catalog_issue_max=None, host=None, admins=(),
         "encrypt_row": encrypt_row,
         "decrypt_row": decrypt_row,
         "_record_contributor": record_contributor,
+        "_record_public_contributor": (
+            lambda env, _owner, _repo, *args: record_contributor(env, *args)),
         "_best_effort_inbox_side_effect": side_effect,
         "_inbox_author_over_quota": inbox_author_over_quota,
         "notify_pending_inbox": notify_pending_inbox,

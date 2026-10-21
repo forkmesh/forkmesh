@@ -1081,7 +1081,6 @@ def test_direct_discussion_answers_flag_only_the_owners_session():
     guard = source[flag - 900:flag]
     assert "actor and actor == owner and trusted_browser_origin" in guard
     assert 'event_type == "answer"' in guard
-    # Moderation is refused outright without the owner's session.
     assert ("if event_type in DISCUSSION_OWNER_EVENT_TYPES and not "
             "owner_session:") in guard
     assert '{"ok": False, "error": "not_authorized"}, 403' in guard

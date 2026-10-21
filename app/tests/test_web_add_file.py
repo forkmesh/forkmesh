@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Add file > Create new file works in the browser (no desktop needed)."""
 
 import re
 
@@ -21,7 +20,6 @@ def test_the_add_file_buttons_are_live_controls():
     button = DASHBOARD_JS[DASHBOARD_JS.index("const addFileButton = (height) =>"):]
     button = button[:button.index("\n")]
     assert "data-repo-file-new" in button
-    # A read-only mirror cannot take a commit; the button says why.
     assert "readOnlyMirror ?" in button and "REPO_READ_ONLY_MIRROR_HINT" in button
 
 
@@ -72,7 +70,6 @@ def test_rename_and_delete_commit_or_propose_through_file_edit():
     assert 'repoFileEditRequest(repo, { ...request, mode: "commit", baseRef: currentBranch })' in form
     assert "await proposeRepoFileEdit(viewer, repo, proposal)" in form
     assert "probeRepoFileEditAccess(viewer, editor, repo, controller.signal)" in form
-    # A delete lands on the folder, a rename on the file's new address.
     assert 'navigateHistory(repoLinkUrl(repo, "tree", folder))' in form
     assert 'navigateHistory(repoLinkUrl(repo, "blob", newPath))' in form
 

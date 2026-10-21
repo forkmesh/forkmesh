@@ -3786,27 +3786,16 @@
     return { ...data, event };
   }
 
-  // Desktop and mirror materializers skip an event id they already hold, so
-  // two replies sent from one browser in the same second need distinct ids.
   function webDiscussionEventId(type, ts) {
     const suffix = new Uint32Array(1);
     crypto.getRandomValues(suffix);
     return `${type}-web-${ts}-${suffix[0].toString(36)}`;
   }
 
-  // The categories DiscussionStore::categories() offers (and the relay's
-  // DISCUSSION_CATEGORIES accepts), in the desktop's order.
   const WEB_DISCUSSION_CATEGORIES = ["Announcements", "Ideas", "Q&A", "Show and tell", "Maintainer notes"];
 
-  // Mirrors DiscussionStore::contentForSigning's "open" case (title NUL body
-  // NUL category) and createDiscussion on the desktop. A new discussion is
-  // signed against number 0: whoever writes it (an online mirror right away,
-  // or the owner's node when it drains the relay inbox) gives it the next
-  // free number, exactly as for one a desktop without the working tree sends.
   async function signWebDiscussionOpenEvent(repo, title, body, category) {
     const { privateKey, pub } = await getWebIssueKey();
-    // DiscussionStore stamps events in epoch milliseconds; the opening post's
-    // ts is also the discussion's createdAt, so keep the desktop's unit.
     const ts = Date.now();
     const cleanTitle = String(title || "").trim().slice(0, 240);
     const cleanBody = String(body || "").replace(/^[\r\n]+|[\r\n]+$/g, "");
@@ -3829,9 +3818,6 @@
     };
   }
 
-  // Starts a discussion from the browser. An online mirror writes it at once
-  // and answers with its number; through the relay it waits in the owner's
-  // inbox and the answer carries number 0 (not yet numbered).
   async function submitWebDiscussion(repo, { title, body, category } = {}, onProgress = null) {
     onProgress?.({ phase: "signing" });
     let event;
@@ -3855,11 +3841,6 @@
     return { ...data, number: Number(data?.number || 0), event };
   }
 
-  // The owner's moderation, as on the desktop's Close / Archive / Delete
-  // buttons: "status" moves the discussion to open, closed or archived, and
-  // "delete" removes one reply (value = its event id). The signature proves
-  // the event; the account session proves repository authority, and the relay
-  // and mirrors refuse these without it.
   async function submitWebDiscussionModeration(repo, number, type, value) {
     const discussionNumber = Number(number);
     if (!Number.isInteger(discussionNumber) || discussionNumber <= 0) {
@@ -3868,7 +3849,6 @@
     if (type === "status" && !["open", "closed", "archived"].includes(value)) {
       throw new Error("unsupported_discussion_action");
     }
-    // "delete" takes a reply id, or "#discussion" for the whole discussion.
     if (type !== "status" && (type !== "delete" || !String(value || ""))) {
       throw new Error("unsupported_discussion_action");
     }
@@ -3925,10 +3905,6 @@
     return fetchRepoMutation(repo, "discussions", payload);
   }
 
-  // Mirrors ProjectStore::contentForSigning/canonicalString on the desktop
-  // (forkmesh-project-event-v1, no repository binding). Each spec is
-  // {type, ...fields}; the relay's project-edit route verifies, appends and
-  // commits them in one go.
   function webProjectEventContent(ev) {
     const NUL = String.fromCharCode(0);
     if (ev.type === "open") return `${ev.title}${NUL}${ev.body}`;
@@ -5222,8 +5198,6 @@
     }
   }
 
-  // One message per refusal the relay, a mirror or the browser can give a
-  // discussion submission; the typed draft always survives.
   function webDiscussionSubmitErrorText(error) {
     const code = String(error?.message || error?.code || "");
     const status = Number(error?.status || 0);
@@ -5279,8 +5253,6 @@
       if (submit) submit.disabled = false;
       const number = Number(result.number || 0);
       if (Number.isInteger(number) && number > 0) {
-        // A mirror wrote it already. Keep the accepted post on screen while
-        // the next read converges, the same way a new issue is shown.
         rememberOptimisticRepoRecord(repo, "discussions", number, {
           values: {
             title: event.title,
@@ -5307,8 +5279,6 @@
         await loadRepoRecordDetail(repo, "discussions", number);
         return;
       }
-      // Through the relay: the owner's node or a mirror numbers it when it
-      // drains the inbox. Say so instead of linking to a number nobody has.
       if (titleInput) titleInput.value = "";
       if (bodyInput) bodyInput.value = "";
       renderRepoDiscussions();
@@ -5323,8 +5293,6 @@
     }
   }
 
-  // The owner's Close / Reopen / Archive / Unarchive. The status is shown at
-  // once and kept while the mirror catches up; a refusal puts it back.
   async function handleDiscussionStatusClick(repo, button) {
     if (!repo || !button) return;
     const number = Number(button.dataset.repoDiscussionStatusNumber || 0);
@@ -5362,8 +5330,6 @@
     }
   }
 
-  // The owner deletes the whole discussion, as on the desktop: its folder
-  // leaves the repository once a mirror (or the owner's node) applies it.
   async function handleDiscussionRemoveClick(repo, button) {
     if (!repo || !button) return;
     const number = Number(button.dataset.repoDiscussionRemove || 0);
@@ -13710,8 +13676,6 @@
     }
     const node = externalMirrorNodeName();
     if (!node) {
-      // No node to lend, but this forge's core nodes can host a copy: import
-      // it here instead of sending the visitor to install the desktop app.
       if (!hostedSettings) await loadHostedSettings();
       const original = String(repository?.originalUrl || "").trim();
       if (hostedImportAllowed(original)) {
@@ -15795,9 +15759,6 @@
     if (mode !== viewer.dataset.repoFileCurrentMode) viewer.dataset.repoFileCurrentMode = mode;
   }
 
-  // Rename/move or delete the open file, from the browser: a commit for a
-  // writer, or a signed pull request that proposes it for everyone else,
-  // through /file-edit's "rename" and "delete" operations.
   function openRepoFileMoveForm(viewer, repo, path, content, lines, meta, op) {
     const shell = viewer?.querySelector("[data-repo-file-shell]");
     const fileContent = viewer?.querySelector("[data-repo-file-content]");
@@ -15923,8 +15884,6 @@
     updateRepoFileStatus(viewer, deleting ? "Confirm to delete this file." : "Choose the new path.", "good");
   }
 
-  // The folder the Code tab is showing (the breadcrumb's last folder; a file
-  // view counts as its folder), so Add file starts there like on GitHub.
   function currentRepoBrowseFolder() {
     const crumb = $("[data-repo-detail] [data-repo-breadcrumb]");
     const folders = [...(crumb?.querySelectorAll("[data-dashboard-tree-path]") || [])];
@@ -15935,10 +15894,6 @@
     return String(value || "").trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/{2,}/g, "/");
   }
 
-  // Add file > Create new file, in the browser: a path, the text, and either
-  // a commit to a branch (repository writers) or a signed pull request that
-  // proposes the file (everyone else). Both go through /file-edit with
-  // create: true, the same route that edits an existing file.
   function openRepoNewFile(repo, folder = currentRepoBrowseFolder()) {
     const detail = $("[data-repo-detail]");
     const viewer = detail?.querySelector("[data-repo-blob]");
@@ -16004,8 +15959,6 @@
       controller.abort();
       void loadRepositoryTree(repo, folder);
     };
-    // An uploaded file (an image, an archive, any bytes) goes up as base64
-    // and is committed exactly; the text box is set aside meanwhile.
     let upload = null;
     const uploadInput = editor.querySelector("[data-repo-new-file-upload]");
     const uploadName = editor.querySelector("[data-repo-new-file-upload-name]");
@@ -19002,7 +18955,6 @@
       startDate: Number(project.startDate || 0) || 0,
       endDate: Number(project.endDate || 0) || 0,
       createdAtMs: Number(project.createdAt || 0) || 0,
-      // ProjectStore::isDeleted: a "delete" of "self" tombstones it.
       deleted: (Array.isArray(project.events) ? project.events : [])
         .some((event) => event?.type === "delete" && event?.target === "self"),
     };
@@ -22479,7 +22431,6 @@
       const action = options.canMark && ev.id
         ? `<button type="button" data-repo-discussion-answer="${escapeHtml(isAnswer ? "" : ev.id)}" data-repo-discussion-answer-number="${escapeHtml(options.number)}" class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="${isAnswer ? "circle-x" : "circle-check"}" class="h-3.5 w-3.5 text-muted-foreground"></i>${isAnswer ? "Clear answer" : "Mark as answer"}</button>`
         : "";
-      // The owner's moderation, like the desktop's Delete on a reply card.
       const remove = options.canModerate && ev.id
         ? `<button type="button" data-repo-discussion-delete="${escapeHtml(ev.id)}" data-repo-discussion-delete-number="${escapeHtml(options.number)}" aria-label="Delete this reply" class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-destructive hover:bg-secondary disabled:opacity-50"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete</button>`
         : "";
@@ -22510,10 +22461,6 @@
     }
   }
 
-  // Closing, archiving and deleting replies are the repository owner's, as on
-  // the desktop (its buttons need the owner's working tree). On the web the
-  // owner's or an organization owner's account session is the proof the relay
-  // checks, so the controls follow the same rule.
   async function loadRepoDiscussionModeration(repo) {
     if (!repo || !state.session?.sessionToken) return false;
     if (isRepoOwner(repo)) return true;
@@ -22528,15 +22475,11 @@
     }
   }
 
-  // discussion.md's status the way DiscussionStore reads it: anything but
-  // closed or archived is open.
   function discussionStatus(value) {
     const status = String(value || "").trim().toLowerCase();
     return status === "closed" || status === "archived" ? status : "open";
   }
 
-  // Closed and archived discussions are read-only for everyone (the desktop's
-  // addComment refuses, and mirrors drop late replies).
   function renderDiscussionLockedNotice(status) {
     const archived = status === "archived";
     return `<div data-repo-discussion-locked="${escapeHtml(status)}" class="flex items-start gap-2 border-t border-border bg-secondary/20 px-4 py-3 text-[14px] text-muted-foreground"><i data-lucide="${archived ? "archive" : "lock"}" class="mt-0.5 h-4 w-4 shrink-0"></i><span>${archived ? "This discussion is archived. It is read-only." : "This discussion is closed. New replies are turned off."}</span></div>`;
@@ -23253,9 +23196,6 @@
 
   async function loadRepoPullMergeAuthorization(repo) {
     if (!repo || !state.session?.sessionToken) return false;
-    // A personal repository's owner merges from the web too; the relay
-    // refuses one that is linked to an organization, where only that
-    // organization's owners merge (_repository_owner_can_merge_repo).
     if (sessionOwnsRepo(repo)) return true;
     try {
       const profile = await orgApiRequest(
@@ -25676,11 +25616,6 @@
   // is therefore kept per browser and laid over what the mirror serves until
   // the mirror carries that event, or a newer status change from anywhere
   // supersedes it.
-  // Discussions get the same treatment for the owner's Close/Reopen/Archive
-  // and Delete discussion (issue #715's problem in another tab): sent through
-  // the relay they wait for a drain, so the next mirror read would undo them on
-  // screen. The signed event is kept per browser and laid over what mirrors
-  // serve until they serve the same state, or OPTIMISTIC_RECORD_TTL_MS passes.
   const PENDING_DISCUSSION_STATE_STORAGE = "forkmesh.repoPendingDiscussionState";
   const PENDING_DISCUSSION_STATE_LIMIT = 100;
   let pendingDiscussionStateHydrated = false;
@@ -25720,7 +25655,6 @@
     } catch (_) { /* private mode or a full quota: the page copy still works */ }
   }
 
-  // event: the signed "status" event, or a "delete" of the whole discussion.
   function rememberPendingDiscussionState(repo, number, event) {
     if (!["status", "delete"].includes(event?.type)) return;
     pendingDiscussionStates()[optimisticRepoRecordKey(repo, "discussions", number)] = {
@@ -25729,8 +25663,6 @@
     persistPendingDiscussionStates();
   }
 
-  // The pending change for this discussion, or null once mirrors serve it:
-  // the same status for a status change, no discussion at all for a delete.
   function pendingDiscussionStateFor(repo, number, servedStatus, served = true) {
     const pending = pendingDiscussionStates();
     const key = optimisticRepoRecordKey(repo, "discussions", number);
@@ -25748,8 +25680,6 @@
     return entry;
   }
 
-  // Lay pending changes over a served discussion list: statuses move, deleted
-  // discussions are hidden.
   function applyPendingDiscussionStates(repo, items) {
     const rows = Array.isArray(items) ? items : [];
     const served = new Set(rows.map((item) => String(item.number)));
@@ -25768,7 +25698,6 @@
     });
   }
 
-  // The same for a served discussion page (parseFrontMatter shape).
   function withPendingDiscussionState(repo, number, parsed) {
     const entry = pendingDiscussionStateFor(repo, number, parsed?.values?.status, true);
     if (entry?.type === "status") {
@@ -27675,8 +27604,6 @@
       .filter((value) => Number.isInteger(value) && value > 0))].sort((a, b) => a - b);
   }
 
-  // New / Edit project, in place of the list. Saved as signed project events
-  // through project-edit (submitWebProjectEvents).
   function renderProjectForm(project = null) {
     const field = "h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent";
     return `
@@ -27707,7 +27634,7 @@
         </div>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <span data-repo-project-hint role="status" class="text-[11px] text-muted-foreground">Signed in this browser and committed to .forkmesh/projects/.</span>
-          <button type="submit" data-repo-project-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-60"><i data-lucide="save" class="h-4 w-4"></i>${project ? "Save project" : "Create project"}</button>
+          <button type="submit" data-repo-project-submit class="inline-flex h-9 items-center gap-2 rounded-md px-4 text-sm font-medium disabled:opacity-60 ${project ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-cta text-cta-foreground hover:bg-cta/90"}"><i data-lucide="save" class="h-4 w-4"></i>${project ? "Save project" : "Create project"}</button>
         </div>
       </form>`;
   }
@@ -27721,8 +27648,6 @@
     container.querySelector("[data-repo-project-title]")?.focus();
   }
 
-  // The events that turn `before` (null for a new project) into the form's
-  // values: only what changed, in ProjectStore's vocabulary.
   function projectFormEvents(before, values) {
     const specs = [];
     if (!before) {
@@ -27785,7 +27710,6 @@
           await submitWebProjectEvents(repo, target, specs);
           break;
         } catch (error) {
-          // Someone created a project meanwhile: sign again for the next number.
           if (!number && error.code === "number_taken" && error.next && attempt < 2) {
             target = error.next;
             continue;
@@ -28490,14 +28414,10 @@
     window.lucide?.createIcons();
   }
 
-  // A repository with no discussions yet invites the first one.
   function renderDiscussionsEmptyState() {
     return `<div data-repo-discussions-empty class="fm-blankslate"><i data-lucide="messages-square"></i><p class="fm-blankslate-title">Welcome to Discussions</p><p class="fm-blankslate-desc">Ask a question, share an idea or show what you built. Discussions are signed by their author and kept in the repository.</p><button type="button" data-repo-discussion-new class="mt-3 inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">Start a discussion</button></div>`;
   }
 
-  // The New discussion form, drawn in place of the list like the New issue
-  // form. Title, category and a Markdown body with a preview tab; signed by
-  // this browser's key when it is sent (submitWebDiscussion).
   function renderDiscussionComposeForm() {
     const categories = WEB_DISCUSSION_CATEGORIES;
     const preset = categories.find((name) => name.toLowerCase() === String(discussionView().category || "").toLowerCase()) || "Ideas";
@@ -28572,8 +28492,6 @@
     const catalogNote = Number.isFinite(count) && count > 0
       ? `The catalog reports ${formatCount(count)} discussion${count === 1 ? "" : "s"}, but ${count === 1 ? "it" : "they"} cannot be fetched because no mirror is reachable right now.`
       : "Discussions cannot be fetched because no mirror is reachable right now.";
-    // Starting one still works: it is signed here and queued for the
-    // repository, which writes it once a mirror or the owner's node is back.
     return `<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Discussions unavailable</p><p class="fm-blankslate-desc">${catalogNote}</p><button type="button" data-repo-discussion-new class="mt-3 inline-flex h-8 items-center rounded-md border border-border px-3 text-[14px] font-medium text-foreground hover:bg-secondary">Start a discussion anyway</button></div>`;
   }
 
@@ -28581,8 +28499,6 @@
     const container = $(containerSelector);
     const config = repoCollectionConfig[kind];
     if (!container || !config) return;
-    // A background refresh must not wipe a New discussion draft, the same
-    // rule loadRepoIssues keeps for the New issue form.
     if (kind === "discussions" && container.querySelector?.("[data-repo-discussion-form]")) return;
     // The pull ledger advances independently from the selected source branch.
     // A commit cached while this repository page was open would otherwise keep
@@ -37261,8 +37177,6 @@
     const title = String(release.name || "");
     const assets = Array.isArray(release.assets) ? release.assets : [];
     const isLatest = channel === "latest";
-    // Web releases (release.json without a publisher signature) can be edited
-    // and deleted by writers from here; signed channels never are.
     const editable = state.repoReleasesManageable === true && release.source === "web";
     const assetRows = assets.length
       ? assets.map((asset) => {
@@ -37270,8 +37184,6 @@
           const sha = String(asset.blob_sha256 || "").toLowerCase();
           const count = Number(downloads[sha]);
           const platform = [asset.os, asset.arch].filter(Boolean).join("/");
-          // A file attached on the web lives in the repository next to the
-          // notes; publisher assets come from the mirrors' content store.
           const href = asset.path
             ? repoLiveUrl(repo, "raw", { path: String(asset.path) })
             : sha
@@ -37320,10 +37232,6 @@
       </article>`;
   }
 
-  // Settings > Access: who can read a private repository, and (for a
-  // repository the core nodes host) whether it is public. Both used to need
-  // the desktop: collaborators were granted with the node's signature, and
-  // visibility lived in the node's signed catalog record.
   function repoIsCoreHosted(repo) {
     return String(repo?.source || "") === "hosted-web";
   }
@@ -37473,8 +37381,6 @@
     }
   }
 
-  // Writers (the repository's owner, or an organization member with write)
-  // draft, edit and delete releases on the web; the relay checks the same.
   async function repoReleasesManageable(repo) {
     if (!repo || !state.session?.nodeName || repoReadOnlyMirror(repo)) return false;
     if (sessionOwnsRepo(repo)) return true;
@@ -37537,7 +37443,7 @@
         <label class="inline-flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" data-repo-release-prerelease ${release?.prerelease ? "checked" : ""} class="h-3.5 w-3.5 rounded border-border accent-primary" />This is a pre-release</label>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <span data-repo-release-hint role="status" class="text-[11px] text-muted-foreground">${editing ? "The tag stays where it is; only the title and notes change." : "Creates the tag if it does not exist yet, then commits the notes to .forkmesh/releases/."} Binary assets are attached by a release publisher.</span>
-          <button type="submit" data-repo-release-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-60"><i data-lucide="send" class="h-4 w-4"></i>${editing ? "Update release" : "Publish release"}</button>
+          <button type="submit" data-repo-release-submit class="inline-flex h-9 items-center gap-2 rounded-md px-4 text-sm font-medium disabled:opacity-60 ${editing ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-cta text-cta-foreground hover:bg-cta/90"}"><i data-lucide="send" class="h-4 w-4"></i>${editing ? "Update release" : "Publish release"}</button>
         </div>
       </form>`;
   }
@@ -38072,8 +37978,6 @@
       state.loadedRepoTabs.releases = true;
       loadRepoReleases(repo);
     } else if (active === "projects") {
-      // /owner/repo/projects opened directly (or refreshed) used to leave the
-      // tab empty: only a click on the tab loaded it.
       state.loadedRepoTabs.projects = true;
       void loadRepoProjects(repo);
     } else if (active === "insights") {
@@ -41800,8 +41704,6 @@
     const forkSplitButton = (compact) => websiteForkAvailable
       ? `<div data-repo-fork-split class="flex ${compact ? "h-8" : "h-9"} min-w-0 shrink-0 items-stretch overflow-hidden rounded-md border border-border bg-secondary text-xs font-semibold text-foreground"><button type="button" data-repo-fork-create data-repo-fork-go title="Fork this repository: your own copy, linked to this one" class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 px-3 hover:bg-background disabled:cursor-wait"><i data-lucide="git-fork" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Fork</span></button><button type="button" data-repo-fork-split-count aria-label="See who forked this repository" title="See who forked this repository" style="min-width:2.25rem" class="inline-flex items-center justify-center border-l border-border px-2 font-mono text-[12px] font-medium hover:bg-background"><span data-repo-fork-count>–</span></button></div>`
       : "";
-    // Add file creates a file in the browser (openRepoNewFile); a read-only
-    // mirror cannot take one, and says why instead.
     const readOnlyMirror = repoReadOnlyMirror(repo);
     const addFileButton = (height) => `<button type="button" data-repo-file-new${readOnlyMirror ? ` disabled title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}"` : ' title="Create a new file"'} class="inline-flex ${height} items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>`;
     const settingsPanel = canSeeSettingsTab ? `

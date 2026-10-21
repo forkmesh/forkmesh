@@ -279,8 +279,6 @@ QString DiscussionStore::contentForSigning(const DiscussionEvent &ev)
         return ev.body;
     if (ev.type == "answer")
         return ev.target;
-    // Owner-only events a browser queues through the relay (the website's
-    // Close/Archive and reply delete): the new status, or the reply's id.
     if (ev.type == "status")
         return ev.status;
     if (ev.type == "delete")
@@ -783,10 +781,6 @@ bool DiscussionStore::applyRemoteEvent(int number, const DiscussionEvent &ev,
     }
 
     if (ev.type == "status" || ev.type == "delete") {
-        // Repository-owned state: the relay and the mirror gateway queue these
-        // only with the owner's session, and mark them ownerApproved. Without
-        // that they are refused here exactly like on a managed mirror
-        // (writeDiscussionModeration in server/intake.go).
         if (!ownerApproved) {
             if (error)
                 *error = QStringLiteral("Only the repository owner can moderate a discussion.");
@@ -822,8 +816,6 @@ bool DiscussionStore::applyRemoteEvent(int number, const DiscussionEvent &ev,
     Discussion discussion;
     const bool exists = readDiscussionFile(number, discussion);
     if (exists && discussion.status != QLatin1String("open")) {
-        // Closed and archived discussions are read-only (addComment refuses
-        // the same reply locally). Consume it so the inbox does not retry it.
         return true;
     }
     if (!exists) {

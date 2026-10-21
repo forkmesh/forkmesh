@@ -8344,13 +8344,10 @@ def _verify_dashboard_pull(
     return False
 
 
-# The relay's DISCUSSION_CATEGORIES / DISCUSSION_STATUSES (app/src/events.py).
 DISCUSSION_CATEGORY_KEYS = frozenset({
     "announcements", "ideas", "q&a", "show and tell", "maintainer notes",
 })
 DISCUSSION_STATUSES = ("open", "closed", "archived")
-# Owner-only discussion events: a status change or a reply removed by
-# moderation. Only the repository owner's own session may queue them here.
 DISCUSSION_OWNER_EVENT_TYPES = frozenset({"status", "delete"})
 
 

@@ -1,22 +1,3 @@
-"""Releases and tags from the browser: POST /api/repo/<owner>/<repo>/release-edit.
-
-A web release is a Git tag plus release notes kept in the repository, in the
-same place every client already reads releases from:
-``.forkmesh/releases/<tag>/release.json`` on the default branch. The
-operations, all for accounts with write access (the /file-edit permission):
-
-* ``tag``            create a tag at a branch or commit (tags never move or
-                     disappear here: mirrors refuse both without an owner's
-                     tag-move grant, which keeps signed releases trustworthy);
-* ``save``           create or edit a release: creates the tag when it does
-                     not exist yet, then commits release.json (title, notes,
-                     pre-release flag, the tag's commit);
-* ``delete``         remove a release's notes (the tag stays).
-
-Signed release channels (a folder holding ``release.json.sig``, and the
-``latest`` / ``candidate-*`` channels the installers read) are never written
-from here: editing them would break their signature.
-"""
 
 import base64
 import binascii
@@ -56,7 +37,6 @@ def _error(code, message, status, **extra):
 
 def release_record(tag, title, notes, prerelease, tag_commit, author,
                    created_at, previous=None):
-    """The release.json a web release writes (keys the release list reads)."""
     record = dict(previous or {})
     record.update({
         "tag": tag,
@@ -95,7 +75,6 @@ async def _create_tag(env, request, owner, repo, actor, tag, commit):
 
 async def _commit_release_file(env, request, owner, repo, actor, branch,
                                tag, record, message):
-    """Write (record) or remove (None) .forkmesh/releases/<tag>/release.json."""
     path = "%s/%s/release.json" % (RELEASES_DIR, tag)
     parent, listings, _create = await edits._listings(
         env, owner, repo, branch, path, "", allow_missing=True)
@@ -137,7 +116,6 @@ async def _commit_release_file(env, request, owner, repo, actor, branch,
 
 
 async def _signed_or_missing(env, owner, repo, branch, tag):
-    """Refuse a publisher-signed release folder; return its listings."""
     folder = "%s/%s" % (RELEASES_DIR, tag)
     parent, listings, _create = await edits._listings(
         env, owner, repo, branch, folder + "/release.json", "",
@@ -153,13 +131,6 @@ async def _signed_or_missing(env, owner, repo, branch, tag):
 
 async def _save_asset(env, request, owner, repo, actor, branch, tag, data,
                       remove):
-    """Attach (or remove) a file to a web release.
-
-    The bytes are committed next to the notes, at
-    .forkmesh/releases/<tag>/assets/<name> (up to 2 MB each), and listed in
-    release.json with their size, type, SHA-256 and repository path, so any
-    mirror serving the repository serves the download too.
-    """
     name = str(data.get("name") or "").strip()
     if not valid_asset_name(name) or not edits.valid_path(name):
         raise edits.FileEditError("invalid_asset", "Choose a valid file name.",
@@ -262,8 +233,7 @@ async def _save(env, request, owner, repo):
     result = {"ok": True, "op": op, "tag": tag}
     try:
         if op == "move-tag":
-            # A tag moves only with an owner's grant, consumed by this push
-            # (core-held repositories; mirrors refuse any other tag move).
+            await _signed_or_missing(env, owner, repo, branch, tag)
             old_commit = await _resolve(env, owner, repo, "refs/tags/" + tag)
             new_commit = await _resolve(env, owner, repo, target)
             if not old_commit:

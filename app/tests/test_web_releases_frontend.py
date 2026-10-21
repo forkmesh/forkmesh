@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Releases tab: draft, edit and delete releases in the browser."""
 
 import re
 
@@ -23,7 +22,6 @@ def test_writers_get_the_draft_button_and_edit_controls_on_web_releases():
     card = _function("renderRepoRelease")
     assert 'state.repoReleasesManageable === true && release.source === "web"' in card
     assert "data-repo-release-edit" in card and "data-repo-release-delete" in card
-    # Notes are Markdown, like everywhere else on a repository page.
     assert "renderRecordMarkdown(notes, repo)" in card
 
 

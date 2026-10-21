@@ -1714,7 +1714,6 @@ def test_dashboard_repository_tabs_read_public_mirror_data_not_owner_inbox():
         "Object.assign(blobs, await fetchRepoBlobs(",
         "paths.slice(offset, offset + 50), refParams",
         "fetchMissingRepoBlobs(",
-        # New discussions are signed in the browser (web-discussions.md).
         "function openDiscussionCompose(repo)",
     ):
         assert marker in dashboard_js

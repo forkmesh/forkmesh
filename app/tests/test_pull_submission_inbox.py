@@ -184,6 +184,7 @@ def _runtime(inserted, notifications, verified, receipts=None, session=""):
             lambda *_args, **_kwargs: _async_value(False)
         ),
         "_record_contributor": noop,
+        "_record_public_contributor": noop,
         "notify_pending_inbox": noop,
         "notify_mentions": notify_mentions,
         "notify_repo_host": noop,

@@ -624,3 +624,23 @@ def test_binary_proposals_replay_with_git_am(bare_repo, tmp_path):
     work = apply_proposal(tmp_path / "second", bare_repo, changed["data"]) \
         if (tmp_path / "second").mkdir() is None else None
     assert (work / "art" / "logo.png").read_bytes() == PNG[::-1]
+
+
+def test_paths_refuse_git_folder_look_alikes_and_dot_segments():
+    for path in (".git/config", ".GIT/config", "a/.Git/hooks/x", ".git./x",
+                 ".git /x", "GIT~1/config", "a/../b", "./a", "/a", "a//b"):
+        assert not repository_file_edits.valid_path(path), path
+    for path in ("README.md", ".github/workflows/ci.yml", "a/.gitignore",
+                 "docs/git~2.md"):
+        assert repository_file_edits.valid_path(path), path
+
+
+def test_commit_paths_refuses_a_path_outside_the_tree():
+    try:
+        asyncio.run(repository_file_edits.commit_paths(
+            object(), FakeRequest(body={}), "alice", "project", "jett", "main",
+            {".forkmesh/releases/v1/assets/../../../.git/config": None}, "x"))
+    except repository_file_edits.FileEditError as error:
+        assert error.code == "invalid_path"
+    else:
+        raise AssertionError("commit_paths accepted a dot segment")

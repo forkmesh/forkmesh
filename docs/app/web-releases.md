@@ -39,6 +39,9 @@ Commits and the tag go through the same push path as web file edits, so
 branch protection and the mirrors' push policy apply. Mirrors never delete or
 move a tag (`enforce_push_ref_policy` in `tools/mirror_gateway.py`) without an
 owner's tag-move grant, so a web release never rewrites what a tag points to.
+A release whose folder holds a publisher's `release.json.sig` is refused
+(409 `signed_release`) for every operation, `move-tag` included, so the web
+never leaves a signed release pointing at a different commit than its tag.
 Publishing a release with a new tag sends the usual `release_published` ping.
 Read-only mirrors refuse the route like `/file-edit`.
 
