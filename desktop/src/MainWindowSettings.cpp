@@ -11187,6 +11187,57 @@ void MainWindow::flashPingMessage(const QString &text, bool error,
                      NoticeRoute::Ping, sourceFile, sourceLine);
 }
 
+MainWindow::PingThreadScope::PingThreadScope(MainWindow *window, const QString &key)
+    : window(window), previous(window->m_pingThreadKey)
+{
+    window->m_pingThreadKey = key;
+}
+
+MainWindow::PingThreadScope::~PingThreadScope()
+{
+    window->m_pingThreadKey = previous;
+}
+
+QString MainWindow::mergePingThread(const QString &dir, const QString &branch)
+{
+    return QStringLiteral("merge:%1:%2").arg(dir, branch);
+}
+
+qint64 MainWindow::refileThreadPing(const QString &key,
+                                    const AppNotification &replacement)
+{
+    const qint64 id = m_pingThreadIds.value(key);
+    if (id <= 0)
+        return 0;
+    const auto found = std::find_if(
+        m_notifications.begin(), m_notifications.end(),
+        [id](const AppNotification &item) { return item.id == id; });
+    if (found == m_notifications.end()) {
+        m_pingThreadIds.remove(key);
+        return 0;
+    }
+    AppNotification item = *found;
+    m_notifications.erase(found);
+    item.title = replacement.title;
+    item.body = replacement.body;
+    item.warning = replacement.warning;
+    item.kind = replacement.kind;
+    item.runId = replacement.runId;
+    item.link = replacement.link;
+    item.timestampMs = QDateTime::currentMSecsSinceEpoch();
+    QString reason;
+    item.sync = initialPingSync(item, &reason);
+    item.syncReason = reason;
+    m_notifications.prepend(item);
+    updateNotificationButton();
+    scheduleNotificationJournalSave();
+    if (m_notificationsTable && m_sectionStack &&
+        m_sectionStack->currentIndex() == 3)
+        refreshNotificationsTable();
+    notePingForFixes(item);
+    return item.id;
+}
+
 void MainWindow::flashMessageImpl(const QString &text, bool error,
                                   const QString &clickHref, const QString &kind,
                                   int actionRunId, NoticeRoute route,
@@ -11219,7 +11270,13 @@ void MainWindow::flashMessageImpl(const QString &text, bool error,
         item.link = notificationLinkForHref(clickHref);
         item.quiet = true;
         item.forward = unsolicited && forkmesh::pings::pingKindEnabled(kind);
-        pingId = recordNotification(item);
+        if (!m_pingThreadKey.isEmpty())
+            pingId = refileThreadPing(m_pingThreadKey, item);
+        if (pingId == 0) {
+            pingId = recordNotification(item);
+            if (pingId > 0 && !m_pingThreadKey.isEmpty())
+                m_pingThreadIds.insert(m_pingThreadKey, pingId);
+        }
     }
     if (error && !forkmesh::ClientErrorReports::echoesRelayAlert(kind, text)
         && !forkmesh::ClientErrorReports::describesLocalOperation(kind))

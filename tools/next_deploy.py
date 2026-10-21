@@ -938,25 +938,20 @@ def activate_node(fleet, node, rev, ssh, runner, vault, key):
     return state
 
 
-def restart(fleet, rev, ssh, runner, names=None, parallel=False, settle=None):
+def restart(fleet, rev, ssh, runner, names=None, settle=None):
     vault = vault_on(fleet)
     key = vault_key(fleet, runner)
     order = [n for n in rollout_order(fleet, rev=rev)
              if not names or n["name"] in names]
-    canary, rest = order[:1], order[1:]
-    together = parallel and runner.execute and len(rest) > 1
-    runner.say("rollout order: %s" % (
-        "%s first, then %s together" % (
-            canary[0]["name"], ", ".join(n["name"] for n in rest))
-        if together else "%s (one node at a time)" % ", ".join(
-            n["name"] for n in order)))
+    runner.say("rollout order: %s (one node at a time)" % ", ".join(
+        n["name"] for n in order))
     done = []
     import next_ids
 
     def pause():
         if runner.execute and SETTLE_SECONDS > 0:
             runner.say("waiting %d s for every core to see %s live before the "
-                       "next node drains" % (SETTLE_SECONDS, done[-1]))
+                       "next node restarts" % (SETTLE_SECONDS, done[-1]))
             (settle or time.sleep)(SETTLE_SECONDS)
 
     def one(node):
@@ -977,20 +972,10 @@ def restart(fleet, rev, ssh, runner, names=None, parallel=False, settle=None):
                         node["name"], rev,
                         "unseal it (DATA_KEY on SSH stdin), " if vault else "",
                         CADDY_WAIT, rev), action)
-    if not together:
-        for index, node in enumerate(order):
-            if index:
-                pause()
-            one(node)
-        return done
-    one(canary[0])
-    pause()
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=len(rest)) as pool:
-        futures = [pool.submit(one, node) for node in rest]
-    errors = [f.exception() for f in futures if f.exception() is not None]
-    if errors:
-        raise errors[0]
+    for index, node in enumerate(order):
+        if index:
+            pause()
+        one(node)
     return done
 
 
@@ -1059,7 +1044,7 @@ def main(argv=None, ssh=None, run=subprocess.run) -> int:
             if whole_fleet and args.command == "restart":
                 signal_world_deploy(fleet, ssh, runner, "deploying", rev)
             signalled = whole_fleet
-            done = restart(fleet, rev, ssh, runner, args.nodes, parallel=True)
+            done = restart(fleet, rev, ssh, runner, args.nodes)
             if runner.execute and set(done) >= known:
                 entry = record_release(rev, run=run)
                 runner.say("recorded %s in %s (commit %s)" % (

@@ -5494,8 +5494,11 @@ QString PullStore::baseTip() const
     return QString::fromUtf8(out).trimmed();
 }
 
-bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error)
+bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error,
+                                bool *opened)
 {
+    if (opened)
+        *opened = false;
     if (!canWrite())
         return false;
     PullRequest pr = incoming;
@@ -5530,6 +5533,8 @@ bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error)
                 error))
         return false;
     materializePullRef(pr, nullptr);
+    if (opened)
+        *opened = true;
     return true;
 }
 

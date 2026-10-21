@@ -332,7 +332,8 @@ public:
     static QString syntheticMbox(const PullRequest &pr);
 
     // Merge a signed PR received from the relay inbox into.forkmesh/pulls/.
-    bool applyRemotePull(const PullRequest &pr, QString *error = nullptr);
+    bool applyRemotePull(const PullRequest &pr, QString *error = nullptr,
+                         bool *opened = nullptr);
     bool applyRemoteRevision(int number, const PullRequest &revision,
                              const QString &revisionSig, QString *error = nullptr);
 

@@ -433,6 +433,24 @@ requests in the repository up to this one, merged, closed and open alike
 none merged yet"; only a real first one reads "First pull request needs your
 approval". Test: `desktop/tests/test_crypto.cpp`.
 
+One ping per pull request, not per workflow: `applyWorkflowScan` used to ping
+inside its workflow loop, so a held pull request in a repository with two pull
+request workflows ("CI tests", "Desktop client CI tests") filed two identical
+rows. The held runs are now collected and `notifyHeldActionRuns` files one row
+naming every held workflow, linked to the first held run.
+
+### New pull request pings count new pull requests only
+
+`applyPullsInboxEntries` counted every inbox entry it accepted. Two kinds of
+entry are not new pull requests: review and lifecycle events, and a replayed
+delivery that `PullStore::applyRemotePull` recognises as already stored (it
+returns true so the entry is acknowledged). Inbox drains overlap when a GET
+lands before the previous drain's acknowledging DELETE, so on 2026-10-21 three
+new pull requests filed five pings ("2 new pull requests", "3 new pull
+requests" and three single ones). `applyRemotePull` now reports through
+`opened` whether it wrote a pull request, `PullsInboxOutcome::opened` counts
+those, and only they ping and name the author and title.
+
 ## Change process
 
 - Source files hold code only; the reason for a change goes in the matching

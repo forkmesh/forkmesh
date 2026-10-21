@@ -6977,7 +6977,7 @@ private:
     void deleteAllRecycledAgentsInOpenRepo();
     void deleteWorktreeBranchAndAgentInBackground(
         const QString &worktreePath, const QString &branch,
-        std::function<void(bool)> onDone = {});
+        std::function<void(bool)> onDone = {}, bool announce = true);
     void deleteWorktreeBranchAndAgent(const QString &worktreePath,
                                       const QString &branch, bool confirm = true,
                                       bool deferRefresh = false,
@@ -7316,6 +7316,10 @@ private:
     void notifyActionEvent(forkmesh::ui::ActionPingEvent event,
                            const QString &title, const QString &body,
                            bool warning, int runId = -1);
+    void notifyHeldActionRuns(const QString &owner, const QString &name,
+                              const QString &commit,
+                              const ActionPullContext &pull,
+                              const QList<QPair<QString, int>> &held);
     struct AppNotification;
     void addNotification(const QString &title, const QString &body,
                          bool warning = false, int runId = -1);
@@ -10314,6 +10318,14 @@ private:
                          const char *sourceFile = FORKMESH_LOG_SOURCE_FILE,
                          int sourceLine = FORKMESH_LOG_SOURCE_LINE);
     enum class NoticeRoute { Page, Local, Ping };
+    struct PingThreadScope {
+        PingThreadScope(MainWindow *window, const QString &key);
+        ~PingThreadScope();
+        MainWindow *window;
+        QString previous;
+    };
+    static QString mergePingThread(const QString &dir, const QString &branch);
+    qint64 refileThreadPing(const QString &key, const AppNotification &replacement);
     void flashMessageImpl(const QString &text, bool error,
                           const QString &clickHref, const QString &kind,
                           int actionRunId, NoticeRoute route,
@@ -13746,6 +13758,7 @@ private:
     };
     struct PullsInboxOutcome {
         int merged = 0;
+        int opened = 0;
         QStringList drainedIds;
         QString lastAuthor;
         QString lastTitle;
@@ -13857,6 +13870,8 @@ private:
     int m_desktopNotificationWaiters = 0; // live `notify-send --wait` processes
     qint64 m_nextNotificationId = 1;
     qint64 m_announcingPingId = 0;
+    QString m_pingThreadKey;
+    QHash<QString, qint64> m_pingThreadIds;
     QTimer *m_notificationJournalTimer = nullptr; // debounced journal write
     QSet<QString> m_flashedWebAlertIds;
     QSet<QString> m_celebratedWebAlertIds;
