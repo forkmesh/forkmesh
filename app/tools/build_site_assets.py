@@ -35,6 +35,7 @@ import forkmesh_safe_delete  # noqa: E402
 import docs_site  # noqa: E402
 import dashboard_shell  # noqa: E402
 import build_app_plugins  # noqa: E402
+import build_dashboard_assets  # noqa: E402
 import site_templates  # noqa: E402
 from marketplace_lib import load_catalog, manifest_entries  # noqa: E402
 
@@ -380,6 +381,7 @@ def stage_app() -> Path:
     # is staged here rather than duplicated into app/public.
     copy_file(WORLD / "public" / "qr.js", destination / "qr.js")
     build_app_plugins.stage_web(destination)
+    build_dashboard_assets.minify_staged(destination, esbuild_binary())
     finish_stage(destination, "app")
     stage_office(destination)
     return destination
@@ -457,6 +459,7 @@ def stage_cutover() -> Path:
     docs_site.stage_docs(destination)
     world_marketplace_packages(destination)
     build_app_plugins.stage_web(destination)
+    build_dashboard_assets.minify_staged(destination, esbuild_binary())
     return finish_stage(destination, "app")
 
 
