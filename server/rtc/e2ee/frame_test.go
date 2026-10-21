@@ -2,13 +2,16 @@ package e2ee
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"math/big"
 	"math/rand/v2"
 	"testing"
 )
 
 func frameKey(peer string, epoch uint32, fill byte) FrameKey {
-	return FrameKey{Peer: peer, Epoch: epoch, KeyID: byte(epoch), Key: bytes.Repeat([]byte{fill}, FrameKeySize)}
+	seed := bytes.Repeat([]byte{fill ^ 0x5a}, ed25519.SeedSize)
+	return FrameKey{Call: "call-1", Peer: peer, Epoch: epoch, KeyID: byte(epoch), Key: bytes.Repeat([]byte{fill}, FrameKeySize),
+		Auth: ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey), AuthSeed: seed}
 }
 
 func TestFrameRoundTripKeepsClearBytes(t *testing.T) {
@@ -210,17 +213,27 @@ func TestFramesFromAnotherPeerDoNotOpen(t *testing.T) {
 	}
 }
 
-func TestLegacy128BitKeysStillWork(t *testing.T) {
+func TestOnlyAuthenticatedAES256KeysInstall(t *testing.T) {
 	var s FrameSender
 	var r FrameReceiver
-	k := FrameKey{Peer: "p", Epoch: 1, KeyID: 0, Key: bytes.Repeat([]byte{5}, 16)}
-	s.SetKey(k)
-	r.SetKey(k)
-	f, _ := s.Seal([]byte("legacy"), 1)
-	if got, err := r.Open("p", f, 1); err != nil || string(got) != "legacy" {
-		t.Fatal(err)
+	legacy := frameKey("p", 1, 5)
+	legacy.Key = bytes.Repeat([]byte{5}, 16)
+	if s.SetKey(legacy) == nil || r.SetKey(legacy) == nil {
+		t.Fatal("AES-128 key accepted")
 	}
-	if err := s.SetKey(FrameKey{Key: make([]byte, 24)}); err == nil {
-		t.Fatal("AES-192 key accepted")
+	bare := frameKey("p", 1, 5)
+	bare.Auth, bare.AuthSeed = nil, nil
+	if s.SetKey(bare) == nil || r.SetKey(bare) == nil {
+		t.Fatal("key without a media auth key accepted")
+	}
+	wrong := frameKey("p", 1, 5)
+	wrong.Auth = frameKey("p", 1, 6).Auth
+	if s.SetKey(wrong) == nil {
+		t.Fatal("auth seed that does not match its public key accepted")
+	}
+	mislabeled := frameKey("p", 1, 5)
+	mislabeled.KeyID = 7
+	if s.SetKey(mislabeled) == nil || r.SetKey(mislabeled) == nil {
+		t.Fatal("key id that is not the epoch accepted")
 	}
 }

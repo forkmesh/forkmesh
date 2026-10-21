@@ -75,69 +75,25 @@ func distribute(t testing.TB, from *Session, to ...*Session) FrameKey {
 		if err != nil {
 			t.Fatalf("open keys: %v", err)
 		}
-		if !bytes.Equal(got.Key, own.Key) || got.KeyID != own.KeyID || got.Peer != from.Peer() {
+		if !bytes.Equal(got.Key, own.Key) || got.KeyID != own.KeyID || got.Peer != from.Peer() || !bytes.Equal(got.Auth, own.Auth) || got.AuthSeed != nil {
 			t.Fatal("receiver derived a different frame key")
 		}
 	}
 	return own
 }
 
-func code(t testing.TB, s *Session) string {
-	t.Helper()
-	c, err := s.Code()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
-}
-
-func TestThreeWayCallAgreesOnKeysAndCode(t *testing.T) {
+func TestThreeWayCallAgreesOnKeys(t *testing.T) {
 	c := newClock()
 	a, b, d := newParticipant(t, c, "call-1", "alice"), newParticipant(t, c, "call-1", "bob"), newParticipant(t, c, "call-1", "dave")
 	meet(t, a, b, d)
 	ka := distribute(t, a, b, d)
 	kb := distribute(t, b, a, d)
 	kd := distribute(t, d, a, b)
-	if bytes.Equal(ka.Key, kb.Key) || bytes.Equal(kb.Key, kd.Key) {
-		t.Fatal("two senders share a frame key")
+	if bytes.Equal(ka.Key, kb.Key) || bytes.Equal(kb.Key, kd.Key) || bytes.Equal(ka.Auth, kb.Auth) {
+		t.Fatal("two senders share a frame key or auth key")
 	}
-	if code(t, a) != code(t, b) || code(t, b) != code(t, d) {
-		t.Fatal("verification codes differ")
-	}
-	if got := code(t, a); len(got) != 35 {
-		t.Fatalf("code %q has the wrong shape", got)
-	}
-}
-
-func TestCodeChangesOnJoinAndLeave(t *testing.T) {
-	c := newClock()
-	a, b, d := newParticipant(t, c, "call-1", "alice"), newParticipant(t, c, "call-1", "bob"), newParticipant(t, c, "call-1", "dave")
-	meet(t, a, b)
-	two := code(t, a)
-	meet(t, a, b, d)
-	three := code(t, a)
-	if two == three {
-		t.Fatal("code did not change on join")
-	}
-	a.Leave(d.Peer())
-	if code(t, a) != two {
-		t.Fatal("code after leave differs from before the join")
-	}
-	other := newParticipant(t, c, "call-2", "alice")
-	if code(t, other) == code(t, newParticipant(t, c, "call-1", "alice")) {
-		t.Fatal("code does not depend on the call")
-	}
-}
-
-func TestCodeDetectsImpersonation(t *testing.T) {
-	c := newClock()
-	a, b := newParticipant(t, c, "call-1", "alice"), newParticipant(t, c, "call-1", "bob")
-	fakeBob := newParticipant(t, c, "call-1", "bob")
-	fakeAlice := newParticipant(t, c, "call-1", "alice")
-	a.AcceptPresence(mustPresence(t, fakeBob))
-	b.AcceptPresence(mustPresence(t, fakeAlice))
-	if code(t, a) == code(t, b) {
-		t.Fatal("a split view produced the same code")
+	if len(ka.AuthSeed) != ed25519.SeedSize || len(ka.Auth) != ed25519.PublicKeySize {
+		t.Fatal("send key has no media auth key")
 	}
 }
 
@@ -335,7 +291,7 @@ func TestLoneParticipantStillGetsASendKey(t *testing.T) {
 	c := newClock()
 	a := newParticipant(t, c, "call-1", "alice")
 	msg, key, err := a.Rekey()
-	if err != nil || msg != nil || len(key.Key) != FrameKeySize || key.Epoch != 1 {
+	if err != nil || msg != nil || len(key.Key) != FrameKeySize || key.Epoch != 1 || len(key.AuthSeed) != ed25519.SeedSize {
 		t.Fatalf("lone rekey: %v %v", msg, err)
 	}
 }
@@ -366,7 +322,10 @@ func TestSessionIsSafeForConcurrentUse(t *testing.T) {
 				b.OpenKeys(msg)
 			}
 			b.AcceptPresence(mustPresence(t, a))
-			b.Code()
+			if cm, err := a.Commit(); err == nil {
+				b.AcceptCommit(cm)
+			}
+			b.Verification()
 			a.Prune()
 		}()
 	}

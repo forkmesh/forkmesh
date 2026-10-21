@@ -53,13 +53,52 @@ type vKeys struct {
 	FrameKey   string          `json:"frameKey"`
 	KeyID      int             `json:"keyId"`
 	EphPrivate string          `json:"ephPrivate"`
+	AuthSeed   string          `json:"authSeed"`
 	Message    json.RawMessage `json:"message"`
 	Wraps      []vWrap         `json:"wraps"`
 }
 
-type vCode struct {
-	Members []string `json:"members"`
-	Code    string   `json:"code"`
+type vSAS struct {
+	Members    []string `json:"members"`
+	Gen        uint32   `json:"gen"`
+	Nonces     []string `json:"nonces"`
+	Round      string   `json:"round"`
+	Transcript string   `json:"transcript"`
+	Emoji      []int    `json:"emoji"`
+	EmojiText  string   `json:"emojiText"`
+	Digits     string   `json:"digits"`
+	QR         string   `json:"qr"`
+}
+
+type vCommit struct {
+	Name   string          `json:"name"`
+	Commit json.RawMessage `json:"commit"`
+	Reveal json.RawMessage `json:"reveal"`
+}
+
+type vRound struct {
+	SAS     vSAS      `json:"sas"`
+	Commits []vCommit `json:"commits"`
+}
+
+type vAuthReject struct {
+	Case    string `json:"case"`
+	Message string `json:"message"`
+	Error   string `json:"error"`
+}
+
+type vMedia struct {
+	Sender  string        `json:"sender"`
+	Key     int           `json:"key"`
+	Frames  []string      `json:"frames"`
+	Auth    []string      `json:"auth"`
+	Forged  string        `json:"forged"`
+	Rejects []vAuthReject `json:"rejects"`
+}
+
+type vEmoji struct {
+	Text string `json:"text"`
+	Name string `json:"name"`
 }
 
 type vFrame struct {
@@ -71,12 +110,13 @@ type vFrame struct {
 }
 
 type vReject struct {
-	What    string            `json:"what"`
-	Case    string            `json:"case"`
-	As      string            `json:"as"`
-	Before  []json.RawMessage `json:"before"`
-	Message json.RawMessage   `json:"message"`
-	Error   string            `json:"error"`
+	What          string            `json:"what"`
+	Case          string            `json:"case"`
+	As            string            `json:"as"`
+	Before        []json.RawMessage `json:"before"`
+	BeforeCommits []json.RawMessage `json:"beforeCommits"`
+	Message       json.RawMessage   `json:"message"`
+	Error         string            `json:"error"`
 }
 
 type vectorFile struct {
@@ -86,8 +126,11 @@ type vectorFile struct {
 	Identities map[string]vIdentity `json:"identities"`
 	Presences  []vPresence          `json:"presences"`
 	Keys       []vKeys              `json:"keys"`
-	Codes      []vCode              `json:"codes"`
+	Round      vRound               `json:"round"`
+	SAS        []vSAS               `json:"sas"`
 	Frames     []vFrame             `json:"frames"`
+	Media      vMedia               `json:"media"`
+	Emoji      []vEmoji             `json:"emoji"`
 	Rejects    []vReject            `json:"rejects"`
 }
 
@@ -130,9 +173,10 @@ func makePresence(call string, who *genIdentity, epoch uint32, ts int64, xs, see
 	return p
 }
 
-func makeKeyMessage(call string, who *genIdentity, epoch uint32, ts int64, ephPriv, secret []byte, to []*Presence) (*KeyMessage, []*wrapTrace) {
+func makeKeyMessage(call string, who *genIdentity, epoch uint32, ts int64, ephPriv, secret, authSeed []byte, to []*Presence) (*KeyMessage, []*wrapTrace) {
 	eph, _ := ecdh.X25519().NewPrivateKey(ephPriv)
-	m := &KeyMessage{Call: call, Peer: who.peer, IDK: who.key.Public().(ed25519.PublicKey), Epoch: epoch, TS: ts, Eph: eph.PublicKey().Bytes()}
+	m := &KeyMessage{Call: call, Peer: who.peer, IDK: who.key.Public().(ed25519.PublicKey), Epoch: epoch, TS: ts, Eph: eph.PublicKey().Bytes(),
+		Auth: ed25519.NewKeyFromSeed(authSeed).Public().(ed25519.PublicKey)}
 	sorted := append([]*Presence(nil), to...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Peer < sorted[j].Peer })
 	var traces []*wrapTrace
@@ -227,13 +271,13 @@ func generateVectors(t testing.TB) *vectorFile {
 	}
 	for _, spec := range keySpecs {
 		who := ids[spec.sender]
-		secret, ephPriv := randBytes(32), randBytes(32)
-		m, traces := makeKeyMessage(vectorCall, who, spec.epoch, now, ephPriv, secret, spec.to)
+		secret, ephPriv, authSeed := randBytes(32), randBytes(32), randBytes(32)
+		m, traces := makeKeyMessage(vectorCall, who, spec.epoch, now, ephPriv, secret, authSeed, spec.to)
 		fk, err := DeriveFrameKey(vectorCall, Sender{Peer: who.peer, IDK: m.IDK, Epoch: spec.epoch}, secret)
 		if err != nil {
 			t.Fatal(err)
 		}
-		entry := vKeys{Sender: spec.sender, Secret: enc(secret), FrameKey: enc(fk.Key), KeyID: int(fk.KeyID), EphPrivate: enc(ephPriv), Message: m.Marshal()}
+		entry := vKeys{Sender: spec.sender, Secret: enc(secret), FrameKey: enc(fk.Key), KeyID: int(fk.KeyID), EphPrivate: enc(ephPriv), AuthSeed: enc(authSeed), Message: m.Marshal()}
 		for i, w := range m.Keys {
 			name := ""
 			for n, id := range ids {
@@ -246,20 +290,20 @@ func generateVectors(t testing.TB) *vectorFile {
 		}
 		v.Keys = append(v.Keys, entry)
 	}
-	for _, set := range [][]string{{"alice", "bob", "carol"}, {"alice", "bob"}, {"bob", "carol"}, {"carol", "alice", "bob"}} {
-		var members []Member
-		for _, n := range set {
-			members = append(members, Member{IDK: ids[n].key.Public().(ed25519.PublicKey), Acct: ids[n].acct})
-		}
-		code, err := VerificationCode(vectorCall, members)
-		if err != nil {
-			t.Fatal(err)
-		}
-		v.Codes = append(v.Codes, vCode{Members: set, Code: code})
+	v.Round = generateRound(t, now, ids)
+	for _, spec := range []struct {
+		names []string
+		gen   uint32
+	}{{[]string{"alice", "bob"}, 2}, {[]string{"carol", "bob"}, 7}, {[]string{"bob"}, 1}} {
+		v.SAS = append(v.SAS, makeSAS(t, ids, spec.names, spec.gen, nil))
 	}
 	aliceKey := mustDec(t, v.Keys[0].FrameKey)
+	senderKey := FrameKey{Call: vectorCall, Peer: ids["alice"].peer, Epoch: 1, KeyID: byte(v.Keys[0].KeyID), Key: aliceKey, AuthSeed: mustDec(t, v.Keys[0].AuthSeed)}
 	var fs FrameSender
-	fs.SetKey(FrameKey{Peer: ids["alice"].peer, Epoch: 1, KeyID: byte(v.Keys[0].KeyID), Key: aliceKey})
+	if err := fs.SetKey(senderKey); err != nil {
+		t.Fatal(err)
+	}
+	v.Media = vMedia{Sender: "alice", Key: 0}
 	for _, spec := range []struct {
 		clear int
 		plain []byte
@@ -269,6 +313,19 @@ func generateVectors(t testing.TB) *vectorFile {
 			t.Fatal(err)
 		}
 		v.Frames = append(v.Frames, vFrame{Key: enc(aliceKey), KeyID: v.Keys[0].KeyID, Clear: spec.clear, Plain: hex.EncodeToString(spec.plain), Sealed: hex.EncodeToString(sealed)})
+		v.Media.Frames = append(v.Media.Frames, hex.EncodeToString(sealed))
+	}
+	for _, m := range fs.Flush() {
+		v.Media.Auth = append(v.Media.Auth, hex.EncodeToString(m))
+	}
+	var forger FrameSender
+	forger.SetKey(FrameKey{Call: vectorCall, Peer: ids["alice"].peer, Epoch: 1, KeyID: byte(v.Keys[0].KeyID), Key: aliceKey, AuthSeed: randBytes(32)})
+	forger.Seal([]byte("not alice"), 1)
+	forged, _ := forger.Seal([]byte("not alice either"), 1)
+	v.Media.Forged = hex.EncodeToString(forged)
+	v.Media.Rejects = generateAuthRejects(t, v, ids)
+	for _, e := range EmojiTable {
+		v.Emoji = append(v.Emoji, vEmoji{Text: e.Text, Name: e.Name})
 	}
 	v.Rejects = generateRejects(t, now, ids, pres, v)
 	return v
@@ -297,7 +354,8 @@ func generateRejects(t testing.TB, now int64, ids map[string]*genIdentity, pres 
 	add("presence", "short-pq", "bob", nil, patchJSON(t, short.Marshal(), "pq", enc(short.PQ[:PQKeySize-1])), "invalid")
 	add("presence", "kid-mismatch", "bob", nil, patchJSON(t, ap.Marshal(), "kid", KeyID(bp.IDK)), "invalid")
 	add("presence", "quoted-epoch", "bob", nil, patchJSON(t, ap.Marshal(), "epoch", "1"), "invalid")
-	add("presence", "version-2", "bob", nil, patchJSON(t, ap.Marshal(), "v", 2), "invalid")
+	add("presence", "version-1", "bob", nil, patchJSON(t, ap.Marshal(), "v", 1), "invalid")
+	add("presence", "version-3", "bob", nil, patchJSON(t, ap.Marshal(), "v", 3), "invalid")
 	p = clonePresence(ap)
 	p.TS = now - (6 * time.Minute).Milliseconds()
 	add("presence", "old-timestamp", "bob", nil, resignPresence(p, alice.key), "clock")
@@ -346,7 +404,162 @@ func generateRejects(t testing.TB, now int64, ids map[string]*genIdentity, pres 
 	m = cloneKeys(first)
 	m.Peer = bob.peer
 	add("keys", "own-peer", "bob", [][]byte{ap.Marshal()}, resignKeys(m, alice.key), "invalid")
+	add("keys", "no-auth-key", "bob", [][]byte{ap.Marshal()}, patchJSON(t, first.Marshal(), "ak", nil), "invalid")
+	add("keys", "version-1", "bob", [][]byte{ap.Marshal()}, patchJSON(t, first.Marshal(), "v", 1), "invalid")
+	add("keys", "auth-key-unsigned", "bob", [][]byte{ap.Marshal()}, patchJSON(t, first.Marshal(), "ak", enc(bp.IDK)), "signature")
+	return append(out, generateRoundRejects(t, now, ids, ap)...)
+}
+
+func generateRoundRejects(t testing.TB, now int64, ids map[string]*genIdentity, ap *Presence) []vReject {
+	alice, carol := ids["alice"], ids["carol"]
+	var out []vReject
+	add := func(what, name string, before, commits [][]byte, msg []byte, code string) {
+		r := vReject{What: what, Case: name, As: "bob", Message: msg, Error: code, Before: []json.RawMessage{}, BeforeCommits: []json.RawMessage{}}
+		for _, b := range before {
+			r.Before = append(r.Before, b)
+		}
+		for _, b := range commits {
+			r.BeforeCommits = append(r.BeforeCommits, b)
+		}
+		out = append(out, r)
+	}
+	pa := [][]byte{ap.Marshal()}
+	round := bytes.Repeat([]byte{0x42}, RoundSize)
+	nonce := bytes.Repeat([]byte{0x24}, NonceSize)
+	base := &Commit{Call: vectorCall, Peer: alice.peer, IDK: alice.key.Public().(ed25519.PublicKey), Round: round, Gen: 3, TS: now}
+	base.C = commitHash(base.Call, base.Peer, base.IDK, base.Round, base.Gen, nonce)
+	good := resignCommit(base, alice.key)
+	cl := func() *Commit { c := *base; c.Sig = nil; return &c }
+	c := cl()
+	c.Sig = ed25519.Sign(alice.key, c.SignedMessage())
+	c.Sig[9] ^= 1
+	add("commit", "bad-signature", pa, nil, c.Marshal(), "signature")
+	add("commit", "unknown-sender", nil, nil, good, "unknown-peer")
+	c = cl()
+	c.Call = "chat:another-room"
+	add("commit", "wrong-call", pa, nil, resignCommit(c, alice.key), "call")
+	add("commit", "version-1", pa, nil, patchJSON(t, good, "v", 1), "invalid")
+	add("commit", "reveal-type", pa, nil, patchJSON(t, good, "t", "reveal"), "invalid")
+	add("commit", "quoted-gen", pa, nil, patchJSON(t, good, "gen", "3"), "invalid")
+	add("commit", "short-round", pa, nil, patchJSON(t, good, "round", enc(round[:31])), "invalid")
+	c = cl()
+	c.TS = now - (6 * time.Minute).Milliseconds()
+	add("commit", "old-timestamp", pa, nil, resignCommit(c, alice.key), "clock")
+	c = cl()
+	c.IDK = carol.key.Public().(ed25519.PublicKey)
+	add("commit", "other-identity", pa, nil, resignCommit(c, carol.key), "peer-bound")
+	c = cl()
+	c.C = commitHash(c.Call, c.Peer, c.IDK, c.Round, c.Gen, round)
+	add("commit", "equivocation", pa, [][]byte{good}, resignCommit(c, alice.key), "equivocation")
+	add("commit", "duplicate", pa, [][]byte{good}, good, "duplicate")
+	c = cl()
+	c.Gen = 2
+	add("commit", "older-gen", pa, [][]byte{good}, resignCommit(c, alice.key), "stale")
+	c = cl()
+	c.Gen = MaxGenJump + 1
+	add("commit", "gen-jump", pa, nil, resignCommit(c, alice.key), "invalid")
+	rv := &Reveal{Call: vectorCall, Peer: alice.peer, Round: round, Gen: 3, Nonce: nonce}
+	add("reveal", "unknown-sender", nil, nil, rv.Marshal(), "unknown-peer")
+	add("reveal", "before-commit", pa, nil, rv.Marshal(), "waiting")
+	add("reveal", "version-1", pa, [][]byte{good}, patchJSON(t, rv.Marshal(), "v", 1), "invalid")
+	add("reveal", "commit-type", pa, [][]byte{good}, patchJSON(t, rv.Marshal(), "t", "commit"), "invalid")
+	add("reveal", "wrong-nonce", pa, [][]byte{good}, (&Reveal{Call: vectorCall, Peer: alice.peer, Round: round, Gen: 3, Nonce: round}).Marshal(), "commitment")
+	add("reveal", "wrong-round", pa, [][]byte{good}, (&Reveal{Call: vectorCall, Peer: alice.peer, Round: nonce, Gen: 3, Nonce: nonce}).Marshal(), "commitment")
+	add("reveal", "older-gen", pa, [][]byte{good}, (&Reveal{Call: vectorCall, Peer: alice.peer, Round: round, Gen: 2, Nonce: nonce}).Marshal(), "stale")
+	add("reveal", "own-peer", pa, nil, (&Reveal{Call: vectorCall, Peer: ids["bob"].peer, Round: round, Gen: 3, Nonce: nonce}).Marshal(), "own")
 	return out
+}
+
+func makeSAS(t testing.TB, ids map[string]*genIdentity, names []string, gen uint32, nonces [][]byte) vSAS {
+	var members []Member
+	out := vSAS{Members: names, Gen: gen}
+	for i, n := range names {
+		id := ids[n]
+		nonce := randBytes(NonceSize)
+		if nonces != nil {
+			nonce = nonces[i]
+		}
+		members = append(members, Member{IDK: id.key.Public().(ed25519.PublicKey), Acct: id.acct, Peer: id.peer, Nonce: nonce})
+		out.Nonces = append(out.Nonces, enc(nonce))
+	}
+	code, err := ComputeSAS(vectorCall, gen, members)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Round, out.Transcript = enc(code.Round), enc(code.Transcript)
+	out.Emoji, out.EmojiText, out.Digits, out.QR = code.Emoji[:], code.EmojiText(), code.Digits, code.QR
+	return out
+}
+
+func generateRound(t testing.TB, now int64, ids map[string]*genIdentity) vRound {
+	names := []string{"alice", "bob", "carol"}
+	var nonces [][]byte
+	for range names {
+		nonces = append(nonces, randBytes(NonceSize))
+	}
+	r := vRound{SAS: makeSAS(t, ids, names, 1, nonces)}
+	round := mustDec(t, r.SAS.Round)
+	for i, n := range names {
+		id := ids[n]
+		c := &Commit{Call: vectorCall, Peer: id.peer, IDK: id.key.Public().(ed25519.PublicKey), Round: round, Gen: 1, TS: now}
+		c.C = commitHash(c.Call, c.Peer, c.IDK, c.Round, c.Gen, nonces[i])
+		rv := &Reveal{Call: vectorCall, Peer: id.peer, Round: round, Gen: 1, Nonce: nonces[i]}
+		r.Commits = append(r.Commits, vCommit{Name: n, Commit: resignCommit(c, id.key), Reveal: rv.Marshal()})
+	}
+	return r
+}
+
+func generateAuthRejects(t testing.TB, v *vectorFile, ids map[string]*genIdentity) []vAuthReject {
+	good := mustHex(t, v.Media.Auth[0])
+	m, err := ParseAuthMessage(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []vAuthReject
+	add := func(name string, b []byte, code string) {
+		out = append(out, vAuthReject{Case: name, Message: hex.EncodeToString(b), Error: code})
+	}
+	bad := append([]byte(nil), good...)
+	bad[len(bad)-3] ^= 1
+	add("bad-signature", bad, "signature")
+	bad = append([]byte(nil), good...)
+	bad[AuthHeaderSize] ^= 1
+	add("tampered-digest", bad, "signature")
+	other := *m
+	other.Sign(vectorCall, ids["bob"].peer, ed25519.NewKeyFromSeed(mustDec(t, v.Keys[0].AuthSeed)))
+	add("signed-for-another-peer", other.Marshal(), "signature")
+	stranger := *m
+	stranger.Sign(vectorCall, ids["alice"].peer, ed25519.NewKeyFromSeed(bytes.Repeat([]byte{3}, 32)))
+	add("other-auth-key", stranger.Marshal(), "signature")
+	add("truncated", good[:len(good)-1], "invalid")
+	bad = append([]byte(nil), good...)
+	bad[0] = 1<<4 | 1
+	add("version-1", bad, "invalid")
+	bad = append([]byte(nil), good...)
+	bad[14] = 0
+	add("zero-count", bad, "invalid")
+	bad = append([]byte(nil), good...)
+	bad[1] ^= 1
+	add("key-id-not-epoch", bad, "invalid")
+	e2 := *m
+	e2.Epoch, e2.KeyID = 2, 2
+	e2.Sign(vectorCall, ids["alice"].peer, ed25519.NewKeyFromSeed(mustDec(t, v.Keys[0].AuthSeed)))
+	add("unknown-key", e2.Marshal(), "unknown-peer")
+	e3 := *m
+	e3.Epoch = 257
+	e3.Sign(vectorCall, ids["alice"].peer, ed25519.NewKeyFromSeed(mustDec(t, v.Keys[0].AuthSeed)))
+	add("other-epoch-same-key-id", e3.Marshal(), "stale")
+	add("duplicate", good, "duplicate")
+	return out
+}
+
+func mustHex(t testing.TB, s string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 type queueReader struct{ b []byte }
@@ -360,7 +573,7 @@ func (q *queueReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func sessionFor(t testing.TB, v *vectorFile, name string) *Session {
+func sessionFor(t testing.TB, v *vectorFile, name string, extra ...[]byte) *Session {
 	t.Helper()
 	id := v.Identities[name]
 	var stream []byte
@@ -371,6 +584,9 @@ func sessionFor(t testing.TB, v *vectorFile, name string) *Session {
 			stream = append(stream, mustDec(t, p.MLKEMSeed)...)
 			epochs++
 		}
+	}
+	for _, b := range extra {
+		stream = append(stream, b...)
 	}
 	now := time.UnixMilli(v.Now)
 	s, err := NewSession(Config{Call: v.Call, Peer: id.Peer, Acct: id.Acct, Identity: ed25519.NewKeyFromSeed(mustDec(t, id.Seed)),
@@ -387,7 +603,7 @@ func sessionFor(t testing.TB, v *vectorFile, name string) *Session {
 }
 
 func checkVectors(t *testing.T, v *vectorFile) {
-	if v.Call == "" || len(v.Identities) < 3 || len(v.Keys) == 0 || len(v.Codes) == 0 || len(v.Frames) == 0 || len(v.Rejects) == 0 {
+	if v.Call == "" || len(v.Identities) < 3 || len(v.Keys) == 0 || len(v.SAS) == 0 || len(v.Round.Commits) == 0 || len(v.Frames) == 0 || len(v.Media.Frames) == 0 || len(v.Rejects) == 0 {
 		t.Fatalf("incomplete vectors from %s", v.Generator)
 	}
 	byPeer := map[string]string{}
@@ -445,6 +661,9 @@ func checkVectors(t *testing.T, v *vectorFile) {
 		if err != nil || enc(fk.Key) != vk.FrameKey || int(fk.KeyID) != vk.KeyID {
 			t.Fatalf("frame key from %s/%d differs", vk.Sender, m.Epoch)
 		}
+		if !bytes.Equal(ed25519.NewKeyFromSeed(mustDec(t, vk.AuthSeed)).Public().(ed25519.PublicKey), m.Auth) {
+			t.Fatalf("auth key from %s/%d does not match its seed", vk.Sender, m.Epoch)
+		}
 		if len(vk.Wraps) != len(m.Keys) {
 			t.Fatal("wrap count differs")
 		}
@@ -486,7 +705,7 @@ func checkVectors(t *testing.T, v *vectorFile) {
 				t.Fatalf("session %s accepts %s: %v", tr.Recipient, vk.Sender, err)
 			}
 			got, err := s.OpenKeys(vk.Message)
-			if err != nil || enc(got.Key) != vk.FrameKey || got.Peer != m.Peer || got.Epoch != m.Epoch {
+			if err != nil || enc(got.Key) != vk.FrameKey || got.Peer != m.Peer || got.Epoch != m.Epoch || !bytes.Equal(got.Auth, m.Auth) || got.Call != v.Call {
 				t.Fatalf("session %s opens keys from %s: %v", tr.Recipient, vk.Sender, err)
 			}
 			if _, err := s.OpenKeys(vk.Message); ErrorCode(err) != "duplicate" {
@@ -494,50 +713,210 @@ func checkVectors(t *testing.T, v *vectorFile) {
 			}
 		}
 	}
-	for _, c := range v.Codes {
-		var members []Member
-		for _, n := range c.Members {
-			id := v.Identities[n]
-			members = append(members, Member{IDK: mustDec(t, id.IDK), Acct: id.Acct})
-		}
-		code, err := VerificationCode(v.Call, members)
-		if err != nil || code != c.Code {
-			t.Fatalf("code for %v: got %q want %q (%v)", c.Members, code, c.Code, err)
+	checkRound(t, v)
+	for _, c := range v.SAS {
+		checkSAS(t, v, c)
+	}
+	if len(v.Emoji) != len(EmojiTable) {
+		t.Fatal("emoji table size differs")
+	}
+	for i, e := range v.Emoji {
+		if e.Text != EmojiTable[i].Text || e.Name != EmojiTable[i].Name {
+			t.Fatalf("emoji %d differs: %q %q", i, e.Text, e.Name)
 		}
 	}
-	var fs FrameSender
-	var fr FrameReceiver
-	for i, f := range v.Frames {
-		key := FrameKey{Peer: "p", Epoch: 1, KeyID: byte(f.KeyID), Key: mustDec(t, f.Key)}
-		fs.SetKey(key)
-		fr.SetKey(key)
-		plain, _ := hex.DecodeString(f.Plain)
-		sealed, _ := hex.DecodeString(f.Sealed)
-		got, err := fr.Open("p", sealed, f.Clear)
-		if err != nil || !bytes.Equal(got, plain) {
-			t.Fatalf("frame %d does not open: %v", i, err)
-		}
-		again, err := fs.Seal(plain, f.Clear)
-		if err != nil || !bytes.Equal(again, sealed) {
-			t.Fatalf("frame %d seals differently", i)
-		}
-	}
+	checkMedia(t, v)
+	kinds := map[string]bool{}
 	for _, r := range v.Rejects {
+		kinds[r.What] = true
 		s := sessionFor(t, v, r.As)
 		for _, b := range r.Before {
 			if _, err := s.AcceptPresence(b); err != nil {
 				t.Fatalf("reject %s/%s: before: %v", r.What, r.Case, err)
 			}
 		}
+		for _, b := range r.BeforeCommits {
+			if err := s.AcceptCommit(b); err != nil {
+				t.Fatalf("reject %s/%s: before commit: %v", r.What, r.Case, err)
+			}
+		}
 		var err error
-		if r.What == "presence" {
+		switch r.What {
+		case "presence":
 			_, err = s.AcceptPresence(r.Message)
-		} else {
+		case "keys":
 			_, err = s.OpenKeys(r.Message)
+		case "commit":
+			err = s.AcceptCommit(r.Message)
+		case "reveal":
+			err = s.AcceptReveal(r.Message)
+		default:
+			t.Fatalf("unknown reject kind %q", r.What)
 		}
 		if ErrorCode(err) != r.Error {
 			t.Fatalf("reject %s/%s: got %q (%v) want %q", r.What, r.Case, ErrorCode(err), err, r.Error)
 		}
+	}
+	if len(kinds) != 4 {
+		t.Fatalf("reject kinds: %v", kinds)
+	}
+}
+
+func membersOf(t testing.TB, v *vectorFile, names []string, nonces []string) []Member {
+	var out []Member
+	for i, n := range names {
+		id := v.Identities[n]
+		m := Member{IDK: mustDec(t, id.IDK), Acct: id.Acct, Peer: id.Peer}
+		if nonces != nil {
+			m.Nonce = mustDec(t, nonces[i])
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func checkSAS(t *testing.T, v *vectorFile, c vSAS) {
+	t.Helper()
+	members := membersOf(t, v, c.Members, c.Nonces)
+	round, err := RoundID(v.Call, c.Gen, members)
+	if err != nil || enc(round) != c.Round {
+		t.Fatalf("round for %v differs", c.Members)
+	}
+	code, err := ComputeSAS(v.Call, c.Gen, members)
+	if err != nil || enc(code.Transcript) != c.Transcript || code.Digits != c.Digits || code.QR != c.QR || code.EmojiText() != c.EmojiText {
+		t.Fatalf("code for %v differs: %+v", c.Members, code)
+	}
+	for i, e := range c.Emoji {
+		if code.Emoji[i] != e {
+			t.Fatalf("emoji %d for %v differs", i, c.Members)
+		}
+	}
+	if q, err := ParseQR(c.QR); err != nil || enc(q) != c.Transcript {
+		t.Fatal("QR does not decode to the transcript")
+	}
+}
+
+func checkRound(t *testing.T, v *vectorFile) {
+	t.Helper()
+	r := v.Round
+	checkSAS(t, v, r.SAS)
+	if len(r.Commits) != len(r.SAS.Members) {
+		t.Fatal("round has the wrong number of commits")
+	}
+	for i, vc := range r.Commits {
+		c, err := ParseCommit(vc.Commit)
+		if err != nil || c.Verify() != nil {
+			t.Fatalf("commit from %s: %v", vc.Name, err)
+		}
+		if !bytes.Equal(c.Marshal(), compact(t, vc.Commit)) {
+			t.Fatalf("commit from %s does not re-encode identically", vc.Name)
+		}
+		rv, err := ParseReveal(vc.Reveal)
+		if err != nil || !bytes.Equal(rv.Marshal(), compact(t, vc.Reveal)) {
+			t.Fatalf("reveal from %s: %v", vc.Name, err)
+		}
+		if enc(c.Round) != r.SAS.Round || c.Gen != r.SAS.Gen || !c.Opens(rv.Nonce) || enc(rv.Nonce) != r.SAS.Nonces[i] || c.Opens(mustDec(t, r.SAS.Round)) {
+			t.Fatalf("commit from %s does not open to its nonce", vc.Name)
+		}
+	}
+	me := r.Commits[0].Name
+	s := sessionFor(t, v, me, mustDec(t, r.SAS.Nonces[0]))
+	for _, name := range r.SAS.Members[1:] {
+		var newest json.RawMessage
+		var epoch uint32
+		for _, p := range v.Presences {
+			if p.Name == name && p.Epoch > epoch {
+				newest, epoch = p.Message, p.Epoch
+			}
+		}
+		if _, err := s.AcceptPresence(newest); err != nil {
+			t.Fatalf("round session accepts %s: %v", name, err)
+		}
+	}
+	own, err := s.Commit()
+	if err != nil || !bytes.Equal(own, compact(t, r.Commits[0].Commit)) {
+		t.Fatalf("session commit differs from the vector:\n%s\n%s", own, r.Commits[0].Commit)
+	}
+	for _, vc := range r.Commits[1:] {
+		if err := s.AcceptCommit(vc.Commit); err != nil {
+			t.Fatalf("session accepts commit from %s: %v", vc.Name, err)
+		}
+	}
+	reveal, err := s.Reveal()
+	if err != nil || !bytes.Equal(reveal, compact(t, r.Commits[0].Reveal)) {
+		t.Fatalf("session reveal differs: %v", err)
+	}
+	for _, vc := range r.Commits[1:] {
+		if err := s.AcceptReveal(vc.Reveal); err != nil {
+			t.Fatalf("session accepts reveal from %s: %v", vc.Name, err)
+		}
+	}
+	st := s.Verification()
+	if st.Code == nil || enc(st.Code.Transcript) != r.SAS.Transcript || st.Code.Digits != r.SAS.Digits {
+		t.Fatalf("session code differs: %+v", st)
+	}
+}
+
+func checkMedia(t *testing.T, v *vectorFile) {
+	t.Helper()
+	md := v.Media
+	vk := v.Keys[md.Key]
+	m, err := ParseKeyMessage(vk.Message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := FrameKey{Call: v.Call, Peer: m.Peer, Epoch: m.Epoch, KeyID: byte(vk.KeyID), Key: mustDec(t, vk.FrameKey), Auth: m.Auth}
+	var frames [][]byte
+	for _, f := range md.Frames {
+		frames = append(frames, mustHex(t, f))
+	}
+	if len(md.Auth) != 1 || len(frames) < 3 {
+		t.Fatal("media vectors are incomplete")
+	}
+	first, _ := ParseFrameTrailer(frames[0])
+	want := &AuthMessage{KeyID: key.KeyID, Epoch: key.Epoch, First: first.Counter}
+	for _, f := range frames {
+		want.Digests = append(want.Digests, FrameDigest(f)...)
+	}
+	want.Sign(v.Call, key.Peer, ed25519.NewKeyFromSeed(mustDec(t, vk.AuthSeed)))
+	if hex.EncodeToString(want.Marshal()) != md.Auth[0] {
+		t.Fatalf("auth message differs:\n%x\n%s", want.Marshal(), md.Auth[0])
+	}
+	clock := time.UnixMilli(v.Now)
+	var r FrameReceiver
+	r.Now = func() time.Time { return clock }
+	if err := r.SetKey(key); err != nil {
+		t.Fatal(err)
+	}
+	for i, f := range frames {
+		if _, err := r.Open(key.Peer, f, v.Frames[i].Clear); err != nil {
+			t.Fatalf("media frame %d: %v", i, err)
+		}
+	}
+	if err := r.AcceptAuth(key.Peer, mustHex(t, md.Auth[0])); err != nil {
+		t.Fatal(err)
+	}
+	if st := r.Status(key.Peer); st.State != AuthVerified || st.Verified != uint64(len(frames)) || st.Forged != 0 {
+		t.Fatalf("media status: %+v", st)
+	}
+	for _, rj := range md.Rejects {
+		if err := r.AcceptAuth(key.Peer, mustHex(t, rj.Message)); ErrorCode(err) != rj.Error {
+			t.Fatalf("auth reject %s: got %q (%v) want %q", rj.Case, ErrorCode(err), err, rj.Error)
+		}
+	}
+	var forged FrameReceiver
+	forged.Now = r.Now
+	forged.SetKey(key)
+	bad := mustHex(t, md.Forged)
+	if _, err := forged.Open(key.Peer, bad, 1); err != nil {
+		t.Fatalf("forged frame should pass its tag: %v", err)
+	}
+	forged.AcceptAuth(key.Peer, mustHex(t, md.Auth[0]))
+	if st := forged.Status(key.Peer); st.State != AuthForged || st.Forged != 1 || !st.Dropping {
+		t.Fatalf("forged frame not caught: %+v", st)
+	}
+	if _, err := forged.Open(key.Peer, frames[0], v.Frames[0].Clear); ErrorCode(err) != "forged" {
+		t.Fatalf("stream not dropped after a forgery: %v", err)
 	}
 }
 

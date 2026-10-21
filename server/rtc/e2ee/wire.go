@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	Version         = 1
+	Version         = 2
 	MaxParticipants = 16
 	MaxRecipients   = 31
 	SecretSize      = 32
@@ -33,12 +33,17 @@ const (
 	maxSafeInt = 1<<53 - 1
 	maxEpoch   = math.MaxUint32
 
-	presenceLabel = "forkmesh-call-e2ee-presence-v1"
-	keysLabel     = "forkmesh-call-e2ee-keys-v1"
-	wrapLabel     = "forkmesh-call-e2ee-wrap-v1"
-	frameLabel    = "forkmesh-call-e2ee-frame-v1"
-	saltLabel     = "forkmesh-call-e2ee-salt-v1"
-	codeLabel     = "forkmesh-call-e2ee-code-v1"
+	presenceLabel = "forkmesh-call-e2ee-presence-v2"
+	keysLabel     = "forkmesh-call-e2ee-keys-v2"
+	wrapLabel     = "forkmesh-call-e2ee-wrap-v2"
+	frameLabel    = "forkmesh-call-e2ee-frame-v2"
+	saltLabel     = "forkmesh-call-e2ee-salt-v2"
+	commitLabel   = "forkmesh-call-e2ee-commit-v2"
+	nonceLabel    = "forkmesh-call-e2ee-nonce-v2"
+	roundLabel    = "forkmesh-call-e2ee-round-v2"
+	sasLabel      = "forkmesh-call-e2ee-sas-v2"
+	authLabel     = "forkmesh-call-e2ee-media-v2"
+	digestLabel   = "forkmesh-call-e2ee-digest-v2"
 )
 
 var (
@@ -57,6 +62,10 @@ var (
 	ErrOwn            = errors.New("e2ee: own message")
 	ErrClosed         = errors.New("e2ee: session closed")
 	ErrExhausted      = errors.New("e2ee: epoch or counter exhausted")
+	ErrWaiting        = errors.New("e2ee: verification round still waiting for other participants")
+	ErrCommitment     = errors.New("e2ee: reveal does not open the commitment")
+	ErrForged         = errors.New("e2ee: frame contradicts its sender's signed digest")
+	ErrUnverified     = errors.New("e2ee: sender's media has not been verified for too long")
 )
 
 var errorCodes = []struct {
@@ -78,6 +87,10 @@ var errorCodes = []struct {
 	{ErrOwn, "own"},
 	{ErrClosed, "closed"},
 	{ErrExhausted, "exhausted"},
+	{ErrWaiting, "waiting"},
+	{ErrCommitment, "commitment"},
+	{ErrForged, "forged"},
+	{ErrUnverified, "unverified"},
 }
 
 func ErrorCode(err error) string {
@@ -315,6 +328,7 @@ type KeyMessage struct {
 	Epoch uint32
 	TS    int64
 	Eph   []byte
+	Auth  []byte
 	Keys  []WrappedKey
 	Sig   []byte
 }
@@ -335,6 +349,7 @@ type keyMessageJSON struct {
 	Epoch uint32        `json:"epoch"`
 	TS    int64         `json:"ts"`
 	Eph   string        `json:"eph"`
+	Auth  string        `json:"ak"`
 	Keys  []wrappedJSON `json:"keys"`
 	Sig   string        `json:"sig"`
 }
@@ -346,7 +361,7 @@ func (m *KeyMessage) Marshal() []byte {
 	}
 	b, _ := json.Marshal(keyMessageJSON{
 		V: Version, Call: m.Call, Peer: m.Peer, KID: KeyID(m.IDK), IDK: enc(m.IDK),
-		Epoch: m.Epoch, TS: m.TS, Eph: enc(m.Eph), Keys: keys, Sig: enc(m.Sig),
+		Epoch: m.Epoch, TS: m.TS, Eph: enc(m.Eph), Auth: enc(m.Auth), Keys: keys, Sig: enc(m.Sig),
 	})
 	return b
 }
@@ -355,7 +370,7 @@ func (m *KeyMessage) SignedMessage() []byte {
 	var b bytes.Buffer
 	b.WriteString(strings.Join([]string{
 		keysLabel, m.Call, m.Peer, KeyID(m.IDK), enc(m.IDK),
-		strconv.FormatUint(uint64(m.Epoch), 10), strconv.FormatInt(m.TS, 10), enc(m.Eph),
+		strconv.FormatUint(uint64(m.Epoch), 10), strconv.FormatInt(m.TS, 10), enc(m.Eph), enc(m.Auth),
 	}, "\n"))
 	for _, k := range m.Keys {
 		b.WriteString("\n" + k.Peer + "|" + strconv.FormatUint(uint64(k.Epoch), 10) + "|" + digest(k.CT) + "|" + enc(k.Key))
@@ -414,6 +429,9 @@ func ParseKeyMessage(b []byte) (*KeyMessage, error) {
 		return nil, err
 	}
 	if m.Eph, err = f.bytes("eph", XKeySize); err != nil {
+		return nil, err
+	}
+	if m.Auth, err = f.bytes("ak", ed25519.PublicKeySize); err != nil {
 		return nil, err
 	}
 	if m.Sig, err = f.bytes("sig", SignatureSize); err != nil {

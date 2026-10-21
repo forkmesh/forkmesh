@@ -48,6 +48,22 @@ type member struct {
 	presence *Presence
 	heard    time.Time
 	opened   uint32
+	commit   *Commit
+	nonce    []byte
+	early    *Reveal
+}
+
+type ownRound struct {
+	id         []byte
+	gen        uint32
+	nonce      []byte
+	commit     []byte
+	reveal     []byte
+	started    time.Time
+	revealedAt time.Time
+	code       *SAS
+	counted    bool
+	stale      bool
 }
 
 type Session struct {
@@ -63,6 +79,11 @@ type Session struct {
 	sendEpoch uint32
 	members   map[string]*member
 	closed    bool
+	gen       uint32
+	round     *ownRound
+	unfinish  int
+	rounds    int
+	verified  map[string]bool
 }
 
 func NewSession(c Config) (*Session, error) {
@@ -72,7 +93,7 @@ func NewSession(c Config) (*Session, error) {
 	s := &Session{
 		call: c.Call, peer: c.Peer, acct: c.Acct,
 		id: c.Identity, idk: c.Identity.Public().(ed25519.PublicKey),
-		rand: c.Rand, now: c.Now, members: map[string]*member{},
+		rand: c.Rand, now: c.Now, members: map[string]*member{}, verified: map[string]bool{},
 	}
 	if s.rand == nil {
 		s.rand = rand.Reader
@@ -325,6 +346,11 @@ func (s *Session) Rekey() ([]byte, FrameKey, error) {
 	if _, err := io.ReadFull(s.rand, secret); err != nil {
 		return nil, FrameKey{}, err
 	}
+	authSeed := make([]byte, ed25519.SeedSize)
+	if _, err := io.ReadFull(s.rand, authSeed); err != nil {
+		return nil, FrameKey{}, err
+	}
+	auth := ed25519.NewKeyFromSeed(authSeed).Public().(ed25519.PublicKey)
 	var out []byte
 	if peers := s.peersLocked(); len(peers) > 0 {
 		if len(peers) > MaxRecipients {
@@ -339,7 +365,7 @@ func (s *Session) Rekey() ([]byte, FrameKey, error) {
 		if err != nil {
 			return nil, FrameKey{}, err
 		}
-		m := &KeyMessage{Call: s.call, Peer: s.peer, IDK: s.idk, Epoch: epoch, TS: s.millis(), Eph: eph.PublicKey().Bytes()}
+		m := &KeyMessage{Call: s.call, Peer: s.peer, IDK: s.idk, Epoch: epoch, TS: s.millis(), Eph: eph.PublicKey().Bytes(), Auth: auth}
 		for _, peer := range peers {
 			w, trace, err := wrapSecret(s.call, s.sender(epoch), s.members[peer].presence, eph, secret)
 			if err != nil {
@@ -355,6 +381,8 @@ func (s *Session) Rekey() ([]byte, FrameKey, error) {
 	if err != nil {
 		return nil, FrameKey{}, err
 	}
+	key.Auth = auth
+	key.AuthSeed = authSeed
 	s.sendEpoch = epoch
 	return out, key, nil
 }
@@ -417,18 +445,9 @@ func (s *Session) OpenKeys(b []byte) (FrameKey, error) {
 	if err != nil {
 		return FrameKey{}, err
 	}
+	key.Auth = append(ed25519.PublicKey(nil), m.Auth...)
 	mem.opened = m.Epoch
 	return key, nil
-}
-
-func (s *Session) Code() (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	members := []Member{{IDK: s.idk, Acct: s.acct}}
-	for _, m := range s.members {
-		members = append(members, Member{IDK: m.presence.IDK, Acct: m.presence.Acct})
-	}
-	return VerificationCode(s.call, members)
 }
 
 func (s *Session) Close() {
@@ -439,5 +458,9 @@ func (s *Session) Close() {
 	}
 	s.keys = nil
 	s.members = map[string]*member{}
+	if s.round != nil {
+		wipe(s.round.nonce)
+		s.round = nil
+	}
 	s.closed = true
 }

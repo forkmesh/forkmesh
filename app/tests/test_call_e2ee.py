@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -61,3 +62,17 @@ def test_js_vectors_open_in_go_live(tmp_path):
     assert out.stat().st_size > 10000
     done = _go_test("^TestJSVectors$", E2EE_JS_VECTORS=str(out))
     assert "--- PASS: TestJSVectors" in done.stdout
+
+
+@pytest.mark.parametrize("name", ["go-vectors.json", "js-vectors.json"])
+def test_stored_vectors_are_call_e2ee_v2(name):
+    v = json.loads((SERVER / "rtc" / "e2ee" / "testdata" / name).read_text())
+    assert {p["message"]["v"] for p in v["presences"]} == {2}
+    assert all(k["message"]["v"] == 2 and "ak" in k["message"] for k in v["keys"])
+    assert {c["commit"]["t"] for c in v["round"]["commits"]} == {"commit"}
+    assert {c["reveal"]["t"] for c in v["round"]["commits"]} == {"reveal"}
+    assert len(v["round"]["sas"]["emoji"]) == 4
+    assert v["round"]["sas"]["qr"].startswith("FMCALL2:")
+    assert v["media"]["auth"] and v["media"]["forged"] and v["media"]["rejects"]
+    assert len(v["emoji"]) == 64
+    assert {r["what"] for r in v["rejects"]} == {"presence", "keys", "commit", "reveal"}

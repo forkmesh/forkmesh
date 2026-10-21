@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
+	"crypto/ed25519"
 	"crypto/hkdf"
 	"crypto/mlkem"
 	"crypto/sha256"
@@ -19,10 +20,13 @@ type Sender struct {
 }
 
 type FrameKey struct {
-	Peer  string
-	Epoch uint32
-	KeyID byte
-	Key   []byte
+	Call     string
+	Peer     string
+	Epoch    uint32
+	KeyID    byte
+	Key      []byte
+	Auth     ed25519.PublicKey
+	AuthSeed []byte
 }
 
 type wrapTrace struct {
@@ -163,5 +167,5 @@ func DeriveFrameKey(call string, s Sender, secret []byte) (FrameKey, error) {
 	if err != nil {
 		return FrameKey{}, err
 	}
-	return FrameKey{Peer: s.Peer, Epoch: s.Epoch, KeyID: byte(s.Epoch), Key: key}, nil
+	return FrameKey{Call: call, Peer: s.Peer, Epoch: s.Epoch, KeyID: byte(s.Epoch), Key: key}, nil
 }
