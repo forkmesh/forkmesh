@@ -765,6 +765,13 @@ def test_an_unclaimed_instance_also_removes_its_runner():
     assert ': > "$CLEANUP_DIR/created-job-user"' in baseline
 
 
+def test_only_a_start_page_launch_arms_the_first_login_removal():
+    arm = function("arm_first_login_timeout")
+    assert '[ -n "${CFG_launchId:-}" ] || return 0' in arm
+    assert arm.index("CFG_launchId") < arm.index("INSTANCE_LOGIN_DEADLINE")
+    assert "Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST,$DOMAIN" in TEXT
+
+
 def test_the_first_login_cleanup_removes_only_what_the_install_created(tmp_path):
     cleanup = function("write_first_login_cleanup")
     script = cleanup.split("<<'EOF'\n", 1)[1].split("\nEOF\n", 1)[0]
