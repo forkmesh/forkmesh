@@ -5,12 +5,13 @@ import FMChat
 import Foundation
 import Observation
 import PushKit
+import StoreKit
 
 @MainActor
 final class DirectCallKit: NSObject {
     static let shared: DirectCallKit = DirectCallKit()
 
-    private let provider: CXProvider
+    private lazy var provider: CXProvider = makeProvider()
     private let controller: CXCallController = CXCallController()
     private let ledger: DirectCallKitLedger = DirectCallKitLedger()
     private var registry: PKPushRegistry?
@@ -19,26 +20,64 @@ final class DirectCallKit: NSObject {
     private var waitingOpens: [String] = []
     private var voipToken: String = ""
     private var tokenShared: Bool = false
+    private var allowed: Bool = false
+    private var storefrontWatch: Task<Void, Never>?
     var wake: (@MainActor () -> Void)?
 
+    private static let storefrontKey: String = "callkit.storefront"
+
     override private init() {
+        super.init()
+    }
+
+    private func makeProvider() -> CXProvider {
         let configuration: CXProviderConfiguration = CXProviderConfiguration()
         configuration.supportsVideo = true
         configuration.maximumCallGroups = 1
         configuration.maximumCallsPerCallGroup = 1
         configuration.supportedHandleTypes = [.generic]
         configuration.includesCallsInRecents = false
-        provider = CXProvider(configuration: configuration)
-        super.init()
-        provider.setDelegate(self, queue: .main)
+        let made: CXProvider = CXProvider(configuration: configuration)
+        made.setDelegate(self, queue: .main)
+        return made
     }
 
     func start() {
-        guard registry == nil else { return }
-        let made: PKPushRegistry = PKPushRegistry(queue: .main)
-        made.delegate = self
-        made.desiredPushTypes = [.voIP]
-        registry = made
+        setAllowed(Self.regionAllows(storefront: UserDefaults.standard.string(forKey: Self.storefrontKey)))
+        guard storefrontWatch == nil else { return }
+        storefrontWatch = Task { @MainActor [weak self] in
+            if let current = await Storefront.current { self?.storefrontChanged(current.countryCode) }
+            for await update in Storefront.updates { self?.storefrontChanged(update.countryCode) }
+        }
+    }
+
+    private func storefrontChanged(_ countryCode: String) {
+        UserDefaults.standard.set(countryCode, forKey: Self.storefrontKey)
+        setAllowed(Self.regionAllows(storefront: countryCode))
+    }
+
+    private static func regionAllows(storefront: String?) -> Bool {
+        DirectCallKitRegion.allowed(storefront: storefront, region: Locale.current.region?.identifier)
+    }
+
+    private func setAllowed(_ value: Bool) {
+        let changed: Bool = value != allowed || (value && registry == nil)
+        allowed = value
+        guard changed else { return }
+        if value {
+            let made: PKPushRegistry = PKPushRegistry(queue: .main)
+            made.delegate = self
+            made.desiredPushTypes = [.voIP]
+            registry = made
+        } else {
+            registry?.desiredPushTypes = []
+            registry = nil
+            voipToken = ""
+            apply(ledger.endAll())
+        }
+        tokenShared = false
+        shareToken()
+        CallRinger.shared.recheck()
     }
 
     func attach(_ engine: DirectCallEngine, direct: DirectMessageService) {
@@ -56,7 +95,7 @@ final class DirectCallKit: NSObject {
     }
 
     func ringing(_ callId: String) -> Bool {
-        ledger.ringing(callId)
+        allowed && ledger.ringing(callId)
     }
 
     private func observe(_ engine: DirectCallEngine) {
@@ -74,7 +113,7 @@ final class DirectCallKit: NSObject {
     }
 
     private func sync() {
-        guard let engine else { return }
+        guard allowed, let engine else { return }
         apply(
             ledger.engine(
                 invite: engine.active ? nil : engine.invite, activeCallId: engine.active ? engine.callId : ""))
@@ -89,7 +128,7 @@ final class DirectCallKit: NSObject {
 
     private func received(_ fields: [String: String], completion: @escaping () -> Void) {
         if engine == nil { wake?() }
-        guard let push = DirectCallRingPush(fields: fields) else {
+        guard allowed, let push = DirectCallRingPush(fields: fields) else {
             let id: String = UUID().uuidString.lowercased()
             apply([.report(id: id, caller: "", video: false), .end(id: id, reason: .failed)], reported: completion)
             return

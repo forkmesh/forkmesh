@@ -119,6 +119,25 @@ final class DirectCallKitLedgerTests: XCTestCase {
         XCTAssertEqual(ledger.engine(invite: nil, activeCallId: ""), [])
     }
 
+    func testCallKitIsOffForTheChinaStorefrontOrRegion() {
+        XCTAssertTrue(DirectCallKitRegion.allowed(storefront: "USA", region: "US"))
+        XCTAssertTrue(DirectCallKitRegion.allowed(storefront: nil, region: nil))
+        XCTAssertTrue(DirectCallKitRegion.allowed(storefront: "HKG", region: "HK"))
+        XCTAssertFalse(DirectCallKitRegion.allowed(storefront: "CHN", region: "US"))
+        XCTAssertFalse(DirectCallKitRegion.allowed(storefront: " chn ", region: nil))
+        XCTAssertFalse(DirectCallKitRegion.allowed(storefront: "USA", region: "CN"))
+        XCTAssertFalse(DirectCallKitRegion.allowed(storefront: nil, region: "cn"))
+    }
+
+    @MainActor func testTurningCallKitOffEndsEveryCallItShowsWithoutHangingUp() async {
+        let ledger = DirectCallKitLedger()
+        _ = ledger.push(push())
+        XCTAssertEqual(ledger.endAll(), [.end(id: Self.callId, reason: .failed)])
+        XCTAssertFalse(ledger.ringing(Self.callId))
+        XCTAssertEqual(ledger.endAll(), [])
+        XCTAssertEqual(ledger.engine(invite: invite(), activeCallId: ""), [])
+    }
+
     @MainActor func testAResetHangsUpALiveCallAndForgetsTheRest() async {
         let ledger = DirectCallKitLedger()
         _ = ledger.engine(invite: invite(), activeCallId: "")

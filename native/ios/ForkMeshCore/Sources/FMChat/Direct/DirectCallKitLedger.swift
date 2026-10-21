@@ -184,6 +184,12 @@ public final class DirectCallKitLedger {
         retire(index)
     }
 
+    public func endAll() -> [DirectCallKitEffect] {
+        let effects: [DirectCallKitEffect] = calls.map { .end(id: $0.id, reason: .failed) }
+        while !calls.isEmpty { retire(0) }
+        return effects
+    }
+
     public func reset() -> [DirectCallKitEffect] {
         let live = calls.contains { $0.live }
         for call in calls { remember(call.id) }

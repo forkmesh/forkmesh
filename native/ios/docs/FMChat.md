@@ -643,6 +643,18 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     other than Focus or the block list (for example `unentitled`), the ledger drops the call and
     the in-app ring, notification and incoming screen work as before. A call Focus filters stays
     silent, as the user asked.
+  - **Region check.** CallKit must not be used in apps on the mainland China App Store. Both are
+    off when `DirectCallKitRegion.allowed` says no: the App Store storefront is `CHN`, or the
+    device region is `CN`. `DirectCallKit.start` decides at launch from the last storefront it
+    saw (`callkit.storefront` in `UserDefaults`, so a VoIP push on a cold launch never waits on
+    StoreKit) and the region, then reads `Storefront.current` and follows `Storefront.updates`.
+    While it is off, no `PKPushRegistry` exists (so no VoIP push can arrive that would have to be
+    reported), the VoIP token is withdrawn from the relay (re-registration without `voipToken`,
+    so the phone gets the alert push), and the `CXProvider` is never created. Calls then ring
+    through `CallRinger`, its local notification and the in-app incoming screen. Turning it off
+    while calls are on the CallKit screen ends them there (`DirectCallKitLedger.endAll`) but not
+    in the app; a VoIP push that lands during the switch is reported and ended at once, as iOS
+    requires.
   - **Our call counts as a call.** `OtherAppCall` (`docs/native/OTHER_APP_CALLS.md`) sees our CallKit
     call too, so interface sounds and chimes stay quiet during it.
 - **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
@@ -656,8 +668,7 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   app is in front, so a call answered on the lock screen connects its signaling at once but its
   audio and picture start once the user unlocks and opens ForkMesh (the app button on the call
   screen). CallKit's audio session activation and WebKit's capture session have not been tried
-  together on a device. Outgoing calls are not reported to CallKit. CallKit must not be used in
-  apps sold in mainland China; the app does not switch it off there yet. The alert push (phones
+  together on a device. Outgoing calls are not reported to CallKit. The alert push (phones
   without a VoIP token) uses time-sensitive delivery, which only breaks through Focus once the
   app has the Time Sensitive Notifications capability
   (`com.apple.developer.usernotifications.time-sensitive`); it is not switched on yet. The root `fullScreenCover` cannot present while another screen of `HomeShell` is
