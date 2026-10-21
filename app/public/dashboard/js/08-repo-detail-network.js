@@ -3614,10 +3614,7 @@
 
       const pullViewedButton = event.target.closest("[data-repo-pull-viewed]");
       if (pullViewedButton && state.selectedRepo) {
-        keepPullDiffHeaderInPlace(pullViewedButton, () => toggleRepoPullViewed(
-          state.selectedRepo,
-          pullViewedButton.dataset.repoPullViewed || "",
-        ));
+        toggleRepoPullViewed(state.selectedRepo, pullViewedButton.dataset.repoPullViewed || "");
         return;
       }
 
@@ -3635,9 +3632,18 @@
         return;
       }
 
-      const diffExplorerToggle = event.target.closest("[data-repo-diff-explorer-toggle]");
-      if (diffExplorerToggle) {
-        setRepoDiffExplorerOpen(diffExplorerToggle.getAttribute("aria-pressed") !== "true");
+      if (event.target.closest("[data-repo-diff-explorer-toggle]")) {
+        toggleRepoDiffExplorer();
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-explorer-scrim]")) {
+        setRepoDiffExplorerOpen(false);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-maximize]")) {
+        toggleRepoDiffMaximize();
         return;
       }
 
@@ -3647,36 +3653,14 @@
         return;
       }
 
-      const diffStepButton = event.target.closest("[data-repo-diff-step]");
-      if (diffStepButton) {
-        stepRepoDiffFile(Number(diffStepButton.dataset.repoDiffStep) || 1);
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-jump]")) {
-        jumpToRepoDiffFile(repoPullFilesSection()?.dataset.activeFile || "");
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-collapse]")) {
-        toggleRepoDiffCurrentCollapse();
-        return;
-      }
-
       if (event.target.closest("[data-repo-diff-collapse-all]")) {
         toggleRepoDiffCollapseAll();
         return;
       }
 
-      const diffCurrentViewed = event.target.closest("[data-repo-diff-current-viewed]");
-      if (diffCurrentViewed && state.selectedRepo) {
-        setRepoDiffCurrentViewed(state.selectedRepo, diffCurrentViewed.dataset.repoDiffCurrentViewed || "");
-        return;
-      }
-
-      const diffFlagButton = event.target.closest("[data-repo-diff-flag]");
-      if (diffFlagButton) {
-        jumpToRepoDiffFile(diffFlagButton.dataset.repoDiffFlag || "");
+      const diffMarkButton = event.target.closest("[data-repo-diff-mark-next]");
+      if (diffMarkButton) {
+        jumpToRepoDiffMark(diffMarkButton.dataset.repoDiffMarkNext || "", diffMarkButton.dataset.repoDiffMarkFile || "");
         return;
       }
 
@@ -3704,7 +3688,7 @@
         // Scroll-spy would otherwise fight the jump it just triggered.
         if (section) section.dataset.activeFile = path;
         setRepoPullActiveFile(path, { revealDiff: true });
-        if (window.matchMedia?.("(max-width: 1023px)")?.matches) setRepoDiffExplorerOpen(false);
+        if (pullExplorerIsDrawer()) setRepoDiffExplorerOpen(false);
         return;
       }
 
@@ -4262,6 +4246,10 @@
 
   // Rotating a phone (or resizing a window) across the split breakpoint
   // re-lays the diff in the layout that fits.
+  window.matchMedia?.(PULL_EXPLORER_DRAWER_QUERY)?.addEventListener?.("change", syncRepoDiffExplorerLayout);
+  document.addEventListener("fullscreenchange", syncRepoDiffMaximize);
+  window.addEventListener("resize", () => fitRepoDiffViewport(repoPullFilesSection()), { passive: true });
+
   window.matchMedia?.(PULL_DIFF_NARROW_QUERY)?.addEventListener?.("change", () => {
     const section = repoPullFilesSection();
     const list = section?.querySelector("[data-repo-pull-diff-list]");
@@ -4273,7 +4261,7 @@
   });
 
   document.addEventListener("click", (event) => {
-    document.querySelectorAll("[data-repo-diff-settings][open]").forEach((menu) => {
+    document.querySelectorAll("[data-repo-diff-settings][open], [data-repo-diff-health-pill][open]").forEach((menu) => {
       if (!menu.contains(event.target) || event.target.closest(".fm-menu-item")) menu.open = false;
     });
   });
@@ -4587,6 +4575,15 @@
         && stepRepoDiffFile(event.key === "j" ? 1 : -1)) {
       event.preventDefault();
       return;
+    }
+    if (!typingTarget && !event.metaKey && !event.ctrlKey && !event.altKey
+        && event.key === "v" && toggleRepoDiffCurrentViewed(state.selectedRepo)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape" && pullExplorerIsDrawer()
+        && repoPullFilesSection()?.dataset.explorerOpen === "true") {
+      setRepoDiffExplorerOpen(false);
     }
     if (!typingTarget && event.key.toLowerCase() === "t" && state.selectedRepo) {
       event.preventDefault();

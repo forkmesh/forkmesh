@@ -149,7 +149,11 @@ async function mockRepoPage(page, submitted = []) {
         ? {
             ok: true,
             commit: PULL_COMMIT,
-            entries: [{ name: "0001-line-comment.md", type: "blob" }],
+            entries: [
+              { name: "pull.md", type: "blob" },
+              { name: "changes.patch", type: "blob" },
+              { name: "0001-line-comment.md", type: "blob" },
+            ],
           }
         : { ok: true, commit: PULL_COMMIT, entries: [] };
     } else if (
@@ -193,7 +197,7 @@ test("daily interface diff rendering is addressable, readable, and within budget
   expect(diffMetric).not.toBeNull();
   expect(diffMetric.duration).toBeLessThanOrEqual(diffBudget.remoteMaximum);
   expect(diffMetric.passed).toBe(true);
-  await expect(page.locator("[data-repo-pull-diff-row]").first()).toContainText("+");
+  await expect(page.locator("[data-repo-pull-diff-row]", { hasText: "hero" })).toContainText("+");
 
   // Both sides of the merge name their repository, not just their branch.
   const hero = page.locator("[data-repo-record-hero]");

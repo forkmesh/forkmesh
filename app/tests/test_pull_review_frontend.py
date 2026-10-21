@@ -65,9 +65,9 @@ def test_diff_pane_supports_unified_and_split_layouts():
     assert "function pairDiffRows(rows)" in CONTENT
     assert 'data-repo-pull-diff-mode' in CONTENT
     assert "setRepoPullDiffMode(" in NETWORK
-    assert "data-repo-diff-current" in CONTENT
+    assert "data-repo-pull-diff-head" in CONTENT
     assert "data-repo-pull-diff-body" in CONTENT
-    assert "setRepoPullDiffBlockCollapsed(block, selected)" in CONTENT
+    assert "foldRepoDiffBlock(block, true)" in CONTENT
     assert "content-visibility:auto" in CONTENT
 
 
@@ -81,7 +81,8 @@ def test_folding_a_file_keeps_its_header_in_place_both_ways():
     assert "scroller.scrollTop += shift" in body
     assert 'block.style.contentVisibility = "auto"' in body[edit:]
     assert "scroller.style.overflowAnchor = anchor" in body[edit:]
-    assert "keepPullDiffHeaderInPlace(pullViewedButton" in NETWORK
+    assert "keepPullDiffHeaderInPlace(block.firstElementChild" in CONTENT
+    assert "toggleRepoPullViewed(state.selectedRepo" in NETWORK
     assert "keepPullDiffHeaderInPlace(pullDiffCollapseButton" in NETWORK
 
 def test_diff_lines_support_inline_range_comments_and_review_batches():

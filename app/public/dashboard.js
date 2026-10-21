@@ -20097,12 +20097,22 @@
       return {
         explorer: stored?.explorer === "list" ? "list" : "tree",
         diff: stored?.diff === "split" ? "split" : "unified",
-        explorerOpen: stored?.explorerOpen === true,
+        explorerOpen: stored?.explorerOpen !== false,
         wrap: ["on", "off"].includes(stored?.wrap) ? stored.wrap : "auto",
       };
     } catch (_) {
-      return { explorer: "tree", diff: "unified", explorerOpen: false, wrap: "auto" };
+      return { explorer: "tree", diff: "unified", explorerOpen: true, wrap: "auto" };
     }
+  }
+
+  const PULL_EXPLORER_DRAWER_QUERY = "(max-width: 1023px)";
+
+  function pullExplorerIsDrawer() {
+    return Boolean(window.matchMedia?.(PULL_EXPLORER_DRAWER_QUERY)?.matches);
+  }
+
+  function pullExplorerShownOpen() {
+    return !pullExplorerIsDrawer() && pullLayoutPrefs().explorerOpen;
   }
 
   function setPullLayoutPref(key, value) {
@@ -20114,8 +20124,6 @@
   }
 
   function toggleRepoPullViewed(repo, path) {
-    // The open pull's Files changed pane or a branch comparison: whichever
-    // review surface is on the page owns the mark.
     const context = repoPullFilesContext();
     if (!repo || !context || !path) return;
     const viewed = context.viewed;
@@ -20125,21 +20133,113 @@
 
     const section = context.section;
     const selected = viewed.has(path);
+    const motion = repoDiffMotion();
+    const seen = context.files.filter((file) => viewed.has(file.path)).length;
+    const done = selected && seen >= context.files.length;
     section.querySelectorAll("[data-repo-pull-file]").forEach((row) => {
       if (row.dataset.repoPullFile !== path) return;
       setRepoPullFileRowViewed(row, selected);
+      if (motion && selected) playRepoDiffAnimation(row.querySelector("[data-repo-pull-file-icon]"), "pop");
     });
-    section.querySelectorAll("[data-repo-pull-diff-file]").forEach((block) => {
-      if (block.dataset.repoPullDiffFile !== path) return;
-      setRepoPullDiffBlockViewed(block, selected);
-    });
-    const summary = section.querySelector("[data-repo-pull-viewed-summary]");
-    if (summary) {
-      summary.textContent = `${formatCount(viewed.size)}/${formatCount(context.files.length)}`;
-    }
-    const checkbox = section.querySelector("[data-repo-diff-current-viewed]");
-    if (checkbox?.dataset.repoDiffCurrentViewed === path) checkbox.checked = selected;
+    updateRepoDiffProgress(section, seen, context.files.length);
+    const block = repoDiffBlocks(section).find((item) => item.dataset.repoPullDiffFile === path);
+    if (block) setRepoPullDiffBlockViewed(block, selected);
     window.lucide?.createIcons();
+    if (!block) return;
+    const body = block.querySelector("[data-repo-pull-diff-body]");
+    const token = {};
+    repoDiffFoldTokens.set(block, token);
+    if (!selected) {
+      foldRepoDiffBlock(block, false);
+      if (motion) playRepoDiffAnimation(body, "enter");
+      return;
+    }
+    const finish = () => {
+      if (repoDiffFoldTokens.get(block) !== token || !block.isConnected) return;
+      foldRepoDiffBlock(block, true);
+      advanceRepoDiffReview(section, block);
+    };
+    if (!motion) {
+      finish();
+      return;
+    }
+    const button = block.querySelector("[data-repo-pull-viewed]");
+    playRepoDiffAnimation(button, "pop");
+    burstRepoDiffSparks(button, done ? 18 : 10);
+    playRepoDiffAnimation(block.firstElementChild, "sweep");
+    playRepoDiffAnimation(body, "leave");
+    if (done) celebrateRepoDiffReview(section);
+    window.setTimeout(finish, 280);
+  }
+
+  const repoDiffFoldTokens = new WeakMap();
+  const repoDiffAnimationTimers = new WeakMap();
+
+  function repoDiffMotion() {
+    return !window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  }
+
+  function playRepoDiffAnimation(node, name) {
+    if (!node) return;
+    node.removeAttribute("data-anim");
+    void node.offsetWidth;
+    node.dataset.anim = name;
+    window.clearTimeout(repoDiffAnimationTimers.get(node));
+    repoDiffAnimationTimers.set(node, window.setTimeout(() => {
+      if (node.dataset.anim === name) node.removeAttribute("data-anim");
+    }, 1400));
+  }
+
+  function burstRepoDiffSparks(anchor, count) {
+    if (!anchor) return;
+    const burst = document.createElement("span");
+    burst.className = "fm-diff-sparks";
+    burst.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < count; index += 1) {
+      const angle = (index / count) * Math.PI * 2 + Math.random() * 0.6;
+      const distance = 16 + Math.random() * (count > 12 ? 30 : 16);
+      const spark = document.createElement("i");
+      spark.dataset.tone = String(index % 3);
+      spark.style.setProperty("--dx", `${(Math.cos(angle) * distance).toFixed(1)}px`);
+      spark.style.setProperty("--dy", `${(Math.sin(angle) * distance).toFixed(1)}px`);
+      spark.style.setProperty("--delay", `${Math.round(Math.random() * 70)}ms`);
+      burst.append(spark);
+    }
+    anchor.append(burst);
+    window.setTimeout(() => burst.remove(), 1000);
+  }
+
+  function celebrateRepoDiffReview(section) {
+    const bar = section.querySelector("[data-repo-diff-progress]");
+    playRepoDiffAnimation(bar, "done");
+    if (bar?.offsetParent) burstRepoDiffSparks(bar, 24);
+  }
+
+  function repoDiffProgressLabel(seen, total) {
+    if (total && seen >= total) return `All ${formatCount(total)} viewed`;
+    return `${formatCount(seen)} of ${formatCount(total)} viewed`;
+  }
+
+  function updateRepoDiffProgress(section, seen, total) {
+    const share = total ? Math.min(100, Math.round((seen / total) * 100)) : 0;
+    section.style.setProperty("--fm-diff-progress", `${share}%`);
+    section.dataset.reviewDone = total && seen >= total ? "true" : "false";
+    const summary = section.querySelector("[data-repo-pull-viewed-summary]");
+    if (summary) summary.textContent = repoDiffProgressLabel(seen, total);
+  }
+
+  function foldRepoDiffBlock(block, collapsed) {
+    keepPullDiffHeaderInPlace(block.firstElementChild, () => setRepoPullDiffBlockCollapsed(block, collapsed));
+    window.lucide?.createIcons();
+  }
+
+  function advanceRepoDiffReview(section, block) {
+    const blocks = repoDiffBlocks(section);
+    const next = blocks.slice(blocks.indexOf(block) + 1).find((item) => item.dataset.viewed !== "true");
+    if (!next) return;
+    const path = next.dataset.repoPullDiffFile || "";
+    section.dataset.activeFile = path;
+    setRepoPullActiveFile(path, { revealDiff: true, revealRow: true });
   }
 
   // Lucide swaps every `<i data-lucide>` placeholder for an `<svg>` and drops the
@@ -20155,36 +20255,23 @@
     const meta = pullFileStatusMeta(row.dataset.repoPullFileStatus || "modified");
     swapLucideIcon(
       row.querySelector("[data-repo-pull-file-icon]"),
-      selected ? "check-circle-2" : meta.icon,
-      `h-3.5 w-3.5 ${selected ? "text-foreground" : meta.tone}`,
+      selected ? "circle-check-big" : meta.icon,
+      `h-3.5 w-3.5 ${selected ? "text-success" : meta.tone}`,
     );
     const name = row.querySelector("[data-repo-pull-file-name]");
     if (name) {
       name.classList.toggle("text-muted-foreground", selected);
-      name.classList.toggle("line-through", selected);
       name.classList.toggle("text-foreground", !selected);
     }
   }
 
-  // Marking a file viewed folds its diff away, the way the desktop review pane
-  // does, so a long pull collapses down to the files still needing attention.
   function setRepoPullDiffBlockViewed(block, selected) {
     block.dataset.viewed = selected ? "true" : "false";
-    block.classList.toggle("border-border", selected);
-    block.classList.toggle("border-border", !selected);
     const button = block.querySelector("[data-repo-pull-viewed]");
-    if (button) {
-      button.setAttribute("aria-pressed", selected ? "true" : "false");
-      button.classList.toggle("border-border", selected);
-      button.classList.toggle("text-foreground", selected);
-      button.classList.toggle("text-muted-foreground", !selected);
-      swapLucideIcon(
-        button.querySelector("[data-repo-pull-viewed-icon]"),
-        selected ? "check-circle-2" : "circle",
-        "h-3.5 w-3.5",
-      );
-    }
-    setRepoPullDiffBlockCollapsed(block, selected);
+    if (!button) return;
+    button.dataset.viewed = selected ? "true" : "false";
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+    swapLucideIcon(button.querySelector("[data-repo-pull-viewed-icon]"), selected ? "square-check-big" : "square", "h-3.5 w-3.5");
   }
 
   function scrollContainerOf(node) {
@@ -20217,6 +20304,7 @@
   function setRepoPullDiffBlockCollapsed(block, collapsed) {
     block.dataset.collapsed = collapsed ? "true" : "false";
     block.querySelector("[data-repo-pull-diff-body]")?.classList.toggle("hidden", collapsed);
+    block.querySelector("[data-repo-pull-diff-collapse]")?.setAttribute("aria-expanded", collapsed ? "false" : "true");
     swapLucideIcon(
       block.querySelector("[data-repo-pull-diff-collapse-icon]"),
       collapsed ? "chevron-right" : "chevron-down",
@@ -20254,6 +20342,7 @@
   // row keeps the whole path, so it still targets the matching diff block.
   function renderRepoPullFiles(files, viewed = new Set(), options = {}) {
     const mode = options.mode === "list" ? "list" : "tree";
+    const marks = options.marks instanceof Map ? options.marks : new Map();
     const query = String(options.filter || "").trim();
     const needle = query.toLowerCase();
     const all = (Array.isArray(files) ? files : []).map((file) => {
@@ -20277,9 +20366,9 @@
       const dirTail = showDir && segments.length ? `${segments.at(-1)}/` : "";
       return `
         <button type="button" data-repo-pull-file="${escapeHtml(file.path)}" data-repo-pull-file-status="${escapeHtml(file.status || "modified")}" data-viewed="${isViewed ? "true" : "false"}" title="${escapeHtml(file.path)} · ${meta.label}" style="${pullExplorerRowIndent(depth)}" class="grid w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md py-1.5 pr-2 text-left text-xs transition-colors hover:bg-secondary">
-          <span data-repo-pull-file-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : meta.icon}" class="h-3.5 w-3.5 ${isViewed ? "text-foreground" : meta.tone}"></i></span>
-          <span data-repo-pull-file-name class="flex min-w-0 overflow-hidden font-mono ${isViewed ? "text-muted-foreground line-through" : "text-foreground"}">${dirHead ? `<span class="truncate text-muted-foreground">${escapeHtml(dirHead)}</span>` : ""}${dirTail ? `<span class="shrink-0 text-muted-foreground">${escapeHtml(dirTail)}</span>` : ""}<span class="shrink-0">${escapeHtml(file.name)}</span></span>
-          <span class="shrink-0 font-mono text-[10px] tabular-nums"><span class="text-success">+${formatCount(file.adds || 0)}</span> <span class="text-destructive">-${formatCount(file.dels || 0)}</span></span>
+          <span data-repo-pull-file-icon class="inline-flex"><i data-lucide="${isViewed ? "circle-check-big" : meta.icon}" class="h-3.5 w-3.5 ${isViewed ? "text-success" : meta.tone}"></i></span>
+          <span data-repo-pull-file-name class="flex min-w-0 overflow-hidden font-mono ${isViewed ? "text-muted-foreground" : "text-foreground"}">${dirHead ? `<span class="truncate text-muted-foreground">${escapeHtml(dirHead)}</span>` : ""}${dirTail ? `<span class="shrink-0 text-muted-foreground">${escapeHtml(dirTail)}</span>` : ""}<span class="shrink-0">${escapeHtml(file.name)}</span></span>
+          <span class="shrink-0 font-mono text-[10px] tabular-nums">${renderRepoDiffFileDot(marks.get(file.path))}<span class="text-success">+${formatCount(file.adds || 0)}</span> <span class="text-destructive">-${formatCount(file.dels || 0)}</span></span>
         </button>`;
     };
 
@@ -20497,8 +20586,8 @@
     return '<span class="select-none"></span>';
   }
 
-  function diffCodeCell(text, extra = "") {
-    return `<span class="whitespace-pre-wrap break-words py-px pr-3 font-mono ${extra}">${escapeHtml(text || " ")}</span>`;
+  function diffCodeCell(text, extra = "", flags = null) {
+    return `<span class="whitespace-pre-wrap break-words py-px pr-3 font-mono ${extra}">${escapeHtml(text || " ")}${renderDiffLineFlagTag(flags)}</span>`;
   }
 
   function pullInlineThreadKey(path, side, line) {
@@ -20739,12 +20828,12 @@
       const newGutter = reviewable
         ? renderDiffLineGutter(path, "new", row.newLine, row.type, newComments, "border-r border-border/60")
         : `<span data-repo-pull-diff-gutter class="select-none border-r border-border/60 px-2 text-right font-mono ${diffGutterClass(row.type)}">${row.newLine ?? ""}</span>`;
-      return `<div data-repo-pull-diff-row class="${diffRowClass(row.type)}">
+      return `<div data-repo-pull-diff-row${diffLineFlagAttributes(row.flags)} class="${diffRowClass(row.type)}">
         <div data-repo-pull-diff-grid="unified" class="grid grid-cols-[3.5rem_3.5rem_1.25rem_minmax(0,1fr)]">
           ${oldGutter}
           ${newGutter}
           ${diffRowSign(row.type)}
-          ${diffCodeCell(row.text)}
+          ${diffCodeCell(row.text, "", row.flags)}
         </div>
         <div data-repo-pull-inline-slot></div>
         ${renderPullInlineThread(path, "old", row.oldLine, oldComments)}
@@ -20799,13 +20888,13 @@
         const gutter = reviewable
           ? renderDiffLineGutter(path, sideName, line, type, comments, rule)
           : `<span data-repo-pull-diff-gutter class="select-none px-2 text-right font-mono ${rule} ${diffGutterClass(type)}">${line ?? ""}</span>`;
-        return `${gutter}${diffCodeCell(entry.text, diffRowClass(type))}`;
+        return `${gutter}${diffCodeCell(entry.text, diffRowClass(type), kind === "add" ? entry.flags : null)}`;
       };
       const oldLine = row.old?.oldLine;
       const newLine = row.new?.newLine;
       const oldComments = commentGroups.get(pullInlineThreadKey(path, "old", oldLine)) || [];
       const newComments = commentGroups.get(pullInlineThreadKey(path, "new", newLine)) || [];
-      return `<div data-repo-pull-diff-row>
+      return `<div data-repo-pull-diff-row${diffLineFlagAttributes(row.new?.type === "add" ? row.new.flags : null)}>
         <div data-repo-pull-diff-grid="split" class="grid grid-cols-[3.5rem_minmax(0,1fr)_3.5rem_minmax(0,1fr)]">
           ${side(row.old, "del")}
           ${side(row.new, "add")}
@@ -20829,6 +20918,14 @@
       return `${escapeHtml(file.oldPath)} &rarr; ${escapeHtml(file.newPath)}`;
     }
     return escapeHtml(file.newPath || file.oldPath || "file");
+  }
+
+  function diffFileHeaderPathParts(file) {
+    if (file.status === "renamed" && file.oldPath && file.newPath && file.oldPath !== file.newPath) {
+      return `<span class="fm-diff-name">${diffFileHeaderPath(file)}</span>`;
+    }
+    const parts = diffPathParts(file.newPath || file.oldPath || "file");
+    return `${parts.dir ? `<span class="fm-diff-dir"><span dir="ltr">${escapeHtml(parts.dir)}</span></span>` : ""}<span class="fm-diff-name">${escapeHtml(parts.name)}</span>`;
   }
 
   function diffFileStatusBadge(file) {
@@ -20895,7 +20992,7 @@
   function diffWrapColumns(mode) {
     if (!pullDiffWraps(mode)) return 0;
     const viewport = Math.max(320, Number(window.innerWidth) || 1280);
-    const explorer = viewport >= 1024 && pullLayoutPrefs().explorerOpen ? 288 : 0;
+    const explorer = viewport >= 1024 && pullLayoutPrefs().explorerOpen ? 304 : 0;
     let code = viewport - 130 - explorer;
     if (mode === "split") code = code / 2 - 60;
     return Math.max(24, Math.floor(code / 7.2));
@@ -20917,12 +21014,14 @@
     return `
       <div data-repo-pull-diff-file="${escapeHtml(path)}" data-viewed="${isViewed ? "true" : "false"}" data-collapsed="${isViewed ? "true" : "false"}" class="fm-diff-file" style="content-visibility:auto;contain-intrinsic-height:auto ${diffFileBlockIntrinsicSize(file, wrapColumns)}">
         <div data-repo-pull-diff-head class="fm-diff-file-head">
+          <button type="button" data-repo-diff-explorer-toggle aria-label="Show changed files" title="Changed files" class="fm-diff-icon fm-diff-explorer-show"><i data-lucide="panel-left-open"></i></button>
           <button type="button" data-repo-pull-diff-collapse="${escapeHtml(path)}" aria-expanded="${isViewed ? "false" : "true"}" title="Collapse or expand this file" class="fm-diff-icon"><span data-repo-pull-diff-collapse-icon class="inline-flex"><i data-lucide="${isViewed ? "chevron-right" : "chevron-down"}" class="h-3.5 w-3.5"></i></span></button>
-          <span class="fm-diff-file-path" title="${escapeHtml(path)}">${diffFileHeaderPath(file)}</span>
+          <span class="fm-diff-path" title="${escapeHtml(path)}">${diffFileHeaderPathParts(file)}</span>
           ${diffFileStatusBadge(file)}
+          ${renderRepoDiffFileMarks(path, file.flagged)}
           <span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(file.adds)}</span> <span class="fm-diff-stat-del">-${formatCount(file.dels)}</span></span>
           ${renderDiffStatBar(file.adds, file.dels)}
-          <button type="button" data-repo-pull-viewed="${escapeHtml(path)}" aria-pressed="${isViewed ? "true" : "false"}" class="fm-diff-viewed ${isViewed ? "text-foreground" : "text-muted-foreground"}"><span data-repo-pull-viewed-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : "circle"}" class="h-3.5 w-3.5"></i></span><span class="fm-diff-viewed-label">Viewed</span></button>
+          <button type="button" data-repo-pull-viewed="${escapeHtml(path)}" data-viewed="${isViewed ? "true" : "false"}" aria-pressed="${isViewed ? "true" : "false"}" title="Mark viewed (v)" class="fm-diff-viewed"><span data-repo-pull-viewed-icon class="inline-flex"><i data-lucide="${isViewed ? "square-check-big" : "square"}" class="h-3.5 w-3.5"></i></span><span class="fm-diff-viewed-label">Viewed</span></button>
         </div>
         <div data-repo-pull-diff-body class="${isViewed ? "hidden " : ""}overflow-x-auto">
           ${image ? renderDiffImagePreview(image) : ""}
@@ -21273,86 +21372,73 @@
     const adds = files.reduce((sum, file) => sum + (file.adds || 0), 0);
     const dels = files.reduce((sum, file) => sum + (file.dels || 0), 0);
     const first = files[0]?.path || "";
+    const parsed = parseDiffFiles(pullPatch.patch);
+    const marks = annotateDiffLineFlags(parsed.files);
+    repoDiffMarks = { patch: pullPatch.patch, marks };
+    const seen = files.filter((file) => viewed.has(file.path)).length;
+    const share = files.length ? Math.min(100, Math.round((seen / files.length) * 100)) : 0;
+    const done = files.length > 0 && seen >= files.length;
     const html = `
-        <section data-repo-pull-files data-repo-diff-fullscreen data-active-file="${escapeHtml(first)}" data-explorer-open="${layout.explorerOpen ? "true" : "false"}" data-diff-wrap="${pullDiffWraps(mode) ? "true" : "false"}" class="fm-diff">
-          <div data-repo-diff-head class="fm-diff-head">
-            <div data-repo-diff-bar="checks" class="fm-diff-row fm-diff-checks">
-              <button type="button" data-repo-diff-explorer-toggle aria-pressed="${layout.explorerOpen ? "true" : "false"}" aria-label="Show changed files" title="Changed files" class="fm-diff-icon"><i data-lucide="panel-left"></i></button>
-              <span class="fm-diff-total" title="${escapeHtml(`${formatCount(files.length)} files changed`)}"><i data-lucide="file-diff"></i>${formatCount(files.length)}<span class="fm-diff-total-label">${files.length === 1 ? "file" : "files"}</span><span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(adds)}</span> <span class="fm-diff-stat-del">-${formatCount(dels)}</span></span></span>
-              <span class="fm-diff-pills">
-                <span data-repo-diff-ci class="fm-diff-pill-group">${renderRepoDiffCiPills(options.checks, reviewable)}</span>
-                <span data-repo-diff-quality class="fm-diff-pill-group">${renderRepoDiffQualityPills(diffQualityFlags(pullPatch.patch))}</span>
-              </span>
-              <span class="fm-diff-tools">
-                <span data-repo-pull-diff-mode-group class="fm-diff-seg" role="group" aria-label="Diff layout">
-                  <button type="button" data-repo-pull-diff-mode="unified" aria-pressed="${layout.diff === "unified" ? "true" : "false"}" aria-label="Unified" title="Unified" class="fm-diff-icon"><i data-lucide="align-justify"></i></button>
-                  <button type="button" data-repo-pull-diff-mode="split" aria-pressed="${layout.diff === "split" ? "true" : "false"}" aria-label="Split" title="Split" class="fm-diff-icon"><i data-lucide="columns-2"></i></button>
-                </span>
-                <span data-repo-pull-viewed-summary class="fm-diff-viewed-count" title="Files marked viewed">${formatCount(viewed.size)}/${formatCount(files.length)}</span>
-                <button type="button" data-repo-diff-collapse-all aria-label="Collapse or expand every file" title="Collapse or expand every file" class="fm-diff-icon"><i data-lucide="chevrons-down-up"></i></button>
-                <details data-repo-diff-settings class="fm-diff-menu">
-                  <summary aria-label="Diff settings" title="Diff settings" class="fm-diff-icon"><i data-lucide="settings-2"></i></summary>
-                  <div class="fm-popover fm-menu fm-diff-menu-panel">
-                    <div class="fm-menu-heading">Changed files</div>
-                    <button type="button" data-repo-pull-explorer-mode="tree" aria-pressed="${layout.explorer === "tree" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="folder-tree"></i>Tree</button>
-                    <button type="button" data-repo-pull-explorer-mode="list" aria-pressed="${layout.explorer === "list" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="list"></i>List</button>
-                    <div class="fm-menu-divider"></div>
-                    <button type="button" data-repo-diff-wrap aria-pressed="${pullDiffWraps(mode) ? "true" : "false"}" class="fm-menu-item"><i data-lucide="wrap-text"></i>Wrap long lines</button>
-                    <div class="fm-menu-divider"></div>
-                    <div class="fm-menu-heading">Keys: j / k next or previous file</div>
-                  </div>
-                </details>
-              </span>
-            </div>
-            <div data-repo-diff-current class="fm-diff-row fm-diff-current">${renderRepoDiffCurrent(files, first, viewed)}</div>
-          </div>
+        <section data-repo-pull-files data-repo-diff-fullscreen data-active-file="${escapeHtml(first)}" data-explorer-open="${pullExplorerShownOpen() ? "true" : "false"}" data-diff-wrap="${pullDiffWraps(mode) ? "true" : "false"}" data-review-done="${done ? "true" : "false"}" style="--fm-diff-progress:${share}%" class="fm-diff">
           <div data-repo-pull-review-batch>${renderPullReviewBatchBar()}</div>
           <div class="fm-diff-body">
+            <button type="button" data-repo-diff-explorer-scrim aria-label="Close changed files" class="fm-diff-scrim"></button>
             <aside data-repo-diff-explorer class="fm-diff-explorer" aria-label="Changed files">
-              <div class="fm-diff-filter">
-                <i data-lucide="search"></i>
-                <input data-repo-pull-file-filter type="search" autocomplete="off" placeholder="Filter changed files" aria-label="Filter changed files" />
+              <div data-repo-diff-head class="fm-diff-side-head">
+                <div class="fm-diff-row">
+                  <span class="fm-diff-total" title="${escapeHtml(`${formatCount(files.length)} files changed`)}">${formatCount(files.length)}<span class="fm-diff-total-label">${files.length === 1 ? "file" : "files"}</span><span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(adds)}</span> <span class="fm-diff-stat-del">-${formatCount(dels)}</span></span></span>
+                  <span class="fm-diff-tools">
+                    ${document.fullscreenEnabled ? '<button type="button" data-repo-diff-maximize aria-label="Full screen" title="Full screen" class="fm-diff-icon"><span data-repo-diff-maximize-icon class="inline-flex"><i data-lucide="maximize-2"></i></span></button>' : ""}
+                    <details data-repo-diff-settings class="fm-diff-menu">
+                      <summary aria-label="Diff settings" title="Diff settings" class="fm-diff-icon"><i data-lucide="settings-2"></i></summary>
+                      <div class="fm-popover fm-menu fm-diff-menu-panel">
+                        <div data-repo-pull-diff-mode-group role="group" aria-label="Diff layout">
+                          <div class="fm-menu-heading">Diff</div>
+                          <button type="button" data-repo-pull-diff-mode="unified" aria-pressed="${layout.diff === "unified" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="align-justify"></i>Unified</button>
+                          <button type="button" data-repo-pull-diff-mode="split" aria-pressed="${layout.diff === "split" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="columns-2"></i>Split</button>
+                          <div class="fm-menu-divider"></div>
+                        </div>
+                        <div class="fm-menu-heading">Changed files</div>
+                        <button type="button" data-repo-pull-explorer-mode="tree" aria-pressed="${layout.explorer === "tree" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="folder-tree"></i>Tree</button>
+                        <button type="button" data-repo-pull-explorer-mode="list" aria-pressed="${layout.explorer === "list" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="list"></i>List</button>
+                        <div class="fm-menu-divider"></div>
+                        <button type="button" data-repo-diff-wrap aria-pressed="${pullDiffWraps(mode) ? "true" : "false"}" class="fm-menu-item"><i data-lucide="wrap-text"></i>Wrap long lines</button>
+                        <button type="button" data-repo-diff-collapse-all class="fm-menu-item"><i data-lucide="chevrons-down-up"></i>Collapse or expand all</button>
+                        <div class="fm-menu-divider"></div>
+                        <div class="fm-menu-heading">Keys: j / k next or previous file, v viewed</div>
+                      </div>
+                    </details>
+                    <button type="button" data-repo-diff-explorer-toggle aria-label="Hide changed files" title="Hide changed files" class="fm-diff-icon"><i data-lucide="panel-left-close"></i></button>
+                  </span>
+                </div>
+                <div class="fm-diff-progress-row">
+                  <span data-repo-diff-progress class="fm-diff-progress" aria-hidden="true"><span></span></span>
+                  <span data-repo-pull-viewed-summary class="fm-diff-viewed-count">${repoDiffProgressLabel(seen, files.length)}</span>
+                </div>
+                <div data-repo-diff-health class="fm-diff-pills">${renderRepoDiffHealthPills(diffHealthReport(parsed.files), marks)}</div>
+                <div data-repo-diff-ci class="fm-diff-pill-group">${renderRepoDiffCiPills(options.checks, reviewable)}</div>
+                <div class="fm-diff-filter">
+                  <i data-lucide="search"></i>
+                  <input data-repo-pull-file-filter type="search" autocomplete="off" placeholder="Filter changed files" aria-label="Filter changed files" />
+                </div>
               </div>
-              <nav data-repo-pull-file-list aria-label="Changed files">${renderRepoPullFiles(files, viewed, { mode: layout.explorer })}</nav>
+              <nav data-repo-pull-file-list aria-label="Changed files">${renderRepoPullFiles(files, viewed, { mode: layout.explorer, marks })}</nav>
             </aside>
             <div data-repo-pull-diff-list data-diff-mode="${mode}" class="min-w-0">${reviewable
-              ? renderRepoPullPatch(pullPatch.patch, viewed, mode)
-              : renderRepoComparePatch(pullPatch.patch, viewed, mode, pullPatch.imageDiffs)}</div>
+              ? renderRepoPullPatch(pullPatch.patch, viewed, mode, parsed)
+              : renderRepoComparePatch(pullPatch.patch, viewed, mode, pullPatch.imageDiffs, parsed)}</div>
           </div>
         </section>`;
     recordInterfaceMetric("diff", startedAt);
     return html;
   }
 
+  let repoDiffMarks = { patch: null, marks: new Map() };
+
   function diffPathParts(path) {
     const text = String(path || "");
     const slash = text.lastIndexOf("/");
     return slash < 0 ? { dir: "", name: text } : { dir: text.slice(0, slash + 1), name: text.slice(slash + 1) };
-  }
-
-  function renderRepoDiffCurrent(files, path, viewed) {
-    const list = Array.isArray(files) ? files : [];
-    const index = list.findIndex((file) => file.path === path);
-    const file = index >= 0 ? list[index] : null;
-    if (!file) return '<span class="fm-diff-path text-muted-foreground">No changed files</span>';
-    const parts = diffPathParts(file.path);
-    const isViewed = viewed?.has?.(file.path) || false;
-    return `
-      <button type="button" data-repo-diff-current-collapse aria-label="Collapse or expand this file" title="Collapse or expand this file" class="fm-diff-icon"><i data-lucide="fold-vertical"></i></button>
-      <button type="button" data-repo-diff-current-jump class="fm-diff-path" title="${escapeHtml(file.path)}">${parts.dir ? `<span class="fm-diff-dir"><span dir="ltr">${escapeHtml(parts.dir)}</span></span>` : ""}<span class="fm-diff-name">${escapeHtml(parts.name)}</span></button>
-      <span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(file.adds)}</span> <span class="fm-diff-stat-del">-${formatCount(file.dels)}</span></span>
-      <label class="fm-diff-check" title="Mark this file viewed"><input type="checkbox" data-repo-diff-current-viewed="${escapeHtml(file.path)}"${isViewed ? " checked" : ""} /><span class="fm-diff-check-label">Viewed</span></label>
-      <button type="button" data-repo-diff-step="-1" aria-label="Previous file (k)" title="Previous file (k)" class="fm-diff-icon"${index <= 0 ? " disabled" : ""}><i data-lucide="chevron-up"></i></button>
-      <span data-repo-diff-position class="fm-diff-position">${formatCount(index + 1)}/${formatCount(list.length)}</span>
-      <button type="button" data-repo-diff-step="1" aria-label="Next file (j)" title="Next file (j)" class="fm-diff-icon"${index >= list.length - 1 ? " disabled" : ""}><i data-lucide="chevron-down"></i></button>`;
-  }
-
-  function updateRepoDiffCurrent(section, path) {
-    const row = section?.querySelector("[data-repo-diff-current]");
-    const context = repoPullFilesContext();
-    if (!row || !context || context.section !== section) return;
-    row.innerHTML = renderRepoDiffCurrent(context.files, path, context.viewed);
-    window.lucide?.createIcons();
   }
 
   function pullCheckPill(tone, icon, count, title) {
@@ -21382,66 +21468,491 @@
       : pills;
   }
 
-  const DIFF_QUALITY_RULES = [
-    ["security", /\b(?:eval|Function)\s*\(|\bexec\s*\(|\bsystem\s*\(|child_process\s*\.\s*exec|shell\s*=\s*True|dangerouslySetInnerHTML|verify\s*=\s*(?:[Ff]alse|0)\b|rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0|Access-Control-Allow-Origin[^\n]*['"]\*['"]|\bchmod\s+(?:-R\s+)?777\b|\bgh[pousr]_[A-Za-z0-9_]{36,}|\bgithub_pat_[A-Za-z0-9_]{22,}|\bAKIA[0-9A-Z]{16,}|\bxox[baprs]-[A-Za-z0-9-]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}|\bsk_live_[A-Za-z0-9]{24,}|\bAIza[A-Za-z0-9_-]{35,}|-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |)PRIVATE KEY/],
-    ["conflict", /^(?:<{7}|={7}|>{7})(?:\s|$)/],
-    ["debug", /\bconsole\.(?:log|debug|trace)\s*\(|\bdebugger\s*;|System\.out\.print|\bvar_dump\s*\(/],
-    ["todo", /\b(?:TODO|FIXME|HACK|XXX)\b/],
+  const DIFF_LINE_FLAGS = {
+    secret: { label: "secret", severe: true, metric: "security" },
+    tlsBypass: { label: "TLS bypass", severe: true, metric: "security" },
+    unsafeApi: { label: "unsafe call", severe: true, metric: "security" },
+    permissive: { label: "permissive", severe: true, metric: "security" },
+    insecureUrl: { label: "plain HTTP", severe: true, metric: "network" },
+    conflictMarker: { label: "conflict marker", severe: true, metric: "practices" },
+    todo: { label: "TODO", severe: false, metric: "quality" },
+    debug: { label: "debug", severe: false, metric: "quality" },
+    broadCatch: { label: "broad catch", severe: false, metric: "quality" },
+    longLine: { label: "long line", severe: false, metric: "quality" },
+    trailingWhitespace: { label: "trailing space", severe: false, metric: "practices" },
+    deepNesting: { label: "deep nesting", severe: false, metric: "complexity" },
+    request: { label: "network call", severe: false, metric: "network" },
+  };
+
+  const DIFF_HEALTH_METRICS = [
+    ["merge", "Merge", "git-merge"],
+    ["complexity", "Complexity", "waypoints"],
+    ["quality", "Quality", "badge-check"],
+    ["security", "Security", "shield"],
+    ["network", "Network", "globe"],
+    ["practices", "Practices", "clipboard-list"],
   ];
 
-  const DIFF_QUALITY_MAX_LINES = 200000;
+  const DIFF_HEALTH = {
+    codeExtensions: new Set(["c", "cc", "cpp", "cxx", "h", "hpp", "cs", "java", "kt", "go", "rs", "py", "rb", "js", "jsx", "ts", "tsx", "mjs", "cjs", "php", "swift", "scala", "sh", "bash", "sql", "dart", "ex", "exs", "vue", "svelte"]),
+    manifests: new Set(["package.json", "pyproject.toml", "requirements.txt", "cargo.toml", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts", "gemfile", "composer.json", "pubspec.yaml", "mix.exs"]),
+    lockfiles: new Set(["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "cargo.lock", "go.sum", "gemfile.lock", "composer.lock", "pubspec.lock", "pipfile.lock", "poetry.lock"]),
+    oddExtensions: new Set(["exe", "dll", "dylib", "so", "a", "o", "db", "sqlite", "zip", "tar", "gz", "7z"]),
+    controlFlow: /\b(?:if|elif|else\s+if|for|foreach|while|switch|case|catch|except|match|when)\b|&&|\|\|/i,
+    todoMarker: /\b(?:TODO|FIXME|HACK|XXX)\b/,
+    debugCall: /\b(?:console\.(?:log|debug|trace)|debugger\s*;|qDebug\s*\(|System\.out\.print|var_dump\s*\(|dd\s*\()/i,
+    broadCatch: /(?:except\s*(?::|Exception\b)|catch\s*\([^)]*(?:Exception|Throwable|\.\.\.)[^)]*\))/i,
+    unsafeApi: /\b(?:eval|Function)\s*\(|\bexec\s*\(|\bsystem\s*\(|child_process\s*\.\s*exec|shell\s*=\s*True|dangerouslySetInnerHTML|\.innerHTML\s*=/i,
+    transportBypass: /verify\s*=\s*(?:false|0)|rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0|CURLOPT_SSL_VERIFYPEER\s*,\s*(?:0|false)|danger_accept_invalid_certs\s*\(\s*true/i,
+    permissiveSecurity: /Access-Control-Allow-Origin[^\n]*['"]\*['"]|\bcors\s*\(\s*\)|\bchmod\s+(?:-R\s+)?777\b/i,
+    requestSite: /\bfetch\s*\(|\baxios\s*(?:\.|\[)|\brequests\s*\.\s*(?:get|post|put|patch|delete|request)\s*\(|\b(?:http|https)\s*\.\s*(?:get|request)\s*\(|\bQNetwork(?:Request|AccessManager)\b|\bURLSession\b|\bWebSocket\s*\(|\bcurl_easy_perform\b|\bHttpClient\b/i,
+    resilience: /\b(?:timeout|AbortController|CancellationToken|retry|retries|backoff|cancell?ation)\b/i,
+    url: /https?:\/\/[^\s'"<>]+/gi,
+    secretPatterns: [
+      ["GitHub token", /\bgh[pousr]_[A-Za-z0-9_]{36,}\b/g],
+      ["GitHub fine-grained PAT", /\bgithub_pat_[A-Za-z0-9_]{22,}\b/g],
+      ["AWS access key", /\bAKIA[0-9A-Z]{16,}\b/g],
+      ["AWS temporary access key", /\bASIA[0-9A-Z]{16,}\b/g],
+      ["Slack token", /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g],
+      ["OpenAI API key", /\bsk-proj-[A-Za-z0-9_-]{20,}\b|\bsk-[A-Za-z0-9]{48,}\b/g],
+      ["Anthropic API key", /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g],
+      ["Stripe secret key", /\bsk_(live|test)_[A-Za-z0-9]{24,}\b/g],
+      ["Stripe restricted key", /\brk_(live|test)_[A-Za-z0-9]{24,}\b/g],
+      ["Google API key", /\bAIza[A-Za-z0-9_-]{35,}\b/g],
+      ["Google OAuth token", /\bya29\.[A-Za-z0-9_-]{20,}\b/g],
+      ["Google OAuth client secret", /\bGOCSPX-[A-Za-z0-9_-]{28,}\b/g],
+      ["SendGrid API key", /\bSG\.[A-Za-z0-9_-]{22,}\.[A-Za-z0-9_-]{43,}\b/g],
+      ["Twilio auth token", /\bSK[a-f0-9]{32,}\b/g],
+      ["npm access token", /\bnpm_[A-Za-z0-9]{36,}\b/g],
+      ["HashiCorp Vault token", /\bhv[sbr]\.[A-Za-z0-9]{24,}\b/g],
+      ["Cloudflare API token", /(?:CLOUDFLARE_API_TOKEN|CF_API_TOKEN)\s*=\s*['"]?([A-Za-z0-9_-]{40,})['"]?/g],
+      ["PEM private key", /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |)PRIVATE KEY(?:-----| BLOCK-----)/g],
+      ["Secret/token assignment", /(?:password|passwd|api[_-]?(?:key|secret|token)|auth[_-]?token|secret[_-]?key|access[_-]?token|private[_-]?key)\s*[:=]\s*['"]([^'"\s]{20,})['"]/gi],
+    ],
+    secretFragments: ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "akia", "asia", "xoxb-", "xoxa-", "xoxp-", "xoxr-", "xoxs-", "sk-proj-", "sk-", "sk_live_", "sk_test_", "rk_live_", "rk_test_", "aiza", "ya29.", "gocspx-", "sg.", "npm_", "hvs.", "hvb.", "hvr.", "cloudflare_api_token", "cf_api_token", "-----begin ", "password", "passwd", "api_key", "api-key", "apikey", "api_secret", "api-secret", "apisecret", "api_token", "api-token", "apitoken", "auth_token", "auth-token", "authtoken", "secret_key", "secret-key", "secretkey", "access_token", "access-token", "accesstoken", "private_key", "private-key", "privatekey"],
+    placeholderMarkers: ["correct-horse-battery-staple", "changeme", "change-me", "change_me", "placeholder", "example", "sample", "dummy", "redacted", "notreal", "not-a-real", "not_a_real", "fake", "your-", "your_", "test-password", "test_password", "testpassword", "${", "{{", "<"],
+    indirection: /^(?:\$\w+|\$\{[^}]*\}|\$\([^)]*\)|%\w+%)$/,
+    ignoreMarker: "forkmesh-secret-scan:ignore-line",
+  };
 
-  function diffQualityFlags(patch) {
-    const flags = Object.fromEntries(DIFF_QUALITY_RULES.map(([key]) => [key, { count: 0, path: "" }]));
-    const text = String(patch || "");
-    if (!text) return flags;
-    let path = "";
-    let seen = 0;
-    for (const line of text.split("\n")) {
-      if (seen > DIFF_QUALITY_MAX_LINES) break;
-      seen += 1;
-      if (line.startsWith("+++ ")) {
-        const target = line.slice(4).trim();
-        if (target !== "/dev/null") path = target.replace(/^b\//, "");
-        continue;
-      }
-      if (line.startsWith("diff --git ")) {
-        const match = line.match(/ b\/(.+)$/);
-        if (match) path = match[1];
-        continue;
-      }
-      if (line[0] !== "+") continue;
-      const added = line.slice(1);
-      for (const [key, rule] of DIFF_QUALITY_RULES) {
-        if (!rule.test(added)) continue;
-        flags[key].count += 1;
-        if (!flags[key].path) flags[key].path = path;
-      }
-    }
-    return flags;
+  const DIFF_HEALTH_MAX_LINES = 200000;
+
+  function diffHealthName(path) {
+    const text = String(path || "");
+    return text.slice(text.lastIndexOf("/") + 1);
   }
 
-  function renderRepoDiffQualityPills(flags) {
-    const meta = {
-      security: ["shield-alert", "Security", "danger", "risky calls, TLS bypasses, open CORS or secrets in added lines"],
-      conflict: ["git-merge", "Conflict", "danger", "merge-conflict markers in added lines"],
-      debug: ["bug", "Debug", "attention", "leftover debug output in added lines"],
-      todo: ["list-todo", "TODO", "attention", "TODO, FIXME or HACK markers in added lines"],
+  function diffHealthSuffix(path) {
+    const name = diffHealthName(path);
+    const dot = name.lastIndexOf(".");
+    return dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
+  }
+
+  function diffHealthIsCode(path) {
+    return DIFF_HEALTH.codeExtensions.has(diffHealthSuffix(path));
+  }
+
+  function diffHealthIsTest(path) {
+    const lower = String(path || "").toLowerCase();
+    if (lower.startsWith("test/") || lower.startsWith("tests/") || lower.includes("/test/") || lower.includes("/tests/")
+        || lower.includes("/__tests__/") || lower.includes("/spec/")) {
+      return true;
+    }
+    const base = diffHealthName(lower);
+    return base.startsWith("test_") || base.includes("_test.") || base.includes(".test.") || base.includes(".spec.")
+      || base.includes("_spec.");
+  }
+
+  function diffHealthIsGenerated(path) {
+    const lower = `/${String(path || "").toLowerCase()}`;
+    return lower.includes("/node_modules/") || lower.includes("/vendor/") || lower.includes("/dist/")
+      || lower.includes("/generated/") || lower.includes("/build/") || lower.endsWith(".min.js")
+      || lower.endsWith(".min.css") || lower.includes(".generated.");
+  }
+
+  function diffHealthSecretMatches(text) {
+    if (text.includes(DIFF_HEALTH.ignoreMarker)) return 0;
+    const lower = text.toLowerCase();
+    if (!text.includes("SK") && !DIFF_HEALTH.secretFragments.some((fragment) => lower.includes(fragment))) return 0;
+    let found = 0;
+    DIFF_HEALTH.secretPatterns.forEach(([name, pattern]) => {
+      for (const match of text.matchAll(pattern)) {
+        if (name === "Secret/token assignment" && diffHealthPlaceholder(match[1] || "")) continue;
+        found += 1;
+      }
+    });
+    return found;
+  }
+
+  function diffHealthPlaceholder(value) {
+    const lower = value.toLowerCase();
+    if (DIFF_HEALTH.placeholderMarkers.some((marker) => lower.includes(marker))) return true;
+    if (DIFF_HEALTH.indirection.test(value)) return true;
+    return Boolean(lower) && [...lower].every((ch) => ch === lower[0]);
+  }
+
+  function diffHealthUrls(text) {
+    let all = 0;
+    let insecure = 0;
+    for (const match of text.matchAll(DIFF_HEALTH.url)) {
+      const found = match[0].toLowerCase();
+      all += 1;
+      if (!found.startsWith("http://")) continue;
+      if (found.startsWith("http://localhost") || found.startsWith("http://127.0.0.1") || found.startsWith("http://0.0.0.0")
+          || found.startsWith("http://[::1]") || found.includes("example.") || found.includes(".invalid")) {
+        continue;
+      }
+      insecure += 1;
+    }
+    return { all, insecure };
+  }
+
+  function diffHealthConflictMarker(text) {
+    const trimmed = text.trim();
+    return trimmed.startsWith("<<<<<<<") || trimmed.startsWith(">>>>>>>") || trimmed === "=======";
+  }
+
+  function diffHealthIndent(text) {
+    return text.length - text.trimStart().length;
+  }
+
+  function diffLineFlags(path, text) {
+    const added = String(text || "");
+    const out = [];
+    if (diffHealthSecretMatches(added)) out.push("secret");
+    if (DIFF_HEALTH.transportBypass.test(added)) out.push("tlsBypass");
+    if (DIFF_HEALTH.unsafeApi.test(added)) out.push("unsafeApi");
+    if (DIFF_HEALTH.permissiveSecurity.test(added)) out.push("permissive");
+    if (diffHealthUrls(added).insecure) out.push("insecureUrl");
+    if (diffHealthConflictMarker(added)) out.push("conflictMarker");
+    if (DIFF_HEALTH.todoMarker.test(added)) out.push("todo");
+    if (DIFF_HEALTH.debugCall.test(added)) out.push("debug");
+    if (DIFF_HEALTH.broadCatch.test(added)) out.push("broadCatch");
+    if (diffHealthIsCode(path)) {
+      if (added.length > 140) out.push("longLine");
+      if (added.endsWith(" ") || added.endsWith("\t")) out.push("trailingWhitespace");
+      if (DIFF_HEALTH.controlFlow.test(added) && diffHealthIndent(added) >= 12) out.push("deepNesting");
+    }
+    if (DIFF_HEALTH.requestSite.test(added)) out.push("request");
+    return out;
+  }
+
+  function diffHealthFilePath(file) {
+    return file.newPath || file.oldPath || "file";
+  }
+
+  function annotateDiffLineFlags(files) {
+    let seen = 0;
+    const marks = new Map();
+    (files || []).forEach((file) => {
+      if (file.flagged) {
+        if (file.flagged.count) marks.set(diffHealthFilePath(file), file.flagged);
+        return;
+      }
+      const path = file.status === "deleted" ? "" : diffHealthFilePath(file);
+      const summary = { count: 0, severe: false, metrics: new Map(), severeMetrics: new Set() };
+      (file.rows || []).forEach((row) => {
+        if (row.type !== "add" || seen > DIFF_HEALTH_MAX_LINES) return;
+        seen += 1;
+        const flags = diffLineFlags(path, row.text);
+        if (!flags.length) return;
+        row.flags = flags;
+        summary.count += 1;
+        flags.forEach((flag) => {
+          const meta = DIFF_LINE_FLAGS[flag];
+          summary.severe = summary.severe || meta.severe;
+          if (meta.severe) summary.severeMetrics.add(meta.metric);
+          summary.metrics.set(meta.metric, (summary.metrics.get(meta.metric) || 0) + 1);
+        });
+      });
+      file.flagged = summary;
+      if (summary.count) marks.set(diffHealthFilePath(file), summary);
+    });
+    return marks;
+  }
+
+  function diffLineFlagMetrics(flags) {
+    return DIFF_HEALTH_METRICS.map(([key]) => key).filter((key) => flags.some((flag) => DIFF_LINE_FLAGS[flag]?.metric === key));
+  }
+
+  function diffHealthEvidence(parts, fallback, caveat) {
+    let result = parts.length ? parts.join("; ") : fallback;
+    if (!result.endsWith(".")) result += ".";
+    return `${result} ${caveat}`;
+  }
+
+  function diffHealthBounded(score) {
+    return Math.min(Math.max(Math.round(score), 0), 100);
+  }
+
+  function diffHealthTone(score) {
+    return score >= 85 ? "green" : score >= 60 ? "orange" : "red";
+  }
+
+  function diffHealthReport(files) {
+    const list = Array.isArray(files) ? files : [];
+    let totalAdds = 0, totalDels = 0, maxFileChurn = 0, sourceFiles = 0, testFiles = 0, testAdds = 0, testDels = 0;
+    let binaryFiles = 0, generatedFiles = 0, sensitiveFiles = 0, oddArtifacts = 0;
+    let maxChurnPath = "";
+    let lockfileChanged = false, manifestChanged = false;
+    const s = {
+      controlFlowLines: 0, nestedControlFlowLines: 0, longLines: 0, todoLines: 0, debugLines: 0, broadCatchLines: 0,
+      unsafeApiLines: 0, transportBypassLines: 0, permissiveSecurityLines: 0, requestLines: 0, hardcodedUrls: 0,
+      insecureUrls: 0, conflictMarkerLines: 0, trailingWhitespaceLines: 0, secretMatches: 0, resilienceEvidence: false,
     };
-    return DIFF_QUALITY_RULES.map(([key]) => {
-      const flag = flags?.[key] || { count: 0, path: "" };
-      if (key === "conflict" && !flag.count) return "";
-      const [icon, label, tone, what] = meta[key];
-      const title = flag.count
-        ? `${label}: ${formatCount(flag.count)} ${flag.count === 1 ? "line" : "lines"} with ${what}. Jump to the first.`
-        : key === "security"
-          ? `${label}: no flagged patterns (${what}). This is a pattern scan, not a security review.`
-          : `${label}: no ${what}.`;
-      const body = `<i data-lucide="${icon}"></i><span class="fm-diff-pill-label">${label}</span>${formatCount(flag.count)}`;
-      return flag.count
-        ? `<button type="button" data-repo-diff-flag="${escapeHtml(flag.path)}" title="${escapeHtml(title)}" class="fm-diff-pill fm-diff-pill-${tone}">${body}</button>`
-        : `<span title="${escapeHtml(title)}" class="fm-diff-pill ${key === "security" ? "fm-diff-pill-muted" : "fm-diff-pill-success"}">${body}</span>`;
+    let seen = 0;
+    list.forEach((file) => {
+      const path = diffHealthFilePath(file);
+      const adds = Number(file.adds) || 0;
+      const dels = Number(file.dels) || 0;
+      totalAdds += adds;
+      totalDels += dels;
+      if (adds + dels > maxFileChurn) {
+        maxFileChurn = adds + dels;
+        maxChurnPath = path;
+      }
+      const test = diffHealthIsTest(path);
+      if (diffHealthIsCode(path) && !test) sourceFiles += 1;
+      if (test) {
+        testFiles += 1;
+        testAdds += adds;
+        testDels += dels;
+      }
+      if (file.binary) binaryFiles += 1;
+      if (diffHealthIsGenerated(path)) generatedFiles += 1;
+      const base = diffHealthName(path).toLowerCase();
+      const suffix = diffHealthSuffix(path);
+      if (file.status === "added" && (base === ".env" || base === "id_rsa" || base === "id_ed25519" || ["pem", "p12", "pfx", "key"].includes(suffix))) sensitiveFiles += 1;
+      if (file.status === "added" && DIFF_HEALTH.oddExtensions.has(suffix)) oddArtifacts += 1;
+      lockfileChanged = lockfileChanged || DIFF_HEALTH.lockfiles.has(base);
+      manifestChanged = manifestChanged || DIFF_HEALTH.manifests.has(base);
+      const code = file.status !== "deleted" && diffHealthIsCode(path);
+      (file.rows || []).forEach((row) => {
+        if (row.type !== "add" || seen > DIFF_HEALTH_MAX_LINES) return;
+        seen += 1;
+        const added = String(row.text || "");
+        if (code) {
+          if (DIFF_HEALTH.controlFlow.test(added)) {
+            s.controlFlowLines += 1;
+            if (diffHealthIndent(added) >= 12) s.nestedControlFlowLines += 1;
+          }
+          if (added.length > 140) s.longLines += 1;
+          if (added.endsWith(" ") || added.endsWith("\t")) s.trailingWhitespaceLines += 1;
+        }
+        if (DIFF_HEALTH.todoMarker.test(added)) s.todoLines += 1;
+        if (DIFF_HEALTH.debugCall.test(added)) s.debugLines += 1;
+        if (DIFF_HEALTH.broadCatch.test(added)) s.broadCatchLines += 1;
+        if (DIFF_HEALTH.unsafeApi.test(added)) s.unsafeApiLines += 1;
+        if (DIFF_HEALTH.transportBypass.test(added)) s.transportBypassLines += 1;
+        if (DIFF_HEALTH.permissiveSecurity.test(added)) s.permissiveSecurityLines += 1;
+        if (DIFF_HEALTH.requestSite.test(added)) s.requestLines += 1;
+        if (!s.resilienceEvidence && DIFF_HEALTH.resilience.test(added)) s.resilienceEvidence = true;
+        if (diffHealthConflictMarker(added)) s.conflictMarkerLines += 1;
+        const found = diffHealthUrls(added);
+        s.hardcodedUrls += found.all;
+        s.insecureUrls += found.insecure;
+        s.secretMatches += diffHealthSecretMatches(added);
+      });
+    });
+    const churn = totalAdds + totalDels;
+    const fileCount = list.length;
+
+    let complexity = 100;
+    if (churn > 80) complexity -= 4;
+    if (churn > 250) complexity -= 8;
+    if (churn > 600) complexity -= 14;
+    if (churn > 1500) complexity -= 20;
+    if (maxFileChurn > 250) complexity -= 8;
+    if (maxFileChurn > 750) complexity -= 10;
+    if (s.controlFlowLines > 20) complexity -= 6;
+    if (s.controlFlowLines > 50) complexity -= 10;
+    if (s.controlFlowLines > 120) complexity -= 15;
+    if (s.nestedControlFlowLines > 8) complexity -= 8;
+    if (s.nestedControlFlowLines > 30) complexity -= 12;
+    complexity = diffHealthBounded(complexity);
+    const complexityBits = [`${churn} changed lines across ${fileCount} files`];
+    if (s.controlFlowLines) complexityBits.push(`${s.controlFlowLines} added control-flow lines`);
+    if (s.nestedControlFlowLines) complexityBits.push(`${s.nestedControlFlowLines} deeply indented branches`);
+    if (maxFileChurn && maxChurnPath) complexityBits.push(`largest file is ${maxFileChurn} lines in ${maxChurnPath}`);
+
+    let quality = 100;
+    const qualityBits = [];
+    if (sourceFiles && !testFiles) {
+      quality -= 18;
+      qualityBits.push(`${sourceFiles} source files changed with no test file in the diff`);
+      if (totalAdds > 250) quality -= 10;
+    } else if (testFiles) {
+      qualityBits.push(`${testFiles} test files changed`);
+    } else {
+      qualityBits.push("no source-code files changed");
+    }
+    if (testFiles && !testAdds && testDels) {
+      quality -= 20;
+      qualityBits.push("tests were only removed");
+    }
+    quality -= Math.min(25, s.todoLines * 5);
+    quality -= Math.min(15, s.debugLines * 5);
+    quality -= Math.min(15, s.broadCatchLines * 5);
+    quality -= Math.min(15, s.longLines * 2);
+    if (s.todoLines) qualityBits.push(`${s.todoLines} new TODO/FIXME markers`);
+    if (s.debugLines) qualityBits.push(`${s.debugLines} debug statements`);
+    if (s.broadCatchLines) qualityBits.push(`${s.broadCatchLines} broad exception handlers`);
+    if (s.longLines) qualityBits.push(`${s.longLines} code lines over 140 characters`);
+    quality = diffHealthBounded(quality);
+
+    let security = 100;
+    const securityBits = [];
+    if (s.secretMatches) {
+      security -= 70 + Math.min(20, (s.secretMatches - 1) * 10);
+      securityBits.push(`${s.secretMatches} high-confidence secret matches`);
+    }
+    security -= Math.min(70, s.transportBypassLines * 35);
+    security -= Math.min(50, s.unsafeApiLines * 20);
+    security -= Math.min(30, s.permissiveSecurityLines * 15);
+    security -= Math.min(70, sensitiveFiles * 55);
+    if (s.transportBypassLines) securityBits.push(`${s.transportBypassLines} TLS/certificate bypasses`);
+    if (s.unsafeApiLines) securityBits.push(`${s.unsafeApiLines} dynamic execution or unsafe DOM calls`);
+    if (s.permissiveSecurityLines) securityBits.push(`${s.permissiveSecurityLines} permissive security settings`);
+    if (sensitiveFiles) securityBits.push(`${sensitiveFiles} newly tracked key or environment files`);
+    security = diffHealthBounded(security);
+
+    let network = 100;
+    const networkBits = [];
+    if (s.requestLines) {
+      network -= Math.min(20, s.requestLines * 4);
+      networkBits.push(`${s.requestLines} added network request sites`);
+      if (!s.resilienceEvidence) {
+        network -= 18;
+        networkBits.push("no added timeout, cancellation, retry, or backoff evidence");
+      } else {
+        networkBits.push("timeout/retry/cancellation evidence present");
+      }
+    }
+    if (s.hardcodedUrls) {
+      network -= Math.min(10, s.hardcodedUrls * 2);
+      networkBits.push(`${s.hardcodedUrls} hard-coded URLs`);
+    }
+    if (s.insecureUrls) {
+      network -= Math.min(80, s.insecureUrls * 40);
+      networkBits.push(`${s.insecureUrls} non-local plain-HTTP endpoints`);
+    }
+    network = diffHealthBounded(network);
+
+    const lockfileWithoutManifest = lockfileChanged && !manifestChanged;
+    let practices = 100;
+    const practicesBits = [];
+    if (s.conflictMarkerLines) {
+      practices = 10;
+      practicesBits.push(`${s.conflictMarkerLines} unresolved conflict-marker lines`);
+    }
+    practices -= Math.min(30, generatedFiles * 12);
+    practices -= Math.min(20, binaryFiles * 8);
+    practices -= Math.min(50, oddArtifacts * 25);
+    practices -= Math.min(15, s.trailingWhitespaceLines * 2);
+    practices -= Math.min(15, (s.todoLines + s.debugLines) * 3);
+    if (lockfileWithoutManifest) practices -= 8;
+    if (churn > 1000) practices -= 10;
+    if (generatedFiles) practicesBits.push(`${generatedFiles} generated/vendor paths changed`);
+    if (binaryFiles) practicesBits.push(`${binaryFiles} binary files changed`);
+    if (oddArtifacts) practicesBits.push(`${oddArtifacts} unusual compiled/archive artifacts added`);
+    if (s.trailingWhitespaceLines) practicesBits.push(`${s.trailingWhitespaceLines} added code lines have trailing whitespace`);
+    if (lockfileWithoutManifest) practicesBits.push("a lockfile changed without its manifest");
+    practices = diffHealthBounded(practices);
+
+    const weighted = Math.floor((complexity * 25 + quality * 20 + security * 25 + network * 10 + practices * 20 + 50) / 100);
+    let merge = Math.min(weighted, 84);
+    const mergeBits = ["no Git base or conflict check was read for this diff"];
+    if (fileCount > 25) merge -= 5;
+    if (fileCount > 75) merge -= 10;
+    if (security < 60 || network < 40 || practices < 30) merge = Math.min(merge, 55);
+    merge = diffHealthBounded(merge);
+    mergeBits.push(`weighted static diff health ${weighted}/100`);
+
+    const details = {
+      merge: diffHealthEvidence(mergeBits, "No merge signals available", "Combines Git divergence/conflict state with the five static diff scores."),
+      complexity: diffHealthEvidence(complexityBits, "No changed lines", "Estimated from churn, control flow, and concentration; no code was executed."),
+      quality: diffHealthEvidence(qualityBits, "No quality findings", "Tests are inferred from paths and were not executed."),
+      security: diffHealthEvidence(securityBits, "No high-confidence secrets or risky added-line patterns found", "Static heuristic only; it does not replace dependency or SAST scanning."),
+      network: diffHealthEvidence(networkBits, "No added request sites or hard-coded URLs detected", "This is syntax analysis; ForkMesh sent no traffic for this check."),
+      practices: diffHealthEvidence(practicesBits, "No unusual artifacts, conflict markers, or diff-hygiene issues found", "Checks only the files and added lines in this diff."),
+    };
+    const scores = { merge, complexity, quality, security, network, practices };
+    return DIFF_HEALTH_METRICS.map(([key, label, icon]) => ({
+      key, label, icon, score: scores[key], tone: diffHealthTone(scores[key]), detail: details[key],
+    }));
+  }
+
+  function diffHealthToneClass(tone) {
+    if (tone === "green") return "success";
+    return tone === "orange" ? "attention" : "danger";
+  }
+
+  function renderRepoDiffHealthPills(report, marks) {
+    const flagged = new Map();
+    (marks instanceof Map ? [...marks.values()] : []).forEach((summary) => {
+      summary.metrics.forEach((count, metric) => flagged.set(metric, (flagged.get(metric) || 0) + count));
+    });
+    return (report || []).map((metric) => {
+      const lines = flagged.get(metric.key) || 0;
+      const tone = metric.key === "security" && metric.tone === "green" ? "muted" : diffHealthToneClass(metric.tone);
+      return `<details data-repo-diff-health-pill="${metric.key}" class="fm-diff-menu">
+        <summary class="fm-diff-pill fm-diff-pill-${tone}" title="${escapeHtml(`${metric.label} ${metric.score}/100`)}" aria-label="${escapeHtml(`${metric.label} health score: ${metric.score} out of 100, ${metric.tone}`)}"><i data-lucide="${metric.icon}"></i>${metric.score}</summary>
+        <div class="fm-popover fm-diff-menu-panel fm-diff-health-panel">
+          <div class="fm-diff-health-title"><span class="fm-diff-pill fm-diff-pill-${tone}"><i data-lucide="${metric.icon}"></i>${metric.score}</span>${escapeHtml(metric.label)} <span class="fm-diff-health-out">${metric.score}/100 · ${metric.tone}</span></div>
+          <p>${escapeHtml(metric.detail)}</p>
+          ${metric.key === "security" ? "<p>This is a pattern scan, not a security review: a clean score is not a security pass.</p>" : ""}
+          <p class="fm-diff-health-legend">Green 85–100 · orange 60–84 · red 0–59</p>
+          ${lines ? `<button type="button" data-repo-diff-mark-next="${metric.key}" class="fm-menu-item"><i data-lucide="corner-down-right"></i>Show flagged lines (${formatCount(lines)})</button>` : ""}
+        </div>
+      </details>`;
     }).join("");
+  }
+
+  function renderRepoDiffFileDot(summary) {
+    if (!summary?.count) return "";
+    const metrics = DIFF_HEALTH_METRICS.filter(([key]) => summary.metrics.has(key)).map(([, label]) => label).join(", ");
+    const title = `${formatCount(summary.count)} flagged ${summary.count === 1 ? "line" : "lines"}: ${metrics}`;
+    return `<span class="fm-diff-dot" data-tone="${summary.severe ? "danger" : "attention"}" title="${escapeHtml(title)}"></span>`;
+  }
+
+  function renderRepoDiffFileMarks(path, summary) {
+    if (!summary?.count) return "";
+    return `<span class="fm-diff-file-marks">${DIFF_HEALTH_METRICS.filter(([key]) => summary.metrics.has(key)).map(([key, label, icon]) => {
+      const count = summary.metrics.get(key);
+      return `<button type="button" data-repo-diff-mark-next="${key}" data-repo-diff-mark-file="${escapeHtml(path)}" title="${escapeHtml(`${label}: ${formatCount(count)} flagged ${count === 1 ? "line" : "lines"} in this file`)}" class="fm-diff-mark" data-tone="${summary.severeMetrics.has(key) ? "danger" : "attention"}"><i data-lucide="${icon}"></i>${formatCount(count)}</button>`;
+    }).join("")}</span>`;
+  }
+
+  function renderDiffLineFlagTag(flags) {
+    if (!flags?.length) return "";
+    const severe = flags.some((flag) => DIFF_LINE_FLAGS[flag]?.severe);
+    return `<span class="fm-diff-flag" data-tone="${severe ? "danger" : "attention"}">⚑ ${escapeHtml(flags.map((flag) => DIFF_LINE_FLAGS[flag]?.label || flag).join(" · "))}</span>`;
+  }
+
+  function diffLineFlagAttributes(flags) {
+    if (!flags?.length) return "";
+    const severe = flags.some((flag) => DIFF_LINE_FLAGS[flag]?.severe);
+    return ` data-flag="${severe ? "danger" : "attention"}" data-flag-metrics="${diffLineFlagMetrics(flags).join(" ")}"`;
+  }
+
+  function jumpToRepoDiffMark(metric, path = "") {
+    const section = repoPullFilesSection();
+    if (!section || !metric) return false;
+    const rows = Array.from(section.querySelectorAll("[data-repo-pull-diff-row][data-flag-metrics]"))
+      .filter((row) => row.dataset.flagMetrics.split(" ").includes(metric)
+        && (!path || row.closest("[data-repo-pull-diff-file]")?.dataset.repoPullDiffFile === path));
+    if (!rows.length) return false;
+    const key = `${metric}:${path}`;
+    const cursor = state.repoDiffMarkCursor?.key === key ? state.repoDiffMarkCursor.index + 1 : 0;
+    const index = cursor % rows.length;
+    state.repoDiffMarkCursor = { key, index };
+    const row = rows[index];
+    const block = row.closest("[data-repo-pull-diff-file]");
+    if (block?.dataset.collapsed === "true") foldRepoDiffBlock(block, false);
+    if (block) block.style.contentVisibility = "visible";
+    row.scrollIntoView({ block: "center" });
+    playRepoDiffAnimation(row, "flash");
+    return true;
   }
 
   // The review surface on the page and the data behind it. An open pull's
@@ -21450,6 +21961,7 @@
   // its viewed marks and layout toggles work, its line gutters do not open a
   // comment composer.
   function repoPullFilesSection() {
+    if (document.fullscreenElement?.matches?.("[data-repo-pull-files]")) return document.fullscreenElement;
     const sections = document.querySelectorAll("[data-repo-pull-files]");
     for (const section of sections) {
       if (section.offsetParent) return section;
@@ -21511,6 +22023,7 @@
     nav.innerHTML = renderRepoPullFiles(context.files, context.viewed, {
       mode: pullLayoutPrefs().explorer,
       filter,
+      marks: repoDiffMarks.patch === context.patch ? repoDiffMarks.marks : new Map(),
     });
     window.lucide?.createIcons();
   }
@@ -21561,12 +22074,56 @@
 
   function setRepoDiffExplorerOpen(open) {
     const next = Boolean(open);
-    setPullLayoutPref("explorerOpen", next);
+    if (!pullExplorerIsDrawer()) setPullLayoutPref("explorerOpen", next);
     const section = repoPullFilesSection();
     if (!section) return;
     section.dataset.explorerOpen = next ? "true" : "false";
-    section.querySelector("[data-repo-diff-explorer-toggle]")?.setAttribute("aria-pressed", next ? "true" : "false");
     if (next) setRepoPullActiveFile(section.dataset.activeFile || "", { revealRow: true });
+  }
+
+  function toggleRepoDiffExplorer() {
+    setRepoDiffExplorerOpen(repoPullFilesSection()?.dataset.explorerOpen !== "true");
+  }
+
+  function syncRepoDiffExplorerLayout() {
+    const section = repoPullFilesSection();
+    if (section) section.dataset.explorerOpen = pullExplorerShownOpen() ? "true" : "false";
+  }
+
+  function repoDiffShown(section) {
+    return Boolean(section && (section.offsetParent || document.fullscreenElement === section));
+  }
+
+  function repoDiffScroller(section) {
+    return document.fullscreenElement === section ? section : scrollContainerOf(section);
+  }
+
+  function fitRepoDiffViewport(section) {
+    if (!section) return 0;
+    const scroller = repoDiffScroller(section);
+    const root = scroller === document.scrollingElement || scroller === document.documentElement;
+    const height = `${Math.round(root ? window.innerHeight : scroller.clientHeight)}px`;
+    if (section.style.getPropertyValue("--fm-diff-viewport") !== height) section.style.setProperty("--fm-diff-viewport", height);
+    return root ? 0 : scroller.getBoundingClientRect().top;
+  }
+
+  function toggleRepoDiffMaximize() {
+    const section = repoPullFilesSection();
+    if (!section) return;
+    if (document.fullscreenElement) void document.exitFullscreen?.();
+    else section.requestFullscreen?.()?.catch?.(() => {});
+  }
+
+  function syncRepoDiffMaximize() {
+    document.querySelectorAll("[data-repo-diff-maximize]").forEach((button) => {
+      const on = document.fullscreenElement === button.closest("[data-repo-pull-files]");
+      const label = on ? "Exit full screen" : "Full screen";
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      swapLucideIcon(button.querySelector("[data-repo-diff-maximize-icon]"), on ? "minimize-2" : "maximize-2", "");
+    });
+    window.lucide?.createIcons();
+    fitRepoDiffViewport(repoPullFilesSection());
   }
 
   function setRepoDiffWrap(wrap) {
@@ -21588,7 +22145,7 @@
 
   function stepRepoDiffFile(step) {
     const section = repoPullFilesSection();
-    if (!section?.offsetParent) return false;
+    if (!repoDiffShown(section)) return false;
     const blocks = repoDiffBlocks(section);
     if (!blocks.length) return false;
     const index = blocks.findIndex((block) => block.dataset.repoPullDiffFile === section.dataset.activeFile);
@@ -21596,37 +22153,22 @@
     return jumpToRepoDiffFile(next?.dataset.repoPullDiffFile || "");
   }
 
-  function setRepoDiffBlockCollapsedFromHeader(block, collapsed) {
-    setRepoPullDiffBlockCollapsed(block, collapsed);
-    block.querySelector("[data-repo-pull-diff-collapse]")?.setAttribute("aria-expanded", collapsed ? "false" : "true");
-  }
-
   function toggleRepoDiffCollapseAll() {
     const section = repoPullFilesSection();
     const blocks = repoDiffBlocks(section);
     if (!blocks.length) return;
     const collapse = blocks.some((block) => block.dataset.collapsed !== "true");
-    blocks.forEach((block) => setRepoDiffBlockCollapsedFromHeader(block, collapse));
+    blocks.forEach((block) => setRepoPullDiffBlockCollapsed(block, collapse));
     window.lucide?.createIcons();
     const current = blocks.find((block) => block.dataset.repoPullDiffFile === section.dataset.activeFile);
     if (current) current.scrollIntoView({ block: "start" });
   }
 
-  function toggleRepoDiffCurrentCollapse() {
+  function toggleRepoDiffCurrentViewed(repo) {
     const section = repoPullFilesSection();
-    const block = repoDiffBlocks(section).find((item) => item.dataset.repoPullDiffFile === section?.dataset.activeFile);
-    if (!block) return;
-    setRepoDiffBlockCollapsedFromHeader(block, block.dataset.collapsed !== "true");
-    window.lucide?.createIcons();
-    block.scrollIntoView({ block: "start" });
-  }
-
-  function setRepoDiffCurrentViewed(repo, path) {
-    const section = repoPullFilesSection();
-    if (!section || !path) return;
-    toggleRepoPullViewed(repo, path);
-    const block = repoDiffBlocks(section).find((item) => item.dataset.repoPullDiffFile === path);
-    if (block) block.scrollIntoView({ block: "start" });
+    if (!repo || !repoDiffShown(section) || !section.dataset.activeFile) return false;
+    toggleRepoPullViewed(repo, section.dataset.activeFile);
+    return true;
   }
 
   // Clicking a file in the explorer jumps the diff pane to it; scrolling the diff
@@ -21635,8 +22177,6 @@
   function setRepoPullActiveFile(path, options = {}) {
     const section = repoPullFilesSection();
     if (!section) return;
-    const current = section.querySelector("[data-repo-diff-current-viewed]");
-    if (current?.dataset.repoDiffCurrentViewed !== path) updateRepoDiffCurrent(section, path);
     let active = null;
     section.querySelectorAll("[data-repo-pull-file]").forEach((button) => {
       const current = button.dataset.repoPullFile === path;
@@ -21725,15 +22265,12 @@
   // file, and the blocks come from their container's children rather than a
   // selector walk over every diff row.
   function syncRepoPullActiveFileFromScroll() {
-    if (state.repoPullDiffJump) return;
     const section = repoPullFilesSection();
-    if (!section || !section.offsetParent) return;
+    if (!repoDiffShown(section)) return;
+    const edge = fitRepoDiffViewport(section) + 6;
+    if (state.repoPullDiffJump) return;
     const blocks = section.querySelector("[data-repo-pull-diff-blocks]")?.children;
     if (!blocks?.length) return;
-    const head = section.querySelector("[data-repo-diff-head]");
-    const edge = head
-      ? head.getBoundingClientRect().bottom + 8
-      : (section.closest("[data-view]")?.getBoundingClientRect().top || 0) + 24;
     let low = 0;
     let high = blocks.length - 1;
     let index = 0;
@@ -21764,19 +22301,20 @@
     // line's min-content width, so an implicit auto track would let one file's
     // longest line push every block past the edge of the review pane.
     const wrapColumns = diffWrapColumns(mode);
+    annotateDiffLineFlags(files);
     return `<div data-repo-pull-diff-blocks class="grid grid-cols-[minmax(0,1fr)]">${files.map((file) => renderDiffFileBlock(file, images.get(file.newPath) || images.get(file.oldPath), viewed, mode, reviewable, wrapColumns)).join("")}</div>`;
   }
 
-  function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified") {
+  function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified", parsed = null) {
     if (!String(patch || "").trim()) return '<div class="px-4 py-3 text-sm text-muted-foreground">The diff is unavailable from the current mirror.</div>';
-    return `<div data-repo-pull-patch>${renderDiffFiles(parseDiffFiles(patch), [], viewed, mode, true)}</div>`;
+    return `<div data-repo-pull-patch>${renderDiffFiles(parsed || parseDiffFiles(patch), [], viewed, mode, true)}</div>`;
   }
 
   // The branch comparison's diff: the pull review's file blocks (viewed
   // folds, unified or split rows, stat bars) without the review gutters.
-  function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified", imageDiffs = []) {
+  function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified", imageDiffs = [], parsed = null) {
     if (!String(patch || "").trim()) return '<div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this comparison.</div>';
-    return `<div data-repo-pull-patch>${renderDiffFiles(parseDiffFiles(patch), imageDiffs, viewed, mode, false)}</div>`;
+    return `<div data-repo-pull-patch>${renderDiffFiles(parsed || parseDiffFiles(patch), imageDiffs, viewed, mode, false)}</div>`;
   }
 
   const repoPullFolderReads = new Map();
@@ -45599,10 +46137,7 @@
 
       const pullViewedButton = event.target.closest("[data-repo-pull-viewed]");
       if (pullViewedButton && state.selectedRepo) {
-        keepPullDiffHeaderInPlace(pullViewedButton, () => toggleRepoPullViewed(
-          state.selectedRepo,
-          pullViewedButton.dataset.repoPullViewed || "",
-        ));
+        toggleRepoPullViewed(state.selectedRepo, pullViewedButton.dataset.repoPullViewed || "");
         return;
       }
 
@@ -45620,9 +46155,18 @@
         return;
       }
 
-      const diffExplorerToggle = event.target.closest("[data-repo-diff-explorer-toggle]");
-      if (diffExplorerToggle) {
-        setRepoDiffExplorerOpen(diffExplorerToggle.getAttribute("aria-pressed") !== "true");
+      if (event.target.closest("[data-repo-diff-explorer-toggle]")) {
+        toggleRepoDiffExplorer();
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-explorer-scrim]")) {
+        setRepoDiffExplorerOpen(false);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-maximize]")) {
+        toggleRepoDiffMaximize();
         return;
       }
 
@@ -45632,36 +46176,14 @@
         return;
       }
 
-      const diffStepButton = event.target.closest("[data-repo-diff-step]");
-      if (diffStepButton) {
-        stepRepoDiffFile(Number(diffStepButton.dataset.repoDiffStep) || 1);
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-jump]")) {
-        jumpToRepoDiffFile(repoPullFilesSection()?.dataset.activeFile || "");
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-collapse]")) {
-        toggleRepoDiffCurrentCollapse();
-        return;
-      }
-
       if (event.target.closest("[data-repo-diff-collapse-all]")) {
         toggleRepoDiffCollapseAll();
         return;
       }
 
-      const diffCurrentViewed = event.target.closest("[data-repo-diff-current-viewed]");
-      if (diffCurrentViewed && state.selectedRepo) {
-        setRepoDiffCurrentViewed(state.selectedRepo, diffCurrentViewed.dataset.repoDiffCurrentViewed || "");
-        return;
-      }
-
-      const diffFlagButton = event.target.closest("[data-repo-diff-flag]");
-      if (diffFlagButton) {
-        jumpToRepoDiffFile(diffFlagButton.dataset.repoDiffFlag || "");
+      const diffMarkButton = event.target.closest("[data-repo-diff-mark-next]");
+      if (diffMarkButton) {
+        jumpToRepoDiffMark(diffMarkButton.dataset.repoDiffMarkNext || "", diffMarkButton.dataset.repoDiffMarkFile || "");
         return;
       }
 
@@ -45689,7 +46211,7 @@
         // Scroll-spy would otherwise fight the jump it just triggered.
         if (section) section.dataset.activeFile = path;
         setRepoPullActiveFile(path, { revealDiff: true });
-        if (window.matchMedia?.("(max-width: 1023px)")?.matches) setRepoDiffExplorerOpen(false);
+        if (pullExplorerIsDrawer()) setRepoDiffExplorerOpen(false);
         return;
       }
 
@@ -46247,6 +46769,10 @@
 
   // Rotating a phone (or resizing a window) across the split breakpoint
   // re-lays the diff in the layout that fits.
+  window.matchMedia?.(PULL_EXPLORER_DRAWER_QUERY)?.addEventListener?.("change", syncRepoDiffExplorerLayout);
+  document.addEventListener("fullscreenchange", syncRepoDiffMaximize);
+  window.addEventListener("resize", () => fitRepoDiffViewport(repoPullFilesSection()), { passive: true });
+
   window.matchMedia?.(PULL_DIFF_NARROW_QUERY)?.addEventListener?.("change", () => {
     const section = repoPullFilesSection();
     const list = section?.querySelector("[data-repo-pull-diff-list]");
@@ -46258,7 +46784,7 @@
   });
 
   document.addEventListener("click", (event) => {
-    document.querySelectorAll("[data-repo-diff-settings][open]").forEach((menu) => {
+    document.querySelectorAll("[data-repo-diff-settings][open], [data-repo-diff-health-pill][open]").forEach((menu) => {
       if (!menu.contains(event.target) || event.target.closest(".fm-menu-item")) menu.open = false;
     });
   });
@@ -46572,6 +47098,15 @@
         && stepRepoDiffFile(event.key === "j" ? 1 : -1)) {
       event.preventDefault();
       return;
+    }
+    if (!typingTarget && !event.metaKey && !event.ctrlKey && !event.altKey
+        && event.key === "v" && toggleRepoDiffCurrentViewed(state.selectedRepo)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape" && pullExplorerIsDrawer()
+        && repoPullFilesSection()?.dataset.explorerOpen === "true") {
+      setRepoDiffExplorerOpen(false);
     }
     if (!typingTarget && event.key.toLowerCase() === "t" && state.selectedRepo) {
       event.preventDefault();
