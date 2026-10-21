@@ -1020,6 +1020,26 @@
     };
   }
 
+  function issueFromIndex(summary) {
+    return {
+      ...summary,
+      number: summary.number === null ? NaN : summary.number,
+      date: formatRecordDate(summary.dateValue),
+      openAttachments: [],
+      events: Array.isArray(summary.events) ? summary.events : [],
+    };
+  }
+
+  async function fetchRepoIssueIndex(repo, options = {}) {
+    try {
+      const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", options.ref ? { ref: options.ref } : {}));
+      if (!data || data.truncated || !Array.isArray(data.issues)) return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // Sub-issues are portable rather than index-backed: their opening
   // description says "Parent issue: #N". Accept the plural spelling too so a
   // hand-authored issue can depend on more than one parent. Keep the parser
@@ -1107,6 +1127,19 @@
         else if (event.type === "delete" && event.target) deleted.add(String(event.target));
       });
       const credited = new Set();
+      (Array.isArray(source.mentionRefs) ? source.mentionRefs : []).forEach(([reference, ts, author, who]) => {
+        if (Number(reference) !== target || credited.has(who)) return;
+        credited.add(who);
+        mentions.push({
+          _mention: true,
+          ts: Number(ts) || 0,
+          author: author || "",
+          authorName: who,
+          sourceNumber: Number(source.number),
+          sourceTitle: String(source.title || ""),
+          sourceStatus: String(source.status || "open"),
+        });
+      });
       for (const event of events) {
         const opening = event.type === "open";
         if (!opening && event.type !== "comment") continue;
@@ -1196,6 +1229,13 @@
     return states;
   }
 
+  function issueRecordPullStates(issue) {
+    const states = new Map((Array.isArray(issue?.pullLinks) ? issue.pullLinks : [])
+      .map(([number, linked]) => [Number(number), Boolean(linked)]));
+    issueDevelopmentPullStates(issue?.events).forEach((linked, number) => states.set(number, linked));
+    return states;
+  }
+
   function issueLinkedPullNumbers(issueNumber, events, pulls) {
     const target = Number(issueNumber);
     const states = issueDevelopmentPullStates(events);
@@ -1216,7 +1256,7 @@
     const numbers = new Set(ownNumbers || []);
     (Array.isArray(issues) ? issues : []).forEach((issue) => {
       if (!issue || issue.deleted) return;
-      const linked = issueDevelopmentPullStates(issue.events).get(target);
+      const linked = issueRecordPullStates(issue).get(target);
       if (linked === true) numbers.add(Number(issue.number));
       else if (linked === false) numbers.delete(Number(issue.number));
     });
@@ -1305,6 +1345,12 @@
     const cached = state.issueRelationIndex;
     if (cached && cached.key === repoKey(repo) && Date.now() - cached.at < 60_000) {
       return cached.items;
+    }
+    const indexed = await fetchRepoIssueIndex(repo);
+    if (indexed) {
+      const items = indexed.issues.map(issueFromIndex);
+      state.issueRelationIndex = { key: repoKey(repo), at: Date.now(), items };
+      return items;
     }
     try {
       const tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/issues/open" }));
@@ -8908,7 +8954,8 @@
       issueParticipants(parsed).forEach((name) => add(name, "participant", "Took part in this issue"));
       add(detail?.repo?.owner, "owner", "Repository owner");
       tally((issue) => [issue.author, ...(issue.assignees || []),
-        ...(Array.isArray(issue.events) ? issue.events : []).map((event) => event?.authorName)])
+        ...(Array.isArray(issue.events) ? issue.events : []).map((event) => event?.authorName),
+        ...(Array.isArray(issue.participants) ? issue.participants : [])])
         .forEach(({ value, count }) => add(value, "active", `Active on ${count} ${count === 1 ? "issue" : "issues"}`));
       // The directory is long, so it only joins once a name is being typed.
       if (String(issuePicker?.query || "").trim()) {
@@ -9290,7 +9337,7 @@
     if (!parsed.developmentIssues) parsed.developmentIssues = (await loadRepoIssueRelationIndex(repo)).slice();
     const issues = developmentIssues(parsed);
     const pending = pullClosingIssueNumbers(body).filter((issueNumber) => !ownText.has(issueNumber)
-      && issueDevelopmentPullStates(issues.find((issue) => Number(issue?.number) === issueNumber)?.events)
+      && issueRecordPullStates(issues.find((issue) => Number(issue?.number) === issueNumber))
         .get(Number(pullNumber)) !== true);
     try {
       for (const issueNumber of pending) await postDevelopmentLink(repo, issueNumber, [pullNumber], true);
@@ -10529,6 +10576,8 @@
   function issueMentionsAccount(issue, account) {
     const name = String(account || "").trim();
     if (!name) return false;
+    if (Array.isArray(issue.mentionHandles) && /^[\w-]+$/.test(name)
+      && issue.mentionHandles.includes(name.toLowerCase())) return true;
     const pattern = new RegExp(
       `(^|[^\\w@])@${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "i");
     const bodies = [issue.body, ...(Array.isArray(issue.events) ? issue.events : [])
@@ -10545,6 +10594,7 @@
     return same(issue.author)
       || (Array.isArray(issue.assignees) ? issue.assignees : []).some(same)
       || (Array.isArray(issue.events) ? issue.events : []).some((event) => same(event?.authorName))
+      || (Array.isArray(issue.participants) ? issue.participants : []).some(same)
       || issueMentionsAccount(issue, account);
   }
 
@@ -11034,6 +11084,12 @@
       // produces false "couldn't load from mirror" rows for deleted issues.
       const issueCommit = immutableGitCommit(tree.commit);
       const issueReadOptions = issueCommit ? { ref: issueCommit } : {};
+      const indexed = await fetchRepoIssueIndex(repo, issueReadOptions);
+      if (indexed) {
+        showIndexedRepoIssues(repo, indexed, issueCommit);
+        renderRepoIssues();
+        return;
+      }
       const rootEntries = Array.isArray(tree.entries) ? tree.entries : [];
       // number -> record path, split by status. The open/ and closed/ subdirs
       // (adhoc #14) hold the numbered folders; pre-split legacy mirrors keep
@@ -11156,6 +11212,45 @@
     } finally {
       setRepoIssuesRefreshing(false);
     }
+  }
+
+  function showIndexedRepoIssues(repo, indexed, issueCommit) {
+    const view = state.issuesView;
+    const items = indexed.issues.map(issueFromIndex);
+    items.sort((a, b) => Number(b.number) - Number(a.number));
+    const missing = (Array.isArray(indexed.missing) ? indexed.missing : []).map(Number);
+    const servedNumbers = new Set([
+      ...items.map((issue) => Number(issue.number)), ...missing,
+    ]);
+    view.items = withOptimisticIssues(repo, items, servedNumbers);
+    const pendingMoves = applyPendingIssueStatuses(repo, view.items);
+    view.missing = missing;
+    view.repo = repo;
+    view.ref = issueCommit;
+    view.closedPaths = new Map();
+    view.closedLoaded = true;
+    view.closedLoading = false;
+    const legacy = items.filter((issue) => !issue.location);
+    const legacyOpen = legacy.filter((issue) => issue.status !== "closed" && !issue.deleted).length;
+    const legacyClosed = legacy.filter((issue) => issue.status === "closed" && !issue.deleted).length;
+    const notYetServed = view.items.filter(
+      (issue) => !servedNumbers.has(Number(issue.number)) && issue.status !== "closed").length;
+    const locations = new Map(items.map((issue) => [Number(issue.number), issue.location]));
+    let pendingOpened = 0;
+    let pendingClosed = 0;
+    pendingMoves.forEach((servedStatus, number) => {
+      if (!locations.get(number)) return;
+      if (servedStatus === "closed") pendingOpened += 1;
+      else pendingClosed += 1;
+    });
+    const openIssues = Number(indexed.openFolders || 0) + legacyOpen + notYetServed
+      + pendingOpened - pendingClosed;
+    const closedIssues = Number(indexed.closedFolders || 0) - pendingOpened + legacyClosed + pendingClosed;
+    view.openCount = openIssues;
+    view.closedCount = closedIssues;
+    view.unservedOpen = notYetServed;
+    setRepoTabCount("issues", openIssues);
+    setRepoCollectionCounts("issues", openIssues, closedIssues);
   }
 
   // Reads and parses the issue-N.json blobs for a page of numbered folders in
