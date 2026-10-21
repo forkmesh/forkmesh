@@ -24,7 +24,7 @@ PREFIX = "/api/crm"
 # matching kCrmRequestProof constant; both must stay byte-for-byte identical.
 REQUEST_PROOF = "forkmesh-crm-request-v1"
 MAX_BODY_BYTES = 2 * 1024 * 1024
-MAX_CONTACTS = 2000
+MAX_CONTACTS = 5000
 MAX_EMAILS = 1000
 MAX_MAIL_MESSAGES = 2000
 MAX_ZOHO_IMPORT = 200
@@ -70,7 +70,7 @@ CSV_IMPORT_PING_ERRORS = 3
 CSV_IMPORT_ROW_MESSAGES = {
     "name_or_email_required": "needs a name, an email or a company",
     "invalid_email": "has an email address that is not valid",
-    "crm_full": "was not added: the CRM already holds its %d contacts" % MAX_CONTACTS,
+    "crm_full": "was not added because the CRM already holds %d contacts" % MAX_CONTACTS,
 }
 # How many data rows an import preview reads to guess each column's field and
 # show the member a few sample values before they confirm the mapping.
@@ -508,9 +508,10 @@ DATA_SCHEMA_UP = [
     "ON crm_contacts(org_bi,updated_at DESC,contact_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_contacts_org_email "
     "ON crm_contacts(org_bi,email_bi) WHERE email_bi<>''",
-    """CREATE TRIGGER IF NOT EXISTS trg_crm_contact_limit
+    "DROP TRIGGER IF EXISTS trg_crm_contact_limit",
+    """CREATE TRIGGER IF NOT EXISTS trg_crm_contact_limit_5000
         BEFORE INSERT ON crm_contacts
-        WHEN (SELECT COUNT(*) FROM crm_contacts WHERE org_bi=NEW.org_bi)>=2000
+        WHEN (SELECT COUNT(*) FROM crm_contacts WHERE org_bi=NEW.org_bi)>=5000
         BEGIN SELECT RAISE(ABORT,'crm_contact_catalog_full'); END""",
     """CREATE TABLE IF NOT EXISTS crm_email_sends (
         send_id TEXT PRIMARY KEY,
@@ -1961,7 +1962,7 @@ async def email_channel_report(runtime, org_bi, since):
     closed = 0
     closed_value = 0
     contacts = await runtime.d1_all(
-        "SELECT data FROM crm_contacts WHERE org_bi=? LIMIT 2000", org_bi)
+        "SELECT data FROM crm_contacts WHERE org_bi=? LIMIT ?", org_bi, MAX_CONTACTS)
     for row in contacts or []:
         data = await runtime.open(row.get("data"))
         data = data if isinstance(data, dict) else {}
@@ -2037,8 +2038,8 @@ async def email_suggestions(runtime, org_bi, now, limit=EMAIL_SUGGESTION_LIMIT):
         else:
             outbound[contact_id] = max(outbound.get(contact_id, 0), at)
     contacts = await runtime.d1_all(
-        "SELECT contact_id,created_at,data FROM crm_contacts WHERE org_bi=? LIMIT 2000",
-        org_bi)
+        "SELECT contact_id,created_at,data FROM crm_contacts WHERE org_bi=? LIMIT ?",
+        org_bi, MAX_CONTACTS)
     ranked = []
     for row in contacts or []:
         contact_id = str(row.get("contact_id") or "")

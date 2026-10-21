@@ -70,11 +70,13 @@ generic package sockets and generated registries.
 - **CSV import**: up to 2000 rows per file; contacts are matched by email, so
   re-importing updates them; columns the CRM has no field for become custom
   columns.
-- An organization holds at most 2000 contacts (a D1 trigger aborts the insert
-  with `crm_contact_catalog_full`). Once it is full, an import still updates
-  the contacts it already knows and skips each new row with the row error
-  `crm_full` ("was not added: the CRM already holds its 2000 contacts"), which
-  the finish ping lists. Adding one contact by hand, from a shared sheet or
+- An organization holds at most 5000 contacts (`MAX_CONTACTS`; the D1 trigger
+  `trg_crm_contact_limit_5000` aborts the insert with
+  `crm_contact_catalog_full`, and replaced the 2000-contact
+  `trg_crm_contact_limit` on 2026-10-20). Once it is full, an import still
+  updates the contacts it already knows and skips each new row with the row
+  error `crm_full` ("was not added because the CRM already holds 5000
+  contacts"), which the finish ping lists. Adding one contact by hand, from a shared sheet or
   from a linked mail message answers `409 {"error": "crm_full"}`. Before
   2026-10-20 the import let the trigger's D1 error escape as a 500.
 - A file whose every row names the same pipeline in its **Flow** or
