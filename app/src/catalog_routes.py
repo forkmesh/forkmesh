@@ -1179,6 +1179,12 @@ async def catalog_handler(env, request):
                     refs_digest=state_hash)
             except Exception:
                 pass
+        if exists:
+            try:
+                await notify_catalog_issues_opened(
+                    env, owner, record["name"], key_bi, prior, record)
+            except Exception:
+                pass
         payload = {
             "ok": True,
             "repository": record,
