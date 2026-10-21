@@ -119,6 +119,21 @@ and wakes the other cores.
   ("main was already past this pass"). If the cores are behind and refused
   it, the pass fails (`gateway cores: the cores are behind and refused
   main`).
+- **Lagging read-back.** The fetch that checks a refused ref goes through the
+  same edge as the push, so it can reach a core that has not replicated the
+  newer value yet. On 2026-10-21 the desktop committed two `pull #N: merged`
+  ledger records while a pass ran; the push of `forkmesh/pulls` was refused
+  by a core that already held the newer tip, the read-back landed on one that
+  still held the older one, and the pass failed as `DIVERGED` and sent a Ping.
+  The next pass, 50 s later, went through. A refused `main` or ledger ref that
+  does not read as outrun is now read once more after 10 s before the pass
+  fails.
+- **Ping cause.** A refused ref is named in the Ping (`the cores refused
+  refs/heads/forkmesh/pulls (non-fast-forward)`, plus the absorb reason for
+  `main`). Before, the Ping carried the last 600 characters of git's output.
+  Those were mostly the cores' `receive.denyCurrentBranch` warning, cut off
+  mid-word. Stale branches left at the cores' value are not counted as
+  causes.
 
 ## Merges made on the cores
 
