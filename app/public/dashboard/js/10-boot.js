@@ -136,7 +136,7 @@
       owner: String(repo.owner),
       name: String(repo.name),
       key: repoKey(repo),
-      display: repoDisplayKey(repo),
+      display: agentModalRepoLabel(repo),
       owns: sessionOwnsRepo(repo),
       endpoint: orgAgentEndpoint(repo),
     };

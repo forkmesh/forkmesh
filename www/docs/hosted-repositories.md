@@ -2,7 +2,8 @@
 
 Create an empty repository from **Repositories → New** and push with plain
 `git` to `https://app.forkmesh.com/<owner>/<name>`. When git asks, enter your
-account name or email and your account password, or the push credential shown.
+account name or email and your account password (if two-factor authentication
+is off), or the push credential shown.
 The credential is a
 keyed MAC over account,
 repository, session and a seven-day expiry; it is not stored, dies with the
@@ -16,6 +17,8 @@ repositories, initial files and imports, up to 10 repositories of 200 MB per
 account.
 
 ## Contributing without write access
+
+Step by step, with the commands: [Contribute with git only](contributing-with-git.md).
 
 The usual way: open the repository, choose **Forks → Fork this repository**,
 create a push credential for your fork (Settings → SSH keys → Push code over
@@ -31,8 +34,8 @@ a fork:
    choose **Create push credential**.
 2. Push a branch named `pr/<your-account>/<topic>`:
    `git push https://<host>/<owner>/<name>.git pr/<your-account>/<topic>`.
-   When Git asks, use your account name or email with your account password,
-   or the credential.
+   When Git asks, use your account name or email with your account password
+   (if two-factor authentication is off), or the credential.
 3. Open the pull request from that branch on the repository's **Pull
    requests** tab.
 

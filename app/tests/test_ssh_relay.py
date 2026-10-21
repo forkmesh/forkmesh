@@ -146,6 +146,9 @@ class _BrokerHandler(socketserver.BaseRequestHandler):
 
 class _Front(_PushGitHandler):
     protect = ""
+    # A CDN proxy's own answer to a push (e.g. 413 for its body cap), sent
+    # before the body is read, the way a proxy refuses an upload.
+    proxy_status = 0
     contributors = ("bob",)
     bookkeeping = []
     received_packs = []
@@ -214,6 +217,17 @@ class _Front(_PushGitHandler):
         parts = path.split("/")
         repo = parts[2][:-4]
         receive = parts[3] == "git-receive-pack"
+        if receive and type(self).proxy_status:
+            self.send_response(type(self).proxy_status)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", "26")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(b"<html>Entity Too Large</html>"[:26])
+            self.wfile.flush()
+            self._body()
+            self.close_connection = True
+            return
         account = self._account("push" if receive else "read")
         body = self._body()
         type(self).requests.append(("POST", path, "", account))
@@ -266,7 +280,8 @@ def relay(tmp_path, monkeypatch):
     monkeypatch.setattr(
         gateway, "REFRESH_PENDING_PATH", tmp_path / "missing" / "pending")
     front = type("Front", (_Front,), {
-        "application": app, "protect": "", "bookkeeping": [],
+        "application": app, "protect": "", "proxy_status": 0,
+        "bookkeeping": [],
         "received_packs": [], "requests": []})
     server = ThreadingHTTPServer(("127.0.0.1", 0), front)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -801,3 +816,362 @@ def test_instance_updates_keep_the_ssh_settings_and_refresh_the_relay():
     assert subprocess.run(["bash", "-n", str(PROJECT_ROOT / "tools"
                                              / "install_ssh_relay.sh")]
                           ).returncode == 0
+
+
+
+# ---------------------------------------------------------------------------
+# Remote front: DNS and TLS to the public origin, CDN limits, token rotation
+# ---------------------------------------------------------------------------
+
+
+FRONT_NAME = "git.example.test"
+
+
+def _tls_files(directory):
+    """A throwaway CA and a server certificate for FRONT_NAME."""
+    directory.mkdir()
+
+    def openssl(*arguments):
+        subprocess.run(["openssl", *arguments], cwd=directory, check=True,
+                       capture_output=True)
+
+    openssl("req", "-x509", "-newkey", "ec", "-pkeyopt",
+            "ec_paramgen_curve:prime256v1", "-nodes", "-days", "2",
+            "-subj", "/CN=Relay Test CA", "-keyout", "ca.key", "-out", "ca.pem",
+            "-addext", "basicConstraints=critical,CA:TRUE",
+            "-addext", "keyUsage=critical,keyCertSign,cRLSign")
+    openssl("req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
+            "-nodes", "-subj", "/CN=" + FRONT_NAME, "-keyout", "server.key",
+            "-out", "server.csr")
+    (directory / "server.ext").write_text(
+        "subjectAltName=DNS:%s\n"
+        "basicConstraints=critical,CA:FALSE\n"
+        "keyUsage=critical,digitalSignature\n"
+        "extendedKeyUsage=serverAuth\n"
+        "subjectKeyIdentifier=hash\n"
+        "authorityKeyIdentifier=keyid\n" % FRONT_NAME, encoding="utf-8")
+    openssl("x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey",
+            "ca.key", "-CAcreateserial", "-days", "2", "-out", "server.pem",
+            "-extfile", "server.ext")
+    return directory / "ca.pem", directory / "server.pem", directory / "server.key"
+
+
+@pytest.fixture
+def public_origin(tmp_path, monkeypatch):
+    """FRONT_NAME served over verified TLS, resolvable only through DNS.
+
+    The name resolves (through a hosts-style override of getaddrinfo, the
+    resolver every connection goes through) to a local TLS server whose
+    certificate is signed by a CA the test trusts via SSL_CERT_FILE, so a
+    connection succeeds only by resolving the name and verifying it.
+    """
+    import ssl
+    from http.server import BaseHTTPRequestHandler
+
+    ca, certificate, key = _tls_files(tmp_path / "tls")
+    seen = {"requests": [], "resolved": []}
+
+    class Origin(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def _send(self, status, body, content_type="application/json"):
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            seen["requests"].append(("GET", self.path, dict(self.headers)))
+            self._send(200, b"0008NAK\n", "application/x-git-upload-pack-result")
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            seen["requests"].append(("POST", self.path, dict(self.headers)))
+            request = json.loads(body)
+            self._send(200, json.dumps({
+                "ok": True, "authorized": True, "keyId": request["keyId"],
+                "requestId": request["requestId"],
+                "operation": request["operation"], "owner": "acme",
+                "repository": "widget",
+                "repositoryRelativePath": "acme/widget.git",
+                "httpCredential": {
+                    "username": "alice",
+                    "password": "fms1.%s.1783000000000.%s" % (
+                        request["keyId"], "a" * 64),
+                    "expiresAt": 1783000000000,
+                },
+            }).encode())
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Origin)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certificate, key)
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+
+    real_getaddrinfo = socket.getaddrinfo
+
+    def getaddrinfo(host, *args, **kwargs):
+        if host in (FRONT_NAME, "other.example.test"):
+            seen["resolved"].append(host)
+            return real_getaddrinfo("127.0.0.1", *args, **kwargs)
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setenv("SSL_CERT_FILE", str(ca))
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    yield {"origin": "https://%s:%d" % (FRONT_NAME, port), "port": port,
+           "seen": seen}
+    server.shutdown()
+    server.server_close()
+
+
+def test_remote_front_reaches_the_origin_by_dns_with_verified_tls(public_origin):
+    target = ssh_gateway.HttpGitTarget({
+        "origin": public_origin["origin"], "maxRequestBytes": 100_000_000,
+        "maxSessionsPerClient": 4})
+    assert target.connect_address is None
+    response = ssh_gateway._relay_send(
+        target, "GET", "/acme/widget.git/info/refs?service=git-upload-pack",
+        ssh_gateway._relay_headers(target, "Basic eA==", {}))
+    assert response.read() == b"0008NAK\n"
+    response.close()
+    method, path, headers = public_origin["seen"]["requests"][-1]
+    assert (method, path) == ("GET",
+                              "/acme/widget.git/info/refs?service=git-upload-pack")
+    assert headers["Host"] == "%s:%d" % (FRONT_NAME, public_origin["port"])
+    assert headers["User-Agent"] == ssh_gateway.RELAY_USER_AGENT
+    assert public_origin["seen"]["resolved"][-1] == FRONT_NAME
+    # The certificate really is checked against the name: the same server
+    # under another name is refused, so there is no silent fallback.
+    other = ssh_gateway.HttpGitTarget(
+        {"origin": "https://other.example.test:%d" % public_origin["port"]})
+    with pytest.raises(ssh_gateway.RelayError):
+        ssh_gateway._relay_send(other, "GET", "/x", ssh_gateway._relay_headers(
+            other, "Basic eA==", {}))
+
+
+def test_remote_front_broker_authorizes_through_dns_without_connect_address(
+        public_origin):
+    import ssh_authorization_broker as broker
+    config = broker.BrokerConfig(
+        api_origin=public_origin["origin"], token="t" * 48,
+        socket_path=Path("/run/x/authorize.sock"), socket_gid=1,
+        lookup_uid=2, git_uid=3)
+    assert config.api_connect_address is None
+    value = {"action": "authorize", "keyId": "sk_" + "a" * 24,
+             "owner": "acme", "repository": "widget",
+             "operation": "git-receive-pack"}
+    result = broker._authorize_upstream(config, value)
+    assert result["httpCredential"]["username"] == "alice"
+    method, path, headers = public_origin["seen"]["requests"][-1]
+    assert (method, path) == ("POST", "/api/ssh/authorize")
+    assert headers["Authorization"] == "Bearer " + "t" * 48
+    assert headers["Host"] == "%s:%d" % (FRONT_NAME, public_origin["port"])
+    assert public_origin["seen"]["resolved"][-1] == FRONT_NAME
+
+
+class _Answer:
+    def __init__(self, status, body=b"", headers=None):
+        self.status = status
+        self._body = body
+        self._headers = {k.lower(): v for k, v in (headers or {}).items()}
+
+    def read(self, _size=-1):
+        return self._body
+
+    def getheader(self, name, default=None):
+        return self._headers.get(name.lower(), default)
+
+
+def test_proxy_answers_become_readable_git_errors():
+    proxy_413 = str(ssh_gateway._relay_refusal(_Answer(
+        413, b"<html>413 Request Entity Too Large</html>",
+        {"Content-Type": "text/html"})))
+    assert "larger than the HTTPS proxy" in proxy_413
+    assert "Push fewer commits" in proxy_413 and "HTTPS" in proxy_413
+    # The Git route's own 413 (a quota) keeps its own explanation.
+    quota = ssh_gateway._relay_refusal(_Answer(
+        413, b'{"message": "repository quota exceeded"}'))
+    assert str(quota) == "repository quota exceeded"
+    timeout = str(ssh_gateway._relay_refusal(_Answer(524, b"<html></html>")))
+    assert "may still have been applied" in timeout and "git fetch" in timeout
+    blocked = str(ssh_gateway._relay_refusal(_Answer(
+        403, b"<html>challenge</html>", {"cf-mitigated": "challenge"})))
+    assert "bot protection" in blocked
+    assert str(ssh_gateway._relay_refusal(_Answer(403, b""))) \
+        == "repository access denied"
+
+
+def _push_big(relay, name, size):
+    git = relay["git"]
+    work = relay["tmp"] / name
+    git(ALICE, "clone", "-q", URL, str(work), check=True)
+    (work / "blob.bin").write_bytes(os.urandom(size))
+    git(ALICE, "add", ".", cwd=work, check=True)
+    git(ALICE, "commit", "-q", "-m", name, cwd=work, check=True)
+    return git(ALICE, "push", "origin", "HEAD:refs/heads/" + name, cwd=work)
+
+
+def test_a_proxy_413_on_a_push_prints_a_readable_git_error(relay):
+    relay["front"].proxy_status = 413
+    pushed = _push_big(relay, "too-big", 3 * 1024 * 1024)
+    assert pushed.returncode != 0
+    assert "larger than the HTTPS proxy" in pushed.stderr, pushed.stderr
+    assert "Push fewer commits" in pushed.stderr
+    assert not _rev(relay["bare"], "refs/heads/too-big")
+
+
+def test_a_push_over_the_proxy_cap_stops_at_the_gateway(relay):
+    config_path = relay["tmp"] / "gateway.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["httpGit"]["maxRequestBytes"] = 2 * 1024 * 1024
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    pushed = _push_big(relay, "capped", 3 * 1024 * 1024)
+    assert pushed.returncode != 0
+    assert "larger than the HTTPS proxy" in pushed.stderr, pushed.stderr
+    assert "(2 MB)" in pushed.stderr
+    assert relay["front"].received_packs == []
+    assert not _rev(relay["bare"], "refs/heads/capped")
+    # Under the cap, the same configuration pushes normally.
+    small = _push_big(relay, "fits", 256 * 1024)
+    assert small.returncode == 0, small.stderr
+
+
+def test_sessions_per_client_are_capped_by_address(tmp_path, monkeypatch):
+    capacity = tmp_path / "capacity"
+    capacity.mkdir(mode=0o700)
+    prefix = ssh_gateway._client_slot_prefix("203.0.113.9")
+    assert prefix == ssh_gateway._client_slot_prefix("::ffff:203.0.113.9")
+    assert ssh_gateway._client_slot_prefix("2001:db8::1") \
+        == ssh_gateway._client_slot_prefix("2001:db8::2")
+    assert ssh_gateway._client_slot_prefix("2001:db8:0:1::1") \
+        != ssh_gateway._client_slot_prefix("2001:db8::1")
+    assert ssh_gateway._client_slot_prefix("") is None
+    held = [ssh_gateway._acquire_slot(capacity, prefix, maximum=2,
+                                      reserved_receive=0, receive=False)
+            for _ in range(2)]
+    with pytest.raises(ssh_gateway.GatewayError, match="at capacity"):
+        ssh_gateway._acquire_slot(capacity, prefix, maximum=2,
+                                  reserved_receive=0, receive=False)
+    for lease in held:
+        lease.close()
+    for bad in (0, 65, True, "4"):
+        with pytest.raises(ssh_gateway.GatewayError):
+            ssh_gateway.HttpGitTarget({"origin": "https://x.example.test",
+                                       "maxSessionsPerClient": bad})
+    for bad in (1024, True, "100000000", 2 ** 40):
+        with pytest.raises(ssh_gateway.GatewayError):
+            ssh_gateway.HttpGitTarget({"origin": "https://x.example.test",
+                                       "maxRequestBytes": bad})
+
+
+def _token_check(**settings):
+    import hmac
+    import ssh_keys
+    import test_ssh_git_auth as auth
+    namespace = auth._load_entry(
+        "_ssh_gateway_tokens", "_ssh_gateway_address_allowed",
+        "_ssh_gateway_token_ok",
+        extra_globals={"ssh_auth": ssh_keys, "hmac": hmac})
+    env = type("Env", (), settings)()
+
+    class Request:
+        def __init__(self, token, address="198.51.100.4"):
+            self.headers = {"authorization": "Bearer " + token,
+                            "cf-connecting-ip": address}
+
+    return lambda token, **kw: namespace["_ssh_gateway_token_ok"](
+        env, Request(token, **kw))
+
+
+def test_token_rotation_accepts_both_tokens_and_only_them():
+    old, new = "o" * 48, "n" * 48
+    rotating = _token_check(SSH_GATEWAY_TOKEN=old, SSH_GATEWAY_TOKEN_NEXT=new)
+    assert rotating(old) and rotating(new)
+    assert not rotating("x" * 48) and not rotating("")
+    finished = _token_check(SSH_GATEWAY_TOKEN=new)
+    assert finished(new) and not finished(old)
+    # A malformed NEXT is ignored, never a wildcard.
+    malformed = _token_check(SSH_GATEWAY_TOKEN=old,
+                             SSH_GATEWAY_TOKEN_NEXT="short\nvalue")
+    assert malformed(old) and not malformed("short\nvalue")
+    assert not _token_check()("o" * 48)
+
+
+def test_an_address_pin_narrows_the_token_to_the_front():
+    token = "o" * 48
+    pinned = _token_check(SSH_GATEWAY_TOKEN=token,
+                          SSH_GATEWAY_ALLOWED_ADDRESSES="203.0.113.7, 2001:db8::/64")
+    assert pinned(token, address="203.0.113.7")
+    assert pinned(token, address="2001:db8::5")
+    assert not pinned(token, address="198.51.100.4")
+    assert not pinned(token, address="")
+    assert not pinned("x" * 48, address="203.0.113.7")
+    broken = _token_check(SSH_GATEWAY_TOKEN=token,
+                          SSH_GATEWAY_ALLOWED_ADDRESSES="203.0.113.7,not-an-ip")
+    assert not broken(token, address="203.0.113.7")
+
+
+def _installer(*arguments, app_env):
+    return subprocess.run(
+        ["bash", str(PROJECT_ROOT / "tools" / "install_ssh_relay.sh"),
+         *arguments, "--print-config"],
+        capture_output=True, text=True, timeout=30, check=False,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+             "FORKMESH_APP_ENV": str(app_env)})
+
+
+def _printed_configs(output):
+    configs = {}
+    for block in output.split("# /etc/forkmesh-ssh/")[1:]:
+        name, _newline, body = block.partition("\n")
+        configs[name.strip()] = json.loads(body)
+    return configs
+
+
+def test_installer_remote_front_writes_no_loopback_and_needs_no_instance(tmp_path):
+    missing = tmp_path / "no-instance" / "app.env"
+    result = _installer("--remote-front", "--api-origin", "https://git.example.test",
+                        "--host", "ssh.example.test", app_env=missing)
+    assert result.returncode == 0, result.stderr
+    assert "127.0.0.1" not in result.stdout and "::1" not in result.stdout
+    assert "onnectAddress" not in result.stdout
+    configs = _printed_configs(result.stdout)
+    gateway_config = configs["ssh-gateway.json"]
+    broker_config = configs["ssh-authorization-broker.json"]
+    assert gateway_config["httpGit"] == {
+        "origin": "https://git.example.test",
+        "maxRequestBytes": 100_000_000,
+        "maxSessionsPerClient": 4,
+    }
+    assert broker_config["apiOrigin"] == "https://git.example.test"
+    assert broker_config["gatewayTokenFile"] == "/etc/forkmesh-ssh/ssh-gateway.token"
+    # The gateway accepts exactly this block (DNS, no override).
+    target = ssh_gateway.HttpGitTarget(gateway_config["httpGit"])
+    assert target.connect_address is None and target.host == "git.example.test"
+    # The cap is adjustable and can be switched off.
+    uncapped = _printed_configs(_installer(
+        "--remote-front", "--api-origin", "https://git.example.test",
+        "--max-request-mb", "0", app_env=missing).stdout)
+    assert "maxRequestBytes" not in uncapped["ssh-gateway.json"]["httpGit"]
+    # A front without an origin is refused rather than guessed.
+    assert _installer("--remote-front", app_env=missing).returncode != 0
+    # On the instance itself the relay keeps using the local front end.
+    app_env = tmp_path / "app.env"
+    app_env.write_text("PUBLIC_BASE_URL=https://git.example.test\n",
+                       encoding="utf-8")
+    local = _printed_configs(_installer("--host", "ssh.example.test",
+                                        app_env=app_env).stdout)
+    assert local["ssh-gateway.json"]["httpGit"]["connectAddress"] \
+        == "127.0.0.1:443"
+    assert local["ssh-authorization-broker.json"]["apiConnectAddress"] \
+        == "127.0.0.1:443"
+    # The remote-front install path never writes app.env or restarts the app.
+    script = (PROJECT_ROOT / "tools" / "install_ssh_relay.sh").read_text(
+        encoding="utf-8")
+    assert 'if [ "$ROLE" = local ]; then\n  say "publishing SSH addresses' in script
+    assert "--token-file -" in script and "fail2ban" in script
+    assert "MaxStartups" in script and "PerSourceMaxStartups" in script
