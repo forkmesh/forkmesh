@@ -2492,9 +2492,11 @@ class RequestBodyTooLarge(BaseException):
 _request_bodies = _LazyModule("request_bodies")
 bounded_request_text = _request_bodies.export("bounded_request_text")
 bounded_json_request = _request_bodies.export("bounded_json_request")
+bounded_json_request_with_raw = _request_bodies.export("bounded_json_request_with_raw")
 _json_request_limit = _request_bodies.export("_json_request_limit")
 _hidden_unicode = _LazyModule("hidden_unicode")
 clean_hidden_unicode = _hidden_unicode.export("clean_value")
+has_hidden_unicode = _hidden_unicode.export("has_hidden")
 
 
 def _legacy_custody_not_ready_response():
@@ -41117,7 +41119,7 @@ async def pulls_handler(env, request, owner, repo):
         if disabled is not None:
             return disabled
         try:
-            data = await bounded_json_request(request)
+            data, raw_data = await bounded_json_request_with_raw(request)
         except Exception:
             return json_response({"error": "invalid_json"}, status=400)
         # A submission is either a whole new PR ("pull") or a signed conversation
@@ -41265,8 +41267,21 @@ async def pulls_handler(env, request, owner, repo):
             (pull.get("commits", "") or "").encode("utf-8"))
         if pull_bytes > MAX_PULL_BYTES:
             return json_response({"error": "pull_too_large"}, status=413)
+        raw_pull = raw_data.get("pull") if isinstance(raw_data, dict) else None
+        raw_pull = raw_pull if isinstance(raw_pull, dict) else {}
+        for field in ("patch", "commits"):
+            if isinstance(raw_pull.get(field), str):
+                pull[field] = raw_pull[field]
+        pull["hiddenUnicode"] = any(
+            has_hidden_unicode(pull.get(field) or "") for field in ("patch", "commits"))
         if not await verify_pull_event(
                 pull, _event_signing_repo_keys(request, owner, repo)):
+            altered = [field for field in ("title", "base", "head")
+                       if isinstance(raw_pull.get(field), str)
+                       and raw_pull[field] != pull.get(field)]
+            if altered:
+                return json_response(
+                    {"error": "hidden_unicode", "fields": altered}, status=400)
             return json_response({"error": "bad_signature"}, status=401)
         refused = await _bind_session_author(env, request, data, pull)
         if refused is not None:

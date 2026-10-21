@@ -138,3 +138,20 @@ Write invisible characters in source as numeric code points (`0x200B`,
 `chr(0x200B)`). Editing tools can turn a typed `\u200b` escape into the real
 invisible character. `test_new_sources_hold_no_literal_hidden_characters`
 fails if one slips into the policy files.
+
+## Signed code in pull requests
+
+A pull request's `patch` and `commits` are code and are signed byte for byte,
+so cleaning them broke every pull whose code holds a character on the list (a
+UTF-8 byte-order mark at the top of a Windows file, a zero-width space inside
+a string, a whitespace table written with literal characters) with
+`bad_signature`, and would otherwise have changed the code silently.
+`pulls_handler` reads the body once more without cleaning
+(`bounded_json_request_with_raw`), verifies the signature over the exact
+`patch` and `commits`, keeps them exact, and stores `hiddenUnicode: true` on
+the pull when either holds a character this policy removes, so a reviewer and
+an agent can be warned instead of the bytes being changed. Prose stays clean:
+when the signature only verifies over a title, base or head that cleaning
+changed, the server answers 400 `hidden_unicode` with the field names instead
+of `bad_signature`.
+
