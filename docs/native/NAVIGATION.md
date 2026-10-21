@@ -752,8 +752,11 @@ Holding the new agent button starts an agent by voice, without the keyboard.
 - Tab roots use their own compact headers; pushed details use inline titles
   with a subtitle where it helps.
 - At most three toolbar items per side; more go in a trailing menu or a
-  horizontal scroller (`AgentRunActionsCap`). Destructive actions sit in menus
-  or confirmation dialogs, or act at once with Undo.
+  horizontal scroller (`AgentRunActionsCap`). The scroller takes the page width
+  less 144 pt for the Back button, the changes chip and the bar margins (never
+  under 184 pt), so a wide phone shows every agent action instead of clipping
+  the first chip. Destructive actions sit in menus or confirmation dialogs, or
+  act at once with Undo.
 - Liquid Glass belongs to bars and floating controls, never behind content.
 
 ### 3.3 Back navigation
