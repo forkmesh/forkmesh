@@ -51269,6 +51269,7 @@ async def _repo_merge_jobs_make_room(env, repo_bi, now):
 repository_pull_merge_handler = _route_handlers.export("repository_pull_merge_handler")
 _pull_rules = _LazyModule("pull_rules")
 _branch_protection = _LazyModule("branch_protection")
+_self_update = _LazyModule("self_update")
 repo_pull_rules_handler = _pull_rules.export("repo_pull_rules_handler")
 org_pull_rules_handler = _pull_rules.export("org_pull_rules_handler")
 repository_branch_ops_handler = _route_handlers.export("repository_branch_ops_handler")

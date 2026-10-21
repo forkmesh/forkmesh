@@ -219,7 +219,8 @@ such an instance silently replaced the fork's program with upstream's. Now:
 - `build-info.json` gets `daemon: {state, builtTree, sourceTree,
   builtCommit}`. `state` is `current` when the recorded `server/` tree equals
   the running source's, `stale` when `server/` changed since, `release` or
-  `unknown`. The installer warns on `stale`.
+  `unknown`. The installer warns on `stale`, and the admin console's Update
+  page says "The git node program was built from older server code".
 
 Building on the server was rejected: a 1 GB instance would need a ~250 MB
 pinned Go toolchain and a memory-hungry build in the middle of an unattended
@@ -229,6 +230,52 @@ keeps serving with the older program until the operator rebuilds it
 (`cd server && go build -trimpath -o forkmesh-mirror-node ./cmd/forkmesh-mirror-node`
 from the running commit on a build machine, copy it over, run
 `FORKMESH_INSTANCE_DAEMON=<binary> bash install-instance.sh --update`).
+
+## Building the instance from its own repository
+
+An instance can be updated from a repository it hosts itself, so that a
+merged pull request deploys. Everything is opt-in:
+
+1. **Publish the platform code as an organization repository** linked as a
+   fork of the instance's platform mirror (`/<owner>/forkmesh`), with the
+   default branch protected and Actions off (the repository's workflows are
+   the platform's, not jobs for this server):
+
+   ```sh
+   git clone --bare --single-branch -b <integration-branch> \
+     /root/platform-src /root/acme-platform.git
+   git -C /root/acme-platform.git branch -m <integration-branch> main
+   cd /opt/forkmesh-instance/src/app/host
+   /opt/forkmesh-instance/venv/bin/python -m forkmesh_host instance-repo \
+     --owner alice --organization acme --name acme-platform \
+     --from /root/acme-platform.git --fork-of acme/forkmesh \
+     --protect-default-branch --actions off --no-hooks \
+     --env-file /etc/forkmesh-instance/app.env \
+     --db sqlite:/var/lib/forkmesh-instance/app.db \
+     --data-dir /var/lib/forkmesh-instance/data
+   systemctl restart forkmesh-mirror-node
+   ```
+
+   The repository must be public, because the updater fetches it without
+   credentials.
+2. **Point the instance at it.** In `/etc/forkmesh-instance/instance.json`
+   set `"sourceUrl": "https://code.example.org/acme/acme-platform.git"` and
+   `"sourceRef": "main"`, then run one update (console button, or
+   `bash /opt/forkmesh-instance/src/www/public/install-instance.sh --update`).
+   The installer keeps the platform mirror on its own upstream: it follows
+   `platformUrl` when set, else the ForkMesh release source whenever
+   `sourceUrl` is on the instance's domain (before, `sourceUrl` also became
+   the mirror's upstream label and `INSTANCE_UPSTREAM`).
+3. **Turn on "Update when a pull request is merged"** on the console's Update
+   page ([app/server-update.md](app/server-update.md#update-when-a-pull-request-is-merged)).
+
+From then on: a contributor opens a pull request, an organization owner or
+admin who is not the author approves it, an owner merges it, and the instance
+updates itself; `build-info.json` and the Update page show the merged commit.
+The protected branch ([app/branch-protection.md](app/branch-protection.md))
+is what keeps unreviewed code from deploying: nobody can push, edit or merge
+into it any other way. The operator's `instance-repo` stays a root-only
+bypass and never triggers an update.
 
 ## Private admin console path
 

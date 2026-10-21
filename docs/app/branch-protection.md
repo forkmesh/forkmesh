@@ -9,7 +9,7 @@ A repository can protect its default branch. The default branch then changes
 only by merging a pull request that an organization owner or admin approved,
 and that approver must not be the author. The rule exists for repositories
 whose default branch deploys somewhere, for example an instance that builds
-itself from its own repository.
+itself from its own repository ([../INSTANCES.md](../INSTANCES.md#building-the-instance-from-its-own-repository)).
 Before this, ForkMesh had no protected branches: pull rules
 ([../server/pull-rules.md](../server/pull-rules.md)) check a pull request's
 content, the node operator policy blocks only deletes and force pushes, and an
