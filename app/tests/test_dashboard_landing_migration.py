@@ -2073,14 +2073,14 @@ def test_dashboard_pull_detail_reads_committed_patch_for_files_changed():
         'async function loadRepoPullPatch(repo, number, metadataCommit = "", values = {})',
         "function parsePatchStats(patch)",
         "function renderRepoPullFiles(files, viewed = new Set(), options = {})",
-        'function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified")',
+        'function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified", parsed = null)',
         "data-repo-pull-file-list",
         "data-repo-pull-patch",
         ".forkmesh/pulls/${number}/changes.patch",
         "ref: commit,",
         "loadRepoPullPatch(repo, number, pullMetadataCommit, values),",
-        "renderRepoPullFiles(files, viewed, { mode: layout.explorer })",
-        "renderRepoPullPatch(pullPatch.patch, viewed, mode)",
+        "renderRepoPullFiles(files, viewed, { mode: layout.explorer, marks })",
+        "renderRepoPullPatch(pullPatch.patch, viewed, mode, parsed)",
     ):
         assert marker in dashboard_js
 
