@@ -19,8 +19,6 @@
   const DESKTOP = /(?<![A-Za-z0-9_.-])ForkMesh (?=[Dd]esktop)/g;
   const swap = (value) => value.replace(DESKTOP, "").replace(BRAND, name);
 
-  // data-user-content marks text a person or repository wrote (descriptions,
-  // names), which keeps its own words even where it says "ForkMesh".
   const USER_CONTENT =
     "[data-user-content], [data-instance-powered-by], [class*='readme'], [class*='markdown'], [class*='commit'], " +
     "[class*='message'], [class*='description'], [data-markdown], [data-repo-detail], " +

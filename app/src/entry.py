@@ -194,6 +194,7 @@ _account_users = _LazyModule("account_users")
 # Away flag + custom status (emoji, text, auto-clear): see account_status.py.
 _account_status = _LazyModule("account_status")
 _account_activity = _LazyModule("account_activity")
+_chat_member_stats = _LazyModule("chat_member_stats")
 _public_user_status = _account_status.export("public_user_status")
 _account_chat_retention = _account_status.export("account_chat_retention")
 
@@ -2338,9 +2339,6 @@ def repo_web_href(owner, repo):
 
 
 def repo_record_href(owner, repo, section, number=0):
-    """Link to the thing a notification is about: one issue or pull request
-    (section "issues" or "pull") when its number is known, otherwise a repo
-    section such as "releases" or "commits", otherwise the repository."""
     base = repo_web_href(owner, repo)
     try:
         number = int(number or 0)
@@ -13526,7 +13524,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "32fe1f7b51cfe6b5e1d0faabc48b4ad6e7ac0f7099979b3b0f3e5b924b98c8a4"
+    "3b8bc5e5cb64ddbaf9109154e323fe92b056c032d93415799bae6afe28a8ecbc"
 )
 
 
@@ -16199,6 +16197,9 @@ record_hosted_branch_count = _hosted_git.export(
 # with a short-lived credential minted by /api/ssh/authorize.
 ssh_git_password = _hosted_git.export("ssh_git_password")
 contributor_push_allowed = _hosted_git.export("contributor_push_allowed")
+# Capability-signed people view of a public core-hosted repository, with
+# commit addresses for server-side matching (chat member activity sweep).
+hosted_people_with_emails = _hosted_git.export("hosted_people_with_emails")
 # Repositories the Next core nodes host (HOSTED_GIT_CORE_NODES,
 # docs/HOSTED_REPOS.md): push routing, the per-repository size limit, and the
 # private (capability-only) read path.
@@ -18820,6 +18821,8 @@ _REPO_SCOPED_TABLES = (
     ("pull_submission_receipts", "repo_bi"),
     ("recent_pushes", "repo_bi"),
     ("comment_reactions", "repo_bi"),
+    ("member_repo_activity", "repo_bi"),
+    ("member_activity_repos", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
@@ -19018,6 +19021,8 @@ async def _delete_account_namespace(env, name_bi, rec):
     await d1_run(env, "DELETE FROM comment_reactions WHERE account_bi=?", name_bi)
     await d1_run(
         env, "DELETE FROM comment_reaction_rate WHERE account_bi=?", name_bi)
+    await d1_run(
+        env, "DELETE FROM member_repo_activity WHERE user_bi=?", name_bi)
     await d1_run(env, "DELETE FROM profile_follows WHERE follower_bi=? OR target_bi=?", name_bi, name_bi)
     await d1_run(env, "DELETE FROM login_attempts WHERE id_bi=?", name_bi)
     await d1_run(
@@ -49712,7 +49717,7 @@ def _https_mirror_request_query(url, operation, release_sha=""):
         if params.get("path"):
             output["path"] = _repository_read_path(params["path"][0])
     elif operation == "pulse":
-        for key in ("period", "person"):
+        for key in ("period", "person", "view"):
             if params.get(key):
                 output[key] = params[key][0]
     # Only operations that resolve a ref accept one. compare/merge-preview
@@ -52743,6 +52748,10 @@ def _cron_due_phases(minute_slot):
         phases.append("marketing-email")
     if minute % 5 == 3:
         phases.append("workflow-schedules")
+    # Chat member activity lines: a few public repositories' Pulse figures
+    # per run, each repository at most every three hours.
+    if minute % 15 == 6:
+        phases.append("member-activity")
     hourly = minute % 60
     if hourly == 7:
         phases.append("microjob-payouts")
@@ -52926,6 +52935,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _attribution.snapshot_clone_counts(env)
     if phase == "badge-sweep":
         return await run_badge_sweep(env)
+    if phase == "member-activity":
+        return await _chat_member_stats.refresh_member_repo_activity(env)
     if phase == "workflow-schedules":
         return await run_due_workflow_schedules(env)
     if phase == "actions-schedule":

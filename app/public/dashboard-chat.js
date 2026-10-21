@@ -182,12 +182,35 @@ function mountForkMeshDashboardChat(options = {}) {
   const MEMBER_LIST_LIMIT = 200;
   const MEMBER_AVATAR_FETCH_LIMIT = 24;
   const MEMBER_LIST_HIDDEN_KEY = "forkmesh.dashboard.chat.membersHidden";
+  const MEMBER_STATS_ENDPOINT = "/api/chat/member-stats";
+  const MEMBER_STATS_BATCH = 50;
+  const MEMBER_STATS_TTL_MS = 5 * 60 * 1000;
+  const MEMBER_STATS_RETRY_MS = 60 * 1000;
+  const MEMBER_STATS_DELAY_MS = 120;
+  const MEMBER_STATS_ICONS = Object.freeze({
+    pulls: '<circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><path d="M6 9v12"></path>',
+    commits: '<circle cx="12" cy="12" r="3"></circle><path d="M3 12h6"></path><path d="M15 12h6"></path>',
+    issues: '<circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="1"></circle>',
+    reviews: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>',
+    recent: '<circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path>',
+  });
+  const MEMBER_STATS_LABELS = Object.freeze({
+    pulls: ["pull request opened", "pull requests opened"],
+    commits: ["commit", "commits"],
+    issues: ["issue opened", "issues opened"],
+    reviews: ["review", "reviews"],
+  });
   const COMPOSER_EMOJI = Object.freeze([
     "😀", "😂", "😊", "😍", "🤔", "😎", "😢", "😮", "👍",
     "👎", "👏", "🙏", "🎉", "🔥", "🚀", "❤️", "👀", "✅",
   ]);
   let fullLogRegroupPending = false;
   let memberListPending = false;
+  const memberStats = new Map();
+  const memberStatsWanted = new Set();
+  let memberStatsTimer = 0;
+  let memberStatsInflight = false;
+  let memberStatsObserver = null;
   let chatUserPanelName = "";
   let chatUserOnline = false;
   let composerEmojiPicker = null;
@@ -6071,7 +6094,24 @@ function mountForkMeshDashboardChat(options = {}) {
     const label = document.createElement("span");
     label.dataset.dashboardChatMemberName = "";
     label.textContent = person.name;
-    row.append(wrap, label);
+    const text = document.createElement("span");
+    text.dataset.dashboardChatMemberText = "";
+    text.append(label);
+    row.append(wrap, text);
+    if (linkable && !isAutomatedMemberName(person.name)) {
+      const stats = document.createElement("span");
+      stats.dataset.dashboardChatMemberStats = "";
+      stats.hidden = true;
+      text.append(stats);
+      const cached = freshMemberStats(person.name);
+      if (cached) {
+        fillMemberStats(stats, cached.entry);
+      } else if (memberStatsObserver) {
+        memberStatsObserver.observe(row);
+      } else {
+        wantMemberStats(person.name);
+      }
+    }
     if (person.kind === "bot") {
       const tag = document.createElement("span");
       tag.dataset.dashboardChatMemberTag = "";
@@ -6082,8 +6122,147 @@ function mountForkMeshDashboardChat(options = {}) {
     return item;
   }
 
+  function isAutomatedMemberName(name) {
+    return [
+      FORKBOT_SENDER_ID, CLAUDE_SENDER_ID, CODEX_SENDER_ID, ORG_BOT_SENDER_ID,
+    ].includes(name) || /(?:^|-)(?:bot|agent|mirror)$/.test(name);
+  }
+
+  function freshMemberStats(name) {
+    const hit = memberStats.get(name);
+    return hit && hit.expires > Date.now() ? hit : null;
+  }
+
+  function compactMemberCount(value) {
+    const count = Math.max(0, Number(value) || 0);
+    if (count < 1000) return String(count);
+    if (count < 10000) return `${(Math.floor(count / 100) / 10).toFixed(1).replace(/\.0$/, "")}k`;
+    return `${Math.floor(count / 1000)}k`;
+  }
+
+  function memberStatsAge(day) {
+    const then = Date.parse(`${day}T00:00:00Z`);
+    if (!Number.isFinite(then)) return null;
+    const today = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+    const days = Math.max(0, Math.round((today - then) / 86400000));
+    if (days === 0) return { short: "today", long: "today" };
+    if (days === 1) return { short: "1d", long: "yesterday" };
+    if (days < 30) return { short: `${days}d`, long: `${days} days ago` };
+    const months = Math.max(1, Math.floor(days / 30));
+    return {
+      short: `${months}mo`,
+      long: months === 1 ? "a month ago" : `${months} months ago`,
+    };
+  }
+
+  function memberStatsIcon(kind) {
+    return `<svg aria-hidden="true" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${MEMBER_STATS_ICONS[kind]}</svg>`;
+  }
+
+  function fillMemberStats(stats, entry) {
+    if (!stats) return;
+    const parts = [];
+    const labels = [];
+    for (const kind of ["pulls", "commits", "issues", "reviews"]) {
+      const count = Math.max(0, Number(entry?.[kind]) || 0);
+      if (!count) continue;
+      parts.push(`<span data-member-stat="${kind}">${memberStatsIcon(kind)}${escapeHtml(compactMemberCount(count))}</span>`);
+      labels.push(`${count.toLocaleString()} ${MEMBER_STATS_LABELS[kind][count === 1 ? 0 : 1]}`);
+    }
+    const age = entry?.lastActive ? memberStatsAge(entry.lastActive) : null;
+    if (age) {
+      parts.push(`<span data-member-stat="recent">${memberStatsIcon("recent")}${escapeHtml(age.short)}</span>`);
+      const activeDays = Math.max(0, Number(entry.activeDays) || 0);
+      if (activeDays) {
+        labels.push(`active on ${activeDays.toLocaleString()} ${activeDays === 1 ? "day" : "days"}`);
+      }
+      labels.push(`last contribution ${age.long}`);
+    }
+    if (!parts.length) {
+      stats.hidden = true;
+      stats.replaceChildren();
+      stats.removeAttribute("title");
+      return;
+    }
+    const summary = `Past year, public repositories: ${labels.join(", ")}`;
+    stats.innerHTML = `<span data-member-stats-visible aria-hidden="true">${parts.join("")}</span><span data-member-stats-label>${escapeHtml(summary)}</span>`;
+    stats.title = summary;
+    stats.hidden = false;
+  }
+
+  function applyMemberStats(name) {
+    if (!memberPane) return;
+    const hit = freshMemberStats(name);
+    if (!hit) return;
+    for (const row of memberPane.querySelectorAll("[data-dashboard-chat-member]")) {
+      if (row.dataset.dashboardChatMember !== name) continue;
+      fillMemberStats(row.querySelector("[data-dashboard-chat-member-stats]"), hit.entry);
+    }
+  }
+
+  function wantMemberStats(name) {
+    if (!name || freshMemberStats(name)) return;
+    memberStatsWanted.add(name);
+    if (memberStatsTimer) return;
+    memberStatsTimer = window.setTimeout(flushMemberStats, MEMBER_STATS_DELAY_MS);
+  }
+
+  async function flushMemberStats() {
+    memberStatsTimer = 0;
+    if (memberStatsInflight) return;
+    const names = [...memberStatsWanted]
+      .filter((name) => !freshMemberStats(name))
+      .slice(0, MEMBER_STATS_BATCH)
+      .sort();
+    for (const name of names) memberStatsWanted.delete(name);
+    if (!names.length) {
+      memberStatsWanted.clear();
+      return;
+    }
+    memberStatsInflight = true;
+    let entries = null;
+    try {
+      const response = await fetch(
+        `${MEMBER_STATS_ENDPOINT}?names=${encodeURIComponent(names.join(","))}`,
+        { headers: { accept: "application/json" } },
+      );
+      const data = response.ok ? await response.json() : null;
+      if (data && Array.isArray(data.members)) entries = data.members;
+    } catch (_) {}
+    const now = Date.now();
+    const byName = new Map();
+    for (const entry of entries || []) {
+      const key = mentionName(entry?.name);
+      if (key) byName.set(key, entry);
+    }
+    for (const name of names) {
+      memberStats.set(name, {
+        entry: byName.get(name) || null,
+        expires: now + (entries ? MEMBER_STATS_TTL_MS : MEMBER_STATS_RETRY_MS),
+      });
+      applyMemberStats(name);
+    }
+    memberStatsInflight = false;
+    if (memberStatsWanted.size && !memberStatsTimer) {
+      memberStatsTimer = window.setTimeout(flushMemberStats, MEMBER_STATS_DELAY_MS);
+    }
+  }
+
+  function watchMemberStats() {
+    if (memberStatsObserver || !memberPane || !("IntersectionObserver" in window)) return;
+    memberStatsObserver = new IntersectionObserver((records) => {
+      for (const record of records) {
+        if (!record.isIntersecting) continue;
+        memberStatsObserver.unobserve(record.target);
+        wantMemberStats(record.target.dataset.dashboardChatMember);
+      }
+    }, { root: memberPane, rootMargin: "160px 0px" });
+  }
+
   function renderMemberList() {
     if (!memberPane || memberPane.offsetParent === null) return;
+    watchMemberStats();
+    memberStatsObserver?.disconnect();
     const selfName = displayName();
     const selfKey = mentionName(selfName);
     const byName = new Map();
@@ -6134,18 +6313,36 @@ function mountForkMeshDashboardChat(options = {}) {
     }
   }
 
+  function memberListWide() {
+    return Boolean(window.matchMedia?.("(min-width: 1200px)").matches);
+  }
+
+  function syncMemberListToggle(toggle) {
+    if (!chatView || !toggle) return;
+    const shown = memberListWide()
+      ? !chatView.hasAttribute("data-members-hidden")
+      : chatView.hasAttribute("data-members-open");
+    const label = shown ? "Hide member list" : "Show member list";
+    toggle.setAttribute("aria-pressed", String(shown));
+    toggle.setAttribute("aria-label", label);
+    toggle.title = label;
+  }
+
   function setMemberListHidden(hidden, toggle) {
     if (!chatView) return;
     chatView.toggleAttribute("data-members-hidden", hidden);
-    if (toggle) {
-      const label = hidden ? "Show member list" : "Hide member list";
-      toggle.setAttribute("aria-pressed", String(!hidden));
-      toggle.setAttribute("aria-label", label);
-      toggle.title = label;
-    }
-    if (!hidden && window.matchMedia?.("(min-width: 1200px)").matches) {
+    syncMemberListToggle(toggle);
+    if (!hidden && memberListWide()) {
       void refreshMentionDirectory();
     }
+    scheduleMemberList();
+  }
+
+  function setMemberDrawerOpen(open, toggle) {
+    if (!chatView) return;
+    chatView.toggleAttribute("data-members-open", open);
+    syncMemberListToggle(toggle);
+    if (open) void refreshMentionDirectory();
     scheduleMemberList();
   }
 
@@ -6283,13 +6480,29 @@ function mountForkMeshDashboardChat(options = {}) {
     const wideMembers = window.matchMedia?.("(min-width: 1200px)");
     setMemberListHidden(membersHidden, membersToggle);
     membersToggle?.addEventListener("click", () => {
+      if (!memberListWide()) {
+        setMemberDrawerOpen(!chatView.hasAttribute("data-members-open"), membersToggle);
+        return;
+      }
       const hidden = !chatView.hasAttribute("data-members-hidden");
       try {
         localStorage.setItem(MEMBER_LIST_HIDDEN_KEY, hidden ? "1" : "0");
       } catch (_) {}
       setMemberListHidden(hidden, membersToggle);
     });
+    chatView.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !chatView.hasAttribute("data-members-open")) return;
+      setMemberDrawerOpen(false, membersToggle);
+      membersToggle?.focus();
+    });
+    chatView.addEventListener("pointerdown", (event) => {
+      if (!chatView.hasAttribute("data-members-open") || memberListWide()) return;
+      if (memberPane?.contains(event.target) || membersToggle?.contains(event.target)) return;
+      setMemberDrawerOpen(false, membersToggle);
+    });
     wideMembers?.addEventListener?.("change", () => {
+      if (wideMembers.matches) chatView.removeAttribute("data-members-open");
+      syncMemberListToggle(membersToggle);
       if (wideMembers.matches && !chatView.hasAttribute("data-members-hidden")) {
         void refreshMentionDirectory();
       }

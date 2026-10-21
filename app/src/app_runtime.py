@@ -3056,6 +3056,10 @@ class Default:
         if url.path in ("/api/chat/activity", "/api/chat/activity/"):
             return await chat_activity_handler(self.env, request)
 
+        if url.path in ("/api/chat/member-stats", "/api/chat/member-stats/"):
+            return await _chat_member_stats.member_stats_route(
+                self.env, request)
+
         # Public AI-agent guestbook. The self-describing GET advertises one
         # narrow query-string GET capability; accepted notes become ordinary
         # encrypted messages in public World #general, never arbitrary room

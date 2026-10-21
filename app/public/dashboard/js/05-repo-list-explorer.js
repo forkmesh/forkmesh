@@ -1117,8 +1117,6 @@
       .slice(0, HOME_FEED_CARD_LIMIT);
   }
 
-  // Older pings point at the repository root although they are about one
-  // issue, pull request, release or push; send the card to that thing.
   function homeFeedHref(item) {
     const href = String(item?.href || "").trim();
     const meta = item?.meta && typeof item.meta === "object" ? item.meta : {};

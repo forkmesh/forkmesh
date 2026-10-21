@@ -217,6 +217,13 @@ fediverse posts sit at the bottom as collapsibles.
 These three tabs follow GitHub's layouts (October 2026, from the user's
 GitHub reference screenshots).
 
+The issue list's label filter lives in the address bar (`?label=…`), so a
+filtered list can be linked and survives a refresh. Only the list route is
+rewritten; an open issue keeps its own address. A label's swatch is its
+colour dot, except Hacktoberfest, which gets a small pumpkin that wiggles a
+few times when the list first paints (and stays still for viewers who ask for
+reduced motion).
+
 - **Issues and Pull requests lists** share one layout
   (`data-repo-collection-layout`). On wide screens the views sidebar sits
   flush against the left edge of the window with a border down its right
