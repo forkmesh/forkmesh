@@ -425,6 +425,12 @@ def test_scoring_helpers_cap_and_rank():
     for name in ("Robot Hughes", "Claude Monet", "Claudia", "Gemma Lee",
                  "Mirror Lake", "Devina", "alice"):
         assert not gateway._pulse_is_automated(name, "x@example.test"), name
+    for name in ("Jules", "Devin", "Cursor", "Sweep", "Llama", "Aider"):
+        assert gateway._pulse_is_automated(name), name
+        assert not gateway._pulse_is_automated(
+            name, name.lower() + "@example.test"), name
+    assert gateway._pulse_is_automated("Devin", "devin@devin.ai")
+    assert gateway._pulse_is_automated("Jules", "jules@google.com")
     for email in ("bob@example.test", "pat@example.test", "bot@example.test"):
         assert not gateway._pulse_is_automated("Pat", email), email
     rules = gateway.pulse_exclusion_rules(

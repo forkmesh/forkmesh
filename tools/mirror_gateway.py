@@ -3749,12 +3749,14 @@ PULSE_AUTOMATED_NAMES = re.compile(
     r"|dependabot|renovate|forkmesh(?: [a-z]+)?|.* reconciler"
     r"|claude(?: (?:code|opus|sonnet|haiku|instant|agent)\b.*| \d.*)?"
     r"|(?:openai )?codex(?: cli| agent)?|(?:chat)?gpt(?:[\s-].*)?|o\d(?:-mini)?"
-    r"|(?:google )?gemini(?: (?:code assist|cli|agent))?|jules"
-    r"|(?:github )?copilot(?: agent)?|copilot-swe-agent|llama(?: \d.*)?"
-    r"|devin(?: ai)?|cursor(?: agent)?|aider|openhands|sweep(?: ai)?"
+    r"|(?:google )?gemini(?: (?:code assist|cli|agent))?|google jules"
+    r"|(?:github )?copilot(?: agent)?|copilot-swe-agent|llama \d.*"
+    r"|devin ai|cursor agent|openhands|sweep ai"
     r"|fmnext-[a-z0-9-]+|mirror\d+|[a-z0-9][a-z0-9-]*-mirror"
     r")$",
     re.IGNORECASE)
+PULSE_AMBIGUOUS_NAMES = re.compile(
+    r"^(?:jules|devin|cursor|aider|sweep|llama)$", re.IGNORECASE)
 PULSE_AUTOMATED_EMAILS = (
     "*[[]bot[]]@*", "*@forkmesh.local", "*@forkmesh.invalid", "*-reconciler@*",
     "noreply@anthropic.com", "llama@cloudflare.com", "noreply@openai.com",
@@ -3783,6 +3785,8 @@ def _pulse_is_automated(
         return True
     folded = name.casefold()
     if name and PULSE_AUTOMATED_NAMES.fullmatch(name):
+        return True
+    if name and not email and PULSE_AMBIGUOUS_NAMES.fullmatch(name):
         return True
     if email and any(fnmatch.fnmatchcase(email, pattern)
                      for pattern in PULSE_AUTOMATED_EMAILS):
