@@ -203,6 +203,28 @@ descenders.
   the box is already rich text, so a title containing `<` is never read as
   markup. Classic is unchanged.
 
+### Prompt composer
+
+In Next the floating prompt (`#promptWrapper`, built in
+`MainWindow::buildNetworkLogDock`) is one `surface` card with a hairline
+`borderStrong` edge and 12 px corners, styled by `62-prompt-composer.qss`. Every
+rule there is scoped under `#promptWrapper` so it outranks the older composer
+rules in `10-shell.qss` and `70-chat.qss`, while the docked workspace rules in
+`61-workspace.qss` (`[workspaceDocked="true"]`) still win. The colour images
+(model faces, the purple Auto sparkle, the speedometer effort art) are replaced
+in Next only: models show monochrome octicons by where they run (`terminal` for
+the CLI agents, `server` for the API agents, `cloud` for Cloudflare AI,
+`device-desktop` for local models) and the closed model picker shows just the
+name and a chevron; modes are `unlock` (Auto), `hand` (Ask), `eye` (Plan) and
+`pencil` (Edit); effort is a painted progress ring that fills with the level.
+Icons are `fgMuted`: a button opts in with the `nextIconRole` property, which
+`applyStoredOcticon` honours only in Next. The bottom bar uses ghost controls
+28 px high with 16 px icons on a 4 px grid; the drag strip uses 20 px buttons
+with 14 px icons. The send column drops its icons for text labels: the button
+Enter triggers (`enterTarget`) is the accent primary, the other is a raised
+secondary, and "task" is a ghost. Object names, layout positions, settings
+keys, tooltips and Classic are unchanged.
+
 ## Must not break
 
 - **Object names and class names stay.** Window tests use `findChild`, Market

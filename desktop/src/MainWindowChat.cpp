@@ -90,6 +90,71 @@ protected:
 private:
     QPointer<QAbstractButton> m_target;
 };
+
+constexpr int kComposerIconPx = 16;
+constexpr int kComposerControlPx = 28;
+
+QIcon composerMonoIcon(const QString &name)
+{
+    return themedOcticon(name, Theme::color(Theme::Role::FgMuted), kComposerIconPx);
+}
+
+QIcon composerModeIcon(int index)
+{
+    static const char *const kModeOcticons[] = {"unlock", "hand", "eye", "pencil"};
+    if (!Theme::isNext() || index < 7 || index > 10)
+        return agentControlIcon(index);
+    return composerMonoIcon(QString::fromLatin1(kModeOcticons[index - 7]));
+}
+
+QIcon composerEffortIcon(int level, int levels)
+{
+    const int px = kComposerIconPx;
+    QPixmap pixmap = crispIconPixmap(px, iconDevicePixelRatio());
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const QRectF ring(2.0, 2.0, px - 4.0, px - 4.0);
+    QColor track = Theme::color(Theme::Role::FgMuted);
+    track.setAlphaF(0.35);
+    painter.setPen(QPen(track, 2.0));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawEllipse(ring);
+    const qreal fraction =
+        levels > 1 ? qBound<qreal>(0.0, qreal(level + 1) / levels, 1.0) : 1.0;
+    painter.setPen(QPen(Theme::color(Theme::Role::FgSecondary), 2.0,
+                        Qt::SolidLine, Qt::RoundCap));
+    painter.drawArc(ring, 90 * 16, -qRound(fraction * 360.0 * 16.0));
+    painter.end();
+    return QIcon(pixmap);
+}
+
+QString composerProviderOcticon(const QString &provider)
+{
+    if (provider == QLatin1String("claude-code") || agentIsCodexProvider(provider))
+        return QStringLiteral("terminal");
+    if (provider == QLatin1String("openai") || provider == QLatin1String("claude-api"))
+        return QStringLiteral("server");
+    if (agentIsCloudflareAiProvider(provider))
+        return QStringLiteral("cloud");
+    if (provider == QLatin1String("manual"))
+        return QStringLiteral("issue-opened");
+    if (provider == kActivityPubPromptProvider)
+        return QStringLiteral("mastodon");
+    if (provider == kNotePromptProvider)
+        return QStringLiteral("note");
+    if (provider == kTaskPromptProvider)
+        return QStringLiteral("people");
+    if (provider == kEditComposerModelsRow)
+        return QStringLiteral("gear");
+    return QStringLiteral("device-desktop");
+}
+
+void setComposerIconTone(QPushButton *button)
+{
+    if (button)
+        button->setProperty("nextIconRole", static_cast<int>(Theme::Role::FgMuted));
+}
+
 constexpr int kBackgroundTaskIdleTicksBeforeStop = 12;
 constexpr qint64 kBackgroundTaskFastFlushMs = 2000;
 
@@ -2941,6 +3006,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     auto *dock = new QWidget;
     m_footerDock = dock;
     dock->setObjectName("logDock");
+    const bool next = Theme::isNext();
 
     m_issueQuickAdd = new QPlainTextEdit;
     m_issueQuickAdd->setObjectName("issueQuickAdd");
@@ -3167,10 +3233,10 @@ QWidget *MainWindow::buildNetworkLogDock()
     // a distinct approval policy and sandbox, including interactive requests.
     m_quickAddModeSelector = new IconWordFullPopupComboBox;
     m_quickAddModeSelector->setObjectName("quickAddModeSelector");
-    m_quickAddModeSelector->addItem(agentControlIcon(7), kClaudeAutoModeLabel, true);
-    m_quickAddModeSelector->addItem(agentControlIcon(8), kAgentAskModeLabel, false);
-    m_quickAddModeSelector->addItem(agentControlIcon(9), QStringLiteral("Plan"), false);
-    m_quickAddModeSelector->addItem(agentControlIcon(10), QStringLiteral("Edit"), false);
+    m_quickAddModeSelector->addItem(composerModeIcon(7), kClaudeAutoModeLabel, true);
+    m_quickAddModeSelector->addItem(composerModeIcon(8), kAgentAskModeLabel, false);
+    m_quickAddModeSelector->addItem(composerModeIcon(9), QStringLiteral("Plan"), false);
+    m_quickAddModeSelector->addItem(composerModeIcon(10), QStringLiteral("Edit"), false);
     // The four labels name the mode but not what it permits — the closed control
     // carries the one word beside its icon, and the permission each one grants is
     // spelled out beside the label once the popup is open. The item text itself
@@ -3258,6 +3324,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddImageButton = new QPushButton;
     m_quickAddImageButton->setObjectName("ghostButton");
     m_quickAddImageButton->setCursor(Qt::PointingHandCursor);
+    setComposerIconTone(m_quickAddImageButton);
     setOcticon(m_quickAddImageButton, "paperclip", 16);
     connect(m_quickAddImageButton, &QPushButton::clicked, this,
             &MainWindow::attachQuickAddMedia);
@@ -3272,6 +3339,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddMicButton = new QPushButton;
     m_quickAddMicButton->setObjectName("ghostButton");
     m_quickAddMicButton->setCursor(Qt::PointingHandCursor);
+    setComposerIconTone(m_quickAddMicButton);
     setOcticon(m_quickAddMicButton, "mic", 16);
     connect(m_quickAddMicButton, &QPushButton::pressed, this,
             &MainWindow::startVoiceCapture);
@@ -3375,8 +3443,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddSendButton = new QPushButton(QStringLiteral("new"));
     m_quickAddSendButton->setObjectName("quickAddSendIcon");
     m_quickAddSendButton->setCursor(Qt::PointingHandCursor);
-    setOcticon(m_quickAddSendButton, "paper-airplane", 17);
-    m_quickAddSendButton->setFixedWidth(58);
+    if (!next)
+        setOcticon(m_quickAddSendButton, "paper-airplane", 17);
+    m_quickAddSendButton->setFixedWidth(next ? 56 : 58);
     m_quickAddSendButton->setMinimumHeight(28);
     m_quickAddSendButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     connect(m_quickAddSendButton, &QPushButton::clicked, this,
@@ -3385,8 +3454,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddSendToAgentButton = new QPushButton(QStringLiteral("add"));
     m_quickAddSendToAgentButton->setObjectName("quickAddSendIcon");
     m_quickAddSendToAgentButton->setCursor(Qt::PointingHandCursor);
-    setOcticon(m_quickAddSendToAgentButton, "paper-airplane", 17, -45.0);
-    m_quickAddSendToAgentButton->setFixedWidth(58);
+    if (!next)
+        setOcticon(m_quickAddSendToAgentButton, "paper-airplane", 17, -45.0);
+    m_quickAddSendToAgentButton->setFixedWidth(next ? 56 : 58);
     m_quickAddSendToAgentButton->setMinimumHeight(28);
     m_quickAddSendToAgentButton->setSizePolicy(QSizePolicy::Fixed,
                                                QSizePolicy::Fixed);
@@ -3450,9 +3520,10 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddGenieButton = new QPushButton(QStringLiteral("task"));
     m_quickAddGenieButton->setObjectName("quickAddGenieButton");
     m_quickAddGenieButton->setCursor(Qt::PointingHandCursor);
-    setOcticon(m_quickAddGenieButton, "list-unordered", 15);
-    m_quickAddGenieButton->setFixedWidth(58);
-    m_quickAddGenieButton->setMinimumHeight(24);
+    if (!next)
+        setOcticon(m_quickAddGenieButton, "list-unordered", 15);
+    m_quickAddGenieButton->setFixedWidth(next ? 56 : 58);
+    m_quickAddGenieButton->setMinimumHeight(next ? kComposerControlPx : 24);
     m_quickAddGenieButton->setSizePolicy(QSizePolicy::Fixed,
                                          QSizePolicy::Fixed);
     m_quickAddGenieButton->setToolTip(
@@ -3464,8 +3535,8 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_issueQuickAdd->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     auto *sendColumn = new QVBoxLayout;
-    sendColumn->setContentsMargins(0, 0, 0, 0);
-    sendColumn->setSpacing(2);
+    sendColumn->setContentsMargins(next ? 4 : 0, 0, next ? 8 : 0, next ? 4 : 0);
+    sendColumn->setSpacing(next ? 4 : 2);
     sendColumn->addStretch(1);
     sendColumn->addWidget(m_quickAddGenieButton, 0);
     sendColumn->addWidget(m_quickAddSendToAgentButton, 0);
@@ -3475,8 +3546,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     auto *agentBox = new QWidget;
     agentBox->setObjectName("quickAddAgentBox");
     auto *agentBoxRow = new QHBoxLayout(agentBox);
-    agentBoxRow->setContentsMargins(6, 1, 4, 1);
-    agentBoxRow->setSpacing(2);
+    agentBoxRow->setContentsMargins(next ? 0 : 6, next ? 0 : 1, next ? 0 : 4,
+                                    next ? 0 : 1);
+    agentBoxRow->setSpacing(next ? 4 : 2);
     agentBoxRow->addWidget(m_quickAddAgentModelSelector);
     agentBoxRow->addWidget(m_quickAddTaskAssignee);
     agentBoxRow->addWidget(m_quickAddAgentProvider);
@@ -3484,9 +3556,37 @@ QWidget *MainWindow::buildNetworkLogDock()
     agentBoxRow->addWidget(m_quickAddModeSelector);
     agentBoxRow->addWidget(m_quickAddSpeedSelector);
 
+    if (next) {
+        for (QPushButton *button :
+             {m_quickAddImageButton, m_quickAddMicButton, m_quickAddSlashButton}) {
+            button->setMinimumWidth(kComposerControlPx);
+            button->setFixedHeight(kComposerControlPx);
+        }
+        m_quickAddSlashButton->setFixedWidth(kComposerControlPx);
+        for (QPushButton *button : {m_quickAddSendButton, m_quickAddSendToAgentButton,
+                                    m_quickAddGenieButton})
+            button->setFixedHeight(kComposerControlPx);
+        m_quickAddAgentModelSelector->setIconSize(QSize(0, 0));
+        m_quickAddAgentModelSelector->view()->setIconSize(
+            QSize(kComposerIconPx, kComposerIconPx));
+        m_quickAddModeSelector->setIconSize(QSize(kComposerIconPx, kComposerIconPx));
+        m_quickAddModeSelector->view()->setIconSize(
+            QSize(kComposerIconPx, kComposerIconPx));
+        m_quickAddModeSelector->setStyleSheet(
+            QStringLiteral("QComboBox { font-size: 12px; }"));
+        m_quickAddSpeedSelector->setIconSize(QSize(kComposerIconPx, kComposerIconPx));
+        m_quickAddSpeedSelector->view()->setIconSize(
+            QSize(kComposerIconPx, kComposerIconPx));
+        m_quickAddSpeedSelector->setFixedWidth(kComposerControlPx);
+        for (QComboBox *combo : {static_cast<QComboBox *>(m_quickAddAgentModelSelector),
+                                 static_cast<QComboBox *>(m_quickAddTaskAssignee),
+                                 static_cast<QComboBox *>(m_quickAddModeSelector),
+                                 static_cast<QComboBox *>(m_quickAddSpeedSelector)})
+            combo->setFixedHeight(kComposerControlPx);
+    }
     auto *bottomBar = new QHBoxLayout;
-    bottomBar->setContentsMargins(42, 4, 6, 0);
-    bottomBar->setSpacing(5);
+    bottomBar->setContentsMargins(next ? 40 : 42, 4, next ? 4 : 6, next ? 4 : 0);
+    bottomBar->setSpacing(next ? 4 : 5);
     bottomBar->addWidget(m_quickAddImageButton, 0, Qt::AlignBottom);
     bottomBar->addWidget(m_quickAddMicButton, 0, Qt::AlignBottom);
     bottomBar->addWidget(m_voiceLevelMeter, 0, Qt::AlignBottom);
@@ -3521,15 +3621,16 @@ QWidget *MainWindow::buildNetworkLogDock()
     auto *promptHandle = new QWidget;
     m_promptDragHandle = promptHandle;
     promptHandle->setObjectName(QStringLiteral("promptDragHandle"));
-    promptHandle->setFixedHeight(16);
+    promptHandle->setFixedHeight(next ? 24 : 16);
     promptHandle->setCursor(Qt::OpenHandCursor);
     promptHandle->setToolTip(
         QStringLiteral("Drag to move the prompt; double-click to snap it back "
                        "to the corner"));
     promptHandle->installEventFilter(this);
     auto *promptHandleRow = new QHBoxLayout(promptHandle);
-    promptHandleRow->setContentsMargins(4, 2, 4, 2);
+    promptHandleRow->setContentsMargins(next ? 8 : 4, 2, next ? 8 : 4, 2);
     promptHandleRow->setSpacing(4);
+    const int handleButtonPx = next ? 20 : 16;
 
     m_promptResizeGrip = new QFrame;
     m_promptResizeGrip->setObjectName(QStringLiteral("promptResizeGrip"));
@@ -3546,8 +3647,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_promptClearButton = new QPushButton;
     m_promptClearButton->setObjectName(QStringLiteral("promptClearButton"));
     m_promptClearButton->setCursor(Qt::PointingHandCursor);
-    m_promptClearButton->setFixedSize(16, 16);
-    setOcticon(m_promptClearButton, "x", 10);
+    m_promptClearButton->setFixedSize(handleButtonPx, handleButtonPx);
+    setComposerIconTone(m_promptClearButton);
+    setOcticon(m_promptClearButton, "x", next ? 14 : 10);
     m_promptClearButton->setToolTip(QStringLiteral("Clear the prompt"));
     connect(m_promptClearButton, &QPushButton::clicked, this, [this] {
         if (!m_issueQuickAdd)
@@ -3573,7 +3675,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     auto *worktreeIcon = new ToggleLabel(m_promptWorktreeCheck);
     worktreeIcon->setObjectName(QStringLiteral("promptWorktreeIcon"));
     worktreeIcon->setCursor(Qt::PointingHandCursor);
-    setLabelOcticon(worktreeIcon, QStringLiteral("git-branch"), 12);
+    setLabelOcticon(worktreeIcon, QStringLiteral("git-branch"), next ? 14 : 12);
     const auto updateWorktreeTip = [check = m_promptWorktreeCheck, worktreeIcon](bool on) {
         const QString tip =
             on ? QStringLiteral("New agent runs get their own branch and "
@@ -3594,12 +3696,13 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_promptCloudButton = new QPushButton;
     m_promptCloudButton->setObjectName(QStringLiteral("promptCloudButton"));
     m_promptCloudButton->setCursor(Qt::PointingHandCursor);
-    m_promptCloudButton->setFixedSize(16, 16);
+    m_promptCloudButton->setFixedSize(handleButtonPx, handleButtonPx);
     m_promptCloudButton->setCheckable(true);
     m_promptCloudButton->setChecked(
         QSettings().value(QStringLiteral("agents/composerRunInCloud"), false)
             .toBool());
-    setOcticon(m_promptCloudButton, "cloud", 12);
+    setComposerIconTone(m_promptCloudButton);
+    setOcticon(m_promptCloudButton, "cloud", next ? 14 : 12);
     const auto updateCloudTip = [button = m_promptCloudButton](bool on) {
         button->setToolTip(
             on ? QStringLiteral("New agent runs go to one of your ForkMesh "
@@ -3656,8 +3759,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_promptResetButton = new QPushButton;
     m_promptResetButton->setObjectName(QStringLiteral("promptResetButton"));
     m_promptResetButton->setCursor(Qt::PointingHandCursor);
-    m_promptResetButton->setFixedSize(16, 16);
-    setOcticon(m_promptResetButton, "sync", 10);
+    m_promptResetButton->setFixedSize(handleButtonPx, handleButtonPx);
+    setComposerIconTone(m_promptResetButton);
+    setOcticon(m_promptResetButton, "sync", next ? 14 : 10);
     m_promptResetButton->setToolTip(
         QStringLiteral("Reset the prompt back to its default size and position"));
     connect(m_promptResetButton, &QPushButton::clicked, this,
@@ -3667,8 +3771,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_promptDetachButton = new QPushButton;
     m_promptDetachButton->setObjectName(QStringLiteral("promptDetachButton"));
     m_promptDetachButton->setCursor(Qt::PointingHandCursor);
-    m_promptDetachButton->setFixedSize(16, 16);
-    setOcticon(m_promptDetachButton, "screen-full", 10);
+    m_promptDetachButton->setFixedSize(handleButtonPx, handleButtonPx);
+    setComposerIconTone(m_promptDetachButton);
+    setOcticon(m_promptDetachButton, "screen-full", next ? 14 : 10);
     m_promptDetachButton->setToolTip(
         QStringLiteral("Pop the prompt out into its own window"));
     connect(m_promptDetachButton, &QPushButton::clicked, this,
@@ -6446,8 +6551,9 @@ void MainWindow::refreshQuickAddSpeedSelector()
     m_quickAddSpeedSelector->clear();
     for (int i = 0; i < levels.size(); ++i)
         m_quickAddSpeedSelector->addItem(
-            agentControlIcon(11 + qMin(i, 4)), agentEffortLabel(levels.at(i)),
-            levels.at(i));
+            Theme::isNext() ? composerEffortIcon(i, levels.size())
+                            : agentControlIcon(11 + qMin(i, 4)),
+            agentEffortLabel(levels.at(i)), levels.at(i));
     const int idx = m_quickAddSpeedSelector->findData(current);
     m_quickAddSpeedSelector->setCurrentIndex(idx >= 0 ? idx : 0);
     const QString description =
@@ -6640,6 +6746,13 @@ void MainWindow::refreshQuickAddAgentModelSelector()
         m_quickAddAgentModelSelector, selectedProvider, selectedModel, true,
         QStringLiteral("Choose the agent and model that will handle this "
                        "prompt."));
+    if (!Theme::isNext())
+        return;
+    const QSignalBlocker block(m_quickAddAgentModelSelector);
+    for (int row = 0; row < m_quickAddAgentModelSelector->count(); ++row)
+        m_quickAddAgentModelSelector->setItemIcon(
+            row, composerMonoIcon(composerProviderOcticon(
+                     m_quickAddAgentModelSelector->itemData(row).toString())));
 }
 
 // Every combined agent+model picker on screen. Call this, not one of the two
