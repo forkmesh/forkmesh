@@ -474,3 +474,15 @@ def test_the_behaviour_is_documented():
     for phrase in ("stale_pull_metadata", "stale-while-revalidate", "Update branch",
                    "overrideReview", "scrollLeft"):
         assert phrase in DOCS, phrase
+
+
+def test_tab_strips_scroll_sideways_only():
+    """The repository and pull request tab strips scroll horizontally only:
+    their tabs overlap the border by 1px, which otherwise leaves a 1px vertical
+    scroll that makes the strip jump during a sideways swipe on phones."""
+    from pathlib import Path
+    shell = (Path(__file__).resolve().parents[1] / "public" / "dashboard" / "shell.html").read_text()
+    start = shell.index('[data-repo-github-header] [role="tablist"],\n      [data-repo-record-tabs] {')
+    rule = shell[start:shell.index("}", start)]
+    assert "overflow-y: hidden;" in rule
+    assert "scrollbar-width: none;" in rule

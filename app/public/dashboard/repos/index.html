@@ -555,6 +555,9 @@
 
       [data-repo-github-header] [role="tablist"],
       [data-repo-record-tabs] {
+        /* Sideways only: tabs sit 1px into the border line, which made the strip
+           1px scrollable vertically, so a diagonal swipe nudged it up and down. */
+        overflow-y: hidden;
         overscroll-behavior-x: contain;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
