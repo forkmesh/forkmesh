@@ -163,6 +163,11 @@ func TestConvergesUnderEachCap(t *testing.T) {
 		steady := r.between(20_000_000, 40_000_000)
 		mean := meanTarget(steady)
 		q := p95Queue(steady)
+		peak := 0
+		for _, x := range steady {
+			peak = max(peak, x.target)
+		}
+		t.Logf("cap %d kbps: peak target %d kbps (%.0f%% of cap)", capacity/1000, peak/1000, 100*float64(peak)/float64(capacity))
 		t.Logf("cap %d kbps: mean target %0.f kbps (%.0f%% of cap), p95 queue %d ms, link queue p95 %d ms, drops %d\n%s",
 			capacity/1000, mean/1000, 100*mean/float64(capacity), q/1000, r.link.Stats.QueueDelayPercentile(0.95)/1000, r.link.Stats.QueueDrops, r.table(4))
 		if mean < 0.6*float64(capacity) || mean > 1.1*float64(capacity) {

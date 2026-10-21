@@ -22,6 +22,8 @@ const (
 	rateWindowUs    = 1_000_000
 	MaxPacketSize   = 1200
 	PacketOverhead  = 48
+	DREDCoverUs     = 100_000
+	DREDFECShare    = 0.15
 )
 
 type meter struct {
@@ -75,6 +77,7 @@ type sentSlot struct {
 
 type sendStream struct {
 	audio        bool
+	depth        int
 	fec          *fec.Encoder
 	media        meter
 	repair       meter
@@ -95,25 +98,26 @@ func (st *sendStream) importantShare() float64 {
 }
 
 type Sender struct {
-	t           Datagrams
-	cc          *cc.Controller
-	pacer       cc.Pacer
-	tseq        uint16
-	streams     map[uint8]*sendStream
-	order       []uint8
-	probeID     int
-	lastFEC     int64
-	now         int64
-	FixedFEC    *fec.Params
-	SendErrors  int
-	Retransmits int
-	RtxSkipped  int
-	rtxStart    int64
-	rtxBytes    int
-	sentMeter   meter
-	Sent        int
-	SentBytes   int64
-	Padding     int
+	t                Datagrams
+	cc               *cc.Controller
+	pacer            cc.Pacer
+	tseq             uint16
+	streams          map[uint8]*sendStream
+	order            []uint8
+	probeID          int
+	lastFEC          int64
+	now              int64
+	FixedFEC         *fec.Params
+	AudioFECWithDRED bool
+	SendErrors       int
+	Retransmits      int
+	RtxSkipped       int
+	rtxStart         int64
+	rtxBytes         int
+	sentMeter        meter
+	Sent             int
+	SentBytes        int64
+	Padding          int
 }
 
 func NewSender(t Datagrams, cfg cc.Config) *Sender {
@@ -157,6 +161,9 @@ func (s *Sender) Send(pkt []byte, now int64) {
 	class := cc.ClassVideo
 	if st.audio {
 		class = cc.ClassAudio
+	}
+	if st.audio {
+		st.depth = int(wire.AuxOf(pkt))
 	}
 	repairs := st.fec.Add(pkt, now)
 	st.media.add(len(pkt))
@@ -228,7 +235,14 @@ func (s *Sender) Tick(now int64) {
 		s.lastFEC = now
 		s.updateFEC()
 	}
-	s.pacer.SetRate(int(float64(s.cc.Target()) * cc.PacingFactor))
+	s.cc.CheckFeedback(now)
+	factor := cc.PacingFactor
+	if s.cc.Congested(now) {
+		factor = cc.CongestedPacingFactor
+		s.pacer.DropOlder(cc.CongestedVideoQueueUs, now)
+	}
+	s.pacer.SetRate(int(float64(s.cc.Target()) * factor))
+	s.pacer.SetDrainCap(int(float64(s.cc.Target()) * factor))
 	if s.probeID == 0 {
 		if id, rate, bytes, ok := s.cc.StartProbe(now); ok {
 			s.probeID = id
@@ -285,7 +299,11 @@ func (s *Sender) chooseFEC(st *sendStream) {
 	}
 	maxK := max(1, int(st.media.pps*delay/1e6))
 	if st.audio {
-		st.fec.SetParams(fec.Choose(true, s.cc.Loss(), s.cc.Burst(), maxK))
+		p := fec.Choose(true, s.cc.Loss(), s.cc.Burst(), maxK)
+		if st.depth*wire.DepthUnitUs >= DREDCoverUs && !s.AudioFECWithDRED && st.media.bps*p.Ratio() > DREDFECShare*float64(s.cc.Target()) {
+			p = fec.Params{}
+		}
+		st.fec.SetParams(p)
 		return
 	}
 	share := st.importantShare()
@@ -512,3 +530,24 @@ func (r *Receiver) Report(now int64) []byte {
 	}
 	return b
 }
+
+func PackFeedback(msgs [][]byte, maxSize int) (datagrams, control [][]byte) {
+	var cur []byte
+	for _, m := range msgs {
+		if wire.FeedbackHeaderLen+len(m) > maxSize {
+			control = append(control, m)
+			continue
+		}
+		if len(cur) > 0 && wire.FeedbackHeaderLen+len(cur)+len(m) > maxSize {
+			datagrams = append(datagrams, wire.AppendFeedback(nil, cur))
+			cur = nil
+		}
+		cur = append(cur, m...)
+	}
+	if len(cur) > 0 {
+		datagrams = append(datagrams, wire.AppendFeedback(nil, cur))
+	}
+	return datagrams, control
+}
+
+func (r *Receiver) SetRepeat(n int) { r.rec.Repeat = n }

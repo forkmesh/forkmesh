@@ -146,15 +146,24 @@ func TestVideoReleasesInOrderAndSkipsWhatItMust(t *testing.T) {
 	if v.Stats.Undecodable != 2 {
 		t.Fatalf("undecodable %d", v.Stats.Undecodable)
 	}
-	if !v.KeyframeNeeded(5000) {
-		t.Fatal("broken TL0 chain did not ask for a keyframe")
+	if v.KeyframeNeeded(5000) {
+		t.Fatal("a broken TL0 chain asked for a keyframe before trying long-term recovery")
 	}
-	if v.KeyframeNeeded(6000) {
-		t.Fatal("keyframe requests are not rate limited")
+	if ok, stuck := v.RecoveryNeeded(5000); !ok || stuck != 5 {
+		t.Fatalf("broken TL0 chain did not ask for recovery: %v %d", ok, stuck)
+	}
+	if ok, _ := v.RecoveryNeeded(6000); ok {
+		t.Fatal("recovery requests are not rate limited")
 	}
 	v.Push(vframe(12, false, 0, 8, 12, 1, 7000), 7000)
 	if v.Pop(7000) != nil {
 		t.Fatal("decoded on a broken chain")
+	}
+	if ok, _ := v.RecoveryNeeded(1_000_000); ok || !v.KeyframeNeeded(1_000_000) || v.Stats.Escalated != 1 {
+		t.Fatal("an unanswered recovery did not escalate to a keyframe")
+	}
+	if v.KeyframeNeeded(1_000_001) {
+		t.Fatal("keyframe requests are not rate limited")
 	}
 	v.Push(vframe(13, true, 0, -1, 13, 4, 8000), 8000)
 	if f := v.Pop(8000); f == nil || f.ID != 13 || v.KeyframeNeeded(9_000_000) {
@@ -202,5 +211,116 @@ func TestAMissingTL0RepairedLateIsStillDecoded(t *testing.T) {
 	}
 	if f := v.Pop(210_000); f == nil || f.ID != 4 || v.KeyframeNeeded(300_000) {
 		t.Fatal("asked for a keyframe though the chain recovered")
+	}
+}
+
+func TestRecoveryFrameSkipsTheBrokenChainAtOnce(t *testing.T) {
+	v := NewVideo(VideoConfig{})
+	key := vframe(0, true, 0, -1, 0, 2, 0)
+	key.LongTerm = true
+	v.Push(key, 0)
+	v.Pop(0)
+	v.Push(vframe(1, false, 0, 0, 2, 1, 1000), 1000)
+	v.Pop(1000)
+	if a := v.TakeAcks(); len(a) != 1 || a[0] != 0 {
+		t.Fatalf("long-term keyframe not acknowledged: %v", a)
+	}
+	v.Push(vframe(4, false, 0, 3, 7, 1, 50_000), 50_000)
+	v.Push(vframe(5, false, 1, 4, 8, 1, 60_000), 60_000)
+	if v.Pop(60_000) != nil {
+		t.Fatal("released frame 4 without its reference")
+	}
+	rec := vframe(6, false, 0, 0, 12, 3, 70_000)
+	rec.Recovery = true
+	v.Push(rec, 70_000)
+	if f := v.Pop(70_000); f == nil || f.ID != 6 {
+		t.Fatalf("recovery frame predicted from a decoded long-term frame was not released at once: %+v", f)
+	}
+	v.Push(vframe(7, false, 2, 6, 15, 1, 80_000), 80_000)
+	if f := v.Pop(80_000); f == nil || f.ID != 7 {
+		t.Fatal("the chain did not continue after the recovery frame")
+	}
+	if v.Stats.Recovered != 1 || v.Stats.Undecodable != 2 {
+		t.Fatalf("%+v", v.Stats)
+	}
+	if ok, _ := v.RecoveryNeeded(1_000_000); ok || v.KeyframeNeeded(1_000_000) {
+		t.Fatal("asked for help after the recovery frame repaired the chain")
+	}
+}
+
+func TestIndependentFaceFramesFlowWithoutAKeyframe(t *testing.T) {
+	v := NewVideo(VideoConfig{})
+	face := func(id, seq int64) *frag.Frame {
+		f := vframe(id, false, 0, -1, seq, 1, id*33_333)
+		f.Face = true
+		return f
+	}
+	v.Push(face(10, 0), 0)
+	if f := v.Pop(0); f == nil || f.ID != 10 {
+		t.Fatal("a face frame waited for a keyframe")
+	}
+	v.Push(face(12, 2), 70_000)
+	if f := v.Pop(70_000); f == nil || f.ID != 12 {
+		t.Fatal("a face frame waited for a lost one before it")
+	}
+	ref := vframe(13, true, 0, -1, 3, 20, 100_000)
+	ref.Face = true
+	v.Push(ref, 100_000)
+	v.Push(face(14, 23), 100_000)
+	if f := v.Pop(100_000); f == nil || !f.Keyframe || !f.Face {
+		t.Fatal("reference picture not released")
+	}
+	if f := v.Pop(100_000); f == nil || f.ID != 14 || v.KeyframeNeeded(200_000) {
+		t.Fatal("face frame after the reference picture")
+	}
+}
+
+func runAudioLoss(lose func(i int, r *rand.Rand) bool, depthUs int64, frames int) AudioStats {
+	r := rand.New(rand.NewPCG(5, 5))
+	a := NewAudio(AudioConfig{})
+	for t := int64(0); t < int64(frames)*FrameUs; t += FrameUs {
+		i := int(t / FrameUs)
+		if !lose(i, r) {
+			a.PushDepth(int64(i), t, []byte{byte(i)}, depthUs, t+20_000+r.Int64N(5_000))
+		}
+		a.PullOut(t + 3_000)
+	}
+	return a.Stats
+}
+
+func TestDREDRecoversBurstsThatFECCannot(t *testing.T) {
+	bad := false
+	burst := func(_ int, r *rand.Rand) bool {
+		if bad {
+			bad = r.Float64() >= 0.3
+		} else {
+			bad = r.Float64() < 0.04
+		}
+		return bad
+	}
+	random := func(p float64) func(int, *rand.Rand) bool {
+		return func(_ int, r *rand.Rand) bool { return r.Float64() < p }
+	}
+	cases := []struct {
+		name string
+		lose func(int, *rand.Rand) bool
+		max  float64
+	}{
+		{"random 10%", random(0.10), 0.005},
+		{"random 20%", random(0.20), 0.01},
+		{"random 30%", random(0.30), 0.03},
+		{"bursts of 3.3 at 12%", burst, 0.03},
+	}
+	for _, c := range cases {
+		without := runAudioLoss(c.lose, 0, 5000)
+		with := runAudioLoss(c.lose, 1_000_000, 5000)
+		total := func(s AudioStats) float64 { return float64(s.Played + s.Concealed + s.DRED + s.Inserted) }
+		plain := func(s AudioStats) float64 { return float64(s.Concealed-s.FEC+s.Inserted) / total(s) }
+		t.Logf("%-22s no DRED: plain %5.2f%% FEC %5.2f%% | DRED 1 s: plain %5.2f%% FEC %5.2f%% DRED %5.2f%%",
+			c.name, 100*plain(without), 100*float64(without.FEC)/total(without),
+			100*plain(with), 100*float64(with.FEC)/total(with), 100*float64(with.DRED)/total(with))
+		if plain(with) > c.max {
+			t.Errorf("%s: %.3f of frames concealed with DRED", c.name, plain(with))
+		}
 	}
 }

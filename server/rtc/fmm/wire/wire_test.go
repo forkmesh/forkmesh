@@ -49,13 +49,15 @@ func TestRepairAndPaddingLayoutsAreExact(t *testing.T) {
 func TestParsersRefuseBadHeaders(t *testing.T) {
 	good := (&Media{FragCount: 1, Payload: []byte{1}}).Append(nil)
 	cases := map[string]func([]byte){
-		"version":       func(b []byte) { b[0] = 0x20 },
-		"kind":          func(b []byte) { b[0] = 0x13 },
-		"zero count":    func(b []byte) { b[9] = 0 },
-		"index>=count":  func(b []byte) { b[8] = 1 },
-		"reserved flag": func(b []byte) { b[10] |= 0x08 },
-		"key layer":     func(b []byte) { b[10] = FlagKeyframe | 1 },
-		"key ref":       func(b []byte) { b[10] = FlagKeyframe; b[11] = 1 },
+		"version":      func(b []byte) { b[0] = 0x20 },
+		"kind":         func(b []byte) { b[0] = 0x13 },
+		"zero count":   func(b []byte) { b[9] = 0 },
+		"index>=count": func(b []byte) { b[8] = 1 },
+		"recovery key": func(b []byte) { b[10] = FlagKeyframe | FlagRecovery },
+		"recovery ref": func(b []byte) { b[10] = FlagRecovery },
+		"recovery tl1": func(b []byte) { b[10] = FlagRecovery | 1; b[11] = 2 },
+		"key layer":    func(b []byte) { b[10] = FlagKeyframe | 1 },
+		"key ref":      func(b []byte) { b[10] = FlagKeyframe; b[11] = 1 },
 	}
 	for name, mutate := range cases {
 		b := append([]byte(nil), good...)
@@ -94,6 +96,8 @@ func sampleMessages() []Message {
 		Joined{Peer: "p1"},
 		Publish{Stream: 1, Kind: TrackAudio, Layers: 1, Name: "mic"},
 		Publish{Stream: 2, Kind: TrackVideo, Layers: 3, Name: ""},
+		Publish{Stream: 3, Kind: TrackVideo, Layers: 1, Name: "cam", Track: 2, Rank: 0},
+		Publish{Stream: 4, Kind: TrackVideo, Layers: 3, Name: "cam", Track: 4, Rank: 3},
 		Unpublish{Stream: 2},
 		TrackAdded{Stream: 7, Kind: TrackVideo, Layers: 3, Peer: "p2", Name: "cam"},
 		TrackRemoved{Stream: 7},
@@ -107,6 +111,8 @@ func sampleMessages() []Message {
 		Leave{Reason: "bye"},
 		Error{Code: 403, Text: "ticket expired"},
 		Nack{Stream: 4, Seqs: []uint16{65535, 0, 7}},
+		Ack{Stream: 4, Frames: []uint16{900, 896, 65535}},
+		Recovery{Stream: 4, Frame: 1234},
 	}
 }
 
@@ -203,6 +209,81 @@ func TestControlBoundsAreEnforced(t *testing.T) {
 	if err := r.Write(make([]byte, MaxReaderBuffer+1)); err == nil {
 		t.Error("oversized reader buffer accepted")
 	}
+}
+
+func TestNewFlagsAndFeedbackLayout(t *testing.T) {
+	m := Media{Stream: 1, FrameID: 9, FragCount: 1, Recovery: true, LongTerm: true, Face: true, RefDelta: 7, Payload: []byte{1}}
+	b := m.Append(nil)
+	if b[10] != FlagRecovery|FlagLongTerm|FlagFace || b[11] != 7 {
+		t.Fatal(hex.EncodeToString(b))
+	}
+	back, err := ParseMedia(b)
+	if err != nil || !reflect.DeepEqual(back, m) {
+		t.Fatalf("%v %+v", err, back)
+	}
+	ack, _ := Append(nil, Ack{Stream: 2, Frames: []uint16{5}})
+	nack, _ := Append(nil, Nack{Stream: 2, Seqs: []uint16{1, 2}})
+	fb := AppendFeedback(nil, append(ack, nack...))
+	if hex.EncodeToString(fb[:4+3+4]) != "13000000"+"0f0004"+"02010005" {
+		t.Fatal(hex.EncodeToString(fb))
+	}
+	msgs, err := ParseFeedback(fb)
+	if err != nil || len(msgs) != 2 || msgs[0].Type() != MsgAck || msgs[1].Type() != MsgNack {
+		t.Fatalf("%v %+v", err, msgs)
+	}
+	join, _ := Append(nil, Join{Ticket: "x"})
+	for name, bad := range map[string][]byte{
+		"empty":       AppendFeedback(nil, nil),
+		"join inside": AppendFeedback(nil, join),
+		"truncated":   AppendFeedback(nil, ack[:len(ack)-1]),
+		"reserved":    append([]byte{0x13, 1, 0, 0}, ack...),
+	} {
+		if _, err := ParseFeedback(bad); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	bad := []Message{
+		Publish{Stream: 3, Kind: TrackAudio, Layers: 1, Track: 3, Rank: 1},
+		Publish{Stream: 3, Kind: TrackVideo, Layers: 1, Track: 2, Rank: MaxEncodings},
+		Publish{Stream: 3, Kind: TrackVideo, Layers: 1, Rank: 1},
+		Ack{Stream: 1},
+		Ack{Stream: 1, Frames: make([]uint16, MaxAck+1)},
+	}
+	for _, m := range bad {
+		if _, err := Append(nil, m); err == nil {
+			t.Errorf("%+v encoded", m)
+		}
+	}
+	trail, _ := Append(nil, Publish{Stream: 3, Kind: TrackVideo, Layers: 1, Track: 3, Rank: 1})
+	trail[len(trail)-2] = 0
+	if _, _, err := Decode(trail); err == nil {
+		t.Error("an encoding of track 0 decoded")
+	}
+}
+
+func FuzzParseFeedback(f *testing.F) {
+	ack, _ := Append(nil, Ack{Stream: 2, Frames: []uint16{5, 9}})
+	rep, _ := Append(nil, sampleMessages()[12])
+	f.Add(AppendFeedback(nil, append(ack, rep...)))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		msgs, err := ParseFeedback(b)
+		if err != nil {
+			return
+		}
+		var again []byte
+		for _, m := range msgs {
+			if !FeedbackType(m.Type()) {
+				t.Fatalf("%T inside feedback", m)
+			}
+			again, err = Append(again, m)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !bytes.Equal(AppendFeedback(nil, again), b) {
+			t.Fatal("feedback does not round-trip")
+		}
+	})
 }
 
 func FuzzParseDatagram(f *testing.F) {

@@ -21,6 +21,9 @@ const (
 	MsgLeave           = 0x0C
 	MsgError           = 0x0D
 	MsgNack            = 0x0E
+	MsgAck             = 0x0F
+	MsgRecovery        = 0x10
+	msgLast            = MsgRecovery
 
 	ControlHeaderLen = 3
 	MaxControlBody   = 8192
@@ -30,6 +33,8 @@ const (
 	MaxReportPackets = 2048
 	MaxReaderBuffer  = 1 << 20
 	MaxNack          = 128
+	MaxAck           = 16
+	MaxEncodings     = 4
 
 	TrackAudio = 1
 	TrackVideo = 2
@@ -55,6 +60,8 @@ type Publish struct {
 	Kind   uint8
 	Layers uint8
 	Name   string
+	Track  uint8
+	Rank   uint8
 }
 
 type Unpublish struct{ Stream uint8 }
@@ -103,6 +110,16 @@ type Nack struct {
 	Seqs   []uint16
 }
 
+type Ack struct {
+	Stream uint8
+	Frames []uint16
+}
+
+type Recovery struct {
+	Stream uint8
+	Frame  uint16
+}
+
 func (Join) Type() uint8            { return MsgJoin }
 func (Joined) Type() uint8          { return MsgJoined }
 func (Publish) Type() uint8         { return MsgPublish }
@@ -117,6 +134,8 @@ func (BitrateHint) Type() uint8     { return MsgBitrateHint }
 func (Leave) Type() uint8           { return MsgLeave }
 func (Error) Type() uint8           { return MsgError }
 func (Nack) Type() uint8            { return MsgNack }
+func (Ack) Type() uint8             { return MsgAck }
+func (Recovery) Type() uint8        { return MsgRecovery }
 
 func validTrack(kind, layers uint8) bool {
 	switch kind {
@@ -126,6 +145,16 @@ func validTrack(kind, layers uint8) bool {
 		return layers >= 1 && layers <= MaxLayer+1
 	}
 	return false
+}
+
+func validEncoding(v Publish) bool {
+	if v.Track == 0 {
+		return v.Rank == 0
+	}
+	if v.Kind != TrackVideo || v.Rank >= MaxEncodings {
+		return false
+	}
+	return v.Track != v.Stream || v.Rank != 0
 }
 
 func appendString(b []byte, s string, limit int, allowEmpty bool) ([]byte, error) {
@@ -150,11 +179,14 @@ func Append(dst []byte, m Message) ([]byte, error) {
 	case Joined:
 		dst, err = appendString(dst, v.Peer, MaxName, false)
 	case Publish:
-		if !validTrack(v.Kind, v.Layers) {
+		if !validTrack(v.Kind, v.Layers) || !validEncoding(v) {
 			return dst[:start], ErrBound
 		}
 		dst = append(dst, v.Stream, v.Kind, v.Layers)
 		dst, err = appendString(dst, v.Name, MaxName, true)
+		if v.Track != 0 {
+			dst = append(dst, v.Track, v.Rank)
+		}
 	case Unpublish:
 		dst = append(dst, v.Stream)
 	case TrackAdded:
@@ -195,6 +227,17 @@ func Append(dst []byte, m Message) ([]byte, error) {
 		for _, q := range v.Seqs {
 			dst = binary.BigEndian.AppendUint16(dst, q)
 		}
+	case Ack:
+		if len(v.Frames) == 0 || len(v.Frames) > MaxAck {
+			return dst[:start], ErrBound
+		}
+		dst = append(dst, v.Stream, uint8(len(v.Frames)))
+		for _, q := range v.Frames {
+			dst = binary.BigEndian.AppendUint16(dst, q)
+		}
+	case Recovery:
+		dst = append(dst, v.Stream)
+		dst = binary.BigEndian.AppendUint16(dst, v.Frame)
 	default:
 		return dst[:start], ErrType
 	}
@@ -321,7 +364,7 @@ func Decode(b []byte) (Message, int, error) {
 		return nil, 0, ErrIncomplete
 	}
 	t := b[0]
-	if t < MsgJoin || t > MsgNack {
+	if t < MsgJoin || t > msgLast {
 		return nil, 0, ErrType
 	}
 	n := int(binary.BigEndian.Uint16(b[1:]))
@@ -345,7 +388,13 @@ func Decode(b []byte) (Message, int, error) {
 	case MsgPublish:
 		v := Publish{Stream: r.u8(), Kind: r.u8(), Layers: r.u8()}
 		v.Name = r.str(MaxName, true)
-		if !validTrack(v.Kind, v.Layers) {
+		if len(r.b) == 2 {
+			v.Track, v.Rank = r.u8(), r.u8()
+			if v.Track == 0 {
+				return nil, 0, ErrBody
+			}
+		}
+		if !validTrack(v.Kind, v.Layers) || !validEncoding(v) {
 			return nil, 0, ErrBody
 		}
 		m = v
@@ -396,6 +445,19 @@ func Decode(b []byte) (Message, int, error) {
 			v.Seqs[i] = r.u16()
 		}
 		m = v
+	case MsgAck:
+		v := Ack{Stream: r.u8()}
+		n := int(r.u8())
+		if r.err || n == 0 || n > MaxAck {
+			return nil, 0, ErrBody
+		}
+		v.Frames = make([]uint16, n)
+		for i := range v.Frames {
+			v.Frames[i] = r.u16()
+		}
+		m = v
+	case MsgRecovery:
+		m = Recovery{Stream: r.u8(), Frame: r.u16()}
 	}
 	if r.err || len(r.b) != 0 {
 		return nil, 0, ErrBody

@@ -13,6 +13,9 @@ type VideoConfig struct {
 	RefWaitUs          int64
 	Percentile         float64
 	WindowUs           int64
+	RecoveryIntervalUs int64
+	EscalateUs         int64
+	NoRecovery         bool
 }
 
 func (c VideoConfig) withDefaults() VideoConfig {
@@ -34,6 +37,12 @@ func (c VideoConfig) withDefaults() VideoConfig {
 	if c.WindowUs == 0 {
 		c.WindowUs = 3_000_000
 	}
+	if c.RecoveryIntervalUs == 0 {
+		c.RecoveryIntervalUs = 250_000
+	}
+	if c.EscalateUs == 0 {
+		c.EscalateUs = 600_000
+	}
 	return c
 }
 
@@ -43,6 +52,9 @@ type VideoStats struct {
 	Late             int
 	GapsSkipped      int
 	KeyframeRequests int
+	RecoveryRequests int
+	Recovered        int
+	Escalated        int
 }
 
 type Video struct {
@@ -57,6 +69,10 @@ type Video struct {
 	broken      map[int64]bool
 	needKey     bool
 	lastKeyReq  int64
+	needRec     bool
+	needRecAt   int64
+	lastRecReq  int64
+	acks        []int64
 	samples     []delaySample
 	minQ        []delaySample
 	wait        int64
@@ -186,9 +202,34 @@ func (v *Video) release(f *frag.Frame) *frag.Frame {
 	v.Stats.Released++
 	if f.Layer == 0 {
 		v.needKey = false
+		v.needRec = false
+	}
+	if f.LongTerm && len(v.acks) < 64 {
+		v.acks = append(v.acks, f.ID)
 	}
 	return f
 }
+
+func (v *Video) chainBroken(now int64) {
+	if v.cfg.NoRecovery || !v.started {
+		v.needKey = true
+		return
+	}
+	if !v.needRec {
+		v.needRec, v.needRecAt = true, now
+	}
+}
+
+func (v *Video) recoveryAt() int {
+	for i, p := range v.pending {
+		if p.Recovery && v.decoded[p.Ref] {
+			return i
+		}
+	}
+	return -1
+}
+
+func (v *Video) independent(f *frag.Frame) bool { return !f.Keyframe && f.Ref < 0 }
 
 func (v *Video) Pop(now int64) *frag.Frame {
 	for len(v.pending) > 0 {
@@ -201,6 +242,13 @@ func (v *Video) Pop(now int64) *frag.Frame {
 			v.lastSeq = f.FirstSeq - 1
 			return v.release(f)
 		}
+		if v.independent(f) {
+			if f.FirstSeq > v.lastSeq+1 {
+				v.Stats.GapsSkipped++
+			}
+			v.lastSeq = max(v.lastSeq, f.FirstSeq-1)
+			return v.release(f)
+		}
 		if !v.started {
 			v.discard(f)
 			v.needKey = true
@@ -208,11 +256,17 @@ func (v *Video) Pop(now int64) *frag.Frame {
 		}
 		waited := now - f.Complete
 		if !v.decoded[f.Ref] {
+			if i := v.recoveryAt(); i > 0 {
+				for range i {
+					v.discard(v.pending[0])
+				}
+				continue
+			}
 			if f.Ref > v.lastID && !v.broken[f.Ref] {
 				limit := v.wait
 				if f.Layer == 0 {
 					if waited >= v.wait {
-						v.needKey = true
+						v.chainBroken(now)
 					}
 					limit = max(v.wait, v.cfg.RefWaitUs)
 				}
@@ -222,19 +276,63 @@ func (v *Video) Pop(now int64) *frag.Frame {
 			}
 			v.discard(f)
 			if f.Layer == 0 {
-				v.needKey = true
+				v.chainBroken(now)
 			}
 			continue
 		}
-		if f.FirstSeq > v.lastSeq+1 {
+		if f.FirstSeq > v.lastSeq+1 && !f.Recovery {
 			if waited < v.wait {
 				return nil
 			}
 			v.Stats.GapsSkipped++
 		}
+		if f.Recovery {
+			v.Stats.Recovered++
+			v.lastSeq = max(v.lastSeq, f.FirstSeq-1)
+		}
 		return v.release(f)
 	}
 	return nil
+}
+
+func (v *Video) TakeAcks() []int64 {
+	a := v.acks
+	v.acks = nil
+	return a
+}
+
+func (v *Video) LastID() int64 {
+	if !v.started {
+		return -1
+	}
+	return v.lastID
+}
+
+func (v *Video) SetTiming(rttUs int64) {
+	v.cfg.RecoveryIntervalUs = min(max(2*rttUs+100_000, 200_000), 1_000_000)
+	v.cfg.EscalateUs = min(max(3*rttUs+400_000, 500_000), 2_000_000)
+}
+
+func (v *Video) RecoveryNeeded(now int64) (bool, int64) {
+	if !v.needRec || v.needKey {
+		return false, 0
+	}
+	if now-v.needRecAt >= v.cfg.EscalateUs {
+		v.needRec = false
+		v.needKey = true
+		v.Stats.Escalated++
+		return false, 0
+	}
+	if v.lastRecReq != 0 && now-v.lastRecReq < v.cfg.RecoveryIntervalUs {
+		return false, 0
+	}
+	v.lastRecReq = now
+	v.Stats.RecoveryRequests++
+	stuck := v.lastID + 1
+	if len(v.pending) > 0 {
+		stuck = v.pending[0].ID
+	}
+	return true, stuck
 }
 
 func (v *Video) KeyframeNeeded(now int64) bool {

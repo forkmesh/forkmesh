@@ -16,6 +16,7 @@ const (
 type recSlot struct {
 	seq          int64
 	has          bool
+	reported     uint8
 	arrival      int64
 	missingSince int64
 }
@@ -27,6 +28,7 @@ type Recorder struct {
 	highest     int64
 	lastArrival int64
 	lastReport  int64
+	Repeat      int
 	Packets     int
 }
 
@@ -94,6 +96,7 @@ func (r *Recorder) Report(now int64) *wire.Report {
 			prev = off
 			rep.Received[i] = true
 			rep.Arrival[i] = off
+			sl.reported++
 			continue
 		}
 		if sl.seq != s {
@@ -103,7 +106,7 @@ func (r *Recorder) Report(now int64) *wire.Report {
 	rep.Delay = uint16(min((now-r.lastArrival)/TickUs, 0xFFFF))
 	for r.base <= r.highest {
 		sl := &r.slots[r.base%recorderSlots]
-		if sl.seq == r.base && (sl.has || now-sl.missingSince >= FinalizeHold) {
+		if sl.seq == r.base && ((sl.has && int(sl.reported) > r.Repeat) || (!sl.has && now-sl.missingSince >= FinalizeHold)) {
 			r.base++
 			continue
 		}

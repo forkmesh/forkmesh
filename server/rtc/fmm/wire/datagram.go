@@ -8,13 +8,15 @@ import (
 const (
 	Version = 1
 
-	KindMedia   = 0
-	KindRepair  = 1
-	KindPadding = 2
+	KindMedia    = 0
+	KindRepair   = 1
+	KindPadding  = 2
+	KindFeedback = 3
 
-	MediaHeaderLen   = 16
-	RepairHeaderLen  = 10
-	PaddingHeaderLen = 4
+	MediaHeaderLen    = 16
+	RepairHeaderLen   = 10
+	PaddingHeaderLen  = 4
+	FeedbackHeaderLen = 4
 
 	RecoveryOffset  = 6
 	RepairExpansion = RepairHeaderLen + 2 - RecoveryOffset
@@ -31,10 +33,14 @@ const (
 	MaxFECK   = 48
 	MaxFECM   = 16
 
-	FlagKeyframe  = 0x80
-	FlagFEC       = 0x40
-	flagsReserved = 0x38
-	layerMask     = 0x07
+	FlagKeyframe = 0x80
+	FlagFEC      = 0x40
+	FlagRecovery = 0x20
+	FlagLongTerm = 0x10
+	FlagFace     = 0x08
+	layerMask    = 0x07
+
+	DepthUnitUs = 10_000
 )
 
 var (
@@ -46,6 +52,7 @@ var (
 	ErrFlags    = errors.New("fmm: bad frame flags")
 	ErrRepair   = errors.New("fmm: bad repair header")
 	ErrPadding  = errors.New("fmm: bad padding header")
+	ErrFeedback = errors.New("fmm: bad feedback datagram")
 )
 
 type Media struct {
@@ -57,6 +64,9 @@ type Media struct {
 	FragCount    uint8
 	Keyframe     bool
 	FEC          bool
+	Recovery     bool
+	LongTerm     bool
+	Face         bool
 	Layer        uint8
 	RefDelta     uint8
 	Timestamp    uint32
@@ -86,7 +96,7 @@ func Kind(b []byte) (int, error) {
 		return 0, ErrVersion
 	}
 	k := int(b[0] & 0x0F)
-	if k > KindPadding {
+	if k > KindFeedback {
 		return 0, ErrKind
 	}
 	return k, nil
@@ -102,6 +112,9 @@ func (m *Media) Validate() error {
 	if m.Keyframe && (m.Layer != 0 || m.RefDelta != 0) {
 		return ErrFlags
 	}
+	if m.Recovery && (m.Keyframe || m.Layer != 0 || m.RefDelta == 0) {
+		return ErrFlags
+	}
 	if MediaHeaderLen+len(m.Payload) > MaxDatagramLen {
 		return ErrLong
 	}
@@ -115,6 +128,15 @@ func (m *Media) Append(b []byte) []byte {
 	}
 	if m.FEC {
 		flags |= FlagFEC
+	}
+	if m.Recovery {
+		flags |= FlagRecovery
+	}
+	if m.LongTerm {
+		flags |= FlagLongTerm
+	}
+	if m.Face {
+		flags |= FlagFace
 	}
 	b = append(b, Version<<4|KindMedia, m.Stream)
 	b = binary.BigEndian.AppendUint16(b, m.TransportSeq)
@@ -138,9 +160,6 @@ func ParseMedia(b []byte) (Media, error) {
 		return m, ErrShort
 	}
 	flags := b[10]
-	if flags&flagsReserved != 0 {
-		return m, ErrFlags
-	}
 	m = Media{
 		Stream:       b[1],
 		TransportSeq: binary.BigEndian.Uint16(b[2:]),
@@ -150,6 +169,9 @@ func ParseMedia(b []byte) (Media, error) {
 		FragCount:    b[9],
 		Keyframe:     flags&FlagKeyframe != 0,
 		FEC:          flags&FlagFEC != 0,
+		Recovery:     flags&FlagRecovery != 0,
+		LongTerm:     flags&FlagLongTerm != 0,
+		Face:         flags&FlagFace != 0,
 		Layer:        flags & layerMask,
 		RefDelta:     b[11],
 		Timestamp:    binary.BigEndian.Uint32(b[12:]),
@@ -282,4 +304,45 @@ func SetFECFlag(b []byte, on bool) {
 	} else {
 		b[10] &^= FlagFEC
 	}
+}
+
+func FlagsOf(b []byte) uint8 { return b[10] }
+
+func FrameIDOf(b []byte) uint16 { return binary.BigEndian.Uint16(b[6:]) }
+
+func SetFrameID(b []byte, id uint16) { binary.BigEndian.PutUint16(b[6:], id) }
+
+func AuxOf(b []byte) uint8 { return b[11] }
+
+func AppendFeedback(b []byte, msgs []byte) []byte {
+	b = append(b, Version<<4|KindFeedback, 0, 0, 0)
+	return append(b, msgs...)
+}
+
+func ParseFeedback(b []byte) ([]Message, error) {
+	k, err := Kind(b)
+	if err != nil {
+		return nil, err
+	}
+	if k != KindFeedback || b[1] != 0 || b[2] != 0 || b[3] != 0 || len(b) == FeedbackHeaderLen {
+		return nil, ErrFeedback
+	}
+	var out []Message
+	rest := b[FeedbackHeaderLen:]
+	for len(rest) > 0 {
+		m, n, err := Decode(rest)
+		if err != nil {
+			return nil, ErrFeedback
+		}
+		if !FeedbackType(m.Type()) {
+			return nil, ErrFeedback
+		}
+		out = append(out, m)
+		rest = rest[n:]
+	}
+	return out, nil
+}
+
+func FeedbackType(t uint8) bool {
+	return t == MsgReport || t == MsgNack || t == MsgAck || t == MsgRecovery
 }

@@ -37,7 +37,7 @@ const (
 	lossWindowPkts   = 200
 	lossLow          = 0.02
 	lossHigh         = 0.10
-	lossHighRandom   = 0.25
+	lossHighRandom   = 0.35
 	queueEvidenceUs  = 40_000
 	overuseMemoryUs  = 2_000_000
 	minRTTWindowUs   = 10_000_000
@@ -49,6 +49,23 @@ const (
 	probeQuiet       = 3_000_000
 	probeFollowUp    = 500_000
 	probeMaxFactor   = 2.0
+	fastCutQueueUs   = 150_000
+	recentWindowUs   = 200_000
+	silenceReports   = 3
+	silenceStepUs    = 100_000
+	silenceFactor    = 0.5
+	drainedUs        = 25_000
+	recoveryProbeUs  = 300_000
+	appLimitedRoom   = 50_000
+	lowProbePacket   = 80
+	lowProbeUs       = 40_000
+	probeMemoryUs    = 5_000_000
+	probeFloor       = 0.85
+	standingQueueUs  = 40_000
+	standWindowUs    = 200_000
+	standRiseUs      = 4_000
+	requestGapUs     = 2_000_000
+	requestQuietUs   = 1_000_000
 )
 
 type Config struct {
@@ -223,7 +240,7 @@ func (a *aimd) capUpper() float64 {
 	return a.capEst + 3*dev
 }
 
-func (a *aimd) update(signal int, acked float64, rtt, queueing int64, now int64, minBps, maxBps float64) {
+func (a *aimd) update(signal int, acked, floor float64, rtt, queueing int64, now int64, minBps, maxBps float64) {
 	switch signal {
 	case SignalOver:
 		a.state = stateDecrease
@@ -251,13 +268,13 @@ func (a *aimd) update(signal int, acked float64, rtt, queueing int64, now int64,
 		} else {
 			a.rate += max(a.rate*(math.Pow(1.08, dt)-1), 1000*dt)
 		}
-		if acked > 0 && a.rate > 1.5*acked+10_000 {
-			a.rate = max(prev, 1.5*acked+10_000)
+		if lim := max(1.5*acked+10_000, acked+appLimitedRoom); acked > 0 && a.rate > lim {
+			a.rate = max(prev, lim)
 		}
 	case stateDecrease:
 		wait := min(max(rtt, 10_000), 200_000)
 		if now-a.lastDecrease >= wait {
-			base := acked
+			base := max(acked, floor)
 			if base <= 0 {
 				base = a.rate
 			}
@@ -338,6 +355,31 @@ type Controller struct {
 	lastLossUpdate     int64
 	lastOveruse        int64
 
+	qWinStart     int64
+	qWinMin       int64
+	qMins         [3]int64
+	qMin          int64
+	lastStand     int64
+	StandCuts     int
+	owdBuckets    [3]int64
+	owdAt         int64
+	owdHave       [3]bool
+	queueDelay    int64
+	lastFastCut   int64
+	lastSent      int64
+	lastSilence   int64
+	preSilence    float64
+	probeEst      float64
+	probeAt       int64
+	silent        bool
+	silentAt      int64
+	cutSeq        int64
+	recovering    bool
+	drainedAt     int64
+	FastCuts      int
+	SilenceCuts   int
+	SilenceUndone int
+
 	srtt       int64
 	minRTT     int64
 	minRTTAt   int64
@@ -393,6 +435,7 @@ func (c *Controller) OnSent(tseq uint16, size int, now int64, probeID int) {
 		c.haveSent = true
 	}
 	c.lastSeq = max(c.lastSeq, s)
+	c.lastSent = now
 	c.hist[s%historySlots] = sentPacket{seq: s, sendTime: now, size: size, probe: probeID}
 	if probeID > 0 {
 		if p := c.probeByID(probeID); p != nil {
@@ -428,6 +471,7 @@ func (c *Controller) OnReport(r *wire.Report, now int64) {
 	}
 	c.haveRef, c.refTicks = true, ref
 	newest := int64(-1)
+	newestOwd, haveOwd, newestSend := int64(0), false, int64(0)
 	for i, ok := range r.Received {
 		s := base + int64(i)
 		if s > c.lastSeq {
@@ -444,6 +488,8 @@ func (c *Controller) OnReport(r *wire.Report, now int64) {
 		h.state = pktReceived
 		h.arrival = (ref + r.Arrival[i]) * TickUs
 		c.onArrival(h, now)
+		newestOwd, haveOwd, newestSend = h.arrival-h.sendTime, true, h.sendTime
+		c.trackOwd(newestOwd, now)
 	}
 	if base-c.finalized > historySlots {
 		c.finalized = base - historySlots
@@ -456,7 +502,9 @@ func (c *Controller) OnReport(r *wire.Report, now int64) {
 		if h.state == pktPending {
 			h.state = pktLost
 		}
-		c.countOutcome(h.state == pktLost)
+		if h.seq > c.cutSeq {
+			c.countOutcome(h.state == pktLost)
+		}
 	}
 	if newest >= 0 {
 		h := &c.hist[newest%historySlots]
@@ -470,12 +518,34 @@ func (c *Controller) OnReport(r *wire.Report, now int64) {
 			c.trackMinRTT(rtt, now)
 		}
 	}
+	if haveOwd {
+		c.queueDelay = max(newestOwd-c.minOwd(), 0)
+		if c.silent && newestSend >= c.silentAt-ReportInterval {
+			c.silent = false
+			if c.queueDelay < queueEvidenceUs {
+				c.rate.rate = max(c.rate.rate, c.preSilence)
+				c.SilenceUndone++
+			}
+		}
+		c.trackQueue(now)
+		c.fastCut(now)
+		c.standingCut(now)
+		if c.queueDelay > drainedUs {
+			c.drainedAt = 0
+		} else if c.drainedAt == 0 {
+			c.drainedAt = now
+		}
+	}
 	c.updateLoss(now)
 	queueing := int64(0)
 	if c.srtt > 0 && c.minRTT > 0 {
 		queueing = max(c.srtt-c.minRTT, 0)
 	}
-	c.rate.update(c.signal, c.ackedRate, c.srtt, queueing, now, float64(c.cfg.MinBps), float64(c.cfg.MaxBps))
+	floor := 0.0
+	if c.queueDelay < fastCutQueueUs {
+		floor = probeFloor * float64(c.ProbeEstimate(now))
+	}
+	c.rate.update(c.signal, c.ackedRate, floor, c.srtt, queueing, now, float64(c.cfg.MinBps), float64(c.cfg.MaxBps))
 	if c.signal == SignalOver {
 		c.lastOveruse = now
 		c.Overuses++
@@ -522,6 +592,128 @@ func (c *Controller) onArrival(h *sentPacket, now int64) {
 	}
 	trend := c.tl.update(sd, ad, h.arrival)
 	c.signal = c.det.detect(trend, float64(sd)/1000, c.tl.count, now)
+}
+
+func (c *Controller) trackOwd(d, now int64) {
+	if c.owdAt == 0 || now-c.owdAt >= minRTTWindowUs {
+		c.owdBuckets[1], c.owdBuckets[0] = c.owdBuckets[0], c.owdBuckets[2]
+		c.owdHave[1], c.owdHave[0] = c.owdHave[0], c.owdHave[2]
+		c.owdBuckets[2], c.owdHave[2] = d, true
+		c.owdAt = now
+	}
+	c.owdBuckets[2] = min(c.owdBuckets[2], d)
+}
+
+func (c *Controller) minOwd() int64 {
+	m := c.owdBuckets[2]
+	for i := range 2 {
+		if c.owdHave[i] {
+			m = min(m, c.owdBuckets[i])
+		}
+	}
+	return m
+}
+
+func (c *Controller) QueueDelay() int64 { return c.queueDelay }
+
+func (c *Controller) trackQueue(now int64) {
+	if c.qWinStart == 0 {
+		c.qWinStart, c.qWinMin = now, c.queueDelay
+		return
+	}
+	c.qWinMin = min(c.qWinMin, c.queueDelay)
+	if now-c.qWinStart < standWindowUs {
+		return
+	}
+	c.qMins[0], c.qMins[1], c.qMins[2] = c.qMins[1], c.qMins[2], c.qWinMin
+	c.qWinStart, c.qWinMin = now, c.queueDelay
+	c.qMin = 0
+	if c.qMins[2] >= standingQueueUs && c.qMins[2] >= c.qMins[1]+standRiseUs && c.qMins[1] >= c.qMins[0]+standRiseUs {
+		c.qMin = c.qMins[2]
+	}
+}
+
+func (c *Controller) standingCut(now int64) {
+	if c.qMin < standingQueueUs || now-c.lastFastCut < max(c.srtt, standWindowUs) || now-c.lastStand < max(c.srtt, standWindowUs) {
+		return
+	}
+	base := c.recentRate()
+	if base <= 0 {
+		base = c.ackedRate
+	}
+	b := min(max(beta-drainBeta*float64(c.qMin)/1e6, betaMin), beta)
+	if nr := b * base; nr < c.rate.rate {
+		c.rate.rate = max(nr, float64(c.cfg.MinBps))
+		c.rate.state = stateHold
+		c.rate.lastDecrease = now
+	}
+	c.lastStand, c.lastOveruse = now, now
+	c.StandCuts++
+}
+
+func (c *Controller) recentRate() float64 {
+	if len(c.acked) < 2 {
+		return 0
+	}
+	newest := c.ackedNewest
+	sum, oldest := 0, newest
+	for i := len(c.acked) - 1; i >= 0 && c.acked[i].at >= newest-recentWindowUs; i-- {
+		sum += c.acked[i].size
+		oldest = c.acked[i].at
+	}
+	span := newest - oldest
+	if span < recentWindowUs/2 {
+		return 0
+	}
+	return float64(sum) * 8e6 / float64(span)
+}
+
+func (c *Controller) fastCut(now int64) {
+	if c.queueDelay < fastCutQueueUs || now-c.lastFastCut < max(c.srtt, 100_000) {
+		return
+	}
+	rr := c.recentRate()
+	if rr <= 0 {
+		return
+	}
+	b := min(max(beta-drainBeta*float64(c.queueDelay)/1e6, betaMin), beta)
+	nr := b * rr
+	if nr >= c.rate.rate {
+		return
+	}
+	c.rate.rate = max(nr, float64(c.cfg.MinBps))
+	c.rate.state = stateHold
+	c.rate.lastDecrease = now
+	c.lastFastCut, c.lastOveruse = now, now
+	c.FastCuts++
+	c.forgetLoss(now)
+}
+
+func (c *Controller) forgetLoss(now int64) {
+	c.cutSeq = c.lastSeq
+	c.lossRecv, c.lossLost, c.lossRuns, c.lossStart = 0, 0, 0, now
+	c.recovering = true
+	c.drainedAt = 0
+}
+
+func (c *Controller) CheckFeedback(now int64) {
+	if c.lastReport == 0 || c.lastSent <= c.lastReport {
+		return
+	}
+	limit := max(silenceReports*ReportInterval, 2*c.minRTT)
+	if now-c.lastReport < limit || now-c.lastSilence < silenceStepUs {
+		return
+	}
+	if !c.silent {
+		c.silent, c.silentAt = true, now
+		c.preSilence = c.rate.rate
+		c.forgetLoss(now)
+	}
+	c.lastSilence, c.lastOveruse = now, now
+	c.rate.rate = max(c.rate.rate*silenceFactor, float64(c.cfg.MinBps))
+	c.rate.state = stateHold
+	c.SilenceCuts++
+	c.updateTarget(now)
 }
 
 func (c *Controller) trackMinRTT(rtt, now int64) {
@@ -604,6 +796,26 @@ func (c *Controller) updateTarget(now int64) {
 	c.target = int(min(max(t, float64(c.cfg.MinBps)), float64(c.cfg.MaxBps)))
 }
 
+func (c *Controller) ProbeEstimate(now int64) int {
+	if c.probeAt == 0 || now-c.probeAt > probeMemoryUs || c.lastFastCut > c.probeAt || c.lastSilence > c.probeAt {
+		return 0
+	}
+	return int(min(c.probeEst, float64(c.cfg.MaxBps)))
+}
+
+func (c *Controller) RequestProbe(now int64) {
+	if c.target >= c.cfg.MaxBps || now-c.lastProbeAt < requestGapUs || now-c.lastOveruse < requestQuietUs || c.queueEvidence(now) {
+		return
+	}
+	if c.nextProbeAt == 0 || c.nextProbeAt > now {
+		c.nextProbeAt = now
+	}
+}
+
+func ProbePacket(rate int) int {
+	return min(max(rate*lowProbeUs/8_000_000/probeMinPackets, lowProbePacket), minProbePacket)
+}
+
 func (c *Controller) StartProbe(now int64) (id, rate, bytes int, ok bool) {
 	for _, p := range c.probes {
 		if !p.ended {
@@ -612,6 +824,9 @@ func (c *Controller) StartProbe(now int64) (id, rate, bytes int, ok bool) {
 	}
 	var r int
 	switch {
+	case c.recovering && c.drainedAt > 0 && now-c.drainedAt >= recoveryProbeUs:
+		r = int(probeMaxFactor * float64(c.target))
+		c.recovering = false
 	case len(c.probeQueue) > 0:
 		r = c.probeQueue[0]
 		c.probeQueue = c.probeQueue[1:]
@@ -629,7 +844,7 @@ func (c *Controller) StartProbe(now int64) (id, rate, bytes int, ok bool) {
 	}
 	r = min(r, int(probeMaxFactor*float64(c.cfg.MaxBps)))
 	c.nextProbeID++
-	p := &probe{id: c.nextProbeID, rate: r, bytes: max(r*probeDurationUs/8_000_000, probeMinPackets*minProbePacket)}
+	p := &probe{id: c.nextProbeID, rate: r, bytes: max(r*probeDurationUs/8_000_000, probeMinPackets*ProbePacket(r))}
 	c.probes = append(c.probes, p)
 	c.lastProbeAt = now
 	c.ProbesSent++
@@ -674,6 +889,7 @@ func (c *Controller) finishProbe(p *probe, now int64) {
 		est = 0.95 * recv
 	}
 	if est > float64(c.target) {
+		c.probeEst, c.probeAt = est, now
 		c.ProbesWon++
 		est = min(est, float64(c.cfg.MaxBps))
 		if est > c.rate.rate {

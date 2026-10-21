@@ -6,13 +6,16 @@ const (
 	ClassVideo = 2
 	classes    = 3
 
-	PacingFactor    = 2.5
-	MaxVideoQueueUs = 400_000
-	maxBurstUs      = 10_000
-	drainTargetUs   = 500_000
-	maxQueueBytes   = 2 << 20
-	PaddingSize     = 1200
-	maxProbeBudget  = 64
+	PacingFactor = 2.5
+
+	CongestedPacingFactor = 1.25
+	CongestedVideoQueueUs = 200_000
+	MaxVideoQueueUs       = 400_000
+	maxBurstUs            = 10_000
+	drainTargetUs         = 500_000
+	maxQueueBytes         = 2 << 20
+	PaddingSize           = 1200
+	maxProbeBudget        = 64
 )
 
 type queued struct {
@@ -52,7 +55,21 @@ type Pacer struct {
 	probeRate   float64
 	probeLeft   int
 	probeSize   int
+	probeSent   int
+	drainCap    float64
 	Dropped     int
+}
+
+func (p *Pacer) SetDrainCap(bps int) { p.drainCap = float64(bps) }
+
+func (p *Pacer) DropOlder(ageUs int64, now int64) {
+	for _, c := range []int{ClassRTX, ClassVideo} {
+		for !p.q[c].empty() && now-p.q[c].peek().at > ageUs {
+			d := p.q[c].pop()
+			p.queuedBytes -= len(d.data)
+			p.Dropped++
+		}
+	}
 }
 
 func (p *Pacer) SetRate(bps int) { p.rate = float64(bps) }
@@ -60,7 +77,8 @@ func (p *Pacer) SetRate(bps int) { p.rate = float64(bps) }
 func (p *Pacer) SetProbe(bps, bytes int) {
 	p.probeRate = float64(bps)
 	p.probeLeft = bytes
-	p.probeSize = bytes / 5
+	p.probeSize = bytes / probeMinPackets
+	p.probeSent = 0
 }
 
 func (p *Pacer) Probing() bool { return p.probeLeft > 0 }
@@ -105,7 +123,11 @@ func (p *Pacer) Tick(now int64, send func(b []byte, probe bool), pad func(size i
 			p.Dropped++
 		}
 	}
-	rate = max(rate, float64(p.queuedBytes)*8e6/drainTargetUs)
+	drain := float64(p.queuedBytes) * 8e6 / drainTargetUs
+	if p.drainCap > 0 {
+		drain = min(drain, max(p.drainCap, rate))
+	}
+	rate = max(rate, drain)
 	p.budget += rate * dt / 8e6
 	p.budget = min(p.budget, rate*maxBurstUs/8e6+PaddingSize)
 	for p.budget > 0 {
@@ -123,14 +145,16 @@ func (p *Pacer) Tick(now int64, send func(b []byte, probe bool), pad func(size i
 		p.budget -= float64(len(item.data))
 		probing := p.probeLeft > 0
 		if probing {
-			p.probeLeft -= len(item.data)
+			p.probeSent++
+			p.probeLeft = max(p.probeLeft-len(item.data), (probeMinPackets-p.probeSent)*lowProbePacket)
 		}
 		send(item.data, probing)
 	}
 	for n := 0; p.probeLeft > 0 && p.budget > 0 && pad != nil && n < maxProbeBudget; n++ {
-		b := pad(min(max(p.probeSize, 250), PaddingSize))
+		b := pad(min(max(min(p.probeSize, p.probeLeft), lowProbePacket), PaddingSize))
 		p.budget -= float64(len(b))
-		p.probeLeft -= len(b)
+		p.probeSent++
+		p.probeLeft = max(p.probeLeft-len(b), (probeMinPackets-p.probeSent)*lowProbePacket)
 		send(b, true)
 	}
 	if p.probeLeft <= 0 {

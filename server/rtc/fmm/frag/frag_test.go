@@ -122,3 +122,55 @@ func FuzzReassembler(f *testing.F) {
 		}
 	})
 }
+
+func TestExplicitReferencesAndFrameFlags(t *testing.T) {
+	p := NewPacketizer(1, 1000)
+	for i := range 10 {
+		if _, err := p.PacketizeFrame([]byte{1}, Opts{Keyframe: i == 0, Ref: -1, LongTerm: true}, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pkts, err := p.PacketizeFrame([]byte{2}, Opts{Ref: 3}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := wire.ParseMedia(pkts[0])
+	if !m.Recovery || m.RefDelta != 7 || m.FrameID != 10 || p.LastID() != 10 {
+		t.Fatalf("%+v", m)
+	}
+	ra := NewReassembler()
+	f := ra.Add(&m, false, 0)
+	if f == nil || !f.Recovery || f.Ref != 3 {
+		t.Fatalf("%+v", f)
+	}
+	pkts, _ = p.PacketizeFrame([]byte{3}, Opts{Layer: 1, Ref: -1}, 0)
+	if m, _ := wire.ParseMedia(pkts[0]); m.RefDelta != 1 {
+		t.Fatal("the layer structure did not continue from the recovery frame")
+	}
+	for _, bad := range []Opts{{Ref: 0, Layer: 1}, {Ref: 50}, {Ref: 0, Keyframe: true}, {Ref: -400}} {
+		if bad.Ref == -400 {
+			bad.Ref = 0
+			for range 300 {
+				p.PacketizeFrame([]byte{1}, Opts{Ref: -1}, 0)
+			}
+		}
+		if _, err := p.PacketizeFrame([]byte{1}, bad, 0); err == nil {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+	face := NewPacketizer(2, 1000)
+	pkts, err = face.PacketizeFrame([]byte{4}, Opts{Face: true, Independent: true, Ref: -1}, 0)
+	if err != nil {
+		t.Fatal("a face frame needed a keyframe first")
+	}
+	m, _ = wire.ParseMedia(pkts[0])
+	if f := NewReassembler().Add(&m, false, 0); f == nil || !f.Face || f.Ref != -1 || f.Keyframe {
+		t.Fatalf("%+v", f)
+	}
+	audio := NewPacketizer(3, 1000)
+	pkts, _ = audio.PacketizeFrame([]byte{5}, Opts{Independent: true, Ref: -1, Aux: 100}, 0)
+	m, _ = wire.ParseMedia(pkts[0])
+	if f := NewReassembler().Add(&m, false, 0); f == nil || f.Aux != 100 {
+		t.Fatalf("redundancy depth lost: %+v", f)
+	}
+}

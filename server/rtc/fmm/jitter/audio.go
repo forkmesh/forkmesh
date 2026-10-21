@@ -7,6 +7,7 @@ const (
 	StatusPlay    = 1
 	StatusConceal = 2
 	StatusInsert  = 3
+	StatusDRED    = 4
 
 	FrameUs = 20_000
 )
@@ -20,6 +21,8 @@ type AudioConfig struct {
 	MarginUs     int64
 	HysteresisUs int64
 	AdjustGapUs  int64
+	MaxExtraUs   int64
+	NoLookAhead  bool
 }
 
 func (c AudioConfig) withDefaults() AudioConfig {
@@ -47,6 +50,9 @@ func (c AudioConfig) withDefaults() AudioConfig {
 	if c.AdjustGapUs == 0 {
 		c.AdjustGapUs = 100_000
 	}
+	if c.MaxExtraUs == 0 {
+		c.MaxExtraUs = 100_000
+	}
 	return c
 }
 
@@ -56,13 +62,28 @@ type delaySample struct {
 }
 
 type audioFrame struct {
-	data []byte
-	ok   bool
+	data  []byte
+	depth int64
+}
+
+type lossRun struct {
+	at    int64
+	start int64
+	n     int64
+	need  int64
+}
+
+type AudioOut struct {
+	Status int
+	Data   []byte
+	Offset int
 }
 
 type AudioStats struct {
 	Played    int
 	Concealed int
+	FEC       int
+	DRED      int
 	Inserted  int
 	Dropped   int
 	Late      int
@@ -78,6 +99,11 @@ type Audio struct {
 	next       int64
 	frames     map[int64]audioFrame
 	newest     int64
+	arrived    int64
+	runs       []lossRun
+	depth      int64
+	extra      int64
+	base       int64
 	samples    []delaySample
 	minQ       []delaySample
 	target     int64
@@ -87,11 +113,17 @@ type Audio struct {
 }
 
 const (
-	minWindowUs  = 10_000_000
-	maxBuffered  = 150
-	resetAheadUs = 3_000_000
-	flushOverUs  = 200_000
-	decayPerSec  = 100_000
+	minWindowUs     = 10_000_000
+	maxBuffered     = 150
+	resetAheadUs    = 3_000_000
+	flushOverUs     = 200_000
+	decayPerSec     = 100_000
+	runWindowUs     = 15_000_000
+	maxRuns         = 64
+	minLossRuns     = 2
+	settleUs        = 200_000
+	lookAheadGoal   = 0.005
+	lookAheadStepUs = 10_000
 )
 
 func NewAudio(cfg AudioConfig) *Audio {
@@ -103,27 +135,35 @@ func (a *Audio) TargetUs() int64 { return a.target }
 
 func (a *Audio) tsOf(id int64) int64 { return a.firstTS + (id-a.firstID)*FrameUs }
 
+func (a *Audio) ExtraUs() int64 { return a.extra }
+
 func (a *Audio) Push(id int64, ts int64, data []byte, arrival int64) {
+	a.PushDepth(id, ts, data, 0, arrival)
+}
+
+func (a *Audio) PushDepth(id int64, ts int64, data []byte, depthUs int64, arrival int64) {
 	if !a.started {
 		a.started = true
-		a.firstID, a.firstTS, a.next, a.newest = id, ts, id, id
+		a.firstID, a.firstTS, a.next, a.newest, a.arrived = id, ts, id, id, id
 	}
 	if (id-a.next)*FrameUs > resetAheadUs {
 		a.Stats.Early++
 		clear(a.frames)
 		a.started, a.playing = true, false
-		a.firstID, a.firstTS, a.next, a.newest = id, ts, id, id
-		a.samples, a.minQ = a.samples[:0], a.minQ[:0]
+		a.firstID, a.firstTS, a.next, a.newest, a.arrived = id, ts, id, id, id
+		a.samples, a.minQ, a.runs = a.samples[:0], a.minQ[:0], a.runs[:0]
 	}
 	if _, ok := a.frames[id]; ok {
 		return
 	}
 	a.sampleDelay(arrival-a.tsOf(id), arrival)
+	a.depth = depthUs
+	a.sampleLoss(id, arrival)
 	if id < a.next {
 		a.Stats.Late++
 		return
 	}
-	a.frames[id] = audioFrame{data: data, ok: true}
+	a.frames[id] = audioFrame{data: data, depth: depthUs}
 	a.newest = max(a.newest, id)
 	for len(a.frames) > maxBuffered {
 		delete(a.frames, a.next)
@@ -150,6 +190,88 @@ func (a *Audio) sampleDelay(d, arrival int64) {
 	}
 }
 
+func (a *Audio) sampleLoss(id, arrival int64) {
+	if id > a.arrived+1 {
+		r := lossRun{at: arrival, start: a.arrived + 1, n: id - a.arrived - 1, need: -1}
+		if a.depth >= r.n*FrameUs || r.n == 1 {
+			r.need = arrival - (a.tsOf(r.start) + a.dmin() + a.base)
+		}
+		a.runs = append(a.runs, r)
+	}
+	if id < a.arrived {
+		for i := len(a.runs) - 1; i >= 0; i-- {
+			r := &a.runs[i]
+			if id < r.start || id >= r.start+r.n {
+				continue
+			}
+			switch {
+			case r.n == 1:
+				a.runs = append(a.runs[:i], a.runs[i+1:]...)
+			case id == r.start:
+				r.start++
+				r.n--
+			case id == r.start+r.n-1:
+				r.n--
+			default:
+				tail := lossRun{at: r.at, start: id + 1, n: r.start + r.n - id - 1}
+				r.n = id - r.start
+				a.runs = slices.Insert(a.runs, i+1, tail)
+			}
+			break
+		}
+	}
+	a.arrived = max(a.arrived, id)
+	cut := 0
+	for cut < len(a.runs) && (a.runs[cut].at < arrival-runWindowUs || len(a.runs)-cut > maxRuns) {
+		cut++
+	}
+	if cut > 0 {
+		a.runs = append(a.runs[:0], a.runs[cut:]...)
+	}
+}
+
+func (a *Audio) lookAhead(now int64) int64 {
+	if a.cfg.NoLookAhead || len(a.runs) < minLossRuns {
+		return 0
+	}
+	var settled []lossRun
+	for _, r := range a.runs {
+		if r.at <= now-settleUs {
+			settled = append(settled, r)
+		}
+	}
+	if len(settled) < minLossRuns {
+		return 0
+	}
+	span := a.arrived - a.runs[0].start + 1
+	if span <= 0 {
+		return 0
+	}
+	goal := lookAheadGoal * float64(span)
+	unrecovered := func(e int64) float64 {
+		n := int64(0)
+		for _, r := range settled {
+			if r.need < 0 {
+				continue
+			}
+			n += min(max((r.need-e+FrameUs-1)/FrameUs, 0), r.n)
+		}
+		return float64(n)
+	}
+	limit := a.cfg.MaxExtraUs
+	if a.depth > 0 {
+		limit = min(limit, a.depth)
+	} else {
+		limit = min(limit, FrameUs)
+	}
+	for e := int64(0); e <= limit; e += lookAheadStepUs {
+		if unrecovered(e) <= goal {
+			return e
+		}
+	}
+	return limit
+}
+
 func (a *Audio) dmin() int64 { return a.minQ[0].delay }
 
 func (a *Audio) updateTarget(now int64) {
@@ -162,7 +284,9 @@ func (a *Audio) updateTarget(now int64) {
 	}
 	slices.Sort(d)
 	p := d[min(len(d)-1, int(a.cfg.Percentile*float64(len(d))))]
-	want := min(max(p-a.dmin()+a.cfg.MarginUs, a.cfg.MinDelayUs), a.cfg.MaxDelayUs)
+	a.extra = a.lookAhead(now)
+	a.base = min(max(p-a.dmin()+a.cfg.MarginUs, a.cfg.MinDelayUs), a.cfg.MaxDelayUs)
+	want := min(max(p-a.dmin()+a.cfg.MarginUs+a.extra, a.cfg.MinDelayUs), a.cfg.MaxDelayUs)
 	if want >= a.target {
 		a.target = want
 	} else if a.lastTarget > 0 {
@@ -173,14 +297,19 @@ func (a *Audio) updateTarget(now int64) {
 }
 
 func (a *Audio) Pull(now int64) ([]byte, int) {
+	o := a.PullOut(now)
+	return o.Data, o.Status
+}
+
+func (a *Audio) PullOut(now int64) AudioOut {
 	if !a.started {
-		return nil, StatusWaiting
+		return AudioOut{Status: StatusWaiting}
 	}
 	a.updateTarget(now)
 	lag := now - (a.tsOf(a.next) + a.dmin())
 	if !a.playing {
 		if lag < a.target {
-			return nil, StatusWaiting
+			return AudioOut{Status: StatusWaiting}
 		}
 		a.playing = true
 		a.lastAdjust = now
@@ -199,25 +328,42 @@ func (a *Audio) Pull(now int64) ([]byte, int) {
 		a.lastAdjust = now
 	}
 	f, ok := a.frames[a.next]
-	if !ok && lag < a.target-a.cfg.HysteresisUs && now-a.lastAdjust >= a.cfg.AdjustGapUs/2 {
+	if !ok && lag < a.target-a.cfg.HysteresisUs && now-a.lastAdjust >= a.cfg.AdjustGapUs/2 && a.recoverFrom(a.next) < 0 {
 		a.lastAdjust = now
 		a.Stats.Inserted++
-		return nil, StatusInsert
+		return AudioOut{Status: StatusInsert}
 	}
 	if ok && lag < a.target-a.cfg.HysteresisUs && now-a.lastAdjust >= a.cfg.AdjustGapUs {
 		a.lastAdjust = now
 		a.Stats.Inserted++
-		return nil, StatusInsert
+		return AudioOut{Status: StatusInsert}
 	}
-	delete(a.frames, a.next)
+	id := a.next
+	delete(a.frames, id)
 	a.next++
 	if ok {
 		a.Stats.Played++
-		return f.data, StatusPlay
+		return AudioOut{Status: StatusPlay, Data: f.data}
+	}
+	if m := a.recoverFrom(id); m >= 0 {
+		a.Stats.DRED++
+		return AudioOut{Status: StatusDRED, Data: a.frames[m].data, Offset: int(m - id)}
+	}
+	if n, ok := a.frames[id+1]; ok {
+		a.Stats.FEC++
+		a.Stats.Concealed++
+		return AudioOut{Status: StatusConceal, Data: n.data}
 	}
 	a.Stats.Concealed++
-	if n, ok := a.frames[a.next]; ok {
-		return n.data, StatusConceal
+	return AudioOut{Status: StatusConceal}
+}
+
+func (a *Audio) recoverFrom(id int64) int64 {
+	for m := id + 1; m <= a.newest && (m-id)*FrameUs <= a.cfg.MaxDelayUs*4; m++ {
+		f, ok := a.frames[m]
+		if ok && f.depth >= (m-id)*FrameUs {
+			return m
+		}
 	}
-	return nil, StatusConceal
+	return -1
 }
