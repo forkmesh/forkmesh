@@ -4512,9 +4512,16 @@ SCHEMA_STATEMENTS = [
         payload TEXT NOT NULL DEFAULT '',
         token_hash TEXT NOT NULL DEFAULT '',
         trusted INTEGER NOT NULL DEFAULT 0,
-        pushed_commit TEXT NOT NULL DEFAULT '')""",
+        pushed_commit TEXT NOT NULL DEFAULT '',
+        pull_number INTEGER NOT NULL DEFAULT 0,
+        approval TEXT NOT NULL DEFAULT '',
+        approved_by TEXT NOT NULL DEFAULT '',
+        base_branch TEXT NOT NULL DEFAULT '',
+        base_oid TEXT NOT NULL DEFAULT '')""",
     "CREATE INDEX IF NOT EXISTS idx_repo_action_jobs_repo "
     "ON repo_action_jobs(owner, repo, id)",
+    "CREATE INDEX IF NOT EXISTS idx_repo_action_jobs_pull "
+    "ON repo_action_jobs(owner, repo, pull_number, id) WHERE pull_number > 0",
     "CREATE INDEX IF NOT EXISTS idx_repo_action_jobs_status "
     "ON repo_action_jobs(status, id)",
     "CREATE INDEX IF NOT EXISTS idx_repo_action_jobs_token "
@@ -4545,6 +4552,13 @@ SCHEMA_STATEMENTS = [
         data TEXT NOT NULL,
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (job_id, run_index))""",
+    """CREATE TABLE IF NOT EXISTS repo_action_trusted_authors (
+        owner TEXT NOT NULL,
+        repo TEXT NOT NULL,
+        account TEXT NOT NULL,
+        added_by TEXT NOT NULL DEFAULT '',
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (owner, repo, account))""",
     """CREATE TABLE IF NOT EXISTS deploy_approvals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         request_id TEXT NOT NULL UNIQUE,

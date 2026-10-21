@@ -2055,7 +2055,7 @@ def test_issue_and_pull_detail_pages_match_github_conversation_layout():
     assert 'tabCounter("data-repo-pull-check-count", pullCheckCount)' in detail
     assert "const pullCheckCount = (parsed.pullChecks?.runs || []).length;" in detail
     assert 'data-repo-record-panel="checks"' in detail
-    assert "renderRepoPullChecks(parsed.pullChecks)" in detail
+    assert "renderRepoPullChecks(parsed.pullChecks, repo)" in detail
     assert 'data-repo-record-tab="files"' in detail
     assert "Reviewers" in detail
     assert "Assignees" in detail

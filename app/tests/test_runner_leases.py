@@ -71,6 +71,9 @@ class FakeRuntime:
         self.db.executescript(
             (ROOT / "migrations" / "0272_actions_instance.sql").read_text()
             .split("INSERT INTO schema_meta")[0])
+        self.db.executescript(
+            (ROOT / "migrations" / "0280_actions_pull_requests.sql").read_text()
+            .split("INSERT INTO schema_meta")[0])
         self.db.execute("""CREATE TABLE org_agent_jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
             org_bi TEXT NOT NULL, target_node TEXT NOT NULL,

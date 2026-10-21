@@ -15506,7 +15506,7 @@
     input_invalid: "an input value is not allowed",
     forbidden: "only the repository owner and organization writers can do that",
   };
-  const REPO_ACTIONS_EVENTS = ["push", "schedule", "workflow_dispatch", "issues", "issue_comment"];
+  const REPO_ACTIONS_EVENTS = ["push", "pull_request", "schedule", "workflow_dispatch", "issues", "issue_comment"];
   const REPO_ACTIONS_INPUT_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
   const ACTIONS_SECRET_NAME = /^[A-Z_][A-Z0-9_]{0,63}$/;
   const ACTIONS_SECRET_MAX_BYTES = 48 * 1024;
@@ -16012,19 +16012,36 @@
     const others = mirrors
       .map((mirror) => repoActionsCleanLine(mirror.node, 80))
       .filter((node) => node && node !== view.node);
-    const busy = view.runs.some((run) => run.status === "running");
+    const count = (status) => view.runs.filter((run) => run.status === status).length;
+    const running = count("running");
+    const queued = count("queued");
+    const waiting = count("awaiting-approval");
     const canToggle = view.controlAvailable && view.actionsEnabled !== null;
     const toggling = view.pending.some((entry) => entry.action === "set-repository-enabled");
     const stateLabel = view.actionsEnabled === false
       ? "paused for this repository"
-      : busy ? "running" : "idle";
-    const stateTone = view.actionsEnabled === false
-      ? "fm-label-attention" : busy ? "fm-label-attention" : "fm-label-success";
+      : running ? "running" : queued ? "queued" : "idle";
+    const stateTone = view.actionsEnabled === false || running || queued ? "attention" : "success";
+    const where = view.local
+      ? `<span>Runs on this server</span>${view.host ? `<span class="font-mono font-semibold text-foreground">${escapeHtml(view.host)}</span>` : ""}`
+      : `<span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span>${view.node ? `<span class="font-mono font-semibold text-foreground">${escapeHtml(view.node)}</span>` : ""}`;
+    const stat = (value, label, tone = "") => `<span class="fm-runner-stat"${tone ? ` data-tone="${tone}"` : ""}><strong>${formatCount(value)}</strong>${escapeHtml(label)}</span>`;
+    const note = view.access === "public"
+      ? repoActionsPublicNote()
+      : view.source === "runner" && view.controlAvailable
+        ? "Pushes, pull requests, schedules, issue events and manual runs run here. Pull requests from contributors who are not maintainers wait for approval and never get secrets."
+        : view.source === "runner"
+          ? "A push to the default branch runs here while the owner's desktop is away; desktop runs show in the desktop app and on paired phones."
+          : view.controlAvailable ? "" : "This node publishes runs read-only; controls appear once its operator enables the actions-control operation.";
     return `
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2 text-xs text-foreground"><i data-lucide="server" class="h-3.5 w-3.5 text-muted-foreground"></i>${view.local ? `<span>Runs on this server</span>${view.host ? `<span class="font-mono font-semibold">${escapeHtml(view.host)}</span>` : ""}` : `<span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span>${view.node ? `<span class="font-mono font-semibold">${escapeHtml(view.node)}</span>` : ""}`}<span class="fm-label ${stateTone}">${escapeHtml(stateLabel)}</span></div>
-          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">${view.updatedAt ? `Executor state from ${escapeHtml(relativeTimeLabel(view.updatedAt))}.` : ""}${others.length ? ` Also enabled on ${escapeHtml(others.join(", "))}.` : ""}${view.access === "public" ? ` ${repoActionsPublicNote()}` : view.source === "runner" && view.controlAvailable ? " Pushes, schedules, issue events and manual runs run here. Pick a workflow to run it by hand." : view.source === "runner" ? " A push to the default branch runs here while the owner's desktop is away; desktop runs show in the desktop app and on paired phones." : view.controlAvailable ? "" : " This node publishes runs read-only; controls appear once its operator enables the actions-control operation."}</p>
+      <div data-repo-actions-runner-card class="fm-runner-card">
+        <div class="fm-runner-card-main">
+          <span class="fm-runner-dot" data-tone="${stateTone}" aria-hidden="true"></span>
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">${where}<span class="fm-label fm-label-${stateTone}">${escapeHtml(stateLabel)}</span></div>
+            <div class="fm-runner-stats">${stat(running, "running", running ? "attention" : "")}${stat(queued, "queued")}${stat(waiting, "awaiting approval", waiting ? "attention" : "")}${view.updatedAt ? `<span class="fm-runner-stat">updated ${escapeHtml(relativeTimeLabel(view.updatedAt))}</span>` : ""}</div>
+            ${note || others.length ? `<p class="mt-1.5 text-[11px] leading-4 text-muted-foreground">${escapeHtml(note)}${others.length ? ` Also enabled on ${escapeHtml(others.join(", "))}.` : ""}</p>` : ""}
+          </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           ${canToggle ? `<button type="button" data-repo-actions-repository-enabled="${view.actionsEnabled ? "false" : "true"}" ${toggling ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${view.actionsEnabled ? "pause" : "play"}" class="h-3.5 w-3.5"></i>${view.actionsEnabled ? "Pause Actions on this mirror" : "Run Actions on this mirror"}</button>` : ""}
@@ -16033,7 +16050,13 @@
       </div>`;
   }
 
-  function renderRepoActionsWorkflowList(view) {
+  function renderRepoActionsForkNote(repo) {
+    const parent = repoForkParent(repo);
+    if (!parent) return "";
+    return `<div data-repo-actions-fork-note class="grid gap-1 px-2.5 py-2 text-xs leading-5 text-muted-foreground"><span class="font-medium text-foreground">Workflows live in the parent repository</span><span><a href="/${escapeHtml(parent.owner)}/${escapeHtml(parent.name)}/actions" class="font-mono text-accent hover:underline">${escapeHtml(parent.key)}</a> runs its workflows. Checks for your pull request run there and appear on the pull request.</span></div>`;
+  }
+
+  function renderRepoActionsWorkflowList(view, repo = state.selectedRepo) {
     const workflows = repoActionsWorkflows(view);
     const selected = view.selectedWorkflow;
     const row = (path, label, detail, extra = "") => `
@@ -16044,6 +16067,7 @@
     if (view.treeWorkflows === null && !view.summaryWorkflows) {
       return `<p class="px-2.5 py-2 text-xs text-muted-foreground">Reading .forkmesh/ ...</p>`;
     }
+    if (!workflows.length && repoForkParent(repo)) return renderRepoActionsForkNote(repo);
     if (!workflows.length) {
       return `<p class="px-2.5 py-2 text-xs leading-5 text-muted-foreground">No workflows yet. Add a <span class="font-mono">.forkmesh/&lt;name&gt;.yml</span> file with <span class="font-mono">on:</span> and <span class="font-mono">steps:</span> to the default branch.</p>`;
     }
@@ -16106,7 +16130,7 @@
     if (!view.controlAvailable) return "";
     const busy = view.pending.some((entry) => entry.runId === run.id);
     const button = (action, label, icon) => `<button type="button" data-repo-actions-run-control="${action}" data-repo-actions-run-id="${run.id}" ${busy ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${label}</button>`;
-    if (run.status === "awaiting-approval" && view.source !== "runner") {
+    if (run.status === "awaiting-approval") {
       return button("approve", "Approve and run", "shield-check") + button("reject", "Reject", "shield-x");
     }
     if (run.status === "running" || run.status === "queued") {
@@ -16150,7 +16174,9 @@
       }).join("")}</ol>`
       : "";
     const approval = run.status === "awaiting-approval"
-      ? `<p class="fm-flash fm-flash-warning fm-flash-full border-t-0 px-4 py-2 text-xs"><i data-lucide="shield-alert"></i><span class="fm-flash-body">This run is waiting for approval because it would execute code the executor has not run for this repository before${run.pullNumber ? ` (pull request #${run.pullNumber})` : ""}. Review the commit before approving.</span></p>`
+      ? `<p class="fm-flash fm-flash-warning fm-flash-full border-t-0 px-4 py-2 text-xs"><i data-lucide="shield-alert"></i><span class="fm-flash-body">${view.source === "runner" && run.pullNumber
+        ? `This run is waiting for approval: pull request #${run.pullNumber} comes from someone who is not a maintainer or trusted contributor yet, or changes .forkmesh/. Review the commit before approving. It runs the base branch's workflow without secrets or write access.`
+        : `This run is waiting for approval because it would execute code the executor has not run for this repository before${run.pullNumber ? ` (pull request #${run.pullNumber})` : ""}. Review the commit before approving.`}</span></p>`
       : "";
     const fullLog = view.source === "runner" ? view.logs?.[run.id] : null;
     const logText = fullLog?.full && fullLog.text ? fullLog.text : run.logTail;
@@ -16171,6 +16197,10 @@
 
   function renderRepoActionsRuns(repo, view, workflow) {
     const runs = view.runs.filter((run) => repoActionsRunMatchesWorkflow(run, workflow));
+    if (!runs.length && repoForkParent(repo) && !repoActionsWorkflows(view).length) {
+      const parent = repoForkParent(repo);
+      return `<div data-repo-actions-fork-empty class="fm-blankslate py-10"><i data-lucide="git-fork"></i><p class="fm-blankslate-title">Runs for this fork happen in ${escapeHtml(parent.key)}</p><p class="fm-blankslate-desc">This fork has no workflows of its own. When you open a pull request, ${escapeHtml(parent.key)} runs its checks with the parent's workflows and shows them on the pull request.</p><a href="/${escapeHtml(parent.owner)}/${escapeHtml(parent.name)}/actions" class="fm-btn fm-btn-sm mt-3"><i data-lucide="play"></i>Open ${escapeHtml(parent.key)} Actions</a></div>`;
+    }
     if (!runs.length) {
       return `<p class="px-4 py-6 text-center text-xs text-muted-foreground">${view.access === "public" ? "No run yet." : view.source === "runner" && view.controlAvailable ? "No run yet. Push, wait for a schedule, or pick a workflow and run it." : view.source === "runner" ? "No runner run yet. The next push to the default branch while the desktop is away runs here." : workflow ? "This workflow has no recent run on the executor." : "No recent runs on the executor."}</p>`;
     }
@@ -16185,10 +16215,10 @@
         ? `<button type="button" data-dashboard-commit-hash="${escapeHtml(run.commit)}" class="font-mono hover:text-foreground hover:underline">${escapeHtml(run.commit.slice(0, 10))}</button>`
         : "";
       const pullLink = run.pullNumber
-        ? `<a href="${escapeHtml(`${repoLinkUrl(repo)}/pulls/${run.pullNumber}`)}" data-repo-actions-link class="hover:text-foreground hover:underline">#${run.pullNumber}</a>`
+        ? `<a href="${escapeHtml(`${repoLinkUrl(repo)}/pulls/${run.pullNumber}`)}" data-repo-actions-link data-repo-actions-run-pull="${run.pullNumber}" class="fm-actions-pull-chip"><i data-lucide="git-pull-request"></i>#${run.pullNumber}</a>`
         : "";
       const facts = [
-        `run ${run.id}`, commitLink, escapeHtml(repoActionsRefLabel(run.ref)), pullLink,
+        `run ${run.id}`, commitLink, run.pullNumber ? "" : escapeHtml(repoActionsRefLabel(run.ref)),
         run.actor ? `<span data-repo-actions-run-actor>${issuePersonNameHtml(run.actor, "")}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
@@ -16196,7 +16226,7 @@
         <div data-repo-actions-run="${run.id}" class="border-b border-border last:border-b-0">
           <button type="button" data-repo-actions-run-toggle="${run.id}" aria-expanded="${open ? "true" : "false"}" class="flex w-full min-w-0 items-center gap-3 px-4 pb-1 pt-3 text-left hover:bg-secondary/40">
             <i data-lucide="${meta.icon}" class="h-4 w-4 shrink-0 ${meta.tone}${run.status === "running" ? " animate-spin" : ""}"></i>
-            <span class="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm font-medium text-foreground"><span class="min-w-0 truncate">${escapeHtml(run.workflow)}</span><span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold ${meta.tone}">${escapeHtml(meta.label)}</span>${run.event ? `<span data-repo-actions-run-event="${escapeHtml(run.event)}" class="fm-label font-mono text-[10px] text-muted-foreground">${escapeHtml(run.event)}</span>` : ""}</span>
+            <span class="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm font-medium text-foreground"><span class="min-w-0 truncate">${escapeHtml(run.workflow)}</span><span class="fm-check-chip" data-state="${escapeHtml(meta.outcome)}">${escapeHtml(meta.label)}</span>${run.event ? `<span data-repo-actions-run-event="${escapeHtml(run.event)}" class="fm-label font-mono text-[10px] text-muted-foreground">${escapeHtml(run.event)}</span>` : ""}${pullLink}</span>
             <i data-lucide="${open ? "chevron-up" : "chevron-down"}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
           </button>
           <div class="pb-3 pl-11 pr-4 text-[11px] text-muted-foreground">${facts}</div>
@@ -16240,12 +16270,15 @@
     const pending = view.pending.length
       ? `<div role="status" class="fm-flash fm-flash-neutral fm-flash-full items-center border-t-0 px-4 py-2 text-xs"><i data-lucide="loader-circle" class="!mt-0 animate-spin"></i><span class="fm-flash-body">${escapeHtml(view.pending.map((entry) => entry.label).join(", "))}: sent to ${escapeHtml(view.node)}, waiting for the executor ...</span></div>`
       : "";
-    const main = view.phase === "ready"
+    const forkOnly = view.phase === "ready" && repoForkParent(repo) && !workflows.length && !view.runs.length;
+    const main = forkOnly
+      ? `${notice}${renderRepoActionsRuns(repo, view, null)}`
+      : view.phase === "ready"
       ? `${renderRepoActionsExecutor(repo, view)}${notice}${pending}${renderRepoActionsWorkflowBar(repo, view, workflow)}<div data-repo-actions-runs>${renderRepoActionsRuns(repo, view, workflow)}</div>`
       : `${notice}${renderRepoActionsEmptyState(view)}`;
     target.innerHTML = `
       <div class="grid min-w-0 md:grid-cols-[16rem_minmax(0,1fr)]">
-        <nav aria-label="Workflows" data-repo-actions-workflows class="grid content-start gap-0.5 border-b border-border p-2 md:border-b-0 md:border-r">${renderRepoActionsWorkflowList(view)}</nav>
+        <nav aria-label="Workflows" data-repo-actions-workflows class="grid content-start gap-0.5 border-b border-border p-2 md:border-b-0 md:border-r">${renderRepoActionsWorkflowList(view, repo)}</nav>
         <div class="min-w-0">${main}</div>
       </div>`;
     const nextRef = target.querySelector("[data-repo-actions-dispatch-ref]");
@@ -16305,7 +16338,7 @@
       // Approval executes code nobody has run here before; make that a
       // deliberate second step rather than a stray click.
       if (action === "approve" && !window.confirm(
-        `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.node}.`)) {
+        `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.local ? (view.host || "this server") : view.node}${run.pullNumber ? " without secrets or write access" : ""}.`)) {
         return true;
       }
       void sendRepoActionsControl(repo, action, { runId }, label);
@@ -21176,7 +21209,7 @@
     const rulesSlot = $("[data-repo-pull-rules-slot]");
     if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
     const checkList = $("[data-repo-pull-checks]");
-    if (checkList) checkList.innerHTML = renderRepoPullChecks(parsed.pullChecks);
+    if (checkList) checkList.innerHTML = renderRepoPullChecks(parsed.pullChecks, repo);
     const checkCount = $("[data-repo-pull-check-count]");
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
@@ -22267,12 +22300,70 @@
   // Live checks come from the same attested mirror executor the Actions view
   // reads. Only runs pinned to this pull's current head commit are shown: a run
   // for an older push describes code that is no longer under review.
+  function normalizeRepoPullCheckRun(run, headOid) {
+    return {
+      id: Number(run?.id) || 0,
+      workflow: String(run?.workflow || "workflow"),
+      workflowPath: String(run?.workflowPath || ""),
+      commit: immutableGitCommit(run?.commit) || headOid,
+      ref: String(run?.ref || ""),
+      status: String(run?.status || "").toLowerCase(),
+      createdAt: Number(run?.createdAt) || 0,
+      startedAt: Number(run?.startedAt) || 0,
+      finishedAt: Number(run?.finishedAt) || 0,
+      logTail: String(run?.logTail || ""),
+    };
+  }
+
+  async function loadRepoPullRunnerChecks(repo, values, headOid) {
+    const number = Number(values?.number) || Number(state.repoRecordDetail?.number) || 0;
+    if (!Number.isInteger(number) || number <= 0) return null;
+    let payload = null;
+    try {
+      payload = await orgAgentRequest("GET", `${repoApiBase(repo)}/pulls/${number}/checks`);
+    } catch (_) {
+      return null;
+    }
+    if (payload?.ok !== true) return null;
+    const reportedHead = immutableGitCommit(payload.head);
+    const head = headOid || reportedHead;
+    const current = !reportedHead || !head || reportedHead === head;
+    const approval = payload.approval || {};
+    return {
+      available: true,
+      source: "pull",
+      number,
+      headOid: head,
+      reportedHead,
+      stale: !current,
+      configured: payload.configured !== false,
+      runs: current
+        ? (Array.isArray(payload.runs) ? payload.runs : []).map((run) => normalizeRepoPullCheckRun(run, head))
+        : [],
+      controlAvailable: payload.canApprove === true,
+      canApprove: payload.canApprove === true,
+      viewer: String(payload.viewer || ""),
+      approval: current ? {
+        required: approval.required === true,
+        reason: String(approval.reason || ""),
+        author: String(approval.author || ""),
+        authorTrust: String(approval.authorTrust || ""),
+        approvedBy: String(approval.approvedBy || ""),
+      } : { required: false, reason: "", author: "", authorTrust: "", approvedBy: "" },
+    };
+  }
+
   async function loadRepoPullChecks(repo, values, readiness) {
     const unavailable = { available: false, runs: [] };
-    if (!repo || !state.session?.sessionToken) return unavailable;
+    if (!repo) return unavailable;
     const headOid = immutableGitCommit(readiness?.headOid)
+      || immutableGitCommit(values?.headOid)
       || immutableGitCommit(values?.creationHeadOid);
-    if (!headOid) return unavailable;
+    if (dashboardOnInstance()) {
+      const runner = await loadRepoPullRunnerChecks(repo, values, headOid);
+      if (runner) return runner;
+    }
+    if (!state.session?.sessionToken || !headOid) return unavailable;
     let payload = null;
     try {
       payload = await orgAgentRequest(
@@ -22393,11 +22484,96 @@
     };
   }
 
-  function renderRepoPullChecks(checks) {
+  function repoPullCheckDuration(run) {
+    if (!run.startedAt) return "";
+    const end = run.finishedAt || (run.status === "running" ? Date.now() : 0);
+    if (!end || end < run.startedAt) return "";
+    const seconds = Math.round((end - run.startedAt) / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    return minutes < 60 ? `${minutes}m ${seconds % 60}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+
+  function repoPullCheckRunUrl(repo, run) {
+    return run.id ? `${repoLinkUrl(repo)}/actions/runs/${run.id}` : `${repoLinkUrl(repo)}/actions`;
+  }
+
+  function renderRepoPullCheckList(repo, checks, flush = false) {
+    const runs = checks?.runs || [];
+    if (!runs.length) return "";
+    return `<ul class="fm-check-list${flush ? " fm-check-list-flush" : ""}" data-repo-pull-check-list>${runs.map((run) => {
+      const meta = pullCheckStateMeta(run.status);
+      const duration = repoPullCheckDuration(run);
+      const label = run.status === "awaiting-approval" ? "awaiting approval" : meta.label;
+      return `
+        <li class="fm-check-item" data-repo-pull-check="${escapeHtml(run.status)}">
+          <i data-lucide="${meta.icon}" class="fm-check-icon ${meta.tone}${run.status === "running" ? " animate-spin" : ""}"></i>
+          <span class="fm-check-name" title="${escapeHtml(run.workflowPath || run.workflow)}">${escapeHtml(run.workflow)}</span>
+          <span class="fm-check-chip" data-state="${escapeHtml(meta.outcome)}">${escapeHtml(label)}</span>
+          ${duration ? `<span class="fm-check-time">${escapeHtml(duration)}</span>` : ""}
+          <a class="fm-check-link" href="${escapeHtml(repoPullCheckRunUrl(repo, run))}" data-dashboard-repo-tab="actions">${run.status === "awaiting-approval" || run.status === "queued" ? "View" : "Log"}</a>
+        </li>`;
+    }).join("")}</ul>`;
+  }
+
+  function repoPullCheckApprovalText(checks) {
+    const approval = checks?.approval || {};
+    if (!approval.required) return "";
+    const who = approval.author ? `@${approval.author}` : "this contributor";
+    if (approval.reason === "workflows") {
+      return checks.canApprove
+        ? `This pull request changes files under .forkmesh/. Read the changes, then approve to run the checks on ${String(checks.headOid || "").slice(0, 7)}. The workflow from the base branch runs, never the one in the pull request, without secrets or write access.`
+        : "This pull request changes files under .forkmesh/, so a maintainer has to approve before checks run.";
+    }
+    if (checks.canApprove) {
+      return `Checks have not run because ${who} is not a maintainer or a trusted contributor yet. Review the code, then approve this commit, or always run checks for ${who}. Runs never get secrets or write access.`;
+    }
+    const viewer = String(checks.viewer || "").toLowerCase();
+    if (viewer && viewer === String(approval.author || "").toLowerCase()) {
+      return "Thanks for the pull request! Checks run after a maintainer approves them for this commit; you do not need to do anything. Every new push needs a new approval until a maintainer adds you as a trusted contributor.";
+    }
+    return "Checks are waiting for a maintainer to approve running this pull request's code.";
+  }
+
+  function renderRepoPullCheckApproval(checks) {
+    const approval = checks?.approval || {};
+    if (!approval.required) return "";
+    const actions = checks.canApprove
+      ? `<div class="fm-check-approval-actions">
+          <button type="button" data-repo-pull-check-approve="${escapeHtml(checks.headOid || "")}" class="fm-btn fm-btn-sm"><i data-lucide="shield-check"></i>Approve and run</button>
+          ${approval.reason === "author" && approval.author ? `<button type="button" data-repo-pull-check-trust="${escapeHtml(approval.author)}" class="fm-btn fm-btn-sm"><i data-lucide="user-check"></i>Always run for @${escapeHtml(approval.author)}</button>` : ""}
+        </div>`
+      : "";
+    return `
+      <div class="fm-check-approval" data-repo-pull-check-approval="${escapeHtml(approval.reason || "author")}">
+        <i data-lucide="${approval.reason === "workflows" ? "file-warning" : "shield-alert"}"></i>
+        <div class="min-w-0">
+          <p class="fm-check-approval-title">${checks.canApprove ? "Approval needed to run checks" : "Waiting for a maintainer"}</p>
+          <p class="fm-check-approval-text">${escapeHtml(repoPullCheckApprovalText(checks))}</p>
+          ${actions}
+        </div>
+      </div>`;
+  }
+
+  function renderRepoPullChecks(checks, repo = state.selectedRepo) {
     if (!checks?.available) {
       return `<div class="px-4 py-3 text-sm text-muted-foreground">Live checks appear for organization members once a mirror publishes an attested Actions executor for this repository.</div>`;
     }
     const runs = checks.runs || [];
+    if (checks.source === "pull") {
+      const trust = checks.approval?.authorTrust === "allowlist" && checks.canApprove
+        ? `<p class="px-4 py-2 text-xs text-muted-foreground">Checks run automatically for @${escapeHtml(checks.approval.author)}. <button type="button" data-repo-pull-check-untrust="${escapeHtml(checks.approval.author)}" class="font-medium text-accent hover:underline">Stop running automatically</button></p>`
+        : "";
+      if (!runs.length) {
+        const text = !checks.configured
+          ? "No workflow in this repository runs on pull requests. Add pull_request to a workflow's on: list on the default branch."
+          : checks.stale
+            ? "The newest commit was just pushed; its checks are queued within a minute."
+            : `No check has been queued for ${escapeHtml(String(checks.headOid || "").slice(0, 12))} yet. Checks are picked up within a minute of a push.`;
+        return `${renderRepoPullCheckApproval(checks)}<div class="px-4 py-3 text-sm text-muted-foreground">${text}</div>`;
+      }
+      return `${renderRepoPullCheckApproval(checks)}<div class="px-4 py-1">${renderRepoPullCheckList(repo, checks, true)}</div>${trust}`;
+    }
     if (!runs.length) {
       return `<div class="px-4 py-3 text-sm text-muted-foreground">No workflow run is pinned to this pull request's current head commit ${escapeHtml(String(checks.headOid || "").slice(0, 12))}.</div>`;
     }
@@ -22548,9 +22724,17 @@
       ? `<button type="button" data-repo-pull-update ${processing ? "disabled" : ""} class="fm-btn fm-btn-sm shrink-0"><i data-lucide="${processing ? "loader-circle" : "git-merge"}"${processing ? ' class="animate-spin"' : ""}></i>${processing ? "Updating branch…" : `Update branch from ${escapeHtml(baseBranch)}`}</button>`
       : "";
     const summary = pullChecksSummary(parsed.pullChecks);
-    const checksRow = summary.text
-      ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="${summary.tone === "bad" ? "text-destructive" : summary.tone === "pending" ? "text-attention" : summary.tone === "good" ? "text-success" : "text-foreground"}">Checks.</strong> ${escapeHtml(summary.text)}</p>`
-      : "";
+    const pullChecks = parsed.pullChecks || {};
+    const approvalText = repoPullCheckApprovalText(pullChecks);
+    const checksRow = (approvalText
+      ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="text-attention">Checks.</strong> ${escapeHtml(approvalText)}</p>`
+      : summary.text
+        ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="${summary.tone === "bad" ? "text-destructive" : summary.tone === "pending" ? "text-attention" : summary.tone === "good" ? "text-success" : "text-foreground"}">Checks.</strong> ${escapeHtml(summary.text)}</p>`
+        : "")
+      + (pullChecks.source === "pull" ? renderRepoPullCheckList(repo, pullChecks) : "")
+      + (pullChecks.approval?.required && pullChecks.canApprove
+        ? `<div class="fm-check-approval-actions"><button type="button" data-repo-pull-check-approve="${escapeHtml(pullChecks.headOid || "")}" class="fm-btn fm-btn-sm"><i data-lucide="shield-check"></i>Approve and run</button>${pullChecks.approval.reason === "author" && pullChecks.approval.author ? `<button type="button" data-repo-pull-check-trust="${escapeHtml(pullChecks.approval.author)}" class="fm-btn fm-btn-sm"><i data-lucide="user-check"></i>Always run for @${escapeHtml(pullChecks.approval.author)}</button>` : ""}</div>`
+        : "");
     return `
       <div data-repo-pull-readiness role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="fm-flash ${!readiness.clean ? "fm-flash-danger" : behind ? "fm-flash-warning" : "fm-flash-neutral"} flex-wrap items-center">
         <i data-lucide="${!readiness.clean ? "git-pull-request-closed" : behind ? "git-compare-arrows" : "git-pull-request"}" class="self-start"></i>
@@ -22850,6 +23034,24 @@
       };
     }
     updateRepoPullMergePanel(repo, detail.number, parsed);
+  }
+
+  async function handleRepoPullCheckDecision(repo, action, value, button) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls" || !value) return;
+    if (action === "approve" && !window.confirm(`Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`)) return;
+    if (action === "trust" && !window.confirm(`Always run checks for @${value} without asking? You can stop this from the Checks tab.`)) return;
+    if (button) button.disabled = true;
+    try {
+      await orgAgentRequest("POST", `${repoApiBase(repo)}/pulls/${detail.number}/checks`,
+        action === "approve" ? { action, head: value } : { action, account: value });
+      refreshRepoPullActivity(repo, detail.number);
+    } catch (error) {
+      if (button) {
+        button.disabled = false;
+        button.title = String(error?.message || "That did not work. Try again.");
+      }
+    }
   }
 
   // Owner-authored contributor reward estimate. Both pull.md and issue-<n>.json
@@ -23359,7 +23561,7 @@
               <div data-repo-record-panel="checks" class="${recordPanelClass("checks")}">
                 <section class="overflow-hidden rounded-md border border-border">
                   <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="list-checks" class="h-4 w-4 text-muted-foreground"></i>Checks on the current head commit</div>
-                  <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks)}</div>
+                  <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks, repo)}</div>
                 </section>
               </div>
               <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}</div>
@@ -26958,7 +27160,7 @@
     if (!ts) return "";
     const delta = Math.max(0, Date.now() - ts);
     const minutes = Math.floor(delta / 60000);
-    if (minutes < 60) return `${Math.max(1, minutes)} minute${minutes === 1 ? "" : "s"} ago`;
+    if (minutes < 60) return `${Math.max(1, minutes)} minute${minutes <= 1 ? "" : "s"} ago`;
     const hours = Math.floor(minutes / 60);
     if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
     const days = Math.floor(hours / 24);
@@ -42603,6 +42805,18 @@
       const pullMergeButton = event.target.closest("[data-repo-pull-merge]");
       if (pullMergeButton && state.selectedRepo) {
         handleRepoPullMerge(state.selectedRepo);
+        return;
+      }
+
+      const pullCheckDecision = event.target.closest("[data-repo-pull-check-approve], [data-repo-pull-check-trust], [data-repo-pull-check-untrust]");
+      if (pullCheckDecision && state.selectedRepo) {
+        const data = pullCheckDecision.dataset;
+        const [action, value] = data.repoPullCheckApprove !== undefined
+          ? ["approve", data.repoPullCheckApprove]
+          : data.repoPullCheckTrust !== undefined
+            ? ["trust", data.repoPullCheckTrust]
+            : ["untrust", data.repoPullCheckUntrust];
+        handleRepoPullCheckDecision(state.selectedRepo, action, value, pullCheckDecision);
         return;
       }
 

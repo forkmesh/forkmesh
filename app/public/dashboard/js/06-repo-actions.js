@@ -44,7 +44,7 @@
     input_invalid: "an input value is not allowed",
     forbidden: "only the repository owner and organization writers can do that",
   };
-  const REPO_ACTIONS_EVENTS = ["push", "schedule", "workflow_dispatch", "issues", "issue_comment"];
+  const REPO_ACTIONS_EVENTS = ["push", "pull_request", "schedule", "workflow_dispatch", "issues", "issue_comment"];
   const REPO_ACTIONS_INPUT_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
   const ACTIONS_SECRET_NAME = /^[A-Z_][A-Z0-9_]{0,63}$/;
   const ACTIONS_SECRET_MAX_BYTES = 48 * 1024;
@@ -550,19 +550,36 @@
     const others = mirrors
       .map((mirror) => repoActionsCleanLine(mirror.node, 80))
       .filter((node) => node && node !== view.node);
-    const busy = view.runs.some((run) => run.status === "running");
+    const count = (status) => view.runs.filter((run) => run.status === status).length;
+    const running = count("running");
+    const queued = count("queued");
+    const waiting = count("awaiting-approval");
     const canToggle = view.controlAvailable && view.actionsEnabled !== null;
     const toggling = view.pending.some((entry) => entry.action === "set-repository-enabled");
     const stateLabel = view.actionsEnabled === false
       ? "paused for this repository"
-      : busy ? "running" : "idle";
-    const stateTone = view.actionsEnabled === false
-      ? "fm-label-attention" : busy ? "fm-label-attention" : "fm-label-success";
+      : running ? "running" : queued ? "queued" : "idle";
+    const stateTone = view.actionsEnabled === false || running || queued ? "attention" : "success";
+    const where = view.local
+      ? `<span>Runs on this server</span>${view.host ? `<span class="font-mono font-semibold text-foreground">${escapeHtml(view.host)}</span>` : ""}`
+      : `<span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span>${view.node ? `<span class="font-mono font-semibold text-foreground">${escapeHtml(view.node)}</span>` : ""}`;
+    const stat = (value, label, tone = "") => `<span class="fm-runner-stat"${tone ? ` data-tone="${tone}"` : ""}><strong>${formatCount(value)}</strong>${escapeHtml(label)}</span>`;
+    const note = view.access === "public"
+      ? repoActionsPublicNote()
+      : view.source === "runner" && view.controlAvailable
+        ? "Pushes, pull requests, schedules, issue events and manual runs run here. Pull requests from contributors who are not maintainers wait for approval and never get secrets."
+        : view.source === "runner"
+          ? "A push to the default branch runs here while the owner's desktop is away; desktop runs show in the desktop app and on paired phones."
+          : view.controlAvailable ? "" : "This node publishes runs read-only; controls appear once its operator enables the actions-control operation.";
     return `
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2 text-xs text-foreground"><i data-lucide="server" class="h-3.5 w-3.5 text-muted-foreground"></i>${view.local ? `<span>Runs on this server</span>${view.host ? `<span class="font-mono font-semibold">${escapeHtml(view.host)}</span>` : ""}` : `<span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span>${view.node ? `<span class="font-mono font-semibold">${escapeHtml(view.node)}</span>` : ""}`}<span class="fm-label ${stateTone}">${escapeHtml(stateLabel)}</span></div>
-          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">${view.updatedAt ? `Executor state from ${escapeHtml(relativeTimeLabel(view.updatedAt))}.` : ""}${others.length ? ` Also enabled on ${escapeHtml(others.join(", "))}.` : ""}${view.access === "public" ? ` ${repoActionsPublicNote()}` : view.source === "runner" && view.controlAvailable ? " Pushes, schedules, issue events and manual runs run here. Pick a workflow to run it by hand." : view.source === "runner" ? " A push to the default branch runs here while the owner's desktop is away; desktop runs show in the desktop app and on paired phones." : view.controlAvailable ? "" : " This node publishes runs read-only; controls appear once its operator enables the actions-control operation."}</p>
+      <div data-repo-actions-runner-card class="fm-runner-card">
+        <div class="fm-runner-card-main">
+          <span class="fm-runner-dot" data-tone="${stateTone}" aria-hidden="true"></span>
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">${where}<span class="fm-label fm-label-${stateTone}">${escapeHtml(stateLabel)}</span></div>
+            <div class="fm-runner-stats">${stat(running, "running", running ? "attention" : "")}${stat(queued, "queued")}${stat(waiting, "awaiting approval", waiting ? "attention" : "")}${view.updatedAt ? `<span class="fm-runner-stat">updated ${escapeHtml(relativeTimeLabel(view.updatedAt))}</span>` : ""}</div>
+            ${note || others.length ? `<p class="mt-1.5 text-[11px] leading-4 text-muted-foreground">${escapeHtml(note)}${others.length ? ` Also enabled on ${escapeHtml(others.join(", "))}.` : ""}</p>` : ""}
+          </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           ${canToggle ? `<button type="button" data-repo-actions-repository-enabled="${view.actionsEnabled ? "false" : "true"}" ${toggling ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${view.actionsEnabled ? "pause" : "play"}" class="h-3.5 w-3.5"></i>${view.actionsEnabled ? "Pause Actions on this mirror" : "Run Actions on this mirror"}</button>` : ""}
@@ -571,7 +588,13 @@
       </div>`;
   }
 
-  function renderRepoActionsWorkflowList(view) {
+  function renderRepoActionsForkNote(repo) {
+    const parent = repoForkParent(repo);
+    if (!parent) return "";
+    return `<div data-repo-actions-fork-note class="grid gap-1 px-2.5 py-2 text-xs leading-5 text-muted-foreground"><span class="font-medium text-foreground">Workflows live in the parent repository</span><span><a href="/${escapeHtml(parent.owner)}/${escapeHtml(parent.name)}/actions" class="font-mono text-accent hover:underline">${escapeHtml(parent.key)}</a> runs its workflows. Checks for your pull request run there and appear on the pull request.</span></div>`;
+  }
+
+  function renderRepoActionsWorkflowList(view, repo = state.selectedRepo) {
     const workflows = repoActionsWorkflows(view);
     const selected = view.selectedWorkflow;
     const row = (path, label, detail, extra = "") => `
@@ -582,6 +605,7 @@
     if (view.treeWorkflows === null && !view.summaryWorkflows) {
       return `<p class="px-2.5 py-2 text-xs text-muted-foreground">Reading .forkmesh/ ...</p>`;
     }
+    if (!workflows.length && repoForkParent(repo)) return renderRepoActionsForkNote(repo);
     if (!workflows.length) {
       return `<p class="px-2.5 py-2 text-xs leading-5 text-muted-foreground">No workflows yet. Add a <span class="font-mono">.forkmesh/&lt;name&gt;.yml</span> file with <span class="font-mono">on:</span> and <span class="font-mono">steps:</span> to the default branch.</p>`;
     }
@@ -644,7 +668,7 @@
     if (!view.controlAvailable) return "";
     const busy = view.pending.some((entry) => entry.runId === run.id);
     const button = (action, label, icon) => `<button type="button" data-repo-actions-run-control="${action}" data-repo-actions-run-id="${run.id}" ${busy ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${label}</button>`;
-    if (run.status === "awaiting-approval" && view.source !== "runner") {
+    if (run.status === "awaiting-approval") {
       return button("approve", "Approve and run", "shield-check") + button("reject", "Reject", "shield-x");
     }
     if (run.status === "running" || run.status === "queued") {
@@ -688,7 +712,9 @@
       }).join("")}</ol>`
       : "";
     const approval = run.status === "awaiting-approval"
-      ? `<p class="fm-flash fm-flash-warning fm-flash-full border-t-0 px-4 py-2 text-xs"><i data-lucide="shield-alert"></i><span class="fm-flash-body">This run is waiting for approval because it would execute code the executor has not run for this repository before${run.pullNumber ? ` (pull request #${run.pullNumber})` : ""}. Review the commit before approving.</span></p>`
+      ? `<p class="fm-flash fm-flash-warning fm-flash-full border-t-0 px-4 py-2 text-xs"><i data-lucide="shield-alert"></i><span class="fm-flash-body">${view.source === "runner" && run.pullNumber
+        ? `This run is waiting for approval: pull request #${run.pullNumber} comes from someone who is not a maintainer or trusted contributor yet, or changes .forkmesh/. Review the commit before approving. It runs the base branch's workflow without secrets or write access.`
+        : `This run is waiting for approval because it would execute code the executor has not run for this repository before${run.pullNumber ? ` (pull request #${run.pullNumber})` : ""}. Review the commit before approving.`}</span></p>`
       : "";
     const fullLog = view.source === "runner" ? view.logs?.[run.id] : null;
     const logText = fullLog?.full && fullLog.text ? fullLog.text : run.logTail;
@@ -709,6 +735,10 @@
 
   function renderRepoActionsRuns(repo, view, workflow) {
     const runs = view.runs.filter((run) => repoActionsRunMatchesWorkflow(run, workflow));
+    if (!runs.length && repoForkParent(repo) && !repoActionsWorkflows(view).length) {
+      const parent = repoForkParent(repo);
+      return `<div data-repo-actions-fork-empty class="fm-blankslate py-10"><i data-lucide="git-fork"></i><p class="fm-blankslate-title">Runs for this fork happen in ${escapeHtml(parent.key)}</p><p class="fm-blankslate-desc">This fork has no workflows of its own. When you open a pull request, ${escapeHtml(parent.key)} runs its checks with the parent's workflows and shows them on the pull request.</p><a href="/${escapeHtml(parent.owner)}/${escapeHtml(parent.name)}/actions" class="fm-btn fm-btn-sm mt-3"><i data-lucide="play"></i>Open ${escapeHtml(parent.key)} Actions</a></div>`;
+    }
     if (!runs.length) {
       return `<p class="px-4 py-6 text-center text-xs text-muted-foreground">${view.access === "public" ? "No run yet." : view.source === "runner" && view.controlAvailable ? "No run yet. Push, wait for a schedule, or pick a workflow and run it." : view.source === "runner" ? "No runner run yet. The next push to the default branch while the desktop is away runs here." : workflow ? "This workflow has no recent run on the executor." : "No recent runs on the executor."}</p>`;
     }
@@ -723,10 +753,10 @@
         ? `<button type="button" data-dashboard-commit-hash="${escapeHtml(run.commit)}" class="font-mono hover:text-foreground hover:underline">${escapeHtml(run.commit.slice(0, 10))}</button>`
         : "";
       const pullLink = run.pullNumber
-        ? `<a href="${escapeHtml(`${repoLinkUrl(repo)}/pulls/${run.pullNumber}`)}" data-repo-actions-link class="hover:text-foreground hover:underline">#${run.pullNumber}</a>`
+        ? `<a href="${escapeHtml(`${repoLinkUrl(repo)}/pulls/${run.pullNumber}`)}" data-repo-actions-link data-repo-actions-run-pull="${run.pullNumber}" class="fm-actions-pull-chip"><i data-lucide="git-pull-request"></i>#${run.pullNumber}</a>`
         : "";
       const facts = [
-        `run ${run.id}`, commitLink, escapeHtml(repoActionsRefLabel(run.ref)), pullLink,
+        `run ${run.id}`, commitLink, run.pullNumber ? "" : escapeHtml(repoActionsRefLabel(run.ref)),
         run.actor ? `<span data-repo-actions-run-actor>${issuePersonNameHtml(run.actor, "")}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
@@ -734,7 +764,7 @@
         <div data-repo-actions-run="${run.id}" class="border-b border-border last:border-b-0">
           <button type="button" data-repo-actions-run-toggle="${run.id}" aria-expanded="${open ? "true" : "false"}" class="flex w-full min-w-0 items-center gap-3 px-4 pb-1 pt-3 text-left hover:bg-secondary/40">
             <i data-lucide="${meta.icon}" class="h-4 w-4 shrink-0 ${meta.tone}${run.status === "running" ? " animate-spin" : ""}"></i>
-            <span class="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm font-medium text-foreground"><span class="min-w-0 truncate">${escapeHtml(run.workflow)}</span><span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold ${meta.tone}">${escapeHtml(meta.label)}</span>${run.event ? `<span data-repo-actions-run-event="${escapeHtml(run.event)}" class="fm-label font-mono text-[10px] text-muted-foreground">${escapeHtml(run.event)}</span>` : ""}</span>
+            <span class="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm font-medium text-foreground"><span class="min-w-0 truncate">${escapeHtml(run.workflow)}</span><span class="fm-check-chip" data-state="${escapeHtml(meta.outcome)}">${escapeHtml(meta.label)}</span>${run.event ? `<span data-repo-actions-run-event="${escapeHtml(run.event)}" class="fm-label font-mono text-[10px] text-muted-foreground">${escapeHtml(run.event)}</span>` : ""}${pullLink}</span>
             <i data-lucide="${open ? "chevron-up" : "chevron-down"}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
           </button>
           <div class="pb-3 pl-11 pr-4 text-[11px] text-muted-foreground">${facts}</div>
@@ -778,12 +808,15 @@
     const pending = view.pending.length
       ? `<div role="status" class="fm-flash fm-flash-neutral fm-flash-full items-center border-t-0 px-4 py-2 text-xs"><i data-lucide="loader-circle" class="!mt-0 animate-spin"></i><span class="fm-flash-body">${escapeHtml(view.pending.map((entry) => entry.label).join(", "))}: sent to ${escapeHtml(view.node)}, waiting for the executor ...</span></div>`
       : "";
-    const main = view.phase === "ready"
+    const forkOnly = view.phase === "ready" && repoForkParent(repo) && !workflows.length && !view.runs.length;
+    const main = forkOnly
+      ? `${notice}${renderRepoActionsRuns(repo, view, null)}`
+      : view.phase === "ready"
       ? `${renderRepoActionsExecutor(repo, view)}${notice}${pending}${renderRepoActionsWorkflowBar(repo, view, workflow)}<div data-repo-actions-runs>${renderRepoActionsRuns(repo, view, workflow)}</div>`
       : `${notice}${renderRepoActionsEmptyState(view)}`;
     target.innerHTML = `
       <div class="grid min-w-0 md:grid-cols-[16rem_minmax(0,1fr)]">
-        <nav aria-label="Workflows" data-repo-actions-workflows class="grid content-start gap-0.5 border-b border-border p-2 md:border-b-0 md:border-r">${renderRepoActionsWorkflowList(view)}</nav>
+        <nav aria-label="Workflows" data-repo-actions-workflows class="grid content-start gap-0.5 border-b border-border p-2 md:border-b-0 md:border-r">${renderRepoActionsWorkflowList(view, repo)}</nav>
         <div class="min-w-0">${main}</div>
       </div>`;
     const nextRef = target.querySelector("[data-repo-actions-dispatch-ref]");
@@ -843,7 +876,7 @@
       // Approval executes code nobody has run here before; make that a
       // deliberate second step rather than a stray click.
       if (action === "approve" && !window.confirm(
-        `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.node}.`)) {
+        `Approve run ${runId} of "${run.workflow}" at ${run.commit.slice(0, 10)}? It will execute on ${view.local ? (view.host || "this server") : view.node}${run.pullNumber ? " without secrets or write access" : ""}.`)) {
         return true;
       }
       void sendRepoActionsControl(repo, action, { runId }, label);

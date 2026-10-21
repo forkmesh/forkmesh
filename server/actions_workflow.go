@@ -111,6 +111,15 @@ func (w *workflow) matchesPushPaths(changed []string) bool {
 }
 
 // matchesPushBranch applies `on.push.branches` to a short branch name.
+func (w *workflow) matchesPullBranch(branch string) bool {
+	for _, pattern := range w.PullBranches {
+		if workflowPathMatches(pattern, branch) {
+			return true
+		}
+	}
+	return false
+}
+
 func (w *workflow) matchesPushBranch(branch string) bool {
 	for _, pattern := range w.PushBranches {
 		if workflowPathMatches(pattern, branch) {
