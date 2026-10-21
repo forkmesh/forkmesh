@@ -46,7 +46,9 @@ the code gets the screen, the controls get two thin rows.
   diff health strip counts (`DiffHealth.swift`): risky calls, TLS bypasses,
   open CORS and secret-shaped strings (Security), merge-conflict markers,
   leftover debug output, and TODO/FIXME/HACK markers. A pill with hits jumps to
-  the first file that has one.
+  the first file that has one. A Security pill with no hits is muted, not
+  green, and its tooltip says it is a pattern scan, not a security review: a
+  regex finding nothing must not read as a security pass.
 
 ## Compare and commit pages
 

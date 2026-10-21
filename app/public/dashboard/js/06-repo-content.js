@@ -4092,11 +4092,13 @@
       const [icon, label, tone, what] = meta[key];
       const title = flag.count
         ? `${label}: ${formatCount(flag.count)} ${flag.count === 1 ? "line" : "lines"} with ${what}. Jump to the first.`
-        : `${label}: no ${what}.`;
+        : key === "security"
+          ? `${label}: no flagged patterns (${what}). This is a pattern scan, not a security review.`
+          : `${label}: no ${what}.`;
       const body = `<i data-lucide="${icon}"></i><span class="fm-diff-pill-label">${label}</span>${formatCount(flag.count)}`;
       return flag.count
         ? `<button type="button" data-repo-diff-flag="${escapeHtml(flag.path)}" title="${escapeHtml(title)}" class="fm-diff-pill fm-diff-pill-${tone}">${body}</button>`
-        : `<span title="${escapeHtml(title)}" class="fm-diff-pill fm-diff-pill-success">${body}</span>`;
+        : `<span title="${escapeHtml(title)}" class="fm-diff-pill ${key === "security" ? "fm-diff-pill-muted" : "fm-diff-pill-success"}">${body}</span>`;
     }).join("");
   }
 

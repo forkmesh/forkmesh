@@ -1,11 +1,10 @@
-"""The full-screen diff viewer: pull Files changed, branch compare and commit
-diffs share one pane with two thin sticky header rows (code quality checks,
-then the file being read) and full-width code."""
-
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -143,6 +142,8 @@ def test_keyboard_and_header_controls_are_wired_without_inline_handlers():
 
 
 def _run_node(source):
+    if shutil.which("node") is None:
+        pytest.skip("Node.js is unavailable")
     result = subprocess.run(["node", "-e", source], capture_output=True, text=True, check=True)
     return json.loads(result.stdout)
 
@@ -207,7 +208,9 @@ def test_quality_pills_count_added_lines_only():
     assert flags["conflict"]["count"] == 0
     assert 'data-repo-diff-flag="app.js"' in out["pills"]
     assert "Conflict" not in out["clean"]
-    assert out["clean"].count("fm-diff-pill-success") == 3
+    assert out["clean"].count("fm-diff-pill-success") == 2
+    assert out["clean"].count("fm-diff-pill-muted") == 1
+    assert "not a security review" in out["clean"]
 
 
 def test_ci_pills_say_nothing_when_checks_cannot_be_read():
