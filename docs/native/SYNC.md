@@ -144,4 +144,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S069 | 2026-10-19 | Router | fix | Router network sharing creates a missing share config so a new share shows up | 3330f9588b be89626f7f | synced | be89626f7f |
 | S070 | 2026-10-20 | Chat | feature | Usernames and @mentions in chat, issues, pull requests and discussions open that person's ForkMesh profile when tapped | 079280627a | synced | 079280627a |
 | S071 | 2026-10-21 | Chat | fix | A call now rings the other phone even when it is not on that chat or the app is in the background | 320fe7221a | synced | 320fe7221a |
+| S072 | 2026-10-21 | Chat | feature | Incoming calls show on the iPhone's own call screen, also on the lock screen and when the app was closed | 5533f4d47f | n/a | Android has no CallKit or PushKit; its call notification already uses CallStyle |
 <!-- ledger:end -->
