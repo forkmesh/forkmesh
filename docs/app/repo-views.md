@@ -158,6 +158,15 @@ right, Mirrors opens the Mirrors tab, Release opens Releases, and Size opens
 the Size map tab beside a tiny sunburst. Rows stay hidden until their data
 loads.
 
+Every `http(s)://` address in the description is a link (accent colour, new
+tab, `nofollow ugc`), found and trimmed the way the README renderer finds bare
+URLs (`MD_BARE_URL`, `mdTrimAutolink`, `mdLinkHtml`); the rest of the text
+stays escaped. A read-only mirror without its own description links the
+upstream path in "Read-only mirror of …" to the upstream URL. Long addresses
+wrap instead of widening the rail. The first render and a saved edit both go
+through `repoAboutDescriptionHtml` in `06-repo-content.js`; tests in
+`app/tests/test_dashboard_repo_mirror_label.py`.
+
 The rail has no banner or logo header: the user asked for the fediverse banner,
 repository logo, handle and follower avatars to be removed from it. The
 fediverse handle and watcher list are still in the Watchers popover.
