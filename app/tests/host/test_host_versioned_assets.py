@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 
 from forkmesh_host import js as _js
 from forkmesh_host.asgi import (HostASGI, VERSIONED_ASSET_CACHE,
@@ -56,10 +57,16 @@ def _get(runtime, path, query=b"", headers=()):
     return sent[0]["status"], found
 
 
+APP_JS = "console.log(1)"
+APP_JS_VERSION = hashlib.sha256(APP_JS.encode()).hexdigest()[:12].encode()
+
+
 def _assets(tmp_path):
-    (tmp_path / "app.js").write_text("console.log(1)")
+    (tmp_path / "app.js").write_text(APP_JS)
+    (tmp_path / "private.js").write_text(APP_JS)
     (tmp_path / "_headers").write_text(
-        "/vendor/*\n  Cache-Control: public, max-age=31536000, immutable\n")
+        "/vendor/*\n  Cache-Control: public, max-age=31536000, immutable\n"
+        "/private.js\n  Cache-Control: no-store\n")
     return StaticAssets(tmp_path, "auto-trailing-slash", "none")
 
 
@@ -76,15 +83,40 @@ def test_versioned_query_is_one_v_token():
 
 def test_versioned_asset_is_immutable(tmp_path):
     status, headers = _get(_Runtime(_assets(tmp_path)), "/app.js",
-                           b"v=3f9c0a1b2c3d")
+                           b"v=" + APP_JS_VERSION)
     assert status == 200
     assert headers["cache-control"] == VERSIONED_ASSET_CACHE
+
+
+def test_version_of_other_content_is_not_immutable(tmp_path):
+    status, headers = _get(_Runtime(_assets(tmp_path)), "/app.js",
+                           b"v=3f9c0a1b2c3d")
+    assert status == 200
+    assert headers["cache-control"] == "public, max-age=0, must-revalidate"
+
+
+def test_changed_file_drops_the_old_version(tmp_path):
+    assets = _assets(tmp_path)
+    runtime = _Runtime(assets)
+    assert _get(runtime, "/app.js", b"v=" + APP_JS_VERSION)[1][
+        "cache-control"] == VERSIONED_ASSET_CACHE
+    (tmp_path / "app.js").write_text("console.log(22)")
+    assert _get(runtime, "/app.js", b"v=" + APP_JS_VERSION)[1][
+        "cache-control"] == "public, max-age=0, must-revalidate"
+
+
+def test_no_store_rule_is_not_overridden(tmp_path):
+    status, headers = _get(_Runtime(_assets(tmp_path)), "/private.js",
+                           b"v=" + APP_JS_VERSION)
+    assert status == 200
+    assert headers["cache-control"] == "no-store"
 
 
 def test_revalidated_versioned_asset_keeps_immutable(tmp_path):
     assets = _assets(tmp_path)
     etag = assets.serve("/app.js").headers.get("etag")
-    status, headers = _get(_Runtime(assets), "/app.js", b"v=3f9c0a1b2c3d",
+    status, headers = _get(_Runtime(assets), "/app.js",
+                           b"v=" + APP_JS_VERSION,
                            [(b"if-none-match", etag.encode())])
     assert status == 304
     assert headers["cache-control"] == VERSIONED_ASSET_CACHE

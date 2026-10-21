@@ -293,6 +293,7 @@ class StaticAssets:
         self.html_handling = html_handling
         self.not_found_handling = not_found_handling
         self._header_rules = None
+        self._versions = {}
 
     def _file(self, relative):
         relative = relative.lstrip("/")
@@ -405,6 +406,25 @@ class StaticAssets:
                 if op == "set":
                     headers[name.lower()] = value
         return headers
+
+    def content_version(self, path):
+        kind, found = self.resolve(path)
+        if kind != "file":
+            return ""
+        try:
+            stat = found.stat()
+        except OSError:
+            return ""
+        key = (stat.st_size, stat.st_mtime_ns)
+        cached = self._versions.get(found)
+        if cached and cached[0] == key:
+            return cached[1]
+        try:
+            version = hashlib.sha256(found.read_bytes()).hexdigest()[:12]
+        except OSError:
+            return ""
+        self._versions[found] = (key, version)
+        return version
 
     def serve(self, path, method="GET", if_none_match=None, redirects=True):
         kind, value = self.resolve(path, redirects)

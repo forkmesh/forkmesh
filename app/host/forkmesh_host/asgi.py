@@ -81,15 +81,17 @@ BOOT_UNSEAL_POLL_SECONDS = 0.05
 
 
 def versioned_asset_query(scope):
-    """True when the query is a single content version: ``?v=<token>``."""
+    """The token of a query that is a single content version, else ""."""
     raw = scope.get("query_string") or b""
     try:
         pairs = urllib.parse.parse_qsl(raw.decode("latin-1"),
                                        keep_blank_values=True)
     except ValueError:
         return False
-    return (len(pairs) == 1 and pairs[0][0] == "v"
-            and bool(_ASSET_VERSION_RE.fullmatch(pairs[0][1])))
+    if (len(pairs) == 1 and pairs[0][0] == "v"
+            and _ASSET_VERSION_RE.fullmatch(pairs[0][1])):
+        return pairs[0][1]
+    return ""
 
 
 def server_timing_headers(response, elapsed_ms, db_count, db_ms):
@@ -582,8 +584,11 @@ class HostASGI:
                     if name == b"if-none-match":
                         if_none_match = value.decode("latin-1")
                 response = assets.serve(path, method, if_none_match)
-                if (int(response.status) in (200, 304)
-                        and versioned_asset_query(scope)):
+                version = versioned_asset_query(scope)
+                cache = str(response.headers.get("cache-control") or "")
+                if (int(response.status) in (200, 304) and version
+                        and "no-store" not in cache and "private" not in cache
+                        and version == assets.content_version(path)):
                     response.headers.set("cache-control",
                                          VERSIONED_ASSET_CACHE)
                 await self._send_response(send, response, method)
