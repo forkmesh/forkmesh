@@ -508,7 +508,7 @@
     card.addEventListener("click", () => chooseNamedTheme(theme.id));
     return card;
   };
-  fetch("/instance-themes/themes.json", { headers: { accept: "application/json" } })
+  const themesLoaded = fetch("/instance-themes/themes.json", { headers: { accept: "application/json" } })
     .then((response) => (response.ok ? response.json() : null))
     .then((data) => {
       const themes = Array.isArray(data && data.themes) ? data.themes : [];
@@ -770,6 +770,7 @@
       delete settings.logo;
     }
     clearError();
+    if (typeof settings.theme === "string") await themesLoaded;
     const skipped = applyConfig(settings);
     if (logoName) showLogo(`Loaded ${logoName} from ${file.name}`);
     $("[data-start-config-name]").textContent = `Loaded ${file.name}`;

@@ -324,7 +324,9 @@ upload CSS.
   unknown or planned id answers 404. The catalogue is loaded once from disk
   when `instance_theme` is imported; a missing or broken file leaves only
   the colour presets. A stylesheet over 64 KB or containing `</` is ignored.
-- **Who can change it:** the start page picks a theme at launch. After that
+- **Who can change it:** the start page picks a theme at launch (its cards
+  come from `themes.json`; a settings file naming a theme waits for that
+  read, so the name is not skipped as unknown while it loads). After that
   an admin changes it with `PUT /api/instance/theme` and `{theme, password}`;
   there is no Settings screen for it yet. `GET /api/instance` lists the
   catalogue (`themes`) and the current `theme.preset` for one to use. The
