@@ -5470,9 +5470,15 @@ void MainWindow::renderPullThread(const PullRequest &pr)
         }
     }
 
-    for (const PullEvent &ev : pr.events) {
+    QSet<QString> editedComments;
+    const QList<PullEvent> shownEvents =
+        PullStore::foldCommentChanges(pr.events, &editedComments);
+    const PullStore commentStore = pullStoreForCurrentRepo();
+    for (const PullEvent &ev : shownEvents) {
         const QString who = ev.authorName.isEmpty() ? ev.author.left(10) : ev.authorName;
-        const QString when = formatIssueRelativeTime(ev.ts);
+        QString when = formatIssueRelativeTime(ev.ts);
+        if (editedComments.contains(ev.id))
+            when += QStringLiteral(" · edited");
         QString verb = QStringLiteral("commented");
         QString accent;
         QString body = ev.body;
@@ -5530,16 +5536,33 @@ void MainWindow::renderPullThread(const PullRequest &pr)
         const QString anchor =
             pullLink + QStringLiteral("#%1")
                            .arg(ev.id.isEmpty() ? QString::number(ev.ts) : ev.id);
+        const bool ownComment =
+            !ev.id.isEmpty() && pr.status == QLatin1String("open") &&
+            PullStore::isEditableComment(ev) && commentStore.authoredByThisNode(ev);
+        std::function<void()> onDelete;
+        QList<QPair<QString, std::function<void()>>> commentActions;
+        if (ownComment) {
+            const int number = pr.number;
+            const QString target = ev.id;
+            const QString original = ev.body;
+            commentActions.append(
+                {QStringLiteral("Edit comment"),
+                 [this, number, target, original] {
+                     editPullComment(number, target, original);
+                 }});
+            if (ev.type != QLatin1String("review"))
+                onDelete = [this, number, target] { deletePullComment(number, target); };
+        }
         entries.append(
             {ev.ts, entryOrder++,
              [this, who, verb, when, body, accent, anchor, author = ev.author,
-              authorName = ev.authorName] {
+              authorName = ev.authorName, onDelete, commentActions] {
                  addConversationCard(
                      m_pullThreadLayout, who,
                      QStringLiteral("<b>%1</b> %2 <span style='color:#8b949e'>%3"
                                     "</span>")
                          .arg(userProfileLinkHtml(authorName, who), verb, when),
-                     body, accent, anchor, author);
+                     body, accent, anchor, author, onDelete, commentActions);
              }});
     }
 
@@ -6596,6 +6619,49 @@ void MainWindow::updatePullSubTabCounts(PullRequest pr)
     }
     setPullChecksAttention(m_pullTabChecks,
                            pullHasRunningChecks(pr, m_actionRuns, owner, name));
+}
+
+void MainWindow::editPullComment(int number, const QString &target,
+                                 const QString &original)
+{
+    bool ok = false;
+    const QString body = QInputDialog::getMultiLineText(
+        this, QStringLiteral("Edit comment"), QString(), original, &ok).trimmed();
+    if (!ok || body.isEmpty() || body == original.trimmed())
+        return;
+    PullStore store = pullStoreForCurrentRepo();
+    QString error;
+    if (store.canWrite()) {
+        if (!store.editComment(number, target, body, &error)) {
+            QMessageBox::warning(this, QStringLiteral("Edit comment"), error);
+            return;
+        }
+    } else {
+        submitPullEventToInbox(number, store.makeCommentChange(number, target, body, false));
+    }
+    reloadPulls();
+    showPull(number);
+}
+
+void MainWindow::deletePullComment(int number, const QString &target)
+{
+    if (QMessageBox::question(this, QStringLiteral("Delete comment"),
+                              QStringLiteral("Delete this comment? Its Git history "
+                                             "remains recoverable.")) !=
+        QMessageBox::Yes)
+        return;
+    PullStore store = pullStoreForCurrentRepo();
+    QString error;
+    if (store.canWrite()) {
+        if (!store.deleteComment(number, target, &error)) {
+            QMessageBox::warning(this, QStringLiteral("Delete comment"), error);
+            return;
+        }
+    } else {
+        submitPullEventToInbox(number, store.makeCommentChange(number, target, QString(), true));
+    }
+    reloadPulls();
+    showPull(number);
 }
 
 void MainWindow::submitPullComment()
