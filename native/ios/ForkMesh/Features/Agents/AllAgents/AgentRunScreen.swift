@@ -89,6 +89,9 @@ struct AgentRunScreen: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 4)
             }
+            AgentPromptDeck(deck: PromptDeck(blocks: shownBlocks), accessibilityPrefix: "agent-run-prompt-deck")
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
             TranscriptFollowScroll(tail: [follower.next, shownBlocks.count], pin: sent, accessibilityPrefix: "agent-run-transcript") {
                 if !follower.attachments.isEmpty {
                     AgentAttachmentStrip(refs: follower.attachments, loader: AgentAttachmentsSupport.loader(hub: center.hub))
