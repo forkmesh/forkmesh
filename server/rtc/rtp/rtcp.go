@@ -17,6 +17,7 @@ const (
 	FmtPLI    = 1
 	FmtFIR    = 4
 	FmtREMB   = 15
+	FmtTCC    = 15
 )
 
 var (
@@ -26,6 +27,7 @@ var (
 	errRTCPLength = errors.New("rtcp: length field overruns packet")
 	errNotNACK    = errors.New("rtcp: not a generic nack")
 	errNACKFCI    = errors.New("rtcp: malformed nack fci")
+	errNotReport  = errors.New("rtcp: not a sender or receiver report")
 )
 
 func SplitCompound(b []byte) ([][]byte, error) {
@@ -143,10 +145,80 @@ func NewREMB(sender uint32, bitrate uint64, ssrcs []uint32) []byte {
 	return p
 }
 
-func NewReceiverReport(sender uint32) []byte {
-	p := newPacket(0, TypeRR, 8)
+type ReportBlock struct {
+	SSRC         uint32
+	FractionLost uint8
+	Lost         int32
+	HighestSeq   uint32
+	Jitter       uint32
+	LSR          uint32
+	DLSR         uint32
+}
+
+func NewReceiverReport(sender uint32, blocks ...ReportBlock) []byte {
+	if len(blocks) > 31 {
+		blocks = blocks[:31]
+	}
+	p := newPacket(uint8(len(blocks)), TypeRR, 8+24*len(blocks))
 	binary.BigEndian.PutUint32(p[4:8], sender)
+	for i, b := range blocks {
+		o := 8 + 24*i
+		binary.BigEndian.PutUint32(p[o:], b.SSRC)
+		lost := b.Lost
+		if lost > 0x7fffff {
+			lost = 0x7fffff
+		}
+		if lost < -0x800000 {
+			lost = -0x800000
+		}
+		binary.BigEndian.PutUint32(p[o+4:], uint32(b.FractionLost)<<24|uint32(lost)&0xffffff)
+		binary.BigEndian.PutUint32(p[o+8:], b.HighestSeq)
+		binary.BigEndian.PutUint32(p[o+12:], b.Jitter)
+		binary.BigEndian.PutUint32(p[o+16:], b.LSR)
+		binary.BigEndian.PutUint32(p[o+20:], b.DLSR)
+	}
 	return p
+}
+
+func ParseReportBlocks(p []byte) ([]ReportBlock, error) {
+	if len(p) < 8 {
+		return nil, errRTCPShort
+	}
+	offset := 8
+	switch PacketType(p) {
+	case TypeSR:
+		offset = 28
+	case TypeRR:
+	default:
+		return nil, errNotReport
+	}
+	n := int(Count(p))
+	if len(p) < offset+24*n {
+		return nil, errRTCPLength
+	}
+	blocks := make([]ReportBlock, n)
+	for i := range blocks {
+		o := offset + 24*i
+		word := binary.BigEndian.Uint32(p[o+4:])
+		lost := int32(word&0xffffff) << 8 >> 8
+		blocks[i] = ReportBlock{
+			SSRC:         binary.BigEndian.Uint32(p[o:]),
+			FractionLost: uint8(word >> 24),
+			Lost:         lost,
+			HighestSeq:   binary.BigEndian.Uint32(p[o+8:]),
+			Jitter:       binary.BigEndian.Uint32(p[o+12:]),
+			LSR:          binary.BigEndian.Uint32(p[o+16:]),
+			DLSR:         binary.BigEndian.Uint32(p[o+20:]),
+		}
+	}
+	return blocks, nil
+}
+
+func SenderReportNTP(p []byte) (uint64, bool) {
+	if len(p) < 28 || PacketType(p) != TypeSR {
+		return 0, false
+	}
+	return binary.BigEndian.Uint64(p[8:16]), true
 }
 
 func ParseNACK(p []byte) (uint32, []uint16, error) {

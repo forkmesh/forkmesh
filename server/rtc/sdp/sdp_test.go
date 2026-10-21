@@ -660,3 +660,38 @@ func diffLine(want, got string) string {
 	}
 	return "lengths differ"
 }
+
+func TestExtensionsRTXAndFeedback(t *testing.T) {
+	s := mustParse(t, chromeOffer)
+	audio, video := s.Media[0], s.Media[1]
+	const tcc = "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
+	if got := video.Extensions(); got[tcc] != 3 || got["urn:3gpp:video-orientation"] != 13 || len(got) != 8 {
+		t.Fatalf("video extensions %v", got)
+	}
+	if got := audio.Extensions(); got[tcc] != 3 || len(got) != 4 {
+		t.Fatalf("audio extensions %v", got)
+	}
+	if pt, ok := video.RTXFor(96); !ok || pt != 97 {
+		t.Fatalf("rtx for vp8 %d %v", pt, ok)
+	}
+	if pt, ok := video.RTXFor(102); !ok || pt != 103 {
+		t.Fatalf("rtx for h264 %d %v", pt, ok)
+	}
+	if _, ok := audio.RTXFor(111); ok {
+		t.Fatal("audio has no rtx")
+	}
+	if got := video.Feedback(96); !reflect.DeepEqual(got, []string{"goog-remb", "transport-cc", "ccm fir", "nack", "nack pli"}) {
+		t.Fatalf("feedback %q", got)
+	}
+	f := mustParse(t, firefoxOffer)
+	if got := f.Media[0].Extensions(); got["urn:ietf:params:rtp-hdrext:csrc-audio-level"] != 2 {
+		t.Fatalf("direction suffix not stripped: %v", got)
+	}
+	bad := mustParse(t, crlf("v=0\no=- 1 1 IN IP4 0.0.0.0\ns=-\nt=0 0\nm=video 9 UDP/TLS/RTP/SAVPF 96 97\na=extmap:0 urn:x\na=extmap:300 urn:y\na=extmap:z urn:w\na=extmap:5\na=rtpmap:97 rtx/90000\na=fmtp:97 apt=x\n"))
+	if got := bad.Media[0].Extensions(); len(got) != 0 {
+		t.Fatalf("bad extmaps kept %v", got)
+	}
+	if _, ok := bad.Media[0].RTXFor(96); ok {
+		t.Fatal("bad apt accepted")
+	}
+}

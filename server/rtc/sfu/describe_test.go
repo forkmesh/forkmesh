@@ -1,8 +1,11 @@
 package sfu
 
 import (
+	"slices"
 	"strings"
 	"testing"
+
+	"forkmesh.com/mirror-node/rtc/rtp"
 
 	"forkmesh.com/mirror-node/rtc/sdp"
 )
@@ -67,13 +70,24 @@ func TestTheAnswerMirrorsTheOfferAndReceivesOnly(t *testing.T) {
 			t.Fatalf("transport lines missing in %d", index)
 		}
 	}
-	if answer.Media[0].Formats[0] != "111" || answer.Media[1].Formats[0] != "96" || len(answer.Media[1].Formats) != 1 {
+	if answer.Media[0].Formats[0] != "111" || len(answer.Media[0].Formats) != 1 ||
+		answer.Media[1].Formats[0] != "96" || answer.Media[1].Formats[1] != "97" || len(answer.Media[1].Formats) != 2 {
 		t.Fatalf("formats %v %v", answer.Media[0].Formats, answer.Media[1].Formats)
+	}
+	if rtx, ok := answer.Media[1].RTXFor(96); !ok || rtx != 97 {
+		t.Fatal("the answer does not accept the sender's rtx")
+	}
+	feedback := answer.Media[1].Feedback(96)
+	if !slices.Contains(feedback, "nack") || !slices.Contains(feedback, "nack pli") || !slices.Contains(feedback, "goog-remb") {
+		t.Fatalf("video feedback %q", feedback)
+	}
+	if slices.Contains(feedback, "transport-cc") || strings.Contains(text, "extmap") {
+		t.Fatal("transport-cc accepted although the offer has no extension for it")
 	}
 	if answer.Media[2].Port != 0 {
 		t.Fatal("the data channel was not refused")
 	}
-	if strings.Contains(text, "rtx") || strings.Contains(text, "H264") {
+	if strings.Contains(text, "H264") || strings.Contains(text, "G722") {
 		t.Fatal("answer offers codecs the SFU does not forward")
 	}
 }
@@ -84,10 +98,10 @@ func TestAnOfferToAReceiverDescribesEachForwardedTrack(t *testing.T) {
 	owner := &Participant{id: "0123456789abcdef0123456789abcdef"}
 	slots := []*slot{
 		{mid: "s0", kind: "audio", track: &Track{owner: owner, kind: "audio", ssrc: 5555, id: "audio-5555"}},
-		{mid: "s1", kind: "video", track: &Track{owner: owner, kind: "video", ssrc: 6666, id: "video-6666"}},
+		{mid: "s1", kind: "video", track: &Track{owner: owner, kind: "video", ssrc: 6666, id: "video-6666"}, rtx: 7777},
 		{mid: "s2", kind: "video"},
 	}
-	d := description{sessionID: "7", version: 3, ufrag: "u", pwd: "p", fingerprint: "sha-256 11:22"}
+	d := description{sessionID: "7", version: 3, ufrag: "u", pwd: "p", fingerprint: "sha-256 11:22", tccID: 3}
 	session, err := sdp.Parse(d.render(upstream, slots))
 	if err != nil {
 		t.Fatal(err)
@@ -104,5 +118,67 @@ func TestAnOfferToAReceiverDescribesEachForwardedTrack(t *testing.T) {
 	}
 	if empty.Direction() != "inactive" || len(empty.SSRCs()) != 0 {
 		t.Fatal("an empty slot must be inactive")
+	}
+	if groups := video.FIDGroups(); len(groups) != 1 || groups[0] != [2]uint32{6666, 7777} {
+		t.Fatalf("video fid %v", groups)
+	}
+	if rtx, ok := video.RTXFor(96); !ok || rtx != 97 || len(video.Formats) != 2 {
+		t.Fatalf("video rtx %v %v", rtx, video.Formats)
+	}
+	for _, media := range []*sdp.Media{audio, video} {
+		if media.Extensions()[rtp.TransportCCURI] != 3 {
+			t.Fatalf("%s slot lacks transport-cc", media.Kind)
+		}
+	}
+	feedback := video.Feedback(96)
+	if !slices.Contains(feedback, "nack") || !slices.Contains(feedback, "transport-cc") || slices.Contains(feedback, "goog-remb") {
+		t.Fatalf("slot feedback %q", feedback)
+	}
+	if !slices.Contains(audio.Feedback(111), "transport-cc") {
+		t.Fatal("audio slot lacks transport-cc feedback")
+	}
+}
+
+func TestTheAnswerAcceptsTransportWideCC(t *testing.T) {
+	offerText := strings.Replace(chromeOffer, "a=rtpmap:96 VP8/90000\r\n",
+		"a=extmap:5 "+rtp.TransportCCURI+"\r\na=rtpmap:96 VP8/90000\r\na=rtcp-fb:96 transport-cc\r\n", 1)
+	offerText = strings.Replace(offerText, "a=rtpmap:111 opus/48000/2\r\n",
+		"a=extmap:5 "+rtp.TransportCCURI+"\r\na=rtpmap:111 opus/48000/2\r\n", 1)
+	offer, err := sdp.Parse(offerText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := readUpstream(offer)
+	if upstream[0].tccID != 5 || upstream[1].tccID != 5 {
+		t.Fatalf("tcc ids %d %d", upstream[0].tccID, upstream[1].tccID)
+	}
+	d := description{sessionID: "7", version: 1, ufrag: "u", pwd: "p", fingerprint: "sha-256 11:22", tccID: 5}
+	answer, err := sdp.Parse(d.render(upstream, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, media := range answer.Media[:2] {
+		if media.Extensions()[rtp.TransportCCURI] != 5 || len(media.Extensions()) != 1 {
+			t.Fatalf("%s extensions %v", media.Kind, media.Extensions())
+		}
+	}
+	if !slices.Contains(answer.Media[1].Feedback(96), "transport-cc") || !slices.Contains(answer.Media[0].Feedback(111), "transport-cc") {
+		t.Fatal("transport-cc feedback missing")
+	}
+}
+
+func TestRTXIsRefusedWhenItsPayloadTypeCollides(t *testing.T) {
+	cases := []struct{ vp8, rtx string }{{"96", "111"}, {"120", "97"}, {"120", "96"}}
+	for _, c := range cases {
+		text := strings.NewReplacer("a=rtpmap:96 VP8/90000", "a=rtpmap:"+c.vp8+" VP8/90000", "m=video 9 UDP/TLS/RTP/SAVPF 96 97 102",
+			"m=video 9 UDP/TLS/RTP/SAVPF "+c.vp8+" "+c.rtx+" 102", "a=rtpmap:97 rtx/90000\r\na=fmtp:97 apt=96",
+			"a=rtpmap:"+c.rtx+" rtx/90000\r\na=fmtp:"+c.rtx+" apt="+c.vp8).Replace(chromeOffer)
+		offer, err := sdp.Parse(text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if section := readUpstream(offer)[1]; !section.accepted || section.rtx {
+			t.Fatalf("vp8 %s rtx %s: %+v", c.vp8, c.rtx, section)
+		}
 	}
 }

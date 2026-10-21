@@ -299,18 +299,18 @@ func TestLostServerFlightRetransmitted(t *testing.T) {
 	if lost := h.take(); len(lost) == 0 {
 		t.Fatal("no server flight")
 	}
-	h.now = h.now.Add(500 * time.Millisecond)
+	h.now = h.now.Add(250 * time.Millisecond)
 	h.s.Tick(h.now)
 	if len(h.toClient) != 0 {
 		t.Fatal("retransmitted too early")
 	}
-	h.now = h.now.Add(600 * time.Millisecond)
+	h.now = h.now.Add(60 * time.Millisecond)
 	if err := h.s.Tick(h.now); err != nil {
 		t.Fatal(err)
 	}
 	again := h.take()
 	if len(again) == 0 {
-		t.Fatal("no retransmission after 1s")
+		t.Fatal("no retransmission after 300ms")
 	}
 	final := h.toClientAll(again)
 	var dup [][]byte
@@ -399,22 +399,22 @@ func TestRetransmitScheduleThenFail(t *testing.T) {
 	h.toServer(h.toClientAll(h.take()))
 	flight := len(h.take())
 	start := h.now
-	for i, at := range []time.Duration{1, 3, 7, 15} {
-		h.s.Tick(start.Add(at*time.Second - time.Millisecond))
+	for i, at := range []time.Duration{300, 900, 2100, 4500, 8500, 12500, 16500} {
+		h.s.Tick(start.Add(at*time.Millisecond - time.Millisecond))
 		if len(h.toClient) != 0 {
 			t.Fatalf("resend %d too early", i)
 		}
-		if err := h.s.Tick(start.Add(at * time.Second)); err != nil {
+		if err := h.s.Tick(start.Add(at * time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
 		if got := len(h.take()); got != flight {
 			t.Fatalf("resend %d sent %d datagrams, want %d", i, got, flight)
 		}
 	}
-	if err := h.s.Tick(start.Add(23*time.Second - time.Millisecond)); err != nil {
+	if err := h.s.Tick(start.Add(20500*time.Millisecond - time.Millisecond)); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.s.Tick(start.Add(23 * time.Second)); !errors.Is(err, errTimeout) {
+	if err := h.s.Tick(start.Add(20500 * time.Millisecond)); !errors.Is(err, errTimeout) {
 		t.Fatalf("expected timeout, got %v", err)
 	}
 	if h.s.Failed() == nil {

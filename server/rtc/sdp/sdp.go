@@ -459,3 +459,66 @@ func Fingerprint(s *Session, m *Media) (algorithm, value string) {
 	}
 	return f[0], f[1]
 }
+
+func (m *Media) Extensions() map[string]int {
+	out := map[string]int{}
+	for _, v := range m.Attrs("extmap") {
+		f := strings.Fields(v)
+		if len(f) < 2 {
+			continue
+		}
+		id := f[0]
+		if i := strings.IndexByte(id, '/'); i >= 0 {
+			id = id[:i]
+		}
+		n, ok := parseDigits(id, 255)
+		if !ok || n == 0 {
+			continue
+		}
+		if _, dup := out[f[1]]; dup {
+			continue
+		}
+		out[f[1]] = n
+	}
+	return out
+}
+
+func (m *Media) RTXFor(primary uint8) (uint8, bool) {
+	maps := m.RTPMaps()
+	fmtps := m.Fmtps()
+	best := -1
+	for pt, codec := range maps {
+		if !strings.HasPrefix(strings.ToLower(codec), "rtx/") {
+			continue
+		}
+		for _, param := range strings.Split(fmtps[pt], ";") {
+			key, value, ok := strings.Cut(strings.TrimSpace(param), "=")
+			if !ok || key != "apt" {
+				continue
+			}
+			apt, ok := parseDigits(strings.TrimSpace(value), 127)
+			if ok && uint8(apt) == primary && (best < 0 || int(pt) < best) {
+				best = int(pt)
+			}
+		}
+	}
+	if best < 0 {
+		return 0, false
+	}
+	return uint8(best), true
+}
+
+func (m *Media) Feedback(pt uint8) []string {
+	want := strconv.Itoa(int(pt))
+	var out []string
+	for _, v := range m.Attrs("rtcp-fb") {
+		i := strings.IndexByte(v, ' ')
+		if i < 0 {
+			continue
+		}
+		if v[:i] == want || v[:i] == "*" {
+			out = append(out, strings.TrimSpace(v[i+1:]))
+		}
+	}
+	return out
+}

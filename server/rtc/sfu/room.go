@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"math"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -23,7 +24,6 @@ const (
 	MaxTracks           = 2
 	MaxPacketBytes      = 1500
 	keyframeInterval    = time.Second
-	feedbackInterval    = time.Second
 	answerTimeout       = 10 * time.Second
 	defaultVideoBitrate = 1_500_000
 	sendQueue           = 64
@@ -33,6 +33,22 @@ const (
 	MaxPerAccount       = 4
 	MaxServerPeople     = 400
 	usedSSRCMemory      = 4096
+	roomCeilingTotal    = 3_000_000
+	minCeiling          = 200_000
+	pauseBelow          = 80_000
+	resumeAbove         = 120_000
+	pauseAfter          = time.Second
+	rembEvery           = time.Second
+	rembRaiseGap        = 200 * time.Millisecond
+	repairNackBudget    = 50
+	repairPacketBudget  = 200
+	repairByteCeiling   = 256 << 10
+	repairByteFloor     = 4 << 10
+	repairShare         = 0.2
+	repairSeqsPerNack   = 64
+	resendSpacing       = 30 * time.Millisecond
+	resendTimes         = 4
+	resentSlots         = 256
 )
 
 var (
@@ -52,6 +68,7 @@ type Config struct {
 
 type Server struct {
 	cfg         Config
+	epoch       time.Time
 	mux         *ice.Mux
 	certificate *dtls.Certificate
 	dtlsConfig  *dtls.Config
@@ -72,6 +89,8 @@ type Room struct {
 	usedOrder    []uint32
 	queue        chan inbound
 	done         chan struct{}
+	scratch      []byte
+	rtxScratch   []byte
 }
 
 type inbound struct {
@@ -81,17 +100,37 @@ type inbound struct {
 }
 
 type Track struct {
-	owner       *Participant
-	kind        string
-	ssrc        uint32
-	id          string
-	payloadType uint8
+	owner          *Participant
+	kind           string
+	ssrc           uint32
+	id             string
+	payloadType    uint8
+	rtxSSRC        uint32
+	rtxPayloadType uint8
+	cache          *packetCache
+	stats          *receiveStats
 }
 
 type slot struct {
 	mid   string
 	kind  string
 	track *Track
+	rtx   uint32
+}
+
+type resent struct {
+	ext   int64
+	at    time.Time
+	count int
+}
+
+type downstream struct {
+	rtxSSRC   uint32
+	rtxSeq    uint16
+	rtx       bool
+	start     int64
+	timestamp uint32
+	resent    *[resentSlots]resent
 }
 
 type outgoing struct {
@@ -127,7 +166,23 @@ type Participant struct {
 	budgetStart time.Time
 	packets     int
 	bytes       int
-	lastFeed    time.Time
+	write       func([]byte) error
+	tccID       uint8
+	tccDown     bool
+	arrivals    *arrivals
+	downlink    *downlink
+	down        map[*Track]*downstream
+	videoPaused bool
+	belowSince  time.Time
+	path        netip.AddrPort
+	havePath    bool
+	lastReport  time.Time
+	remb        uint64
+	rembAt      time.Time
+	repairStart time.Time
+	repairNacks int
+	repairCount int
+	repairBytes int
 }
 
 func NewServer(cfg Config, mux *ice.Mux) (*Server, error) {
@@ -150,6 +205,7 @@ func NewServer(cfg Config, mux *ice.Mux) (*Server, error) {
 	}
 	server := &Server{
 		cfg:         cfg,
+		epoch:       time.Now(),
 		mux:         mux,
 		certificate: certificate,
 		candidates:  mux.Candidates(cfg.Addresses),
@@ -169,6 +225,21 @@ func randomID() string {
 		panic(err)
 	}
 	return strconv.FormatUint(binary.BigEndian.Uint64(raw[:])>>1, 10)
+}
+
+func (s *Server) micros(now time.Time) int64 {
+	return now.Sub(s.epoch).Microseconds()
+}
+
+func (r *Room) newSSRCLocked() uint32 {
+	for {
+		ssrc := randomSSRC()
+		if !r.used[ssrc] {
+			r.used[ssrc] = true
+			r.usedOrder = append(r.usedOrder, ssrc)
+			return ssrc
+		}
+	}
 }
 
 func randomSSRC() uint32 {
@@ -287,6 +358,9 @@ func (r *Room) join(peerID, account string) (*Participant, []string, error) {
 		sessionID:  randomID(),
 		lastKey:    map[uint32]time.Time{},
 		account:    account,
+		arrivals:   &arrivals{},
+		downlink:   newDownlink(),
+		down:       map[*Track]*downstream{},
 	}
 	r.participants[peerID] = participant
 	r.order = append(r.order, peerID)
@@ -319,6 +393,7 @@ func (p *Participant) description() description {
 		fingerprint: p.room.server.certificate.Fingerprint,
 		candidates:  p.room.server.candidates,
 		cname:       p.id,
+		tccID:       p.tccID,
 	}
 }
 
@@ -353,6 +428,17 @@ func (r *Room) offer(p *Participant, text string) error {
 		return ErrBadOffer
 	}
 	p.fingerprint = "sha-256 " + strings.ToUpper(strings.TrimSpace(value))
+	for _, section := range upstream {
+		if section.accepted && section.tccID != 0 {
+			p.tccID = section.tccID
+			break
+		}
+	}
+	for i := range upstream {
+		if upstream[i].tccID != p.tccID {
+			upstream[i].tccID = 0
+		}
+	}
 	p.upstream = upstream
 	kinds := map[string]bool{}
 	offered := map[uint32]bool{}
@@ -380,13 +466,23 @@ func (r *Room) offer(p *Participant, text string) error {
 				break
 			}
 			kinds[section.kind] = true
-			p.tracks = append(p.tracks, &Track{
+			track := &Track{
 				owner:       p,
 				kind:        section.kind,
 				ssrc:        ssrc,
 				id:          section.kind + "-" + strconv.FormatUint(uint64(ssrc), 10),
 				payloadType: section.payloadType,
-			})
+				stats:       newReceiveStats(section.kind),
+			}
+			if section.kind == "video" {
+				track.cache = &packetCache{}
+				for _, group := range media.FIDGroups() {
+					if group[0] == ssrc && section.rtx {
+						track.rtxSSRC, track.rtxPayloadType = group[1], section.rtxPayloadType
+					}
+				}
+			}
+			p.tracks = append(p.tracks, track)
 			break
 		}
 	}
@@ -407,6 +503,7 @@ func (r *Room) offer(p *Participant, text string) error {
 		}
 		return nil
 	}
+	p.write = p.ice.Send
 	p.dtls = dtls.NewServer(&config, p.id, p.ice.Send)
 	p.send(map[string]any{"type": "answer", "sdp": p.description().render(p.upstream, nil)})
 	for _, other := range r.participants {
@@ -429,22 +526,42 @@ func (r *Room) answered(p *Participant, rev int, text string) error {
 		return nil
 	}
 	accepted := map[string]bool{}
+	rtx := map[string]bool{}
+	tcc := map[string]bool{}
 	for _, media := range session.Media {
 		if media.Port != 0 && media.Direction() != "inactive" {
 			accepted[media.Mid()] = true
+			if pt, ok := media.RTXFor(videoPayloadType); ok && pt == videoRTXPayloadType {
+				rtx[media.Mid()] = true
+			}
+			if p.tccID != 0 && media.Extensions()[rtp.TransportCCURI] == int(p.tccID) {
+				tcc[media.Mid()] = true
+			}
 		}
 	}
+	before := p.negotiated
 	p.negotiated = map[*Track]bool{}
 	var fresh []*Track
+	anyTCC := false
 	for _, slot := range p.offered {
 		if slot.track != nil && accepted[slot.mid] {
 			p.negotiated[slot.track] = true
-			fresh = append(fresh, slot.track)
+			if !before[slot.track] {
+				fresh = append(fresh, slot.track)
+			}
+			if d := p.down[slot.track]; d != nil {
+				d.rtx = rtx[slot.mid]
+			}
+			anyTCC = anyTCC || tcc[slot.mid]
 		}
 	}
+	if anyTCC && !p.tccDown {
+		p.downlink.reset(r.server.micros(time.Now()))
+	}
+	p.tccDown = anyTCC
 	p.pendingRev = 0
 	for _, track := range fresh {
-		if track.kind == "video" {
+		if track.kind == "video" && p.ready {
 			r.requestKeyframeLocked(track, time.Now())
 		}
 	}
@@ -477,7 +594,9 @@ func (r *Room) renegotiateLocked(p *Participant) {
 	present := map[*Track]bool{}
 	for _, slot := range p.slots {
 		if slot.track != nil && slot.track.owner.closed {
+			delete(p.down, slot.track)
 			slot.track = nil
+			slot.rtx = 0
 		}
 		if slot.track != nil {
 			present[slot.track] = true
@@ -500,6 +619,15 @@ func (r *Room) renegotiateLocked(p *Participant) {
 			p.slots = append(p.slots, target)
 		}
 		target.track = track
+		d := p.down[track]
+		if d == nil {
+			d = &downstream{rtxSSRC: r.newSSRCLocked()}
+			p.down[track] = d
+		}
+		target.rtx = 0
+		if track.kind == "video" {
+			target.rtx = d.rtxSSRC
+		}
 	}
 	p.offered = make([]*slot, len(p.slots))
 	for i, current := range p.slots {
@@ -574,7 +702,7 @@ func (r *Room) packet(p *Participant, kind int, packet []byte) {
 		if rtp.IsRTCP(packet) {
 			r.rtcpLocked(p, packet, now)
 		} else {
-			r.rtpLocked(p, packet)
+			r.rtpLocked(p, packet, now)
 		}
 	}
 }
@@ -609,6 +737,11 @@ func (r *Room) dtlsLocked(p *Participant, packet []byte, now time.Time) {
 			r.requestKeyframeLocked(track, now)
 		}
 	}
+	for track, ok := range p.negotiated {
+		if ok && track.kind == "video" {
+			r.requestKeyframeLocked(track, now)
+		}
+	}
 }
 
 func (r *Room) trackBySSRC(ssrc uint32) *Track {
@@ -622,7 +755,7 @@ func (r *Room) trackBySSRC(ssrc uint32) *Track {
 	return nil
 }
 
-func (r *Room) rtpLocked(p *Participant, packet []byte) {
+func (r *Room) rtpLocked(p *Participant, packet []byte, now time.Time) {
 	plain, err := p.inbound.DecryptRTP(nil, packet)
 	if err != nil {
 		return
@@ -631,29 +764,178 @@ func (r *Room) rtpLocked(p *Participant, packet []byte) {
 	if err != nil {
 		return
 	}
+	if p.tccID != 0 {
+		if seq, ok := rtp.TransportSequence(header, p.tccID); ok {
+			p.arrivals.record(seq, r.server.micros(now))
+		}
+	}
 	var track *Track
+	recovered := false
 	for _, owned := range p.tracks {
 		if owned.ssrc == header.SSRC {
 			track = owned
+		} else if owned.rtxSSRC != 0 && owned.rtxSSRC == header.SSRC {
+			track, recovered = owned, true
 		}
 	}
-	if track == nil || header.PayloadType != track.payloadType {
+	if track == nil {
 		return
 	}
+	if recovered {
+		if header.PayloadType != track.rtxPayloadType {
+			return
+		}
+		osn, payload, err := rtp.ParseRTX(rtp.Payload(plain, header))
+		if err != nil {
+			return
+		}
+		rebuilt := rtp.Packet{
+			Marker: header.Marker, PayloadType: track.payloadType, SequenceNumber: osn,
+			Timestamp: header.Timestamp, SSRC: track.ssrc, CSRC: header.CSRC, Payload: payload,
+		}
+		plain = rebuilt.Marshal(nil)
+		if header, err = rtp.ParseHeader(plain); err != nil {
+			return
+		}
+	} else if header.PayloadType != track.payloadType {
+		return
+	}
+	stats := track.stats
+	ext := stats.ext(header.SequenceNumber)
+	if stats.started && ext <= stats.highest-cacheSlots {
+		return
+	}
+	if track.cache != nil && track.cache.has(ext) {
+		return
+	}
+	if stats.arrived(ext, header.Timestamp, now, r.server.epoch, recovered) {
+		r.requestKeyframeLocked(track, now)
+	}
+	pt := uint8(audioPayloadType)
 	if track.kind == "video" {
-		rtp.SetPayloadType(plain, videoPayloadType)
-	} else {
-		rtp.SetPayloadType(plain, audioPayloadType)
+		pt = videoPayloadType
+	}
+	rtp.SetPayloadType(plain, pt)
+	if track.cache != nil {
+		track.cache.put(ext, now, plain)
+	}
+	out := rtp.Packet{
+		Marker: header.Marker, PayloadType: pt, SequenceNumber: header.SequenceNumber,
+		Timestamp: header.Timestamp, SSRC: track.ssrc, CSRC: header.CSRC,
+		Payload: rtp.Payload(plain, header), Padding: header.PaddingLength,
 	}
 	for _, receiver := range r.participants {
 		if receiver == p || !receiver.ready || !receiver.negotiated[track] {
 			continue
 		}
-		sealed, err := receiver.outbound.EncryptRTP(nil, plain)
+		d := receiver.down[track]
+		if d == nil || (track.kind == "video" && receiver.videoPaused) {
+			continue
+		}
+		if d.start == 0 {
+			d.start = ext
+		}
+		d.timestamp = header.Timestamp
+		r.sendRTPLocked(receiver, &out, 0, now)
+	}
+	if track.kind == "video" {
+		r.sendNacksLocked(track, now)
+	}
+}
+
+func (r *Room) sendRTPLocked(receiver *Participant, packet *rtp.Packet, probe int32, now time.Time) (int, bool) {
+	packet.TransportID = 0
+	var seq int64
+	if receiver.tccDown {
+		packet.TransportID = receiver.tccID
+		packet.TransportSeq, seq = receiver.downlink.stamp()
+	}
+	r.scratch = packet.Marshal(r.scratch)
+	sealed, err := receiver.outbound.EncryptRTP(nil, r.scratch)
+	if err != nil {
+		return 0, false
+	}
+	_ = receiver.write(sealed)
+	if seq != 0 {
+		receiver.downlink.sent(seq, r.server.micros(now), len(sealed), probe)
+	}
+	return len(sealed), true
+}
+
+func (r *Room) sendNacksLocked(track *Track, now time.Time) {
+	if seqs := track.stats.nacks(now); len(seqs) > 0 {
+		r.sendRTCPLocked(track.owner, rtp.NewNACK(track.owner.sendSSRC, track.ssrc, seqs))
+	}
+}
+
+func (p *Participant) repairBudget(now time.Time) int {
+	if now.Sub(p.repairStart) > time.Second {
+		p.repairStart, p.repairNacks, p.repairCount, p.repairBytes = now, 0, 0, 0
+	}
+	if !p.downlink.known() {
+		return repairByteCeiling
+	}
+	return max(repairByteFloor, min(repairByteCeiling, int(p.downlink.estimate*repairShare/8)))
+}
+
+func (r *Room) nackLocked(p *Participant, part []byte, now time.Time) {
+	media, lost, err := rtp.ParseNACK(part)
+	if err != nil {
+		return
+	}
+	track := r.trackBySSRC(media)
+	if track == nil || track.owner == p || track.cache == nil || !p.negotiated[track] || p.videoPaused {
+		return
+	}
+	d := p.down[track]
+	if d == nil || !d.rtx {
+		return
+	}
+	byteBudget := p.repairBudget(now)
+	p.repairNacks++
+	if p.repairNacks > repairNackBudget {
+		return
+	}
+	if len(lost) > repairSeqsPerNack {
+		lost = lost[:repairSeqsPerNack]
+	}
+	for _, seq := range lost {
+		if p.repairCount >= repairPacketBudget || p.repairBytes >= byteBudget {
+			return
+		}
+		ext, plain := track.cache.get(seq, now)
+		if plain == nil || d.start == 0 || ext < d.start {
+			continue
+		}
+		if d.resent == nil {
+			d.resent = new([resentSlots]resent)
+		}
+		mark := &d.resent[ext&(resentSlots-1)]
+		if mark.ext == ext {
+			if mark.count >= resendTimes || now.Sub(mark.at) < resendSpacing {
+				continue
+			}
+		} else {
+			*mark = resent{ext: ext}
+		}
+		header, err := rtp.ParseHeader(plain)
 		if err != nil {
 			continue
 		}
-		_ = receiver.ice.Send(sealed)
+		r.rtxScratch = rtp.RTXPayload(r.rtxScratch, header.SequenceNumber, rtp.Payload(plain, header))
+		packet := rtp.Packet{
+			Marker: header.Marker, PayloadType: videoRTXPayloadType, SequenceNumber: d.rtxSeq,
+			Timestamp: header.Timestamp, SSRC: d.rtxSSRC, CSRC: header.CSRC, Payload: r.rtxScratch,
+		}
+		d.rtxSeq++
+		size, ok := r.sendRTPLocked(p, &packet, 0, now)
+		if !ok {
+			continue
+		}
+		mark.count++
+		mark.at = now
+		p.repairCount++
+		p.repairBytes += size
 	}
 }
 
@@ -677,6 +959,18 @@ func (r *Room) rtcpLocked(p *Participant, packet []byte, now time.Time) {
 			if track != nil && track.owner != p && track.kind == "video" && p.negotiated[track] {
 				r.requestKeyframeLocked(track, now)
 			}
+		case rtp.TypeRTPFB:
+			switch rtp.Count(part) {
+			case rtp.FmtNACK:
+				r.nackLocked(p, part, now)
+			case rtp.FmtTCC:
+				if !p.tccDown {
+					continue
+				}
+				if feedback, err := rtp.ParseTransportFeedback(part); err == nil {
+					p.downlink.feedback(feedback, r.server.micros(now))
+				}
+			}
 		case rtp.TypeSR:
 			if len(part) < 28 || rtp.SenderSSRC(part) == 0 {
 				continue
@@ -689,6 +983,9 @@ func (r *Room) rtcpLocked(p *Participant, packet []byte, now time.Time) {
 			}
 			if track == nil {
 				continue
+			}
+			if ntp, ok := rtp.SenderReportNTP(part); ok {
+				track.stats.srNTP, track.stats.srAt = ntp, now
 			}
 			report := append([]byte(nil), part[:28]...)
 			report[0] = 0x80
@@ -719,7 +1016,7 @@ func (r *Room) sendRTCPLocked(p *Participant, packet []byte) {
 	if err != nil {
 		return
 	}
-	_ = p.ice.Send(sealed)
+	_ = p.write(sealed)
 }
 
 func (r *Room) tick(now time.Time) []*Participant {
@@ -747,18 +1044,168 @@ func (r *Room) tick(now time.Time) []*Participant {
 				continue
 			}
 		}
-		if p.ready && now.Sub(p.lastFeed) >= feedbackInterval {
-			p.lastFeed = now
-			report := rtp.NewReceiverReport(p.sendSSRC)
-			for _, track := range p.tracks {
-				if track.kind == "video" {
-					report = append(report, rtp.NewREMB(p.sendSSRC, r.server.cfg.VideoBitrate, []uint32{track.ssrc})...)
-				}
-			}
-			r.sendRTCPLocked(p, report)
+	}
+	ceiling := r.ceilingLocked()
+	for _, p := range r.participants {
+		if !p.closed && p.ready {
+			r.feedbackLocked(p, now)
+			r.adaptReceiverLocked(p, now, ceiling)
+		}
+	}
+	for _, p := range r.participants {
+		if !p.closed && p.ready {
+			r.capSenderLocked(p, now, ceiling)
 		}
 	}
 	return expired
+}
+
+func (r *Room) ceilingLocked() float64 {
+	n := len(r.participants)
+	ceiling := float64(r.server.cfg.VideoBitrate)
+	if n > 1 {
+		ceiling = math.Min(ceiling, math.Max(minCeiling, roomCeilingTotal/float64(n-1)))
+	}
+	return ceiling
+}
+
+func (p *Participant) senders() int {
+	owners := map[*Participant]bool{}
+	for track, ok := range p.negotiated {
+		if ok && !track.owner.closed {
+			owners[track.owner] = true
+		}
+	}
+	return len(owners)
+}
+
+func (r *Room) feedbackLocked(p *Participant, now time.Time) {
+	if p.ice != nil {
+		if addr, ok := p.ice.Selected(); ok {
+			if p.havePath && addr != p.path {
+				p.downlink.reset(r.server.micros(now))
+			}
+			p.path, p.havePath = addr, true
+		}
+	}
+	if p.tccID != 0 && len(p.tracks) > 0 {
+		for _, packet := range p.arrivals.feedback(p.sendSSRC, p.tracks[0].ssrc) {
+			r.sendRTCPLocked(p, packet)
+		}
+	}
+	for _, track := range p.tracks {
+		if track.kind == "video" {
+			r.sendNacksLocked(track, now)
+		}
+	}
+	if now.Sub(p.lastReport) >= reportInterval {
+		p.lastReport = now
+		var blocks []rtp.ReportBlock
+		for _, track := range p.tracks {
+			if block, ok := track.stats.report(track.ssrc, now); ok {
+				blocks = append(blocks, block)
+			}
+		}
+		if len(blocks) > 0 {
+			r.sendRTCPLocked(p, rtp.NewReceiverReport(p.sendSSRC, blocks...))
+		}
+	}
+}
+
+func (r *Room) adaptReceiverLocked(p *Participant, now time.Time, ceiling float64) {
+	senders := p.senders()
+	if senders == 0 {
+		return
+	}
+	limit := ceiling * float64(senders)
+	link := p.downlink
+	if link.known() && link.estimate >= 1.2*limit {
+		link.estimate = 0
+	}
+	share := math.Inf(1)
+	if link.known() {
+		share = link.estimate / float64(senders)
+	}
+	switch {
+	case !p.videoPaused && share < pauseBelow:
+		if p.belowSince.IsZero() {
+			p.belowSince = now
+		} else if now.Sub(p.belowSince) >= pauseAfter {
+			p.videoPaused = true
+		}
+	case !p.videoPaused:
+		p.belowSince = time.Time{}
+	case share >= resumeAbove:
+		p.videoPaused = false
+		p.belowSince = time.Time{}
+		for track, ok := range p.negotiated {
+			if ok && track.kind == "video" {
+				if d := p.down[track]; d != nil {
+					d.start = 0
+				}
+				r.requestKeyframeLocked(track, now)
+			}
+		}
+	}
+	if !p.tccDown {
+		return
+	}
+	_, packets, ok := link.wantProbe(r.server.micros(now), limit)
+	if !ok {
+		return
+	}
+	var carrier *downstream
+	for track, negotiated := range p.negotiated {
+		if d := p.down[track]; negotiated && d != nil && d.rtx && track.kind == "video" {
+			carrier = d
+			break
+		}
+	}
+	if carrier == nil {
+		link.probe.done = true
+		return
+	}
+	for i := 0; i < packets; i++ {
+		packet := rtp.Packet{
+			PayloadType: videoRTXPayloadType, SequenceNumber: carrier.rtxSeq,
+			Timestamp: carrier.timestamp, SSRC: carrier.rtxSSRC, Padding: probePadding,
+		}
+		carrier.rtxSeq++
+		r.sendRTPLocked(p, &packet, link.probe.id, now)
+	}
+}
+
+func (r *Room) capSenderLocked(p *Participant, now time.Time, ceiling float64) {
+	var ssrcs []uint32
+	for _, track := range p.tracks {
+		if track.kind == "video" {
+			ssrcs = append(ssrcs, track.ssrc)
+		}
+	}
+	if len(ssrcs) == 0 {
+		return
+	}
+	limit := ceiling
+	for _, receiver := range r.participants {
+		if receiver == p || receiver.closed || !receiver.ready || receiver.videoPaused || !receiver.downlink.known() {
+			continue
+		}
+		receives := false
+		for _, track := range p.tracks {
+			receives = receives || receiver.negotiated[track]
+		}
+		if !receives {
+			continue
+		}
+		share := receiver.downlink.estimate / float64(max(1, receiver.senders()))
+		limit = math.Min(limit, math.Max(share, pauseBelow))
+	}
+	value := uint64(limit)
+	since := now.Sub(p.rembAt)
+	if p.rembAt.IsZero() || since >= rembEvery || value*100 < p.remb*95 || (value*100 > p.remb*105 && since >= rembRaiseGap) {
+		p.remb, p.rembAt = value, now
+		r.sendRTCPLocked(p, rtp.NewREMB(p.sendSSRC, value, ssrcs))
+	}
 }
 
 func (s *Server) Tick(now time.Time) {

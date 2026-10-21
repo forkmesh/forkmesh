@@ -35,9 +35,9 @@ const (
 )
 
 const (
-	initialRetransmit = time.Second
-	maxRetransmit     = 8 * time.Second
-	maxRetransmits    = 4
+	initialRetransmit = 300 * time.Millisecond
+	maxRetransmit     = 4 * time.Second
+	maxRetransmits    = 7
 	minPeerResendGap  = 250 * time.Millisecond
 )
 
