@@ -1111,6 +1111,101 @@
     return mentions.sort((a, b) => a.ts - b.ts);
   }
 
+  const PULL_CLOSING_REFERENCE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(?:issues?\s+)?#([1-9]\d{0,8})\b/gi;
+  const ISSUE_PULL_LINK = /\b(?:(un)?linked\s+(?:pull\s+request|PR)\s+|(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s+(?:(?:by|in|with|via)\s+(?:(?:pull\s+request|PR|pull)\s+)?|(?:pull\s+request|PR)\s+))#([1-9]\d{0,8})\b/gi;
+  const ISSUE_PULL_LINK_LINE = /^\s*(un)?linked\s+pull\s+request\s+#([1-9]\d{0,8})\s*$/i;
+
+  function developmentProse(text) {
+    const lines = [];
+    let fence = "";
+    for (const rawLine of String(text || "").split("\n")) {
+      const trimmed = rawLine.trim();
+      const fenceLine = trimmed.startsWith("```") || trimmed.startsWith("~~~");
+      if (fence) {
+        if (fenceLine && trimmed.startsWith(fence)) fence = "";
+        continue;
+      }
+      if (fenceLine) {
+        fence = trimmed.slice(0, 3);
+        continue;
+      }
+      lines.push(rawLine.replace(/`+[^`]*`+/g, " "));
+    }
+    return lines.join("\n");
+  }
+
+  function pullClosingIssueNumbers(texts) {
+    const numbers = [];
+    (Array.isArray(texts) ? texts : [texts]).forEach((text) => {
+      for (const match of developmentProse(text).matchAll(PULL_CLOSING_REFERENCE)) {
+        const number = Number(match[1]);
+        if (!numbers.includes(number)) numbers.push(number);
+      }
+    });
+    return numbers;
+  }
+
+  function pullOwnIssueNumbers(pull, conversation = [], commits = []) {
+    const numbers = new Set(issueReferenceNumbers(`${pull?.title || ""}\n${pull?.body || ""}`));
+    pullClosingIssueNumbers((Array.isArray(conversation) ? conversation : [])
+      .concat(Array.isArray(commits) ? commits : [])
+      .map((event) => event?.body || ""))
+      .forEach((number) => numbers.add(number));
+    return numbers;
+  }
+
+  function issueDevelopmentPullStates(events) {
+    const list = (Array.isArray(events) ? events : []).filter(Boolean);
+    const edits = new Map();
+    const deleted = new Set();
+    list.forEach((event) => {
+      if (event.type === "edit" && event.target) edits.set(String(event.target), event.body);
+      else if (event.type === "delete" && event.target) deleted.add(String(event.target));
+    });
+    const states = new Map();
+    for (const event of list) {
+      if (event.type !== "open" && event.type !== "comment") continue;
+      const id = String(event.id || "");
+      if (id && deleted.has(id)) continue;
+      const body = id && edits.has(id) ? edits.get(id) : event.body;
+      for (const match of developmentProse(body).matchAll(ISSUE_PULL_LINK)) {
+        states.set(Number(match[2]), !match[1]);
+      }
+    }
+    return states;
+  }
+
+  function issueLinkedPullNumbers(issueNumber, events, pulls) {
+    const target = Number(issueNumber);
+    const states = issueDevelopmentPullStates(events);
+    const known = Array.isArray(pulls) ? pulls.filter((pull) => pull && /^\d+$/.test(String(pull.number))) : null;
+    const numbers = new Set();
+    (known || []).forEach((pull) => {
+      const number = Number(pull.number);
+      if (states.get(number) !== false && pullOwnIssueNumbers(pull).has(target)) numbers.add(number);
+    });
+    states.forEach((linked, number) => {
+      if (linked && (!known || known.some((pull) => Number(pull.number) === number))) numbers.add(number);
+    });
+    return Array.from(numbers).sort((a, b) => b - a);
+  }
+
+  function pullLinkedIssueNumbers(pullNumber, ownNumbers, issues) {
+    const target = Number(pullNumber);
+    const numbers = new Set(ownNumbers || []);
+    (Array.isArray(issues) ? issues : []).forEach((issue) => {
+      if (!issue || issue.deleted) return;
+      const linked = issueDevelopmentPullStates(issue.events).get(target);
+      if (linked === true) numbers.add(Number(issue.number));
+      else if (linked === false) numbers.delete(Number(issue.number));
+    });
+    return Array.from(numbers).sort((a, b) => a - b);
+  }
+
+  function developmentLinkComment(pullNumbers, linked) {
+    return pullNumbers.map((number) => `${linked ? "Linked" : "Unlinked"} pull request #${Number(number)}`).join("\n");
+  }
+
   function issueRelationStatusPill(status) {
     const value = String(status || "").toLowerCase();
     const label = value === "closed" ? "Closed" : value === "unknown" ? "Not synced" : "Open";
@@ -1503,6 +1598,18 @@
       if (ev.type === "comment") {
         if (deletedComments.has(ev.id)) continue;
         const edit = edits.get(String(ev.id || ""));
+        const linkLines = String((edit ? edit.body : ev.body) || "").split("\n").filter((line) => line.trim());
+        if (linkLines.length && linkLines.every((line) => ISSUE_PULL_LINK_LINE.test(line))) {
+          const links = linkLines.map((line) => line.match(ISSUE_PULL_LINK_LINE));
+          const linkHtml = (match) => {
+            const href = options.repo ? repoRecordUrl(options.repo, "pulls", match[2]) : `#pull-${match[2]}`;
+            return `<span>${match[1] ? "unlinked" : "linked"} pull request</span><a href="${escapeHtml(href)}" class="font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(match[2])}</a>`;
+          };
+          items.push(renderIssueTimelineEvent(links.every((match) => match[1]) ? "unlink" : "git-pull-request", who, ev.author,
+            links.map(linkHtml).join('<span aria-hidden="true">,</span>'), ev.ts,
+            `data-repo-issue-development-event="${escapeHtml(ev.id || "")}"`));
+          continue;
+        }
         ev = {
           ...ev,
           ...(edit ? { body: edit.body } : {}),
@@ -5439,6 +5546,8 @@
           number,
           state.repoRecordDetail.parsed,
         );
+        renderRepoRecordDevelopment();
+        if (body) void linkPullCommentIssues(repo, number, body);
       }
       if (bodyInput) bodyInput.value = "";
       buttons.forEach((button) => { button.disabled = false; });
@@ -6768,9 +6877,9 @@
           <button type="button" data-repo-record-tab="badge" ${recordTabAttrs("badge")}><i data-lucide="fingerprint" class="h-4 w-4 text-muted-foreground"></i>Badge</button>
           <span data-repo-pull-diffstat class="ml-auto hidden shrink-0 items-center gap-1.5 self-center pl-4 font-mono text-[12px] font-semibold sm:inline-flex"><span class="text-success">+${formatCount(pullAdds)}</span><span class="text-destructive">&minus;${formatCount(pullDels)}</span><span class="ml-0.5 inline-flex gap-px">${diffBlocks}</span></span>
         </nav>` : "";
-    const sidebarSection = (label, value) => `
-      <div class="border-b border-border py-4 first:pt-0">
-        <h4 class="mb-2 text-[12px] font-semibold text-muted-foreground">${label}</h4>
+    const sidebarSection = (label, value, picker = "") => `
+      <div ${picker ? `data-repo-issue-picker-section="${picker}" ` : ""}class="relative border-b border-border py-4 first:pt-0">
+        <h4 class="mb-2 flex items-center justify-between gap-2 text-[12px] font-semibold text-muted-foreground">${label}${picker ? `<button type="button" data-repo-issue-picker-open="${picker}" aria-haspopup="dialog" aria-expanded="false" aria-label="Edit ${escapeHtml(String(label).toLowerCase())}" title="Edit ${escapeHtml(String(label).toLowerCase())}" class="-my-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-[var(--dashboard-link)]"><i data-lucide="settings-2" class="h-4 w-4"></i></button>` : ""}</h4>
         <div class="text-[12px] text-foreground">${value}</div>
       </div>`;
     const labelValue = labels.length
@@ -6854,7 +6963,7 @@
             ${sidebarSection("Labels", labelValue)}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
             ${isPulls ? sidebarSection("Milestone", escapeHtml(metadata.find(([label]) => label === "Milestone")?.[1] || "") || `<span class="text-muted-foreground">No milestone</span>`) : ""}
-            ${isPulls ? sidebarSection("Development", `<span class="text-muted-foreground">Successfully merging this pull request may close the issues it names.</span>`) : ""}
+            ${isPulls ? sidebarSection("Development", `<div data-repo-development="pulls">${renderPullDevelopment(repo, number, parsed)}</div>`, state.session?.nodeName ? "development" : "") : ""}
             ${sidebarSection(`${formatCount(participants.length)} ${participants.length === 1 ? "Participant" : "Participants"}`, `<div class="flex flex-wrap gap-1">${participants.slice(0, 12).map((name) => issueActorAvatarHtml(name, name, "h-6 w-6")).join("")}</div>`)}
           </aside>
         </div>
@@ -6957,9 +7066,9 @@
     // opens a picker (openIssuePicker); the picker writes into the hidden
     // metadata form below and submits it, so every change is signed by the
     // one metadata handler.
-    const sidebarSection = (label, value, picker = "") => `
+    const sidebarSection = (label, value, picker = "", editable = canManage) => `
       <div ${picker ? `data-repo-issue-picker-section="${picker}" ` : ""}class="relative border-b border-border py-4 first:pt-0">
-        <h4 class="mb-2 flex items-center justify-between gap-2 text-[12px] font-semibold text-muted-foreground">${label}${picker && canManage ? `<button type="button" data-repo-issue-picker-open="${picker}" aria-haspopup="dialog" aria-expanded="false" aria-label="Edit ${escapeHtml(String(label).toLowerCase())}" title="Edit ${escapeHtml(String(label).toLowerCase())}" class="-my-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-[var(--dashboard-link)]"><i data-lucide="settings-2" class="h-4 w-4"></i></button>` : ""}</h4>
+        <h4 class="mb-2 flex items-center justify-between gap-2 text-[12px] font-semibold text-muted-foreground">${label}${picker && editable ? `<button type="button" data-repo-issue-picker-open="${picker}" aria-haspopup="dialog" aria-expanded="false" aria-label="Edit ${escapeHtml(String(label).toLowerCase())}" title="Edit ${escapeHtml(String(label).toLowerCase())}" class="-my-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-[var(--dashboard-link)]"><i data-lucide="settings-2" class="h-4 w-4"></i></button>` : ""}</h4>
         <div class="text-[12px] text-foreground">${value}</div>
       </div>`;
     const issueAssignees = webIssueAssigneesWithClaims(parseFrontMatterList(values.assignees), events);
@@ -6999,14 +7108,7 @@
     const milestoneValue = milestoneName
       ? `${milestoneIssues.length ? `<span class="mb-1.5 block h-2 overflow-hidden rounded-full bg-[var(--dashboard-counter)]" title="${milestoneClosed} of ${milestoneIssues.length} loaded issues closed"><span class="block h-full rounded-full bg-[var(--dashboard-open)]" style="width:${Math.round((milestoneClosed / milestoneIssues.length) * 100)}%"></span></span>` : ""}<span class="font-semibold">${escapeHtml(milestoneName)}</span>`
       : `<span class="text-muted-foreground">No milestone</span>`;
-    // Pull requests that name this issue, once the Pull requests list is loaded.
-    const mentionPattern = new RegExp(`(^|[^\\w&])#${Number(number)}(?!\\d)`);
-    const linkedPulls = (Array.isArray(state.repoCollectionItems?.pulls) ? state.repoCollectionItems.pulls : [])
-      .filter((pull) => pull && /^\d+$/.test(String(pull.number))
-        && mentionPattern.test(`${pull.title || ""}\n${pull.body || ""}`));
-    const developmentValue = linkedPulls.length
-      ? `<div class="grid gap-1.5">${linkedPulls.slice(0, 6).map((pull) => `<a href="${escapeHtml(repoRecordUrl(repo, "pulls", pull.number))}" class="flex min-w-0 items-center gap-1.5 hover:text-[var(--dashboard-link)]"><i data-lucide="git-pull-request" class="h-4 w-4 shrink-0 text-muted-foreground"></i><span class="min-w-0 truncate">${escapeHtml(pull.title || `Pull request #${pull.number}`)}</span><span class="shrink-0 text-muted-foreground">#${escapeHtml(pull.number)}</span></a>`).join("")}</div>`
-      : `<span class="text-muted-foreground">No linked pull requests</span>`;
+    const developmentValue = `<div data-repo-development="issues">${renderIssueDevelopment(repo, number, events, developmentPulls(parsed))}</div>`;
     const participantsValue = `<div class="flex flex-wrap gap-1" aria-label="${formatCount(participants.length)} participants">${participants.slice(0, 12).map((name) => issueActorAvatarHtml(name, name, "h-6 w-6")).join("")}</div>`;
     // The hidden form every picker writes into; handleWebIssueMetadataSubmit
     // diffs it against the issue and signs one event per changed field.
@@ -7077,7 +7179,7 @@
             ${sidebarSection("Fields", fieldsValue, "fields")}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
             ${sidebarSection("Milestone", milestoneValue, "milestone")}
-            ${sidebarSection("Development", developmentValue)}
+            ${sidebarSection("Development", developmentValue, "development", Boolean(state.session?.nodeName))}
             ${sidebarSection("Notifications", `<button type="button" data-repo-issue-subscription="${parsed.issueSubscribed ? "unsubscribe" : "subscribe"}" class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-[12px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="${parsed.issueSubscribed ? "bell-off" : "bell"}" class="h-4 w-4 text-muted-foreground"></i>${parsed.issueSubscribed ? "Unsubscribe" : "Subscribe"}</button><p class="mt-2 text-[12px] text-muted-foreground">${parsed.issueSubscribed ? "You're receiving notifications because you're subscribed to this thread." : "You're not receiving notifications from this thread."}</p>`)}
             ${sidebarSection(`${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}`, participantsValue)}
             <div data-repo-issue-sidebar-actions class="grid gap-0.5 py-3">
@@ -7198,7 +7300,15 @@
     labels: { title: "Apply labels to this issue", search: "Filter labels", add: "Create label", multiple: true },
     milestone: { title: "Set milestone", search: "Filter milestones", add: "Set milestone", multiple: false },
     fields: { title: "Edit fields" },
+    development: { title: "Link a pull request", search: "Search pull requests", add: "Link pull request", multiple: true },
   };
+
+  function issuePickerCopy(field) {
+    if (field === "development" && state.repoRecordDetail?.kind === "pulls") {
+      return { title: "Link an issue", search: "Search issues", add: "Link issue", multiple: true };
+    }
+    return ISSUE_PICKER_COPY[field];
+  }
 
   function issuePickerForm() {
     return $("[data-repo-issue-metadata-form]");
@@ -7263,24 +7373,54 @@
       add(issuePickerInput("milestone")?.value, "");
       tally((issue) => [issue.milestone])
         .forEach(({ value, count }) => add(value, "", `${count} ${count === 1 ? "issue" : "issues"}`));
+    } else if (field === "development") {
+      return developmentPickerCandidates(detail);
     }
     return Array.from(entries.values());
+  }
+
+  function developmentPickerCandidates(detail) {
+    const parsed = detail?.parsed || {};
+    const onPull = detail?.kind === "pulls";
+    const records = onPull ? developmentIssues(parsed) : developmentPulls(parsed) || [];
+    const linked = new Set(issuePicker?.selected || []);
+    const noun = onPull ? "Issue" : "Pull request";
+    const listed = records
+      .filter((record) => record && !record.deleted && !record.unavailable
+        && /^\d+$/.test(String(record.number)));
+    const unlisted = Array.from(linked)
+      .filter((value) => !listed.some((record) => String(record.number) === value))
+      .map((value) => ({ value, label: `${noun} #${value}`, note: `#${value}`, reason: "", rank: 0 }));
+    return unlisted.concat(listed
+      .map((record) => {
+        const status = String((onPull ? record.status : record.state) || "open").toLowerCase();
+        return {
+          value: String(record.number),
+          label: String(record.title || `${noun} #${record.number}`),
+          note: `#${record.number} · ${status.charAt(0).toUpperCase()}${status.slice(1)}`,
+          reason: "",
+          rank: linked.has(String(record.number)) ? 0 : status === "open" ? 1 : 2,
+        };
+      }))
+      .sort((a, b) => a.rank - b.rank || Number(b.value) - Number(a.value));
   }
 
   function renderIssuePickerOptions() {
     if (!issuePicker) return "";
     const { field, selected, query } = issuePicker;
-    const copy = ISSUE_PICKER_COPY[field];
+    const copy = issuePickerCopy(field);
     const needle = query.trim().toLowerCase();
     const isSelected = (value) => selected.some((item) => item.toLowerCase() === value.toLowerCase());
     const candidates = issuePickerCandidates(field)
       .filter((entry) => !needle || entry.value.toLowerCase().includes(needle)
-        || entry.note.toLowerCase().includes(needle));
+        || entry.note.toLowerCase().includes(needle)
+        || String(entry.label || "").toLowerCase().includes(needle));
+    const developmentIcon = state.repoRecordDetail?.kind === "pulls" ? "circle-dot" : "git-pull-request";
     const leading = (value) => field === "assignees"
       ? issueActorAvatarHtml(value, value, "h-5 w-5", false, false)
       : field === "labels"
         ? `<span aria-hidden="true" class="h-3.5 w-3.5 rounded-full" style="background:hsl(${issueLabelHue(value)} 70% 55%)"></span>`
-        : '<i data-lucide="milestone" class="h-4 w-4 text-muted-foreground"></i>';
+        : `<i data-lucide="${field === "development" ? developmentIcon : "milestone"}" class="h-4 w-4 text-muted-foreground"></i>`;
     const row = (value, label, note = "", reason = "") => `
       <button type="button" role="option" aria-selected="${value && isSelected(value) ? "true" : "false"}" data-repo-issue-picker-option="${escapeHtml(value)}" class="grid w-full grid-cols-[16px_20px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-secondary focus:bg-secondary focus:outline-none">
         <i data-lucide="check" class="h-4 w-4 text-accent ${value && isSelected(value) ? "" : "invisible"}"></i>
@@ -7288,9 +7428,16 @@
         <span class="min-w-0"><span class="block truncate text-[14px] font-semibold text-foreground">${escapeHtml(label)}</span>${note ? `<span class="block truncate text-[12px] text-muted-foreground">${escapeHtml(note)}</span>` : ""}</span>
         ${reason ? `<span class="fm-label">${escapeHtml(reason)}</span>` : "<span></span>"}
       </button>`;
-    const rows = candidates.slice(0, 30).map((entry) => row(entry.value, entry.value, entry.note,
+    const rows = candidates.slice(0, 30).map((entry) => row(entry.value, entry.label || entry.value, entry.note,
       field === "assignees" && !["assigned", "user"].includes(entry.reason) ? entry.reason : ""));
     if (field === "milestone" && !needle && selected.length) rows.unshift(row("", "No milestone", "Clear the milestone"));
+    if (field === "development") {
+      const typed = needle.match(/^#?([1-9]\d{0,8})$/);
+      if (typed && !candidates.some((entry) => entry.value === typed[1])) rows.push(row(typed[1], `${copy.add} #${typed[1]}`));
+      return rows.length
+        ? rows.join("")
+        : `<p class="px-3 py-4 text-center text-[12px] text-muted-foreground">${issuePicker.loading ? "Loading…" : needle ? "No matches. Type a number to link it." : "Nothing to link yet. Type a number."}</p>`;
+    }
     const exact = candidates.some((entry) => entry.value.toLowerCase() === needle);
     if (needle && !exact) rows.push(row(query.trim(), `${copy.add} “${query.trim()}”`));
     return rows.length
@@ -7319,13 +7466,21 @@
   function openIssuePicker(field) {
     closeIssuePicker({ apply: true });
     const section = $(`[data-repo-issue-picker-section="${field}"]`);
-    const copy = ISSUE_PICKER_COPY[field];
-    if (!section || !copy || !issuePickerForm()) return;
+    const copy = issuePickerCopy(field);
+    if (!section || !copy || (field !== "development" && !issuePickerForm())) return;
     const selected = field === "milestone"
       ? [String(issuePickerInput("milestone")?.value || "").trim()].filter(Boolean)
-      : field === "fields" ? [] : splitWebIssueList(issuePickerInput(field)?.value);
+      : field === "fields" ? []
+        : field === "development" ? repoRecordDevelopmentNumbers().map(String)
+          : splitWebIssueList(issuePickerInput(field)?.value);
     issuePicker = { field, selected, original: selected.join(","), query: "" };
     if (field === "assignees") loadRepoIssueAssigneeDirectory();
+    if (field === "development") {
+      const detail = state.repoRecordDetail;
+      const parsed = detail?.parsed || {};
+      issuePicker.loading = detail?.kind === "pulls" ? !parsed.developmentIssues : !developmentPulls(parsed);
+      if (issuePicker.loading) void refreshRepoRecordDevelopment(detail?.repo, detail?.kind, detail?.number);
+    }
     section.insertAdjacentHTML("beforeend", `
       <div data-repo-issue-picker="${field}" role="dialog" aria-label="${escapeHtml(copy.title)}" class="fm-popover absolute right-0 top-10 z-40 w-[19rem] max-w-[calc(100vw-2rem)] overflow-hidden text-left">
         <div class="flex items-center justify-between gap-2 py-2 pl-3 pr-2">
@@ -7359,7 +7514,7 @@
   function toggleIssuePickerOption(value) {
     if (!issuePicker) return;
     const { field } = issuePicker;
-    if (!ISSUE_PICKER_COPY[field].multiple) {
+    if (!issuePickerCopy(field).multiple) {
       issuePicker.selected = value ? [value] : [];
       closeIssuePicker({ apply: true });
       return;
@@ -7383,6 +7538,10 @@
     issuePicker = null;
     if (!open || !apply || open.field === "fields") return;
     if (open.selected.join(",") === open.original) return;
+    if (open.field === "development") {
+      void applyDevelopmentPicker(open);
+      return;
+    }
     const input = issuePickerInput(open.field);
     const form = issuePickerForm();
     if (!input || !form) return;
@@ -7400,6 +7559,180 @@
     });
     closeIssuePicker({ apply: false });
     form.requestSubmit();
+  }
+
+  function developmentPulls(parsed) {
+    if (Array.isArray(parsed?.developmentPulls)) return parsed.developmentPulls;
+    return Array.isArray(state.repoCollectionItems?.pulls) ? state.repoCollectionItems.pulls : null;
+  }
+
+  function developmentIssues(parsed) {
+    return Array.isArray(parsed?.developmentIssues) ? parsed.developmentIssues : [];
+  }
+
+  function pullDevelopmentOwnNumbers(parsed) {
+    return pullOwnIssueNumbers({ title: parsed?.values?.title, body: parsed?.body },
+      parsed?.pullConversation, parsed?.pullCommits);
+  }
+
+  function repoRecordDevelopmentNumbers() {
+    const detail = state.repoRecordDetail;
+    const parsed = detail?.parsed || {};
+    if (detail?.kind === "issues") {
+      return issueLinkedPullNumbers(detail.number, parsed.issueEvents, developmentPulls(parsed));
+    }
+    if (detail?.kind === "pulls") {
+      return pullLinkedIssueNumbers(detail.number, pullDevelopmentOwnNumbers(parsed), developmentIssues(parsed));
+    }
+    return [];
+  }
+
+  function developmentRow(href, icon, title, number) {
+    return `<a href="${escapeHtml(href)}" class="flex min-w-0 items-center gap-1.5 hover:text-[var(--dashboard-link)]"><i data-lucide="${icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i><span class="min-w-0 truncate">${escapeHtml(title)}</span><span class="shrink-0 text-muted-foreground">#${escapeHtml(number)}</span></a>`;
+  }
+
+  const DEVELOPMENT_HINT = `<p data-repo-development-hint role="status" aria-live="polite" class="mt-2 text-[11px] text-muted-foreground empty:hidden"></p>`;
+
+  function renderIssueDevelopment(repo, number, events, pulls) {
+    const byNumber = new Map((pulls || []).map((pull) => [Number(pull?.number), pull]));
+    const rows = issueLinkedPullNumbers(number, events, pulls).slice(0, 10).map((pullNumber) => {
+      const pull = byNumber.get(pullNumber);
+      const pullState = String(pull?.state || "open").toLowerCase();
+      const icon = pullState === "merged" ? "git-merge" : pullState === "closed" ? "git-pull-request-closed" : "git-pull-request";
+      return developmentRow(repoRecordUrl(repo, "pulls", pullNumber), icon, pull?.title || `Pull request #${pullNumber}`, pullNumber);
+    });
+    return `${rows.length
+      ? `<div class="grid gap-1.5">${rows.join("")}</div>`
+      : `<span class="text-muted-foreground">No linked pull requests</span>`}${DEVELOPMENT_HINT}`;
+  }
+
+  function renderPullDevelopment(repo, number, parsed) {
+    const issues = developmentIssues(parsed);
+    const byNumber = new Map(issues.map((issue) => [Number(issue?.number), issue]));
+    const rows = pullLinkedIssueNumbers(number, pullDevelopmentOwnNumbers(parsed), issues).slice(0, 10).map((issueNumber) => {
+      const issue = byNumber.get(issueNumber);
+      const closed = String(issue?.status || "").toLowerCase() === "closed";
+      return developmentRow(repoRecordUrl(repo, "issues", issueNumber), closed ? "circle-check" : "circle-dot",
+        issue?.title || `Issue #${issueNumber}`, issueNumber);
+    });
+    return `${rows.length
+      ? `<p class="mb-2 text-muted-foreground">Successfully merging this pull request may close these issues.</p><div class="grid gap-1.5">${rows.join("")}</div>`
+      : `<span class="text-muted-foreground">No linked issues</span>`}${DEVELOPMENT_HINT}`;
+  }
+
+  function renderRepoRecordDevelopment(hintText = "", bad = false) {
+    const detail = state.repoRecordDetail;
+    const node = detail && $(`[data-repo-development="${detail.kind}"]`);
+    if (!node) return;
+    node.innerHTML = detail.kind === "issues"
+      ? renderIssueDevelopment(detail.repo, detail.number, detail.parsed?.issueEvents, developmentPulls(detail.parsed))
+      : renderPullDevelopment(detail.repo, detail.number, detail.parsed || {});
+    const hint = node.querySelector("[data-repo-development-hint]");
+    if (hint && hintText) {
+      hint.textContent = hintText;
+      hint.classList.toggle("text-destructive", bad);
+    }
+    window.lucide?.createIcons();
+  }
+
+  async function loadRepoDevelopmentPulls(repo) {
+    if (Array.isArray(state.repoCollectionItems?.pulls) && state.selectedRepo
+      && repoKey(state.selectedRepo) === repoKey(repo)) {
+      return state.repoCollectionItems.pulls;
+    }
+    const cached = state.developmentPullIndex;
+    if (cached && cached.key === repoKey(repo) && Date.now() - cached.at < 60_000) return cached.items;
+    try {
+      await primeRepoViewReads(repo, "pulls");
+      const items = await loadRepoRecordsFromMirror(repo, repoCollectionConfig.pulls);
+      state.developmentPullIndex = { key: repoKey(repo), at: Date.now(), items };
+      return items;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function refreshRepoRecordDevelopment(repo, kind, number) {
+    const detail = state.repoRecordDetail;
+    if (!repo || !detail || detail.kind !== kind || String(detail.number) !== String(number)) return;
+    if (kind === "issues") {
+      const pulls = await loadRepoDevelopmentPulls(repo);
+      if (pulls) detail.parsed.developmentPulls = pulls;
+    } else if (kind === "pulls") {
+      detail.parsed.developmentIssues = (await loadRepoIssueRelationIndex(repo)).slice();
+    } else {
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    renderRepoRecordDevelopment();
+    if (issuePicker?.field === "development") {
+      issuePicker.loading = false;
+      refreshIssuePickerList();
+    }
+  }
+
+  async function postDevelopmentLink(repo, issueNumber, pullNumbers, linked) {
+    const result = await submitWebIssueComment(repo, Number(issueNumber), developmentLinkComment(pullNumbers, linked));
+    const detail = state.repoRecordDetail;
+    if (detail?.kind === "issues" && Number(detail.number) === Number(issueNumber)) {
+      optimisticWebIssueEvent(result.event);
+    } else if (detail?.kind === "pulls") {
+      const issues = developmentIssues(detail.parsed);
+      let issue = issues.find((item) => Number(item?.number) === Number(issueNumber));
+      if (!issue) {
+        issue = { number: Number(issueNumber), title: "", status: "unknown", events: [] };
+        detail.parsed.developmentIssues = issues.concat(issue);
+      }
+      issue.events = (Array.isArray(issue.events) ? issue.events : []).concat(result.event);
+    }
+    return result;
+  }
+
+  async function applyDevelopmentPicker(open) {
+    const detail = state.repoRecordDetail;
+    if (!detail?.repo || (detail.kind !== "issues" && detail.kind !== "pulls")) return;
+    const before = new Set(String(open.original || "").split(",").filter(Boolean).map(Number));
+    const after = new Set(open.selected.map(Number).filter((value) => Number.isInteger(value) && value > 0));
+    const added = Array.from(after).filter((value) => !before.has(value));
+    const removed = Array.from(before).filter((value) => !after.has(value));
+    if (!added.length && !removed.length) return;
+    renderRepoRecordDevelopment("Signing…");
+    try {
+      if (detail.kind === "issues") {
+        const lines = developmentLinkComment(added, true)
+          + (added.length && removed.length ? "\n" : "")
+          + developmentLinkComment(removed, false);
+        const result = await submitWebIssueComment(detail.repo, Number(detail.number), lines);
+        optimisticWebIssueEvent(result.event);
+        renderCurrentWebIssueDetail();
+        renderRepoRecordDevelopment("Saved. Shows for everyone once the repository records it.");
+        return;
+      }
+      for (const issueNumber of added) await postDevelopmentLink(detail.repo, issueNumber, [detail.number], true);
+      for (const issueNumber of removed) await postDevelopmentLink(detail.repo, issueNumber, [detail.number], false);
+      renderRepoRecordDevelopment("Saved. Shows for everyone once the repository records it.");
+    } catch (error) {
+      renderRepoRecordDevelopment(webIssueActionError(error), true);
+    }
+  }
+
+  async function linkPullCommentIssues(repo, pullNumber, body) {
+    const detail = state.repoRecordDetail;
+    if (detail?.kind !== "pulls" || Number(detail.number) !== Number(pullNumber)) return;
+    const parsed = detail.parsed || {};
+    const ownText = new Set(issueReferenceNumbers(`${parsed.values?.title || ""}\n${parsed.body || ""}`));
+    if (!parsed.developmentIssues) parsed.developmentIssues = (await loadRepoIssueRelationIndex(repo)).slice();
+    const issues = developmentIssues(parsed);
+    const pending = pullClosingIssueNumbers(body).filter((issueNumber) => !ownText.has(issueNumber)
+      && issueDevelopmentPullStates(issues.find((issue) => Number(issue?.number) === issueNumber)?.events)
+        .get(Number(pullNumber)) !== true);
+    try {
+      for (const issueNumber of pending) await postDevelopmentLink(repo, issueNumber, [pullNumber], true);
+    } catch (_) {
+      renderRepoRecordDevelopment("Could not link every issue this comment names.", true);
+      return;
+    }
+    renderRepoRecordDevelopment();
   }
 
   // The compact title bar slides in once the full header scrolls away.
@@ -7879,6 +8212,7 @@
         if (commentBody) commentBody.value = commentDraft;
       }
       loadFederatedReplies(repo, kind, number, container);
+      void refreshRepoRecordDevelopment(repo, kind, number);
       // Members watch an open pull for agent activity; signed-out visitors
       // cannot read organization sessions at all, so they get no timer.
       if (kind === "pulls" && state.session?.sessionToken) {

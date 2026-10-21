@@ -348,8 +348,10 @@ def test_issue_timeline_draws_activity_on_a_rail_and_comments_as_cards():
         "function renderIssueTimeline(events)",
         "function projectJsonPath(number)",
     )
-    # Every non-comment event, mentions included, is one line on the rail.
-    assert timeline.count("renderIssueTimelineEvent(") == 2
+    # Every non-comment event, mentions and pull request links included, is
+    # one line on the rail.
+    assert timeline.count("renderIssueTimelineEvent(") == 3
+    assert "ISSUE_PULL_LINK_LINE.test(line)" in timeline
     assert "renderIssueTimelineComment(ev)" in timeline
     event = _slice(
         REPO_UI,
@@ -386,7 +388,9 @@ def test_issue_sidebar_edits_through_pickers_that_submit_the_metadata_form():
     for field in ("assignees", "labels", "fields", "milestone"):
         assert f'sidebarSection("' in detail and f', "{field}")' in detail
     assert 'data-repo-issue-picker-open="${picker}"' in detail
-    assert "picker && canManage" in detail
+    assert 'picker = "", editable = canManage' in detail
+    assert "picker && editable" in detail
+    assert 'sidebarSection("Development", developmentValue, "development", Boolean(state.session?.nodeName))' in detail
 
     pickers = _slice(REPO_UI, "let issuePicker = null;", "function mountIssueStickyHeader(container)")
     assert "form.requestSubmit();" in pickers

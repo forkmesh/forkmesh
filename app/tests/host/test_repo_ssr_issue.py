@@ -56,14 +56,17 @@ FUNCTIONS = {
         "renderRepoIssueDetail", "renderIssueCommentForm", "repoContributorIsBot",
         "issueMentionsOf", "issueReferenceNumbers", "issueDependencyNumbers",
         "issueSubIssueNumbers", "renderRecordRewardEstimate", "formatRewardSol",
-        "issueDateInputValue", "mdMentionHtml", "issueCardAuthorHtml"),
+        "issueDateInputValue", "mdMentionHtml", "issueCardAuthorHtml", "developmentProse",
+        "pullClosingIssueNumbers", "pullOwnIssueNumbers", "issueDevelopmentPullStates",
+        "issueLinkedPullNumbers", "developmentPulls", "developmentRow", "renderIssueDevelopment"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE"),
     "06-repo-content.js": (
         "MD_DATA_IMAGE_URL", "MD_BARE_URL", "MD_ENTITIES", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
-        "rewardStateLabels", "MD_MENTION"),
+        "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
+        "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT"),
 }
 
 
@@ -236,6 +239,33 @@ def test_first_view_is_the_dashboards_issue_markup(viewer):
     expected = normalize(js_render(issue, 27, index_rows(), viewer))
     got = normalize(py_render(issue, 27, index_rows(), viewer))
     assert got == expected
+
+
+def linked_issue():
+    issue = issue27()
+    issue["events"] = issue["events"] + [
+        {"type": "comment", "id": "k1", "author": "k2", "authorName": "riley",
+         "body": "Linked pull request #5\nLinked pull request #9", "ts": NOW_MS - 300_000},
+        {"type": "comment", "id": "k2", "author": "k2", "authorName": "riley",
+         "body": "Unlinked pull request #9", "ts": NOW_MS - 200_000},
+        {"type": "comment", "id": "k3", "author": "k4", "authorName": "erin",
+         "body": "Fixed by PR #11, and `fixed by #12` is code.", "ts": NOW_MS - 100_000},
+    ]
+    return issue
+
+
+@needs_node
+@pytest.mark.parametrize("viewer", ["guest", "member"])
+def test_linked_pull_requests_match_the_dashboard(viewer):
+    issue = linked_issue()
+    expected = normalize(js_render(issue, 27, index_rows(), viewer))
+    got = normalize(py_render(issue, 27, index_rows(), viewer))
+    assert got == expected
+    assert 'data-repo-issue-development-event="k1"' in got
+    development = got.split('data-repo-development="issues"')[1].split("</div> </div>")[0]
+    assert "/Bolt/pulls/11" in development and "/Bolt/pulls/5" in development
+    assert "/Bolt/pulls/9" not in development and "/Bolt/pulls/12" not in development
+    assert ('data-repo-issue-picker-open="development"' in got) == (viewer == "member")
 
 
 @needs_node

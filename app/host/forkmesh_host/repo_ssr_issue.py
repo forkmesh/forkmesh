@@ -285,6 +285,8 @@ ICONS = {
         '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"></path><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"></path><circle cx="12" cy="12" r="2"></circle><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"></path><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19.1"></path>'),
     'rotate-ccw': (
         '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path>'),
+    'settings-2': (
+        '<path d="M20 7h-9"></path><path d="M14 17H5"></path><circle cx="17" cy="17" r="3"></circle><circle cx="7" cy="7" r="3"></circle>'),
     'shield-check': (
         '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="m9 12 2 2 4-4"></path>'),
     'tag': (
@@ -295,6 +297,8 @@ ICONS = {
         '<path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"></path>'),
     'trash-2': (
         '<path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" x2="10" y1="11" y2="17"></line><line x1="14" x2="14" y1="11" y2="17"></line>'),
+    'unlink': (
+        '<path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"></path><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"></path><line x1="8" x2="8" y1="2" y2="5"></line><line x1="2" x2="5" y1="8" y2="8"></line><line x1="16" x2="16" y1="19" y2="22"></line><line x1="19" x2="22" y1="16" y2="16"></line>'),
     'user-check': (
         '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline>'),
     'user-minus': (
@@ -900,6 +904,56 @@ def dependency_numbers(body):
     return numbers
 
 
+ISSUE_PULL_LINK = re.compile(
+    r"\b(?:(un)?linked\s+(?:pull\s+request|PR)\s+|(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s+"
+    r"(?:(?:by|in|with|via)\s+(?:(?:pull\s+request|PR|pull)\s+)?|(?:pull\s+request|PR)\s+))"
+    r"#([1-9]\d{0,8})\b", re.I | _A)
+ISSUE_PULL_LINK_LINE = re.compile(r"^\s*(un)?linked\s+pull\s+request\s+#([1-9]\d{0,8})\s*$",
+                                  re.I | _A)
+DEVELOPMENT_HINT = ('<p data-repo-development-hint role="status" aria-live="polite" '
+                    'class="mt-2 text-[11px] text-muted-foreground empty:hidden"></p>')
+
+
+def development_prose(text):
+    lines, fence = [], ""
+    for raw_line in str(text or "").split("\n"):
+        trimmed = raw_line.strip()
+        fence_line = trimmed.startswith("```") or trimmed.startswith("~~~")
+        if fence:
+            if fence_line and trimmed.startswith(fence):
+                fence = ""
+            continue
+        if fence_line:
+            fence = trimmed[:3]
+            continue
+        lines.append(re.sub(r"`+[^`]*`+", " ", raw_line))
+    return "\n".join(lines)
+
+
+def development_pull_states(events):
+    events = [e for e in events or [] if e]
+    edits = {str(e["target"]): e.get("body") for e in events
+             if e.get("type") == "edit" and e.get("target")}
+    deleted = {str(e["target"]) for e in events if e.get("type") == "delete" and e.get("target")}
+    states = {}
+    for event in events:
+        if event.get("type") not in ("open", "comment"):
+            continue
+        event_id = str(event.get("id") or "")
+        if event_id and event_id in deleted:
+            continue
+        body = edits[event_id] if event_id and event_id in edits else event.get("body")
+        for match in ISSUE_PULL_LINK.finditer(development_prose(body)):
+            states[int(match.group(2))] = not match.group(1)
+    return states
+
+
+def development_link_lines(body):
+    lines = [line for line in str(body or "").split("\n") if line.strip()]
+    matches = [ISSUE_PULL_LINK_LINE.match(line) for line in lines]
+    return matches if lines and all(matches) else None
+
+
 def mentions_of(index, number):
     mentions = []
     for source in index or []:
@@ -1141,6 +1195,20 @@ class Renderer:
                     continue
                 edit = edits.get(str(event.get("id") or ""))
                 shown = dict(event, body=edit.get("body")) if edit else event
+                links = development_link_lines(shown.get("body"))
+                if links:
+                    items.append(self.timeline_event(
+                        "unlink" if all(m.group(1) for m in links) else "git-pull-request",
+                        who, event.get("author"), '<span aria-hidden="true">,</span>'.join(
+                            '<span>%s pull request</span><a href="%s" class="font-semibold '
+                            'text-foreground hover:text-[var(--dashboard-link)] '
+                            'hover:underline">#%s</a>' % (
+                                "unlinked" if m.group(1) else "linked",
+                                esc(self.ctx.record_url("pulls", m.group(2))), esc(m.group(2)))
+                            for m in links),
+                        event.get("ts"),
+                        'data-repo-issue-development-event="%s"' % esc(event.get("id") or "")))
+                    continue
                 items.append(self.timeline_comment(
                     shown, bool(edit), reaction_chips(reactions.get(str(event.get("id") or "")))))
                 continue
@@ -1429,13 +1497,13 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
             render.time(opened_at),
             "Owner" if is_owner else "Contributor", description))
 
-    def section(label, value, picker=""):
+    def section(label, value, picker="", button=""):
         return ('\n      <div %sclass="relative border-b border-border py-4 first:pt-0">\n'
                 '        <h4 class="mb-2 flex items-center justify-between gap-2 text-[12px] '
-                'font-semibold text-muted-foreground">%s</h4>\n        <div class="text-[12px] '
+                'font-semibold text-muted-foreground">%s%s</h4>\n        <div class="text-[12px] '
                 'text-foreground">%s</div>\n      </div>' % (
                     'data-repo-issue-picker-section="%s" ' % picker if picker else "",
-                    label, value))
+                    label, button, value))
 
     assignees = assignees_with_claims(front_matter_list(
         "[%s]" % ", ".join(issue["assignees"])), events)
@@ -1489,7 +1557,26 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
     milestone = issue["milestone"].strip()
     milestone_value = '<span class="font-semibold">%s</span>' % esc(milestone) if milestone \
         else '<span class="text-muted-foreground">No milestone</span>'
-    development = '<span class="text-muted-foreground">No linked pull requests</span>'
+    linked_pulls = sorted((n for n, linked in development_pull_states(events).items() if linked),
+                          reverse=True)[:10]
+    development = '<div data-repo-development="issues">%s%s</div>' % (
+        '<div class="grid gap-1.5">%s</div>' % "".join(
+            '<a href="%s" class="flex min-w-0 items-center gap-1.5 '
+            'hover:text-[var(--dashboard-link)]">%s<span class="min-w-0 truncate">Pull request #%s'
+            '</span><span class="shrink-0 text-muted-foreground">#%s</span></a>' % (
+                esc(ctx.record_url("pulls", n)),
+                icon("git-pull-request", "h-4 w-4 shrink-0", "text-muted-foreground"), n, n)
+            for n in linked_pulls) if linked_pulls
+        else '<span class="text-muted-foreground">No linked pull requests</span>',
+        DEVELOPMENT_HINT)
+    development_button = (
+        '<button type="button" data-repo-issue-picker-open="development" aria-haspopup="dialog" '
+        'aria-expanded="false" aria-label="Edit development" title="Edit development" '
+        'class="-my-1 inline-flex h-6 w-6 items-center justify-center rounded-md '
+        'text-muted-foreground hover:bg-secondary hover:text-[var(--dashboard-link)]">%s'
+        '</button>' % icon("settings-2", "h-4 w-4"))
+    development_button = _viewer(development_button, "member") if viewer == "both" \
+        else development_button if viewer == "member" else ""
     notifications = (
         '<button type="button" data-repo-issue-subscription="subscribe" class="inline-flex h-8 '
         'w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary '
@@ -1574,7 +1661,8 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
             section("Labels", label_value, "labels"), section("Type", "Issue"),
             section("Fields", fields_value, "fields"),
             section("Milestone", milestone_value, "milestone"),
-            section("Development", development), section("Notifications", notifications),
+            section("Development", development, "development", development_button),
+            section("Notifications", notifications),
             section("%s %s" % (format_count(len(people)), plural), people_value)))
 
 

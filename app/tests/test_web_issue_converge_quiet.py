@@ -91,6 +91,7 @@ const parseIssueJson = () => ({});
 const loadRepoIssueMutationAuthorization = async () => false;
 const loadWebIssueSubscription = async () => false;
 const loadFederatedReplies = () => {};
+const refreshRepoRecordDevelopment = async () => {};
 const setRepoIssueRecordOpen = () => {};
 const setRepoRecordOpen = () => {};
 const mountIssueStickyHeader = () => {};
