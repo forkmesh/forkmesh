@@ -127,7 +127,7 @@ test("the fork menu in the title row lists who forked the repo", async ({
   await expect(forkButton).toBeVisible();
   await expect(page.locator("[data-repo-about] [data-repo-action-fork]")).toHaveCount(0);
   // Real count, not a placeholder and not a mock number.
-  await expect(page.locator("[data-repo-fork-count]")).toHaveText("2");
+  await expect(page.locator("[data-repo-about-actions] [data-repo-fork-count]")).toHaveText("2");
 
   const menu = page.locator("[data-repo-fork-menu]");
   await expect(menu).toBeHidden();
@@ -135,9 +135,7 @@ test("the fork menu in the title row lists who forked the repo", async ({
   await expect(menu).toBeVisible();
   await expect(forkButton).toHaveAttribute("aria-expanded", "true");
 
-  // Forking stays entirely on the website: the server makes the copy and
-  // hands back a one-time push credential instead of a desktop protocol URL.
-  const create = page.locator("[data-repo-fork-create]");
+  const create = menu.locator("[data-repo-fork-create]");
   await expect(create).toHaveAttribute("type", "button");
   await expect(create).toHaveText("Create fork");
   await create.click();

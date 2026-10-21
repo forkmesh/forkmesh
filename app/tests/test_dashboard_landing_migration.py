@@ -1359,6 +1359,119 @@ def test_repository_header_is_compact_and_actions_live_in_about():
     assert title_row.count("fm-btn-cta") == 1
 
 
+def test_repository_code_toolbar_carries_fork_and_about_carries_code_map():
+    dashboard_js = _read(PUBLIC / "dashboard.js")
+    render = dashboard_js[
+        dashboard_js.index("function renderRepoDetail")
+        : dashboard_js.index("function findRepository")
+    ]
+    tab_band = render[
+        render.index("<div data-repo-github-header")
+        : render.index("<div data-repo-content-grid")
+    ]
+    # The tab bar holds only the tabs; Fork lives by the code.
+    assert "data-repo-fork" not in tab_band
+    assert "forkSplitButton" not in tab_band
+
+    toolbar = render[
+        render.index("<div data-repo-root-toolbar")
+        : render.index("<div data-repo-pathbar")
+    ]
+    focus_actions = render[
+        render.index("<div data-repo-focus-actions")
+        : render.index("<div data-repo-code-workspace")
+    ]
+    # Fork | count sits directly left of "Add file", in both toolbars.
+    for bar, compact in ((toolbar, "false"), (focus_actions, "true")):
+        fork = bar.index("${forkSplitButton(%s)}" % compact)
+        assert fork < bar.index("Add file")
+        assert "data-repo-codemap-open" not in bar[fork:bar.index("Add file")]
+    assert "md:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto]" in toolbar
+    # The main toolbar lost Code map to the About box; the file view keeps it,
+    # since About is hidden there.
+    assert "data-repo-codemap-open" not in toolbar
+    assert "data-repo-codemap-open" in focus_actions
+
+    fork_split = render[
+        render.index("const forkSplitButton = (compact) =>")
+        : render.index("const settingsPanel")
+    ]
+    assert "websiteForkAvailable" in fork_split
+    assert "data-repo-fork-split" in fork_split
+    assert "data-repo-fork-create data-repo-fork-go" in fork_split
+    assert "data-repo-fork-split-count" in fork_split
+    assert "<span data-repo-fork-count>" in fork_split
+    # The count keeps its width so the number arriving does not shift the row.
+    assert 'style="min-width:2.25rem"' in fork_split
+    assert "const websiteForkAvailable = !repo.isPrivate;" in render
+    assert 'event.target.closest("[data-repo-fork-split-count]")' in dashboard_js
+
+    about = render[
+        render.index("<aside data-repo-about")
+        : render.index("<aside data-repo-dir-about")
+    ]
+    code_map = about.index("data-repo-about-codemap")
+    assert about.index("data-repo-about-actions") < code_map
+    assert code_map < about.index("data-repo-about-langs")
+    assert 'data-repo-codemap-open title="See the whole codebase' in about
+    assert "w-full" in about[code_map:about.index("data-repo-about-langs")]
+    assert "[data-repo-about-codemap]" in dashboard_js[
+        dashboard_js.index("function repoCodeMapNotice")
+        : dashboard_js.index("async function openRepoCodeMap")
+    ]
+
+
+def test_repository_logo_moved_from_about_to_settings():
+    dashboard_js = _read(PUBLIC / "dashboard.js")
+    render = dashboard_js[
+        dashboard_js.index("function renderRepoDetail")
+        : dashboard_js.index("function findRepository")
+    ]
+    about = render[
+        render.index("<aside data-repo-about")
+        : render.index("<aside data-repo-dir-about")
+    ]
+    assert "data-repo-logo-workflow" not in dashboard_js
+    assert "Repository logo" not in about
+    assert "data-repo-about-logo" not in dashboard_js
+    assert "data-repo-logo-suggestion-form" not in dashboard_js
+    # Banner stays in the About form.
+    assert "data-repo-about-banner" in about
+
+    settings = render[
+        render.index("const settingsPanel = canSeeSettingsTab ?")
+        : render.index("detail.innerHTML = ")
+    ]
+    assert "const canSeeSettingsTab = canEditAbout;" in render
+    assert "const canEditAbout = sessionAdministersRepo(repo);" in render
+    logo = settings[
+        settings.index("data-repo-settings-logo class")
+        : settings.index("data-repo-pull-rules-card")
+    ]
+    for marker in (
+        "Repository logo",
+        "data-repo-settings-logo-current",
+        'nativeRepositoryLogoMarkup(repo, "h-16 w-16")',
+        "data-repo-settings-logo-form",
+        'data-repo-settings-logo-file type="file" accept="image/png"',
+        "data-repo-settings-logo-remove",
+        "data-repo-logo-suggestions",
+        "data-repo-logo-suggestion-status",
+    ):
+        assert marker in logo, marker
+    assert '${repo.isPrivate ? "" : `<div data-repo-settings-logo' in settings
+
+    loader = dashboard_js[
+        dashboard_js.index("async function loadRepoSettingsLogo")
+        : dashboard_js.index("async function reviewRepoLogoSuggestion")
+    ]
+    # The upload is the About endpoint's logoPng, behind its owner/admin check.
+    assert "saveRepoSettingsFromWeb(repo, { logoPng })" in loader
+    assert "loadRepoLogoSuggestions(repo)" in loader
+    assert 'logo?.source !== "owner"' in loader
+    assert "void loadRepoSettingsLogo(state.selectedRepo);" in dashboard_js
+
+
 def test_repository_context_links_and_fediverse_avatars_replace_redundant_ui():
     dashboard_js = _read(PUBLIC / "dashboard.js")
     shell = _read(PUBLIC / "dashboard" / "shell.html")

@@ -110,7 +110,7 @@ async function openRepoPage(page, requests) {
     });
   });
   await page.goto("/acme/engine");
-  const button = page.locator("[data-repo-root-toolbar] [data-repo-codemap-open]");
+  const button = page.locator("[data-repo-about-codemap] [data-repo-codemap-open]");
   await expect(button).toBeVisible();
   return button;
 }
