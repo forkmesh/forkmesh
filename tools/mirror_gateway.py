@@ -6807,10 +6807,16 @@ class GitRepository:
             numbers = sorted(chosen, reverse=True)[:ISSUE_INDEX_MAX_ISSUES]
             cache = self._issue_search_texts
             wanted = []
+            budget = ISSUE_INDEX_READ_BYTES
+            unread = False
             for number in numbers:
                 record = records.get((chosen[number], number))
                 if record is not None and (record[0], number) not in cache \
                         and record[1] <= MAX_JSON_BLOB:
+                    if record[1] > budget:
+                        unread = True
+                        continue
+                    budget -= record[1]
                     wanted.append(record)
             blobs = self._pulse_read(wanted) if wanted else {}
             matches: list[int] = []
@@ -6838,7 +6844,7 @@ class GitRepository:
                 if text in haystack:
                     matches.append(number)
         return {"ok": True, "commit": commit, "numbers": matches,
-                "truncated": len(chosen) > ISSUE_INDEX_MAX_ISSUES}
+                "truncated": unread or len(chosen) > ISSUE_INDEX_MAX_ISSUES}
 
     def _issue_folders(self, tree: str) -> tuple[
             dict[int, str], dict[tuple[str, int], tuple[str, int]],

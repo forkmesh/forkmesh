@@ -416,6 +416,13 @@ def test_search_reads_titles_bodies_and_live_comments(issue_app):
         "X-ForkMesh-Memory-Cache") == "hit"
 
 
+def test_search_reads_within_the_index_byte_budget(issue_app, monkeypatch):
+    app, _bare, _tmp = issue_app
+    monkeypatch.setattr(gateway, "ISSUE_INDEX_READ_BYTES", 1)
+    answer = json.loads(_search(app, "ref=main&q=dave").body)
+    assert answer["numbers"] == [] and answer["truncated"] is True
+
+
 def test_index_is_sent_as_utf8_not_escapes(tmp_path):
     bare = _make_repository(tmp_path, {
         ".forkmesh/issues/open/1/issue-1.json": {

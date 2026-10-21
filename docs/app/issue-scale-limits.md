@@ -73,7 +73,10 @@ about 490 KB, 56 KB gzip.
   text); lower-casing is Python's, which differs from JavaScript's only for
   a handful of characters. The searchable text of each record is kept per
   blob id up to `ISSUE_SEARCH_CACHE_CHARS`, and each answer is commit-keyed
-  like the index. If the search cannot be reached the list says so and
+  like the index. One search reads at most `ISSUE_INDEX_READ_BYTES` of
+  uncached records, the index's budget, so a public search never holds every
+  record of a huge repository in memory; records past it are skipped and the
+  answer says `truncated`. If the search cannot be reached the list says so and
   matches the summary fields only.
 - **Folding.** `_issue_index_fold` in `tools/mirror_gateway.py` is a port of
   `parseIssueJson` and of `issueDependencyNumbers`, down to JavaScript's
