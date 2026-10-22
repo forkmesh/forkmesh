@@ -198,7 +198,9 @@ and is masked in errors.
   the runs caught: the `pr/545` merge left `06-repo-actions.js` with two
   `pullLink` branches and `08-repo-detail-network.js` without the end of the
   quick-reply handler, so `dashboard.js` did not parse and the World browser
-  job's esbuild step failed; GIPHY (`comment_gifs.py`) was missing from the
+  job's esbuild step failed (repaired the same way on `main` in `8fd2702dcf`,
+  which also dropped a doubled readiness panel and added a `node --check` test
+  of the bundle); GIPHY (`comment_gifs.py`) was missing from the
   external dependency map (recorded as a privacy finding); the certification
   tests built their report on the runner's platform while the registry lists
   only `linux`; the social-signals CLI test checked a POSIX file mode on
