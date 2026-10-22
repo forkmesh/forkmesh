@@ -83,7 +83,8 @@
      "title": "Desktop",
      "items": [
       "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes.",
-      "An Actions run that stops because the computer is low on disk space now says to run Free disk space first, and its ping is filed as a disk problem."
+      "An Actions run that stops because the computer is low on disk space now says to run Free disk space first, and its ping is filed as a disk problem.",
+      "A run waiting for your approval now says why it is held, such as a first-time contributor's pull request, instead of only saying the workflow has no changes."
      ]
     },
     {
