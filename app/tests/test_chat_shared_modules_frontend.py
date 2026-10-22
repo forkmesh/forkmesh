@@ -167,7 +167,7 @@ def test_room_transport_authorizes_encrypts_replays_and_suspends_cleanly():
       const received = [];
       const timers = [];
       let authorizations = 0;
-      const sealStore = createRoomSealStore({{ acct: "self", node: "self" }});
+      const sealStore = createRoomSealStore({{ acct: "self", wrappingKey: null }});
       let activeSeal = null;
       const transport = createChatRoomTransport({{
         authorize: async (room) => {{
@@ -199,11 +199,13 @@ def test_room_transport_authorizes_encrypts_replays_and_suspends_cleanly():
 
       const key = await derivePassphraseKey("room secret", "channel-alpha");
       const incoming = await encryptObject(
-        await sealFrame({{ type: "chat", senderId: "self", text: "replayed" }}, activeSeal), key);
+        await sealFrame({{ type: "chat", senderId: sealStore.node, text: "replayed" }}, activeSeal), key);
       socket.emit("message", {{ data: JSON.stringify(incoming) }});
       for (let attempt = 0; attempt < 20 && !received.length; attempt += 1) {{
         await new Promise((resolve) => setTimeout(resolve, 5));
       }}
+      const node = sealStore.node;
+      const kid = activeSeal.keyId;
 
       transport.suspend();
       const timerCountAfterSuspend = timers.length;
@@ -215,6 +217,8 @@ def test_room_transport_authorizes_encrypts_replays_and_suspends_cleanly():
         socketUrl: socket.url,
         sentEnvelope: JSON.parse(socket.sent[0]),
         received,
+        node,
+        kid,
         connected: transport.connected,
         state: transport.state,
         timerCountAfterSuspend,
@@ -229,9 +233,19 @@ def test_room_transport_authorizes_encrypts_replays_and_suspends_cleanly():
         "wss://relay.example/api/chat/channel-alpha/ws?ticket=one"
     )
     assert result["sentEnvelope"]["persist"] is True
+    node = result["node"]
+    assert len(node) == 43
     assert result["received"] == [
         {
-            "plain": {"type": "chat", "senderId": "self", "text": "replayed"},
+            "plain": {
+                "type": "chat",
+                "senderId": node,
+                "text": "replayed",
+                "frameAuth": {
+                    "sealed": True, "node": node, "acct": "self",
+                    "kid": result["kid"], "self": True,
+                },
+            },
             "scope": "channel-alpha",
         }
     ]

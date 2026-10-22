@@ -45,6 +45,14 @@ CHANNEL = "1" * 32
 DIRECT = "2" * 32
 
 
+def _entry_constant(name):
+    node = next(
+        item for item in ENTRY_TREE.body
+        if isinstance(item, ast.Assign)
+        and any(getattr(target, "id", "") == name for target in item.targets))
+    return eval(compile(ast.Expression(node.value), str(ENTRY), "eval"), {})
+
+
 class _Attachment:
     def __init__(self, values):
         self.__dict__.update(values)
@@ -213,6 +221,9 @@ def _harness(channel=None, members=(), participants=()):
 
     namespace = {
         "CHAT_HISTORY_MAX_BODY": 1_900_000,
+        "CHAT_RELAY_OWNED_FIELDS": _entry_constant("CHAT_RELAY_OWNED_FIELDS"),
+        "PUBLIC_WORLD_GENERAL_ROOM_KEY":
+            "repo:mainnode/forkmesh:room:world-general",
         "CHAT_HISTORY_RETAIN_MS": 7 * 24 * 60 * 60 * 1000,
         "CHAT_DIRECT_RECEIVED_REFS_MAX": 64,
         "CHAT_DIRECT_ACKED_GRACE_MS": 120_000,

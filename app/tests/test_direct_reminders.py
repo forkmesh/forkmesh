@@ -38,6 +38,7 @@ class Env:
                          "0269_chat_history_acked_grace.sql")))
         self.clock = NOW
         self.sent = []
+        self.blocks = {}
         self.saved = []
         self.accounts = {
             bi: {"name": name, "status": "active", "email": name + "@x.test"}
@@ -113,6 +114,9 @@ def _load(env):
     async def save_account(_env, account_bi, rec):
         env.saved.append(account_bi)
 
+    async def blocked_by(_env, recipient, sender):
+        return sender in env.blocks.get(recipient, ())
+
     class Date:
         @staticmethod
         def now():
@@ -143,6 +147,7 @@ def _load(env):
         "_send_email": send_email,
         "_stamp_account_email": lambda rec, kind, ok, now: rec,
         "_save_account": save_account,
+        "_chat_blocked_by": blocked_by,
     })
     return module
 
@@ -173,9 +178,10 @@ def test_recipient_of_a_day_old_server_copy_gets_one_reminder():
     assert [mail["to"] for mail in env.sent] == ["bob@x.test"]
     mail = env.sent[0]
     assert mail["kind"] == "direct_unread"
-    assert mail["subject"] == (
-        "ForkMesh: 2 unread direct messages from alice waiting on the server")
-    assert "- alice: 2 messages" in mail["text"]
+    assert mail["subject"] == "You have unread messages on ForkMesh"
+    assert "2 unread direct messages" in mail["text"]
+    assert "alice" not in mail["subject"]
+    assert "alice" not in mail["text"] and "alice" not in mail["html"]
     assert "deleted from the server" in mail["text"]
     assert "https://forkmesh.com/chat" in mail["text"]
     assert "zz" not in mail["text"] and "zz" not in mail["html"]
@@ -189,8 +195,8 @@ def test_recipient_of_a_day_old_server_copy_gets_one_reminder():
     env.store(AB, ALICE, NOW + HOUR)
     env.clock = NOW + 26 * HOUR
     assert _run(module.send_reminders(env)) == 1
-    assert env.sent[1]["subject"] == (
-        "ForkMesh: 1 unread direct message from alice waiting on the server")
+    assert env.sent[1]["subject"] == "You have unread messages on ForkMesh"
+    assert "1 unread direct message " in env.sent[1]["text"]
 
 
 def test_fresh_received_and_own_copies_send_nothing():
@@ -239,11 +245,29 @@ def test_one_email_lists_every_waiting_sender():
     assert _run(module.send_reminders(env)) == 1
     mail = env.sent[0]
     assert mail["to"] == "bob@x.test"
-    assert mail["subject"] == (
-        "ForkMesh: 4 unread direct messages from 2 people waiting on the "
-        "server")
-    assert "- alice: 3 messages\n" in mail["text"]
-    assert "- carol: 1 message\n" in mail["text"]
+    assert mail["subject"] == "You have unread messages on ForkMesh"
+    assert "4 unread direct messages" in mail["text"]
+    for name in ("alice", "carol"):
+        assert name not in mail["text"] and name not in mail["html"]
+
+
+def test_messages_from_a_blocked_sender_send_no_reminder():
+    env = Env()
+    module = _load(env)
+    env.conversation(AB, ALICE, BOB)
+    env.conversation(CB, CAROL, BOB)
+    env.store(AB, ALICE, NOW - 26 * HOUR)
+    env.store(CB, CAROL, NOW - 25 * HOUR)
+    env.blocks["bob"] = {"alice", "carol"}
+
+    assert _run(module.send_reminders(env)) == 0
+    assert env.sent == []
+
+    env.blocks["bob"] = {"alice"}
+    env.store(CB, CAROL, NOW + HOUR)
+    env.clock = NOW + 26 * HOUR
+    assert _run(module.send_reminders(env)) == 1
+    assert "1 unread direct message " in env.sent[0]["text"]
 
 
 def test_entry_wires_the_cron_phase_column_and_kind():

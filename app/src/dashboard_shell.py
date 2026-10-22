@@ -122,7 +122,7 @@ PAGES = {
         "route": "/dashboard/chat",
         "asset": "dashboard/chat/index.html",
         "title": "Chat - ForkMesh",
-        "description": "ForkMesh public #general chat is controller-readable so ForkBot and MCP can participate.",
+        "description": "ForkMesh public #general chat: every message is sealed and signed by the device that sent it, and it stays controller-readable: anyone who joins, the server included, can read it.",
     },
     # The referral program keeps its own top-level public URL (/referral is
     # linked from the site header, the site footer and the privacy page) and is

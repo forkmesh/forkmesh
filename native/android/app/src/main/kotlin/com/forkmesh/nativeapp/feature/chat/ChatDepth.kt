@@ -9,6 +9,8 @@ import com.forkmesh.nativeapp.apps.AppsApi
 import com.forkmesh.nativeapp.apps.ChatApps
 import com.forkmesh.nativeapp.chat.ChannelGroupsStore
 import com.forkmesh.nativeapp.chat.ChatAccountCalling
+import com.forkmesh.nativeapp.chat.ChatBlocks
+import com.forkmesh.nativeapp.chat.NodeOwners
 import com.forkmesh.nativeapp.chat.ChatHistoryCodec
 import com.forkmesh.nativeapp.chat.ChatHistoryStore
 import com.forkmesh.nativeapp.chat.ChatHub
@@ -189,6 +191,8 @@ object ChatDepth {
                 selfId = { room.selfId },
                 displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
                 account = { room.persona.ownerUser },
+                nodeKey = { room.nodeKey },
+                owners = { room.owners },
             )
             service.addListener {
                 bump()
@@ -218,8 +222,8 @@ object ChatDepth {
 
                 override fun sendDirect(kid: String, frame: Map<String, Any?>): Boolean = room()?.sendDirect(kid, frame) == true
 
-                override fun setFocus(channel: String, on: Boolean) {
-                    room()?.setFocus(channel, on)
+                override fun setFocus(channel: String, on: Boolean, kids: Set<String>) {
+                    room()?.setFocus(channel, on, kids)
                 }
             }
             direct = directService
@@ -258,6 +262,15 @@ object ChatDepth {
                 }
             }
             chat.forkbot = calling
+            val owners = NodeOwners(calling)
+            owners.addListener {
+                chat.extras.relabelBots()
+                service.relabelBots()
+            }
+            room.owners = owners
+            val blocks = ChatBlocks(calling, prefs)
+            blocks.onChange = { bump() }
+            chat.blocks = blocks
             val appsService = ChatApps(AppsApi(api))
             appsService.onChange = { bump() }
             appsService.onNotice = { post(it) }
@@ -276,6 +289,7 @@ object ChatDepth {
                 discordBridge?.stopWatching()
             }
             room.frameObserver = null
+            room.owners = null
             chat.calls = null
             if (hub === chat) hub = null
             office = null
@@ -308,6 +322,8 @@ object ChatDepth {
                             }
                         }
                         if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks()
+                        room.owners?.clear()
+                        chat.blocks?.let { if (token.isEmpty()) it.clear() else it.signedIn() }
                     }
                 }
             }

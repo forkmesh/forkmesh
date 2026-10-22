@@ -43,7 +43,7 @@ interface DirectMeshLinks {
 
     fun sendDirect(kid: String, frame: Map<String, Any?>): Boolean
 
-    fun setFocus(channel: String, on: Boolean)
+    fun setFocus(channel: String, on: Boolean, kids: Set<String>)
 }
 
 data class DirectDevice(
@@ -1275,10 +1275,17 @@ class DirectMessageService(
         }
         val links = mesh
         if (links != null) {
-            if (previous.isNotEmpty()) runCatching { links.setFocus(DirectMessageFrames.PREFIX + previous, false) }
-            if (id.isNotEmpty()) runCatching { links.setFocus(DirectMessageFrames.PREFIX + id, true) }
+            if (previous.isNotEmpty()) runCatching { links.setFocus(DirectMessageFrames.PREFIX + previous, false, partnerKids(DirectMessageFrames.PREFIX + previous)) }
+            if (id.isNotEmpty()) runCatching { links.setFocus(DirectMessageFrames.PREFIX + id, true, partnerKids(DirectMessageFrames.PREFIX + id)) }
         }
         notifyListeners()
+    }
+
+    fun partnerKids(conversation: String): Set<String> {
+        val record = record(conversation) ?: return emptySet()
+        val me = sealAccount()
+        val own = ownKid()
+        return trustFor(record).approved().filter { it.kid != own && it.acct != me }.map { it.kid }.toSet()
     }
 
     private fun linkedDevices(record: DirectConversation): Map<String, MeshRoute> {

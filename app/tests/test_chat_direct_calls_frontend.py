@@ -100,8 +100,9 @@ def test_caller_posts_a_missed_call_line():
 
 def test_incoming_call_frames_are_filtered_by_device_and_call_id():
     source = _function_source(CALLS, "handleFrame")
-    assert "from === selfId" in source
-    assert "plain.to && plain.to !== selfId" in source
+    assert 'typeof selfId === "function" ? selfId() : selfId' in source
+    assert "from === self" in source
+    assert "plain.to && plain.to !== self" in source
     assert 'call.callId !== callId' in source
 
 

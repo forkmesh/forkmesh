@@ -1,5 +1,6 @@
 #include "RoomSeal.h"
 #include "AppPaths.h"
+#include "OwnerOnlyFile.h"
 #include "SettingsWrite.h"
 
 #include <QCoreApplication>
@@ -13,7 +14,6 @@
 #include <QMap>
 #include <QMutex>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QSettings>
 #include <QTimer>
 
@@ -119,6 +119,10 @@ std::unique_ptr<QSettings> openStoredState()
     const QString path = storedStatePath();
     if (path.isEmpty() || !QDir().mkpath(QFileInfo(path).absolutePath()))
         return nullptr;
+    if (QFileInfo::exists(path))
+        forkmesh::ownerfile::restrictToOwner(path);
+    else
+        forkmesh::ownerfile::write(path, QByteArray());
     return std::make_unique<QSettings>(path, QSettings::IniFormat);
 }
 
@@ -141,18 +145,7 @@ bool writeStateFile(const QString &path, const QVariant &value)
 {
     if (!value.isValid())
         return !QFileInfo::exists(path) || QFile::remove(path);
-    if (!QDir().mkpath(QFileInfo(path).absolutePath()))
-        return false;
-    const QByteArray data = value.toByteArray();
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly))
-        return false;
-    file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-    if (file.write(data) != data.size()) {
-        file.cancelWriting();
-        return false;
-    }
-    return file.commit();
+    return forkmesh::ownerfile::write(path, value.toByteArray());
 }
 
 bool readStateFile(const QString &path, QByteArray *out)
@@ -865,6 +858,37 @@ bool verifyBundle(const QJsonObject &bundle, const QString &room, qint64 now)
         return false;
     return ed25519Verify(idk, sig,
                          bundleMessage(room, kid, idkValue.toString(), acct, node, spk));
+}
+
+QByteArray nodeBindingMessage(const QString &room, const QString &kid,
+                              const QString &idk, const QString &acct)
+{
+    return QStringList{QStringLiteral("forkmesh-chat-e2ee-node-v1"), room, kid, idk, acct}
+        .join(QLatin1Char('\n'))
+        .toUtf8();
+}
+
+bool isNodeKey(const QString &node)
+{
+    bool ok = false;
+    const QByteArray raw = fromB64u(node, &ok);
+    return ok && raw.size() == kKeyBytes && b64u(raw) == node;
+}
+
+bool verifyNodeBinding(const QJsonObject &bundle, const QString &room)
+{
+    const QString node = bundle.value(QStringLiteral("node")).toString();
+    if (!isNodeKey(node))
+        return false;
+    bool ok = false;
+    const QByteArray nsig = fromB64u(bundle.value(QStringLiteral("nsig")).toString(), &ok);
+    if (!ok || nsig.size() != kSignatureBytes)
+        return false;
+    return ed25519Verify(fromB64u(node), nsig,
+                         nodeBindingMessage(room,
+                                            bundle.value(QStringLiteral("kid")).toString(),
+                                            bundle.value(QStringLiteral("idk")).toString(),
+                                            bundle.value(QStringLiteral("acct")).toString()));
 }
 
 QByteArray kek(const QString &room, const QString &sender,
@@ -2393,14 +2417,20 @@ QJsonObject RoomSeal::keyFrame() const
         m_device->sign(bundleMessage(m_room, kid, idk, m_acct, m_node, spk));
     if (sig.isEmpty())
         return {};
-    return {{QStringLiteral("type"), QStringLiteral("e2ee-key")},
-            {QStringLiteral("v"), 3},
-            {QStringLiteral("kid"), kid},
-            {QStringLiteral("idk"), idk},
-            {QStringLiteral("acct"), m_acct},
-            {QStringLiteral("node"), m_node},
-            {QStringLiteral("spk"), spk},
-            {QStringLiteral("sig"), b64u(sig)}};
+    QJsonObject bundle{{QStringLiteral("type"), QStringLiteral("e2ee-key")},
+                       {QStringLiteral("v"), 3},
+                       {QStringLiteral("kid"), kid},
+                       {QStringLiteral("idk"), idk},
+                       {QStringLiteral("acct"), m_acct},
+                       {QStringLiteral("node"), m_node},
+                       {QStringLiteral("spk"), spk},
+                       {QStringLiteral("sig"), b64u(sig)}};
+    if (m_policy == Policy::Open && m_nodeSigner) {
+        const QByteArray nsig = m_nodeSigner(nodeBindingMessage(m_room, kid, idk, m_acct));
+        if (nsig.size() == kSignatureBytes)
+            bundle.insert(QStringLiteral("nsig"), b64u(nsig));
+    }
+    return bundle;
 }
 
 RoomSeal::BundleResult RoomSeal::acceptKeyFrame(const QJsonObject &frame,
@@ -2413,6 +2443,8 @@ RoomSeal::BundleResult RoomSeal::acceptKeyFrame(const QJsonObject &frame,
     if (frame.value(QStringLiteral("kid")).toString() == m_device->kid())
         return verifyBundle(frame, m_room, m_device->now()) ? BundleResult::Known
                                                            : BundleResult::Rejected;
+    if (m_policy == Policy::Open && !verifyNodeBinding(frame, m_room))
+        return BundleResult::Rejected;
     return m_device->acceptBundle(m_scope, m_policy, m_room, frame, changed,
                                   m_policy == Policy::Strict ? m_participants
                                                              : QStringList());

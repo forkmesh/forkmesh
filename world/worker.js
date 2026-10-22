@@ -4,6 +4,7 @@ const APP_ASSET_PATHS = new Set([
   "/chat-apps.js",
   "/chat-attachments.js",
   "/chat-crypto.js",
+  "/chat-frame-auth.js",
   "/chat-issue-filing.js",
   "/chat-mlkem.js",
   "/chat-moderation.js",

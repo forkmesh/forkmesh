@@ -1872,6 +1872,7 @@ def _websocket_namespace():
         "_websocket_handoff_authorization",
         "_validated_websocket_handoff",
         "_websocket_direct_fetch",
+        "_chat_socket_query_ok",
         "room_key_from_path",
     }
     class_names = {
@@ -2059,11 +2060,14 @@ def _websocket_handoff_cases():
         ),
         (
             Request(
-                "https://app.forkmesh.com/api/room/general/ws",
-                headers=handshake),
+                "https://app.forkmesh.com/api/repo/mainnode/forkmesh/rooms/"
+                "general/ws?node=alice&ts=1&sig=x",
+                headers=handshake,
+            ),
             "FORKMESH_MAINNODE_ROOM",
-            "legacy:room:general",
-            "https://app.forkmesh.com/api/room/general/ws",
+            "repo:mainnode/forkmesh:room:general",
+            "https://app.forkmesh.com/api/repo/mainnode/forkmesh/rooms/"
+            "general/ws?account=" + account + "&addr=" + "d" * 32,
             handshake,
         ),
         (

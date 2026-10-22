@@ -173,8 +173,8 @@ class ChatV4RatchetTest {
 
     fun testStrictRoomsIgnoreV3AndOpenRoomsIgnoreV4() {
         val (alice, bob) = pair()
-        val openAlice = RoomSeal.create(room, "open-scope", SealPolicy.OPEN, "alice", alice.keys, clock = { now })
-        val openBob = RoomSeal.create(room, "open-scope", SealPolicy.OPEN, "bob", bob.keys, clock = { now })
+        val openAlice = RoomSeal.create(room, "open-scope", SealPolicy.OPEN, "alice", alice.keys, clock = { now }, nodeKey = ChatNodeKey.generate())
+        val openBob = RoomSeal.create(room, "open-scope", SealPolicy.OPEN, "bob", bob.keys, clock = { now }, nodeKey = ChatNodeKey.generate())
         openBob.acceptKeyFrame(openAlice.keyFrame(now), now)
         openAlice.acceptKeyFrame(openBob.keyFrame(now), now)
         val v3 = openAlice.seal(chat("v3"), now)

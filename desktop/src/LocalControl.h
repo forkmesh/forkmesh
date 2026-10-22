@@ -257,6 +257,7 @@ private:
         QByteArray relayPending;
         qint64 lastHeardMs = 0;
         qint64 accountCheckedMs = 0;
+        qint64 pendingSinceMs = 0;
         bool accountCheckInFlight = false;
         bool relayed() const { return !relaySession.isEmpty(); }
     };
@@ -275,6 +276,7 @@ private:
     void handleFrame(Connection &conn, const QByteArray &payload);
     void handleAuth(Connection &conn, const QByteArray &payload);
     void requestPairing(Connection &conn);
+    void expirePairing(int connectionId);
     void pairDevice(Connection &conn, const QString &approval);
     void admitStored(Connection &conn);
     bool needsAccountCheck(const Connection &conn) const;

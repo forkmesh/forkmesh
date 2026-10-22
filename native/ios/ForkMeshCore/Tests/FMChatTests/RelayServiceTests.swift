@@ -18,7 +18,11 @@ final class RelayHarness {
     let relay: RelayService
     let crypto: RoomCrypto
     let server: FakeWebSocketConnection
+    var accounts: [String: String] = [:]
+    var lookups = 0
     private var peerSeals: [String: RoomSeal] = [:]
+    private var nodeKeys: [String: Identity] = [:]
+    private var keysByNode: [String: Identity] = [:]
 
     static func start() async throws -> RelayHarness {
         let device = ChatDevice(name: "Mobile Tester")
@@ -33,7 +37,12 @@ final class RelayHarness {
         let server = try XCTUnwrap(ws.lastConnection, "the relay dialled")
         let room = device.settings.room
         let crypto = await Task.detached { RoomCrypto.withPassphrase(room, "forkmesh-chat-screen-test-key") }.value
-        return RelayHarness(device: device, ws: ws, relay: relay, crypto: crypto, server: server)
+        let h = RelayHarness(device: device, ws: ws, relay: relay, crypto: crypto, server: server)
+        relay.nodeOwners = ChatNodeOwners(lookup: { [weak h] node in
+            h?.lookups += 1
+            return h?.accounts[node] ?? ""
+        })
+        return h
     }
 
     private init(device: ChatDevice, ws: FakeWebSocketConnector, relay: RelayService, crypto: RoomCrypto, server: FakeWebSocketConnection) {
@@ -43,41 +52,66 @@ final class RelayHarness {
         self.server = server
     }
 
+    func node(_ name: String) -> String {
+        if name.isEmpty || name == relay.selfId || keysByNode[name] != nil { return name }
+        if let key = nodeKeys[name] { return key.nodeId }
+        let key = try! Identity.fromSeed(Ed25519.generateSeed())
+        nodeKeys[name] = key
+        keysByNode[key.nodeId] = key
+        return key.nodeId
+    }
+
     func sendPlain(_ plain: JSONObject) throws {
         server.receive(text: JSON.encode(.object(try crypto.encrypt(plain))))
     }
 
-    /// Sealed to this device, as a real peer's protected frames are.
-    func peer(_ node: String) async throws -> RoomSeal {
-        if let known = peerSeals[node] { return known }
+    func sendFromServer(_ plain: JSONObject) throws {
+        var envelope = try crypto.encrypt(plain)
+        envelope["srv"] = true
+        server.receive(text: JSON.encode(.object(envelope)))
+    }
+
+    func peer(_ name: String) async throws -> RoomSeal {
+        let nodeId = node(name)
+        if let known = peerSeals[nodeId] { return known }
         let peer = try RoomSeal.loadOrCreate(
-            device.settings.room, policy: .open, acct: node, node: node, secureStore: InMemorySecureStore())
-        do {
-            var mobileKey: JSONObject?
-            for _ in 0..<200 where mobileKey == nil {
-                mobileKey = server.sentTexts.lazy.compactMap { text -> JSONObject? in
-                    guard case .object(let env)? = try? JSON.parse(text), let frame = self.crypto.decrypt(env),
-                        RoomSeal.isKeyFrame(frame)
-                    else { return nil }
-                    return frame
-                }.first
-                if mobileKey == nil { try await Task.sleep(nanoseconds: 10_000_000) }
-            }
-            let key = try XCTUnwrap(mobileKey, "mobile seal key was not advertised")
-            XCTAssertTrue(peer.acceptKeyFrame(key))
-            try sendPlain(peer.keyFrame())
-            peerSeals[node] = peer
+            device.settings.room, policy: .open, acct: nodeId, node: nodeId, secureStore: InMemorySecureStore(),
+            nodeIdentity: keysByNode[nodeId])
+        var mobileKey: JSONObject?
+        for _ in 0..<200 where mobileKey == nil {
+            mobileKey = server.sentTexts.lazy.compactMap { text -> JSONObject? in
+                guard case .object(let env)? = try? JSON.parse(text), let frame = self.crypto.decrypt(env),
+                    RoomSeal.isKeyFrame(frame)
+                else { return nil }
+                return frame
+            }.first
+            if mobileKey == nil { try await Task.sleep(nanoseconds: 10_000_000) }
         }
+        let key = try XCTUnwrap(mobileKey, "mobile seal key was not advertised")
+        XCTAssertTrue(peer.acceptKeyFrame(key))
+        try sendPlain(peer.keyFrame())
+        peerSeals[nodeId] = peer
         return peer
     }
 
-    func sendProtected(_ plain: JSONObject) async throws {
-        let sender = plain["senderId"]?.stringValue ?? ""
-        let peer = try await peer(sender.isEmpty ? "remote-node" : sender)
+    func sendProtected(_ plain: JSONObject, bind: Bool = true, signedIn: Bool = true) async throws {
+        var plain = plain
+        let name = plain["senderId"]?.stringValue ?? ""
+        let nodeId = node(name.isEmpty ? "remote-node" : name)
+        plain["senderId"] = .string(nodeId)
+        for key in ["to", "reactorId"] {
+            if let value = plain[key]?.stringValue, !value.isEmpty { plain[key] = .string(node(value)) }
+        }
+        let sender = ChatNodeOwners.normalized(plain["sender"]?.text ?? "")
+        if signedIn && RelayService.ownerClaim(plain).isEmpty && !sender.isEmpty && plain[ChatFrameText.botField] == nil {
+            plain["ownerUser"] = .string(sender)
+        }
+        let claim = RelayService.ownerClaim(plain)
+        if bind && !claim.isEmpty { accounts[nodeId] = claim }
+        let peer = try await peer(nodeId)
         try sendPlain(try peer.seal(plain))
     }
 
-    /// Every frame the device sent that this harness can read.
     func openFrames() -> [JSONObject] {
         server.sentTexts.compactMap { text -> JSONObject? in
             guard case .object(let env)? = try? JSON.parse(text), let frame = crypto.decrypt(env),
@@ -131,17 +165,19 @@ final class RelayServiceTests: XCTestCase {
         XCTAssertEqual(relay.nextReconnectDelay, 1)
     }
 
-    func testSendingShowsTheMessageAtOnceAsADurableEncryptedFrame() async throws {
+    func testSendingShowsTheMessageAtOnceAsADurableSealedFrame() async throws {
         let h = try await RelayHarness.start()
         XCTAssertEqual(h.relay.state, .connected)
+        _ = try await h.peer("remote-node")
+        try await Task.sleep(nanoseconds: 150_000_000)
         let sent = await h.relay.sendMessage("retain this message")
         XCTAssertTrue(sent)
         XCTAssertEqual(h.relay.messages("#general").map(\.text), ["retain this message"])
-        let arrived = await h.server.waitForSent(3)
+        let arrived = await waitUntil(2) { h.openFrames().contains { $0["type"] == "chat" } }
         XCTAssertTrue(arrived)
         let frame = try XCTUnwrap(h.server.sentJSON.last { $0["persist"] == .bool(true) && $0["notify"] == .bool(true) })
         XCTAssertEqual(frame["kind"], "cipher")
-        // Public #channel chat is controller-readable: room cipher only, not sealed.
+        XCTAssertTrue(RoomSeal.isSealedFrame(try XCTUnwrap(h.crypto.decrypt(frame))), "public channel chat is sealed too")
         let chat = try XCTUnwrap(h.openFrames().first { $0["type"] == "chat" })
         XCTAssertEqual(chat["text"], "retain this message")
         XCTAssertEqual(chat["channel"], "#general")
@@ -151,29 +187,34 @@ final class RelayServiceTests: XCTestCase {
         await h.close()
     }
 
-    func testDirectMessagesAreNotRetainedByTheRelay() async throws {
+    func testTheRelayNeverCarriesDirectOrPrivateFrames() async throws {
         let h = try await RelayHarness.start()
         _ = await h.server.waitForSent(2)
         let before = h.server.sentTexts.count
-        h.relay.switchConversation("@remote-node")
-        _ = await h.relay.sendMessage("private direct message")
-        _ = await h.server.waitForSent(before + 1)
-        let dm = try XCTUnwrap(h.server.sentJSON.last)
-        XCTAssertEqual(dm["kind"], "cipher")
-        XCTAssertFalse(dm.contains("persist"))
-        // And it is sealed: the room key alone does not read it.
-        let inner = try XCTUnwrap(h.crypto.decrypt(dm))
-        XCTAssertTrue(RoomSeal.isSealedFrame(inner))
+        let dm = await h.relay.sendMessage("private direct message", to: "@\(h.node("remote-node"))")
+        XCTAssertFalse(dm)
+        XCTAssertTrue(h.relay.messages("@\(h.node("remote-node"))").isEmpty)
+        for (type, extra) in [
+            ("dm", ["to": JSONValue.string(h.node("remote-node"))]), ("invite", ["channel": "#secret"]),
+            ("cove-invite", ["invitee": "ada"]), ("cove-open", ["creator": "x"]), ("chat", ["channel": "#x", "private": true]),
+            ("typing", ["conversation": "@someone"]),
+        ] as [(String, JSONObject)] {
+            var frame = h.relay.makeFrame(type)
+            for (key, value) in extra { frame[key] = value }
+            XCTAssertFalse(h.relay.sendFrame(frame), type)
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(h.server.sentTexts.count, before, "nothing private reached the socket")
         await h.close()
     }
 
     func testRetainedAndLiveMessagesRenderInChronologicalOrder() async throws {
         let h = try await RelayHarness.start()
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "remote-newer", "senderId": "remote-node", "sender": "Remote", "ts": 2000,
             "channel": "#general", "text": "newer remote message",
         ])
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "remote-older", "senderId": "remote-node", "sender": "Remote", "ts": 1000,
             "channel": "#general", "text": "older remote message",
         ])
@@ -186,7 +227,7 @@ final class RelayServiceTests: XCTestCase {
     func testUnreadCountsAccumulateAndClearWhenRead() async throws {
         let h = try await RelayHarness.start()
         for (id, ts) in [("unread-1", 1000), ("unread-2", 2000)] {
-            try h.sendPlain([
+            try await h.sendProtected([
                 "type": "chat", "id": .string(id), "senderId": "remote-node", "sender": "Remote", "ts": .int(Int64(ts)),
                 "channel": "#random", "text": "unread",
             ])
@@ -203,11 +244,11 @@ final class RelayServiceTests: XCTestCase {
 
     func testMarkAllReadClearsEveryConversationAtOnce() async throws {
         let h = try await RelayHarness.start()
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "bulk-1", "senderId": "remote-node", "sender": "Remote", "ts": 1000,
             "channel": "#random", "text": "channel unread",
         ])
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "bulk-2", "senderId": "remote-node", "sender": "Remote", "ts": 2000,
             "channel": "#dev", "text": "another channel unread",
         ])
@@ -222,11 +263,11 @@ final class RelayServiceTests: XCTestCase {
 
     func testSeeingTheBadgeKeepsEachConversationUnread() async throws {
         let h = try await RelayHarness.start()
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "badge-1", "senderId": "remote-node", "sender": "Remote", "ts": 1000,
             "channel": "#random", "text": "first",
         ])
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "badge-2", "senderId": "remote-node", "sender": "Remote", "ts": 2000,
             "channel": "#dev", "text": "second",
         ])
@@ -238,7 +279,7 @@ final class RelayServiceTests: XCTestCase {
         XCTAssertEqual(h.relay.totalUnread, 2)
         XCTAssertTrue(h.relay.hasUnread("#random"))
         XCTAssertTrue(h.relay.hasUnread("#dev"))
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "badge-3", "senderId": "remote-node", "sender": "Remote", "ts": 3000,
             "channel": "#dev", "text": "third",
         ])
@@ -263,34 +304,79 @@ final class RelayServiceTests: XCTestCase {
         await h.close()
     }
 
-    func testAnUnsealedFrameOutsideAPublicChannelIsRefused() async throws {
+    func testAnUnsealedFrameIsRefusedEvenInAPublicChannel() async throws {
         let h = try await RelayHarness.start()
         try h.sendPlain([
-            "type": "dm", "id": "sneaky", "senderId": "remote-node", "sender": "Remote", "ts": 1000,
-            "to": .string(h.relay.selfId), "text": "not sealed",
+            "type": "chat", "id": "sneaky", "senderId": .string(h.node("remote-node")), "sender": "Remote", "ts": 1000,
+            "channel": "#general", "text": "not sealed",
         ])
         let logged = await waitUntil(2) { h.relay.log.contains { $0.contains("refused an unencrypted frame") } }
         XCTAssertTrue(logged)
-        XCTAssertTrue(h.relay.messages("@remote-node").isEmpty)
+        XCTAssertTrue(h.relay.messages("#general").isEmpty)
         await h.close()
     }
 
-    func testSealedDirectMessagesArriveInTheirConversation() async throws {
+    func testAFrameTheServerInjectedShowsAsTheIntegrationNotAPerson() async throws {
+        let h = try await RelayHarness.start()
+        let victim = h.node("ada-phone")
+        try await h.sendProtected([
+            "type": "chat", "id": "ada-1", "senderId": "ada-phone", "sender": "Ada", "ownerUser": "ada", "ts": 1000,
+            "channel": "#general", "text": "mine",
+        ])
+        _ = await waitUntil(2) { h.relay.messages("#general").count == 1 }
+        try h.sendFromServer([
+            "type": "chat", "id": "hook-1", "senderId": .string(victim), "sender": "Deploy bot", "ownerUser": "ada",
+            "accountKind": "user", "ts": 1001, "channel": "#general", "text": "build passed",
+        ])
+        try h.sendFromServer([
+            "type": "delete", "id": "hook-2", "senderId": .string(victim), "conversation": "#general", "target": "ada-1",
+            "channel": "#general",
+        ])
+        try h.sendFromServer([
+            "type": "chat", "id": "hook-3", "senderId": "x", "sender": "Leak", "channel": "#secret", "private": true,
+            "text": "no",
+        ])
+        let shown = await waitUntil(2) { h.relay.messages("#general").count == 2 }
+        XCTAssertTrue(shown)
+        let hook = try XCTUnwrap(h.relay.messages("#general").first { $0.id == "hook-1" })
+        XCTAssertEqual(hook.senderId, "app:Deploy bot")
+        XCTAssertEqual(hook.senderName, "Deploy bot")
+        XCTAssertFalse(hook.isSelf)
+        XCTAssertTrue(h.relay.messages("#general").contains { $0.id == "ada-1" }, "an unsealed delete does nothing")
+        XCTAssertTrue(h.relay.messages("#secret").isEmpty)
+        XCTAssertFalse(h.relay.roster().contains { $0.id.hasPrefix("app:") })
+        await h.close()
+    }
+
+    func testSealedDirectAndPrivateFramesAreDroppedOnTheRelay() async throws {
         let h = try await RelayHarness.start()
         try await h.sendProtected([
             "type": "dm", "id": "dm-1", "senderId": "remote-node", "sender": "Remote", "ts": 1000,
             "to": .string(h.relay.selfId), "text": "hello you",
         ])
-        let arrived = await waitUntil(2) { !h.relay.messages("@remote-node").isEmpty }
+        try await h.sendProtected([
+            "type": "chat", "id": "p-1", "senderId": "remote-node", "sender": "Remote", "ts": 1001, "channel": "#secret",
+            "private": true, "text": "private",
+        ])
+        try await h.sendProtected([
+            "type": "invite", "id": "i-1", "senderId": "remote-node", "sender": "Remote", "ts": 1002,
+            "to": .string(h.relay.selfId), "channel": "#secret",
+        ])
+        try await h.sendProtected([
+            "type": "chat", "id": "ok-1", "senderId": "remote-node", "sender": "Remote", "ts": 1003, "channel": "#general",
+            "text": "public",
+        ])
+        let arrived = await waitUntil(2) { !h.relay.messages("#general").isEmpty }
         XCTAssertTrue(arrived)
-        XCTAssertEqual(h.relay.messages("@remote-node").first?.text, "hello you")
-        XCTAssertEqual(h.relay.unreadCountFor("@remote-node"), 1)
+        XCTAssertTrue(h.relay.messages("@\(h.node("remote-node"))").isEmpty)
+        XCTAssertTrue(h.relay.messages("#secret").isEmpty)
+        XCTAssertFalse(h.relay.channels.contains("#secret"))
         await h.close()
     }
 
     func testOnlyTheAuthorMayDeleteAMessage() async throws {
         let h = try await RelayHarness.start()
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "m1", "senderId": "author", "sender": "A", "ts": 1000, "channel": "#general",
             "text": "mine",
         ])
@@ -302,7 +388,7 @@ final class RelayServiceTests: XCTestCase {
         try await h.sendProtected([
             "type": "presence", "id": "p1", "senderId": "someone-else", "sender": "B", "ts": 1002,
         ])
-        _ = await waitUntil(2) { h.relay.roster().contains { $0.id == "someone-else" } }
+        _ = await waitUntil(2) { h.relay.roster().contains { $0.id == h.node("someone-else") } }
         XCTAssertEqual(h.relay.messages("#general").count, 1, "a stranger cannot take it back")
         try await h.sendProtected([
             "type": "delete", "id": "d2", "senderId": "author", "sender": "A", "ts": 1003,
@@ -329,18 +415,117 @@ final class RelayServiceTests: XCTestCase {
 
     func testAHelloIsAnsweredWithThisDevicesChannels() async throws {
         let h = try await RelayHarness.start()
+        let remote = h.node("remote-node")
         try await h.sendProtected([
             "type": "hello", "id": "h1", "senderId": "remote-node", "sender": "Remote", "ts": 1000,
             "channels": ["#general", "#ops"],
         ])
         let replied = await waitUntil(2) {
-            h.openFrames().contains { $0["type"] == "hello" && $0["to"] == "remote-node" }
+            h.openFrames().contains { $0["type"] == "hello" && $0["to"] == .string(remote) }
         }
         XCTAssertTrue(replied)
         XCTAssertTrue(h.relay.channels.contains("#ops"))
-        let reply = try XCTUnwrap(h.openFrames().last { $0["type"] == "hello" && $0["to"] == "remote-node" })
+        let reply = try XCTUnwrap(h.openFrames().last { $0["type"] == "hello" && $0["to"] == .string(remote) })
         XCTAssertEqual(reply["channels"], ["#general", "#ops"])
+        XCTAssertNil(reply["timeZone"], "strangers are not told this phone's time zone")
         await h.close()
+    }
+
+    func testABotLineNamesWhoeverReallyPostedIt() async throws {
+        let h = try await RelayHarness.start()
+        let now = Date().epochMillis
+        try await h.sendProtected([
+            "type": "chat", "id": "bot-1", "senderId": "pat-phone", "sender": "forkbot", "bot": "forkbot", "ownerUser": "pat",
+            "ts": .int(now), "channel": "#general", "text": "an answer",
+        ])
+        try await h.sendProtected(
+            [
+                "type": "chat", "id": "bot-2", "senderId": "eve-phone", "sender": "forkbot", "bot": "forkbot",
+                "ownerUser": "pat", "ts": .int(now + 1), "channel": "#general", "text": "trust me",
+            ], bind: false)
+        let both = await waitUntil(2) { h.relay.messages("#general").count == 2 }
+        XCTAssertTrue(both)
+        let byId = Dictionary(uniqueKeysWithValues: h.relay.messages("#general").map { ($0.id, $0) })
+        XCTAssertEqual(byId["bot-1"]?.senderName, "forkbot \u{00B7} via pat")
+        XCTAssertEqual(byId["bot-2"]?.senderName, "forkbot \u{00B7} via \(guestChatName(h.node("eve-phone")))")
+        XCTAssertEqual(byId["bot-2"]?.senderId, "forkbot")
+        await h.close()
+    }
+
+    func testAnAccountNameIsShownOnlyOnceTheServerVouchesForTheNode() async throws {
+        let h = try await RelayHarness.start()
+        let now = Date().epochMillis
+        try await h.sendProtected(
+            [
+                "type": "presence", "id": "liar-1", "senderId": "liar", "sender": "Ada", "ownerUser": "ada",
+                "accountKind": "user", "ts": .int(now),
+            ], bind: false)
+        try await h.sendProtected(
+            [
+                "type": "chat", "id": "liar-2", "senderId": "liar", "sender": "Ada", "ownerUser": "ada", "ts": .int(now),
+                "channel": "#general", "text": "I am Ada",
+            ], bind: false)
+        h.accounts[h.node("bound-elsewhere")] = "bob"
+        try await h.sendProtected(
+            [
+                "type": "chat", "id": "bob-1", "senderId": "bound-elsewhere", "sender": "Ada", "ownerUser": "ada",
+                "ts": .int(now), "channel": "#general", "text": "Also Ada",
+            ], bind: false)
+        try await h.sendProtected([
+            "type": "chat", "id": "ada-1", "senderId": "ada-phone", "sender": "Ada", "ownerUser": "Ada", "ts": .int(now + 1),
+            "channel": "#general", "text": "the real Ada",
+        ])
+        let three = await waitUntil(2) { h.relay.messages("#general").count == 3 }
+        XCTAssertTrue(three)
+        let byId = Dictionary(uniqueKeysWithValues: h.relay.messages("#general").map { ($0.id, $0) })
+        XCTAssertEqual(byId["liar-2"]?.senderName, guestChatName(h.node("liar")))
+        XCTAssertEqual(byId["bob-1"]?.senderName, guestChatName(h.node("bound-elsewhere")))
+        XCTAssertEqual(byId["ada-1"]?.senderName, "Ada")
+        let groups = h.relay.rosterGroups()
+        XCTAssertEqual(groups.filter { $0.account == "ada" }.map { $0.members.map(\.id) }, [[h.node("ada-phone")]])
+        XCTAssertEqual(groups.first { $0.id == h.node("liar") }?.account, "")
+        let lookups = h.lookups
+        try await h.sendProtected([
+            "type": "chat", "id": "ada-2", "senderId": "ada-phone", "sender": "Ada", "ownerUser": "ada", "ts": .int(now + 2),
+            "channel": "#general", "text": "cached",
+        ])
+        _ = await waitUntil(2) { h.relay.messages("#general").count == 4 }
+        XCTAssertEqual(h.lookups, lookups, "a node's owner is cached")
+        await h.close()
+    }
+
+    func testNodeOwnersAreCachedForAnHour() async {
+        let clock = FixedClock(epochMillis: 1_790_000_000_000)
+        var calls = 0
+        let owners = ChatNodeOwners(
+            lookup: { node in
+                calls += 1
+                if node == "down" { throw MeshSocketError(code: 1, message: "offline") }
+                return node == "n1" ? " Ada " : ""
+            }, clock: clock)
+        let first = await owners.account(for: "n1")
+        XCTAssertEqual(first, "ada")
+        XCTAssertTrue(owners.isVerified(node: "n1", claim: "ADA"))
+        XCTAssertFalse(owners.isVerified(node: "n1", claim: "bob"))
+        let guest = await owners.account(for: "n2")
+        XCTAssertEqual(guest, "")
+        XCTAssertFalse(owners.isVerified(node: "n2", claim: ""))
+        _ = await owners.account(for: "n1")
+        XCTAssertEqual(calls, 2)
+        clock.advance(by: ChatNodeOwners.ttl)
+        XCTAssertNil(owners.cached("n1"))
+        _ = await owners.account(for: "n1")
+        XCTAssertEqual(calls, 3)
+        let down = await owners.account(for: "down")
+        XCTAssertNil(down)
+        XCTAssertFalse(owners.isVerified(node: "down", claim: "ada"), "a failed check is a guest")
+        XCTAssertEqual(owners.cached("down"), "")
+        _ = await owners.account(for: "down")
+        XCTAssertEqual(calls, 4, "and is not asked again at once")
+        clock.advance(by: ChatNodeOwners.retryAfter)
+        XCTAssertNil(owners.cached("down"))
+        _ = await owners.account(for: "down")
+        XCTAssertEqual(calls, 5)
     }
 
     func testNodesOwnedByOneUserCollapseIntoASingleRosterEntry() async throws {
@@ -404,7 +589,7 @@ final class RelayServiceTests: XCTestCase {
         XCTAssertEqual(groups.count, 1)
         let me = try XCTUnwrap(groups.first)
         XCTAssertTrue(me.isSelf)
-        XCTAssertEqual(me.members.map(\.id), [h.relay.selfId, "w0F5DesktopNodeggm4"])
+        XCTAssertEqual(me.members.map(\.id), [h.relay.selfId, h.node("w0F5DesktopNodeggm4")])
         XCTAssertEqual(me.disambiguator, "")
         await h.close()
     }
@@ -420,7 +605,7 @@ final class RelayServiceTests: XCTestCase {
         XCTAssertEqual(groups.first?.isSelf, true)
     }
 
-    func testPresenceCarriesTheDeviceTimeZoneSoPeopleShowTheirLocalTime() async throws {
+    func testPresenceReadsAPeersTimeZoneButSendsNoneOfItsOwn() async throws {
         let h = try await RelayHarness.start()
         let now = Date().epochMillis
         func ada() -> MemberGroup? { h.relay.rosterGroups().first { $0.name.lowercased() == "ada" } }
@@ -441,7 +626,7 @@ final class RelayServiceTests: XCTestCase {
         h.relay.appLifecycleChanged(.resumed)
         _ = await waitUntil(2) { h.openFrames().count > mark }
         let presence = try XCTUnwrap(h.openFrames().dropFirst(mark).last { $0["type"] == "presence" })
-        XCTAssertEqual(presence["timeZone"]?.text, TimeZone.current.identifier)
+        XCTAssertNil(presence["timeZone"], "a shared room is not told this phone's time zone")
         XCTAssertEqual(h.relay.roster().first?.timeZone, TimeZone.current.identifier)
         await h.close()
     }
@@ -474,7 +659,7 @@ final class RelayServiceTests: XCTestCase {
         let heard = await waitUntil(2) { adaStatus().emoji == "🎧" }
         XCTAssertTrue(heard)
         XCTAssertTrue(adaStatus().away)
-        XCTAssertEqual(h.relay.liveStatusFor("node-a")?.text, "Focus time")
+        XCTAssertEqual(h.relay.liveStatusFor(h.node("node-a"))?.text, "Focus time")
 
         // No field: the known status stays. A chat frame or a stale presence frame cannot
         // overwrite it either.
@@ -486,8 +671,8 @@ final class RelayServiceTests: XCTestCase {
             "type": "presence", "id": "status-3", "senderId": "node-a", "sender": "Ada", "ownerUser": "ada", "ts": 1000,
             "userStatus": ["away": false, "emoji": "👻", "text": "replayed"],
         ])
-        try h.sendPlain([
-            "type": "chat", "id": "status-4", "senderId": "node-a", "sender": "Ada", "ts": .int(now + 2),
+        try await h.sendProtected([
+            "type": "chat", "id": "status-4", "senderId": "node-a", "sender": "Ada", "ownerUser": "ada", "ts": .int(now + 2),
             "channel": "#general", "text": "hello", "userStatus": ["away": false, "emoji": "👻", "text": "chat"],
         ])
         _ = await waitUntil(2) { !h.relay.messages("#general").isEmpty }
@@ -535,8 +720,12 @@ final class RelayServiceTests: XCTestCase {
     func testAResetForgetsEverythingFromTheRelayBeingLeft() async throws {
         let h = try await RelayHarness.start()
         _ = await h.relay.sendMessage("old world")
+        h.accounts["n1"] = "ada"
+        _ = await h.relay.nodeOwners?.account(for: "n1")
+        XCTAssertEqual(h.relay.nodeOwners?.cached("n1"), "ada")
         await h.relay.disconnect()
         h.relay.resetForRelaySwitch()
+        XCTAssertNil(h.relay.nodeOwners?.cached("n1"), "another relay binds its own nodes")
         XCTAssertTrue(h.relay.messages("#general").isEmpty)
         XCTAssertTrue(h.relay.log.isEmpty)
         XCTAssertEqual(h.relay.roster().count, 1)

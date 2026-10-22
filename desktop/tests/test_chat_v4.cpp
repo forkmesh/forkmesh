@@ -462,10 +462,20 @@ void testVersionsStayInTheirRooms()
     check(v3Frame.value(QStringLiteral("v")).toInt() == 3 &&
               bob.seal.open(v3Frame).status == RoomSeal::Status::Invalid,
           "a v3 frame in a direct room is ignored");
+    const QByteArray aliceNodeSeed(32, 'a');
+    const QByteArray bobNodeSeed(32, 'b');
+    const QString aliceNode = b64u(ed25519Public(aliceNodeSeed));
+    const QString bobNode = b64u(ed25519Public(bobNodeSeed));
     RoomSeal openRoom(QStringLiteral("open-room"), QString(), Policy::Open,
-                      QStringLiteral("alice"), QStringLiteral("alice"), alice.device);
+                      QStringLiteral("alice"), aliceNode, alice.device);
     RoomSeal openPeer(QStringLiteral("open-room"), QString(), Policy::Open, QStringLiteral("bob"),
-                      QStringLiteral("bob"), bob.device);
+                      bobNode, bob.device);
+    openRoom.setNodeSigner([aliceNodeSeed](const QByteArray &m) {
+        return ed25519Sign(aliceNodeSeed, m);
+    });
+    openPeer.setNodeSigner([bobNodeSeed](const QByteArray &m) {
+        return ed25519Sign(bobNodeSeed, m);
+    });
     openRoom.acceptKeyFrame(openPeer.keyFrame());
     openPeer.acceptKeyFrame(openRoom.keyFrame());
     const QJsonObject openFrame = openRoom.sealObject(chat(QStringLiteral("open")));

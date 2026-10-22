@@ -114,7 +114,10 @@ struct ChatChannelFilesScreen: View {
             }
             .buttonStyle(.plain)
             if let service, service.enabled, let url = ChatLinkPreviewParsing.previewable(item.url) {
-                ChatLinkPreviewCard(url: url, service: service)
+                ChatLinkPreviewCard(
+                    url: url, service: service,
+                    autoLoad: hub.autoLoadsLinkPreviews(
+                        in: conversation, fromSelf: hub.messages(in: conversation).first { $0.id == item.messageId }?.isSelf ?? false))
             }
         }
         .contextMenu {
@@ -334,8 +337,10 @@ struct ChatChannelMembersScreen: View {
                     }
                     .contentShape(Rectangle())
                     .contextMenu {
-                        if !member.isSelf {
+                        if hub.canMessage(member) {
                             Button(action: { onMessage(member) }) { Label("Message", systemImage: "bubble.left") }
+                        }
+                        if !member.isSelf {
                             Button(action: { onProfile(member.account.isEmpty ? member.name : member.account) }) {
                                 Label("View profile", systemImage: "person.crop.circle")
                             }
@@ -348,7 +353,7 @@ struct ChatChannelMembersScreen: View {
             } footer: {
                 if hub.isEveryoneChannel(conversation) {
                     Text("Every ForkMesh member is in this channel.")
-                } else if hub.office?.room(for: conversation) == nil && !hub.extras.isPrivate(conversation) {
+                } else if hub.office?.room(for: conversation) == nil {
                     Text("Everyone online in this project's chat, and everyone who has posted here.")
                 }
             }
@@ -478,7 +483,7 @@ struct ChatChannelDetailsScreen: View {
         List {
             Section("Channel") {
                 LabeledContent("Name", value: hub.conversationLabel(conversation))
-                LabeledContent("Type", value: room?.isPrivate ?? hub.extras.isPrivate(conversation) ? "Private" : "Public")
+                LabeledContent("Type", value: (room?.isPrivate ?? false) ? "Private" : "Public")
                 LabeledContent("Members", value: "\(hub.memberCount(conversation))")
             }
             if let room {

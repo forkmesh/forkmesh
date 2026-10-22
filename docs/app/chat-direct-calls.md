@@ -67,7 +67,7 @@ not copied: it is end-to-end encrypted to the original two participants.
     room socket, the next resent invite arrives, and the normal incoming-call
     screen shows;
   - APNs gets an alert (`direct_call_alert` in `apns.py`): "📞 Incoming call",
-    "@caller is calling you", `topic: calls` and the conversation, the
+    body "Incoming call", `topic: calls` and the conversation, the
     `forkmesh-call-ring.wav` sound (a 27 s ring the iOS app writes to
     `Library/Sounds`; iOS falls back to the default sound before the app has
     run once), `interruption-level: time-sensitive`, no `mutable-content`
@@ -84,12 +84,18 @@ not copied: it is end-to-end encrypted to the original two participants.
     `_apns_send_call` sends each phone that has one a VoIP push
     (`apns.send_voip`: `apns-push-type: voip`, topic `<bundle id>.voip`,
     `apns-expiration: 0` so it is delivered now or never, payload
-    `{topic, conversation, caller, callId, origin}`) instead of the alert,
+    `{topic, conversation, callId, origin}`) instead of the alert,
     once per phone and call (`_APNS_VOIP_CALL_MEMO`, 2 min), so the 20 s
     re-ring does not report the call twice. A phone without a VoIP token, or
     whose VoIP push fails, gets the alert push as before; a VoIP token Apple
     calls dead is dropped from the row and the alert token kept. iOS shows the
     VoIP push as a CallKit call (`native/ios/docs/FMChat.md`).
+  - **No caller name in pushes** (2026-10-22). The alert body used to be
+    "@caller is calling you" and both payloads carried a `caller` field, so
+    Apple and anyone reading the lock screen saw who was calling in
+    plaintext. Neither push names the caller now; the app shows the name
+    after it opens the sealed invite. Nothing rings when the callee has
+    blocked the caller ([chat-relay-server](chat-relay-server.md#r5-blocks)).
   - **Notifications turned off on the iPhone** (2026-10-21). A VoIP push
     needs no notification permission, but the phone used to register nothing
     when the system prompt was declined or notifications were off in

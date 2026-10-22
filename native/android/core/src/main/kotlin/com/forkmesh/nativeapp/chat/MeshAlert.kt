@@ -1,6 +1,8 @@
 package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.model.ChatMessage
+import com.forkmesh.nativeapp.push.DirectMessagePreviews
+import com.forkmesh.nativeapp.push.NotificationContent
 
 const val MESH_ALERT_FRESH_MS = 10 * 60_000L
 const val MESH_ALERT_PREVIEW_CHARS = 180
@@ -17,4 +19,10 @@ fun meshAlert(message: ChatMessage, unread: Int, watching: Boolean, nowMs: Long)
     val body = if (preview.length > MESH_ALERT_PREVIEW_CHARS) preview.take(MESH_ALERT_PREVIEW_CHARS - 3) + "..." else preview
     val title = if (unread > 1) "$sender in $MESH_CONVERSATION · $unread new" else "$sender in $MESH_CONVERSATION"
     return MeshAlert(title, body, sender)
+}
+
+fun MeshAlert.shown(content: NotificationContent): MeshAlert = when (content) {
+    NotificationContent.NAME_AND_MESSAGE -> this
+    NotificationContent.NAME_ONLY -> copy(body = DirectMessagePreviews.GENERIC_BODY)
+    NotificationContent.NOTHING -> MeshAlert(DirectMessagePreviews.GENERIC_TITLE, DirectMessagePreviews.GENERIC_BODY, "")
 }

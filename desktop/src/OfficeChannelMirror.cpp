@@ -1,6 +1,7 @@
 #include "OfficeChannelMirror.h"
 #include "ChatBlocks.h"
 #include "ChatRecipients.h"
+#include "ChatNodeOwners.h"
 #include "ServerNode.h"
 #include "SettingsWrite.h"
 #include "StickerCatalog.h"
@@ -364,7 +365,11 @@ bool chatMessageFromPlain(const QJsonObject &plain, const QString &conversation,
         message.threadRootId = rootId;
     message.senderId =
         plain.value(QStringLiteral("senderId")).toString().left(64);
-    message.senderName = boundedText(plain, "sender", kMaxDisplayNameChars);
+    message.senderName = boundedText(
+        plain, "sender",
+        plain.value(QStringLiteral("accountKind")) == QLatin1String("integration")
+            ? 96
+            : kMaxDisplayNameChars);
     if (message.senderName.isEmpty())
         message.senderName = QStringLiteral("Office visitor");
     message.text = forkmesh::chatformat::bodySource(plain, kMaxTextChars);
@@ -548,6 +553,26 @@ void OfficeChannelMirror::onDeviceEvent(forkmesh::chatv3::ChatDevice::Event even
     case Event::PrekeyRotated:
         break;
     }
+}
+
+void OfficeChannelMirror::setOwnerVerifier(ChatNodeOwners *owners)
+{
+    m_owners = owners;
+    for (auto it = m_rooms.begin(); it != m_rooms.end(); ++it)
+        if (it->sender)
+            it->sender->setOwnerVerifier(owners);
+}
+
+void OfficeChannelMirror::prepareRoomSender(
+    ServerNode &sender, const std::function<QString(const QByteArray &)> &signer,
+    ChatNodeOwners *owners)
+{
+    sender.setSharedRoom(false);
+    sender.setOwnerVerifier(owners);
+    if (signer)
+        sender.setNodeSigner([signer](const QByteArray &message) {
+            return forkmesh::chatv3::fromB64u(signer(message));
+        });
 }
 
 void OfficeChannelMirror::setSigner(std::function<QString(const QByteArray &)> signer)
@@ -828,13 +853,45 @@ void OfficeChannelMirror::sendMemberChange(const QString &conversation,
 
 bool OfficeChannelMirror::startDirectMessage(const QString &username)
 {
+    return openDirect(username, true);
+}
+
+bool OfficeChannelMirror::sendDirectText(const QString &username, const QString &text)
+{
+    const QString name = normalizedUsername(username);
+    const QString message = text.trimmed().left(kMaxTextChars);
+    if (!ready() || name.isEmpty() || name == m_account || message.isEmpty())
+        return false;
+    QStringList &queued = m_directTexts[name];
+    if (queued.size() >= 8)
+        return false;
+    queued.append(message);
+    if (!openDirect(name, false)) {
+        m_directTexts.remove(name);
+        return false;
+    }
+    return true;
+}
+
+void OfficeChannelMirror::flushDirectTexts(const QString &name,
+                                           const QString &conversation)
+{
+    const QStringList texts = m_directTexts.take(name);
+    for (const QString &text : texts)
+        sendMessage(conversation, text);
+}
+
+bool OfficeChannelMirror::openDirect(const QString &username, bool announce)
+{
     const QString name = normalizedUsername(username);
     if (!ready() || name.isEmpty() || name == m_account)
         return false;
     const QString existing = forkmesh::office::conversationForDirect(name);
     for (auto it = m_rooms.constBegin(); it != m_rooms.constEnd(); ++it) {
         if (it->direct && it->conversation == existing) {
-            emit directConversationReady(existing);
+            flushDirectTexts(name, existing);
+            if (announce)
+                emit directConversationReady(existing);
             return true;
         }
     }
@@ -849,7 +906,7 @@ bool OfficeChannelMirror::startDirectMessage(const QString &username)
         QJsonDocument(QJsonObject{{QStringLiteral("username"), name}})
             .toJson(QJsonDocument::Compact);
     QNetworkReply *reply = m_network->post(request, body);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, name]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, name, announce]() {
         const QByteArray responseBody = reply->readAll();
         const bool failed = reply->error() != QNetworkReply::NoError;
         const QString transportError = failed ? reply->errorString() : QString();
@@ -878,12 +935,15 @@ bool OfficeChannelMirror::startDirectMessage(const QString &username)
                 reason = transportError.isEmpty()
                              ? QStringLiteral("the relay rejected the message")
                              : transportError;
+            m_directTexts.remove(name);
             emit directMessageFailed(name, reason);
             return;
         }
         saveDirectDirectory();
         emit directConversationsChanged(m_directConversations);
-        emit directConversationReady(conversation);
+        flushDirectTexts(name, conversation);
+        if (announce)
+            emit directConversationReady(conversation);
     });
     return true;
 }
@@ -2860,6 +2920,7 @@ void OfficeChannelMirror::openSender(const QString &channelId,
     auto *sender = new ServerNode(
         m_displayName.isEmpty() ? m_account : m_displayName, m_account, m_account,
         m_selfId, endpoint, roomName, QString(), passphrase, this);
+    prepareRoomSender(*sender, m_signer, m_owners);
     sender->setChatDevice(m_device);
     sender->setChatAccount(selfDirectAcct());
     if (room.direct)
@@ -3184,9 +3245,8 @@ void OfficeChannelMirror::applyHistory(Room &room, const QJsonObject &payload)
             if (!plain.contains(QStringLiteral("senderId")))
                 plain.insert(QStringLiteral("senderId"), opened.senderNode);
             RoomSeal::useSignedTime(plain, opened);
-        } else if (room.privateRoom && !room.serverVisible) {
-            // The history endpoint is controlled by the relay too. Apply the
-            // same fail-closed policy as the live socket for private rooms.
+        } else if (room.direct || !envelope.value(QStringLiteral("srv")).toBool() ||
+                   !ServerNode::serverFrameFromPlain(plain, &plain, false)) {
             continue;
         }
         const QString type = plain.value(QStringLiteral("type")).toString();

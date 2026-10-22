@@ -11,7 +11,7 @@ data class ChatShareTarget(
     val user: String = "",
     val private: Boolean = false,
 ) {
-    val guestProbe: String get() = if (kind == ChatShareKind.DIRECT || kind == ChatShareKind.USER) "@$user" else conversation
+    val guestProbe: String get() = if (kind == ChatShareKind.DIRECT || kind == ChatShareKind.USER || kind == ChatShareKind.PERSON) "@$user" else conversation
 }
 
 object ChatShareTargets {
@@ -41,8 +41,9 @@ object ChatShareTargets {
         }
         for (group in people) {
             if (group.self || !group.online || group.members.isEmpty()) continue
-            if (ChatVisitorPresence.isTransientVisitor(name = group.name) || group.name.trim().lowercase() in known) continue
-            out.add(ChatShareTarget(ChatShareKind.PERSON, "@${group.id}", group.name))
+            val account = group.members.firstNotNullOfOrNull { it.owner.trim().lowercase().ifEmpty { null } } ?: continue
+            if (ChatVisitorPresence.isTransientVisitor(name = group.name) || account in known || group.name.trim().lowercase() in known) continue
+            out.add(ChatShareTarget(ChatShareKind.PERSON, "@${group.id}", group.name, user = account))
         }
         return out.distinctBy { it.conversation }
     }

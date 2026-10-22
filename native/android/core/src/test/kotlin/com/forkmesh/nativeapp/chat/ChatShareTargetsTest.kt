@@ -6,8 +6,8 @@ import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
 
 class ChatShareTargetsTest {
-    private fun group(id: String, name: String, online: Boolean = true, self: Boolean = false) =
-        MemberGroup(name, listOf(Member(id = id, name = name, online = online, self = self)), self = self)
+    private fun group(id: String, name: String, online: Boolean = true, self: Boolean = false, owner: String = name) =
+        MemberGroup(name, listOf(Member(id = id, name = name, online = online, self = self, owner = owner)), self = self)
 
     private fun targets(): List<ChatShareTarget> = ChatShareTargets.build(
         channels = listOf("#general", "#reading", "#office/ops", "#reading"),
@@ -18,7 +18,8 @@ class ChatShareTargetsTest {
             group("n2", "bravo"),
             group("n3", "charlie", online = false),
             group("n4", "me", self = true),
-            group("n5", "Guest 12"),
+            group("n5", "Guest 12", owner = ""),
+            group("n6", "echo", owner = ""),
         ),
         privateChannels = setOf("#reading"),
     )
@@ -31,10 +32,11 @@ class ChatShareTargetsTest {
                 ChatShareTarget(ChatShareKind.CHANNEL, "#reading", "#reading", private = true),
                 ChatShareTarget(ChatShareKind.OFFICE, "#office/ops", "#ops"),
                 ChatShareTarget(ChatShareKind.DIRECT, DirectMessageFrames.PREFIX + "d1", "alpha", user = "alpha"),
-                ChatShareTarget(ChatShareKind.PERSON, "@n2", "bravo"),
+                ChatShareTarget(ChatShareKind.PERSON, "@n2", "bravo", user = "bravo"),
             ),
             list,
         )
+        assertEq("@bravo", list[4].guestProbe, "a person is reached through their account")
         assertEq("@alpha", list[3].guestProbe)
         assertEq("#general", list[0].guestProbe)
     }

@@ -22,6 +22,18 @@
      ]
     },
     {
+     "title": "Chat",
+     "items": [
+      "Edits, reactions, typing and deletes in direct messages now reach only the person you are talking to, on iPhone, Android and desktop.",
+      "Webhook posts in public channels notify everyone at most once every ten minutes, and each account can create up to 20 channels.",
+      "Direct messages and private channels always go through the server's member-checked rooms, and the shared room carries only public messages; nobody can post, edit or delete as someone else.",
+      "Account names in chat are checked with the server, so an unverified sender shows as a guest, and a bot reply shows who asked for it.",
+      "Private channels can take webhooks, and webhook messages are marked server-visible.",
+      "Blocking someone now also stops their direct messages, pushes and calls at the server.",
+      "#mesh says that anyone nearby can read it and no longer shares your account name."
+     ]
+    },
+    {
      "title": "World",
      "items": [
       "Stepping into a neighbouring World's hexagon is seamless: its hexagon is built ahead of time, people stay visible on both sides while you cross, and the World no longer blanks out or stalls after a while on slower devices."
@@ -36,7 +48,20 @@
     {
      "title": "iPhone",
      "items": [
-      "With Status Page installed, tiny status dots now sit in the thin strip above the Dynamic Island, so you can see ForkMesh's health on every screen."
+      "With Status Page installed, tiny status dots now sit in the thin strip above the Dynamic Island, so you can see ForkMesh's health on every screen.",
+      "Link previews in shared rooms load only when you tap them, and private network addresses are never fetched."
+     ]
+    },
+    {
+     "title": "Android",
+     "items": [
+      "Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting."
+     ]
+    },
+    {
+     "title": "Desktop",
+     "items": [
+      "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes."
      ]
     },
     {
@@ -82,7 +107,9 @@
      "items": [
       "Stick stickers on messages.",
       "Swipe left on a message for Message Info; your last sent message shows when it was delivered and read.",
-      "Each project keeps its own chat when you switch projects."
+      "Each project keeps its own chat when you switch projects.",
+      "The iPhone no longer tells other devices the names of your private channels, so one project's channels stop turning up in another.",
+      "Chat on iPhone is snappier: closing Control Center no longer reconnects every conversation, and message lists, typing and the channel list redraw far less."
      ]
     },
     {
@@ -142,18 +169,18 @@
    "pitch": "Calls get face swap and background blur, the Market gets a fresh look, and the app tells you what changed.",
    "sections": [
     {
+     "title": "Market",
+     "items": [
+      "The Market has a fresh look, with sorting, filters, usage numbers and one-tap install.",
+      "Packages you have installed now show as installed, every time."
+     ]
+    },
+    {
      "title": "Calls",
      "items": [
       "Face swap in video calls now covers your whole head, hair included, and follows your movements naturally.",
       "Your voice changes to match the face you pick.",
       "Blur your background during a call, or replace it with a picture of your own."
-     ]
-    },
-    {
-     "title": "Market",
-     "items": [
-      "The Market has a fresh look, with sorting, filters, usage numbers and one-tap install.",
-      "Packages you have installed now show as installed, every time."
      ]
     },
     {

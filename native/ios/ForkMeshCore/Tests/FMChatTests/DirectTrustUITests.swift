@@ -291,15 +291,15 @@ extension DirectMessagesTests {
         _ = await service.open(conversation)
         let connection = try XCTUnwrap(ws.lastConnection)
         let crypto = await roomCrypto()
-        let pat = try peerSeal("peer")
+        let pat = try peerSeal("peer", node: harness.node("pat-node"))
         _ = await teach(pat, from: connection, crypto)
         connection.receive(text: JSON.encode(try crypto.encrypt(pat.keyFrame())))
         let known = await waitUntil { service.deviceKeys(conversation) == [pat.keyId] }
         XCTAssertTrue(known)
         XCTAssertEqual(hub.conversationSubtitle, "Offline")
-        try await harness.sendProtected([
-            "type": "hello", "id": "hello-2", "senderId": "pat-node", "sender": "Patricia", "ts": .int(Date().epochMillis),
-        ])
+        try await harness.sendProtected(
+            ["type": "hello", "id": "hello-2", "senderId": "pat-node", "sender": "Patricia", "ts": .int(Date().epochMillis)],
+            signedIn: false)
         let online = await waitUntil { hub.conversationSubtitle == "Online" }
         XCTAssertTrue(online, "a roster node with no owner still matches the device the DM trusts")
         await service.closeAll()

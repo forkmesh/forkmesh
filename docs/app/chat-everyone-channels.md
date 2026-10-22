@@ -22,7 +22,8 @@ Every member belongs to three fixed public channels. The shared relay room
 - **Fixed.** Nobody can rename, delete, close, invite to, add webhooks to or
   manage members of them: 403 `everyone_channel_fixed`. Using one of the names
   for another channel returns 409 `channel_name_taken`. They do not count
-  toward `MAX_CHAT_CHANNELS` and are listed first.
+  toward `MAX_CHAT_CHANNELS` or `MAX_CHAT_CHANNELS_PER_CREATOR` and are
+  listed first.
 - **Welcome post.** When signup activates an account, `post_welcome` delivers
   a system message to `#welcome` through the incoming-webhook path, so it is
   stored in `chat_history`, without the per-user webhook bell.

@@ -125,10 +125,12 @@ def test_dashboard_chat_allows_guests_only_in_public_world_general():
     ) in CHAT
     assert "return PUBLIC_WORLD_GENERAL || Boolean(userSession())" in CHAT
     assert 'return PUBLIC_WORLD_GENERAL && !userSession() ? "guest" : "user"' in CHAT
-    assert 'value === "user" || (PUBLIC_WORLD_GENERAL && value === "guest")' in CHAT
+    assert 'return value === "user" || value === "guest" || value === "integration";' in CHAT
+    assert "frameAuth.attributeFrame(plain, {" in CHAT
+    assert "if (!isAuthenticatedPlain(plain)) return;" in CHAT
     assert "function normalizedPublicWorldFrame(entry)" in CHAT
-    assert 'accountKind: entry.accountKind === "user" ? "user" : "guest"' in CHAT
-    assert "sender: publicWorldName(entry.sender)" in CHAT
+    assert 'accountKind: ["user", "integration"].includes(entry.accountKind) ? entry.accountKind : "guest"' in CHAT
+    assert "sender: entry.botVia ? entry.sender : publicWorldName(entry.sender)" in CHAT
     # Public-room names are shown as asserted - no "World visitor - jett".
     assert "World visitor · ${" not in CHAT
     assert 'function publicWorldName(value)' in CHAT
@@ -153,10 +155,12 @@ def test_public_chat_splits_guest_general_from_authenticated_channels():
         'roomScopeForChannel() === "public-world-general" && !userSession()'
         in PUBLIC_CHAT
     )
-    assert 'scope === "public-world-general" && value === "guest"' in PUBLIC_CHAT
+    assert 'return value === "user" || value === "guest" || value === "integration";' in PUBLIC_CHAT
+    assert ".map((plain) => attributeFrame(plain, {" in PUBLIC_CHAT
+    assert "if (!isSealedPlain(plain) && !isServerPlain(plain)) return;" in PUBLIC_CHAT
     assert "function normalizedPublicWorldFrame(" in PUBLIC_CHAT
-    assert 'accountKind: plain.accountKind === "user" ? "user" : "guest"' in PUBLIC_CHAT
-    assert "sender: publicWorldName(plain.sender)" in PUBLIC_CHAT
+    assert 'accountKind: ["user", "integration"].includes(plain.accountKind) ? plain.accountKind : "guest"' in PUBLIC_CHAT
+    assert "sender: plain.botVia ? plain.sender : publicWorldName(plain.sender)" in PUBLIC_CHAT
     # Public-room names are shown as asserted - no "World visitor - jett".
     assert "World visitor · ${" not in PUBLIC_CHAT
     assert "function publicWorldName(value)" in PUBLIC_CHAT
@@ -423,7 +427,8 @@ def test_public_chat_thread_authors_link_to_profile_pages():
         PUBLIC_CHAT.index("function renderThreadRoot(record) {")
     ]
     assert 'const author = document.createElement("strong");' in header
-    assert "if (record.senderId === FORKBOT_SENDER_ID) {" in header
+    assert "const isBot = record.senderId === FORKBOT_SENDER_ID || isIntegrationSenderId(record.senderId);" in header
+    assert "if (isBot) {" in header
     assert 'authorLink.className = "chat-author";' in header
     assert "authorLink.href = mentionProfilePath(record.sender);" in header
     assert "showMentionCard(authorLink, record.sender)" in header
