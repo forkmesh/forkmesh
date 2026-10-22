@@ -1,6 +1,7 @@
 #ifndef FORKMESH_MAIN_WINDOW_H
 #define FORKMESH_MAIN_WINDOW_H
 
+#include "ChatRelayRules.h"
 #include "BackoffNetworkAccessManager.h" // FirewallVerdict, in a signature below
 #include "ChatBackend.h"
 #include "ChatListPreview.h"
@@ -293,6 +294,8 @@ class NodeEventSocket;
 class WorldSpeechBridge;
 class OfficeChannelMirror;
 class LocalMeshNode;
+class ChatNodeOwners;
+class ChatAccountBlocks;
 class LocalControlServer;
 class DiscordClient;
 class PrivateMirrorMaterialization;
@@ -4513,6 +4516,14 @@ private:
     bool chatIdentityIsGuest() const;
     QString guestChatName() const;   // stable "Guest ####" for this install
     QString machineNodeName() const; // THIS machine's node name (never the username)
+    QString sharedNodeName() const;
+    QString sharedTipAddress() const;
+    void ensureChatTrust();
+    void syncChatBlocks();
+    QString verifiedChatAccount(const QString &senderId, const QString &conversation);
+    bool isBlockedChatSender(const QString &senderId, const QString &conversation);
+    void purgeRelayPrivateChannels();
+    forkmesh::relayrules::RoomKind currentRoomKind() const;
     void saveMachineNodeName(const QString &name); // persist + re-advertise
     void saveActionNodeLabels(const QString &labels);
     void updateChatIdentity();     // push user name/avatar into the chat backend
@@ -12469,6 +12480,9 @@ private:
     WorldSpeechBridge *m_worldSpeechBridge = nullptr;
     OfficeChannelMirror *m_officeChannelMirror = nullptr;
     LocalMeshNode *m_localMesh = nullptr;
+    ChatNodeOwners *m_chatNodeOwners = nullptr;
+    ChatAccountBlocks *m_chatBlocks = nullptr;
+    QSet<QString> m_relayPrivatePurged;
     LocalControlServer *m_localControl = nullptr;
     forkmesh::localcontrolimages::Staging m_localControlImages;
     // Host management from the phone: one-use confirmations, the log streams

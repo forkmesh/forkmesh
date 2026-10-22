@@ -57,3 +57,55 @@ func temporaryDirectory(_ name: String) -> URL {
     try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }
+
+@MainActor
+final class OfficePeer {
+    let key: Identity
+    let seal: RoomSeal
+    let crypto: RoomCrypto
+    let room: String
+    var node: String { key.nodeId }
+
+    init(room: String, crypto: RoomCrypto, acct: String = "pat") throws {
+        key = try Identity.fromSeed(Ed25519.generateSeed())
+        self.room = room
+        self.crypto = crypto
+        seal = try RoomSeal.loadOrCreate(
+            room, scope: room, policy: .open, acct: acct, node: key.nodeId, secureStore: InMemorySecureStore(),
+            nodeIdentity: key)
+    }
+
+    func bundleEnvelope() throws -> JSONObject { try crypto.encrypt(seal.keyFrame()) }
+
+    func learnPhone(store: SecureStore, identity: DeviceIdentity, acct: String = "me") throws {
+        let phone = try RoomSeal.loadOrCreate(
+            room, scope: room, policy: .open, acct: acct, node: identity.nodeId, secureStore: store, nodeIdentity: identity)
+        XCTAssertNotNil(seal.acceptBundle(phone.keyFrame()))
+    }
+
+    func envelope(_ plain: JSONObject) throws -> JSONObject {
+        var signed = plain
+        signed["senderId"] = .string(node)
+        return try crypto.encrypt(try seal.seal(signed))
+    }
+
+    func history(_ entries: [(Int64, JSONObject)]) throws -> [JSONValue] {
+        var out: [JSONValue] = [.object(["ts": 0, "body": .string(JSON.encode(try bundleEnvelope()))])]
+        for (ts, envelope) in entries { out.append(.object(["ts": .int(ts), "body": .string(JSON.encode(envelope))])) }
+        return out
+    }
+
+    func read(_ text: String) -> JSONObject? {
+        guard let framed = crypto.decrypt(JSON.parseObject(text)), !RoomSeal.isKeyFrame(framed) else { return nil }
+        if !RoomSeal.isSealedFrame(framed) { return framed }
+        return seal.unseal(framed)
+    }
+
+    func readAll(_ texts: [String]) -> [JSONObject] { texts.compactMap(read) }
+}
+
+func serverEnvelope(_ plain: JSONObject, crypto: RoomCrypto) throws -> JSONObject {
+    var envelope = try crypto.encrypt(plain)
+    envelope["srv"] = true
+    return envelope
+}

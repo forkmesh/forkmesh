@@ -2,7 +2,9 @@
 #include "AppPaths.h"
 #include "ChatHistoryLimits.h"
 #include "ChatFormat.h"
+#include "ChatNodeOwners.h"
 #include "ChatRecipients.h"
+#include "ChatRelayRules.h"
 #include "ChatVisitorPresence.h"
 #include "NodeDiagnostics.h"
 #include "OfficeChannelMirror.h"
@@ -345,6 +347,54 @@ QByteArray diagnosticToken(const QString &value)
     return QUrl::toPercentEncoding(value.trimmed().left(64), "-._~");
 }
 
+QString targetedPeer(const QJsonObject &plain)
+{
+    const QString type = plain.value(QStringLiteral("type")).toString();
+    const QString to = plain.value(QStringLiteral("to")).toString();
+    if (type == QLatin1String("dm"))
+        return to;
+    if (type == QLatin1String("hello"))
+        return QString();
+    const QString conversation = frameConversation(plain);
+    if (conversation.startsWith(QLatin1Char('@')))
+        return conversation.mid(1);
+    return to;
+}
+
+bool isTargetedFrame(const QJsonObject &plain)
+{
+    const QString type = plain.value(QStringLiteral("type")).toString();
+    return type == QLatin1String("dm") || !targetedPeer(plain).isEmpty();
+}
+
+QString integrationSenderId(const QString &senderId)
+{
+    const QString id = senderId.trimmed().left(96);
+    for (const char *prefix : {"webhook:", "system:", "app:", "srv:"})
+        if (id.startsWith(QLatin1String(prefix)) && id.size() > int(qstrlen(prefix)))
+            return id;
+    return QStringLiteral("srv:") + (id.isEmpty() ? QStringLiteral("integration") : id);
+}
+
+constexpr int kMaxAdoptedChannelChars = 80;
+constexpr int kMaxAdoptedChannels = 200;
+
+bool adoptableChannelName(const QString &name)
+{
+    if (name.size() < 2 || name.size() > kMaxAdoptedChannelChars ||
+        !name.startsWith(QLatin1Char('#')))
+        return false;
+    if (name.startsWith(QLatin1String("#office/"), Qt::CaseInsensitive) ||
+        name.contains(QLatin1Char('@')) ||
+        name.contains(QLatin1String("direct:"), Qt::CaseInsensitive))
+        return false;
+    for (const QChar c : name)
+        if (c.category() == QChar::Other_Control ||
+            c.category() == QChar::Other_Format)
+            return false;
+    return true;
+}
+
 } // namespace
 
 ServerNode::ServerNode(const QString &userName, const QString &nodeName,
@@ -432,6 +482,7 @@ void ServerNode::rebuildSeal()
     if (!m_directRoom) {
         m_seal = RoomSeal(m_roomName, m_roomName, RoomSeal::Policy::Open, m_chatAccount,
                           m_nodeId, device);
+        m_seal.setNodeSigner(m_nodeSigner);
         return;
     }
     static const QRegularExpression directRoom(
@@ -442,7 +493,83 @@ void ServerNode::rebuildSeal()
                               : QStringLiteral("direct-room:") + m_roomName;
     m_seal = RoomSeal(m_roomName, scope, RoomSeal::Policy::Strict, m_chatAccount, m_nodeId,
                       device);
+    m_seal.setNodeSigner(m_nodeSigner);
     m_seal.setParticipants(m_directParticipants);
+}
+
+void ServerNode::setNodeSigner(RoomSeal::NodeSigner signer)
+{
+    m_nodeSigner = std::move(signer);
+    m_seal.setNodeSigner(m_nodeSigner);
+    if (m_wsReady)
+        sendKeyAdvertisement(true);
+}
+
+void ServerNode::setTipAddress(const QString &address)
+{
+    const QString trimmed = address.trimmed().left(kMaxSolanaAddressChars);
+    if (trimmed == m_solanaAddress)
+        return;
+    m_solanaAddress = trimmed;
+    updateRosterAndStatus();
+    if (m_wsReady)
+        sendHello(true, false);
+}
+
+void ServerNode::setOwnerVerifier(ChatNodeOwners *owners)
+{
+    if (m_owners == owners)
+        return;
+    if (m_owners)
+        m_owners->disconnect(this);
+    m_owners = owners;
+    if (m_owners)
+        connect(m_owners, &ChatNodeOwners::resolved, this,
+                [this](const QString &node, const QString &) {
+                    if (m_peers.contains(node))
+                        updateRosterAndStatus();
+                });
+    updateRosterAndStatus();
+}
+
+bool ServerNode::relayForbidden(const QJsonObject &plain, bool sharedRoom)
+{
+    const QString type = plain.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("dm") || type == QLatin1String("invite") ||
+        type == QLatin1String("cove-invite") || type == QLatin1String("cove-open"))
+        return true;
+    if (frameConversation(plain).startsWith(QLatin1Char('@')) ||
+        plain.value(QStringLiteral("conversation")).toString().startsWith(QLatin1Char('@')) ||
+        plain.value(QStringLiteral("channel")).toString().startsWith(QLatin1Char('@')))
+        return true;
+    return sharedRoom && plain.value(QStringLiteral("private")).toBool();
+}
+
+bool ServerNode::serverFrameFromPlain(const QJsonObject &plain, QJsonObject *out,
+                                      bool sharedRoom)
+{
+    if (plain.value(QStringLiteral("type")).toString() != QLatin1String("chat") ||
+        relayForbidden(plain, sharedRoom) ||
+        !plain.value(QStringLiteral("channel")).toString().startsWith(QLatin1Char('#')) ||
+        plain.value(QStringLiteral("id")).toString().isEmpty())
+        return false;
+    QJsonObject frame = plain;
+    for (const char *key : {"nodeName", "ownerUser", "solana", "platform", "version", "sys",
+                            "dg", "userStatus", "bot", "rootId", "to"})
+        frame.remove(QLatin1String(key));
+    frame.insert(QStringLiteral("senderId"),
+                 integrationSenderId(plain.value(QStringLiteral("senderId")).toString()));
+    QString name = plain.value(QStringLiteral("sender")).toString().trimmed().left(
+        kMaxDisplayNameChars);
+    if (name.isEmpty())
+        name = QStringLiteral("Integration");
+    if (plain.value(QStringLiteral("serverVisible")).toBool())
+        name += QStringLiteral(" · server-visible");
+    frame.insert(QStringLiteral("sender"), name);
+    frame.insert(QStringLiteral("accountKind"), QStringLiteral("integration"));
+    if (out)
+        *out = frame;
+    return true;
 }
 
 void ServerNode::setChatAccount(const QString &account)
@@ -494,10 +621,9 @@ void ServerNode::reopenHeldFrames()
 
 QJsonObject ServerNode::sealForRoom(const QJsonObject &plain) const
 {
-    if (plain.value(QStringLiteral("type")).toString() != QLatin1String("dm"))
+    if (!isTargetedFrame(plain))
         return m_seal.sealObject(plain);
-    const QString to = plain.value(QStringLiteral("to")).toString();
-    QStringList recipients = m_seal.keyIdsForNode(to);
+    QStringList recipients = m_seal.keyIdsForNode(targetedPeer(plain));
     for (const QString &kid : m_seal.keyIdsForAcct(m_chatAccount))
         if (!recipients.contains(kid))
             recipients.append(kid);
@@ -1033,7 +1159,8 @@ void ServerNode::processFrame(const QByteArray &payload)
     // signed up. Validate the handle the same way the Worker does before it
     // reaches the UI.
     if (envelope.value(QStringLiteral("kind")).toString() ==
-        QStringLiteral("forkmesh-new-member")) {
+            QStringLiteral("forkmesh-new-member") &&
+        envelope.value(QStringLiteral("srv")).toBool()) {
         static const QRegularExpression handle(
             QStringLiteral("^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"));
         const QString name =
@@ -1043,6 +1170,9 @@ void ServerNode::processFrame(const QByteArray &payload)
             emit newMemberJoined(name);
         return;
     }
+    if (envelope.value(QStringLiteral("kind")).toString() ==
+        QStringLiteral("forkmesh-new-member"))
+        return;
     if (forkmesh::recipients::isAckFrame(envelope)) {
         m_lastRxType = QStringLiteral("recipients");
         handleRecipientsAck(envelope);
@@ -1102,11 +1232,39 @@ void ServerNode::processFrame(const QByteArray &payload)
         handleSealedFrame(plain, envelope);
         return;
     }
-    if (!isControllerReadableFrame(plain)) {
-        noteSealMismatch(QString());
+    if (envelope.value(QStringLiteral("srv")).toBool()) {
+        handleServerFrame(plain, envelope);
         return;
     }
-    dispatchPlain(plain, envelope, QJsonObject(), QString());
+    m_lastRxType = QStringLiteral("unsealed");
+    noteSealMismatch(QString());
+}
+
+void ServerNode::handleServerFrame(const QJsonObject &plain, const QJsonObject &envelope)
+{
+    QJsonObject frame;
+    if (m_directRoom || !serverFrameFromPlain(plain, &frame, m_sharedRoom)) {
+        m_lastRxType = QStringLiteral("srv-dropped");
+        return;
+    }
+    m_lastRxType = QStringLiteral("srv");
+    if (!messageHasSafePayload(plain))
+        return;
+    const QString channel = frame.value(QStringLiteral("channel")).toString();
+    if (frameConversation(frame) == QLatin1String("#team") ||
+        m_hiddenChannels.contains(channel) ||
+        forkmesh::office::isRetiredRelayChannel(channel) ||
+        (m_sharedRoom && m_privateChannels.contains(channel)))
+        return;
+    if (!markSeen(frame.value(QStringLiteral("id")).toString()))
+        return;
+    noteReceived(envelope);
+    if (!m_channels.contains(channel))
+        m_channels.append(channel);
+    const QJsonObject moderated = moderatedChatObject(frame);
+    storeHistory(moderated);
+    emitChat(moderated, forkmesh::recipients::countFromEnvelope(envelope),
+             forkmesh::recipients::namesFromEnvelope(envelope));
 }
 
 void ServerNode::handleSealedFrame(const QJsonObject &sealed,
@@ -1454,7 +1612,8 @@ QJsonObject ServerNode::makeMessage(const QString &type) const
             sys.insert("cpu", m_cpuPercent);
         message.insert("sys", sys);
     }
-    if ((type == QLatin1String("hello") || type == QLatin1String("presence")) &&
+    if (!m_sharedRoom &&
+        (type == QLatin1String("hello") || type == QLatin1String("presence")) &&
         m_diagnosticsMs > 0)
         message.insert("dg", NodeDiagnostics::toJson(m_diagnostics));
     // The sender's away flag and custom status ride the same two frames the
@@ -1463,40 +1622,6 @@ QJsonObject ServerNode::makeMessage(const QString &type) const
         !m_userStatus.isEmpty())
         message.insert("userStatus", m_userStatus);
     return message;
-}
-
-bool ServerNode::isControllerReadableFrame(const QJsonObject &plain) const
-{
-    const QString type = plain.value(QStringLiteral("type")).toString();
-    if (type == QLatin1String("chat") ||
-        type == QLatin1String("thread-reply")) {
-        if (plain.value(QStringLiteral("private")).toBool())
-            return false;
-    } else if (type != QLatin1String("reaction") &&
-               type != QLatin1String("edit") &&
-               type != QLatin1String("delete") &&
-               type != QLatin1String("admin-delete") &&
-               type != QLatin1String("typing")) {
-        return false;
-    }
-    const QString conversation = frameConversation(plain);
-    if (!conversation.startsWith(QLatin1Char('#')) ||
-        m_privateChannels.contains(conversation)) {
-        return false;
-    }
-    if (type != QLatin1String("typing") &&
-        type != QLatin1String("chat") &&
-        type != QLatin1String("thread-reply")) {
-        const QString target = plain.value(QStringLiteral("target")).toString();
-        // A public controller frame must not mutate a protected message merely
-        // by claiming that its opaque id belongs to a public conversation.
-        // Bind mutations to the conversation recorded with the target.
-        if (target.isEmpty() ||
-            m_messageConversation.value(target) != conversation) {
-            return false;
-        }
-    }
-    return true;
 }
 
 void ServerNode::setDirectRoom(bool direct)
@@ -1640,11 +1765,15 @@ void ServerNode::sendEncrypted(const QJsonObject &plain, bool showActivity,
         }
         return;
     }
-    // Public channels deliberately use only the controller-readable room
-    // layer. Everything else gets the automatic device-to-device layer first.
-    const QJsonObject framed = isControllerReadableFrame(moderated)
-                                   ? moderated
-                                   : sealForRoom(moderated);
+    if (relayForbidden(moderated, m_sharedRoom))
+        return;
+    QJsonObject wire = moderated;
+    const QString author = wire.value(QStringLiteral("senderId")).toString();
+    if (!author.isEmpty() && author != m_nodeId) {
+        wire.insert(QStringLiteral("bot"), author);
+        wire.insert(QStringLiteral("senderId"), m_nodeId);
+    }
+    const QJsonObject framed = sealForRoom(wire);
     if (framed.isEmpty()) {
         emit systemMessage("Mainnode room seal failed; message was not sent.");
         return;
@@ -1674,8 +1803,8 @@ void ServerNode::sendEncrypted(const QJsonObject &plain, bool showActivity,
         rememberRecipientRef(payload, id);
         rememberSentRef(forkmesh::recipients::frameRef(payload), id.left(96));
     }
-    if (m_directRoom && durable && framed != moderated && m_wsReady)
-        rememberOutbox(forkmesh::recipients::frameRef(payload), moderated, framed);
+    if (m_directRoom && durable && m_wsReady)
+        rememberOutbox(forkmesh::recipients::frameRef(payload), wire, framed);
     // A direct message, or history sent to one peer, is addressed to it.
     sendTextFrame(payload,
                   type, mainnodeScopeFor(moderated, durable),
@@ -1830,42 +1959,6 @@ void ServerNode::sendPresence()
         return;
     sampleSystemStats();
     sendEncrypted(makeMessage("presence"), false);
-}
-
-void ServerNode::notifyCoveOpened(const QString &creatorKey, const QString &coveId,
-                                  const QString &coveName, const QString &openerKey,
-                                  const QString &openerName, qint64 ts,
-                                  const QString &signature)
-{
-    if (creatorKey.trimmed().isEmpty() || !m_wsReady)
-        return;
-    QJsonObject message = makeMessage("cove-open");
-    message.insert("creator", creatorKey.left(120));
-    message.insert("coveId", coveId.left(80));
-    message.insert("coveName", coveName.left(160));
-    message.insert("openerKey", openerKey.left(120));
-    message.insert("openerName", openerName.left(80));
-    message.insert("coveTs", double(ts));
-    message.insert("sig", signature.left(200));
-    markSeen(message.value("id").toString());
-    sendEncrypted(message, false);
-}
-
-void ServerNode::notifyCoveInvited(const QString &inviteeAccount, const QString &coveId,
-                                   const QString &coveName, const QString &inviterName,
-                                   const QString &shareUrl, qint64 ts)
-{
-    if (inviteeAccount.trimmed().isEmpty() || !m_wsReady)
-        return;
-    QJsonObject message = makeMessage("cove-invite");
-    message.insert("invitee", inviteeAccount.left(120));
-    message.insert("coveId", coveId.left(80));
-    message.insert("coveName", coveName.left(160));
-    message.insert("inviterName", inviterName.left(80));
-    message.insert("shareUrl", shareUrl.left(512));
-    message.insert("coveTs", double(ts));
-    markSeen(message.value("id").toString());
-    sendEncrypted(message, false);
 }
 
 QString ServerNode::moderatedChatText(const QString &text)
@@ -2230,15 +2323,12 @@ void ServerNode::sendTeamNotice(const QString &channel,
 
 void ServerNode::sendDirect(const QString &targetId, const QString &text)
 {
-    const QString moderated = filteredChatText(text).left(kMaxTextChars);
-    if (moderated.trimmed().isEmpty() || targetId == m_nodeId)
+    Q_UNUSED(text);
+    if (targetId.isEmpty() || targetId == m_nodeId)
         return;
-    QJsonObject message = makeMessage("dm");
-    message.insert("to", targetId);
-    message.insert("text", moderated);
-    markSeen(message.value("id").toString());
-    sendEncrypted(message, true);
-    emitDm(message, targetId);
+    emit systemMessage(QStringLiteral(
+        "Direct messages go through your account's direct conversations, not "
+        "the shared room, so this one was not sent."));
 }
 
 void ServerNode::sendFile(const QString &conversation, const QString &fileName,
@@ -2247,17 +2337,10 @@ void ServerNode::sendFile(const QString &conversation, const QString &fileName,
     if (fileName.isEmpty() || data.isEmpty() || data.size() > kMaxFileBytes)
         return;
     if (conversation.startsWith('@')) {
-        QJsonObject message = makeMessage("dm");
-        message.insert("to", conversation.mid(1));
-        message.insert("fileName", safeFileName(fileName));
-        message.insert("fileMime", mimeType.left(kMaxMimeChars));
-        message.insert("file", QString::fromLatin1(data.toBase64()));
-        markSeen(message.value("id").toString());
-        sendEncrypted(message, true);
-        emitDm(message, conversation.mid(1));
-    } else {
-        sendFileWithId(conversation, fileName, mimeType, data, QString());
+        sendDirect(conversation.mid(1), QString());
+        return;
     }
+    sendFileWithId(conversation, fileName, mimeType, data, QString());
 }
 
 QString ServerNode::sendFileWithId(const QString &channel, const QString &fileName,
@@ -2414,6 +2497,8 @@ void ServerNode::forgetMember(const QString &peerId)
 
 void ServerNode::sendTyping(const QString &conversation, bool active)
 {
+    if (m_privateChannels.contains(conversation))
+        return;
     QJsonObject message = makeMessage("typing");
     message.insert("conversation", conversation);
     message.insert("active", active);
@@ -2484,6 +2569,8 @@ void ServerNode::createPrivateChannel(const QString &channel)
         return;
     if (!name.startsWith('#'))
         name.prepend('#');
+    if (m_sharedRoom && name != QLatin1String("#team"))
+        return;
     if (m_hiddenChannels.remove(name))
         saveHiddenChannels();
     m_privateChannels.insert(name);
@@ -2531,7 +2618,10 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
     // frames from older clients that treated the well-known name as a room.
     if (frameConversation(message) == QLatin1String("#team"))
         return;
+    if (relayForbidden(message, m_sharedRoom))
+        return;
     const QString senderId = message.value("senderId").toString();
+    const QString bot = message.value(QStringLiteral("bot")).toString().left(80);
     const QString sender = message.value("sender").toString();
     const QString nodeName = boundedText(message, "nodeName", kMaxDisplayNameChars);
     const QString ownerUser = boundedText(message, "ownerUser", kMaxDisplayNameChars);
@@ -2539,7 +2629,7 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
     const QString solanaAddress = boundedText(message, "solana", kMaxSolanaAddressChars);
     const QString platform = message.value("platform").toString().left(16);
     const QString version = boundedText(message, "version", kMaxVersionChars);
-    if (!senderId.isEmpty())
+    if (!senderId.isEmpty() && bot.isEmpty())
         rememberPeer(senderId, sender, nodeName, ownerUser, accountKind,
                      solanaAddress, platform, version);
 
@@ -2604,7 +2694,9 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
         bool changed = false;
         for (const auto &value : message.value("channels").toArray()) {
             const QString channel = value.toString();
-            if (!channel.isEmpty() && !m_channels.contains(channel) &&
+            if (m_channels.size() >= kMaxAdoptedChannels)
+                break;
+            if (adoptableChannelName(channel) && !m_channels.contains(channel) &&
                 !m_hiddenChannels.contains(channel) &&
                 !forkmesh::office::isRetiredRelayChannel(channel)) {
                 m_channels.append(channel);
@@ -2636,7 +2728,16 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
             }
         }
     } else if (type == "chat" || type == "thread-reply") {
-        const QJsonObject moderated = moderatedChatObject(message);
+        QJsonObject moderated = moderatedChatObject(message);
+        if (forkmesh::relayrules::isNamedBot(bot)) {
+            moderated.insert(QStringLiteral("senderId"), bot.toLower());
+            moderated.insert(QStringLiteral("sender"),
+                             forkmesh::relayrules::botViaName(
+                                 bot, m_owners ? m_owners->shownAccount(senderId, QString())
+                                               : QString(),
+                                 senderId));
+            moderated.insert(QStringLiteral("postedBy"), senderId);
+        }
         const QString channel = moderated.value("channel").toString();
         if (type == "thread-reply" &&
             moderated.value("rootId").toString().trimmed().isEmpty())
@@ -2650,14 +2751,10 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
             m_channels.append(channel);
         storeHistory(moderated);
         emitChat(moderated, envelopeRecipients, envelopeRecipientNames);
-    } else if (type == "dm") {
-        const QString to = message.value("to").toString();
-        if (to == m_nodeId)
-            emitDm(moderatedChatObject(message), senderId, envelopeRecipients,
-                   envelopeRecipientNames);
     } else if (type == "channel") {
         const QString name = message.value("name").toString();
-        if (!m_channels.contains(name) && !m_hiddenChannels.contains(name) &&
+        if (adoptableChannelName(name) && m_channels.size() < kMaxAdoptedChannels &&
+            !m_channels.contains(name) && !m_hiddenChannels.contains(name) &&
             !forkmesh::office::isRetiredRelayChannel(name)) {
             m_channels.append(name);
             emit channelsChanged(m_channels);
@@ -2672,23 +2769,6 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
         if (!repo.isEmpty())
             emit mirrorSynced(repo, sender,
                               message.value("commit").toString().left(64));
-    } else if (type == "cove-open") {
-        const QString creator = message.value("creator").toString().left(120);
-        if (!creator.isEmpty())
-            emit coveOpened(creator, message.value("coveId").toString().left(80),
-                            message.value("coveName").toString().left(160),
-                            message.value("openerKey").toString().left(120),
-                            message.value("openerName").toString().left(80),
-                            qint64(message.value("coveTs").toDouble()),
-                            message.value("sig").toString().left(200));
-    } else if (type == "cove-invite") {
-        const QString invitee = message.value("invitee").toString().left(120);
-        if (!invitee.isEmpty())
-            emit coveInvited(invitee, message.value("coveId").toString().left(80),
-                             message.value("coveName").toString().left(160),
-                             message.value("inviterName").toString().left(80),
-                             message.value("shareUrl").toString().left(512),
-                             qint64(message.value("coveTs").toDouble()));
     } else if (type == "reaction" || type == "edit" || type == "delete") {
         emit roomMutationArrived(message);
     }
@@ -2741,7 +2821,9 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
             return;
         for (const auto &value : message.value("entries").toArray()) {
             const QJsonObject entry = moderatedChatObject(value.toObject());
-            if (!messageHasSafePayload(entry))
+            if (!messageHasSafePayload(entry) || relayForbidden(entry, m_sharedRoom) ||
+                entry.value(QStringLiteral("senderId")).toString() != senderId ||
+                entry.contains(QStringLiteral("bot")))
                 continue;
             if (frameConversation(entry) == QLatin1String("#team") ||
                 forkmesh::office::isRetiredRelayChannel(
@@ -2774,8 +2856,12 @@ void ServerNode::sendHistoryTo(const QString &peerId)
         if (m_privateChannels.contains(it.key()))
             continue;
         for (const QJsonObject &entry : it.value())
-            entries.append(entry);
+            if (!entry.value(QStringLiteral("private")).toBool() &&
+                entry.value(QStringLiteral("senderId")).toString() == m_nodeId)
+                entries.append(entry);
     }
+    if (entries.isEmpty())
+        return;
     QJsonObject message = makeMessage("history");
     message.insert("to", peerId);
     message.insert("entries", entries);
@@ -2792,32 +2878,12 @@ void ServerNode::emitChat(const QJsonObject &message, int recipients,
     out.conversation = message.value("channel").toString();
     out.threadRootId = message.value("rootId").toString().left(96);
     out.senderId = message.value("senderId").toString();
-    out.senderName = boundedText(message, "sender", kMaxDisplayNameChars);
-    out.text = filteredChatText(chatBodyText(message, kMaxTextChars));
-    out.timestampMs = qint64(message.value("ts").toDouble());
-    out.fileName = safeFileName(message.value("fileName").toString());
-    if (out.fileName == "file" && !message.contains("fileName"))
-        out.fileName.clear();
-    out.fileMime = boundedText(message, "fileMime", kMaxMimeChars);
-    if (message.contains("file"))
-        out.fileData = boundedBase64(message, "file", kMaxBase64FileChars, kMaxFileBytes);
-    out.self = out.senderId == m_nodeId;
-    out.edited = message.value("edited").toBool();
-    out.deleted = message.value("deleted").toBool();
-    indexMessage(out.id, out.conversation, out.senderId);
-    emit messageArrived(out);
-}
-
-void ServerNode::emitDm(const QJsonObject &message, const QString &conversationPeer,
-                        int recipients, const QStringList &recipientNames)
-{
-    ChatMessage out;
-    out.recipientCount = recipients;
-    out.recipientNames = recipientNames;
-    out.id = message.value("id").toString();
-    out.conversation = "@" + conversationPeer;
-    out.senderId = message.value("senderId").toString();
-    out.senderName = boundedText(message, "sender", kMaxDisplayNameChars);
+    out.senderName = boundedText(message, "sender",
+                                 message.contains(QStringLiteral("postedBy")) ||
+                                         message.value(QStringLiteral("accountKind")) ==
+                                             QLatin1String("integration")
+                                     ? 96
+                                     : kMaxDisplayNameChars);
     out.text = filteredChatText(chatBodyText(message, kMaxTextChars));
     out.timestampMs = qint64(message.value("ts").toDouble());
     out.fileName = safeFileName(message.value("fileName").toString());
@@ -2910,8 +2976,12 @@ void ServerNode::flushRosterAndStatus()
         member.id = it.key();
         member.name = it->name;
         member.nodeName = it->nodeName;
-        member.ownerUser = it->ownerUser;
+        member.ownerUser =
+            m_owners ? m_owners->shownAccount(it.key(), it->ownerUser) : QString();
         member.accountKind = it->accountKind;
+        if (member.ownerUser.isEmpty() &&
+            (!it->ownerUser.isEmpty() || it->accountKind == QLatin1String("user")))
+            member.accountKind = QStringLiteral("guest");
         member.note = QString();
         member.online = it->online;
         member.solanaAddress = it->solanaAddress;

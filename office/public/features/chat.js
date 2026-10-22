@@ -3,6 +3,7 @@ import { ROOMS, MAX_TEXT, chanForZone, roomLabel, mentionQuery, receiptState, re
 import { handleOf } from './profile/logic.js';
 import { createChatRoomTransport } from '../../../app/public/chat-room-transport.js';
 import { createRoomSealStore } from '../../../app/public/chat-seal.js';
+import { attributeFrame, bindNodeKey, botViaName, chatProfileFor, createNodeOwners, forgetLegacySelfId, isSealedPlain, mayChangeMessage } from '../../../app/public/chat-frame-auth.js';
 import { moderateChatText } from '../../../app/public/chat-moderation.js';
 import { createChatRetention, CHAT_RETENTION_ENDPOINT } from '../../../app/public/chat-retention.js';
 import { renderRichText, plainTextFromRichSource } from '../../../app/public/chat-rich-text.js';
@@ -19,19 +20,9 @@ const IC = {
   edit: (s) => svg('<path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/>', s),
   trash: (s) => svg('<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>', s),
 };
-const SELF_KEY = 'forkmesh.chat.selfId';
 const PRESENCE_MS = 60e3;
 const READ_MARK_FUTURE_SLACK_MS = 24 * 60 * 60 * 1000;
 const MAX_KEEP = 300;
-
-function selfId(store) {
-  let id = store.get(SELF_KEY);
-  if (!id) {
-    id = crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now();
-    store.set(SELF_KEY, id);
-  }
-  return id;
-}
 
 async function request(path, init = {}) {
   const r = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...init, headers: { accept: 'application/json', ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
@@ -47,8 +38,22 @@ async function request(path, init = {}) {
 
 export default function setup(api) {
   const { $, tint } = api;
-  const me = selfId(api.store);
-  const seals = createRoomSealStore({ acct: () => account(), node: me });
+  let me = '';
+  forgetLegacySelfId();
+  const owners = createNodeOwners();
+  const sealStores = new Map();
+  async function seals() {
+    const name = account().trim().toLowerCase();
+    const profile = chatProfileFor(name);
+    let store = sealStores.get(profile);
+    if (!store) {
+      store = createRoomSealStore({ acct: name, profile });
+      sealStores.set(profile, store);
+      if (name) bindNodeKey({ store, account: name, owners }).catch(() => false);
+    }
+    me = await store.ready();
+    return store;
+  }
   const retention = createChatRetention({ request: (body) => request(CHAT_RETENTION_ENDPOINT, { method: 'POST', body: JSON.stringify(body) }), storage: globalThis.localStorage });
   const S = { cur: null, view: 'chat', convs: new Map(), rooms: {}, here: null, transport: null, editing: null, ac: null, acSel: 0, presence: null, readMarks: new Map(), noPic: new Set() };
 
@@ -134,11 +139,11 @@ export default function setup(api) {
   }
 
   function keep(c, plain, receipt) {
-    if (!plain || plain.type !== 'chat' || plain.accountKind !== 'user') return false;
+    if (!plain || plain.type !== 'chat' || !isSealedPlain(plain)) return false;
     if (plain.channel !== c.wire || !plain.id || c.ids.has(plain.id)) return false;
     if (retention.isExpired(plain.ts, c.key)) return false;
     c.ids.add(plain.id);
-    const m = { id: plain.id, senderId: plain.senderId, sender: String(plain.sender || 'someone').slice(0, 63), text: String(plain.text || ''), richText: plain.richText, ts: Number(plain.ts) || Date.now() };
+    const m = { id: plain.id, senderId: plain.senderId, sender: botViaName(plain) || String(plain.sender || 'someone').slice(0, 63), text: String(plain.text || ''), richText: plain.richText, ts: Number(plain.ts) || Date.now() };
     if (Number.isSafeInteger(plain.relayRecipients) && plain.relayRecipients >= 0) m.recipients = plain.relayRecipients;
     if (receipt) m.receipt = receipt;
     if (plain.fileName) m.fileName = String(plain.fileName).slice(0, 120);
@@ -149,7 +154,7 @@ export default function setup(api) {
   function mutate(c, plain) {
     if (!plain || (plain.conversation !== c.wire && plain.channel !== c.wire)) return false;
     const m = c.msgs.find((x) => x.id === plain.target);
-    if (!m || m.senderId !== plain.senderId) return false;
+    if (!m || !mayChangeMessage(plain, m)) return false;
     if (plain.type === 'delete') { c.msgs.splice(c.msgs.indexOf(m), 1); return true; }
     if (plain.type === 'edit') { Object.assign(m, { text: String(plain.text || ''), richText: plain.richText, edited: true }); return true; }
     return false;
@@ -182,6 +187,20 @@ export default function setup(api) {
   function trim(c) {
     c.msgs.sort((a, b) => a.ts - b.ts);
     if (c.msgs.length > MAX_KEEP) c.msgs.splice(0, c.msgs.length - MAX_KEEP);
+  }
+
+  let inbound = Promise.resolve();
+  function attributed(plains, room) {
+    const direct = String(room?.scope || '').startsWith('direct:');
+    return plains.map((plain) => attributeFrame(plain, { owners, selfNode: me, selfAccount: account(), direct })).filter(Boolean);
+  }
+  function receive(plains, room, history) {
+    inbound = inbound.then(async () => {
+      await owners.prefetch(plains, { selfNode: me });
+      const shown = attributed(plains, room);
+      if (history) onHistory(shown, room);
+      else for (const plain of shown) onPlain(plain, room);
+    }).catch(() => {});
   }
 
   function onPlain(plain, room) {
@@ -226,9 +245,9 @@ export default function setup(api) {
       },
       allowsControllerAccess: () => false,
       isDirectRoom: (room) => String(room?.scope || '').startsWith('direct:'),
-      resolveSeal: (room, roomName) => seals.resolve(room.scope, roomName, location.host, room.scope.startsWith('direct:') && S.convs.get(room.scope)?.peer && account() ? { participants: [account(), S.convs.get(room.scope).peer] } : {}),
-      onPlain,
-      onHistory,
+      resolveSeal: async (room, roomName) => (await seals()).resolve(room.scope, roomName, location.host, room.scope.startsWith('direct:') && S.convs.get(room.scope)?.peer && account() ? { participants: [account(), S.convs.get(room.scope).peer] } : {}),
+      onPlain: (plain, room) => receive([plain], room, false),
+      onHistory: (plains, room) => receive(plains, room, true),
       onRecipients,
       onDelivered: (ids, room) => advance(room, 'delivered', ids),
       onRead: (room) => advance(room, 'read'),

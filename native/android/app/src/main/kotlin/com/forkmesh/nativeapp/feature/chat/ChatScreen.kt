@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.chat.ChatConversationLayout
 import com.forkmesh.nativeapp.chat.ChatRow
 import com.forkmesh.nativeapp.chat.DirectMessageFrames
+import com.forkmesh.nativeapp.chat.ChatHub
 import com.forkmesh.nativeapp.chat.MESH_CONVERSATION
 import com.forkmesh.nativeapp.chat.MeshSnapshot
 import com.forkmesh.nativeapp.chat.OfficeFrames
@@ -205,11 +206,6 @@ class ChatScreen : Screen() {
         }
         val sessionToken = Services.get<AuthService>()?.session?.collectAsState()?.value?.sessionToken.orEmpty()
         LaunchedEffect(sessionToken) { if (sessionToken.isNotEmpty()) ChatDepth.loadAppCommands() }
-        LaunchedEffect(revision) {
-            val notice = ChatDepth.hub?.extras?.inviteNotice ?: return@LaunchedEffect
-            ChatDepth.hub?.extras?.clearInviteNotice()
-            status.show(notice)
-        }
         val lockOn by ChatPrivacy.lockEnabled.collectAsState()
         val locked by ChatPrivacy.chatLocked.collectAsState()
         if (lockOn && locked) {
@@ -567,7 +563,16 @@ class ChatScreen : Screen() {
                             style = Fm.text.bodySmall.copy(color = colors.textTertiary),
                         )
                     }
-                    if (inMesh) MeshDebugBar()
+                    if (inMesh) {
+                        Text(
+                            ChatHub.MESH_SEAL_SUMMARY,
+                            modifier = Modifier.fillMaxWidth().background(colors.bgRaised).padding(horizontal = FmSpace.x4, vertical = FmSpace.x1),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            style = Fm.text.bodySmall.copy(color = colors.textTertiary),
+                        )
+                        MeshDebugBar()
+                    }
                     if (inDirect) PendingDeviceBanner(conversation, revision)
                     if (!inMesh && relay.totalUnread > 0) {
                         UnreadBanner(relay.totalUnread) {

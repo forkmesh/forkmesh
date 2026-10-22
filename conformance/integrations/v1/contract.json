@@ -368,7 +368,7 @@
           "acceptedStatus": 202,
           "bodyFields": ["text", "content", "message"],
           "idempotent": false,
-          "errors": {"400": "empty_webhook", "404": "not_found", "405": "method_not_allowed", "409": "public_channel_required"}
+          "errors": {"400": "empty_webhook", "404": "not_found", "405": "method_not_allowed"}
         }
       ]
     }

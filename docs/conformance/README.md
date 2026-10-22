@@ -68,6 +68,12 @@ generated page matches; the matching test fails otherwise. CI runs
 - `social-signals/v1/vectors.json` and `disaster-recovery/v1/runbook.json`
   are covered by signatures or attested digests; rehosting tools never
   rewrite them (`FROZEN_FILES`), and a hand edit breaks verification.
+- Public keys are URL-safe base64, so about one in 64 starts with `-`, and
+  argparse reads `--trusted-key -Ab…` as a missing value (exit 2). The drills
+  generate fresh keys each run and pass them as `--trusted-key=KEY`; passing
+  them as two arguments made the Disaster recovery workflow fail on a random
+  OS about one run in three (fixed 2026-10-22,
+  `test_offline_bootstrap_passes_keys_that_start_with_a_dash`).
 - Suites that talk to themselves over loopback TCP (stock Git, integration
   contract) run in CI under `unshare -rn` with `lo` up, because a host
   application firewall can drop loopback connections and stall a run.

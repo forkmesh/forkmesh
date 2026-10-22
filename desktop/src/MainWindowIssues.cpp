@@ -1,5 +1,6 @@
 
 #include "MainWindow.h"
+#include "ChatRelayRules.h"
 #include "OfficeChannelMirror.h"
 #include "PingSettings.h"
 #include "Tooltips.h"
@@ -13182,7 +13183,7 @@ QWidget *MainWindow::buildChatHeader()
     m_encryptionLabel->setPixmap(
         tintedOcticonPixmap("unlock", Theme::remapColor(QColor("#8b949e")), 16));
     m_encryptionLabel->setToolTip(
-        "Public channel; the controller can read it for integrations");
+        forkmesh::relayrules::roomBadge(forkmesh::relayrules::RoomKind::Public).tooltip);
     m_roomSealButton = new QPushButton(QStringLiteral("Public"));
     m_roomSealButton->setObjectName("ghostButton");
     m_roomSealButton->setProperty("buttonSize", "sm");

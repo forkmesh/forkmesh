@@ -46,10 +46,12 @@ public enum CoveInviteDelivery: Equatable, Sendable {
 }
 
 public struct CoveNotifier {
-    public var invite: @MainActor (CoveInviteNotice) -> Bool
+    public var invite: @MainActor (CoveInviteNotice) async -> Bool
     public var opened: @MainActor (CoveOpenNotice) -> Bool
 
-    public init(invite: @escaping @MainActor (CoveInviteNotice) -> Bool, opened: @escaping @MainActor (CoveOpenNotice) -> Bool) {
+    public init(
+        invite: @escaping @MainActor (CoveInviteNotice) async -> Bool, opened: @escaping @MainActor (CoveOpenNotice) -> Bool
+    ) {
         self.invite = invite
         self.opened = opened
     }

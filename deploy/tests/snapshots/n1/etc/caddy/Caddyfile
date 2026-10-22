@@ -172,6 +172,8 @@
 				replace secret REDACTED
 				replace auth REDACTED
 				replace session REDACTED
+				replace ticket REDACTED
+				replace node REDACTED
 			}
 		}
 	}

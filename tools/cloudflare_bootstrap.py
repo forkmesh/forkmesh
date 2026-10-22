@@ -624,6 +624,7 @@ def render_world_wrangler_config(
             '  "/chat-apps.js",',
             '  "/chat-attachments.js",',
             '  "/chat-crypto.js",',
+            '  "/chat-frame-auth.js",',
             '  "/chat-issue-filing.js",',
             '  "/chat-mlkem.js",',
             '  "/chat-moderation.js",',

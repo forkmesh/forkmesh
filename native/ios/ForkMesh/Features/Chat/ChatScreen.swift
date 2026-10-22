@@ -57,12 +57,6 @@ private struct ChatScreenBody: View {
                     hub.clearNotice()
                 }
             }
-            .onChange(of: hub.extras.inviteNotice) { _, posted in
-                if let posted = posted {
-                    notice = FmNotice(posted.text)
-                    hub.extras.clearInviteNotice()
-                }
-            }
             .onChange(of: hub.pendingIssue) { _, argument in
                 guard let argument = argument else { return }
                 hub.pendingIssue = nil
@@ -224,7 +218,6 @@ private struct ChatTranscript<Drawer: View>: View {
     @State private var sealInfo: Bool = false
     @State private var editing: ChatMessage?
     @State private var editText: String = ""
-    @State private var inviting: Bool = false
     @State private var managing: OfficeRoom?
     @State private var meshDebugShown: Bool = false
     @State private var channelInfo: Bool = false
@@ -260,7 +253,6 @@ private struct ChatTranscript<Drawer: View>: View {
             sharing = nil
             person = nil
             sealInfo = false
-            inviting = false
             managing = nil
             channelInfo = false
             broadcast = nil
@@ -282,9 +274,6 @@ private struct ChatTranscript<Drawer: View>: View {
             Button("Send to agent") { FmMessageHandoff.send(hub.sealSummary) }
         } message: {
             Text(hub.sealSummary)
-        }
-        .sheet(isPresented: $inviting) {
-            InviteToChannelSheet(hub: hub, channel: hub.currentConversation)
         }
         .sheet(item: $managing) { (room: OfficeRoom) in
             if let office = hub.office {
@@ -342,6 +331,15 @@ private struct ChatTranscript<Drawer: View>: View {
         VStack(spacing: 0) {
             if hub.inMesh && meshDebugShown {
                 MeshDebugBar(mesh: hub.mesh)
+            }
+            if !hub.meshNotice.isEmpty {
+                Label(hub.meshNotice, systemImage: "eye")
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, FmSpace.x4)
+                    .padding(.vertical, FmSpace.x1)
+                    .accessibilityIdentifier("chat-mesh-readable-notice")
             }
             if let topic = hub.office?.room(for: hub.currentConversation)?.topic, !topic.isEmpty {
                 Text(topic)
@@ -496,8 +494,7 @@ private struct ChatTranscript<Drawer: View>: View {
             guard room.canManage, room.isPrivate else { return nil }
             return { managing = room }
         }
-        guard hub.extras.isPrivate(conversation) else { return nil }
-        return { inviting = true }
+        return nil
     }
 
     @ViewBuilder private var messages: some View {
@@ -947,7 +944,7 @@ struct ChatMessageRow: View {
                 }
                 if !row.text.isEmpty {
                     ChatMessageBody(text: row.text)
-                    ChatLinkPreviews(text: row.text)
+                    ChatLinkPreviews(text: row.text, autoLoad: row.autoPreview)
                 }
                 if row.edited {
                     Text("(edited)").fmText(.labelSmall, color: fm.textTertiary)
@@ -1079,6 +1076,10 @@ struct ChatMessageRow: View {
                 .accessibilityAddTraits(actions.onProfile == nil ? [] : .isButton)
             if row.visitor {
                 Text(" visitor").fmText(.labelSmall, color: fm.textTertiary)
+            }
+            if message.serverVisible {
+                Text(" server-visible").fmText(.labelSmall, color: fm.textTertiary)
+                    .accessibilityLabel("Visible to the server")
             }
             if message.app?.ephemeral == true {
                 Text(" \(AppsChat.ephemeralNote)").fmText(.labelSmall, color: fm.textTertiary).lineLimit(1)
@@ -1337,8 +1338,10 @@ extension View {
     }
 
     func chatFollowsOwnSend(_ rows: [ChatRow], scroll: @escaping () -> Void) -> some View {
-        modifier(
-            ChatFollowsOwnSend(
-                newest: rows.last(where: { $0.message.isSelf })?.message.timestamp ?? .distantPast, scroll: scroll))
+        chatFollowsOwnSend(newest: rows.last(where: { $0.message.isSelf })?.message.timestamp ?? .distantPast, scroll: scroll)
+    }
+
+    func chatFollowsOwnSend(newest: Date, scroll: @escaping () -> Void) -> some View {
+        modifier(ChatFollowsOwnSend(newest: newest, scroll: scroll))
     }
 }

@@ -1,4 +1,5 @@
 #include "LocalControl.h"
+#include "OwnerOnlyFile.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -10,7 +11,6 @@
 #include <QMessageAuthenticationCode>
 #include <QPointer>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QTcpSocket>
 #include <QTimer>
 #include <QUuid>
@@ -334,6 +334,7 @@ namespace {
 
 constexpr int kMaxConnections = 8;
 constexpr int kHandshakeTimeoutMs = 15000;
+constexpr int kPairingTimeoutMs = 2 * 60 * 1000;
 constexpr int kMaintenanceIntervalMs = 60 * 1000;
 constexpr qint64 kRelayIdleMs = 15 * 60 * 1000;
 constexpr qint64 kRelayEvictIdleMs = 60 * 1000;
@@ -780,7 +781,11 @@ void LocalControlServer::maintain(qint64 nowMs)
     }
     QList<int> idle;
     QList<int> recheck;
+    QList<int> expired;
     for (const Connection *conn : std::as_const(m_connections)) {
+        if (conn->state == State::Pending && conn->pendingSinceMs > 0 &&
+            nowMs - conn->pendingSinceMs >= kPairingTimeoutMs)
+            expired.append(conn->id);
         if (conn->state != State::Paired)
             continue;
         if (conn->relayed() && nowMs - conn->lastHeardMs >= kRelayIdleMs)
@@ -789,6 +794,8 @@ void LocalControlServer::maintain(qint64 nowMs)
                  nowMs - conn->accountCheckedMs >= kAccountRecheckMs)
             recheck.append(conn->id);
     }
+    for (int id : std::as_const(expired))
+        expirePairing(id);
     for (int id : std::as_const(idle))
         closeConnection(id, QStringLiteral("idle"));
     for (int id : std::as_const(recheck))
@@ -1139,9 +1146,30 @@ void LocalControlServer::requestPairing(Connection &conn)
         return;
     }
     conn.code = pairingCode(conn.transcript);
+    const qint64 since = QDateTime::currentMSecsSinceEpoch();
+    conn.pendingSinceMs = since;
+    const int id = conn.id;
+    QTimer::singleShot(kPairingTimeoutMs, this, [this, id, since] {
+        const Connection *pending = connection(id);
+        if (pending && pending->state == State::Pending &&
+            pending->pendingSinceMs == since)
+            expirePairing(id);
+    });
     sendEvent(conn, QStringLiteral("session"), sessionInfo(conn));
     if (onPairingRequested)
         onPairingRequested(conn.id, conn.device, conn.code);
+}
+
+void LocalControlServer::expirePairing(int connectionId)
+{
+    Connection *conn = connection(connectionId);
+    if (!conn || conn->state != State::Pending)
+        return;
+    sendEvent(*conn, QStringLiteral("pairing-denied"),
+              {{QStringLiteral("reason"), QStringLiteral("expired")}});
+    if (conn->socket)
+        conn->socket->flush();
+    closeConnection(connectionId, QStringLiteral("pairing expired"));
 }
 
 void LocalControlServer::pairDevice(Connection &conn, const QString &approval)
@@ -1571,11 +1599,7 @@ void LocalControlServer::saveDevices() const
                           double(device.accountCheckedMs));
         devices.append(object);
     }
-    QDir().mkpath(QFileInfo(m_storePath).absolutePath());
-    QSaveFile file(m_storePath);
-    if (!file.open(QIODevice::WriteOnly))
-        return;
-    file.write(QJsonDocument(QJsonObject{{QStringLiteral("devices"), devices}})
-                   .toJson(QJsonDocument::Indented));
-    file.commit();
+    forkmesh::ownerfile::write(
+        m_storePath, QJsonDocument(QJsonObject{{QStringLiteral("devices"), devices}})
+                         .toJson(QJsonDocument::Indented));
 }

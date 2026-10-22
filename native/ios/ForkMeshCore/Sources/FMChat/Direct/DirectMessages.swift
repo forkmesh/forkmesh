@@ -341,6 +341,7 @@ public final class DirectMessageService {
     @ObservationIgnored public var isRemoved: (@MainActor (String) -> Bool)?
     @ObservationIgnored public var onRemoved: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
+    @ObservationIgnored public var onConversations: (@MainActor ([DirectConversation]) -> Void)?
     @ObservationIgnored private var refBooks: [String: DirectRefBook] = [:]
     @ObservationIgnored private var receiptOrder: [String] = []
     @ObservationIgnored private var pendingDeletes: [String: [String: String]] = [:]
@@ -435,19 +436,22 @@ public final class DirectMessageService {
     }
 
     public func refresh() async {
-        loading = true
-        defer { loading = false }
+        let shows = records.isEmpty && !loading
+        if shows { loading = true }
+        defer { if shows { loading = false } }
         let started = generation
         do {
             let payload = try await call(
                 "GET", "\(DirectMessageFrames.endpoint)?limit=\(DirectMessageFrames.pageLimit)", nil)
             if generation != started { return }
             apply(DirectMessageFrames.conversations(from: payload), replacing: true)
-            nextCursor = payload["nextCursor"]?.text ?? ""
-            lastError = nil
+            let cursor = payload["nextCursor"]?.text ?? ""
+            if nextCursor != cursor { nextCursor = cursor }
+            if lastError != nil { lastError = nil }
             watchWanted()
         } catch {
-            lastError = "\(error)"
+            let message = "\(error)"
+            if lastError != message { lastError = message }
         }
     }
 
@@ -482,7 +486,10 @@ public final class DirectMessageService {
                 if let socket = sockets[old.id] { Task { await self.close(socket) } }
             }
         }
-        records = merged
+        if records != merged {
+            records = merged
+            onConversations?(merged)
+        }
     }
 
     public func searchUsers(_ query: String) async -> [String] {
@@ -592,7 +599,9 @@ public final class DirectMessageService {
 
     public func appLifecycleChanged(_ state: AppLifecycleState) {
         if state == .inactive { return }
-        foreground = state == .resumed
+        let next = state == .resumed
+        if next == foreground { return }
+        foreground = next
         publishFocus()
         cancelReconnects()
         if foreground {

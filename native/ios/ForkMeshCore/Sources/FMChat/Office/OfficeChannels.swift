@@ -136,15 +136,18 @@ public enum OfficeFrames {
         let rawText = plain["text"]?.text ?? ""
         if rawText.count > ChatLimits.maxTextChars { return nil }
         let senderId = String(ChatFrameText.shownSender(plain).prefix(64))
-        var sender = String((plain["sender"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars))
+        let nameLimit = ChatFrameText.botName(plain) == nil ? ChatLimits.maxDisplayNameChars : ChatLimits.maxDisplayNameChars * 3
+        var sender = String((plain["sender"]?.text ?? "").prefix(nameLimit))
         if sender.isEmpty { sender = "Office visitor" }
         let fileName = String((plain["fileName"]?.text ?? "").prefix(ChatLimits.maxFileNameChars))
         if rawText.isEmpty && fileName.isEmpty { return nil }
         let ts = plain["ts"]?.doubleValue.map { Date(epochMillis: Int64($0)) } ?? Date(epochMillis: 0)
-        return ChatMessage(
+        var message = ChatMessage(
             id: id, conversation: conversation, senderId: senderId, senderName: sender, text: rawText, timestamp: ts,
             isSelf: !selfId.isEmpty && senderId == selfId, fileName: fileName, recipients: recipients,
             app: AppsChat.message(plain, channelId: channelId))
+        message.serverVisible = ChatFrameText.isIntegration(senderId) && plain["serverVisible"]?.isTrue == true
+        return message
     }
 
     public static func webSocketURL(_ path: String, origin: URL) -> URL? {
@@ -233,6 +236,8 @@ public final class OfficeChannelService {
     @ObservationIgnored private var removedIds: Set<String> = []
     @ObservationIgnored public var onRooms: (@MainActor ([OfficeRoom]) -> Void)?
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
+    @ObservationIgnored public var nodeOwners: ChatNodeOwners?
+    @ObservationIgnored private var heldForOwner: [String: [(JSONObject, String, Bool, Int?)]] = [:]
 
     public private(set) var rooms: [OfficeRoom] = []
     public private(set) var loading = false
@@ -244,12 +249,12 @@ public final class OfficeChannelService {
     public init(
         api: ChatAccountCalling, connector: WebSocketConnector, secureStore: SecureStore,
         origin: @escaping @MainActor () -> URL?, selfId: @escaping @MainActor () -> String,
-        displayName: @escaping @MainActor () -> String, clock: Clock = SystemClock()
+        displayName: @escaping @MainActor () -> String, clock: Clock = SystemClock(), nodeIdentity: DeviceIdentity? = nil
     ) {
         self.api = api
         self.connector = connector
         self.secureStore = secureStore
-        seals = RoomSealCache(secureStore: secureStore)
+        seals = RoomSealCache(secureStore: secureStore, nodeIdentity: nodeIdentity)
         self.origin = origin
         self.selfId = selfId
         self.displayName = displayName
@@ -288,8 +293,9 @@ public final class OfficeChannelService {
     }
 
     public func refresh() async {
-        loading = true
-        defer { loading = false }
+        let shows = rooms.isEmpty && !loading
+        if shows { loading = true }
+        defer { if shows { loading = false } }
         let started = generation
         do {
             let payload = try await api.accountApiCall("GET", "/api/chat/channels", nil)
@@ -309,11 +315,13 @@ public final class OfficeChannelService {
                     }
                 }
             }
+            if lastError != nil { lastError = nil }
+            if rooms == next { return }
             rooms = next
-            lastError = nil
             onRooms?(next)
         } catch {
-            lastError = "\(error)"
+            let message = "\(error)"
+            if lastError != message { lastError = message }
         }
     }
 
@@ -363,7 +371,9 @@ public final class OfficeChannelService {
                     guard let envelope = JSON.parseObject(entry["body"]?.text ?? "") as JSONObject?, !envelope.isEmpty,
                         let plain = crypto.decrypt(envelope)
                     else { continue }
-                    accept(plain, room: room, seal: seal, live: false, recipients: OfficeFrames.recipients(envelope), history: true)
+                    accept(
+                        plain, room: room, seal: seal, live: false, recipients: OfficeFrames.recipients(envelope), history: true,
+                        serverInjected: envelope["srv"]?.boolValue == true)
                 }
             }
         } catch {
@@ -372,7 +382,8 @@ public final class OfficeChannelService {
     }
 
     private func accept(
-        _ frame: JSONObject, room: OfficeRoom, seal: RoomSeal, live: Bool, recipients: Int? = nil, history: Bool = false
+        _ frame: JSONObject, room: OfficeRoom, seal: RoomSeal, live: Bool, recipients: Int? = nil, history: Bool = false,
+        serverInjected: Bool = false
     ) {
         var plain = frame
         if RoomSeal.isKeyFrame(plain) {
@@ -388,12 +399,56 @@ public final class OfficeChannelService {
             let result = seal.open(plain, now: clock.nowMillis, history: history)
             guard let opened = result.authenticatedPlain else { return }
             plain = GroupCallE2ee.annotate(opened, kid: result.senderKid, acct: result.senderAcct)
-        } else if room.isPrivate && !room.serverVisible {
-            return
-        } else {
-            plain = GroupCallE2ee.annotate(plain, kid: nil, acct: nil)
+            acceptPerson(plain, acct: result.senderAcct ?? "", room: room, live: live, recipients: recipients)
+        } else if serverInjected, let integration = ChatFrameText.integrationFrame(plain) {
+            plain = GroupCallE2ee.annotate(integration, kid: nil, acct: nil)
+            acceptPlain(plain, room: room, live: live, recipients: recipients)
         }
-        acceptPlain(plain, room: room, live: live, recipients: recipients)
+    }
+
+    nonisolated static func ownerClaim(_ plain: JSONObject, acct: String) -> String {
+        let claimed = RelayService.ownerClaim(plain)
+        return claimed.isEmpty ? ChatNodeOwners.normalized(acct) : claimed
+    }
+
+    private func acceptPerson(_ plain: JSONObject, acct: String, room: OfficeRoom, live: Bool, recipients: Int?) {
+        let senderId = plain["senderId"]?.text ?? ""
+        if senderId.isEmpty || senderId == selfId() {
+            acceptPlain(
+                ChatFrameText.asBotLine(plain, via: String(displayName().prefix(ChatLimits.maxDisplayNameChars))), room: room,
+                live: live, recipients: recipients)
+            return
+        }
+        let claim = OfficeChannelService.ownerClaim(plain, acct: acct)
+        if !claim.isEmpty, let nodeOwners, nodeOwners.cached(senderId) == nil {
+            let first = heldForOwner[senderId] == nil
+            var list = heldForOwner[senderId] ?? []
+            list.append((plain, room.id, live, recipients))
+            if list.count > 256 { list.removeFirst(list.count - 256) }
+            heldForOwner[senderId] = list
+            if !first { return }
+            let started = generation
+            Task { [weak self] in
+                _ = await nodeOwners.account(for: senderId)
+                guard let self, started == self.generation else { return }
+                for (frame, roomId, wasLive, count) in self.heldForOwner.removeValue(forKey: senderId) ?? [] {
+                    guard let held = self.rooms.first(where: { $0.id == roomId }) else { continue }
+                    self.acceptPlain(
+                        self.personFrame(frame, senderId: senderId, claim: claim), room: held, live: wasLive, recipients: count)
+                }
+            }
+            return
+        }
+        acceptPlain(personFrame(plain, senderId: senderId, claim: claim), room: room, live: live, recipients: recipients)
+    }
+
+    private func personFrame(_ plain: JSONObject, senderId: String, claim: String) -> JSONObject {
+        if !claim.isEmpty && nodeOwners?.isVerified(node: senderId, claim: claim) == true {
+            var out = plain
+            if (out["sender"]?.text ?? "").trimmingCharacters(in: .whitespaces).isEmpty { out["sender"] = .string(claim) }
+            return ChatFrameText.asBotLine(out, via: claim)
+        }
+        return ChatFrameText.asBotLine(RelayService.asGuest(plain, senderId: senderId), via: guestChatName(senderId))
     }
 
     private func acceptPlain(_ plain: JSONObject, room: OfficeRoom, live: Bool, recipients: Int?) {
@@ -569,7 +624,9 @@ public final class OfficeChannelService {
             return
         }
         guard let plain = socket.crypto.decrypt(envelope) else { return }
-        accept(plain, room: room, seal: socket.seal, live: true, recipients: OfficeFrames.recipients(envelope))
+        accept(
+            plain, room: room, seal: socket.seal, live: true, recipients: OfficeFrames.recipients(envelope),
+            serverInjected: envelope["srv"]?.boolValue == true)
     }
 
     private func rememberSent(_ ref: String, id: String) {
@@ -632,6 +689,7 @@ public final class OfficeChannelService {
 
     public func clear() async {
         generation &+= 1
+        heldForOwner = [:]
         await closeAll()
         sockets = [:]
         connected = []
@@ -686,7 +744,7 @@ public final class OfficeChannelService {
         guard let socket = sockets[room.id] else { return nil }
         let plain = frame(room, text: body, bot: asBot)
         do {
-            let framed = room.isPrivate ? try socket.seal.seal(plain, now: clock.nowMillis) : plain
+            let framed = try socket.seal.seal(plain, now: clock.nowMillis)
             var envelope = try socket.crypto.encrypt(framed)
             envelope["persist"] = true
             envelope["notify"] = true
@@ -698,7 +756,7 @@ public final class OfficeChannelService {
             }
             do {
                 try await socket.connection.send(text: wire)
-                if room.isPrivate && socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
+                if socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
             } catch {
                 unsent(plain["id"]?.text ?? "", conversation: room.conversation, shown: shown)
                 throw error
@@ -751,7 +809,7 @@ public final class OfficeChannelService {
         plain.removeValue(forKey: "text")
         for (key, value) in fields { plain[key] = value }
         do {
-            let framed = room.isPrivate ? try socket.seal.seal(plain, now: clock.nowMillis) : plain
+            let framed = try socket.seal.seal(plain, now: clock.nowMillis)
             var envelope = try socket.crypto.encrypt(framed)
             envelope["persist"] = true
             if type == "chat" || type == "thread-reply" { envelope["notify"] = true }
@@ -763,7 +821,7 @@ public final class OfficeChannelService {
             }
             do {
                 try await socket.connection.send(text: wire)
-                if room.isPrivate && socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
+                if socket.seal.needsAdvertisement(now: clock.nowMillis) { advertise(socket) }
             } catch {
                 unsent(plain["id"]?.text ?? "", conversation: room.conversation, shown: shown)
                 throw error
