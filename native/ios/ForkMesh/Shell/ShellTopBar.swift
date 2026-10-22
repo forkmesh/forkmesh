@@ -409,12 +409,44 @@ struct ShellStatusDots: View {
     }
 }
 
+struct ShellIslandStatusDots: View {
+    static let islandInset: CGFloat = 54
+    static let islandBottom: CGFloat = 48
+    static let dotSize: CGFloat = 5
+
+    let lights: [StatusLight]
+
+    static func gap(top: CGFloat) -> CGFloat? {
+        top >= islandInset ? top - islandBottom : nil
+    }
+
+    var body: some View {
+        GeometryReader { (proxy: GeometryProxy) in
+            if let gap = ShellIslandStatusDots.gap(top: proxy.safeAreaInsets.top) {
+                HStack(spacing: 2) {
+                    ForEach(lights) { (light: StatusLight) in
+                        ShellStatusDot(light: light, size: ShellIslandStatusDots.dotSize)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: gap)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(lights.map(\.label).joined(separator: "; ")))
+                .accessibilityIdentifier("top-island-status-dots")
+            }
+        }
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+    }
+}
+
 struct ShellStatusDot: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @State private var dim: Bool = false
     let light: StatusLight
     var ringed: Bool = false
+    var size: CGFloat = 7
 
     private var color: Color {
         switch light.state {
@@ -428,7 +460,7 @@ struct ShellStatusDot: View {
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: 7, height: 7)
+            .frame(width: size, height: size)
             .opacity(light.troubled && dim ? 0.25 : 1)
             .background {
                 if ringed {
