@@ -1838,6 +1838,30 @@ class Default:
         return instance_legal.remember(
             instance_legal.parse((row or {}).get("doc") or ""), now)
 
+    async def _instance_sidebar_setting(self):
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                "sidebar")
+            doc = json.loads((row or {}).get("doc") or "{}")
+        except Exception:
+            doc = {}
+        if not isinstance(doc, dict):
+            doc = {}
+        pinned = []
+        for value in doc.get("pinned") or []:
+            text = str(value or "").strip().lower()
+            if 0 < len(text) <= 161 and text.count("/") <= 1 \
+                    and text not in pinned:
+                pinned.append(text)
+            if len(pinned) >= 10:
+                break
+        try:
+            forks = int(doc.get("forks", 3))
+        except (TypeError, ValueError):
+            forks = 3
+        return {"pinned": pinned, "forks": max(0, min(50, forks))}
+
     async def _instance_legal_route(self, request, url):
         if method_name(request) not in ("GET", "HEAD"):
             return None
@@ -2041,6 +2065,7 @@ class Default:
                 "repoAddresses": await self._repo_addresses_doc(),
                 "directory": await self._instance_directory_links(),
                 "world": await self._instance_world_public(),
+                "sidebar": await self._instance_sidebar_setting(),
             }, cache_control="public, max-age=60")
         if instance_branded(self.env) and url.path.rstrip("/") == \
                 "/api/world/neighbour-scene" and \
