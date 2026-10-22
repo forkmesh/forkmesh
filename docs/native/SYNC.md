@@ -164,4 +164,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S089 | 2026-10-21 | Calls | fix | Calls you place to an iPhone show its camera and play its voice once it answers. | 478fbe6a9c | n/a | Android calls run in the WebView page, which already adds its tracks with addTrack |
 | S090 | 2026-10-21 | Calls | ui | Call buttons move to two rows when one row does not fit the screen. | 478fbe6a9c | pending |  |
 | S091 | 2026-10-21 | Calls | feature | Drag your own video in a call to any corner and it stays there for the next call. | 478fbe6a9c | pending |  |
+| S092 | 2026-10-21 | Chat | fix | The phone leaves private and hidden channels out of its relay hello and does not adopt channels it has hidden, so private channel names stay out of other projects and devices | fe664f0c09 | pending |  |
+| S093 | 2026-10-21 | Chat | fix | Chat stays snappy: a quick inactive step (Control Center, an alert) does not reconnect direct message rooms or rerun the chat refresh, and chat screens redraw less | fe664f0c09 | pending |  |
 <!-- ledger:end -->
