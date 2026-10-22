@@ -47,17 +47,21 @@ struct ChatChannelSidebar: View {
     }
 
     var body: some View {
+        let directRows: [ChatDirectRow] = hub.directRows
+        let people: [String: ChatDirectRow] = Dictionary(
+            directRows.map { ($0.conversation, $0) }, uniquingKeysWith: { (first: ChatDirectRow, _: ChatDirectRow) in first })
+        let groups: [MemberGroup] = hub.memberGroups
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if onSearch != nil || onCompose != nil || onClose != nil {
                     jumpBar.padding(.bottom, FmSpace.x3)
                 }
-                recentSection.padding(.bottom, FmSpace.x4)
+                recentSection(directRows, people: people, online: groups.filter(\.online).count).padding(.bottom, FmSpace.x4)
                 if !hub.workspace.starred.isEmpty {
                     sectionTitle("Starred", count: hub.workspace.starred.count)
                     card {
                         ForEach(hub.workspace.starred, id: \.self) { (conversation: String) in
-                            conversationTile(conversation)
+                            conversationTile(conversation, people: people)
                         }
                     }
                     .padding(.bottom, FmSpace.x4)
@@ -72,15 +76,15 @@ struct ChatChannelSidebar: View {
                         }
                     }
                     if !hub.workspace.isStarred(meshConversation) {
-                        conversationTile(meshConversation)
+                        conversationTile(meshConversation, people: people)
                     }
                 }
-                directMessages
-                if !hub.memberGroups.isEmpty {
-                    sectionTitle("People", count: hub.memberGroups.count)
+                directMessages(directRows)
+                if !groups.isEmpty {
+                    sectionTitle("People", count: groups.count)
                         .padding(.top, FmSpace.x4)
                     card {
-                        ForEach(hub.memberGroups) { (group: MemberGroup) in
+                        ForEach(groups) { (group: MemberGroup) in
                             ChatMemberRow(
                                 group: group, selected: memberSelected(group),
                                 onTap: memberTap(group), onProfile: { person = ChatPersonKey(group: group) }, retentionHub: hub)
@@ -274,14 +278,16 @@ struct ChatChannelSidebar: View {
         .frame(minHeight: 44)
     }
 
-    @ViewBuilder private var recentSection: some View {
-        let recent: [String] = hub.recentConversations(limit: ChatChannelSidebar.recentLimit)
-        sectionTitle("Recent", count: 0) { onlineButton }
+    @ViewBuilder private func recentSection(
+        _ directRows: [ChatDirectRow], people: [String: ChatDirectRow], online: Int
+    ) -> some View {
+        let recent: [String] = hub.recentConversations(limit: ChatChannelSidebar.recentLimit, directRows: directRows)
+        sectionTitle("Recent", count: 0) { onlineButton(online) }
         if !recent.isEmpty {
             card {
                 ForEach(recent, id: \.self) { (conversation: String) in
                     if ChatHub.isPersonConversation(conversation) || conversation == meshConversation {
-                        conversationTile(conversation)
+                        conversationTile(conversation, people: people)
                     } else {
                         channelTile(conversation)
                     }
@@ -292,9 +298,8 @@ struct ChatChannelSidebar: View {
 
     static let recentLimit: Int = 5
 
-    private var onlineButton: some View {
-        let online: Int = hub.memberGroups.filter(\.online).count
-        return Button(action: { showingOnline = true }) {
+    private func onlineButton(_ online: Int) -> some View {
+        Button(action: { showingOnline = true }) {
             HStack(spacing: 5) {
                 Circle()
                     .fill(online > 0 ? fm.success : fm.textTertiary)
@@ -356,8 +361,8 @@ struct ChatChannelSidebar: View {
         }
     }
 
-    @ViewBuilder private var directMessages: some View {
-        let rows: [ChatDirectRow] = hub.directRows.filter { !hub.workspace.isStarred($0.conversation) }
+    @ViewBuilder private func directMessages(_ directRows: [ChatDirectRow]) -> some View {
+        let rows: [ChatDirectRow] = directRows.filter { !hub.workspace.isStarred($0.conversation) }
         if !rows.isEmpty || onCompose != nil {
             sectionTitle("Direct messages", count: rows.count) {
                 if let onCompose {
@@ -379,14 +384,16 @@ struct ChatChannelSidebar: View {
         }
     }
 
-    @ViewBuilder private func conversationTile(_ conversation: String, direct: ChatDirectRow? = nil) -> some View {
+    @ViewBuilder private func conversationTile(
+        _ conversation: String, direct: ChatDirectRow? = nil, people: [String: ChatDirectRow] = [:]
+    ) -> some View {
         let office: OfficeRoom? = hub.office?.room(for: conversation)
         let person: Bool = conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation)
         let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(conversation)
         let icon: String = conversation == meshConversation ? "point.3.connected.trianglepath.dotted" : (person ? "at" : (locked ? "lock.fill" : "number"))
         let title: String = direct.map { $0.name } ?? hub.conversationLabel(conversation)
         let preview: ChatListPreview? = hub.listPreview(conversation)
-        let row: ChatDirectRow? = direct ?? (person ? hub.directRows.first(where: { $0.conversation == conversation }) : nil)
+        let row: ChatDirectRow? = direct ?? (person ? people[conversation] : nil)
         ChatChannelTile(
             title: title, icon: icon, selected: hub.currentConversation == conversation, unread: hub.isUnread(conversation),
             onTap: { select(conversation) }, muted: hub.workspace.isMuted(conversation),

@@ -119,16 +119,16 @@ struct ChatInstaller: AppServicesInstaller {
                 }
                 Services.put(ChatAuthListener(auth: auth, token: token))
             }
+            var returns: AppReturnGate = AppReturnGate()
             Services.get(AppLifecycle.self)?.observe { (state: AppLifecycleState) in
                 direct.appLifecycleChanged(state)
                 if state == .hidden || state == .paused || state == .detached {
                     live.stopSharingMotion()
                     DirectLiveMotionFeed.shared.stop()
                 }
-                if state == .resumed {
-                    Task { await hub.refreshMemberDirectory() }
-                }
-                if state == .resumed && !(auth?.session?.sessionToken ?? "").isEmpty {
+                guard returns.isReturn(state) else { return }
+                Task { await hub.refreshMemberDirectory() }
+                if !(auth?.session?.sessionToken ?? "").isEmpty {
                     Task { await office.refresh() }
                     Task { await direct.refresh() }
                     Task { await hub.applyReadMarks() }
@@ -141,7 +141,7 @@ struct ChatInstaller: AppServicesInstaller {
                     if topic == "direct-messages" {
                         Task { await direct.refresh() }
                     } else if topic == ChatReadMarks.topic {
-                        Task { await hub.applyReadMarks() }
+                        Task { await hub.applyReadMarks(force: true) }
                     }
                 }
                 let previousEvent: (@MainActor (String, JSONObject) -> Void)? = events.onEvent
@@ -238,8 +238,9 @@ struct ChatInstaller: AppServicesInstaller {
         auth.addListener {
             Task { @MainActor in await retention.syncSession() }
         }
+        var returns: AppReturnGate = AppReturnGate()
         Services.get(AppLifecycle.self)?.observe { (state: AppLifecycleState) in
-            if state != .resumed { return }
+            guard returns.isReturn(state) else { return }
             hub.pruneExpired()
             Task {
                 do {

@@ -128,6 +128,8 @@ public final class ChatHub: ShellChatBridge {
         }
     }
     @ObservationIgnored public var readMarks: ChatReadMarks?
+    @ObservationIgnored private var readMarksTask: Task<Void, Never>?
+    @ObservationIgnored private var readMarksAt: Date?
     @ObservationIgnored public var onMessageRemoved: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var calls: DirectCallEngine?
     @ObservationIgnored public var onGroupCallFrame: (@MainActor (JSONObject, String) -> Void)?
@@ -192,6 +194,8 @@ public final class ChatHub: ShellChatBridge {
             if self.relay.currentConversation == message.conversation { self.queueReadMark(message.conversation) }
         }
         relay.isReadElsewhere = { [weak self] message in self?.isReadElsewhere(message) ?? false }
+        relay.isPrivateChannel = { [weak extras] channel in extras?.isPrivate(channel) ?? false }
+        relay.isHiddenChannel = { [weak extras] channel in extras?.hiddenChannels.contains(channel) ?? false }
         relay.isExpired = expiry
         mesh.isExpired = expiry
         extras.isExpired = expiry
@@ -291,6 +295,7 @@ public final class ChatHub: ShellChatBridge {
         pendingSaved = false
         resetAppCommands(clearReplies: true)
         readMarks?.clear()
+        readMarksAt = nil
         extras.resetForProjectSwitch()
         workspace = ChatWorkspace()
         await office?.clear()
@@ -1240,7 +1245,26 @@ public final class ChatHub: ShellChatBridge {
         readMarks.queue(key, newest)
     }
 
-    public func applyReadMarks() async {
+    public static let readMarksInterval: TimeInterval = 5
+
+    public func applyReadMarks(force: Bool = false) async {
+        if let running = readMarksTask {
+            await running.value
+            if !force { return }
+            if let next = readMarksTask, next != running { return await next.value }
+        }
+        if !force, let at = readMarksAt, clock.now.timeIntervalSince(at) < ChatHub.readMarksInterval { return }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.fetchReadMarks()
+        }
+        readMarksTask = task
+        await task.value
+        if readMarksTask == task { readMarksTask = nil }
+        readMarksAt = clock.now
+    }
+
+    private func fetchReadMarks() async {
         guard let readMarks, await readMarks.fetch() else { return }
         for conversation in unreadConversations {
             guard let key = readMarkKey(conversation),

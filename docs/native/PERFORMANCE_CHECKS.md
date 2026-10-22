@@ -125,6 +125,44 @@ characters, lowest-ranked sections are trimmed first and say so):
 Newest first. Each entry: date and branch; what the bundle showed; the
 cause; the fix; what was ruled out; what the bundle lacked.
 
+- 2026-10-21, `2424-improve-mobile-chat-room` (no bundle; the user: "the
+  app is very laggy", around chat). Read the chat paths the 2026-10-19
+  entry left open, plus the chat screens' redraws. Found: the direct
+  messages closed and reopened every watched room (up to 16, each a
+  `room-access` read, a socket and a signed key frame, then a history replay
+  opened in full) on every `.resumed`, including closing Control Center or
+  an alert, not only after the background; each `.resumed` also refreshed
+  office rooms, direct messages, read marks (fetched again by the event
+  channel's connect), the member directory and chat retention; both
+  refreshes wrote `rooms`, `records`, `loading`, `lastError` and
+  `nextCursor` even when nothing changed, and every write redrew the open
+  conversation and the channel list. On screen, the conversation built its
+  rows two or three times per redraw (`conversationItems`, `rows` for
+  `chatFollowsOwnSend`, the info page's lookup); a peer typing redrew the
+  whole transcript every 2.5 s; the online light ran a `repeatForever`
+  shadow animation; every bubble and `ChatLinkText` re-parsed its text
+  (links, references, formatting) on every parent redraw; the channel list
+  rebuilt `directRows` about seven times per redraw, each rebuilding the
+  roster groups once per direct message. Fix: `AppReturnGate` (FMAccount)
+  lets the chat and retention observers refresh only on a resume after
+  `.paused`, `.hidden` or `.detached`; `DirectMessageService` reopens rooms
+  only when `foreground` really changes; `ChatHub.applyReadMarks` joins a
+  fetch in flight and skips one within 5 s (`force` for the read-marks
+  push); the refreshes write only changed values and show `loading` only
+  while the list is empty; the conversation builds its items once per body;
+  the typing bubble is its own view (`MessagesTypingRow`); the online light
+  pulses its opacity from a `TimelineView`; parsed text is cached
+  (`ChatTextCache`, 1024 entries); the channel list computes `directRows`
+  and `memberGroups` once and hands them down. Tests:
+  `testAQuickInactiveStepKeepsDirectRoomsOpen`,
+  `testAReturnIsOnlyAResumeAfterTheBackground`, the read-marks throttle in
+  `ChatReadMarksTests`. Not fixed: a replayed direct-message frame is still
+  opened in full before it is found to be a duplicate (now only after a
+  real return); the Message Info swipe redraws the conversation on every
+  drag frame (`infoDrag` is read in `body`); `trustChanged` bumps
+  `trustRevision` on every room connect; relay channel history has no
+  per-room cap. Not measured on a phone: no bundle came with the report.
+
 - 2026-10-19, `2321-slow-ios-app-performance` (1.4.1 (291), commit
   63b65a9, iPhone16,2, Code tab root after Shortcuts and
   fmnext-n1/forkmesh; the user: "laggy when we switch to it"). Showed: 11

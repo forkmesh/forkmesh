@@ -52,6 +52,8 @@ public final class RelayService: OwnStatusAnnouncer {
     @ObservationIgnored public var onMessage: (@MainActor (ChatMessage) -> Void)?
     @ObservationIgnored public var isExpired: ChatExpiry?
     @ObservationIgnored public var isReadElsewhere: (@MainActor (ChatMessage) -> Bool)?
+    @ObservationIgnored public var isPrivateChannel: (@MainActor (String) -> Bool)?
+    @ObservationIgnored public var isHiddenChannel: (@MainActor (String) -> Bool)?
     @ObservationIgnored public let listeners = Listeners()
 
     @ObservationIgnored private var sharedPassphrase = ""
@@ -736,8 +738,23 @@ public final class RelayService: OwnStatusAnnouncer {
 
     private func sendHello() async {
         var hello = withOwnStatus(envelopeBase("hello"))
-        hello["channels"] = JSONValue(channels)
+        hello["channels"] = JSONValue(advertisedChannels)
         send(hello)
+    }
+
+    var advertisedChannels: [String] {
+        channels.filter { !OfficeFrames.isOffice($0) && isPrivateChannel?($0) != true && isHiddenChannel?($0) != true }
+    }
+
+    private func adoptAdvertised(_ values: [JSONValue]) {
+        var adopted: [String] = []
+        for value in values {
+            let channel = value.text
+            if channel.isEmpty || !channel.hasPrefix("#") || channels.contains(channel) || adopted.contains(channel) { continue }
+            if OfficeFrames.isOffice(channel) || isHiddenChannel?(channel) == true { continue }
+            adopted.append(channel)
+        }
+        if !adopted.isEmpty { channels.append(contentsOf: adopted) }
     }
 
     private func sendPresence() async {
@@ -967,13 +984,10 @@ public final class RelayService: OwnStatusAnnouncer {
 
         switch type {
         case "hello":
-            for value in m["channels"]?.arrayValue ?? [] {
-                let channel = value.text
-                if !channel.isEmpty && !channels.contains(channel) { channels.append(channel) }
-            }
+            adoptAdvertised(m["channels"]?.arrayValue ?? [])
             if (m["to"]?.text ?? "").isEmpty && senderId != nodeId {
                 var reply = withOwnStatus(envelopeBase("hello"))
-                reply["channels"] = JSONValue(channels)
+                reply["channels"] = JSONValue(advertisedChannels)
                 reply["to"] = .string(senderId)
                 send(reply)
             }

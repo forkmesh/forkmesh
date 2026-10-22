@@ -219,7 +219,16 @@ order:
 
 The LAN mesh room (`#mesh`) is not an instance's: every nearby ForkMesh
 device shares it, in every project. `ProjectChatIsolationTests` covers the
-switch. Android rebuilds its whole chat graph per project
+switch, and since 2026-10-21 also private rooms and direct messages across a
+switch.
+
+The relay `hello` (still 2026-10-21): the iPhone listed every channel it knew
+in its `hello` and its replies, private ones included, and took every channel
+a peer listed, even one it had hidden. So one project's private channel names
+reached every device in the room, and came back into other projects and
+devices from there. It now leaves out private, hidden and `#office/` channels
+(`RelayService.advertisedChannels`, as the desktop's `ServerNode::sendHello`
+leaves out private ones) and adopts only `#` channels it has not hidden. Android rebuilds its whole chat graph per project
 (`ProjectLifecycle.close`, `Features.install`), so it never had this leak.
 
 ### WS2: Push, pings and code-push

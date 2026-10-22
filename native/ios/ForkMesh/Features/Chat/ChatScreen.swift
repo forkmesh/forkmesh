@@ -1337,8 +1337,10 @@ extension View {
     }
 
     func chatFollowsOwnSend(_ rows: [ChatRow], scroll: @escaping () -> Void) -> some View {
-        modifier(
-            ChatFollowsOwnSend(
-                newest: rows.last(where: { $0.message.isSelf })?.message.timestamp ?? .distantPast, scroll: scroll))
+        chatFollowsOwnSend(newest: rows.last(where: { $0.message.isSelf })?.message.timestamp ?? .distantPast, scroll: scroll)
+    }
+
+    func chatFollowsOwnSend(newest: Date, scroll: @escaping () -> Void) -> some View {
+        modifier(ChatFollowsOwnSend(newest: newest, scroll: scroll))
     }
 }

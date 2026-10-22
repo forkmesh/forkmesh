@@ -362,7 +362,10 @@ avatar movement but does not silently change that saved feedback preference.
   what Home reads on each resume.
 - A scene-phase refresh runs on every inactive-to-active change (Control
   Center, Notification Center, a system alert), not only after the
-  background; gate it on age (`AccountPackagesStore.refreshIfStale`).
+  background; gate it on age (`AccountPackagesStore.refreshIfStale`) or on
+  a real return (`AppReturnGate`, used by chat).
+- Parse message text once per text, not once per redraw: `ChatLinkText` and
+  the bubbles read `ChatTextCache`.
 - Compute derived lists once per body and pass them down.
 - Do not let a ring cancel a load in flight, whatever started it; mark it and
   run one more load afterwards, or none when the load's reads had not gone out

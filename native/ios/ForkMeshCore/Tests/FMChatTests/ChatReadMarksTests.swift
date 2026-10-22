@@ -79,6 +79,8 @@ final class ChatReadMarksTests: XCTestCase {
         XCTAssertEqual(h.relay.unreadCountFor("#random"), 2)
         api.replies["GET \(ChatReadMarks.endpoint)"] = ["marks": ["#random": .int(base + 2_000)]]
         await hub.applyReadMarks()
+        XCTAssertEqual(h.relay.totalUnread, 2, "a second read within a few seconds is skipped")
+        await hub.applyReadMarks(force: true)
         XCTAssertEqual(h.relay.totalUnread, 0)
         try h.sendPlain([
             "type": "chat", "id": "replayed", "senderId": "remote-node", "sender": "Remote", "ts": .int(base + 1_800),

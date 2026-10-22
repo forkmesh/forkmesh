@@ -79,4 +79,82 @@ final class ProjectChatIsolationTests: XCTestCase {
         XCTAssertFalse(h.relay.messages("#general").contains { $0.text == "beta note" })
         await h.close()
     }
+
+    func testHelloKeepsPrivateAndHiddenChannelsToThisPhone() async throws {
+        let h = try await RelayHarness.start()
+        let mesh = LocalMeshService(settings: h.device.settings, identity: h.device.identity, secureStore: h.device.secure)
+        let hub = ChatHub(relay: h.relay, mesh: mesh)
+        let secret = try XCTUnwrap(hub.extras.createPrivateChannel("alpha-private"))
+        h.relay.addChannel("#alpha-hidden")
+        hub.extras.removeChannel("#alpha-hidden")
+        XCTAssertTrue(h.relay.channels.contains(secret))
+
+        try await h.sendProtected(peerFrame(["type": "hello", "channels": ["#peer-room", "#alpha-hidden", "#office/team"]], id: "h-1"))
+        let replied = await waitUntil {
+            h.openFrames().contains { $0["type"]?.text == "hello" && $0["to"]?.text == "peer-1" }
+        }
+        XCTAssertTrue(replied)
+        XCTAssertTrue(h.relay.channels.contains("#peer-room"))
+        XCTAssertFalse(h.relay.channels.contains("#alpha-hidden"))
+        XCTAssertFalse(h.relay.channels.contains("#office/team"))
+        for hello in h.openFrames() where hello["type"]?.text == "hello" {
+            let advertised = (hello["channels"]?.arrayValue ?? []).map(\.text)
+            XCTAssertFalse(advertised.contains(secret), "a private channel name never leaves the phone")
+            XCTAssertFalse(advertised.contains("#alpha-hidden"))
+        }
+        await h.close()
+    }
+
+    func testPrivateRoomsAndDirectMessagesStayWithTheirProject() async throws {
+        let h = try await RelayHarness.start()
+        let mesh = LocalMeshService(settings: h.device.settings, identity: h.device.identity, secureStore: h.device.secure)
+        let hub = ChatHub(relay: h.relay, mesh: mesh)
+        let api = FakeAccountApi()
+        let office = OfficeChannelService(
+            api: api, connector: FakeWebSocketConnector(), secureStore: InMemorySecureStore(),
+            origin: { URL(string: "https://app.forkmesh.com") }, selfId: { "me-node" }, displayName: { "Me" })
+        let direct = DirectMessageService(
+            api: api, connector: FakeWebSocketConnector(), secureStore: InMemorySecureStore(),
+            origin: { URL(string: "https://app.forkmesh.com") }, selfId: { "me-node" }, displayName: { "Me" })
+        hub.office = office
+        hub.direct = direct
+        let dir = temporaryDirectory("project-rooms-isolation")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ChatHistoryStore(directory: dir, delay: 0)
+        var project = "a"
+        hub.attachHistory(store, scope: { "project-\(project)" })
+
+        let alphaRoom = String(repeating: "a", count: 32)
+        let alphaDirect = String(repeating: "1", count: 32)
+        api.replies["GET /api/chat/channels"] = [
+            "channels": [["id": .string(alphaRoom), "name": "alpha-team", "visibility": "private", "canManage": true]]
+        ]
+        api.replies["GET /api/chat/direct-messages"] = [
+            "conversations": [["id": .string(alphaDirect), "otherUser": "pat", "unreadCount": 0]]
+        ]
+        await office.refresh()
+        await direct.refresh()
+        XCTAssertEqual(hub.officeChannels, ["#office/alpha-team"])
+        XCTAssertEqual(direct.records.map(\.otherUser), ["pat"])
+
+        await hub.leaveProject()
+        await h.relay.disconnect()
+        h.relay.resetForRelaySwitch()
+        XCTAssertTrue(hub.officeChannels.isEmpty)
+        XCTAssertTrue(direct.records.isEmpty)
+
+        project = "b"
+        let betaRoom = String(repeating: "b", count: 32)
+        api.replies["GET /api/chat/channels"] = [
+            "channels": [["id": .string(betaRoom), "name": "beta-team", "visibility": "private", "canManage": true]]
+        ]
+        api.replies["GET /api/chat/direct-messages"] = ["conversations": []]
+        hub.enterProject(workspace: ChatWorkspace())
+        await office.refresh()
+        await direct.refresh()
+        XCTAssertEqual(hub.officeChannels, ["#office/beta-team"])
+        XCTAssertTrue(direct.records.isEmpty)
+        XCTAssertFalse(hub.listedChannels.contains("#office/alpha-team"))
+        await h.close()
+    }
 }

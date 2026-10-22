@@ -288,8 +288,9 @@ public final class OfficeChannelService {
     }
 
     public func refresh() async {
-        loading = true
-        defer { loading = false }
+        let shows = rooms.isEmpty && !loading
+        if shows { loading = true }
+        defer { if shows { loading = false } }
         let started = generation
         do {
             let payload = try await api.accountApiCall("GET", "/api/chat/channels", nil)
@@ -309,11 +310,13 @@ public final class OfficeChannelService {
                     }
                 }
             }
+            if lastError != nil { lastError = nil }
+            if rooms == next { return }
             rooms = next
-            lastError = nil
             onRooms?(next)
         } catch {
-            lastError = "\(error)"
+            let message = "\(error)"
+            if lastError != message { lastError = message }
         }
     }
 

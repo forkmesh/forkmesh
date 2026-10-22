@@ -231,7 +231,10 @@ extension ChatHub {
     public var conversationPeerGroup: MemberGroup? { peerGroup(relay.currentConversation) }
 
     public func peerGroup(_ conversation: String) -> MemberGroup? {
-        let groups = memberGroups.filter { !$0.isSelf }
+        peerGroup(conversation, groups: memberGroups.filter { !$0.isSelf })
+    }
+
+    func peerGroup(_ conversation: String, groups: [MemberGroup]) -> MemberGroup? {
         if conversation.hasPrefix("@") {
             let id = String(conversation.dropFirst())
             return groups.first { $0.members.contains { $0.id == id } }
@@ -259,11 +262,15 @@ extension ChatHub {
     }
 
     public func peerPresence(_ conversation: String) -> ChatPeerPresence {
-        let group = peerGroup(conversation)
+        peerPresence(conversation, groups: memberGroups.filter { !$0.isSelf }, roster: nil)
+    }
+
+    func peerPresence(_ conversation: String, groups: [MemberGroup], roster: [Member]?) -> ChatPeerPresence {
+        let group = peerGroup(conversation, groups: groups)
         let online: Bool
         if conversation.hasPrefix("@") {
             let id = String(conversation.dropFirst())
-            online = relay.roster().first { $0.id == id }?.online == true || group?.online == true
+            online = (roster ?? relay.roster()).first { $0.id == id }?.online == true || group?.online == true
         } else {
             online = group?.online == true
         }

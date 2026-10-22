@@ -300,8 +300,9 @@ extension ChatHub {
     public var directRows: [ChatDirectRow] {
         var out: [ChatDirectRow] = []
         let roster = relay.roster()
+        let groups = memberGroups.filter { !$0.isSelf }
         for record in direct?.records ?? [] where !workspace.isBlocked(record.otherUser) {
-            let online = peerPresence(record.conversation) != .offline
+            let online = peerPresence(record.conversation, groups: groups, roster: roster) != .offline
             let last = direct?.messages(record.conversation).last?.timestamp
                 ?? (record.updatedAt > 0 ? Date(epochMillis: record.updatedAt) : nil)
             if workspace.isRemoved(record.conversation, lastActivity: last) { continue }
@@ -317,7 +318,8 @@ extension ChatHub {
             if workspace.isBlocked(member?.owner ?? "") || workspace.isBlocked(String(label.dropFirst())) { continue }
             out.append(
                 ChatDirectRow(
-                    conversation: conversation, name: String(label.dropFirst()), online: peerPresence(conversation) != .offline,
+                    conversation: conversation, name: String(label.dropFirst()),
+                    online: peerPresence(conversation, groups: groups, roster: roster) != .offline,
                     unread: relay.unreadCountFor(conversation), lastAt: last))
         }
         out.sort { ($0.lastAt ?? .distantPast) > ($1.lastAt ?? .distantPast) }
@@ -325,6 +327,10 @@ extension ChatHub {
     }
 
     public func recentConversations(limit: Int = 5) -> [String] {
+        recentConversations(limit: limit, directRows: directRows)
+    }
+
+    public func recentConversations(limit: Int, directRows: [ChatDirectRow]) -> [String] {
         var stamped: [(conversation: String, at: Date)] = []
         var listed = Set<String>()
         for row in directRows where listed.insert(row.conversation).inserted {

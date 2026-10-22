@@ -36,7 +36,9 @@
      "items": [
       "Stick stickers on messages.",
       "Swipe left on a message for Message Info; your last sent message shows when it was delivered and read.",
-      "Each project keeps its own chat when you switch projects."
+      "Each project keeps its own chat when you switch projects.",
+      "The iPhone no longer tells other devices the names of your private channels, so one project's channels stop turning up in another.",
+      "Chat on iPhone is snappier: closing Control Center no longer reconnects every conversation, and message lists, typing and the channel list redraw far less."
      ]
     },
     {
