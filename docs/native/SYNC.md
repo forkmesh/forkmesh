@@ -177,4 +177,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S102 | 2026-10-22 | Agents | fix | The pinned last prompt no longer leaves an empty box under it, and swiping it left and right moves through your earlier and later prompts. | 6f57eaf518 | pending |  |
 | S103 | 2026-10-22 | Calls | feature | Calls show a small live quality pill with signal bars, a voice waveform and the delay; tap it for live network and video charts. | 6740cdc214 | synced | 6740cdc214 |
 | S104 | 2026-10-22 | DJ Studio | feature | DJ Studio decks have a Repeat button that plays the song on that deck over and over until it is turned off. | c191462a0a | pending |  |
+| S105 | 2026-10-22 | Code | fix | Merge all with AI on a pull request list now reaches the desktop's copy of the repository instead of saying the desktop does not have it. | c17892ba63 | synced | c17892ba63 |
 <!-- ledger:end -->
