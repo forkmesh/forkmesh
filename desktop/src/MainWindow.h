@@ -69,6 +69,7 @@
 #include "AgentRunner.h"
 #include "AgentNetworkGate.h" // the gate server is held by value below
 #include "AgentRunRules.h"
+#include "AgentHub.h"
 #include "AgentIntake.h"
 #include "AgentWindows.h"
 #include "ClaudeTranscriptTools.h"
@@ -14675,6 +14676,26 @@ private:
     std::unique_ptr<forkmesh::agentwindows::Registry> m_agentWindows;
     QJsonObject handleAgentWindowRequest(int sessionId,
                                          const forkmesh::agentintake::Request &request);
+    forkmesh::agentwindows::Registry *agentWindows();
+    QString agentWindowLabel(int sessionId) const;
+    QJsonObject handleAgentHubRequest(int sessionId,
+                                      const forkmesh::agentintake::Request &request);
+    QJsonObject suggestAgentSession(int sessionId, const QJsonObject &params);
+    QJsonObject listAgentSessionsForAgent(int sessionId, const QJsonObject &params);
+    QJsonObject messageAgentSessionFromAgent(int sessionId, const QJsonObject &params);
+    QJsonObject notifyFromAgent(int sessionId, const QJsonObject &params);
+    void listRunnersForAgent(int sessionId, forkmesh::agentintake::Server::Reply reply);
+    void answerAgentSuggestion(const QString &windowId);
+    QString agentEffectiveModeLabel(const AgentSession &session) const;
+    struct AgentSuggestion {
+        int requester = 0;
+        forkmesh::agentintake::CreateRequest create;
+    };
+    QHash<QString, AgentSuggestion> m_agentSuggestions;
+    forkmesh::agentintake::RateLimiter m_agentMessageLimiter{
+        forkmesh::agenthub::kMessageLimit, forkmesh::agenthub::kMessageWindowMs};
+    forkmesh::agentintake::RateLimiter m_agentNotifyLimiter{
+        forkmesh::agenthub::kNotifyLimit, forkmesh::agenthub::kNotifyWindowMs};
     // Destinations the user allowed for one run, by session token.
     QHash<QString, QSet<QString>> m_agentGateSessionHosts;
     QHash<QString, QPointer<QDialog>> m_agentGatePrompts;

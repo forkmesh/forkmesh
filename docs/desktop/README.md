@@ -202,8 +202,11 @@ Everything is in `desktop/`.
 - **Editor bridge and MCP:** `ClaudeIdeBridge.*`, `McpConnector.*`. The MCP
   server (`tools/forkmesh_mcp_server.py`) reaches the desktop over the
   agent-intake socket (`AgentIntake.*`) to create agents, open agent windows
-  and cut releases ([../tools/mcp-create-agent.md](../tools/mcp-create-agent.md),
+  and widgets, drive browser windows, suggest sessions, list and message
+  agents and runners, and cut releases
+  ([../tools/mcp-create-agent.md](../tools/mcp-create-agent.md),
   [../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md),
+  [../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md),
   [../tools/mcp-releases.md](../tools/mcp-releases.md)).
 - **Launch targets:** `forkmesh <target>` takes a `forkmesh://` link, an
   absolute folder path or a `file://` URL. A path after `--project` is a

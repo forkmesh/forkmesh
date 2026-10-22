@@ -330,6 +330,9 @@ ALL_WINDOW_CALLS = [
     ("close_window", {"window_id": WINDOW}),
     ("open_browser_window", {"url": "https://forkmesh.com/"}),
     ("read_browser_page", {"window_id": WINDOW}),
+    ("browser_action", {"window_id": WINDOW, "action": "reload"}),
+    ("show_widget", {"title": "Counter", "html": "<button>+</button>"}),
+    ("suggest_session", {"prompt": "Fix the flaky upload test"}),
 ]
 
 

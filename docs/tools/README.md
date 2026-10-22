@@ -59,7 +59,7 @@ security scan runners.
 **Agents and desktop helpers**: `forkmesh_coding_agent.py` and
 `forkmesh_agent_guard.py` (embedded into the desktop by their
 `sync_*_header.py` scripts; edit the Python, then regenerate),
-`forkmesh_mcp_server.py` ([../agents/tools.md](../agents/tools.md#forkmesh-mcp-server)),
+`forkmesh_mcp_server.py` ([../agents/tools.md](../agents/tools.md#forkmesh-mcp-server); its Claude Code desktop counterparts in [mcp-claude-code-desktop.md](mcp-claude-code-desktop.md)),
 `branch_pr_review.py` (loopback-only diff viewer),
 `pull_ledger.py` (comment on, close, reopen and record merges of a native pull from the terminal, [pull-ledger.md](pull-ledger.md)),
 `zoho_mail.py` (send email from a Zoho Mail mailbox with no prompts, the `send_email` MCP tool, [zoho-mail.md](zoho-mail.md)), `code_health.py`,

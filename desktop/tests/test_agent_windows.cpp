@@ -9,6 +9,8 @@
 #include <QTcpSocket>
 #endif
 #include <QJsonArray>
+#include <QStringList>
+#include <QUrl>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTextBrowser>
@@ -212,6 +214,204 @@ static void testRegistry()
     check(afterUserClose.value(QStringLiteral("ok")).toBool() &&
               !afterUserClose.value(QStringLiteral("open")).toBool(),
           "a window the user closed reads as closed");
+}
+
+static QString widgetError(const QJsonObject &params)
+{
+    WidgetRequest request;
+    QString error;
+    return parseWidgetRequest(params, &request, &error) ? QString() : error;
+}
+
+static QString actError(const QJsonObject &params)
+{
+    ActRequest request;
+    QString error;
+    return parseActRequest(params, &request, &error) ? QString() : error;
+}
+
+static void testWidgetAndActionParsing()
+{
+    const QString id = mintWindowId();
+    WidgetRequest widget;
+    QString error;
+    check(parseWidgetRequest(QJsonObject{{QStringLiteral("title"), QStringLiteral(" Counter ")},
+                                         {QStringLiteral("html"), QStringLiteral("<b>1</b>")},
+                                         {QStringLiteral("data"), QJsonObject{{QStringLiteral("n"), 1}}},
+                                         {QStringLiteral("width"), 300}},
+                             &widget, &error),
+          "a widget request parses");
+    check(widget.title == QLatin1String("Counter") && widget.hasData && widget.width == 300,
+          "widget fields are kept");
+    check(widgetError(QJsonObject{{QStringLiteral("html"), QStringLiteral("<p>x</p>")}}) ==
+              QLatin1String("bad_title"),
+          "a new widget needs a title");
+    check(widgetError(QJsonObject{{QStringLiteral("title"), QStringLiteral("x")}}) ==
+              QLatin1String("bad_html"),
+          "a new widget needs html");
+    check(widgetError(QJsonObject{{QStringLiteral("window_id"), id},
+                                  {QStringLiteral("data"), 5}})
+              .isEmpty(),
+          "window_id with data updates a widget");
+    check(widgetError(QJsonObject{{QStringLiteral("title"), QStringLiteral("x")},
+                                  {QStringLiteral("html"), QString(kMaxWidgetHtmlChars + 1,
+                                                                   QLatin1Char('h'))}}) ==
+              QLatin1String("bad_html"),
+          "widget html is bounded");
+    check(widgetError(QJsonObject{{QStringLiteral("window_id"), id},
+                                  {QStringLiteral("data"),
+                                   QString(kMaxWidgetDataChars + 10, QLatin1Char('d'))}}) ==
+              QLatin1String("bad_data"),
+          "widget data is bounded");
+
+    QJsonValue event;
+    check(widgetEventFromConsole(widgetEventMarker() + QStringLiteral("{\"clicked\":3}"), &event) &&
+              event.toObject().value(QStringLiteral("clicked")).toInt() == 3,
+          "a bridge console line becomes an event");
+    check(widgetEventFromConsole(widgetEventMarker() + QStringLiteral("\"done\""), &event) &&
+              event.toString() == QLatin1String("done"),
+          "scalar events are kept");
+    check(!widgetEventFromConsole(QStringLiteral("plain log"), &event), "other logs are ignored");
+    check(!widgetEventFromConsole(widgetEventMarker() + QStringLiteral("{bad"), &event),
+          "broken JSON is ignored");
+    check(widgetBridgeScript(QJsonObject{{QStringLiteral("n"), 1}})
+              .contains(QStringLiteral("console.log('%1'").arg(widgetEventMarker())),
+          "the bridge logs with the marker");
+    check(widgetDataScript(QJsonValue(2)).contains(QLatin1String("_receive(([2])[0])")),
+          "data updates call the bridge");
+    check(widgetRequestAllowed(QUrl(QStringLiteral("data:text/html,x"))) &&
+              widgetRequestAllowed(QUrl(QStringLiteral("about:blank"))) &&
+              !widgetRequestAllowed(QUrl(QStringLiteral("https://example.com/x.js"))) &&
+              !widgetRequestAllowed(QUrl(QStringLiteral("file:///etc/passwd"))),
+          "widgets load nothing from the network or disk");
+
+    ActRequest act;
+    check(parseActRequest(QJsonObject{{QStringLiteral("window_id"), id},
+                                      {QStringLiteral("action"), QStringLiteral("Click")},
+                                      {QStringLiteral("target"), QStringLiteral("  Sign   in ")}},
+                          &act, &error) &&
+              act.action == QLatin1String("click") && act.target == QLatin1String("Sign in"),
+          "a click parses");
+    check(actError(QJsonObject{{QStringLiteral("window_id"), id},
+                               {QStringLiteral("action"), QStringLiteral("click")}}) ==
+              QLatin1String("no_element"),
+          "click needs an element");
+    check(actError(QJsonObject{{QStringLiteral("window_id"), id},
+                               {QStringLiteral("action"), QStringLiteral("eval")}}) ==
+              QLatin1String("bad_action"),
+          "unknown actions are refused");
+    check(actError(QJsonObject{{QStringLiteral("window_id"), id},
+                               {QStringLiteral("action"), QStringLiteral("navigate")},
+                               {QStringLiteral("url"), QStringLiteral("file:///etc/passwd")}}) ==
+              QLatin1String("bad_url"),
+          "navigate refuses other schemes");
+    check(parseActRequest(QJsonObject{{QStringLiteral("window_id"), id},
+                                      {QStringLiteral("action"), QStringLiteral("navigate")},
+                                      {QStringLiteral("url"), QStringLiteral("localhost:3000")}},
+                          &act, &error) &&
+              act.url == QUrl(QStringLiteral("http://localhost:3000")),
+          "navigate accepts a bare local address");
+    check(actError(QJsonObject{{QStringLiteral("window_id"), id},
+                               {QStringLiteral("action"), QStringLiteral("press")}}) ==
+              QLatin1String("no_key"),
+          "press needs a key");
+    check(actError(QJsonObject{{QStringLiteral("window_id"), id},
+                               {QStringLiteral("action"), QStringLiteral("wait_for")},
+                               {QStringLiteral("selector"), QStringLiteral("#ok")},
+                               {QStringLiteral("wait_ms"), kMaxActionWaitMs + 1}}) ==
+              QLatin1String("bad_range"),
+          "waits are bounded");
+    check(actError(QJsonObject{{QStringLiteral("window_id"), QStringLiteral("nope")},
+                               {QStringLiteral("action"), QStringLiteral("reload")}}) ==
+              QLatin1String("bad_window"),
+          "actions need a window id");
+    act = ActRequest();
+    act.action = QStringLiteral("type");
+    act.target = QStringLiteral("Email");
+    act.value = QStringLiteral("a'b\"c");
+    const QString script = pageActionScript(act);
+    check(script.contains(QLatin1String("password_field")), "typing refuses password fields");
+    check(script.contains(QLatin1String("\"value\":\"a'b\\\"c\"")),
+          "action arguments are passed as JSON");
+    check(actionSummary(act) == QString::fromUtf8("typed into “Email”"), "action summary");
+}
+
+static void testSuggestionAndWidgetState()
+{
+    QWidget host;
+    Registry registry(&host);
+    QStringList answered;
+    registry.setAnswerHandler([&answered](const QString &windowId) { answered << windowId; });
+    QJsonObject ask = basic();
+    ask.insert(QStringLiteral("buttons"), QJsonArray{QStringLiteral("Start session"),
+                                                     QStringLiteral("Not now")});
+    const QString id = registry.handle(4, QString(), QString(), ShowMethod, ask)
+                           .value(QStringLiteral("window_id"))
+                           .toString();
+    registry.setKind(id, SuggestionKind);
+    registry.setExtra(id, QJsonObject{{QStringLiteral("suggestion"), QStringLiteral("offered")}});
+    const QJsonObject read = registry.handle(4, QString(), QString(), ReadMethod,
+                                             QJsonObject{{QStringLiteral("window_id"), id}});
+    check(read.value(QStringLiteral("kind")).toString() == SuggestionKind &&
+              read.value(QStringLiteral("suggestion")).toString() == QLatin1String("offered"),
+          "a suggestion window reports its state");
+    QJsonObject replace = basic();
+    replace.insert(QStringLiteral("window_id"), id);
+    check(registry.handle(4, QString(), QString(), ShowMethod, replace)
+                  .value(QStringLiteral("error"))
+                  .toString() == QLatin1String("locked"),
+          "the agent cannot rewrite a suggestion window");
+    const WindowState *state = registry.state(id);
+    QPushButton *start = nullptr;
+    if (state && state->widget)
+        for (QPushButton *button : state->widget->findChildren<QPushButton *>())
+            if (button->text() == QLatin1String("Start session"))
+                start = button;
+    check(start != nullptr, "the suggestion has a Start session button");
+    if (start)
+        start->click();
+    QApplication::processEvents();
+    check(answered == QStringList{id}, "a click reaches the answer handler");
+
+    const QString widgetId = registry.handle(4, QString(), QString(), ShowMethod, basic())
+                                 .value(QStringLiteral("window_id"))
+                                 .toString();
+    registry.setKind(widgetId, WidgetKind);
+    for (int i = 0; i < kMaxWidgetEvents + 3; ++i)
+        registry.addWidgetEvent(widgetId, QJsonValue(i));
+    const QJsonObject events = registry.handle(4, QString(), QString(), ReadMethod,
+                                               QJsonObject{{QStringLiteral("window_id"), widgetId}});
+    check(events.value(QStringLiteral("answered")).toBool() &&
+              events.value(QStringLiteral("events")).toArray().size() == kMaxWidgetEvents &&
+              events.value(QStringLiteral("events")).toArray().first().toInt() == 3 &&
+              events.value(QStringLiteral("dropped_events")).toInt() == 3,
+          "widget events are bounded and the oldest dropped");
+    const QJsonObject drained = registry.handle(
+        4, QString(), QString(), ReadMethod, QJsonObject{{QStringLiteral("window_id"), widgetId}});
+    check(drained.value(QStringLiteral("events")).toArray().isEmpty() &&
+              !drained.value(QStringLiteral("answered")).toBool(),
+          "reading a widget drains its events");
+    registry.addWidgetEvent(id, QJsonValue(1));
+    check(registry.state(id) && registry.state(id)->events.isEmpty(),
+          "only widgets collect events");
+
+    if (!embeddedBrowserAvailable()) {
+        check(registry
+                      .handle(4, QString(), QString(), WidgetMethod,
+                              QJsonObject{{QStringLiteral("title"), QStringLiteral("w")},
+                                          {QStringLiteral("html"), QStringLiteral("<p>x</p>")}})
+                      .value(QStringLiteral("error"))
+                      .toString() == QLatin1String("no_widget_engine"),
+              "without WebEngine widgets are refused");
+        bool replied = false;
+        registry.act(4, QJsonObject{{QStringLiteral("window_id"), widgetId},
+                                    {QStringLiteral("action"), QStringLiteral("reload")}},
+                     [&replied](const QJsonObject &answer) {
+                         replied = answer.value(QStringLiteral("error")).toString() ==
+                                   QLatin1String("not_browser");
+                     });
+        check(replied, "actions need a browser window");
+    }
 }
 
 static void testBrowser()
@@ -445,6 +645,8 @@ int main(int argc, char **argv)
     testRegistry();
     testBrowser();
     testCaptureParsing();
+    testWidgetAndActionParsing();
+    testSuggestionAndWidgetState();
 #ifdef FORKMESH_HAVE_WEBENGINE
     testCaptureLive();
 #endif

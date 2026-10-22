@@ -81,10 +81,15 @@ QStringList MainWindow::agentIntakeEnv(int sessionId)
                 return;
             }
             if (request.method == forkmesh::agentwindows::CaptureMethod) {
-                if (!m_agentWindows)
-                    m_agentWindows =
-                        std::make_unique<forkmesh::agentwindows::Registry>(this);
-                m_agentWindows->capture(requester, request.params, std::move(reply));
+                agentWindows()->capture(requester, request.params, std::move(reply));
+                return;
+            }
+            if (request.method == forkmesh::agentwindows::ActMethod) {
+                agentWindows()->act(requester, request.params, std::move(reply));
+                return;
+            }
+            if (request.method == forkmesh::agenthub::RunnersMethod) {
+                listRunnersForAgent(requester, std::move(reply));
                 return;
             }
             reply(handleAgentIntakeRequest(request));
@@ -107,6 +112,11 @@ QJsonObject MainWindow::handleAgentIntakeRequest(const intake::Request &request)
         return intake::unauthorizedReply(request.method);
     if (request.method.startsWith(forkmesh::agentwindows::MethodPrefix))
         return handleAgentWindowRequest(requester, request);
+    if (request.method == forkmesh::agenthub::SuggestMethod ||
+        request.method == forkmesh::agenthub::ListMethod ||
+        request.method == forkmesh::agenthub::MessageMethod ||
+        request.method == forkmesh::agenthub::NotifyMethod)
+        return handleAgentHubRequest(requester, request);
     if (request.method != intake::CreateMethod)
         return intake::errorReply(QStringLiteral("unknown_method"),
                                   QStringLiteral("Unknown method."));
@@ -131,18 +141,8 @@ QJsonObject MainWindow::handleAgentIntakeRequest(const intake::Request &request)
 QJsonObject MainWindow::handleAgentWindowRequest(int sessionId,
                                                  const intake::Request &request)
 {
-    if (!m_agentWindows)
-        m_agentWindows = std::make_unique<forkmesh::agentwindows::Registry>(this);
-    QString label;
-    if (const AgentSession *session = findAgentSession(sessionId)) {
-        label = session->issueTitle.simplified();
-        if (label.isEmpty())
-            label = session->name.simplified();
-        if (label.size() > 60)
-            label = label.left(59) + QStringLiteral("…");
-    }
-    return m_agentWindows->handle(sessionId, label, sessionWorkdir(sessionId),
-                                  request.method, request.params);
+    return agentWindows()->handle(sessionId, agentWindowLabel(sessionId),
+                                  sessionWorkdir(sessionId), request.method, request.params);
 }
 
 QJsonObject MainWindow::createAgentFromIntake(int requesterId,

@@ -231,6 +231,52 @@ static void testWindowResults()
     check(displayName(QStringLiteral("mcp__forkmesh__read_browser_page"), {}) ==
               QLatin1String("Read page"),
           "read_browser_page reads as Read page");
+
+    check(isWindowTool(QStringLiteral("mcp__forkmesh__suggest_session")) &&
+              isWindowTool(QStringLiteral("mcp__forkmesh__show_widget")) &&
+              isWindowTool(QStringLiteral("mcp__forkmesh__browser_action")),
+          "the new window tools are window tools");
+    check(displayName(QStringLiteral("mcp__forkmesh__suggest_session"), {}) ==
+              QLatin1String("Suggest session"),
+          "suggest_session has a name");
+    check(subtitle(QStringLiteral("mcp__forkmesh__suggest_session"),
+                   QJsonObject{{QStringLiteral("prompt"), QStringLiteral("Fix uploads\nmore")}}) ==
+              QLatin1String("Fix uploads"),
+          "an untitled suggestion shows its prompt's first line");
+    check(subtitle(QStringLiteral("mcp__forkmesh__browser_action"),
+                   QJsonObject{{QStringLiteral("action"), QStringLiteral("click")},
+                               {QStringLiteral("target"), QStringLiteral("Sign in")}}) ==
+              QLatin1String("click Sign in"),
+          "a browser action shows what it acts on");
+    check(displayName(QStringLiteral("mcp__forkmesh__send_agent_message"), {}) ==
+                  QLatin1String("Message agent") &&
+              subtitle(QStringLiteral("mcp__forkmesh__send_agent_message"),
+                       QJsonObject{{QStringLiteral("agent_id"), 12}}) ==
+                  QLatin1String("Agent #12") &&
+              bodyMarkdown(QStringLiteral("mcp__forkmesh__send_agent_message"),
+                           QJsonObject{{QStringLiteral("message"), QStringLiteral(" hi ")}}) ==
+                  QLatin1String("hi"),
+          "agent messages name the receiver and show the text");
+    const WindowResult offered = parseWindowResult(QStringLiteral(
+        "{\"window_id\":\"w0123456789abcdef\",\"open\":true,\"answered\":false,"
+        "\"kind\":\"suggestion\",\"suggestion\":\"offered\"}"));
+    check(windowResultSummary(offered) == QLatin1String("Asked the user to start a new session"),
+          "an offered suggestion says so");
+    const WindowResult started = parseWindowResult(QStringLiteral(
+        "{\"window_id\":\"w0123456789abcdef\",\"open\":false,\"answered\":true,"
+        "\"button\":\"Start session\",\"suggestion\":\"started\",\"session_id\":41}"));
+    check(windowResultSummary(started) == QLatin1String("The user started agent #41"),
+          "a started suggestion names the new agent");
+    const WindowResult acted = parseWindowResult(QStringLiteral(
+        "{\"window_id\":\"w0123456789abcdef\",\"kind\":\"action\",\"action\":\"click\","
+        "\"open\":true,\"title\":\"Dashboard\",\"url\":\"http://localhost:3000/\"}"));
+    check(windowResultSummary(acted) == QString::fromUtf8("Did click · Dashboard"),
+          "a browser action summarizes the page it left");
+    const WindowResult widget = parseWindowResult(QStringLiteral(
+        "{\"window_id\":\"w0123456789abcdef\",\"kind\":\"widget\",\"open\":true,"
+        "\"answered\":true,\"events\":[1,2]}"));
+    check(windowResultSummary(widget) == QString::fromUtf8("Widget open · 2 events"),
+          "a widget counts its events");
 }
 
 static QStringList iconKeys(const QString &command)

@@ -18,7 +18,7 @@ lifecycle is in [README.md](README.md); access rules in
 | iOS and Android coding agent | `FMAgents/CodingAgent.swift`, `AgentTools.kt` | 7 file and Git tools, no shell | Plan mode refuses edits; 24 turns |
 | iOS Genie and on-device chat | `FMAssistant/` | Genie tools and ForkMesh account tools | Approval on start, message, stop and delete |
 | Desktop teammates | Claude Code or Codex desktop runs | The provider's tools plus their CLIs | Teammate permissions ([access-rules.md](access-rules.md#teammates)) |
-| Any MCP client | `tools/forkmesh_mcp_server.py` | ForkMesh MCP tools | Connector token for writes, CRM and tasks; desktop socket for agents, windows and releases |
+| Any MCP client | `tools/forkmesh_mcp_server.py` | ForkMesh MCP tools | Connector token for writes, CRM, tasks, windows and agent tools; desktop socket for agents, windows, widgets, runners and releases |
 | Remote MCP client | `app/src/remote_mcp.py` at `/mcp` | 3 organization task tools | Org bot bearer scopes |
 
 ## Desktop: Claude Code runs
@@ -170,10 +170,13 @@ Agent, window and release tools need the desktop's intake socket
 | Releases | `list_releases`, `create_release`, `publish_release` | Desktop socket; 6 per 10 minutes |
 | Ledger | `record_expense` | Signed `POST /api/ledger/expenses`; the signed-in account must be an administrator with two-factor sign-in ([../finance/cfo.md](../finance/cfo.md#recording-expenses)) |
 | Email | `send_email` | Sends through the local Zoho Mail account set up with `tools/zoho_mail.py`, no confirmation step, then logs outside recipients in the CRM's Initiatives list ([../tools/zoho-mail.md](../tools/zoho-mail.md)) |
-| Windows | `show_window`, `read_window`, `close_window`, `open_browser_window`, `read_browser_page` | Desktop socket; the user can stop a page being shared |
+| Windows | `show_window`, `read_window`, `close_window`, `open_browser_window`, `read_browser_page`, `browser_action`, `show_widget`, `suggest_session` | Desktop socket; the user can stop a page being shared; widgets run sandboxed with no network; a suggested session starts only when the user presses Start session |
+| Agents and runners | `list_agents`, `send_agent_message`, `list_runners`, `notify_user` | Desktop socket; messages only reach desktop agents whose mode allows no more than the sender's; 30 messages and 10 notifications per 10 minutes |
 
 Details: [../tools/mcp-create-agent.md](../tools/mcp-create-agent.md),
 [../tools/mcp-agent-windows.md](../tools/mcp-agent-windows.md),
+[../tools/mcp-claude-code-desktop.md](../tools/mcp-claude-code-desktop.md)
+(how these map to Claude Code desktop's own tools),
 [../tools/mcp-releases.md](../tools/mcp-releases.md).
 
 ## Remote MCP
