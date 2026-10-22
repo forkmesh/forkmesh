@@ -5,6 +5,6 @@ CREATE TABLE IF NOT EXISTS chat_blocks (
 );
 
 INSERT INTO schema_meta (k, v) VALUES (
-  'schema_fingerprint:7ea1fe7cb13e1cb599a8c5f6ede34f1f947311c2e34608c648ae4389817ee147',
+  'schema_fingerprint:a2baca528d73942f6a58a0dccba59b0121d5ae9b3a1b786bf72d63fec59447b4',
   'applied'
 ) ON CONFLICT(k) DO UPDATE SET v='applied';

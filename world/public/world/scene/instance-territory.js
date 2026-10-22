@@ -591,6 +591,15 @@ export function houseFootprint(object, x, z, rotation) {
   });
 }
 
+function shownInScene(object) {
+  let node = object;
+  while (node.parent) {
+    if (node.visible === false) return false;
+    node = node.parent;
+  }
+  return node.isScene === true && node.visible !== false;
+}
+
 function makeTerrarium(THREE, territory, interactive, animated) {
   const { palette, bugs: config } = territory;
   const { width, depth, height } = TERRITORY_TERRARIUM;
@@ -667,7 +676,7 @@ function makeTerrarium(THREE, territory, interactive, animated) {
   animated.push((time) => {
     const delta = lastTime ? Math.min(0.1, Math.max(0, (time - lastTime) / 1000)) : 0;
     lastTime = time;
-    if (!delta || !group.parent) return;
+    if (!delta || !shownInScene(group)) return;
     swarm.step(delta);
   });
 
@@ -933,6 +942,7 @@ export function functions({
         root.position.z += shift.z;
         root.updateMatrix();
         root.updateMatrixWorld(true);
+        fns.moveCompactDistrictsWithin?.(root, shift.x, shift.z);
         root.traverse((part) => {
           const index = ctx.interactive.indexOf(part);
           if (index < 0) return;
@@ -958,6 +968,7 @@ export function functions({
       root.position.z -= shift.z;
       root.updateMatrix();
       root.updateMatrixWorld(true);
+      fns.moveCompactDistrictsWithin?.(root, -shift.x, -shift.z);
       parts.forEach((part) => {
         if (!ctx.interactive.includes(part)) ctx.interactive.push(part);
       });
@@ -990,6 +1001,7 @@ export function functions({
     const key = `${next.id}:${JSON.stringify(next)}`;
     const cached = visitBuilds.get(next.id);
     if (cached?.key === key) return cached;
+    if (cached?.built === built) return null;
     if (cached) disposeVisitBuild(cached);
     const parts = [];
     const entry = {
@@ -1012,6 +1024,18 @@ export function functions({
     disposeObject3D(entry.built.root);
   }
 
+  function prepareTerritoryVisit(next) {
+    if (territory || !next?.id || visiting?.id === next.id) return false;
+    const place = territoryPlace(next);
+    if (!forkmeshShiftAround(place)) return false;
+    const entry = visitBuild({ ...next, place });
+    if (!entry) return false;
+    entry.built.root.visible = false;
+    entry.built.root.userData.groundStandby = true;
+    if (entry.built.root.parent !== ctx.world) ctx.world.add(entry.built.root);
+    return true;
+  }
+
   function enterTerritoryVisit(next) {
     if (territory || !next?.id) return false;
     if (visiting?.id === next.id && built) {
@@ -1023,10 +1047,13 @@ export function functions({
     const around = forkmeshShiftAround(place);
     if (!around) return false;
     const entry = visitBuild({ ...next, place });
+    if (!entry) return false;
     visiting = next;
     current = { ...next, place };
     built = entry.built;
-    ctx.world.add(built.root);
+    built.root.visible = true;
+    built.root.userData.groundStandby = false;
+    if (built.root.parent !== ctx.world) ctx.world.add(built.root);
     entry.parts.forEach((part) => {
       if (!ctx.interactive.includes(part)) ctx.interactive.push(part);
     });
@@ -1052,7 +1079,10 @@ export function functions({
     if (territory || !visiting) return false;
     returnForkmeshWorld();
     removeInteractiveObject(ctx.interactive, built?.root);
-    built?.root.removeFromParent();
+    if (built) {
+      built.root.visible = false;
+      built.root.userData.groundStandby = true;
+    }
     hiddenByVisit.forEach((id) => fns.setWorldElementEnabled(id, true));
     hiddenByVisit = [];
     setTerritoryTiles(null);
@@ -1172,6 +1202,7 @@ export function functions({
     territoryArrival,
     updateTerritoryBugs,
     updateTerritoryVisitBugs,
+    prepareTerritoryVisit,
     enterTerritoryVisit,
     leaveTerritoryVisit,
     territoryVisitId: () => visiting?.id || "",

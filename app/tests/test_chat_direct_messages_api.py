@@ -39,7 +39,7 @@ class FakeRuntime:
         self.db.execute(
             "CREATE TABLE schema_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
         self.db.executescript(
-            (ROOT / "migrations" / "0284_chat_blocks.sql")
+            (ROOT / "migrations" / "0286_chat_blocks.sql")
             .read_text(encoding="utf-8")
         )
         self.actor = ""

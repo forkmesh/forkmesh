@@ -292,6 +292,11 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   within its radius or its bounds are in the camera frustum (with enter/exit
   margins). `updateCompactDistrictView()` runs before every render, so a
   district the camera turns to is drawn in its first on-screen frame.
+  When a territory visit moves the Office and the beach next door,
+  `moveCompactDistrictsWithin()` moves their residency centres with them and
+  re-measures their bounds. Until 2026-10-22 they were judged where they used
+  to stand, so on phone tiers (and any desktop the ladder put there) the moved
+  Office and beach blanked out while in view and stayed resident out of view.
 - **Office aquarium on demand.** The lobby reef is built in idle slices when
   the camera comes within the Office detail distance, warmed off-scene, then
   attached; it is released after `OFFICE_AQUARIUM_RELEASE_MS` (15 s) beyond
@@ -343,6 +348,12 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   (`computeWorldLoadSuggestions()`), adding `world.auditScene()` findings in
   an idle callback when the panel is visible. Capped at 400 lines; nothing
   runs per frame after load.
+- **Crash guard and scene stats.** The crash-guard beat runs for every
+  visitor and re-reads the diagnostics at most every 4 s, including the scene
+  stats, whose walk runs in idle slices. The heaviest three World
+  elements (once a minute) are counted inside the same sliced walk; they used
+  to come from one synchronous `listWorldElements()` call that blocked an
+  idle callback for up to half a second on slower machines.
 - **Visibility.** Shown to admin tickets and to anyone with Settings → Debug
   → "Show debug panel"; otherwise recorded but hidden. The panel is
   draggable, can collapse to a pill, and "Copy log" copies the summary,
@@ -706,6 +717,15 @@ them without changing page.
   hide `visiting` peers and see the visitor through their own watch socket
   instead, so nobody is drawn twice. Walking back reverses the swap. A notice
   says which world you entered or returned to.
+- **Hand-off.** The home presence turns `visiting` only once the neighbour's
+  relay has welcomed the visit socket (`onVisitAdmitted`, `admittedId` in
+  `WorldMeshLinks`). Until then, and again whenever that socket drops, moves
+  keep going to the home socket converted back to home's frame
+  (`homeFrameMovement()`), while the visit link keeps the latest move to send
+  on open. The watch link's residents stay drawn until the visit's own
+  welcome replaces them. Before 2026-10-22 the switch happened as soon as the
+  walker crossed, so for the seconds a visa and socket took (or for good, if
+  the neighbour refused the socket) the walker was drawn in neither World.
 - **Standing in an instance's hexagon.** Until 2026-10-21 stepping onto
   OWASP BLT only drew its published scene, a stand-in with a plaza, a sign,
   a house and a terrarium, and the rest of BLT's World (its members,
@@ -728,7 +748,8 @@ them without changing page.
     published scene.
   - `enterMeshWorld()` then calls the scene's `enterTerritoryVisit()`
     (`scene/instance-territory.js`): it builds the hexagon with
-    `buildInstanceTerritory()` at the town's centre, moves ForkMesh's
+    `buildInstanceTerritory()` at the town's centre (or shows the copy built
+    ahead, below), moves ForkMesh's
     scenery (`TERRITORY_NEIGHBOUR_ELEMENTS`) next door by
     `forkmeshShiftAround()`, switches off `TERRITORY_HIDDEN_ELEMENTS` (only
     those the visitor had on), walks the hexagon and ForkMesh's tiles, and
@@ -743,8 +764,16 @@ them without changing page.
     territory reports. Stepping onto ForkMesh's ground (its tiles grown to
     the road's midline, `territoryOwnerAt()`) returns home:
     `leaveTerritoryVisit()` moves the scenery back, gives back its clicks,
-    turns the hidden elements on again and keeps the built hexagon for the
-    next visit.
+    turns the hidden elements on again and keeps the built hexagon, hidden,
+    for the next visit.
+  - The hexagon is built before anyone steps in. Once the territory has
+    loaded, an idle callback calls `prepareTerritoryVisit()`, which builds it
+    and adds it to the World hidden (`userData.groundStandby`), so the GPU
+    warm-up compiles its materials and uploads its plates in idle time and the
+    crossing frame only shows it. Building, compiling and uploading it on the
+    crossing frame cost a half-second stall. A standby hexagon is skipped by
+    the ground-height walk, has no clicks, and its terrarium bugs only move
+    while it is shown in the scene.
 - **Standing in another World.** A flower neighbour runs the same town, so
   its real town is this page's town with that World's data. Single-hexagon
   neighbours are entered as their own hexagon (see above). Before,

@@ -872,7 +872,7 @@ void MainWindow::onMessage(const ChatMessage &message)
     const QString conversation = message.conversation;
     if (conversation.isEmpty())
         return;
-    if (!message.self && isBlockedChatSender(message.senderId, conversation))
+    if (isBlockedChatSender(message.senderId, conversation) && !message.self)
         return;
 
     if (message.timestampMs <=

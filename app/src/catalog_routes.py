@@ -1163,6 +1163,12 @@ async def catalog_handler(env, request):
             # push never banners a fleet of devices twice. Best effort: an
             # authorized publication is never rolled back because a ping could
             # not be filed.
+            if head_moved:
+                try:
+                    await pull_attention_moved(
+                        env, owner, record["name"], [branch])
+                except Exception:
+                    pass
             try:
                 await notify_code_push(
                     env, owner, record["name"],

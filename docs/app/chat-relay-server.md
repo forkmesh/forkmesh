@@ -67,7 +67,7 @@ copies, read and delivered notices) are not chat messages and carry no mark.
   (`400 too_many_accounts`); anything that is not a list of valid account
   names is `400 invalid_accounts`. Names need not exist, so the endpoint
   reveals nothing about which accounts do.
-- Storage: table `chat_blocks` (migration 0284), one row per account:
+- Storage: table `chat_blocks` (migration 0286), one row per account:
   `account_bi` and the list sealed in `data`. An empty list deletes the row.
   `tools/next_rekey.py` and [REKEY.md](../REKEY.md) list the table.
 - Desktops without a session sign `forkmesh-chat-blocks-list-v1\n<node>\n<ts>`

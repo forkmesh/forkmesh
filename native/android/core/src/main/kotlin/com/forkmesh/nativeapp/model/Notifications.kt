@@ -134,6 +134,7 @@ data class ForkNotification(
             "plugin_activity" -> "Package"
             "package_review" -> "Package review"
             "reaction" -> "Reaction"
+            "pull_attention" -> "Your pull request"
             "hackathon_squad", "hackathon_reward" -> "Hackathon"
             "badge" -> "Badge"
             "timer_finished" -> "Timer"

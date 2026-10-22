@@ -182,6 +182,13 @@ def _runtime(inserted, notifications, verified, receipts=None, session=""):
         "valid_node_name": lambda value: bool(value) and value.isalnum(),
         "_repo_feature_off": noop,
         "_record_pull_review": noop,
+        "pull_attention_watch": noop,
+        "pull_attention_forget": noop,
+        "pull_attention_review_posted": noop,
+        "pull_attention_claim_quick_reply": (
+            lambda *_args, **_kwargs: _async_value(True)
+        ),
+        "_pull_attention_public_owner": lambda _request, owner: owner,
         "notify_subscribers": noop,
         "subscribe_thread": noop,
         "_event_signing_repo_keys": lambda _request, owner, repo: (

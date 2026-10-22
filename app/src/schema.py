@@ -4516,9 +4516,16 @@ SCHEMA_STATEMENTS = [
         payload TEXT NOT NULL DEFAULT '',
         token_hash TEXT NOT NULL DEFAULT '',
         trusted INTEGER NOT NULL DEFAULT 0,
-        pushed_commit TEXT NOT NULL DEFAULT '')""",
+        pushed_commit TEXT NOT NULL DEFAULT '',
+        pull_number INTEGER NOT NULL DEFAULT 0,
+        approval TEXT NOT NULL DEFAULT '',
+        approved_by TEXT NOT NULL DEFAULT '',
+        base_branch TEXT NOT NULL DEFAULT '',
+        base_oid TEXT NOT NULL DEFAULT '')""",
     "CREATE INDEX IF NOT EXISTS idx_repo_action_jobs_repo "
     "ON repo_action_jobs(owner, repo, id)",
+    "CREATE INDEX IF NOT EXISTS idx_repo_action_jobs_pull "
+    "ON repo_action_jobs(owner, repo, pull_number, id) WHERE pull_number > 0",
     "CREATE INDEX IF NOT EXISTS idx_repo_action_jobs_status "
     "ON repo_action_jobs(status, id)",
     "CREATE INDEX IF NOT EXISTS idx_repo_action_jobs_token "
@@ -4549,6 +4556,13 @@ SCHEMA_STATEMENTS = [
         data TEXT NOT NULL,
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (job_id, run_index))""",
+    """CREATE TABLE IF NOT EXISTS repo_action_trusted_authors (
+        owner TEXT NOT NULL,
+        repo TEXT NOT NULL,
+        account TEXT NOT NULL,
+        added_by TEXT NOT NULL DEFAULT '',
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (owner, repo, account))""",
     """CREATE TABLE IF NOT EXISTS deploy_approvals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         request_id TEXT NOT NULL UNIQUE,
@@ -5063,6 +5077,38 @@ SCHEMA_STATEMENTS = [
         k TEXT PRIMARY KEY,
         window_start INTEGER NOT NULL,
         count INTEGER NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS pull_merge_watch (
+        repo_bi TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        base_bi TEXT NOT NULL,
+        head_bi TEXT NOT NULL DEFAULT '',
+        due_at INTEGER NOT NULL DEFAULT 0,
+        checked_at INTEGER NOT NULL DEFAULT 0,
+        trial_bi TEXT NOT NULL DEFAULT '',
+        notified_bi TEXT NOT NULL DEFAULT '',
+        updated_at INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (repo_bi, number))""",
+    "CREATE INDEX IF NOT EXISTS idx_pull_merge_watch_base "
+    "ON pull_merge_watch(repo_bi, base_bi)",
+    "CREATE INDEX IF NOT EXISTS idx_pull_merge_watch_head "
+    "ON pull_merge_watch(repo_bi, head_bi)",
+    "CREATE INDEX IF NOT EXISTS idx_pull_merge_watch_due "
+    "ON pull_merge_watch(due_at)",
+    "CREATE INDEX IF NOT EXISTS idx_pull_merge_watch_checked "
+    "ON pull_merge_watch(checked_at)",
+    "CREATE INDEX IF NOT EXISTS idx_pull_merge_watch_age "
+    "ON pull_merge_watch(updated_at)",
+    """CREATE TABLE IF NOT EXISTS pull_quick_replies (
+        repo_bi TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        reviewer_bi TEXT NOT NULL,
+        head TEXT NOT NULL,
+        reply_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (repo_bi, number, reviewer_bi, head, reply_id))""",
+    "CREATE INDEX IF NOT EXISTS idx_pull_quick_replies_age "
+    "ON pull_quick_replies(created_at)",
     """CREATE TABLE IF NOT EXISTS instance_settings (
         k TEXT PRIMARY KEY,
         doc TEXT NOT NULL,

@@ -10,7 +10,7 @@ What this adds over runner Actions:
 
 | Feature | Runner Actions | Instance Actions |
 | --- | --- | --- |
-| Triggers | push to the default branch | push (any branch, `paths`), `schedule`, `workflow_dispatch` with inputs, `issues`, `issue_comment` |
+| Triggers | push to the default branch | push (any branch, `paths`), `pull_request`, `schedule`, `workflow_dispatch` with inputs, `issues`, `issue_comment` |
 | Desktop check | queues only while the owner's desktop is offline | always queues (`ACTIONS_INSTANCE_RUNNER` set) |
 | Step options | `run`, workflow `env` | plus job/step `env`, `working-directory`, `if`, `timeout-minutes` |
 | Secrets | none | repository and organization secrets, masked in logs |
@@ -113,7 +113,7 @@ Every step gets the runner Actions environment plus:
 | Variable | Value |
 | --- | --- |
 | `FORKMESH_BEFORE` | the push's previous commit (`before`), empty when unknown |
-| `FORKMESH_EVENT`, `GITHUB_EVENT_NAME` | `push`, `schedule`, `workflow_dispatch`, `issues`, `issue_comment` |
+| `FORKMESH_EVENT`, `GITHUB_EVENT_NAME` | `push`, `pull_request`, `schedule`, `workflow_dispatch`, `issues`, `issue_comment` |
 | `FORKMESH_EVENT_PATH`, `GITHUB_EVENT_PATH` | JSON event payload file |
 | `FORKMESH_TOKEN`, `GITHUB_TOKEN` | job token for the job API (trusted jobs, and outside issue jobs scoped to their issue; see Secrets) |
 | `FORKMESH_API_URL` | instance origin, e.g. `https://git.example.org` |
@@ -258,6 +258,89 @@ entry carries `"actions": true` too. The push reaches the runner's git, not
 the app, so the app records it from the runner's report (`pushed_commit`)
 and never sees it in `core_push.record_accepted_push`; any proxy that relays
 the header must skip `push` triggers when `actions` is true.
+
+## Pull requests
+
+A workflow that lists `pull_request` in `on:` runs on every open pull
+request: same-repository branches, `pr/<account>/` contributor branches and
+patch-backed pulls from forks or the web alike. `on.pull_request.branches`
+filters the base branch.
+
+### Threat model
+
+A pull request is code from anyone. Running it must not reach secrets, write
+to the repository, change which workflow runs, or let one contributor spend
+the runner without a maintainer agreeing.
+
+| Threat | Mitigation |
+| --- | --- |
+| The run reads secrets or the job token | A `pull_request` lease never carries `secrets`, `jobToken`, `apiUrl`, a bot identity or a push grant, whatever the row's `trusted` says (`runner_actions.lease`); the Go runner drops them again before validating (`runnerActionsJob.dropPrivileges`). Rows are inserted with `trusted=0`. |
+| The pull request edits the workflow to run something else | The runner reads workflow files from the base branch commit recorded at enqueue (`baseCommit`, else the base tip), never from the head (`planJob`). The head is only the checkout. |
+| The pull request edits `.forkmesh/` (workflows, required checks) | An unapproved run carries `gateWorkflowChanges`; the runner diffs merge-base..head and, when anything under `.forkmesh/` changed, runs nothing and reports `approvalRequired: "workflows"`. The app turns the job into `waiting`. This applies to trusted authors too. |
+| Anyone can open a pull request and use the runner | Runs start only for approved authors: the repository owner, an account owning its node, organization writers, and the per-repository allowlist `repo_action_trusted_authors`. Others are queued as `waiting` (awaiting approval). |
+| An approval is reused for code the maintainer never saw | Approval names the head commit (`POST .../pulls/<n>/checks {action: "approve", head}`), answers `409 stale_head` for any other commit, and a new head cancels the older `waiting`/`queued` jobs and needs a new approval unless the author is trusted. |
+| A claimed author name | The author is the account the pull's signing key belongs to (`_git_push_account_for_pubkey`), never `authorName`. An unknown key is untrusted and cannot be allowlisted from the pull. |
+| Resource abuse | The same job sandbox as every Actions job (job user, systemd scope memory/CPU/task limits, no loopback or private networks, per-run `HOME`/`TMPDIR`, work tree removed after the run), the 90-minute lease and per-workflow `timeout-minutes` cap, one active job per workflow, at most 16 workflows per head, unapproved runs expire after 7 days. |
+
+Residual risk: an approved or trusted run executes arbitrary code as the
+runner's job user with public network access; a sandbox escape is out of scope
+here and is the same risk as any push run. Runs check out the head, not a
+merge result.
+
+### Flow
+
+1. **Sync** (`app/src/pull_actions.py`, `sync_repo`). Every minute
+   (`actions-schedule` cron, `sync_all`, only repositories whose catalog lists
+   `pull_request`) and when someone opens the pull page (at most every 15 s
+   per repository), the app reads the newest 20 pull records from
+   `forkmesh/pulls` (and per-pull `forkmesh/pull/<n>` branches), and for each
+   open pull its head: `headOid` (fetched by the runner as
+   `refs/pr/<n>/head`), or the branch tip for a `derive: branch` pull.
+2. **Enqueue** (`runner_actions.enqueue_pull`). One job per catalog workflow
+   with `pull_request`, per `(pull, head, workflow)`; `branch` is
+   `pull/<n>`, `ref` the pull ref, `before_oid`/`base_oid` the base tip,
+   `approval` `''` (trusted author) or `author`. The base branch's catalog
+   decides, so a pull request cannot add itself a trigger.
+3. **Approve.** `GET /api/repo/<o>/<r>/pulls/<n>/checks` returns the current
+   head's runs, `approval {required, reason, author, authorTrust, approvedBy}`
+   and `canApprove`. `POST` with `approve` (`head`), `trust` or `untrust`
+   (`account` must be the verified author) is for writers only. The Actions tab
+   also approves or rejects one run (`actions/control` `approve`/`reject`).
+   Every decision and refusal is audited (`actions.pull_approve`,
+   `actions.trust_author`, `actions.untrust_author`,
+   `repository.actions_control`).
+4. **Lease** adds `pullNumber`, `pullRef`, `baseRef`, `baseCommit`, `before`
+   (the base commit, so `git diff "$FORKMESH_BEFORE"...HEAD` lists the pull's
+   changes) and `gateWorkflowChanges` (true unless approved).
+5. **Run.** The runner fetches the pull ref into its cache, plans from the base
+   commit, checks out the head and sets `FORKMESH_PULL_NUMBER`,
+   `FORKMESH_BASE_REF`, `FORKMESH_BASE_SHA`, `GITHUB_BASE_REF`,
+   `GITHUB_HEAD_REF`. The event payload follows GitHub's `pull_request` shape
+   (`action`, `number`, `pull_request {number, title, head {sha, ref}, base
+   {sha, ref}, user {login}}`, `sender`).
+
+Columns (migration `0280_actions_pull_requests.sql`): `repo_action_jobs`
+`pull_number`, `approval`, `approved_by`, `base_branch`, `base_oid`, status
+`waiting`; table `repo_action_trusted_authors (owner, repo, account, added_by,
+added_at)`. Snapshot runs carry `pullNumber` (also in the public summary) and
+show a waiting job as `awaiting-approval`.
+
+On the pull request page the readiness panel and the Checks tab list each
+workflow with a status chip, duration and a link to its run; while a run
+waits, maintainers get *Approve and run* (bound to the head commit shown) and
+*Always run for @author*, the author is told nothing is needed from them, and
+an allowlisted author's Checks tab offers *Stop running automatically*. The
+Actions tab shows a runner card (running / queued / awaiting-approval counts),
+a pull request chip on pull request runs, Approve and Reject on a waiting run,
+and on a fork without workflows a pointer to the parent repository.
+
+Required checks are separate: `.forkmesh/required-checks.json` needs signed
+`forkmesh-check-v1` attestations, which instance runners do not produce yet, so
+a repository that adds it locks every merge.
+
+Tests: `app/tests/test_pull_request_actions.py`,
+`app/tests/test_pull_request_checks_frontend.py`,
+`server/runner_actions_pull_test.go`.
 
 ## Job API
 

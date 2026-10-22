@@ -2230,7 +2230,7 @@
 
   async function fetchRepoMutation(repo, operation, payload, options = {}) {
     const path = `${repoApiBase(repo)}/${operation}`;
-    const candidates = directRepoRequestCandidates(path, { mutation: true });
+    const candidates = options.relayOnly ? [] : directRepoRequestCandidates(path, { mutation: true });
     // The first definitive refusal a mirror gave (bad signature, quota, too
     // large). If the canonical route then cannot be reached at all, that answer
     // is far more useful to the submitter than a bare network failure.
@@ -5949,11 +5949,13 @@
     if (checkList) checkList.innerHTML = renderRepoPullChecks(parsed.pullChecks);
     const diffCi = $("[data-repo-diff-ci]");
     if (diffCi) diffCi.innerHTML = renderRepoDiffCiPills(parsed.pullChecks, true);
+    if (checkList) checkList.innerHTML = renderRepoPullChecks(parsed.pullChecks, repo);
     const checkCount = $("[data-repo-pull-check-count]");
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
     }
     updateRepoPullMergePanel(repo, number, parsed);
+    void hydrateRepoPullAttention(repo, number, parsed);
     window.lucide?.createIcons();
     scheduleRepoPullActivityRefresh(repo, number,
       agents.some((event) => pullAgentStatusIsActive(event.status)));
@@ -6712,6 +6714,35 @@
     }
   }
 
+  function applyRepoPullLocalEvent(repo, number, event) {
+    const detail = state.repoRecordDetail;
+    if (detail?.kind !== "pulls" || String(detail.number) !== String(number)) return;
+    const parsed = detail.parsed;
+    const conversation = [...(parsed.pullConversation || []), {
+      type: event.type,
+      state: event.state || "",
+      authorName: state.session?.nodeName || "you",
+      author: event.author || "",
+      ts: Math.floor(Date.now() / 1000),
+      body: event.body || "",
+      pending: true,
+    }];
+    parsed.pullConversation = conversation;
+    parsed.pullTimeline = buildRepoPullTimeline(
+      parsed.values || {}, conversation, parsed.pullCommits || [], parsed.pullAgents || [],
+    );
+    const list = document.querySelector("[data-repo-pull-conversation]");
+    if (list) {
+      list.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
+      list.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
+    }
+    const count = $("[data-repo-pull-timeline-count]");
+    if (count) count.textContent = formatCount(parsed.pullTimeline.length);
+    const reviewers = document.querySelector("[data-repo-pull-reviewers]");
+    if (reviewers) reviewers.innerHTML = renderPullReviewers(conversation, parsed.values?.author || "");
+    updateRepoPullMergePanel(repo, number, parsed);
+  }
+
   async function handlePullReviewSubmit(repo, form, action) {
     if (!repo || !form) return;
     if (action === "close" || action === "delete") {
@@ -6746,45 +6777,12 @@
       } else {
         result = await submitWebPullComment(repo, number, body);
       }
-      const signedEvent = result?.event || {};
-      const newEvent = {
+      applyRepoPullLocalEvent(repo, number, {
         type: isReview ? "review" : "comment",
         state: isReview ? action : "",
-        authorName: state.session?.nodeName || "you",
-        author: signedEvent.author || "",
-        ts: Math.floor(Date.now() / 1000),
+        author: result?.event?.author || "",
         body,
-        pending: true,
-      };
-      if (state.repoRecordDetail?.kind === "pulls" && String(state.repoRecordDetail.number) === String(number)) {
-        const conversation = [...(state.repoRecordDetail.parsed.pullConversation || []), newEvent];
-        state.repoRecordDetail.parsed.pullConversation = conversation;
-        const parsed = state.repoRecordDetail.parsed;
-        parsed.pullTimeline = buildRepoPullTimeline(
-          parsed.values || {}, conversation, parsed.pullCommits || [], parsed.pullAgents || [],
-        );
-        const list = form.parentElement?.querySelector("[data-repo-pull-conversation]");
-        if (list) {
-          list.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
-          list.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
-        }
-        const count = $("[data-repo-pull-timeline-count]");
-        if (count) count.textContent = formatCount(parsed.pullTimeline.length);
-        const reviewers = document.querySelector("[data-repo-pull-reviewers]");
-        if (reviewers) {
-          reviewers.innerHTML = renderPullReviewers(
-            conversation,
-            state.repoRecordDetail.parsed.values?.author || "",
-          );
-        }
-        updateRepoPullMergePanel(
-          repo,
-          number,
-          state.repoRecordDetail.parsed,
-        );
-        renderRepoRecordDevelopment();
-        if (body) void linkPullCommentIssues(repo, number, body);
-      }
+      });
       if (bodyInput) bodyInput.value = "";
       buttons.forEach((button) => { button.disabled = false; });
       setHint(isReview ? "Review sent to the maintainer's inbox for review." : "Comment sent to the maintainer's inbox for review.", "good");
@@ -7091,12 +7089,70 @@
   // Live checks come from the same attested mirror executor the Actions view
   // reads. Only runs pinned to this pull's current head commit are shown: a run
   // for an older push describes code that is no longer under review.
+  function normalizeRepoPullCheckRun(run, headOid) {
+    return {
+      id: Number(run?.id) || 0,
+      workflow: String(run?.workflow || "workflow"),
+      workflowPath: String(run?.workflowPath || ""),
+      commit: immutableGitCommit(run?.commit) || headOid,
+      ref: String(run?.ref || ""),
+      status: String(run?.status || "").toLowerCase(),
+      createdAt: Number(run?.createdAt) || 0,
+      startedAt: Number(run?.startedAt) || 0,
+      finishedAt: Number(run?.finishedAt) || 0,
+      logTail: String(run?.logTail || ""),
+    };
+  }
+
+  async function loadRepoPullRunnerChecks(repo, values, headOid) {
+    const number = Number(values?.number) || Number(state.repoRecordDetail?.number) || 0;
+    if (!Number.isInteger(number) || number <= 0) return null;
+    let payload = null;
+    try {
+      payload = await orgAgentRequest("GET", `${repoApiBase(repo)}/pulls/${number}/checks`);
+    } catch (_) {
+      return null;
+    }
+    if (payload?.ok !== true) return null;
+    const reportedHead = immutableGitCommit(payload.head);
+    const head = headOid || reportedHead;
+    const current = !reportedHead || !head || reportedHead === head;
+    const approval = payload.approval || {};
+    return {
+      available: true,
+      source: "pull",
+      number,
+      headOid: head,
+      reportedHead,
+      stale: !current,
+      configured: payload.configured !== false,
+      runs: current
+        ? (Array.isArray(payload.runs) ? payload.runs : []).map((run) => normalizeRepoPullCheckRun(run, head))
+        : [],
+      controlAvailable: payload.canApprove === true,
+      canApprove: payload.canApprove === true,
+      viewer: String(payload.viewer || ""),
+      approval: current ? {
+        required: approval.required === true,
+        reason: String(approval.reason || ""),
+        author: String(approval.author || ""),
+        authorTrust: String(approval.authorTrust || ""),
+        approvedBy: String(approval.approvedBy || ""),
+      } : { required: false, reason: "", author: "", authorTrust: "", approvedBy: "" },
+    };
+  }
+
   async function loadRepoPullChecks(repo, values, readiness) {
     const unavailable = { available: false, runs: [] };
-    if (!repo || !state.session?.sessionToken) return unavailable;
+    if (!repo) return unavailable;
     const headOid = immutableGitCommit(readiness?.headOid)
+      || immutableGitCommit(values?.headOid)
       || immutableGitCommit(values?.creationHeadOid);
-    if (!headOid) return unavailable;
+    if (dashboardOnInstance()) {
+      const runner = await loadRepoPullRunnerChecks(repo, values, headOid);
+      if (runner) return runner;
+    }
+    if (!state.session?.sessionToken || !headOid) return unavailable;
     let payload = null;
     try {
       payload = await orgAgentRequest(
@@ -7219,11 +7275,96 @@
     };
   }
 
-  function renderRepoPullChecks(checks) {
+  function repoPullCheckDuration(run) {
+    if (!run.startedAt) return "";
+    const end = run.finishedAt || (run.status === "running" ? Date.now() : 0);
+    if (!end || end < run.startedAt) return "";
+    const seconds = Math.round((end - run.startedAt) / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    return minutes < 60 ? `${minutes}m ${seconds % 60}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+
+  function repoPullCheckRunUrl(repo, run) {
+    return run.id ? `${repoLinkUrl(repo)}/actions/runs/${run.id}` : `${repoLinkUrl(repo)}/actions`;
+  }
+
+  function renderRepoPullCheckList(repo, checks, flush = false) {
+    const runs = checks?.runs || [];
+    if (!runs.length) return "";
+    return `<ul class="fm-check-list${flush ? " fm-check-list-flush" : ""}" data-repo-pull-check-list>${runs.map((run) => {
+      const meta = pullCheckStateMeta(run.status);
+      const duration = repoPullCheckDuration(run);
+      const label = run.status === "awaiting-approval" ? "awaiting approval" : meta.label;
+      return `
+        <li class="fm-check-item" data-repo-pull-check="${escapeHtml(run.status)}">
+          <i data-lucide="${meta.icon}" class="fm-check-icon ${meta.tone}${run.status === "running" ? " animate-spin" : ""}"></i>
+          <span class="fm-check-name" title="${escapeHtml(run.workflowPath || run.workflow)}">${escapeHtml(run.workflow)}</span>
+          <span class="fm-check-chip" data-state="${escapeHtml(meta.outcome)}">${escapeHtml(label)}</span>
+          ${duration ? `<span class="fm-check-time">${escapeHtml(duration)}</span>` : ""}
+          <a class="fm-check-link" href="${escapeHtml(repoPullCheckRunUrl(repo, run))}" data-dashboard-repo-tab="actions">${run.status === "awaiting-approval" || run.status === "queued" ? "View" : "Log"}</a>
+        </li>`;
+    }).join("")}</ul>`;
+  }
+
+  function repoPullCheckApprovalText(checks) {
+    const approval = checks?.approval || {};
+    if (!approval.required) return "";
+    const who = approval.author ? `@${approval.author}` : "this contributor";
+    if (approval.reason === "workflows") {
+      return checks.canApprove
+        ? `This pull request changes files under .forkmesh/. Read the changes, then approve to run the checks on ${String(checks.headOid || "").slice(0, 7)}. The workflow from the base branch runs, never the one in the pull request, without secrets or write access.`
+        : "This pull request changes files under .forkmesh/, so a maintainer has to approve before checks run.";
+    }
+    if (checks.canApprove) {
+      return `Checks have not run because ${who} is not a maintainer or a trusted contributor yet. Review the code, then approve this commit, or always run checks for ${who}. Runs never get secrets or write access.`;
+    }
+    const viewer = String(checks.viewer || "").toLowerCase();
+    if (viewer && viewer === String(approval.author || "").toLowerCase()) {
+      return "Thanks for the pull request! Checks run after a maintainer approves them for this commit; you do not need to do anything. Every new push needs a new approval until a maintainer adds you as a trusted contributor.";
+    }
+    return "Checks are waiting for a maintainer to approve running this pull request's code.";
+  }
+
+  function renderRepoPullCheckApproval(checks) {
+    const approval = checks?.approval || {};
+    if (!approval.required) return "";
+    const actions = checks.canApprove
+      ? `<div class="fm-check-approval-actions">
+          <button type="button" data-repo-pull-check-approve="${escapeHtml(checks.headOid || "")}" class="fm-btn fm-btn-sm"><i data-lucide="shield-check"></i>Approve and run</button>
+          ${approval.reason === "author" && approval.author ? `<button type="button" data-repo-pull-check-trust="${escapeHtml(approval.author)}" class="fm-btn fm-btn-sm"><i data-lucide="user-check"></i>Always run for @${escapeHtml(approval.author)}</button>` : ""}
+        </div>`
+      : "";
+    return `
+      <div class="fm-check-approval" data-repo-pull-check-approval="${escapeHtml(approval.reason || "author")}">
+        <i data-lucide="${approval.reason === "workflows" ? "file-warning" : "shield-alert"}"></i>
+        <div class="min-w-0">
+          <p class="fm-check-approval-title">${checks.canApprove ? "Approval needed to run checks" : "Waiting for a maintainer"}</p>
+          <p class="fm-check-approval-text">${escapeHtml(repoPullCheckApprovalText(checks))}</p>
+          ${actions}
+        </div>
+      </div>`;
+  }
+
+  function renderRepoPullChecks(checks, repo = state.selectedRepo) {
     if (!checks?.available) {
       return `<div class="px-4 py-3 text-sm text-muted-foreground">Live checks appear for organization members once a mirror publishes an attested Actions executor for this repository.</div>`;
     }
     const runs = checks.runs || [];
+    if (checks.source === "pull") {
+      const trust = checks.approval?.authorTrust === "allowlist" && checks.canApprove
+        ? `<p class="px-4 py-2 text-xs text-muted-foreground">Checks run automatically for @${escapeHtml(checks.approval.author)}. <button type="button" data-repo-pull-check-untrust="${escapeHtml(checks.approval.author)}" class="font-medium text-accent hover:underline">Stop running automatically</button></p>`
+        : "";
+      if (!runs.length) {
+        const text = !checks.configured
+          ? "No workflow in this repository runs on pull requests. Add pull_request to a workflow's on: list on the default branch."
+          : checks.stale
+            ? "The newest commit was just pushed; its checks are queued within a minute."
+            : `No check has been queued for ${escapeHtml(String(checks.headOid || "").slice(0, 12))} yet. Checks are picked up within a minute of a push.`;
+        return `${renderRepoPullCheckApproval(checks)}<div class="px-4 py-3 text-sm text-muted-foreground">${text}</div>`;
+      }
+      return `${renderRepoPullCheckApproval(checks)}<div class="px-4 py-1">${renderRepoPullCheckList(repo, checks, true)}</div>${trust}`;
+    }
     if (!runs.length) {
       return `<div class="px-4 py-3 text-sm text-muted-foreground">No workflow run is pinned to this pull request's current head commit ${escapeHtml(String(checks.headOid || "").slice(0, 12))}.</div>`;
     }
@@ -7339,6 +7480,66 @@
 
   const PULL_MERGE_REPIN_ERRORS = new Set(["stale_pull_metadata", "stale_base"]);
   const PULL_MERGE_RESUMABLE_ERRORS = new Set(["merge_status_pending", "merge_state_unavailable"]);
+  function renderRepoPullReadiness(repo, number, parsed) {
+    const readiness = parsed.pullReadiness;
+    // Unknown readiness renders nothing at all: an absent panel is honest,
+    // a panel claiming "up to date" from no data is not.
+    if (!readiness?.available) return "";
+    const values = parsed.values || {};
+    const baseBranch = values.base || "the base branch";
+    const update = parsed.pullUpdate || {};
+    const context = repoPullUpdateContext(
+      repo, number, values, parsed.pullMetadataCommit || "", readiness,
+    );
+    const state_ = String(update.state || "");
+    const processing = state_ === "processing";
+    const updated = state_ === "updated";
+    const behind = readiness.behind;
+    const rows = [];
+    if (!readiness.clean) {
+      const shown = readiness.conflicts.slice(0, 10);
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-destructive">Conflicts with ${escapeHtml(baseBranch)}.</strong> ${readiness.conflicts.length ? `${formatCount(readiness.conflicts.length)} file${readiness.conflicts.length === 1 ? "" : "s"} must be resolved locally: ` : ""}${shown.map((path) => `<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(path)}</span>`).join("")}${readiness.conflicts.length > shown.length ? `and ${formatCount(readiness.conflicts.length - shown.length)} more.` : ""}</p>`);
+    } else if (behind) {
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-attention">Out of date.</strong> This branch is ${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
+    } else {
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-success">Up to date.</strong> This branch already contains ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
+    }
+    if (updated) {
+      rows.push(`<p class="text-xs leading-5 text-muted-foreground">The mirror published the branch update. Normal repository sync carries it back to the source of truth.</p>`);
+    } else if (update.message) {
+      rows.push(`<p class="text-xs leading-5 text-destructive">${escapeHtml(update.message)}</p>`);
+    }
+    // The control exists only when a real, signed, exact-OID update can be
+    // dispatched right now by an actor the worker will actually authorize.
+    // Otherwise the panel reports state and offers nothing to press: a button
+    // that can only ever answer 403 is a worse answer than no button.
+    const action = context && !updated && parsed.pullMergeAuthorized === true
+      ? `<button type="button" data-repo-pull-update ${processing ? "disabled" : ""} class="fm-btn fm-btn-sm shrink-0"><i data-lucide="${processing ? "loader-circle" : "git-merge"}"${processing ? ' class="animate-spin"' : ""}></i>${processing ? "Updating branch…" : `Update branch from ${escapeHtml(baseBranch)}`}</button>`
+      : "";
+    const summary = pullChecksSummary(parsed.pullChecks);
+    const pullChecks = parsed.pullChecks || {};
+    const row = { checkList: pullChecks.source === "pull" ? pullChecks : null };
+    const approvalText = repoPullCheckApprovalText(pullChecks);
+    const checksRow = (approvalText
+      ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="text-attention">Checks.</strong> ${escapeHtml(approvalText)}</p>`
+      : summary.text
+        ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="${summary.tone === "bad" ? "text-destructive" : summary.tone === "pending" ? "text-attention" : summary.tone === "good" ? "text-success" : "text-foreground"}">Checks.</strong> ${escapeHtml(summary.text)}</p>`
+        : "")
+      + (row.checkList ? renderRepoPullCheckList(repo, row.checkList) : "")
+      + (pullChecks.approval?.required && pullChecks.canApprove
+        ? `<div class="fm-check-approval-actions"><button type="button" data-repo-pull-check-approve="${escapeHtml(pullChecks.headOid || "")}" class="fm-btn fm-btn-sm"><i data-lucide="shield-check"></i>Approve and run</button>${pullChecks.approval.reason === "author" && pullChecks.approval.author ? `<button type="button" data-repo-pull-check-trust="${escapeHtml(pullChecks.approval.author)}" class="fm-btn fm-btn-sm"><i data-lucide="user-check"></i>Always run for @${escapeHtml(pullChecks.approval.author)}</button>` : ""}</div>`
+        : "");
+    return `
+      <div data-repo-pull-readiness role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="fm-flash ${!readiness.clean ? "fm-flash-danger" : behind ? "fm-flash-warning" : "fm-flash-neutral"} flex-wrap items-center">
+        <i data-lucide="${!readiness.clean ? "git-pull-request-closed" : behind ? "git-compare-arrows" : "git-pull-request"}" class="self-start"></i>
+        <div class="grid min-w-0 flex-1 gap-1">
+          <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(readiness.headOid.slice(0, 12))} · ${formatCount(readiness.ahead)} ahead · ${formatCount(behind)} behind</span>
+          ${rows.join("")}
+          ${checksRow}
+        </div>
+        ${action}
+      </div>`;
+  }
 
   function pullMergeFailureMessage(payload) {
     const error = String(payload?.error || "");
@@ -7701,7 +7902,6 @@
     const text = String(value || "");
     return /^[A-Za-z0-9._\/@+=:,-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
   }
-
   function renderRepoPullMergeAction(repo, number, action) {
     if (action.kind === "update") {
       return `<button type="button" data-repo-pull-update ${action.busy ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${action.busy ? "loader-circle" : "git-merge"}"${action.busy ? ' class="animate-spin"' : ""}></i>${escapeHtml(action.label)}</button>`;
@@ -7769,6 +7969,7 @@
     return `
       <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
         ${rows}
+        ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
         <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
           <p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>
           ${changes}
@@ -7779,9 +7980,513 @@
 
   function updateRepoPullMergePanel(repo, number, parsed) {
     const slot = document.querySelector("[data-repo-pull-merge-slot]");
+    const banner = document.querySelector("[data-repo-pull-conflict-slot]");
+    if (banner) {
+      const html = renderRepoPullConflictBanner(repo, number, parsed);
+      if (banner.dataset.rendered !== html) {
+        banner.innerHTML = html;
+        banner.dataset.rendered = html;
+      }
+    }
     if (!slot) return;
+    const draft = slot.querySelector("[data-repo-pull-quick-reply-draft]");
+    const focused = draft && document.activeElement === draft
+      ? { start: draft.selectionStart, end: draft.selectionEnd }
+      : null;
     slot.innerHTML = renderRepoPullMergeBox(repo, number, parsed);
+    const restored = slot.querySelector("[data-repo-pull-quick-reply-draft]");
+    if (restored && focused) {
+      restored.focus();
+      restored.setSelectionRange(focused.start, focused.end);
+    }
     window.lucide?.createIcons();
+  }
+
+  const PULL_QUICK_REPLY_PATH = ".forkmesh/review-replies.json";
+  const PULL_CONTRIBUTING_PATHS = ["CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"];
+  const PULL_QUICK_REPLY_STATES = new Set(["changes_requested", "commented", "approved"]);
+  const PULL_QUICK_REPLY_WHEN = new Set(["always", "conflict", "behind", "ai_missing", "checks_failing", "contributing"]);
+  const PULL_QUICK_REPLY_MAX = 12;
+  const PULL_QUICK_REPLY_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+  const PULL_QUICK_REPLY_SENT_KEY = "forkmesh.pullQuickReplies.sent";
+  const PULL_QUICK_REPLY_SENT_MAX = 200;
+  const PULL_QUICK_REPLY_LONG_PRESS_MS = 550;
+  const PULL_REVIEWER_PERMISSIONS = new Set(["triage", "write", "maintain", "admin"]);
+  function pullShellWord(value) {
+    const text = String(value || "");
+    return /^[A-Za-z0-9._\/@+=:,-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
+  }
+  const PULL_QUICK_REPLY_DEFAULTS = Object.freeze([
+    { id: "conflict", emoji: "⚠️", label: "Merge conflict", body: "Merge conflict with {base} — please rebase or merge {base} and push again: {commands}", state: "changes_requested", when: "conflict" },
+    { id: "behind", emoji: "🔄", label: "Update branch", body: "This branch is {behind} behind {base} — please update it: {commands}", state: "changes_requested", when: "behind" },
+    { id: "checks", emoji: "🚦", label: "Fix the checks", body: "Please make the checks pass (see the Checks tab: {checks}).", state: "changes_requested", when: "checks_failing" },
+    { id: "ai-model", emoji: "🤖", label: "Name the AI model", body: "Please fill in the AI model(s) used: add a line like \"AI model: …\" (or \"AI model: none\") to the description.", state: "changes_requested", when: "ai_missing" },
+    { id: "tests", emoji: "🧪", label: "Add tests", body: "Please add tests for this change.", state: "changes_requested", when: "always" },
+    { id: "issue", emoji: "🔗", label: "Link the issue", body: "Please link the issue this fixes in the description (e.g. \"Fixes #123\").", state: "changes_requested", when: "always" },
+    { id: "split", emoji: "✂️", label: "Split it up", body: "Please split this into smaller pull requests, one change each, so each is quick to review.", state: "changes_requested", when: "always" },
+    { id: "screenshot", emoji: "📸", label: "Add a screenshot", body: "Please add a screenshot or a short recording of the change.", state: "changes_requested", when: "always" },
+    { id: "contributing", emoji: "📘", label: "Contributing guide", body: "Please follow the contributing guide: {contributing}", state: "changes_requested", when: "contributing" },
+    { id: "thanks", emoji: "🎉", label: "Looks good", body: "Thanks! Looks good.", state: "approved", when: "always" },
+  ].map((reply) => Object.freeze(reply)));
+
+  function cleanPullQuickReplyText(value, max) {
+    return String(value ?? "").replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim().slice(0, max).trim();
+  }
+
+  function normalizePullQuickReply(entry) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+    const id = String(entry.id || "").trim().toLowerCase();
+    const label = cleanPullQuickReplyText(entry.label, 40);
+    const body = cleanPullQuickReplyText(entry.body, 500);
+    if (!PULL_QUICK_REPLY_ID_RE.test(id) || !label || !body) return null;
+    const stateName = String(entry.state || "changes_requested").trim().toLowerCase();
+    const when = String(entry.when || "always").trim().toLowerCase();
+    if (!PULL_QUICK_REPLY_STATES.has(stateName) || !PULL_QUICK_REPLY_WHEN.has(when)) return null;
+    const emoji = cleanPullQuickReplyText(entry.emoji ?? entry.icon ?? "", 8);
+    return { id, label, body, state: stateName, when, emoji };
+  }
+
+  function parsePullQuickReplies(text) {
+    let value;
+    try {
+      value = JSON.parse(String(text || ""));
+    } catch (_) {
+      return null;
+    }
+    const list = Array.isArray(value) ? value : Array.isArray(value?.replies) ? value.replies : null;
+    if (!list) return null;
+    const seen = new Set();
+    const replies = [];
+    for (const entry of list) {
+      const reply = normalizePullQuickReply(entry);
+      if (!reply || seen.has(reply.id)) continue;
+      seen.add(reply.id);
+      replies.push(reply);
+      if (replies.length >= PULL_QUICK_REPLY_MAX) break;
+    }
+    return replies;
+  }
+
+  function repoPullAiDisclosureMissing(parsed) {
+    if (parsed?.repoCollabSettings?.requireAiDisclosure !== true) return false;
+    // pullAiModel (main's AI disclosure) also reads an "AI model:" line in
+    // the description, the way the disclosure chip does.
+    const stated = typeof pullAiModel === "function"
+      ? pullAiModel(parsed?.values || {}, parsed?.body || "")
+      : parsed?.values?.aiModel;
+    return !String(stated || "").trim();
+  }
+
+  function repoPullQuickReplyConditions(parsed) {
+    const readiness = parsed?.pullReadiness || {};
+    const conflict = readiness.available === true && readiness.clean !== true;
+    return {
+      always: true,
+      conflict,
+      behind: readiness.available === true && !conflict && Number(readiness.behind) > 0,
+      checks_failing: pullChecksSummary(parsed?.pullChecks || { available: false, runs: [] }).tone === "bad",
+      ai_missing: repoPullAiDisclosureMissing(parsed),
+      contributing: Boolean(parsed?.pullQuickReplies?.contributingPath),
+    };
+  }
+
+  function repoPullViewerIsAuthor(parsed) {
+    const values = parsed?.values || {};
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    const name = String(values.authorName || "").trim().toLowerCase();
+    if (me && name && me === name) return true;
+    const key = webIssueKeyPublic();
+    return Boolean(key && values.author && key === String(values.author));
+  }
+
+  function repoPullCanQuickReview(repo, parsed) {
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (!repo || !me || !parsed) return false;
+    if (String(parsed.values?.status || "open").trim().toLowerCase() !== "open") return false;
+    if (repoPullViewerIsAuthor(parsed)) return false;
+    if (parsed.pullMergeAuthorized === true || state.session?.isAdmin || sessionOwnsRepo(repo)) return true;
+    const known = repoViewerPermissions.get(repoViewerPermissionKey(repo));
+    if (known && typeof known === "object" && (known.viewerCanAdmin === true
+      || PULL_REVIEWER_PERMISSIONS.has(String(known.permission || "").toLowerCase()))) {
+      return true;
+    }
+    return (parsed.pullConversation || []).some((ev) => ev?.type === "review"
+      && String(ev.authorName || "").trim().toLowerCase() === me);
+  }
+
+  function repoPullQuickReplyHead(parsed) {
+    const readiness = parsed?.pullReadiness || {};
+    const values = parsed?.values || {};
+    return immutableGitCommit(readiness.available ? readiness.headOid : "")
+      || immutableGitCommit(values.headOid)
+      || immutableGitCommit(values.creationHeadOid);
+  }
+
+  function repoPullConflictCommands(repo, values) {
+    const base = String(values?.base || "").trim() || "main";
+    if (values?.derive === "branch") {
+      const head = pullHeadBranchRef(values) || "your-branch";
+      return ["git fetch origin", `git switch ${pullShellWord(head)}`, `git merge ${pullShellWord(`origin/${base}`)}`, "# fix the conflicted files, then", "git add -A && git commit", "git push"];
+    }
+    return [`git fetch ${pullShellWord(cloneUrl(repo))} ${pullShellWord(base)}`, "git rebase FETCH_HEAD", "# fix the conflicted files, then", "git add -A && git rebase --continue", "# and submit the pull request again"];
+  }
+
+  function repoPullQuickReplyText(template, repo, number, parsed) {
+    const values = parsed?.values || {};
+    const base = String(values.base || "").trim() || "main";
+    const head = pullHeadBranchRef(values) || "your-branch";
+    const behind = Math.max(0, Number(parsed?.pullReadiness?.behind) || 0);
+    const contributing = parsed?.pullQuickReplies?.contributingPath || "";
+    const commands = values.derive === "branch"
+      ? `\`git fetch origin && git switch ${pullShellWord(head)} && git merge ${pullShellWord(`origin/${base}`)}\`, fix any conflicts, commit and \`git push\`.`
+      : `\`git fetch ${pullShellWord(cloneUrl(repo))} ${pullShellWord(base)} && git rebase FETCH_HEAD\`, fix any conflicts and submit the pull request again.`;
+    const fields = {
+      base,
+      head,
+      number: String(number),
+      author: String(values.authorName || "").trim(),
+      behind: `${formatCount(behind)} commit${behind === 1 ? "" : "s"}`,
+      commands,
+      checks: `${publicSiteOrigin()}${repoRecordUrl(repo, "pulls", number, "checks")}`,
+      contributing: contributing ? `${publicSiteOrigin()}${repoPathUrl(repo, "blob", contributing)}` : "CONTRIBUTING.md",
+    };
+    return String(template || "")
+      .replace(/\{(base|head|number|author|behind|commands|checks|contributing)\}/g, (_, name) => fields[name])
+      .replace(/\s+/g, " ").trim();
+  }
+
+  function pullQuickReplySentKey(repo, number, head, id) {
+    return `${repoKey(repo).toLowerCase()}#${number}@${head}:${id}`;
+  }
+
+  function readPullQuickReplySent() {
+    try {
+      const value = JSON.parse(localStorage.getItem(PULL_QUICK_REPLY_SENT_KEY) || "{}");
+      return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function rememberPullQuickReplySent(repo, number, head, id) {
+    const sent = readPullQuickReplySent();
+    sent[pullQuickReplySentKey(repo, number, head, id)] = Date.now();
+    const kept = Object.entries(sent).sort((left, right) => right[1] - left[1]).slice(0, PULL_QUICK_REPLY_SENT_MAX);
+    try {
+      localStorage.setItem(PULL_QUICK_REPLY_SENT_KEY, JSON.stringify(Object.fromEntries(kept)));
+    } catch (_) {}
+  }
+
+  function repoPullQuickReplyStateLabel(stateName) {
+    return stateName === "approved" ? "Approve" : stateName === "commented" ? "Comment" : "Request changes";
+  }
+
+  function repoPullQuickReplyModel(repo, number, parsed) {
+    const config = parsed?.pullQuickReplies;
+    if (!config || !repoPullCanQuickReview(repo, parsed)) return null;
+    const conditions = repoPullQuickReplyConditions(parsed);
+    const head = repoPullQuickReplyHead(parsed);
+    const ui = parsed.pullQuickReplyUi || {};
+    const local = readPullQuickReplySent();
+    const sentHere = new Set((ui.sent || {})[head] || []);
+    const items = (config.replies || [])
+      .filter((reply) => conditions[reply.when] === true)
+      .map((reply) => ({
+        ...reply,
+        text: repoPullQuickReplyText(reply.body, repo, number, parsed),
+        sent: sentHere.has(reply.id) || Boolean(local[pullQuickReplySentKey(repo, number, head, reply.id)]),
+        sending: ui.sending === reply.id,
+      }));
+    if (!items.length) return null;
+    const editing = items.find((item) => item.id === ui.editing && !item.sent) || null;
+    return {
+      head,
+      author: String(parsed.values?.authorName || "").trim(),
+      items,
+      editing,
+      draft: editing ? (typeof ui.draft === "string" ? ui.draft : editing.text) : "",
+      busy: Boolean(ui.sending),
+      hint: ui.hint || null,
+    };
+  }
+
+  function renderRepoPullQuickReplies(repo, number, parsed) {
+    const model = repoPullQuickReplyModel(repo, number, parsed);
+    if (!model) return "";
+    const who = model.author ? `@${model.author}` : "the author";
+    const chips = model.items.map((item) => {
+      const action = repoPullQuickReplyStateLabel(item.state);
+      if (item.sent) {
+        return `<span class="fm-quick-reply" data-sent="true" data-state="${escapeHtml(item.state)}"><button type="button" disabled class="fm-quick-reply-send" aria-label="${escapeHtml(`${item.label}: sent on this commit`)}"><i data-lucide="check"></i><span>${escapeHtml(item.label)}</span><span class="fm-quick-reply-sent">Sent</span></button></span>`;
+      }
+      return `<span class="fm-quick-reply" data-state="${escapeHtml(item.state)}"><button type="button" data-repo-pull-quick-reply="${escapeHtml(item.id)}" ${model.busy ? "disabled" : ""} class="fm-quick-reply-send" title="${escapeHtml(`${action}: ${item.text}`)}" aria-label="${escapeHtml(`${action}: ${item.text}`)}">${item.sending ? '<i data-lucide="loader-circle" class="animate-spin"></i>' : item.emoji ? `<span aria-hidden="true" class="fm-quick-reply-emoji">${escapeHtml(item.emoji)}</span>` : ""}<span>${escapeHtml(item.label)}</span></button><button type="button" data-repo-pull-quick-reply-edit="${escapeHtml(item.id)}" ${model.busy ? "disabled" : ""} class="fm-quick-reply-edit" aria-label="${escapeHtml(`Edit “${item.label}” before sending`)}" title="Edit before sending"><i data-lucide="pencil"></i></button></span>`;
+    }).join("");
+    const editor = model.editing
+      ? `<form data-repo-pull-quick-reply-form="${escapeHtml(model.editing.id)}" class="fm-quick-reply-form">
+          <label class="fm-quick-reply-form-label" for="fm-quick-reply-draft">${escapeHtml(`${model.editing.emoji ? `${model.editing.emoji} ` : ""}${model.editing.label}`)} · ${escapeHtml(repoPullQuickReplyStateLabel(model.editing.state))}</label>
+          <textarea id="fm-quick-reply-draft" data-repo-pull-quick-reply-draft rows="3" maxlength="2000">${escapeHtml(model.draft)}</textarea>
+          <div class="fm-quick-reply-form-actions"><button type="button" data-repo-pull-quick-reply-cancel class="fm-btn fm-btn-sm">Cancel</button><button type="submit" ${model.busy ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="send"></i>Send</button></div>
+        </form>`
+      : "";
+    const hint = model.hint
+      ? `<p class="fm-merge-quick-hint" data-tone="${escapeHtml(model.hint.tone || "")}">${escapeHtml(model.hint.text || "")}</p>`
+      : `<p class="fm-merge-quick-hint">One tap sends a signed review and notifies ${escapeHtml(who)}: <span class="fm-quick-reply-key" data-state="changes_requested">requests changes</span>, <span class="fm-quick-reply-key" data-state="approved">approves</span>. Use the pencil, or press and hold, to edit first.</p>`;
+    return `
+        <div class="fm-merge-quick" data-repo-pull-quick-replies role="group" aria-labelledby="fm-merge-quick-title">
+          <p class="fm-merge-quick-title" id="fm-merge-quick-title"><i data-lucide="message-square-reply"></i>Quick replies to ${escapeHtml(who)}</p>
+          <div class="fm-merge-quick-list">${chips}</div>
+          ${editor}
+          <div data-repo-pull-quick-reply-hint role="status" aria-live="polite">${hint}</div>
+        </div>`;
+  }
+
+  function renderRepoPullConflictBanner(repo, number, parsed) {
+    const values = parsed?.values || {};
+    const readiness = parsed?.pullReadiness || {};
+    if (String(values.status || "open").trim().toLowerCase() !== "open") return "";
+    if (readiness.available !== true || readiness.clean === true) return "";
+    if (!repoPullViewerIsAuthor(parsed)) return "";
+    const base = String(values.base || "").trim() || "main";
+    const head = pullHeadBranchRef(values) || "your branch";
+    const commands = repoPullConflictCommands(repo, values);
+    const files = (readiness.conflicts || []).slice(0, 5);
+    const more = Math.max(0, (readiness.conflicts || []).length - files.length);
+    const lead = values.derive === "branch"
+      ? `Rebase or merge ${base} into ${head} and push again. It cannot be merged until then.`
+      : `Rebase your change onto the newest ${base} and submit it again. It cannot be merged until then.`;
+    return `
+      <section data-repo-pull-conflict-banner aria-labelledby="fm-conflict-banner-title" class="fm-flash fm-flash-danger fm-conflict-banner">
+        <i data-lucide="git-merge"></i>
+        <div class="fm-flash-body">
+          <h2 class="fm-flash-title" id="fm-conflict-banner-title">Your pull request has conflicts with ${escapeHtml(base)}</h2>
+          <p>${escapeHtml(lead)}</p>
+          ${files.length ? `<p class="fm-conflict-files">${files.map((path) => `<code>${escapeHtml(path)}</code>`).join("")}${more ? `<span>and ${formatCount(more)} more</span>` : ""}</p>` : ""}
+          <pre class="fm-conflict-commands" tabindex="0" aria-label="Commands to resolve the conflicts"><code>${escapeHtml(commands.join("\n"))}</code></pre>
+        </div>
+        <div class="fm-flash-actions"><button type="button" data-dashboard-copy="${escapeHtml(commands.filter((line) => !line.startsWith("#")).join("\n"))}" class="copy-button fm-btn fm-btn-sm"><i data-lucide="copy" class="copy-icon"></i><i data-lucide="check" class="copy-check"></i>Copy commands</button></div>
+      </section>`;
+  }
+
+  function repoPullAttentionHeaders() {
+    const headers = { accept: "application/json", "content-type": "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    return headers;
+  }
+
+  const repoPullMergeabilityReports = new Set();
+
+  function reportRepoPullMergeability(repo, number, parsed) {
+    const readiness = parsed?.pullReadiness;
+    if (!repo || repo.isPrivate || !state.session?.sessionToken || readiness?.available !== true) return;
+    if (String(parsed?.values?.status || "open").trim().toLowerCase() !== "open") return;
+    const baseOid = immutableGitCommit(readiness.baseOid);
+    const headOid = immutableGitCommit(readiness.headOid);
+    if (!baseOid || !headOid) return;
+    const key = `${repoKey(repo).toLowerCase()}#${number}@${baseOid}:${headOid}`;
+    if (repoPullMergeabilityReports.has(key)) return;
+    repoPullMergeabilityReports.add(key);
+    const values = parsed.values || {};
+    fetch(`${repoApiBase(repo)}/pulls/${encodeURIComponent(number)}/attention`, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: repoPullAttentionHeaders(),
+      body: JSON.stringify({
+        baseOid,
+        headOid,
+        clean: readiness.clean === true,
+        base: String(values.base || ""),
+        head: String(values.head || ""),
+        derive: String(values.derive || ""),
+      }),
+    }).catch(() => {});
+  }
+
+  async function loadRepoPullQuickReplyConfig(repo, parsed) {
+    const ref = immutableGitCommit(parsed?.pullReadiness?.baseOid)
+      || String(parsed?.values?.base || "").trim()
+      || repoDefaultBranch(repo);
+    const key = `${repoKey(repo).toLowerCase()}@${ref}`;
+    state.repoPullQuickReplyConfigs = state.repoPullQuickReplyConfigs || {};
+    const cached = state.repoPullQuickReplyConfigs[key];
+    if (cached) return cached;
+    let blobs = null;
+    try {
+      blobs = await fetchRepoBlobs(repo, [PULL_QUICK_REPLY_PATH, ...PULL_CONTRIBUTING_PATHS], { ref });
+    } catch (_) {
+      blobs = null;
+    }
+    const configured = blobs?.[PULL_QUICK_REPLY_PATH] ? parsePullQuickReplies(blobText(blobs[PULL_QUICK_REPLY_PATH])) : null;
+    const config = {
+      source: configured ? "repository" : "default",
+      replies: configured || PULL_QUICK_REPLY_DEFAULTS,
+      contributingPath: PULL_CONTRIBUTING_PATHS.find((path) => blobs?.[path]) || "",
+    };
+    if (blobs) state.repoPullQuickReplyConfigs[key] = config;
+    return config;
+  }
+
+  async function loadRepoPullQuickRepliesSent(repo, number, head) {
+    if (!head || !state.session?.sessionToken) return [];
+    try {
+      const response = await fetch(
+        `${repoApiBase(repo)}/pulls/${encodeURIComponent(number)}/attention?head=${encodeURIComponent(head)}`,
+        { credentials: "same-origin", cache: "no-store", headers: repoPullAttentionHeaders() },
+      );
+      const payload = await response.json().catch(() => ({}));
+      return response.ok && Array.isArray(payload?.sent) ? payload.sent.map(String) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function hydrateRepoPullAttention(repo, number, parsed) {
+    if (!repo || !parsed) return;
+    reportRepoPullMergeability(repo, number, parsed);
+    if (!repoPullCanQuickReview(repo, parsed)) return;
+    const config = await loadRepoPullQuickReplyConfig(repo, parsed);
+    if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.pullQuickReplies = config;
+    const head = repoPullQuickReplyHead(parsed);
+    const ui = parsed.pullQuickReplyUi = parsed.pullQuickReplyUi || {};
+    ui.sent = ui.sent || {};
+    if (head && !ui.sent[head]) {
+      const sent = await loadRepoPullQuickRepliesSent(repo, number, head);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      ui.sent[head] = sent;
+    }
+    updateRepoPullMergePanel(repo, number, parsed);
+  }
+
+  function setRepoPullQuickReplyUi(repo, number, changes) {
+    const detail = state.repoRecordDetail;
+    if (detail?.kind !== "pulls" || String(detail.number) !== String(number)) return null;
+    detail.parsed.pullQuickReplyUi = { ...(detail.parsed.pullQuickReplyUi || {}), ...changes };
+    updateRepoPullMergePanel(repo, number, detail.parsed);
+    return detail.parsed;
+  }
+
+  function openRepoPullQuickReplyEditor(repo, replyId) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls") return;
+    const model = repoPullQuickReplyModel(repo, detail.number, detail.parsed);
+    const item = model?.items.find((entry) => entry.id === replyId && !entry.sent);
+    if (!item || model.busy) return;
+    setRepoPullQuickReplyUi(repo, detail.number, { editing: item.id, draft: item.text, hint: null });
+    const input = document.querySelector("[data-repo-pull-quick-reply-draft]");
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }
+
+  function closeRepoPullQuickReplyEditor(repo) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls") return;
+    const id = detail.parsed.pullQuickReplyUi?.editing || "";
+    setRepoPullQuickReplyUi(repo, detail.number, { editing: "", draft: undefined });
+    if (id) document.querySelector(`[data-repo-pull-quick-reply="${CSS.escape(id)}"]`)?.focus();
+  }
+
+  function repoPullQuickReplyError(error) {
+    const code = String(error?.message || "");
+    return code === "inbox_full" ? "The maintainer's inbox is full. Try again later."
+      : code === "author_quota" ? "You've reached the submission limit for this repository."
+        : code === "event_too_large" ? "That reply is too long."
+          : code === "bad_signature" ? "Could not verify the reply's signature."
+            : code === "author_mismatch" ? "This browser's signing key belongs to another account."
+              : "Could not send the reply. Please try again.";
+  }
+
+  async function sendRepoPullQuickReply(repo, replyId, customText) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls") return;
+    const number = Number(detail.number);
+    const parsed = detail.parsed;
+    const model = repoPullQuickReplyModel(repo, number, parsed);
+    const item = model?.items.find((entry) => entry.id === replyId);
+    if (!item || item.sent || model.busy) return;
+    const body = String(customText ?? item.text).trim();
+    if (!body) {
+      setRepoPullQuickReplyUi(repo, number, { hint: { tone: "bad", text: "Write a reply before sending." } });
+      return;
+    }
+    const head = model.head;
+    setRepoPullQuickReplyUi(repo, number, { sending: item.id, hint: { tone: "", text: "Signing and sending…" } });
+    const delivery = { relayOnly: true, extra: { quickReply: { id: item.id, head } } };
+    const markSent = () => {
+      rememberPullQuickReplySent(repo, number, head, item.id);
+      const ui = parsed.pullQuickReplyUi || {};
+      const sent = { ...(ui.sent || {}) };
+      sent[head] = Array.from(new Set([...(sent[head] || []), item.id]));
+      return sent;
+    };
+    try {
+      const result = item.state === "commented"
+        ? await submitWebPullEvent(repo, number, "comment", { body }, delivery)
+        : await submitWebPullEvent(repo, number, "review", { state: item.state, body }, delivery);
+      const sent = markSent();
+      const who = model.author ? `@${model.author}` : "the author";
+      parsed.pullQuickReplyUi = {
+        ...(parsed.pullQuickReplyUi || {}),
+        sent,
+        sending: "",
+        editing: "",
+        draft: undefined,
+        hint: {
+          tone: "good",
+          text: item.state === "approved" ? `Approved and sent to ${who}.`
+            : item.state === "commented" ? `Sent to ${who}.`
+              : `Changes requested; ${who} has been notified.`,
+        },
+      };
+      applyRepoPullLocalEvent(repo, number, {
+        type: item.state === "commented" ? "comment" : "review",
+        state: item.state === "commented" ? "" : item.state,
+        author: result?.event?.author || "",
+        body,
+      });
+    } catch (error) {
+      if (String(error?.message || "") === "quick_reply_sent") {
+        parsed.pullQuickReplyUi = { ...(parsed.pullQuickReplyUi || {}), sent: markSent(), sending: "", editing: "", draft: undefined, hint: { tone: "", text: "You already sent that reply on this commit." } };
+      } else {
+        parsed.pullQuickReplyUi = { ...(parsed.pullQuickReplyUi || {}), sending: "", hint: { tone: "bad", text: repoPullQuickReplyError(error) } };
+      }
+      if (pullDetailIsCurrent(repo, number)) updateRepoPullMergePanel(repo, number, parsed);
+    }
+  }
+
+  const repoPullQuickReplyPress = { timer: 0, id: "", fired: false, x: 0, y: 0 };
+
+  function startRepoPullQuickReplyPress(repo, button, event) {
+    cancelRepoPullQuickReplyPress();
+    repoPullQuickReplyPress.id = button.dataset.repoPullQuickReply || "";
+    repoPullQuickReplyPress.fired = false;
+    repoPullQuickReplyPress.x = Number(event?.clientX) || 0;
+    repoPullQuickReplyPress.y = Number(event?.clientY) || 0;
+    repoPullQuickReplyPress.timer = window.setTimeout(() => {
+      repoPullQuickReplyPress.fired = true;
+      openRepoPullQuickReplyEditor(repo, repoPullQuickReplyPress.id);
+    }, PULL_QUICK_REPLY_LONG_PRESS_MS);
+  }
+
+  function moveRepoPullQuickReplyPress(event) {
+    if (!repoPullQuickReplyPress.timer) return;
+    const dx = (Number(event?.clientX) || 0) - repoPullQuickReplyPress.x;
+    const dy = (Number(event?.clientY) || 0) - repoPullQuickReplyPress.y;
+    if (dx * dx + dy * dy > 100) cancelRepoPullQuickReplyPress();
+  }
+
+  function cancelRepoPullQuickReplyPress() {
+    if (repoPullQuickReplyPress.timer) window.clearTimeout(repoPullQuickReplyPress.timer);
+    repoPullQuickReplyPress.timer = 0;
+  }
+
+  function consumeRepoPullQuickReplyLongPress(replyId) {
+    const fired = repoPullQuickReplyPress.fired && repoPullQuickReplyPress.id === replyId;
+    repoPullQuickReplyPress.fired = false;
+    return fired;
   }
 
   function repoPullMutationRequestId(previous) {
@@ -8064,6 +8769,24 @@
       if (button) {
         button.disabled = false;
         button.title = String(error?.message || "The run could not be restarted.");
+      }
+    }
+  }
+
+  async function handleRepoPullCheckDecision(repo, action, value, button) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls" || !value) return;
+    if (action === "approve" && !window.confirm(`Run this pull request's checks on commit ${value.slice(0, 10)}? Its code runs on the runner without secrets or write access.`)) return;
+    if (action === "trust" && !window.confirm(`Always run checks for @${value} without asking? You can stop this from the Checks tab.`)) return;
+    if (button) button.disabled = true;
+    try {
+      await orgAgentRequest("POST", `${repoApiBase(repo)}/pulls/${detail.number}/checks`,
+        action === "approve" ? { action, head: value } : { action, account: value });
+      refreshRepoPullActivity(repo, detail.number);
+    } catch (error) {
+      if (button) {
+        button.disabled = false;
+        button.title = String(error?.message || "That did not work. Try again.");
       }
     }
   }
@@ -8501,7 +9224,7 @@
       return `<span class="inline-block h-2 w-2 rounded-[2px] ${tone}"></span>`;
     }).join("");
     const recordTabs = isPulls ? `
-        <nav class="mt-6 flex min-w-0 items-end overflow-x-auto border-b border-border" aria-label="Pull request sections">
+        <nav data-repo-record-tabs class="mt-6 flex min-w-0 items-end overflow-x-auto border-b border-border" aria-label="Pull request sections">
           <button type="button" data-repo-record-tab="conversation" ${recordTabAttrs("conversation")}><i data-lucide="messages-square" class="h-4 w-4 text-muted-foreground"></i>Conversation${tabCounter("data-repo-pull-timeline-count", pullTimeline.length)}</button>
           <button type="button" data-repo-record-tab="commits" ${recordTabAttrs("commits")}><i data-lucide="git-commit-horizontal" class="h-4 w-4 text-muted-foreground"></i>Commits${tabCounter("data-repo-pull-commit-count", pullCommitCount)}</button>
           <button type="button" data-repo-record-tab="checks" ${recordTabAttrs("checks")}><i data-lucide="list-checks" class="h-4 w-4 text-muted-foreground"></i>Checks${tabCounter("data-repo-pull-check-count", pullCheckCount)}</button>
@@ -8552,6 +9275,7 @@
           </div>
           ${recordTabs}
         </header>
+        ${isPulls ? `<div data-repo-pull-conflict-slot class="fm-conflict-slot">${renderRepoPullConflictBanner(repo, number, parsed)}</div>` : ""}
         <div data-repo-record-layout class="mt-6 grid gap-8 ${activeSection === "conversation" ? "lg:grid-cols-[minmax(0,1fr)_18rem]" : "lg:grid-cols-1"}">
           <div class="${recordColumnClass}">
             <div data-repo-record-panel="conversation" class="${activeSection === "conversation" ? "" : "hidden "}grid min-w-0 gap-4">
@@ -8578,7 +9302,7 @@
               <div data-repo-record-panel="checks" class="${recordPanelClass("checks")}">
                 <section class="overflow-hidden rounded-md border border-border">
                   <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground"><i data-lucide="list-checks" class="h-4 w-4 text-muted-foreground"></i>Checks on the current head commit</div>
-                  <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks)}</div>
+                  <div data-repo-pull-checks class="divide-y divide-border">${renderRepoPullChecks(parsed.pullChecks, repo)}</div>
                 </section>
               </div>
               <div data-repo-record-panel="files" class="${recordPanelClass("files")}">${pullFilesSection}</div>
@@ -10088,6 +10812,7 @@
       loadFederatedReplies(repo, kind, number, container);
       if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
       void refreshRepoRecordDevelopment(repo, kind, number);
+      if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
       // Members watch an open pull for agent activity; signed-out visitors
       // cannot read organization sessions at all, so they get no timer.
       if (kind === "pulls" && state.session?.sessionToken) {
@@ -12993,7 +13718,7 @@
     if (!ts) return "";
     const delta = Math.max(0, Date.now() - ts);
     const minutes = Math.floor(delta / 60000);
-    if (minutes < 60) return `${Math.max(1, minutes)} minute${minutes === 1 ? "" : "s"} ago`;
+    if (minutes < 60) return `${Math.max(1, minutes)} minute${minutes <= 1 ? "" : "s"} ago`;
     const hours = Math.floor(minutes / 60);
     if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
     const days = Math.floor(hours / 24);

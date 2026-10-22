@@ -87,7 +87,7 @@ re-key keeps the record of which commits were already sent to each fork.
 
 **Token columns (`TOKEN_COLUMNS`):** `attribution_ip_hourly`, `blog_post_view_seen`, `feedback`, `note_views`, `repo_views`, `sensitive_audit_log`, `world_manual_blocks`
 
-**Emptied tables (`DROP_TABLES`):** `account_sessions`, `account_signup_intents`, `agent_guestbook_rate`, `ai_ask_rate`, `app_auth_codes`, `app_response_urls`, `app_tokens`, `catalog_rate`, `comment_extras_rate`, `comment_reaction_rate`, `contributor_invitation_rate`, `email_sends`, `host_secrets`, `link_codes`, `login_attempts`, `mail_sends`, `mail_suppressions`, `member_activity_repos`, `member_repo_activity`, `notification_email_sends`, `org_office_visits`, `organization_agent_presence`, `organization_discord_oauth_states`, `password_reset_rate`, `patreon_oauth_states`, `probe_bans`, `probe_visitors`, `recent_pushes`, `referral_click_claims`, `referral_click_seen`, `signup_rate`
+**Emptied tables (`DROP_TABLES`):** `account_sessions`, `account_signup_intents`, `agent_guestbook_rate`, `ai_ask_rate`, `app_auth_codes`, `app_response_urls`, `app_tokens`, `catalog_rate`, `comment_extras_rate`, `comment_reaction_rate`, `contributor_invitation_rate`, `email_sends`, `host_secrets`, `link_codes`, `login_attempts`, `mail_sends`, `mail_suppressions`, `member_activity_repos`, `member_repo_activity`, `notification_email_sends`, `org_office_visits`, `organization_agent_presence`, `organization_discord_oauth_states`, `password_reset_rate`, `patreon_oauth_states`, `probe_bans`, `probe_visitors`, `pull_merge_watch`, `pull_quick_replies`, `recent_pushes`, `referral_click_claims`, `referral_click_seen`, `signup_rate`
 
 **Chat envelopes (`CHAT_TABLE`):** `chat_history` (`body`).
 

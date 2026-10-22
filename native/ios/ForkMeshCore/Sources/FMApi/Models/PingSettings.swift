@@ -368,6 +368,7 @@ public struct PingSettings: Equatable, Sendable {
         PingKindGroup(key: "repositories", label: "Repositories", kinds: [
             PingKindOption(kind: "issue_opened", label: "New issues", email: true),
             PingKindOption(kind: "pull_submitted", label: "New pull requests", email: true),
+            PingKindOption(kind: "pull_attention", label: "Reviews and conflicts on your pull requests", email: true),
             PingKindOption(kind: "issue_assigned", label: "Issue assignments", email: true),
             PingKindOption(kind: "pending_inbox", label: "Inbox updates", email: true),
             PingKindOption(kind: "repo_activity", label: "Pushes and merges"),
