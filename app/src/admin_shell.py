@@ -95,6 +95,7 @@ NAV = (
         ("world-territory", "World", "grid",
          ("console", "world-territory")),
         ("home-page", "Home page", "globe", ("console", "home-page")),
+        ("privacy", "Privacy mode", "shield", ("console", "privacy")),
         ("database", "Database", "database", ("console", "database")),
     )),
 )

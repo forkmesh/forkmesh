@@ -278,6 +278,10 @@ if not isinstance(single, bool):
 if single and values["ownerType"] != "org":
     sys.exit("Setting singleOrganization needs ownerType org.")
 values["singleOrganization"] = "1" if single else "0"
+privacy_mode = c.get("privacyMode", False)
+if not isinstance(privacy_mode, bool):
+    sys.exit("Setting privacyMode must be true or false.")
+values["privacyMode"] = "1" if privacy_mode else "0"
 values["logoType"] = values["logoData"] = ""
 logo = str(c.get("logo") or "").strip()
 if logo and not update:
@@ -1257,6 +1261,7 @@ print(encode(seed), encode(public))
     echo "INSTANCE_UPSTREAM=$(upstream_page)"
     echo "INSTANCE_POWERED_BY=$CFG_poweredBy"
     echo "INSTANCE_WHITE_LABEL=${CFG_whiteLabel:-0}"
+    echo "INSTANCE_PRIVACY_MODE=${CFG_privacyMode:-0}"
     echo "INSTANCE_LOGIN_MARKER=$LOGIN_MARKER"
     echo "INSTANCE_LOGIN_DEADLINE=$login_deadline"
     echo "INSTANCE_UPDATE_REQUEST=$UPDATE_REQUEST_DIR/request"
@@ -1318,7 +1323,7 @@ import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
         "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl",
-        "webFirewall", "whiteLabel"]
+        "webFirewall", "whiteLabel", "privacyMode"]
 values = dict(zip(keys, sys.argv[1:]))
 if not values["platformUrl"]:
     del values["platformUrl"]
@@ -1328,6 +1333,7 @@ values["poweredBy"] = values["poweredBy"] == "1"
 values["whiteLabel"] = values["whiteLabel"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
 values["actions"] = values["actions"] == "1"
+values["privacyMode"] = values["privacyMode"] == "1"
 values["plugins"] = [p for p in values["plugins"].split(",") if p]
 values["installerVersion"] = sys.argv[-1]
 print(json.dumps(values, indent=2, sort_keys=True))
@@ -1335,7 +1341,7 @@ print(json.dumps(values, indent=2, sort_keys=True))
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
     "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "${CFG_webFirewall:-}" \
-    "${CFG_whiteLabel:-0}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "${CFG_whiteLabel:-0}" "${CFG_privacyMode:-0}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
@@ -1477,6 +1483,27 @@ start_app() {
   die "The app did not start. The lines above show why."
 }
 
+JOURNALD_PRIVACY="/etc/systemd/journald.conf.d/forkmesh-privacy.conf"
+JOURNALD_PRIVACY_RETENTION="3day"
+
+write_journald_privacy() {
+  local before
+  before="$(files_digest "$JOURNALD_PRIVACY")"
+  if [ "${CFG_privacyMode:-0}" = "1" ]; then
+    install -d -m 0755 "$(dirname "$JOURNALD_PRIVACY")"
+    printf '%s\n' "# managed by install-instance.sh: privacyMode keeps logs for a short time only" \
+      "[Journal]" "MaxRetentionSec=$JOURNALD_PRIVACY_RETENTION" "MaxFileSec=1day" > "$JOURNALD_PRIVACY"
+  elif [ -f "$JOURNALD_PRIVACY" ] && grep -q 'managed by install-instance.sh' "$JOURNALD_PRIVACY"; then
+    rm -f "$JOURNALD_PRIVACY"
+  fi
+  if [ "$(files_digest "$JOURNALD_PRIVACY")" != "$before" ]; then
+    systemctl restart systemd-journald >/dev/null 2>&1 || warn "systemd-journald did not restart; the log retention applies after a reboot"
+  fi
+  if [ "${CFG_privacyMode:-0}" = "1" ]; then
+    say "Privacy mode: no request logs, and the system journal keeps $JOURNALD_PRIVACY_RETENTION of lines."
+  fi
+}
+
 write_caddyfile() {
   if [ -f /etc/caddy/Caddyfile ] && ! grep -q 'managed by install-instance.sh' /etc/caddy/Caddyfile; then
     cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-forkmesh.$(date +%s)"
@@ -1490,7 +1517,7 @@ write_caddyfile() {
 # Rewritten on every update; put local changes in /etc/caddy/conf.d/*.caddy
 # (top level) or /etc/caddy/site.d/*.caddy (inside the $DOMAIN site).
 {
-	email $CFG_adminEmail
+	email $CFG_adminEmail$( [ "${CFG_privacyMode:-0}" = "1" ] && printf '\n\tlog default {\n\t\texclude http.log.access http.log.error http.handlers.reverse_proxy http.stdlib\n\t}' )
 }
 
 import /etc/caddy/conf.d/*.caddy
@@ -1923,7 +1950,7 @@ Environment=HOME=/var/lib/forkmesh
 Environment=XDG_DATA_HOME=/var/lib/forkmesh/.local/share
 Environment=TMPDIR=/var/lib/forkmesh/tmp
 Environment="FORKMESH_COMMIT_NAME=$CFG_projectName"
-Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN
+Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN$( [ "${CFG_privacyMode:-0}" = "1" ] && printf '\nEnvironment=FORKMESH_PRIVACY_MODE=1' )
 ExecStartPre=$DAEMON --config $DAEMON_CONFIG --check
 ExecStart=$DAEMON --config $DAEMON_CONFIG
 Restart=on-failure
@@ -2357,6 +2384,7 @@ activate_source
 write_settings
 setup_onion
 migrate_database
+write_journald_privacy
 start_app
 SOURCE_COMMITTED="1"
 setup_https
