@@ -20,6 +20,7 @@ struct DesktopTerminalScreen: View {
     @State private var repo: String = ""
     @State private var provider: String = "claude-code"
     @State private var input: String = ""
+    @State private var ctrl: Bool = false
     @State private var notice: FmNotice?
     @State private var confirmEnd: Bool = false
     @State private var supported: Bool?
@@ -156,7 +157,7 @@ struct DesktopTerminalScreen: View {
                 }
                 TerminalGridView(terminal: terminal)
                     .id(ObjectIdentifier(terminal))
-                TerminalKeyBar(terminal: terminal, onPaste: {
+                TerminalKeyBar(terminal: terminal, ctrl: $ctrl, onPaste: {
                     if let text = UIPasteboard.general.string, !text.isEmpty {
                         terminal.paste(text)
                     }
@@ -319,6 +320,7 @@ struct DesktopTerminalScreen: View {
                 .fmMono(size: FmType.small, color: fm.textPrimary)
                 .submitLabel(.send)
                 .onSubmit { submitLine() }
+                .terminalChords(text: $input, ctrl: $ctrl, terminal: terminal)
                 .accessibilityIdentifier("desktop-terminal-input")
             Button {
                 submitLine()
