@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ package_title }}{% endblock %}
+{% block meta %}
+{{ package_meta }}
+{% endblock %}
+{% block head %}
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/market-package.css?v=${version}" />
+    <script src="/static-page.js?v=${version}" defer></script>
+    <script src="/market-package.js?v=${version}" defer></script>
+{% endblock %}
+{% block body %}
+    <div data-forkmesh-header="simple"></div>
+
+    <main class="mp-wrap" data-market-package-page="{{ package_id }}">
+{{ package_body }}
+    </main>
+
+    <div data-forkmesh-footer="standard"></div>
+{% endblock %}

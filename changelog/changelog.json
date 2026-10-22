@@ -8,6 +8,12 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Market",
+     "items": [
+      "Every Market package has its own page on forkmesh.com, with its details, README, ratings and an install button, and its share link now opens that page."
+     ]
+    },
+    {
      "title": "Other improvements",
      "items": [
       "forkmesh.com/features lists every feature again, with a count for each section and a mark on every feature that is a Market plugin."

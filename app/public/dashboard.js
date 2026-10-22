@@ -53556,7 +53556,7 @@
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
     "agent-profiles": "/dashboard-page-agent-profiles.js?v=5f1b0cdbc981",
     "agents": "/dashboard-page-agents.js?v=8e608cb03ff4",
-    "apps": "/dashboard-page-apps.js?v=584df5307f30",
+    "apps": "/dashboard-page-apps.js?v=9e800893389a",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=1ebcd099794e",
     "challenges": "/dashboard-page-challenges.js?v=a053b54ae338",

@@ -400,6 +400,21 @@
         padding-left: 6px;
         color: var(--fx-ink);
       }
+      a.fx-tag-plugin {
+        position: relative;
+        z-index: 1;
+        text-decoration: none;
+        transition: box-shadow 0.15s ease;
+      }
+      a.fx-tag-plugin:hover {
+        box-shadow: inset 0 0 0 1px var(--fx-icon);
+        color: var(--fx-ink);
+        text-decoration: none;
+      }
+      a.fx-tag-plugin:focus-visible {
+        outline: 2px solid var(--fx-focus);
+        outline-offset: 2px;
+      }
       .fx-tag-ico {
         width: 12px;
         height: 12px;
@@ -830,7 +845,8 @@
         <p class="fx-legend">
           <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg>Plugin</span> marks a Market plugin: an optional package you install or
           remove from the <a href="/market">Market</a> on the web, desktop, or
-          phone. Some come installed; everything else is built in.
+          phone. Each tag opens that plugin's own page. Some come installed;
+          everything else is built in.
         </p>
         <div class="fx-actions">
           <a class="fx-btn fx-btn-primary" href="/signup">Join the mesh<svg class="fx-btn-ico" aria-hidden="true"><use href="#fx-chevron"/></svg></a>
@@ -1125,7 +1141,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Organizations</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/organizations"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Organizations</a>
             </div>
             <h3>Organizations</h3>
             <p>
@@ -1277,7 +1293,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-issue"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Full issue tracker</h3>
             <p>
@@ -1293,7 +1309,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-kanban"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Kanban board</h3>
             <p>
@@ -1307,7 +1323,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-flag"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Milestones with progress</h3>
             <p>
@@ -1321,7 +1337,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-up"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Burnup charts</h3>
             <p>
@@ -1336,7 +1352,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-plus-circle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Quick-add from anywhere</h3>
             <p>
@@ -1350,7 +1366,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-exchange"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Issues ↔ PRs that talk</h3>
             <p>
@@ -1393,7 +1409,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-check-circle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a>
             </div>
             <h3>Real mergeability checks</h3>
             <p>
@@ -1407,7 +1423,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chat"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a>
             </div>
             <h3>Review conversations</h3>
             <p>
@@ -1421,7 +1437,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sparkles"/></svg></span>
-              <span class="fx-tags"><span class="fx-tag">AI</span><span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</span></span>
+              <span class="fx-tags"><span class="fx-tag">AI</span><a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a></span>
             </div>
             <h3>AI code review</h3>
             <p>
@@ -1436,7 +1452,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-wand"/></svg></span>
-              <span class="fx-tags"><span class="fx-tag">AI</span><span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</span></span>
+              <span class="fx-tags"><span class="fx-tag">AI</span><a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a></span>
             </div>
             <h3>AI conflict resolution</h3>
             <p>
@@ -1451,7 +1467,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-merge"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a>
             </div>
             <h3>Merge from anywhere</h3>
             <p>
@@ -1477,7 +1493,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-branch"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Branches</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/branches"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Branches</a>
             </div>
             <h3>Branch cleanup</h3>
             <p>
@@ -1507,7 +1523,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-robot"/></svg></span>
-              <span class="fx-tags"><span class="fx-tag">Claude Code · Codex</span><span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</span></span>
+              <span class="fx-tags"><span class="fx-tag">Claude Code · Codex</span><a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a></span>
             </div>
             <h3>Assign any issue to an agent</h3>
             <p>
@@ -1522,7 +1538,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layers"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Dedicated agent worktrees</h3>
             <p>
@@ -1537,7 +1553,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lanes"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Parallel agents</h3>
             <p>
@@ -1551,7 +1567,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Resumable sessions</h3>
             <p>
@@ -1566,7 +1582,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-doc-text"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Rich live transcripts</h3>
             <p>
@@ -1581,7 +1597,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chat-question"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Agents can ask you questions</h3>
             <p>
@@ -1623,7 +1639,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-gauge"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Live usage meter</h3>
             <p>
@@ -1651,7 +1667,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Special Agents</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/special-agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Special Agents</a>
             </div>
             <h3>Special Agents</h3>
             <p>
@@ -1666,7 +1682,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-bolt"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Shortcuts</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/shortcuts"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Shortcuts</a>
             </div>
             <h3>Repository shortcuts</h3>
             <p>
@@ -1680,7 +1696,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-box"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>4 model packages</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/gemma-4"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>4 model packages</a>
             </div>
             <h3>Local and custom models</h3>
             <p>
@@ -1688,8 +1704,8 @@
               agent through Ollama on your own machine, or Nemotron 3 Ultra
               through Ollama Cloud.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Local and custom models</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/gemma-4">
+              See it in the Market<span class="fx-sr"> about Local and custom models</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
@@ -1734,7 +1750,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-server"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Runners</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/runners"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Runners</a>
             </div>
             <h3>Runners</h3>
             <p>
@@ -1749,7 +1765,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Watch</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agent-watch"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Watch</a>
             </div>
             <h3>Watch</h3>
             <p>
@@ -1757,56 +1773,56 @@
               takes, the processes it started, and the network traffic it
               makes.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Watch</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/agent-watch">
+              See it in the Market<span class="fx-sr"> about Watch</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-gauge"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Usage</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/usage"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Usage</a>
             </div>
             <h3>Usage across desktops</h3>
             <p>
               One view of every Claude Code and Codex account's usage windows
               across all your connected desktops.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Usage across desktops</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/usage">
+              See it in the Market<span class="fx-sr"> about Usage across desktops</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-bar"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Stats</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/stats"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Stats</a>
             </div>
             <h3>Stats</h3>
             <p>
               Agent runs, commits, usage, and time saved, charted on the
               desktop, iPhone, and Android.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Stats</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/stats">
+              See it in the Market<span class="fx-sr"> about Stats</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-inbox"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Inbox</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/inbox"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Inbox</a>
             </div>
             <h3>Inbox</h3>
             <p>
               Pings, mentions, review requests, and agent results waiting for
               you in one place.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Inbox</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/inbox">
+              See it in the Market<span class="fx-sr"> about Inbox</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-devices"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Desktops</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/desktops"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Desktops</a>
             </div>
             <h3>Desktops from your phone</h3>
             <p>
@@ -1820,21 +1836,21 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-network"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Hosts &amp; fleet</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/hosts"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Hosts &amp; fleet</a>
             </div>
             <h3>Hosts &amp; fleet</h3>
             <p>
               Your saved servers and runner fleet, their health, and the builds
               they run.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Hosts &amp; fleet</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/hosts">
+              See it in the Market<span class="fx-sr"> about Hosts &amp; fleet</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-doc-text"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Logs · Diagnostics</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/logs"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Logs · Diagnostics</a>
             </div>
             <h3>Logs &amp; diagnostics</h3>
             <p>
@@ -1842,8 +1858,8 @@
               hosts, plus live responsiveness, memory, network, and relay health
               for the phone.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Logs &amp; diagnostics</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/logs">
+              See it in the Market<span class="fx-sr"> about Logs &amp; diagnostics</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -1863,7 +1879,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-rocket"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Actions</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/actions"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Actions</a>
             </div>
             <h3>Actions</h3>
             <p>
@@ -1892,7 +1908,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-tag"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Releases</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/releases"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Releases</a>
             </div>
             <h3>Releases &amp; tags</h3>
             <p>
@@ -1961,7 +1977,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lanes"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Workflows</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/workflows"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Workflows</a>
             </div>
             <h3>Workflows canvas</h3>
             <p>
@@ -1969,14 +1985,14 @@
               number, list, and date steps, your own scripts, and 100
               integrations.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Workflows canvas</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/workflows">
+              See it in the Market<span class="fx-sr"> about Workflows canvas</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>13 Workflows packs</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/workflows"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>13 Workflows packs</a>
             </div>
             <h3>Integration packs</h3>
             <p>
@@ -1984,22 +2000,22 @@
               more arrive in twelve add-on packs, plus twelve ready-made example
               workflows to start from.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Integration packs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/workflows">
+              See it in the Market<span class="fx-sr"> about Integration packs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-git"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Repository Files</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/workflows-repository-files"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Repository Files</a>
             </div>
             <h3>Repository files in Workflows</h3>
             <p>
               Edit a repository's actions, shortcuts, skills, and special agents
               on the Workflows canvas, and save each change as a commit.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Repository files in Workflows</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/workflows-repository-files">
+              See it in the Market<span class="fx-sr"> about Repository files in Workflows</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -2019,7 +2035,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-map"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Code Map</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/code-map"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Code Map</a>
             </div>
             <h3>Code Map</h3>
             <p>
@@ -2027,14 +2043,14 @@
               with each file's source drawn in its cell, or as a rotatable 3D
               city.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Code Map</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/code-map">
+              See it in the Market<span class="fx-sr"> about Code Map</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-up"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Size Map</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/size-map"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Size Map</a>
             </div>
             <h3>Size Map</h3>
             <p>
@@ -2042,14 +2058,14 @@
               folder you pick, or a whole drive, with ignored files hidden or
               shown.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Size Map</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/size-map">
+              See it in the Market<span class="fx-sr"> about Size Map</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layers"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Strata</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/strata"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Strata</a>
             </div>
             <h3>Strata</h3>
             <p>
@@ -2057,14 +2073,14 @@
               instability, code rules, and technical debt with an A to E rating
               and quality gates.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Strata</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/strata">
+              See it in the Market<span class="fx-sr"> about Strata</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-heartbeat"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Ember</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/ember"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Ember</a>
             </div>
             <h3>Ember</h3>
             <p>
@@ -2072,14 +2088,14 @@
               frequency, refactoring targets, change coupling, and complexity
               trends from Git history.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Ember</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/ember">
+              See it in the Market<span class="fx-sr"> about Ember</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-network"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Synapse</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/synapse"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Synapse</a>
             </div>
             <h3>Synapse</h3>
             <p>
@@ -2087,8 +2103,8 @@
               dependencies glowing red. Follow a file's imports and importers and
               find orphans and cycles.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Synapse</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/synapse">
+              See it in the Market<span class="fx-sr"> about Synapse</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -2109,7 +2125,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lock"/></svg></span>
-              <span class="fx-tags"><span class="fx-tag">Post-quantum</span><span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</span></span>
+              <span class="fx-tags"><span class="fx-tag">Post-quantum</span><a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a></span>
             </div>
             <h3>Encrypted repo rooms</h3>
             <p>
@@ -2125,7 +2141,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-send"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a>
             </div>
             <h3>Direct messages</h3>
             <p>
@@ -2140,7 +2156,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a>
             </div>
             <h3>View-once messages</h3>
             <p>
@@ -2154,7 +2170,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-check-circle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a>
             </div>
             <h3>Stickers &amp; read receipts</h3>
             <p>
@@ -2208,7 +2224,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-camera"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Face Changer</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/face-changer"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Face Changer</a>
             </div>
             <h3>Face Changer</h3>
             <p>
@@ -2216,14 +2232,14 @@
               background, and change your voice live in the browser or the phone
               app. Video and sound stay on your device.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Face Changer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/face-changer">
+              See it in the Market<span class="fx-sr"> about Face Changer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-mic"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Voice Changer</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/voice-changer"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Voice Changer</a>
             </div>
             <h3>Voice Changer</h3>
             <p>
@@ -2231,14 +2247,14 @@
               offers your changed voice as a "ForkMesh Voice" microphone. Audio
               stays on your device.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Voice Changer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/voice-changer">
+              See it in the Market<span class="fx-sr"> about Voice Changer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chats"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Discord</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/discord"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Discord</a>
             </div>
             <h3>Discord in Chat</h3>
             <p>
@@ -2252,7 +2268,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-safe"/></svg></span>
-              <span class="fx-tags"><span class="fx-tag">AES-256-GCM</span><span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Coves</span></span>
+              <span class="fx-tags"><span class="fx-tag">AES-256-GCM</span><a class="fx-tag fx-tag-plugin" href="/market/coves"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Coves</a></span>
             </div>
             <h3>Coves</h3>
             <p>
@@ -2267,7 +2283,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chat"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Discussions</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/discussions"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Discussions</a>
             </div>
             <h3>Discussions</h3>
             <p>
@@ -2281,7 +2297,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-browser"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a>
             </div>
             <h3>Web chat</h3>
             <p>
@@ -2309,7 +2325,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-globe"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>World</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/world"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>World</a>
             </div>
             <h3>3D World</h3>
             <p>
@@ -2324,7 +2340,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-map"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>World</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/world"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>World</a>
             </div>
             <h3>Neighbouring instances</h3>
             <p>
@@ -2350,7 +2366,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>People</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/people"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>People</a>
             </div>
             <h3>People</h3>
             <p>
@@ -2358,28 +2374,28 @@
               Pick someone to see their profile, follow them, or send a
               message.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about People</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/people">
+              See it in the Market<span class="fx-sr"> about People</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-broadcast"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Network Feed</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/feed"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Network Feed</a>
             </div>
             <h3>Network Feed</h3>
             <p>
               A public ActivityPub feed of people's ForkMesh updates, plus
               verified replies and mentions from across the network.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Network Feed</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/feed">
+              See it in the Market<span class="fx-sr"> about Network Feed</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chats"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Feed</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/instance-feed"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Feed</a>
             </div>
             <h3>Instance Feed</h3>
             <p>
@@ -2387,36 +2403,36 @@
               instance, with replies, favourites, boosts, and content
               warnings.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Instance Feed</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/instance-feed">
+              See it in the Market<span class="fx-sr"> about Instance Feed</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-megaphone"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Mastodon</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/mastodon"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Mastodon</a>
             </div>
             <h3>Mastodon</h3>
             <p>
               Sign in to your own Mastodon server and manage your timeline, posts,
               profile, lists, and notifications from ForkMesh.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Mastodon</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/mastodon">
+              See it in the Market<span class="fx-sr"> about Mastodon</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-photo"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>2 board packages</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/x-banner-board"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>2 board packages</a>
             </div>
             <h3>World banner boards</h3>
             <p>
               Boards you can place in the World that show the public @forkmesh
               X feed and the r/forkmesh subreddit.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about World banner boards</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/x-banner-board">
+              See it in the Market<span class="fx-sr"> about World banner boards</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -2512,7 +2528,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-bar"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Ledger</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/ledger"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Ledger</a>
             </div>
             <h3>Ledger</h3>
             <p>
@@ -2520,8 +2536,8 @@
               every wallet in it holds, and keep your own expense and income
               records beside it.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Ledger</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/ledger">
+              See it in the Market<span class="fx-sr"> about Ledger</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -2600,7 +2616,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-camera"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Capture</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/capture"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Capture</a>
             </div>
             <h3>Capture</h3>
             <p>
@@ -2702,57 +2718,57 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Tour</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/tour"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Tour</a>
             </div>
             <h3>Tour</h3>
             <p>
               A first-run welcome and a guided tour of every workspace,
               replayable from Tour in the rail.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Tour</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/tour">
+              See it in the Market<span class="fx-sr"> about Tour</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-bolt"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Timers</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/timers"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Timers</a>
             </div>
             <h3>Timers</h3>
             <p>
               A little clock in the top bar for timers, countdowns such as "25m
               standup", and alarms, each surviving a restart.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Timers</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/timers">
+              See it in the Market<span class="fx-sr"> about Timers</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sliders"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Winamp Classic</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/winamp"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Winamp Classic</a>
             </div>
             <h3>Winamp Classic theme</h3>
             <p>
               A compact graphite, neon-green, and brushed-metal desktop skin
               inspired by classic Winamp.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Winamp Classic theme</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/winamp">
+              See it in the Market<span class="fx-sr"> about Winamp Classic theme</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-code"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>VSCodium</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/vscodium"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>VSCodium</a>
             </div>
             <h3>VSCodium button</h3>
             <p>
               Adds a Codium button to the branch diff header that opens the
               branch's local checkout in VSCodium.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about VSCodium button</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/vscodium">
+              See it in the Market<span class="fx-sr"> about VSCodium button</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -2772,7 +2788,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-safe"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Password Vault</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/vault"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Password Vault</a>
             </div>
             <h3>Password Vault</h3>
             <p>
@@ -2780,14 +2796,14 @@
               Share a login under post-quantum keys, and fill it in the browser
               extension and in apps on your phone.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Password Vault</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/vault">
+              See it in the Market<span class="fx-sr"> about Password Vault</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-browser"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Browser Extension</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/browser-extension"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Browser Extension</a>
             </div>
             <h3>Browser Extension</h3>
             <p>
@@ -2795,14 +2811,14 @@
               links Gmail, Zoho Mail, and Mastodon conversations to your
               contacts.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Browser Extension</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/browser-extension">
+              See it in the Market<span class="fx-sr"> about Browser Extension</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-doc-text"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Files</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/files"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Files</a>
             </div>
             <h3>Files</h3>
             <p>
@@ -2810,14 +2826,14 @@
               device's files and network (SMB) shares: browse, open, edit, copy,
               move, and more.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Files</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/files">
+              See it in the Market<span class="fx-sr"> about Files</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lock"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Secure Drive</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/secure-drive"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Secure Drive</a>
             </div>
             <h3>Secure Drive</h3>
             <p>
@@ -2825,14 +2841,14 @@
               spreadsheets, drawings, and files, their versions, and a signed
               access log. Only the devices you approve hold the keys.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Secure Drive</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/secure-drive">
+              See it in the Market<span class="fx-sr"> about Secure Drive</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-signpost"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>OpenWrt Router</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/openwrt"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>OpenWrt Router</a>
             </div>
             <h3>OpenWrt Router</h3>
             <p>
@@ -2840,14 +2856,14 @@
               internet and LAN, Wi-Fi, devices, port forwards, storage, packages,
               and firmware.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about OpenWrt Router</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/openwrt">
+              See it in the Market<span class="fx-sr"> about OpenWrt Router</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-network"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>NEXUS</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/nexus"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>NEXUS</a>
             </div>
             <h3>NEXUS</h3>
             <p>
@@ -2855,14 +2871,14 @@
               up DNS, and check web servers' TLS and security headers, on
               networks you own or may test.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about NEXUS</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/nexus">
+              See it in the Market<span class="fx-sr"> about NEXUS</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-shield-check"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Security</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/computer-security"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Security</a>
             </div>
             <h3>Security checkup</h3>
             <p>
@@ -2870,14 +2886,14 @@
               ports, accounts, secrets, SSH, and more — each explained, many
               fixable with one confirmed click.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Security checkup</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/computer-security">
+              See it in the Market<span class="fx-sr"> about Security checkup</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-phone"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Phone Security</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/phone-security"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Phone Security</a>
             </div>
             <h3>Phone Security</h3>
             <p>
@@ -2885,64 +2901,64 @@
               signs, injected code, updates, proxies, and what ForkMesh can
               access.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Phone Security</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/phone-security">
+              See it in the Market<span class="fx-sr"> about Phone Security</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-database"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Backups</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/backups"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Backups</a>
             </div>
             <h3>Backups</h3>
             <p>
               Every backup ForkMesh keeps on this computer on one page. Label,
               verify, copy, restore, or delete them.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Backups</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/backups">
+              See it in the Market<span class="fx-sr"> about Backups</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-box"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Disk Cleanup</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/cleanup"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Disk Cleanup</a>
             </div>
             <h3>Disk Cleanup</h3>
             <p>
               See what Claude Code, Codex, and agent runs left on disk, what each
               item belongs to, and delete what nothing uses.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Disk Cleanup</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/cleanup">
+              See it in the Market<span class="fx-sr"> about Disk Cleanup</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-broadcast"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Glasses Alert</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/glasses-alert"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Glasses Alert</a>
             </div>
             <h3>Glasses Alert</h3>
             <p>
               Your phone scans Bluetooth and rings an alarm, even on silent, when
               someone nearby wears Ray-Ban Meta or Oakley Meta glasses.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Glasses Alert</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/glasses-alert">
+              See it in the Market<span class="fx-sr"> about Glasses Alert</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Eye Control</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/eye-control"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Eye Control</a>
             </div>
             <h3>Eye Control</h3>
             <p>
               Experimental: steer a cursor around the iPhone app with your eyes
               and blink firmly to tap. Camera frames stay on the phone.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Eye Control</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/eye-control">
+              See it in the Market<span class="fx-sr"> about Eye Control</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -2962,49 +2978,49 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-doc-text"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Notes</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/notes"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Notes</a>
             </div>
             <h3>Notes</h3>
             <p>
               Encrypted Markdown notes you can edit together live, publish
               selectively, and link to repository conversations.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Notes</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/notes">
+              See it in the Market<span class="fx-sr"> about Notes</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-clipboard-check"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Tasks</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/tasks"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Tasks</a>
             </div>
             <h3>Tasks</h3>
             <p>
               Plan, assign, hand off, and review organization work across
               people, agents, the desktop, and the office board.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Tasks</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/tasks">
+              See it in the Market<span class="fx-sr"> about Tasks</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-grid"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Calendar</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/calendar"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Calendar</a>
             </div>
             <h3>Calendar</h3>
             <p>
               Plan private personal and organization events alongside repository
               commits and merges.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Calendar</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/calendar">
+              See it in the Market<span class="fx-sr"> about Calendar</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-id-card"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>CRM</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/crm"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>CRM</a>
             </div>
             <h3>CRM</h3>
             <p>
@@ -3012,14 +3028,14 @@
               their accounts' latest posts, tracked links, and linked email and
               Mastodon threads.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about CRM</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/crm">
+              See it in the Market<span class="fx-sr"> about CRM</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-megaphone"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Marketing</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/marketing"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Marketing</a>
             </div>
             <h3>Marketing</h3>
             <p>
@@ -3027,78 +3043,78 @@
               campaigns planned with the Marketing agent, ads, and posting to
               X.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Marketing</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/marketing">
+              See it in the Market<span class="fx-sr"> about Marketing</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-up"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Analytics</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/analytics"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Analytics</a>
             </div>
             <h3>Analytics</h3>
             <p>
               First-party product analytics: events, funnels, cohorts, session
               recordings, heatmaps, flags, experiments, and surveys.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Analytics</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/analytics">
+              See it in the Market<span class="fx-sr"> about Analytics</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-flag"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Competitor Watch</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/competitor"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Competitor Watch</a>
             </div>
             <h3>Competitor Watch</h3>
             <p>
               An organization-private watchlist of competitors, their
               positioning, strengths, and weaknesses.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Competitor Watch</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/competitor">
+              See it in the Market<span class="fx-sr"> about Competitor Watch</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-phone"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>App Store Status</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/app-store-status"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>App Store Status</a>
             </div>
             <h3>App Store Status</h3>
             <p>
               Your iOS app in App Store Connect: App Review state, downloads,
               TestFlight builds, tester feedback, and customer reviews.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about App Store Status</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/app-store-status">
+              See it in the Market<span class="fx-sr"> about App Store Status</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-bolt"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Sentry</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/sentry"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Sentry</a>
             </div>
             <h3>Sentry</h3>
             <p>
               Connect a Sentry organization and see unresolved errors grouped by
               issue, project, and level.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Sentry</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/sentry">
+              See it in the Market<span class="fx-sr"> about Sentry</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-book"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>RSS Reader</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/rss-reader"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>RSS Reader</a>
             </div>
             <h3>RSS Reader</h3>
             <p>
               An RSS, Atom, and JSON Feed reader that checks feeds from your own
               device, with smart feeds, folders, stars, and OPML.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about RSS Reader</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/rss-reader">
+              See it in the Market<span class="fx-sr"> about RSS Reader</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -3118,7 +3134,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-bar"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Calorie Counter</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/calories"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Calorie Counter</a>
             </div>
             <h3>Calorie Counter</h3>
             <p>
@@ -3126,148 +3142,148 @@
               barcode scanning, goals, and charts, synced across web, desktop,
               and mobile.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Calorie Counter</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/calories">
+              See it in the Market<span class="fx-sr"> about Calorie Counter</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-navigation"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pedometer</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/steps"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pedometer</a>
             </div>
             <h3>Pedometer</h3>
             <p>
               Counts your steps on the iPhone through Apple Health and shows
               daily steps, distance, goals, and streaks everywhere.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Pedometer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/steps">
+              See it in the Market<span class="fx-sr"> about Pedometer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-cloud-rain"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Water Intake</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/water"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Water Intake</a>
             </div>
             <h3>Water Intake</h3>
             <p>
               Log the water and drinks you have each day, keep a daily goal and
               streak, and share every glass with Apple Health.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Water Intake</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/water">
+              See it in the Market<span class="fx-sr"> about Water Intake</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layers"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Sleep</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/sleep"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Sleep</a>
             </div>
             <h3>Sleep</h3>
             <p>
               Counts the time your iPhone lies still by your bed as sleep, and
               shows your nights, bedtime, and sleep debt.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Sleep</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/sleep">
+              See it in the Market<span class="fx-sr"> about Sleep</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-check-circle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Sugar Break</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/sugar-break"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Sugar Break</a>
             </div>
             <h3>Sugar Break</h3>
             <p>
               Take a break from sugar for as long as you choose, tap +1 each time
               you skip it, and watch your streak grow.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Sugar Break</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/sugar-break">
+              See it in the Market<span class="fx-sr"> about Sugar Break</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Stretch Break</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/stretch"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Stretch Break</a>
             </div>
             <h3>Stretch Break</h3>
             <p>
               A guided stretch for your back and posture after a day at the
               computer, with a voice and an example person to follow.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Stretch Break</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/stretch">
+              See it in the Market<span class="fx-sr"> about Stretch Break</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-gift"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Food Guide</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/food-guide"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Food Guide</a>
             </div>
             <h3>Food Guide</h3>
             <p>
               Breakfast, lunch, and dinner ideas on iPhone from healthy recipes,
               picked for your calorie budget and what you're short of.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Food Guide</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/food-guide">
+              See it in the Market<span class="fx-sr"> about Food Guide</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Video Mix DJ Studio</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/video-mix-dj-studio"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Video Mix DJ Studio</a>
             </div>
             <h3>Video Mix DJ Studio</h3>
             <p>
               Mix two YouTube decks with turntables, crossfader, cues, loops, and
               sampler pads, and jam with friends who share the decks.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Video Mix DJ Studio</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/video-mix-dj-studio">
+              See it in the Market<span class="fx-sr"> about Video Mix DJ Studio</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-mic"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Speech Playground</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/speech"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Speech Playground</a>
             </div>
             <h3>Speech Playground</h3>
             <p>
               Type anything and hear it in Apple's most natural voices, or your
               own Personal Voice, on iPhone, and save it as audio.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Speech Playground</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/speech">
+              See it in the Market<span class="fx-sr"> about Speech Playground</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-camera"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Spider Room</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/spider-room"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Spider Room</a>
             </div>
             <h3>Spider Room</h3>
             <p>
               The Genie spider in your room in augmented reality on the iPhone:
               it climbs walls, naps on seats, and spins webs.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Spider Room</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/spider-room">
+              See it in the Market<span class="fx-sr"> about Spider Room</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-robot"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Aquarium</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/aquarium"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Aquarium</a>
             </div>
             <h3>Aquarium</h3>
             <p>
               Your agents become fish, shaped by their status, changed files, and
               conflicts, swimming on the desktop and over the iPhone app.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about Aquarium</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/aquarium">
+              See it in the Market<span class="fx-sr"> about Aquarium</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -3303,15 +3319,15 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sparkles"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>On-device AI</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/on-device-ai"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>On-device AI</a>
             </div>
             <h3>On-device AI</h3>
             <p>
               Download a small model to your phone and chat with it offline;
               nothing leaves the device.
             </p>
-            <a class="fx-more" href="/market">
-              Find it in the Market<span class="fx-sr"> about On-device AI</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/on-device-ai">
+              See it in the Market<span class="fx-sr"> about On-device AI</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
@@ -3384,7 +3400,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>ForkMesh for VS Code</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/forkmesh-ide"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>ForkMesh for VS Code</a>
             </div>
             <h3>VS Code extension</h3>
             <p>
@@ -3398,7 +3414,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-book"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Docs</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/docs"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Docs</a>
             </div>
             <h3>Docs with search</h3>
             <p>
@@ -3412,7 +3428,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-heartbeat"/></svg></span>
-              <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Status Page</span>
+              <a class="fx-tag fx-tag-plugin" href="/market/status-page"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Status Page</a>
             </div>
             <h3>Status Page</h3>
             <p>
