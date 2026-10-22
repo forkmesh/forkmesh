@@ -1065,13 +1065,17 @@ giving visitors its lobby and rooftop. Pieces that would show the
 instance's own data inside ForkMesh's town stay off
 (`TERRITORY_HIDDEN_ELEMENTS`).
 
-**What ForkMesh's World draws.** forkmesh.com draws the instance hexagon as
-it is laid out here from `GET /api/world/neighbour-scene`
+**What ForkMesh's World draws.** From a distance forkmesh.com draws the
+instance hexagon from `GET /api/world/neighbour-scene`
 (`app/src/instance_world_scene.py`: ground, plaza, sign, lamps, houses with
-their links and the terrarium with up to 32 bugs and their favicons), and a
-ForkMesh walker steps onto it without a reload: their World opens a visit
-socket to this instance's relay with a visa, and they appear here as
-`name@world.forkmesh.com`.
+their links and the terrarium with up to 32 bugs and their favicons). A
+ForkMesh walker who steps onto it, without a reload, stands in this World as
+it draws itself: the page builds the hexagon with the same code from this
+instance's `/api/instance` settings, moves ForkMesh's town next door, and
+reads the Members Circle, repository portals and other town content from
+this instance ([world/README.md](world/README.md), Standing in an instance's
+hexagon). Their World opens a visit socket to this instance's relay with a
+visa, and they appear here as `name@world.forkmesh.com`.
 
 **Crossing the road.** `checkTerritoryCrossing()` runs after every walking
 step: when the avatar's step enters the land of a neighbouring tile

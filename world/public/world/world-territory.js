@@ -317,6 +317,52 @@ export function territoryFromInstance(payload, mesh = null) {
   };
 }
 
+function neighbourSceneBugs(scene, icon) {
+  const terrarium = (Array.isArray(scene?.objects) ? scene.objects : [])
+    .find((item) => item?.type === "terrarium");
+  const seen = new Set();
+  return (Array.isArray(terrarium?.bugs) ? terrarium.bugs : [])
+    .map((item) => {
+      const name = text(item?.label, 60);
+      const domain = territoryDomain(name) || name.toLowerCase();
+      if (!domain || seen.has(domain)) return null;
+      seen.add(domain);
+      return {
+        domain,
+        name: name || domain,
+        count: 0,
+        url: territoryLinkURL(item?.url),
+        favicon: icon(item?.icon) || "",
+      };
+    })
+    .filter(Boolean)
+    .slice(0, TERRITORY_BUG_LIMIT);
+}
+
+export function territoryForNeighbour(world, payload, scene = null, icon = () => "") {
+  const base = territoryFromInstance(payload);
+  const id = String(world?.id || "");
+  const slot = territorySlot(world?.slot);
+  if (!base || !/^[0-9a-f]{32}$/.test(id) || world?.shape !== "hex" || slot < 0 || slot >= 5) {
+    return null;
+  }
+  let logo = "";
+  try {
+    logo = String(world.logo || "") ||
+      (base.logo === "/assets/logo.svg" ? "" : icon(new URL(base.logo, world.world).href) || "");
+  } catch (_) {}
+  return {
+    ...base,
+    id,
+    host: String(world.host || ""),
+    logo,
+    slot,
+    listed: true,
+    petal: slot + 1,
+    visitBugs: base.bugs ? neighbourSceneBugs(scene, icon) : [],
+  };
+}
+
 export function territoryDisabledElements(saved = [], territory = null) {
   const list = Array.isArray(saved) ? saved : [];
   if (!territory) return list;

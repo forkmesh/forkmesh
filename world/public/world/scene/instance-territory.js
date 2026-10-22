@@ -17,7 +17,7 @@ import {
   setTerritoryTiles,
   territoryWalkActive,
 } from "./movement.js";
-import { setShadows } from "./object-utils.js";
+import { disposeObject3D, removeInteractiveObject, setShadows } from "./object-utils.js";
 import { OFFICE_AVATAR_RADIUS } from "../world-office-tower.js";
 import { createBugSwarm, mergeParts } from "./territory-bugs.js";
 import {
@@ -37,7 +37,11 @@ import {
   territoryFootprint,
 } from "./territory-geometry.js";
 import { roundedHexagonGeometry } from "./town.js";
-import { TERRITORY_NEIGHBOUR_ELEMENTS, TERRITORY_PLAZA } from "../world-territory.js";
+import {
+  TERRITORY_HIDDEN_ELEMENTS,
+  TERRITORY_NEIGHBOUR_ELEMENTS,
+  TERRITORY_PLAZA,
+} from "../world-territory.js";
 import * as resources from "./resources.js";
 
 export const TERRITORY_PLAZA_RADIUS = 26;
@@ -50,6 +54,8 @@ const TREE_COUNT = 34;
 function loadImage(url, apply) {
   const image = new Image();
   image.decoding = "async";
+  image.crossOrigin = "anonymous";
+  image.referrerPolicy = "no-referrer";
   image.onload = () => apply(image);
   image.src = url;
 }
@@ -906,35 +912,58 @@ export function functions({
   let doorAt = 0;
   const hintedAt = new Map();
 
-  const shifted = new WeakSet();
+  const shifted = new Map();
   let shift = null;
   let sweptAt = -Infinity;
+  let current = territory;
+  let visiting = null;
+  let sweeping = false;
+  let hiddenByVisit = [];
+  const visitBuilds = new Map();
 
   function showForkmeshWorld(now = performance.now()) {
-    if (!territory || !shift || now - sweptAt < 1000) return;
+    if (!current || !shift || now - sweptAt < 1000) return;
     sweptAt = now;
     let moved = false;
     TERRITORY_NEIGHBOUR_ELEMENTS.forEach((id) => {
       ctx.worldElements.get(id)?.roots.forEach((root) => {
         if (shifted.has(root)) return;
-        shifted.add(root);
+        const parts = [];
         root.position.x += shift.x;
         root.position.z += shift.z;
         root.updateMatrix();
         root.updateMatrixWorld(true);
         root.traverse((part) => {
           const index = ctx.interactive.indexOf(part);
-          if (index >= 0) ctx.interactive.splice(index, 1);
+          if (index < 0) return;
+          ctx.interactive.splice(index, 1);
+          parts.push(part);
         });
+        shifted.set(root, parts);
         moved = true;
       });
     });
     if (moved) {
       ctx.groundSurfaces = null;
       ctx.desertPlots?.userData?.replacePetals?.(
-        territory.petal >= 0 ? [territory.petal] : [],
+        current.petal >= 0 ? [current.petal] : [],
       );
     }
+  }
+
+  function returnForkmeshWorld() {
+    if (!shift) return;
+    shifted.forEach((parts, root) => {
+      root.position.x -= shift.x;
+      root.position.z -= shift.z;
+      root.updateMatrix();
+      root.updateMatrixWorld(true);
+      parts.forEach((part) => {
+        if (!ctx.interactive.includes(part)) ctx.interactive.push(part);
+      });
+    });
+    shifted.clear();
+    sweptAt = -Infinity;
   }
 
   function installInstanceTerritory() {
@@ -955,6 +984,86 @@ export function functions({
     ctx.animated.push((time) => showForkmeshWorld(time));
     ctx.groundSurfaces = null;
     return built;
+  }
+
+  function visitBuild(next) {
+    const key = `${next.id}:${JSON.stringify(next)}`;
+    const cached = visitBuilds.get(next.id);
+    if (cached?.key === key) return cached;
+    if (cached) disposeVisitBuild(cached);
+    const parts = [];
+    const entry = {
+      key,
+      built: buildInstanceTerritory({
+        THREE,
+        territory: next,
+        interactive: parts,
+        animated: ctx.animated,
+      }),
+      parts,
+    };
+    visitBuilds.set(next.id, entry);
+    return entry;
+  }
+
+  function disposeVisitBuild(entry) {
+    entry.built.root.removeFromParent();
+    removeInteractiveObject(ctx.interactive, entry.built.root);
+    disposeObject3D(entry.built.root);
+  }
+
+  function enterTerritoryVisit(next) {
+    if (territory || !next?.id) return false;
+    if (visiting?.id === next.id && built) {
+      ctx.desertPlots?.userData?.replacePetals?.(current.petal >= 0 ? [current.petal] : []);
+      return true;
+    }
+    leaveTerritoryVisit();
+    const place = territoryPlace(next);
+    const around = forkmeshShiftAround(place);
+    if (!around) return false;
+    const entry = visitBuild({ ...next, place });
+    visiting = next;
+    current = { ...next, place };
+    built = entry.built;
+    ctx.world.add(built.root);
+    entry.parts.forEach((part) => {
+      if (!ctx.interactive.includes(part)) ctx.interactive.push(part);
+    });
+    fns.registerWorldElement("instance-territory", `${next.name} territory`, "Districts", built.root);
+    hiddenByVisit = TERRITORY_HIDDEN_ELEMENTS.filter((id) =>
+      fns.worldElementEnabled(id) && fns.setWorldElementEnabled(id, false));
+    setTerritoryTiles(built.walkTiles);
+    crossings = [];
+    footprints = built.footprints;
+    shift = around;
+    showForkmeshWorld();
+    if (!sweeping) {
+      sweeping = true;
+      ctx.animated.push((time) => {
+        if (visiting) showForkmeshWorld(time);
+      });
+    }
+    ctx.groundSurfaces = null;
+    return true;
+  }
+
+  function leaveTerritoryVisit() {
+    if (territory || !visiting) return false;
+    returnForkmeshWorld();
+    removeInteractiveObject(ctx.interactive, built?.root);
+    built?.root.removeFromParent();
+    hiddenByVisit.forEach((id) => fns.setWorldElementEnabled(id, true));
+    hiddenByVisit = [];
+    setTerritoryTiles(null);
+    visiting = null;
+    current = null;
+    built = null;
+    footprints = [];
+    crossings = [];
+    shift = null;
+    ctx.groundSurfaces = null;
+    return true;
   }
 
   function territoryOwnerAt(x, z) {
@@ -1050,6 +1159,10 @@ export function functions({
     built?.updateBugs(list);
   }
 
+  function updateTerritoryVisitBugs(id, list = []) {
+    visitBuilds.get(String(id || ""))?.built.updateBugs(list);
+  }
+
   return {
     installInstanceTerritory,
     setForkmeshCrossings,
@@ -1058,6 +1171,10 @@ export function functions({
     enterNearbyTerritoryDoor,
     territoryArrival,
     updateTerritoryBugs,
+    updateTerritoryVisitBugs,
+    enterTerritoryVisit,
+    leaveTerritoryVisit,
+    territoryVisitId: () => visiting?.id || "",
     territoryOwnerAt,
     territoryForkmeshShift: () => (shift
       ? {
