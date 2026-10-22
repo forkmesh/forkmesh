@@ -31,6 +31,7 @@ type fakeHostedApp struct {
 	answer  func(node string, reported map[string]hostedCopyState) hostedReplicaResponse
 	reports map[string][]map[string]hostedCopyState
 	pushes  map[string][]map[string]hostedPushReport
+	archive map[string][]map[string]hostedArchiveReport
 }
 
 func (f *fakeHostedApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +61,10 @@ func (f *fakeHostedApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.pushes = map[string][]map[string]hostedPushReport{}
 	}
 	f.pushes[node] = append(f.pushes[node], request.PushMirrors)
+	if f.archive == nil {
+		f.archive = map[string][]map[string]hostedArchiveReport{}
+	}
+	f.archive[node] = append(f.archive[node], request.ArchiveSyncs)
 	answer := f.answer
 	f.mu.Unlock()
 	response := answer(node, request.Repositories)

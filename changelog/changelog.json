@@ -25,7 +25,8 @@
       "ChatGPT and other AI assistants can now read a pull request link: the page includes the description, the conversation and the diff, and adding .diff to the address gives the raw diff.",
       "The web dashboard works again: a merge earlier today had left its script unable to load, which broke repository pages, the Actions tab and pull requests.",
       "A pull request's merge box now lists each check with its state and log, and says when checks are waiting for a maintainer's approval.",
-      "Issue and pull request pings now say what happened, such as who approved, closed or assigned which item, and link straight to it; the issue sidebar now tells a repository owner they are receiving notifications, and Unsubscribe really stops them."
+      "Issue and pull request pings now say what happened, such as who approved, closed or assigned which item, and link straight to it; the issue sidebar now tells a repository owner they are receiving notifications, and Unsubscribe really stops them.",
+      "Public repositories can back themselves up to the Internet Archive every day, week or month from repository Settings, using your own archive.org keys."
      ]
     },
     {
