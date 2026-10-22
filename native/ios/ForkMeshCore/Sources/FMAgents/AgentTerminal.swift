@@ -725,11 +725,14 @@ public enum TerminalKey: String, CaseIterable, Sendable {
     case enter, backspace, tab, escape, up, down, right, left, home, end, pageUp, pageDown, delete, ctrlC
 }
 
-public func terminalKeyBytes(_ key: TerminalKey, appCursorKeys: Bool = false) -> String {
+public func terminalKeyBytes(_ key: TerminalKey, appCursorKeys: Bool = false, control: Bool = false) -> String {
     let esc = "\u{1b}"
     // The cursor keys change their own prefix when the remote program asks
     // for application mode, which the provider CLIs' menus rely on.
-    func cursor(_ letter: String) -> String { "\(esc)\(appCursorKeys ? "O" : "[")\(letter)" }
+    func cursor(_ letter: String) -> String {
+        if control { return "\(esc)[1;5\(letter)" }
+        return "\(esc)\(appCursorKeys ? "O" : "[")\(letter)"
+    }
     switch key {
     case .enter: return "\r"
     case .backspace: return "\u{7f}"

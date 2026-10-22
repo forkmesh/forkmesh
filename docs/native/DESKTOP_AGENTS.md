@@ -786,6 +786,15 @@ repositoryName, cwd, startedAtMs, device, running, cols, rows}` (`terminal` is
   (cols 20 to 500, rows 5 to 200).
 - `replay` is base64 of the last 512 KiB written, cut at a line start (the most
   that fits one relay frame). Phone emulators keep 10,000 rows of scrollback.
+- The iPhone terminal follows new output only while it is scrolled to the
+  bottom: Claude Code redraws its spinner several times a second, and pinning
+  on every redraw made the scrollback impossible to read. Scrolled up, it stays
+  put and shows a jump-to-newest button (`TerminalGridView`).
+- The key bar (`TerminalKeyBar`) is two rows of equal-width keys sized to the
+  window, so no key sits off screen behind a sideways scroll. Ctrl is a
+  one-shot modifier: tap it, then type a letter (Ctrl+X then Ctrl+S sends
+  Claude Code's "send now") or tap an arrow (`ESC [1;5` + letter). `^C`
+  stays a key of its own.
 - Events: `terminal.output {terminal, data, reset}` (coalesced like follows, at
   most 16 KiB; `reset` after falling 256 KiB behind) and
   `terminal.exit {terminal, code}`.

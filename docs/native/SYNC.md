@@ -178,5 +178,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S103 | 2026-10-22 | Calls | feature | Calls show a small live quality pill with signal bars, a voice waveform and the delay; tap it for live network and video charts. | 6740cdc214 | synced | 6740cdc214 |
 | S104 | 2026-10-22 | DJ Studio | feature | DJ Studio decks have a Repeat button that plays the song on that deck over and over until it is turned off. | c191462a0a | pending |  |
 | S105 | 2026-10-22 | Home | ui | On Home, the number on each icon sits beside the icon instead of covering the name of the icon above, and the update dot is smaller. | 35c4317e51 | pending |  |
-| S106 | 2026-10-22 | Steps | fix | A walk shows in the Dynamic Island and on the Lock Screen once you have been walking with the app open, and stays when you lock the phone mid-walk. | 88396d68c9 | pending |  |
+| S106 | 2026-10-22 | Agents | ui | The terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom. | ae5cba204b | pending |  |
+| S107 | 2026-10-22 | Steps | fix | A walk shows in the Dynamic Island and on the Lock Screen once you have been walking with the app open, and stays when you lock the phone mid-walk. | 88396d68c9 | pending |  |
 <!-- ledger:end -->
