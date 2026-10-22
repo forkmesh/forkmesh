@@ -17303,8 +17303,12 @@ async def repo_about_handler(env, request, owner, repo):
             not owner_key_authed
             and not await _repo_admin_allowed(env, actor, owner, repo)):
         return json_response({"error": "not_authorized"}, status=403)
+    # An organization has no node key of its own; its owners and admins were
+    # already checked above, so its repositories' About (and images) can be
+    # edited from the web like a person's.
     if not await _owner_pubkey(env, owner) and not (
-            await _branch_protection.settings_only(env, data, owner, repo)):
+            await _branch_protection.settings_only(env, data, owner, repo)) \
+            and not (await _org_row(env, owner))[1]:
         return json_response({"error": "account_required"}, status=403)
 
     # Absent = unchanged, so a settings-only save (Qt fediverse switches)
