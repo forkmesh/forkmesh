@@ -1991,11 +1991,11 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function fullEmptyHtml() {
-    return `<div class="fm-blankslate"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span class="fm-blankslate-title">No messages yet</span><p class="fm-blankslate-desc">Type below to join the encrypted ${escapeHtml(CHANNEL)} collaboration channel.</p></div>`;
+    return `<div class="fm-blankslate" data-chat-empty><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg><span class="fm-blankslate-title">No messages yet</span><p class="fm-blankslate-desc">Type below to join the encrypted ${escapeHtml(CHANNEL)} collaboration channel.</p></div>`;
   }
 
   function sideEmptyHtml() {
-    return `<div class="px-3 py-2 text-xs text-muted-foreground">Type to join ${escapeHtml(CHANNEL)}.</div>`;
+    return `<div class="px-3 py-2 text-xs text-muted-foreground" data-chat-empty>Type to join ${escapeHtml(CHANNEL)}.</div>`;
   }
 
   function fullUserOnlyHtml() {
@@ -2036,9 +2036,11 @@ function mountForkMeshDashboardChat(options = {}) {
   function clearEmptyState() {
     [fullLog, sideLog].forEach((log) => {
       if (!log) return;
-      const text = log.textContent || "";
-      if (text.includes("Type below to join") || text.includes("Type to join")) {
-        log.textContent = "";
+      for (const child of log.children) {
+        if (child.hasAttribute("data-chat-empty")) {
+          log.textContent = "";
+          return;
+        }
       }
     });
   }

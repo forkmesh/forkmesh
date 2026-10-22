@@ -66,3 +66,14 @@ still sets the dashboard sizes), and `world/public/world/world.css` gives
 `.rounded-lg` notice: one muted line with no icon in the HUD island feed, a
 dashed box with a 20px icon in the native chat panel. The World thread
 dialog's title rule matches `.fm-dialog-title` as well as the old `<strong>`.
+
+## Clearing the empty state
+
+The "Type below to join" blankslate and the rail's "Type to join" line carry
+`data-chat-empty`, and `clearEmptyState()` looks for that child before each
+new row. It used to read the whole `textContent` of both logs for every
+message, a cost that grows with the history. A World profile on 2026-10-22
+showed the Discord refresh's append slices (`finish @ dashboard-chat.js`)
+taking 4.3 s of main thread over 42 slices, up to 1.3 s each, although each
+slice is meant to stop after 6 ms; that whole-log read was the only
+per-message step that grows with the log.

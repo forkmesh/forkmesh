@@ -11707,13 +11707,29 @@ class ForkMeshWorld extends HTMLElement {
         neighbourIconURL(world.id, icon));
       if (!territory) throw new Error("not_a_territory");
       record.territory = territory;
-      if (!this.destroyed) this.syncWorldMeshPosition();
+      if (!this.destroyed) {
+        this.prepareMeshHexTerritory(record);
+        this.syncWorldMeshPosition();
+      }
     } catch (_) {
       window.setTimeout(() => {
         if (this.meshTerritories.get(world.id) === record) {
           this.meshTerritories.delete(world.id);
         }
       }, 60_000);
+    }
+  }
+
+  prepareMeshHexTerritory(record) {
+    const prepare = () => {
+      if (this.destroyed || !record.territory) return;
+      if (this.meshTerritories.get(record.territory.id) !== record) return;
+      this.world?.prepareTerritoryVisit?.(record.territory);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(prepare, { timeout: 3000 });
+    } else {
+      window.setTimeout(prepare, 0);
     }
   }
 
@@ -11754,6 +11770,16 @@ class ForkMeshWorld extends HTMLElement {
     return home ? { dx: home.dx, dz: home.dz } : null;
   }
 
+  homeFrameMovement(movement) {
+    const shift = this.meshHomeShift();
+    if (!shift || !movement) return movement;
+    return {
+      ...movement,
+      x: (Number(movement.x) || 0) - shift.dx,
+      z: (Number(movement.z) || 0) - shift.dz,
+    };
+  }
+
   homeFramePlayer(player) {
     const shift = this.meshHomeShift();
     if (!shift || !player) return player;
@@ -11786,7 +11812,7 @@ class ForkMeshWorld extends HTMLElement {
       const territory = this.meshTerritories.get(id)?.territory;
       this.world.updateTerritoryVisitBugs?.(id, territory?.visitBugs || []);
     }
-    const visited = this.meshVisitId;
+    const visited = this.meshLinks?.visiting?.id || "";
     this.meshSwitching = true;
     try {
       this.meshRoot =
@@ -11878,6 +11904,7 @@ class ForkMeshWorld extends HTMLElement {
         },
         onVisitChanged: (world, previous) =>
           this.handleWorldMeshVisit(world, previous),
+        onVisitAdmitted: (world) => this.handleWorldMeshAdmission(world),
         requestVisa: (world) => this.worldFederation().credential(world),
         presenceFrame: () => this.presencePayload(),
         moveIntervalMs: MOVEMENT_SEND_INTERVAL_MS,
@@ -11962,7 +11989,7 @@ class ForkMeshWorld extends HTMLElement {
   }
 
   handleWorldMeshVisit(world, previous) {
-    this.meshVisitId = world?.id || "";
+    this.meshVisitId = this.meshLinks?.admittedId || "";
     if (this.destroyed) return;
     if (!this.meshRoot && !this.meshSwitching) {
       if (world) {
@@ -11972,6 +11999,14 @@ class ForkMeshWorld extends HTMLElement {
       }
     }
     this.sendPresenceNow({ type: "presence" });
+    this.schedulePeerRender();
+  }
+
+  handleWorldMeshAdmission(world) {
+    this.meshVisitId = world?.id || "";
+    if (this.destroyed) return;
+    this.sendPresenceNow({ type: "presence" });
+    if (!world && this.lastMovement) this.queueMovementPresence(this.lastMovement);
     this.schedulePeerRender();
   }
 
@@ -31994,7 +32029,7 @@ class ForkMeshWorld extends HTMLElement {
     // safeguards intact instead of introducing a second fan-out channel.
     if (this.sendPresenceNow({
       type: "move",
-      ...this.lastMovement,
+      ...this.homeFrameMovement(this.lastMovement),
       ...look,
       moving: this.lastMovement?.moving === true,
     })) {
@@ -32153,6 +32188,8 @@ class ForkMeshWorld extends HTMLElement {
       this.pendingMovement = null;
       return;
     }
+    if (this.meshLinks?.visiting) this.meshLinks.queueMove(this.pendingMovement);
+    this.pendingMovement = this.homeFrameMovement(this.pendingMovement);
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
     if (!this.pendingMovement.moving) {
       window.clearTimeout(this.movementSendTimer);
@@ -32988,7 +33025,7 @@ class ForkMeshWorld extends HTMLElement {
       this.pendingMovement = null;
       this.sendPresenceNow({
         type: "move",
-        ...this.lastMovement,
+        ...this.homeFrameMovement(this.lastMovement),
         ...this.lastCameraLook,
         moving: false,
       });
