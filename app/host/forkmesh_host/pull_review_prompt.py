@@ -1,16 +1,3 @@
-"""The "Review with your agent" box on an open pull request.
-
-A copyable prompt that asks a coding agent to review the pull request for
-the human reviewer. The dashboard draws the same box (06-repo-content.js
-``renderPullReviewPrompt``); the server-rendered first view (repo_views)
-uses this module, and app/tests/host/test_pull_review_prompt.py runs both
-and compares them. docs/app/pull-review-prompt.md has the design.
-
-A repository replaces the default with ``.forkmesh/pulls.json``
-``{"reviewPromptTemplate": "..."}``. Placeholders are filled once, in one
-pass, so a title that itself contains ``{url}`` is not expanded again.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -22,24 +9,18 @@ from .repo_ssr_issue import esc, icon, public_site_origin
 
 SETTINGS_PATH = ".forkmesh/pulls.json"
 TEMPLATE_KEY = "reviewPromptTemplate"
-MAX_TEMPLATE = 6144          # code points, after normalizing
+MAX_TEMPLATE = 6144
 MAX_SETTINGS_BYTES = 16 * 1024
 FIELD_LIMITS = {"title": 200, "author": 80, "base": 200, "head": 200,
                 "repo": 120}
 FIELD_RE = re.compile(
     r"\{(url|number|title|repo|host|base|head|author|cloneUrl|diffUrl|filesUrl)\}")
-# Line and paragraph separators become newlines; other control characters
-# (C0 except tab/newline, DEL, C1) become spaces; invisible format
-# characters (zero-width, bidirectional overrides and isolates) are dropped,
-# so neither a template nor a pull request's title can hide text from the
-# person who reads the prompt before pasting it.
 LINE_BREAK_RE = re.compile(r"\r\n|[\r\u2028\u2029]")
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\t]")
 FIELD_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 INVISIBLE_RE = re.compile(
     r"[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064"
     r"\u2066-\u2069\ufeff]")
-# A toggle is offered when the prompt is longer than the collapsed box.
 COLLAPSE_LINES = 5
 COLLAPSE_CHARS = 360
 
@@ -65,8 +46,6 @@ Report
 
 
 def normalize_template(value):
-    """A template as the box uses it: newlines kept, at most MAX_TEMPLATE
-    code points, '' for anything that is not a string."""
     if not isinstance(value, str):
         return ""
     text = LINE_BREAK_RE.sub("\n", value)
@@ -77,7 +56,6 @@ def normalize_template(value):
 
 
 def clean_field(value, limit=0):
-    """One untrusted value (title, author, branch): a single line."""
     text = INVISIBLE_RE.sub("", FIELD_CONTROL_RE.sub(" ", str(value or "")))
     text = re.sub(r" {2,}", " ", text).strip(" ")
     return text[:limit].rstrip(" ") if limit else text
@@ -96,13 +74,11 @@ def template_from_text(text):
 
 
 def template_from_blobs(blobs):
-    """The template from a /blobs answer's ``blobs`` map (repo_views reads
-    the same paths as loadRepoCollabSettings)."""
     blob = (blobs or {}).get(SETTINGS_PATH)
     if not isinstance(blob, dict):
         return ""
     content = str(blob.get("content") or blob.get("text") or "")
-    if blob.get("encoding") == "base64":   # blobText in the dashboard
+    if blob.get("encoding") == "base64":
         try:
             content = base64.b64decode(content).decode("utf-8")
         except (ValueError, UnicodeDecodeError):
@@ -111,8 +87,6 @@ def template_from_blobs(blobs):
 
 
 def diff_url(origin, api_base, number, ref):
-    """The raw diff a patch-backed pull carries (changes.patch), pinned to
-    the commit the page read it at; '' when there is none."""
     if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", str(ref or "")):
         return ""
     query = urllib.parse.urlencode(
@@ -122,8 +96,6 @@ def diff_url(origin, api_base, number, ref):
 
 
 def fields(origin, link_base, api_base, number, pull, patch_ref=""):
-    """The placeholder values (link_base is repoLinkUrl, api_base
-    repoApiBase, origin publicSiteOrigin())."""
     origin = public_site_origin(origin)
     url = "%s%s/pull/%d" % (origin, link_base, int(number))
     files = url + "/files"
@@ -160,7 +132,6 @@ def collapses(prompt):
 
 
 def render(values, number, template=""):
-    """The box (same markup as the dashboard's renderPullReviewPrompt)."""
     prompt = prompt_text(values, template)
     text = esc(prompt)
     toggle = collapses(prompt)

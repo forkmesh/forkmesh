@@ -508,8 +508,6 @@ async def plan_pull(reader, branch, number):
         return {"pull": None}
     values, body = parse_front_matter(blob_text(blob))
     is_open = str(values.get("status") or "open").lower() == "open"
-    # The review prompt reads .forkmesh/pulls.json in the same request the
-    # dashboard makes (loadRepoCollabSettings), so it is in the bundle.
     settings = asyncio.ensure_future(reader.get(
         "blobs", [("path", path) for path in COLLAB_SETTINGS_PATHS]
         + [("ref", branch)])) if is_open else None
@@ -1081,7 +1079,7 @@ def reaction_subject(bundle):
 
 def render(bundle, section="", reactions=None, link=None, reader=False, origin=""):
     """HTML of the first view for a bundle, or None (kept per bundle and
-    reaction summary and public origin)."""
+    reaction summary)."""
     from .repo_ssr_issue import public_site_origin
     origin = public_site_origin(origin)
     key = (section, reactions_digest(reactions), link, reader, origin)
@@ -1137,7 +1135,7 @@ def _render(bundle, section="", reactions=None, link=None, reader=False, origin=
         raw = "%s/pull/%d.diff" % (base, pull["number"]) if patch.strip() else ""
         head = ('<h2 class="fm-ssr-h1">%s <span>#%d</span></h2>'
                 '<p class="fm-ssr-sub">%s<b>%s</b> wants to merge into '
-                '<code>%s</code> from <code>%s</code> &middot; %s</p>'
+                '<code>%s</code> from <code>%s</code> &middot; %s%s</p>'
                 '%s<nav class="fm-ssr-tabs">%s</nav>' % (
                     _esc(pull["title"]), pull["number"], _pill(pull["state"]),
                     _person(pull["author"]), _esc(pull["base"]),

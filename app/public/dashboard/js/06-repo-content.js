@@ -9423,11 +9423,8 @@
     if (!parsed.issueSubscribed) return "You're not receiving notifications from this thread.";
     if (parsed.issueSubscriptionReason === "owner") return "You're receiving notifications because you own this repository.";
     return "You're receiving notifications because you're subscribed to this thread.";
-  // "Review with your agent" on an open pull request: a copyable prompt that
-  // asks a coding agent for a review report, for the human reviewer. The
-  // server-rendered first view draws the same box
-  // (app/host/forkmesh_host/pull_review_prompt.py; docs/app/pull-review-prompt.md).
-  // .forkmesh/pulls.json {"reviewPromptTemplate": "..."} replaces the default.
+  }
+
   const PULL_REVIEW_PROMPT_MAX = 6144;
   const PULL_REVIEW_FIELD_LIMITS = { title: 200, author: 80, base: 200, head: 200, repo: 120 };
   const PULL_REVIEW_COLLAPSE_LINES = 5;
@@ -9453,9 +9450,6 @@ Review all of it
 Report
 6. Sections: Summary; Suggested verdict (approve, request changes or comment) and why; Blockers; Security findings (each with severity: critical, high, medium or low); Correctness issues; Test gaps; Nits; Questions for the author; Not verified (what you could not check or run). Give every finding a file:line and a concrete suggested fix. Write "None" for an empty section. Be concise.`;
 
-  // Newlines kept; other control characters become spaces; invisible format
-  // characters (zero-width, bidi overrides) are dropped so nothing in the
-  // prompt is hidden from the person pasting it. Capped in code points.
   function normalizePullReviewTemplate(value) {
     if (typeof value !== "string") return "";
     const text = value.replace(/\r\n|[\r\u2028\u2029]/g, "\n")
@@ -9467,7 +9461,6 @@ Report
     return Array.from(text).slice(0, PULL_REVIEW_PROMPT_MAX).join("").replace(/[ \n]+$/, "");
   }
 
-  // One untrusted value (title, author, branch) as a single line.
   function cleanPullReviewField(value, limit = 0) {
     const text = String(value ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
       .replace(PULL_REVIEW_INVISIBLE, "")
@@ -9476,8 +9469,6 @@ Report
     return limit ? Array.from(text).slice(0, limit).join("").replace(/ +$/, "") : text;
   }
 
-  // The raw diff a patch-backed pull carries (changes.patch), pinned to the
-  // commit it was read at; branch-backed pulls have none.
   function pullReviewRawDiffUrl(repo, number, pullPatch) {
     const ref = String(pullPatch?.source === "file" ? pullPatch.ref || "" : "");
     if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(ref)) return "";
