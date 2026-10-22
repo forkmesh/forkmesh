@@ -636,6 +636,11 @@ class HostASGI:
             response = _js.Response(b"worker returned no response", 500, "",
                                     _js.Headers())
         response = await repo_ssr.finish(ssr, response)
+        if self.repo_fastpath is not None and path.startswith("/api/repo/"):
+            stale = self.repo_fastpath.stale_answer(scope, response.status)
+            if stale is not None:
+                await self.repo_fastpath.send_stale(scope, send, stale)
+                return
         extra = None
         if path.startswith("/api/"):
             extra = server_timing_headers(response, elapsed, db_count, db_ms)

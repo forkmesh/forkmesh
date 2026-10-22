@@ -1076,22 +1076,28 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 		if request.ExpectedHeadOid != request.ExpectedPullsOid {
 			return e.storeRecord(dir, request, e.failure(request, "unsupported_pull"))
 		}
-		mbox, patch := e.pullPayloads(ctx, gitDir, request)
-		if len(bytes.TrimSpace(mbox)) == 0 && len(bytes.TrimSpace(patch)) == 0 {
-			return e.storeRecord(dir, request, e.failure(request, "unsupported_pull"))
+		head, synced := syncedPullHead(ctx, gitDir, meta.matter.values, request.ExpectedBaseOid)
+		if synced && head.head == "" {
+			return e.storeRecord(dir, request, e.failure(request, "stale_head"))
 		}
-		jobs, err := e.jobsDirectory()
-		if err != nil {
-			return nil, err
-		}
-		noHooks, err := e.noHooksDirectory()
-		if err != nil {
-			return nil, err
-		}
-		head, err := materializePullHead(ctx, gitDir, jobs, noHooks, meta.matter.values,
-			request.ExpectedBaseOid, mbox, patch)
-		if err != nil {
-			return nil, err
+		if !synced {
+			mbox, patch := e.pullPayloads(ctx, gitDir, request)
+			if len(bytes.TrimSpace(mbox)) == 0 && len(bytes.TrimSpace(patch)) == 0 {
+				return e.storeRecord(dir, request, e.failure(request, "unsupported_pull"))
+			}
+			jobs, err := e.jobsDirectory()
+			if err != nil {
+				return nil, err
+			}
+			noHooks, err := e.noHooksDirectory()
+			if err != nil {
+				return nil, err
+			}
+			head, err = materializePullHead(ctx, gitDir, jobs, noHooks, meta.matter.values,
+				request.ExpectedBaseOid, mbox, patch)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if head.head == "" {
 			return e.storeRecord(dir, request, e.failure(request, "merge_conflict"))

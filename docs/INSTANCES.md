@@ -383,6 +383,23 @@ upload CSS.
   before shipping. `app/tests/test_instance_theme.py` requires every ready theme to
   define every theme token in both modes.
 
+### When an update restarts the git node
+
+`--update` restarts `forkmesh-mirror-node` only when `daemon_digest` changes:
+the binary, the systemd unit, the gateway tools in
+`/usr/local/share/forkmesh/tools`, the node config without its `version`
+field, and the gateway config fields the installer itself writes
+(`routerPublicKey`, `publicOrigin`, `dashboard.canonicalOrigin`, the
+`forkmesh` repository entries). Before 2026-10-21 the digest hashed the raw
+node config, whose `version` is the source commit, and the raw gateway config,
+which the running daemon rewrites on every ref change; every deploy therefore
+restarted the node and its gateway, and on a single-server instance pull request pages
+showed "unavailable until a reachable mirror host serves …" for about 40 s.
+The gateway tools were not in the digest at all, so a gateway code change only
+took effect because of that spurious restart. The cost now is that the
+`version` label in the catalog stays at the commit of the last real restart
+when an update changed nothing the node runs.
+
 ## Private admin console path
 
 The admin console has always lived at `/<ADMIN_PATH>` (`app_runtime._fetch_inner`,

@@ -4738,6 +4738,7 @@
     }
     if (page !== "repo") return;
     window.addEventListener("popstate", () => {
+      stopRepoReconnects();
       const requested = requestedRepoKey();
       const repo = requested ? findRepository(requested) : null;
       if (!repo) {
