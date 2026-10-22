@@ -45,17 +45,29 @@ struct ChatChannelSidebar: View {
         }
     }
 
+    private var movingKey: Binding<ChatSheetKey?> {
+        Binding(get: { moving.map(ChatSheetKey.init) }, set: { (key: ChatSheetKey?) in moving = key?.value })
+    }
+
+    private func shown(_ value: Binding<String?>) -> Binding<Bool> {
+        Binding(get: { value.wrappedValue != nil }, set: { (on: Bool) in if !on { value.wrappedValue = nil } })
+    }
+
     var body: some View {
+        dialogs(alerts(channelSheets(peopleSheets(list))))
+    }
+
+    @ViewBuilder private var list: some View {
         let directRows: [ChatDirectRow] = hub.directRows
         let people: [String: ChatDirectRow] = Dictionary(
             directRows.map { ($0.conversation, $0) }, uniquingKeysWith: { (first: ChatDirectRow, _: ChatDirectRow) in first })
-        let groups: [MemberGroup] = hub.memberGroups
+        let memberGroups: [MemberGroup] = hub.memberGroups
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if onSearch != nil || onCompose != nil || onClose != nil {
                     jumpBar.padding(.bottom, FmSpace.x3)
                 }
-                recentSection(directRows, people: people, online: groups.filter(\.online).count).padding(.bottom, FmSpace.x4)
+                recentSection(directRows, people: people, online: memberGroups.filter(\.online).count).padding(.bottom, FmSpace.x4)
                 if !hub.workspace.starred.isEmpty {
                     sectionTitle("Starred", count: hub.workspace.starred.count)
                     card {
@@ -79,11 +91,11 @@ struct ChatChannelSidebar: View {
                     }
                 }
                 directMessages(directRows)
-                if !groups.isEmpty {
-                    sectionTitle("People", count: groups.count)
+                if !memberGroups.isEmpty {
+                    sectionTitle("People", count: memberGroups.count)
                         .padding(.top, FmSpace.x4)
                     card {
-                        ForEach(groups) { (group: MemberGroup) in
+                        ForEach(memberGroups) { (group: MemberGroup) in
                             ChatMemberRow(
                                 group: group, selected: memberSelected(group),
                                 onTap: memberTap(group), onProfile: { person = ChatPersonKey(group: group) }, retentionHub: hub)
@@ -106,92 +118,108 @@ struct ChatChannelSidebar: View {
             await hub.direct?.refresh()
             await hub.refreshAppCommands()
         }
-        .sheet(isPresented: $statusSheet) { UserStatusSheet() }
-        .sheet(item: $person) { (key: ChatPersonKey) in
-            ChatPersonSheet(
-                hub: hub, person: key, onMessage: { (recipient: ChatRecipient) in open(recipient) },
-                onProfile: { (name: String) in onRoute(.profile(name: name)) })
-        }
-        .sheet(isPresented: $showingOnline) {
-            ChatOnlineSheet(
-                hub: hub,
-                onMessage: { (recipient: ChatRecipient) in
-                    showingOnline = false
-                    open(recipient)
-                },
-                onProfile: { (name: String) in
-                    showingOnline = false
-                    onRoute(.profile(name: name))
-                })
-        }
-        .sheet(isPresented: $newChannel) { NewChatChannelSheet(hub: hub, onCreated: { select($0) }) }
-        .sheet(item: Binding(get: { moving.map(ChatSheetKey.init) }, set: { moving = $0?.value })) { key in
-            MoveChannelSheet(channel: key.value, rows: rows, onMove: { group in move(key.value, to: group) })
-        }
-        .sheet(item: $managing) { (room: OfficeRoom) in
-            if let office = hub.office {
-                NavigationStack { OfficeChannelSettingsScreen(office: office, room: room) }
+    }
+
+    private func peopleSheets<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(isPresented: $statusSheet) { UserStatusSheet() }
+            .sheet(item: $person) { (key: ChatPersonKey) in
+                ChatPersonSheet(
+                    hub: hub, person: key, onMessage: { (recipient: ChatRecipient) in open(recipient) },
+                    onProfile: { (name: String) in onRoute(.profile(name: name)) })
             }
-        }
-        .alert("New group", isPresented: $newGroup) {
-            TextField("Name", text: $groupName)
-            Button("Cancel", role: .cancel) { groupName = "" }
-            Button("Create") {
-                let name: String = groupName
-                groups?.update { ChannelGroups.createGroup(&$0, name) }
-                groupName = ""
+            .sheet(isPresented: $showingOnline) {
+                ChatOnlineSheet(
+                    hub: hub,
+                    onMessage: { (recipient: ChatRecipient) in
+                        showingOnline = false
+                        open(recipient)
+                    },
+                    onProfile: { (name: String) in
+                        showingOnline = false
+                        onRoute(.profile(name: name))
+                    })
             }
-        }
-        .alert("Rename group", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Name", text: $groupName)
-            Button("Cancel", role: .cancel) { renaming = nil }
-            Button("Rename") {
-                if let from = renaming {
-                    let members: [String] = ChannelGroups.renderedMembers(rows, from)
-                    let to: String = groupName
-                    groups?.update { ChannelGroups.renameGroup(&$0, from: from, to: to, members: members) }
+    }
+
+    private func channelSheets<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(isPresented: $newChannel) { NewChatChannelSheet(hub: hub, onCreated: { (conversation: String) in select(conversation) }) }
+            .sheet(item: movingKey) { (key: ChatSheetKey) in
+                MoveChannelSheet(channel: key.value, rows: rows, onMove: { (group: String) in move(key.value, to: group) })
+            }
+            .sheet(item: $managing) { (room: OfficeRoom) in
+                if let office = hub.office {
+                    NavigationStack { OfficeChannelSettingsScreen(office: office, room: room) }
                 }
-                renaming = nil
-                groupName = ""
             }
-        }
-        .confirmationDialog(
-            "Leave \(leaving ?? "")?", isPresented: Binding(get: { leaving != nil }, set: { if !$0 { leaving = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Leave channel", role: .destructive) {
-                if let channel = leaving {
-                    hub.workspace.forget(conversation: channel)
-                    hub.extras.removeChannel(channel)
-                    if hub.currentConversation == channel { hub.select(hub.generalConversation) }
+    }
+
+    private func alerts<Content: View>(_ content: Content) -> some View {
+        content
+            .alert("New group", isPresented: $newGroup) {
+                TextField("Name", text: $groupName)
+                Button("Cancel", role: .cancel) { groupName = "" }
+                Button("Create") {
+                    let name: String = groupName
+                    groups?.update { ChannelGroups.createGroup(&$0, name) }
+                    groupName = ""
                 }
-                leaving = nil
             }
-        } message: {
-            Text("It disappears from this phone. Messages others send there stop arriving here.")
-        }
-        .confirmationDialog(
-            "Delete this conversation?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let conversation = deleting { hub.deleteConversation(conversation) }
-                deleting = nil
+            .alert("Rename group", isPresented: shown($renaming)) {
+                TextField("Name", text: $groupName)
+                Button("Cancel", role: .cancel) { renaming = nil }
+                Button("Rename") {
+                    if let from = renaming {
+                        let members: [String] = ChannelGroups.renderedMembers(rows, from)
+                        let to: String = groupName
+                        groups?.update { ChannelGroups.renameGroup(&$0, from: from, to: to, members: members) }
+                    }
+                    renaming = nil
+                    groupName = ""
+                }
             }
-        } message: {
-            Text("It is removed from this phone only, and comes back if they message you again.")
-        }
-        .confirmationDialog(
-            "Block \(blocking ?? "")?", isPresented: Binding(get: { blocking != nil }, set: { if !$0 { blocking = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Block", role: .destructive) {
-                if let name = blocking { hub.setBlocked(name, true) }
-                blocking = nil
+    }
+
+    private func dialogs<Content: View>(_ content: Content) -> some View {
+        content
+            .confirmationDialog(
+                "Leave \(leaving ?? "")?", isPresented: shown($leaving),
+                titleVisibility: .visible
+            ) {
+                Button("Leave channel", role: .destructive) {
+                    if let channel = leaving {
+                        hub.workspace.forget(conversation: channel)
+                        hub.extras.removeChannel(channel)
+                        if hub.currentConversation == channel { hub.select(hub.generalConversation) }
+                    }
+                    leaving = nil
+                }
+            } message: {
+                Text("It disappears from this phone. Messages others send there stop arriving here.")
             }
-        } message: {
-            Text("Their messages, typing and alerts are hidden on this phone. You can unblock them from their profile.")
-        }
+            .confirmationDialog(
+                "Delete this conversation?", isPresented: shown($deleting),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let conversation = deleting { hub.deleteConversation(conversation) }
+                    deleting = nil
+                }
+            } message: {
+                Text("It is removed from this phone only, and comes back if they message you again.")
+            }
+            .confirmationDialog(
+                "Block \(blocking ?? "")?", isPresented: shown($blocking),
+                titleVisibility: .visible
+            ) {
+                Button("Block", role: .destructive) {
+                    if let name = blocking { hub.setBlocked(name, true) }
+                    blocking = nil
+                }
+            } message: {
+                Text("Their messages, typing and alerts are hidden on this phone. You can unblock them from their profile.")
+            }
     }
 
     private var jumpBar: some View {
