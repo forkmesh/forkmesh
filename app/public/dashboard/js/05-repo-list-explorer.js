@@ -1403,6 +1403,7 @@
 
   function renderProfileRepositories() {
     renderOrganizationRepositories();
+    hydrateProfileAvatars();
     const container = $("[data-profile-repo-list]");
     if (!container) return;
     const query = ($("[data-profile-repo-search]")?.value || "").trim().toLowerCase();
