@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 JS = ROOT / "public" / "dashboard" / "js"
 PROFILE_IO = (JS / "03-issues-profile-io.js").read_text(encoding="utf-8")
+HELPERS = (JS / "02-helpers.js").read_text(encoding="utf-8")
 EXPLORER = (JS / "05-repo-list-explorer.js").read_text(encoding="utf-8")
 BUNDLE = (ROOT / "public" / "dashboard.js").read_text(encoding="utf-8")
 DOC = (ROOT.parent / "docs" / "app" / "profile-avatar.md").read_text(encoding="utf-8")
@@ -64,6 +65,7 @@ function avatarContainer() {
   image.classList = classList({ initialClasses: ["hidden"] });
   const initial = { textContent: "" };
   initial.classList = classList({});
+  initial.innerHTML = "";
   const container = { dataset: {}, image, initial,
     querySelector(selector) { return selector === "img" ? image : selector === "[data-avatar-initial]" ? initial : null; } };
   container.classList = classList({});
@@ -80,7 +82,11 @@ const view = (c) => ({ src: c.image.attrs.src ?? null, imageHidden: c.image.hidd
 %s
 """ % ("\n".join(_function(PROFILE_IO, name) for name in (
         "applyAvatar", "profileAvatarHandle", "profileAvatarRosterRepos", "profileAvatarPicture",
-        "showProfileAvatarPicture", "hydrateProfileAvatar", "hydrateProfileAvatars"))
+        "showProfileAvatarPicture", "showProfileAvatarBot", "hydrateProfileAvatar",
+        "hydrateProfileAvatars"))
+       + "\n" + "\n".join(_function(HELPERS, name) for name in ("botAvatarKind", "botAvatarSvg"))
+       + "\n" + HELPERS[HELPERS.index("  const BOT_AVATAR_GLYPHS = {"):
+                        HELPERS.index("\n  };\n", HELPERS.index("  const BOT_AVATAR_GLYPHS = {")) + 5]
        + "\nconst PROFILE_AVATAR_ROSTER_REPOS = 4;", body)
     result = subprocess.run(["node", "--input-type=module"], input=script,
                             text=True, capture_output=True)
@@ -155,6 +161,22 @@ console.log(JSON.stringify({ empty, unchanged, later: view(page), org: org.datas
     assert out["unchanged"] == 0
     assert out["later"]["src"] == "/raw/example/project/exampleuser.png"
     assert out["org"] == {}
+
+
+def test_a_system_account_without_a_picture_gets_its_glyph_and_an_upload_wins():
+    out = _node("""
+accounts["upload-actions"] = "iVBORw0KGgo=";
+const bot = avatarContainer();
+const uploaded = avatarContainer();
+containers.push(bot, uploaded);
+applyAvatar(bot, { nodeName: "example-actions", avatarPng: "" });
+applyAvatar(uploaded, { nodeName: "upload-actions", avatarPng: "" });
+await settle(); await settle();
+console.log(JSON.stringify({ bot: view(bot), glyph: bot.initial.innerHTML, uploaded: view(uploaded) }));
+""")
+    assert out["bot"]["state"] == "bot" and out["bot"]["src"] is None
+    assert '<svg data-bot-avatar="actions"' in out["glyph"]
+    assert out["uploaded"]["src"] == "data:image/png;base64,iVBORw0KGgo="
 
 
 def test_wiring_bundle_and_docs():

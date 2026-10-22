@@ -33,7 +33,7 @@ def _const(text, name):
 
 HELPER_NAMES = (
     "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issuePersonHandle",
-    "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref", "issueActorAvatarHtml",
+    "botAvatarKind", "botAvatarSvg", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref", "issueActorAvatarHtml",
     "issuePersonNameHtml", "hydrateIssuePersonLink", "issueActorPortraitPng", "issueActorAccount",
     "forgeIdentity", "forgeLinkAttrs",
 )
@@ -76,7 +76,9 @@ const issueActorAccountsSettled = new Map();
 """ % (
         _const(HELPERS, "USER_NAME_RE"),
         "\n".join([_const(HELPERS, "ISSUE_PERSON_HANDLE_RE"), _const(HELPERS, "FORGE_PROFILES"),
-                   _const(HELPERS, "FORGE_IDENTITY_RE")]),
+                   _const(HELPERS, "FORGE_IDENTITY_RE")]) + "\n" + HELPERS[
+            HELPERS.index("  const BOT_AVATAR_GLYPHS = {"):
+            HELPERS.index("\n  };\n", HELPERS.index("  const BOT_AVATAR_GLYPHS = {")) + 5],
         "\n".join(_function(HELPERS, name) for name in HELPER_NAMES),
         "\n".join([_const(CONTENT, "MD_MENTION"), _const(CONTENT, "MENTION_SUGGESTION_LIMIT"),
                    _const(CONTENT, "MENTION_LOGIN_RE")]
@@ -111,9 +113,12 @@ console.log(JSON.stringify({
     assert 'data-issue-actor-avatar="kofi-mensah"' in out["mixed"]
     assert out["digit"].startswith('<a data-issue-person="2fast-dev"') and 'data-issue-actor-avatar="2fast-dev"' in out["digit"]
     for bot in (out["importer"], out["actions"]):
-        assert bot.startswith("<span") and 'data-lucide="bot"' in bot
-        assert "data-issue-person" not in bot and "href" not in bot and "data-issue-actor-avatar" not in bot
-    assert '<i data-lucide="bot" class="h-5 w-5' in out["actions"]
+        assert bot.startswith("<span") and "<svg data-bot-avatar=" in bot
+        assert "data-issue-person" not in bot and "href" not in bot
+    assert '<svg data-bot-avatar="bot"' in out["importer"]
+    assert "data-issue-actor-avatar" not in out["importer"]
+    assert '<svg data-bot-avatar="actions"' in out["actions"] and 'class="h-5 w-5 text-muted-foreground"' in out["actions"]
+    assert 'data-issue-actor-avatar="acme-actions"' in out["actions"]
     assert 'href="https://code.example.test/@vandana42"' in out["name"] and ">vandana42</span></a>" in out["name"]
     assert ">Kofi-Mensah</span></a>" in out["mixedName"] and 'href="https://code.example.test/@kofi-mensah"' in out["mixedName"]
     assert out["digitName"].startswith('<a data-issue-person="2fast-dev"') and ">2Fast-Dev</a>" in out["digitName"]
@@ -159,16 +164,16 @@ console.log(JSON.stringify({
 """)
     assign = out["assign"]
     assert '<span class="font-semibold text-foreground">tasks[bot]</span>' in assign
-    assert 'data-lucide="bot"' in assign
+    assert '<svg data-bot-avatar="bot"' in assign
     assert "set assignees: <a href=\"https://code.example.test/@vandana42\"" in assign
     assert '<a data-issue-person="2fast-dev"' in assign and ">2Fast-Dev</a>" in assign
-    assert 'data-lucide="bot"' in out["label"] and ">G<" not in out["label"]
+    assert '<svg data-bot-avatar="bot"' in out["label"] and ">G<" not in out["label"]
     comment = out["comment"]
     assert comment.count('data-issue-actor-avatar="vandana42"') == 2
     assert '<span class="hidden sm:block">' in comment and '<span class="mr-1 inline-flex align-middle sm:hidden">' in comment
     assert 'class="relative flex h-6 w-6 shrink-0' in comment and 'class="relative flex h-10 w-10 shrink-0' in comment
     assert '<a href="https://code.example.test/@vandana42" data-issue-person="vandana42" class="font-semibold' in comment
-    assert out["bot"].count('data-lucide="bot"') == 2 and "data-issue-person" not in out["bot"]
+    assert out["bot"].count('<svg data-bot-avatar="actions"') == 2 and "data-issue-person" not in out["bot"]
 
 
 def test_links_resolve_to_the_forge_then_the_roster_profile_then_plain_text():
