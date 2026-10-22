@@ -18,6 +18,13 @@ thing that can block a merge, each with the action that clears it:
 | Branch | the mirror's merge trial (`merge-preview`) | Update branch, or how to resolve conflicts |
 | Rules | `pulls/<n>/rules` | none: blocking rules cannot be waived |
 
+When the checks come from the pull's own runner (`pulls/<n>/checks`, source
+`pull`), the Checks row also lists each run with its state, duration and log
+link (`renderRepoPullCheckList`). When those checks are waiting for a
+maintainer's approval, the row says so first (`repoPullCheckApprovalText`).
+The Approve and Always run buttons stay in the pull's Checks section
+(`renderRepoPullCheckApproval`).
+
 The footer says whether the pull can merge, why not, and holds the controls.
 Only someone who may merge (the repository's owner, or for an organization's
 repository an owner of the organization) sees the merge controls; everyone

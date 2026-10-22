@@ -1,0 +1,17 @@
+{
+  "schema": "forkmesh-issue-v1",
+  "number": 126,
+  "events": [
+    {
+      "type": "open",
+      "id": "open-126",
+      "author": "7ZMh_2s_IOTPiKoZ6K5eDe4AclTYh_JzqJ7pK2lovT4",
+      "authorName": "forkmesh",
+      "ts": 1782140598761,
+      "title": "don't send a system notification when a node connects by default thrn this off but make so please log it in the network",
+      "body": "",
+      "attachments": [],
+      "sig": "zyuPFEiYvbSvIdX5p3fkiPQCqbE00FfcD226LOkTDviMuxx-enWDWkhvvqZq0vSf4Owqyfh34dg42TAjm4hHCQ"
+    }
+  ]
+}

@@ -92,9 +92,7 @@ public final class ChatExtras {
     @ObservationIgnored private var lastTypingSent: [String: Date] = [:]
 
     public private(set) var revision = 0
-    public private(set) var privateChannels: Set<String> = []
     public private(set) var hiddenChannels: Set<String> = []
-    public private(set) var inviteNotice: ChatNotice?
 
     private var replies: [String: [ChatMessage]] = [:]
     private var replyRoot: [String: String] = [:]
@@ -123,8 +121,6 @@ public final class ChatExtras {
         revision &+= 1
         onChange?()
     }
-
-    public func clearInviteNotice() { inviteNotice = nil }
 
     public func replies(to rootId: String) -> [ChatMessage] { replies[rootId] ?? [] }
 
@@ -266,20 +262,15 @@ public final class ChatExtras {
         }
     }
 
-    public func isPrivate(_ channel: String) -> Bool { privateChannels.contains(channel) }
-
     public func apply(_ frame: JSONObject) {
         let type = frame["type"]?.text ?? ""
         let senderId = frame["senderId"]?.text ?? ""
         let conversation = ChatFrameText.conversation(of: frame)
         if conversation == "#team" { return }
         switch type {
-        case "chat", "dm":
+        case "chat":
             rememberFile(frame)
-            stopTyping(senderId, target: conversation.hasPrefix("@") ? "@\(senderId)" : conversation)
-            if frame["private"]?.isTrue == true, conversation.hasPrefix("#"), !hiddenChannels.contains(conversation) {
-                if privateChannels.insert(conversation).inserted { changed() }
-            }
+            stopTyping(senderId, target: conversation)
         case "thread-reply":
             applyReply(frame, senderId: senderId)
         case "reaction":
@@ -290,15 +281,13 @@ public final class ChatExtras {
             applyDelete(frame, senderId: senderId)
         case "typing":
             applyTyping(frame, senderId: senderId, conversation: conversation)
-        case "invite":
-            applyInvite(frame)
         case "channel":
             let name = ChatExtras.normalizedChannel(frame["name"]?.text ?? "")
             if !name.isEmpty, name != "#team", !hiddenChannels.contains(name) { onChannelJoined?(name) }
         case "history":
             applyHistory(frame)
         case ChatLookFrames.type:
-            applyLook(frame, senderId: senderId, conversation: relayConversation(frame, senderId: senderId))
+            applyLook(frame, senderId: senderId, conversation: conversation.hasPrefix("#") ? conversation : "")
         default:
             break
         }
@@ -383,14 +372,6 @@ public final class ChatExtras {
         onRemoved?(conversation, target)
     }
 
-    private func relayConversation(_ frame: JSONObject, senderId: String) -> String {
-        let conversation = ChatFrameText.conversation(of: frame)
-        guard conversation.hasPrefix("@") else { return conversation }
-        if !senderId.isEmpty && senderId == selfId { return conversation }
-        guard !senderId.isEmpty, (frame["to"]?.text ?? "") == selfId, !selfId.isEmpty else { return "" }
-        return "@\(senderId)"
-    }
-
     private func applyLook(_ frame: JSONObject, senderId: String, conversation: String, selfId lookSelfId: String? = nil) {
         if conversation.isEmpty || conversation == "#team" || hiddenChannels.contains(conversation) || senderId.isEmpty { return }
         let id = frame["id"]?.text ?? ""
@@ -430,7 +411,9 @@ public final class ChatExtras {
         let shown = ChatFrameText.shownSender(frame).isEmpty ? senderId : ChatFrameText.shownSender(frame)
         let message = ChatMessage(
             id: id, conversation: channel, senderId: shown,
-            senderName: ChatFrameText.bounded(frame["sender"], ChatLimits.maxDisplayNameChars),
+            senderName: ChatFrameText.bounded(
+                frame["sender"],
+                ChatFrameText.botName(frame) == nil ? ChatLimits.maxDisplayNameChars : ChatLimits.maxDisplayNameChars * 3),
             text: ChatFrameText.bounded(frame["text"], ChatLimits.maxTextChars), timestamp: Date(epochMillis: millis),
             isSelf: !shown.isEmpty && shown == me,
             fileName: ChatFrameText.bounded(frame["fileName"], ChatLimits.maxFileNameChars))
@@ -446,7 +429,6 @@ public final class ChatExtras {
         replies[rootId] = list
         replyRoot[id] = rootId
         rootChannel[rootId] = channel
-        if frame["private"]?.isTrue == true { privateChannels.insert(channel) }
         rememberFile(frame)
         changed()
     }
@@ -520,8 +502,9 @@ public final class ChatExtras {
             list.removeAll { $0.id == target }
             replies[root] = list.isEmpty ? nil : list
             replyRoot.removeValue(forKey: target)
-        } else if let author = authorOf?(ChatFrameText.conversation(of: frame), target), author != senderId {
-            return
+        } else {
+            guard !senderId.isEmpty, let author = authorOf?(ChatFrameText.conversation(of: frame), target), author == senderId
+            else { return }
         }
         forget(target)
         changed()
@@ -545,8 +528,8 @@ public final class ChatExtras {
     }
 
     private func applyTyping(_ frame: JSONObject, senderId: String, conversation: String) {
-        let target = conversation.hasPrefix("@") ? "@\(senderId)" : conversation
-        applyTyping(frame, senderId: senderId, target: target, selfId: selfId)
+        if !conversation.hasPrefix("#") { return }
+        applyTyping(frame, senderId: senderId, target: conversation, selfId: selfId)
     }
 
     private func applyTyping(_ frame: JSONObject, senderId: String, target: String, selfId me: String) {
@@ -562,26 +545,17 @@ public final class ChatExtras {
         typingState[target] = peers.isEmpty ? nil : peers
     }
 
-    private func applyInvite(_ frame: JSONObject) {
-        if (frame["to"]?.text ?? "") != selfId || selfId.isEmpty { return }
-        let channel = ChatExtras.normalizedChannel(String((frame["channel"]?.text ?? "").prefix(120)))
-        if channel.isEmpty || channel == "#team" || hiddenChannels.contains(channel) { return }
-        privateChannels.insert(channel)
-        onChannelJoined?(channel)
-        let sender = frame["sender"]?.text ?? "Someone"
-        inviteNotice = ChatNotice("\(sender) invited you to private room \(channel).")
-        changed()
-    }
-
     private func applyHistory(_ frame: JSONObject) {
         let to = frame["to"]?.text ?? ""
         if !to.isEmpty && to != selfId { return }
+        let sender = frame["senderId"]?.text ?? ""
+        if sender.isEmpty { return }
         for entry in frame["entries"]?.objects.prefix(ChatLimits.historyEntriesPerChannel) ?? [] {
             let type = entry["type"]?.text ?? ""
             if type != "chat" && type != "thread-reply" { continue }
             let channel = entry["channel"]?.text ?? ""
             if !channel.hasPrefix("#") || channel == "#team" || hiddenChannels.contains(channel) { continue }
-            if entry["private"]?.isTrue == true && !privateChannels.contains(channel) { continue }
+            if entry["private"]?.isTrue == true || (entry["senderId"]?.text ?? "") != sender { continue }
             sink?.applyFrame(entry)
         }
     }
@@ -621,17 +595,6 @@ public final class ChatExtras {
     }
 
     @discardableResult
-    public func createPrivateChannel(_ raw: String) -> String? {
-        guard ChatExtras.validChannelName(raw) else { return nil }
-        let name = ChatExtras.normalizedChannel(raw).lowercased()
-        hiddenChannels.remove(name)
-        privateChannels.insert(name)
-        onChannelJoined?(name)
-        changed()
-        return name
-    }
-
-    @discardableResult
     public func addPublicChannel(_ raw: String) -> String? {
         guard ChatExtras.validChannelName(raw), let sink else { return nil }
         let name = ChatExtras.normalizedChannel(raw).lowercased()
@@ -648,7 +611,6 @@ public final class ChatExtras {
     public func removeChannel(_ channel: String) {
         if channel == "#general" { return }
         hiddenChannels.insert(channel)
-        privateChannels.remove(channel)
         looks.removeValue(forKey: channel)
         lookEventLists.removeValue(forKey: channel)
         for (root, owner) in rootChannel where owner == channel {
@@ -665,9 +627,7 @@ public final class ChatExtras {
         pendingEditOrder = []
         removedOrder = []
         lastTypingSent = [:]
-        privateChannels = []
         hiddenChannels = []
-        inviteNotice = nil
         replies = [:]
         replyRoot = [:]
         rootChannel = [:]
@@ -687,12 +647,8 @@ public final class ChatExtras {
         revision &+= 1
     }
 
-    public func restoreChannels(privateChannels: [String], hiddenChannels: [String]) {
+    public func restoreChannels(hiddenChannels: [String]) {
         self.hiddenChannels.formUnion(hiddenChannels)
-        for channel in privateChannels where !self.hiddenChannels.contains(channel) {
-            self.privateChannels.insert(channel)
-            onChannelJoined?(channel)
-        }
         changed()
     }
 
@@ -700,10 +656,7 @@ public final class ChatExtras {
         frame["conversation"] = .string(conversation)
         if conversation.hasPrefix("#") {
             frame["channel"] = .string(conversation)
-            if privateChannels.contains(conversation) { frame["private"] = true }
             if persist { frame["persist"] = true }
-        } else if conversation.hasPrefix("@") {
-            frame["to"] = .string(String(conversation.dropFirst()))
         }
     }
 
@@ -716,30 +669,15 @@ public final class ChatExtras {
     }
 
     @discardableResult
-    public func sendPrivateChat(_ channel: String, text: String) -> Bool {
-        let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxTextChars))
-        guard let sink, !body.isEmpty, channel.hasPrefix("#") else { return false }
-        var frame = sink.makeFrame("chat")
-        frame["text"] = .string(body)
-        routed(&frame, conversation: channel, persist: true)
-        frame["private"] = true
-        sink.applyFrame(frame)
-        if sink.sendFrame(frame) { return true }
-        takeBack(frame["id"]?.text ?? "", conversation: channel)
-        return false
-    }
-
-    @discardableResult
     public func sendText(conversation: String, text: String) async -> Bool {
-        if privateChannels.contains(conversation) { return sendPrivateChat(conversation, text: text) }
-        guard let sink else { return false }
+        guard let sink, conversation.hasPrefix("#") else { return false }
         return await sink.sendMessage(String(text.prefix(ChatLimits.maxTextChars)), to: conversation)
     }
 
     @discardableResult
     public func sendBotReply(channel: String, rootId: String, text: String) -> Bool {
         let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxTextChars))
-        guard let sink, !body.isEmpty, channel.hasPrefix("#"), !privateChannels.contains(channel) else { return false }
+        guard let sink, !body.isEmpty, channel.hasPrefix("#") else { return false }
         let root = String(rootId.prefix(ChatLimits.maxRootIdChars))
         var frame: JSONObject = [
             "type": .string(root.isEmpty ? "chat" : "thread-reply"),
@@ -842,7 +780,7 @@ public final class ChatExtras {
 
     @discardableResult
     public func sendTyping(conversation: String, active: Bool) -> Bool {
-        guard let sink, conversation.hasPrefix("#") || conversation.hasPrefix("@") else { return false }
+        guard let sink, conversation.hasPrefix("#") else { return false }
         let now = clock.now
         if active {
             if let last = lastTypingSent[conversation], now.timeIntervalSince(last) < ChatLimits.typingResend { return false }
@@ -858,26 +796,15 @@ public final class ChatExtras {
     }
 
     @discardableResult
-    public func invite(peerId: String, to channel: String) -> Bool {
-        guard let sink, !peerId.isEmpty, peerId != sink.selfId, privateChannels.contains(channel), channel != "#team" else {
-            return false
-        }
-        var frame = sink.makeFrame("invite")
-        frame["to"] = .string(peerId)
-        frame["channel"] = .string(channel)
-        return sink.sendFrame(frame)
-    }
-
-    @discardableResult
     public func sendFile(conversation: String, fileName: String, mime: String, data: Data) -> Bool {
         let name = String(fileName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxFileNameChars))
-        guard let sink, !name.isEmpty, !data.isEmpty, data.count <= ChatFileLimits.maxSendBytes else { return false }
-        var frame = sink.makeFrame(conversation.hasPrefix("@") ? "dm" : "chat")
+        guard let sink, !name.isEmpty, !data.isEmpty, data.count <= ChatFileLimits.maxSendBytes, conversation.hasPrefix("#")
+        else { return false }
+        var frame = sink.makeFrame("chat")
         frame["fileName"] = .string(name)
         frame["fileMime"] = .string(String(mime.prefix(ChatLimits.maxMimeChars)))
         frame["file"] = .string(data.base64EncodedString())
         routed(&frame, conversation: conversation, persist: true)
-        if frame["channel"] == nil { frame.removeValue(forKey: "persist") }
         let id = frame["id"]?.text ?? ""
         store(ChatAttachment(messageId: id, fileName: name, mime: mime, data: data))
         sink.applyFrame(frame)
@@ -889,7 +816,7 @@ public final class ChatExtras {
 
     @discardableResult
     public func sendLook(conversation: String, change: ChatLookChange) -> Bool {
-        guard let sink, conversation.hasPrefix("#") || conversation.hasPrefix("@") else { return false }
+        guard let sink, conversation.hasPrefix("#") else { return false }
         var frame = sink.makeFrame(ChatLookFrames.type)
         for (key, value) in ChatLookFrames.fields(change) { frame[key] = value }
         routed(&frame, conversation: conversation, persist: true)

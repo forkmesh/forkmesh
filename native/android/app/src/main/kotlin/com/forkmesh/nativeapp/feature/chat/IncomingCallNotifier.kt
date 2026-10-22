@@ -18,6 +18,7 @@ import com.forkmesh.nativeapp.R
 import com.forkmesh.nativeapp.chat.DirectCallInvite
 import com.forkmesh.nativeapp.chat.DirectCallKind
 import com.forkmesh.nativeapp.feature.push.PingNotifier
+import com.forkmesh.nativeapp.platform.IntentTokens
 import com.forkmesh.nativeapp.push.CallRings
 
 object IncomingCallNotifier {
@@ -108,6 +109,7 @@ object IncomingCallNotifier {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_CALL, callId)
         }
+        IntentTokens.stamp(context, intent)
         return PendingIntent.getActivity(context, code, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
@@ -116,6 +118,7 @@ object IncomingCallNotifier {
             action = ACTION_DECLINE
             putExtra(EXTRA_CALL, callId)
         }
+        IntentTokens.stamp(context, intent)
         return PendingIntent.getBroadcast(context, NOTIFICATION_ID + 2, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
@@ -165,6 +168,7 @@ object IncomingCallNotifier {
 class CallActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != IncomingCallNotifier.ACTION_DECLINE) return
+        if (!IntentTokens.carries(context, intent)) return
         IncomingCallNotifier.cancel(context)
         DirectCallFeature.decline(intent.getStringExtra(IncomingCallNotifier.EXTRA_CALL).orEmpty())
     }

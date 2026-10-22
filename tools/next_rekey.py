@@ -163,6 +163,7 @@ BI_COLUMNS = {
     "calendar_events": ("owner_bi", "org_bi"),
     "calendar_reminder_deliveries": ("recipient_bi",),
     "catalog_rate": ("owner_bi",),
+    "chat_blocks": ("account_bi",),
     "chat_channel_invites": ("token_bi", "created_by_bi"),
     "chat_channel_members": ("member_bi", "invited_by_bi"),
     "chat_channel_reads": ("account_bi",),
@@ -431,7 +432,7 @@ CIPHER_COLUMNS = {
         "ap_objects", "ap_org_digest_settings", "ap_outbox",
         "ap_repo_settings", "ap_service_keys", "apns_device_tokens",
         "branch_delete_jobs", "branch_op_inbox", "branch_op_results",
-        "bug_reports", "calendar_events",
+        "bug_reports", "calendar_events", "chat_blocks",
         "chat_channel_invites", "chat_channel_members",
         "chat_channel_webhooks", "chat_channels",
         "chat_direct_conversations", "chat_direct_media",
@@ -615,7 +616,8 @@ class Keyset:
         if scope == "mainnode/forkmesh" and room.lower() == PUBLIC_WORLD_GENERAL_ROOM:
             suffix = ":room-chat-passphrase-public-world-general-v1"
         elif scope == "mainnode/forkmesh":
-            suffix = ":room-chat-passphrase-v1"
+            suffix = (":room-chat-passphrase-v2:mainnode/forkmesh:room:"
+                      + room.lower())
         else:
             suffix = ":room-chat-passphrase-v2:" + scope
         return self._passphrase(suffix)

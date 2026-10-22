@@ -1062,9 +1062,10 @@ export function createChatCalls({
     if (!CALL_FRAME_TYPES.has(type)) return;
     const callId = String(plain.call || "");
     const from = String(plain.senderId || "");
-    if (!callId || !from || from === selfId) return;
+    const self = String((typeof selfId === "function" ? selfId() : selfId) || "");
+    if (!callId || !from || from === self) return;
     const fromOwnAccount = ownAccountFrame(plain);
-    if (plain.to && plain.to !== selfId) {
+    if (plain.to && plain.to !== self) {
       if (fromOwnAccount && invite?.callId === callId &&
           (type === "call-accept" || type === "call-decline")) {
         hideIncoming();

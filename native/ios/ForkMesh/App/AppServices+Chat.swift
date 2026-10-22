@@ -5,6 +5,7 @@ import FMChat
 import FMControl
 import FMDiscord
 import FMNet
+import FMPush
 import SwiftUI
 
 @MainActor
@@ -39,6 +40,7 @@ struct ChatInstaller: AppServicesInstaller {
             switcher.onSuspend = {
                 try await suspend?()
                 await hub.leaveProject()
+                Services.get(ChatLinkPreviewService.self)?.leaveProject()
                 DirectLiveMotionFeed.shared.stop()
             }
             switcher.onResume = {
@@ -47,14 +49,24 @@ struct ChatInstaller: AppServicesInstaller {
             }
         }
         if let api = api, let sockets = Services.get(WebSocketConnector.self), let secure = Services.get(SecureStore.self) {
+            let owners: ChatNodeOwners = ChatNodeOwners(api: api)
+            let verifiedNames: PushVerifiedNames = PushVerifiedNames(
+                store: KeychainSharedItemStore(service: PushCredentialStore.service, accessGroup: PushCredentialStore.accessGroup))
+            owners.onAnswer = { (node: String, account: String) in verifiedNames.remember(node: node, account: account) }
             let office: OfficeChannelService = OfficeChannelService(
                 api: api, connector: sockets, secureStore: secure, origin: { api.url("/") },
-                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
+                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" }, nodeIdentity: relay.nodeIdentity)
             let direct: DirectMessageService = DirectMessageService(
                 api: api, connector: sockets, secureStore: secure, origin: { api.url("/") },
                 selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
+            office.nodeOwners = owners
+            direct.onConversations = { (records: [DirectConversation]) in
+                verifiedNames.rememberDirect(records.map { (conversation: $0.conversation, account: $0.otherUser) })
+            }
             hub.office = office
             hub.direct = direct
+            hub.accountApi = api
+            relay.nodeOwners = owners
             let prefs: KeyValueStore? = Services.get(KeyValueStore.self)
             let roomsKey: @MainActor () -> String = {
                 let account: String = (auth?.session?.nodeName ?? "").lowercased()
@@ -119,16 +131,16 @@ struct ChatInstaller: AppServicesInstaller {
                 }
                 Services.put(ChatAuthListener(auth: auth, token: token))
             }
+            var returns: AppReturnGate = AppReturnGate()
             Services.get(AppLifecycle.self)?.observe { (state: AppLifecycleState) in
                 direct.appLifecycleChanged(state)
                 if state == .hidden || state == .paused || state == .detached {
                     live.stopSharingMotion()
                     DirectLiveMotionFeed.shared.stop()
                 }
-                if state == .resumed {
-                    Task { await hub.refreshMemberDirectory() }
-                }
-                if state == .resumed && !(auth?.session?.sessionToken ?? "").isEmpty {
+                guard returns.isReturn(state) else { return }
+                Task { await hub.refreshMemberDirectory() }
+                if !(auth?.session?.sessionToken ?? "").isEmpty {
                     Task { await office.refresh() }
                     Task { await direct.refresh() }
                     Task { await hub.applyReadMarks() }
@@ -141,7 +153,7 @@ struct ChatInstaller: AppServicesInstaller {
                     if topic == "direct-messages" {
                         Task { await direct.refresh() }
                     } else if topic == ChatReadMarks.topic {
-                        Task { await hub.applyReadMarks() }
+                        Task { await hub.applyReadMarks(force: true) }
                     }
                 }
                 let previousEvent: (@MainActor (String, JSONObject) -> Void)? = events.onEvent
@@ -159,7 +171,7 @@ struct ChatInstaller: AppServicesInstaller {
             }
         }
         _ = Services.put(
-            ChatReplySender(relay: relay, extras: hub.extras, office: { hub.office }),
+            ChatReplySender(relay: relay, extras: hub.extras, office: { hub.office }, direct: { hub.direct }),
             as: (any NotificationReplySending).self)
         if let desktops = Services.get(DesktopControlHub.self) {
             Services.put(DiscordBridge(channel: desktops))
@@ -238,8 +250,9 @@ struct ChatInstaller: AppServicesInstaller {
         auth.addListener {
             Task { @MainActor in await retention.syncSession() }
         }
+        var returns: AppReturnGate = AppReturnGate()
         Services.get(AppLifecycle.self)?.observe { (state: AppLifecycleState) in
-            if state != .resumed { return }
+            guard returns.isReturn(state) else { return }
             hub.pruneExpired()
             Task {
                 do {

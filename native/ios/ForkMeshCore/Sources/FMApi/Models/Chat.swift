@@ -118,6 +118,7 @@ public struct ChatMessage: Equatable, Hashable, Sendable, Identifiable {
     public var recipients: Int?
     public var app: AppMessage?
     public var replyTo: ChatReplyQuote?
+    public var serverVisible = false
 
     public init(
         id: String, conversation: String, senderId: String, senderName: String, text: String,

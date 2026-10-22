@@ -62,7 +62,11 @@ final class ChatPersonaTests: XCTestCase {
         let mesh = LocalMeshService(settings: device.settings, identity: device.identity, secureStore: device.secure)
         XCTAssertEqual(mesh.displayName, guestChatName(device.identity.publicKeyB64url))
         mesh.accountProvider = { "jett" }
-        XCTAssertEqual(mesh.displayName, "jett")
+        device.settings.setDisplayName("Jett")
+        XCTAssertEqual(
+            mesh.displayName, guestChatName(device.identity.publicKeyB64url), "#mesh never names the account to strangers")
         XCTAssertEqual(mesh.members().first { $0.isSelf }?.owner, "jett")
+        device.settings.setDisplayName("Jett P")
+        XCTAssertEqual(mesh.displayName, "Jett P", "a name the user chose is shown")
     }
 }

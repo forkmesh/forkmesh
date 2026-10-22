@@ -292,7 +292,9 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 - **Diagnostics.** "Send diagnostics" (the composer's "+" menu and
   `/diagnostics`) puts a performance report into the prompt; it trims its
   lowest-ranked sections to fit and lists crashes as the attributed thread's
-  top frames. The prompt sends the agent to
+  top frames. `PerformanceReport.text` runs `DiagnosticsBundle.scrub` on every
+  report (tokens, emails, message text, conversation, channel and room names),
+  so no path hands an agent an unscrubbed one. The prompt sends the agent to
   [PERFORMANCE_CHECKS.md](PERFORMANCE_CHECKS.md) (how to read the bundle,
   every earlier check) and asks it to add its own check there.
 
@@ -300,6 +302,18 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 
 - Keys live in the Keychain (`native/ios/ForkMesh/Platform/KeychainStore.swift`)
   and the Android Keystore (`app/platform/SecureStore`).
+- iOS Keychain groups (2026-10-22, `FMAccount/KeychainPlacement.swift`): the
+  app lists `…forkmesh.private`, `…forkmesh.push` and `…forkmesh`, in that
+  order. The node key, owner key, sessions, vault copy and every other
+  secure-store item live in `private`, which no extension lists. The
+  notification service extension lists only `push`: it holds the push
+  session items, the room keys, the verified-names map and the chat keyring
+  (`chat/e2ee/…`: identity, prekeys, trust, ratchets), which it needs to open
+  sealed chat pushes. Share, Widgets and AutoFill keep `…forkmesh` for the
+  share drop, surface snapshot and AutoFill cache. Before, every item sat in
+  `…forkmesh` and every extension listed it, so any extension could read the
+  node key and sessions. `KeychainStore` moves old items out of `…forkmesh`
+  once per launch (add to the new group, then delete the old copy).
 - Ed25519 is never delegated to CryptoKit (randomised signatures would break
   the pinned deterministic vectors).
 - The iOS app shows no prices, plans or paid features and moves no money
@@ -362,7 +376,10 @@ avatar movement but does not silently change that saved feedback preference.
   what Home reads on each resume.
 - A scene-phase refresh runs on every inactive-to-active change (Control
   Center, Notification Center, a system alert), not only after the
-  background; gate it on age (`AccountPackagesStore.refreshIfStale`).
+  background; gate it on age (`AccountPackagesStore.refreshIfStale`) or on
+  a real return (`AppReturnGate`, used by chat).
+- Parse message text once per text, not once per redraw: `ChatLinkText` and
+  the bubbles read `ChatTextCache`.
 - Compute derived lists once per body and pass them down.
 - Do not let a ring cancel a load in flight, whatever started it; mark it and
   run one more load afterwards, or none when the load's reads had not gone out

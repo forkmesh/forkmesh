@@ -17463,8 +17463,7 @@
         ? `<button type="button" data-dashboard-commit-hash="${escapeHtml(run.commit)}" class="font-mono hover:text-foreground hover:underline">${escapeHtml(run.commit.slice(0, 10))}</button>`
         : "";
       const pullLink = run.pullNumber
-        ? `<a href="${escapeHtml(repoRecordUrl(repo, "pulls", run.pullNumber))}" data-repo-actions-link class="hover:text-foreground hover:underline">#${run.pullNumber}</a>`
-        ? `<a href="${escapeHtml(`${repoLinkUrl(repo)}/pulls/${run.pullNumber}`)}" data-repo-actions-link data-repo-actions-run-pull="${run.pullNumber}" class="fm-actions-pull-chip"><i data-lucide="git-pull-request"></i>#${run.pullNumber}</a>`
+        ? `<a href="${escapeHtml(repoRecordUrl(repo, "pulls", run.pullNumber))}" data-repo-actions-link data-repo-actions-run-pull="${run.pullNumber}" class="fm-actions-pull-chip"><i data-lucide="git-pull-request"></i>#${run.pullNumber}</a>`
         : "";
       const facts = [
         `run ${run.id}`, commitLink, run.pullNumber ? "" : escapeHtml(repoActionsRefLabel(run.ref)),
@@ -23750,10 +23749,9 @@
     const rulesSlot = $("[data-repo-pull-rules-slot]");
     if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
     const checkList = $("[data-repo-pull-checks]");
-    if (checkList) checkList.innerHTML = renderRepoPullChecks(parsed.pullChecks);
+    if (checkList) checkList.innerHTML = renderRepoPullChecks(parsed.pullChecks, repo);
     const diffCi = $("[data-repo-diff-ci]");
     if (diffCi) diffCi.innerHTML = renderRepoDiffCiPills(parsed.pullChecks, true);
-    if (checkList) checkList.innerHTML = renderRepoPullChecks(parsed.pullChecks, repo);
     const checkCount = $("[data-repo-pull-check-count]");
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
@@ -25284,66 +25282,6 @@
 
   const PULL_MERGE_REPIN_ERRORS = new Set(["stale_pull_metadata", "stale_base"]);
   const PULL_MERGE_RESUMABLE_ERRORS = new Set(["merge_status_pending", "merge_state_unavailable"]);
-  function renderRepoPullReadiness(repo, number, parsed) {
-    const readiness = parsed.pullReadiness;
-    // Unknown readiness renders nothing at all: an absent panel is honest,
-    // a panel claiming "up to date" from no data is not.
-    if (!readiness?.available) return "";
-    const values = parsed.values || {};
-    const baseBranch = values.base || "the base branch";
-    const update = parsed.pullUpdate || {};
-    const context = repoPullUpdateContext(
-      repo, number, values, parsed.pullMetadataCommit || "", readiness,
-    );
-    const state_ = String(update.state || "");
-    const processing = state_ === "processing";
-    const updated = state_ === "updated";
-    const behind = readiness.behind;
-    const rows = [];
-    if (!readiness.clean) {
-      const shown = readiness.conflicts.slice(0, 10);
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-destructive">Conflicts with ${escapeHtml(baseBranch)}.</strong> ${readiness.conflicts.length ? `${formatCount(readiness.conflicts.length)} file${readiness.conflicts.length === 1 ? "" : "s"} must be resolved locally: ` : ""}${shown.map((path) => `<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(path)}</span>`).join("")}${readiness.conflicts.length > shown.length ? `and ${formatCount(readiness.conflicts.length - shown.length)} more.` : ""}</p>`);
-    } else if (behind) {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-attention">Out of date.</strong> This branch is ${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
-    } else {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-success">Up to date.</strong> This branch already contains ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
-    }
-    if (updated) {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground">The mirror published the branch update. Normal repository sync carries it back to the source of truth.</p>`);
-    } else if (update.message) {
-      rows.push(`<p class="text-xs leading-5 text-destructive">${escapeHtml(update.message)}</p>`);
-    }
-    // The control exists only when a real, signed, exact-OID update can be
-    // dispatched right now by an actor the worker will actually authorize.
-    // Otherwise the panel reports state and offers nothing to press: a button
-    // that can only ever answer 403 is a worse answer than no button.
-    const action = context && !updated && parsed.pullMergeAuthorized === true
-      ? `<button type="button" data-repo-pull-update ${processing ? "disabled" : ""} class="fm-btn fm-btn-sm shrink-0"><i data-lucide="${processing ? "loader-circle" : "git-merge"}"${processing ? ' class="animate-spin"' : ""}></i>${processing ? "Updating branch…" : `Update branch from ${escapeHtml(baseBranch)}`}</button>`
-      : "";
-    const summary = pullChecksSummary(parsed.pullChecks);
-    const pullChecks = parsed.pullChecks || {};
-    const row = { checkList: pullChecks.source === "pull" ? pullChecks : null };
-    const approvalText = repoPullCheckApprovalText(pullChecks);
-    const checksRow = (approvalText
-      ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="text-attention">Checks.</strong> ${escapeHtml(approvalText)}</p>`
-      : summary.text
-        ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="${summary.tone === "bad" ? "text-destructive" : summary.tone === "pending" ? "text-attention" : summary.tone === "good" ? "text-success" : "text-foreground"}">Checks.</strong> ${escapeHtml(summary.text)}</p>`
-        : "")
-      + (row.checkList ? renderRepoPullCheckList(repo, row.checkList) : "")
-      + (pullChecks.approval?.required && pullChecks.canApprove
-        ? `<div class="fm-check-approval-actions"><button type="button" data-repo-pull-check-approve="${escapeHtml(pullChecks.headOid || "")}" class="fm-btn fm-btn-sm"><i data-lucide="shield-check"></i>Approve and run</button>${pullChecks.approval.reason === "author" && pullChecks.approval.author ? `<button type="button" data-repo-pull-check-trust="${escapeHtml(pullChecks.approval.author)}" class="fm-btn fm-btn-sm"><i data-lucide="user-check"></i>Always run for @${escapeHtml(pullChecks.approval.author)}</button>` : ""}</div>`
-        : "");
-    return `
-      <div data-repo-pull-readiness role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="fm-flash ${!readiness.clean ? "fm-flash-danger" : behind ? "fm-flash-warning" : "fm-flash-neutral"} flex-wrap items-center">
-        <i data-lucide="${!readiness.clean ? "git-pull-request-closed" : behind ? "git-compare-arrows" : "git-pull-request"}" class="self-start"></i>
-        <div class="grid min-w-0 flex-1 gap-1">
-          <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(readiness.headOid.slice(0, 12))} · ${formatCount(readiness.ahead)} ahead · ${formatCount(behind)} behind</span>
-          ${rows.join("")}
-          ${checksRow}
-        </div>
-        ${action}
-      </div>`;
-  }
 
   function pullMergeFailureMessage(payload) {
     const error = String(payload?.error || "");
@@ -25535,7 +25473,7 @@
     const runs = checks.runs || [];
     const summary = pullChecksSummary(checks);
     const failedRun = runs.find((run) => pullCheckStateMeta(run.status).outcome === "failed");
-    const checksRow = { id: "checks", actions: [] };
+    const checksRow = { id: "checks", actions: [], checkList: checks.source === "pull" ? checks : null };
     const requiredNames = required.names || [];
     const passedNames = new Set(runs
       .filter((run) => pullCheckStateMeta(run.status).outcome === "passed")
@@ -25555,6 +25493,7 @@
       checksRow.title = runs.length ? "Some checks did not finish" : "No checks have run on this head";
     }
     checksRow.detail = [
+      repoPullCheckApprovalText(checks),
       summary.text || "Live checks appear once a mirror publishes an attested Actions executor for this repository.",
       requiredNames.length
         ? `Required before merging: ${requiredNames.join(", ")}.${missingRequired.length ? ` Not yet passed: ${missingRequired.join(", ")}.` : ""} The mirror verifies the signed results at merge time.`
@@ -25733,6 +25672,7 @@
       const meta = row.id === "branch" && row.headOid
         ? `<span class="fm-merge-row-meta" data-repo-pull-readiness>${escapeHtml(row.headOid.slice(0, 12))} · ${formatCount(row.ahead)} ahead · ${formatCount(row.behind)} behind</span>`
         : "";
+      const checkList = row.checkList ? renderRepoPullCheckList(repo, row.checkList) : "";
       const note = row.note
         ? `<p class="fm-merge-row-note" data-tone="${escapeHtml(row.note.tone)}">${escapeHtml(row.note.text)}</p>`
         : "";
@@ -25744,7 +25684,7 @@
             <p class="fm-merge-row-title">${escapeHtml(row.title)}</p>
             ${meta}
             <p class="fm-merge-row-detail">${escapeHtml(row.detail)}</p>
-            ${conflicts}${note}
+            ${conflicts}${checkList}${note}
           </div>
           ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
         </div>`;
@@ -47995,6 +47935,9 @@
         if (!consumeRepoPullQuickReplyLongPress(replyId)) {
           void sendRepoPullQuickReply(state.selectedRepo, replyId);
         }
+        return;
+      }
+
       const pullCheckDecision = event.target.closest("[data-repo-pull-check-approve], [data-repo-pull-check-trust], [data-repo-pull-check-untrust]");
       if (pullCheckDecision && state.selectedRepo) {
         const data = pullCheckDecision.dataset;
@@ -54397,7 +54340,7 @@
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
     "agent-profiles": "/dashboard-page-agent-profiles.js?v=5f1b0cdbc981",
     "agents": "/dashboard-page-agents.js?v=8e608cb03ff4",
-    "apps": "/dashboard-page-apps.js?v=584df5307f30",
+    "apps": "/dashboard-page-apps.js?v=9e800893389a",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=1ebcd099794e",
     "challenges": "/dashboard-page-challenges.js?v=a053b54ae338",

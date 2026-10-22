@@ -35,6 +35,7 @@ import forkmesh_safe_delete  # noqa: E402
 import docs_site  # noqa: E402
 import dashboard_shell  # noqa: E402
 import build_app_plugins  # noqa: E402
+import build_market_catalog  # noqa: E402
 import build_dashboard_assets  # noqa: E402
 import precompress_assets  # noqa: E402
 import site_templates  # noqa: E402
@@ -365,6 +366,7 @@ def stage_www() -> Path:
         copy_file(APP / "public" / name, destination / name)
     build_www_feeds(destination)
     stage_market_previews(destination)
+    build_market_catalog.stage_package_pages(destination)
     build_app_plugins.stage_www_pages(destination)
     docs_site.stage_docs(destination)
     stamp_canonical_links(destination)
@@ -459,6 +461,8 @@ def stage_cutover() -> Path:
         copy_file(WWW / "public" / name, destination / name)
     shutil.copytree(WWW / "public", destination, dirs_exist_ok=True)
     shutil.copytree(WORLD / "public", destination, dirs_exist_ok=True)
+    stage_market_previews(destination)
+    build_market_catalog.stage_package_pages(destination)
     docs_site.stage_docs(destination)
     world_marketplace_packages(destination)
     build_app_plugins.stage_web(destination)

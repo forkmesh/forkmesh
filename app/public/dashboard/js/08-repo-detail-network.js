@@ -3769,6 +3769,9 @@
         if (!consumeRepoPullQuickReplyLongPress(replyId)) {
           void sendRepoPullQuickReply(state.selectedRepo, replyId);
         }
+        return;
+      }
+
       const pullCheckDecision = event.target.closest("[data-repo-pull-check-approve], [data-repo-pull-check-trust], [data-repo-pull-check-untrust]");
       if (pullCheckDecision && state.selectedRepo) {
         const data = pullCheckDecision.dataset;

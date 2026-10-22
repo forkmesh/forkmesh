@@ -8,8 +8,11 @@
 #include "SettingsWrite.h"
 #include "StickerCatalog.h"
 
+#include "ChatAccountBlocks.h"
 #include "ChatBlocks.h"
 #include "ChatFormat.h"
+#include "ChatNodeOwners.h"
+#include "ChatRelayRules.h"
 #include "ChatLinkText.h"
 #include "ChatRecipients.h"
 #include "ChatTranscriptWindow.h"
@@ -25,6 +28,10 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFontDatabase>
+#include <QJsonDocument>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QUuid>
 #include <QDir>
 #include <QLabel>
@@ -786,7 +793,8 @@ void MainWindow::renderConversationRows()
         const ChatMessage &message = history.at(index);
         if (message.deleted ||
             (!message.threadRootId.isEmpty() &&
-             !isDiscordConversation(message.conversation)))
+             !isDiscordConversation(message.conversation)) ||
+            (!message.self && isBlockedChatSender(message.senderId, message.conversation)))
             continue;
         rows.append(index);
     }
@@ -863,6 +871,8 @@ void MainWindow::onMessage(const ChatMessage &message)
 {
     const QString conversation = message.conversation;
     if (conversation.isEmpty())
+        return;
+    if (isBlockedChatSender(message.senderId, conversation) && !message.self)
         return;
 
     if (message.timestampMs <=
@@ -1592,6 +1602,8 @@ void MainWindow::onTypingChanged(const QString &conversation, const QString &pee
                                  const QString &peerName, bool active)
 {
     if (conversation.isEmpty() || peerId.isEmpty())
+        return;
+    if (active && isBlockedChatSender(peerId, conversation))
         return;
     if (active)
         m_typing[conversation].insert(peerId, peerName);
@@ -2988,8 +3000,10 @@ void MainWindow::showChatSenderProfile(const QString &senderId,
         account = senderId.mid(QStringLiteral("user:").size()).trimmed().toLower();
     if (account.isEmpty() && foundMember)
         account = profileMember.ownerUser.trimmed().toLower();
+    if (account.isEmpty() && foundMember && profileMember.self)
+        account = chatTrustAccount();
     if (account.isEmpty())
-        account = senderName.trimmed().toLower();
+        account = verifiedChatAccount(senderId, m_currentConversation);
 
     const auto directoryMember = m_chatDirectoryUsers.constFind(account);
     if (directoryMember != m_chatDirectoryUsers.constEnd()) {
@@ -3025,10 +3039,9 @@ void MainWindow::showChatSenderProfile(const QString &senderId,
 void MainWindow::showChatUserProfile(const MemberInfo &member,
                                      const QStringList &nodeLines)
 {
-    const QString account =
-        (member.ownerUser.trimmed().isEmpty() ? member.name : member.ownerUser)
-            .trimmed()
-            .toLower();
+    const QString account = forkmesh::relayrules::profileAccount(
+        member.id, member.self, chatTrustAccount(), member.ownerUser,
+        verifiedChatAccount(member.id, QString()));
 
     auto *dialog = new QDialog(this);
     dialog->setObjectName("chatUserProfileDialog");
@@ -3172,42 +3185,32 @@ void MainWindow::showChatUserProfile(const MemberInfo &member,
     auto *buttonRow = new QHBoxLayout;
     buttonRow->setContentsMargins(0, 0, 0, 0);
     buttonRow->setSpacing(8);
-    if (!member.self) {
-        QString peerId, peerName;
-        if (!member.id.isEmpty() &&
-            !member.id.startsWith(QStringLiteral("user:")) && member.online) {
-            peerId = member.id;
-            peerName = member.name;
-        } else {
-            for (const MemberInfo &m : std::as_const(m_homeRoster)) {
-                if (!m.online || m.id.isEmpty() || m.self)
-                    continue;
-                const QString owner = m.ownerUser.trimmed().toLower();
-                const QString name = m.name.trimmed().toLower();
-                if (owner == account || (owner.isEmpty() && name == account)) {
-                    peerId = m.id;
-                    peerName = member.name;
-                    break;
-                }
-            }
-        }
-        const bool serverDirect =
-            !account.isEmpty() && m_officeChannelMirror &&
-            m_officeChannelMirror->isActive();
-        if (serverDirect || !peerId.isEmpty()) {
-            auto *messageButton = new QPushButton(QStringLiteral("Message"));
-            messageButton->setObjectName("primaryButton");
-            messageButton->setCursor(Qt::PointingHandCursor);
-            messageButton->setToolTip(
-                QStringLiteral("Open a private conversation with %1")
-                    .arg(member.name));
-            connect(messageButton, &QPushButton::clicked, this,
-                    [this, dialog, account, peerId, peerName] {
-                        dialog->accept();
-                        startDirectMessageWith(account, peerId, peerName);
-                    });
-            buttonRow->addWidget(messageButton);
-        }
+    if (!member.self && !account.isEmpty()) {
+        auto *messageButton = new QPushButton(QStringLiteral("Message"));
+        messageButton->setObjectName("primaryButton");
+        messageButton->setCursor(Qt::PointingHandCursor);
+        messageButton->setToolTip(
+            QStringLiteral("Open a direct conversation with @%1").arg(account));
+        connect(messageButton, &QPushButton::clicked, this, [this, dialog, account] {
+            dialog->accept();
+            startDirectMessageWith(account, QString(), QString());
+        });
+        buttonRow->addWidget(messageButton);
+        ensureChatTrust();
+        const bool blocked = m_chatBlocks->isBlocked(account);
+        auto *blockButton =
+            new QPushButton(blocked ? QStringLiteral("Unblock") : QStringLiteral("Block"));
+        blockButton->setObjectName(QStringLiteral("ghostButton"));
+        blockButton->setCursor(Qt::PointingHandCursor);
+        blockButton->setToolTip(
+            blocked ? QStringLiteral("Show @%1's messages again").arg(account)
+                    : QStringLiteral("Hide @%1's messages, typing and alerts").arg(account));
+        connect(blockButton, &QPushButton::clicked, this, [this, dialog, account, blocked] {
+            dialog->accept();
+            ensureChatTrust();
+            m_chatBlocks->setBlocked(account, !blocked);
+        });
+        buttonRow->addWidget(blockButton);
     }
     if (member.self) {
         auto *editButton = new QPushButton(QStringLiteral("Edit profile"));
@@ -3445,8 +3448,8 @@ void MainWindow::refreshChannelList()
         if (isLocalMeshConversation(channel)) {
             tooltip = QStringLiteral(
                 "Everyone running ForkMesh on this network, found "
-                "automatically. End-to-end encrypted and never sent to the "
-                "internet.");
+                "automatically. Anyone nearby can join and read it; it is "
+                "never sent to the internet.");
         }
         const QString prefix =
             (m_unread.contains(channel) ? "\xE2\x97\x8F " : "") +
@@ -3924,11 +3927,14 @@ void MainWindow::updateChatConversationHeading()
             discord
                 ? QStringLiteral("Discord bot connection over TLS; Discord and "
                                  "server moderators can read this channel")
+                : isLocalMeshConversation(m_currentConversation)
+                    ? forkmesh::relayrules::roomBadge(
+                          forkmesh::relayrules::RoomKind::Mesh).tooltip
                 : publicChannel
-                    ? QStringLiteral("Public channel; the controller can read it "
-                                     "for ForkBot, MCP, and webhook access")
-                    : QStringLiteral("Automatic end-to-end encryption; the "
-                                     "controller room key cannot read messages"));
+                    ? forkmesh::relayrules::roomBadge(
+                          forkmesh::relayrules::RoomKind::Public).tooltip
+                    : forkmesh::relayrules::roomBadge(
+                          forkmesh::relayrules::RoomKind::Private).tooltip);
     }
 }
 
@@ -4254,14 +4260,13 @@ void MainWindow::startDirectMessageWith(const QString &account,
     const QString name = account.trimmed().toLower();
     if (!m_officeChannelMirror || !m_officeChannelMirror->isActive())
         startOfficeChannelMirror();
-    if (!name.isEmpty() && m_officeChannelMirror &&
-        m_officeChannelMirror->isActive() &&
+    Q_UNUSED(peerId);
+    Q_UNUSED(peerName);
+    if (name.isEmpty())
+        return;
+    if (m_officeChannelMirror && m_officeChannelMirror->isActive() &&
         m_officeChannelMirror->startDirectMessage(name))
         return;
-    if (!peerId.isEmpty()) {
-        openDirectChat(peerId, peerName.isEmpty() ? name : peerName);
-        return;
-    }
     const bool signedIn = hasActiveAccountSession();
     const QString heading =
         signedIn ? QStringLiteral("Messages are not connected")
@@ -4389,9 +4394,6 @@ void MainWindow::refreshChatComposerAccess()
     }
 }
 
-// Public #channels intentionally use the controller-readable room layer for
-// integrations. Private channels, DMs, and private Office conversations add
-// the automatic X25519 device layer.
 void MainWindow::refreshRoomSealButton()
 {
     if (!m_roomSealButton)
@@ -4403,40 +4405,30 @@ void MainWindow::refreshRoomSealButton()
     m_roomSealButton->setVisible(roomConversation);
     if (!roomConversation)
         return;
+    const forkmesh::relayrules::RoomBadge badge =
+        forkmesh::relayrules::roomBadge(currentRoomKind());
+    m_roomSealButton->setText(badge.text);
+    setOcticon(m_roomSealButton, badge.icon, 14);
+    m_roomSealButton->setToolTip(badge.tooltip);
+}
+
+forkmesh::relayrules::RoomKind MainWindow::currentRoomKind() const
+{
+    using forkmesh::relayrules::RoomKind;
+    const QString &conversation = m_currentConversation;
+    if (isDiscordConversation(conversation))
+        return RoomKind::Discord;
     if (m_officeChannelMirror &&
-        m_officeChannelMirror->isServerVisibleConversation(
-            m_currentConversation)) {
-        m_roomSealButton->setText(QStringLiteral("Server-visible"));
-        setOcticon(m_roomSealButton, "server", 14);
-        m_roomSealButton->setToolTip(
-            QStringLiteral("ForkMesh writes these notices itself, so the "
-                           "server can read them. Only you can see this "
-                           "channel"));
-        return;
-    }
-    const bool publicChannel =
-        m_currentConversation.startsWith(QLatin1Char('#')) &&
-        !m_privateChannels.contains(m_currentConversation) &&
-        (!isOfficeConversation(m_currentConversation) ||
-         (m_officeChannelMirror &&
-          !m_officeChannelMirror->isPrivateConversation(m_currentConversation)));
-    if (publicChannel) {
-        m_roomSealButton->setText(QStringLiteral("Public"));
-        setOcticon(m_roomSealButton, "unlock", 14);
-        m_roomSealButton->setToolTip(
-            QStringLiteral("Controller-readable public channel; ForkBot, MCP, "
-                           "and webhooks can participate"));
-        return;
-    }
-    const QString keyId = m_backend->roomSealKeyId();
-    m_roomSealButton->setText(QStringLiteral("End-to-end"));
-    setOcticon(m_roomSealButton, "shield-check", 14);
-    m_roomSealButton->setToolTip(
-        keyId.isEmpty()
-            ? QStringLiteral("Automatic end-to-end encryption is unavailable")
-            : QStringLiteral("Automatic device-to-device encryption (device %1); "
-                             "the controller key cannot unwrap message keys")
-                  .arg(keyId));
+        m_officeChannelMirror->isServerVisibleConversation(conversation))
+        return RoomKind::ServerVisible;
+    if (isLocalMeshConversation(conversation))
+        return RoomKind::Mesh;
+    if (forkmesh::relayrules::isDeviceLocalConversation(conversation))
+        return RoomKind::DeviceLocal;
+    if (isOfficeConversation(conversation) && m_officeChannelMirror &&
+        m_officeChannelMirror->isPrivateConversation(conversation))
+        return RoomKind::Private;
+    return RoomKind::Public;
 }
 
 void MainWindow::promptRoomSeal()
@@ -4460,15 +4452,25 @@ void MainWindow::promptRoomSeal()
         (!isOfficeConversation(m_currentConversation) ||
          (m_officeChannelMirror &&
           !m_officeChannelMirror->isPrivateConversation(m_currentConversation)));
+    if (isLocalMeshConversation(m_currentConversation)) {
+        QMessageBox::information(
+            this, QStringLiteral("#mesh"),
+            QStringLiteral(
+                "#mesh is the room for everyone nearby running ForkMesh. Anyone "
+                "on this network or in Bluetooth range can join it and read what "
+                "is said here. It never goes to the internet."));
+        return;
+    }
     if (publicChannel) {
         QMessageBox::information(
             this, QStringLiteral("Public channel"),
             QStringLiteral(
-                "This channel is public and controller-readable. It still uses "
-                "authenticated AES-256-GCM transport, while allowing ForkBot, "
-                "MCP, and incoming webhooks to read and post messages.\n\n"
-                "Private channels and direct messages add automatic "
-                "device-to-device encryption beyond the controller key."));
+                "Anyone who joins this channel can read it. Each message is "
+                "signed and sealed to the devices in the room, so the relay "
+                "forwards it without being able to read or change it. Webhooks "
+                "and apps can post here; they show as the integration, never as "
+                "a person.\n\nFor something only one person should read, "
+                "use a direct message or a private channel."));
         return;
     }
     if (forkmesh::office::isDirectOfficeConversation(m_currentConversation)) {
@@ -4860,7 +4862,7 @@ void MainWindow::openChannelSettingsFor(const QString &target)
     auto *visibilityBox = new QComboBox(dialog);
     visibilityBox->addItem(QStringLiteral("Private — invited, end-to-end"),
                            QStringLiteral("private"));
-    visibilityBox->addItem(QStringLiteral("Public — integrations enabled"),
+    visibilityBox->addItem(QStringLiteral("Public — webhooks can post"),
                            QStringLiteral("public"));
     if (serverVisible)
         visibilityBox->addItem(
@@ -4934,9 +4936,7 @@ void MainWindow::openChannelSettingsFor(const QString &target)
     auto *webhookHeading = new QLabel(
         QStringLiteral("<b>Incoming webhooks</b>"), dialog);
     auto *webhookNote = new QLabel(
-        QStringLiteral("Public channels can accept controller integrations. "
-                       "POST JSON with a text, content, or message field. A "
-                       "URL is shown only once when it is issued."),
+        forkmesh::relayrules::webhookNote(QStringLiteral("public")),
         dialog);
     webhookNote->setWordWrap(true);
     webhookNote->setStyleSheet(Theme::remapSheet(QStringLiteral("color:#8b949e; font-size:11px;")));
@@ -5019,17 +5019,11 @@ void MainWindow::openChannelSettingsFor(const QString &target)
     };
     auto syncWebhookPolicy = [visibilityBox, addWebhook, rotateWebhook,
                               webhookNote] {
-        const bool enabled = visibilityBox->currentData().toString() ==
-                             QLatin1String("public");
+        const QString visibility = visibilityBox->currentData().toString();
+        const bool enabled = forkmesh::relayrules::webhooksAllowed(visibility);
         addWebhook->setEnabled(enabled);
         rotateWebhook->setEnabled(enabled);
-        webhookNote->setText(
-            enabled
-                ? QStringLiteral("Public channels can accept controller "
-                                 "integrations. POST JSON with a text, content, "
-                                 "or message field. A URL is shown only once.")
-                : QStringLiteral("Incoming webhooks are disabled while this "
-                                 "channel is private and end-to-end encrypted."));
+        webhookNote->setText(forkmesh::relayrules::webhookNote(visibility));
     };
     connect(visibilityBox, &QComboBox::currentIndexChanged, dialog,
             [syncWebhookPolicy](int) { syncWebhookPolicy(); });
@@ -5306,10 +5300,10 @@ void MainWindow::showMeshChannelSettings(const QString &channel)
     auto *nameLabel = new QLabel(chatConversationLabel(channel), dialog);
     nameLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     auto *encryptionLabel = new QLabel(
-        localMesh ? QStringLiteral("Local network — end-to-end encrypted, "
+        localMesh ? QStringLiteral("Local network — anyone nearby can read it; "
                                    "never sent to the internet")
         : privateRoom ? QStringLiteral("Private — invited, end-to-end")
-                      : QStringLiteral("Public — integrations enabled"),
+                      : QStringLiteral("Public — anyone in the room can read it"),
         dialog);
     encryptionLabel->setWordWrap(true);
     auto *form = new QFormLayout;
@@ -5398,28 +5392,138 @@ void MainWindow::promptDeleteRoom(const QString &channel)
 
 void MainWindow::restorePrivateChannels()
 {
-    if (!m_backend)
-        return;
+    purgeRelayPrivateChannels();
+}
+
+void MainWindow::purgeRelayPrivateChannels()
+{
+    const QSet<QString> relayPrivate =
+        forkmesh::relayrules::relayPrivateChannels(savedPrivateChannels() + m_privateChannels);
+    m_relayPrivatePurged.unite(relayPrivate);
     QSettings settings;
-    const QString key = privateChannelsSettingsKey();
-    if (!settings.contains(key) &&
-        settings.contains(QStringLiteral("chat/privateChannels"))) {
-        settings.setValue(
-            key,
-            settings.value(QStringLiteral("chat/privateChannels")).toStringList());
-        settings.remove(QStringLiteral("chat/privateChannels"));
+    settings.remove(QStringLiteral("chat/privateChannels"));
+    settings.remove(QStringLiteral("chat/privateChannelsByInstance"));
+    bool changed = false;
+    for (const QString &channel : relayPrivate) {
+        changed = m_privateChannels.remove(channel) || changed;
+        if (m_history.remove(channel) > 0)
+            changed = true;
+        m_unread.remove(channel);
+        m_unreadCounts.remove(channel);
+        m_channels.removeAll(channel);
     }
-    const QStringList saved = settings.value(key).toStringList();
-    {
-        const QScopedValueRollback<bool> restoring(m_restoringPrivateChannels, true);
-        for (const QString &name : saved) {
-            const QString trimmed = name.trimmed();
-            if (!trimmed.isEmpty())
-                m_backend->createPrivateChannel(trimmed);
+    for (auto it = m_history.begin(); it != m_history.end();) {
+        if (forkmesh::relayrules::isRelayDirectConversation(it.key())) {
+            m_unread.remove(it.key());
+            m_unreadCounts.remove(it.key());
+            it = m_history.erase(it);
+            changed = true;
+        } else {
+            ++it;
         }
     }
-    if (!saved.isEmpty())
-        persistPrivateChannels();
+    if (!m_openDms.isEmpty() || !m_dmNames.isEmpty())
+        changed = true;
+    m_openDms.clear();
+    m_dmNames.clear();
+    persistPrivateChannels();
+    purgePrivateChatPings(relayPrivate);
+    if (!changed)
+        return;
+    if (forkmesh::relayrules::purgedConversation(m_currentConversation, relayPrivate)) {
+        m_currentConversation.clear();
+        const QString fallback = m_channels.value(0);
+        if (!fallback.isEmpty())
+            switchConversation(fallback);
+    }
+    refreshChannelList();
+    refreshDmList();
+    scheduleChatSave();
+}
+
+void MainWindow::ensureChatTrust()
+{
+    if (!m_chatNodeOwners) {
+        m_chatNodeOwners = new ChatNodeOwners(this);
+        m_chatNodeOwners->setFetcher([this](const QString &node, ChatNodeOwners::Reply reply) {
+            if (!m_networkAccess || m_offlineMode) {
+                reply(false, QString());
+                return;
+            }
+            QNetworkRequest request(ChatNodeOwners::lookupUrl(catalogApiUrl(), node));
+            request.setRawHeader("Accept", "application/json");
+            QNetworkReply *network = m_networkAccess->get(request);
+            connect(network, &QNetworkReply::finished, this, [network, reply] {
+                const QByteArray body = network->readAll();
+                const bool ok = network->error() == QNetworkReply::NoError;
+                network->deleteLater();
+                QString account;
+                const bool parsed = ok && ChatNodeOwners::parseAnswer(body, &account);
+                reply(parsed, account);
+            });
+        });
+        connect(m_chatNodeOwners, &ChatNodeOwners::resolved, this,
+                [this] { refreshChatMembers(); });
+    }
+    if (!m_chatBlocks) {
+        m_chatBlocks = new ChatAccountBlocks(this);
+        m_chatBlocks->setPusher([this](const QJsonObject &body) {
+            const QUrl url = ChatAccountBlocks::endpoint(catalogApiUrl());
+            const QString token = accountSessionTokenForUrl(url);
+            if (!m_networkAccess || m_offlineMode || token.isEmpty())
+                return;
+            QNetworkRequest request(url);
+            request.setHeader(QNetworkRequest::ContentTypeHeader,
+                              QStringLiteral("application/json"));
+            request.setRawHeader("Authorization", "Bearer " + token.toUtf8());
+            QNetworkReply *reply = m_networkAccess->sendCustomRequest(
+                request, "PUT", QJsonDocument(body).toJson(QJsonDocument::Compact));
+            connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+        });
+        connect(m_chatBlocks, &ChatAccountBlocks::changed, this, [this] {
+            m_typing.clear();
+            refreshTypingLabel();
+            rebuildConversationView();
+            refreshChatMembers();
+        });
+    }
+}
+
+void MainWindow::syncChatBlocks()
+{
+    ensureChatTrust();
+    const QUrl url = ChatAccountBlocks::endpoint(catalogApiUrl());
+    const QString token = accountSessionTokenForUrl(url);
+    if (!m_networkAccess || m_offlineMode || token.isEmpty())
+        return;
+    QNetworkRequest request(url);
+    request.setRawHeader("Accept", "application/json");
+    request.setRawHeader("Authorization", "Bearer " + token.toUtf8());
+    QNetworkReply *reply = m_networkAccess->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        const QByteArray body = reply->readAll();
+        const bool ok = reply->error() == QNetworkReply::NoError;
+        reply->deleteLater();
+        const QJsonDocument document = QJsonDocument::fromJson(body);
+        if (ok && document.isObject() && m_chatBlocks)
+            m_chatBlocks->mergeServerList(document.object());
+    });
+}
+
+QString MainWindow::verifiedChatAccount(const QString &senderId,
+                                        const QString &conversation)
+{
+    ensureChatTrust();
+    return forkmesh::relayrules::senderAccount(senderId, conversation,
+                                               m_chatNodeOwners->account(senderId));
+}
+
+bool MainWindow::isBlockedChatSender(const QString &senderId, const QString &conversation)
+{
+    if (!m_chatBlocks || m_chatBlocks->accounts().isEmpty())
+        return false;
+    const QString account = verifiedChatAccount(senderId, conversation);
+    return !account.isEmpty() && m_chatBlocks->isBlocked(account);
 }
 
 QSet<QString> MainWindow::savedPrivateChannels() const
@@ -5779,8 +5883,7 @@ void MainWindow::maybeAskForkbot(const QString &conversation, const QString &tex
                                   !m_officeChannelMirror->isPrivateConversation(
                                       conversation))));
     if (!publicChannel) {
-        logSystem(QStringLiteral("ForkBot is available only in public, "
-                                 "controller-readable channels."));
+        logSystem(QStringLiteral("ForkBot is available only in public channels."));
         return;
     }
 

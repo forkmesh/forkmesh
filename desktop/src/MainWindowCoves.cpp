@@ -5,6 +5,7 @@
 // forkmesh/coves/<slug>.cove format and the AES-256-GCM crypto.
 
 #include "MainWindow.h"
+#include "OfficeChannelMirror.h"
 #include "MainWindowInternal.h"
 #include "PingSettings.h"
 
@@ -143,14 +144,12 @@ QByteArray MainWindow::coveOpenCanonical(const QString &coveId, const QString &c
 
 void MainWindow::announceCoveOpened(const Cove &cove)
 {
-    if (!m_backend || cove.creator.isEmpty() || !m_profileIdentity.isValid())
+    const QString creator = cove.creatorAccount.trimmed().toLower();
+    if (creator.isEmpty() || creator == chatTrustAccount() || !m_officeChannelMirror ||
+        !m_officeChannelMirror->isActive())
         return;
-    const QString openerKey = m_profileIdentity.publicKey();
-    const qint64 ts = QDateTime::currentMSecsSinceEpoch();
-    const QString sig = m_profileIdentity.signData(
-        coveOpenCanonical(cove.id, cove.creator, openerKey, ts));
-    m_backend->notifyCoveOpened(cove.creator, cove.id, cove.name, openerKey,
-                                m_userName, ts, sig);
+    m_officeChannelMirror->sendDirectText(
+        creator, QStringLiteral("I opened your cove %1.").arg(cove.name.left(160)));
 }
 
 void MainWindow::onCoveOpened(const QString &creatorKey, const QString &coveId,

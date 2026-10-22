@@ -128,6 +128,8 @@ def _register_harness():
         "DESKTOP_NODE_CAPABILITIES": DESKTOP_CAPS,
         "MOBILE_NODE_CAPABILITIES": MOBILE_CAPS,
         "CLIENT_CAPABILITIES": CLIENT_CAPS,
+        "CHAT_NODE_DEVICE_KIND": "chat_node",
+        "CHAT_NODE_CAPABILITIES": "chat_node",
         "CONTRIBUTION_KEY_PROOF_CAPABILITY": "contribution_key_proof",
     })
     return ns["_register_account_device"], rows
@@ -136,6 +138,7 @@ def _register_harness():
 @pytest.mark.parametrize("kind,expected", [
     ("desktop_node", DESKTOP_CAPS),
     ("mobile_node", MOBILE_CAPS),
+    ("chat_node", "chat_node"),
     ("web_or_mobile", CLIENT_CAPS),
     ("anything-else", CLIENT_CAPS),
 ])
@@ -758,6 +761,8 @@ class _Registry:
             "ACCOUNT_DEVICE_KINDS": (
                 "desktop_node", "mobile_node", "browser_control"),
             "BROWSER_CONTROL_CAPABILITIES": "desktop_control",
+            "CHAT_NODE_DEVICE_KIND": "chat_node",
+            "CHAT_NODE_CAPABILITIES": "chat_node",
             "BROWSER_CONTROL_BIND_PROOF": _literal_assignment(
                 ENTRY, "BROWSER_CONTROL_BIND_PROOF"),
             "BROWSER_CONTROL_MAX_DEVICES": 3,

@@ -1,7 +1,7 @@
 {
   "schema": "forkmesh-external-dependency-map-v1",
   "issue": 503,
-  "updated": "2026-10-21",
+  "updated": "2026-10-22",
   "documentation": "www/docs/external-dependency-map.md",
   "inventoryScope": {
     "include": [
@@ -757,6 +757,27 @@
       "drills": []
     },
     {
+      "id": "giphy",
+      "name": "GIPHY for GIFs in comments",
+      "categories": ["media-embed", "social"],
+      "components": ["app-browser", "app-worker"],
+      "necessity": "optional",
+      "hosts": ["api.giphy.com", "media.giphy.com"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "The app sends GIPHY the trending and search requests a signed-in user makes in the GIF picker, with the administrator's key; every browser that shows a comment with a GIF loads it from GIPHY's media hosts, which see the viewer's IP address.",
+      "retention": "Set by GIPHY.",
+      "jurisdiction": "GIPHY, Inc. (United States), owned by Shutterstock.",
+      "canonicalData": "None; a comment keeps only the GIF's media address.",
+      "outage": "The GIF picker reports the failure and GIFs already in comments do not load; comments, stickers and reactions keep working.",
+      "recovery": "None required; searches work again once GIPHY answers.",
+      "alternative": "Leave the GIPHY key unset, which hides the GIF buttons; stickers and custom reactions stay on the instance.",
+      "gap": "The privacy notice does not name GIPHY yet.",
+      "privacyFinding": true,
+      "evidence": ["app/src/comment_gifs.py", "app/public/dashboard/js/09-comment-gifs.js", "docs/app/comment-gifs.md"],
+      "drills": ["app/tests/test_comment_gifs.py::test_results_are_cached_and_upstream_failures_are_reported"]
+    },
+    {
       "id": "video-mix-sources",
       "name": "Invidious and YouTube thumbnails for Video Mix DJ Studio",
       "categories": ["media-embed"],
@@ -922,6 +943,11 @@
       "dependency": "cloudflare-turnstile",
       "contradicts": "Today, these are involved:",
       "finding": "The signup and forgot-password pages load Cloudflare Turnstile, which sees the visitor's IP address and browser signals, without the privacy notice naming it."
+    },
+    {
+      "dependency": "giphy",
+      "contradicts": "Today, these are involved:",
+      "finding": "Comment GIFs load from GIPHY's media hosts, which see the viewer's IP address, and GIF searches go to GIPHY, without the privacy notice naming it."
     }
   ],
   "storedIdentifiers": [

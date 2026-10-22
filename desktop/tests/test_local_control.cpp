@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -1426,11 +1427,102 @@ static void testStream()
     check(followIntervalMs(false) < followIntervalMs(true), "the LAN streams more often than the relay");
 }
 
+static bool waitingDevice(const LocalControlServer &server, const QString &key)
+{
+    for (const LocalControlServer::Device &device : server.connectedDevices())
+        if (device.key == key)
+            return true;
+    return false;
+}
+
+static void testPendingPairingExpires()
+{
+    QTemporaryDir dir;
+    SigningKey desktopKey;
+    SigningKey idlePhone;
+    SigningKey approvedPhone;
+    const QString store = dir.filePath("paired.json");
+    LocalControlServer server(
+        desktopKey.publicKey,
+        [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
+    server.setDesktopInfo("desk", "alice");
+    server.setDeviceStorePath(store);
+    int pairingConnection = 0;
+    QList<int> closedPrompts;
+    server.onPairingRequested = [&](int id, const LocalControlServer::Device &,
+                                    const QString &) { pairingConnection = id; };
+    server.onPairingClosed = [&](int id) { closedPrompts.append(id); };
+
+    QTcpServer listener;
+    check(listener.listen(QHostAddress::LocalHost, 0), "expiry listener");
+    QObject::connect(&listener, &QTcpServer::newConnection, [&] {
+        QTcpSocket *socket = listener.nextPendingConnection();
+        auto *buffer = new QByteArray;
+        QObject::connect(socket, &QTcpSocket::readyRead, socket, [=, &server] {
+            buffer->append(socket->readAll());
+            if (buffer->size() < 4)
+                return;
+            const quint32 length = qFromBigEndian<quint32>(
+                reinterpret_cast<const uchar *>(buffer->constData()));
+            if (buffer->size() < qsizetype(length) + 4)
+                return;
+            const QByteArray first = buffer->mid(4, length);
+            const QByteArray rest = buffer->mid(4 + length);
+            delete buffer;
+            socket->disconnect();
+            server.adopt(socket, first, rest);
+        });
+    });
+
+    {
+        TestClient phone(idlePhone);
+        check(phone.connectTo(listener.serverPort()), "idle phone connects");
+        check(waitFor([&] { return pairingConnection != 0; }), "idle phone prompts");
+        const int idleConnection = pairingConnection;
+        server.maintain(QDateTime::currentMSecsSinceEpoch() + 60 * 1000);
+        check(waitingDevice(server, idlePhone.publicKey) &&
+                  !phone.event("session").isEmpty() &&
+                  phone.event("pairing-denied").isEmpty(),
+              "a pairing prompt stays open for its first minute");
+        server.maintain(QDateTime::currentMSecsSinceEpoch() + 2 * 60 * 1000 + 1000);
+        check(waitFor([&] { return !phone.event("pairing-denied").isEmpty(); }),
+              "an unanswered pairing is refused");
+        check(phone.event("pairing-denied").value("data").toObject()
+                      .value("reason").toString() == "expired",
+              "the phone is told the pairing expired");
+        check(closedPrompts.contains(idleConnection),
+              "the desktop prompt closes when the pairing expires");
+        check(!waitingDevice(server, idlePhone.publicKey) &&
+                  !server.isPaired(idlePhone.publicKey),
+              "an expired pairing frees its slot and pairs nothing");
+        server.approvePairing(idleConnection);
+        check(!server.isPaired(idlePhone.publicKey),
+              "a late Allow on an expired prompt pairs nothing");
+    }
+
+    pairingConnection = 0;
+    {
+        TestClient phone(approvedPhone);
+        check(phone.connectTo(listener.serverPort()), "second phone connects");
+        check(waitFor([&] { return pairingConnection != 0; }), "second phone prompts");
+        server.approvePairing(pairingConnection);
+        check(server.isPaired(approvedPhone.publicKey), "second phone paired");
+    }
+#ifndef Q_OS_WIN
+    const QFileDevice::Permissions shared =
+        QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther |
+        QFileDevice::WriteOther;
+    check(QFileInfo::exists(store) && !(QFileInfo(store).permissions() & shared),
+          "the paired devices file is readable by its owner only");
+#endif
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     testPrimitives();
     testLoopback();
+    testPendingPairingExpires();
     testRelay();
     testAccountDevices();
     testRelayResilience();

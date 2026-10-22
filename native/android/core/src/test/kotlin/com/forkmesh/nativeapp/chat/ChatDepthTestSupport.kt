@@ -64,13 +64,13 @@ class FakeChatRelay(override val selfId: String = "me-node", var online: Boolean
     }
 
     private fun toMessage(m: Map<String, Any?>, conversation: String): ChatMessage {
-        val senderId = jsonText(m["senderId"])
+        val senderId = RelayFrames.shownSender(m)
         val ts = m["ts"]
         return ChatMessage(
             id = jsonText(m["id"]),
             conversation = conversation,
             senderId = senderId,
-            senderName = jsonText(m["sender"]),
+            senderName = RelayFrames.shownName(m),
             text = jsonText(m["text"]),
             timestamp = if (ts is Number) ts.toLong() else 0L,
             self = senderId == selfId,

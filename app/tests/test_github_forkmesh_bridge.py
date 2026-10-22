@@ -117,7 +117,7 @@ def issue_path(root, side, number):
 
 def test_canonical_strings_verify_records_signed_by_the_desktop():
     """The bridge's content functions reproduce desktop-made signatures."""
-    discussion = ROOT / ".forkmesh" / "discussions" / "2"
+    discussion = ROOT / "app" / "tests" / "fixtures" / "desktop-signed-discussion"
     for name in ("discussion.md", "0002-comment.md"):
         values, body = bridge.parse_front_matter(
             (discussion / name).read_text(encoding="utf-8"))
@@ -129,7 +129,7 @@ def test_canonical_strings_verify_records_signed_by_the_desktop():
             values["ts"], bridge.discussion_event_content(event)))
 
     record = json.loads(
-        (ROOT / ".forkmesh/issues/closed/126/issue-126.json").read_text(encoding="utf-8"))
+        (ROOT / "app/tests/fixtures/desktop-signed-issue/issue-126.json").read_text(encoding="utf-8"))
     opener = record["events"][0]
     assert verified(opener["author"], opener["sig"], canonical(
         "forkmesh-issue-event-v1", "open", 126, opener["author"], opener["ts"],

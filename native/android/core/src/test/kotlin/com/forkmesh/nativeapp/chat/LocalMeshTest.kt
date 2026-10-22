@@ -223,7 +223,7 @@ class LocalMeshTest {
         }
     }
 
-    fun testALateJoinerIsBackfilledAndReachedWithNoDirectLink() {
+    fun testALateJoinerGetsNoEarlierMessagesButIsReachedWithNoDirectLink() {
         val ada = makeService("ada")
         val grace = makeService("grace")
         val linus = makeService("linus")
@@ -240,12 +240,12 @@ class LocalMeshTest {
             waitUntil { grace.messages.isNotEmpty() }
 
             linus.connectToPeer(loopback, grace.listenPort)
-            expect(waitUntil { linus.messages.isNotEmpty() }, "the devices already here backfill a late joiner")
-            assertEq("anyone here?", linus.messages.first().text)
+            expect(waitUntil { linus.peerCount == 1 && grace.peerCount == 2 })
+            expect(!waitUntil(1_500) { linus.messages.isNotEmpty() }, "nobody re-seals earlier messages to a key they had not seen")
 
             ada.sendMessage("second")
-            expect(waitUntil { linus.messages.size == 2 }, "a message crosses the mesh to a device with no direct link")
-            assertEq("second", linus.messages[1].text)
+            expect(waitUntil { linus.messages.size == 1 }, "a message crosses the mesh to a device with no direct link")
+            assertEq("second", linus.messages[0].text)
             assertEq(2, grace.messages.size)
         } finally {
             for (service in all) {

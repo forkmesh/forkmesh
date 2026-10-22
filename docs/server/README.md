@@ -218,6 +218,37 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   joined CI (2026-10-14) until it was fixed; reproduce with
   `umask 077; GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1
   GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true go test ./...`.
+- **The sandbox has a CPU quota, not fewer cores.** The desktop runs a step in
+  a scope with `CPUQuota` of at most 800% and `CPUWeight=20`, while Go 1.24
+  sizes `GOMAXPROCS` (and so `go test -p`) from every host core. On a 36-core
+  desktop, 36 packages with 36 threads each got throttled in bursts. Run 6484
+  (2026-10-22) failed this way: a loopback `httptest` POST in
+  `TestRegisterNodeAccountReservesAndFinalizesLinkCode` hit the 20 s client
+  timeout, and the plain datagram window in
+  `TestDatagramLossExemptKeepsTheWindowOpen` regrew to 3600 B, short of the old
+  4x-the-exempt-window ratio. `tools/run_critical_tests.py go` now sets
+  `GOMAXPROCS` from `FORKMESH_ACTIONS_CPUS`, which the desktop exports, so
+  package parallelism follows it. That datagram test now checks each
+  connection against its own starting window: without the exemption the
+  window falls to half or less, and with it the window never shrinks.
+- **A timeout on a busy desktop gets one retry.** The CI step shares the host
+  with agent sessions, builds and auto-deploy tests, at `CPUWeight=20`. Even
+  with `GOMAXPROCS` capped, one in-process loopback exchange sometimes waits
+  out its whole timeout while the rest of the package runs at normal speed.
+  Run 6458 hit the 30 s context of `TestMirrorNodeRejectsUnsafeAgentJobWithoutRunningIt`,
+  run 6484 the 20 s client timeout of the account test, and run 6499
+  (2026-10-22) the 30 s dial timeout of `http.DefaultTransport` in
+  `TestRunnerClaimsOnlyWithAProviderAndFreeSlots`. Each failed package took
+  its usual ~63 s plus exactly that timeout. The host counters show no lost
+  packets (`/proc/net/stat/nf_conntrack` drop 0, `ListenOverflows` 0,
+  `softnet_stat` dropped 0), so the test process was starved, not the
+  network. `tools/run_critical_tests.py go` now reruns the failed tests once,
+  with `-count=1 -run '^(…)$'` per package, but only when at most three
+  tests failed, each printed a timeout (`i/o timeout`,
+  `context deadline exceeded`, `Client.Timeout exceeded`, `timed out`), and
+  no package panicked or failed to build. The log says
+  `retrying … once: every failure was a timeout`. A wrong value, a panic,
+  or a timeout that recurs still fails the step.
 
 ## Related docs
 

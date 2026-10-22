@@ -34,22 +34,13 @@ enum CovesFeature {
     }
 
     static let notifier: CoveNotifier = CoveNotifier(
-        invite: { (notice: CoveInviteNotice) -> Bool in
-            guard let relay: RelayService = Services.get(RelayService.self) else { return false }
-            return relay.sendCoveInvite(
-                inviteeAccount: notice.inviteeAccount, coveId: notice.coveId, coveName: notice.coveName,
-                inviterName: notice.inviterName, shareUrl: notice.shareUrl, ts: notice.ts)
+        invite: { (notice: CoveInviteNotice) async -> Bool in
+            guard let hub: ChatHub = Services.get(ChatHub.self) else { return false }
+            let text: String = ChatHub.coveInviteText(
+                inviterName: notice.inviterName, coveName: notice.coveName, shareUrl: notice.shareUrl)
+            return await hub.sendDirectNote(to: notice.inviteeAccount, text: text)
         },
-        opened: { (notice: CoveOpenNotice) -> Bool in
-            guard let relay: RelayService = Services.get(RelayService.self),
-                  let identity: DeviceIdentity = Services.get(DeviceIdentity.self),
-                  identity.publicKeyB64url == notice.openerKey
-            else { return false }
-            let signature: String = identity.sign(notice.canonical)
-            return relay.sendCoveOpen(
-                creatorKey: notice.creatorKey, coveId: notice.coveId, coveName: notice.coveName,
-                openerKey: notice.openerKey, openerName: notice.openerName, ts: notice.ts, signature: signature)
-        })
+        opened: { (_: CoveOpenNotice) -> Bool in false })
 
     static func lockEverything() {
         for model in models.values { model.lockAll() }

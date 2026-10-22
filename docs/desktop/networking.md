@@ -374,8 +374,16 @@ moves files, without relaying content in clear.
   desktop page took seconds at home. Relayed channels and phones not confirmed
   for a day still wait for the answer.
 - Any other phone gets a six-digit code shown on both screens; over the relay it
-  is refused with `pair_on_lan`. Approved devices live in
-  `data/local_control/paired-devices.json` (**Settings → Phone**). Browsers are
+  is refused with `pair_on_lan`. The prompt (`showLocalControlPairingPrompt`)
+  defaults to **Deny** (also the Escape button), opens without taking focus
+  (`Qt::WA_ShowWithoutActivating`, no `raise()`) and only flashes the taskbar,
+  so a keystroke meant for another window cannot approve a phone. A pending
+  pairing expires after two minutes (`kPairingTimeoutMs`, a timer per request
+  plus `maintain()`): the phone gets `pairing-denied` with reason `expired`,
+  the prompt closes and the connection frees its slot. Unanswered prompts used
+  to hold one of the eight connection slots forever. Approved devices live in
+  `data/local_control/paired-devices.json` (**Settings → Phone**), written
+  owner-only through `forkmesh::ownerfile::write`. Browsers are
   never stored and are checked on every connect.
 - **Revocation.** Each device records `approval` (`account` or `code`) and
   `accountCheckedMs`. Account-held approvals are re-checked on connect and every

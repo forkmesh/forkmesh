@@ -292,6 +292,8 @@ def _durable_guestbook_method(state):
         "Date": DateStub,
         "PUBLIC_WORLD_GENERAL_ROOM_KEY": (
             "repo:mainnode/forkmesh:room:world-general"),
+        "CHAT_RELAY_OWNED_FIELDS": frozenset((
+            "historyReplay", "recipients", "recipientNames", "ref", "srv")),
         "_require_data_secret": lambda env: env.DATA_KEY,
         "chat_history_store": chat_history_store,
         "durable_object_traffic_flush": traffic_flush,
@@ -366,11 +368,13 @@ def test_durable_relay_requires_hmac_and_uses_only_the_public_room_key():
     assert accepted == {"status": 200, "data": {"ok": True, "delivered": 1}}
     assert len(state["stored"]) == 1
     stored_room, message_id, timestamp, stored_body = state["stored"][0]
+    marked = json.dumps(
+        {**json.loads(body), "srv": True}, separators=(",", ":"))
     assert stored_room == "repo:mainnode/forkmesh:room:world-general"
-    assert message_id == hashlib.sha256(body.encode()).hexdigest()[:40]
+    assert message_id == hashlib.sha256(marked.encode()).hexdigest()[:40]
     assert timestamp == 1_800_000_000_123
-    assert stored_body == body
-    assert room.peer.frames == [body]
+    assert stored_body == marked
+    assert room.peer.frames == [marked]
     assert state["flushed"] == 1
 
 

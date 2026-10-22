@@ -186,14 +186,51 @@
           <time class="when" datetime="2026-10-22">October 22, 2026</time>
         </div>
         <div class="release-body">
+          <h3>Market</h3>
+          <ul>
+            <li>Every Market package has its own page on forkmesh.com, with its details, README, ratings and an install button, and its share link now opens that page.</li>
+          </ul>
           <h3>Projects</h3>
           <ul>
             <li>ChatGPT and other AI assistants can now read a pull request link: the page includes the description, the conversation and the diff, and adding .diff to the address gives the raw diff.</li>
+            <li>The web dashboard works again: a merge earlier today had left its script unable to load, which broke repository pages, the Actions tab and pull requests.</li>
+            <li>A pull request's merge box now lists each check with its state and log, and says when checks are waiting for a maintainer's approval.</li>
             <li>Issue and pull request pings now say what happened, such as who approved, closed or assigned which item, and link straight to it; the issue sidebar now tells a repository owner they are receiving notifications, and Unsubscribe really stops them.</li>
+          </ul>
+          <h3>Chat</h3>
+          <ul>
+            <li>Edits, reactions, typing and deletes in direct messages now reach only the person you are talking to, on iPhone, Android and desktop.</li>
+            <li>Webhook posts in public channels notify everyone at most once every ten minutes, and each account can create up to 20 channels.</li>
+            <li>Direct messages and private channels always go through the server's member-checked rooms, and the shared room carries only public messages; nobody can post, edit or delete as someone else.</li>
+            <li>Account names in chat are checked with the server, so an unverified sender shows as a guest, and a bot reply shows who asked for it.</li>
+            <li>Private channels can take webhooks, and webhook messages are marked server-visible.</li>
+            <li>Blocking someone now also stops their direct messages, pushes and calls at the server.</li>
+            <li>#mesh says that anyone nearby can read it and no longer shares your account name.</li>
           </ul>
           <h3>World</h3>
           <ul>
             <li>Stepping into a neighbouring World's hexagon is seamless: its hexagon is built ahead of time, people stay visible on both sides while you cross, and the World no longer blanks out or stalls after a while on slower devices.</li>
+          </ul>
+          <h3>Settings</h3>
+          <ul>
+            <li>Closing the web status editor now returns keyboard focus to the control that opened it.</li>
+          </ul>
+          <h3>iPhone</h3>
+          <ul>
+            <li>With Status Page installed, tiny status dots now sit in the thin strip above the Dynamic Island, so you can see ForkMesh's health on every screen.</li>
+            <li>Link previews in shared rooms load only when you tap them, and private network addresses are never fetched.</li>
+          </ul>
+          <h3>Android</h3>
+          <ul>
+            <li>Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting.</li>
+          </ul>
+          <h3>Desktop</h3>
+          <ul>
+            <li>A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes.</li>
+          </ul>
+          <h3>Other improvements</h3>
+          <ul>
+            <li>forkmesh.com/features lists every feature again, with a count for each section and a mark on every feature that is a Market plugin.</li>
           </ul>
         </div>
       </section>
@@ -228,6 +265,8 @@
             <li>Stick stickers on messages.</li>
             <li>Swipe left on a message for Message Info; your last sent message shows when it was delivered and read.</li>
             <li>Each project keeps its own chat when you switch projects.</li>
+            <li>The iPhone no longer tells other devices the names of your private channels, so one project's channels stop turning up in another.</li>
+            <li>Chat on iPhone is snappier: closing Control Center no longer reconnects every conversation, and message lists, typing and the channel list redraw far less.</li>
           </ul>
           <h3>Agents</h3>
           <ul>
@@ -275,16 +314,16 @@
         <div class="release-body">
           <h2>Face swap, a new Market and What's new</h2>
           <p class="pitch">Calls get face swap and background blur, the Market gets a fresh look, and the app tells you what changed.</p>
+          <h3>Market</h3>
+          <ul>
+            <li>The Market has a fresh look, with sorting, filters, usage numbers and one-tap install.</li>
+            <li>Packages you have installed now show as installed, every time.</li>
+          </ul>
           <h3>Calls</h3>
           <ul>
             <li>Face swap in video calls now covers your whole head, hair included, and follows your movements naturally.</li>
             <li>Your voice changes to match the face you pick.</li>
             <li>Blur your background during a call, or replace it with a picture of your own.</li>
-          </ul>
-          <h3>Market</h3>
-          <ul>
-            <li>The Market has a fresh look, with sorting, filters, usage numbers and one-tap install.</li>
-            <li>Packages you have installed now show as installed, every time.</li>
           </ul>
           <h3>Projects</h3>
           <ul>

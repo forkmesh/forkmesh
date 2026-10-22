@@ -103,6 +103,88 @@ public struct PushChatMessage: Equatable, Sendable {
     public let channel: String
     public let isReply: Bool
     public var media: PushChatMedia = .none
+    public var bot = ""
+}
+
+public final class PushVerifiedNames: @unchecked Sendable {
+    public static let item = "verified-names"
+    public static let maxNodes = 256
+    public static let maxDirect = 200
+
+    private let store: SharedItemStore
+    private let lock = NSLock()
+
+    public init(store: SharedItemStore) {
+        self.store = store
+    }
+
+    public func remember(node: String, account: String) {
+        let name = account.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if node.isEmpty || node.count > PushChatOpener.maxIdChars || name.count > PushChatOpener.maxNameChars { return }
+        lock.lock()
+        defer { lock.unlock() }
+        var (nodes, direct) = read()
+        let known = nodes.first { $0.0 == node }?.1
+        if known == name || (known == nil && name.isEmpty) { return }
+        nodes.removeAll { $0.0 == node }
+        if !name.isEmpty { nodes.append((node, name)) }
+        if nodes.count > PushVerifiedNames.maxNodes { nodes.removeFirst(nodes.count - PushVerifiedNames.maxNodes) }
+        write(nodes, direct)
+    }
+
+    public func rememberDirect(_ peers: [(conversation: String, account: String)]) {
+        var next: [String: String] = [:]
+        for (conversation, account) in peers.suffix(PushVerifiedNames.maxDirect) {
+            let name = account.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if conversation.isEmpty || name.isEmpty || name.count > PushChatOpener.maxNameChars { continue }
+            next[conversation] = name
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        let (nodes, direct) = read()
+        if direct == next { return }
+        write(nodes, next)
+    }
+
+    public func account(node: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return read().nodes.last { $0.0 == node }?.1
+    }
+
+    public func directPeer(_ conversation: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return read().direct[conversation]
+    }
+
+    public func clear() {
+        store.remove(PushVerifiedNames.item)
+    }
+
+    private func read() -> (nodes: [(String, String)], direct: [String: String]) {
+        guard let data = store.data(PushVerifiedNames.item) else { return ([], [:]) }
+        let root = JSON.parseObject(data)
+        var nodes: [(String, String)] = []
+        for pair in root["nodes"]?.arrayValue ?? [] {
+            guard let entry = pair.arrayValue, entry.count == 2 else { continue }
+            let node = entry[0].text
+            let account = entry[1].text
+            if !node.isEmpty && !account.isEmpty { nodes.append((node, account)) }
+        }
+        var direct: [String: String] = [:]
+        for (conversation, value) in root["direct"]?.objectValue ?? [:] where !value.text.isEmpty {
+            direct[conversation] = value.text
+        }
+        return (nodes, direct)
+    }
+
+    private func write(_ nodes: [(String, String)], _ direct: [String: String]) {
+        let pairs: [JSONValue] = nodes.map { .array([.string($0.0), .string($0.1)]) }
+        var map: JSONObject = [:]
+        for (conversation, account) in direct { map[conversation] = .string(account) }
+        store.set(JSON.encodeData(.object(["v": 1, "nodes": .array(pairs), "direct": .object(map)])), PushVerifiedNames.item)
+    }
 }
 
 public enum PushChatMedia: Equatable, Sendable {
@@ -291,13 +373,26 @@ public enum PushChatOpener {
             default:
                 return .unavailable
             }
-        } else if request.isDirect || RoomSeal.isKeyFrame(framed) {
+        } else if request.isDirect || RoomSeal.isKeyFrame(framed) || envelope["srv"]?.boolValue != true {
             return .unavailable
         } else {
-            plain = framed
+            plain = integration(framed)
         }
         guard let message = message(plain, request: request) else { return .unavailable }
         return .message(message)
+    }
+
+    static func integration(_ frame: JSONObject) -> JSONObject {
+        var out = frame
+        var name = ""
+        for key in ["bot", "sender"] where name.isEmpty {
+            name = String((frame[key]?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(64))
+        }
+        if name.isEmpty || name.hasPrefix("app:") { name = "Integration" }
+        for key in ["ownerUser", "owner", "acct", "accountKind", "bot"] { out.removeValue(forKey: key) }
+        out["sender"] = .string(name)
+        out["senderId"] = .string("app:" + name)
+        return out
     }
 
     public static func withPushedFrame(_ pending: JSONObject, pushed: JSONObject) -> JSONObject {
@@ -328,7 +423,14 @@ public enum PushChatOpener {
         return PushChatMessage(
             id: id, sender: String((plain["sender"]?.text ?? "").trimmingCharacters(in: .whitespaces).prefix(maxNameChars)),
             senderId: String((plain["senderId"]?.text ?? "").prefix(maxIdChars)), text: text, fileName: fileName,
-            channel: channel, isReply: type == "thread-reply", media: media)
+            channel: channel, isReply: type == "thread-reply", media: media, bot: botName(plain))
+    }
+
+    static func botName(_ plain: JSONObject) -> String {
+        let bot = String((plain["bot"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(maxNameChars))
+        if bot.isEmpty || bot.hasPrefix("app:") { return "" }
+        if bot.count == 43, (try? B64.decodeUnpadded(bot))?.count == 32 { return "" }
+        return bot
     }
 }
 
@@ -338,28 +440,48 @@ public enum PushPreviewText {
     public static let maxBodyChars = 1_000
     public static let unknownSender = PushPreview(title: genericBody, body: "")
 
+    public static let botVia = " \u{00B7} via "
+
+    public static func verifiedAccount(
+        _ message: PushChatMessage, request: PushChatRequest, names: PushVerifiedNames?
+    ) -> String? {
+        if message.senderId.hasPrefix("app:") || message.senderId.isEmpty { return nil }
+        if let account = names?.account(node: message.senderId), !account.isEmpty { return account }
+        if request.isDirect, let peer = names?.directPeer(request.conversation), !peer.isEmpty { return peer }
+        return nil
+    }
+
+    public static func verifiedSender(
+        _ message: PushChatMessage, request: PushChatRequest, names: PushVerifiedNames?
+    ) -> String? {
+        if message.senderId.hasPrefix("app:") { return message.sender.isEmpty ? nil : message.sender }
+        guard let account = verifiedAccount(message, request: request, names: names) else { return nil }
+        return message.bot.isEmpty ? account : message.bot + botVia + account
+    }
+
     public static func preview(
-        _ message: PushChatMessage?, request: PushChatRequest, mode: PushPreviewMode
+        _ message: PushChatMessage?, request: PushChatRequest, mode: PushPreviewMode, names: PushVerifiedNames? = nil
     ) -> PushPreview? {
         if mode == .hidden { return PushPreview(title: hiddenTitle, body: genericBody) }
         guard let message else { return nil }
-        let sender = message.sender
+        let sender = verifiedSender(message, request: request, names: names)
         let title: String
         if request.isDirect {
-            guard !sender.isEmpty else { return nil }
-            title = sender
+            title = sender ?? genericBody
         } else {
             guard !message.channel.isEmpty else { return nil }
-            title = sender.isEmpty ? message.channel : "\(sender) in \(message.channel)"
+            title = sender.map { "\($0) in \(message.channel)" } ?? message.channel
         }
         if mode == .nameOnly { return PushPreview(title: title, body: genericBody) }
         return PushPreview(title: title, body: body(message))
     }
 
-    public static func preview(_ opened: PushChatOpened, request: PushChatRequest, mode: PushPreviewMode) -> PushPreview? {
+    public static func preview(
+        _ opened: PushChatOpened, request: PushChatRequest, mode: PushPreviewMode, names: PushVerifiedNames? = nil
+    ) -> PushPreview? {
         if mode == .hidden { return PushPreview(title: hiddenTitle, body: genericBody) }
         switch opened {
-        case .message(let message): return preview(message, request: request, mode: mode)
+        case .message(let message): return preview(message, request: request, mode: mode, names: names)
         case .unknownSender: return unknownSender
         case .unavailable: return nil
         }

@@ -12,7 +12,7 @@ class RoomSealCryptoTest {
     private val now = 1_790_000_000_000L
 
     private fun device(acct: String, policy: SealPolicy = SealPolicy.OPEN): RoomSeal =
-        RoomSeal.loadOrCreate(room, scope = room, policy = policy, acct = acct, secureStore = MemorySecretStore(), clock = { now })
+        RoomSeal.loadOrCreate(room, scope = room, policy = policy, acct = acct, secureStore = MemorySecretStore(), clock = { now }, nodeKey = ChatNodeKey.generate())
 
     private fun pair(): Pair<RoomSeal, RoomSeal> {
         val alice = device("alice-node")
@@ -27,7 +27,7 @@ class RoomSealCryptoTest {
         val bundle = alice.keyFrame()
         expect(RoomSeal.isKeyFrame(bundle))
         expect(!RoomSeal.isLegacyFrame(bundle))
-        val frame = alice.seal(mapOf("type" to "chat", "senderId" to "alice-node"))
+        val frame = alice.seal(mapOf("type" to "chat", "senderId" to alice.node))
         expect(RoomSeal.isSealedFrame(frame))
         assertEq(alice.keyId, RoomSeal.frameKeyId(frame))
         expect(RoomSeal.isLegacyFrame(mapOf("type" to "sealed", "v" to 2L, "kid" to "x")))
@@ -42,7 +42,7 @@ class RoomSealCryptoTest {
         val (alice, bob) = pair()
         assertEq(1, alice.peerCount)
         assertEq(1, bob.peerCount)
-        val plain = mapOf("type" to "chat", "senderId" to "alice-node", "text" to "no setup required")
+        val plain = mapOf("type" to "chat", "senderId" to alice.node, "text" to "no setup required")
         val frame = alice.seal(plain)
         expect(!Json.stringify(frame).contains("no setup required"))
         assertEq(listOf(alice.keyId, bob.keyId).sorted(), RoomSeal.wrappedKeyIds(frame))
@@ -56,7 +56,7 @@ class RoomSealCryptoTest {
         val alice = device("alice-node")
         val bob = device("bob-node")
         alice.acceptKeyFrame(bob.keyFrame())
-        val frame = alice.seal(mapOf("type" to "chat", "senderId" to "alice-node", "text" to "early"))
+        val frame = alice.seal(mapOf("type" to "chat", "senderId" to alice.node, "text" to "early"))
         val held = bob.open(frame)
         expect(held is SealOpen.Held && !held.blocked)
         assertEq(1, bob.trust.heldCount(room))
@@ -84,7 +84,7 @@ class RoomSealCryptoTest {
 
     fun testMalformedFramesAreInvalid() {
         val (alice, bob) = pair()
-        val frame = alice.seal(mapOf("type" to "chat", "senderId" to "alice-node", "text" to "hi bob"))
+        val frame = alice.seal(mapOf("type" to "chat", "senderId" to alice.node, "text" to "hi bob"))
         fun mutate(change: (MutableMap<String, Any?>) -> Unit): Map<String, Any?> = LinkedHashMap(frame).also(change)
         @Suppress("UNCHECKED_CAST")
         fun mutateWrap(change: (MutableMap<String, Any?>) -> Unit): Map<String, Any?> = mutate { copy ->
@@ -145,7 +145,7 @@ class RoomSealCryptoTest {
         expect(seal.shouldPersistAdvertisement(clock))
     }
 
-    fun testRelayDirectMessagesCanBeSealedToChosenDevices() {
+    fun testAddressedFramesCanBeSealedToChosenDevices() {
         val alice = device("alice-node")
         val bob = device("bob-node")
         val carol = device("carol-node")
@@ -153,7 +153,7 @@ class RoomSealCryptoTest {
             alice.acceptKeyFrame(peer.keyFrame())
             peer.acceptKeyFrame(alice.keyFrame())
         }
-        val toBob = alice.seal(mapOf("type" to "dm", "senderId" to "alice-node", "to" to "bob-node"), only = listOf(bob.keyId))
+        val toBob = alice.seal(mapOf("type" to "chat", "senderId" to alice.node, "to" to bob.node), only = listOf(bob.keyId))
         assertEq(listOf(alice.keyId, bob.keyId).sorted(), RoomSeal.wrappedKeyIds(toBob))
         expect(bob.open(toBob) is SealOpen.Opened)
         expect(carol.open(toBob) is SealOpen.NotForMe)

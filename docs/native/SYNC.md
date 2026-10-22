@@ -165,4 +165,12 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S090 | 2026-10-21 | Calls | ui | Call buttons move to two rows when one row does not fit the screen. | 478fbe6a9c | pending |  |
 | S091 | 2026-10-21 | Calls | feature | Drag your own video in a call to any corner and it stays there for the next call. | 478fbe6a9c | pending |  |
 | S092 | 2026-10-21 | Inbox | feature | Review and merge-conflict pings on your own pull requests have their own icon, label, settings switch and open the pull request | ff273c2c19 | synced | ff273c2c19 |
+| S093 | 2026-10-22 | Shell | feature | With Status Page installed, tiny status dots sit in the thin strip above the Dynamic Island on every screen. | 360acccbd4 | pending |  |
+| S094 | 2026-10-21 | Chat | fix | The phone leaves private and hidden channels out of its relay hello and does not adopt channels it has hidden, so private channel names stay out of other projects and devices | fe664f0c09 | synced | 3d7fccfeed |
+| S095 | 2026-10-21 | Chat | fix | Chat stays snappy: a quick inactive step (Control Center, an alert) does not reconnect direct message rooms or rerun the chat refresh, and chat screens redraw less | fe664f0c09 | pending |  |
+| S096 | 2026-10-22 | Chat | fix | Frames addressed to one person (DM edits, reactions, typing, deletes, invites) are sealed to that person only, and private-channel frames for channels the phone is not in are dropped | 3d7fccfeed | synced | 3d7fccfeed |
+| S097 | 2026-10-22 | Chat | fix | Inbox chat pings are kept per project, removing a project erases its chat history, and every diagnostics report is scrubbed | 3d7fccfeed | pending |  |
+| S098 | 2026-10-22 | Chat | feature | Chat relay hardening: DMs and private channels only through the server, signed device keys, sealed person frames, verified account names, server-kept blocks and webhook rooms marked server-visible | 440e84220c | synced | 440e84220c |
+| S099 | 2026-10-22 | Chat | fix | #mesh carries no account name, uses a random beacon id and says anyone nearby can read it; less identity in shared rooms | 440e84220c | synced | 440e84220c |
+| S100 | 2026-10-22 | Chat | ui | Link previews in shared rooms load on tap and never reach private addresses | 440e84220c | n/a | Android has no link previews |
 <!-- ledger:end -->

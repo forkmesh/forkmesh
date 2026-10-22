@@ -1,5 +1,6 @@
 """D1-backed participant-only one-to-one direct-message API."""
 
+import hashlib
 import re
 
 
@@ -23,6 +24,109 @@ CURSOR_RE = re.compile(r"^([0-9]{1,20})\.([0-9a-f]{32})$")
 REF_RE = re.compile(r"^[0-9a-f]{40}$")
 PENDING_ACKED_GRACE_MS = 120 * 1000
 PENDING_RETAIN_MS = 7 * 24 * 60 * 60 * 1000
+BLOCKS_RE = re.compile(r"^/api/chat/blocks/?$")
+BLOCKS_MAX = 500
+BLOCKS_BODY_MAX_BYTES = 48 * 1024
+BLOCK_NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def clean_blocks(raw):
+    if not isinstance(raw, list) or len(raw) > BLOCKS_MAX:
+        return None
+    accounts = []
+    for value in raw:
+        if not isinstance(value, str):
+            return None
+        name = value.strip().lower()
+        if not BLOCK_NAME_RE.fullmatch(name):
+            return None
+        if name not in accounts:
+            accounts.append(name)
+    return sorted(accounts)
+
+
+def blocks_digest(accounts):
+    return hashlib.sha256(
+        "\n".join(accounts or ()).encode("utf-8")).hexdigest()
+
+
+async def blocked_accounts(runtime, account_bi):
+    if not account_bi:
+        return []
+    row = await runtime.d1_first(
+        "SELECT data FROM chat_blocks WHERE account_bi=?", account_bi)
+    if not row:
+        return []
+    try:
+        record = await runtime.open(row.get("data"))
+    except Exception:
+        return []
+    accounts = clean_blocks((record or {}).get("accounts"))
+    return accounts or []
+
+
+async def has_blocked(runtime, account_bi, name):
+    name = str(name or "").strip().lower()
+    if not account_bi or not name:
+        return False
+    return name in await blocked_accounts(runtime, account_bi)
+
+
+async def _save_blocks(runtime, account_bi, actor, data):
+    accounts = clean_blocks((data or {}).get("accounts"))
+    if accounts is None:
+        raw = (data or {}).get("accounts")
+        error = (
+            "too_many_accounts"
+            if isinstance(raw, list) and len(raw) > BLOCKS_MAX
+            else "invalid_accounts")
+        return _response(runtime, {"error": error}, status=400)
+    accounts = [name for name in accounts if name != actor]
+    if accounts:
+        await runtime.d1_run(
+            "INSERT INTO chat_blocks (account_bi,data,updated_at) "
+            "VALUES (?,?,?) ON CONFLICT(account_bi) DO UPDATE SET "
+            "data=excluded.data,updated_at=excluded.updated_at",
+            account_bi,
+            await runtime.seal({"accounts": accounts}),
+            runtime.now(),
+        )
+    else:
+        await runtime.d1_run(
+            "DELETE FROM chat_blocks WHERE account_bi=?", account_bi)
+    return _response(runtime, {"ok": True, "accounts": accounts})
+
+
+async def handle_blocks(runtime, path):
+    await runtime.ensure_schema()
+    if not BLOCKS_RE.fullmatch(str(path or "")):
+        return _response(runtime, {"error": "not_found"}, status=404)
+    method = runtime.method()
+    if method not in {"GET", "PUT"}:
+        return _response(
+            runtime,
+            {"error": "method_not_allowed"},
+            status=405,
+            allow="GET, PUT",
+        )
+    data = None
+    if method == "PUT":
+        data, error = await runtime.json_body(BLOCKS_BODY_MAX_BYTES)
+        if error:
+            return _response(
+                runtime,
+                {"error": error},
+                status=413 if error == "payload_too_large" else 400,
+            )
+    account_bi, account = await runtime.session(data)
+    actor = str((account or {}).get("name") or "").strip().lower()
+    if not account_bi or not actor:
+        return _response(runtime, {"error": "invalid_session"}, status=401)
+    if method == "GET":
+        return _response(
+            runtime,
+            {"accounts": await blocked_accounts(runtime, account_bi)})
+    return await _save_blocks(runtime, account_bi, actor, data)
 
 
 def _response(runtime, data, status=200, allow="", retry_after_ms=0):
@@ -123,6 +227,8 @@ async def _start_conversation(runtime, account_bi, actor, data):
     if target_bi == account_bi:
         return _response(
             runtime, {"error": "cannot_message_self"}, status=400)
+    if await has_blocked(runtime, target_bi, actor):
+        return _response(runtime, {"error": "user_not_found"}, status=404)
 
     pair_bi = await runtime.blind(
         "chat-direct-pair:" + ":".join(sorted((account_bi, target_bi)))

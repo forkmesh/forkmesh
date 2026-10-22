@@ -364,7 +364,11 @@ Office chat bundles `app/public/chat-seal.js` and the ML-KEM-768 port
 `app/public/chat-mlkem.js`, about 8 KB gzip more than the v2 seal, which took
 the bundle from just under 130 KB to about 137 KB. Chat protocol v4
 (2026-10-16, the per-message ratchet for DMs, its Web Lock and the opened-frame
-cache) adds about 3 KB gzip, so the budget is 144 KB.
+cache) adds about 3 KB gzip, so the budget is 144 KB. The chat relay hardening
+(2026-10-22, [../app/chat-relay-hardening.md](../app/chat-relay-hardening.md))
+adds `app/public/chat-frame-auth.js` (frame authentication, node-owner checks,
+bot "via" labels and the guest-name hash), about 1 KB gzip, so the budget is
+148 KB.
 
 ## Operations
 

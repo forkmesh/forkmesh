@@ -44,7 +44,7 @@ struct OfficeChannelSettingsScreen: View {
                 Toggle("Private", isOn: $isPrivate)
             } footer: {
                 Text(isPrivate
-                    ? "Only members can read it, and messages are end-to-end encrypted between devices."
+                    ? "Only members can read it, and members' messages are end-to-end encrypted between devices. Webhook messages are visible to the server."
                     : "Everyone in this project can read it; ForkBot and webhooks can take part.")
             }
             if room.isPrivate {

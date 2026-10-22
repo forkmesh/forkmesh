@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.model.ChatMessage
+import com.forkmesh.nativeapp.push.NotificationContent
 import com.forkmesh.nativeapp.testing.assertEq
 import com.forkmesh.nativeapp.testing.expect
 
@@ -35,5 +36,18 @@ class MeshAlertTest {
         expect(alert.body.startsWith("a b xxx"), alert.body)
         expect(alert.body.endsWith("..."), alert.body)
         assertEq("New message", meshAlert(message(text = " "), unread = 1, watching = false, nowMs = now)!!.body)
+    }
+
+    fun testTheNotificationContentSettingHidesTheMeshText() {
+        val alert = meshAlert(message(), unread = 1, watching = false, nowMs = now)!!
+        assertEq(alert, alert.shown(NotificationContent.NAME_AND_MESSAGE))
+        val nameOnly = alert.shown(NotificationContent.NAME_ONLY)
+        assertEq("grace in #mesh", nameOnly.title)
+        assertEq("New message", nameOnly.body)
+        val nothing = alert.shown(NotificationContent.NOTHING)
+        assertEq("ForkMesh", nothing.title)
+        assertEq("New message", nothing.body)
+        assertEq("", nothing.sender)
+        expect(!nothing.title.contains("grace") && !nothing.body.contains("lunch"))
     }
 }

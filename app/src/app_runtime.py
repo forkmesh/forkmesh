@@ -423,7 +423,6 @@ class Default:
             "nodeSolanaAddress": getattr(
                 self.env, "NODE_SOLANA_ADDRESS", ""),
             "websocket": "/api/repo/{owner}/{repo}/rooms/{room}/ws",
-            "compatWebsocket": "/api/room/{room}/ws",
             "capabilities": [
                 "encrypted-relay-rooms",
                 "repo-scoped-rooms",
@@ -3167,6 +3166,13 @@ class Default:
         # to authenticated clients — replaces the old public app-wide constant.
         if url.path in ("/api/chat/room-key", "/api/chat/room-key/"):
             return await chat_room_key_handler(self.env, request)
+        if url.path in ("/api/chat/node-owner", "/api/chat/node-owner/"):
+            return await chat_node_owner_handler(self.env, request)
+        if url.path in ("/api/chat/node-bind", "/api/chat/node-bind/"):
+            return await chat_node_bind_handler(self.env, request)
+        if CHAT_BLOCKS_RE.match(url.path):
+            return await chat_direct_messages_api.handle_blocks(
+                _ChatDirectMessagesRuntime(self.env, request), url.path)
 
         # Public chat-activity counters (message + user counts) that drive the
         # unread badge on the shared site header's chat icon.
@@ -4300,13 +4306,18 @@ class Default:
             return _repository_socket_retired()
 
         room = room_key_from_path(url.path)
+        if REPO_ROOM_RE.match(url.path) and (
+                not room or room.get("channel_id") or room.get("direct_id")):
+            return json_response(
+                {"error": "not_found"}, status=404, cache_control="no-store")
+        if room and (room.get("channel_id") or room.get("direct_id")):
+            return _private_replica_not_found()
         if room:
             public_world_general = (
                 room.get("key") == PUBLIC_WORLD_GENERAL_ROOM_KEY
             )
             if (
-                not room.get("compat")
-                and not public_world_general
+                not public_world_general
                 and await _repository_access_context(
                     self.env,
                     request,
@@ -4328,6 +4339,16 @@ class Default:
                     status=410,
                     cache_control="no-store",
                 )
+            socket_account = ""
+            if not public_world_general:
+                requester = await _room_key_requester(
+                    self.env, request, room.get("owner", ""),
+                    room.get("repo", ""))
+                if requester:
+                    socket_account = await blind_index(self.env, requester)
+            socket_target = _chat_socket_target(
+                request, account_bi=socket_account,
+                address=_chat_socket_address(self.env, request))
             room_id = self.env.FORKMESH_MAINNODE_ROOM.idFromName(room["key"])
             # The platform can abort a room DO mid-request — the free-tier
             # duration cap kills long-lived requests, and any co-located DO
@@ -4345,7 +4366,8 @@ class Default:
                 room_object = self.env.FORKMESH_MAINNODE_ROOM.get(room_id)
                 try:
                     return await room_object.fetch(
-                        await durable_object_request(request))
+                        await durable_object_request(
+                            request, target_url=socket_target))
                 except Exception as error:
                     last_error = error
             await log_durable_object_abort(
@@ -4586,9 +4608,12 @@ class Default:
             return await self._proxy_site_document(request, url, upstream)
         base = url.scheme + "://" + url.netloc + "/"
         try:
+            query = ("?" + url.query) if url.query else ""
             local = await self.env.ASSETS.fetch(
-                base + site_document_asset_path(url.path).lstrip("/")
-                + (("?" + url.query) if url.query else ""))
+                base + site_document_asset_path(url.path).lstrip("/") + query)
+            if (int(getattr(local, "status", 0) or 0) == 404
+                    and is_market_package_path(url.path)):
+                local = await self.env.ASSETS.fetch(base + "market" + query)
             if int(getattr(local, "status", 0) or 0) == 200:
                 return self._without_head_body(request, JsResponse.new(
                     local.body, to_js({
