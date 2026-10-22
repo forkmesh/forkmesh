@@ -161,4 +161,7 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S086 | 2026-10-21 | Chat | feature | The face changer works in native calls: a chosen stand-in or custom face is drawn over the caller's face live | 28b18d33b9 | pending |  |
 | S087 | 2026-10-21 | Chat | feature | Face changer in calls tracks the face in 3D on Face ID iPhones, keeps real hair around the new face and has cleaner edges than the browser | 9b199aef1b | pending |  |
 | S088 | 2026-10-21 | Chat | fix | Calls still ring an iPhone that has notifications turned off, and calling again right after a decline rings straight away. | 5f0db42ebf | pending |  |
+| S089 | 2026-10-21 | Calls | fix | Calls you place to an iPhone show its camera and play its voice once it answers. | 478fbe6a9c | n/a | Android calls run in the WebView page, which already adds its tracks with addTrack |
+| S090 | 2026-10-21 | Calls | ui | Call buttons move to two rows when one row does not fit the screen. | 478fbe6a9c | pending |  |
+| S091 | 2026-10-21 | Calls | feature | Drag your own video in a call to any corner and it stays there for the next call. | 478fbe6a9c | pending |  |
 <!-- ledger:end -->
