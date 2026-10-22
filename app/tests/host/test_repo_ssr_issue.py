@@ -260,13 +260,13 @@ def test_first_view_is_the_dashboards_issue_markup(viewer):
 def mirrored_issue():
     opener = {"type": "open", "id": "forge-github-issue-9", "author": "s1",
               "authorName": "github:Gulp-Run", "ts": NOW_MS - 7200_000,
-              "title": "انجمن Net4People",
-              "body": "### &rlm;انجمن Net4People&zwnj;\n\n&rlm;سلام &amp; `&rlm;` &lt;b&gt;"}
+              "title": "انجمن Example",
+              "body": "### &rlm;انجمن Example&zwnj;\n\n&rlm;سلام &amp; `&rlm;` &lt;b&gt;"}
     return {"number": 9, "title": opener["title"], "status": "open", "authorName": "github:Gulp-Run",
             "author": "s1", "createdAt": opener["ts"], "events": [
                 opener,
                 {"type": "comment", "id": "forge-github-comment-1", "author": "s1",
-                 "authorName": "github:wkrp", "body": "同意 &zwnj; 동의", "ts": NOW_MS - 3600_000},
+                 "authorName": "github:alice", "body": "同意 &zwnj; 동의", "ts": NOW_MS - 3600_000},
                 {"type": "comment", "id": "forge-github-comment-2", "author": "s1",
                  "authorName": "github:~sync", "body": "sync", "ts": NOW_MS - 1800_000},
             ]}
@@ -279,7 +279,7 @@ def test_mirrored_forge_authors_and_entities_render_the_same_on_first_view(viewe
     expected = normalize(js_render(issue, 9, (), viewer))
     got = normalize(py_render(issue, 9, (), viewer))
     assert got == expected
-    assert 'href="https://github.com/wkrp" target="_blank"' in got and ">@Gulp-Run</a>" in got
+    assert 'href="https://github.com/alice" target="_blank"' in got and ">@Gulp-Run</a>" in got
     assert "&rlm;انجمن" in got and "&amp;rlm;</code>" in got and "&amp;rlm;انجمن" not in got.split("<code")[0]
 
 
