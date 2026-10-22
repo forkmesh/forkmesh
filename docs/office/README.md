@@ -186,6 +186,13 @@ Counter package through same-origin `api.calories`.
 - Private rooms: everyone inside at full volume, nobody outside.
 - Meeting tables connect exactly the people seated, wherever they are.
 - Focus status blocking calls is a client courtesy, not access control.
+- Live quality widget (2026-10-22): while you talk with someone nearby, or
+  with your microphone on, a pill under the room name shows signal bars, a
+  voice waveform (you up, nearby people down) and the round-trip time; click
+  it for a minute of network and video charts. It is the call widget from
+  `app/public/call-quality-meter.js` (see `docs/app/chat-direct-calls.md`,
+  "Live quality widget"), bundled like the chat modules, reading every mesh
+  peer connection.
 
 ## Status lines
 
@@ -368,7 +375,9 @@ cache) adds about 3 KB gzip, so the budget is 144 KB. The chat relay hardening
 (2026-10-22, [../app/chat-relay-hardening.md](../app/chat-relay-hardening.md))
 adds `app/public/chat-frame-auth.js` (frame authentication, node-owner checks,
 bot "via" labels and the guest-name hash), about 1 KB gzip, so the budget is
-148 KB.
+148 KB. The live quality widget (2026-10-22, `app/public/call-quality-meter.js`)
+adds about 5.5 KB gzip, taking the bundle to about 150 KB, so the budget is
+152 KB.
 
 ## Operations
 

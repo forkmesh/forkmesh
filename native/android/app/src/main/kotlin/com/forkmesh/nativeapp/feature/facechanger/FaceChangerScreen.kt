@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.forkmesh.nativeapp.feature.chat.CallQualityWidget
 import com.forkmesh.nativeapp.feature.composer.PhotoPicker
 import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
@@ -116,6 +117,7 @@ private fun FaceChangerStudio(modifier: Modifier) {
     val previewing by peers.previewing.collectAsState()
     val faces by peers.facesSupported.collectAsState()
     val thumbs by peers.backgrounds.collectAsState()
+    val quality by peers.quality.collectAsState()
     var phase by remember { mutableStateOf(StudioPhase.OPENING) }
     var notice by remember { mutableStateOf("") }
     var hearing by remember { mutableStateOf(false) }
@@ -208,7 +210,7 @@ private fun FaceChangerStudio(modifier: Modifier) {
             else -> Unit
         }
         Column(
-            Modifier.align(Alignment.TopCenter).padding(top = FmSpace.x4, start = FmSpace.x4, end = FmSpace.x4),
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = FmSpace.x4, start = FmSpace.x4, end = FmSpace.x4),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -234,6 +236,9 @@ private fun FaceChangerStudio(modifier: Modifier) {
                         .background(Color.Black.copy(alpha = .55f))
                         .padding(horizontal = FmSpace.x3, vertical = FmSpace.x1),
                 )
+            }
+            if (previewing && (phase == StudioPhase.READY || phase == StudioPhase.RECORDING)) {
+                CallQualityWidget(quality, video = true, modifier = Modifier.align(Alignment.Start).padding(top = FmSpace.x2))
             }
         }
         val live = phase == StudioPhase.READY || phase == StudioPhase.RECORDING

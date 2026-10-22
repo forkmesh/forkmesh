@@ -191,6 +191,18 @@ clear.
   media, or label one person's stream with another's peer id; the receiver
   then holds the wrong key and decodes nothing.
 
+## Live quality widget
+
+The group call panel shows the same quality pill and charts as direct calls
+(`docs/app/chat-direct-calls.md`, "Live quality widget", 2026-10-22). `chat.js`
+mounts it in the panel head when you join (`syncGroupCallQuality`): on FM
+Media it reads the worker's `stats` reply through `fmmStatsReader` (round-trip
+time and loss from congestion control, bitrate and frame rate from the
+counters; there is no jitter figure), and after a fall back to WebRTC it reads
+the SFU connection's `getStats()`. The voice chart shows your microphone up
+and the loudest other person down ("Others"); FM Media plays received audio
+through its own worklet, so only received WebRTC audio tracks are measured.
+
 ## Limits
 
 - The key exchange rides the channel's room socket, which `/chat` keeps open

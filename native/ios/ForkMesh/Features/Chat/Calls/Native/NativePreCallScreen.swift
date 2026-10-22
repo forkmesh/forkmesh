@@ -23,6 +23,9 @@ struct NativePreCallScreen: View {
                 Text(DirectCallRoute.hint)
                     .font(.system(size: 13))
                     .opacity(0.75)
+                #if canImport(WebRTC)
+                CallQualityWidget(monitor: NativeCallPeerFactory.shared.quality)
+                #endif
                 if request.media == .audio {
                     Spacer()
                     FmAvatar(name: request.partner, size: 110, fontSize: 40)

@@ -343,6 +343,14 @@ struct DirectCallScreen: View {
         #endif
     }
 
+    private var qualityMonitor: CallQualityMonitor? {
+        if let factory, factory.current != nil { return factory.quality }
+        #if canImport(WebRTC)
+        if let native = engine.peerFactory as? NativeCallPeerFactory { return native.quality }
+        #endif
+        return nil
+    }
+
     private var hasNativeVideo: Bool {
         #if canImport(WebRTC)
         return (engine.peerFactory as? NativeCallPeerFactory)?.remoteVideo != nil
@@ -398,6 +406,10 @@ struct DirectCallScreen: View {
                 .padding(.top, FmSpace.x4)
                 .padding(.horizontal, FmSpace.x5)
                 .accessibilityElement(children: .combine)
+                if let quality = qualityMonitor {
+                    CallQualityWidget(monitor: quality, video: engine.media == .video)
+                        .padding(.top, 6)
+                }
                 if !notice.isEmpty {
                     Text(notice)
                         .font(.system(size: 13, weight: .semibold))

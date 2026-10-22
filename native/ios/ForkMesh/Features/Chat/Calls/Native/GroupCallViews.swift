@@ -96,6 +96,7 @@ struct GroupCallPanel: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.top, FmSpace.x4)
+                CallQualityWidget(monitor: call.quality, video: call.media == .video, peerLabel: "Others")
                 if call.engine == .fmm {
                     Button { showVerify = true } label: {
                         Label(verifyLabel, systemImage: call.verify?.verified == true ? "checkmark.shield.fill" : "lock.shield")

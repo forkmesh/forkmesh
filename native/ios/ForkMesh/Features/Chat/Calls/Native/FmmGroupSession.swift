@@ -185,6 +185,23 @@ final class FmmGroupSession: @unchecked Sendable {
 
     func verification() -> FmmmobileVerification? { call.verification() }
 
+    func takeLevels() -> CallVoiceLevel { audio.takeLevels() }
+
+    func qualitySample() async -> CallQualitySample {
+        let call = self.call
+        return await withCheckedContinuation { (continuation: CheckedContinuation<CallQualitySample, Never>) in
+            DispatchQueue.global(qos: .utility).async {
+                var sample = CallQualitySample(at: Date().timeIntervalSince1970)
+                if let stats = call.stats() {
+                    if stats.rttUs > 0 { sample.rttMs = Double(stats.rttUs) / 1000 }
+                    if stats.loss.isFinite { sample.lossPct = max(0, stats.loss) * 100 }
+                    if stats.targetBitrate > 0 { sample.sendKbps = Double(stats.targetBitrate) / 1000 }
+                }
+                continuation.resume(returning: sample)
+            }
+        }
+    }
+
     func markVerified(_ round: String) -> Bool { (try? call.markVerified(round)) != nil }
 
     func unverify() { call.unverify() }

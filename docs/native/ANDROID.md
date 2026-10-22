@@ -819,6 +819,31 @@ default in new projects except the chosen starter pack
     `DirectCallFeature` calls `endPreview("precall")`, which leaves a Face
     Changer screen preview alone. `FaceChangerFeature` skips face and
     background updates for an audio preview.
+  - **Live quality widget (2026-10-22).** `direct-call.html` posts a
+    `quality` event about once a second (the web meter in
+    `app/public/call-quality-meter.js`). `WebCallPeer` parses it with
+    `C/chat/CallQuality.kt`, which mirrors the web thresholds (RTT
+    150/300/500 ms, loss 1/3/8 %, jitter 30/60/100 ms), labels and text,
+    and `WebCallPeers.quality` keeps a `CallQualityHistory` for the current
+    preview or live peer: the last 50 voice levels (5 s) and the last 60
+    live stat samples (1 min). It resets when a new peer opens and when no
+    peer is left; a preview handed to the call keeps its levels.
+    `A/feature/chat/CallQualityWidget.kt` draws a small dark translucent pill
+    at the top start of the call screen, under the name and state lines,
+    away from the self-view in the bottom-right corner and the buttons: four
+    signal bars in the grade colour (on-dark success, warning, danger), a
+    20-sample mirrored waveform (your mic up in accent blue, the other side
+    down in grey) and the RTT. Tapping it opens a card with Voice, Network
+    (RTT line, amber loss ticks from 1 %, red from 8 %) and, on video
+    calls, Video in and Video out rows; the open state is the
+    `fm.call.qualityOpen` pref, shared with the web key name. Before the call
+    connects, and on the pre-call screen, the page sends `live:false`, so the
+    pill shows only the mic waveform. The pre-call screen hides it while a
+    test clip plays. The Face Changer studio (`FaceChangerScreen.kt`) shows
+    the same mic-only pill under its hint line while the preview is ready or
+    recording, because it captures audio and video too. Android has no
+    group-call screen. Tests:
+    `C/chat/CallQualityTest.kt`.
   - **Ringback.** `CallRinger` listens to the engine on the main thread.
     While the phase is RINGING (only a caller rings) it plays
     `ToneGenerator(STREAM_VOICE_CALL, 80)` `TONE_SUP_RINGTONE` and stops it on
