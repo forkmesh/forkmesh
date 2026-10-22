@@ -1085,7 +1085,8 @@ git config remote.origin.promisor true
 git config remote.origin.partialclonefilter blob:none
 git config extensions.partialClone origin
 git sparse-checkout set --no-cone '/native/ios/' '/codemagic.yaml' '/conformance/' \
-  '/app/src/apns.py' '/app/src/app_runtime.py' '/marketplace/packages/vault/tests/fixtures/' \
+  '/changelog/' '/tools/changelog.py' '/app/src/apns.py' '/app/src/app_runtime.py' \
+  '/app/public/assets/call-segmentation/' '/marketplace/packages/vault/tests/fixtures/' \
   '/marketplace/packages/people/tests/fixtures/' '/marketplace/packages/secure-drive/tests/fixtures/' \
   '/docs/native/PERFORMANCE_CHECKS.md' '/docs/marketplace/video-mix-dj-studio-performance.md'
 attempt=1
