@@ -226,6 +226,22 @@ ROOM_LIVE_ACCESS_RECHECK_MS = 5 * 1000
 # or network break leaves an old WebSocket hibernated in the room, stop counting
 # and forwarding to it instead of letting ghost peers inflate the roster.
 ROOM_CLIENT_STALE_MS = 3 * 60 * 1000
+CHAT_RELAY_OWNED_FIELDS = frozenset(
+    ("historyReplay", "recipients", "recipientNames", "ref", "srv"))
+ROOM_SOCKETS_PER_ADDRESS = 8
+CHAT_SOCKETS_PER_ADDRESS = 32
+CHAT_SOCKET_ADDRESS_MEMO_MAX = 4096
+_CHAT_SOCKET_ADDRESSES = {}
+CHAT_RELAY_OWNER = "mainnode"
+CHAT_RELAY_REPO = "forkmesh"
+CHAT_RELAY_SPACES = (
+    "sky-campus", "space-station", "code-planet", "organization-region",
+    "planet-atlas", "neighborhood", "broadcast",
+)
+CHAT_RELAY_ROOMS = frozenset(
+    ("world-general", "general")
+    + tuple("world-" + space for space in CHAT_RELAY_SPACES))
+CHAT_ROOM_KEY_VERSION = 2
 # Catalog write throttle per owner, and a hard cap on records an owner may hold.
 CATALOG_WRITE_COOLDOWN_MS = 500
 CATALOG_MAX_RECORDS_PER_OWNER = 100
@@ -1130,7 +1146,7 @@ GENERAL_CHAT_EMAIL_MAX_RECIPIENTS = 4
 # request resolves these transparent exports from the bundled sibling module.
 _urls = _LazyModule("urls")
 _URL_EXPORT_NAMES = (
-    "ROOM_RE", "REPO_ROOM_RE", "CHAT_CHANNELS_RE", "CHAT_CHANNEL_RE",
+    "REPO_ROOM_RE", "CHAT_CHANNELS_RE", "CHAT_CHANNEL_RE",
     "CHAT_CHANNEL_MEMBERS_RE", "CHAT_CHANNEL_ROOM_ACCESS_RE",
     "CHAT_CHANNEL_HISTORY_RE", "CHAT_CHANNEL_PENDING_RE",
     "CHAT_CHANNEL_WEBHOOKS_RE",
@@ -1139,7 +1155,8 @@ _URL_EXPORT_NAMES = (
     "CHAT_DIRECT_MESSAGES_RE", "CHAT_DIRECT_MESSAGE_USERS_RE",
     "CHAT_DIRECT_MESSAGE_ROOM_ACCESS_RE", "CHAT_DIRECT_MESSAGE_READ_RE",
     "CHAT_DIRECT_MESSAGE_PENDING_RE", "CHAT_DIRECT_MESSAGE_DELIVERED_RE",
-    "CHAT_DIRECT_MESSAGE_WS_RE", "CHAT_READS_RE", "REPO_ISSUES_RE", "REPO_PULLS_RE",
+    "CHAT_DIRECT_MESSAGE_WS_RE", "CHAT_READS_RE", "CHAT_BLOCKS_RE",
+    "REPO_ISSUES_RE", "REPO_PULLS_RE",
     "REPO_PULL_MERGE_RE", "REPO_PULL_UPDATE_RE", "REPO_PULL_RULES_RE",
     "REPO_PULL_ATTENTION_RE",
     "REPO_PULL_CHECKS_RE",
@@ -1218,6 +1235,7 @@ repo_alias_redirect = _static_routes.export("repo_alias_redirect")
 external_site_route = _static_routes.export("external_site_route")
 external_site_delivery = _static_routes.export("external_site_delivery")
 site_document_asset_path = _static_routes.export("site_document_asset_path")
+is_market_package_path = _static_routes.export("is_market_package_path")
 world_asset_path = _static_routes.export("world_asset_path")
 world_asset_cache_control = _static_routes.export("world_asset_cache_control")
 looks_like_repo_route = _static_routes.export("looks_like_repo_route")
@@ -3661,12 +3679,15 @@ async def push_chat_room_apns(env, room_key, channel_id="", sender_bi="",
     notify_account_event. A channel or public room does not: the relay only
     ever sees ciphertext, so the audience is derived from the room instead —
     a private channel's members, or every registered phone for a public
-    channel or room. The sender's own phones are skipped whenever the relay
-    knows who sent the frame, which a public room's anonymous socket does not
-    say; the app keeps that banner off screen while it is open instead.
+    channel or the public world room; any other room wakes nobody. The
+    sender's own phones are skipped whenever the relay knows who sent the
+    frame, which a public room's anonymous socket does not say; the app keeps
+    that banner off screen while it is open instead.
     """
     apns = _apns_module()
     if not room_key or not apns.apns_configured(env):
+        return 0
+    if not channel_id and room_key != PUBLIC_WORLD_GENERAL_ROOM_KEY:
         return 0
     now = int(Date.now())
     last = _CHAT_ROOM_PUSH_MEMO.get(room_key, 0)
@@ -10330,9 +10351,9 @@ async def _chat_direct_message_retained(
     # count move until they reloaded. (A reader who *is* sitting in it already
     # got the message over this room's socket; the push is then redundant, and
     # notify_account_event's coalescing window absorbs it.)
-    recipient = await _chat_direct_message_recipient(
+    recipient, sender = await _chat_direct_message_parties(
         env, conversation_id, account_bi)
-    if recipient:
+    if recipient and not await _chat_blocked_by(env, recipient, sender):
         await notify_account_event(
             env, recipient, "direct-messages",
             _apns_module().direct_message_alert(
@@ -10340,15 +10361,31 @@ async def _chat_direct_message_retained(
                 key_version=key_version, frame=frame))
 
 
+async def _chat_blocked_by(env, recipient, sender):
+    recipient = clean_string(recipient or "", MAX_NODE_NAME).strip().lower()
+    sender = clean_string(sender or "", MAX_NODE_NAME).strip().lower()
+    if not valid_node_name(recipient) or not valid_node_name(sender):
+        return False
+    try:
+        row = await d1_first(
+            env, "SELECT data FROM chat_blocks WHERE account_bi=?",
+            await blind_index(env, recipient))
+        record = await decrypt_row(env, row.get("data")) if row else None
+    except Exception:
+        return False
+    accounts = (record or {}).get("accounts") if isinstance(
+        record, dict) else None
+    return isinstance(accounts, list) and sender in accounts
+
+
 async def _chat_direct_call_ring(env, conversation_id, caller_bi, call_id=""):
     recipient, caller = await _chat_direct_message_parties(
         env, conversation_id, caller_bi)
-    if recipient:
+    if recipient and not await _chat_blocked_by(env, recipient, caller):
         await notify_account_event(
             env, recipient, "calls",
             _apns_module().direct_call_alert(
-                conversation_id=conversation_id, caller=caller,
-                call_id=call_id))
+                conversation_id=conversation_id, call_id=call_id))
 
 
 _CHAT_DIRECT_RING_MEMO = {}
@@ -10550,10 +10587,12 @@ async def _chat_channel_socket_handler(env, request, channel_id):
         "chat-channel:" + channel_id + ":v" + str(claims["key_version"])
     )
     room_id = env.FORKMESH_MAINNODE_ROOM.idFromName(room_name)
+    address = _chat_socket_address(env, request)
     target_url = (
         url.scheme + "://" + url.netloc + "/api/chat/channels/"
         + channel_id + "/v" + str(claims["key_version"])
         + "/ws?account=" + quote(claims["account_bi"], safe="")
+        + ("&addr=" + address if address else "")
     )
     last_error = None
     for _attempt in range(2):
@@ -10699,10 +10738,12 @@ async def _chat_direct_socket_handler(env, request, conversation_id):
         + str(claims["key_version"])
     )
     room_id = env.FORKMESH_MAINNODE_ROOM.idFromName(room_name)
+    address = _chat_socket_address(env, request)
     target_url = (
         url.scheme + "://" + url.netloc + "/api/chat/direct-messages/"
         + conversation_id + "/v" + str(claims["key_version"])
         + "/ws?account=" + quote(claims["account_bi"], safe="")
+        + ("&addr=" + address if address else "")
     )
     last_error = None
     for _attempt in range(2):
@@ -10968,9 +11009,7 @@ class _WorldCommunityRuntime:
                 MAX_NODE_NAME,
             ).strip().lower()
             if (
-                record
-                and record.get("status") == "active"
-                and _account_kind(record) == "user"
+                _is_public_roster_member(record)
                 and valid_node_name(name)
                 and name not in names
             ):
@@ -11488,7 +11527,13 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
             healthy, _chat_call_fm_info(nodes))
 
     def webhook_url(self, token):
-        return self.public_origin() + "/api/chat/webhooks/" + str(token)
+        return (
+            self.public_origin() + "/api/chat/webhooks?token=" + str(token))
+
+    def header(self, name):
+        if self.request is None:
+            return ""
+        return str(self.request.headers.get(name) or "")
 
     def invite_url(self, token):
         return self.public_origin() + "/chat#invite=" + str(token)
@@ -13023,34 +13068,27 @@ def room_key_from_path(pathname, account_bi=""):
         return info
 
     match = REPO_ROOM_RE.match(pathname)
-    if match:
-        owner = safe_segment(match.group(1))
-        repo = safe_segment(match.group(2))
-        room = safe_segment(match.group(3), MAX_ROOM_NAME)
-        if not owner or not repo or not room:
-            return None
-        return {
-            "key": f"repo:{owner}/{repo}:room:{room}",
-            "owner": owner,
-            "repo": repo,
-            "room": room,
-            "compat": False,
-        }
-
-    match = ROOM_RE.match(pathname)
     if not match:
         return None
-
-    room = safe_segment(match.group(1), MAX_ROOM_NAME)
-    if not room:
+    owner = safe_segment(match.group(1))
+    repo = safe_segment(match.group(2))
+    room = safe_segment(match.group(3), MAX_ROOM_NAME)
+    if (
+        owner != CHAT_RELAY_OWNER
+        or repo != CHAT_RELAY_REPO
+        or room not in CHAT_RELAY_ROOMS
+    ):
         return None
-    return {
-        "key": f"legacy:room:{room}",
-        "owner": "",
-        "repo": "",
+    info = {
+        "key": f"repo:{owner}/{repo}:room:{room}",
+        "owner": owner,
+        "repo": repo,
         "room": room,
-        "compat": True,
+        "compat": False,
     }
+    if re.fullmatch(r"[0-9a-f]{64}", str(account_bi or "")):
+        info["account_bi"] = str(account_bi)
+    return info
 
 
 def clean_media_png(value, max_bytes):
@@ -13932,7 +13970,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "77e8e7ee1d331dc3ee91089720e9d4a54f90ec2ce1599cad171e3020f61e1e88"
+    "a2baca528d73942f6a58a0dccba59b0121d5ae9b3a1b786bf72d63fec59447b4"
 )
 
 
@@ -14515,8 +14553,6 @@ async def _room_chat_passphrase(
         env, owner="mainnode", repo="forkmesh", room="general"):
     # A repository-scoped room-chat passphrase, derived ONE-WAY from DATA_KEY
     # with its own domain separation (same pattern as the blind-index HMAC key).
-    # The legacy authenticated mainnode/forkmesh room deliberately retains the
-    # v1 derivation so its retained chat remains readable across this rollout.
     # Public World #general uses a separate, explicitly public derivation and a
     # separate Durable Object room. Giving that key to a guest therefore cannot
     # decrypt authenticated channels or any repository-scoped room.
@@ -14538,12 +14574,13 @@ async def _room_chat_passphrase(
         and room.lower() == PUBLIC_WORLD_GENERAL_ROOM
     ):
         suffix = ":room-chat-passphrase-public-world-general-v1"
-    else:
+    elif scope == "mainnode/forkmesh":
         suffix = (
-            ":room-chat-passphrase-v1"
-            if scope == "mainnode/forkmesh"
-            else ":room-chat-passphrase-v2:" + scope
+            ":room-chat-passphrase-v" + str(CHAT_ROOM_KEY_VERSION)
+            + ":mainnode/forkmesh:room:" + room.lower()
         )
+    else:
+        suffix = ":room-chat-passphrase-v2:" + scope
     secret = _require_data_secret(env) + suffix
     if _room_key_cache["secret"] == secret and _room_key_cache["value"]:
         return _room_key_cache["value"]
@@ -14611,6 +14648,8 @@ CHAT_DIRECT_ACCESS_PROOF = "forkmesh-chat-direct-access-v1"
 CHAT_DIRECT_READ_PROOF = "forkmesh-chat-direct-read-v1"
 CHAT_READS_LIST_PROOF = "forkmesh-chat-reads-list-v1"
 CHAT_READS_MARK_PROOF = "forkmesh-chat-reads-mark-v1"
+CHAT_BLOCKS_LIST_PROOF = "forkmesh-chat-blocks-list-v1"
+CHAT_BLOCKS_PUT_PROOF = "forkmesh-chat-blocks-put-v1"
 CHAT_CHANNEL_TOPIC_MAX_LENGTH = 200
 CHAT_CHANNEL_NAME_MAX_LENGTH = 40
 CHAT_CHANNEL_WEBHOOK_NAME_MAX_LENGTH = 80
@@ -14788,7 +14827,7 @@ async def _chat_channel_signed_session(env, request, data=None):
 
 async def _chat_direct_signed_session(env, request, data=None):
     method = method_name(request)
-    if method not in {"GET", "POST"}:
+    if method not in {"GET", "POST", "PUT"}:
         return "", None
     url = urlparse(request.url)
     params = parse_qs(url.query)
@@ -14801,7 +14840,21 @@ async def _chat_direct_signed_session(env, request, data=None):
     read = CHAT_DIRECT_MESSAGE_READ_RE.match(url.path)
     collection = CHAT_DIRECT_MESSAGES_RE.match(url.path)
     reads = CHAT_READS_RE.match(url.path)
-    if method == "GET" and reads:
+    blocks = CHAT_BLOCKS_RE.match(url.path)
+    if method == "GET" and blocks:
+        canonical = (
+            CHAT_BLOCKS_LIST_PROOF + "\n" + node + "\n" + str(ts)
+        ).encode()
+    elif method == "PUT" and blocks:
+        accounts = chat_direct_messages_api.clean_blocks(
+            (data or {}).get("accounts"))
+        if accounts is None:
+            return "", None
+        canonical = (
+            CHAT_BLOCKS_PUT_PROOF + "\n" + node + "\n" + str(ts) + "\n"
+            + chat_direct_messages_api.blocks_digest(accounts)
+        ).encode()
+    elif method == "GET" and reads:
         canonical = (
             CHAT_READS_LIST_PROOF + "\n" + node + "\n" + str(ts)
         ).encode()
@@ -15228,13 +15281,13 @@ async def chat_room_key_handler(env, request):
     owner = safe_segment(params.get("owner", ["mainnode"])[0])
     repo = safe_segment(params.get("repo", ["forkmesh"])[0])
     room = safe_segment(params.get("room", ["general"])[0], MAX_ROOM_NAME)
-    if not owner or not repo or not room:
+    if (
+        owner != CHAT_RELAY_OWNER
+        or repo != CHAT_RELAY_REPO
+        or room not in CHAT_RELAY_ROOMS
+    ):
         return _private_replica_not_found()
-    public_world_general = (
-        owner.lower() == "mainnode"
-        and repo.lower() == "forkmesh"
-        and room.lower() == PUBLIC_WORLD_GENERAL_ROOM
-    )
+    public_world_general = room == PUBLIC_WORLD_GENERAL_ROOM
     if not public_world_general:
         requester = await _room_key_requester(env, request, owner, repo)
         if not requester:
@@ -15248,6 +15301,8 @@ async def chat_room_key_handler(env, request):
             "ok": True,
             "scope": owner.lower() + "/" + repo.lower(),
             "room": room.lower(),
+            "version": (
+                1 if public_world_general else CHAT_ROOM_KEY_VERSION),
             "access": (
                 "public-world-general"
                 if public_world_general
@@ -21390,6 +21445,41 @@ def _transient_client_address(request):
     return value[:64]
 
 
+def _chat_socket_address(env, request):
+    try:
+        raw = str(request.headers.get("cf-connecting-ip") or "")
+    except Exception:
+        return ""
+    try:
+        address = ipaddress.ip_address(raw.strip().strip("[]")[:64])
+    except (ValueError, TypeError):
+        return ""
+    mapped = address.ipv4_mapped if address.version == 6 else None
+    if mapped:
+        scope = str(mapped)
+    elif address.version == 6:
+        scope = str(ipaddress.ip_network(str(address) + "/64", strict=False))
+    else:
+        scope = str(address)
+    return hmac.new(
+        (_require_data_secret(env) + ":chat-socket-address-v1").encode(),
+        scope.encode(),
+        "sha256",
+    ).hexdigest()[:32]
+
+
+def _chat_socket_target(request, path=None, account_bi="", address=""):
+    parsed = urlparse(request.url)
+    query = []
+    if re.fullmatch(r"[0-9a-f]{64}", str(account_bi or "")):
+        query.append("account=" + str(account_bi))
+    if re.fullmatch(r"[0-9a-f]{32}", str(address or "")):
+        query.append("addr=" + str(address))
+    return parsed._replace(
+        path=parsed.path if path is None else path,
+        query="&".join(query), fragment="").geturl()
+
+
 def _generalized_client_category(request):
     """Reduce a user agent to a non-identifying category."""
     try:
@@ -23844,7 +23934,16 @@ BROWSER_CONTROL_CAPABILITIES = "desktop_control"
 BROWSER_CONTROL_DEVICE_KIND = "browser_control"
 BROWSER_CONTROL_BIND_PROOF = "forkmesh-browser-control-v1"
 BROWSER_CONTROL_MAX_DEVICES = 20
-ACCOUNT_DEVICE_KINDS = ("desktop_node", "mobile_node", "browser_control")
+CHAT_NODE_DEVICE_KIND = "chat_node"
+CHAT_NODE_CAPABILITIES = "chat_node"
+CHAT_NODE_BIND_PROOF = "forkmesh-chat-node-bind-v1"
+CHAT_NODE_MAX_DEVICES = 20
+CHAT_NODE_OWNER_WINDOW_MS = 60 * 1000
+CHAT_NODE_OWNER_MAX_PER_WINDOW = 120
+CHAT_NODE_OWNER_RATE_MEMO_MAX = 4096
+_CHAT_NODE_OWNER_RATE = {}
+ACCOUNT_DEVICE_KINDS = (
+    "desktop_node", "mobile_node", "browser_control", CHAT_NODE_DEVICE_KIND)
 CONTRIBUTION_KEY_PROOF_CAPABILITY = "contribution_key_proof"
 
 
@@ -23907,6 +24006,8 @@ async def _register_account_device(
         capabilities = MOBILE_NODE_CAPABILITIES
     elif kind == "browser_control":
         capabilities = BROWSER_CONTROL_CAPABILITIES
+    elif kind == CHAT_NODE_DEVICE_KIND:
+        capabilities = CHAT_NODE_CAPABILITIES
     else:
         capabilities = CLIENT_CAPABILITIES
     if proof_verified:
@@ -24796,6 +24897,181 @@ async def _account_browser_control_bind(env, request):
          "desktopKeys": [item["key"] for item in desktops],
          "desktops": [{"key": item["key"], "node": item["node"]}
                       for item in desktops]},
+        cache_control=no_store)
+
+
+def _chat_node_rate_ok(key, now):
+    window_start, count = _CHAT_NODE_OWNER_RATE.get(key, (0, 0))
+    if now - window_start >= CHAT_NODE_OWNER_WINDOW_MS:
+        window_start, count = now, 0
+    if count >= CHAT_NODE_OWNER_MAX_PER_WINDOW:
+        return False
+    if len(_CHAT_NODE_OWNER_RATE) >= CHAT_NODE_OWNER_RATE_MEMO_MAX:
+        _CHAT_NODE_OWNER_RATE.clear()
+    _CHAT_NODE_OWNER_RATE[key] = (window_start, count + 1)
+    return True
+
+
+async def chat_node_owner_account(env, node):
+    if not valid_node_pubkey(node):
+        return ""
+    rows = await d1_all(
+        env,
+        """SELECT COALESCE(NULLIF(owner_node.user_bi, ''),
+                           account_devices.account_bi) AS owner_bi
+             FROM account_devices
+             LEFT JOIN nodes AS owner_node
+               ON owner_node.node_bi=account_devices.account_bi
+            WHERE account_devices.pubkey=?
+              AND account_devices.enabled=1
+              AND account_devices.revoked_at=0
+              AND account_devices.kind IN (?,?,?)
+           UNION
+           SELECT COALESCE(NULLIF(user_bi, ''), node_bi) AS owner_bi
+             FROM nodes WHERE pubkey=?""",
+        node, "desktop_node", "mobile_node", CHAT_NODE_DEVICE_KIND, node,
+    )
+    owners = {
+        str(row.get("owner_bi") or "") for row in rows or []
+        if row.get("owner_bi")}
+    if len(owners) != 1:
+        return ""
+    rec = await _account_identity_rec_by_bi(env, owners.pop())
+    if (
+        not isinstance(rec, dict)
+        or rec.get("status") != "active"
+        or _account_kind(rec) != "user"
+    ):
+        return ""
+    name = clean_string(rec.get("name", ""), MAX_NODE_NAME).strip().lower()
+    return name if valid_node_name(name) else ""
+
+
+async def chat_node_owner_handler(env, request):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            extra_headers={"allow": "GET"})
+    now = int(Date.now())
+    address = _chat_socket_address(env, request) or "unknown"
+    if not _chat_node_rate_ok(address, now):
+        return json_response(
+            {"error": "rate_limited"}, status=429, cache_control="no-store",
+            extra_headers={"retry-after": str(
+                CHAT_NODE_OWNER_WINDOW_MS // 1000)})
+    values = parse_qs(urlparse(request.url).query).get("node") or [""]
+    node = clean_string(values[0], 120).strip()
+    if len(values) != 1 or not valid_node_pubkey(node):
+        return json_response(
+            {"error": "invalid_node"}, status=400, cache_control="no-store")
+    await ensure_schema(env)
+    return json_response(
+        {"account": await chat_node_owner_account(env, node)},
+        cache_control="private, max-age=600")
+
+
+def _chat_node_bind_ts(value):
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    value = clean_string(str(value or ""), 20).strip()
+    return value if value.isdigit() and str(int(value)) == value else ""
+
+
+async def chat_node_bind_handler(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    if method_name(request) != "POST":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": "POST"})
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    token, cookie_auth = _request_account_session_token(request, data)
+    if cookie_auth and not _request_origin_allowed(env, request):
+        token = ""
+    account_bi, rec, current_session_id = await _account_session_lookup(
+        env, token, touch=False)
+    if (
+        not account_bi or not rec or not current_session_id
+        or _account_kind(rec) != "user"
+    ):
+        return json_response(
+            {"error": await _account_session_invalid_error(env, token)},
+            status=401, cache_control=no_store)
+    account = clean_string(rec.get("name", ""), MAX_NODE_NAME).lower()
+    node = clean_string(str(data.get("node", "")), 120).strip()
+    ts = _chat_node_bind_ts(data.get("ts"))
+    sig = clean_string(str(data.get("sig", "")), 200).strip()
+    if not valid_node_pubkey(node) or not valid_node_name(account):
+        return json_response(
+            {"error": "invalid_node"}, status=400, cache_control=no_store)
+    if not ts or not _ts_ok(ts):
+        return json_response(
+            {"error": "stale_request"}, status=401, cache_control=no_store)
+    canonical = (
+        CHAT_NODE_BIND_PROOF + "\n" + account + "\n" + node + "\n" + ts
+    ).encode()
+    if not sig or not await ed25519_verify(node, sig, canonical):
+        return json_response(
+            {"error": "invalid_signature"}, status=401,
+            cache_control=no_store)
+    owner = await chat_node_owner_account(env, node)
+    if owner and owner != account:
+        return json_response(
+            {"error": "node_key_conflict"}, status=409,
+            cache_control=no_store)
+    existing = await _account_device_for_pubkey(env, account_bi, node)
+    if existing and clean_string(
+            existing.get("kind", ""), 40) != CHAT_NODE_DEVICE_KIND:
+        if owner == account:
+            return json_response(
+                {"ok": True, "account": account, "node": node},
+                cache_control=no_store)
+        return json_response(
+            {"error": "node_key_conflict"}, status=409,
+            cache_control=no_store)
+    if existing and (
+            int(existing.get("revoked_at") or 0)
+            or not int(existing.get("enabled") or 0)):
+        return json_response(
+            {"error": "device_revoked"}, status=401, cache_control=no_store)
+    if not existing and owner == account:
+        return json_response(
+            {"ok": True, "account": account, "node": node},
+            cache_control=no_store)
+    label = clean_string(str(data.get("label", "")), 120).strip()
+    device = await _register_account_device(
+        env, account_bi, node, CHAT_NODE_DEVICE_KIND,
+        label or "Web browser chat")
+    now = int(Date.now())
+    others = [
+        row for row in await _account_devices_list(env, account_bi)
+        if row.get("kind") == CHAT_NODE_DEVICE_KIND
+        and row.get("enabled")
+        and row.get("pubkey") != node
+    ]
+    others.sort(key=lambda row: int(row.get("lastSeen") or 0))
+    while len(others) >= CHAT_NODE_MAX_DEVICES:
+        oldest = others.pop(0)
+        await d1_run(
+            env,
+            "UPDATE account_devices SET revoked_at=?, enabled=0 "
+            "WHERE account_bi=? AND device_bi=? AND revoked_at=0",
+            now, account_bi, oldest.get("deviceBi", ""),
+        )
+    if not existing:
+        await _audit_sensitive_action(
+            env, account, "account.chat_node_bind", "account_device",
+            (device or {}).get("id", ""), "success", {})
+    return json_response(
+        {"ok": True, "account": account, "node": node},
         cache_control=no_store)
 
 
@@ -45047,6 +45323,8 @@ async def _privacy_safe_log_path(env, path):
         return "/api/chat/channels/[opaque]"
     if path.startswith("/api/chat/invites/"):
         return "/api/chat/invites/[token]"
+    if path.startswith("/api/chat/webhooks/"):
+        return "/api/chat/webhooks/[token]"
     if path.startswith("/api/chat/direct-messages/"):
         return "/api/chat/direct-messages/[opaque]"
     match = REPO_API_PREFIX_RE.match(path)
@@ -52686,8 +52964,8 @@ async def _git_push_account_for_pubkey(env, pubkey):
         device = await d1_first(
             env,
             "SELECT account_bi FROM account_devices "
-            "WHERE pubkey=? AND enabled=1 AND revoked_at=0",
-            pubkey,
+            "WHERE pubkey=? AND enabled=1 AND revoked_at=0 AND kind<>?",
+            pubkey, CHAT_NODE_DEVICE_KIND,
         )
         account_bi = (device or {}).get("account_bi")
         if not account_bi:
@@ -54404,11 +54682,23 @@ def _public_websocket_path(path):
         or CHAT_CHANNEL_WS_RE.fullmatch(value)
         or CHAT_DIRECT_MESSAGE_WS_RE.fullmatch(value)
         or re.fullmatch(r"/api/notes/[0-9a-f]{32}/ws/?", value)
-        or (
-            (REPO_ROOM_RE.fullmatch(value) or ROOM_RE.fullmatch(value))
-            and value.endswith("/ws")
-        )
+        or (REPO_ROOM_RE.fullmatch(value) and value.endswith("/ws"))
     )
+
+
+def _chat_socket_query_ok(query, account_required=False):
+    if not set(query) <= {"account", "addr"}:
+        return False
+    if account_required and "account" not in query:
+        return False
+    for name, pattern in (("account", r"[0-9a-f]{64}"),
+                          ("addr", r"[0-9a-f]{32}")):
+        values = query.get(name)
+        if values is None:
+            continue
+        if len(values) != 1 or not re.fullmatch(pattern, values[0]):
+            return False
+    return True
 
 
 def _websocket_handoff_response(binding_name, object_name, forwarded):
@@ -54576,7 +54866,6 @@ def _validated_websocket_handoff(env, request, response):
         source_note = re.fullmatch(
             r"/api/notes/([0-9a-f]{32})/ws/?", source_path)
         source_repo_room = REPO_ROOM_RE.fullmatch(source_path)
-        source_compat_room = ROOM_RE.fullmatch(source_path)
 
         # Bind the descriptor to the exact public route that was authorized.
         # Shape validation alone is insufficient: a corrupt or confused
@@ -54673,7 +54962,7 @@ def _validated_websocket_handoff(env, request, response):
                 and target_path.group(1) == target_object.group(1)
                 and len(accounts) == 1
                 and re.fullmatch(r"[0-9a-f]{64}", accounts[0])
-                and set(query) == {"account"}
+                and _chat_socket_query_ok(query, account_required=True)
             )
         elif source_note:
             roles = query.get("role") or []
@@ -54717,7 +55006,7 @@ def _validated_websocket_handoff(env, request, response):
                 binding_name == "FORKMESH_MAINNODE_ROOM"
                 and target.scheme == source.scheme
                 and target.netloc == source.netloc
-                and target.query == source.query
+                and _chat_socket_query_ok(query)
                 and target.path.endswith("/ws")
                 and source_repo
                 and source_room
@@ -54728,17 +55017,6 @@ def _validated_websocket_handoff(env, request, response):
                     "repo:" + canonical_owner + "/" + canonical_repo
                     + ":room:" + canonical_room
                 )
-            )
-        elif source_compat_room:
-            room = room_key_from_path(source_path)
-            valid_target = bool(
-                binding_name == "FORKMESH_MAINNODE_ROOM"
-                and target.scheme == source.scheme
-                and target.netloc == source.netloc
-                and target.path == source_path
-                and target.query == source.query
-                and room
-                and room.get("key") == object_name
             )
         else:
             valid_target = False
@@ -56319,6 +56597,14 @@ class ForkMeshNoteRoom(DurableObject):
             pass
 
 
+def _chat_socket_open(ws):
+    try:
+        state = int(ws.readyState)
+    except Exception:
+        return False
+    return state in (0, 1)
+
+
 class ForkMeshRoom(DurableObject):
     # Encrypted chat relay on the WebSocket Hibernation API. Sockets are accepted
     # via ctx.acceptWebSocket and serviced by the webSocketMessage/Close handlers
@@ -56414,24 +56700,37 @@ class ForkMeshRoom(DurableObject):
 
         # The room key identifies this room across hibernation; stash it on the
         # socket so webSocketMessage can scope retained history to this room.
-        account_values = parse_qs(
-            parsed_url.query, keep_blank_values=False
-        ).get("account") or []
+        socket_query = parse_qs(parsed_url.query, keep_blank_values=False)
+        account_values = socket_query.get("account") or []
         account_bi = account_values[0] if len(account_values) == 1 else ""
+        address_values = socket_query.get("addr") or []
+        address = (
+            address_values[0]
+            if len(address_values) == 1
+            and re.fullmatch(r"[0-9a-f]{32}", address_values[0])
+            else "")
         info = room_key_from_path(path, account_bi)
-        room_key = info["key"] if info else None
+        if not info:
+            return json_response({"error": "not_found"}, status=404)
+        room_key = info["key"]
+        if not self._address_admitted(address):
+            return json_response(
+                {"error": "too_many_sockets"}, status=429)
 
         client, server = WebSocketPair.new().object_values()
         self.ctx.acceptWebSocket(server, to_js(["chat"]))
         server.serializeAttachment(to_js({
             "id": new_socket_id(), "room": room_key,
-            "channel_id": (info or {}).get("channel_id", ""),
-            "channel_version": (info or {}).get("channel_version", 0),
-            "direct_id": (info or {}).get("direct_id", ""),
-            "direct_version": (info or {}).get("direct_version", 0),
-            "account_bi": (info or {}).get("account_bi", ""),
+            "channel_id": info.get("channel_id", ""),
+            "channel_version": info.get("channel_version", 0),
+            "direct_id": info.get("direct_id", ""),
+            "direct_version": info.get("direct_version", 0),
+            "account_bi": info.get("account_bi", ""),
+            "addr": address,
             "last": int(Date.now()),
         }))
+        if address:
+            _CHAT_SOCKET_ADDRESSES.setdefault(address, []).append(server)
 
         # Replay retained (still-encrypted) history to the joining client so new
         # users see some recent backlog even when no peer is online to send it.
@@ -56507,6 +56806,11 @@ class ForkMeshRoom(DurableObject):
         if not await self._retention_ingress_admitted(len(body.encode("utf-8"))):
             return json_response({"error": "rate_limited"}, status=429)
 
+        envelope = {
+            key: value for key, value in envelope.items()
+            if key not in CHAT_RELAY_OWNED_FIELDS}
+        envelope["srv"] = True
+        body = json.dumps(envelope, separators=(",", ":"))
         retained_at = int(Date.now())
         msg_id = (await sha256_hex(body))[:40]
         await chat_history_store(
@@ -56563,9 +56867,10 @@ class ForkMeshRoom(DurableObject):
 
         room_key = (
             "chat-channel:" + match.group(1) + ":v" + match.group(2))
-        envelope.pop("historyReplay", None)
-        envelope.pop("recipients", None)
-        envelope.pop("recipientNames", None)
+        envelope = {
+            key: value for key, value in envelope.items()
+            if key not in CHAT_RELAY_OWNED_FIELDS}
+        envelope["srv"] = True
         body = json.dumps(envelope, separators=(",", ":"))
         msg_id = (await sha256_hex(body))[:40]
         peers = self._live_chat_sockets(close_stale=True)
@@ -56619,7 +56924,8 @@ class ForkMeshRoom(DurableObject):
         if not name:
             return json_response({"error": "unauthorized"}, status=401)
         frame = json.dumps(
-            {"kind": "forkmesh-new-member", "v": 1, "name": name},
+            {"kind": "forkmesh-new-member", "v": 1, "name": name,
+             "srv": True},
             separators=(",", ":"))
         frame_bytes = len(frame.encode("utf-8"))
         delivered = 0
@@ -56638,6 +56944,30 @@ class ForkMeshRoom(DurableObject):
             return len(self._live_chat_sockets(close_stale=True))
         except Exception:
             return 0
+
+    def _address_admitted(self, address):
+        if not address:
+            return True
+        here = sum(
+            1 for peer in self._live_chat_sockets()
+            if _ws_attr(peer, "addr", "") == address)
+        if here >= ROOM_SOCKETS_PER_ADDRESS:
+            return False
+        if len(_CHAT_SOCKET_ADDRESSES) >= CHAT_SOCKET_ADDRESS_MEMO_MAX:
+            for key in list(_CHAT_SOCKET_ADDRESSES):
+                _CHAT_SOCKET_ADDRESSES[key] = [
+                    peer for peer in _CHAT_SOCKET_ADDRESSES[key]
+                    if _chat_socket_open(peer)]
+                if not _CHAT_SOCKET_ADDRESSES[key]:
+                    del _CHAT_SOCKET_ADDRESSES[key]
+        open_sockets = [
+            peer for peer in _CHAT_SOCKET_ADDRESSES.get(address, ())
+            if _chat_socket_open(peer)]
+        if open_sockets:
+            _CHAT_SOCKET_ADDRESSES[address] = open_sockets
+        else:
+            _CHAT_SOCKET_ADDRESSES.pop(address, None)
+        return len(open_sockets) < CHAT_SOCKETS_PER_ADDRESS
 
     def _live_chat_sockets(self, close_stale=False):
         now = int(Date.now())
@@ -56682,6 +57012,7 @@ class ForkMeshRoom(DurableObject):
             "direct_id": _ws_attr(ws, "direct_id", ""),
             "direct_version": _ws_attr(ws, "direct_version", 0),
             "account_bi": _ws_attr(ws, "account_bi", ""),
+            "addr": _ws_attr(ws, "addr", ""),
         }
         for name in ("last", "rl_start", "rl_count", "lv_start", "lv_count",
                      "lv_checked", "rc_start", "rc_count"):
@@ -56742,8 +57073,7 @@ class ForkMeshRoom(DurableObject):
         message = json.dumps(
             {
                 key: value for key, value in envelope.items()
-                if key not in (
-                    "historyReplay", "recipients", "recipientNames", "ref")
+                if key not in CHAT_RELAY_OWNED_FIELDS
             },
             separators=(",", ":"))
         frame_bytes = len(message.encode("utf-8"))
@@ -56788,19 +57118,17 @@ class ForkMeshRoom(DurableObject):
                 ws, receipt,
                 superseded=receipt.get("kind") == "forkmesh-superseded")
             return
-        # Drop frames from a socket that is flooding (don't relay or retain them).
+        try:
+            envelope = json.loads(message)
+        except Exception:
+            return
+        if not isinstance(envelope, dict) or envelope.get("kind") not in (
+                "cipher", "forkmesh-received", "forkmesh-superseded"):
+            return
         if not self._rate_ok(ws):
             return
         if not await self._private_room_current(ws):
             self._close_all_chat_sockets(1008, "room access revoked")
-            return
-        # Replay markers are server-owned transport metadata. Chat clients send
-        # only encrypted envelopes; dropping plaintext controls and stripping a
-        # forged replay bit prevents a peer from flushing another reader's
-        # backlog or disguising a live message as retained history.
-        try:
-            envelope = json.loads(message)
-        except Exception:
             return
         if (
             isinstance(envelope, dict)
@@ -56823,17 +57151,10 @@ class ForkMeshRoom(DurableObject):
             or envelope.get("kind") != "cipher"
         ):
             return
-        if (
-            "historyReplay" in envelope
-            or "recipients" in envelope
-            or "recipientNames" in envelope
-            or "ref" in envelope
-        ):
-            envelope = dict(envelope)
-            envelope.pop("historyReplay", None)
-            envelope.pop("recipients", None)
-            envelope.pop("recipientNames", None)
-            envelope.pop("ref", None)
+        if any(field in envelope for field in CHAT_RELAY_OWNED_FIELDS):
+            envelope = {
+                key: value for key, value in envelope.items()
+                if key not in CHAT_RELAY_OWNED_FIELDS}
             message = json.dumps(envelope, separators=(",", ":"))
         durable_object_traffic_note(
             self, bytes_in=len(message.encode("utf-8")), messages=1)
@@ -57036,6 +57357,11 @@ class ForkMeshRoom(DurableObject):
     async def _maybe_retain(self, ws, message, msg_id="", stored=False):
         room_key = _ws_attr(ws, "room")
         if not room_key:
+            return
+        if (
+            not _ws_attr(ws, "account_bi", "")
+            and room_key != PUBLIC_WORLD_GENERAL_ROOM_KEY
+        ):
             return
         message_bytes = len(message.encode("utf-8"))
         if message_bytes > CHAT_HISTORY_MAX_BODY:

@@ -20,7 +20,7 @@ public enum ChatReplyTarget {
     public static func resolve(_ raw: String, channels: [String], roster: [Member], offices: [String] = []) throws -> String {
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty { throw ChatReplyError.unknownConversation(raw) }
-        if name.hasPrefix("#") { return name }
+        if name.hasPrefix("#") || DirectMessageFrames.isDirect(name) { return name }
         let others = roster.filter { !$0.isSelf }
         if name.hasPrefix("@") {
             let rest = String(name.dropFirst())
@@ -49,13 +49,27 @@ public final class ChatReplySender: NotificationReplySending {
     let relay: RelayService
     let extras: ChatExtras
     let office: () -> OfficeChannelService?
+    let direct: () -> DirectMessageService?
     let connectWait: TimeInterval
 
-    public init(relay: RelayService, extras: ChatExtras, office: @escaping () -> OfficeChannelService? = { nil }, connectWait: TimeInterval = 10) {
+    public init(
+        relay: RelayService, extras: ChatExtras, office: @escaping () -> OfficeChannelService? = { nil },
+        direct: @escaping () -> DirectMessageService? = { nil }, connectWait: TimeInterval = 10
+    ) {
         self.relay = relay
         self.extras = extras
         self.office = office
+        self.direct = direct
         self.connectWait = connectWait
+    }
+
+    func directConversation(_ conversation: String, direct: DirectMessageService) async -> String? {
+        if DirectMessageFrames.isDirect(conversation) { return conversation }
+        let id = String(conversation.dropFirst())
+        let account = relay.roster().first { !$0.isSelf && $0.id == id }.map { ChatNodeOwners.normalized($0.owner) } ?? ""
+        if account.isEmpty { return nil }
+        if let record = direct.records.first(where: { $0.otherUser == account }) { return record.conversation }
+        return try? await direct.start(username: account).conversation
     }
 
     public func reply(channel: String, text: String) async throws {
@@ -65,6 +79,12 @@ public final class ChatReplySender: NotificationReplySending {
             channel, channels: relay.channels, roster: relay.roster(), offices: office()?.conversations ?? [])
         if OfficeFrames.isOffice(conversation) {
             guard let office = office(), await office.send(conversation, text: body) else { throw ChatReplyError.refused }
+            return
+        }
+        if DirectMessageFrames.isDirect(conversation) || conversation.hasPrefix("@") {
+            guard let direct = direct(), let target = await directConversation(conversation, direct: direct),
+                await direct.send(target, text: body)
+            else { throw ChatReplyError.refused }
             return
         }
         if relay.state != .connected {

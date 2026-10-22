@@ -56,7 +56,7 @@ final class ChatEveryoneTests: XCTestCase {
         XCTAssertEqual(
             try ChatReplyTarget.resolve("general", channels: ["#general"], roster: [], offices: hub.officeChannels),
             "#office/general", "a reply to general goes to the server channel, not World")
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "hello", "id": "h1", "senderId": "old-desktop", "sender": "Old", "ts": 1000,
             "channels": ["#general", "#random", "#welcome"],
         ])
@@ -71,7 +71,7 @@ final class ChatEveryoneTests: XCTestCase {
         try await h.sendProtected([
             "type": "presence", "id": "p1", "senderId": "peer-1", "sender": "Pat", "ownerUser": "pat", "ts": .int(Date().epochMillis),
         ])
-        _ = await waitUntil { h.relay.roster().contains { $0.id == "peer-1" } }
+        _ = await waitUntil { h.relay.roster().contains { $0.id == h.node("peer-1") } }
         await hub.refreshMemberDirectory()
         XCTAssertEqual(hub.directoryMembers, ["alice", "bob", "pat"])
         for conversation in ["#office/general", "#office/random", "#office/welcome"] {

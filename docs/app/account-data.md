@@ -18,7 +18,7 @@ Settings > Data on the iPhone does three things for the signed-in account:
 | Server module (routes, store, inventory, export) | `app/src/account_data.py` |
 | Runtime adapter | `_AccountDataRuntime`, `account_data_handler` in `app/src/entry.py` |
 | Routing | `app/src/app_runtime.py`, before the `/api/accounts/` catch-all |
-| Tables | `account_store`, `account_store_keys` (module DDL `STORE_SCHEMA`, migration `0286_account_store.sql`) |
+| Tables | `account_store`, `account_store_keys` (module DDL `STORE_SCHEMA`, migration `0287_account_store.sql`) |
 | Account deletion | `_delete_account_namespace` deletes both store tables |
 | Tests | `app/tests/test_account_data.py` |
 | iPhone core | `FMAccount/AccountSync.swift`, `FMAccount/Identity/AccountDataInventory.swift`, `FMPackages/RSSReaderStore.swift` (`syncLibrary`, `restoreLibrary`) |

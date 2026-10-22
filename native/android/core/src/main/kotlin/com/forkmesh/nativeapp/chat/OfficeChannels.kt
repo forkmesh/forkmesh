@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.chat
 
 import com.forkmesh.nativeapp.apps.AppBlocks
+import com.forkmesh.nativeapp.crypto.ChatNodeKey
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealOpen
@@ -129,14 +130,22 @@ object OfficeFrames {
         else -> "Delivered to $count people"
     }
 
-    fun chatMessage(plain: Map<String, Any?>, conversation: String, selfId: String, recipients: Int? = null): ChatMessage? {
+    fun chatMessage(
+        plain: Map<String, Any?>,
+        conversation: String,
+        selfId: String,
+        recipients: Int? = null,
+        botAccount: (String) -> String = { "" },
+    ): ChatMessage? {
         if (conversation.isEmpty() || jsonText(plain["type"]) != "chat") return null
         val id = jsonText(plain["id"])
         if (id.isEmpty() || id.length > 64) return null
         val rawText = jsonText(plain["text"])
         if (rawText.length > ChatLimits.MAX_TEXT_CHARS) return null
-        val senderId = jsonText(plain["senderId"]).take(64)
-        val sender = jsonText(plain["sender"]).take(ChatLimits.MAX_DISPLAY_NAME_CHARS).ifEmpty { "Office visitor" }
+        val senderId = RelayFrames.shownSender(plain).take(64)
+        val sender = RelayFrames.shownName(plain, botAccount)
+            .let { if (RelayFrames.botName(plain).isEmpty()) it.take(ChatLimits.MAX_DISPLAY_NAME_CHARS) else it }
+            .ifEmpty { "Office visitor" }
         val fileName = jsonText(plain["fileName"]).take(ChatLimits.MAX_FILE_NAME_CHARS)
         val blocks = if (senderId.startsWith("app:")) AppBlocks.parse(plain["blocks"]) else emptyList()
         if (rawText.isEmpty() && fileName.isEmpty() && blocks.isEmpty()) return null
@@ -153,6 +162,7 @@ object OfficeFrames {
             recipients = recipients,
             blocks = blocks,
             appMessageId = if (blocks.isEmpty()) "" else jsonText(plain["appMessageId"]).take(64),
+            serverVisible = RelayFrames.serverVisible(plain),
         )
     }
 
@@ -245,6 +255,8 @@ class OfficeChannelService(
     private val now: () -> Long = System::currentTimeMillis,
     private val platform: String = "android",
     private val account: () -> String = { "" },
+    private val nodeKey: () -> ChatNodeKey? = { null },
+    private val owners: () -> NodeOwners? = { null },
 ) {
     private class RoomSocket(val roomId: String, val crypto: RoomCrypto, val seal: RoomSeal, var socket: OfficeSocket? = null)
 
@@ -364,9 +376,27 @@ class OfficeChannelService(
             it.setIdentity(sealAccount(), selfId())
             return it
         }
-        val loaded = RoomSeal.loadOrCreate(room, scope = room, policy = SealPolicy.OPEN, acct = sealAccount(), secureStore = secureStore, clock = now, node = selfId())
+        val loaded = RoomSeal.loadOrCreate(room, scope = room, policy = SealPolicy.OPEN, acct = sealAccount(), secureStore = secureStore, clock = now, node = selfId(), nodeKey = nodeKey())
         synchronized(lock) { seals[room] = loaded }
         return loaded
+    }
+
+    fun botAccount(node: String): String =
+        if (node == selfId()) account().trim().lowercase() else owners()?.account(node).orEmpty()
+
+    fun relabelBots() {
+        val changed = synchronized(lock) {
+            var any = false
+            for ((key, list) in HashMap(history)) {
+                val next = list.map { RelayFrames.relabel(it, ::botAccount) }
+                if (next != list) {
+                    history[key] = next
+                    any = true
+                }
+            }
+            any
+        }
+        if (changed) notifyListeners()
     }
 
     private fun sealAccount(): String = account().trim().lowercase().ifEmpty { selfId() }
@@ -391,7 +421,7 @@ class OfficeChannelService(
                 }
                 if (envelope.isEmpty()) continue
                 val plain = crypto.decrypt(envelope) ?: continue
-                accept(plain, room, seal, null, OfficeFrames.recipients(envelope), history = true)
+                accept(plain, room, seal, null, OfficeFrames.recipients(envelope), history = true, server = envelope["srv"] == true)
             }
             notifyListeners()
         } catch (error: Exception) {
@@ -407,6 +437,7 @@ class OfficeChannelService(
         live: RoomSocket?,
         recipients: Int? = null,
         history: Boolean = false,
+        server: Boolean = false,
     ) {
         var plain = frame
         if (RoomSeal.isLegacyFrame(plain)) return
@@ -422,11 +453,21 @@ class OfficeChannelService(
             val meta = LinkedHashMap<String, Any?>()
             if (history) meta["history"] = true
             if (recipients != null) meta["recipients"] = recipients
-            plain = (seal.open(plain, now(), history = history, meta = meta) as? SealOpen.Opened)?.plain ?: return
-        } else if (room.isPrivate && !room.serverVisible) {
+            val opened = seal.open(plain, now(), history = history, meta = meta) as? SealOpen.Opened ?: return
+            plain = LinkedHashMap(opened.plain).also { copy ->
+                copy.remove(RelayFrames.INTEGRATION_KEY)
+                opened.senderNode?.let { copy["senderId"] = it }
+            }
+        } else if (server) {
+            val marked = LinkedHashMap(plain).also {
+                it.remove("private")
+                it["channel"] = "#${room.name}"
+            }
+            plain = RelayFrames.serverFrame(mapOf("srv" to true), marked) ?: return
+        } else {
             return
         }
-        val message = OfficeFrames.chatMessage(plain, room.conversation, selfId(), recipients) ?: return
+        val message = OfficeFrames.chatMessage(plain, room.conversation, selfId(), recipients, ::botAccount) ?: return
         if (append(message, room.id) && live != null && !message.self) onMessage?.invoke(message)
     }
 
@@ -518,7 +559,7 @@ class OfficeChannelService(
             return
         }
         val plain = holder.crypto.decrypt(envelope) ?: return
-        accept(plain, room, holder.seal, holder, OfficeFrames.recipients(envelope))
+        accept(plain, room, holder.seal, holder, OfficeFrames.recipients(envelope), server = envelope["srv"] == true)
         notifyListeners()
     }
 
@@ -577,20 +618,20 @@ class OfficeChannelService(
 
     internal fun frame(room: OfficeRoom, text: String, bot: Boolean): LinkedHashMap<String, Any?> {
         val seq = sequence.incrementAndGet()
-        val me = if (bot) "forkbot" else selfId()
+        val me = selfId()
         val at = now()
         val plain = linkedMapOf<String, Any?>(
             "type" to "chat",
             "id" to if (bot) UUID.randomUUID().toString().lowercase() else "$me-$at-$seq",
             "senderId" to me,
-            "sender" to if (bot) "forkbot" else displayName().take(ChatLimits.MAX_DISPLAY_NAME_CHARS),
+            "sender" to displayName().take(ChatLimits.MAX_DISPLAY_NAME_CHARS),
             "ts" to at,
             "platform" to platform,
             "version" to RelayRoom.CLIENT_VERSION,
             "channel" to "#${room.name}",
             "text" to text.take(ChatLimits.MAX_TEXT_CHARS),
         )
-        if (bot) plain["accountKind"] = "user"
+        if (bot) plain["bot"] = "forkbot"
         if (room.isPrivate) plain["private"] = true
         return plain
     }
@@ -607,15 +648,15 @@ class OfficeChannelService(
         val socket = holder.socket ?: return ""
         val plain = frame(room, body, asBot)
         return try {
-            val framed = if (room.isPrivate) holder.seal.seal(plain, now()) else plain
-            if (room.isPrivate && holder.seal.needsAdvertisement()) advertise(holder)
+            val framed = holder.seal.seal(plain, now())
+            if (holder.seal.needsAdvertisement()) advertise(holder)
             val envelope = LinkedHashMap(holder.crypto.encrypt(framed))
             envelope["persist"] = true
             envelope["notify"] = true
             val wire = Json.stringify(envelope)
             rememberSent(OfficeFrames.sentRef(wire), jsonText(plain["id"]))
             if (!socket.sendText(wire)) return ""
-            OfficeFrames.chatMessage(plain, room.conversation, selfId())?.let { append(it, room.id) }
+            OfficeFrames.chatMessage(plain, room.conversation, selfId(), botAccount = ::botAccount)?.let { append(it, room.id) }
             notifyListeners()
             jsonText(plain["id"])
         } catch (error: Exception) {

@@ -93,6 +93,7 @@ APNS_CHAT_TOPIC = "chat"
 APNS_CODE_PUSH_TOPIC = "code-push"
 APNS_CALL_TOPIC = "calls"
 APNS_CALL_TITLE = "Incoming call"
+APNS_CALL_BODY = "Incoming call"
 APNS_CALL_SOUND = "forkmesh-call-ring.wav"
 APNS_CALL_COLLAPSE_PREFIX = "call-"
 APNS_CALL_EXPIRATION_SECONDS = 60
@@ -345,15 +346,11 @@ def normalize_call_id(value):
     return value if APNS_CALL_ID_RE.fullmatch(value) else ""
 
 
-def direct_call_alert(conversation_id="", caller="", call_id=""):
-    caller = str(caller or "").strip().lower()
+def direct_call_alert(conversation_id="", call_id=""):
     alert = {
         "title": with_icon(APNS_CALL_TITLE, PUSH_CALL_ICON),
-        "body": ("@" + caller + " is calling you" if caller
-                 else "Someone is calling you in ForkMesh"),
+        "body": APNS_CALL_BODY,
     }
-    if caller:
-        alert["caller"] = caller
     call_id = normalize_call_id(call_id)
     if call_id:
         alert["callId"] = call_id
@@ -371,9 +368,6 @@ def voip_payload(alert, origin=""):
                 conversation[len(APNS_DIRECT_CONVERSATION_PREFIX):])):
         return ""
     payload = {"topic": APNS_CALL_TOPIC, "conversation": conversation}
-    caller = str(alert.get("caller") or "").strip()[:64]
-    if caller and all(c.isprintable() for c in caller):
-        payload["caller"] = caller
     call_id = normalize_call_id(alert.get("callId"))
     if call_id:
         payload["callId"] = call_id

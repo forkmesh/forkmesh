@@ -9,6 +9,7 @@ import com.forkmesh.nativeapp.chat.DirectCallKind
 import com.forkmesh.nativeapp.chat.DirectMessageService
 import com.forkmesh.nativeapp.feature.facechanger.FaceChangerFeature
 import com.forkmesh.nativeapp.feature.facechanger.WebCallPeers
+import com.forkmesh.nativeapp.platform.IntentTokens
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -165,10 +166,12 @@ object DirectCallFeature {
     fun onIntent(intent: Intent?): Boolean {
         val action = intent?.action ?: return false
         if (action != IncomingCallNotifier.ACTION_SHOW && action != IncomingCallNotifier.ACTION_ACCEPT) return false
-        val callId = intent.getStringExtra(IncomingCallNotifier.EXTRA_CALL).orEmpty()
+        val trusted = IntentTokens.carries(appContext, intent)
+        val callId = runCatching { intent.getStringExtra(IncomingCallNotifier.EXTRA_CALL) }.getOrNull().orEmpty()
         intent.action = null
         intent.removeExtra(IncomingCallNotifier.EXTRA_CALL)
-        if (action == IncomingCallNotifier.ACTION_ACCEPT) accept(callId)
+        IntentTokens.strip(intent)
+        if (trusted && action == IncomingCallNotifier.ACTION_ACCEPT) accept(callId)
         return true
     }
 

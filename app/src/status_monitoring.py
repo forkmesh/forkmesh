@@ -2542,7 +2542,7 @@ async def record_status_sample(
                 first_hit["errors"] = (
                     row.get("status"), path, message.strip())
             if (route.rstrip("/") == "/api/world/ws" or
-                    ROOM_RE.match(route) or REPO_ROOM_RE.match(route) or
+                    REPO_ROOM_RE.match(route) or
                     GIT_INFO_RE.match(route) or GIT_PACK_RE.match(route)):
                 bucket = "realtime"
             elif route.startswith("/api/"):

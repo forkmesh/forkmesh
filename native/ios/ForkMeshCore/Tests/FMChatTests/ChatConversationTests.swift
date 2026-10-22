@@ -150,57 +150,83 @@ final class ChatConversationTests: XCTestCase {
         XCTAssertEqual(second.backgroundPreset, "")
     }
 
-    @MainActor func testAPeerSharesADirectMessageBackgroundAndItPersists() async throws {
+    @MainActor
+    private func privateRoom(_ hub: ChatHub, name: String = "crew") async throws -> (OfficePeer, FakeWebSocketConnector, String) {
+        let roomId = String(repeating: "f", count: 32)
+        let api = FakeAccountApi()
+        api.replies["GET /api/chat/channels"] = [
+            "channels": [
+                ["id": .string(roomId), "name": .string(name), "visibility": "private", "canManage": true, "members": ["me", "pat"]]
+            ]
+        ]
+        let room = "chat-channel:\(roomId):v1"
+        api.replies["GET /api/chat/channels/\(roomId)/room-access"] = [
+            "room": .string(room), "passphrase": "crew-pass", "webSocketUrl": .string("/api/chat/channels/\(roomId)/ws?ticket=t"),
+        ]
+        let crypto = await Task.detached { RoomCrypto.withPassphrase(room, "crew-pass") }.value
+        let store = InMemorySecureStore()
+        let me = try Identity.fromSeed(Ed25519.generateSeed())
+        let peer = try OfficePeer(room: room, crypto: crypto)
+        try peer.learnPhone(store: store, identity: me)
+        let ws = FakeWebSocketConnector()
+        let service = OfficeChannelService(
+            api: api, connector: ws, secureStore: store, origin: { URL(string: "https://app.next.forkmesh.com") },
+            selfId: { me.nodeId }, displayName: { "Me" }, nodeIdentity: me)
+        hub.office = service
+        await service.refresh()
+        let conversation = "#office/\(name)"
+        let opened = await service.open(conversation)
+        XCTAssertTrue(opened)
+        ws.lastConnection?.receive(text: JSON.encode(try peer.bundleEnvelope()))
+        try await Task.sleep(nanoseconds: 30_000_000)
+        return (peer, ws, conversation)
+    }
+
+    static let directConversation = "direct:" + String(repeating: "e", count: 32)
+
+    @MainActor func testADirectMessageBackgroundPersistsAndARelayLookForAPersonIsDropped() async throws {
         let (hub, h) = try await hub()
-        try await h.sendProtected(peerFrame("hello", ["to": .string(h.relay.selfId)], sender: "peer-9"))
-        let known = await waitUntil { h.relay.roster().contains { $0.id == "peer-9" } }
-        XCTAssertTrue(known)
-        try await h.sendProtected(
-            peerFrame(
-                "look", ["field": "background", "preset": "sunset", "conversation": "@someone-else", "to": "someone-else"],
-                sender: "peer-9"))
+        let dm = Self.directConversation
         try await h.sendProtected(
             peerFrame(
                 "look",
-                ["field": "background", "preset": "beach", "conversation": .string("@\(h.relay.selfId)"), "to": .string(h.relay.selfId)],
-                id: "look-beach", sender: "peer-9"))
-        let applied = await waitUntil { hub.extras.look(for: "@peer-9").backgroundPreset == "beach" }
-        XCTAssertTrue(applied)
-        XCTAssertEqual(hub.extras.look(for: "@someone-else"), ChatLook(), "a DM frame for someone else is ignored")
-        hub.select("@peer-9")
+                ["field": "background", "preset": "sunset", "conversation": .string("@\(h.relay.selfId)"), "to": .string(h.relay.selfId)],
+                sender: "peer-9"))
+        try await h.sendProtected(peerFrame("chat", ["channel": "#general", "text": "after"], sender: "peer-9"))
+        let heard = await waitUntil { !h.relay.messages("#general").isEmpty }
+        XCTAssertTrue(heard)
+        XCTAssertEqual(hub.extras.look(for: "@\(h.node("peer-9"))"), ChatLook(), "the relay carries no looks for a person")
+        hub.extras.applyRoomFrame(
+            peerFrame("look", ["field": "background", "preset": "beach"], id: "look-beach", sender: "pat-node"),
+            conversation: dm, selfId: "me-node")
+        hub.select(dm)
         XCTAssertTrue(hub.inConversation)
         XCTAssertFalse(hub.inGroupConversation)
         XCTAssertEqual(hub.conversationLook.backgroundPreset, "beach")
-        XCTAssertEqual(hub.extras.lookEvents(in: "@peer-9").map(\.text), ["Pat changed the background."])
+        XCTAssertEqual(hub.extras.lookEvents(in: dm).map(\.text), ["Pat changed the background."])
 
         let snapshot = hub.historySnapshot()
         let restored = try XCTUnwrap(ChatHistoryCodec.decode(ChatHistoryCodec.encode(snapshot)))
-        XCTAssertEqual(restored.looks["@peer-9"]?.backgroundPreset, "beach")
+        XCTAssertEqual(restored.looks[dm]?.backgroundPreset, "beach")
         XCTAssertEqual(restored.lookEvents.map(\.id), ["look-beach"])
         let fresh = ChatExtras()
         fresh.restoreLooks(restored.looks, events: restored.lookEvents)
-        XCTAssertEqual(fresh.look(for: "@peer-9").backgroundPreset, "beach")
-        XCTAssertEqual(fresh.lookEvents(in: "@peer-9").count, 1)
+        XCTAssertEqual(fresh.look(for: dm).backgroundPreset, "beach")
+        XCTAssertEqual(fresh.lookEvents(in: dm).count, 1)
         await h.close()
     }
 
     @MainActor func testAnOwnBackgroundCoversTheSharedOneOnThisPhoneOnly() async throws {
         let (hub, h) = try await hub()
-        try await h.sendProtected(peerFrame("hello", ["to": .string(h.relay.selfId)], sender: "peer-9"))
-        let known = await waitUntil { h.relay.roster().contains { $0.id == "peer-9" } }
-        XCTAssertTrue(known)
-        func shareFromPeer(_ preset: String, _ id: String) async throws {
-            try await h.sendProtected(
-                peerFrame(
-                    "look",
-                    ["field": "background", "preset": .string(preset), "conversation": .string("@\(h.relay.selfId)"),
-                     "to": .string(h.relay.selfId)],
-                    id: id, sender: "peer-9"))
+        let dm = Self.directConversation
+        func shareFromPeer(_ preset: String, _ id: String) {
+            hub.extras.applyRoomFrame(
+                peerFrame("look", ["field": "background", "preset": .string(preset)], id: id, sender: "pat-node"),
+                conversation: dm, selfId: "me-node")
         }
-        try await shareFromPeer("beach", "look-beach")
-        let applied = await waitUntil { hub.extras.look(for: "@peer-9").backgroundPreset == "beach" }
-        XCTAssertTrue(applied)
-        hub.select("@peer-9")
+        shareFromPeer("beach", "look-beach")
+        XCTAssertEqual(hub.extras.look(for: dm).backgroundPreset, "beach")
+        hub.select(dm)
         XCTAssertFalse(hub.conversationOwnBackground)
         let sentBefore = h.openFrames().filter { $0["type"]?.text == "look" }.count
 
@@ -210,9 +236,8 @@ final class ChatConversationTests: XCTestCase {
         XCTAssertEqual(hub.conversationSharedLook.backgroundPreset, "beach")
         XCTAssertEqual(h.openFrames().filter { $0["type"]?.text == "look" }.count, sentBefore, "nothing is sent")
 
-        try await shareFromPeer("forest", "look-forest")
-        let shared = await waitUntil { hub.conversationSharedLook.backgroundPreset == "forest" }
-        XCTAssertTrue(shared)
+        shareFromPeer("forest", "look-forest")
+        XCTAssertEqual(hub.conversationSharedLook.backgroundPreset, "forest")
         XCTAssertEqual(hub.conversationLook.backgroundPreset, "ocean", "a new shared background stays covered")
 
         let picture = Data(repeating: 4, count: 200)
@@ -226,19 +251,19 @@ final class ChatConversationTests: XCTestCase {
         hub.setOwnBackground(ChatLookChange(field: .background, preset: "rose"))
 
         let restored = try XCTUnwrap(ChatHistoryCodec.decode(ChatHistoryCodec.encode(hub.historySnapshot())))
-        XCTAssertEqual(restored.looks["@peer-9"]?.shown.backgroundPreset, "rose")
-        XCTAssertEqual(restored.looks["@peer-9"]?.backgroundPreset, "forest")
+        XCTAssertEqual(restored.looks[dm]?.shown.backgroundPreset, "rose")
+        XCTAssertEqual(restored.looks[dm]?.backgroundPreset, "forest")
         let fresh = ChatExtras()
         fresh.restoreLooks(restored.looks, events: restored.lookEvents)
-        XCTAssertEqual(fresh.look(for: "@peer-9").shown.backgroundPreset, "rose")
+        XCTAssertEqual(fresh.look(for: dm).shown.backgroundPreset, "rose")
         let early = ChatExtras()
         var arrived = ChatLook()
         arrived.backgroundPreset = "sky"
         arrived.stamps["background"] = ChatLookStamp(ts: 99, id: "x")
-        early.restoreLooks(["@peer-9": arrived], events: [])
+        early.restoreLooks([dm: arrived], events: [])
         early.restoreLooks(restored.looks, events: [])
-        XCTAssertEqual(early.look(for: "@peer-9").backgroundPreset, "sky", "a live shared look is kept")
-        XCTAssertEqual(early.look(for: "@peer-9").shown.backgroundPreset, "rose", "and the saved own one still covers it")
+        XCTAssertEqual(early.look(for: dm).backgroundPreset, "sky", "a live shared look is kept")
+        XCTAssertEqual(early.look(for: dm).shown.backgroundPreset, "rose", "and the saved own one still covers it")
 
         hub.setOwnBackground(nil)
         XCTAssertFalse(hub.conversationOwnBackground)
@@ -248,10 +273,7 @@ final class ChatConversationTests: XCTestCase {
 
     @MainActor func testSharingABackgroundDropsTheOwnOne() async throws {
         let (hub, h) = try await hub()
-        try await h.sendProtected(peerFrame("presence", [:]))
-        let peerKnown = await waitUntil { h.relay.roster().count > 1 }
-        XCTAssertTrue(peerKnown)
-        guard let channel = hub.extras.createPrivateChannel("crew") else { return XCTFail("channel") }
+        let (_, _, channel) = try await privateRoom(hub)
         hub.select(channel)
         hub.setOwnBackground(ChatLookChange(field: .background, preset: "ember"))
         XCTAssertEqual(hub.conversationLook.backgroundPreset, "ember")
@@ -259,15 +281,13 @@ final class ChatConversationTests: XCTestCase {
         XCTAssertTrue(sent)
         XCTAssertFalse(hub.conversationOwnBackground)
         XCTAssertEqual(hub.conversationLook.backgroundPreset, "mint")
+        await hub.office?.closeAll()
         await h.close()
     }
 
     @MainActor func testChangingTheBackgroundAndGroupNameSendsSealedLookFrames() async throws {
         let (hub, h) = try await hub()
-        try await h.sendProtected(peerFrame("presence", [:]))
-        let peerKnown = await waitUntil { h.relay.roster().count > 1 }
-        XCTAssertTrue(peerKnown)
-        guard let channel = hub.extras.createPrivateChannel("crew") else { return XCTFail("channel") }
+        let (peer, ws, channel) = try await privateRoom(hub)
         hub.select(channel)
         XCTAssertTrue(hub.inGroupConversation)
         XCTAssertTrue(hub.canChangeLook)
@@ -277,19 +297,21 @@ final class ChatConversationTests: XCTestCase {
         let named = await hub.setLook(ChatLookChange(field: .name, name: "Road trip"))
         XCTAssertTrue(named)
         XCTAssertEqual(hub.conversationName, "Road trip")
-        let frames = await waitUntil { h.openFrames().filter { $0["type"]?.text == "look" }.count == 2 }
+        let connection = try XCTUnwrap(ws.lastConnection)
+        let frames = await waitUntil { peer.readAll(connection.sentTexts).filter { $0["type"]?.text == "look" }.count == 2 }
         XCTAssertTrue(frames)
-        let look = try XCTUnwrap(h.openFrames().first { $0["type"]?.text == "look" })
+        let look = try XCTUnwrap(peer.readAll(connection.sentTexts).first { $0["type"]?.text == "look" })
         XCTAssertEqual(look["channel"]?.text, "#crew")
-        XCTAssertEqual(look["private"]?.isTrue, true)
+        XCTAssertTrue(
+            connection.sentTexts.filter { peer.read($0)?["type"]?.text == "look" }.allSatisfy {
+                peer.crypto.decrypt(JSON.parseObject($0)).map(RoomSeal.isSealedFrame) == true
+            })
         XCTAssertEqual(
             hub.conversationItems.compactMap {
                 if case .event(let event) = $0 { return event.text }
                 return nil
             }, ["You changed the background.", "You named the conversation \u{201C}Road trip\u{201D}."])
-        hub.leaveGroupConversation()
-        XCTAssertEqual(hub.currentConversation, "#general")
-        XCTAssertEqual(hub.extras.look(for: "#crew"), ChatLook())
+        await hub.office?.closeAll()
         await h.close()
     }
 
@@ -297,7 +319,7 @@ final class ChatConversationTests: XCTestCase {
         let (hub, h) = try await hub()
         hub.select("#general")
         XCTAssertFalse(hub.inConversation)
-        guard let channel = hub.extras.createPrivateChannel("pics") else { return XCTFail("channel") }
+        let (_, _, channel) = try await privateRoom(hub, name: "pics")
         hub.select(channel)
         let tooBig = await hub.sendMedia(
             fileName: "big.jpg", mime: "image/jpeg", data: Data(repeating: 1, count: ChatConversationLayout.maxMediaBytes + 1))
@@ -307,22 +329,18 @@ final class ChatConversationTests: XCTestCase {
         XCTAssertEqual(hub.conversationPhotos.map(\.fileName), ["small.jpg"])
         hub.clearConversationHistory()
         XCTAssertTrue(hub.rows.isEmpty)
+        await hub.office?.closeAll()
         await h.close()
     }
 
-    @MainActor func testAPhotoSentInADirectMessageShowsInTheSendersOwnTranscript() async throws {
+    @MainActor func testARelayPersonConversationTakesNoFilesOrLooks() async throws {
         let (hub, h) = try await hub()
-        try await h.sendProtected(peerFrame("hello", ["to": .string(h.relay.selfId)], sender: "peer-9"))
-        let known = await waitUntil { h.relay.roster().contains { $0.id == "peer-9" } }
-        XCTAssertTrue(known)
-        hub.select("@peer-9")
-        let sent = await hub.sendMedia(fileName: "Audio Message.m4a", mime: "audio/mp4", data: Data(repeating: 2, count: 2048))
-        XCTAssertTrue(sent)
-        XCTAssertEqual(hub.rows.map(\.message.fileName), ["Audio Message.m4a"])
-        XCTAssertEqual(hub.rows.first?.attachment?.kind, .audio)
-        XCTAssertEqual(hub.rows.first?.message.isSelf, true)
-        let frame = await waitUntil { h.openFrames().contains { $0["type"]?.text == "dm" && $0["fileName"]?.text == "Audio Message.m4a" } }
-        XCTAssertTrue(frame)
+        let peer = "@\(h.node("peer-9"))"
+        XCTAssertFalse(hub.isConversation(peer))
+        XCTAssertFalse(hub.extras.sendFile(conversation: peer, fileName: "a.m4a", mime: "audio/mp4", data: Data([1, 2])))
+        XCTAssertFalse(hub.extras.sendLook(conversation: peer, change: ChatLookChange(field: .background, preset: "mint")))
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertFalse(h.openFrames().contains { $0["type"]?.text == "dm" || $0["type"]?.text == "look" })
         await h.close()
     }
 
@@ -337,21 +355,25 @@ final class ChatConversationTests: XCTestCase {
         let crypto = await Task.detached { RoomCrypto.withPassphrase(room, "office-pass") }.value
         let picture = Data(repeating: 9, count: 64)
         let now = Date().epochMillis
-        let earlier = try crypto.encrypt([
-            "type": "look", "id": "look-old", "senderId": "peer", "sender": "Pat", "ts": .int(now - 2_000), "field": "background", "preset": "mint",
+        let store = InMemorySecureStore()
+        let me = try Identity.fromSeed(Ed25519.generateSeed())
+        let peer = try OfficePeer(room: room, crypto: crypto)
+        try peer.learnPhone(store: store, identity: me)
+        let earlier = try peer.envelope([
+            "type": "look", "id": "look-old", "sender": "Pat", "ts": .int(now - 2_000), "field": "background", "preset": "mint",
         ])
-        let photo = try crypto.encrypt([
-            "type": "chat", "id": "pic-1", "senderId": "peer", "sender": "Pat", "ts": .int(now - 1_000), "fileName": "beach.jpg",
+        let photo = try peer.envelope([
+            "type": "chat", "id": "pic-1", "sender": "Pat", "ts": .int(now - 1_000), "fileName": "beach.jpg",
             "fileMime": "image/jpeg", "file": .string(picture.base64EncodedString()),
         ])
         api.replies["GET /api/chat/channels/\(roomId)/history"] = [
             "room": .string(room), "passphrase": "office-pass",
-            "messages": [["ts": .int(now - 2_000), "body": .string(JSON.encode(earlier))], ["ts": .int(now - 1_000), "body": .string(JSON.encode(photo))]],
+            "messages": .array(try peer.history([(now - 2_000, earlier), (now - 1_000, photo)])),
         ]
         let ws = FakeWebSocketConnector()
         let service = OfficeChannelService(
-            api: api, connector: ws, secureStore: InMemorySecureStore(), origin: { URL(string: "https://app.next.forkmesh.com") },
-            selfId: { "me-node" }, displayName: { "Me" })
+            api: api, connector: ws, secureStore: store, origin: { URL(string: "https://app.next.forkmesh.com") },
+            selfId: { me.nodeId }, displayName: { "Me" }, nodeIdentity: me)
         let (hub, h) = try await hub()
         hub.office = service
         await service.refresh()
@@ -369,9 +391,7 @@ final class ChatConversationTests: XCTestCase {
         XCTAssertEqual(hub.extras.look(for: "#office/crew").name, "Crew")
         XCTAssertEqual(hub.extras.lookEvents(in: "#office/crew").last?.isSelf, true)
         let connection = try XCTUnwrap(ws.lastConnection)
-        let sent = await waitUntil {
-            connection.sentTexts.contains { crypto.decrypt(JSON.parseObject($0))?["type"]?.text == ChatLookFrames.type }
-        }
+        let sent = await waitUntil { connection.sentTexts.contains { peer.read($0)?["type"]?.text == ChatLookFrames.type } }
         XCTAssertTrue(sent)
         XCTAssertEqual(service.messages("#office/crew").count, 1, "a look frame is not a chat message")
         await service.closeAll()

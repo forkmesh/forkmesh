@@ -54,8 +54,10 @@ Routing in `www/worker.js`, in order:
    and pitch-deck documents, and every non-GET request are proxied to the App.
 5. `/world*` redirects to World; dashboard and other App pages (`APP_PATHS`)
    redirect to the App.
-6. `/ecosystem/<slug>` serves `ecosystem.html`; other `/<owner>/<repo>` paths
-   redirect to the App.
+6. `/ecosystem/<slug>` serves `ecosystem.html`; `/market/<id>` serves the
+   package page `market/<id>.html`, or `market.html` for an unknown id
+   ([package pages](../marketplace/README.md#share-links-and-package-pages));
+   other `/<owner>/<repo>` paths redirect to the App.
 7. Everything else is a static asset, with first-party attribution captured
    on page navigations (`fm_attr` cookie; `docs/attribution.md`).
 
@@ -286,6 +288,13 @@ Crawlers and scrapers:
   knockouts are masks; keep the `.fx-sprite mask > g` rule, and hide the
   sprite with zero size, not `display: none`. Its six-column grid's
   `nth-child` centring rules must stay scoped to their breakpoints.
+  The counts are written by hand: a card added or removed changes its
+  section's `.fx-count` line, its `.fx-toc-count`, the hero's `.fx-stats`
+  line and the outro title. A card whose feature is a Market package
+  (`marketplace/catalog.json`, including the core switches in
+  [core-plugins](../marketplace/core-plugins.md)) carries a `.fx-tag-plugin`
+  chip, a link to `/market/<id>` with the package's name, and counts as a
+  plugin; built-in features have none. Removed features leave the page (issue bounties went 2026-10-22).
 - The textured button recipe is copied as tokens into each stylesheet that
   owns buttons (`--btn-*`, `--button-*`, `--fm-btn-*`, `--mesh-btn-*`,
   `--bs-*`); `www/tests/test_button_texture.py` and the page tests check the

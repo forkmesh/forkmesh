@@ -149,8 +149,8 @@ void testBundles()
           "a server-injected device claiming Bob's account is held as pending");
     RoomSeal open(room, QStringLiteral("open-scope"), Policy::Open, QStringLiteral("bob"),
                   nodeFor("bob"), view.bob);
-    check(open.acceptKeyFrame(bundle("injectedOutsider")) == RoomSeal::BundleResult::Approved,
-          "an open room approves any valid bundle");
+    check(open.acceptKeyFrame(bundle("injectedOutsider")) == RoomSeal::BundleResult::Rejected,
+          "an open room drops a bundle that carries no node signature");
     check(node("bundleChecks").value(QStringLiteral("pendingStateForAlice2AtBob")).toString() ==
               trustStateName(TrustState::Pending),
           "the reference agrees the second phone is pending");
@@ -500,21 +500,38 @@ void testRoundTrips()
                       value.toObject().value(QStringLiteral("kid")).toString() == bobPhone->kid();
     check(!phoneListed, "a pending device gets nothing sealed to it");
 
+    const QByteArray nodeASeed(32, 'A');
+    const QByteArray nodeBSeed(32, 'B');
+    const QByteArray nodeB2Seed(32, 'D');
+    const QByteArray nodeCSeed(32, 'C');
+    const auto nodeKey = [](const QByteArray &seed) { return b64u(ed25519Public(seed)); };
+    const auto signerFor = [](const QByteArray &seed) {
+        return [seed](const QByteArray &message) { return ed25519Sign(seed, message); };
+    };
     RoomSeal openRoom(QStringLiteral("#mesh-room"), QString(), Policy::Open,
-                      QStringLiteral("node-a"), QStringLiteral("node-a"), alice);
+                      nodeKey(nodeASeed), nodeKey(nodeASeed), alice);
     RoomSeal openPeer(QStringLiteral("#mesh-room"), QString(), Policy::Open,
-                      QStringLiteral("node-b"), QStringLiteral("node-b"), bob);
+                      nodeKey(nodeBSeed), nodeKey(nodeBSeed), bob);
     RoomSeal openPeer2(QStringLiteral("#mesh-room"), QString(), Policy::Open,
-                       QStringLiteral("node-b"), QStringLiteral("node-b2"), bobPhone);
+                       nodeKey(nodeBSeed), nodeKey(nodeB2Seed), bobPhone);
+    openRoom.setNodeSigner(signerFor(nodeASeed));
+    openPeer.setNodeSigner(signerFor(nodeBSeed));
+    openPeer2.setNodeSigner(signerFor(nodeB2Seed));
     check(openRoom.acceptKeyFrame(openPeer.keyFrame()) == RoomSeal::BundleResult::Approved &&
               openRoom.acceptKeyFrame(openPeer2.keyFrame()) ==
                   RoomSeal::BundleResult::Approved,
-          "an open room approves every valid bundle");
+          "an open room approves every bundle signed by its node key");
+    RoomSeal unsignedPeer(QStringLiteral("#mesh-room"), QString(), Policy::Open,
+                          nodeKey(nodeCSeed), nodeKey(nodeCSeed), carol);
+    check(!unsignedPeer.keyFrame().contains(QStringLiteral("nsig")) &&
+              openRoom.acceptKeyFrame(unsignedPeer.keyFrame()) ==
+                  RoomSeal::BundleResult::Rejected,
+          "an open room drops a bundle without a node signature");
     const QJsonObject unknownSender = openPeer.sealObject(
         QJsonObject{{QStringLiteral("type"), QStringLiteral("chat")},
-                    {QStringLiteral("senderId"), QStringLiteral("node-b")}});
+                    {QStringLiteral("senderId"), nodeKey(nodeBSeed)}});
     RoomSeal stranger(QStringLiteral("#mesh-room"), QString(), Policy::Open,
-                      QStringLiteral("node-c"), QStringLiteral("node-c"), carol);
+                      nodeKey(nodeCSeed), nodeKey(nodeCSeed), carol);
     check(stranger.open(unknownSender).status == RoomSeal::Status::Held,
           "a frame from a device whose bundle has not arrived is held");
     stranger.acceptKeyFrame(openPeer.keyFrame());
@@ -522,6 +539,81 @@ void testRoundTrips()
     check(waiting.size() == 1 && stranger.open(waiting.first()).status ==
                                      RoomSeal::Status::NotForMe,
           "the held frame is released once the sender's bundle arrives");
+}
+
+void testNodeBinding()
+{
+    QFile file(QStringLiteral(FORKMESH_CHAT_NODE_BINDING_VECTORS));
+    if (!file.open(QIODevice::ReadOnly)) {
+        check(false, "the node binding vectors are readable");
+        return;
+    }
+    const QJsonObject binding = QJsonDocument::fromJson(file.readAll()).object();
+    const QString bindingRoom = binding.value(QStringLiteral("room")).toString();
+    const QString acct = binding.value(QStringLiteral("acct")).toString();
+    const QByteArray nodeSeed = fromB64(binding.value(QStringLiteral("nodeSeed")).toString());
+    const auto identity =
+        ChatDevice::inMemory(fromB64(binding.value(QStringLiteral("identitySeed")).toString()));
+    const QString node = binding.value(QStringLiteral("node")).toString();
+    check(b64u(ed25519Public(nodeSeed)) == node && isNodeKey(node),
+          "the node id is the b64u of the node's Ed25519 public key");
+    check(identity->idkText() == binding.value(QStringLiteral("idk")).toString(),
+          "the identity seed derives the vector's identity key");
+    const QByteArray message =
+        nodeBindingMessage(bindingRoom, identity->kid(), identity->idkText(), acct);
+    check(QString::fromUtf8(message) == binding.value(QStringLiteral("message")).toString(),
+          "the node binding message matches the reference");
+    check(b64u(ed25519Sign(nodeSeed, message)) == binding.value(QStringLiteral("nsig")).toString(),
+          "the node key signs the binding exactly as the reference");
+    const QJsonObject good{{QStringLiteral("kid"), identity->kid()},
+                           {QStringLiteral("idk"), identity->idkText()},
+                           {QStringLiteral("acct"), acct},
+                           {QStringLiteral("node"), node},
+                           {QStringLiteral("nsig"), binding.value(QStringLiteral("nsig"))}};
+    check(verifyNodeBinding(good, bindingRoom), "the reference binding verifies");
+    int rejected = 0;
+    const QJsonArray rejects = binding.value(QStringLiteral("rejects")).toArray();
+    for (const QJsonValue &value : rejects) {
+        const QJsonObject reject = value.toObject();
+        QJsonObject bundle = good;
+        bundle.insert(QStringLiteral("node"), reject.value(QStringLiteral("node")));
+        bundle.insert(QStringLiteral("nsig"), reject.value(QStringLiteral("nsig")));
+        if (!verifyNodeBinding(bundle, reject.value(QStringLiteral("room")).toString()))
+            ++rejected;
+        else
+            std::fprintf(stderr, "FAIL: node binding accepted: %s\n",
+                         qPrintable(reject.value(QStringLiteral("why")).toString()));
+    }
+    check(rejects.size() == 3 && rejected == 3, "every reference reject is refused");
+
+    auto peerDevice = ChatDevice::inMemory(QByteArray(32, 'p'));
+    auto viewer = ChatDevice::inMemory(QByteArray(32, 'v'));
+    const QString peerNode = b64u(ed25519Public(nodeSeed));
+    RoomSeal signedPeer(bindingRoom, bindingRoom, Policy::Open, acct, peerNode, peerDevice);
+    signedPeer.setNodeSigner([nodeSeed](const QByteArray &m) { return ed25519Sign(nodeSeed, m); });
+    RoomSeal receiver(bindingRoom, bindingRoom, Policy::Open, QStringLiteral("viewer"),
+                      b64u(ed25519Public(QByteArray(32, 'w'))), viewer);
+    const QJsonObject signedBundle = signedPeer.keyFrame();
+    check(verifyNodeBinding(signedBundle, bindingRoom) &&
+              receiver.acceptKeyFrame(signedBundle) == RoomSeal::BundleResult::Approved,
+          "a bundle signed by its node key is admitted to an open room");
+    RoomSeal stolen(bindingRoom, bindingRoom, Policy::Open, acct,
+                    b64u(ed25519Public(QByteArray(32, 'x'))), peerDevice);
+    stolen.setNodeSigner([](const QByteArray &m) { return ed25519Sign(QByteArray(32, 'x'), m); });
+    check(receiver.acceptKeyFrame(stolen.keyFrame()) == RoomSeal::BundleResult::Rejected,
+          "a stored kid keeps its node, so another node key cannot claim it");
+    QJsonObject forged = signedBundle;
+    forged.remove(QStringLiteral("nsig"));
+    auto other = ChatDevice::inMemory(QByteArray(32, 'o'));
+    RoomSeal fresh(bindingRoom, bindingRoom, Policy::Open, QStringLiteral("fresh"),
+                   b64u(ed25519Public(QByteArray(32, 'f'))), other);
+    check(fresh.acceptKeyFrame(forged) == RoomSeal::BundleResult::Rejected,
+          "an open room drops a bundle whose node signature is missing");
+    RoomSeal strict(QStringLiteral("chat-direct:x:v1"), QStringLiteral("direct:x"),
+                    Policy::Strict, acct, peerNode, peerDevice);
+    strict.setNodeSigner([nodeSeed](const QByteArray &m) { return ed25519Sign(nodeSeed, m); });
+    check(!strict.keyFrame().contains(QStringLiteral("nsig")),
+          "a strict room keeps the v3 bundle without a node signature");
 }
 
 void testCountersPersist()
@@ -674,6 +766,9 @@ void testStoredStateKeysHaveTheirOwnFiles()
     check((QFileInfo(ratchetPath).permissions() &
            (QFileDevice::ReadGroup | QFileDevice::ReadOther)) == 0,
           "a ratchet file is readable by its owner only");
+    check((QFileInfo(storedStateFile()).permissions() &
+           (QFileDevice::ReadGroup | QFileDevice::ReadOther)) == 0,
+          "state.ini is readable by its owner only");
     const qint64 iniSize = QFileInfo(storedStateFile()).size();
     ChatDevice::local()->setPolicy(QStringLiteral("own-file-scope"), Policy::Strict);
     migrateStoredState();
@@ -730,6 +825,7 @@ int main(int argc, char **argv)
     testSafetyNumbers();
     testLink();
     testRoundTrips();
+    testNodeBinding();
     testCountersPersist();
     testHeldBudget();
     testStoredStateLeavesSettingsFile();

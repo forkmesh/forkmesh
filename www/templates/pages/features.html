@@ -3,7 +3,7 @@
 {% block meta %}
     <meta
       name="description"
-      content="The complete ForkMesh feature catalog: distributed Git mirrors with live clone routing and failover, signed issues and patch PRs, built-in AI coding agents, encrypted chat and coves, CI, releases, non-custodial community rewards, mobile and IDE apps."
+      content="The complete ForkMesh feature catalog: hosted repositories and Git mirrors with live clone routing and failover, signed issues and pull requests, AI coding agents and runners, Workflows and Actions, encrypted chat and calls, the 3D World, non-custodial community rewards, phone apps, and every Market plugin."
     />
     <link rel="canonical" href="https://forkmesh.com/features" />
 {% endblock %}
@@ -16,7 +16,7 @@
     <meta property="og:title" content="ForkMesh Features — everything the mesh can do" />
     <meta
       property="og:description"
-      content="Distributed Git mirrors, signed collaboration, built-in AI agents, encrypted chat, CI, releases, and non-custodial community rewards — the full ForkMesh feature catalog."
+      content="Hosted repositories and mirrors, signed collaboration, AI agents, automation, encrypted chat and calls, the World, non-custodial community rewards, and every Market plugin — the full ForkMesh feature catalog."
     />
     <style>
       @font-face {
@@ -388,6 +388,71 @@
         font-weight: 500;
         line-height: 1;
         white-space: nowrap;
+      }
+      .fx-tags {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+      .fx-tag-plugin {
+        gap: 4px;
+        padding-left: 6px;
+        color: var(--fx-ink);
+      }
+      a.fx-tag-plugin {
+        position: relative;
+        z-index: 1;
+        text-decoration: none;
+        transition: box-shadow 0.15s ease;
+      }
+      a.fx-tag-plugin:hover {
+        box-shadow: inset 0 0 0 1px var(--fx-icon);
+        color: var(--fx-ink);
+        text-decoration: none;
+      }
+      a.fx-tag-plugin:focus-visible {
+        outline: 2px solid var(--fx-focus);
+        outline-offset: 2px;
+      }
+      .fx-tag-ico {
+        width: 12px;
+        height: 12px;
+        color: var(--fx-icon);
+      }
+      .fx-count,
+      .fx-stats {
+        margin: 12px 0 0;
+        color: var(--fx-body);
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 20px;
+      }
+      .fx-stats {
+        margin-top: 16px;
+        color: var(--fx-ink);
+      }
+      .fx-legend {
+        max-width: 560px;
+        margin: 8px 0 0;
+        color: var(--fx-body);
+        font-size: 14px;
+        line-height: 22px;
+        text-wrap: balance;
+      }
+      .fx-legend .fx-tag {
+        vertical-align: -5px;
+      }
+      .fx-legend a {
+        color: var(--fx-ink);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .fx-toc-count {
+        margin-left: 2px;
+        color: var(--fx-body);
+        font-size: 12px;
+        font-weight: 450;
       }
       .fx-card h3 {
         margin: 16px 0 0;
@@ -772,49 +837,113 @@
         <p class="fx-lede">
           ForkMesh is a complete code forge that lives on machines you and your
           community control — not on one company's servers. This page is the
-          whole catalog: hosting, collaboration, AI agents, CI, chat, money, and
-          the apps that tie it together.
+          whole catalog: hosting, collaboration, AI agents, automation, chat and
+          calls, the World, money, and the apps and plugins that tie it
+          together.
+        </p>
+        <p class="fx-stats">166 features in 17 areas · 101 of them Market plugins</p>
+        <p class="fx-legend">
+          <span class="fx-tag fx-tag-plugin"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg>Plugin</span> marks a Market plugin: an optional package you install or
+          remove from the <a href="/market">Market</a> on the web, desktop, or
+          phone. Each tag opens that plugin's own page. Some come installed;
+          everything else is built in.
         </p>
         <div class="fx-actions">
           <a class="fx-btn fx-btn-primary" href="/signup">Join the mesh<svg class="fx-btn-ico" aria-hidden="true"><use href="#fx-chevron"/></svg></a>
-          <a class="fx-btn fx-btn-secondary" href="/docs/">Read the docs<svg class="fx-btn-ico" aria-hidden="true"><use href="#fx-chevron"/></svg></a>
+          <a class="fx-btn fx-btn-secondary" href="/market">Browse the Market<svg class="fx-btn-ico" aria-hidden="true"><use href="#fx-chevron"/></svg></a>
         </div>
         <nav class="fx-toc" aria-label="Feature categories">
-          <a href="#mesh"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-network"/></svg>Distributed hosting</a>
-          <a href="#signed"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-key"/></svg>Signed collaboration</a>
-          <a href="#issues"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-issue"/></svg>Issues &amp; planning</a>
-          <a href="#pulls"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-pr"/></svg>Pull requests &amp; review</a>
-          <a href="#agents"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-robot"/></svg>AI agents</a>
-          <a href="#ci"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-rocket"/></svg>CI, releases &amp; distribution</a>
-          <a href="#chat"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-chats"/></svg>Chat &amp; private sharing</a>
-          <a href="#desktop"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-monitor"/></svg>Desktop app</a>
-          <a href="#money"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-wallet"/></svg>Accounts &amp; rewards</a>
-          <a href="#everywhere"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-devices"/></svg>Mobile, web &amp; plugins</a>
+          <a href="#mesh"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-network"/></svg>Hosting &amp; Git<span class="fx-toc-count">14</span></a>
+          <a href="#instances"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-globe"/></svg>Instances &amp; projects<span class="fx-toc-count">5</span></a>
+          <a href="#signed"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-key"/></svg>Signed collaboration<span class="fx-toc-count">8</span></a>
+          <a href="#issues"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-issue"/></svg>Issues &amp; planning<span class="fx-toc-count">6</span></a>
+          <a href="#pulls"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-pr"/></svg>Pull requests &amp; review<span class="fx-toc-count">8</span></a>
+          <a href="#agents"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-robot"/></svg>AI agents<span class="fx-toc-count">14</span></a>
+          <a href="#fleet"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-server"/></svg>Runners &amp; fleet<span class="fx-toc-count">9</span></a>
+          <a href="#ci"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-rocket"/></svg>Automation &amp; releases<span class="fx-toc-count">10</span></a>
+          <a href="#insight"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-layers"/></svg>Code insight<span class="fx-toc-count">5</span></a>
+          <a href="#chat"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-chats"/></svg>Chat &amp; calls<span class="fx-toc-count">14</span></a>
+          <a href="#world"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-globe"/></svg>World &amp; community<span class="fx-toc-count">8</span></a>
+          <a href="#money"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-wallet"/></svg>Accounts &amp; rewards<span class="fx-toc-count">6</span></a>
+          <a href="#desktop"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-monitor"/></svg>Desktop app<span class="fx-toc-count">15</span></a>
+          <a href="#tools"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-shield-check"/></svg>Security &amp; utilities<span class="fx-toc-count">12</span></a>
+          <a href="#work"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-clipboard-check"/></svg>Productivity<span class="fx-toc-count">10</span></a>
+          <a href="#life"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-heart"/></svg>Health &amp; fun<span class="fx-toc-count">11</span></a>
+          <a href="#everywhere"><svg class="fx-toc-ico" aria-hidden="true"><use href="#fx-devices"/></svg>Phones, web &amp; Market<span class="fx-toc-count">11</span></a>
         </nav>
       </div>
 
       <section id="mesh" class="fx-section" aria-labelledby="mesh-title">
         <div class="fx-head">
-          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-network"/></svg>Distributed hosting &amp; preservation</span>
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-network"/></svg>Hosting, Git &amp; preservation</span>
           <h2 id="mesh-title" class="fx-title">Repositories that outlive any one machine</h2>
           <p class="fx-lede">
-            The core bet: a repository should survive any single machine,
-            company, or account. ForkMesh keeps real Git mirrors on real
-            desktops and coordinates them through a routing layer that never
-            becomes permanent repository storage.
+            A repository should survive any single machine, company, or
+            account. ForkMesh keeps full copies on its core servers and on
+            independently run mirrors, and serves them all behind one ordinary
+            Git address.
           </p>
+          <p class="fx-count">14 features</p>
         </div>
         <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-database"/></svg></span>
+            </div>
+            <h3>Hosted repositories</h3>
+            <p>
+              Create a repository on the website and push to it with plain
+              <code>git</code> over HTTPS, no desktop node needed. Every core
+              server keeps a full copy, private repositories included, and you
+              can move it to your own node later.
+            </p>
+            <a class="fx-more" href="/blog/three-small-servers/">
+              Read the blog post<span class="fx-sr"> about Hosted repositories</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-terminal"/></svg></span>
+            </div>
+            <h3>Git over SSH</h3>
+            <p>
+              Add your OpenSSH public key and clone or push any hosted
+              repository or fork with a <code>git@</code> address. Branch
+              protection, quotas and push records work exactly as they do over
+              HTTPS, and your private key never leaves your device.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-download"/></svg></span>
+            </div>
+            <h3>Import from other forges</h3>
+            <p>
+              Paste a GitHub, GitLab or Codeberg address under New repository
+              to bring the project over. A large import that stops picks up
+              where it left off.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-exchange"/></svg></span>
+            </div>
+            <h3>Mirror to GitHub or GitLab</h3>
+            <p>
+              Keep a copy of the code, issues, pull requests and releases on
+              GitHub or GitLab, and choose which way each of them syncs.
+            </p>
+          </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-copy"/></svg></span>
             </div>
             <h3>Desktop-node mirrors</h3>
             <p>
-              Actively mirrored repositories live on independently operated
-              nodes and refresh while their configured synchronization is
-              healthy. External stubs are clearly labeled until a mirror accepts
-              them; private replicas are opaque client-encrypted archives.
+              Any desktop or server can keep a live mirror of a repository and
+              serve it to others. Mirrors pick up new issues, pull requests and
+              discussions as soon as they are committed; private copies on
+              mirror nodes are encrypted archives the mirror cannot read.
             </p>
             <a class="fx-more" href="/blog/desktop-node-mirrors/">
               Read the blog post<span class="fx-sr"> about Desktop-node mirrors</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -824,14 +953,14 @@
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-signpost"/></svg></span>
             </div>
-            <h3>Packfile-free routing relay</h3>
+            <h3>Routing relay</h3>
             <p>
-              The routing layer stores signed discovery and generalized health
-              metadata, not packfiles. Repository bytes stream from a selected
-              independent origin over ordinary HTTPS.
+              The relay keeps signed discovery and health records. It stores
+              packfiles only for repositories hosted on the core servers;
+              everything else streams from an independent mirror over HTTPS.
             </p>
             <a class="fx-more" href="/blog/zero-custody-relay/">
-              Read the blog post<span class="fx-sr"> about Packfile-free routing relay</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+              Read the blog post<span class="fx-sr"> about Routing relay</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
@@ -840,9 +969,10 @@
             </div>
             <h3>Live clone routing</h3>
             <p>
-              <code>git clone https://forkmesh.com/owner/repo</code> uses normal
-              Smart HTTP while the router selects a fresh, healthy,
-              integrity-verified mirror behind the unchanged public URL.
+              <code>git clone https://app.forkmesh.com/owner/repo</code> is
+              ordinary Smart HTTP. Behind that unchanged address the router picks
+              a core or a fresh, healthy mirror whose history matches the
+              published integrity pins.
             </p>
             <a class="fx-more" href="/blog/live-clone-routing/">
               Read the blog post<span class="fx-sr"> about Live clone routing</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -854,9 +984,8 @@
             </div>
             <h3>Streaming transfers</h3>
             <p>
-              Packs stream over HTTPS from the selected read-only gateway. The
-              router proxies the response but never keeps it as repository
-              storage.
+              Packs stream over HTTPS from the chosen core or mirror. The router
+              passes a mirror's response through without keeping a copy.
             </p>
             <a class="fx-more" href="/blog/streaming-transfers/">
               Read the blog post<span class="fx-sr"> about Streaming transfers</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -909,9 +1038,9 @@
             </div>
             <h3>Headless mirror nodes</h3>
             <p>
-              One command turns any Linux box or VM into a mirror node. The
-              installer registers its account, syncs its repositories, and
-              starts serving — no GUI required.
+              One <code>curl … | bash</code> command and a six-digit link code
+              turn any Linux box or VM into a mirror node that syncs its
+              repositories and starts serving, with no GUI required.
             </p>
             <a class="fx-more" href="/blog/headless-mirror-nodes/">
               Read the blog post<span class="fx-sr"> about Headless mirror nodes</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -947,6 +1076,82 @@
         </div>
       </section>
 
+      <section id="instances" class="fx-section" aria-labelledby="instances-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-globe"/></svg>Instances &amp; projects</span>
+          <h2 id="instances-title" class="fx-title">Run your own ForkMesh, and keep each one apart</h2>
+          <p class="fx-lede">
+            ForkMesh is one self-hostable service. Run an instance for your
+            team or community, list it beside the others, and switch between
+            them in the apps without mixing their work.
+          </p>
+          <p class="fx-count">5 features · 1 Market plugin</p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-rocket"/></svg></span>
+            </div>
+            <h3>Your own instance</h3>
+            <p>
+              forkmesh.com/start sets up a ForkMesh of your own: your project's
+              name, your server and your domain. Give it a server and an admin
+              account and it installs Git hosting, your admin and your first
+              repository while you watch.
+            </p>
+            <a class="fx-more" href="/blog/start-your-own-forkmesh/">
+              Read the blog post<span class="fx-sr"> about Your own instance</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-network"/></svg></span>
+            </div>
+            <h3>Federated instances</h3>
+            <p>
+              Instances list one another under Federated instances, and you can
+              add your own instance to that list.
+            </p>
+            <a class="fx-more" href="/blog/one-app-one-mesh/">
+              Read the blog post<span class="fx-sr"> about Federated instances</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layers"/></svg></span>
+            </div>
+            <h3>Projects</h3>
+            <p>
+              Each project in the desktop and phone apps belongs to one
+              instance and keeps its own repositories, chat and installed
+              packages, so work for different instances never mixes.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-pr"/></svg></span>
+            </div>
+            <h3>Cross-instance pull requests</h3>
+            <p>
+              See the copies of a repository on other ForkMesh instances and send
+              a branch to one of them as a pull request, carried as a signed
+              patch.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/organizations"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Organizations</a>
+            </div>
+            <h3>Organizations</h3>
+            <p>
+              Create and join organizations, invite members, give them roles,
+              and switch between the organizations you belong to.
+            </p>
+          </article>
+        </div>
+      </section>
+
       <section id="signed" class="fx-section" aria-labelledby="signed-title">
         <div class="fx-head">
           <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-key"/></svg>Signed, portable collaboration</span>
@@ -956,18 +1161,19 @@
             are signed events committed into the repository itself — verifiable
             anywhere, hosted everywhere.
           </p>
+          <p class="fx-count">8 features</p>
         </div>
         <div class="fx-grid">
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-key"/></svg></span>
-              <span class="fx-tag">No passwords</span>
+              <span class="fx-tag">Signed</span>
             </div>
             <h3>Ed25519 identity</h3>
             <p>
-              Nodes and people are identified by local Ed25519 keys. Profiles,
-              catalog records, and every collaboration event carry a signature
-              you can check yourself.
+              Nodes, devices, and every collaboration event are signed with local
+              Ed25519 keys, so you can check who wrote what yourself. Your account
+              adds an email and password for signing in.
             </p>
             <a class="fx-more" href="/blog/ed25519-identity/">
               Read the blog post<span class="fx-sr"> about Ed25519 identity</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -975,7 +1181,7 @@
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
-              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-pen"/></svg></span>
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-issue"/></svg></span>
             </div>
             <h3>Signed issue events</h3>
             <p>
@@ -991,14 +1197,15 @@
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-patch"/></svg></span>
             </div>
-            <h3>Signed patch pull requests</h3>
+            <h3>Pull requests from forks and branches</h3>
             <p>
-              PRs are signed patch submissions. Anyone can propose a change to
-              any repository in the mesh and the maintainer can verify exactly
-              who sent what.
+              Push a branch to your fork, or a <code>pr/&lt;you&gt;/</code> branch
+              where a repository accepts contributors, and open a pull request.
+              Pull requests between instances travel as signed patches the
+              maintainer can verify.
             </p>
             <a class="fx-more" href="/blog/signed-patch-pull-requests/">
-              Read the blog post<span class="fx-sr"> about Signed patch pull requests</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+              Read the blog post<span class="fx-sr"> about Pull requests from forks and branches</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
@@ -1007,9 +1214,10 @@
             </div>
             <h3>Everything lives in Git</h3>
             <p>
-              Issues, pull requests, discussions, and release notes are files
-              committed to the repository. Clone the repo and you own the whole
-              project history — code and conversation alike.
+              Issues, pull requests, reviews, discussions, and release notes are
+              signed files committed under <code>.forkmesh/</code>. Clone the
+              repo and you own the whole project history — code and conversation
+              alike.
             </p>
             <a class="fx-more" href="/blog/everything-lives-in-git/">
               Read the blog post<span class="fx-sr"> about Everything lives in Git</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1021,9 +1229,9 @@
             </div>
             <h3>Web contribution inbox</h3>
             <p>
-              Visitors can file issues and pull requests from the website even
-              while the owner is offline. Signed submissions wait in an inbox;
-              the owner reviews, commits, and the mesh syncs back.
+              Visitors can file issues and pull requests on a mirror-hosted
+              repository even while its owner is offline. Signed submissions wait
+              in an inbox; the owner reviews, commits, and the mesh syncs back.
             </p>
             <a class="fx-more" href="/blog/web-contribution-inbox/">
               Read the blog post<span class="fx-sr"> about Web contribution inbox</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1057,6 +1265,17 @@
               Read the blog post<span class="fx-sr"> about Binary-safe patches</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-flag"/></svg></span>
+            </div>
+            <h3>Hidden Unicode protection</h3>
+            <p>
+              Invisible characters are stripped from every input on the web,
+              desktop, phones, and server. A pull request whose code contains
+              them is accepted and flagged, so you can see what is hiding.
+            </p>
+          </article>
         </div>
       </section>
 
@@ -1068,17 +1287,20 @@
             A tracker that grows with the project — from a quick TODO to a
             milestone-driven roadmap — without leaving the mesh.
           </p>
+          <p class="fx-count">6 features, all Market plugins</p>
         </div>
         <div class="fx-grid">
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-issue"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Full issue tracker</h3>
             <p>
-              Open and closed states, priorities, assignees, and custom fields —
-              all stored as signed events in the repository and browsable on the
-              web.
+              Open and closed states, priorities, assignees, and custom fields,
+              stored as signed events in the repository. Search reads
+              descriptions and comments, and the list stays quick with thousands
+              of issues.
             </p>
             <a class="fx-more" href="/blog/full-issue-tracker/">
               Read the blog post<span class="fx-sr"> about Full issue tracker</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1087,11 +1309,12 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-kanban"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Kanban board</h3>
             <p>
-              Drag issues across columns to plan work visually, right inside the
-              desktop app.
+              Drag issues across columns to plan work visually on the desktop,
+              iPhone, and Android.
             </p>
             <a class="fx-more" href="/blog/kanban-board/">
               Read the blog post<span class="fx-sr"> about Kanban board</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1100,6 +1323,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-flag"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Milestones with progress</h3>
             <p>
@@ -1113,11 +1337,13 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-up"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Burnup charts</h3>
             <p>
-              Built-in burnup charts show scope and completion over time, so you
-              can see a release converging (or not) at a glance.
+              Burnup charts show scope and completion over time on the desktop,
+              and in Insights on iPhone and Android, so you can see a release
+              converging (or not) at a glance.
             </p>
             <a class="fx-more" href="/blog/burnup-charts/">
               Read the blog post<span class="fx-sr"> about Burnup charts</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1126,11 +1352,12 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-plus-circle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Quick-add from anywhere</h3>
             <p>
-              A prompt-style quick-add box captures an issue in one line — and
-              can hand it straight to an AI agent as it's filed.
+              A one-line quick-add box on the desktop captures an issue and can
+              hand it straight to an AI agent as it's filed.
             </p>
             <a class="fx-more" href="/blog/quick-add-from-anywhere/">
               Read the blog post<span class="fx-sr"> about Quick-add from anywhere</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1139,11 +1366,13 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-exchange"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/issues"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Issues</a>
             </div>
             <h3>Issues ↔ PRs that talk</h3>
             <p>
-              Merge a pull request and its linked issue closes itself. One
-              checkbox syncs the merge straight to main.
+              A pull request links issue #N when it names it or a comment or
+              commit says <code>fixes #N</code>, and you can link more from
+              Development. Merging it closes the linked issues.
             </p>
             <a class="fx-more" href="/blog/issues-prs-that-talk/">
               Read the blog post<span class="fx-sr"> about Issues ↔ PRs that talk</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1154,12 +1383,13 @@
 
       <section id="pulls" class="fx-section" aria-labelledby="pulls-title">
         <div class="fx-head">
-          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-pr"/></svg>Pull requests &amp; review</span>
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-pr"/></svg>Pull requests &amp; code review</span>
           <h2 id="pulls-title" class="fx-title">Review that doesn&rsquo;t stop at comments</h2>
           <p class="fx-lede">
-            Review with rich diffs, real mergeability checks, and an AI reviewer
-            that doesn't just comment — it fixes.
+            Review with rich diffs, real mergeability checks, and an AI
+            reviewer that doesn't just comment — it fixes.
           </p>
+          <p class="fx-count">8 features · 6 Market plugins</p>
         </div>
         <div class="fx-grid">
           <article class="fx-card">
@@ -1168,8 +1398,9 @@
             </div>
             <h3>Rich diffs</h3>
             <p>
-              Syntax-aware diffs with side-by-side image comparison and clear
-              badges for binary changes — in the app and on the web.
+              Syntax-aware unified or split diffs, images side by side as Before
+              and After, and clear badges for binary changes — in the apps and on
+              the web.
             </p>
             <a class="fx-more" href="/blog/rich-diffs/">
               Read the blog post<span class="fx-sr"> about Rich diffs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1178,6 +1409,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-check-circle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a>
             </div>
             <h3>Real mergeability checks</h3>
             <p>
@@ -1191,11 +1423,12 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chat"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a>
             </div>
             <h3>Review conversations</h3>
             <p>
-              Inline comment threads, emoji reactions, and Markdown everywhere —
-              signed like every other event.
+              Inline comment threads, a full set of reactions, and Markdown
+              everywhere — signed like every other event.
             </p>
             <a class="fx-more" href="/blog/review-conversations/">
               Read the blog post<span class="fx-sr"> about Review conversations</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1204,13 +1437,13 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sparkles"/></svg></span>
-              <span class="fx-tag">AI</span>
+              <span class="fx-tags"><span class="fx-tag">AI</span><a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a></span>
             </div>
             <h3>AI code review</h3>
             <p>
-              One click asks an AI reviewer for findings, each anchored to the
-              exact lines as a mini-diff suggestion. Apply a single quick-fix or
-              fix everything at once.
+              Review with AI asks the agent and model you picked in the composer
+              for findings, each anchored to the exact lines as a suggested
+              change. Apply one quick-fix or all of them at once.
             </p>
             <a class="fx-more" href="/blog/ai-code-review/">
               Read the blog post<span class="fx-sr"> about AI code review</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1219,13 +1452,13 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-wand"/></svg></span>
-              <span class="fx-tag">AI</span>
+              <span class="fx-tags"><span class="fx-tag">AI</span><a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a></span>
             </div>
             <h3>AI conflict resolution</h3>
             <p>
-              When a merge conflicts, hand the conflict to an agent that edits
-              the files in place and reports back — no manual
-              <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> spelunking.
+              When a merge conflicts, hand it to an agent from the desktop,
+              iPhone, or Android; it edits the files in place and reports back —
+              no manual <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> spelunking.
             </p>
             <a class="fx-more" href="/blog/ai-conflict-resolution/">
               Read the blog post<span class="fx-sr"> about AI conflict resolution</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1234,14 +1467,42 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-merge"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/pull-requests"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pull requests</a>
             </div>
             <h3>Merge from anywhere</h3>
             <p>
-              Merge from the desktop client with the branch view, the PR view,
-              or straight from an agent's completed session.
+              Merge on the web, the desktop, iPhone, or Android, or straight
+              from an agent's finished run. The same merge checks apply
+              everywhere.
             </p>
             <a class="fx-more" href="/blog/merge-from-anywhere/">
               Read the blog post<span class="fx-sr"> about Merge from anywhere</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lock"/></svg></span>
+            </div>
+            <h3>Protected default branch</h3>
+            <p>
+              Turn it on and the default branch changes only by merging a pull
+              request that an organization owner or admin approved — and that
+              approver can't be its author.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-branch"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/branches"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Branches</a>
+            </div>
+            <h3>Branch cleanup</h3>
+            <p>
+              Delete branches one at a time or up to 200 at once, with the
+              default and protected branches refused, and merged pull requests
+              stop leaving their branches behind.
+            </p>
+            <a class="fx-more" href="/blog/runs-that-listen-branches-that-let-go/">
+              Read the blog post<span class="fx-sr"> about Branch cleanup</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -1249,25 +1510,26 @@
 
       <section id="agents" class="fx-section" aria-labelledby="agents-title">
         <div class="fx-head">
-          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-robot"/></svg>AI agents, built in</span>
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-robot"/></svg>AI coding agents</span>
           <h2 id="agents-title" class="fx-title">Assign the issue, review the pull request</h2>
           <p class="fx-lede">
             Open an issue, hand it to an agent, get a pull request. ForkMesh
             treats AI coding agents as first-class contributors — with real
             sandboxed worktrees, live transcripts, and a native terminal.
           </p>
+          <p class="fx-count">14 features · 10 Market plugins</p>
         </div>
         <div class="fx-grid">
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-robot"/></svg></span>
-              <span class="fx-tag">Claude Code · Codex</span>
+              <span class="fx-tags"><span class="fx-tag">Claude Code · Codex</span><a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a></span>
             </div>
             <h3>Assign any issue to an agent</h3>
             <p>
-              From the issue detail, the quick-add box, or even the website's
-              new-issue form: one click sends the issue to Claude Code or Codex,
-              which works the issue and opens a PR when it's done.
+              From the issue page, the quick-add box, the website's new-issue
+              form, or your phone: one click sends the issue to Claude Code or
+              Codex, which works on it and opens a PR when it's done.
             </p>
             <a class="fx-more" href="/blog/assign-any-issue-to-an-agent/">
               Read the blog post<span class="fx-sr"> about Assign any issue to an agent</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1276,6 +1538,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layers"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Dedicated agent worktrees</h3>
             <p>
@@ -1290,6 +1553,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lanes"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Parallel agents</h3>
             <p>
@@ -1303,11 +1567,13 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Resumable sessions</h3>
             <p>
-              Pick any conversation back up where it left off — sessions
-              persist, survive restarts, and keep their full context.
+              Pick any conversation back up where it left off — sessions persist,
+              survive restarts, and keep their branch and worktree. A run stopped
+              by a usage limit carries on by itself once the limit resets.
             </p>
             <a class="fx-more" href="/blog/resumable-sessions/">
               Read the blog post<span class="fx-sr"> about Resumable sessions</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1316,12 +1582,13 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-doc-text"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Rich live transcripts</h3>
             <p>
-              Agent sessions render as a live, structured transcript — tool
-              calls, diffs, and results as cards, with a raw-output toggle for
-              the curious.
+              Agent sessions render as a live, structured transcript — commands
+              and edits as cards, a raw view for the curious, and your last
+              prompt pinned above it all.
             </p>
             <a class="fx-more" href="/blog/rich-live-transcripts/">
               Read the blog post<span class="fx-sr"> about Rich live transcripts</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1330,6 +1597,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chat-question"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Agents can ask you questions</h3>
             <p>
@@ -1347,8 +1615,8 @@
             </div>
             <h3>Native terminal</h3>
             <p>
-              A real VT100 terminal widget renders agent sessions with full
-              color and emoji — not a flat log viewer.
+              A real terminal widget renders agent sessions with full colour and
+              emoji — not a flat log viewer.
             </p>
             <a class="fx-more" href="/blog/native-terminal/">
               Read the blog post<span class="fx-sr"> about Native terminal</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1371,11 +1639,13 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-gauge"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Agents</a>
             </div>
             <h3>Live usage meter</h3>
             <p>
-              See your Claude 5-hour and weekly usage right in the app, updated
-              every minute, so you always know how much agent runway is left.
+              Claude Code and Codex meters under the prompt show your 5-hour and
+              weekly limits, checked when the app starts, when you open them, and
+              when a run hits a limit.
             </p>
             <a class="fx-more" href="/blog/live-usage-meter/">
               Read the blog post<span class="fx-sr"> about Live usage meter</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1394,27 +1664,229 @@
               Read the blog post<span class="fx-sr"> about Custom agent instructions</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/special-agents"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Special Agents</a>
+            </div>
+            <h3>Special Agents</h3>
+            <p>
+              Named agents with their own instructions and skills, kept in a
+              repository's <code>.forkmesh</code> folder so everyone on the
+              project works with the same teammates.
+            </p>
+            <a class="fx-more" href="/blog/forkmesh-gives-your-agents-context/">
+              Read the blog post<span class="fx-sr"> about Special Agents</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-bolt"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/shortcuts"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Shortcuts</a>
+            </div>
+            <h3>Repository shortcuts</h3>
+            <p>
+              One-tap commands from a repository's <code>.forkmesh</code> folder
+              that run on your desktop or from your phone.
+            </p>
+            <a class="fx-more" href="/blog/forkmesh-gives-your-agents-context/">
+              Read the blog post<span class="fx-sr"> about Repository shortcuts</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-box"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/gemma-4"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>4 model packages</a>
+            </div>
+            <h3>Local and custom models</h3>
+            <p>
+              Run Gemma 4, Nemotron 3.5 Lightning, or Muse Spark as a coding
+              agent through Ollama on your own machine, or Nemotron 3 Ultra
+              through Ollama Cloud.
+            </p>
+            <a class="fx-more" href="/market/gemma-4">
+              See it in the Market<span class="fx-sr"> about Local and custom models</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-check-circle"/></svg></span>
+            </div>
+            <h3>Vibe mode</h3>
+            <p>
+              Switch on Vibe in the composer and a successful run merges and
+              pushes its own work, with every merge check still applied.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="fleet" class="fx-section" aria-labelledby="fleet-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-server"/></svg>Runners, fleet &amp; oversight</span>
+          <h2 id="fleet-title" class="fx-title">Keep every agent in view, wherever it runs</h2>
+          <p class="fx-lede">
+            Agents run on your desktop, your runners, or the cloud. These views
+            show what each one is doing, what it costs, and what is waiting for
+            you.
+          </p>
+          <p class="fx-count">9 features · 8 Market plugins</p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-send"/></svg></span>
+            </div>
+            <h3>Cloud agent runs</h3>
+            <p>
+              Flip the composer's Cloud switch to queue a run on one of your
+              agent nodes or runners instead of this computer, then follow it
+              live from your phone.
+            </p>
+            <a class="fx-more" href="/blog/runs-that-listen-branches-that-let-go/">
+              Read the blog post<span class="fx-sr"> about Cloud agent runs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-server"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/runners"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Runners</a>
+            </div>
+            <h3>Runners</h3>
+            <p>
+              See the runners you added, sign them in to their providers, and
+              pause, resume, or revoke them from the desktop, iPhone, or
+              Android.
+            </p>
+            <a class="fx-more" href="/blog/three-small-servers/">
+              Read the blog post<span class="fx-sr"> about Runners</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/agent-watch"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Watch</a>
+            </div>
+            <h3>Watch</h3>
+            <p>
+              A live picture of your whole agent fleet: every action each agent
+              takes, the processes it started, and the network traffic it
+              makes.
+            </p>
+            <a class="fx-more" href="/market/agent-watch">
+              See it in the Market<span class="fx-sr"> about Watch</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-gauge"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/usage"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Usage</a>
+            </div>
+            <h3>Usage across desktops</h3>
+            <p>
+              One view of every Claude Code and Codex account's usage windows
+              across all your connected desktops.
+            </p>
+            <a class="fx-more" href="/market/usage">
+              See it in the Market<span class="fx-sr"> about Usage across desktops</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-bar"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/stats"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Stats</a>
+            </div>
+            <h3>Stats</h3>
+            <p>
+              Agent runs, commits, usage, and time saved, charted on the
+              desktop, iPhone, and Android.
+            </p>
+            <a class="fx-more" href="/market/stats">
+              See it in the Market<span class="fx-sr"> about Stats</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-inbox"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/inbox"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Inbox</a>
+            </div>
+            <h3>Inbox</h3>
+            <p>
+              Pings, mentions, review requests, and agent results waiting for
+              you in one place.
+            </p>
+            <a class="fx-more" href="/market/inbox">
+              See it in the Market<span class="fx-sr"> about Inbox</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-devices"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/desktops"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Desktops</a>
+            </div>
+            <h3>Desktops from your phone</h3>
+            <p>
+              See and drive your ForkMesh desktops from your phone, terminals
+              and screens included.
+            </p>
+            <a class="fx-more" href="/blog/1-2-7-and-a-phone-that-listens/">
+              Read the blog post<span class="fx-sr"> about Desktops from your phone</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-network"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/hosts"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Hosts &amp; fleet</a>
+            </div>
+            <h3>Hosts &amp; fleet</h3>
+            <p>
+              Your saved servers and runner fleet, their health, and the builds
+              they run.
+            </p>
+            <a class="fx-more" href="/market/hosts">
+              See it in the Market<span class="fx-sr"> about Hosts &amp; fleet</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-doc-text"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/logs"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Logs · Diagnostics</a>
+            </div>
+            <h3>Logs &amp; diagnostics</h3>
+            <p>
+              A live log console for your phone, connected desktops, and saved
+              hosts, plus live responsiveness, memory, network, and relay health
+              for the phone.
+            </p>
+            <a class="fx-more" href="/market/logs">
+              See it in the Market<span class="fx-sr"> about Logs &amp; diagnostics</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
         </div>
       </section>
 
       <section id="ci" class="fx-section" aria-labelledby="ci-title">
         <div class="fx-head">
-          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-rocket"/></svg>CI, releases &amp; distribution</span>
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-rocket"/></svg>Automation, CI &amp; releases</span>
           <h2 id="ci-title" class="fx-title">From push to published release</h2>
           <p class="fx-lede">
-            Push, build, tag, publish — the whole delivery loop runs on the
-            mesh.
+            Push, build, automate, tag, publish — the whole delivery loop runs
+            on the mesh.
           </p>
+          <p class="fx-count">10 features · 5 Market plugins</p>
         </div>
         <div class="fx-grid">
           <article class="fx-card">
             <div class="fx-card-top">
-              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-bolt"/></svg></span>
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-rocket"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/actions"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Actions</a>
             </div>
             <h3>Actions</h3>
             <p>
-              Shell-step workflows run on push on your own desktop, with the
-              latest live log one click away. <code>uses:</code> steps are not run.
+              Workflows in <code>.forkmesh/</code> run on push on your own
+              desktop; when it's offline, a runner takes pushes to the default
+              branch. Self-hosted instances add schedules, manual runs, issue
+              triggers, and secrets. <code>uses:</code> steps are not run.
             </p>
             <a class="fx-more" href="/blog/actions/">
               Read the blog post<span class="fx-sr"> about Actions</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1436,6 +1908,7 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-tag"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/releases"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Releases</a>
             </div>
             <h3>Releases &amp; tags</h3>
             <p>
@@ -1467,9 +1940,9 @@
             </div>
             <h3>One-line installer</h3>
             <p>
-              <code>curl … | sh</code> installs the desktop or headless node
-              with SHA-256-verified binaries — and a matching one-line
-              uninstaller when you need it.
+              <code>curl -fsSL … | bash</code> installs the desktop or a headless
+              node with hash-checked binaries — and a matching one-line
+              uninstaller removes it when you need to.
             </p>
             <a class="fx-more" href="/blog/one-line-installer/">
               Read the blog post<span class="fx-sr"> about One-line installer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1501,30 +1974,165 @@
               Read the blog post<span class="fx-sr"> about Insights</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lanes"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/workflows"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Workflows</a>
+            </div>
+            <h3>Workflows canvas</h3>
+            <p>
+              Build automations on a visual canvas with Shortcuts-style text,
+              number, list, and date steps, your own scripts, and 100
+              integrations.
+            </p>
+            <a class="fx-more" href="/market/workflows">
+              See it in the Market<span class="fx-sr"> about Workflows canvas</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/workflows"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>13 Workflows packs</a>
+            </div>
+            <h3>Integration packs</h3>
+            <p>
+              Slack, Discord, GitHub, Jira, Stripe, HubSpot, Notion, OpenAI, and
+              more arrive in twelve add-on packs, plus twelve ready-made example
+              workflows to start from.
+            </p>
+            <a class="fx-more" href="/market/workflows">
+              See it in the Market<span class="fx-sr"> about Integration packs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-git"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/workflows-repository-files"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Repository Files</a>
+            </div>
+            <h3>Repository files in Workflows</h3>
+            <p>
+              Edit a repository's actions, shortcuts, skills, and special agents
+              on the Workflows canvas, and save each change as a commit.
+            </p>
+            <a class="fx-more" href="/market/workflows-repository-files">
+              See it in the Market<span class="fx-sr"> about Repository files in Workflows</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="insight" class="fx-section" aria-labelledby="insight-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-layers"/></svg>Code insight</span>
+          <h2 id="insight-title" class="fx-title">See the shape of any codebase</h2>
+          <p class="fx-lede">
+            Maps, graphs, and health scores for the repository you have open,
+            built from its files and its Git history.
+          </p>
+          <p class="fx-count">5 features, all Market plugins</p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-map"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/code-map"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Code Map</a>
+            </div>
+            <h3>Code Map</h3>
+            <p>
+              The whole codebase at the browsed branch as a zoomable treemap
+              with each file's source drawn in its cell, or as a rotatable 3D
+              city.
+            </p>
+            <a class="fx-more" href="/market/code-map">
+              See it in the Market<span class="fx-sr"> about Code Map</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-up"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/size-map"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Size Map</a>
+            </div>
+            <h3>Size Map</h3>
+            <p>
+              A sunburst of what takes disk space in the repository folder, any
+              folder you pick, or a whole drive, with ignored files hidden or
+              shown.
+            </p>
+            <a class="fx-more" href="/market/size-map">
+              See it in the Market<span class="fx-sr"> about Size Map</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layers"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/strata"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Strata</a>
+            </div>
+            <h3>Strata</h3>
+            <p>
+              Module dependency graph and matrix, cycles, abstractness and
+              instability, code rules, and technical debt with an A to E rating
+              and quality gates.
+            </p>
+            <a class="fx-more" href="/market/strata">
+              See it in the Market<span class="fx-sr"> about Strata</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-heartbeat"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/ember"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Ember</a>
+            </div>
+            <h3>Ember</h3>
+            <p>
+              Every file sized by code and coloured by health, with change
+              frequency, refactoring targets, change coupling, and complexity
+              trends from Git history.
+            </p>
+            <a class="fx-more" href="/market/ember">
+              See it in the Market<span class="fx-sr"> about Ember</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-network"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/synapse"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Synapse</a>
+            </div>
+            <h3>Synapse</h3>
+            <p>
+              Your files as a 3D brain: every import a lit fibre, circular
+              dependencies glowing red. Follow a file's imports and importers and
+              find orphans and cycles.
+            </p>
+            <a class="fx-more" href="/market/synapse">
+              See it in the Market<span class="fx-sr"> about Synapse</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
         </div>
       </section>
 
       <section id="chat" class="fx-section" aria-labelledby="chat-title">
         <div class="fx-head">
-          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-chats"/></svg>Chat &amp; private sharing</span>
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-chats"/></svg>Chat, calls &amp; private sharing</span>
           <h2 id="chat-title" class="fx-title">Talk in the open, encrypt what&rsquo;s private</h2>
           <p class="fx-lede">
             Talk next to the code with an explicit boundary: public rooms admit
-            controller integrations, while private conversations add automatic
-            device-recipient encryption.
+            controller integrations, while private channels, direct messages,
+            and calls are encrypted between devices.
           </p>
+          <p class="fx-count">14 features · 10 Market plugins</p>
         </div>
         <div class="fx-grid">
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lock"/></svg></span>
-              <span class="fx-tag">Policy-aware</span>
+              <span class="fx-tags"><span class="fx-tag">Post-quantum</span><a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a></span>
             </div>
             <h3>Encrypted repo rooms</h3>
             <p>
-              Public rooms are controller-readable for integrations. Private
-              channels automatically add device-to-device encryption; up to 500
-              persisted frames remain for 7 days.
+              Public rooms stay readable to integrations. Private channels add
+              signed, forward-secret, post-quantum device encryption. A room keeps
+              up to 500 messages for at most 7 days, and you can make your chats
+              expire sooner.
             </p>
             <a class="fx-more" href="/blog/encrypted-repo-rooms/">
               Read the blog post<span class="fx-sr"> about Encrypted repo rooms</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1533,11 +2141,13 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-send"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a>
             </div>
             <h3>Direct messages</h3>
             <p>
-              Message any node operator with automatic device-to-device
-              encryption beyond the controller's room key.
+              Every one-to-one message gets a fresh key mixed with ML-KEM-768.
+              The server drops its copy once your contact's device has it, and
+              anything undelivered expires after 7 days.
             </p>
             <a class="fx-more" href="/blog/direct-messages/">
               Read the blog post<span class="fx-sr"> about Direct messages</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1545,15 +2155,126 @@
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a>
+            </div>
+            <h3>View-once messages</h3>
+            <p>
+              Send a video or voice message that plays once, and unsend it until
+              it's opened.
+            </p>
+            <a class="fx-more" href="/blog/whats-new-mid-october-2026/">
+              Read the blog post<span class="fx-sr"> about View-once messages</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-check-circle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a>
+            </div>
+            <h3>Stickers &amp; read receipts</h3>
+            <p>
+              Stick a sticker on any message. Swipe left for Message Info, and
+              your last sent message shows when it was delivered and read.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-heart"/></svg></span>
+            </div>
+            <h3>Gratitude, GIFs &amp; tips</h3>
+            <p>
+              Say thanks on any comment with gratitude reactions and a Thank you
+              sticker, reply with a GIF, or tip the author wallet to wallet with
+              Solana Pay.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sliders"/></svg></span>
+            </div>
+            <h3>Custom reactions</h3>
+            <p>
+              Instance and organization admins add their own reactions under
+              Settings, Reactions, GIFs &amp; tips.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-phone"/></svg></span>
+            </div>
+            <h3>Voice &amp; video calls</h3>
+            <p>
+              Call anyone you message, one to one and peer to peer, on the web,
+              iPhone, and Android. A missed call leaves a line in the chat, and
+              your own video drags to any corner.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-devices"/></svg></span>
+            </div>
+            <h3>Group calls</h3>
+            <p>
+              Start a voice or video call in any private channel for up to 16
+              people. Media is encrypted end to end; the call server only
+              forwards it.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-camera"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/face-changer"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Face Changer</a>
+            </div>
+            <h3>Face Changer</h3>
+            <p>
+              Wear a stand-in face and a new outfit, swap or blur your
+              background, and change your voice live in the browser or the phone
+              app. Video and sound stay on your device.
+            </p>
+            <a class="fx-more" href="/market/face-changer">
+              See it in the Market<span class="fx-sr"> about Face Changer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-mic"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/voice-changer"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Voice Changer</a>
+            </div>
+            <h3>Voice Changer</h3>
+            <p>
+              Sound like another person on any call or meeting app: the desktop
+              offers your changed voice as a "ForkMesh Voice" microphone. Audio
+              stays on your device.
+            </p>
+            <a class="fx-more" href="/market/voice-changer">
+              See it in the Market<span class="fx-sr"> about Voice Changer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chats"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/discord"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Discord</a>
+            </div>
+            <h3>Discord in Chat</h3>
+            <p>
+              A Discord bot's server channels, threads, and direct messages show
+              up in the Chat sidebar, grouped by server.
+            </p>
+            <a class="fx-more" href="/blog/a-team-around-the-work/">
+              Read the blog post<span class="fx-sr"> about Discord in Chat</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-safe"/></svg></span>
-              <span class="fx-tag">AES-256-GCM</span>
+              <span class="fx-tags"><span class="fx-tag">AES-256-GCM</span><a class="fx-tag fx-tag-plugin" href="/market/coves"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Coves</a></span>
             </div>
             <h3>Coves</h3>
             <p>
-              Encrypted vaults for the things that don't belong in a repo:
-              notes, credentials, plans. Documents live inside authenticated
-              ciphertext, and every unlock is recorded in an access log the
-              creator can audit.
+              End-to-end encrypted shared folders for what doesn't belong in a
+              repo. Open one with a password or only for the people you invite,
+              and see every unlock in its access log.
             </p>
             <a class="fx-more" href="/blog/coves/">
               Read the blog post<span class="fx-sr"> about Coves</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1561,12 +2282,13 @@
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
-              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chats"/></svg></span>
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chat"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/discussions"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Discussions</a>
             </div>
             <h3>Discussions</h3>
             <p>
-              Longer-form threaded conversations per repository — signed,
-              synced, and browsable like issues.
+              Longer threaded conversations per repository, with answers and
+              polls — signed, synced, and browsable like issues.
             </p>
             <a class="fx-more" href="/blog/discussions/">
               Read the blog post<span class="fx-sr"> about Discussions</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1575,11 +2297,12 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-browser"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/chat"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Chat</a>
             </div>
             <h3>Web chat</h3>
             <p>
-              Join the conversation from the browser too — the website speaks
-              the same room protocol as the desktop app.
+              Channels, threads, direct messages, stickers, and calls in the
+              browser, speaking the same room protocol as the apps.
             </p>
             <a class="fx-more" href="/blog/web-chat/">
               Read the blog post<span class="fx-sr"> about Web chat</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1588,15 +2311,262 @@
         </div>
       </section>
 
+      <section id="world" class="fx-section" aria-labelledby="world-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-globe"/></svg>World &amp; community</span>
+          <h2 id="world-title" class="fx-title">A place to meet, not just a place to push</h2>
+          <p class="fx-lede">
+            Guests and members share a 3D world, every organization gets an
+            office, and the feeds follow the people you work with.
+          </p>
+          <p class="fx-count">8 features · 7 Market plugins</p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-globe"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/world"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>World</a>
+            </div>
+            <h3>3D World</h3>
+            <p>
+              A shared Town Square where guests and members walk around as live
+              avatars, with World chat built in — and a roller coaster round the
+              town.
+            </p>
+            <a class="fx-more" href="/blog/forkmesh-coaster/">
+              Read the blog post<span class="fx-sr"> about 3D World</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-map"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/world"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>World</a>
+            </div>
+            <h3>Neighbouring instances</h3>
+            <p>
+              Walk onto a neighbouring instance's hexagon and stand in its real
+              World — its members, repositories, and buildings — without
+              reloading.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layout"/></svg></span>
+            </div>
+            <h3>The Office</h3>
+            <p>
+              A pixel-art office for each organization: talk to the people near
+              you, share a screen, draw on whiteboards, claim desks, and see
+              teammates' agent runs.
+            </p>
+            <a class="fx-more" href="/blog/office-identity/">
+              Read the blog post<span class="fx-sr"> about The Office</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/people"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>People</a>
+            </div>
+            <h3>People</h3>
+            <p>
+              Everyone around a campfire, the most active closest to the flames.
+              Pick someone to see their profile, follow them, or send a
+              message.
+            </p>
+            <a class="fx-more" href="/market/people">
+              See it in the Market<span class="fx-sr"> about People</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-broadcast"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/feed"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Network Feed</a>
+            </div>
+            <h3>Network Feed</h3>
+            <p>
+              A public ActivityPub feed of people's ForkMesh updates, plus
+              verified replies and mentions from across the network.
+            </p>
+            <a class="fx-more" href="/market/feed">
+              See it in the Market<span class="fx-sr"> about Network Feed</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chats"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/instance-feed"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Feed</a>
+            </div>
+            <h3>Instance Feed</h3>
+            <p>
+              A Mastodon-style timeline of short posts from the people on your
+              instance, with replies, favourites, boosts, and content
+              warnings.
+            </p>
+            <a class="fx-more" href="/market/instance-feed">
+              See it in the Market<span class="fx-sr"> about Instance Feed</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-megaphone"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/mastodon"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Mastodon</a>
+            </div>
+            <h3>Mastodon</h3>
+            <p>
+              Sign in to your own Mastodon server and manage your timeline, posts,
+              profile, lists, and notifications from ForkMesh.
+            </p>
+            <a class="fx-more" href="/market/mastodon">
+              See it in the Market<span class="fx-sr"> about Mastodon</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-photo"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/x-banner-board"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>2 board packages</a>
+            </div>
+            <h3>World banner boards</h3>
+            <p>
+              Boards you can place in the World that show the public @forkmesh
+              X feed and the r/forkmesh subreddit.
+            </p>
+            <a class="fx-more" href="/market/x-banner-board">
+              See it in the Market<span class="fx-sr"> about World banner boards</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="money" class="fx-section" aria-labelledby="money-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-wallet"/></svg>Accounts, money &amp; rewards</span>
+          <h2 id="money-title" class="fx-title">Community incentives, out in the open</h2>
+          <p class="fx-lede">
+            Community incentives are transparent and non-custodial. ForkMesh
+            does not hold or control user funds; for community members it stores
+            only an optional public payout address, while wallet keys and
+            transfer approval remain on their owners’ devices. The operator’s
+            separate community-pool signer stays encrypted on the operator’s
+            own device. User-owned funds, the
+            community-funded public pool, pending allocations, and completed
+            on-chain transfers are separate states.
+          </p>
+          <p class="fx-count">6 features · 1 Market plugin</p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
+            </div>
+            <h3>Guest-first access</h3>
+            <p>
+              Enter the world immediately as a guest. Registration uses an
+              email, password, and email verification; optional public identity
+              and device fields remain configurable.
+            </p>
+            <a class="fx-more" href="/blog/anonymous-accounts/">
+              Read the blog post<span class="fx-sr"> about Guest-first access</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-id-card"/></svg></span>
+            </div>
+            <h3>Public node profiles</h3>
+            <p>
+              Registered nodes can publish a generalized profile and public
+              repositories. Optional platform, device, status, and activity
+              fields follow the owner’s visibility controls.
+            </p>
+            <a class="fx-more" href="/blog/public-node-profiles/">
+              Read the blog post<span class="fx-sr"> about Public node profiles</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-heart"/></svg></span>
+              <span class="fx-tag">SOL · USDC</span>
+            </div>
+            <h3>Solana donations</h3>
+            <p>
+              Publish a Solana address and accept donations with on-chain
+              confirmation. Contributors sign direct transfers from their own
+              wallet; ForkMesh never creates or stores a deposit key.
+            </p>
+            <a class="fx-more" href="/blog/solana-donations/">
+              Read the blog post<span class="fx-sr"> about Solana donations</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-cloud-rain"/></svg></span>
+            </div>
+            <h3>Make it rain</h3>
+            <p>
+              Contribute directly from a self-custodial wallet, then choose an
+              immediate split across the current eligible nodes or fund the
+              transparent pool for later randomized incentives.
+            </p>
+            <a class="fx-more" href="/blog/make-it-rain/">
+              Read the blog post<span class="fx-sr"> about Make it rain</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-gift"/></svg></span>
+            </div>
+            <h3>Mirror rewards</h3>
+            <p>
+              The community pool may reward eligible, integrity-verified
+              nodes. Selection and payment are never guaranteed.
+            </p>
+            <a class="fx-more" href="/world?landmark=fountain">
+              Join or fund the reward program<span class="fx-sr"> about Mirror rewards</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-bar"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/ledger"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Ledger</a>
+            </div>
+            <h3>Ledger</h3>
+            <p>
+              Read ForkMesh's public financial record on the desktop, see what
+              every wallet in it holds, and keep your own expense and income
+              records beside it.
+            </p>
+            <a class="fx-more" href="/market/ledger">
+              See it in the Market<span class="fx-sr"> about Ledger</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+        <aside class="fx-note">
+          <svg class="fx-note-ico" aria-hidden="true"><use href="#fx-info"/></svg>
+          <p>
+            <strong>One deliberate exception:</strong> if the operator enables
+            temporary deposit addresses for world-element purchases, ForkMesh
+            generates that address and holds its key from the moment it is
+            created until it sweeps the payment — half to the treasury, half to
+            online mirror nodes. During that window those specific funds are
+            custodial and an operator compromise could move them. The store
+            labels that option with its own custody, and paying the published
+            pool address from your own wallet remains available and puts no key
+            on ForkMesh.
+          </p>
+        </aside>
+      </section>
+
       <section id="desktop" class="fx-section" aria-labelledby="desktop-title">
         <div class="fx-head">
           <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-monitor"/></svg>The desktop app</span>
           <h2 id="desktop-title" class="fx-title">A full forge in one native app</h2>
           <p class="fx-lede">
-            A native desktop app (built with Qt) that is a full forge: seventeen
-            repository views from Code to Settings, plus the workflow tools
-            you'd normally need three other apps for.
+            A native desktop app for Linux, Windows, and macOS (built with Qt)
+            that is a full forge, plus the workflow tools you'd normally need
+            three other apps for.
           </p>
+          <p class="fx-count">15 features · 5 Market plugins</p>
         </div>
         <div class="fx-grid">
           <article class="fx-card">
@@ -1605,10 +2575,10 @@
             </div>
             <h3>Complete repository workspace</h3>
             <p>
-              Code, Commits, Issues, Agents, Pull requests, Discussions,
-              Actions, Security, Quality, Insights, Branches, Worktrees,
-              Releases, Mirror nodes, Artifacts, Shortcuts, and Settings — every
-              view one click apart.
+              Issues, Projects, Pull requests, Discussions, Actions, Security,
+              Quality, Insights, Size map, Artifacts, Shortcuts, and Settings
+              tabs, with Branches, Worktrees, Remotes, Tags, Releases, and Code
+              map in the Code toolbar.
             </p>
             <a class="fx-more" href="/blog/complete-repository-workspace/">
               Read the blog post<span class="fx-sr"> about Complete repository workspace</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1620,8 +2590,9 @@
             </div>
             <h3>Source control &amp; worktrees</h3>
             <p>
-              Stage, commit, branch, and manage multiple worktrees from the app
-              — including the worktrees your agents are working in.
+              Stage, commit, branch, delete several branches at once, and manage
+              multiple worktrees from the app — including the worktrees your
+              agents are working in.
             </p>
             <a class="fx-more" href="/blog/source-control-and-worktrees/">
               Read the blog post<span class="fx-sr"> about Source control &amp; worktrees</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1634,8 +2605,9 @@
             </div>
             <h3>Voice dictation</h3>
             <p>
-              Dictate issues, comments, and prompts with built-in Whisper speech
-              recognition — transcribed locally, streamed live as you speak.
+              Dictate issues, comments, and prompts on your own machine with
+              Whisper or NVIDIA Parakeet, installed from Settings. With Whisper
+              the words appear as you speak.
             </p>
             <a class="fx-more" href="/blog/voice-dictation/">
               Read the blog post<span class="fx-sr"> about Voice dictation</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1644,14 +2616,16 @@
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-camera"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/capture"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Capture</a>
             </div>
-            <h3>Screenshot &amp; markup</h3>
+            <h3>Capture</h3>
             <p>
-              Capture any region of the screen, annotate it with built-in
-              drawing tools, and drop it straight into an issue, PR, or chat.
+              Capture any region of the screen, mark it up, and attach it to an
+              agent prompt. On the iPhone, long-press a blank area to select,
+              mark up, and copy.
             </p>
             <a class="fx-more" href="/blog/screenshot-and-markup/">
-              Read the blog post<span class="fx-sr"> about Screenshot &amp; markup</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+              Read the blog post<span class="fx-sr"> about Capture</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
@@ -1721,135 +2695,654 @@
               Read the blog post<span class="fx-sr"> about Built to stay up</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-navigation"/></svg></span>
+            </div>
+            <h3>Search across everything</h3>
+            <p>
+              The top search box asks every installed package for results, so
+              notes, contacts, files, and repositories turn up in one list.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-browser"/></svg></span>
+            </div>
+            <h3>Pages in their own window</h3>
+            <p>
+              Drag a rail button out, or choose Open in new window, to give any
+              page a window of its own.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/tour"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Tour</a>
+            </div>
+            <h3>Tour</h3>
+            <p>
+              A first-run welcome and a guided tour of every workspace,
+              replayable from Tour in the rail.
+            </p>
+            <a class="fx-more" href="/market/tour">
+              See it in the Market<span class="fx-sr"> about Tour</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-bolt"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/timers"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Timers</a>
+            </div>
+            <h3>Timers</h3>
+            <p>
+              A little clock in the top bar for timers, countdowns such as "25m
+              standup", and alarms, each surviving a restart.
+            </p>
+            <a class="fx-more" href="/market/timers">
+              See it in the Market<span class="fx-sr"> about Timers</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sliders"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/winamp"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Winamp Classic</a>
+            </div>
+            <h3>Winamp Classic theme</h3>
+            <p>
+              A compact graphite, neon-green, and brushed-metal desktop skin
+              inspired by classic Winamp.
+            </p>
+            <a class="fx-more" href="/market/winamp">
+              See it in the Market<span class="fx-sr"> about Winamp Classic theme</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-code"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/vscodium"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>VSCodium</a>
+            </div>
+            <h3>VSCodium button</h3>
+            <p>
+              Adds a Codium button to the branch diff header that opens the
+              branch's local checkout in VSCodium.
+            </p>
+            <a class="fx-more" href="/market/vscodium">
+              See it in the Market<span class="fx-sr"> about VSCodium button</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
         </div>
       </section>
 
-      <section id="money" class="fx-section" aria-labelledby="money-title">
+      <section id="tools" class="fx-section" aria-labelledby="tools-title">
         <div class="fx-head">
-          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-wallet"/></svg>Accounts, money &amp; rewards</span>
-          <h2 id="money-title" class="fx-title">Community incentives, out in the open</h2>
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-shield-check"/></svg>Security &amp; utilities</span>
+          <h2 id="tools-title" class="fx-title">Look after your computer, phone, and network</h2>
           <p class="fx-lede">
-            Community incentives are transparent and non-custodial. ForkMesh
-            does not hold or control user funds; for community members it stores
-            only an optional public payout address, while wallet keys and
-            transfer approval remain on their owners’ devices. The operator’s
-            separate community-pool signer stays encrypted on the operator’s
-            own device. User-owned funds, the
-            community-funded public pool, pending allocations, and completed
-            on-chain transfers are separate states.
+            Passwords, files, backups, and security checks for the devices you
+            run ForkMesh on — every one an optional plugin.
           </p>
+          <p class="fx-count">12 features, all Market plugins</p>
         </div>
         <div class="fx-grid">
           <article class="fx-card">
             <div class="fx-card-top">
-              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-safe"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/vault"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Password Vault</a>
             </div>
-            <h3>Guest-first access</h3>
+            <h3>Password Vault</h3>
             <p>
-              Enter the world immediately as a guest. Registration uses an
-              email, password, and email verification; optional public identity
-              and device fields remain configurable.
+              An end-to-end encrypted password vault on web, desktop, and mobile.
+              Share a login under post-quantum keys, and fill it in the browser
+              extension and in apps on your phone.
             </p>
-            <a class="fx-more" href="/blog/anonymous-accounts/">
-              Read the blog post<span class="fx-sr"> about Guest-first access</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/vault">
+              See it in the Market<span class="fx-sr"> about Password Vault</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-browser"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/browser-extension"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Browser Extension</a>
+            </div>
+            <h3>Browser Extension</h3>
+            <p>
+              The ForkMesh extension for Chrome fills Password Vault logins and
+              links Gmail, Zoho Mail, and Mastodon conversations to your
+              contacts.
+            </p>
+            <a class="fx-more" href="/market/browser-extension">
+              See it in the Market<span class="fx-sr"> about Browser Extension</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-doc-text"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/files"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Files</a>
+            </div>
+            <h3>Files</h3>
+            <p>
+              A file explorer on the desktop, iPhone, and Android for each
+              device's files and network (SMB) shares: browse, open, edit, copy,
+              move, and more.
+            </p>
+            <a class="fx-more" href="/market/files">
+              See it in the Market<span class="fx-sr"> about Files</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-lock"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/secure-drive"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Secure Drive</a>
+            </div>
+            <h3>Secure Drive</h3>
+            <p>
+              One encrypted file on your router's USB drive holds your documents,
+              spreadsheets, drawings, and files, their versions, and a signed
+              access log. Only the devices you approve hold the keys.
+            </p>
+            <a class="fx-more" href="/market/secure-drive">
+              See it in the Market<span class="fx-sr"> about Secure Drive</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-signpost"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/openwrt"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>OpenWrt Router</a>
+            </div>
+            <h3>OpenWrt Router</h3>
+            <p>
+              Manage an OpenWrt router from the desktop, iPhone, or Android:
+              internet and LAN, Wi-Fi, devices, port forwards, storage, packages,
+              and firmware.
+            </p>
+            <a class="fx-more" href="/market/openwrt">
+              See it in the Market<span class="fx-sr"> about OpenWrt Router</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-network"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/nexus"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>NEXUS</a>
+            </div>
+            <h3>NEXUS</h3>
+            <p>
+              Network inspection on the desktop: find devices, scan ports, look
+              up DNS, and check web servers' TLS and security headers, on
+              networks you own or may test.
+            </p>
+            <a class="fx-more" href="/market/nexus">
+              See it in the Market<span class="fx-sr"> about NEXUS</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-shield-check"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/computer-security"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Security</a>
+            </div>
+            <h3>Security checkup</h3>
+            <p>
+              A local checkup with over 300 checks — rootkits, malware, open
+              ports, accounts, secrets, SSH, and more — each explained, many
+              fixable with one confirmed click.
+            </p>
+            <a class="fx-more" href="/market/computer-security">
+              See it in the Market<span class="fx-sr"> about Security checkup</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-phone"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/phone-security"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Phone Security</a>
+            </div>
+            <h3>Phone Security</h3>
+            <p>
+              A checkup for iPhone and Android: screen lock, jailbreak and root
+              signs, injected code, updates, proxies, and what ForkMesh can
+              access.
+            </p>
+            <a class="fx-more" href="/market/phone-security">
+              See it in the Market<span class="fx-sr"> about Phone Security</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-database"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/backups"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Backups</a>
+            </div>
+            <h3>Backups</h3>
+            <p>
+              Every backup ForkMesh keeps on this computer on one page. Label,
+              verify, copy, restore, or delete them.
+            </p>
+            <a class="fx-more" href="/market/backups">
+              See it in the Market<span class="fx-sr"> about Backups</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-box"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/cleanup"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Disk Cleanup</a>
+            </div>
+            <h3>Disk Cleanup</h3>
+            <p>
+              See what Claude Code, Codex, and agent runs left on disk, what each
+              item belongs to, and delete what nothing uses.
+            </p>
+            <a class="fx-more" href="/market/cleanup">
+              See it in the Market<span class="fx-sr"> about Disk Cleanup</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-broadcast"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/glasses-alert"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Glasses Alert</a>
+            </div>
+            <h3>Glasses Alert</h3>
+            <p>
+              Your phone scans Bluetooth and rings an alarm, even on silent, when
+              someone nearby wears Ray-Ban Meta or Oakley Meta glasses.
+            </p>
+            <a class="fx-more" href="/market/glasses-alert">
+              See it in the Market<span class="fx-sr"> about Glasses Alert</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/eye-control"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Eye Control</a>
+            </div>
+            <h3>Eye Control</h3>
+            <p>
+              Experimental: steer a cursor around the iPhone app with your eyes
+              and blink firmly to tap. Camera frames stay on the phone.
+            </p>
+            <a class="fx-more" href="/market/eye-control">
+              See it in the Market<span class="fx-sr"> about Eye Control</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="work" class="fx-section" aria-labelledby="work-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-clipboard-check"/></svg>Productivity &amp; business</span>
+          <h2 id="work-title" class="fx-title">Run the rest of the project in the same place</h2>
+          <p class="fx-lede">
+            Notes, tasks, contacts, and numbers for the people around the code —
+            install the ones your team needs.
+          </p>
+          <p class="fx-count">10 features, all Market plugins</p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-doc-text"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/notes"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Notes</a>
+            </div>
+            <h3>Notes</h3>
+            <p>
+              Encrypted Markdown notes you can edit together live, publish
+              selectively, and link to repository conversations.
+            </p>
+            <a class="fx-more" href="/market/notes">
+              See it in the Market<span class="fx-sr"> about Notes</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-clipboard-check"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/tasks"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Tasks</a>
+            </div>
+            <h3>Tasks</h3>
+            <p>
+              Plan, assign, hand off, and review organization work across
+              people, agents, the desktop, and the office board.
+            </p>
+            <a class="fx-more" href="/market/tasks">
+              See it in the Market<span class="fx-sr"> about Tasks</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-grid"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/calendar"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Calendar</a>
+            </div>
+            <h3>Calendar</h3>
+            <p>
+              Plan private personal and organization events alongside repository
+              commits and merges.
+            </p>
+            <a class="fx-more" href="/market/calendar">
+              See it in the Market<span class="fx-sr"> about Calendar</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-id-card"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/crm"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>CRM</a>
             </div>
-            <h3>Public node profiles</h3>
+            <h3>CRM</h3>
             <p>
-              Registered nodes can publish a generalized profile and public
-              repositories. Optional platform, device, status, and activity
-              fields follow the owner’s visibility controls.
+              Customizable relationship flows, a page for every contact with
+              their accounts' latest posts, tracked links, and linked email and
+              Mastodon threads.
             </p>
-            <a class="fx-more" href="/blog/public-node-profiles/">
-              Read the blog post<span class="fx-sr"> about Public node profiles</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/crm">
+              See it in the Market<span class="fx-sr"> about CRM</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
-              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-heart"/></svg></span>
-              <span class="fx-tag">SOL · USDT</span>
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-megaphone"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/marketing"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Marketing</a>
             </div>
-            <h3>Solana donations</h3>
+            <h3>Marketing</h3>
             <p>
-              Publish a Solana address and accept donations with on-chain
-              confirmation. Contributors sign direct transfers from their own
-              wallet; ForkMesh never creates or stores a deposit key.
+              Traffic by channel and search keyword, every channel's stats,
+              campaigns planned with the Marketing agent, ads, and posting to
+              X.
             </p>
-            <a class="fx-more" href="/blog/solana-donations/">
-              Read the blog post<span class="fx-sr"> about Solana donations</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/marketing">
+              See it in the Market<span class="fx-sr"> about Marketing</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-up"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/analytics"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Analytics</a>
+            </div>
+            <h3>Analytics</h3>
+            <p>
+              First-party product analytics: events, funnels, cohorts, session
+              recordings, heatmaps, flags, experiments, and surveys.
+            </p>
+            <a class="fx-more" href="/market/analytics">
+              See it in the Market<span class="fx-sr"> about Analytics</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-flag"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/competitor"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Competitor Watch</a>
+            </div>
+            <h3>Competitor Watch</h3>
+            <p>
+              An organization-private watchlist of competitors, their
+              positioning, strengths, and weaknesses.
+            </p>
+            <a class="fx-more" href="/market/competitor">
+              See it in the Market<span class="fx-sr"> about Competitor Watch</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-phone"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/app-store-status"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>App Store Status</a>
+            </div>
+            <h3>App Store Status</h3>
+            <p>
+              Your iOS app in App Store Connect: App Review state, downloads,
+              TestFlight builds, tester feedback, and customer reviews.
+            </p>
+            <a class="fx-more" href="/market/app-store-status">
+              See it in the Market<span class="fx-sr"> about App Store Status</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-bolt"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/sentry"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Sentry</a>
+            </div>
+            <h3>Sentry</h3>
+            <p>
+              Connect a Sentry organization and see unresolved errors grouped by
+              issue, project, and level.
+            </p>
+            <a class="fx-more" href="/market/sentry">
+              See it in the Market<span class="fx-sr"> about Sentry</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-book"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/rss-reader"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>RSS Reader</a>
+            </div>
+            <h3>RSS Reader</h3>
+            <p>
+              An RSS, Atom, and JSON Feed reader that checks feeds from your own
+              device, with smart feeds, folders, stars, and OPML.
+            </p>
+            <a class="fx-more" href="/market/rss-reader">
+              See it in the Market<span class="fx-sr"> about RSS Reader</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section id="life" class="fx-section" aria-labelledby="life-title">
+        <div class="fx-head">
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-heart"/></svg>Health, music &amp; play</span>
+          <h2 id="life-title" class="fx-title">Look after yourself between commits</h2>
+          <p class="fx-lede">
+            Health trackers kept encrypted under your own key, and a few things
+            that are simply fun.
+          </p>
+          <p class="fx-count">11 features, all Market plugins</p>
+        </div>
+        <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-chart-bar"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/calories"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Calorie Counter</a>
+            </div>
+            <h3>Calorie Counter</h3>
+            <p>
+              A private calorie and macro diary with photo identification,
+              barcode scanning, goals, and charts, synced across web, desktop,
+              and mobile.
+            </p>
+            <a class="fx-more" href="/market/calories">
+              See it in the Market<span class="fx-sr"> about Calorie Counter</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-navigation"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/steps"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Pedometer</a>
+            </div>
+            <h3>Pedometer</h3>
+            <p>
+              Counts your steps on the iPhone through Apple Health and shows
+              daily steps, distance, goals, and streaks everywhere.
+            </p>
+            <a class="fx-more" href="/market/steps">
+              See it in the Market<span class="fx-sr"> about Pedometer</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-cloud-rain"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/water"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Water Intake</a>
             </div>
-            <h3>Make it rain</h3>
+            <h3>Water Intake</h3>
             <p>
-              Contribute directly from a self-custodial wallet, then choose an
-              immediate split across the current eligible nodes or fund the
-              transparent pool for later randomized incentives.
+              Log the water and drinks you have each day, keep a daily goal and
+              streak, and share every glass with Apple Health.
             </p>
-            <a class="fx-more" href="/blog/make-it-rain/">
-              Read the blog post<span class="fx-sr"> about Make it rain</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/water">
+              See it in the Market<span class="fx-sr"> about Water Intake</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
-              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-trophy"/></svg></span>
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-layers"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/sleep"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Sleep</a>
             </div>
-            <h3>Issue bounties</h3>
+            <h3>Sleep</h3>
             <p>
-              Bounty funding requires an owner-controlled external wallet,
-              program, or multisig and independently verified public transfers.
+              Counts the time your iPhone lies still by your bed as sleep, and
+              shows your nights, bedtime, and sleep debt.
             </p>
-            <a class="fx-more" href="/blog/issue-bounties/">
-              Read the blog post<span class="fx-sr"> about Issue bounties</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/sleep">
+              See it in the Market<span class="fx-sr"> about Sleep</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-check-circle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/sugar-break"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Sugar Break</a>
+            </div>
+            <h3>Sugar Break</h3>
+            <p>
+              Take a break from sugar for as long as you choose, tap +1 each time
+              you skip it, and watch your streak grow.
+            </p>
+            <a class="fx-more" href="/market/sugar-break">
+              See it in the Market<span class="fx-sr"> about Sugar Break</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-user"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/stretch"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Stretch Break</a>
+            </div>
+            <h3>Stretch Break</h3>
+            <p>
+              A guided stretch for your back and posture after a day at the
+              computer, with a voice and an example person to follow.
+            </p>
+            <a class="fx-more" href="/market/stretch">
+              See it in the Market<span class="fx-sr"> about Stretch Break</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-gift"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/food-guide"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Food Guide</a>
             </div>
-            <h3>Mirror rewards</h3>
+            <h3>Food Guide</h3>
             <p>
-              The community pool may reward eligible, integrity-verified
-              nodes. Selection and payment are never guaranteed.
+              Breakfast, lunch, and dinner ideas on iPhone from healthy recipes,
+              picked for your calorie budget and what you're short of.
             </p>
-            <a class="fx-more" href="/world?landmark=fountain">
-              Join or fund the reward program<svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market/food-guide">
+              See it in the Market<span class="fx-sr"> about Food Guide</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-play-circle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/video-mix-dj-studio"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Video Mix DJ Studio</a>
+            </div>
+            <h3>Video Mix DJ Studio</h3>
+            <p>
+              Mix two YouTube decks with turntables, crossfader, cues, loops, and
+              sampler pads, and jam with friends who share the decks.
+            </p>
+            <a class="fx-more" href="/market/video-mix-dj-studio">
+              See it in the Market<span class="fx-sr"> about Video Mix DJ Studio</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-mic"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/speech"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Speech Playground</a>
+            </div>
+            <h3>Speech Playground</h3>
+            <p>
+              Type anything and hear it in Apple's most natural voices, or your
+              own Personal Voice, on iPhone, and save it as audio.
+            </p>
+            <a class="fx-more" href="/market/speech">
+              See it in the Market<span class="fx-sr"> about Speech Playground</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-camera"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/spider-room"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Spider Room</a>
+            </div>
+            <h3>Spider Room</h3>
+            <p>
+              The Genie spider in your room in augmented reality on the iPhone:
+              it climbs walls, naps on seats, and spins webs.
+            </p>
+            <a class="fx-more" href="/market/spider-room">
+              See it in the Market<span class="fx-sr"> about Spider Room</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-robot"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/aquarium"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Aquarium</a>
+            </div>
+            <h3>Aquarium</h3>
+            <p>
+              Your agents become fish, shaped by their status, changed files, and
+              conflicts, swimming on the desktop and over the iPhone app.
+            </p>
+            <a class="fx-more" href="/market/aquarium">
+              See it in the Market<span class="fx-sr"> about Aquarium</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
-        <aside class="fx-note">
-          <svg class="fx-note-ico" aria-hidden="true"><use href="#fx-info"/></svg>
-          <p>
-            <strong>One deliberate exception:</strong> if the operator enables
-            temporary deposit addresses for world-element purchases, ForkMesh
-            generates that address and holds its key from the moment it is
-            created until it sweeps the payment — half to the treasury, half to
-            online mirror nodes. During that window those specific funds are
-            custodial and an operator compromise could move them. The store
-            labels that option with its own custody, and paying the published
-            pool address from your own wallet remains available and puts no key
-            on ForkMesh.
-          </p>
-        </aside>
       </section>
 
       <section id="everywhere" class="fx-section" aria-labelledby="everywhere-title">
         <div class="fx-head">
-          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-devices"/></svg>Mobile, web &amp; plugins</span>
+          <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-devices"/></svg>Phones, web &amp; the Market</span>
           <h2 id="everywhere-title" class="fx-title">Pick it up from any device</h2>
           <p class="fx-lede">
-            The mesh follows you: a phone app, a full web experience, and an
-            optional Marketplace plugin for your editor.
+            The mesh follows you: native phone apps, a full web experience, an
+            API for your own apps, and a Market to add exactly what you
+            need.
           </p>
+          <p class="fx-count">11 features · 4 Market plugins</p>
         </div>
         <div class="fx-grid">
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-phone"/></svg></span>
+              <span class="fx-tag">iOS &amp; Android</span>
+            </div>
+            <h3>iPhone &amp; Android apps</h3>
+            <p>
+              Each phone is its own node with its own keys and Git engine:
+              browse and edit repositories, commit, run and watch agents, chat
+              and call, with widgets, a share sheet, and Siri.
+            </p>
+            <a class="fx-more" href="/blog/mobile-app/">
+              Read the blog post<span class="fx-sr"> about iPhone &amp; Android apps</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-sparkles"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/on-device-ai"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>On-device AI</a>
+            </div>
+            <h3>On-device AI</h3>
+            <p>
+              Download a small model to your phone and chat with it offline;
+              nothing leaves the device.
+            </p>
+            <a class="fx-more" href="/market/on-device-ai">
+              See it in the Market<span class="fx-sr"> about On-device AI</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-grid"/></svg></span>
+            </div>
+            <h3>Starter packs</h3>
+            <p>
+              A new phone project asks once whether to start Minimal, Standard,
+              or with Everything, and installs those packages.
+            </p>
+            <a class="fx-more" href="/blog/whats-new-mid-october-2026/">
+              Read the blog post<span class="fx-sr"> about Starter packs</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-globe"/></svg></span>
@@ -1857,8 +3350,8 @@
             <h3>Web repo browser</h3>
             <p>
               Explore any published repository — files, commits, rich diffs,
-              issues, and PRs — straight from forkmesh.com, streamed live from
-              its host. No clone, no account required.
+              issues, and PRs — straight from the website. No clone, no account
+              required.
             </p>
             <a class="fx-more" href="/blog/web-repo-browser/">
               Read the blog post<span class="fx-sr"> about Web repo browser</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1881,40 +3374,52 @@
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
-              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-phone"/></svg></span>
-              <span class="fx-tag">iOS &amp; Android</span>
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg></span>
             </div>
-            <h3>Mobile app</h3>
+            <h3>The Market</h3>
             <p>
-              Carry the mesh in your pocket: browse repositories, follow
-              activity, chat, and get notifications from a native mobile app.
+              Install and remove packages, dependencies included, in one tap on
+              the web, desktop, and phones. Sort by rating, installs, or use,
+              filter by category, or install a whole pack.
             </p>
-            <a class="fx-more" href="/blog/mobile-app/">
-              Read the blog post<span class="fx-sr"> about Mobile app</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            <a class="fx-more" href="/market">
+              Open the Market<span class="fx-sr"> about The Market</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
-              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg></span>
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-code"/></svg></span>
             </div>
-            <h3>VS Code Marketplace plugin</h3>
+            <h3>ForkMesh Apps</h3>
             <p>
-              Optionally browse ForkMesh issues and hand work to Claude Code or
-              Codex from VS Code-compatible editors. The base app does not
-              install or activate the plugin.
+              Build your own app on OAuth 2.1, the Web and Events APIs, slash
+              commands, and interactive messages, and list it in the reviewed App
+              Directory.
+            </p>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/forkmesh-ide"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>ForkMesh for VS Code</a>
+            </div>
+            <h3>VS Code extension</h3>
+            <p>
+              Browse ForkMesh issues and hand work to Claude Code or Codex from
+              VS Code-compatible editors.
             </p>
             <a class="fx-more" href="/blog/vs-code-extension/">
-              Read the blog post<span class="fx-sr"> about VS Code Marketplace plugin</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+              Read the blog post<span class="fx-sr"> about VS Code extension</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
               <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-book"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/docs"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Docs</a>
             </div>
             <h3>Docs with search</h3>
             <p>
-              Searchable documentation covering encrypted mirrors, direct-HTTPS
-              routing, cloning, and the collaboration protocol.
+              Searchable documentation at forkmesh.com/docs, and the same library
+              on the desktop, iPhone, and Android, even offline.
             </p>
             <a class="fx-more" href="/blog/docs-with-search/">
               Read the blog post<span class="fx-sr"> about Docs with search</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
@@ -1922,15 +3427,30 @@
           </article>
           <article class="fx-card">
             <div class="fx-card-top">
-              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-megaphone"/></svg></span>
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-heartbeat"/></svg></span>
+              <a class="fx-tag fx-tag-plugin" href="/market/status-page"><svg class="fx-tag-ico" aria-hidden="true"><use href="#fx-puzzle"/></svg><span class="fx-sr">Market plugin: </span>Status Page</a>
             </div>
-            <h3>Status, blog &amp; changelog</h3>
+            <h3>Status Page</h3>
             <p>
-              A public status page, a blog, and a human-readable changelog keep
-              the network's story out in the open.
+              ForkMesh's live status as green dots on desktop, phone, and web.
+              Each check is its own package, and you can add your own
+              monitors.
             </p>
             <a class="fx-more" href="/blog/status-blog-and-changelog/">
-              Read the blog post<span class="fx-sr"> about Status, blog &amp; changelog</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+              Read the blog post<span class="fx-sr"> about Status Page</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
+            </a>
+          </article>
+          <article class="fx-card">
+            <div class="fx-card-top">
+              <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-megaphone"/></svg></span>
+            </div>
+            <h3>Blog &amp; changelog</h3>
+            <p>
+              A blog and one changelog keep the network's story in the open; the
+              apps' What's new shows the same notes.
+            </p>
+            <a class="fx-more" href="/changelog">
+              Read the changelog<span class="fx-sr"> about Blog &amp; changelog</span><svg class="fx-more-ico" aria-hidden="true"><use href="#fx-arrow"/></svg>
             </a>
           </article>
         </div>
@@ -1949,7 +3469,7 @@
           <span class="fx-tile"><svg class="fx-ico" aria-hidden="true"><use href="#fx-git"/></svg></span>
         </div>
         <span class="fx-badge"><svg class="fx-badge-ico" aria-hidden="true"><use href="#fx-grid"/></svg>The whole catalog</span>
-        <h2 id="fx-outro-title" class="fx-title">Seventy-plus features. One promise.</h2>
+        <h2 id="fx-outro-title" class="fx-title">166 features. One promise.</h2>
         <p class="fx-lede">
           Everything above serves the same idea: your code, your conversations,
           and your community should never depend on one company staying online.

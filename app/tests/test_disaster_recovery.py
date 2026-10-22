@@ -352,6 +352,15 @@ def test_corrupted_backup_loses_only_commits_newer_than_the_verified_copy():
     assert report["dataLoss"]["policy"] == "since-last-good-copy" and report["dataLoss"]["withinPolicy"]
 
 
+def test_offline_bootstrap_passes_keys_that_start_with_a_dash(monkeypatch):
+    seeds = iter([bytes([n] * 32) for n in (41, 62, 83, 130, 172)] * 4)
+    real = os.urandom
+    monkeypatch.setattr(tool.os, "urandom", lambda n: next(seeds) if n == 32 else real(n))
+    assert public(bytes([41] * 32)).startswith("-")
+    report = tool.run_drill("offline-bootstrap")
+    assert report["verdict"] == "pass", tool._describe_report(report)
+
+
 @pytest.mark.skipif(not (sys.platform.startswith("linux") and shutil.which("strace")), reason="needs strace")
 def test_dns_loss_drill_traces_git_for_dns_queries():
     report = tool.run_drill("dns-loss")

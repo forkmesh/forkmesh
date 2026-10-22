@@ -201,6 +201,53 @@ console.log(JSON.stringify(out));
 """
 
 
+_EDITOR_FOCUS_HARNESS = r"""
+const fs = require("fs");
+const vm = require("vm");
+const listeners = {};
+const storage = { "forkmesh.session": JSON.stringify({ nodeName: "Alice", kind: "user" }) };
+const frames = [];
+let activeElement = null;
+const element = () => ({
+  className: "", textContent: "", title: "", attrs: {}, children: [], listeners: {},
+  isConnected: true,
+  setAttribute(k, v) { this.attrs[k] = v; },
+  append(...children) { this.children.push(...children); },
+  addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); },
+  remove() { this.isConnected = false; },
+  focus() { activeElement = this; },
+  showModal() { this.open = true; },
+  close() { this.open = false; for (const fn of this.listeners.close || []) fn(); },
+});
+const opener = element();
+opener.isConnected = true;
+const body = { children: [], append(node) { this.children.push(node); } };
+const document = {
+  get activeElement() { return activeElement; },
+  getElementById() { return null; },
+  createElement: element,
+  head: { append() {} }, body,
+};
+const sandbox = {
+  window: { dispatchEvent() {}, addEventListener(name, fn) { listeners[name] = fn; }, requestAnimationFrame(fn) { frames.push(fn); } },
+  document, localStorage: { getItem: (k) => storage[k] || null },
+  CustomEvent: function (name, init) { this.type = name; this.detail = init && init.detail; },
+  setTimeout: () => 1, clearTimeout() {}, Date, JSON, Math, Number, String,
+  Object, Boolean, Map, Set, Error,
+};
+vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), sandbox);
+activeElement = opener;
+sandbox.window.ForkMeshUserStatus.openEditor().then(() => {
+  const dialog = body.children.at(-1);
+  dialog.close();
+  const beforeFrame = activeElement === opener;
+  for (const frame of frames) frame();
+  console.log(JSON.stringify({ beforeFrame, afterFrame: activeElement === opener, removed: !dialog.isConnected }));
+});
+"""
+
+
 def test_web_helper_expiry_frames_and_clear_after_math():
     node = shutil.which("node")
     if node is None:
@@ -220,6 +267,17 @@ def test_web_helper_expiry_frames_and_clear_after_math():
     assert out["never"] == 0
     assert out["customMissing"] == -1
     assert out["describeAway"] == "Away"
+
+
+def test_web_status_editor_returns_focus_to_its_opener_after_close():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is unavailable")
+    result = subprocess.run(
+        [node, "-e", _EDITOR_FOCUS_HARNESS, str(USER_STATUS_JS)],
+        capture_output=True, text=True, timeout=30, check=True)
+    assert json.loads(result.stdout) == {
+        "beforeFrame": False, "afterFrame": True, "removed": True}
 
 
 def test_web_surfaces_load_the_helper_and_carry_status_on_beats():

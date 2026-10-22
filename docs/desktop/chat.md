@@ -76,6 +76,16 @@ pending devices, 950 KB of a 1.5 MB `ForkMesh.conf`, which every settings sync
 rewrote (`testHeldBudget`).
 The old `chat/e2ee/x25519PrivateV2` value is left in place and unused.
 
+`state.ini` itself is owner-only: `openStoredState()` creates it through
+`forkmesh::ownerfile::write` and restricts an existing one to 0600 before
+QSettings opens it, and QSettings' `QSaveFile` keeps that mode on every sync.
+The same header-only helper (`src/OwnerOnlyFile.h`, `QSaveFile` with 0600
+before the first byte) now writes the per-key files, the conversation history
+(`MainWindow::saveChatHistory`, DM and private-channel text, which used a plain
+`QFile` at the default umask and was truncated in place), the `#mesh` history
+(`LocalMeshNode::saveHistory`) and `paired-devices.json`. A crash mid-write
+leaves the previous file, and other local users cannot read message text.
+
 - Prekeys rotate when the newest is 24 h old (checked at start, before each
   seal and before each bundle) and are wiped once expired; at most ten are
   kept. A rotation re-advertises the bundle on every relay room and mesh link.
@@ -183,8 +193,20 @@ exists only so the v3 vector tests can open the v3 DM vectors.
 - Held frames are re-opened when the sender's bundle arrives or its trust
   changes; the `ServerNode` of that room re-opens them through the normal
   frame path, or the mirror does when no socket is open.
-- Relay `@peer` DMs are sealed to the devices whose bundle `node` is the
-  recipient plus this account's approved devices.
+- Relay `@peer` DMs, relay private channels and relay cove frames are gone
+  (see "Relay hardening" below). Any frame other than `hello` that carries a
+  `to` (the `history` reply to a newcomer) is sealed to that peer only
+  (`ServerNode::sealForRoom`, `targetedPeer`).
+- A peer's `hello` channel list and `channel` frames only add names that start
+  with `#`, are at most 80 characters, contain no control or format
+  characters, and are not `#office/...`, `@...` or `direct:...` names
+  (`adoptableChannelName`); adoption stops at 200 channels. Any member could
+  otherwise plant a row that looks like a DM or an office room, or flood the
+  channel list.
+- The `history` reply carries only this device's own messages, and a
+  received `history` frame is applied only for entries whose `senderId` is the
+  frame's authenticated sender (`sendHistoryTo`, `handlePlain`): a peer could
+  otherwise replay words under somebody else's name.
 - Chat and thread replies are shown at the frame's signed `ts`, not the
   plaintext `ts`, so a replayed frame cannot be reordered.
 - A frame from another approved device of this account remembers its relay
@@ -235,3 +257,108 @@ badge, on a DM) shows the 60 digits in 12 groups, the QR code of the QR string
 (`src/QrCode.*`) and the string itself, every device with its state, and
 "Mark as verified". A change to the approved set after both accounts have a
 device clears verified and adds "Your safety number with @name changed."
+
+## Relay hardening (2026-10-22)
+
+The desktop side of [chat-relay-hardening.md](../app/chat-relay-hardening.md)
+(R1 to R7). Tests: `testNodeBinding` in `test_chat_v3.cpp`, and in
+`test_chat_transport.cpp` `testPublicIntegrationsAndPrivateSeal`,
+`testTargetedConversationSealing`, `testTeammateChatRelay`,
+`testUserStatusOnPresenceFrames`, `testNodeOwnersAndBlocks`,
+`testRelayRules`, `testLocalMeshNoResealToDirectJoiner`, the other `#mesh`
+room tests and `testOfficeChannelMirror`.
+
+- **Node binding (R1).** The desktop's relay node id is already the `b64u` of
+  its 32-byte Ed25519 profile key (`ForkMeshIdentity::publicKey()`), in the
+  World room, the office/channel/DM rooms and `#mesh`. `RoomSeal` takes a node
+  signer (`setNodeSigner`); in open rooms `keyFrame()` adds `nsig` over
+  `forkmesh-chat-e2ee-node-v1\n<room>\n<kid>\n<idk>\n<acct>`, and
+  `acceptKeyFrame` drops a bundle whose `node` is not a 32-byte key or whose
+  `nsig` does not verify (`verifyNodeBinding`). `MainWindow` signs with the
+  profile identity for the World `ServerNode` and `#mesh`; the office mirror
+  passes its signer to every room `ServerNode`
+  (`OfficeChannelMirror::prepareRoomSender`, which also marks the room as not
+  shared). `ServerNode` keeps the signer across every seal rebuild. Strict rooms send and accept
+  bundles without `nsig`. Checked against
+  `conformance/chat/v3/node-binding.json`.
+- **Nothing private on the shared room (R2).** `ServerNode::relayForbidden`
+  drops, in both directions, `dm`, `invite`, `cove-invite`, `cove-open`, any
+  frame of an `@` conversation, and in the shared World room
+  (`setSharedRoom(true)`, the default) any `private: true` frame. The office
+  mirror's room nodes call `setSharedRoom(false)`, so its server private
+  channels keep their `private` marks. `sendDirect` only posts a system line.
+  `createPrivateChannel` on the shared room accepts only the device-local
+  `#team`. "Message" on a person opens a server DM for the verified account
+  and is not offered for a guest; there is no relay fallback any more. Cove
+  invites, and the "opened your cove" notice, are server DMs
+  (`OfficeChannelMirror::sendDirectText`, which opens the conversation
+  without switching to it). On start `purgeRelayPrivateChannels` forgets the
+  saved relay private channels (the `chat/privateChannels*` settings),
+  removes them and every `@peer` conversation from memory, and
+  `loadChatHistory` drops them from the saved file (`purgedChatHistory`),
+  threads, unread counts, open DMs and DM names included. `#mesh`, `#team` and
+  server DMs (`#office/@...`) stay.
+- **Badges.** `refreshRoomSealButton` reads `relayrules::roomBadge`: Public
+  (sealed to the room's devices, readable by anyone in the room), Nearby for
+  `#mesh` ("anyone nearby can read it"), This device for `#team`,
+  Server-visible for notices, and End-to-end only for server private channels
+  and DMs, whose members the server checks. The old relay private-channel
+  "End-to-end" badge is gone with those channels.
+- **Authenticated frames only (R3).** `sendEncrypted` seals every person
+  frame, public channels included; there is no controller-readable path.
+  ForkBot and teammate lines keep this device's `senderId` and name the bot in
+  `bot`; a received line whose `bot` is `forkbot`, `claude` or `codex` is
+  shown under that bot's id but named "<bot> · via <poster>", the poster
+  being the sending node's verified account or, unverified, `Guest NNNN`
+  (from the node key's hash, `relayrules::guestLabel`), so any sealed sender,
+  a guest included, can no longer pass as ForkBot. The name is set on the
+  message itself, so the transcript, list previews and notifications all show
+  it; the office mirror hands the same verifier to its room nodes. Such a line
+  never renames the device. An
+  unsealed frame is used only when the envelope has `srv: true`, and then only
+  as a `chat` in a `#` channel, shown as the integration: its `senderId` keeps
+  a `webhook:`, `system:` or `app:` prefix and anything else becomes
+  `srv:<id>`, with no account, node name or Solana address
+  (`ServerNode::serverFrameFromPlain`, also used for the office mirror's HTTP
+  history). Edits, deletes, reactions and thread replies therefore only come
+  from sealed frames, and edits and deletes still need the authenticated
+  author.
+- **Webhook-fed channels.** In server channel rooms (the office mirror's room
+  nodes, `setSharedRoom(false)`) and their HTTP history, a `srv: true` chat is
+  shown whether the channel is public or private, the `#email-log` notices
+  channel included, even when it carries `private: true`; it is never
+  accepted in a DM room (`m_directRoom`, `room.direct`). A frame with
+  `serverVisible: true` gets " · server-visible" after the integration's name
+  (names up to 96 characters for integrations). The channel settings dialog
+  offers webhooks for private channels as well as public ones, not for
+  notices (`relayrules::webhooksAllowed`), and says the server reads webhook
+  messages (`relayrules::webhookNote`).
+- **New-member notes.** The relay's plaintext `forkmesh-new-member`
+  announcement counts only with `srv: true`; any other copy is dropped.
+- **Verified accounts (R4).** `ChatNodeOwners` asks
+  `GET /api/chat/node-owner?node=<b64u>` once per node key, caches an answer
+  for an hour and a failure for a minute. `ServerNode` shows a peer's
+  `ownerUser` on the roster only when it matches the answer (or the claim is
+  empty); otherwise the peer is a guest. The profile dialog takes the account
+  from the verified roster row, a server directory entry or the lookup, never
+  from a display name.
+- **Blocks (R5).** `ChatAccountBlocks` keeps the blocked accounts in
+  `chat/blockedAccounts`, pushes the whole list with
+  `PUT /api/chat/blocks` (Bearer session) on every block or unblock, and
+  merges `GET /api/chat/blocks` when the office mirror starts after sign-in;
+  a local block the server has not seen is pushed back. The profile dialog
+  has Block/Unblock. A blocked account's messages and typing are dropped and
+  its saved messages are not drawn.
+- **Less about you (R7).** The shared room gets the node name only when the
+  user set one (`sharedNodeName`, never the host name), a Solana address only
+  when "Show this address in shared chat rooms so people can tip you" is on
+  (`chat/shareTipAddress`, `ServerNode::setTipAddress`), and no `dg`.
+  `#mesh`: bundles carry `acct` = node id, frames carry no `ownerUser` and a
+  received one is ignored, the beacon id is 12 random bytes drawn on start and
+  on every network change (`renewBeaconId`), the beacon has no `node`, and the
+  start line says anyone nearby can read the room. A device no longer
+  re-seals its earlier messages: a joiner (direct or through another device)
+  gets only messages still queued for nobody (`resealOwnHistory`,
+  `sendHistoryTo`); already delivered ones are forwarded only as their
+  original sealed frames. Beacon peers are tracked by beacon id in
+  `m_heard` and bound to a link's key id by address and port.

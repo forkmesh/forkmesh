@@ -657,6 +657,15 @@
         white-space: nowrap;
       }
 
+      .chat-server-visible {
+        font-size: 11px;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0 4px;
+        white-space: nowrap;
+      }
+
       .chat-text { color: var(--fg); }
 
       /* ── reactions ── */
@@ -1470,10 +1479,12 @@
                 <button id="chat-seal-close" type="button" aria-label="Close encryption details">×</button>
               </div>
               <p class="chat-attachment-meta">
-                Private channels and direct messages are encrypted automatically
-                to known participant devices, beyond the controller's room key.
-                Public channels are intentionally controller-readable so ForkBot,
-                MCP, and incoming webhooks can participate.
+                Every message is encrypted automatically to the devices in the
+                room, beyond the controller's room key. Private channels and direct
+                messages reach only their members. Public channels and World are
+                open, so anyone who joins can read them, the server included:
+                public channels are controller-readable. Posts from apps and
+                webhooks come from the server and are shown as those apps.
               </p>
               <p id="chat-seal-state" class="chat-attachment-meta" role="status" aria-live="polite"></p>
               <p class="chat-attachment-meta">
@@ -1553,7 +1564,7 @@
 
               <section id="chat-channel-webhooks-section" class="chat-channel-section" aria-labelledby="chat-channel-webhooks-title" hidden>
                 <h3 id="chat-channel-webhooks-title">Incoming webhooks</h3>
-                <p class="chat-attachment-meta">Public channels can accept controller integrations. POST JSON with a <code>text</code>, <code>content</code>, or <code>message</code> field. Each delivery posts to this channel and sends a notification.</p>
+                <p class="chat-attachment-meta">POST JSON with a <code>text</code>, <code>content</code>, or <code>message</code> field. Each delivery posts to this channel and sends a notification. Webhook messages go through the server, so the server can read them, in private channels too; they show as server-visible.</p>
                 <form id="chat-channel-webhook-form" class="chat-channel-form">
                   <input id="chat-channel-webhook-name" name="name" maxlength="80" placeholder="Deploy bot" aria-label="Webhook name" required />
                   <button type="submit">Add webhook</button>
@@ -1754,9 +1765,9 @@
             </div>
           </div>
 
-          <div class="chat-e2e-note" title="Private channels and direct messages add automatic device-to-device encryption beyond the controller's AES-256-GCM room key. Public channels are controller-readable so ForkBot, MCP, and webhooks can participate. The relay retains at most 500 persisted frames per room for 7 days.">
+          <div class="chat-e2e-note" title="Every message adds automatic device-to-device encryption beyond the controller's AES-256-GCM room key. Public channels are open, so anyone who joins can read them, the server included; apps and webhooks post through the server. The relay retains at most 500 persisted frames per room for 7 days.">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
-            <span>Private channels and DMs are end-to-end encrypted · Public channels allow ForkBot, MCP and webhooks · Messages disappear after 7 days, or sooner if you choose</span>
+            <span>Private channels and DMs are end-to-end encrypted · Public channels are readable by anyone who joins, the server included · Messages disappear after 7 days, or sooner if you choose</span>
             <a href="/docs">Learn more</a>
           </div>
         </main>
@@ -1835,7 +1846,7 @@
             </form>
             <input id="chat-channel-initial-members" maxlength="1000" placeholder="Invite people: alice, bob" aria-label="Usernames to invite, separated by commas" />
             <p id="chat-channel-audience" class="chat-channel-audience" role="status" aria-live="polite">Only you can see this room until you invite someone. Nobody else, including administrators, is added.</p>
-            <p class="chat-attachment-meta">Members, renaming and deletion live in Settings. Controller integrations such as webhooks are available in Public channels.</p>
+            <p class="chat-attachment-meta">Members, renaming and deletion live in Settings. Incoming webhooks work in public and private channels; their messages are visible to the server.</p>
           </section>
         </div>
       </dialog>

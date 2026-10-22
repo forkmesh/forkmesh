@@ -34,8 +34,11 @@ channel it is stricter:
 - Every client labels it **server-visible** and disables the composer.
 - Its name index is per owner, so creating it reveals nothing to others.
 
-A bot app was rejected for this: app posting is limited to public channels,
-and a private-channel exception would be a new trust path.
+A bot app was rejected for this: app posting is limited to public channels.
+The server writes the notes itself through the channel delivery path, which
+marks each envelope `srv` (server-injected) so clients accept these unsealed
+frames in this private room; since 2026-10-22 ordinary private channels can
+take webhooks the same way ([app/chat-private-rooms.md](app/chat-private-rooms.md)).
 
 ## The note
 

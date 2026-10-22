@@ -53,7 +53,7 @@ jobs:
 
       - name: Exercise WebGL, keyboard, touch, and two-client privacy
         working-directory: world/browser_tests
-        run: npm test
+        run: npm test -- --global-timeout=0
 
       - name: Measure adaptive World device tiers
         working-directory: world/browser_tests

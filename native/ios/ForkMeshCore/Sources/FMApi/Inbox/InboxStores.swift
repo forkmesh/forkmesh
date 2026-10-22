@@ -164,12 +164,21 @@ public final class LocalPingLog {
         self.store = store
         self.clock = clock
         self.makeId = makeId
-        if let text = store.string(forKey: LocalPingLog.key), let data = text.data(using: .utf8),
-           let decoded = try? JSONDecoder().decode([LocalPing].self, from: data) {
-            pings = Array(decoded.prefix(LocalPingLog.maxEntries))
-        } else {
-            pings = []
-        }
+        pings = LocalPingLog.stored(store)
+    }
+
+    private static func stored(_ store: KeyValueStore) -> [LocalPing] {
+        guard let text = store.string(forKey: LocalPingLog.key), let data = text.data(using: .utf8),
+            let decoded = try? JSONDecoder().decode([LocalPing].self, from: data)
+        else { return [] }
+        return Array(decoded.prefix(LocalPingLog.maxEntries))
+    }
+
+    public func reload() {
+        let next = LocalPingLog.stored(store)
+        if next == pings { return }
+        pings = next
+        listeners.notify()
     }
 
     private func save() {

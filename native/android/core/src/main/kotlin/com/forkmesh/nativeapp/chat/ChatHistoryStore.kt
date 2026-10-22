@@ -83,6 +83,7 @@ object ChatHistoryCodec {
         )
         if (message.self) out["self"] = true
         if (message.fileName.isNotEmpty()) out["f"] = message.fileName
+        if (message.serverVisible) out["sv"] = true
         return out
     }
 
@@ -99,6 +100,7 @@ object ChatHistoryCodec {
             timestamp = jsonLong(map["ts"]),
             self = map["self"] == true,
             fileName = jsonText(map["f"]).take(ChatLimits.MAX_FILE_NAME_CHARS),
+            serverVisible = map["sv"] == true,
         )
     }
 

@@ -48,8 +48,48 @@ final class KeychainBackend: ThrowingSecureBackend, @unchecked Sendable {
         ]
         if let key = key {
             query[kSecAttrAccount as String] = key
+            query[kSecAttrAccessGroup as String] = KeychainPlacement.group(forSecureKey: key)
         }
         return query
+    }
+
+    static func migrateAccessGroups() {
+        for service in [KeychainPlacement.secureService, KeychainPlacement.pushService] {
+            let lookup: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccessGroup as String: KeychainPlacement.sharedGroup,
+                kSecReturnAttributes as String: true,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitAll,
+            ]
+            var found: CFTypeRef?
+            guard SecItemCopyMatching(lookup as CFDictionary, &found) == errSecSuccess, let rows = found as? [[String: Any]]
+            else { continue }
+            for row in rows {
+                guard let account = row[kSecAttrAccount as String] as? String, let data = row[kSecValueData as String] as? Data,
+                    let target = KeychainPlacement.destination(
+                        service: service, account: account, group: KeychainPlacement.sharedGroup)
+                else { continue }
+                let insert: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: account,
+                    kSecAttrAccessGroup as String: target,
+                    kSecValueData as String: data,
+                    kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+                ]
+                let added: OSStatus = SecItemAdd(insert as CFDictionary, nil)
+                guard added == errSecSuccess || added == errSecDuplicateItem else { continue }
+                let old: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: account,
+                    kSecAttrAccessGroup as String: KeychainPlacement.sharedGroup,
+                ]
+                SecItemDelete(old as CFDictionary)
+            }
+        }
     }
 
     func read(_ key: String) throws -> String? {
@@ -138,7 +178,10 @@ final class KeychainStore: SecureStore, @unchecked Sendable {
     private let store: FallbackSecureStore
     private let routed: ProjectRoutedSecureStore
 
+    private static let migrated: Void = KeychainBackend.migrateAccessGroups()
+
     init(service: String = KeychainStore.defaultService, router: ProjectScopeRouter = AppProjectScope.router) {
+        _ = KeychainStore.migrated
         let fallback: FallbackSecureStore = FallbackSecureStore(backend: KeychainBackend(service: service))
         store = fallback
         routed = ProjectRoutedSecureStore(base: fallback, router: router)

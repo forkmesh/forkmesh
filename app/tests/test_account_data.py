@@ -277,14 +277,14 @@ def test_every_table_with_a_hashed_identity_column_is_scanned():
 
 def test_migration_matches_the_module_schema_and_reverses():
     migrated = sqlite3.connect(":memory:")
-    migrated.executescript((ROOT / "migrations" / "0286_account_store.sql").read_text())
+    migrated.executescript((ROOT / "migrations" / "0287_account_store.sql").read_text())
     lazy = sqlite3.connect(":memory:")
     for statement in account_data.STORE_SCHEMA:
         lazy.execute(statement)
     for table in (account_data.STORE_TABLE, account_data.STORE_KEYS_TABLE):
         info = f'PRAGMA table_info("{table}")'
         assert migrated.execute(info).fetchall() == lazy.execute(info).fetchall()
-    migrated.executescript((ROOT / "migrations" / "down" / "0286_account_store.sql").read_text())
+    migrated.executescript((ROOT / "migrations" / "down" / "0287_account_store.sql").read_text())
     assert migrated.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0] == 0
 
 
