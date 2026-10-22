@@ -47,6 +47,7 @@
      "items": [
       "The pinned last prompt above an agent's transcript no longer leaves an empty box under it on the phone, you can swipe it left and right to go through earlier and later prompts, and the desktop app and the website's agent session pages now pin it too.",
       "Desktop agents can now offer to start a new session for side work, list and message your other agents and runners, send you notifications, click and type in their browser windows, and open small interactive widgets in ForkMesh, like Claude Code's desktop app.",
+      "In the iPhone terminal, every key now fits on screen, a Ctrl key sends any Ctrl combination such as Ctrl+X then Ctrl+S, and scrolling up to read earlier output no longer jumps back to the bottom.",
       "Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once."
      ]
     },
@@ -67,7 +68,10 @@
      "title": "iPhone",
      "items": [
       "With Status Page installed, tiny status dots now sit in the thin strip above the Dynamic Island, so you can see ForkMesh's health on every screen.",
-      "Link previews in shared rooms load only when you tap them, and private network addresses are never fetched."
+      "Link previews in shared rooms load only when you tap them, and private network addresses are never fetched.",
+      "On the iPhone Home screen, the number on each icon now sits beside the icon, so it no longer covers the name of the icon above it.",
+      "Merge all with AI on a repository's pull requests now reaches your desktop's copy instead of saying the desktop does not have that repository.",
+      "A walk now shows in the Dynamic Island and on the Lock Screen as soon as you've been walking with ForkMesh open, and stays there when you lock the phone mid-walk."
      ]
     },
     {
@@ -79,7 +83,8 @@
     {
      "title": "Desktop",
      "items": [
-      "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes."
+      "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes.",
+      "An Actions run that stops because the computer is low on disk space now says to run Free disk space first, and its ping is filed as a disk problem."
      ]
     },
     {

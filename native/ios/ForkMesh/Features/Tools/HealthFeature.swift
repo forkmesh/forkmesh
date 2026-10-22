@@ -31,6 +31,7 @@ enum HealthFeature {
             lifecycleToken = AppLifecycle.shared.observe { (state: AppLifecycleState) in
                 Task { @MainActor in
                     sleepUsageChanged(state)
+                    if state == .inactive { WalkActivityController.shared.appLeaving() }
                     if state == .paused || state == .hidden { WalkActivityController.shared.appPaused() }
                     guard state == .resumed else { return }
                     WalkActivityController.shared.appResumed()

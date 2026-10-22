@@ -1,3 +1,4 @@
+import FMApi
 import FMBase
 import FMChat
 import FMControl
@@ -49,6 +50,12 @@ final class PullMergeAllRemoteTests: XCTestCase {
         }
         XCTAssertEqual(PullMergeAllRules.errorMessage("busy"), "An agent is already merging this repository's pull requests.")
         XCTAssertEqual(PullMergeAllRules.errorMessage("not_repo_owner").prefix(4), "Only")
+    }
+
+    func testMirrorRowAsksForThePublicOwner() {
+        let mirror = Repository(owner: "fmnext-n1", name: "forkmesh", publicOwner: "forkmesh")
+        XCTAssertEqual(PullMergeAllRules.owner(of: mirror), "forkmesh")
+        XCTAssertEqual(PullMergeAllRules.owner(of: Repository(owner: "alice", name: "tool")), "alice")
     }
 
     func testPullsFamilyOwnsItsMethods() {
