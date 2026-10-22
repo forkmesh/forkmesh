@@ -43,7 +43,9 @@ def registry():
 
 @pytest.fixture(scope="module")
 def clean_room_report(program):
-    return pc.run_certification(program, "core", CLEAN_ROOM, implementation_id="forkmesh-clean-room-python")
+    report = pc.run_certification(program, "core", CLEAN_ROOM, implementation_id="forkmesh-clean-room-python")
+    report["runner"]["platform"] = "linux"
+    return report
 
 
 def _cli(*args):

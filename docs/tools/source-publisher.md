@@ -187,6 +187,24 @@ and is masked in errors.
   `d.publishEndpoint`) and five discouraged terms (two "merge request" relay
   messages, two "Qt client" links, and the `ForkMesh-Attestation` pull rule,
   now an explained allowance).
+- Fixed 2026-10-22, from the logs of the runs on `7e22a97771`: the actions
+  move to checkout v7.0.1, setup-python v7.1.0, setup-go v7.0.0, setup-node
+  v7.1.0 and upload-artifact v7.0.2 (Node 24; checkout v7 refuses to check out
+  a fork's pull request code under `pull_request_target`, which the sync
+  workflow never does: it checks out the default branch). The macOS image no
+  longer ships Go, so the dependency workflow installs it from
+  `server/go.mod`; every pytest install reads `tools/requirements-ci.txt`; the
+  bridge's `cryptography` pin follows `app/host/requirements.txt`. Code drift
+  the runs caught: the `pr/545` merge left `06-repo-actions.js` with two
+  `pullLink` branches and `08-repo-detail-network.js` without the end of the
+  quick-reply handler, so `dashboard.js` did not parse and the World browser
+  job's esbuild step failed; GIPHY (`comment_gifs.py`) was missing from the
+  external dependency map (recorded as a privacy finding); the certification
+  tests built their report on the runner's platform while the registry lists
+  only `linux`; the social-signals CLI test checked a POSIX file mode on
+  Windows; and the bridge's signature test read discussion #2 and issue #126,
+  which were scrubbed and deleted, so their signed records are now fixtures in
+  `app/tests/fixtures/` (author names replaced; they are not signed).
 
 ## Merges made on the cores
 

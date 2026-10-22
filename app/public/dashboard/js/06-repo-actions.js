@@ -753,8 +753,7 @@
         ? `<button type="button" data-dashboard-commit-hash="${escapeHtml(run.commit)}" class="font-mono hover:text-foreground hover:underline">${escapeHtml(run.commit.slice(0, 10))}</button>`
         : "";
       const pullLink = run.pullNumber
-        ? `<a href="${escapeHtml(repoRecordUrl(repo, "pulls", run.pullNumber))}" data-repo-actions-link class="hover:text-foreground hover:underline">#${run.pullNumber}</a>`
-        ? `<a href="${escapeHtml(`${repoLinkUrl(repo)}/pulls/${run.pullNumber}`)}" data-repo-actions-link data-repo-actions-run-pull="${run.pullNumber}" class="fm-actions-pull-chip"><i data-lucide="git-pull-request"></i>#${run.pullNumber}</a>`
+        ? `<a href="${escapeHtml(repoRecordUrl(repo, "pulls", run.pullNumber))}" data-repo-actions-link data-repo-actions-run-pull="${run.pullNumber}" class="fm-actions-pull-chip"><i data-lucide="git-pull-request"></i>#${run.pullNumber}</a>`
         : "";
       const facts = [
         `run ${run.id}`, commitLink, run.pullNumber ? "" : escapeHtml(repoActionsRefLabel(run.ref)),
