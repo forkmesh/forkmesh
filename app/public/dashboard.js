@@ -15225,6 +15225,7 @@
       loadRepoDigestPreview(state.selectedRepo);
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
+      void loadRepoArchiveSync(state.selectedRepo);
       void loadRepoPullRulesSettings(state.selectedRepo);
       mountActionsSecrets($("[data-actions-secrets]"));
     }
@@ -32606,6 +32607,268 @@
     return true;
   }
 
+  function repoArchiveSyncState(repo) {
+    const key = repoKey(repo).toLowerCase();
+    if (!state.repoArchiveSync || state.repoArchiveSync.key !== key) {
+      state.repoArchiveSync = { key, body: null, editing: false };
+    }
+    return state.repoArchiveSync;
+  }
+
+  async function repoArchiveSyncRequest(repo, payload) {
+    const response = await fetch(`${repoApiBase(repo)}/archive-sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ownerAccount: state.session?.nodeName || "",
+        sessionToken: state.session?.sessionToken || "",
+        ...payload,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (body?.error) {
+      const error = new Error(body.error);
+      error.detail = body.message || "";
+      throw error;
+    }
+    if (!response.ok) throw new Error("archive_request_failed");
+    return body;
+  }
+
+  function repoArchiveSyncErrorText(error) {
+    if (error?.detail) return error.detail;
+    switch (String(error?.message || "")) {
+      case "invalid_identifier":
+        return "Enter an item identifier of 5 to 100 letters, digits, dots, dashes or underscores.";
+      case "invalid_access_key":
+        return "Paste the S3 access key from your archive.org account.";
+      case "invalid_secret":
+        return "The secret key has letters and digits only.";
+      case "secret_required":
+        return "Paste the S3 secret key that goes with this access key.";
+      case "invalid_interval":
+        return "Choose every day, every week or every month.";
+      case "private_repository":
+        return "Only public repositories can be archived: everything on archive.org is public.";
+      case "sync_too_soon":
+        return "A backup was requested a moment ago. Try again in ten minutes.";
+      case "not_authorized":
+        return "Only the repository owner can manage its archive.";
+      case "not_configured":
+        return "This repository is not archived yet.";
+      default:
+        return "The archive settings could not be updated. Try again in a moment.";
+    }
+  }
+
+  function setRepoArchiveSyncStatus(message, tone = "") {
+    const status = $("[data-repo-archive-sync-status]");
+    if (!status) return;
+    status.textContent = message || "";
+    status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
+  }
+
+  function repoArchiveSyncIntervalLabel(body, key) {
+    const entry = (body?.catalog?.intervals || []).find((item) => item.key === key);
+    return entry?.label || "Every week";
+  }
+
+  function renderRepoArchiveSyncForm(body) {
+    const archive = body?.archive || null;
+    const interval = archive?.interval || body?.catalog?.defaultInterval || "weekly";
+    const options = (body?.catalog?.intervals || []).map((item) =>
+      `<option value="${escapeHtml(item.key)}"${item.key === interval ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
+    const keepsSecret = Boolean(archive?.secretHint);
+    return `<form data-repo-archive-sync-form class="grid gap-4">
+      <div class="grid gap-3 sm:grid-cols-2">
+        <label class="grid gap-1 text-[11px] font-medium text-foreground">Item identifier
+          <span class="flex h-8 min-w-0 items-center rounded-md bg-secondary text-xs">
+            <span class="shrink-0 pl-2 font-mono text-muted-foreground">archive.org/details/</span>
+            <input data-repo-archive-sync-identifier type="text" autocomplete="off" spellcheck="false" required value="${escapeHtml(archive?.identifier || "")}" placeholder="${escapeHtml(state.selectedRepo ? repoKey(state.selectedRepo).replace("/", "-") : "owner-name")}" class="h-8 min-w-0 flex-1 bg-transparent px-1 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
+          </span>
+        </label>
+        <label class="grid gap-1 text-[11px] font-medium text-foreground">How often
+          <select data-repo-archive-sync-interval class="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-accent">${options}</select>
+        </label>
+        <label class="grid gap-1 text-[11px] font-medium text-foreground">S3 access key
+          <input data-repo-archive-sync-access type="text" autocomplete="off" spellcheck="false" required value="${escapeHtml(archive?.accessKey || "")}" class="h-8 w-full rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
+        </label>
+        <label class="grid gap-1 text-[11px] font-medium text-foreground">S3 secret key
+          <input data-repo-archive-sync-secret type="password" autocomplete="new-password" spellcheck="false"${keepsSecret ? "" : " required"} placeholder="${keepsSecret ? `Saved (${escapeHtml(archive.secretHint)}). Leave blank to keep it` : ""}" class="h-8 w-full rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" />
+        </label>
+      </div>
+      <p class="text-[11px] leading-5 text-muted-foreground">The item is created on the first upload if it does not exist yet. <a href="${escapeHtml(body?.catalog?.keysUrl || "https://archive.org/account/s3.php")}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">Get your S3 keys on archive.org</a>. They are stored encrypted, used only for this backup, and the secret is never shown again.</p>
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        ${archive ? `<button type="button" data-repo-archive-sync-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary">Cancel</button>` : ""}
+        <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"><i data-lucide="archive" class="h-3.5 w-3.5"></i>${archive ? "Save backup" : "Start backing up"}</button>
+      </div>
+    </form>`;
+  }
+
+  function repoArchiveSyncUploadLine(archive, body) {
+    const upload = archive.status?.upload || {};
+    const every = repoArchiveSyncIntervalLabel(body, archive.interval).toLowerCase();
+    if (!body?.codeHosted) return { tone: "", text: `Waiting for this repository to be hosted on ${platformName()}.` };
+    if (!upload.at) return { tone: "", text: "The first upload starts within a few minutes." };
+    if (!upload.ok) return { tone: "bad", text: `Last upload failed ${relativeTimeLabel(upload.at)}: ${upload.error || "unknown error"}` };
+    const size = Number(upload.bytes || 0);
+    const sizeText = size >= 1048576 ? `${(size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
+    return { tone: "good", text: `Uploaded ${archive.file} (${sizeText}) ${relativeTimeLabel(upload.at)}. Next upload ${every}, once something changes.` };
+  }
+
+  function renderRepoArchiveSyncOverview(body) {
+    const archive = body.archive;
+    const status = archive.status || {};
+    const upload = repoArchiveSyncUploadLine(archive, body);
+    const connectionTone = status.error ? "bad" : status.username ? "good" : "";
+    const history = (archive.history || []).slice(0, 6).map((entry) =>
+      `<li class="flex min-w-0 items-start gap-2">${repoForgeMirrorDot(entry.ok ? "good" : "bad")}<span class="min-w-0 flex-1 break-words">${escapeHtml(entry.message || entry.kind || "")}</span><span class="shrink-0 text-[10px]">${escapeHtml(relativeTimeLabel(entry.at) || "just now")}</span></li>`).join("");
+    return `<div class="grid gap-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+        <div class="grid min-w-0">
+          <a href="${escapeHtml(archive.itemUrl)}" target="_blank" rel="noopener noreferrer" class="truncate font-mono text-xs font-semibold text-foreground hover:underline">archive.org/details/${escapeHtml(archive.identifier)}</a>
+          <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(connectionTone)}${status.error ? escapeHtml(status.error) : `As ${escapeHtml(status.username || "unknown")} · ${escapeHtml(repoArchiveSyncIntervalLabel(body, archive.interval))}`}</span>
+        </div>
+        <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">${repoForgeMirrorDot(archive.active ? "good" : "")}${archive.active ? "Backing up" : "Paused"}</span>
+      </div>
+      <p class="flex items-start gap-2 text-[11px] text-muted-foreground">${repoForgeMirrorDot(upload.tone)}<span>${escapeHtml(upload.text)}</span></p>
+      ${body.private ? `<p class="text-[11px] text-destructive">${escapeHtml(repoArchiveSyncErrorText({ message: "private_repository" }))} Nothing is uploaded while it is private.</p>` : ""}
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" data-repo-archive-sync-sync class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="upload-cloud" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up now</button>
+        <button type="button" data-repo-archive-sync-edit class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="sliders-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Change settings</button>
+        <button type="button" data-repo-archive-sync-verify class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">Check keys</button>
+        <button type="button" data-repo-archive-sync-toggle data-repo-archive-sync-active="${archive.active ? "1" : "0"}" class="inline-flex h-7 items-center rounded-md border border-border px-2.5 text-[11px] font-medium text-foreground hover:bg-secondary">${archive.active ? "Pause" : "Resume"}</button>
+        <button type="button" data-repo-archive-sync-disconnect class="inline-flex h-7 items-center rounded-md border border-destructive/60 px-2.5 text-[11px] font-semibold text-destructive hover:bg-destructive/10">Stop backing up</button>
+      </div>
+      ${history ? `<div class="grid gap-2"><span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</span><ul class="grid gap-1.5 text-[11px] text-muted-foreground">${history}</ul></div>` : ""}
+    </div>`;
+  }
+
+  function renderRepoArchiveSync() {
+    const holder = $("[data-repo-archive-sync-body]");
+    const archiveState = state.repoArchiveSync;
+    if (!holder || !archiveState?.body) return;
+    const body = archiveState.body;
+    const summary = $("[data-repo-archive-sync-summary]");
+    if (summary) {
+      summary.innerHTML = body.archive
+        ? `${repoForgeMirrorDot(body.archive.status?.error || body.archive.status?.upload?.ok === false ? "bad" : body.archive.active ? "good" : "")}<span>${escapeHtml(body.archive.identifier)}</span>`
+        : "Off";
+    }
+    if (!body.archive && body.private) {
+      holder.innerHTML = `<p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(repoArchiveSyncErrorText({ message: "private_repository" }))} Make the repository public to back it up there.</p>`;
+      return;
+    }
+    holder.innerHTML = body.archive && !archiveState.editing
+      ? renderRepoArchiveSyncOverview(body)
+      : renderRepoArchiveSyncForm(body);
+    window.lucide?.createIcons();
+  }
+
+  async function loadRepoArchiveSync(repo) {
+    const holder = $("[data-repo-archive-sync-body]");
+    if (!holder || !sessionAdministersRepo(repo)) return;
+    const archiveState = repoArchiveSyncState(repo);
+    try {
+      const body = await repoArchiveSyncRequest(repo, { action: "get" });
+      if (!repoAboutStillCurrent(repo)) return;
+      archiveState.body = body;
+      renderRepoArchiveSync();
+    } catch (error) {
+      if (!repoAboutStillCurrent(repo)) return;
+      holder.innerHTML = `<p class="text-[11px] text-destructive">${escapeHtml(repoArchiveSyncErrorText(error))}</p>`;
+    }
+  }
+
+  async function handleRepoArchiveSyncClick(event) {
+    const card = event.target.closest("[data-repo-archive-sync-card]");
+    const repo = state.selectedRepo;
+    if (!card || !repo || !sessionAdministersRepo(repo)) return false;
+    const archiveState = repoArchiveSyncState(repo);
+    if (event.target.closest("[data-repo-archive-sync-edit]")) {
+      archiveState.editing = true;
+      renderRepoArchiveSync();
+      return true;
+    }
+    if (event.target.closest("[data-repo-archive-sync-cancel]")) {
+      archiveState.editing = false;
+      renderRepoArchiveSync();
+      return true;
+    }
+    const button = event.target.closest("button");
+    const actions = [
+      ["[data-repo-archive-sync-sync]", "sync"],
+      ["[data-repo-archive-sync-verify]", "verify"],
+      ["[data-repo-archive-sync-toggle]", "toggle"],
+      ["[data-repo-archive-sync-disconnect]", "disconnect"],
+    ];
+    const match = button && actions.find(([selector]) => button.matches(selector));
+    if (!match) return false;
+    const action = match[1];
+    if (action === "disconnect" && !window.confirm(
+      "Stop backing up this repository to the Internet Archive? The stored keys are deleted. Nothing already uploaded is removed from archive.org.",
+    )) return true;
+    const payload = { action };
+    if (action === "toggle") payload.active = button.dataset.repoArchiveSyncActive !== "1";
+    const pending = {
+      sync: "Requesting a backup…",
+      verify: "Checking the keys…",
+      toggle: payload.active ? "Resuming…" : "Pausing…",
+      disconnect: "Stopping…",
+    }[action];
+    button.disabled = true;
+    setRepoArchiveSyncStatus(pending);
+    try {
+      const body = await repoArchiveSyncRequest(repo, payload);
+      if (!repoAboutStillCurrent(repo)) return true;
+      archiveState.body = body;
+      if (action === "disconnect") archiveState.editing = false;
+      renderRepoArchiveSync();
+      setRepoArchiveSyncStatus({
+        sync: "Backup requested. The upload starts within a few minutes.",
+        verify: body.archive?.status?.error ? body.archive.status.error : "The keys work.",
+        toggle: payload.active ? "Backups resumed." : "Backups paused.",
+        disconnect: "Stopped backing up.",
+      }[action], action === "verify" && body.archive?.status?.error ? "bad" : "good");
+    } catch (error) {
+      setRepoArchiveSyncStatus(repoArchiveSyncErrorText(error), "bad");
+    } finally {
+      button.disabled = false;
+    }
+    return true;
+  }
+
+  async function handleRepoArchiveSyncSubmit(event) {
+    const form = event.target.closest("[data-repo-archive-sync-form]");
+    if (!form) return false;
+    event.preventDefault();
+    const repo = state.selectedRepo;
+    if (!repo || !sessionAdministersRepo(repo)) return true;
+    const archiveState = repoArchiveSyncState(repo);
+    const submit = form.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    setRepoArchiveSyncStatus("Checking the keys with archive.org…");
+    try {
+      const body = await repoArchiveSyncRequest(repo, {
+        action: "save",
+        identifier: form.querySelector("[data-repo-archive-sync-identifier]")?.value || "",
+        accessKey: form.querySelector("[data-repo-archive-sync-access]")?.value || "",
+        secret: form.querySelector("[data-repo-archive-sync-secret]")?.value || "",
+        interval: form.querySelector("[data-repo-archive-sync-interval]")?.value || "",
+      });
+      if (!repoAboutStillCurrent(repo)) return true;
+      archiveState.body = body;
+      archiveState.editing = false;
+      renderRepoArchiveSync();
+      setRepoArchiveSyncStatus("Backup saved.", "good");
+    } catch (error) {
+      setRepoArchiveSyncStatus(repoArchiveSyncErrorText(error), "bad");
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+    return true;
+  }
+
   async function loadRepoPullRulesSettings(repo) {
     const holder = $("[data-repo-pull-rules-editor]");
     if (!holder || !repo) return;
@@ -44673,6 +44936,17 @@
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
+        <div data-repo-archive-sync-card id="archive" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
+            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
+            <span data-repo-archive-sync-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
+          </div>
+          <div class="grid gap-4 p-4">
+            <p class="text-[11px] leading-5 text-muted-foreground">Upload a copy of this repository to archive.org every day, week or month with your own archive.org S3 keys. Each upload is a git bundle of every branch and tag that anyone can clone, and it is skipped when nothing has changed. Only public repositories can be archived.</p>
+            <div data-repo-archive-sync-body class="text-xs text-muted-foreground">Loading archive settings…</div>
+            <span data-repo-archive-sync-status class="text-[11px] text-muted-foreground"></span>
+          </div>
+        </div>
         <div data-repo-danger-zone class="mt-5 overflow-hidden rounded-lg border border-destructive/50 bg-background">
           <div class="border-b border-destructive/30 px-4 py-3">
             <h3 class="text-sm font-semibold text-destructive">Danger zone</h3>
@@ -47102,6 +47376,7 @@
       }
 
       if (await handleRepoForgeMirrorClick(event)) return;
+      if (await handleRepoArchiveSyncClick(event)) return;
 
       const webhookRow = event.target.closest("[data-repo-webhook-row]");
       if (
@@ -48362,6 +48637,7 @@
       return;
     }
     if (await handleRepoForgeMirrorSubmit(event)) return;
+    if (await handleRepoArchiveSyncSubmit(event)) return;
     const settingsLogoForm = event.target.closest("[data-repo-settings-logo-form]");
     if (settingsLogoForm && state.selectedRepo) {
       event.preventDefault();

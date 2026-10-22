@@ -81,6 +81,7 @@ LAZY_MODULES = {
     # webhook-outbox cron phase, or on the first event that queues a delivery.
     "repository_webhooks.py",
     "repository_provider_mirror.py",
+    "repository_archive_sync.py",
     # Mirror Actions control and summary v2: entry.py's _repository_actions
     # proxy resolves on the first POST .../actions/control or the first
     # version 2 summary an owner's Actions tab reads.

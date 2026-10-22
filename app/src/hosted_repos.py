@@ -659,6 +659,11 @@ async def replicas(runtime, raw):
         push_reports = {}
     mirror_keys = (await runtime.push_mirror_keys()
                    if hasattr(runtime, "push_mirror_keys") else set())
+    archive_reports = data.get("archiveSyncs")
+    if not isinstance(archive_reports, dict):
+        archive_reports = {}
+    archive_keys = (await runtime.archive_sync_keys()
+                    if hasattr(runtime, "archive_sync_keys") else set())
 
     # A catalog row deleted on the website ends the hosted repository, and so
     # does one the owner's own node took over with a signed publication (the
@@ -778,6 +783,17 @@ async def replicas(runtime, raw):
                 owner, name, item["aliases"], mirror_keys)
             if mirror:
                 item["pushMirror"] = mirror
+        archive_report = archive_reports.get(repo_id)
+        if isinstance(archive_report, dict) and hasattr(
+                runtime, "record_archive_sync"):
+            await runtime.record_archive_sync(
+                owner, name, item["aliases"], archive_report)
+        if (caller == primary and archive_keys
+                and item["visibility"] == "public"):
+            archive = await runtime.archive_sync(
+                owner, name, item["aliases"], archive_keys)
+            if archive:
+                item["archiveSync"] = archive
         empty_here = report is None or report["empty"]
         others = copies.get(repo_id, {})
         content_elsewhere = any(
