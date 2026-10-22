@@ -59,6 +59,11 @@ import {
   worldMeshReplacedPetals,
 } from "./scene/movement.js";
 import { meshRootRoute } from "./world-federation.js";
+import { territoryForNeighbour } from "./world-territory.js";
+import { neighbourIconURL } from "./world-neighbour-scene.js";
+import {
+  forkmeshShiftAround, forkmeshTilesAround, hexRoadContains, territoryPetalTile,
+} from "./scene/territory-geometry.js";
 
 globalThis.window = globalThis;
 globalThis.document = { hidden: false };
@@ -75,6 +80,35 @@ const clearNeighbourFootprints = () => {};
 const removeInteractiveObject = () => {};
 const disposeObject3D = () => {};
 const ctx = { world: { userData: {}, add() {}, remove() {} }, interactive: [] };
+const BLT_SCENE = {
+  v: 1,
+  ground: { color: "#3a4550", accent: "#e74c3c", pattern: "circuit" },
+  objects: [{
+    type: "terrarium", x: 60, z: 75, facing: 0, label: "OWASP BLT bugs",
+    bugs: [
+      { label: "aaa.com", icon: "https://git.owaspblt.org/api/repo/owasp-blt/BLT/raw?path=f%2Faaa.com.png&ref=main", url: "https://legacy.owaspblt.org/domain/aaa.com/" },
+      { label: "aao.org", icon: "", url: "" },
+    ],
+  }],
+};
+const BLT_INSTANCE = {
+  ok: true, name: "OWASP BLT", branded: true, logo: "/instance-logo.png",
+  directory: { listed: true, world: true, portal: { home: "https://world.forkmesh.com/world/", slot: 0 } },
+  world: {
+    style: "security", accent: "#e74c3c", logo: "/instance-logo.png",
+    objects: [{ type: "house", label: "Hacker House", url: "https://hackerhouse.owaspblt.org/", position: [-60, -10] }],
+    bugs: { repo: "owasp-blt/BLT", ref: "main", path: ".forkmesh/world/bugs.json", title: "OWASP BLT bugs", limit: 60, position: [60, -10] },
+  },
+};
+const scenes = [];
+globalThis.fetch = async (url, options) => {
+  territoryReads.push({ url, options });
+  return { ok: true, json: async () => BLT_INSTANCE };
+};
+const loadNeighbourScene = async (url) => {
+  scenes.push(url);
+  return BLT_SCENE;
+};
 const remotePlayer = (peer) => ({
   id: String(peer.id), name: String(peer.name), activity: peer.activity || "online",
   category: peer.category || "", x: 0, y: 0, z: 0,
@@ -87,6 +121,7 @@ __METHODS__
 
 const sockets = [];
 const federated = [];
+const territoryReads = [];
 const own = [];
 function view(self, x, z) {
   const player = { x, z };
@@ -104,6 +139,7 @@ function view(self, x, z) {
     saved: [],
     restoredPosition: null,
     meshRestoreChecked: false,
+    meshTerritories: new Map(),
     player,
     lastMovement: { x, z, space: "town-square" },
     worldMesh: normalizeWorldMesh({ self, worlds: __WORLDS__ }),
@@ -119,6 +155,32 @@ function view(self, x, z) {
         player.x += dx;
         player.z += dz;
         return true;
+      },
+      visiting: null,
+      visitBugs: null,
+      enterTerritoryVisit(territory) {
+        this.visiting = territory;
+        return true;
+      },
+      leaveTerritoryVisit() {
+        this.visiting = null;
+        return true;
+      },
+      updateTerritoryVisitBugs(id, list) {
+        this.visitBugs = { id, count: list.length, first: list[0] };
+      },
+      territoryForkmeshShift() {
+        const shift = this.visiting
+          ? forkmeshShiftAround(territoryPetalTile(this.visiting.petal))
+          : null;
+        return shift
+          ? { ...shift, townX: home.x + shift.x, townZ: home.z + shift.z }
+          : null;
+      },
+      territoryOwnerAt(x, z) {
+        if (!this.visiting) return "";
+        return forkmeshTilesAround(territoryPetalTile(this.visiting.petal))
+          .some((tile) => hexRoadContains(x, z, tile, 5)) ? "forkmesh" : "";
       },
     },
   });
@@ -165,10 +227,25 @@ const out = {};
 const home = { x: WORLD_BIKE_LANE_CENTER_X, z: CONTINUOUS_CITY_CENTER_Z };
 const hub = view("forkmesh", home.x, home.z);
 hub.placeWorldMesh();
+await flush();
 const blt = hub.meshPlaced.find((world) => world.id === "__BLT__");
 out.atHome = { shape: blt.shape, dx: blt.dx, dz: blt.dz, petals: worldMeshReplacedPetals() };
+const territory = hub.meshTerritories.get("__BLT__")?.territory || null;
+out.territory = territory && {
+  id: territory.id, name: territory.name, style: territory.style, petal: territory.petal,
+  slot: territory.slot, logo: territory.logo, objects: territory.objects.map((item) => item.label),
+  bugs: territory.bugs && territory.bugs.title, visitBugs: territory.visitBugs,
+};
+out.territoryReads = territoryReads.map((item) => [
+  item.url, item.options.credentials, item.options.mode, item.options.redirect]);
+out.scenes = [...scenes];
 
 const into = { x: blt.x - blt.dx * 0.4, z: blt.z - blt.dz * 0.4 };
+out.land = {
+  onLand: hub.neighbourHexLandAt(into.x, into.z)?.id || "",
+  onRoad: hub.neighbourHexLandAt((home.x + blt.x) / 2, (home.z + blt.z) / 2)?.id || "",
+  atHome: hub.neighbourHexLandAt(home.x, home.z)?.id || "",
+};
 walk(hub, (home.x + blt.x) / 2, (home.z + blt.z) / 2);
 out.onRoad = { root: hub.meshRoot?.id || "", reloads: hub.reloads };
 walk(hub, into.x, into.z);
@@ -176,6 +253,7 @@ await flush();
 out.visited = {
   root: hub.meshRoot?.id || "",
   player: { ...hub.player },
+  lastMovement: { x: hub.lastMovement.x, z: hub.lastMovement.z },
   petals: worldMeshReplacedPetals(),
   visit: hub.meshLinks.visitId,
   links: links(hub),
@@ -184,16 +262,27 @@ out.visited = {
   notices: [...hub.notices],
   reloads: hub.reloads,
   shift: hub.meshHomeShift(),
-  onLand: hub.neighbourHexLandAt(into.x, into.z)?.id || "",
-  onRoad: hub.neighbourHexLandAt((home.x + blt.x) / 2, (home.z + blt.z) / 2)?.id || "",
-  atHome: hub.neighbourHexLandAt(home.x, home.z)?.id || "",
+  standing: hub.world.visiting?.id || "",
+  bugs: hub.world.visitBugs,
+  homePeer: hub.homeFramePlayer({ id: "a", x: home.x, z: home.z }),
 };
-walk(hub, home.x, home.z);
+walk(hub, hub.lastMovement.x + 2, hub.lastMovement.z + 2);
+const bltRoad = { x: home.x - blt.dx * (367 / 740), z: home.z - blt.dz * (367 / 740) };
+walk(hub, bltRoad.x, bltRoad.z);
+out.inside = { root: hub.meshRoot?.id || "", reloads: hub.reloads, standing: hub.world.visiting?.id || "" };
+walk(hub, home.x - blt.dx, home.z - blt.dz);
 await flush();
 out.left = {
   root: hub.meshRoot?.id || "",
+  player: { ...hub.player },
   visit: hub.meshLinks.visitId,
+  links: links(hub),
   notices: [...hub.notices],
+  standing: hub.world.visiting?.id || "",
+  petals: worldMeshReplacedPetals(),
+  office: hub.officeOwner,
+  reloads: hub.reloads,
+  shift: hub.meshHomeShift(),
 };
 
 const acme = hub.meshPlaced.find((world) => world.id === "__ACME__");
@@ -326,33 +415,72 @@ def test_the_shared_road_does_not_switch_worlds(walk):
     assert walk["onRoad"] == {"root": "", "reloads": 0}
 
 
-def test_stepping_onto_blt_visits_it_and_keeps_the_page_in_forkmesh(walk):
+def test_the_hub_loads_blts_own_territory_before_anyone_steps_in(walk):
+    territory = walk["territory"]
+    assert territory["id"] == BLT
+    assert territory["name"] == "OWASP BLT"
+    assert territory["style"] == "security"
+    assert (territory["slot"], territory["petal"]) == (0, 1)
+    assert territory["objects"] == ["Hacker House"]
+    assert territory["bugs"] == "OWASP BLT bugs"
+    assert territory["logo"] == (
+        f"/api/world/neighbour-icon?world={BLT}&path=%2Finstance-logo.png")
+    first, second = territory["visitBugs"]
+    assert first["domain"] == "aaa.com"
+    assert first["url"] == "https://legacy.owaspblt.org/domain/aaa.com/"
+    assert first["favicon"].startswith(f"/api/world/neighbour-icon?world={BLT}&path=")
+    assert second == {"domain": "aao.org", "name": "aao.org", "count": 0,
+                      "url": "", "favicon": ""}
+    assert walk["territoryReads"] == [
+        ["https://git.owaspblt.org/api/instance", "omit", "cors", "error"]]
+    assert walk["scenes"] == ["https://git.owaspblt.org/api/world/neighbour-scene"]
+
+
+def test_stepping_onto_blt_puts_the_page_in_its_own_hexagon(walk):
     visited = walk["visited"]
-    assert visited["root"] == ""
-    assert visited["player"] == {"x": 0, "z": -45}
-    assert visited["petals"] == [1]
+    assert visited["root"] == BLT
+    assert visited["standing"] == BLT
+    assert close(visited["player"]["x"], -PETAL1[0])
+    assert close(visited["player"]["z"], -45 - PETAL1[1])
+    assert visited["petals"] == []
     assert visited["visit"] == BLT
     assert visited["links"] == [[BLT, "visit"]]
     assert visited["socket"] == (
         "wss://git.owaspblt.org/api/world/ws?visitor=fmwv1.token")
     assert visited["office"] is None
     assert visited["notices"] == ["Entering OWASP BLT · git.owaspblt.org"]
-    assert visited["reloads"] == 0
-    assert visited["shift"] is None
+    assert visited["reloads"] == 1
+    assert close(visited["shift"]["dx"], -PETAL1[0])
+    assert close(visited["shift"]["dz"], -PETAL1[1])
+    assert close(visited["homePeer"]["x"], -PETAL1[0])
+    assert close(visited["homePeer"]["z"], -45 - PETAL1[1])
+    assert visited["bugs"]["id"] == BLT and visited["bugs"]["count"] == 2
 
 
 def test_only_blt_land_counts_as_its_hexagon(walk):
-    visited = walk["visited"]
-    assert visited["onLand"] == BLT
-    assert visited["onRoad"] == ""
-    assert visited["atHome"] == ""
+    land = walk["land"]
+    assert land["onLand"] == BLT
+    assert land["onRoad"] == ""
+    assert land["atHome"] == ""
+
+
+def test_walking_inside_blt_and_on_its_side_of_the_road_stays_there(walk):
+    assert walk["inside"] == {"root": BLT, "reloads": 1, "standing": BLT}
 
 
 def test_walking_off_blt_returns_home(walk):
     left = walk["left"]
     assert left["root"] == ""
+    assert left["standing"] == ""
+    assert close(left["player"]["x"], 0) and close(left["player"]["z"], -45)
     assert left["visit"] == ""
+    assert left["links"] == [[BLT, "watch"]]
+    assert left["petals"] == [1]
+    assert left["office"] is None
+    assert left["reloads"] == 2
+    assert left["shift"] is None
     assert left["notices"][-1] == "Back in ForkMesh"
+    assert left["notices"].count("Entering OWASP BLT · git.owaspblt.org") == 1
 
 
 def test_a_saved_spot_on_blt_starts_at_the_campfire(walk):
@@ -382,14 +510,14 @@ def test_stepping_onto_a_flower_puts_the_page_in_that_world(walk):
         "wss://app.acme.dev/api/world/ws?visitor=fmwv1.token")
     assert entered["office"] == ACME
     assert entered["notices"][-1] == "Entering Acme · world.acme.dev"
-    assert entered["reloads"] == 1
+    assert entered["reloads"] == 3
     assert close(entered["shift"]["dx"], -acme["dx"])
     assert close(entered["homePeer"]["x"], -acme["dx"])
     assert close(entered["homePeer"]["z"], -45 - acme["dz"])
 
 
 def test_walking_inside_the_flower_keeps_the_page_there(walk):
-    assert walk["stays"] == {"root": ACME, "reloads": 1}
+    assert walk["stays"] == {"root": ACME, "reloads": 3}
 
 
 def test_residents_keep_their_activity_and_stand_where_their_world_puts_them(walk):
@@ -424,7 +552,7 @@ def test_stepping_back_onto_the_hub_returns_home(walk):
     assert back["links"] == [[BLT, "watch"]]
     assert back["office"] is None
     assert back["notices"][-1] == "Back in ForkMesh"
-    assert back["reloads"] == 2
+    assert back["reloads"] == 4
     assert back["shift"] is None
 
 
