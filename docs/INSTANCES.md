@@ -811,7 +811,8 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   See [Named themes](#named-themes) for whole-look themes such as BLT.
 - **Plugins** (`app/src/instance_features.py`): ForkMesh-company features
   (world, hackathon, ads, rewards, blog, status, developer docs, website
-  pages and others) are off on an instance unless turned on. A disabled
+  pages and others) are off on an instance unless turned on; the platform
+  changelog is on unless turned off. A disabled
   plugin's routes answer 404 before any other route; tagged UI
   (`data-instance-plugin`) is hidden. See [Plugins](#plugins) below.
 - **Market packages:** every account on an instance has the
@@ -860,6 +861,7 @@ reinstall or restart.
 | `guestbook` | The agent guestbook in the instance's chat. |
 | `genie` | The tip spider at the bottom of each page. |
 | `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
+| `changelog` | The platform changelog at `/changelog`: what changed in the platform version the instance runs. On by default. |
 
 Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
 `discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
@@ -871,6 +873,31 @@ services" with the reason (`FORKMESH_ONLY`) and offers no switch;
 `note`. An operator who really wants one can still name it in
 `INSTANCE_PLUGINS`; a saved choice keeps it as it is.
 
+- **On by default.** `changelog` is in `DEFAULT_ON`: it is on until an
+  admin switches it off, also on an instance that saved its choice before
+  the plugin existed. A saved row lists the default plugins an admin turned
+  off under `"off"` (`{"enabled": [...], "off": ["changelog"]}`), and
+  `INSTANCE_PLUGINS` turns one off with a leading minus (`world,-changelog`).
+- **The changelog on an instance.** `/changelog` was part of `website`
+  until 2026-10-21, so instances answered 404 and hid the sidebar's
+  Resources → Changelog link. The page is the static
+  `www/public/changelog.html`, rendered from `changelog/changelog.json` at
+  the commit the instance runs ([changelog.md](changelog.md)), so it needs
+  nothing from forkmesh.com. `build_site_assets.stage_app` copies it into
+  `app/dist` (`BACKEND_ASSETS`, like `blog.html`); with `WWW_ORIGIN` set to
+  the instance's own origin, `external_site_delivery` answers `local` and
+  `_serve_site_document` serves that copy. forkmesh.com's app origin still
+  308s `/changelog` to forkmesh.com. The brand pass renames the platform
+  word on it as on every other page.
+- **The Company group.** About, Careers and Press are `website` pages, so
+  their links were already hidden on an instance, but the sidebar kept the
+  "Company" title over an empty group. The group (`sidebarGroupCompany` in
+  `app/public/dashboard/partials/sidebar.html`, and the Company group of the
+  site header menu in `www/public/site-header.js`) now carries
+  `data-instance-plugin="website"`, so `chrome_css` hides the whole group,
+  title included, from the first paint while `website` is off. forkmesh.com
+  serves neither `instance-theme.css` nor `instance-brand.js`, so it keeps
+  the group.
 - **Where the choice lives.** Saving writes the `instance_settings` row
   `plugins` (`{"enabled": [...]}`), CSRF-checked and audited as
   `admin.console_save_plugins` with the plugins turned on and off. Until the

@@ -65,6 +65,12 @@
      ]
     },
     {
+     "title": "Server",
+     "items": [
+      "Self-hosted instances show the platform changelog at /changelog, and their menus no longer show forkmesh.com's Company links."
+     ]
+    },
+    {
      "title": "Other improvements",
      "items": [
       "forkmesh.com/features lists every feature again, with a count for each section and a mark on every feature that is a Market plugin."

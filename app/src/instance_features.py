@@ -72,9 +72,12 @@ FEATURES = (
      ("/start", "/api/start"), ()),
     ("website", "ForkMesh website pages",
      "forkmesh.com's own pages: about, careers, press, pricing, features, "
-     "the ecosystem, leaderboards, the blog and the changelog.",
+     "the ecosystem, leaderboards and the blog.",
      ("/about", "/careers", "/press", "/pricing", "/features", "/ecosystem",
-      "/leaderboards", "/blog", "/changelog", "/market"), ()),
+      "/leaderboards", "/blog", "/market"), ()),
+    ("changelog", "Changelog",
+     "Platform changelog: what changed in each platform version.",
+     ("/changelog",), ()),
 )
 OFFSITE_HOSTS = ("forkmesh.com", "www.forkmesh.com", "app.forkmesh.com",
                  "world.forkmesh.com", "www.patreon.com")
@@ -105,7 +108,10 @@ INSTANCE_NOTES = {
     "genie": "The spider at the bottom of each page that offers tips.",
     "developer-docs": "Shows the docs/ folder of this instance's read-only "
                       "forkmesh mirror in the dashboard.",
+    "changelog": "The changelog of the platform version this instance runs, "
+                 "at /changelog. On unless turned off.",
 }
+DEFAULT_ON = frozenset({"changelog"})
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)
@@ -172,7 +178,9 @@ def installed_ids(env):
     if raw == "all":
         return set(IDS)
     chosen = {item.strip() for item in raw.split(",")}
-    return {item for item in chosen if _ID_RE.fullmatch(item) and item in IDS}
+    off = {item[1:] for item in chosen if item.startswith("-")}
+    return {item for item in chosen
+            if _ID_RE.fullmatch(item) and item in IDS} | (DEFAULT_ON - off)
 
 
 def enabled_ids(env):
@@ -190,13 +198,18 @@ def parse(doc):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("enabled"), list):
         return None
+    off = data.get("off") if isinstance(data.get("off"), list) else []
     return {item for item in data["enabled"]
-            if isinstance(item, str) and item in IDS}
+            if isinstance(item, str) and item in IDS} | (DEFAULT_ON - set(
+                item for item in off if isinstance(item, str)))
 
 
 def dump(ids):
-    return json.dumps({"enabled": sorted(set(ids) & set(IDS))},
-                      separators=(",", ":"))
+    ids = set(ids) & set(IDS)
+    doc = {"enabled": sorted(ids)}
+    if DEFAULT_ON - ids:
+        doc["off"] = sorted(DEFAULT_ON - ids)
+    return json.dumps(doc, separators=(",", ":"))
 
 
 def choose(current, chosen):
