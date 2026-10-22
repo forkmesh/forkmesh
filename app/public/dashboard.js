@@ -136,6 +136,8 @@
     homeRepositoryViews: {},
     homeRepositoryViewsSignature: "",
     recordedRepositoryViews: new Set(),
+    recordedIssueViews: new Set(),
+    issueViewTotals: {},
     repoCommitDetail: null,
     repoRecordDetail: null,
     // The branch comparison on the Pull requests tab (/owner/repo/compare/
@@ -20618,6 +20620,7 @@
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
               <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              ${issueRowViewsHtml(state.selectedRepo, item.number)}
               ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
               ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
@@ -20671,6 +20674,11 @@
     const pagination = ["issues", "pulls"].includes(kind)
       ? renderRepoCollectionPagination(kind, safePage, totalPages, items.length)
       : "";
+    if (kind === "issues") {
+      const repo = state.selectedRepo;
+      const numbers = pageItems.map((item) => item.number);
+      setTimeout(() => loadIssueListViews(repo, numbers), 0);
+    }
     return rows + unavailableWarning + pagination;
   }
 
@@ -27368,6 +27376,7 @@
             <span>${formatCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}</span>
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
+            ${issueViewsHtml(repo, number)}
           </p>
           ${closed ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
@@ -28554,6 +28563,7 @@
       }
       loadFederatedReplies(repo, kind, number, container);
       if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
+      if (kind === "issues") recordIssueView(repo, number);
       void refreshRepoRecordDevelopment(repo, kind, number);
       if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
       // Members watch an open pull for agent activity; signed-out visitors
@@ -33920,6 +33930,99 @@
             lastViewedAt: Number(data.lastViewedAt) || 0,
           },
         };
+      })
+      .catch(() => {});
+  }
+
+  function issueViewKey(repo, number) {
+    return `${repositoryViewKey(repo)}#${Number(number) || 0}`;
+  }
+
+  function issueViewTotals(data) {
+    return {
+      views: Number(data?.views) || 0,
+      viewers: Number(data?.viewers) || 0,
+      lastViewedAt: Number(data?.lastViewedAt) || 0,
+    };
+  }
+
+  function issueViewsLabel(totals) {
+    const views = Number(totals?.views) || 0;
+    return `${formatCount(views)} ${views === 1 ? "view" : "views"}`;
+  }
+
+  function issueViewsHtml(repo, number) {
+    if (!repo || repo.isPrivate) return "";
+    const totals = state.issueViewTotals?.[issueViewKey(repo, number)];
+    const shown = Number(totals?.views) > 0;
+    return `<span data-repo-issue-views-separator aria-hidden="true"${shown ? "" : " hidden"}>·</span><span data-repo-issue-views="${escapeHtml(number)}" title="Views by people, counted once a day per viewer" class="inline-flex items-center gap-1"${shown ? "" : " hidden"}><i data-lucide="eye" class="h-4 w-4"></i><span data-repo-issue-views-label>${shown ? escapeHtml(issueViewsLabel(totals)) : ""}</span></span>`;
+  }
+
+  function issueRowViewsHtml(repo, number) {
+    if (!repo || repo.isPrivate || !/^\d+$/.test(String(number))) return "";
+    const totals = state.issueViewTotals?.[issueViewKey(repo, number)];
+    const shown = Number(totals?.views) > 0;
+    return `<span data-repo-issue-row-views="${escapeHtml(number)}" class="inline-flex items-center gap-1 pl-1"${shown ? "" : " hidden"}><i data-lucide="eye" class="h-3 w-3 shrink-0"></i><span data-repo-issue-views-label>${shown ? escapeHtml(issueViewsLabel(totals)) : ""}</span></span>`;
+  }
+
+  function showIssueViews(repo, number, data) {
+    const totals = issueViewTotals(data);
+    state.issueViewTotals = { ...(state.issueViewTotals || {}), [issueViewKey(repo, number)]: totals };
+    const shown = totals.views > 0;
+    const selector = `[data-repo-issue-views="${Number(number)}"], [data-repo-issue-row-views="${Number(number)}"]`;
+    document.querySelectorAll(selector).forEach((node) => {
+      const label = node.querySelector("[data-repo-issue-views-label]");
+      if (label) label.textContent = shown ? issueViewsLabel(totals) : "";
+      node.hidden = !shown;
+      if (node.matches("[data-repo-issue-views]")) {
+        const separator = node.previousElementSibling;
+        if (separator?.matches("[data-repo-issue-views-separator]")) separator.hidden = !shown;
+      }
+    });
+    return totals;
+  }
+
+  function recordIssueView(repo, number) {
+    if (!repo || repo.isPrivate || !(Number(number) > 0)) return;
+    const key = issueViewKey(repo, number);
+    if (state.recordedIssueViews.has(key)) return;
+    state.recordedIssueViews.add(key);
+    const body = state.session?.sessionToken
+      ? { sessionToken: state.session.sessionToken }
+      : {};
+    fetch(`${repoApiBase(repo)}/issues/${Number(number)}/view`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data && data.ok !== false) showIssueViews(repo, number, data);
+      })
+      .catch(() => {});
+  }
+
+  const ISSUE_LIST_VIEWS_MAX = 100;
+  const ISSUE_LIST_VIEWS_FRESH_MS = 60_000;
+  const issueListViewsFetched = new Map();
+
+  function loadIssueListViews(repo, numbers) {
+    if (!repo || repo.isPrivate) return;
+    const wanted = [...new Set((numbers || []).map(Number).filter((n) => n > 0))].slice(0, ISSUE_LIST_VIEWS_MAX);
+    if (!wanted.length) return;
+    const fetchKey = `${repositoryViewKey(repo)}|${wanted.join(",")}`;
+    const now = Date.now();
+    if (now - (issueListViewsFetched.get(fetchKey) || 0) < ISSUE_LIST_VIEWS_FRESH_MS) return;
+    issueListViewsFetched.set(fetchKey, now);
+    fetch(`${repoApiBase(repo)}/issue-views?numbers=${wanted.join(",")}`, {
+      headers: { accept: "application/json" },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const views = data?.views && typeof data.views === "object" ? data.views : {};
+        wanted.forEach((number) => {
+          if (views[String(number)]) showIssueViews(repo, number, views[String(number)]);
+        });
       })
       .catch(() => {});
   }

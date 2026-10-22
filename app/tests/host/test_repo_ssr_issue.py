@@ -37,7 +37,8 @@ FUNCTIONS = {
         "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issueActorAvatarHtml",
         "parseFlexibleDate", "formatDate", "formatTimeAgo", "formatCount", "loadingHtml",
         "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
-        "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs"),
+        "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs",
+        "repositoryViewKey"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
         "markdownVideoButtonHtml",
@@ -64,7 +65,8 @@ FUNCTIONS = {
         "issueDateInputValue", "mdMentionHtml", "issueCardAuthorHtml", "developmentProse",
         "pullClosingIssueNumbers", "pullOwnIssueNumbers", "issueDevelopmentPullStates",
         "issueLinkedPullNumbers", "developmentPulls", "developmentRow", "renderIssueDevelopment",
-        "issueAiPromptText", "renderIssueAiPrompt"),
+        "issueAiPromptText", "renderIssueAiPrompt", "issueViewKey", "issueViewsLabel",
+        "issueViewsHtml"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE"),
@@ -110,6 +112,7 @@ let countFormatter = null;
 function watchIssueActorAvatars() {}
 function platformName() { return "Acme Code"; }
 function publicSiteOrigin() { return %(origin)s; }
+function repoPublicOwner(value) { return value.owner; }
 function publicProfileUrl(name, suffix = "") {
   return `/@${encodeURIComponent(String(name || "").trim().toLowerCase())}${suffix}`;
 }
