@@ -429,12 +429,22 @@ Path-keyed application firewalls (OpenSnitch) prompt for every new build path.
 | --- | --- |
 | `000-forkmesh-programs` | programs whose file name contains `forkmesh` under a home folder, `/opt`, `/usr/local` or an AppImage mount |
 | `000-forkmesh-dev-trees` | programs under `~/projects/forkmesh/` or `~/.cache/fm*/` (`--no-dev-trees` omits it) |
+| `000-forkmesh-agent-clis` | every version of Claude Code (`~/.local/share/claude/versions/*`, the Claude app's `~/.config/Claude/claude-code/*/*/claude`) and Codex (`~/.codex/packages/standalone/*/bin/codex`) (`--no-agent-clis` omits it) |
 | `000-forkmesh-loopback` | connections to `127.0.0.0/8` and `::1` (`--no-loopback` omits it) |
 
 ```sh
 sudo python3 tools/opensnitch_rules.py install
 python3 tools/opensnitch_rules.py print
 ```
+
+Each Claude Code update installs a new binary path, so OpenSnitch prompts
+again. When nobody is at the screen (another user is switched in, or the
+screen is locked) the prompt times out into the UI's default action, often a
+deny rule, and every agent then fails its API calls with `EAI_AGAIN` after
+about 11 minutes of retries: on 2026-10-22 2.1.308 was denied at 16:32 and
+every agent run failed until about 18:20. `000-forkmesh-agent-clis` allows
+those paths for one user; run the install once per account that runs agents
+(`--user <name>`).
 
 The rules folder is root-only, so neither the desktop nor an agent installs
 them. Tests: `tools/test_opensnitch_rules.py`.
