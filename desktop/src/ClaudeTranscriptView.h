@@ -24,6 +24,7 @@ class QResizeEvent;
 class CacheLabel;
 class Collapsible;
 class ScrollJumpButtons;
+class PromptDeckBar;
 
 class ClaudeTranscriptView : public QScrollArea
 {
@@ -210,6 +211,7 @@ private:
     void processLabelRelayouts();
 
     void applyScheme(bool dark);
+    void layoutPromptDeck();
     QWidget *addRow(QWidget *card, const RowStyle &style);
     QWidget *addRow(QWidget *card, const QString &nodeColor = QString(),
                     RowGlyph glyph = GlyphDot);
@@ -306,6 +308,7 @@ private:
     QWidget *m_bottomSpacer = nullptr; // small tail so the last row isn't flush
     bool m_stickBottom = true;
     ScrollJumpButtons *m_jumpButtons = nullptr; // floating ▲/▼ jump corner
+    PromptDeckBar *m_promptDeck = nullptr;
     bool m_splitDiffs = false;            // side-by-side vs unified diffs
     QWidget *m_activity = nullptr;        // live "what it's doing" ticker row
     QLabel *m_activityLabel = nullptr;

@@ -5,6 +5,7 @@
 #include "AgentPromptImages.h"
 #include "ClaudeTranscriptTools.h"
 #include "CodexTranscriptStyle.h"
+#include "PromptDeckBar.h"
 #include "ScrollJumpButtons.h"
 #include "Theme.h"
 #include "DesignTokens.h"
@@ -3011,6 +3012,12 @@ ClaudeTranscriptView::ClaudeTranscriptView(QWidget *parent) : QScrollArea(parent
     connect(m_jumpButtons, &ScrollJumpButtons::bottomClicked, this,
             &ClaudeTranscriptView::scrollToBottom);
 
+    m_promptDeck = new PromptDeckBar(this);
+    m_promptDeck->setObjectName(QStringLiteral("transcriptPromptDeck"));
+    m_promptDeck->setFont(proseFont());
+    connect(m_promptDeck, &PromptDeckBar::heightChanged, this,
+            &ClaudeTranscriptView::layoutPromptDeck);
+
     QScrollBar *sb = verticalScrollBar();
     connect(sb, &QScrollBar::actionTriggered, this, [this](int) {
         QScrollBar *b = verticalScrollBar();
@@ -3042,9 +3049,31 @@ ClaudeTranscriptView::ClaudeTranscriptView(QWidget *parent) : QScrollArea(parent
 void ClaudeTranscriptView::resizeEvent(QResizeEvent *e)
 {
     QScrollArea::resizeEvent(e);
+    layoutPromptDeck();
     if (m_heldFrame && m_heldFrame->isVisible())
         m_heldFrame->setGeometry(rect());
     if (m_stickBottom)
+        verticalScrollBar()->setValue(verticalScrollBar()->maximum());
+}
+
+void ClaudeTranscriptView::layoutPromptDeck()
+{
+    if (!m_promptDeck)
+        return;
+    const int left = 8;
+    const int right = 14;
+    const int top = 6;
+    const int w = qMax(0, width() - left - right);
+    const int h = m_promptDeck->isVisible() ? m_promptDeck->heightForWidth(w) : 0;
+    const bool atBottom = m_stickBottom;
+    if (h > 0) {
+        m_promptDeck->setGeometry(left, top, w, h);
+        m_promptDeck->raise();
+        setViewportMargins(0, h + top + 4, 0, 0);
+    } else {
+        setViewportMargins(0, 0, 0, 0);
+    }
+    if (atBottom)
         verticalScrollBar()->setValue(verticalScrollBar()->maximum());
 }
 
@@ -3354,6 +3383,12 @@ void ClaudeTranscriptView::applyScheme(bool dark)
         m_jumpButtons->setButtonStyle(btnCss);
         m_jumpButtons->setTheme(dark);
     }
+    if (m_promptDeck) {
+        QColor tint(m_p.accent);
+        tint.setAlphaF(dark ? 0.12 : 0.08);
+        m_promptDeck->setColors(QColor(m_p.surface), tint, QColor(m_p.border),
+                                QColor(m_p.text), QColor(m_p.muted), QColor(m_p.accent));
+    }
 }
 
 void ClaudeTranscriptView::enableReferenceLinks(QLabel *label)
@@ -3417,6 +3452,8 @@ void ClaudeTranscriptView::clear()
     m_labelRelayoutQueue.clear();
     m_labelRelayoutScheduled = false;
     emit statsChanged(0, 0.0);
+    if (m_promptDeck)
+        m_promptDeck->clearPrompts();
     if (m_col->count() <= 1)
         return;
     QWidget *host = m_col->parentWidget();
@@ -3533,6 +3570,8 @@ void ClaudeTranscriptView::setSpeakerAvatars(const QPixmap &agent,
 void ClaudeTranscriptView::accumulateStatsOnly(const QJsonObject &ev)
 {
     const QString type = ev.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("_local_user") && m_promptDeck)
+        m_promptDeck->addPrompt(ev.value(QStringLiteral("text")).toString());
     if (type == QLatin1String("assistant")) {
         m_totalTokens += m_outputTokens.add(
             ev.value(QStringLiteral("message")).toObject());
@@ -4558,6 +4597,8 @@ void ClaudeTranscriptView::addUserTurn(const QString &text, const QDateTime &at)
     v->setContentsMargins(0, 0, 0, 0);
     v->setSpacing(6);
     v->addWidget(speakerCaption(true, at));
+    if (m_prependAt < 0 && m_promptDeck)
+        m_promptDeck->addPrompt(text);
 
     static const QRegularExpression imgLine(
         QStringLiteral("^Attached image:\\s*(.+?)\\s*$"));

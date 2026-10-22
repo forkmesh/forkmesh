@@ -1122,6 +1122,8 @@ set(FORKMESH_APP_SOURCES
     src/Tooltips.h
     src/ClaudeTranscriptView.h
     src/ClaudeTranscriptView.cpp
+    src/PromptDeckBar.h
+    src/PromptDeckBar.cpp
     src/ClaudeTranscriptTools.h
     src/ClaudeTranscriptTools.cpp
     src/ClaudeSessionScan.h

@@ -244,6 +244,21 @@ is matched to its card by `tool_use_id` (replays parse
 forms as `forkmesh-task:` before the commit alternative; a bare 32-hex id
 links as a commit.
 
+**Pinned prompt.** `PromptDeckBar` sits above the rows, in the top viewport
+margin `layoutPromptDeck()` reserves, and shows the last prompt in one line
+(2026-10-22). It is the desktop version of the phone's prompt deck:
+
+- Edges peek out below for earlier prompts. With several prompts it shows
+  `2/5` and ‹ › arrows.
+- To move between prompts, drag the card sideways, scroll sideways on a
+  trackpad, or press ← →. Right goes to the previous prompt, left to the next.
+- Click to read the whole prompt (up to eight lines). Right-click to copy it
+  or jump back to the latest.
+- Prompts come from `addUserTurn` and also from `accumulateStatsOnly`, so the
+  turns a long replay skips still count.
+- `prependEarlierEvents` does not add them again, and `clear()` empties the
+  bar.
+
 **Raw log jump.** Clicking a row's gutter switches to Raw at the line of the
 event that drew it (`m_rowSource`, `transcripttools::rawLogLineStart()`).
 

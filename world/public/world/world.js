@@ -1701,6 +1701,233 @@ function escapeHTML(value) {
     .replace(/'/g, "&#039;");
 }
 
+const worldPromptDecks = {
+  bound: false,
+  prompts: new Map(),
+  held: new Map(),
+  wheelAt: 0,
+  wheel: 0,
+  drag: null,
+  quietUntil: 0,
+};
+
+function worldPromptDeckIndex(key) {
+  const prompts = worldPromptDecks.prompts.get(key) || [];
+  const held = worldPromptDecks.held.get(key);
+  if (!held || held.count !== prompts.length) return prompts.length - 1;
+  return Math.max(0, Math.min(held.index, prompts.length - 1));
+}
+
+function worldPromptDeckHTML(key, said) {
+  const prompts = (Array.isArray(said) ? said : [])
+    .map((text) =>
+      String(text || "")
+        .replace(/^\s*Attached image:.*$/gm, "")
+        .trim(),
+    )
+    .filter(Boolean);
+  worldPromptDecks.prompts.set(key, prompts);
+  if (!prompts.length) {
+    worldPromptDecks.held.delete(key);
+    return "";
+  }
+  const held = worldPromptDecks.held.get(key);
+  if (held && held.count !== prompts.length) worldPromptDecks.held.delete(key);
+  const index = worldPromptDeckIndex(key);
+  const expanded = Boolean(worldPromptDecks.held.get(key)?.expanded);
+  const latest = index === prompts.length - 1;
+  const prompt = prompts[index];
+  const position = prompts.length > 1 ? `${index + 1}/${prompts.length}` : "";
+  return `<div class="world-prompt-deck" data-world-prompt-deck="${escapeHTML(
+    key,
+  )}" data-behind="${Math.min(2, index)}" tabindex="0" role="group" aria-label="${
+    latest ? "Last prompt" : "Earlier prompt"
+  }${position ? `, ${position}` : ""}">
+      <div class="world-prompt-deck-card" data-world-prompt-deck-card>
+        <span class="world-prompt-deck-mark" aria-hidden="true">${
+          latest ? "“" : "↺"
+        }</span>
+        <button type="button" class="world-prompt-deck-text" data-world-prompt-deck-toggle data-expanded="${expanded}" aria-expanded="${expanded}" title="${
+          expanded ? "Show one line" : "Read the whole prompt"
+        }">${escapeHTML(expanded ? prompt : prompt.replace(/\s+/g, " "))}</button>
+        ${
+          position
+            ? `<span class="world-prompt-deck-position">${position}</span>
+        <button type="button" class="world-prompt-deck-step" data-world-prompt-deck-step="older" aria-label="Earlier prompt" title="Earlier prompt"${
+          index > 0 ? "" : " disabled"
+        }>‹</button>
+        <button type="button" class="world-prompt-deck-step" data-world-prompt-deck-step="newer" aria-label="Later prompt" title="Later prompt"${
+          latest ? " disabled" : ""
+        }>›</button>`
+            : ""
+        }
+      </div>
+    </div>`;
+}
+
+function worldPromptDeckRedraw(deck, direction) {
+  const key = deck.dataset.worldPromptDeck;
+  const scratch = document.createElement("div");
+  scratch.innerHTML = worldPromptDeckHTML(
+    key,
+    worldPromptDecks.prompts.get(key),
+  );
+  const fresh = scratch.firstElementChild;
+  if (!fresh) return;
+  const focused = deck.contains(document.activeElement);
+  deck.replaceWith(fresh);
+  if (focused) fresh.focus({ preventScroll: true });
+  const card = fresh.querySelector("[data-world-prompt-deck-card]");
+  if (
+    direction &&
+    card?.animate &&
+    !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  ) {
+    card.animate(
+      [
+        {
+          transform: `translateX(${direction < 0 ? -32 : 32}px)`,
+          opacity: 0.2,
+        },
+        { transform: "translateX(0)", opacity: 1 },
+      ],
+      { duration: 200, easing: "cubic-bezier(.2,.8,.2,1)" },
+    );
+  }
+}
+
+function worldPromptDeckStep(deck, delta) {
+  const key = deck.dataset.worldPromptDeck;
+  const prompts = worldPromptDecks.prompts.get(key) || [];
+  const index = worldPromptDeckIndex(key);
+  const next = Math.max(0, Math.min(prompts.length - 1, index + delta));
+  if (next === index) return false;
+  worldPromptDecks.held.set(key, {
+    index: next,
+    count: prompts.length,
+    expanded: false,
+  });
+  worldPromptDeckRedraw(deck, delta);
+  return true;
+}
+
+function bindWorldPromptDecks() {
+  if (worldPromptDecks.bound) return;
+  worldPromptDecks.bound = true;
+  const deckOf = (target) =>
+    target?.closest?.("[data-world-prompt-deck]") || null;
+  document.addEventListener("click", (event) => {
+    const deck = deckOf(event.target);
+    if (!deck) return;
+    if (Date.now() < worldPromptDecks.quietUntil) {
+      event.preventDefault();
+      return;
+    }
+    const step = event.target.closest("[data-world-prompt-deck-step]");
+    if (step) {
+      worldPromptDeckStep(
+        deck,
+        step.dataset.worldPromptDeckStep === "older" ? -1 : 1,
+      );
+    } else if (event.target.closest("[data-world-prompt-deck-toggle]")) {
+      const key = deck.dataset.worldPromptDeck;
+      const prompts = worldPromptDecks.prompts.get(key) || [];
+      worldPromptDecks.held.set(key, {
+        index: worldPromptDeckIndex(key),
+        count: prompts.length,
+        expanded: !worldPromptDecks.held.get(key)?.expanded,
+      });
+      worldPromptDeckRedraw(deck, 0);
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    const deck = deckOf(event.target);
+    if (!deck || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    worldPromptDeckStep(deck, event.key === "ArrowLeft" ? -1 : 1);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    const deck = deckOf(event.target);
+    const card = deck?.querySelector("[data-world-prompt-deck-card]");
+    if (
+      !card ||
+      event.button !== 0 ||
+      event.target.closest("[data-world-prompt-deck-step]")
+    )
+      return;
+    worldPromptDecks.drag = {
+      deck,
+      card,
+      x: event.clientX,
+      y: event.clientY,
+      id: event.pointerId,
+      moved: false,
+      dx: 0,
+    };
+  });
+  document.addEventListener("pointermove", (event) => {
+    const drag = worldPromptDecks.drag;
+    if (!drag || drag.id !== event.pointerId) return;
+    const dx = event.clientX - drag.x;
+    if (!drag.moved) {
+      if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(event.clientY - drag.y))
+        return;
+      drag.moved = true;
+      drag.card.setPointerCapture?.(event.pointerId);
+    }
+    const key = drag.deck.dataset.worldPromptDeck;
+    const prompts = worldPromptDecks.prompts.get(key) || [];
+    const index = worldPromptDeckIndex(key);
+    const free = dx > 0 ? index > 0 : index < prompts.length - 1;
+    drag.dx = dx;
+    drag.card.style.transform = `translateX(${dx * (free ? 0.6 : 0.15)}px)`;
+  });
+  const release = (event) => {
+    const drag = worldPromptDecks.drag;
+    if (!drag || drag.id !== event.pointerId) return;
+    worldPromptDecks.drag = null;
+    if (!drag.moved) return;
+    worldPromptDecks.quietUntil = Date.now() + 300;
+    const stepped =
+      event.type === "pointerup" &&
+      Math.abs(drag.dx) > 48 &&
+      worldPromptDeckStep(drag.deck, drag.dx > 0 ? -1 : 1);
+    if (!stepped) {
+      drag.card.style.transform = "";
+      drag.card.animate?.(
+        [
+          { transform: `translateX(${drag.dx * 0.6}px)` },
+          { transform: "translateX(0)" },
+        ],
+        { duration: 180, easing: "ease-out" },
+      );
+    }
+  };
+  document.addEventListener("pointerup", release);
+  document.addEventListener("pointercancel", release);
+  document.addEventListener(
+    "wheel",
+    (event) => {
+      const deck = deckOf(event.target);
+      if (!deck || Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+      event.preventDefault();
+      const now = Date.now();
+      if (now - worldPromptDecks.wheelAt < 350) {
+        worldPromptDecks.wheel = 0;
+        return;
+      }
+      worldPromptDecks.wheel += event.deltaX;
+      if (Math.abs(worldPromptDecks.wheel) < 40) return;
+      const delta = worldPromptDecks.wheel > 0 ? 1 : -1;
+      worldPromptDecks.wheel = 0;
+      worldPromptDecks.wheelAt = now;
+      worldPromptDeckStep(deck, delta);
+    },
+    { passive: false },
+  );
+}
+
 // Clicking the HUD logo opens this switcher rather than silently reloading:
 // the 3D city is a peer of the console, not a detour away from it, so every
 // dashboard page stays one hop from wherever the camera is standing.
@@ -17420,6 +17647,14 @@ class ForkMeshWorld extends HTMLElement {
                 : ""
             }
           </dl>
+          ${worldPromptDeckHTML(
+            `mirror:${session?.id || ""}`,
+            Array.isArray(session?.history)
+              ? session.history
+                  .filter((entry) => entry?.role === "user")
+                  .map((entry) => entry?.text)
+              : [],
+          )}
           <div class="world-agent-transcript" aria-label="Agent transcript">
             ${
               history.length
@@ -17582,6 +17817,7 @@ class ForkMeshWorld extends HTMLElement {
           },
         );
       });
+    bindWorldPromptDecks();
     workspace
       .querySelectorAll("[data-world-agent-followup]")
       .forEach((form) => {

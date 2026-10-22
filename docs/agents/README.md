@@ -225,6 +225,26 @@ The website's session page follows a running Claude Code run.
 
 Text arrives per assistant message, not per token.
 
+### Pinned last prompt on the web
+
+The cloud and desktop session pages (`06-repo-content.js`) and World's agent
+sessions (`world.js`) pin the last prompt above the transcript, like the
+phone and the desktop (asked for on 2026-10-22). It is one line, with edges
+peeking out below for earlier prompts and `2/5` with ‹ › buttons when there
+are several. Swipe or drag the card sideways, use a trackpad's sideways
+scroll, or press ← → while it has focus: right goes back to the previous
+prompt, left goes forward to the next. Click the text to read all of it.
+
+- Prompts are the `user` history entries (cloud and World) or the desktop's
+  `_local_user` events, with `Attached image:` lines dropped.
+- `promptDecks` / `worldPromptDecks` keep the prompt you are reading per
+  session across live patches. A new prompt resets it to the latest.
+- A live patch swaps the deck (`data-…-detail-deck`) only when its markup
+  changed and nobody is dragging it, so a read-back is not interrupted.
+- The dashboard's markup uses only classes already in the committed
+  `tailwind.css` (see `docs/app/content-first-pings.md`). The drag and
+  `touch-action: pan-y`, which keeps vertical scrolling, are inline styles.
+
 ### Live stream to the phone
 
 `GET /api/repo/<owner>/<repo>/agent-sessions/<id>/live` (or the `agent-bots`
