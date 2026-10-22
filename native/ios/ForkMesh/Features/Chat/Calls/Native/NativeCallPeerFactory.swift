@@ -14,6 +14,8 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
     private(set) var route: DirectCallRoute?
     private(set) var remoteVideo: RTCVideoTrack?
     private(set) var localVideo: RTCVideoTrack?
+    let quality = CallQualityMonitor()
+    private let micMeter = NativeMicMeter()
     @ObservationIgnored var filter: NativeFrameFilter? = NativeCallMedia.shared.lookFilter
     @ObservationIgnored private var preview: (RTCVideoTrack, NativeCameraPipeline)?
     @ObservationIgnored private var previewAudio: RTCAudioTrack?
@@ -22,6 +24,8 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
 
     func makePeer(media: DirectCallKind, iceServers: [String]) async throws -> DirectCallPeer {
         current?.close()
+        micMeter.stop(deactivate: false)
+        quality.reset()
         let video = media == .video ? (preview ?? NativeCallMedia.shared.makeVideo()) : nil
         if media != .video, let preview {
             preview.1.stop()
@@ -30,6 +34,7 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
         let peer = try NativeCallPeer(media: media, iceServers: iceServers, audioTrack: previewAudio, video: video)
         previewAudio = nil
         peer.camera?.setFilter(filter)
+        peer.quality = quality
         route = nil
         remoteVideo = nil
         localVideo = peer.videoTrack
@@ -49,12 +54,17 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
             self.route = nil
             self.remoteVideo = nil
             self.localVideo = nil
+            self.quality.reset()
         }
         current = peer
         return peer
     }
 
     func startPreview(media: DirectCallKind) async -> Bool {
+        if current == nil, !micMeter.running {
+            quality.reset()
+            _ = micMeter.start(into: quality)
+        }
         if media == .video {
             let made = preview ?? NativeCallMedia.shared.makeVideo()
             preview = made
@@ -69,6 +79,7 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
     }
 
     func endPreview() {
+        micMeter.stop(deactivate: current == nil && !NativeGroupCall.shared.active)
         preview?.1.stop()
         preview = nil
         previewAudio = nil

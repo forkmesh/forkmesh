@@ -175,4 +175,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S100 | 2026-10-22 | Chat | ui | Link previews in shared rooms load on tap and never reach private addresses | 440e84220c | n/a | Android has no link previews |
 | S101 | 2026-10-22 | Settings | feature | Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete. | 306a20abda | pending |  |
 | S102 | 2026-10-22 | Agents | fix | The pinned last prompt no longer leaves an empty box under it, and swiping it left and right moves through your earlier and later prompts. | 6f57eaf518 | pending |  |
+| S103 | 2026-10-22 | Calls | feature | Calls show a small live quality pill with signal bars, a voice waveform and the delay; tap it for live network and video charts. | 6740cdc214 | synced | 6740cdc214 |
 <!-- ledger:end -->

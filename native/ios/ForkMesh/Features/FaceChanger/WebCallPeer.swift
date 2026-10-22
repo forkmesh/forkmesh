@@ -43,10 +43,12 @@ enum WebCallError: Error {
 final class WebCallPeerFactory: DirectCallPeerMaking {
     private(set) var current: WebCallPeer?
     private(set) var route: DirectCallRoute?
+    let quality = CallQualityMonitor()
     var voice: @MainActor () -> String = { "" }
 
     func makePeer(media: DirectCallKind, iceServers: [String]) async throws -> DirectCallPeer {
         route = nil
+        quality.reset()
         if let previewed = current, previewed.previewing, media == .video {
             return try await adopt(previewed, media: media, iceServers: iceServers)
         }
@@ -85,10 +87,15 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
             guard let self, self.current === closed else { return }
             self.current = nil
             self.route = nil
+            self.quality.reset()
         }
         peer.onRoute = { [weak self, weak peer] (found: DirectCallRoute?) in
             guard let self, let peer, self.current === peer, !peer.previewing else { return }
             self.route = found
+        }
+        peer.onQuality = { [weak self, weak peer] (event: CallQualityEvent) in
+            guard let self, let peer, self.current === peer else { return }
+            self.quality.apply(event)
         }
         return peer
     }
@@ -107,6 +114,7 @@ final class WebCallPeerFactory: DirectCallPeerMaking {
             previewed.close()
         }
         guard !busy else { throw WebCallError.failed("busy") }
+        quality.reset()
         let peer = freshPeer()
         peer.previewing = true
         peer.previewMedia = media
@@ -153,6 +161,7 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
     var onLive: (@MainActor () -> Void)?
     var onClosed: (@MainActor () -> Void)?
     var onRoute: (@MainActor (DirectCallRoute?) -> Void)?
+    var onQuality: (@MainActor (CallQualityEvent) -> Void)?
     let webView: WKWebView
     private let proxy = WebCallMessageProxy()
     private let onDispose: @MainActor (WebCallPeer) -> Void
@@ -255,6 +264,8 @@ final class WebCallPeer: NSObject, DirectCallPeer, WKUIDelegate {
             voiceObserver?(message["id"]?.text ?? "")
         case "route":
             onRoute?(DirectCallRoute(rawValue: message["route"]?.text ?? ""))
+        case "quality":
+            if let event = CallQualityEvent(message) { onQuality?(event) }
         case "live":
             onLive?()
         case "closed":

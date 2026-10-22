@@ -174,6 +174,8 @@ final class FmmAudioEngine: @unchecked Sendable {
     private var mix = [Float](repeating: 0, count: GroupCallAudioPlan.frameSamples)
     private var decoded = [Float](repeating: 0, count: GroupCallAudioPlan.frameSamples)
     private var interruption: NSObjectProtocol?
+    private var micPeak: Double = 0
+    private var peerPeak: Double?
     let voiceSource: () -> String
     var muted = false
     private(set) var running = false
@@ -312,6 +314,8 @@ final class FmmAudioEngine: @unchecked Sendable {
                 guard let base = buffer.baseAddress else { return }
                 _ = capture.read(into: base, count: samples, blocking: true)
                 changeVoice(buffer)
+                let heard = muted ? 0 : CallQuality.level(samples: UnsafeBufferPointer(buffer))
+                lock.withLock { micPeak = max(micPeak, heard) }
                 if muted { base.update(repeating: 0, count: samples) }
                 let target = lock.withLock { stream }
                 if target != 0, let packet = encoder?.encode(base) { try? call.sendAudio(target, frame: packet) }
@@ -331,10 +335,23 @@ final class FmmAudioEngine: @unchecked Sendable {
                     }
                 }
                 for index in 0..<samples { base[index] = max(-1, min(1, base[index])) }
+                if !streams.isEmpty {
+                    let level = CallQuality.level(samples: UnsafeBufferPointer(out))
+                    lock.withLock { peerPeak = max(peerPeak ?? 0, level) }
+                }
                 playout.write(base, count: samples)
             }
         }
         if Date().timeIntervalSince(retunedAt) >= Self.retuneEvery { retune(force: false) }
+    }
+
+    func takeLevels() -> CallVoiceLevel {
+        lock.withLock { () -> CallVoiceLevel in
+            let level = CallVoiceLevel(mic: micPeak, peer: peerPeak)
+            micPeak = 0
+            peerPeak = nil
+            return level
+        }
     }
 
     private func changeVoice(_ buffer: UnsafeMutableBufferPointer<Float>) {

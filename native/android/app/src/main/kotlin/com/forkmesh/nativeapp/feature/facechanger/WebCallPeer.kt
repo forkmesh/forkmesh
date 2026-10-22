@@ -17,6 +17,9 @@ import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import com.forkmesh.nativeapp.chat.CallQuality
+import com.forkmesh.nativeapp.chat.CallQualityEvent
+import com.forkmesh.nativeapp.chat.CallQualityHistory
 import com.forkmesh.nativeapp.chat.DirectCallKind
 import com.forkmesh.nativeapp.chat.DirectCallPeer
 import com.forkmesh.nativeapp.chat.DirectCallPeerFactory
@@ -33,6 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 class WebCallPeers(
     private val context: Context,
@@ -45,6 +49,7 @@ class WebCallPeers(
     private val backgroundsState = MutableStateFlow<Map<String, String>?>(null)
     private val previewState = MutableStateFlow(false)
     private val routeState = MutableStateFlow("")
+    private val qualityState = MutableStateFlow(CallQualityHistory())
 
     @Volatile
     private var previewPeer: WebCallPeer? = null
@@ -64,6 +69,7 @@ class WebCallPeers(
     val backgrounds: StateFlow<Map<String, String>?> = backgroundsState.asStateFlow()
     val previewing: StateFlow<Boolean> = previewState.asStateFlow()
     val route: StateFlow<String> = routeState.asStateFlow()
+    val quality: StateFlow<CallQualityHistory> = qualityState.asStateFlow()
 
     val busy: Boolean get() = livePeer != null
 
@@ -77,8 +83,11 @@ class WebCallPeers(
                 livePeer = null
                 routeState.value = ""
             }
+            if (livePeer == null && previewPeer == null) qualityState.value = CallQualityHistory()
         }
         made = peer
+        qualityState.value = CallQualityHistory()
+        peer.onQuality = { event -> if (livePeer === peer || previewPeer === peer) qualityState.update { it.add(event) } }
         return peer
     }
 
@@ -208,6 +217,9 @@ class WebCallPeer internal constructor(
     @Volatile
     var onRoute: ((String) -> Unit)? = null
 
+    @Volatile
+    var onQuality: ((CallQualityEvent) -> Unit)? = null
+
     private val ready = CountDownLatch(1)
     private val pending = ConcurrentHashMap<Int, CompletableFuture<Any?>>()
     private val ids = AtomicInteger()
@@ -281,6 +293,10 @@ class WebCallPeer internal constructor(
             "route" -> {
                 val route = jsonText(message["route"])
                 if (route == "direct" || route == "relay") deliver { onRoute?.invoke(route) }
+            }
+            "quality" -> {
+                val quality = CallQuality.parse(message) ?: return
+                deliver { onQuality?.invoke(quality) }
             }
             "live" -> deliver { onLive?.invoke() }
             "closed" -> deliver { onClosed?.invoke() }
