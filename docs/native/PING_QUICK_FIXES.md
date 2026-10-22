@@ -50,7 +50,10 @@ stays fixable after a restart.
 `causeOf` reads the ping's `Cause:` line (or the body) and sorts it into
 host-offline, network, timeout, missing-tool, auth, disk, test, build or
 unknown. The event comes from the ping: action failed, stopped, waiting for
-approval, turned off automatically, or an agent that failed.
+approval, turned off automatically, or an agent that failed. Disk covers
+the runner's own pre-checkout check ("Not enough free disk space on this
+node", Desktop client CI tests run #6604 on 2026-10-22) as well as ENOSPC
+from a step; that check used to land in unknown.
 
 | Event | Fixes |
 | --- | --- |
