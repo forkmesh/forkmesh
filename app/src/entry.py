@@ -1208,7 +1208,7 @@ _URL_EXPORT_NAMES = (
     "REPO_PROVIDER_MIRROR_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
-    "REPO_VIEWS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
+    "REPO_VIEWS_RE", "REPO_FORK_COUNTS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
     "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
@@ -50814,7 +50814,7 @@ def _https_mirror_request_query(url, operation, release_sha=""):
     elif operation in ("compare", "merge-preview"):
         keys = ("base", "head")
         if operation == "compare":
-            keys += ("cherry", "limit")
+            keys += ("cherry", "limit", "counts")
         if operation == "merge-preview":
             keys += ("rules", "pull", "orgRules")
         for key in keys:
