@@ -860,6 +860,8 @@ reinstall or restart.
 | `guestbook` | The agent guestbook in the instance's chat. |
 | `genie` | The tip spider at the bottom of each page. |
 | `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
+| `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" box under an open issue's title, which readers copy into a coding agent. On by default. |
+| `fediverse-ui` | The Fediverse thread panel under issues, pull requests and discussions, and the repository's Watchers row with its "Watch on the fediverse" menu. Off also answers 404 to `GET /api/repo/<o>/<r>/fedi-comments`. On by default. |
 
 Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
 `discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
@@ -878,6 +880,32 @@ services" with the reason (`FORKMESH_ONLY`) and offers no switch;
   once the row exists it wins. The installer never writes the row and
   `--update` only rewrites `INSTANCE_PLUGINS`, so an update keeps the
   admin's choice.
+- **Plugins that start on (`DEFAULT_ON`).** `issue-ai-prompt` and
+  `fediverse-ui` were always shown before they became switches, so they stay
+  on unless an admin turns them off. A saved row from before them lists only
+  `enabled`; `parse` adds every `DEFAULT_ON` plugin the row does not name in
+  its `disabled` list, so an upgrade keeps both on. Saving writes the
+  `DEFAULT_ON` plugins left off as `disabled`
+  (`{"enabled": [...], "disabled": ["fediverse-ui"]}`). The install setting
+  follows the same rule: `INSTANCE_PLUGINS` does not need to name them, and
+  `-fediverse-ui` in it turns one off. A future plugin that changes something
+  instances already show joins `DEFAULT_ON` the same way, so no update ever
+  removes it silently.
+- **Opt-in plugins (`OPT_IN`).** forkmesh.com itself (an unbranded core)
+  normally runs every plugin. A plugin in `OPT_IN` changes how pages look or
+  behave enough that it should be a choice everywhere: it starts off on
+  instances like any other plugin, and on a core it is on only when
+  `FORKMESH_CORE_PLUGINS` (a comma list in the core's environment) names it.
+- **Not only hidden.** The dashboard asks `instancePluginOff(id)`
+  (`02-helpers.js`, from the `/api/instance` the page already fetched) and
+  leaves the prompt, the Fediverse thread and the watch menu out of its
+  markup; `loadFederatedReplies` never calls `fedi-comments` while
+  `fediverse-ui` is off. The server-rendered issue page and About rail ask
+  `repo_ssr_issue.plugins_off()`, which reads
+  `instance_features.switched_off()` for the env the runtime last remembered
+  (`remember_instance`), and the issue render cache is keyed by it. Until the
+  dashboard has the instance document, `chrome_css` (`PLUGIN_ELEMENTS`)
+  hides the same elements, so nothing flashes in.
 - **How it applies.** Every request on an instance passes
   `Default._instance_plugins_load` before the plugin gate. It reads the row
   at most every 30 seconds (`CACHE_MS`) into a process cache that

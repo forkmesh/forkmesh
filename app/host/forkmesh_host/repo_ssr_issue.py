@@ -5,6 +5,7 @@ import datetime
 import html
 import json
 import re
+import sys
 import time
 import urllib.parse
 
@@ -1698,8 +1699,16 @@ def ai_prompt_html(ctx, number, title, repo, template=""):
             icon("copy", "copy-icon h-3.5 w-3.5"), icon("check", "copy-check h-3.5 w-3.5")))
 
 
+def plugins_off():
+    features = sys.modules.get("instance_features")
+    try:
+        return frozenset(features.switched_off()) if features is not None else frozenset()
+    except Exception:
+        return frozenset()
+
+
 def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
-                 repo="", prompt="", reactions=None):
+                 repo="", prompt="", reactions=None, off=frozenset()):
     now = time.time() if now is None else now
     number = issue["number"]
     title = issue["title"] or "Issue #%d" % number
@@ -1907,14 +1916,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
         'gap-4 self-start">\n            <section data-repo-record-conversation class="grid '
         'min-w-0 gap-4">\n              %s\n              %s\n              <div '
         'data-repo-issue-timeline data-empty="%s" class="grid gap-2">%s</div>\n              %s\n'
-        '            </section>\n            <details data-repo-federated-thread class="group '
-        'rounded-md border border-border sm:ml-14">\n              <summary class="flex '
-        'cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[14px] '
-        'text-muted-foreground">\n                %s<span class="font-semibold text-foreground">'
-        'Fediverse thread</span><span class="text-[12px]">· remote provenance, separate from '
-        'signed history</span>%s\n              </summary>\n              <div '
-        'data-repo-federated-replies class="border-t border-border"></div>\n            '
-        '</details>\n          </div>\n          <aside data-repo-record-sidebar class="min-w-0 '
+        '            </section>\n            %s\n          </div>\n          <aside data-repo-record-sidebar class="min-w-0 '
         'self-start">\n            \n            <p data-repo-issue-metadata-hint role="status" '
         'aria-live="polite" class="mb-2 text-[11px] text-muted-foreground empty:hidden"></p>\n'
         '            %s\n            %s\n            %s\n            %s\n            %s\n'
@@ -1929,10 +1931,12 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
             parents_html(ctx, parents), pill_class, icon(pill_icon, "h-4 w-4"), state_label,
             format_count(comments), "comment" if comments == 1 else "comments",
             format_count(len(people)), plural,
-            "" if closed else ai_prompt_html(ctx, number, title, repo, prompt),
+            "" if closed or "issue-ai-prompt" in off
+            else ai_prompt_html(ctx, number, title, repo, prompt),
             opening, sub_issues, "false" if timeline else "true", timeline, comment_box,
-            icon("radio", "h-4 w-4"), icon("chevron-down",
-                 "ml-auto h-4 w-4 transition-transform group-open:rotate-180"),
+            "" if "fediverse-ui" in off else FEDERATED_THREAD % (
+                icon("radio", "h-4 w-4"), icon(
+                    "chevron-down", "ml-auto h-4 w-4 transition-transform group-open:rotate-180")),
             section("Assignees", assignee_value, "assignees"), section("Agent", agent_value),
             section("Labels", label_value, "labels"), section("Type", "Issue"),
             section("Fields", fields_value, "fields"),
@@ -1940,6 +1944,16 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
             section("Development", development, "development", development_button),
             section("Notifications", notifications),
             section("%s %s" % (format_count(len(people)), plural), people_value)))
+
+
+FEDERATED_THREAD = (
+    '<details data-repo-federated-thread class="group rounded-md border border-border '
+    'sm:ml-14">\n              <summary class="flex cursor-pointer list-none items-center '
+    'gap-2 px-4 py-2.5 text-[14px] text-muted-foreground">\n                %s<span '
+    'class="font-semibold text-foreground">Fediverse thread</span><span class="text-[12px]">'
+    '· remote provenance, separate from signed history</span>%s\n              </summary>\n'
+    '              <div data-repo-federated-replies class="border-t border-border"></div>\n'
+    '            </details>')
 
 
 def index_row(summary):

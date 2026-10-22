@@ -844,7 +844,9 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
     if not model.get("issue") or not model.get("issueJson"):
         return None
     origin = repo_ssr_issue.public_site_origin(origin)
-    key = ("dashboard", bool(short), origin, repo_views.reactions_digest(reactions))
+    off = repo_ssr_issue.plugins_off()
+    key = ("dashboard", bool(short), origin, repo_views.reactions_digest(reactions),
+           tuple(sorted(off)))
     now = time.time()
     kept = bundle.rendered.get(key)
     if kept and now - kept[0] < ISSUE_RENDER_SECONDS:
@@ -862,7 +864,7 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
         issue, ctx, owner, "%s/issues/%d" % (link, bundle.number),
         index=repo_ssr_issue.index_rows(model.get("index")), now=now, repo=repo,
         prompt=repo_ssr_issue.prompt_template(model.get("settings")),
-        reactions=reactions)
+        reactions=reactions, off=off)
     if len(bundle.rendered) >= repo_views.RENDERED_PER_BUNDLE:
         bundle.rendered.clear()
     bundle.rendered[key] = (now, article)
@@ -1329,8 +1331,10 @@ def _about_rail(about, readme_href, info=None, values=None, base="", raw=""):
     size = ('<span class="block h-4 w-4"></span>' + mono % html.escape(
         repo_ssr_about.format_size(values["size"])) + _icon(
             "chevron-right", "h-3 w-3", "text-muted-foreground")) if values.get("size") else dash
-    rows = site + "".join(ABOUT_ROW % (label, value) for label, value in (
-        ("Watchers", watchers + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),
+    from . import repo_ssr_issue
+    watching = () if "fediverse-ui" in repo_ssr_issue.plugins_off() else (
+        ("Watchers", watchers + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),)
+    rows = site + "".join(ABOUT_ROW % (label, value) for label, value in watching + (
         ("Mirrors", dash), ("Files", files), ("Size", size)))
     drawn = _languages_html(values.get("languages") or [])
     if drawn:
