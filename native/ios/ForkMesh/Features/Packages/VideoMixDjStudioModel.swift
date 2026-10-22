@@ -55,6 +55,7 @@ final class DjDeck {
     var bend: Double = 0
     var bpm: Double = 0
     var loop = false
+    var repeats = false
     var scratching = false
     var brake: Double = 0
     var sample: DjSampleStep = .idle
@@ -291,6 +292,7 @@ final class DjStudioModel {
             deck.level = stored.level
             deck.rate = stored.rate
             deck.bpm = stored.bpm
+            deck.repeats = stored.repeats
             if !stored.videoId.isEmpty {
                 prepare(deck, id: stored.videoId, title: stored.title, author: stored.author, start: stored.position, keepSettings: true)
                 deck.keepsPlaying = stored.playing
@@ -484,6 +486,7 @@ final class DjStudioModel {
             deck.bend = 0
             deck.bpm = fresh[deck.side].bpm
             deck.loop = false
+            deck.repeats = false
             deck.sample = .idle
             deck.showsRemaining = false
             deck.tapTempo = DjTapTempo()
@@ -638,6 +641,7 @@ final class DjStudioModel {
             guard believes(state, deck, reported: duration) else { return }
             if duration > 0, abs(duration - deck.duration) > 0.5 { deck.duration = duration }
             guard !deck.scratching else { return }
+            if state == 0, replay(deck) { return }
             let now = CACurrentMediaTime()
             let side = deck.side
             if now < deck.settleUntil {
@@ -662,6 +666,7 @@ final class DjStudioModel {
             if deck.playing, now - savedAt > 5 { save(now: true) }
         case let .state(state):
             guard believes(state, deck, reported: 0) else { return }
+            if state == 0, replay(deck) { return }
             apply(state, deck)
             if state == 1 { advance(true, deck) }
         case let .meta(title, author):
@@ -702,6 +707,15 @@ final class DjStudioModel {
         deck.doubtedEnd = nil
         if deck.loaded { unplayable.insert(deck.videoId) }
         advance(false, deck)
+    }
+
+    private func replay(_ deck: DjDeck) -> Bool {
+        guard deck.repeats, deck.keepsPlaying, deck.loaded, !deck.failed, !deck.scratching else { return false }
+        DjDiagnostics.mark("Deck \(deck.side.label) repeats")
+        sectionTasks[deck.side]?.cancel()
+        rewind(deck)
+        play(deck)
+        return true
     }
 
     private func believes(_ state: Int, _ deck: DjDeck, reported: Double) -> Bool {
@@ -1065,6 +1079,13 @@ final class DjStudioModel {
         save()
     }
 
+    func toggleRepeat(_ side: DjDeckSide) {
+        let deck = deck(side)
+        deck.repeats.toggle()
+        show(deck.repeats ? "Deck \(side.label) repeats its song." : "Deck \(side.label) repeat off.")
+        save()
+    }
+
     func setLevel(_ side: DjDeckSide, _ level: Double) {
         deck(side).level = min(1, max(0, level))
         applyMix()
@@ -1412,7 +1433,8 @@ final class DjStudioModel {
 
     private func snapshot(_ deck: DjDeck) -> DjAutomixDeck {
         DjAutomixDeck(
-            loaded: deck.loaded && !deck.failed, playing: deck.playing, position: deck.position(), duration: deck.duration, rate: deck.effectiveRate)
+            loaded: deck.loaded && !deck.failed, playing: deck.playing, position: deck.position(), duration: deck.duration, rate: deck.effectiveRate,
+            repeats: deck.repeats)
     }
 
     func mixNow() {
@@ -1648,6 +1670,7 @@ final class DjStudioModel {
             stored.rate = deck.rate
             stored.bpm = deck.bpm
             stored.loop = deck.loop
+            stored.repeats = deck.repeats
             stored.position = deck.position()
             stored.playing = deck.keepsPlaying && deck.loaded
             saved[deck.side] = stored

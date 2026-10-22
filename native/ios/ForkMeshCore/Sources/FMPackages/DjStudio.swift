@@ -411,6 +411,7 @@ public struct DjSavedDeck: Codable, Equatable, Sendable {
     public var rate: Double = 1
     public var bpm: Double = 0
     public var loop: Bool = false
+    public var repeats: Bool = false
     public var position: Double = 0
     public var playing: Bool = false
 
@@ -427,6 +428,7 @@ public struct DjSavedDeck: Codable, Equatable, Sendable {
         rate = DjStudio.clampRate(DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .rate)) ?? nil, 1, DjStudio.rateBounds))
         bpm = DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .bpm)) ?? nil, 0, 0...250)
         loop = ((try? values.decodeIfPresent(Bool.self, forKey: .loop)) ?? nil) ?? false
+        repeats = ((try? values.decodeIfPresent(Bool.self, forKey: .repeats)) ?? nil) ?? false
         position = DjSaved.clamp((try? values.decodeIfPresent(Double.self, forKey: .position)) ?? nil, cue, 0...864_000)
         playing = !videoId.isEmpty && (((try? values.decodeIfPresent(Bool.self, forKey: .playing)) ?? nil) ?? false)
     }
