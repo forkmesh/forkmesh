@@ -56,16 +56,21 @@ can log in as `build` on the Mac.
 
 - The source lives in one fixed folder, `~/ci/tree`, because Xcode keys
   DerivedData by project path. It is a partial (`blob:none`), sparse checkout
-  of `native/ios/`, `codemagic.yaml`, `conformance/`, and the files outside
-  them that the ForkMeshCore tests read (`app/src/apns.py`,
-  `app/src/app_runtime.py`, the vault, people and secure-drive fixtures under
+  of `native/ios/`, `codemagic.yaml`, `conformance/`, the changelog the build
+  bundles (`changelog/` and `tools/changelog.py`, which
+  `native/ios/tools/changelog_stamp.py` loads), and the files outside them
+  that the ForkMeshCore tests read (`app/src/apns.py`,
+  `app/src/app_runtime.py`, the browser call-segmentation models in
+  `app/public/assets/call-segmentation/` that `CallSegmentTests` compares
+  against the bundled ones, the vault, people and secure-drive fixtures under
   `marketplace/packages/*/tests/fixtures/`, and the two performance playbooks
   `docs/native/PERFORMANCE_CHECKS.md` and
   `docs/marketplace/video-mix-dj-studio-performance.md`).
 - `test_the_mac_checkout_holds_every_file_the_core_tests_read` in
   `tools/test_mac_adhoc_deploy.py` finds those files itself: in every test file
-  that builds the repository root from `#filePath` (or calls a helper defined
-  in one), each string literal or `Type.constant` from `Sources/` passed as a
+  that builds the repository root from `#filePath` (or calls a `func` defined
+  in one; a local `let map` there once made every `.map(` call count, and
+  flagged `DiffImagesTests`, which only names `office/public/logo.svg`), each string literal or `Type.constant` from `Sources/` passed as a
   call's first argument that names an existing repository path with a `/` in
   it. Each must be covered by `MAC_IOS_FETCH_SCRIPT` in
   `tools/forkmesh-release-host.py`, so a new test that reads a file outside
@@ -77,6 +82,13 @@ can log in as `build` on the Mac.
   hand and missed it; `DjVitalsTests` (the DJ studio playbook) would have
   failed the next build the same way, and `SecureDriveInteropTests` skipped
   silently without its fixtures.
+- The 2026-10-21 19:53 ad hoc build of `9edbec22155b` failed in "Bundle the
+  changelog": the one-changelog change made `changelog_stamp.py` load
+  `tools/changelog.py` and read `changelog/changelog.json`, neither of which
+  the sparse checkout held. `test_the_mac_checkout_holds_every_file_the_build_steps_read`
+  now finds every `ROOT / "..."` path (with `ROOT` the repository root) in the
+  `native/ios/tools/*.py` scripts `codemagic.yaml` runs and checks
+  `MAC_IOS_FETCH_SCRIPT` covers it.
 - Each run fetches its commit at depth 1 from `MAC_BUILD_GIT_URL` and checks it
   out with `git clean -ffdx`. Fetch and checkout retry together (six times,
   20 s apart) because a core may advertise a commit before it holds every blob,
