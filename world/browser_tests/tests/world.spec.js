@@ -1493,17 +1493,15 @@ async function measureWorldInputResponses(page) {
     async (shell, sampleCount) => {
       const world = shell.world;
       const canvas = world.renderer.domElement;
-      const terminal = shell.querySelector("[data-world-chat-terminal]");
-      const chatSummary = terminal?.querySelector(":scope > summary");
-      const chatBody = terminal?.querySelector(
-        ":scope > .world-chat-terminal-body",
-      );
+      const island = shell.querySelector("[data-world-hud-island]");
+      const chatToggle = island?.querySelector("[data-world-island-toggle]");
+      const chatBody = island?.querySelector("#fullChatMessages");
       const thumbstick = shell.querySelector("[data-world-thumbstick]");
       const coarsePointer = matchMedia("(pointer: coarse)").matches;
       if (
         !canvas ||
-        !terminal ||
-        !chatSummary ||
+        !island ||
+        !chatToggle ||
         !chatBody ||
         (coarsePointer && !thumbstick)
       ) {
@@ -1685,26 +1683,26 @@ async function measureWorldInputResponses(page) {
 
       const chat = [];
       for (let sample = 0; sample < sampleCount; sample += 1) {
-        terminal.open = false;
+        shell.setHudIslandExpanded(false);
         await settleFrames();
         chat.push(
           await waitForPresentedResponse(
-            () => chatSummary.click(),
+            () => chatToggle.click(),
             () => {
               const style = getComputedStyle(chatBody);
               const bounds = chatBody.getBoundingClientRect();
               return (
-                terminal.open &&
+                island.dataset.expanded === "true" &&
+                chatToggle.getAttribute("aria-expanded") === "true" &&
                 style.display !== "none" &&
                 style.visibility !== "hidden" &&
                 Number(style.opacity) > 0 &&
-                bounds.width > 100 &&
-                bounds.height > 100
+                bounds.width > 100
               );
             },
           ),
         );
-        terminal.open = false;
+        shell.setHudIslandExpanded(false);
         await settleFrames();
       }
 

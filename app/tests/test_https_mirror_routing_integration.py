@@ -10,7 +10,7 @@ import sqlite3
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1086,7 +1086,11 @@ def test_flagship_state_pin_falls_back_to_account_namespace_without_org_alias():
         "d1_first": d1_first,
         "decrypt_row": decrypt_row,
         "clean_string": lambda value, limit: str(value or "")[:limit],
+        "MAX_NODE_NAME": 80,
+        "valid_node_name": lambda value: bool(
+            re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", str(value or ""))),
     })
+    exec(_function_source("_instance_flagship_node"), namespace)
     result = asyncio.run(
         namespace["_https_mirror_expected_forkmesh_refs"](object()))
     assert result == state_hash
@@ -1151,6 +1155,7 @@ def test_flagship_quorum_requires_two_fresh_group_mirrors():
         "json": json,
         "re": re,
     }
+    exec(_function_source("_instance_solo_flagship_node"), namespace)
     exec(_function_source("_https_mirror_flagship_quorum"), namespace)
     exec(_function_source("_https_mirror_deployed_flagship_refs"), namespace)
     result = asyncio.run(namespace["_https_mirror_flagship_quorum"](
@@ -1271,6 +1276,7 @@ def _source_dark_group_namespace(
         "blind_index": _blind_index_async,
     })
     namespace["hmac"] = hmac
+    exec(_function_source("_instance_solo_flagship_node"), namespace)
     exec(_function_source("_https_mirror_flagship_quorum"), namespace)
     # An owner's web merge can override the current generation; with no
     # succeeded merge job the override is inert and the classic rules decide.
@@ -3271,8 +3277,11 @@ def _proxy_namespace(responses, cached_response=None, *, direct=False):
         "EXPECTED_DEGRADED_HEADERS": {},
         "Response": lambda body, status=200, headers=None: SimpleNamespace(
             status=status, headers=headers or {}),
+        "urlparse": urlparse,
     }
     exec(_function_source("js_nullish"), namespace)
+    exec(_function_source("_discard_response_body"), namespace)
+    exec(_function_source("_mirror_origin_is_this_app"), namespace)
     exec(_function_source("_https_mirror_proxy"), namespace)
     return namespace["_https_mirror_proxy"], attempts
 

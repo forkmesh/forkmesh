@@ -1,7 +1,7 @@
 {
   "schema": "forkmesh-external-dependency-map-v1",
   "issue": 503,
-  "updated": "2026-09-14",
+  "updated": "2026-10-21",
   "documentation": "www/docs/external-dependency-map.md",
   "inventoryScope": {
     "include": [
@@ -58,14 +58,7 @@
   },
   "firstParty": {
     "suffixes": ["forkmesh.com", "forkmesh.dev"],
-    "secrets": [
-      "ADMIN_ALERT_EMAILS", "ADMIN_PASS", "ADMIN_PATH", "DATA_KEY",
-      "MAIN_RELAY_URL", "MIRROR_ROUTER_PUBLIC_KEY", "MIRROR_ROUTER_SIGNING_SEED",
-      "PRODUCT_ANALYSIS_PASS", "PRODUCT_ANALYSIS_USER", "PUBLIC_BASE_URL",
-      "SSH_GATEWAY_ALLOWED_ADDRESSES", "SSH_GATEWAY_HOST",
-      "SSH_GATEWAY_NODE_HOSTS", "SSH_GATEWAY_PORT",
-      "SSH_GATEWAY_REPOSITORIES", "SSH_GATEWAY_TOKEN", "SSH_GATEWAY_TOKEN_NEXT"
-    ]
+    "secrets": ["ADMIN_ALERT_EMAILS", "ADMIN_PASS", "ADMIN_PATH", "DATA_KEY", "MAIN_RELAY_URL", "MIRROR_ROUTER_PUBLIC_KEY", "MIRROR_ROUTER_SIGNING_SEED", "OFFICE_TURN_SECRET", "PRODUCT_ANALYSIS_PASS", "PRODUCT_ANALYSIS_USER", "PUBLIC_BASE_URL", "SSH_GATEWAY_ALLOWED_ADDRESSES", "SSH_GATEWAY_HOST", "SSH_GATEWAY_NODE_HOSTS", "SSH_GATEWAY_PORT", "SSH_GATEWAY_REPOSITORIES", "SSH_GATEWAY_TOKEN", "SSH_GATEWAY_TOKEN_NEXT"]
   },
   "storedIdentifierTablePattern": "discord|patreon|apns|solana|wallet|mailtrap|sentry|remote_actor|github|gitlab|codeberg",
   "dependencies": [
@@ -75,7 +68,7 @@
       "categories": ["hosting", "dns", "certificates", "cdn-edge", "ai-provider", "telemetry"],
       "components": ["app-worker", "app-browser", "www-browser", "world-worker", "world-browser", "mirror-node", "desktop", "operator-tools"],
       "necessity": "mandatory",
-      "hosts": ["api.cloudflare.com", "www.cloudflare.com", "cloudflare-dns.com", "static.cloudflareinsights.com"],
+      "hosts": ["api.cloudflare.com", "www.cloudflare.com", "cloudflare-dns.com", "static.cloudflareinsights.com", "cloudflare.com"],
       "configuredHosts": [],
       "credentials": ["USAGE_ANALYTICS_API_TOKEN", "WORKERS_OBSERVABILITY_ACCOUNT_ID", "WORKERS_OBSERVABILITY_API_TOKEN", "WORKERS_OBSERVABILITY_SERVICE"],
       "observes": "Every request to forkmesh.com, app.forkmesh.com, and world.forkmesh.com terminates here: client IP address, TLS SNI, headers including User-Agent, request path, and timing. D1, KV, Durable Objects, and Queues hold the hosted service's account, catalog, collaboration, presence, and health data; sensitive fields are encrypted under DATA_KEY before storage. Workers AI receives ForkBot prompts, bug-report text, and usernames sent for moderation. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code.",
@@ -89,13 +82,7 @@
       "privacyDisclosure": "Cloudflare hosts the public website at forkmesh.com, passes requests made there on to ForkMesh’s servers, and provides DNS for ForkMesh domains. The app, APIs, account data, and relay infrastructure run on ForkMesh’s own servers.",
       "personalData": true,
       "evidence": ["app/wrangler.toml", "www/wrangler.toml", "world/wrangler.toml", "app/src/app_runtime.py", "app/src/usage_reporting.py", "app/src/entry.py"],
-      "drills": [
-        "app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising",
-        "app/tests/test_https_mirror_health_leases.py::test_cloudflare_dns_check_distinguishes_unavailable_from_rejected",
-        "app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum",
-        "app/tests/test_forkbot.py::test_forkbot_files_the_raw_request_when_ai_is_unreachable",
-        "app/tests/test_start_setup.py::test_rejected_cloudflare_token_fails_that_step_with_a_console_line"
-      ]
+      "drills": ["app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising", "app/tests/test_https_mirror_health_leases.py::test_cloudflare_dns_check_distinguishes_unavailable_from_rejected", "app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum", "app/tests/test_forkbot.py::test_forkbot_files_the_raw_request_when_ai_is_unreachable"]
     },
     {
       "id": "acme-certificate-authority",
@@ -104,7 +91,7 @@
       "components": ["mirror-node"],
       "necessity": "degradable",
       "hosts": [],
-      "configuredHosts": ["acme-v02.api.letsencrypt.org", "acme.zerossl.com"],
+      "configuredHosts": ["acme-v02.api.letsencrypt.org", "acme.zerossl.com", "acme-staging-v02.api.letsencrypt.org"],
       "credentials": [],
       "observes": "The mirror's public hostname and the host's IP address during certificate issuance and renewal. Issued certificates are published in public Certificate Transparency logs.",
       "retention": "Certificate Transparency entries are permanent and public.",
@@ -184,7 +171,7 @@
       "categories": ["package-registry"],
       "components": ["ci", "operator-tools"],
       "necessity": "build",
-      "hosts": ["registry.npmjs.org", "dl.google.com", "deb.debian.org", "archive.ubuntu.com"],
+      "hosts": ["registry.npmjs.org", "dl.google.com", "deb.debian.org", "archive.ubuntu.com", "download.qt.io", "snapshot.debian.org", "auth.docker.io", "storage.googleapis.com", "cloud.debian.org"],
       "configuredHosts": ["pypi.org", "files.pythonhosted.org", "pub.dev", "proxy.golang.org"],
       "credentials": [],
       "observes": "The build host's IP address and the exact package names and versions requested.",
@@ -194,7 +181,7 @@
       "outage": "Fresh builds that need to download packages fail. Deployed services never contact registries, and the ForkMesh Actions critical suites use preinstalled packages.",
       "recovery": "Retry the build, or build from a warm package cache.",
       "alternative": "Self-host builds may use a local package mirror or cache; the app Worker and mirror node need no third-party packages at runtime.",
-      "evidence": ["tools/requirements-ci.txt", "docs/dependency-security-audit-2026-09-13.md", "tools/android-toolchain.sh"],
+      "evidence": ["tools/requirements-ci.txt", "docs/dependency-security-audit-2026-09-13.md", "tools/android-toolchain.sh", "tools/package/linux-baseline/stage-qt.sh", "tools/package/linux-baseline/stage-packages.sh", "tools/package/linux-baseline/oci_rootfs.py", "tools/package/macos_universal_on_mac.sh", "tools/clean_machine_vm.py"],
       "drills": ["app/tests/test_offline_ci_workflow.py::test_deploy_fails_before_secrets_when_the_sandbox_has_no_egress"]
     },
     {
@@ -486,9 +473,9 @@
       "id": "fediverse-peers",
       "name": "ActivityPub peer servers",
       "categories": ["social"],
-      "components": ["app-worker"],
+      "components": ["app-worker", "marketplace-package"],
       "necessity": "optional",
-      "hosts": [],
+      "hosts": ["mastodon.online", "fosstodon.org", "hachyderm.io", "mas.to", "infosec.exchange"],
       "configuredHosts": [],
       "credentials": [],
       "observes": "Public activities ForkMesh publishes, the actor's public key, and HTTP signatures, delivered to the inboxes of remote followers; remote servers fetching actor profiles see the requesting server's IP address.",
@@ -498,7 +485,7 @@
       "outage": "Delivery to that peer is queued for retry; local posting and every other feature continue.",
       "recovery": "Queued deliveries retry from the D1 outbox.",
       "alternative": "Disable federation; local posts remain.",
-      "evidence": ["app/src/activitypub.py", "app/src/fediverse_routes.py"],
+      "evidence": ["app/src/activitypub.py", "app/src/fediverse_routes.py", "marketplace/packages/crm/manifest.json"],
       "drills": ["app/tests/test_ap_post_delete.py::test_delete_drops_local_even_when_federation_disabled"]
     },
     {
@@ -507,7 +494,7 @@
       "categories": ["ai-provider"],
       "components": ["desktop", "mobile"],
       "necessity": "optional",
-      "hosts": ["api.anthropic.com", "api.openai.com", "claude.ai", "chatgpt.com"],
+      "hosts": ["api.anthropic.com", "api.openai.com", "claude.ai", "chatgpt.com", "auth.openai.com"],
       "configuredHosts": [],
       "credentials": [],
       "observes": "Prompts the user chooses to send, including issue threads, pull request diffs, and repository context, with the user's own API key; usage and cost queries for that key. Agent CLI install scripts are downloaded from claude.ai and chatgpt.com when the user installs them on a node.",
@@ -538,7 +525,7 @@
       "recovery": "Retry provisioning.",
       "alternative": "Install the mirror node on any Linux host with install.sh.",
       "gap": "No drill simulates a Vultr API outage during provisioning.",
-      "evidence": ["app/src/start_setup.py", "desktop/src/MainWindowChat.cpp"],
+      "evidence": ["tools/next_fleet.py", "desktop/src/MainWindowChat.cpp"],
       "drills": []
     },
     {
@@ -668,6 +655,226 @@
       "privacyDisclosure": "Git remotes you choose may receive network requests",
       "evidence": ["server/config.go", "app/src/microjobs_runtime.py", "app/src/marketplace_runtime.py"],
       "drills": []
+    },
+    {
+      "id": "cloudflare-turnstile",
+      "name": "Cloudflare Turnstile on the signup and password-reset forms",
+      "categories": ["identity"],
+      "components": ["app-browser", "app-worker"],
+      "necessity": "degradable",
+      "hosts": ["challenges.cloudflare.com"],
+      "configuredHosts": [],
+      "credentials": ["TURNSTILE_SECRET_KEY", "TURNSTILE_SITE_KEY"],
+      "observes": "The visitor's IP address, User-Agent and browser signals while the widget runs on /signup and /forgot-password; the app sends Cloudflare the widget token and the client IP to verify it.",
+      "retention": "Set by Cloudflare.",
+      "jurisdiction": "Cloudflare, Inc. (United States).",
+      "canonicalData": "None.",
+      "outage": "On ForkMesh Next the gated forms fail closed with 503 turnstile_unavailable; signed-in use, desktop node registration and every other page keep working.",
+      "recovery": "None required; the forms work again once siteverify answers.",
+      "alternative": "Leave the keys unset off the VPS platform, which selects Cloudflare's always-pass test pair.",
+      "gap": "The privacy notice does not name Turnstile yet.",
+      "privacyFinding": true,
+      "evidence": ["app/src/turnstile.py", "app/public/signup.html", "app/public/forgot-password.html"],
+      "drills": ["app/tests/test_turnstile.py::test_siteverify_failure_timeout_and_garbage_fail_closed"]
+    },
+    {
+      "id": "mail-provider-alternatives",
+      "name": "SendGrid and Mailgun as alternative mail providers",
+      "categories": ["email"],
+      "components": ["app-worker"],
+      "necessity": "optional",
+      "hosts": ["api.sendgrid.com", "api.mailgun.net", "api.eu.mailgun.net"],
+      "configuredHosts": [],
+      "credentials": ["MAILGUN_API_URL", "SENDGRID_API_URL"],
+      "observes": "When an operator selects SendGrid or Mailgun instead of Mailtrap: recipient addresses and the content of transactional and marketing mail.",
+      "retention": "Set by the provider.",
+      "jurisdiction": "Twilio Inc. (SendGrid) or Sinch/Mailgun Technologies (United States or the EU region the operator picks).",
+      "canonicalData": "None; the provider only relays mail.",
+      "outage": "Mail sends fail and are logged as skipped; account actions still complete.",
+      "recovery": "Retry, or switch the provider back to Mailtrap.",
+      "alternative": "Mailtrap, the default provider.",
+      "gap": "No drill sends through SendGrid or Mailgun with the provider unreachable.",
+      "evidence": ["app/src/mail_providers.py"],
+      "drills": []
+    },
+    {
+      "id": "workflow-integrations",
+      "name": "Third-party APIs called by workflow integration steps",
+      "categories": ["forge-api", "email", "payments", "ai-provider", "social", "infrastructure"],
+      "components": ["app-worker"],
+      "necessity": "optional",
+      "hosts": ["api-free.deepl.com", "api-inference.huggingface.co", "api-m.paypal.com", "api-ssl.bitly.com", "api.airtable.com", "api.attio.com", "api.baserow.io", "api.bitbucket.org", "api.box.com", "api.brevo.com", "api.calendly.com", "api.clickup.com", "api.cohere.com", "api.digitalocean.com", "api.dropboxapi.com", "api.groq.com", "api.helpscout.net", "api.hubapi.com", "api.intercom.io", "api.jotform.com", "api.kit.com", "api.lemonsqueezy.com", "api.linear.app", "api.linkedin.com", "api.mistral.ai", "api.mixpanel.com", "api.monday.com", "api.n8n.io", "api.netlify.com", "api.notion.com", "api.openweathermap.org", "api.opsgenie.com", "api.paddle.com", "api.perplexity.ai", "api.pipedrive.com", "api.postmarkapp.com", "api.pushover.net", "api.resend.com", "api.segment.io", "api.stripe.com", "api.telegram.org", "api.todoist.com", "api.trello.com", "api.twilio.com", "api.typeform.com", "api.vercel.com", "api.webflow.com", "api.zoom.us", "api2.amplitude.com", "app.asana.com", "circleci.com", "connect.mailerlite.com", "connect.squareup.com", "en.wikipedia.org", "events.pagerduty.com", "generativelanguage.googleapis.com", "gist.githubusercontent.com", "gmail.googleapis.com", "graph.facebook.com", "graph.microsoft.com", "hooks.zapier.com", "matrix.org", "ntfy.sh", "oauth.reddit.com", "plausible.io", "quickbooks.api.intuit.com", "raw.githubusercontent.com", "sheets.googleapis.com", "slack.com", "www.google-analytics.com", "www.googleapis.com", "www.zohoapis.com"],
+      "configuredHosts": ["abc.supabase.co", "abc.upstash.io", "your-org.my.salesforce.com", "your-team.atlassian.net", "project-default-rtdb.firebaseio.com"],
+      "credentials": [],
+      "observes": "Only for a user who adds an integration step to a workflow: the credential they paste and whatever data the step sends or reads. Importing a workflow by URL fetches it from GitHub, a gist or the n8n template API.",
+      "retention": "Set by each provider.",
+      "jurisdiction": "Each provider's own, chosen by the user who configures the step.",
+      "canonicalData": "The provider is canonical for its own records; the workflow definition stays in ForkMesh.",
+      "outage": "The step fails and the run stops unless the step continues on failure; other workflows and ForkMesh itself are unaffected.",
+      "recovery": "Rerun the workflow.",
+      "alternative": "Use a webhook step to a service the user hosts, or leave the integration out.",
+      "evidence": ["app/src/workflow_integrations.py", "app/src/workflow_templates.py", "app/src/workflows_runtime.py", "tools/reddit_scout.py"],
+      "drills": ["app/tests/test_workflows.py::test_http_errors_stop_the_run_unless_continue_on_fail"]
+    },
+    {
+      "id": "nutrition-data",
+      "name": "Open Food Facts and USDA FoodData Central for the Calories package",
+      "categories": ["infrastructure"],
+      "components": ["marketplace-package"],
+      "necessity": "optional",
+      "hosts": ["world.openfoodfacts.org", "search.openfoodfacts.org", "api.nal.usda.gov"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "For users of the Calories package: the food names and barcodes they look up.",
+      "retention": "Set by Open Food Facts and the USDA.",
+      "jurisdiction": "Open Food Facts (France) and the U.S. Department of Agriculture.",
+      "canonicalData": "None; results are looked up on demand.",
+      "outage": "Food search in the package returns nothing; logged entries are unaffected.",
+      "recovery": "Search again.",
+      "alternative": "Enter foods by hand.",
+      "gap": "No drill covers the food databases being unreachable.",
+      "evidence": ["marketplace/packages/calories/content/worker/calories.py"],
+      "drills": []
+    },
+    {
+      "id": "link-previews",
+      "name": "oEmbed and public APIs for chat link previews",
+      "categories": ["media-embed", "social"],
+      "components": ["mobile", "app-worker"],
+      "necessity": "optional",
+      "hosts": ["vimeo.com", "www.tiktok.com", "www.dailymotion.com", "www.loom.com", "open.spotify.com", "soundcloud.com", "codepen.io", "www.flickr.com", "publish.twitter.com", "hacker-news.firebaseio.com", "crates.io", "store.steampowered.com", "api.stackexchange.com", "xkcd.com"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "The link a user posted in chat and the device's IP address, when a preview for that site is built.",
+      "retention": "Set by each site.",
+      "jurisdiction": "Each site's own.",
+      "canonicalData": "None.",
+      "outage": "The link shows without a rich preview.",
+      "recovery": "None required.",
+      "alternative": "Turn off link previews.",
+      "gap": "No drill builds a preview with the site unreachable.",
+      "evidence": ["native/ios/ForkMeshCore/Sources/FMChat/ViewModels/ChatLinkPreviewService.swift", "native/ios/ForkMeshCore/Sources/FMChat/Threads/ChatLinkSites.swift", "app/src/plugin_race.py"],
+      "drills": []
+    },
+    {
+      "id": "video-mix-sources",
+      "name": "Invidious and YouTube thumbnails for Video Mix DJ Studio",
+      "categories": ["media-embed"],
+      "components": ["marketplace-package", "mobile"],
+      "necessity": "optional",
+      "hosts": ["api.invidious.io", "i.ytimg.com"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "For users of the package: video searches, the device's IP address and the thumbnails it loads.",
+      "retention": "Set by the Invidious instance and Google.",
+      "jurisdiction": "The chosen Invidious instance's operator; Google LLC (United States) for thumbnails.",
+      "canonicalData": "None.",
+      "outage": "Video search in the package fails; saved mixes are unaffected.",
+      "recovery": "Search again or pick another instance.",
+      "alternative": "Add local videos.",
+      "gap": "No drill covers the instance list being unreachable.",
+      "evidence": ["marketplace/packages/video-mix-dj-studio/content/web/page.js"],
+      "drills": []
+    },
+    {
+      "id": "app-store-lookup",
+      "name": "Apple iTunes lookup for the current App Store version",
+      "categories": ["package-registry"],
+      "components": ["mobile", "marketplace-package"],
+      "necessity": "optional",
+      "hosts": ["itunes.apple.com"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "The device's IP address and the app id being looked up.",
+      "retention": "Set by Apple.",
+      "jurisdiction": "Apple Inc. (United States).",
+      "canonicalData": "None.",
+      "outage": "The update prompt and the Marketing package's App Store figures are not refreshed.",
+      "recovery": "None required; the next check retries.",
+      "alternative": "None needed.",
+      "gap": "No drill covers the lookup failing.",
+      "evidence": ["native/ios/ForkMeshCore/Sources/FMApi/Navigation/ClientVersionGate.swift", "marketplace/packages/marketing/content/worker/marketing.py"],
+      "drills": []
+    },
+    {
+      "id": "hugging-face-models",
+      "name": "Hugging Face downloads for local voices and models",
+      "categories": ["ai-provider"],
+      "components": ["desktop", "mobile"],
+      "necessity": "optional",
+      "hosts": ["huggingface.co"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "The device's IP address and which voice or model file is downloaded.",
+      "retention": "Set by Hugging Face.",
+      "jurisdiction": "Hugging Face, Inc. (United States).",
+      "canonicalData": "None; files are cached on the device after download.",
+      "outage": "A voice or local model that is not yet downloaded cannot be used.",
+      "recovery": "Download again.",
+      "alternative": "Use a voice or model already on the device.",
+      "gap": "No drill covers the download failing.",
+      "evidence": ["desktop/src/AgentAnnouncerVoice.cpp", "native/ios/ForkMeshCore/Sources/FMLocalAI/HuggingFaceSnapshot.swift"],
+      "drills": []
+    },
+    {
+      "id": "duckduckgo-web-research",
+      "name": "DuckDuckGo HTML search for the phone assistant",
+      "categories": ["ai-provider"],
+      "components": ["mobile"],
+      "necessity": "optional",
+      "hosts": ["html.duckduckgo.com"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "The search query the assistant runs and the device's IP address.",
+      "retention": "Set by DuckDuckGo.",
+      "jurisdiction": "Duck Duck Go, Inc. (United States).",
+      "canonicalData": "None.",
+      "outage": "The assistant answers without web results.",
+      "recovery": "None required.",
+      "alternative": "Ask without web research.",
+      "gap": "No drill covers search being unreachable.",
+      "evidence": ["native/ios/ForkMeshCore/Sources/FMAssistant/WebResearch.swift"],
+      "drills": []
+    },
+    {
+      "id": "google-public-dns",
+      "name": "Google Public DNS as the instance installer's second resolver",
+      "categories": ["dns"],
+      "components": ["installer"],
+      "necessity": "operator",
+      "hosts": ["dns.google"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "The domain name the installer is checking and the server's IP address.",
+      "retention": "Set by Google.",
+      "jurisdiction": "Google LLC (United States).",
+      "canonicalData": "None.",
+      "outage": "The installer falls back to Cloudflare DNS over HTTPS.",
+      "recovery": "None required.",
+      "alternative": "Cloudflare DNS over HTTPS, tried first.",
+      "gap": "No drill runs the installer with both resolvers unreachable.",
+      "evidence": ["www/public/install-instance.sh"],
+      "drills": []
+    },
+    {
+      "id": "browser-extension-sites",
+      "name": "Sites the browser extension reads in the user's own browser",
+      "categories": ["social"],
+      "components": ["marketplace-package"],
+      "necessity": "optional",
+      "hosts": ["old.reddit.com", "console.x.com", "developer.x.com", "developer.twitter.com", "api-console.zoho.com", "api-console.zoho.eu", "api-console.zoho.in", "api-console.zoho.com.au", "api-console.zoho.jp", "api-console.zohocloud.ca"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "Nothing beyond what the user's own signed-in browser sends: the extension reads subreddit rules pages and fills developer-portal setup forms the user opens.",
+      "retention": "Set by Reddit, X and Zoho.",
+      "jurisdiction": "Each site's own.",
+      "canonicalData": "None.",
+      "outage": "The Reddit walk or the setup helper stops; the rest of the extension works.",
+      "recovery": "Run the step again.",
+      "alternative": "Do the setup by hand.",
+      "gap": "No drill covers these pages being unreachable.",
+      "evidence": ["marketplace/packages/browser-extension/content/extension/background.js", "marketplace/packages/browser-extension/content/extension/manifest.json"],
+      "drills": []
     }
   ],
   "privacyFindings": [
@@ -710,6 +917,11 @@
       "dependency": "patreon",
       "contradicts": "Today, these are involved:",
       "finding": "Patreon membership linking reads identity, email, and pledge state, which the notice does not name."
+    },
+    {
+      "dependency": "cloudflare-turnstile",
+      "contradicts": "Today, these are involved:",
+      "finding": "The signup and forgot-password pages load Cloudflare Turnstile, which sees the visitor's IP address and browser signals, without the privacy notice naming it."
     }
   ],
   "storedIdentifiers": [
@@ -778,6 +990,366 @@
     {"host": "docs.oasis-open.org", "kind": "namespace", "why": "WebFinger/XRD namespace."},
     {"host": "schemas.android.com", "kind": "namespace", "why": "Android XML namespace."},
     {"host": "www.apple.com", "kind": "namespace", "why": "Property list DTD identifier."},
-    {"host": "www.andymatuschak.org", "kind": "namespace", "why": "Sparkle appcast XML namespace."}
+    {"host": "www.andymatuschak.org", "kind": "namespace", "why": "Sparkle appcast XML namespace."},
+    {
+      "host": "ads.google.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "ads.microsoft.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "ads.nextdoor.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "ads.pinterest.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "ads.reddit.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "ads.snapchat.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "ads.spotify.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "ads.x.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "adsmanager.facebook.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "advertising.amazon.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "advertising.walmart.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "biz.yelp.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "searchads.apple.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "www.ebay.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "www.etsy.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "www.quora.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "www.tripadvisor.com",
+      "kind": "link",
+      "why": "Ad manager link in the Marketing package."
+    },
+    {
+      "host": "diabetesfoodhub.org",
+      "kind": "link",
+      "why": "Recipe source link in the phone food catalog."
+    },
+    {
+      "host": "diet.mayoclinic.org",
+      "kind": "link",
+      "why": "Recipe source link in the phone food catalog."
+    },
+    {
+      "host": "health.clevelandclinic.org",
+      "kind": "link",
+      "why": "Recipe source link in the phone food catalog."
+    },
+    {
+      "host": "huskynutritionsport.education.uconn.edu",
+      "kind": "link",
+      "why": "Recipe source link in the phone food catalog."
+    },
+    {
+      "host": "www.aldi.us",
+      "kind": "link",
+      "why": "Recipe source link in the phone food catalog."
+    },
+    {
+      "host": "www.diabetesaustralia.com.au",
+      "kind": "link",
+      "why": "Recipe source link in the phone food catalog."
+    },
+    {
+      "host": "www.healthyfood.com",
+      "kind": "link",
+      "why": "Recipe source link in the phone food catalog."
+    },
+    {
+      "host": "www.heartfoundation.org.au",
+      "kind": "link",
+      "why": "Recipe source link in the phone food catalog."
+    },
+    {
+      "host": "git-scm.com",
+      "kind": "documentation",
+      "why": "Manual page linked from the desktop's destructive command review."
+    },
+    {
+      "host": "cli.github.com",
+      "kind": "documentation",
+      "why": "Manual page linked from the desktop's destructive command review."
+    },
+    {
+      "host": "docs.python.org",
+      "kind": "documentation",
+      "why": "Manual page linked from the desktop's destructive command review."
+    },
+    {
+      "host": "docs.pytest.org",
+      "kind": "documentation",
+      "why": "Manual page linked from the desktop's destructive command review."
+    },
+    {
+      "host": "man7.org",
+      "kind": "documentation",
+      "why": "Manual page linked from the desktop's destructive command review."
+    },
+    {
+      "host": "www.sudo.ws",
+      "kind": "documentation",
+      "why": "Manual page linked from the desktop's destructive command review."
+    },
+    {
+      "host": "docs.aws.amazon.com",
+      "kind": "documentation",
+      "why": "Deploy guide linked from the marketplace page."
+    },
+    {
+      "host": "docs.netlify.com",
+      "kind": "documentation",
+      "why": "Deploy guide linked from the marketplace page."
+    },
+    {
+      "host": "fly.io",
+      "kind": "documentation",
+      "why": "Deploy guide linked from the marketplace page."
+    },
+    {
+      "host": "vercel.com",
+      "kind": "documentation",
+      "why": "Deploy guide linked from the marketplace page."
+    },
+    {
+      "host": "about.me",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "alexgaynor.net",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "baroquesoftware.com",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "blog.ian.stapletoncordas.co",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "davidism.com",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "florimond.dev",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "graingert.co.uk",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "hugovk.dev",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "karpetrosyan.dev",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "kimdavies.com",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "langui.sh",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "lucumr.pocoo.org",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "lukasa.co.uk",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "pgjones.dev",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "requires.io",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "richard.levitte.org",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "sethmlarson.dev",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "vorpus.org",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "wallstreet.io",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "www.lovelydinosaur.com",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "yohanboniface.me",
+      "kind": "link",
+      "why": "Author website on the Docs package's Dependencies page."
+    },
+    {
+      "host": "apps.apple.com",
+      "kind": "link",
+      "why": "App Store page links."
+    },
+    {
+      "host": "discord.gg",
+      "kind": "link",
+      "why": "Discord invite links."
+    },
+    {
+      "host": "www.google.com",
+      "kind": "link",
+      "why": "Site search link in the Marketing package."
+    },
+    {
+      "host": "fedi.directory",
+      "kind": "link",
+      "why": "Directory link in the Marketing package."
+    },
+    {
+      "host": "opencollective.com",
+      "kind": "link",
+      "why": "ForkMesh's Open Collective page."
+    },
+    {
+      "host": "git.owaspblt.org",
+      "kind": "link",
+      "why": "Homepage link to an instance."
+    },
+    {
+      "host": "netnewswire.com",
+      "kind": "link",
+      "why": "Credit link in the RSS Reader package."
+    },
+    {
+      "host": "musespark.ai",
+      "kind": "documentation",
+      "why": "Model documentation link in an agent package."
+    },
+    {
+      "host": "cwe.mitre.org",
+      "kind": "documentation",
+      "why": "CWE definitions linked from security findings."
+    },
+    {
+      "host": "unlicense.org",
+      "kind": "documentation",
+      "why": "Link inside the Unlicense license text."
+    },
+    {
+      "host": "n8n.io",
+      "kind": "link",
+      "why": "Placeholder example in the workflow import field."
+    },
+    {
+      "host": "appstoreconnect.apple.com",
+      "kind": "link",
+      "why": "App Store Connect link printed by an operator tool."
+    },
+    {
+      "host": "codemagic.io",
+      "kind": "link",
+      "why": "Build link printed by an operator tool."
+    },
+    {
+      "host": "aus.social",
+      "kind": "link",
+      "why": "Example profile URL in the browser extension's Mastodon parser."
+    },
+    {
+      "host": "apache.org",
+      "kind": "namespace",
+      "why": "Xerces XML parser feature identifier."
+    },
+    {
+      "host": "www.sitemaps.org",
+      "kind": "namespace",
+      "why": "Sitemap XML namespace."
+    }
   ]
 }

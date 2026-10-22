@@ -165,6 +165,28 @@ and is masked in errors.
   reachable through GitHub's `refs/pull/1-3` until the repository is deleted
   or GitHub support purges them. A bundle of the old `main` and PR heads is in
   `data/core/state/github-mirror/github-forkmesh-before-2026-10-21.bundle`.
+- GitHub runs `.github/workflows/` on every push to `main`; nothing ran them
+  before 2026-10-21, so the first runs surfaced drift that had built up
+  unseen. Fixed then: the Windows jobs set `PYTHONUTF8: "1"` (Windows Python
+  otherwise reads and writes files as cp1252 and fails on any non-ASCII
+  source) and run `git config --global core.autocrlf false` before checkout
+  (CRLF checkouts change the protocol suite's document digests);
+  `tools/forkmesh_safe_delete.py` imports `pwd` only where it exists;
+  `app/browser_tests/package-lock.json` lists the optional packages npm 11
+  `npm ci` requires; the World input-latency test opens chat through the HUD
+  island that replaced the chat terminal; the protocol suite manifest was
+  regenerated; and the external dependency map
+  (`conformance/external-dependencies/v1/manifest.json`) now classifies the
+  ~200 hosts added since 2026-09-14, among them the workflow integration
+  APIs, Turnstile (recorded as a privacy finding: the privacy notice does not
+  name it yet), SendGrid/Mailgun, chat link previews and the Calories
+  package's food databases. The core quality gate also caught source-reading
+  tests that had fallen behind `entry.py` (the HTTPS mirror routing tests now
+  load `_discard_response_body`, `_mirror_origin_is_this_app` and the
+  `_instance_*flagship_node` helpers; the mirror-node test follows
+  `d.publishEndpoint`) and five discouraged terms (two "merge request" relay
+  messages, two "Qt client" links, and the `ForkMesh-Attestation` pull rule,
+  now an explained allowance).
 
 ## Merges made on the cores
 

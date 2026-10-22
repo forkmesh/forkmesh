@@ -16,7 +16,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Install ForkMesh and complete first-run setup | [Getting started](getting-started.md) |
 | Supported platforms, signing, upgrade, rollback, uninstall | [Installation support matrix](install-support-matrix.md) |
 | Start an instance from a settings file | [Start from a settings file](start-config.md) |
-| Build, run and use the desktop application | [Qt client guide](qt-client.md) |
+| Build, run and use the desktop application | [ForkMesh desktop app guide](qt-client.md) |
 | Read and clone public projects without an account | [Reading and cloning without an account](accountless-reading.md) |
 | Create a repository from the web and push to it | [Hosted repositories](hosted-repositories.md) |
 | Fork a repository, push a branch and open a pull request with git only | [Contribute with git only](contributing-with-git.md) |
@@ -107,4 +107,4 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 - `*.schema.json`: machine-readable configuration and protocol schemas.
 
 When reporting a problem, include the version, the action taken and the
-relevant log excerpt; see the [Qt client guide](qt-client.md) for log locations.
+relevant log excerpt; see the [ForkMesh desktop app guide](qt-client.md) for log locations.
