@@ -303,6 +303,16 @@ destination, in sections, with counts and activity:
   (`gridTop`, counted in the fit), so the count pills that sit above the
   first row's icons are not clipped by the bar. The operator asked for this
   on 2026-10-15; at 8 pt the pills were cut off.
+- **Count pills stay in their own row.** The count pill (and the spinner)
+  hangs from the glyph's top-right corner and the heartbeat count from its
+  top-left, each rising at most 2 pt above the icon box
+  (`ShellHomeIcon.anchorRise`). They used to sit with their bottom edge
+  inside the icon, overhanging about 10 pt upwards; once `fittedTile`
+  shrank a full grid to 50 pt rows the pills covered the names of the row
+  above ("Usage", "Organizations", "Diagnostics"). The pills draw over the
+  update dot, which is now 6 pt instead of 8 pt so a grid where most
+  plugins have one stays calm. The operator asked on 2026-10-22 for a Home
+  where every name can be read at a glance while keeping every count.
 
 **Top chrome** (`ShellTopBar`). The project icon (`ShellProjectSlot`, 40 pt,
 opens the project drawer; touch and hold for 0.5 s goes to Home from any

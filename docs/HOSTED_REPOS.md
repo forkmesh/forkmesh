@@ -357,6 +357,35 @@ refs).
 - A branch deleted on the Branches page changes the refs digest, so it
   triggers a push, and with prune the branch is removed from the target.
 
+## Internet Archive backups
+
+The owner can upload a public hosted repository to an archive.org item on a
+schedule ([app/archive-sync.md](app/archive-sync.md)). The exchange carries an
+optional `archiveSync` (`revision`, `url`, `accessKey`, `secret`,
+`intervalSeconds`, `collection`, `title`, `source`, and `uploaded`: the
+`revision`, `digest` and `at` of the last upload the app recorded) to the
+primary, only for public repositories, and the daemon reports `archiveSyncs`
+results (`revision`, `digest`, `ok`, `at`, `error`, `bytes`).
+`server/hosted_archive_sync.go` does the work:
+
+- Valid only for `https://s3.us.archive.org/<item>/<file>.bundle`, keys of 8
+  to 64 letters and digits, an interval from 1 hour to 400 days, and
+  printable ASCII metadata.
+- Due when the `revision` differs from the last upload (new settings or
+  **Back up now**), or when the refs digest (every branch and tag) changed and
+  the interval has passed since the last upload. `uploaded` seeds the last
+  upload after a daemon restart, so nothing is uploaded twice. Failures retry
+  after 1 hour.
+- The upload runs in the background, one at a time per core, so a large
+  repository never holds up replication: `git bundle create <root>/.archive/<id>-*.bundle
+  HEAD --branches --tags` (30 minutes at most), then one `PUT` with
+  `Authorization: LOW <access>:<secret>`, `x-amz-auto-make-bucket: 1`,
+  `x-archive-queue-derive: 0` and `x-archive-meta-*` (mediatype `software`,
+  the collection, title, description, source). Redirects are not followed;
+  the whole job is limited to 2 hours. The bundle file is removed afterwards.
+- Errors (the archive's `<Message>` when it sends one) are redacted (both
+  keys replaced) and folded to 300 characters.
+
 ## Operations
 
 - Root on each core: `/var/lib/forkmesh/hosted/<id>.git` (owned by the daemon

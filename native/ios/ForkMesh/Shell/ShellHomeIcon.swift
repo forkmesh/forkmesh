@@ -85,10 +85,10 @@ struct ShellHomeIcon: View {
     var body: some View {
         VStack(spacing: ShellHomeIcon.gap) {
             glyphBox
-                .overlay(alignment: .topTrailing) { countAnchor }
-                .overlay(alignment: .topLeading) { liveAnchor }
                 .overlay(alignment: .bottomTrailing) { updateAnchor }
                 .overlay(alignment: .bottomLeading) { desktopOfflineAnchor }
+                .overlay(alignment: .topTrailing) { countAnchor }
+                .overlay(alignment: .topLeading) { liveAnchor }
             Text(item.title)
                 .font(.system(size: labelSize, weight: item.selected ? .semibold : .medium))
                 .foregroundStyle(item.selected ? fm.accent : fm.textSecondary)
@@ -172,22 +172,20 @@ struct ShellHomeIcon: View {
             .accessibilityHidden(true)
     }
 
-    private var anchorInset: CGFloat {
-        tiled ? min(12, box * 0.28) : (box - iconSize) / 2 + iconSize * 0.3
-    }
+    static let anchorRise: CGFloat = 2
 
-    private var anchorDrop: CGFloat {
-        tiled ? min(10, box * 0.22) : (box - iconSize) / 2 + 6
+    private var anchorInset: CGFloat {
+        tiled ? min(12, box * 0.28) : (box - iconSize) / 2 + iconSize * 0.12
     }
 
     @ViewBuilder private var countAnchor: some View {
         Color.clear
             .frame(width: 0, height: 0)
-            .overlay(alignment: .bottomLeading) {
+            .overlay(alignment: .topLeading) {
                 if item.badge > 0 {
                     ShellHomeCountMark(text: ShellBottomBar.countText(item.badge), value: item.badge, unread: true)
                         .keyframeAnimator(initialValue: 1.0, trigger: item.pulse) { badge, scale in
-                            badge.scaleEffect(scale, anchor: .bottomLeading)
+                            badge.scaleEffect(scale, anchor: .leading)
                         } keyframes: { (_: Double) in
                             KeyframeTrack {
                                 SpringKeyframe(1.4, duration: 0.18)
@@ -195,15 +193,15 @@ struct ShellHomeIcon: View {
                                 SpringKeyframe(1.0, duration: 0.2)
                             }
                         }
-                        .transition(.scale(scale: 0.4, anchor: .bottomLeading).combined(with: .opacity))
+                        .transition(.scale(scale: 0.4, anchor: .leading).combined(with: .opacity))
                 } else if showsCounts, item.loading {
                     ShellHomeCountSpinner()
                 } else if showsCounts, let count = item.count, count > 0 {
                     ShellHomeCountMark(text: ShellBottomBar.countText(count), value: count, unread: false)
-                        .transition(.scale(scale: 0.4, anchor: .bottomLeading).combined(with: .opacity))
+                        .transition(.scale(scale: 0.4, anchor: .leading).combined(with: .opacity))
                 }
             }
-            .offset(x: -anchorInset, y: anchorDrop)
+            .offset(x: -anchorInset, y: -ShellHomeIcon.anchorRise)
             .accessibilityHidden(true)
     }
 
@@ -236,11 +234,11 @@ struct ShellHomeIcon: View {
         if item.live > 0 {
             Color.clear
                 .frame(width: 0, height: 0)
-                .overlay(alignment: .bottomTrailing) {
+                .overlay(alignment: .topTrailing) {
                     ShellHeartbeatCount(count: item.live)
                         .fixedSize()
                 }
-                .offset(x: anchorInset, y: anchorDrop)
+                .offset(x: anchorInset, y: -ShellHomeIcon.anchorRise)
                 .transition(.scale.combined(with: .opacity))
         }
     }
@@ -307,7 +305,7 @@ struct ShellHomeCountSpinner: View {
 struct ShellHomeUpdateDot: View {
     @Environment(\.fmPalette) var fm
 
-    static let size: CGFloat = 8
+    static let size: CGFloat = 6
 
     var body: some View {
         Circle()

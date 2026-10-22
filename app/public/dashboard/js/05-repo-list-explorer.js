@@ -2737,6 +2737,7 @@
       loadRepoDigestPreview(state.selectedRepo);
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
+      void loadRepoArchiveSync(state.selectedRepo);
       void loadRepoPullRulesSettings(state.selectedRepo);
       mountActionsSecrets($("[data-actions-secrets]"));
     }
