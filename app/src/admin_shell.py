@@ -64,6 +64,8 @@ NAV = (
     )),
     ("People", (
         ("users", "Users", "users", ("console", "users")),
+        ("accounts-moderation", "Sign-up & moderation", "shield",
+         ("console", "accounts-moderation")),
     )),
     ("Support", (
         ("bugs", "Bug reports", "bug", ("console", "bugs")),

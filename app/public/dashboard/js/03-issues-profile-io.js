@@ -1398,6 +1398,14 @@
     setHint("Signing and sending…");
     try {
       const result = await submitWebIssueComment(repo, number, body);
+      if (result?.pending === "review") {
+        stopSpinner();
+        if (bodyInput) bodyInput.value = "";
+        actionButtons.forEach((button) => { button.disabled = false; });
+        form._issueSubmitAction = "comment";
+        setHint(moderationPendingMessage(result));
+        return;
+      }
       // Show the comment straight away: it only reaches the mirror once the
       // maintainer's node drains the inbox, so the timeline can't reload it yet.
       // The composer sits in its own row of the conversation, so find the
@@ -1563,6 +1571,7 @@
       detail.parsed,
     ));
     mountIssueStickyHeader(container);
+    decorateIssueModeration(container, detail.repo, detail.number, detail.parsed);
     window.lucide?.createIcons();
   }
 
@@ -1573,6 +1582,7 @@
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
     }
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
       return "Only the comment's author, the repository owner or an organization admin can change this comment.";
     }

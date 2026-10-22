@@ -136,7 +136,8 @@ def test_signup_email_validation_requires_well_formed_domain_and_tld():
         ENTRY_TEXT.index("async def _account_signup"):
         ENTRY_TEXT.index("async def _account_reserve")
     ]
-    assert "if not valid_account_email(email):" in signup_body
+    assert ("if (email or not email_optional) and not "
+            "valid_account_email(email):") in signup_body
     assert "valid_email_required" in signup_body
 
 

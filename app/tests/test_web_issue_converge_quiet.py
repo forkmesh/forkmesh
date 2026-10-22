@@ -101,6 +101,10 @@ const loadRepoCollabSettings = async () => ({});
 const prepareCommentReactions = () => "";
 const loadCommentReactions = async () => null;
 const loadRepoIssueAttachments = async () => {};
+const fetchIssueModeration = () => null;
+const issueModerationWithin = async () => null;
+const applyIssueModeration = (text) => text;
+const decorateIssueModeration = () => {};
 const repoIssueSourceUrl = () => "";
 const loadRepoIssueRelations = async () => ({ issueDependencies: [], issueSubIssues: [], issueMentions: [] });
 

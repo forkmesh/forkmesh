@@ -300,10 +300,10 @@ def test_every_blocking_signup_refusal_is_recorded():
                    "account_pending_verification", "rate_limited"):
         assert reason in handler
         assert handler.count('"%s"' % reason) >= 1
-    # Two expired-intent sites, the referral gate, quarantine, the per-IP
-    # throttle, and username moderation.
-    assert handler.count("await log_blocked_signup(") == 6
-    assert handler.count("SIGNUP_PATH") == 7
+    # Two expired-intent sites, closed sign-up, the referral gate,
+    # quarantine, the per-IP throttle, and username moderation.
+    assert handler.count("await log_blocked_signup(") == 7
+    assert handler.count("SIGNUP_PATH") == 8
 
 
 def test_node_claim_routes_record_their_blocking_refusals():

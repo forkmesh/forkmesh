@@ -70,6 +70,7 @@
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
       bindAccountPasswordControls();
+      bindAccountRecoveryControls();
       loadAccountSessions({ force: true });
       loadAccountDevices({ force: true });
       loadPatreonConnection();
@@ -1028,6 +1029,55 @@
     else if (!instanceThemeState.previewing) setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is the current theme.`);
   }
 
+  function bindAccountRecoveryControls() {
+    const button = $("[data-account-recovery-new]");
+    if (!button || button.dataset.controlsBound === "true") return;
+    button.dataset.controlsBound = "true";
+    const status = (text, bad) => {
+      const node = $("[data-account-recovery-status]");
+      if (!node) return;
+      node.textContent = text || "";
+      node.className = "min-h-4 text-xs " + (bad ? "text-destructive" : "text-muted-foreground");
+    };
+    button.addEventListener("click", async () => {
+      const field = $("[data-account-recovery-password]");
+      const password = field?.value || "";
+      if (!password) {
+        status("Enter your current password.", true);
+        field?.focus();
+        return;
+      }
+      button.disabled = true;
+      try {
+        const token = state.session?.sessionToken || "";
+        const response = await fetch("/api/accounts/recovery-code", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+            ...(token && token !== "cookie" ? { authorization: "Bearer " + token } : {}),
+          },
+          body: JSON.stringify({ password }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body.recoveryCode) throw new Error(body.error || `http_${response.status}`);
+        if (field) field.value = "";
+        const code = $("[data-account-recovery-code]");
+        if (code) {
+          code.textContent = String(body.recoveryCode);
+          code.hidden = false;
+        }
+        status("This is your new recovery code. The old one no longer works.");
+      } catch (error) {
+        status(ACCOUNT_PASSWORD_ERRORS[error.message] || "Could not make a new code. Try again.", true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
   // ---- Nodes & devices (account_devices registry) ----------------------------
   // The web dashboard is the source of truth for every node key bound to the
   // account (desktop and mobile). Listing is session-gated like sessions; the
@@ -1874,6 +1924,7 @@
     renderOrgDetail(
       root, name, profile, members, teams, repos, fediverse, botTokens);
     void loadOrgPullRules(root, name);
+    void loadOrgModeration(root, name);
   }
 
   async function loadOrgPullRules(root, name) {
@@ -2263,6 +2314,11 @@
         '<h4 class="text-sm font-semibold text-foreground">Pull request rules</h4>' +
         '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Requirements every pull request on this organization\'s linked repositories must meet: tests, documentation, size, commit format, secrets, protected paths, or a required AI model. Each repository can add its own rules in <span class="font-mono">.forkmesh/pull-rules.json</span>. A failing rule is flagged on the pull request with how to fix it; a blocking one also locks the merge.</p>' +
         '<div data-org-pull-rules class="mt-3 text-xs text-muted-foreground">Loading rules…</div>' +
+      "</section>" +
+      '<section class="mt-6" data-org-moderation-section hidden>' +
+        '<h4 class="text-sm font-semibold text-foreground">Moderation</h4>' +
+        '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Posts waiting for review, the people who moderate this organization\'s repositories, and the accounts blocked from them.</p>' +
+        '<div data-org-moderation class="mt-3 text-xs text-muted-foreground">Loading moderation…</div>' +
       "</section>" +
       botTokenControls +
       (canManage
@@ -5342,7 +5398,9 @@
     renderProfileReferrals(session);
     if (!session?.emailVerified) {
       state.nodeNameAvailability.available = false;
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
     } else if (!($("[data-profile-rename-input]")?.value || "").trim()) {
       state.nodeNameAvailability.available = false;
       setRenameStatus("Enter a new username to check availability.", "");
@@ -6186,7 +6244,9 @@
       return;
     }
     if (!state.session?.emailVerified) {
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(state.session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
       updateRenameButton();
       return;
     }

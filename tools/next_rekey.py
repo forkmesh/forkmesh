@@ -94,6 +94,7 @@ DROP_TABLES = {
     "recent_pushes": "24-hour pushed-branch banners keyed by blind indexes of prefixed branch and nested pull keys (no plaintext to recompute)",
     "ai_ask_rate": "rate counter",
     "comment_reaction_rate": "reaction rate counter keyed by the account blind index",
+    "moderation_post_counts": "new-account daily post counters keyed by the account blind index",
     "member_repo_activity": "chat member activity cache keyed by repository and account blind indexes; the member-activity cron rebuilds it",
     "member_activity_repos": "refresh times of that cache, keyed by repository blind index",
     "comment_extras_rate": "custom reaction, GIF search and tip rate counters keyed by account blind indexes",
@@ -252,6 +253,12 @@ BI_COLUMNS = {
     "microjob_claims": ("account_bi", "subject_bi"),
     "mirror_https_endpoints": ("node_bi",),
     "mirror_repository_integrity": ("repo_bi", "node_bi"),
+    "moderation_blocks": ("scope_bi", "account_bi"),
+    "moderation_flags": ("repo_bi",),
+    "moderation_log": ("scope_bi",),
+    "moderation_post_counts": ("account_bi",),
+    "moderation_queue": ("repo_bi", "scope_bi", "author_bi"),
+    "moderation_roles": ("scope_bi", "account_bi"),
     "nodes": ("node_bi", "user_bi"),
     "note_events": ("actor_bi",),
     "note_shares": ("principal_bi", "added_by_bi"),
@@ -443,6 +450,8 @@ CIPHER_COLUMNS = {
         "hosted_repos",
         "issue_bounty", "issue_inbox", "link_codes",
         "marketing_email_campaigns", "microjob_claims",
+        "moderation_blocks", "moderation_flags", "moderation_log",
+        "moderation_queue", "moderation_roles",
         "nodes", "note_versions", "notes", "notifications", "org_agent_jobs",
         "org_agent_sessions", "org_bot_tokens",
         "organization_discord_connectors",
@@ -507,7 +516,7 @@ REPO_PREFIXES = ("", "repo-alert-settings:", "repo-feature-settings:", "ap-repo-
 NESTED_PREFIXES = (
     "password-change-v1\n", "password-reset-account-v1\n", "login-source:",
 )
-BI_CONSTANTS = ("", "bug-reporter:anonymous")
+BI_CONSTANTS = ("", "bug-reporter:anonymous", "moderation-scope:instance")
 
 OWNER_KEYS = ("owner", "owner_name", "ownerName", "node", "node_owner",
               "nodeOwner", "repo_owner", "repoOwner", "fork_owner",
