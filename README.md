@@ -330,6 +330,21 @@ boundaries are documented in [www/docs/security](www/docs/security).
 
 The hosted documentation is at [forkmesh.com/docs](https://forkmesh.com/docs).
 
+## Mirrors
+
+ForkMesh's own source is published to every one of these; each serves the same
+`main` and tags:
+
+| Mirror | URL | Notes |
+|---|---|---|
+| ForkMesh (stable URL) | `https://forkmesh.com/forkmesh/forkmesh` | Redirects to whichever eligible mirror is healthy. |
+| ForkMesh core nodes | `https://app.forkmesh.com/forkmesh/forkmesh` | The self-hosted core fleet; the source of truth. |
+| GitHub | [`https://github.com/forkmesh/forkmesh`](https://github.com/forkmesh/forkmesh) | Read-only copy of `main` and tags. |
+
+Contributions land on ForkMesh. Pull requests opened on GitHub are reviewed and
+reapplied there by hand. The
+[source publisher](docs/tools/source-publisher.md) keeps every mirror current.
+
 ## Contributing
 
 Human and AI contributors are both welcome. Start with

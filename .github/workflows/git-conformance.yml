@@ -15,6 +15,9 @@ concurrency:
   group: forkmesh-git-conformance-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   stock-git:
     name: Git protocol v${{ matrix.protocol }} · ${{ matrix.os }}

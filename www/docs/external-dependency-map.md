@@ -63,7 +63,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | [World social feeds (X, Reddit, Mastodon)](#social-feeds) | social | Degrades one feature | world-worker, world-browser | The World Worker's egress IP when it reads the public ForkMesh X and Reddit feeds. Visitors' browsers look up the public ForkMesh Mastodon account directly on mastodon.social, which exposes the visitor's IP address. |
 | [CRM contact pictures and their accounts' public posts](#crm-contact-accounts) | social, forge-api | Optional, off unless enabled | app-browser, desktop, marketplace-package | The reading device's IP address and which account was asked about. A CRM page reads a picture for each contact whose record names a GitHub, Bluesky or Mastodon account, a contact's detail card reads that account's newest public posts, and the Reach out card reads the newest Mastodon post of up to 40 never-contacted contacts to order them. The desktop CRM also asks Gravatar for a picture by the SHA-256 hash of each contact's email address when the contact has no ForkMesh or account picture. The Mastodon instance is whichever one the contact's handle names, so it is not a fixed host. |
 | [CelesTrak satellite orbital elements](#celestrak) | infrastructure | Degrades one feature | world-worker | The Worker's egress IP on a cron refresh. Visitors never contact CelesTrak. |
-| [ActivityPub peer servers](#fediverse-peers) | social | Optional, off unless enabled | app-worker | Public activities ForkMesh publishes, the actor's public key, and HTTP signatures, delivered to the inboxes of remote followers; remote servers fetching actor profiles see the requesting server's IP address. |
+| [ActivityPub peer servers](#fediverse-peers) | social | Optional, off unless enabled | app-worker, marketplace-package | Public activities ForkMesh publishes, the actor's public key, and HTTP signatures, delivered to the inboxes of remote followers; remote servers fetching actor profiles see the requesting server's IP address. |
 | [Hosted AI model providers (user-supplied keys)](#ai-providers) | ai-provider | Optional, off unless enabled | desktop, mobile | Prompts the user chooses to send, including issue threads, pull request diffs, and repository context, with the user's own API key; usage and cost queries for that key. Agent CLI install scripts are downloaded from claude.ai and chatgpt.com when the user installs them on a node. |
 | [Vultr server provisioning](#vultr) | infrastructure | Optional, off unless enabled | app-worker, desktop | The user's own Vultr API key and the instance they create, including cloud-init data with the Cloudflare token and payout address they supplied. |
 | [Zoho Mail for the CRM marketplace package](#crm-package-providers) | email, identity | Optional, off unless enabled | marketplace-package, app-worker | For users who install the CRM package and connect Zoho Mail: OAuth tokens and the mail they choose to sync. |
@@ -72,6 +72,17 @@ proves this for clone. Every optional service stays off until its secret is set.
 | [OSV vulnerability database](#osv) | package-registry | Operator tooling only | operator-tools | Package names and versions being checked, and the operator's IP address. |
 | [Repository webhook endpoints owners register](#repository-webhook-endpoints) | hosted-runner | Optional, off unless enabled | app-worker | Each registered endpoint receives one signed JSON event per subscribed repository change: the repository's owner and name, its public URLs, the moved refs (branch, before/after commit, refs digest), merged pull numbers and the merging account, released tags and their notes, plus the relay's outbound IP address. Only public repositories emit events. api.codemagic.io is the one endpoint ForkMesh itself registers, for its own repository's mobile builds. |
 | [Git remotes, plugin endpoints, and pages users choose](#user-chosen-remotes) | forge-api | Optional, off unless enabled | app-worker, mirror-node, desktop | Requests to Git upstreams a mirror is configured to follow, marketplace manifests and plugin-declared endpoints a user installs, and public pages a microjob reads. Each receives the requesting server's IP address and only the request needed. |
+| [Cloudflare Turnstile on the signup and password-reset forms](#cloudflare-turnstile) | identity | Degrades one feature | app-browser, app-worker | The visitor's IP address, User-Agent and browser signals while the widget runs on /signup and /forgot-password; the app sends Cloudflare the widget token and the client IP to verify it. |
+| [SendGrid and Mailgun as alternative mail providers](#mail-provider-alternatives) | email | Optional, off unless enabled | app-worker | When an operator selects SendGrid or Mailgun instead of Mailtrap: recipient addresses and the content of transactional and marketing mail. |
+| [Third-party APIs called by workflow integration steps](#workflow-integrations) | forge-api, email, payments, ai-provider, social, infrastructure | Optional, off unless enabled | app-worker | Only for a user who adds an integration step to a workflow: the credential they paste and whatever data the step sends or reads. Importing a workflow by URL fetches it from GitHub, a gist or the n8n template API. |
+| [Open Food Facts and USDA FoodData Central for the Calories package](#nutrition-data) | infrastructure | Optional, off unless enabled | marketplace-package | For users of the Calories package: the food names and barcodes they look up. |
+| [oEmbed and public APIs for chat link previews](#link-previews) | media-embed, social | Optional, off unless enabled | mobile, app-worker | The link a user posted in chat and the device's IP address, when a preview for that site is built. |
+| [Invidious and YouTube thumbnails for Video Mix DJ Studio](#video-mix-sources) | media-embed | Optional, off unless enabled | marketplace-package, mobile | For users of the package: video searches, the device's IP address and the thumbnails it loads. |
+| [Apple iTunes lookup for the current App Store version](#app-store-lookup) | package-registry | Optional, off unless enabled | mobile, marketplace-package | The device's IP address and the app id being looked up. |
+| [Hugging Face downloads for local voices and models](#hugging-face-models) | ai-provider | Optional, off unless enabled | desktop, mobile | The device's IP address and which voice or model file is downloaded. |
+| [DuckDuckGo HTML search for the phone assistant](#duckduckgo-web-research) | ai-provider | Optional, off unless enabled | mobile | The search query the assistant runs and the device's IP address. |
+| [Google Public DNS as the instance installer's second resolver](#google-public-dns) | dns | Operator tooling only | installer | The domain name the installer is checking and the server's IP address. |
+| [Sites the browser extension reads in the user's own browser](#browser-extension-sites) | social | Optional, off unless enabled | marketplace-package | Nothing beyond what the user's own signed-in browser sends: the extension reads subreddit rules pages and fills developer-portal setup forms the user opens. |
 
 ## When each service disappears
 
@@ -105,6 +116,17 @@ proves this for clone. Every optional service stays off until its secret is set.
 | OSV vulnerability database | The manual security scan cannot query advisories. No workflow or runtime path depends on it. | Use an offline OSV database export. | **gap** |
 | Repository webhook endpoints owners register | Deliveries retry with capped backoff and are dropped after 6 attempts; the Settings tab shows the failure. Pushes, merges, and releases are unaffected because delivery is queued out of band. | Delete the webhook and poll the public catalog with tools/forkmesh_integration.py watch instead; nothing in ForkMesh depends on an endpoint answering. | tested |
 | Git remotes, plugin endpoints, and pages users choose | Only the affected mirror sync, plugin call, or page read fails; mirrors keep serving the last accepted refs. | Push directly to the mirror instead of following an upstream. | **gap** |
+| Cloudflare Turnstile on the signup and password-reset forms | On ForkMesh Next the gated forms fail closed with 503 turnstile_unavailable; signed-in use, desktop node registration and every other page keep working. | Leave the keys unset off the VPS platform, which selects Cloudflare's always-pass test pair. | tested |
+| SendGrid and Mailgun as alternative mail providers | Mail sends fail and are logged as skipped; account actions still complete. | Mailtrap, the default provider. | **gap** |
+| Third-party APIs called by workflow integration steps | The step fails and the run stops unless the step continues on failure; other workflows and ForkMesh itself are unaffected. | Use a webhook step to a service the user hosts, or leave the integration out. | tested |
+| Open Food Facts and USDA FoodData Central for the Calories package | Food search in the package returns nothing; logged entries are unaffected. | Enter foods by hand. | **gap** |
+| oEmbed and public APIs for chat link previews | The link shows without a rich preview. | Turn off link previews. | **gap** |
+| Invidious and YouTube thumbnails for Video Mix DJ Studio | Video search in the package fails; saved mixes are unaffected. | Add local videos. | **gap** |
+| Apple iTunes lookup for the current App Store version | The update prompt and the Marketing package's App Store figures are not refreshed. | None needed. | **gap** |
+| Hugging Face downloads for local voices and models | A voice or local model that is not yet downloaded cannot be used. | Use a voice or model already on the device. | **gap** |
+| DuckDuckGo HTML search for the phone assistant | The assistant answers without web results. | Ask without web research. | **gap** |
+| Google Public DNS as the instance installer's second resolver | The installer falls back to Cloudflare DNS over HTTPS. | Cloudflare DNS over HTTPS, tried first. | **gap** |
+| Sites the browser extension reads in the user's own browser | The Reddit walk or the setup helper stops; the rest of the extension works. | Do the setup by hand. | **gap** |
 
 ## Services in detail
 
@@ -115,7 +137,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Needed:** Mandatory for the hosted service
 - **Kind:** hosting, dns, certificates, cdn-edge, ai-provider, telemetry
 - **Components:** app-worker, app-browser, www-browser, world-worker, world-browser, mirror-node, desktop, operator-tools
-- **Hosts:** `api.cloudflare.com`, `www.cloudflare.com`, `cloudflare-dns.com`, `static.cloudflareinsights.com`
+- **Hosts:** `api.cloudflare.com`, `www.cloudflare.com`, `cloudflare-dns.com`, `static.cloudflareinsights.com`, `cloudflare.com`
 - **Credentials:** `USAGE_ANALYTICS_API_TOKEN`, `WORKERS_OBSERVABILITY_ACCOUNT_ID`, `WORKERS_OBSERVABILITY_API_TOKEN`, `WORKERS_OBSERVABILITY_SERVICE`
 - **Observes:** Every request to forkmesh.com, app.forkmesh.com, and world.forkmesh.com terminates here: client IP address, TLS SNI, headers including User-Agent, request path, and timing. D1, KV, Durable Objects, and Queues hold the hosted service's account, catalog, collaboration, presence, and health data; sensitive fields are encrypted under DATA_KEY before storage. Workers AI receives ForkBot prompts, bug-report text, and usernames sent for moderation. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code.
 - **Retention:** D1 rows persist until the owning feature deletes them; persisted room frames last 7 days and at most 500 per room. Workers observability on forkmesh-www, the only Worker still deployed since the app and World Workers were deleted on 2026-09-27, samples 5% of logs and traces every request, kept for the Cloudflare plan's retention; relay data on the core nodes is covered by the relay data retention page. Edge caches expire by their Cache-Control lifetimes.
@@ -124,7 +146,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **When it is gone:** The hosted website, dashboard, API, accounts, chat, catalog, and clone routing through app.forkmesh.com stop. Direct mirror URLs keep serving Git clone, fetch, and SSH push; desktops keep local Git, signed records, and direct mirror access; the Go mirror node keeps publishing signed health locally.
 - **Recovery:** Service resumes when Cloudflare recovers; D1 point-in-time restore and the node backup runbook cover data loss. The router reverts to the last accepted signed refs pins.
 - **Alternative:** Clone from any independent mirror node's direct HTTPS or SSH URL. A self-host deploys its own app Worker on its own Cloudflare account; no non-Cloudflare runtime for the app Worker exists yet.
-- **Failure drills:** `app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising`, `app/tests/test_https_mirror_health_leases.py::test_cloudflare_dns_check_distinguishes_unavailable_from_rejected`, `app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum`, `app/tests/test_forkbot.py::test_forkbot_files_the_raw_request_when_ai_is_unreachable`, `app/tests/test_start_setup.py::test_rejected_cloudflare_token_fails_that_step_with_a_console_line`
+- **Failure drills:** `app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising`, `app/tests/test_https_mirror_health_leases.py::test_cloudflare_dns_check_distinguishes_unavailable_from_rejected`, `app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum`, `app/tests/test_forkbot.py::test_forkbot_files_the_raw_request_when_ai_is_unreachable`
 - **Known gap:** The app Worker has no non-Cloudflare runtime, so a self-host cannot leave Cloudflare for accounts, catalog, and realtime; only Git serving is provider-independent.
 - **Evidence:** `app/wrangler.toml`, `www/wrangler.toml`, `world/wrangler.toml`, `app/src/app_runtime.py`, `app/src/usage_reporting.py`, `app/src/entry.py`
 
@@ -135,7 +157,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Needed:** Degrades one feature
 - **Kind:** certificates
 - **Components:** mirror-node
-- **Hosts:** `acme-v02.api.letsencrypt.org`, `acme.zerossl.com`
+- **Hosts:** `acme-v02.api.letsencrypt.org`, `acme.zerossl.com`, `acme-staging-v02.api.letsencrypt.org`
 - **Observes:** The mirror's public hostname and the host's IP address during certificate issuance and renewal. Issued certificates are published in public Certificate Transparency logs.
 - **Retention:** Certificate Transparency entries are permanent and public.
 - **Jurisdiction:** Caddy's default issuers, Let's Encrypt (ISRG, United States) and ZeroSSL, unless the operator configures another ACME issuer.
@@ -206,7 +228,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Needed:** Build and release only
 - **Kind:** package-registry
 - **Components:** ci, operator-tools
-- **Hosts:** `registry.npmjs.org`, `dl.google.com`, `deb.debian.org`, `archive.ubuntu.com`, `pypi.org`, `files.pythonhosted.org`, `pub.dev`, `proxy.golang.org`
+- **Hosts:** `registry.npmjs.org`, `dl.google.com`, `deb.debian.org`, `archive.ubuntu.com`, `download.qt.io`, `snapshot.debian.org`, `auth.docker.io`, `storage.googleapis.com`, `cloud.debian.org`, `pypi.org`, `files.pythonhosted.org`, `pub.dev`, `proxy.golang.org`
 - **Observes:** The build host's IP address and the exact package names and versions requested.
 - **Retention:** Set by each registry's download-log terms.
 - **Jurisdiction:** npm (GitHub, United States); PyPI (Python Software Foundation, United States); Go module proxy (Google, United States); Debian and Ubuntu mirrors (various).
@@ -215,7 +237,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Recovery:** Retry the build, or build from a warm package cache.
 - **Alternative:** Self-host builds may use a local package mirror or cache; the app Worker and mirror node need no third-party packages at runtime.
 - **Failure drills:** `app/tests/test_offline_ci_workflow.py::test_deploy_fails_before_secrets_when_the_sandbox_has_no_egress`
-- **Evidence:** `tools/requirements-ci.txt`, `docs/dependency-security-audit-2026-09-13.md`, `tools/android-toolchain.sh`
+- **Evidence:** `tools/requirements-ci.txt`, `docs/dependency-security-audit-2026-09-13.md`, `tools/android-toolchain.sh`, `tools/package/linux-baseline/stage-qt.sh`, `tools/package/linux-baseline/stage-packages.sh`, `tools/package/linux-baseline/oci_rootfs.py`, `tools/package/macos_universal_on_mac.sh`, `tools/clean_machine_vm.py`
 
 <a id="code-signing-timestamps"></a>
 
@@ -464,7 +486,8 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 - **Needed:** Optional, off unless enabled
 - **Kind:** social
-- **Components:** app-worker
+- **Components:** app-worker, marketplace-package
+- **Hosts:** `mastodon.online`, `fosstodon.org`, `hachyderm.io`, `mas.to`, `infosec.exchange`
 - **Observes:** Public activities ForkMesh publishes, the actor's public key, and HTTP signatures, delivered to the inboxes of remote followers; remote servers fetching actor profiles see the requesting server's IP address.
 - **Retention:** Set by each remote server; deletes are federated but cannot be enforced.
 - **Jurisdiction:** Wherever each follower's server operates.
@@ -473,7 +496,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Recovery:** Queued deliveries retry from the D1 outbox.
 - **Alternative:** Disable federation; local posts remain.
 - **Failure drills:** `app/tests/test_ap_post_delete.py::test_delete_drops_local_even_when_federation_disabled`
-- **Evidence:** `app/src/activitypub.py`, `app/src/fediverse_routes.py`
+- **Evidence:** `app/src/activitypub.py`, `app/src/fediverse_routes.py`, `marketplace/packages/crm/manifest.json`
 
 <a id="ai-providers"></a>
 
@@ -482,7 +505,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Needed:** Optional, off unless enabled
 - **Kind:** ai-provider
 - **Components:** desktop, mobile
-- **Hosts:** `api.anthropic.com`, `api.openai.com`, `claude.ai`, `chatgpt.com`
+- **Hosts:** `api.anthropic.com`, `api.openai.com`, `claude.ai`, `chatgpt.com`, `auth.openai.com`
 - **Observes:** Prompts the user chooses to send, including issue threads, pull request diffs, and repository context, with the user's own API key; usage and cost queries for that key. Agent CLI install scripts are downloaded from claude.ai and chatgpt.com when the user installs them on a node.
 - **Retention:** Set by the provider for the user's own account.
 - **Jurisdiction:** Anthropic PBC (United States); OpenAI (United States).
@@ -509,7 +532,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Recovery:** Retry provisioning.
 - **Alternative:** Install the mirror node on any Linux host with install.sh.
 - **Known gap:** No drill simulates a Vultr API outage during provisioning.
-- **Evidence:** `app/src/start_setup.py`, `desktop/src/MainWindowChat.cpp`
+- **Evidence:** `tools/next_fleet.py`, `desktop/src/MainWindowChat.cpp`
 
 <a id="crm-package-providers"></a>
 
@@ -620,6 +643,207 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Known gap:** Failure is local to each chosen remote; no aggregate drill exists.
 - **Evidence:** `server/config.go`, `app/src/microjobs_runtime.py`, `app/src/marketplace_runtime.py`
 
+<a id="cloudflare-turnstile"></a>
+
+### Cloudflare Turnstile on the signup and password-reset forms
+
+- **Needed:** Degrades one feature
+- **Kind:** identity
+- **Components:** app-browser, app-worker
+- **Hosts:** `challenges.cloudflare.com`
+- **Credentials:** `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY`
+- **Observes:** The visitor's IP address, User-Agent and browser signals while the widget runs on /signup and /forgot-password; the app sends Cloudflare the widget token and the client IP to verify it.
+- **Retention:** Set by Cloudflare.
+- **Jurisdiction:** Cloudflare, Inc. (United States).
+- **Canonical data:** None.
+- **When it is gone:** On ForkMesh Next the gated forms fail closed with 503 turnstile_unavailable; signed-in use, desktop node registration and every other page keep working.
+- **Recovery:** None required; the forms work again once siteverify answers.
+- **Alternative:** Leave the keys unset off the VPS platform, which selects Cloudflare's always-pass test pair.
+- **Failure drills:** `app/tests/test_turnstile.py::test_siteverify_failure_timeout_and_garbage_fail_closed`
+- **Known gap:** The privacy notice does not name Turnstile yet.
+- **Evidence:** `app/src/turnstile.py`, `app/public/signup.html`, `app/public/forgot-password.html`
+
+<a id="mail-provider-alternatives"></a>
+
+### SendGrid and Mailgun as alternative mail providers
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** email
+- **Components:** app-worker
+- **Hosts:** `api.sendgrid.com`, `api.mailgun.net`, `api.eu.mailgun.net`
+- **Credentials:** `MAILGUN_API_URL`, `SENDGRID_API_URL`
+- **Observes:** When an operator selects SendGrid or Mailgun instead of Mailtrap: recipient addresses and the content of transactional and marketing mail.
+- **Retention:** Set by the provider.
+- **Jurisdiction:** Twilio Inc. (SendGrid) or Sinch/Mailgun Technologies (United States or the EU region the operator picks).
+- **Canonical data:** None; the provider only relays mail.
+- **When it is gone:** Mail sends fail and are logged as skipped; account actions still complete.
+- **Recovery:** Retry, or switch the provider back to Mailtrap.
+- **Alternative:** Mailtrap, the default provider.
+- **Known gap:** No drill sends through SendGrid or Mailgun with the provider unreachable.
+- **Evidence:** `app/src/mail_providers.py`
+
+<a id="workflow-integrations"></a>
+
+### Third-party APIs called by workflow integration steps
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** forge-api, email, payments, ai-provider, social, infrastructure
+- **Components:** app-worker
+- **Hosts:** `api-free.deepl.com`, `api-inference.huggingface.co`, `api-m.paypal.com`, `api-ssl.bitly.com`, `api.airtable.com`, `api.attio.com`, `api.baserow.io`, `api.bitbucket.org`, `api.box.com`, `api.brevo.com`, `api.calendly.com`, `api.clickup.com`, `api.cohere.com`, `api.digitalocean.com`, `api.dropboxapi.com`, `api.groq.com`, `api.helpscout.net`, `api.hubapi.com`, `api.intercom.io`, `api.jotform.com`, `api.kit.com`, `api.lemonsqueezy.com`, `api.linear.app`, `api.linkedin.com`, `api.mistral.ai`, `api.mixpanel.com`, `api.monday.com`, `api.n8n.io`, `api.netlify.com`, `api.notion.com`, `api.openweathermap.org`, `api.opsgenie.com`, `api.paddle.com`, `api.perplexity.ai`, `api.pipedrive.com`, `api.postmarkapp.com`, `api.pushover.net`, `api.resend.com`, `api.segment.io`, `api.stripe.com`, `api.telegram.org`, `api.todoist.com`, `api.trello.com`, `api.twilio.com`, `api.typeform.com`, `api.vercel.com`, `api.webflow.com`, `api.zoom.us`, `api2.amplitude.com`, `app.asana.com`, `circleci.com`, `connect.mailerlite.com`, `connect.squareup.com`, `en.wikipedia.org`, `events.pagerduty.com`, `generativelanguage.googleapis.com`, `gist.githubusercontent.com`, `gmail.googleapis.com`, `graph.facebook.com`, `graph.microsoft.com`, `hooks.zapier.com`, `matrix.org`, `ntfy.sh`, `oauth.reddit.com`, `plausible.io`, `quickbooks.api.intuit.com`, `raw.githubusercontent.com`, `sheets.googleapis.com`, `slack.com`, `www.google-analytics.com`, `www.googleapis.com`, `www.zohoapis.com`, `abc.supabase.co`, `abc.upstash.io`, `your-org.my.salesforce.com`, `your-team.atlassian.net`, `project-default-rtdb.firebaseio.com`
+- **Observes:** Only for a user who adds an integration step to a workflow: the credential they paste and whatever data the step sends or reads. Importing a workflow by URL fetches it from GitHub, a gist or the n8n template API.
+- **Retention:** Set by each provider.
+- **Jurisdiction:** Each provider's own, chosen by the user who configures the step.
+- **Canonical data:** The provider is canonical for its own records; the workflow definition stays in ForkMesh.
+- **When it is gone:** The step fails and the run stops unless the step continues on failure; other workflows and ForkMesh itself are unaffected.
+- **Recovery:** Rerun the workflow.
+- **Alternative:** Use a webhook step to a service the user hosts, or leave the integration out.
+- **Failure drills:** `app/tests/test_workflows.py::test_http_errors_stop_the_run_unless_continue_on_fail`
+- **Evidence:** `app/src/workflow_integrations.py`, `app/src/workflow_templates.py`, `app/src/workflows_runtime.py`, `tools/reddit_scout.py`
+
+<a id="nutrition-data"></a>
+
+### Open Food Facts and USDA FoodData Central for the Calories package
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** infrastructure
+- **Components:** marketplace-package
+- **Hosts:** `world.openfoodfacts.org`, `search.openfoodfacts.org`, `api.nal.usda.gov`
+- **Observes:** For users of the Calories package: the food names and barcodes they look up.
+- **Retention:** Set by Open Food Facts and the USDA.
+- **Jurisdiction:** Open Food Facts (France) and the U.S. Department of Agriculture.
+- **Canonical data:** None; results are looked up on demand.
+- **When it is gone:** Food search in the package returns nothing; logged entries are unaffected.
+- **Recovery:** Search again.
+- **Alternative:** Enter foods by hand.
+- **Known gap:** No drill covers the food databases being unreachable.
+- **Evidence:** `marketplace/packages/calories/content/worker/calories.py`
+
+<a id="link-previews"></a>
+
+### oEmbed and public APIs for chat link previews
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** media-embed, social
+- **Components:** mobile, app-worker
+- **Hosts:** `vimeo.com`, `www.tiktok.com`, `www.dailymotion.com`, `www.loom.com`, `open.spotify.com`, `soundcloud.com`, `codepen.io`, `www.flickr.com`, `publish.twitter.com`, `hacker-news.firebaseio.com`, `crates.io`, `store.steampowered.com`, `api.stackexchange.com`, `xkcd.com`
+- **Observes:** The link a user posted in chat and the device's IP address, when a preview for that site is built.
+- **Retention:** Set by each site.
+- **Jurisdiction:** Each site's own.
+- **Canonical data:** None.
+- **When it is gone:** The link shows without a rich preview.
+- **Recovery:** None required.
+- **Alternative:** Turn off link previews.
+- **Known gap:** No drill builds a preview with the site unreachable.
+- **Evidence:** `native/ios/ForkMeshCore/Sources/FMChat/ViewModels/ChatLinkPreviewService.swift`, `native/ios/ForkMeshCore/Sources/FMChat/Threads/ChatLinkSites.swift`, `app/src/plugin_race.py`
+
+<a id="video-mix-sources"></a>
+
+### Invidious and YouTube thumbnails for Video Mix DJ Studio
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** media-embed
+- **Components:** marketplace-package, mobile
+- **Hosts:** `api.invidious.io`, `i.ytimg.com`
+- **Observes:** For users of the package: video searches, the device's IP address and the thumbnails it loads.
+- **Retention:** Set by the Invidious instance and Google.
+- **Jurisdiction:** The chosen Invidious instance's operator; Google LLC (United States) for thumbnails.
+- **Canonical data:** None.
+- **When it is gone:** Video search in the package fails; saved mixes are unaffected.
+- **Recovery:** Search again or pick another instance.
+- **Alternative:** Add local videos.
+- **Known gap:** No drill covers the instance list being unreachable.
+- **Evidence:** `marketplace/packages/video-mix-dj-studio/content/web/page.js`
+
+<a id="app-store-lookup"></a>
+
+### Apple iTunes lookup for the current App Store version
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** package-registry
+- **Components:** mobile, marketplace-package
+- **Hosts:** `itunes.apple.com`
+- **Observes:** The device's IP address and the app id being looked up.
+- **Retention:** Set by Apple.
+- **Jurisdiction:** Apple Inc. (United States).
+- **Canonical data:** None.
+- **When it is gone:** The update prompt and the Marketing package's App Store figures are not refreshed.
+- **Recovery:** None required; the next check retries.
+- **Alternative:** None needed.
+- **Known gap:** No drill covers the lookup failing.
+- **Evidence:** `native/ios/ForkMeshCore/Sources/FMApi/Navigation/ClientVersionGate.swift`, `marketplace/packages/marketing/content/worker/marketing.py`
+
+<a id="hugging-face-models"></a>
+
+### Hugging Face downloads for local voices and models
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** ai-provider
+- **Components:** desktop, mobile
+- **Hosts:** `huggingface.co`
+- **Observes:** The device's IP address and which voice or model file is downloaded.
+- **Retention:** Set by Hugging Face.
+- **Jurisdiction:** Hugging Face, Inc. (United States).
+- **Canonical data:** None; files are cached on the device after download.
+- **When it is gone:** A voice or local model that is not yet downloaded cannot be used.
+- **Recovery:** Download again.
+- **Alternative:** Use a voice or model already on the device.
+- **Known gap:** No drill covers the download failing.
+- **Evidence:** `desktop/src/AgentAnnouncerVoice.cpp`, `native/ios/ForkMeshCore/Sources/FMLocalAI/HuggingFaceSnapshot.swift`
+
+<a id="duckduckgo-web-research"></a>
+
+### DuckDuckGo HTML search for the phone assistant
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** ai-provider
+- **Components:** mobile
+- **Hosts:** `html.duckduckgo.com`
+- **Observes:** The search query the assistant runs and the device's IP address.
+- **Retention:** Set by DuckDuckGo.
+- **Jurisdiction:** Duck Duck Go, Inc. (United States).
+- **Canonical data:** None.
+- **When it is gone:** The assistant answers without web results.
+- **Recovery:** None required.
+- **Alternative:** Ask without web research.
+- **Known gap:** No drill covers search being unreachable.
+- **Evidence:** `native/ios/ForkMeshCore/Sources/FMAssistant/WebResearch.swift`
+
+<a id="google-public-dns"></a>
+
+### Google Public DNS as the instance installer's second resolver
+
+- **Needed:** Operator tooling only
+- **Kind:** dns
+- **Components:** installer
+- **Hosts:** `dns.google`
+- **Observes:** The domain name the installer is checking and the server's IP address.
+- **Retention:** Set by Google.
+- **Jurisdiction:** Google LLC (United States).
+- **Canonical data:** None.
+- **When it is gone:** The installer falls back to Cloudflare DNS over HTTPS.
+- **Recovery:** None required.
+- **Alternative:** Cloudflare DNS over HTTPS, tried first.
+- **Known gap:** No drill runs the installer with both resolvers unreachable.
+- **Evidence:** `www/public/install-instance.sh`
+
+<a id="browser-extension-sites"></a>
+
+### Sites the browser extension reads in the user's own browser
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** social
+- **Components:** marketplace-package
+- **Hosts:** `old.reddit.com`, `console.x.com`, `developer.x.com`, `developer.twitter.com`, `api-console.zoho.com`, `api-console.zoho.eu`, `api-console.zoho.in`, `api-console.zoho.com.au`, `api-console.zoho.jp`, `api-console.zohocloud.ca`
+- **Observes:** Nothing beyond what the user's own signed-in browser sends: the extension reads subreddit rules pages and fills developer-portal setup forms the user opens.
+- **Retention:** Set by Reddit, X and Zoho.
+- **Jurisdiction:** Each site's own.
+- **Canonical data:** None.
+- **When it is gone:** The Reddit walk or the setup helper stops; the rest of the extension works.
+- **Recovery:** Run the step again.
+- **Alternative:** Do the setup by hand.
+- **Known gap:** No drill covers these pages being unreachable.
+- **Evidence:** `marketplace/packages/browser-extension/content/extension/background.js`, `marketplace/packages/browser-extension/content/extension/manifest.json`
+
 ## Stored third-party identifiers
 
 | Table | Column | Service | Protection |
@@ -694,5 +918,77 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `schemas.android.com` | namespace | Android XML namespace. |
 | `www.apple.com` | namespace | Property list DTD identifier. |
 | `www.andymatuschak.org` | namespace | Sparkle appcast XML namespace. |
+| `ads.google.com` | link | Ad manager link in the Marketing package. |
+| `ads.microsoft.com` | link | Ad manager link in the Marketing package. |
+| `ads.nextdoor.com` | link | Ad manager link in the Marketing package. |
+| `ads.pinterest.com` | link | Ad manager link in the Marketing package. |
+| `ads.reddit.com` | link | Ad manager link in the Marketing package. |
+| `ads.snapchat.com` | link | Ad manager link in the Marketing package. |
+| `ads.spotify.com` | link | Ad manager link in the Marketing package. |
+| `ads.x.com` | link | Ad manager link in the Marketing package. |
+| `adsmanager.facebook.com` | link | Ad manager link in the Marketing package. |
+| `advertising.amazon.com` | link | Ad manager link in the Marketing package. |
+| `advertising.walmart.com` | link | Ad manager link in the Marketing package. |
+| `biz.yelp.com` | link | Ad manager link in the Marketing package. |
+| `searchads.apple.com` | link | Ad manager link in the Marketing package. |
+| `www.ebay.com` | link | Ad manager link in the Marketing package. |
+| `www.etsy.com` | link | Ad manager link in the Marketing package. |
+| `www.quora.com` | link | Ad manager link in the Marketing package. |
+| `www.tripadvisor.com` | link | Ad manager link in the Marketing package. |
+| `diabetesfoodhub.org` | link | Recipe source link in the phone food catalog. |
+| `diet.mayoclinic.org` | link | Recipe source link in the phone food catalog. |
+| `health.clevelandclinic.org` | link | Recipe source link in the phone food catalog. |
+| `huskynutritionsport.education.uconn.edu` | link | Recipe source link in the phone food catalog. |
+| `www.aldi.us` | link | Recipe source link in the phone food catalog. |
+| `www.diabetesaustralia.com.au` | link | Recipe source link in the phone food catalog. |
+| `www.healthyfood.com` | link | Recipe source link in the phone food catalog. |
+| `www.heartfoundation.org.au` | link | Recipe source link in the phone food catalog. |
+| `git-scm.com` | documentation | Manual page linked from the desktop's destructive command review. |
+| `cli.github.com` | documentation | Manual page linked from the desktop's destructive command review. |
+| `docs.python.org` | documentation | Manual page linked from the desktop's destructive command review. |
+| `docs.pytest.org` | documentation | Manual page linked from the desktop's destructive command review. |
+| `man7.org` | documentation | Manual page linked from the desktop's destructive command review. |
+| `www.sudo.ws` | documentation | Manual page linked from the desktop's destructive command review. |
+| `docs.aws.amazon.com` | documentation | Deploy guide linked from the marketplace page. |
+| `docs.netlify.com` | documentation | Deploy guide linked from the marketplace page. |
+| `fly.io` | documentation | Deploy guide linked from the marketplace page. |
+| `vercel.com` | documentation | Deploy guide linked from the marketplace page. |
+| `about.me` | link | Author website on the Docs package's Dependencies page. |
+| `alexgaynor.net` | link | Author website on the Docs package's Dependencies page. |
+| `baroquesoftware.com` | link | Author website on the Docs package's Dependencies page. |
+| `blog.ian.stapletoncordas.co` | link | Author website on the Docs package's Dependencies page. |
+| `davidism.com` | link | Author website on the Docs package's Dependencies page. |
+| `florimond.dev` | link | Author website on the Docs package's Dependencies page. |
+| `graingert.co.uk` | link | Author website on the Docs package's Dependencies page. |
+| `hugovk.dev` | link | Author website on the Docs package's Dependencies page. |
+| `karpetrosyan.dev` | link | Author website on the Docs package's Dependencies page. |
+| `kimdavies.com` | link | Author website on the Docs package's Dependencies page. |
+| `langui.sh` | link | Author website on the Docs package's Dependencies page. |
+| `lucumr.pocoo.org` | link | Author website on the Docs package's Dependencies page. |
+| `lukasa.co.uk` | link | Author website on the Docs package's Dependencies page. |
+| `pgjones.dev` | link | Author website on the Docs package's Dependencies page. |
+| `requires.io` | link | Author website on the Docs package's Dependencies page. |
+| `richard.levitte.org` | link | Author website on the Docs package's Dependencies page. |
+| `sethmlarson.dev` | link | Author website on the Docs package's Dependencies page. |
+| `vorpus.org` | link | Author website on the Docs package's Dependencies page. |
+| `wallstreet.io` | link | Author website on the Docs package's Dependencies page. |
+| `www.lovelydinosaur.com` | link | Author website on the Docs package's Dependencies page. |
+| `yohanboniface.me` | link | Author website on the Docs package's Dependencies page. |
+| `apps.apple.com` | link | App Store page links. |
+| `discord.gg` | link | Discord invite links. |
+| `www.google.com` | link | Site search link in the Marketing package. |
+| `fedi.directory` | link | Directory link in the Marketing package. |
+| `opencollective.com` | link | ForkMesh's Open Collective page. |
+| `git.owaspblt.org` | link | Homepage link to an instance. |
+| `netnewswire.com` | link | Credit link in the RSS Reader package. |
+| `musespark.ai` | documentation | Model documentation link in an agent package. |
+| `cwe.mitre.org` | documentation | CWE definitions linked from security findings. |
+| `unlicense.org` | documentation | Link inside the Unlicense license text. |
+| `n8n.io` | link | Placeholder example in the workflow import field. |
+| `appstoreconnect.apple.com` | link | App Store Connect link printed by an operator tool. |
+| `codemagic.io` | link | Build link printed by an operator tool. |
+| `aus.social` | link | Example profile URL in the browser extension's Mastodon parser. |
+| `apache.org` | namespace | Xerces XML parser feature identifier. |
+| `www.sitemaps.org` | namespace | Sitemap XML namespace. |
 
 <!-- external-dependency-map:end -->

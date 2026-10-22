@@ -25066,7 +25066,7 @@
       unsupported_pull: "This pull request cannot be merged on the web; merge it from the desktop client.",
       pull_not_found: "The mirror could not read this pull request's record.",
       pull_not_open: "This pull request is no longer open.",
-      request_id_reused: "That merge request was already used. Merge again to send a new one.",
+      request_id_reused: "That merge was already sent. Merge again to send a new one.",
       read_only_mirror: payload?.message || REPO_READ_ONLY_MIRROR_HINT,
     };
     return messages[error] || "The mirror merge could not be confirmed.";
@@ -25530,7 +25530,7 @@
         state: "failed",
         resumable: true,
         request,
-        message: "The merge request could not reach the relay. Retrying resends the same request, so nothing can merge twice.",
+        message: "The merge could not reach the relay. Retrying resends the same request, so nothing can merge twice.",
       };
     }
     const { response, payload, waiting } = result;

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import os
-import pwd
 import shutil
 import time
 from pathlib import Path
 from typing import Iterable, Mapping
+
+try:
+    import pwd
+except ImportError:
+    pwd = None
 
 PROJECT_ROOTS = ("src", "data", "config", "ssh", "state", "logs",
                  "data/core", "data/core/config", "data/core/ssh", "data/core/state", "data/core/logs")
@@ -32,8 +36,16 @@ def _clean(path: str | os.PathLike[str]) -> str:
     absolute = os.path.abspath(os.path.expanduser(text))
     head, tail = os.path.split(absolute)
     if not tail:
-        return os.path.realpath(absolute)
-    return os.path.join(os.path.realpath(head), tail)
+        return _slashed(os.path.realpath(absolute))
+    return _slashed(os.path.join(os.path.realpath(head), tail))
+
+
+def _slashed(path: str) -> str:
+    if os.sep == "/":
+        return path
+    path = path.replace(os.sep, "/")
+    drive, rest = os.path.splitdrive(path)
+    return "/" if drive and not rest.strip("/") else path
 
 
 def _inside(child: str, parent: str) -> bool:
@@ -58,6 +70,8 @@ def _homes(environ: Mapping[str, str]) -> list[str]:
 
 
 def _account_home() -> str:
+    if pwd is None:
+        return ""
     try:
         return pwd.getpwuid(os.getuid()).pw_dir
     except (KeyError, OSError):

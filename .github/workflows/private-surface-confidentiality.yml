@@ -13,6 +13,9 @@ concurrency:
   group: forkmesh-private-surface-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   keyless-inspection:
     name: Keyless inspection · ${{ matrix.os }}
@@ -23,6 +26,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
+      - name: Keep LF line endings on Windows
+        run: git config --global core.autocrlf false
+
       - name: Check out source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
