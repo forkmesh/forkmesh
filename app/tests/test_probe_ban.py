@@ -16,6 +16,7 @@ HOUR = 3_600_000
 DAY = 24 * HOUR
 SCANNER = "93.184.216.34"
 OTHER = "93.184.216.35"
+THIRD = "93.184.216.36"
 CLIENT = {"ip": SCANNER, "country": "NL", "ua": "Mozilla/5.0 zgrab/0.x"}
 
 SCANNER_PATHS = {
@@ -52,13 +53,14 @@ SCANNER_PATHS = {
     "/login.action": "script",
     "/npm-pwg/..;/axis2-AWC/services/listServices": "script",
     "/phpinfo": "script",
-    "/wp-login": "cms",
-    "//wp/wp-includes/wlwmanifest.xml": "cms",
-    "/wordpress/": "cms",
+    "/wp-login": "script",
+    "//wp/wp-includes/wlwmanifest.xml": "script",
+    "/wordpress/": "script",
+    "/blog/wp-includes/wlwmanifest.xml": "cms",
     "/actuator/health/db": "cms",
     "/solr/admin/cores": "cms",
     "/server-status": "cms",
-    "/database.sql": "backup",
+    "/database.sql": "secret",
     "/backup.zip": "backup",
     "/storage/logs/laravel.log": "backup",
     "/docker-compose.yml~": "backup",
@@ -88,7 +90,7 @@ SCANNER_PATHS = {
     "/config/initializers/stripe%2erb": "secret",
     "/app/etc/local%2exml": "secret",
     "/status%252ephp": "script",
-    "/config%252ephp%252ebak": "backup",
+    "/config%252ephp%252ebak": "script",
     "/%252e%252e/": "script",
     "/%c0": "script",
     "/C:/Windows/System32/drivers/etc/hosts": "script",
@@ -109,16 +111,69 @@ SCANNER_PATHS = {
     "/_debugbar/": "cms",
     "/administrator/": "cms",
     "/functionRouter": "cms",
-    "/storage/logs/laravel%2elog%2e1": "backup",
-    "/var/log/mail%2eerr": "backup",
-    "/package%2ejson%2eswn": "backup",
-    "/dump%2ecsv": "backup",
+    "/storage/logs/laravel%2elog%2e1": "script",
+    "/storage/logs/laravel.log.1": "backup",
+    "/var/log/mail%2eerr": "script",
+    "/var/log/mail.err": "backup",
+    "/package%2ejson%2eswn": "script",
+    "/package.json.swn": "backup",
+    "/dump%2ecsv": "script",
+    "/dump.csv": "backup",
     "/go.sum": "config",
     "/requirements.txt": "config",
-    "/manage%2epy": "config",
+    "/manage%2epy": "script",
+    "/manage.py": "config",
     "/node_modules/": "config",
-    "/swagger-ui%2ehtml": "config",
+    "/swagger-ui%2ehtml": "script",
+    "/swagger-ui.html": "config",
     "/v2/api-docs": "config",
+    "/MAIL_HOST": "secret",
+    "/SENDGRID_TEMPLATE_ID": "secret",
+    "/internal/v2/config/mps_secret/ADM_SESSIONID": "secret",
+    "/_environment": "secret",
+    "/_netrc": "secret",
+    "/psql_history": "secret",
+    "/terraform.tfvars": "secret",
+    "/GoogleService-Info.plist": "secret",
+    "/snowflake.json": "secret",
+    "/sftp-config.json": "secret",
+    "/api/v1/.git/config": "secret",
+    "/api/v1/secrets": "secret",
+    "/dump%2esqlite": "secret",
+    "/CHANGELOG%2emd": "script",
+    "/favicon%2eico": "script",
+    "/%2eeslintrc": "script",
+    "/index.php.txt": "script",
+    "/index.do": "script",
+    "/wp-json/wp/v2/users": "script",
+    "/phpMyAdmin/": "script",
+    "/_profiler/router/latest": "script",
+    "/metabase/api/session/properties": "cms",
+    "/api/session/properties": "cms",
+    "/bin/get/Main/SolrSearch": "cms",
+    "/rest/api/1.0/application-properties": "cms",
+    "/media/system/js/core.js": "cms",
+    "/api/users-permissions/roles": "cms",
+    "/api/v1/bedrock-runtime": "cms",
+    "/v1/models": "cms",
+    "/manager/html": "cms",
+    "/elmah/": "cms",
+    "/backup.tbz2": "backup",
+    "/Jenkinsfile": "config",
+    "/api/graphql": "config",
+    "/swagger-resources/configuration/ui": "config",
+    "/node_modules/mqtt/test/helpers/": "config",
+    "/vercel.json": "config",
+    "/kafka/": "recon",
+    "/mysql": "recon",
+    "/console": "recon",
+    "/proxy": "recon",
+    "/secrets": "recon",
+    "/mailgun": "recon",
+    "/whoami": "recon",
+    "/_next/static/chunks/main.js.map": "recon",
+    "/README.md": "recon",
+    "/reconx-632e35b2b6e7": "recon",
 }
 
 OUR_404S = (
@@ -141,7 +196,12 @@ OUR_404S = (
     "/grafana/api/tree/main/README.md", "/api/v3/rate_limit",
     "/api/v1/instance", "/api/chat/direct-messages/[opaque]",
     "/api/market/reviews/forkmesh/diagnostics", "/blog/api-keys-explained",
-    "/assets/fonts/Lato-Bold.ttf", "/index.js.map", "/mail", "/admin")
+    "/assets/fonts/Lato-Bold.ttf", "/index.js.map", "/mail", "/admin",
+    "/alice/MY_REPO", "/alice/vendor", "/alice/kafka", "/login", "/settings",
+    "/contact", "/register", "/notes", "/status.html", "/healthz",
+    "/api/repo/alice/site/raw/main/MAIL_HOST",
+    "/api/repo/alice/site/raw/main/backup.sql", "/alice/repo.git/info/refs",
+    "/docs/swagger", "/%23pricing")
 
 
 class ProbeHarness(Harness):
@@ -209,15 +269,10 @@ def test_only_public_addresses_outside_cloudflare_are_ban_targets():
     assert target(h.env, "93.184.217.1") == "93.184.217.1"
 
 
-def test_two_secret_probes_ban_the_visitor_everywhere():
+def test_one_secret_probe_bans_the_visitor_everywhere():
     h = ProbeHarness()
-    assert h.scan("/.env") == "scored"
-    assert h.scan("/.env") == "seen"
-    assert h.rules() == [] and h.bans() == []
     assert h.denied(SCANNER) is None
-    assert h.visitor()["score"] == 3
-
-    assert h.scan("/.git/config") == "banned"
+    assert h.scan("/.env") == "banned"
     [rule] = h.rules()
     assert rule["rule_id"].startswith("auto-probe-")
     assert (rule["match_type"], rule["pattern"], rule["enabled"],
@@ -225,9 +280,9 @@ def test_two_secret_probes_ban_the_visitor_everywhere():
     assert SCANNER not in rule["note"] and "secret" in rule["note"]
     [ban] = h.bans()
     assert ban["rule_id"] == rule["rule_id"] and ban["enforced"] == 1
-    assert ban["expires_at"] == NOW + DAY and ban["score"] == 6
+    assert ban["expires_at"] == NOW + 7 * DAY and ban["score"] == 3
     assert ban["kinds"] == "secret"
-    assert [p for p, _ in json.loads(ban["paths"])] == ["/.env", "/.git/config"]
+    assert [p for p, _ in json.loads(ban["paths"])] == ["/.env"]
     assert json.loads(ban["client"])["target"] == SCANNER
 
     response = h.denied(SCANNER, "/wp-admin")
@@ -236,7 +291,7 @@ def test_two_secret_probes_ban_the_visitor_everywhere():
     assert h.denied(SCANNER, "/health") is None
     assert h.denied(SCANNER, "/api/fleet/peers") is None
     assert h.denied(OTHER) is None
-    assert h.scan("/.aws/credentials") == "banned"
+    assert h.scan("/.git/config") == "banned"
     assert len(h.rules()) == 1
 
 
@@ -244,42 +299,46 @@ def test_mixed_families_add_up_and_one_stray_404_does_not():
     h = ProbeHarness()
     assert h.scan("/config.json") == "scored"
     assert h.scan("/favicon.ico") == ""
+    assert h.scan("/config.json") == "seen"
     assert h.scan("/Dockerfile") == "scored"
-    assert h.scan("/composer.lock") == "scored"
-    assert h.visitor()["score"] == 3
-    assert h.scan("/backup.zip") == "banned"
-    assert h.bans()[0]["kinds"] == "backup,config"
+    assert h.visitor()["score"] == 2
+    assert h.scan("/kafka/") == "banned"
+    assert h.bans()[0]["kinds"] == "config,recon"
 
 
-def test_one_probe_path_never_bans_and_a_wordpress_pair_does():
+def test_one_script_probe_bans_and_one_backup_probe_does_not():
     h = ProbeHarness()
-    assert h.scan("/.env") == "scored"
-    assert h.scan("//xmlrpc.php", {"ip": OTHER}) == "scored"
+    assert h.scan("/backup.zip") == "scored"
     assert h.rules() == []
-    assert h.scan("//wordpress/", {"ip": OTHER}) == "banned"
-    assert [b["kinds"] for b in h.bans()] == ["cms,script"]
+    assert h.scan("//xmlrpc.php", {"ip": OTHER}) == "banned"
+    assert h.scan("/wp-includes/", {"ip": THIRD}) == "banned"
+    assert sorted(b["kinds"] for b in h.bans()) == ["script", "script"]
+    assert len(h.rules()) == 2
 
 
-def test_the_score_window_is_one_hour():
+def test_the_score_window_is_one_day():
     h = ProbeHarness()
-    h.scan("/.env")
-    h.now += HOUR
-    assert h.scan("/.git/config") == "scored"
-    assert h.visitor()["score"] == 3
-    assert h.rules() == []
+    h.scan("/backup.zip")
+    h.now += DAY - 1
+    assert h.scan("/kafka/") == "banned"
+
+    late = ProbeHarness()
+    late.scan("/backup.zip")
+    late.now += DAY
+    assert late.scan("/kafka/") == "scored"
+    assert late.visitor()["score"] == 1
+    assert late.rules() == []
 
 
-def test_a_repeat_offender_is_banned_for_a_week():
+def test_a_repeat_offender_is_banned_for_a_month():
     h = ProbeHarness()
-    h.scan("/.env")
-    h.scan("/.git/config")
-    assert h.bans()[0]["expires_at"] == NOW + DAY
-    h.now += DAY + 1
+    assert h.scan("/.env") == "banned"
+    assert h.bans()[0]["expires_at"] == NOW + 7 * DAY
+    h.now += 60 * DAY
     _run(h.probe.sweep(h.env, h.now))
     assert h.rules() == []
-    h.scan("/.env")
     assert h.scan("/.git/config") == "banned"
-    assert h.bans()[0]["expires_at"] == h.now + 7 * DAY
+    assert h.bans()[0]["expires_at"] == h.now + 30 * DAY
     assert h.visitor()["bans"] == 2
 
 
@@ -297,15 +356,13 @@ def test_an_ipv6_scanner_is_banned_by_its_slash_64():
 
 def test_observe_mode_records_without_blocking_and_off_does_nothing():
     h = ProbeHarness(FORKMESH_PROBE_BAN="observe")
-    h.scan("/.env")
-    assert h.scan("/.git/config") == "observed"
+    assert h.scan("/.env") == "observed"
     assert h.rules() == [] and h.bans()[0]["enforced"] == 0
     assert h.denied(SCANNER) is None
     assert (h.visitor()["bans"], h.visitor()["banned_until"]) == (0, 0)
     h.env.FORKMESH_PROBE_BAN = "ban"
-    assert h.scan("/.aws/credentials") == "scored"
-    assert h.scan("/.npmrc") == "banned"
-    assert h.bans()[0]["expires_at"] == NOW + DAY and len(h.rules()) == 1
+    assert h.scan("/.aws/credentials") == "banned"
+    assert h.bans()[0]["expires_at"] == NOW + 7 * DAY and len(h.rules()) == 1
 
     off = ProbeHarness(FORKMESH_PROBE_BAN="off")
     assert off.scan("/.env") == "" and off.scan("/.git/config") == ""
@@ -366,9 +423,9 @@ def test_the_sweep_expires_bans_and_turning_off_lifts_every_auto_rule():
     assert h.local_bans == {}
 
     h.env.FORKMESH_PROBE_BAN = "ban"
-    _run(h.probe.sweep(h.env, h.now + 9 * DAY))
+    _run(h.probe.sweep(h.env, h.now + 15 * DAY))
     assert h.bans() == []
-    _run(h.probe.sweep(h.env, h.now + 40 * DAY))
+    _run(h.probe.sweep(h.env, h.now + 100 * DAY))
     assert h.db.execute("SELECT COUNT(*) FROM probe_visitors").fetchone()[0] == 0
 
 
@@ -383,7 +440,9 @@ def test_the_404_log_scores_probes_even_on_ignored_paths():
                           headers={"cf-connecting-ip": SCANNER})
     assert _run(h.log.record_response(
         h.env, request, urlparse(request.url)))
-    assert h.bans()[0]["score"] == 6 and len(h.rules()) == 1
+    [ban] = h.bans()
+    assert [p for p, _ in json.loads(ban["paths"])] == ["/.env"]
+    assert ban["score"] == 3 and len(h.rules()) == 1
 
 
 def test_admin_page_lists_bans_marks_probes_and_lifts_one():

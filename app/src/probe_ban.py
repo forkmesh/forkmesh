@@ -16,12 +16,12 @@ ALLOW_ENV = "FORKMESH_PROBE_BAN_ALLOW"
 MODES = ("ban", "observe", "off")
 HOUR_MS = 60 * 60 * 1000
 DAY_MS = 24 * HOUR_MS
-WINDOW_MS = HOUR_MS
-BAN_SCORE = 4
-FIRST_BAN_MS = DAY_MS
-REPEAT_BAN_MS = 7 * DAY_MS
-REPEAT_WITHIN_MS = 30 * DAY_MS
-VISITOR_RETAIN_MS = 30 * DAY_MS
+WINDOW_MS = DAY_MS
+BAN_SCORE = 3
+FIRST_BAN_MS = 7 * DAY_MS
+REPEAT_BAN_MS = 30 * DAY_MS
+REPEAT_WITHIN_MS = 90 * DAY_MS
+VISITOR_RETAIN_MS = 90 * DAY_MS
 BAN_HISTORY_MS = 7 * DAY_MS
 LOCAL_TTL_MS = 2 * 60 * 1000
 MAX_ACTIVE_BANS = 500
@@ -34,13 +34,15 @@ RULE_PRIORITY = 0
 VISITOR_PREFIX = "probe-visitor:"
 EXEMPT_PATHS = frozenset({"/health", "/readyz"})
 EXEMPT_PREFIXES = ("/api/fleet/",)
-WEIGHTS = {"secret": 3, "script": 2, "cms": 2, "backup": 2, "config": 1}
+WEIGHTS = {"secret": 3, "script": 3, "cms": 2, "backup": 2, "config": 1,
+           "recon": 1}
 LABELS = {
     "secret": "Secrets",
     "script": "Server scripts",
     "cms": "CMS and admin panels",
     "backup": "Backups and logs",
     "config": "Config files",
+    "recon": "Recon paths",
 }
 CLOUDFLARE_RANGES = (
     "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
@@ -63,9 +65,12 @@ _SECRET_RE = re.compile(
     r"\.npmrc|\.pypirc|\.netrc|\.pgpass|\.my\.cnf|\.htpasswd|\.htaccess|"
     r"\.passwd.*|\.ftpconfig|\.msmtprc|\.vault-token|\.yarnrc|"
     r"\.(?:bash|zsh)rc|\.profile|\.ds_store|\.vscode|\.idea|\.terraform|\.tugboat|"
-    r"\.secrets?|\.amplifyrc|\.(?:bash|zsh|mysql|psql)_history|web-inf|"
+    r"\.secrets?|\.amplifyrc|web-inf|_netrc|_environment|\.?wgetrc|"
+    r"\.?(?:bash|zsh|mysql|psql|node_repl|python|sqlite|rediscli)_history|"
     r"id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|terraform\.tfstate.*|"
-    r"wp-config\.php.*|credentials)$")
+    r".*\.tfvars(?:\.json)?|googleservice-info\.plist|google-services\.json|"
+    r"wp-config\.php.*|sftp-config\.json|credentials|"
+    r".+\.(?:sql|sqlite3?|db|mdb|dump)(?:\.(?:gz|zip|bz2|xz|tar|tgz|7z))?)$")
 _SECRET_FILE_RE = re.compile(
     r"credential|secret|private[-_]?key|passw(?:or)?d|adminsdk|"
     r"service[-_]?account|aws-exports|claude.*\.json|opencode\.json|"
@@ -78,7 +83,13 @@ _SECRET_FILE_RE = re.compile(
     r"nextauth|workos|stytch|clerk|auth0|authorizenet|mercadopago|stripe|"
     r"paypal|braintree|razorpay|twilio|activecampaign|getresponse|omnisend|"
     r"mailgun|sendgrid|mailchimp|mailjet|mandrill|brevo|sendinblue|"
-    r"sparkpost|postmark|resend|mailersend|datasources)\.(?:json|txt|ya?ml)$|"
+    r"sparkpost|postmark|resend|mailersend|datasources|betterstack|bigquery|"
+    r"clickhouse|snowflake|keycloak|northflank|ovh(?:-backups?)?|plaid|stigg|"
+    r"uptimerobot|argyle|sftp|postman(?:_collection)?|algolia|cloudinary|"
+    r"heroku|digitalocean|linode|vultr|hetzner|cloudflare|azure|s3|r2|"
+    r"backblaze|wasabi|pusher|slack|discord|telegram|github|gitlab|"
+    r"bitbucket|mongo(?:db)?|redis|elastic(?:search)?|coinbase|binance)"
+    r"\.(?:json|txt|ya?ml)$|"
     r"\.(?:pem|key|p12|pfx|jks|keystore)$")
 _SECRET_NAME_RE = re.compile(
     r"^(?:[a-z0-9]+_)+(?:api_?)?(?:keys?|secret(?:_key)?|token|password|"
@@ -88,18 +99,32 @@ _SECRET_NAME_RE = re.compile(
 _ENV_TOKEN_RE = re.compile(r"(?:^|[._-])env(?:ironment)?(?:$|[._~-]|\d)")
 _SCRIPT_RE = re.compile(
     r"\.(?:php\d?|phtml|phar|phps|inc|asp|aspx|ashx|asmx|axd|jsp|jspx|"
-    r"action|cgi|cfm|cfc|xgi|rsp)$")
+    r"action|do|cgi|cfm|cfc|xgi|rsp)$|\.php\d?\.")
 _SCRIPT_NAMES = frozenset({
     "phpinfo", "cgi-bin", "phpunit", "eval-stdin", "system32", "win.ini",
     "boot.ini"})
+_SCRIPT_ROOTS = frozenset({
+    "wp", "wordpress", "xmlrpc", "wlwmanifest.xml", "phpmyadmin", "myadmin",
+    "mysqladmin", "pma", "adminer", "boaform", "hnap1", "_ignition",
+    "_profiler"})
+_ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
 _PATH_SIGNATURES = (
     (re.compile(
         r"^(?:latest/(?:meta-data|user-data|dynamic|api/token)|"
         r"computemetadata/v1|metadata/(?:identity|instance|v1)|opc/v[12]/|"
         r"v1/sys/|v1/auth/token|etc/(?:passwd|shadow)|proc/self/|"
         r"app/etc/(?:local\.xml|env\.php)|"
-        r"config/(?:environments|initializers)/[^/]+\.rb$)"), "secret"),
+        r"config/(?:environments|initializers)/[^/]+\.rb$|"
+        r"(?:api/)?v\d+/secrets?(?:/|$))"), "secret"),
+    (re.compile(r"(?:^|/)\.(?:git|svn|hg|bzr)/"), "secret"),
     (re.compile(r"^api/[^/]+\.php"), "script"),
+    (re.compile(
+        r"(?:^|/)api/session/properties$|^bin/(?:get|view)/main/|"
+        r"^rest/api/(?:\d|latest)|^media/system/js/|^api/users-permissions|"
+        r"^api/action/datastore_search|^api/(?:rds|db|data)/(?:execute|query)$|"
+        r"^(?:api/)?(?:v1/)?(?:aws/)?bedrock(?:-?runtime)?(?:/|$)|"
+        r"^(?:api/)?v1/models$|^(?:host-)?manager/(?:html|text|status)|"
+        r"^(?:api/)?system/system/"), "cms"),
     (re.compile(
         r"^(?:(?:api/)?actuator(?:/|$)|debug/(?:pprof|vars|default)|"
         r"v1/(?:agent|catalog|status|health)/|v[23]/kv/|v1\.\d+/|"
@@ -119,7 +144,7 @@ _CMS_NAMES = frozenset({
     "actuator", "server-status", "server-info", "solr", "geoserver",
     "jmx-console", "web-console", "telescope", "_ignition", "_profiler",
     "owa", "ecp", "+cscoe+", "cpanel", "webmail", "roundcube", "elfinder",
-    "fckeditor", "ckfinder", "kcfinder", "umbraco", "sftp-config.json",
+    "fckeditor", "ckfinder", "kcfinder", "umbraco",
     "laravel-filemanager", "logonpoint", "cfide", "vropspluginui",
     "helpdesk.woa", "functionrouter", "programexport", "cruise_config",
     "simzysh", "scripttext", "administrativemonitor"})
@@ -128,12 +153,14 @@ _CMS_ROOTS = frozenset({
     "fpm-ping", "fpm-status.html", "awstats", "phpmailer", "jolokia",
     "webinterface", "fortisandbox", "xwiki", "resin-doc", "brightmail",
     "jenkins", "grafana", "kibana", "rabbitmq", "airflow", "jupyter",
-    "pgadmin", "phppgadmin"})
+    "pgadmin", "phppgadmin", "elmah", "nacos", "druid", "zabbix", "nagios",
+    "cacti", "webmin", "portainer", "hudson"})
 _CMS_PREFIXES = ("wp-", "phpmyadmin", "pma", "axis2", "adminer", "cpanel",
                  "___proxy_subdomain")
 _BACKUP_RE = re.compile(
     r"(?:\.(?:sql|sqlite3?|db|mdb|dump|bak|backup|bkp|old|orig|save|swp|swo|"
-    r"swn|tar|tgz|gz|zip|rar|7z|bz2|xz|log(?:\.\d+)?)|~|^error_log|"
+    r"swn|tar|tgz|tbz2?|txz|gz|zip|rar|7z|bz2|xz|zst|war|"
+    r"log(?:\.\d+)?)|~|^error_log|"
     r"^(?:db|database|dump|backup|users)\.(?:csv|json|xml))$")
 _CONFIG_EXT_RE = re.compile(
     r"\.(?:ya?ml|ini|conf|cfg|cnf|toml|properties|config|dist|settings)$")
@@ -154,7 +181,38 @@ _CONFIG_NAMES = frozenset({
     "asgi.py", "application.py", "settings.py", "node_modules", "venv",
     "virtualenv", "__pycache__", "htmlcov", "flask_session", "flask_sessions",
     "swagger", "swagger.json", "swagger-ui", "swagger-ui.html",
-    "swagger-resources", "api-docs", "openapi.json", "graphiql"})
+    "swagger-resources", "api-docs", "openapi.json", "graphiql",
+    "swagger-config", "graphql", "gql", "redoc", "altair", "jenkinsfile",
+    "build.sh", "ci.sh", "deploy.sh", "cmakelists.txt", "coverage.xml",
+    "crossdomain.xml", "clientaccesspolicy.xml", "vercel.json", "host.json",
+    "server.js", "postman.json"})
+_CONFIG_DIRS = frozenset({
+    "node_modules", "swagger-resources", "swagger-ui", "api-docs",
+    "__pycache__", "venv"})
+_RECON_ROOTS = frozenset({
+    "keys", "tokens", "secret", "secrets", "private", "certs", "cert", "ssl",
+    "tls", "backup", "backups", "bak", "old", "dump", "dumps", "db",
+    "database", "sql", "mysql", "mongo", "mongodb", "redis", "redis-cli",
+    "kafka", "hdfs", "spark", "mapreduce", "prometheus", "sentry", "ansible",
+    "puppet", "chef", "salt", "terraform", "docker", "console", "debug",
+    "shell", "cmd", "terminal", "invoke", "wsgi", "wsgi-scripts", "runtime",
+    "staticfiles", "collected_static", "collectedstatic", "site_media",
+    "aws_s3_bucket", "aws-codecommit", "bedrockruntime", "notebook",
+    "notebooks", "lab", "cluster", "hosts", "smartportal", "backoffice",
+    "panel", "internal", "exportfile", "fetch", "proxy", "render",
+    "screenshot", "thumbnail", "serverinfo", "serverstatus", "systeminfo",
+    "buildinfo", "build-info", "pinfo", "version", "tmp", "var", "etc",
+    "log", "_next", "blog2", "site1", "elasticsmtp", "smtp", "ses",
+    "ses-smtp", "mailgun", "mailjet", "mailchimp", "mailersend", "sendgrid",
+    "sendinblue", "sparkpost", "postmark", "resend", "brevo", "whoami",
+    "who-am-i", "metrics", "secure", "script", "soap", "startup", "vendor",
+    "uploads", "theme", "themes", "horizon", "computer", "job", "jobs",
+    "playground", "models", "foundation-models", "yarn", "ncfindweb",
+    "actpt_5g.data", "siteinfo.json", "statistics.json", "workflow.json"})
+_RECON_FILE_RE = re.compile(
+    r"^(?:readme|changelog|changes|history|license|install|upgrade|"
+    r"release[-_]?notes|todo|version|build[-_]?info|contributing|authors)\."
+    r"(?:md|txt|json|html?|rst)$|^manifest\.in$|^reconx-")
 _ALLOW_CACHE = {"key": None, "networks": ()}
 
 
@@ -177,6 +235,8 @@ def _file_kinds(segment, first, last):
             or segment in ("..", ".") or "..;" in segment
             or "\ufffd" in segment or re.match(r"^[a-z]:$", segment)):
         found.add("script")
+    if first and (segment in _SCRIPT_ROOTS or segment.startswith("wp-")):
+        found.add("script")
     if (segment in _CMS_NAMES or segment.startswith(_CMS_PREFIXES)
             or (first and segment in _CMS_ROOTS)):
         found.add("cms")
@@ -184,6 +244,10 @@ def _file_kinds(segment, first, last):
         found.add("backup")
     if segment.startswith(".") and segment not in ("..", "."):
         found.add("config")
+    if segment in _CONFIG_DIRS or segment.startswith("swagger"):
+        found.add("config")
+    if first and (segment in _RECON_ROOTS or _RECON_FILE_RE.search(segment)):
+        found.add("recon")
     if last and (segment in _CONFIG_NAMES or _CONFIG_EXT_RE.search(segment)
                  or (dotted and _CONFIG_STEM_RE.search(segment))):
         found.add("config")
@@ -191,13 +255,15 @@ def _file_kinds(segment, first, last):
 
 
 def classify(path):
-    path = unquote(str(path or ""))
+    text = str(path or "")
+    path = unquote(text)
+    encoded_dot = "%2e" in (text + path).lower()
     if "%" in path:
         path = unquote(path)
     if not path.startswith("/"):
         return ""
-    segments = [segment.strip() for segment in path.lower().split("/")
-                if segment.strip()]
+    raw = [segment.strip() for segment in path.split("/") if segment.strip()]
+    segments = [segment.lower() for segment in raw]
     if not segments or segments[0] in _SKIP_FIRST:
         return ""
     if segments[0] != "api" and len(segments) >= 3 and (
@@ -206,10 +272,13 @@ def classify(path):
     joined = "/".join(segments)
     found = {kind for pattern, kind in _PATH_SIGNATURES
              if pattern.search(joined)}
+    if encoded_dot:
+        found.add("script")
     if segments[0] == "api" and (len(segments) > 3 or (
             len(segments) > 1 and segments[1] in _API_SKIP)):
         segments = []
-    if "secret" in found:
+    if "secret" in found or (segments and len(raw) != 2
+                             and _ENV_NAME_RE.match(raw[-1])):
         return "secret"
     for index, segment in enumerate(segments):
         found |= _file_kinds(segment, index == 0, index == len(segments) - 1)
@@ -596,9 +665,9 @@ async def render(env, form_for, client_cell, now=None):
         description=(
             "%s Each 404 on a path that only a scanner asks for (secrets such "
             "as .env, server scripts such as .php, CMS panels, backups, "
-            "config files) scores its visitor; %d points within an hour "
-            "bans the address for a day, a week when it comes back within "
-            "30 days. %s active, %s in the last 24 hours." % (
+            "config files, recon paths) scores its visitor; %d points within "
+            "a day bans the address for a week, a month when it comes back "
+            "within 90 days. %s active, %s in the last 24 hours." % (
                 state, BAN_SCORE, shell.format_int(counts.get("active") or 0),
                 shell.format_int(counts.get("today") or 0))),
         table=table, cls="not-found-bans")
