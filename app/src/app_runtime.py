@@ -3352,6 +3352,9 @@ class Default:
                 or url.path.startswith("/api/federation/")):
             return await federation_handler(self.env, request)
 
+        if (url.path.rstrip("/") in ("/api/accounts/export", "/api/accounts/data")
+                or url.path.startswith("/api/accounts/data/")):
+            return await account_data_handler(self.env, request, url.path)
         if url.path.startswith("/api/accounts/"):
             return await accounts_handler(self.env, request)
 

@@ -504,6 +504,67 @@ public final class RSSReaderStore {
         touchLibrary()
     }
 
+    public func syncLibrary() -> RSSReaderLibrary {
+        var copy = library
+        copy.activity = []
+        copy.lastRefreshAt = 0
+        copy.feeds = library.feeds.map { feed in
+            var clean = RSSFeed(id: feed.id, url: feed.url, title: feed.title, folderId: feed.folderId, siteUrl: feed.siteUrl, addedAt: feed.addedAt)
+            clean.customTitle = feed.customTitle
+            clean.iconUrl = feed.iconUrl
+            clean.summary = feed.summary
+            clean.previousUrls = feed.previousUrls
+            clean.paused = feed.paused
+            clean.excludeFromToday = feed.excludeFromToday
+            clean.excludeFromUnread = feed.excludeFromUnread
+            clean.language = feed.language
+            return clean
+        }
+        return copy
+    }
+
+    @discardableResult
+    public func restoreLibrary(_ incoming: RSSReaderLibrary) -> Int {
+        let local = Dictionary(library.feeds.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
+        let kept = Set(incoming.feeds.map(\.id))
+        for feed in library.feeds where !kept.contains(feed.id) && !incoming.feeds.contains(where: { $0.url == feed.url }) {
+            unsubscribe(feed.id)
+        }
+        var feeds: [RSSFeed] = []
+        for var feed in incoming.feeds {
+            if let mine = local[feed.url] {
+                feed.id = mine.id
+                feed.etag = mine.etag
+                feed.lastModified = mine.lastModified
+                feed.fetchedAt = mine.fetchedAt
+                feed.nextFetchAt = mine.nextFetchAt
+                feed.iconFound = mine.iconFound
+                feed.iconSource = mine.iconSource
+                feed.iconCheckedAt = mine.iconCheckedAt
+            } else {
+                feed.nextFetchAt = 0
+                articles[feed.id] = articles[feed.id] ?? []
+            }
+            if !feeds.contains(where: { $0.url == feed.url }) { feeds.append(feed) }
+        }
+        let renamed = Dictionary(incoming.feeds.compactMap { feed in local[feed.url].map { (feed.id, $0.id) } }, uniquingKeysWith: { first, _ in first })
+        library.feeds = feeds
+        library.folders = incoming.folders
+        library.settings = incoming.settings
+        library.collapsed = incoming.collapsed
+        library.filters = incoming.filters.map { filter in
+            var copy = filter
+            if let id = renamed[filter.feedId] { copy.feedId = id }
+            return copy
+        }
+        library.smartFeeds = incoming.smartFeeds
+        linkIndex = nil
+        matchCache = [:]
+        log("restore", "Restored \(feeds.count) subscriptions saved on ForkMesh")
+        touchLibrary()
+        return feeds.count
+    }
+
     public static func prepare(_ parsed: RSSParsedFeed, feedUrl: String, now: Int64) -> [RSSPreparedArticle] {
         var seen: Set<String> = []
         var prepared: [RSSPreparedArticle] = []
