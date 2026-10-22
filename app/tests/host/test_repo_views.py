@@ -541,3 +541,15 @@ def test_issue_list_rows_have_no_commenter_faces_unless_forum_lists_are_on(monke
     model = repo_views._indexed_issues(index)
     bundle = SimpleNamespace(owner="o", repo="r", view="issues", number=0, model=model, ref="main")
     assert "data-repo-issue-row-commenters" not in repo_views._render(bundle)
+def test_issue_detail_reads_its_attachment_shard(monkeypatch):
+    shard = ".forkmesh/attachments/issues/12.json"
+    url = "https://user-images.githubusercontent.com/1/2-a.png"
+    entry = {"path": ".forkmesh/attachments/%s.png" % ("c" * 64), "type": "image/png",
+             "bytes": 9}
+    monkeypatch.setitem(FILES[MAIN], shard, json.dumps({
+        "schema": "forkmesh-attachments-issue-v1", "files": {url: entry}}))
+    bundle, _fast = build("issue", 12)
+    assert "blobs?path=%s&ref=main" % shard in reads(bundle)
+    assert bundle.model["attachments"] == {url: {"path": entry["path"], "type": "image/png"}}
+    plain, _fast = build("issue", 5)
+    assert plain.model["attachments"] == {}

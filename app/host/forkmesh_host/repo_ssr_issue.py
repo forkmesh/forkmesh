@@ -407,13 +407,14 @@ LONE_IMAGE_RE = re.compile(
 class Context:
 
     def __init__(self, link_base, api_base, ref="main", issue_tasks=None,
-                 figures=True, origin=""):
+                 figures=True, origin="", attachments=None):
         self.link_base = link_base      # repoLinkUrl(repo): "/name" or "/o/r"
         self.api_base = api_base        # repoApiBase(repo)
         self.ref = ref
         self.issue_tasks = issue_tasks  # None or {"editable": bool}
         self.figures = figures
         self.origin = origin
+        self.attachments = attachments if isinstance(attachments, dict) else {}
 
     def record_url(self, kind, number):
         return "%s/%s/%d" % (self.link_base,
@@ -446,6 +447,52 @@ def heading_slug(text):
     text = re.sub(r"&[a-z0-9#]+;", "", text, flags=re.I).lower().strip()
     text = re.sub(r"[^\w\s-]|_(?=\Z)", "", text).replace(" ", " ")
     return re.sub(r"\s", "-", text)
+
+
+MD_GITHUB_ATTACHMENT_URL = re.compile(
+    r"^https?://(?:github\.com/(?:user-attachments/|[^/?#]+/[^/?#]+/(?:assets|files)/)"
+    r"|(?:private-)?user-images\.githubusercontent\.com/|objects\.githubusercontent\.com/)", re.I)
+MD_ATTACHMENT_PATH = re.compile(r"^\.forkmesh/attachments/[0-9a-f]{64}\.[a-z0-9]{1,8}\Z")
+MD_ATTACHMENT_ENTITIES = {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "#039": "'"}
+ATTACHMENTS_ISSUE_SCHEMA = "forkmesh-attachments-issue-v1"
+
+
+def attachments_path(number):
+    return ".forkmesh/attachments/issues/%d.json" % int(number)
+
+
+def attachment_files(doc):
+    files = doc.get("files") if isinstance(doc, dict) \
+        and doc.get("schema") == ATTACHMENTS_ISSUE_SCHEMA else None
+    if not isinstance(files, dict):
+        return {}
+    return {str(url): {"path": entry["path"], "type": str(entry.get("type") or "")}
+            for url, entry in files.items()
+            if isinstance(entry, dict) and isinstance(entry.get("path"), str)}
+
+
+def attachment_key(url):
+    return re.sub(r"&(amp|lt|gt|quot|#039);", lambda m: MD_ATTACHMENT_ENTITIES[m.group(1)],
+                  str(url or "").strip())
+
+
+def attachment_file(url, ctx):
+    if ctx is None:
+        return None
+    entry = ctx.attachments.get(attachment_key(url))
+    return entry if entry and MD_ATTACHMENT_PATH.match(str(entry.get("path") or "")) else None
+
+
+def attachment_href(entry, ctx):
+    return esc(ctx.raw_url(entry["path"]))
+
+
+def github_image_html(alt, url):
+    source = str(url or "").strip()
+    label = "%s (image on GitHub)" % alt if alt and alt.lower() != "image" else "image on GitHub"
+    return ('<a href="%s" data-md-github-image="" title="%s" class="%s" target="_blank" '
+            'rel="noopener noreferrer nofollow ugc">%s</a>' % (
+                safe_url(source), source, LINK_CLASS, label))
 
 
 def image_source(url, ctx):
@@ -486,14 +533,21 @@ def image_html(alt, url, ctx):
                     str(url).strip(), alt, VIDEO_CLASS))
     hint = re.search(r"#w=(\d{1,4})(?:x(\d{1,4}))?$", url)
     target = url[:hint.start()] if hint else url
-    source = image_source(target, ctx)
+    attachment = attachment_file(target, ctx)
+    if attachment and not attachment["type"].startswith("image/"):
+        return link_html(alt or "attachment", target, ctx)
+    if not attachment and "mirrored-attachments" not in plugins_off() \
+            and MD_GITHUB_ATTACHMENT_URL.match(str(target or "").strip()):
+        return github_image_html(alt, target)
+    source = attachment_href(attachment, ctx) if attachment else image_source(target, ctx)
     if not source or source == "#":
         return alt
     if not hint and GIPHY_GIF_RE.match(source):
         return gif_html(alt, source)
     bare = re.split(r"[?#]", target or "")[0]
-    svg = ctx is not None and re.search(r"\.svg$", bare, re.I) and not re.match(
-        r"^(?:[a-z][a-z0-9+.-]*:|//|/|#)", target or "", re.I)
+    svg = attachment["type"] == "image/svg+xml" if attachment else (
+        ctx is not None and re.search(r"\.svg$", bare, re.I) and not re.match(
+            r"^(?:[a-z][a-z0-9+.-]*:|//|/|#)", target or "", re.I))
     size = (' width="%s"%s' % (hint.group(1), ' height="%s"' % hint.group(2)
                                if hint.group(2) else "")) if hint else ""
     external = ' referrerpolicy="no-referrer"' if re.match(r"^https?:", source, re.I) else ""
@@ -503,6 +557,11 @@ def image_html(alt, url, ctx):
 
 def link_html(label_html, url, ctx):
     source = str(url or "").strip()
+    attachment = attachment_file(source, ctx)
+    if attachment:
+        return ('<a href="%s" data-md-attachment="" class="%s" target="_blank" rel="noopener '
+                'noreferrer nofollow ugc">%s</a>' % (attachment_href(attachment, ctx), LINK_CLASS,
+                                                      label_html))
     if source.startswith("#"):
         anchor = heading_slug(source[1:])
         return '<a href="%s" data-repo-markdown-anchor="%s" class="%s">%s</a>' % (
@@ -1387,7 +1446,7 @@ class Renderer:
 
     def comment_ctx(self):
         return Context(self.ctx.link_base, self.ctx.api_base, self.ctx.ref, None,
-                       self.ctx.figures)
+                       self.ctx.figures, attachments=self.ctx.attachments)
 
     def timeline_event(self, icon_name, who, author, description, ts, attrs="", agent=False):
         return (
@@ -1768,7 +1827,13 @@ def source_link_html(url):
                 esc(label)))
 
 
+PLUGINS_OFF = contextvars.ContextVar("plugins_off", default=None)
+
+
 def plugins_off():
+    override = PLUGINS_OFF.get()
+    if override is not None:
+        return override
     features = sys.modules.get("instance_features")
     try:
         return frozenset(features.switched_off()) if features is not None else frozenset()
@@ -1865,7 +1930,8 @@ def _render_issue(issue, ctx, owner, path, index, now, viewer, repo, prompt, rea
         '          %s\n        </div>' % (
             icon("arrow-big-up", "h-4 w-4", "text-muted-foreground"),
             format_count(issue["votes"]), chips))
-    body_ctx = Context(ctx.link_base, ctx.api_base, ctx.ref, {"editable": False}, ctx.figures)
+    body_ctx = Context(ctx.link_base, ctx.api_base, ctx.ref, {"editable": False}, ctx.figures,
+                       attachments=ctx.attachments)
     if has_body:
         description = (
             '<div data-repo-record-description="body">\n                      <div '

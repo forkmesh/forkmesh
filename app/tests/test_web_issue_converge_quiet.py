@@ -100,6 +100,7 @@ const primeRepoViewReads = async () => {};
 const loadRepoCollabSettings = async () => ({});
 const prepareCommentReactions = () => "";
 const loadCommentReactions = async () => null;
+const loadRepoIssueAttachments = async () => {};
 const repoIssueSourceUrl = () => "";
 const loadRepoIssueRelations = async () => ({ issueDependencies: [], issueSubIssues: [], issueMentions: [] });
 

@@ -56,13 +56,16 @@ def _run(body, tip_author="", motion=True):
             "ISSUE_REACTION_EMOJI", "COMMENT_REACTIONS", "COMMENT_REACTION_QUICK",
             "COMMENT_REACTION_KINDS", "COMMENT_REACTION_GRATITUDE",
             "COMMENT_REACTION_STICKERS", "COMMENT_REACTION_CUSTOM_RE", "MD_GIPHY_GIF",
-            "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS")
-    ] + [_function(HELPERS, "escapeHtml"), _function(HELPERS, "formatCount")]
+            "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS", "MD_GITHUB_ATTACHMENT_URL",
+            "MD_ATTACHMENT_PATH", "MD_ATTACHMENT_ENTITIES", "repoAttachmentFiles")
+    ] + [_function(HELPERS, "escapeHtml"), _function(HELPERS, "formatCount"),
+         _function(HELPERS, "repoKey")]
         + [_function(CONTENT, name) for name in (
             "commentReactionSubject", "commentReactionLabel", "commentReactionKnown",
             "commentReactionSafeSrc", "commentReactionGlyph", "commentReactionTallies",
             "commentReactionWho", "renderCommentReactionChip", "renderCommentReactionExtras",
             "renderCommentReactionBar", "mdSafeUrl", "mdImageSource", "mdGifHtml",
+            "mdAttachmentKey", "mdAttachmentFile", "mdAttachmentHref", "mdGithubImageHtml",
             "mdImageHtml")]
         + [_function(REACTIONS, name) for name in (
             "commentReactionOptionHtml", "commentReactionSectionHtml",

@@ -91,6 +91,11 @@ FEATURES = (
      "A Mirrors card on each repository page with a goal for independent "
      "copies, their health, and a page that asks readers to run one.",
      (), (r"^/api/repo/[^/]+/[^/]+/mirror-quota$",)),
+    ("mirrored-attachments", "No images from the source forge",
+     "Images hosted by the forge a repository mirrors (GitHub user "
+     "attachments) are shown from the instance's copy, or as a link when "
+     "there is none, so readers' browsers never load them from the forge.",
+     (), ()),
     ("forum-list", "Forum-style issue lists",
      "Issue lists open on Newest first, as on GitHub, and each row shows the "
      "thread's last few commenters.",
@@ -129,6 +134,8 @@ INSTANCE_NOTES = {
                      "page for readers on slow or filtered links and feed readers.",
     "mirror-quota": "Lets maintainers set how many independent mirrors a "
                     "repository should have and checks them.",
+    "mirrored-attachments": "Never makes readers' browsers fetch images from "
+                            "the forge a repository mirrors.",
     "forum-list": "Lists a repository's issues newest first and shows who "
                   "commented last, like a forum.",
     "issue-ai-prompt": "Offers readers a prompt to paste into a coding agent "
@@ -138,7 +145,7 @@ INSTANCE_NOTES = {
                     "replies endpoint answers 404 too.",
 }
 DEFAULT_ON = frozenset({"issue-ai-prompt", "fediverse-ui"})
-OPT_IN = frozenset({"forum-list", "read-surfaces", "mirror-quota"})
+OPT_IN = frozenset({"forum-list", "read-surfaces", "mirror-quota", "mirrored-attachments"})
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)
