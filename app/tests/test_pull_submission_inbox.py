@@ -185,6 +185,8 @@ def _runtime(inserted, notifications, verified, receipts=None, session=""):
         "pull_attention_watch": noop,
         "pull_attention_forget": noop,
         "pull_attention_review_posted": noop,
+        "pull_attention_record": noop,
+        "pending_inbox_action": lambda *_args, **_kwargs: ("", ""),
         "pull_attention_claim_quick_reply": (
             lambda *_args, **_kwargs: _async_value(True)
         ),

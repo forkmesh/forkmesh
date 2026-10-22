@@ -84,21 +84,24 @@ def _load_notification_helpers():
     return ns
 
 
-def _load_pending_inbox_notifier(captured, maintainers=(), node_owners=None):
+def _load_pending_inbox_notifier(captured, maintainers=(), node_owners=None,
+                                 muted=()):
     """notify_pending_inbox with its collaborators stubbed, so the strings
     it composes for the ping inbox can be read back directly. maintainers is
     what the organization lookup answers for the repo."""
     tree = ast.parse(ENTRY_TEXT, filename=str(ENTRY))
     body = [node for node in tree.body
             if isinstance(node, ast.AsyncFunctionDef)
-            and node.name in ("notify_pending_inbox", "_node_owner_among")]
-    assert len(body) == 2, "notify_pending_inbox not found in entry.py"
+            and node.name in ("notify_pending_inbox", "_node_owner_among")
+            or isinstance(node, ast.FunctionDef)
+            and node.name == "pending_inbox_action"]
+    assert len(body) == 3, "notify_pending_inbox not found in entry.py"
     body.extend(
         node for node in tree.body
         if isinstance(node, ast.Assign) and {
             t.id for t in node.targets if isinstance(t, ast.Name)
         } & {"PING_OPENED_KINDS", "NOTIFICATION_ITEM_URL_SEGMENTS",
-             "NOTIFICATION_BODY_MAX"})
+             "NOTIFICATION_BODY_MAX", "PENDING_INBOX_ISSUE_ACTIONS"})
     mod = ast.Module(body=body, type_ignores=[])
     ast.fix_missing_locations(mod)
 
@@ -115,10 +118,14 @@ def _load_pending_inbox_notifier(captured, maintainers=(), node_owners=None):
     async def account_row(_env, name):
         return None, {"owner": (node_owners or {}).get(name, "")}
 
+    async def thread_muted(_env, _owner, _repo, source, number, listener):
+        return (source, number, listener) in muted
+
     ns = {
         "enqueue_notification": enqueue_notification,
         "_org_repo_maintainers": org_repo_maintainers,
         "_account_row": account_row,
+        "_thread_muted": thread_muted,
         "clean_string": lambda value, limit=240: (
             value.strip()[:limit] if isinstance(value, str) else ""),
         "repo_web_href": lambda owner, repo: "/" + owner + "/" + repo,
@@ -520,7 +527,7 @@ def test_pending_inbox_ping_names_the_repo_the_submitter_used():
     # the confirmation, the web URL and this ping's own href.
     assert ping["title"] == "Issue submitted for forkmesh/forkmesh"
     assert ping["repo"] == "forkmesh/forkmesh"
-    assert ping["href"] == "/forkmesh/forkmesh"
+    assert ping["href"] == "/forkmesh/forkmesh/issues/7"
     # The hosting node still matters to this recipient, who owns it, so it is
     # spelled out rather than dropped.
     assert ping["body"] == "Improve the README (hosted on your jett node)"
@@ -685,7 +692,74 @@ def test_inbox_activity_on_an_existing_item_stays_a_host_only_inbox_ping():
     assert ping["recipient"] == "source"
     assert ping["kind"] == "pending_inbox"
     assert ping["title"] == "Pull request activity for source/forkmesh"
-    assert ping["href"] == "/source/forkmesh"
+    assert ping["href"] == "/source/forkmesh/pull/3"
+
+
+def test_a_pull_request_event_without_text_says_what_happened():
+    captured = []
+    notify = _load_pending_inbox_notifier(captured)
+    for event in ({"type": "review", "state": "approved", "body": ""},
+                  {"type": "status", "state": "closed", "body": ""},
+                  {"type": "thread-state", "state": "resolved", "body": ""}):
+        asyncio.run(notify(object(), "source", "forkmesh", "pull", "alice",
+                           "Add relay retries", 3, text=event["body"],
+                           event=event))
+
+    approved, closed, resolved = captured
+    assert approved["title"] == "Pull request approved in source/forkmesh"
+    assert approved["body"] == (
+        "Add relay retries\n\nalice approved pull request #3.")
+    assert approved["href"] == "/source/forkmesh/pull/3"
+    assert closed["title"] == "Pull request closed in source/forkmesh"
+    assert closed["body"].endswith("alice closed pull request #3.")
+    assert resolved["title"] == "Review thread resolved in source/forkmesh"
+    for ping in captured:
+        assert "desktop inbox" not in ping["body"]
+    assert len({ping["dedupe"] for ping in captured}) == 3
+
+
+def test_an_approval_with_a_note_keeps_the_note():
+    captured = []
+    notify = _load_pending_inbox_notifier(captured)
+    asyncio.run(notify(object(), "source", "forkmesh", "pull", "alice", "", 3,
+                       text="Ship it.",
+                       event={"type": "review", "state": "approved",
+                              "body": "Ship it."}))
+
+    ping, = captured
+    assert ping["title"] == "Pull request approved in source/forkmesh"
+    assert ping["body"] == "alice approved pull request #3.\n\nShip it."
+
+
+def test_an_issue_change_names_the_change_and_the_issue():
+    captured = []
+    notify = _load_pending_inbox_notifier(captured)
+    asyncio.run(notify(object(), "source", "forkmesh", "issue", "alice", "", 12,
+                       event={"type": "assignees", "assignees": ["bob"]}))
+    asyncio.run(notify(object(), "source", "forkmesh", "issue", "alice", "", 12,
+                       event={"type": "status", "status": "closed"}))
+    asyncio.run(notify(object(), "source", "forkmesh", "issue", "alice", "", 12,
+                       event={"type": "unknown"}))
+
+    assigned, closed, other = captured
+    assert assigned["title"] == "Issue assigned in source/forkmesh"
+    assert assigned["body"] == "alice assigned issue #12 to bob."
+    assert assigned["href"] == "/source/forkmesh/issues/12"
+    assert closed["title"] == "Issue closed in source/forkmesh"
+    assert closed["body"] == "alice closed issue #12."
+    assert other["body"] == "There's new activity on issue #12."
+
+
+def test_an_owner_who_muted_the_thread_hears_nothing_more_from_it():
+    captured = []
+    notify = _load_pending_inbox_notifier(
+        captured, muted={("pull", 3, "source")})
+    asyncio.run(notify(object(), "source", "forkmesh", "pull", "alice", "", 3,
+                       text="Another comment."))
+    assert captured == []
+    asyncio.run(notify(object(), "source", "forkmesh", "pull", "alice",
+                       "Add relay retries", 3, opened=True))
+    assert [p["kind"] for p in captured] == ["pull_submitted"]
 
 
 def test_every_inbox_creation_path_marks_its_ping_opened():
