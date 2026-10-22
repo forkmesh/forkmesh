@@ -9471,6 +9471,12 @@
           </div>`;
   }
 
+  function issueSubscriptionNote(parsed) {
+    if (!parsed.issueSubscribed) return "You're not receiving notifications from this thread.";
+    if (parsed.issueSubscriptionReason === "owner") return "You're receiving notifications because you own this repository.";
+    return "You're receiving notifications because you're subscribed to this thread.";
+  }
+
   function renderRepoIssueDetail(repo, number, parsed) {
     const values = parsed.values || {};
     const title = values.title || `Issue #${number}`;
@@ -9654,7 +9660,7 @@
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
             ${sidebarSection("Milestone", milestoneValue, "milestone")}
             ${sidebarSection("Development", developmentValue, "development", Boolean(state.session?.nodeName))}
-            ${sidebarSection("Notifications", `<button type="button" data-repo-issue-subscription="${parsed.issueSubscribed ? "unsubscribe" : "subscribe"}" class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-[12px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="${parsed.issueSubscribed ? "bell-off" : "bell"}" class="h-4 w-4 text-muted-foreground"></i>${parsed.issueSubscribed ? "Unsubscribe" : "Subscribe"}</button><p class="mt-2 text-[12px] text-muted-foreground">${parsed.issueSubscribed ? "You're receiving notifications because you're subscribed to this thread." : "You're not receiving notifications from this thread."}</p>`)}
+            ${sidebarSection("Notifications", `<button type="button" data-repo-issue-subscription="${parsed.issueSubscribed ? "unsubscribe" : "subscribe"}" class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-[12px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="${parsed.issueSubscribed ? "bell-off" : "bell"}" class="h-4 w-4 text-muted-foreground"></i>${parsed.issueSubscribed ? "Unsubscribe" : "Subscribe"}</button><p class="mt-2 text-[12px] text-muted-foreground">${issueSubscriptionNote(parsed)}</p>`)}
             ${sidebarSection(`${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}`, participantsValue)}
             <div data-repo-issue-sidebar-actions class="grid gap-0.5 py-3">
               ${canManage ? `<button type="button" data-repo-issue-move-to-task class="flex h-8 items-center gap-2 rounded-md px-1 text-left text-[12px] font-semibold text-foreground hover:underline"><i data-lucide="list-checks" class="h-4 w-4 text-muted-foreground"></i>Move to task</button>` : ""}
@@ -10782,7 +10788,10 @@
         parsed.pullRequiredChecks = requiredChecks;
       }
       if (kind === "issues") {
-        [parsed.issueMutationAuthorized, parsed.issueSubscribed] = await issueAccess;
+        const [mutationAuthorized, subscription] = await issueAccess;
+        parsed.issueMutationAuthorized = mutationAuthorized;
+        parsed.issueSubscribed = subscription?.subscribed === true;
+        parsed.issueSubscriptionReason = subscription?.reason || "";
       }
       if (kind === "discussions") {
         const thread = await discussionConversation;

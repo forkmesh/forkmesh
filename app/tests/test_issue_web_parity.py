@@ -297,10 +297,14 @@ def test_subscription_can_be_set_and_reloaded_with_account_session():
     )
     assert 'action == "status"' in backend
     assert "session_authorized" in backend
-    assert '"subscribed": bool(subscription' in backend
+    assert '"subscribed": reason in ("subscribed", "owner"),' in backend
+    assert '"reason": reason,' in backend
+    assert "await _account_owns_node(env, node, owner)" in backend
     assert "async function loadWebIssueSubscription" in ISSUE_IO
     assert "loadWebIssueSubscription(repo, number)," in REPO_UI
-    assert "[parsed.issueMutationAuthorized, parsed.issueSubscribed] = await issueAccess;" in REPO_UI
+    assert "const [mutationAuthorized, subscription] = await issueAccess;" in REPO_UI
+    assert "parsed.issueSubscriptionReason = subscription?.reason" in REPO_UI
+    assert "because you own this repository." in REPO_UI
 
 
 def test_worker_accepts_only_known_qt_issue_events_and_matches_agent_signing():

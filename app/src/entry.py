@@ -16613,6 +16613,7 @@ pull_attention_merged = _pull_attention.export("merged")
 pull_attention_cron = _pull_attention.export("cron")
 pull_attention_handler = _pull_attention.export("handler")
 pull_attention_review_posted = _pull_attention.export("review_posted")
+pull_attention_record = _pull_attention.export("pull_record")
 pull_attention_claim_quick_reply = _pull_attention.export("claim_quick_reply")
 
 
@@ -37519,6 +37520,8 @@ async def notify_mentions(env, owner, repo, actor, title, body, href, source,
                    ":" + clean_string(body, 80),
             meta={"number": number} if number else {},
         )
+        if source in ("issue", "pull") and number:
+            await subscribe_thread(env, owner, repo, source, number, name)
 
 
 def _thread_key(owner, repo, source, number):
@@ -37627,8 +37630,102 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
         )
 
 
+PENDING_INBOX_ISSUE_ACTIONS = {
+    "title": ("Issue renamed", "renamed issue #{n}"),
+    "labels": ("Issue labels changed", "changed the labels on issue #{n}"),
+    "milestone": ("Issue milestone changed", "changed the milestone of issue #{n}"),
+    "dates": ("Issue dates changed", "changed the dates of issue #{n}"),
+    "priority": ("Issue priority changed", "changed the priority of issue #{n}"),
+    "progress": ("Issue progress updated", "updated the progress of issue #{n}"),
+    "bounty": ("Issue bounty changed", "changed the bounty on issue #{n}"),
+    "reporter": ("Issue reporter changed", "changed the reporter of issue #{n}"),
+    "agent": ("Agent update on an issue", "updated the agent run on issue #{n}"),
+    "edit": ("Issue edited", "edited issue #{n}"),
+    "vote": ("Issue upvoted", "voted for issue #{n}"),
+    "reaction": ("New reaction on an issue", "reacted on issue #{n}"),
+}
+
+
+def pending_inbox_action(source, event, number, actor=""):
+    if not isinstance(event, dict):
+        return "", ""
+    kind = str(event.get("type") or "")
+    state = str(event.get("state") or event.get("status") or "").lower()
+    who = actor or "Someone"
+    n = str(number) if number else ""
+    if source == "pull":
+        item = "pull request #" + n if n else "a pull request"
+        if kind == "review":
+            if state == "approved":
+                return "Pull request approved", who + " approved " + item + "."
+            if state == "changes_requested":
+                return ("Changes requested on a pull request",
+                        who + " requested changes on " + item + ".")
+            return "Pull request reviewed", who + " reviewed " + item + "."
+        if kind == "status":
+            return "Pull request closed", who + " closed " + item + "."
+        if kind == "delete":
+            return "Pull request deleted", who + " deleted " + item + "."
+        if kind in ("thread-state", "suggestion-state"):
+            what = "review thread" if kind == "thread-state" else "suggestion"
+            done = state.replace("_", " ") or "updated"
+            return (what[0].upper() + what[1:] + " " + done,
+                    who + " marked a " + what + " on " + item + " " + done + ".")
+        return "", ""
+    if source != "issue":
+        return "", ""
+    item = "issue #" + n if n else "an issue"
+    if kind == "status":
+        if state == "closed":
+            return "Issue closed", who + " closed " + item + "."
+        return "Issue reopened", who + " reopened " + item + "."
+    if kind == "assignees":
+        names = [clean_string(name, MAX_NODE_NAME)
+                 for name in (event.get("assignees") or [])
+                 if clean_string(name, MAX_NODE_NAME)]
+        if not names:
+            return "Issue unassigned", who + " cleared the assignees of " + item + "."
+        return ("Issue assigned",
+                who + " assigned " + item + " to " + ", ".join(names[:5]) + ".")
+    if kind == "claim":
+        if str(event.get("claimState") or "") == "assigned":
+            return "Issue claimed", who + " claimed " + item + "."
+        return "Issue released", who + " released " + item + "."
+    if kind == "delete":
+        if str(event.get("target") or "").strip():
+            return "Issue comment deleted", who + " deleted a comment on " + item + "."
+        return "Issue deleted", who + " deleted " + item + "."
+    label, phrase = PENDING_INBOX_ISSUE_ACTIONS.get(kind, ("", ""))
+    if not label:
+        return "", ""
+    return label, who + " " + phrase.replace("issue #{n}", item) + "."
+
+
+async def _thread_muted(env, owner, repo, source, number, listener):
+    listener = clean_string(listener, MAX_NODE_NAME).lower()
+    if (not valid_node_name(listener) or source not in ("issue", "pull")
+            or int(number or 0) <= 0):
+        return False
+    _, rec = await _account_row(env, listener)
+    names = [listener, clean_string((rec or {}).get("owner", ""),
+                                    MAX_NODE_NAME).lower()]
+    await ensure_schema(env)
+    thread_bi = await blind_index(env, _thread_key(owner, repo, source, number))
+    for name in dict.fromkeys(name for name in names if valid_node_name(name)):
+        row = await d1_first(
+            env,
+            "SELECT data FROM thread_subscriptions "
+            "WHERE thread_bi=? AND subscriber_bi=?",
+            thread_bi, await blind_index(env, name))
+        rec = await decrypt_row(env, row.get("data", "")) if row else None
+        if rec and rec.get("muted"):
+            return True
+    return False
+
+
 async def notify_pending_inbox(env, owner, repo, source, actor, title, number=0,
-                               public_owner="", opened=False, text=""):
+                               public_owner="", opened=False, text="",
+                               event=None):
     # owner is the account whose inbox holds the item and who receives this
     # ping. public_owner is the name the submission was made under when an
     # organization alias fronts the repo, and the two differ only then. Name
@@ -37663,9 +37760,23 @@ async def notify_pending_inbox(env, owner, repo, source, actor, title, number=0,
     host_owner = clean_string(owner, MAX_NODE_NAME).lower()
     public = clean_string(public_owner, MAX_NODE_NAME).lower() or host_owner
     opened = bool(opened) and source in PING_OPENED_KINDS
+    action_label, action = ("", "") if opened else pending_inbox_action(
+        source, event, int(number or 0), clean_string(actor, MAX_NODE_NAME))
+    if not opened:
+        try:
+            muted = await _thread_muted(
+                env, owner, repo, source, number, host_owner)
+        except Exception:
+            muted = False
+        if muted:
+            return
     if opened:
         kind = PING_OPENED_KINDS[source]
         label = {"issue": "New issue", "pull": "New pull request"}[source]
+        joiner = " in "
+    elif action_label:
+        kind = "pending_inbox"
+        label = action_label
         joiner = " in "
     elif text:
         kind = "pending_inbox"
@@ -37685,10 +37796,15 @@ async def notify_pending_inbox(env, owner, repo, source, actor, title, number=0,
     slug = public + "/" + repo
     href = repo_web_href(public, repo)
     segment = NOTIFICATION_ITEM_URL_SEGMENTS.get(source, "")
-    if opened and segment and int(number or 0) > 0:
+    if segment and int(number or 0) > 0:
         href += "/" + segment + "/" + str(int(number))
-    body = ("\n\n".join(part for part in (clean_string(title), text) if part)
-            or "A signed item is waiting in your desktop inbox.")
+    body = "\n\n".join(
+        part for part in (clean_string(title), action, text) if part)
+    if not body and int(number or 0) > 0:
+        body = "There's new activity on %s #%d." % (
+            {"pull": "pull request", "discussion": "discussion"}.get(
+                source, "issue"), int(number))
+    body = body or "A signed item is waiting in your desktop inbox."
     host_body = body
     if public != host_owner:
         note = " (hosted on your " + host_owner + " node)"
@@ -37699,6 +37815,8 @@ async def notify_pending_inbox(env, owner, repo, source, actor, title, number=0,
     dedupe = ("pending:" + host_owner + "/" + repo + ":" + source + ":" +
               clean_string(actor, 120) + ":" + str(number) + ":" +
               clean_string(title, 120))
+    if action:
+        dedupe += ":" + action
     if text:
         # Two comments from one person on one issue are two pings. Without the
         # text in the key the second overwrote the first — keeping its read
@@ -37845,6 +37963,7 @@ async def notify_issue_assignees(env, owner, repo, assignees, actor, title, numb
                    ":" + assignee,
             meta={"number": number},
         )
+        await subscribe_thread(env, owner, repo, "issue", number, assignee)
 
 
 async def notify_bounty_event(env, rec, kind):
@@ -38616,9 +38735,19 @@ async def subscribe_handler(env, request, owner, repo):
             thread_bi, subscriber_bi,
         )
         subscription = await decrypt_row(env, row.get("data", "")) if row else None
+        if subscription and subscription.get("muted"):
+            reason = "muted"
+        elif subscription:
+            reason = "subscribed"
+        elif (node == str(owner).lower()
+              or await _account_owns_node(env, node, owner)):
+            reason = "owner"
+        else:
+            reason = ""
         return json_response({
             "ok": True,
-            "subscribed": bool(subscription and not subscription.get("muted")),
+            "subscribed": reason in ("subscribed", "owner"),
+            "reason": reason,
         })
     if action != "set":
         return json_response({"error": "bad_action"}, status=400)
@@ -41205,7 +41334,8 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
             env, owner, repo, "issue", actor, item.get("titleIfNew", ""),
             number, opened=event_type == "open",
             text=(event.get("body", "")
-                  if event_type in ("open", "comment") else "")))
+                  if event_type in ("open", "comment") else ""),
+            event=event))
     await _best_effort_inbox_side_effect(
         notify_mentions(
             env, owner, repo, actor, item.get("titleIfNew", ""),
@@ -41711,8 +41841,16 @@ async def pulls_handler(env, request, owner, repo):
                 await _record_pull_review(
                     env, request, data, owner, repo, number, event)
             actor = clean_string(event.get("authorName", "") or event.get("author", ""), MAX_NODE_NAME).lower()
-            await notify_pending_inbox(env, owner, repo, "pull", actor, "", number,
-                                       text=event.get("body", ""))
+            pull_title = ""
+            if pending_inbox_action("pull", event, number)[0]:
+                try:
+                    pull_title = clean_string((await pull_attention_record(
+                        env, owner, repo, number)).get("title", ""), 240)
+                except Exception:
+                    pull_title = ""
+            await notify_pending_inbox(env, owner, repo, "pull", actor,
+                                       pull_title, number,
+                                       text=event.get("body", ""), event=event)
             await notify_mentions(env, owner, repo, actor, "Pull request comment", event.get("body", ""),
                                   repo_web_href(owner, repo), "pull", number=number)
             pull_author = ""
