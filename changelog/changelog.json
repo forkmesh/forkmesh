@@ -64,7 +64,8 @@
      "title": "iPhone",
      "items": [
       "With Status Page installed, tiny status dots now sit in the thin strip above the Dynamic Island, so you can see ForkMesh's health on every screen.",
-      "Link previews in shared rooms load only when you tap them, and private network addresses are never fetched."
+      "Link previews in shared rooms load only when you tap them, and private network addresses are never fetched.",
+      "A walk now shows in the Dynamic Island and on the Lock Screen as soon as you've been walking with ForkMesh open, and stays there when you lock the phone mid-walk."
      ]
     },
     {
