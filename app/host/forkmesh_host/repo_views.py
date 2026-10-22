@@ -812,6 +812,13 @@ VIEW_PATH_RE = re.compile(
     r"(pulls|pull|issues|discussions)(?:/(\d{1,9})"
     r"(?:/(files|commits|checks))?)?/?$")
 
+DIFF_PATH_RE = re.compile(
+    r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/"
+    r"pulls?/([1-9]\d{0,8})\.(?:diff|patch)$")
+SHORT_DIFF_PATH_RE = re.compile(
+    r"^/([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/pulls?/([1-9]\d{0,8})"
+    r"\.(?:diff|patch)$")
+
 VIEW_STYLE = """<style>
 .fm-ssr-tabs{display:flex;gap:4px;border-bottom:1px solid rgb(var(--dashboard-border-rgb));margin:0 0 16px;overflow:hidden}
 .fm-ssr-tabs a{padding:8px 12px;color:rgb(var(--dashboard-muted-foreground-rgb));border-bottom:2px solid transparent;white-space:nowrap}
@@ -852,6 +859,34 @@ def view_target(scope):
     view = {"pull": "pull", "issues": "issue",
             "discussions": "discussion"}[kind] if number else kind
     return owner.lower(), repo, view, int(number or 0), section or ""
+
+
+def diff_target(scope):
+    if scope.get("method", "GET").upper() not in ("GET", "HEAD") or \
+            (scope.get("query_string") or b""):
+        return None
+    raw = scope.get("raw_path")
+    path = raw.decode("latin-1") if raw else (scope.get("path") or "")
+    from .repo_ssr import RESERVED_OWNERS
+    match = DIFF_PATH_RE.match(path)
+    if match:
+        owner, repo, number = match.groups()
+        if owner.lower() in RESERVED_OWNERS or repo in (".", "..") \
+                or repo.endswith(".git"):
+            return None
+        return owner.lower(), repo, int(number)
+    match = SHORT_DIFF_PATH_RE.match(path)
+    if not match or match.group(1).lower() in RESERVED_OWNERS \
+            or match.group(1).endswith(".git"):
+        return None
+    return None, match.group(1), int(match.group(2))
+
+
+def pull_patch(bundle):
+    pull = (bundle.model or {}).get("pull") if bundle is not None else None
+    if not isinstance(pull, dict):
+        return ""
+    return str(pull.get("patch") or "")
 
 
 def _esc(value):
@@ -895,26 +930,28 @@ def _md(text, base):
     return markdown_html(str(text or "")[:MAX_BODY_CHARS], base)
 
 
-def _frame(bundle, active, inner):
+def _frame(bundle, active, inner, link=None):
     owner, repo = bundle.owner, bundle.repo
-    base = "/%s/%s" % (urllib.parse.quote(owner), urllib.parse.quote(repo))
+    base = link or "/%s/%s" % (urllib.parse.quote(owner), urllib.parse.quote(repo))
     tabs = "".join('<a href="%s%s"%s>%s</a>' % (
         base, suffix, ' class="on"' if name == active else "", label)
         for name, suffix, label in (
             ("code", "", "Code"), ("issues", "/issues", "Issues"),
             ("pulls", "/pulls", "Pull requests"),
             ("discussions", "/discussions", "Discussions")))
+    title = '<a href="%s">%s</a>' % (_esc(base), _esc(repo))
+    if not link:
+        title = '<a href="/@%s">%s</a> / %s' % (
+            _esc(urllib.parse.quote(owner)), _esc(owner), title)
     return (
         '<div class="fm-ssr" data-repo-ssr>'
-        '<h1 class="fm-ssr-title"><a href="/@%s">%s</a> / <a href="%s">%s</a>'
-        '</h1><nav class="fm-ssr-tabs">%s</nav>%s</div>' % (
-            _esc(urllib.parse.quote(owner)), _esc(owner), _esc(base),
-            _esc(repo), tabs, inner))
+        '<h1 class="fm-ssr-title">%s</h1><nav class="fm-ssr-tabs">%s</nav>%s'
+        '</div>' % (title, tabs, inner))
 
 
-def _list(bundle, kind, rows, open_count=None, closed_count=None):
-    base = "/%s/%s" % (urllib.parse.quote(bundle.owner),
-                       urllib.parse.quote(bundle.repo))
+def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
+    base = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
+                               urllib.parse.quote(bundle.repo))
     if kind in ("pulls", "issues"):
         shown = [r for r in rows if str(r.get("state") or "open").lower()
                  == "open" and not r.get("deleted")]
@@ -954,10 +991,10 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None):
         items.append('<div class="fm-ssr-item" data-ssr-usable>No open %s.'
                      '</div>' % {"pulls": "pull requests"}.get(kind, kind))
     return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s</div>' % (
-        head, "".join(items)))
+        head, "".join(items)), link)
 
 
-def _diff(patch):
+def _diff(patch, href="", usable=True):
     files, lines, current = [], 0, None
     for line in patch.split("\n"):
         if line.startswith("diff --git "):
@@ -985,15 +1022,18 @@ def _diff(patch):
     for index, (name, rows) in enumerate(files):
         out.append('<div class="fm-ssr-box"><div class="fm-ssr-file">%s</div>'
                    '<div class="fm-ssr-diff"%s>%s</div></div>' % (
-                       _esc(name), " data-ssr-usable" if index == 0 else "",
+                       _esc(name), " data-ssr-usable" if usable and index == 0
+                       else "",
                        "".join(rows)))
     total = patch.count("\ndiff --git ") + (1 if patch.startswith(
         "diff --git ") else 0)
     if total > len(files) or lines >= MAX_DIFF_LINES:
         out.append('<p class="fm-ssr-sub">Showing %d of %d files; the full '
-                   'diff loads with the page.</p>' % (len(files), total))
-    return "".join(out) or '<p class="fm-ssr-sub" data-ssr-usable>' \
-        'No changes to show.</p>'
+                   'diff %s.</p>' % (len(files), total, (
+                       'is at <a href="%s">%s</a>' % (_esc(href), _esc(href)))
+                       if href else "loads with the page"))
+    return "".join(out) or '<p class="fm-ssr-sub"%s>No changes to show.</p>' % (
+        " data-ssr-usable" if usable else "")
 
 
 REACTION_EVENT_TYPES = ("comment", "review", "line-comment", "thread-comment",
@@ -1028,14 +1068,15 @@ def reaction_subject(bundle):
     return "%s:%d" % (name, bundle.number) if name and bundle.number else ""
 
 
-def render(bundle, section="", reactions=None):
+def render(bundle, section="", reactions=None, link=None, reader=False):
     """HTML of the first view for a bundle, or None (kept per bundle and
     reaction summary)."""
-    key = (section, reactions_digest(reactions))
+    key = (section, reactions_digest(reactions), link, reader)
     if key not in bundle.rendered:
         if len(bundle.rendered) >= RENDERED_PER_BUNDLE:
             bundle.rendered.clear()
-        bundle.rendered[key] = _render(bundle, section, reactions)
+        bundle.rendered[key] = _render(bundle, section, reactions, link,
+                                       reader)
     return bundle.rendered[key]
 
 
@@ -1046,16 +1087,16 @@ def reactions_digest(reactions):
         ",", ":")).encode()).hexdigest()[:16]
 
 
-def _render(bundle, section="", reactions=None):
+def _render(bundle, section="", reactions=None, link=None, reader=False):
     subject = reaction_subject(bundle)
     model = bundle.model or {}
-    base = "/%s/%s" % (urllib.parse.quote(bundle.owner),
-                       urllib.parse.quote(bundle.repo))
+    base = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
+                               urllib.parse.quote(bundle.repo))
     if bundle.view in ("pulls", "discussions"):
-        return _list(bundle, bundle.view, model.get("rows") or [])
+        return _list(bundle, bundle.view, model.get("rows") or [], link=link)
     if bundle.view == "issues":
         return _list(bundle, "issues", model.get("rows") or [],
-                     model.get("open"), model.get("closed"))
+                     model.get("open"), model.get("closed"), link)
     if bundle.view == "pull" and model.get("pull"):
         pull = model["pull"]
         tabs = "".join('<a href="%s/pull/%d%s"%s>%s</a>' % (
@@ -1063,15 +1104,19 @@ def _render(bundle, section="", reactions=None):
             ' class="on"' if suffix.strip("/") == section else "", label)
             for suffix, label in (("", "Conversation"), ("/commits", "Commits"),
                                   ("/files", "Files changed")))
+        patch = pull.get("patch") or ""
+        raw = "%s/pull/%d.diff" % (base, pull["number"]) if patch.strip() else ""
         head = ('<h2 class="fm-ssr-h1">%s <span>#%d</span></h2>'
                 '<p class="fm-ssr-sub">%s<b>%s</b> wants to merge into '
-                '<code>%s</code> from <code>%s</code> &middot; %s</p>'
+                '<code>%s</code> from <code>%s</code> &middot; %s%s</p>'
                 '<nav class="fm-ssr-tabs">%s</nav>' % (
                     _esc(pull["title"]), pull["number"], _pill(pull["state"]),
                     _person(pull["author"]), _esc(pull["base"]),
-                    _esc(pull["head"]), _date(pull["ts"]), tabs))
+                    _esc(pull["head"]), _date(pull["ts"]),
+                    ' &middot; <a href="%s" data-pull-raw-diff>Raw diff</a>'
+                    % _esc(raw) if raw else "", tabs))
         if section == "files":
-            body = _diff(pull.get("patch") or "")
+            body = _diff(patch, raw)
         else:
             body = ('<div class="fm-ssr-event"><div><b>%s</b> opened this '
                     'pull request</div><div class="fm-ssr-md" '
@@ -1081,7 +1126,10 @@ def _render(bundle, section="", reactions=None):
                         if str(pull.get("body") or "").strip() else "",
                         _events(pull.get("conversation") or [], base,
                                 subject, reactions)))
-        return _frame(bundle, "pulls", head + body)
+            if reader and patch.strip():
+                body += '<h3 class="fm-ssr-title">Files changed</h3>' + _diff(
+                    patch, raw, usable=False)
+        return _frame(bundle, "pulls", head + body, link)
     if bundle.view == "issue" and model.get("issue"):
         issue = model["issue"]
         labels = "".join('<span class="fm-ssr-label">%s</span>' % _esc(x)
@@ -1096,7 +1144,7 @@ def _render(bundle, section="", reactions=None):
                 '<div class="fm-ssr-md" data-ssr-usable>%s</div></div>%s' % (
                     _person(issue["author"]), _md(issue["body"], base),
                     _events(issue.get("comments") or [], base)))
-        return _frame(bundle, "issues", head + body)
+        return _frame(bundle, "issues", head + body, link)
     if bundle.view == "discussion" and model.get("discussion"):
         item = model["discussion"]
         status = item.get("status") or "open"
@@ -1115,5 +1163,5 @@ def _render(bundle, section="", reactions=None):
                     if str(item.get("body") or "").strip() else "",
                     _events(item.get("replies") or [], base, subject,
                             reactions)))
-        return _frame(bundle, "discussions", head + body)
+        return _frame(bundle, "discussions", head + body, link)
     return None
