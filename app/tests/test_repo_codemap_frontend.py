@@ -316,3 +316,34 @@ def test_a_failed_or_partial_batch_is_retried_never_shown_as_binary(tmp_path):
     assert states["bin.dat"] == 3
     assert states["gone.json"] == 4
     assert out["calls"] > 1
+
+
+NOWRAP_HARNESS = r'''
+const map = require(process.argv[process.argv.length - 1]);
+const text = Array.from({ length: 200 }, (_, i) => `line ${i} ` + "x".repeat(i % 7 === 0 ? 400 : 30)).join("\n");
+const make = () => ({ w: 800, h: 400, band: 10, rev: 0, code: map.prepareCode(text, "JSON") });
+const wrapped = map.fitCode(make());
+map.layoutPrefs.wrap = false;
+const node = make();
+const flat = map.fitCode(node);
+const rev = node.rev;
+map.fitCode(node);
+console.log(JSON.stringify({
+  wrapped: { cols: wrapped.cols, clip: wrapped.clip, maxLen: wrapped.maxLen },
+  flat: { cols: flat.cols, rows: flat.rows, clip: flat.clip, colW: flat.colW, cw: flat.cw, lh: flat.lh, ch: flat.ch },
+  stable: node.rev === rev,
+}));
+'''
+
+
+def test_no_wrap_puts_every_line_on_its_own_row_clipped_at_the_tile(tmp_path):
+    harness = tmp_path / "nowrap.js"
+    harness.write_text(NOWRAP_HARNESS, encoding="utf-8")
+    out = json.loads(subprocess.run(["node", str(harness), str(CODEMAP)], check=True,
+                                    capture_output=True, text=True, timeout=60).stdout)
+    assert out["wrapped"]["cols"] > 1 and out["wrapped"]["clip"] == out["wrapped"]["maxLen"]
+    flat = out["flat"]
+    assert flat["cols"] == 1 and flat["rows"] == 200
+    assert flat["colW"] == flat["cw"] and flat["lh"] * 200 <= flat["ch"] + 1e-6
+    assert flat["clip"] > out["wrapped"]["maxLen"]
+    assert out["stable"]

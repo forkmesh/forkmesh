@@ -607,9 +607,12 @@
 
   // Fits the file's lines into its cell as newspaper columns, choosing the
   // column count that leaves the largest line height.
+  const layoutPrefs = { wrap: true };
+  const NOWRAP_MAX_CHARS = 80;
+
   function fitCode(node) {
     const code = node.code;
-    const key = `${node.w}|${node.h}`;
+    const key = `${node.w}|${node.h}|${layoutPrefs.wrap ? "wrap" : "nowrap"}`;
     if (code.key === key) return code;
     code.key = key;
     node.rev += 1;
@@ -617,6 +620,17 @@
     const cw = Math.max(0, node.w - inset * 2);
     const ch = Math.max(0, node.h - node.band - inset * 2);
     const count = Math.max(1, code.lines.length);
+    if (!layoutPrefs.wrap) {
+      const span = Math.min(code.maxLen, NOWRAP_MAX_CHARS) + 3;
+      const lh = Math.min(ch / count, cw / (span * CHAR_ASPECT));
+      code.cols = 1;
+      code.rows = count;
+      code.lh = lh;
+      code.colW = cw;
+      code.clip = lh > 0 ? Math.max(1, Math.floor(cw / (lh * CHAR_ASPECT)) - 1) : code.maxLen;
+      code.ox = inset; code.oy = node.band + inset; code.cw = cw; code.ch = ch;
+      return code;
+    }
     const chars = code.maxLen + 3;
     let bestLh = 0, bestCols = 1;
     const limit = Math.min(count, 64);
@@ -629,6 +643,7 @@
     code.rows = Math.ceil(count / bestCols);
     code.lh = bestLh;
     code.colW = chars * CHAR_ASPECT * bestLh;
+    code.clip = code.maxLen;
     code.ox = inset; code.oy = node.band + inset; code.cw = cw; code.ch = ch;
     return code;
   }
@@ -706,7 +721,7 @@
       const charW = lod * CHAR_ASPECT;
       const colW = code.colW * (lod / code.lh);
       const rows = code.rows;
-      const maxLen = code.maxLen;
+      const maxLen = code.clip || code.maxLen;
       if (lod <= 2) {
         const far = lod < 1;
         const bar = far ? lod * 0.75 : Math.max(1, lod * 0.7);
@@ -1056,6 +1071,7 @@
     <button type="button" data-codemap-mode="2d" aria-pressed="true">2D</button>
     <button type="button" data-codemap-mode="3d" aria-pressed="false">3D</button>
   </div>
+  <button type="button" class="fmcm-btn" data-codemap-act="wrap" aria-pressed="false" title="Show every line on its own row, clipped at the tile edge">No wrap</button>
   <button type="button" class="fmcm-btn" data-codemap-act="out" aria-label="Zoom out">−</button>
   <button type="button" class="fmcm-btn" data-codemap-act="in" aria-label="Zoom in">+</button>
   <button type="button" class="fmcm-btn" data-codemap-act="reset">Reset</button>
@@ -1370,7 +1386,7 @@
           if (!tokens) {
             const line = code.lines[index];
             const lead = line.length - line.trimStart().length;
-            const len = Math.min(line.length, code.maxLen) - lead;
+            const len = Math.min(line.length, code.clip || code.maxLen) - lead;
             if (len <= 0) continue;
             ctx.globalAlpha = 0.6;
             ctx.fillStyle = theme.code[code.inBlock[index] ? 3 : 0];
@@ -1380,8 +1396,9 @@
           const parts = tokenizeLine(code, index);
           for (let t = 0; t < parts.length; t += 1) {
             const part = parts[t];
-            if (part[0] >= code.maxLen) break;
-            const shown = part[0] + part[1].length > code.maxLen ? part[1].slice(0, code.maxLen - part[0]) : part[1];
+            const limit = code.clip || code.maxLen;
+            if (part[0] >= limit) break;
+            const shown = part[0] + part[1].length > limit ? part[1].slice(0, limit - part[0]) : part[1];
             ctx.fillStyle = theme.code[part[2]];
             if (text) ctx.fillText(shown, lx + part[0] * charW, ly + lhPx / 2);
             else { ctx.globalAlpha = 0.8; ctx.fillRect(lx + part[0] * charW, ly + lhPx * 0.2, shown.length * charW - 0.5, lhPx * 0.6); }
@@ -2271,6 +2288,16 @@
       else if (three) three.dolly(1 / factor);
     }
 
+    function setWrap(wrap) {
+      layoutPrefs.wrap = Boolean(wrap);
+      try { localStorage.setItem("forkmesh-codemap-wrap", layoutPrefs.wrap ? "1" : "0"); } catch (_) { void 0; }
+      const button = el.querySelector('[data-codemap-act="wrap"]');
+      if (button) button.setAttribute("aria-pressed", layoutPrefs.wrap ? "false" : "true");
+      eachNode(root, (node) => { if (node.code) node.code.key = ""; });
+      if (three) three.rebuild();
+      requestDraw();
+    }
+
     function reset() {
       setFocus(root);
       if (mode === "2d") { atHome = true; animateView(fitFor(root, 0.03)); }
@@ -2282,6 +2309,7 @@
       if (modeButton) { setMode(modeButton.dataset.codemapMode); return; }
       const act = event.target.closest("[data-codemap-act]");
       if (!act) return;
+      if (act.dataset.codemapAct === "wrap") { setWrap(!layoutPrefs.wrap); return; }
       if (act.dataset.codemapAct === "close") close();
       else if (act.dataset.codemapAct === "in") zoomStep(1.6);
       else if (act.dataset.codemapAct === "out") zoomStep(1 / 1.6);
@@ -2350,6 +2378,9 @@
     renderFocus();
     resizer.observe(stage);
     requestDraw();
+    let savedWrap = null;
+    try { savedWrap = localStorage.getItem("forkmesh-codemap-wrap"); } catch (_) { void 0; }
+    if (savedWrap === "0") setWrap(false);
     el.querySelector('[data-codemap-act="close"]').focus();
 
     const findPath = (path) => {
@@ -2384,7 +2415,7 @@
     // The open viewer's handle (close, setMode, goToPath, state), or null.
     get current() { return current; },
     buildTree, measureTree, squarify, layoutTree, elevateTree, prepareCode, tokenizeLine, fitCode,
-    languageOf, previewKindOf, fileCategoryOf, previewArea, pickLod, createLoader, THREE_URL, open,
+    languageOf, previewKindOf, fileCategoryOf, previewArea, pickLod, createLoader, layoutPrefs, THREE_URL, open,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window === "undefined") return;
