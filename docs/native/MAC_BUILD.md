@@ -463,6 +463,16 @@ compile. Keep to these:
   `ShellNewAgentButton.body`, a 25-modifier chain with a ternary hint and an
   `any Tip` ternary; it now builds in `pressable`, `described`, `tipped` and
   `body`, with the hint as a plain computed property.
+- Inside a long modifier chain, a plain type error is often reported only as
+  "unable to type-check this expression in reasonable time". Never give a
+  `body` local the name of a property its closures use: the 2026-10-22 ad hoc
+  build of `e4d1620af4e6` failed on `ChatChannelSidebar.body`, where
+  `let groups: [MemberGroup]` (added in `fe664f0c09`) hid the
+  `@State groups: ChannelGroupsStore?` that the group alerts call
+  `groups?.update` on. The local is now `memberGroups`, and the body is split
+  into `list`, `peopleSheets`, `channelSheets`, `alerts` and `dialogs`, with
+  typed `movingKey` and `shown(_:)` bindings instead of inline
+  `Binding(get:set:)` closures.
 - Pass `popoverTip` a concrete tip type, never `any Tip`: an existential picks
   the iOS 26 overload (`popoverTip(_:isPresented:attachmentAnchor:arrowEdge:action:)`)
   and the archive fails on availability. To choose between tips, branch in a
