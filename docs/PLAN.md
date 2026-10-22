@@ -41,7 +41,13 @@ records the move from the old Cloudflare Worker stack, and
 - **Host shim.** The app is the same Python code that ran as a Worker, on
   CPython behind `app/host/forkmesh_host/`: `js.py`, `ffi.py`, `workers.py`,
   `env.py`, `asgi.py` (uvicorn). `tools/js_surface_inventory.py` fails when
-  the app uses an attribute the shim does not implement.
+  the app uses an attribute the shim does not implement. The test that uses
+  it requires a binding only for `DB`, `ASSETS`, `REPOSITORY_METADATA` and
+  names the app calls through (`env.X.idFromName()`). An `env.FORKMESH_*`
+  name read as a plain value, such as `FORKMESH_CALLS_NODES` or
+  `FORKMESH_CALLS_SECRET`, is an optional var. Before 2026-10-22 every
+  `FORKMESH_*` name counted as a binding, and that failed the node deploy of
+  03524dc4dd77.
 - **Database.** rqlite. `d1_rqlite.py` gives it the D1 shape; plain reads are
   in-process read-only `sqlite3` on the local file, reads after a write use
   `weak`, primary-first reads use `linearizable`. `tools/rqlite_migrate.py`
