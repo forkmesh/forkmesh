@@ -416,6 +416,12 @@ per value.
 ## Self-diagnostics
 
 `src/NodeDiagnostics.*` produces findings for the report and phones.
+Hello and presence frames carry them as `dg` to everyone in a shared room, so
+the wire form (`toJson`) holds only ids, severities and counted messages. The
+newest error log line (last 80 characters) is kept in `Finding::detail`, which
+`toJson` never sends; `detailText` shows it on this desktop's own diagnostics
+and report. Before 2026-10-22 the `log-errors` message embedded that line, so
+paths, hostnames or tokens in a log error reached every room member.
 `relay-flap` comes from `Collector::noteRelayDrop`: only loss of an established
 link counts, only while the network is up, and drops within
 `kRelayDropCoalesceMs` (15 s) coalesce.

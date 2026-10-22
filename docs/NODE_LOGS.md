@@ -52,6 +52,21 @@ Cloudflare's published ranges, the `expected_degraded` response header,
 credential query parameters redacted, `/readyz` and `/health` skipped. The app
 never sees the `Cf-*` headers.
 
+The redacted query keys are `ACCESS_LOG_QUERY_KEYS` in `deploy/core/render.py`.
+`ticket` (chat room, call and event-socket tickets on socket URLs) and `node`
+(the account a desktop's signed reads name) were added on 2026-10-22: both
+were written to the journal in full; a ticket is a short-lived socket
+credential and `node` ties each signed read to an account.
+
+Bearer tokens carried in a path (`/api/chat/invites/<token>`,
+`/api/chat/webhooks/<token>`) are still logged by Caddy. Caddy applies one
+filter per log field, and `request>uri` already uses the `query` filter, so
+redacting the path would mean replacing that filter with hand-written regular
+expressions over the whole URI; that was not done. The app's own error and
+Sentry logs replace both with `[token]` (`_privacy_safe_log_path` in
+`app/src/entry.py`; `/api/chat/webhooks/` was added on 2026-10-22). Tests:
+`deploy/tests/test_render.py`, `app/tests/test_sentry_worker.py`.
+
 ## Rolling it out
 
 1. `tools/next_fleet.py logread-key --execute`; copy the printed `[logs]`

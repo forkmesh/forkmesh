@@ -1,5 +1,6 @@
 #include "RoomSeal.h"
 #include "AppPaths.h"
+#include "OwnerOnlyFile.h"
 #include "SettingsWrite.h"
 
 #include <QCoreApplication>
@@ -13,7 +14,6 @@
 #include <QMap>
 #include <QMutex>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QSettings>
 #include <QTimer>
 
@@ -119,6 +119,10 @@ std::unique_ptr<QSettings> openStoredState()
     const QString path = storedStatePath();
     if (path.isEmpty() || !QDir().mkpath(QFileInfo(path).absolutePath()))
         return nullptr;
+    if (QFileInfo::exists(path))
+        forkmesh::ownerfile::restrictToOwner(path);
+    else
+        forkmesh::ownerfile::write(path, QByteArray());
     return std::make_unique<QSettings>(path, QSettings::IniFormat);
 }
 
@@ -141,18 +145,7 @@ bool writeStateFile(const QString &path, const QVariant &value)
 {
     if (!value.isValid())
         return !QFileInfo::exists(path) || QFile::remove(path);
-    if (!QDir().mkpath(QFileInfo(path).absolutePath()))
-        return false;
-    const QByteArray data = value.toByteArray();
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly))
-        return false;
-    file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-    if (file.write(data) != data.size()) {
-        file.cancelWriting();
-        return false;
-    }
-    return file.commit();
+    return forkmesh::ownerfile::write(path, value.toByteArray());
 }
 
 bool readStateFile(const QString &path, QByteArray *out)

@@ -228,7 +228,40 @@ a peer listed, even one it had hidden. So one project's private channel names
 reached every device in the room, and came back into other projects and
 devices from there. It now leaves out private, hidden and `#office/` channels
 (`RelayService.advertisedChannels`, as the desktop's `ServerNode::sendHello`
-leaves out private ones) and adopts only `#` channels it has not hidden. Android rebuilds its whole chat graph per project
+leaves out private ones) and adopts only `#` channels it has not hidden.
+
+Addressed frames and private frames (2026-10-22): every relay frame that
+names one person in `to` (a DM and its edits, reactions, stickers, typing and
+deletes, and channel invites) is sealed to that person's keys
+(`RelayService.directRecipient`), not only `dm`; `hello` stays room-wide. A
+`private` chat, thread, reaction or edit frame for a channel this phone is not
+in is dropped before it reaches the channel list, the history or the thread
+store, unless it comes from a device of the same account
+(`RelayService.acceptsPrivate`); such a frame marks its channel private before
+the message is filed, so it never lands in the Inbox ping log.
+
+Android (2026-10-22) had the same two leaks in `RelayRoom.kt`: its `hello`
+and replies sent the whole channel list and it took any channel a peer
+listed, and only `dm` frames were sealed to the recipient, so edits,
+reactions, stickers, typing, deletes and invites in an `@peer` conversation
+were sealed to every key in the room. `RelayRoom.advertisedChannels` now
+leaves out private, hidden and `#office/` channels (hooks set by `ChatHub`
+from `ChatExtras.isPrivate` / `isHiddenChannel`), a peer's `hello`, a chat
+frame and restored history add only `#` channels that are not `#office/` or
+hidden, and `RelayRoom.sealRecipients` seals every frame with a `to` except
+`hello` to that device and this account's own devices. It also took a
+stranger's `private` frames for channels it was not in, and filed a private
+first message as an Inbox ping because `ChatExtras` saw the frame only after
+the message was delivered. `RelayRoom.acceptsPrivate` now drops a `private`
+frame for a `#` channel outside `ChatExtras`' private set (chat, thread
+replies, reactions, edits) before the channel list, history or `ChatExtras`
+see it, unless its `ownerUser` is this phone's own account (case-insensitive,
+non-empty); an accepted private `chat` goes to `ChatExtras` first, so the
+channel is private before `ChatHub.filePing` runs (`RelayRoomPrivacyTest`).
+
+The Inbox's local chat pings (`inbox/local-pings.v1`) are a per-project
+preference key and reload on a switch (`LocalPingLog.reload`), and removing a
+project erases its chat history file (`ChatHistoryStore.eraseProject`). Android rebuilds its whole chat graph per project
 (`ProjectLifecycle.close`, `Features.install`), so it never had this leak.
 
 ### WS2: Push, pings and code-push

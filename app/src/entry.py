@@ -3654,12 +3654,15 @@ async def push_chat_room_apns(env, room_key, channel_id="", sender_bi="",
     notify_account_event. A channel or public room does not: the relay only
     ever sees ciphertext, so the audience is derived from the room instead —
     a private channel's members, or every registered phone for a public
-    channel or room. The sender's own phones are skipped whenever the relay
-    knows who sent the frame, which a public room's anonymous socket does not
-    say; the app keeps that banner off screen while it is open instead.
+    channel or the public world room; any other room wakes nobody. The
+    sender's own phones are skipped whenever the relay knows who sent the
+    frame, which a public room's anonymous socket does not say; the app keeps
+    that banner off screen while it is open instead.
     """
     apns = _apns_module()
     if not room_key or not apns.apns_configured(env):
+        return 0
+    if not channel_id and room_key != PUBLIC_WORLD_GENERAL_ROOM_KEY:
         return 0
     now = int(Date.now())
     last = _CHAT_ROOM_PUSH_MEMO.get(room_key, 0)
@@ -10961,9 +10964,7 @@ class _WorldCommunityRuntime:
                 MAX_NODE_NAME,
             ).strip().lower()
             if (
-                record
-                and record.get("status") == "active"
-                and _account_kind(record) == "user"
+                _is_public_roster_member(record)
                 and valid_node_name(name)
                 and name not in names
             ):
@@ -44941,6 +44942,8 @@ async def _privacy_safe_log_path(env, path):
         return "/api/chat/channels/[opaque]"
     if path.startswith("/api/chat/invites/"):
         return "/api/chat/invites/[token]"
+    if path.startswith("/api/chat/webhooks/"):
+        return "/api/chat/webhooks/[token]"
     if path.startswith("/api/chat/direct-messages/"):
         return "/api/chat/direct-messages/[opaque]"
     match = REPO_API_PREFIX_RE.match(path)

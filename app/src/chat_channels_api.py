@@ -7,11 +7,13 @@ import re
 
 CHANNEL_BODY_MAX_BYTES = 64 * 1024
 MAX_CHAT_CHANNELS = 100
+MAX_CHAT_CHANNELS_PER_CREATOR = 20
 MAX_CHANNEL_MEMBERS = 500
 MAX_CHANNEL_TOPIC_LENGTH = 200
 MAX_CHANNEL_WEBHOOKS = 10
 MAX_WEBHOOK_NAME_LENGTH = 80
 MAX_WEBHOOK_TEXT_LENGTH = 8000
+WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS = 10 * 60 * 1000
 CHANNEL_NAME_RE = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$")
 # Everything a channel manager may PATCH from the settings panel. Each one is
@@ -288,6 +290,13 @@ async def _create_channel(runtime, account_bi, actor, data):
     if int((count or {}).get("n") or 0) >= MAX_CHAT_CHANNELS:
         return _response(
             runtime, {"error": "too_many_channels"}, status=429)
+    own = await runtime.d1_first(
+        "SELECT COUNT(*) AS n FROM chat_channels WHERE created_by_bi=? "
+        "AND channel_id NOT IN (SELECT channel_id FROM org_office_channels) "
+        "AND channel_id NOT IN (?,?,?)", account_bi, *EVERYONE_IDS)
+    if int((own or {}).get("n") or 0) >= MAX_CHAT_CHANNELS_PER_CREATOR:
+        return _response(
+            runtime, {"error": "too_many_own_channels"}, status=429)
 
     now = runtime.now()
     channel_id = runtime.new_id()
@@ -989,12 +998,26 @@ async def _deliver_webhook(runtime, token, data):
     }
     await runtime.deliver_webhook(
         channel_id, int(row.get("key_version") or 1), plain)
+    notify_public = False
     try:
-        await runtime.d1_run(
-            "UPDATE chat_channel_webhooks SET last_used_at=? WHERE webhook_id=?",
+        notify_public = bool(await runtime.d1_first(
+            "UPDATE chat_channel_webhooks SET last_used_at=? "
+            "WHERE webhook_id=? AND NOT EXISTS ("
+            "SELECT 1 FROM chat_channel_webhooks "
+            "WHERE channel_id=? AND last_used_at>?) "
+            "RETURNING webhook_id",
             now,
             webhook_id,
-        )
+            channel_id,
+            now - WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS,
+        ))
+        if not notify_public:
+            await runtime.d1_run(
+                "UPDATE chat_channel_webhooks SET last_used_at=? "
+                "WHERE webhook_id=?",
+                now,
+                webhook_id,
+            )
     except Exception:
         # The encrypted room write is already durable. Do not make the sender
         # retry (and duplicate a live delivery) for display-only metadata.
@@ -1015,7 +1038,7 @@ async def _deliver_webhook(runtime, token, data):
                 username = member["username"]
                 if username and username not in recipients:
                     recipients.append(username)
-        else:
+        elif notify_public:
             for username in await runtime.public_webhook_recipients():
                 if username and username not in recipients:
                     recipients.append(username)

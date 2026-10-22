@@ -958,6 +958,72 @@ async def test_public_channels_support_incoming_webhooks():
 
 
 @run_async_test
+async def test_a_public_webhook_pings_everyone_at_most_once_per_window():
+    runtime = FakeRuntime()
+    created = await create_channel(
+        runtime, "public-updates", visibility="public", actor="alice")
+    channel_id = created["data"]["channel"]["id"]
+    collection = f"/api/chat/channels/{channel_id}/webhooks"
+    tokens = []
+    for name in ("Deploy bot", "Other bot"):
+        webhook = await api.handle(
+            runtime.use("POST", "alice", {"name": name}), collection)
+        tokens.append(webhook["data"]["url"].rsplit("/", 1)[-1])
+
+    async def post(token, text):
+        runtime.webhook_notifications.clear()
+        delivery = await api.handle(
+            runtime.use("POST", "", {"text": text}),
+            f"/api/chat/webhooks/{token}")
+        assert delivery["status"] == 202
+        return sorted(
+            item["recipient"] for item in runtime.webhook_notifications)
+
+    assert await post(tokens[0], "one") == ["admin", "alice", "bob"]
+    runtime.clock += 1000
+    assert await post(tokens[0], "two") == ["alice"]
+    runtime.clock += 1000
+    assert await post(tokens[1], "three") == ["alice"]
+    assert len(runtime.webhook_deliveries) == 3
+    runtime.clock += api.WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS
+    assert await post(tokens[1], "four") == ["admin", "alice", "bob"]
+    listed = await api.handle(runtime.use("GET", "alice"), collection)
+    assert sorted(
+        item["lastUsedAt"] for item in listed["data"]["webhooks"]) == [
+        runtime.clock - api.WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS - 1000,
+        runtime.clock]
+
+
+@run_async_test
+async def test_one_account_at_its_channel_cap_does_not_block_another():
+    runtime = FakeRuntime()
+    for index in range(api.MAX_CHAT_CHANNELS_PER_CREATOR):
+        created = await create_channel(
+            runtime, f"alice-{index}", actor="alice")
+        assert created["status"] == 201, created
+    refused = await create_channel(runtime, "alice-extra", actor="alice")
+    assert refused["status"] == 429
+    assert refused["data"] == {"error": "too_many_own_channels"}
+    allowed = await create_channel(runtime, "bob-first", actor="bob")
+    assert allowed["status"] == 201
+
+
+@run_async_test
+async def test_the_site_wide_channel_ceiling_still_applies():
+    runtime = FakeRuntime()
+    for index in range(api.MAX_CHAT_CHANNELS):
+        runtime.db.execute(
+            "INSERT INTO chat_channels (channel_id,name_bi,data,"
+            "created_by_bi,created_at,updated_at,key_version) "
+            "VALUES (?,?,?,?,?,?,1)",
+            (f"{index + 1000:032x}", f"name-{index}", "{}",
+             f"bi:other-{index}", 0, 0))
+    refused = await create_channel(runtime, "bob-first", actor="bob")
+    assert refused["status"] == 429
+    assert refused["data"] == {"error": "too_many_channels"}
+
+
+@run_async_test
 async def test_private_channels_reject_controller_webhooks():
     runtime = FakeRuntime()
     created = await create_channel(

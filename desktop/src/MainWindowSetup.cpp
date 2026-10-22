@@ -16,6 +16,7 @@
 #include "MainWindowNextAccess.h"
 #include "NetworkReplyError.h"
 #include "NodeEventSocket.h"
+#include "OwnerOnlyFile.h"
 #include "SafeDelete.h"
 #include "LocalMeshNode.h"
 #include "OfficeChannelMirror.h"
@@ -218,10 +219,7 @@ void MainWindow::saveChatHistory()
                            {"dmNames", dmNames},
                            {"unread", unreadObj},
                            {"conversations", conversations}};
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QFile file(path);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        file.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
+    forkmesh::ownerfile::write(path, QJsonDocument(root).toJson(QJsonDocument::Compact));
 }
 
 void MainWindow::loadChatHistory()

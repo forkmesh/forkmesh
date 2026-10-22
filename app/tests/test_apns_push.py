@@ -1397,16 +1397,34 @@ def test_a_channel_that_cannot_be_read_wakes_nobody():
 
 
 def test_chat_pushes_coalesce_per_room_and_reuse_the_device_table():
-    runtime = _chat_push_runtime()
-    runtime.push("room-a")
-    runtime.push("room-a")
-    runtime.push("room-b")
+    runtime = _chat_push_runtime(
+        channel={"data": {"visibility": "public"},
+                 "created_by_bi": "bi-alice"})
+    world = "repo:mainnode/forkmesh:room:world-general"
+    runtime.push(world)
+    runtime.push(world)
+    runtime.push("chat-channel:c2:v1", channel_id="c2")
     # One buzz per room per window, and one device-table read for all of it.
     assert [topic for _, topic in runtime.sent] == ["chat", "chat"]
-    assert len(runtime.reads) == 1
+    assert sum("apns_device_tokens" in sql for sql in runtime.reads) == 1
     runtime.clock["now"] += _entry_constant("CHAT_ROOM_PUSH_COALESCE_MS")
-    runtime.push("room-a")
+    runtime.push(world)
     assert len(runtime.sent) == 3
+
+
+def test_a_legacy_room_wakes_nobody():
+    runtime = _chat_push_runtime()
+    assert runtime.push("legacy:room:anything") == 0
+    assert runtime.sent == [] and runtime.reads == []
+
+
+def test_a_repository_room_other_than_the_world_room_wakes_nobody():
+    runtime = _chat_push_runtime()
+    for room in ("repo:someone/project:room:general",
+                 "repo:mainnode/forkmesh:room:general",
+                 "repo:mainnode/forkmesh:room:world-general-2"):
+        assert runtime.push(room) == 0
+    assert runtime.sent == [] and runtime.reads == []
 
 
 def test_chat_pushes_are_a_no_op_without_usable_credentials():

@@ -483,4 +483,8 @@ public final class ChatHistoryStore {
         saveTask?.cancel()
         writer.erase(file(scope: scope))
     }
+
+    public func eraseProject(_ projectId: String, room: String) {
+        erase(scope: ChatHistoryCodec.projectScope(projectId: projectId, room: room))
+    }
 }

@@ -243,6 +243,8 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     fun isPrivate(channel: String): Boolean = synchronized(lock) { channel in privateSet }
 
+    fun isHiddenChannel(channel: String): Boolean = synchronized(lock) { channel in hiddenSet }
+
     fun apply(frame: Map<String, Any?>) {
         val type = jsonText(frame["type"])
         val senderId = jsonText(frame["senderId"])

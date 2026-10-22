@@ -742,6 +742,13 @@ public final class RelayService: OwnStatusAnnouncer {
         send(hello)
     }
 
+    private func acceptsPrivate(_ m: JSONObject, channel: String) -> Bool {
+        if m["private"]?.boolValue != true || isPrivateChannel?(channel) == true { return true }
+        let owner = (m["ownerUser"]?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let account = (accountProvider?() ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !account.isEmpty && owner == account
+    }
+
     var advertisedChannels: [String] {
         channels.filter { !OfficeFrames.isOffice($0) && isPrivateChannel?($0) != true && isHiddenChannel?($0) != true }
     }
@@ -919,7 +926,7 @@ public final class RelayService: OwnStatusAnnouncer {
     }
 
     nonisolated static func directRecipient(_ frame: JSONObject) -> String? {
-        guard (frame["type"]?.text ?? "") == "dm" else { return nil }
+        if (frame["type"]?.text ?? "") == "hello" { return nil }
         let to = frame["to"]?.text ?? ""
         return to.isEmpty ? nil : to
     }
@@ -993,7 +1000,14 @@ public final class RelayService: OwnStatusAnnouncer {
             }
         case "chat":
             let channel = m["channel"].map { $0.isNull ? "#general" : $0.text } ?? "#general"
+            if !acceptsPrivate(m, channel: channel) { return }
             if !channels.contains(channel) { channels.append(channel) }
+            if m["private"]?.boolValue == true {
+                frameObserver?(m)
+                receive(toMessage(m, channel))
+                notifyListeners()
+                return
+            }
             receive(toMessage(m, channel))
         case "dm":
             let to = m["to"]?.text ?? ""
@@ -1018,6 +1032,8 @@ public final class RelayService: OwnStatusAnnouncer {
         default:
             break
         }
+        let conversation = ChatFrameText.conversation(of: m)
+        if conversation.hasPrefix("#") && !acceptsPrivate(m, channel: conversation) { return }
         frameObserver?(m)
         notifyListeners()
     }

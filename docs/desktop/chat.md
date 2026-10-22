@@ -76,6 +76,16 @@ pending devices, 950 KB of a 1.5 MB `ForkMesh.conf`, which every settings sync
 rewrote (`testHeldBudget`).
 The old `chat/e2ee/x25519PrivateV2` value is left in place and unused.
 
+`state.ini` itself is owner-only: `openStoredState()` creates it through
+`forkmesh::ownerfile::write` and restricts an existing one to 0600 before
+QSettings opens it, and QSettings' `QSaveFile` keeps that mode on every sync.
+The same header-only helper (`src/OwnerOnlyFile.h`, `QSaveFile` with 0600
+before the first byte) now writes the per-key files, the conversation history
+(`MainWindow::saveChatHistory`, DM and private-channel text, which used a plain
+`QFile` at the default umask and was truncated in place), the `#mesh` history
+(`LocalMeshNode::saveHistory`) and `paired-devices.json`. A crash mid-write
+leaves the previous file, and other local users cannot read message text.
+
 - Prekeys rotate when the newest is 24 h old (checked at start, before each
   seal and before each bundle) and are wiped once expired; at most ten are
   kept. A rotation re-advertises the bundle on every relay room and mesh link.
@@ -185,6 +195,27 @@ exists only so the v3 vector tests can open the v3 DM vectors.
   frame path, or the mirror does when no socket is open.
 - Relay `@peer` DMs are sealed to the devices whose bundle `node` is the
   recipient plus this account's approved devices.
+- Every other frame of an `@peer` conversation (edits with their new text,
+  reactions, deletes, typing) uses the same recipients, and so does any
+  frame other than `hello` that carries a `to` (the `history` reply to a
+  newcomer). `ServerNode::sealForRoom` picks the recipients from the frame's
+  conversation (`targetedPeer`), not only from `type == "dm"`. Before
+  2026-10-22 only the `dm` frame itself was targeted, so an edit of a DM was
+  sealed to every key in the room and every member could read the new text
+  (`testTargetedConversationSealing`).
+- Typing frames are not sent for private channels at all: a typing frame is
+  sealed to the whole room and carries the conversation name, so it told every
+  member the private channel existed.
+- A peer's `hello` channel list and `channel` frames only add names that start
+  with `#`, are at most 80 characters, contain no control or format
+  characters, and are not `#office/...`, `@...` or `direct:...` names
+  (`adoptableChannelName`); adoption stops at 200 channels. Any member could
+  otherwise plant a row that looks like a DM or an office room, or flood the
+  channel list.
+- The `history` reply skips entries marked `private: true` as well as the
+  channels this desktop marked private (`sendHistoryTo`): a private entry can
+  sit in a channel this desktop never marked private, and the reply used to
+  replay it to every newcomer.
 - Chat and thread replies are shown at the frame's signed `ts`, not the
   plaintext `ts`, so a replayed frame cannot be reordered.
 - A frame from another approved device of this account remembers its relay

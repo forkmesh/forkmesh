@@ -244,6 +244,14 @@ signed with the v3 key (`native/android/README.md`); the default application id
     lock-screen version "New message". The "Notification content" setting
     (`notifications/content`) chooses name and message, name only, or neither.
     Any failure falls back to a generic notification.
+  - every notification that can carry someone's words is `VISIBILITY_PRIVATE`
+    with a generic public version ("ForkMesh" and "New message", or "New
+    notification" for pings and desktop alarms), so a locked phone shows
+    neither who wrote nor what (2026-10-22; before, only the decrypted DM
+    preview had one). Nearby `#mesh` alerts (`PingNotifier.postMesh`) follow
+    the same "Notification content" setting through `MeshAlert.shown`: name
+    only drops the text, neither shows "ForkMesh" / "New message"; before,
+    they always showed the sender and the text.
   - every `direct-messages` frame, foreground or not, first posts
     `/api/chat/direct-messages/<id>/delivered?ref=<ref>`
     (`DirectMessagePreviews.confirmDelivery`), so the sender sees Delivered
@@ -251,8 +259,21 @@ signed with the v3 key (`native/android/README.md`); the default application id
     ([chat-private-rooms.md](../app/chat-private-rooms.md#delivery-ticks)).
 - **Relay room** (`C/chat/RelayRoom.kt`): every frame encrypted twice
   (`RoomCrypto` room key and a v3 `RoomSeal`, open trust, scope = room name),
-  except public `#channel` chat. `@peer` DMs are sealed to the devices whose
-  bundle `node` is the recipient plus this account's own devices. v2 frames
+  except public `#channel` chat. Every frame with a non-empty `to` except
+  `hello` (DMs and their edits, reactions, stickers, typing and deletes, and
+  channel invites) is sealed to the devices whose bundle `node` is the
+  recipient plus this account's own devices (`RelayRoom.sealRecipients`,
+  2026-10-22): before, only `type == "dm"` was, so an edit or reaction in an
+  `@peer` conversation could be opened by every device in the room. The
+  `hello` and its replies list only `RelayRoom.advertisedChannels` (no
+  private, hidden or `#office/` channel, from `ChatExtras.isPrivate` and
+  `isHiddenChannel` through `ChatRelay.setChannelPrivacy`), and a peer's
+  `hello` adds only `#` channels that are neither `#office/` nor hidden; a
+  chat frame or restored history no longer brings a hidden channel back. A
+  `private` frame for a channel this phone is not in is dropped unless its
+  `ownerUser` is this account (`acceptsPrivate`), and an accepted private
+  chat reaches `ChatExtras` before the message is filed, so it is never
+  pinged ([PARITY.md](PARITY.md), "Chat is per project"). v2 frames
   are ignored. Dial timeout 15 s; ping every 25 s; reconnect 1, 2, 4, 8,
   16, then 30 s; presence every 60 s, peers dropped after 180 s. Envelope
   `version` matches iOS.
@@ -456,6 +477,17 @@ signed with the v3 key (`native/android/README.md`); the default application id
 
 ## 10. Platform choices
 
+- **Notification intent token** (`C/security/IntentToken.kt`,
+  `platform/IntentTokens.kt`, 2026-10-22). `MainActivity` is exported, so any
+  app could send it `com.forkmesh.inbox.ACTION` (Deny, Retry, Continue run and
+  Mark read ran without a prompt) or `com.forkmesh.call.ACCEPT`. Every
+  PendingIntent the app builds for these (Inbox notification actions, the
+  call notification's show, accept and decline) now carries
+  `com.forkmesh.intent.TOKEN`, 32 random bytes made once per install and kept
+  in the private `forkmesh.intents` preferences. `InboxFeature.onIntent`,
+  `NotificationActionReceiver`, `DirectCallFeature.onIntent` and
+  `CallActionReceiver` compare it in constant time and drop an intent without
+  it.
 - **Haptics** map to `VIRTUAL_KEY`, `KEYBOARD_TAP`, `CONTEXT_CLICK`, all
   suppressed under reduced motion.
 - **Timers** ring through `AlarmManager` (`TimerAlarmReceiver`, rescheduled
@@ -811,8 +843,8 @@ default in new projects except the chosen starter pack
     full-screen intent to `MainActivity` (`com.forkmesh.call.SHOW`), and
     Accept (`com.forkmesh.call.ACCEPT`, an activity intent routed through
     `Features.onIntent` to `DirectCallFeature.onIntent`) and Decline (the
-    manifest receiver `CallActionReceiver`). Both carry the call id and act
-    only on that invite; Accept from the notification accepts at once only
+    manifest receiver `CallActionReceiver`). Both carry the call id and the
+    install's intent token (section 10) and act only on that invite; Accept from the notification accepts at once only
     when the microphone (and camera) permissions are already granted,
     otherwise it opens the in-app incoming screen. On API 31+ the
     notification uses `Notification.CallStyle.forIncomingCall` and falls back

@@ -674,6 +674,9 @@ void testStoredStateKeysHaveTheirOwnFiles()
     check((QFileInfo(ratchetPath).permissions() &
            (QFileDevice::ReadGroup | QFileDevice::ReadOther)) == 0,
           "a ratchet file is readable by its owner only");
+    check((QFileInfo(storedStateFile()).permissions() &
+           (QFileDevice::ReadGroup | QFileDevice::ReadOther)) == 0,
+          "state.ini is readable by its owner only");
     const qint64 iniSize = QFileInfo(storedStateFile()).size();
     ChatDevice::local()->setPolicy(QStringLiteral("own-file-scope"), Policy::Strict);
     migrateStoredState();

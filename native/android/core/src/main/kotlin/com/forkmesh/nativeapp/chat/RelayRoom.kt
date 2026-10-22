@@ -71,6 +71,16 @@ class RelayRoom(
         const val CLIENT_VERSION = "native-1.0"
 
         private val seq = AtomicLong()
+
+        fun directRecipient(frame: Map<String, Any?>): String? {
+            if (jsonText(frame["type"]) == "hello") return null
+            return jsonText(frame["to"]).ifEmpty { null }
+        }
+
+        fun sealRecipients(roomSeal: RoomSeal, payload: Map<String, Any?>, ownAccount: String): Collection<String>? {
+            val to = directRecipient(payload) ?: return null
+            return roomSeal.trust.approved().filter { it.node == to || it.acct == ownAccount }.map { it.kid }
+        }
     }
 
     @Volatile
@@ -89,6 +99,12 @@ class RelayRoom(
 
     @Volatile
     var isReadElsewhere: ((ChatMessage) -> Boolean)? = null
+
+    @Volatile
+    var isPrivateChannel: ((String) -> Boolean)? = null
+
+    @Volatile
+    var isHiddenChannel: ((String) -> Boolean)? = null
 
     private val framesCounter = AtomicInteger()
 
@@ -588,12 +604,8 @@ class RelayRoom(
         }
     }
 
-    private fun directRecipients(roomSeal: RoomSeal, payload: Map<String, Any?>): Collection<String>? {
-        if (jsonText(payload["type"]) != "dm") return null
-        val to = jsonText(payload["to"])
-        val own = sealAccount()
-        return roomSeal.trust.approved().filter { it.node == to || it.acct == own }.map { it.kid }
-    }
+    private fun directRecipients(roomSeal: RoomSeal, payload: Map<String, Any?>): Collection<String>? =
+        sealRecipients(roomSeal, payload, sealAccount())
 
     private fun sealAccount(): String = persona.ownerUser.trim().lowercase().ifEmpty { nodeId }
 
@@ -624,8 +636,23 @@ class RelayRoom(
 
     private fun sendHello() {
         val hello = withOwnStatus(envelopeBase("hello"))
-        hello["channels"] = ArrayList(channelList)
+        hello["channels"] = advertisedNow()
         send(hello)
+    }
+
+    val advertisedChannels: List<String> get() = loop.call { advertisedNow() }
+
+    private fun advertisedNow(): List<String> =
+        channelList.filter { !OfficeFrames.isOffice(it) && isPrivateChannel?.invoke(it) != true && !hidden(it) }
+
+    private fun hidden(channel: String): Boolean = isHiddenChannel?.invoke(channel) == true
+
+    private fun adoptAdvertised(values: List<String>) {
+        for (channel in values) {
+            if (channel.isEmpty() || !channel.startsWith("#") || channel in channelList) continue
+            if (OfficeFrames.isOffice(channel) || hidden(channel)) continue
+            channelList.add(channel)
+        }
     }
 
     private fun sendPresence() {
@@ -768,7 +795,7 @@ class RelayRoom(
             next.addAll(list)
             next.add(at, message)
             history[message.conversation] = java.util.Collections.unmodifiableList(next)
-            if (message.conversation.startsWith("#") && message.conversation !in channelList) channelList.add(message.conversation)
+            if (message.conversation.startsWith("#") && message.conversation !in channelList && !hidden(message.conversation)) channelList.add(message.conversation)
             changed = true
         }
         if (changed) notifyListeners()
@@ -897,19 +924,24 @@ class RelayRoom(
         when (type) {
             "hello" -> {
                 val incoming = (m["channels"] as? List<*>)?.map { if (it == null) "null" else jsonText(it) } ?: emptyList()
-                for (c in incoming) {
-                    if (c.isNotEmpty() && c !in channelList) channelList.add(c)
-                }
+                adoptAdvertised(incoming)
                 if (jsonText(m["to"]).isEmpty() && senderId != nodeId) {
                     val reply = withOwnStatus(envelopeBase("hello"))
-                    reply["channels"] = ArrayList(channelList)
+                    reply["channels"] = advertisedNow()
                     reply["to"] = senderId
                     send(reply)
                 }
             }
             "chat" -> {
                 val target = if (m["channel"] == null) "#general" else jsonText(m["channel"])
-                if (target !in channelList) channelList.add(target)
+                if (!acceptsPrivate(m, target)) return
+                if (target !in channelList && !hidden(target)) channelList.add(target)
+                if (m["private"] == true) {
+                    observe(m)
+                    receive(toMessage(m, target))
+                    notifyListeners()
+                    return
+                }
                 receive(toMessage(m, target))
             }
             "dm" -> if (jsonText(m["to"]) == nodeId) receive(toMessage(m, "@$senderId"))
@@ -923,6 +955,13 @@ class RelayRoom(
             }
             "bye" -> if (peers.remove(senderId) != null) logLine("$sender left")
         }
+        val conversation = ChatFrameText.conversation(m)
+        if (conversation.startsWith("#") && !acceptsPrivate(m, conversation)) return
+        observe(m)
+        notifyListeners()
+    }
+
+    private fun observe(m: Map<String, Any?>) {
         frameObserver?.let { observer ->
             try {
                 observer(m)
@@ -930,7 +969,13 @@ class RelayRoom(
                 loop.failures.add(failure)
             }
         }
-        notifyListeners()
+    }
+
+    private fun acceptsPrivate(m: Map<String, Any?>, channel: String): Boolean {
+        if (m["private"] != true || isPrivateChannel?.invoke(channel) == true) return true
+        val owner = jsonText(m["ownerUser"]).trim().lowercase()
+        val account = (accountProvider?.invoke() ?: "").trim().lowercase()
+        return account.isNotEmpty() && owner == account
     }
 
     private fun toMessage(m: Map<String, Any?>, conversation: String): ChatMessage {

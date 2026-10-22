@@ -292,7 +292,9 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 - **Diagnostics.** "Send diagnostics" (the composer's "+" menu and
   `/diagnostics`) puts a performance report into the prompt; it trims its
   lowest-ranked sections to fit and lists crashes as the attributed thread's
-  top frames. The prompt sends the agent to
+  top frames. `PerformanceReport.text` runs `DiagnosticsBundle.scrub` on every
+  report (tokens, emails, message text, conversation, channel and room names),
+  so no path hands an agent an unscrubbed one. The prompt sends the agent to
   [PERFORMANCE_CHECKS.md](PERFORMANCE_CHECKS.md) (how to read the bundle,
   every earlier check) and asks it to add its own check there.
 

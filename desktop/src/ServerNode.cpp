@@ -345,6 +345,45 @@ QByteArray diagnosticToken(const QString &value)
     return QUrl::toPercentEncoding(value.trimmed().left(64), "-._~");
 }
 
+QString targetedPeer(const QJsonObject &plain)
+{
+    const QString type = plain.value(QStringLiteral("type")).toString();
+    const QString to = plain.value(QStringLiteral("to")).toString();
+    if (type == QLatin1String("dm"))
+        return to;
+    if (type == QLatin1String("hello"))
+        return QString();
+    const QString conversation = frameConversation(plain);
+    if (conversation.startsWith(QLatin1Char('@')))
+        return conversation.mid(1);
+    return to;
+}
+
+bool isTargetedFrame(const QJsonObject &plain)
+{
+    const QString type = plain.value(QStringLiteral("type")).toString();
+    return type == QLatin1String("dm") || !targetedPeer(plain).isEmpty();
+}
+
+constexpr int kMaxAdoptedChannelChars = 80;
+constexpr int kMaxAdoptedChannels = 200;
+
+bool adoptableChannelName(const QString &name)
+{
+    if (name.size() < 2 || name.size() > kMaxAdoptedChannelChars ||
+        !name.startsWith(QLatin1Char('#')))
+        return false;
+    if (name.startsWith(QLatin1String("#office/"), Qt::CaseInsensitive) ||
+        name.contains(QLatin1Char('@')) ||
+        name.contains(QLatin1String("direct:"), Qt::CaseInsensitive))
+        return false;
+    for (const QChar c : name)
+        if (c.category() == QChar::Other_Control ||
+            c.category() == QChar::Other_Format)
+            return false;
+    return true;
+}
+
 } // namespace
 
 ServerNode::ServerNode(const QString &userName, const QString &nodeName,
@@ -494,10 +533,9 @@ void ServerNode::reopenHeldFrames()
 
 QJsonObject ServerNode::sealForRoom(const QJsonObject &plain) const
 {
-    if (plain.value(QStringLiteral("type")).toString() != QLatin1String("dm"))
+    if (!isTargetedFrame(plain))
         return m_seal.sealObject(plain);
-    const QString to = plain.value(QStringLiteral("to")).toString();
-    QStringList recipients = m_seal.keyIdsForNode(to);
+    QStringList recipients = m_seal.keyIdsForNode(targetedPeer(plain));
     for (const QString &kid : m_seal.keyIdsForAcct(m_chatAccount))
         if (!recipients.contains(kid))
             recipients.append(kid);
@@ -2414,6 +2452,8 @@ void ServerNode::forgetMember(const QString &peerId)
 
 void ServerNode::sendTyping(const QString &conversation, bool active)
 {
+    if (m_privateChannels.contains(conversation))
+        return;
     QJsonObject message = makeMessage("typing");
     message.insert("conversation", conversation);
     message.insert("active", active);
@@ -2604,7 +2644,9 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
         bool changed = false;
         for (const auto &value : message.value("channels").toArray()) {
             const QString channel = value.toString();
-            if (!channel.isEmpty() && !m_channels.contains(channel) &&
+            if (m_channels.size() >= kMaxAdoptedChannels)
+                break;
+            if (adoptableChannelName(channel) && !m_channels.contains(channel) &&
                 !m_hiddenChannels.contains(channel) &&
                 !forkmesh::office::isRetiredRelayChannel(channel)) {
                 m_channels.append(channel);
@@ -2657,7 +2699,8 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
                    envelopeRecipientNames);
     } else if (type == "channel") {
         const QString name = message.value("name").toString();
-        if (!m_channels.contains(name) && !m_hiddenChannels.contains(name) &&
+        if (adoptableChannelName(name) && m_channels.size() < kMaxAdoptedChannels &&
+            !m_channels.contains(name) && !m_hiddenChannels.contains(name) &&
             !forkmesh::office::isRetiredRelayChannel(name)) {
             m_channels.append(name);
             emit channelsChanged(m_channels);
@@ -2774,7 +2817,8 @@ void ServerNode::sendHistoryTo(const QString &peerId)
         if (m_privateChannels.contains(it.key()))
             continue;
         for (const QJsonObject &entry : it.value())
-            entries.append(entry);
+            if (!entry.value(QStringLiteral("private")).toBool())
+                entries.append(entry);
     }
     QJsonObject message = makeMessage("history");
     message.insert("to", peerId);

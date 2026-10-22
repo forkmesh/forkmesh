@@ -1391,6 +1391,215 @@ void testPublicIntegrationsAndPrivateSeal()
     node.shutdown();
 }
 
+void testTargetedConversationSealing()
+{
+    WebSocketHarness harness;
+    check(harness.listen(), "targeted-seal harness listens");
+    if (!harness.server.isListening())
+        return;
+
+    const QString room = forkmesh::mainnode::kDefaultRoomName;
+    const QString roomPassphrase = QStringLiteral("targeted-seal-passphrase");
+    ServerNode node(QStringLiteral("Alice"), QStringLiteral("alice-laptop"),
+                    QStringLiteral("alice"), QStringLiteral("targeted-node"),
+                    harness.url(), room, QString(), roomPassphrase);
+    QList<ChatMessage> messages;
+    QObject::connect(&node, &ServerNode::messageArrived, &node,
+                     [&messages](const ChatMessage &message) {
+                         messages.append(message);
+                     });
+    QStringList channels;
+    QObject::connect(&node, &ServerNode::channelsChanged, &node,
+                     [&channels](const QStringList &list) { channels = list; });
+    node.setTransportLimitsForTests(60, 20, 1 << 20);
+    check(node.start(), "a targeted-seal node starts");
+    check(waitUntil([&] { return connected(node); }, 3000),
+          "a targeted-seal node reaches the relay");
+
+    RoomCrypto relayKey(room, roomPassphrase);
+    const auto inner = [&](const QByteArray &raw) {
+        return relayKey.decryptObject(QJsonDocument::fromJson(raw).object());
+    };
+    QJsonObject nodeKeyFrame;
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(harness.textFrames))
+                  if (RoomSeal::isKeyFrame(inner(raw)))
+                      nodeKeyFrame = inner(raw);
+              return !nodeKeyFrame.isEmpty();
+          }, 2000),
+          "the targeted-seal node announces its key");
+
+    TestPeer bob(room, room, RoomSeal::Policy::Open, QStringLiteral("bob-node"),
+                 '\x21');
+    TestPeer carol(room, room, RoomSeal::Policy::Open,
+                   QStringLiteral("carol-node"), '\x22');
+    bob.accept(nodeKeyFrame);
+    carol.accept(nodeKeyFrame);
+    const auto relay = [&](const QJsonObject &object) {
+        harness.sendText(QJsonDocument(relayKey.encryptObject(object))
+                             .toJson(QJsonDocument::Compact));
+    };
+    relay(bob.keyFrame());
+    relay(carol.keyFrame());
+    check(waitUntil([&] { return node.roomSealPeerKeyIds().size() >= 2; }, 2000),
+          "the node learns both room members' keys");
+
+    const auto lastOfType = [&](const QString &type) {
+        for (qsizetype i = harness.textFrames.size() - 1; i >= 0; --i) {
+            const QJsonObject view = inner(harness.textFrames.at(i));
+            if (!RoomSeal::isSealedFrame(view))
+                continue;
+            const QJsonObject forBob = bob.open(view);
+            const QJsonObject forCarol = carol.open(view);
+            const QJsonObject plain = forBob.isEmpty() ? forCarol : forBob;
+            if (plain.value("type").toString() == type)
+                return view;
+        }
+        return QJsonObject();
+    };
+    const auto waitFor = [&](const QString &type) {
+        QJsonObject view;
+        waitUntil([&] { return !(view = lastOfType(type)).isEmpty(); }, 2000);
+        return view;
+    };
+
+    node.sendDirect(QStringLiteral("bob-node"), QStringLiteral("only for bob"));
+    check(waitUntil([&] { return !messages.isEmpty(); }, 2000),
+          "the own direct message is shown locally");
+    const QString dmId = messages.isEmpty() ? QString() : messages.constLast().id;
+    const QJsonObject dm = waitFor(QStringLiteral("dm"));
+    check(!bob.open(dm).isEmpty() && carol.open(dm).isEmpty(),
+          "a direct message opens for its recipient only");
+
+    harness.textFrames.clear();
+    node.editMessage(QStringLiteral("@bob-node"), dmId,
+                     QStringLiteral("edited for bob"));
+    const QJsonObject edit = waitFor(QStringLiteral("edit"));
+    check(bob.open(edit).value("text").toString() ==
+                  QLatin1String("edited for bob") &&
+              carol.open(edit).isEmpty(),
+          "an edit in a direct conversation is sealed to that peer, not the room");
+
+    node.sendReaction(QStringLiteral("@bob-node"), dmId, QStringLiteral("+1"));
+    const QJsonObject reaction = waitFor(QStringLiteral("reaction"));
+    check(!bob.open(reaction).isEmpty() && carol.open(reaction).isEmpty(),
+          "a reaction in a direct conversation is sealed to that peer");
+
+    node.sendTyping(QStringLiteral("@bob-node"), true);
+    const QJsonObject typing = waitFor(QStringLiteral("typing"));
+    check(!bob.open(typing).isEmpty() && carol.open(typing).isEmpty(),
+          "typing in a direct conversation is sealed to that peer");
+
+    node.deleteMessage(QStringLiteral("@bob-node"), dmId);
+    const QJsonObject removal = waitFor(QStringLiteral("delete"));
+    check(!bob.open(removal).isEmpty() && carol.open(removal).isEmpty(),
+          "a delete in a direct conversation is sealed to that peer");
+
+    node.createPrivateChannel(QStringLiteral("#hidden-plans"));
+    harness.textFrames.clear();
+    node.sendTyping(QStringLiteral("#hidden-plans"), true);
+    QElapsedTimer quiet;
+    quiet.start();
+    while (quiet.elapsed() < 150)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    check(harness.textFrames.isEmpty(),
+          "typing in a private channel never leaves the desktop");
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QJsonArray offered{QStringLiteral("#ok"), QStringLiteral("@bob-node"),
+                       QStringLiteral("direct:abcdef"), QStringLiteral("#office/x"),
+                       QStringLiteral("nohash"), QStringLiteral("#a@b"),
+                       QStringLiteral("#") + QString(90, QLatin1Char('x'))};
+    for (int i = 0; i < 400; ++i)
+        offered.append(QStringLiteral("#flood-%1").arg(i));
+    relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("hello")},
+                                     {"id", QStringLiteral("bob-hello-1")},
+                                     {"senderId", QStringLiteral("bob-node")},
+                                     {"sender", QStringLiteral("Bob")},
+                                     {"channels", offered},
+                                     {"ts", double(now)}}));
+    check(waitUntil([&] { return channels.contains(QStringLiteral("#ok")); }, 2000),
+          "a well-formed channel name from a hello is adopted");
+    bool rejected = true;
+    for (const QString &name : std::as_const(channels))
+        rejected = rejected && name.startsWith(QLatin1Char('#')) &&
+                   !name.startsWith(QLatin1String("#office/")) &&
+                   !name.contains(QLatin1Char('@')) && name.size() <= 80;
+    check(rejected && !channels.contains(QStringLiteral("direct:abcdef")),
+          "hello cannot plant direct, office, @ or oversized channel names");
+    check(channels.size() <= 200, "hello cannot flood the channel list");
+
+    relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("channel")},
+                                     {"id", QStringLiteral("bob-channel-1")},
+                                     {"senderId", QStringLiteral("bob-node")},
+                                     {"sender", QStringLiteral("Bob")},
+                                     {"name", QStringLiteral("@carol-node")},
+                                     {"ts", double(now)}}));
+    relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("chat")},
+                                     {"id", QStringLiteral("bob-sentinel-1")},
+                                     {"senderId", QStringLiteral("bob-node")},
+                                     {"sender", QStringLiteral("Bob")},
+                                     {"channel", QStringLiteral("#ok")},
+                                     {"text", QStringLiteral("public line")},
+                                     {"ts", double(now)}}));
+    check(waitUntil([&] {
+              for (const ChatMessage &m : std::as_const(messages))
+                  if (m.id == QLatin1String("bob-sentinel-1"))
+                      return true;
+              return false;
+          }, 2000) &&
+              !channels.contains(QStringLiteral("@carol-node")),
+          "a channel frame cannot plant a direct conversation name");
+
+    relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("chat")},
+                                     {"id", QStringLiteral("bob-private-1")},
+                                     {"senderId", QStringLiteral("bob-node")},
+                                     {"sender", QStringLiteral("Bob")},
+                                     {"channel", QStringLiteral("#ok")},
+                                     {"private", true},
+                                     {"text", QStringLiteral("private line")},
+                                     {"ts", double(now)}}));
+    check(waitUntil([&] {
+              for (const ChatMessage &m : std::as_const(messages))
+                  if (m.id == QLatin1String("bob-private-1"))
+                      return true;
+              return false;
+          }, 2000),
+          "a private entry reaches the history");
+
+    harness.textFrames.clear();
+    relay(carol.sealObject(QJsonObject{{"type", QStringLiteral("hello")},
+                                       {"id", QStringLiteral("carol-hello-1")},
+                                       {"senderId", QStringLiteral("carol-node")},
+                                       {"sender", QStringLiteral("Carol")},
+                                       {"channels", QJsonArray{}},
+                                       {"ts", double(now)}}));
+    QJsonObject history;
+    check(waitUntil([&] {
+              for (const QByteArray &raw : std::as_const(harness.textFrames)) {
+                  const QJsonObject plain = carol.open(inner(raw));
+                  if (plain.value("type").toString() == QLatin1String("history"))
+                      history = plain;
+              }
+              return !history.isEmpty();
+          }, 2000),
+          "a newcomer receives the room history");
+    QStringList historyIds;
+    for (const QJsonValue &entry : history.value("entries").toArray())
+        historyIds.append(entry.toObject().value("id").toString());
+    check(historyIds.contains(QStringLiteral("bob-sentinel-1")) &&
+              !historyIds.contains(QStringLiteral("bob-private-1")),
+          "history replay skips entries marked private");
+    bool bobReadHistory = false;
+    for (const QByteArray &raw : std::as_const(harness.textFrames))
+        bobReadHistory = bobReadHistory ||
+                         bob.open(inner(raw)).value("type").toString() ==
+                             QLatin1String("history");
+    check(!bobReadHistory, "history addressed to one peer is sealed to that peer");
+
+    node.shutdown();
+}
+
 void testDeterministicRecovery()
 {
     WebSocketHarness harness;
@@ -4812,6 +5021,7 @@ int main(int argc, char **argv)
     if (!discordOnly) {
         testSavedRoomMigration();
         testPublicIntegrationsAndPrivateSeal();
+        testTargetedConversationSealing();
         testDeterministicRecovery();
         testStatusIsEventDriven();
         testTeardownMidBufferLeavesSocketAlone();

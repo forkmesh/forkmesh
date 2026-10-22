@@ -2605,6 +2605,7 @@ function privateChannelErrorMessage(error) {
     channel_name_taken: "That channel name is already in use.",
     user_not_found: "That active registered user was not found.",
     too_many_channels: "This relay has reached its channel limit.",
+    too_many_own_channels: "You have reached your channel limit.",
     too_many_members: "This channel has reached its member limit.",
     invalid_visibility: "Choose Public or Private visibility.",
     invalid_members: "Choose registered users from the list.",

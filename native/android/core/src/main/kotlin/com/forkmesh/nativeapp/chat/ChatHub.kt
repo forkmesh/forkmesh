@@ -51,6 +51,8 @@ interface ChatRelay : ChatFrameSink {
     fun markAllRead() {}
 
     fun setReadElsewhere(check: (ChatMessage) -> Boolean) {}
+
+    fun setChannelPrivacy(isPrivate: (String) -> Boolean, isHidden: (String) -> Boolean) {}
 }
 
 class RelayRoomChat(val room: RelayRoom) : ChatRelay {
@@ -105,6 +107,11 @@ class RelayRoomChat(val room: RelayRoom) : ChatRelay {
 
     override fun setReadElsewhere(check: (ChatMessage) -> Boolean) {
         room.isReadElsewhere = check
+    }
+
+    override fun setChannelPrivacy(isPrivate: (String) -> Boolean, isHidden: (String) -> Boolean) {
+        room.isPrivateChannel = isPrivate
+        room.isHiddenChannel = isHidden
     }
 }
 
@@ -294,6 +301,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
             if (relay.currentConversation == it.conversation) queueReadMark(it.conversation)
         }
         relay.setReadElsewhere { isReadElsewhere(it) }
+        relay.setChannelPrivacy(extras::isPrivate, extras::isHiddenChannel)
     }
 
     fun filePing(message: ChatMessage, nowMs: Long = System.currentTimeMillis()) {

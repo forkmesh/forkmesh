@@ -2,6 +2,33 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-22",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Chat",
+     "items": [
+      "Edits, reactions, typing and deletes in direct messages now reach only the person you are talking to, on iPhone, Android and desktop.",
+      "Webhook posts in public channels notify everyone at most once every ten minutes, and each account can create up to 20 channels."
+     ]
+    },
+    {
+     "title": "Android",
+     "items": [
+      "Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting."
+     ]
+    },
+    {
+     "title": "Desktop",
+     "items": [
+      "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-21",
    "version": "",
    "title": "Neighbours, stickers and runners",

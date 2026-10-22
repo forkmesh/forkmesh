@@ -10930,8 +10930,14 @@ int main(int argc, char *argv[])
         const Finding logFinding = findingFor(evaluate(logs), "log-errors");
         check(logFinding.severity == Warning &&
                   logFinding.message.contains("12 errors") &&
-                  logFinding.message.contains("exit 128"),
-              "a run of log errors warns and carries the newest line");
+                  !logFinding.message.contains("exit 128") &&
+                  logFinding.detail.contains("exit 128"),
+              "a run of log errors warns and keeps the newest line local");
+        check(!QJsonDocument(toJson({logFinding})).toJson().contains("exit 128") &&
+                  QJsonDocument(toJson({logFinding})).toJson().contains("12 errors"),
+              "the heartbeat carries the error count but not the log line");
+        check(detailText({logFinding}).contains("exit 128"),
+              "this desktop's own diagnostics still show the newest line");
         logs.logErrors = 2;
         check(findingFor(evaluate(logs), "log-errors").severity == Info,
               "a couple of log errors is a note, not a warning");

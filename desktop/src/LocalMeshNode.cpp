@@ -2,6 +2,7 @@
 #include "ChatHistoryLimits.h"
 #include "BleMeshLink.h"
 #include "LocalMeshNode.h"
+#include "OwnerOnlyFile.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -11,7 +12,6 @@
 #include <QJsonDocument>
 #include <QNetworkInterface>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTimer>
@@ -2268,14 +2268,9 @@ void LocalMeshNode::saveHistory()
     const QJsonObject root{{QStringLiteral("v"), kHistoryFileVersion},
                            {QStringLiteral("history"), entries},
                            {QStringLiteral("queued"), queued}};
-    QDir().mkpath(QFileInfo(m_historyPath).absolutePath());
-    QSaveFile file(m_historyPath);
-    if (!file.open(QIODevice::WriteOnly))
-        return;
     // The room's plaintext: readable by this user only.
-    file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-    file.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
-    file.commit();
+    forkmesh::ownerfile::write(m_historyPath,
+                               QJsonDocument(root).toJson(QJsonDocument::Compact));
 }
 
 QString LocalMeshNode::sendOwn(QJsonObject message)

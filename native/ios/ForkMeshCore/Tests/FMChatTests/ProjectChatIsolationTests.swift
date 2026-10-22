@@ -157,4 +157,71 @@ final class ProjectChatIsolationTests: XCTestCase {
         XCTAssertFalse(hub.listedChannels.contains("#office/alpha-team"))
         await h.close()
     }
+
+    func testFramesForOnePersonAreSealedToThemOnly() async {
+        let edit: JSONObject = ["type": "edit", "conversation": "@peer-1", "to": "peer-1", "text": "new words"]
+        XCTAssertEqual(RelayService.directRecipient(edit), "peer-1")
+        XCTAssertEqual(RelayService.directRecipient(["type": "typing", "to": "peer-1"]), "peer-1")
+        XCTAssertEqual(RelayService.directRecipient(["type": "invite", "to": "peer-1", "channel": "#team-x"]), "peer-1")
+        XCTAssertNil(RelayService.directRecipient(["type": "hello", "to": "peer-1"]))
+        XCTAssertNil(RelayService.directRecipient(["type": "chat", "channel": "#general"]))
+    }
+
+    func testAStrangersPrivateChannelNeverReachesThisPhone() async throws {
+        let h = try await RelayHarness.start()
+        let mesh = LocalMeshService(settings: h.device.settings, identity: h.device.identity, secureStore: h.device.secure)
+        let hub = ChatHub(relay: h.relay, mesh: mesh)
+        let mine = try XCTUnwrap(hub.extras.createPrivateChannel("team-x"))
+        try await h.sendProtected(
+            peerFrame(["channel": "#their-secret", "private": true, "ownerUser": "mallory", "text": "hidden"], id: "p-1"))
+        try await h.sendProtected(
+            peerFrame(["channel": .string(mine), "private": true, "ownerUser": "pat", "text": "for the team"], id: "p-2"))
+        try await h.sendProtected(
+            peerFrame(["channel": "#own-other-device", "private": true, "ownerUser": "Mobile Tester", "text": "mine"], id: "p-3"))
+        let arrived = await waitUntil { !h.relay.messages(mine).isEmpty && !h.relay.messages("#own-other-device").isEmpty }
+        XCTAssertTrue(arrived)
+        XCTAssertTrue(h.relay.messages("#their-secret").isEmpty)
+        XCTAssertFalse(h.relay.channels.contains("#their-secret"))
+        XCTAssertFalse(hub.extras.isPrivate("#their-secret"))
+        XCTAssertTrue(hub.extras.isPrivate("#own-other-device"))
+        await h.close()
+    }
+
+    func testThePrivateFirstMessageOfOwnChannelIsNotPinged() async throws {
+        let h = try await RelayHarness.start()
+        let mesh = LocalMeshService(settings: h.device.settings, identity: h.device.identity, secureStore: h.device.secure)
+        let hub = ChatHub(relay: h.relay, mesh: mesh)
+        let pings = LocalPingLog(store: InMemoryKeyValueStore())
+        hub.pings = pings
+        try await h.sendProtected(
+            peerFrame(["channel": "#own-plans", "private": true, "ownerUser": "Mobile Tester", "text": "private plan"], id: "q-1"))
+        let arrived = await waitUntil { !h.relay.messages("#own-plans").isEmpty }
+        XCTAssertTrue(arrived)
+        XCTAssertFalse(pings.pings.contains { $0.message.contains("private plan") })
+        await h.close()
+    }
+
+    func testInboxPingsBelongToOneProject() async {
+        XCTAssertTrue(ProjectKeyPolicy.projectPreferenceKeys.contains(LocalPingLog.key))
+        let store = InMemoryKeyValueStore()
+        let pings = LocalPingLog(store: store)
+        _ = pings.recordChat(
+            messageId: "m-1", sender: "Pat", title: "Pat in #alpha", message: "alpha news", conversation: "#alpha",
+            tsMs: Date().epochMillis, read: false)
+        XCTAssertEqual(pings.pings.count, 1)
+        store.remove(LocalPingLog.key)
+        pings.reload()
+        XCTAssertTrue(pings.pings.isEmpty)
+    }
+
+    func testRemovingAProjectErasesItsChatHistory() async {
+        let dir = temporaryDirectory("project-history-erase")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ChatHistoryStore(directory: dir, delay: 0)
+        let scope = ChatHistoryCodec.projectScope(projectId: "local-beta-1", room: "world-general")
+        store.save(ChatHistorySnapshot(), scope: scope)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.file(scope: scope).path))
+        store.eraseProject("local-beta-1", room: "world-general")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.file(scope: scope).path))
+    }
 }

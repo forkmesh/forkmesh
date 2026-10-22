@@ -59,8 +59,31 @@ bound to the resource and body (`_chat_channel_signed_session`,
   `MAX_CHANNEL_MEMBERS` cap. Removing any member, deleting the room, or
   changing its creator invalidates the link.
 - The web link is `/chat#invite=<token>`: a fragment, so the token never
-  reaches the server in a page request or `Referer`. Request logs record
-  `/api/chat/invites/[token]`.
+  reaches the server in a page request or `Referer`. The app's own error and
+  Sentry logs record `/api/chat/invites/[token]` (`_privacy_safe_log_path`);
+  the Caddy access log still records the path as sent
+  ([NODE_LOGS.md](../NODE_LOGS.md#caddy-access-log)).
+
+## Channel limits and webhook pings
+
+- `POST /api/chat/channels` refuses a new channel with
+  `429 too_many_own_channels` once its creator already made
+  `MAX_CHAT_CHANNELS_PER_CREATOR` (20) channels, and with
+  `429 too_many_channels` once the site holds `MAX_CHAT_CHANNELS` (100).
+  Office and Everyone channels count toward neither. Without the per-creator
+  cap (2026-10-22) one account could take every one of the 100 slots and
+  block channel creation for everyone else.
+- An incoming webhook post to a public channel always pings the channel's
+  creator, but pings the rest of the public audience (up to
+  `MAX_CHANNEL_MEMBERS` active users) only when none of that channel's
+  webhooks has posted in the last `WEBHOOK_PUBLIC_NOTIFY_WINDOW_MS`
+  (10 minutes). The check and the `last_used_at` write are one `UPDATE ...
+  WHERE NOT EXISTS ... RETURNING`, so parallel posts cannot all claim the
+  window, and the gate needs no new table. Before 2026-10-22 every post made
+  a ping (an uncoalesced phone banner) with the webhook's own title and text
+  for every active user, so anyone holding a webhook URL could flood every
+  phone. A steady stream of posts therefore pings the audience once, when it
+  starts after a quiet window; the messages themselves are all delivered.
 
 ## Server copies of direct messages
 
