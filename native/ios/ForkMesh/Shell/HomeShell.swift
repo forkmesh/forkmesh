@@ -394,6 +394,11 @@ struct HomeShell: View {
         settings?.showTelemetryStrip ?? true
     }
 
+    private var islandSystems: [StatusLight] {
+        guard statusPageOn, diagnosticsEnabled, let fleet = fleet, fleet.loaded else { return [] }
+        return fleet.shownSystems
+    }
+
     private var diagnosticsTroubled: Bool {
         diagnosticsEnabled && statusPageOn && fleet?.loaded == true && fleet?.allHealthy == false
     }
@@ -740,6 +745,11 @@ struct HomeShell: View {
                     GenieSpiderLayer(
                         hidden: composer.isOpen || keyboardUp || voice.isOpen || router.currentRoute?.kind == .spiderRoom,
                         floor: genieFloor)
+                }
+            }
+            .overlay(alignment: .top) {
+                if !islandSystems.isEmpty {
+                    ShellIslandStatusDots(lights: islandSystems)
                 }
             }
             .overlay { hubDropdown }

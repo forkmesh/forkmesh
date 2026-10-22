@@ -379,6 +379,16 @@ and shows while the Diagnostics switch is on. Reads happen at shell start and
 app activation only, waiting 15 minutes after an all-green read and 2 minutes
 otherwise; no timers. Any loaded check in trouble turns the avatar dot red.
 
+**Status dots above the Dynamic Island.** While Status Page is installed and
+Diagnostics is on, the same service dots (`ShellIslandStatusDots`, 5 pt, no
+ring) also sit in the thin strip of status bar above the Dynamic Island, so
+the checks stay visible on every page. The strip is the top safe-area inset
+minus the island's 48 pt (11 pt on a 59 pt inset, 14 pt on 62 pt); it shows
+only when that inset is at least 54 pt, which leaves out notched iPhones,
+landscape and iPad, where there is no room above a cut-out. The row ignores
+touches, since a tap that high belongs to the status bar's scroll-to-top, and
+a troubled dot blinks like the footer's.
+
 ### 2.0.1 Chat room layout (iOS)
 
 - The room header replaces the top bar: a back circle that opens the channel
