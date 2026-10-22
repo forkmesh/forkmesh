@@ -64,8 +64,12 @@ const ctx = {
   player: { position: { x: 0, y: 0, z: 0 } },
 };
 const toggles = [];
+const moves = [];
 const fns = {
   registerWorldElement() {},
+  moveCompactDistrictsWithin(root, dx, dz) {
+    moves.push([root === town, dx, dz]);
+  },
   worldElementEnabled: (id) => !disabled.has(id),
   setWorldElementEnabled(id, on) {
     toggles.push([id, on]);
@@ -92,11 +96,26 @@ const territory = territoryForNeighbour(
 
 const out = {};
 const shift = geometry.forkmeshShiftAround(geometry.territoryPetalTile(1));
+out.prepared = runtime.prepareTerritoryVisit(territory);
+const standby = world.children.find((child) => child.name === "instance-territory");
+out.standby = {
+  inWorld: Boolean(standby),
+  shown: standby?.visible,
+  ground: standby?.userData.groundStandby,
+  clickable: ctx.interactive.some((item) => item.userData?.interactive === "territory-link"),
+  town: { x: town.position.x, z: town.position.z },
+  walk: territoryWalkActive(),
+  visiting: runtime.territoryVisitId(),
+};
 out.entered = runtime.enterTerritoryVisit(territory);
 runtime.updateTerritoryVisitBugs(territory.id, territory.visitBugs);
 const root = world.children.find((child) => child.name === "instance-territory");
 out.visit = {
   built: Boolean(root),
+  reused: root === standby,
+  shown: root?.visible,
+  ground: root?.userData.groundStandby,
+  moves: moves.slice(),
   houses: root ? root.getObjectsByProperty("name", "territory-house").length : 0,
   terrarium: root ? root.getObjectsByProperty("name", "territory-terrarium").length : 0,
   shield: root ? root.getObjectsByProperty("name", "territory-shield").length : 0,
@@ -119,6 +138,9 @@ out.againPetals = petals.at(-1);
 out.left = runtime.leaveTerritoryVisit();
 out.home = {
   inWorld: world.children.includes(root),
+  shown: root.visible,
+  ground: root.userData.groundStandby,
+  moves: moves.slice(),
   town: { x: town.position.x, z: town.position.z },
   townClickable: ctx.interactive.includes(townButton),
   territoryClickable: ctx.interactive.some((item) => item.userData?.interactive === "territory-link"),
@@ -156,6 +178,27 @@ def result():
     return json.loads(run.stdout)
 
 
+def test_the_hexagon_is_built_hidden_before_anyone_steps_in(result):
+    standby = result["standby"]
+    assert result["prepared"] is True
+    assert standby["inWorld"] is True
+    assert standby["shown"] is False
+    assert standby["ground"] is True
+    assert standby["clickable"] is False
+    assert standby["town"] == {"x": 0, "z": 0}
+    assert standby["walk"] is False
+    assert standby["visiting"] == ""
+    assert result["visit"]["reused"] is True
+    assert result["visit"]["shown"] is True
+    assert result["visit"]["ground"] is False
+
+
+def test_compact_districts_follow_the_town_next_door_and_back(result):
+    shift = result["visit"]["shift"]
+    assert result["visit"]["moves"] == [[True, pytest.approx(shift["x"]), pytest.approx(shift["z"])]]
+    assert result["home"]["moves"][-1] == [True, pytest.approx(-shift["x"]), pytest.approx(-shift["z"])]
+
+
 def test_standing_in_a_neighbour_builds_its_own_hexagon(result):
     visit = result["visit"]
     assert result["entered"] is True
@@ -191,7 +234,9 @@ def test_the_logo_and_bug_icons_load_through_cors(result):
 def test_walking_home_puts_everything_back(result):
     home = result["home"]
     assert result["left"] is True
-    assert home["inWorld"] is False
+    assert home["inWorld"] is True
+    assert home["shown"] is False
+    assert home["ground"] is True
     assert home["town"] == {"x": 0, "z": 0}
     assert home["townClickable"] is True
     assert home["territoryClickable"] is False

@@ -2644,6 +2644,7 @@ export async function createWorldScene({
     updateTerritoryBugs: fns.updateTerritoryBugs,
     territoryForkmeshShift: fns.territoryForkmeshShift,
     territoryOwnerAt: fns.territoryOwnerAt,
+    prepareTerritoryVisit: fns.prepareTerritoryVisit,
     enterTerritoryVisit: fns.enterTerritoryVisit,
     leaveTerritoryVisit: fns.leaveTerritoryVisit,
     updateTerritoryVisitBugs: fns.updateTerritoryVisitBugs,
