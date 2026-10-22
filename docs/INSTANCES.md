@@ -172,6 +172,52 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   [app/server-update.md](app/server-update.md).
   `--config FILE` takes the same JSON as the page for a manual install.
 
+## Tor onion service
+
+Setting `onionService` (a boolean, default `false`, kept in `instance.json`)
+serves the instance over Tor too, so blocking its domain or IP address does
+not block it ([app/forum-reach.md](app/forum-reach.md)). To turn it on for a
+running instance, add `"onionService": true` to
+`/etc/forkmesh-instance/instance.json` and run `install-instance.sh
+--update`; `false` (or removing the key) turns it off.
+
+| Piece | Where |
+| --- | --- |
+| Package | `tor` joins the `packages` step |
+| Hidden service | `/etc/tor/torrc.d/forkmesh-instance.conf`: `HiddenServiceDir /var/lib/tor/forkmesh-instance/`, `HiddenServicePort 80 127.0.0.1:8091`; `/etc/tor/torrc` gets one `%include /etc/tor/torrc.d/*.conf` line if it has none |
+| Onion site | `/etc/caddy/conf.d/forkmesh-onion.caddy`: `http://<addr>.onion:8091`, bound to `127.0.0.1`, the same gateway paths and app as the HTTPS site, `Host` set to the onion name |
+| Advertisement | `/etc/caddy/site.d/forkmesh-onion-location.caddy`: `Onion-Location: http://<addr>.onion{uri}` on the HTTPS site, which Tor Browser offers to switch to |
+| App | `FORKMESH_PUBLIC_HOSTS=<domain>,<addr>.onion` (the host allowlist in `request_guard.py` answers the onion name) and `FORKMESH_VAR_INSTANCE_ONION=<addr>.onion` in the unit; `/api/instance` answers `onion: "<addr>.onion"` (`null` without one) and `instance-brand.js` adds a "Tor .onion" link to the footer badge |
+
+- The step runs after `configure` and before `services`, inside the
+  `configure` progress step, so the start page's step list is unchanged.
+  The address is read from `/var/lib/tor/forkmesh-instance/hostname` (v3,
+  56 base32 characters); the setup stops if Tor does not write one within
+  two minutes.
+- **Plain HTTP on purpose.** Tor encrypts and authenticates the connection
+  to the onion address end to end, and no public CA issues `.onion`
+  certificates cheaply. Caddy listens only on loopback, so the onion site
+  is reachable only through Tor. The onion site drops the app's
+  `upgrade-insecure-requests` CSP directive (it would send Tor Browser to
+  `https://` for every asset) and the HSTS header.
+- **Idempotent.** Each run rewrites the torrc snippet and the two Caddy
+  files; Tor restarts only when its configuration changed or it is not
+  running, and Caddy reloads only when its files changed. `--update`
+  keeps the same address.
+- **The key is the address.** `/var/lib/tor/forkmesh-instance/` holds
+  `hs_ed25519_secret_key`; whoever has it can serve that address. Back the
+  folder up (root only, mode 0700, owner `debian-tor`) to move the address
+  to a new server; turning the setting off removes the site files but
+  keeps the key, so turning it back on keeps the address.
+- **Egress and the allowlist.** The app makes no outbound calls for this:
+  `FORKMESH_EGRESS_PRODUCTION_ALLOW` is unchanged, and only the host
+  allowlist gains the onion name. The web firewall (`webFirewall`) is
+  unaffected: Tor dials out, and port 8091 is loopback only.
+- **Visitors share one address.** Every onion visitor reaches the app from
+  `127.0.0.1` (`Cf-Connecting-Ip`), so per-IP rate limits are shared among
+  them; probe bans never apply to non-global addresses.
+- Tests: `app/tests/test_install_instance_onion.py`.
+
 ## Updates build beside the running version
 
 Until October 2026 `--update` checked the new commit out in

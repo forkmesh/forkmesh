@@ -37,6 +37,12 @@ change something are dry runs unless given `--execute`.
 | `grants_build.py` | Builds the grants CRM import and ranked page from `docs/finance/grants/grants.json` ([grants](../finance/grants/README.md)) |
 | `cutover_*.py`, `rehost.py` | Hostname and cutover tooling ([CUTOVER.md](../CUTOVER.md)) |
 
+**Forum reach** ([../app/forum-reach.md](../app/forum-reach.md)):
+`forum_static_export.py` writes a static, read-only, JavaScript-free copy of
+a repository's issue forum (threads, labels, Atom feed, mirrored files,
+`manifest.json`); `forum_static_publish.py` commits it on top of a branch of
+one or more git remotes (GitHub Pages, Codeberg Pages) without force.
+
 **Paths and layout** ([projects-layout.md](projects-layout.md)): `forkmesh_paths.py`
 (Python twin of `desktop/src/AppPaths.{h,cpp}`), `forkmesh-paths.sh` (the
 same for shell scripts), `forkmesh_layout.py` (`plan` or `apply`).
