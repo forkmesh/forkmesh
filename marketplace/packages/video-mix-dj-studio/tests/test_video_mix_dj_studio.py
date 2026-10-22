@@ -177,3 +177,13 @@ def test_a_push_tap_closes_the_studio_before_routing():
     assert "if route != .videoMixDjStudio, DjStudioHub.shared.stepAside() {" in shell
     assert "studio.onStepAside = { shown.wrappedValue = false }" in screen
     assert "guard leaving else { return }" in screen
+
+
+def test_each_deck_can_repeat_its_song_and_auto_dj_leaves_it_alone():
+    for name in ("a", "b"):
+        assert f'data-vmdj="repeat-{name}"' in VIEW
+    assert "repeat: deck.repeat, position: deck.time" in PAGE
+    assert "decks[name].repeat = value.repeat === true;" in PAGE
+    assert "if (playerState === 0 && deck.repeat) {" in PAGE
+    assert 'command(deck, "seekTo", [0, true]);\n        command(deck, "playVideo");' in PAGE
+    assert "if (!deck?.id || deck.repeat) return;" in PAGE

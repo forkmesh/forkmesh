@@ -224,13 +224,15 @@ public struct DjAutomixDeck: Equatable, Sendable {
     public var position: Double
     public var duration: Double
     public var rate: Double
+    public var repeats: Bool
 
-    public init(loaded: Bool, playing: Bool = false, position: Double = 0, duration: Double = 0, rate: Double = 1) {
+    public init(loaded: Bool, playing: Bool = false, position: Double = 0, duration: Double = 0, rate: Double = 1, repeats: Bool = false) {
         self.loaded = loaded
         self.playing = playing
         self.position = position
         self.duration = duration
         self.rate = rate
+        self.repeats = repeats
     }
 
     public var remaining: Double? {
@@ -272,7 +274,7 @@ public enum DjAutomix {
             return queued ? .preload(favoured) : .wait
         }
         let other = live.other
-        guard let incoming = decks[other], !incoming.playing, let outgoing = decks[live] else { return .wait }
+        guard let incoming = decks[other], !incoming.playing, let outgoing = decks[live], !outgoing.repeats else { return .wait }
         if !incoming.fresh { return queued ? .preload(other) : .wait }
         guard let remaining = outgoing.remaining, remaining <= DjStudio.automixSeconds + lead else { return .wait }
         return .mix(from: live, to: other, seconds: max(2, min(DjStudio.automixSeconds, remaining)))

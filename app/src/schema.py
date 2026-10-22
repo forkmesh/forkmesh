@@ -5113,6 +5113,12 @@ SCHEMA_STATEMENTS = [
         k TEXT PRIMARY KEY,
         doc TEXT NOT NULL,
         updated_at INTEGER NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS repo_archive_syncs (
+        repo_bi TEXT PRIMARY KEY,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        data TEXT NOT NULL)""",
     """CREATE TABLE IF NOT EXISTS repo_provider_mirrors (
         repo_bi TEXT PRIMARY KEY,
         provider TEXT NOT NULL,
