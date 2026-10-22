@@ -168,4 +168,7 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S093 | 2026-10-21 | Chat | fix | Chat stays snappy: a quick inactive step (Control Center, an alert) does not reconnect direct message rooms or rerun the chat refresh, and chat screens redraw less | fe664f0c09 | pending |  |
 | S094 | 2026-10-22 | Chat | fix | Frames addressed to one person (DM edits, reactions, typing, deletes, invites) are sealed to that person only, and private-channel frames for channels the phone is not in are dropped | 3d7fccfeed | synced | 3d7fccfeed |
 | S095 | 2026-10-22 | Chat | fix | Inbox chat pings are kept per project, removing a project erases its chat history, and every diagnostics report is scrubbed | 3d7fccfeed | pending |  |
+| S096 | 2026-10-22 | Chat | feature | Chat relay hardening: DMs and private channels only through the server, signed device keys, sealed person frames, verified account names, server-kept blocks and webhook rooms marked server-visible | 440e84220c | synced | 440e84220c |
+| S097 | 2026-10-22 | Chat | fix | #mesh carries no account name, uses a random beacon id and says anyone nearby can read it; less identity in shared rooms | 440e84220c | synced | 440e84220c |
+| S098 | 2026-10-22 | Chat | ui | Link previews in shared rooms load on tap and never reach private addresses | 440e84220c | n/a | Android has no link previews |
 <!-- ledger:end -->
