@@ -102,4 +102,8 @@ the head the same way:
   patch-backed pull's patch with a revision instead
   ([../app/pull-revisions.md](../app/pull-revisions.md)); the head is rebuilt the
   same way.
+  attestation names a head commit. Instance runners now run `pull_request`
+  workflows on `refs/pr/<n>/head` ([instance-actions.md](instance-actions.md#pull-requests)),
+  but do not sign attestations yet.
+- "Update branch" on the web is still branch-backed only.
 

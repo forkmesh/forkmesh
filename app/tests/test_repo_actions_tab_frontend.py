@@ -131,7 +131,7 @@ def test_runner_snapshots_dispatch_with_inputs_cancel_and_rerun_locally():
     assert 'data-repo-actions-input-required' in submit
     controls = function("renderRepoActionsRunControls")
     assert 'button("cancel"' in controls and 'button("rerun"' in controls
-    assert 'run.status === "awaiting-approval" && view.source !== "runner"' in controls
+    assert 'if (run.status === "awaiting-approval") {' in controls
 
 
 def test_dispatch_inputs_render_by_type():

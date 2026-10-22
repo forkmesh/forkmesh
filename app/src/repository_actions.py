@@ -494,7 +494,7 @@ async def _instance_actions_control(env, request, owner, repo):
     except Exception:
         data = None
     if not isinstance(data, dict) or data.get("action") not in (
-            "dispatch", "cancel", "rerun"):
+            "dispatch", "cancel", "rerun", "approve", "reject"):
         return _instance_error("invalid_request", 400)
     actor, allowed = await _instance_actor(env, request, owner, repo, data)
     if not actor:
@@ -535,9 +535,14 @@ async def _instance_actions_control(env, request, owner, repo):
                                 ACTIONS_MAX_SAFE_INTEGER):
             return _instance_error("invalid_request", 400)
         details["runId"] = data["runId"]
-        if action == "cancel":
+        if action in ("cancel", "reject"):
             reason = await runner_actions.cancel(
                 runtime, owner, repo, data["runId"])
+            run_id, message = data["runId"], ""
+        elif action == "approve":
+            reason, pull, head = await runner_actions.approve_run(
+                runtime, owner, repo, data["runId"], actor)
+            details.update({"pull": pull, "head": head})
             run_id, message = data["runId"], ""
         else:
             job, reason = await runner_actions.rerun(

@@ -124,7 +124,7 @@ object InboxRoutes {
         NotificationDeepLink.parse(href)?.let { return route(it) }
         val ref = RepoRef.parse(repo) ?: return null
         return when (kind) {
-            "pull_submitted" -> if (number > 0) Route.Pull(ref, number, PullTab.Conversation) else Route.Repo(ref, RepoSection.Pulls)
+            "pull_submitted", "pull_attention" -> if (number > 0) Route.Pull(ref, number, PullTab.Conversation) else Route.Repo(ref, RepoSection.Pulls)
             "issue_assigned", "issue_opened", "mention" -> if (number > 0) Route.Issue(ref, number) else Route.Repo(ref, RepoSection.Issues)
             "release_published" -> Route.Repo(ref, RepoSection.Releases)
             else -> Route.Repo(ref, null)

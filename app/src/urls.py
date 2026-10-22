@@ -77,6 +77,10 @@ REPO_PULL_UPDATE_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/pulls/([1-9][0-9]{0,8})/update$")
 REPO_PULL_RULES_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/pulls/([1-9][0-9]{0,8})/rules$")
+REPO_PULL_ATTENTION_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/pulls/([1-9][0-9]{0,8})/attention$")
+REPO_PULL_CHECKS_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/pulls/([1-9][0-9]{0,8})/checks$")
 # Branch management typed on the website's Branches page (adhoc #2098). The
 # relay runs no Git: POST queues one delete/update/create for the repository's
 # own node, GET reads the queue back, and DELETE?id= cancels one that has not
