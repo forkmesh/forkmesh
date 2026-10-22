@@ -22,6 +22,12 @@
      ]
     },
     {
+     "title": "Settings",
+     "items": [
+      "Settings > Data on the iPhone can save your home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and shows everything ForkMesh keeps about you, your organizations and your repositories, with a full download and per-item delete."
+     ]
+    },
+    {
      "title": "iPhone",
      "items": [
       "With Status Page installed, tiny status dots now sit in the thin strip above the Dynamic Island, so you can see ForkMesh's health on every screen."

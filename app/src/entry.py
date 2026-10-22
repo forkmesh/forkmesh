@@ -132,6 +132,7 @@ urlunparse = _urllib_parse.export("urlunparse")
 organization_discord = _LazyModule("organization_discord")
 _org_rbac = _LazyModule("organization_rbac")
 notes = _LazyModule("notes")
+account_data = _LazyModule("account_data")
 calendar_api = _LazyModule("calendar_api")
 plugin_data = _LazyModule("plugin_data")
 plan_services = _LazyModule("plan_services")
@@ -11869,6 +11870,40 @@ async def notes_handler(env, request, path):
     return await notes.handle(_NotesRuntime(env, request), path)
 
 
+class _AccountDataRuntime(_WorldCommunityRuntime):
+
+    async def d1_all(self, sql, *args):
+        return await d1_all(self.env, sql, *args)
+
+    async def d1_first(self, sql, *args):
+        return await d1_first(self.env, sql, *args)
+
+    async def d1_run(self, sql, *args):
+        return await d1_run(self.env, sql, *args)
+
+    @staticmethod
+    def changes(result):
+        return _NotesRuntime.changes(result)
+
+    def new_secret(self):
+        return _ap_uuid() + _ap_uuid()
+
+    async def seal_with(self, secret, value):
+        return await encrypt_row(
+            self.env, value, key=await _scoped_key(secret))
+
+    async def open_with(self, secret, value):
+        try:
+            key = await _scoped_key(secret)
+        except RuntimeError:
+            return None
+        return await decrypt_row(self.env, value, key=key)
+
+
+async def account_data_handler(env, request, path):
+    return await account_data.handle(_AccountDataRuntime(env, request), path)
+
+
 CALENDAR_LIST_PROOF = "forkmesh-calendar-list-v1"
 CALENDAR_CREATE_PROOF = "forkmesh-calendar-create-v1"
 CALENDAR_READ_PROOF = "forkmesh-calendar-read-v1"
@@ -19464,6 +19499,13 @@ async def _delete_account_namespace(env, name_bi, rec):
     # Account-scoped packages (Calorie Counter) keep a private diary per
     # account; it goes with the account.
     await plugin_data.purge_account(_PluginPurgeRuntime(env), name_bi, name)
+    for table in (account_data.STORE_TABLE, account_data.STORE_KEYS_TABLE):
+        try:
+            await d1_run(
+                env, "DELETE FROM " + table + " WHERE account_bi=?", name_bi)
+        except Exception as error:
+            if "no such table" not in str(error).lower():
+                raise
     # Click counters and reports hang off the ad id, so they go before the
     # account's ads do in the loop below.
     for table in ("ad_network_daily_stats", "ad_network_reports"):

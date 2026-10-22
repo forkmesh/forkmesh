@@ -123,6 +123,8 @@ BI_COLUMNS = {
     "account_sessions": ("account_bi", "device_bi"),
     "account_signup_intents": ("account_bi",),
     "account_ssh_keys": ("account_bi", "key_bi"),
+    "account_store": ("account_bi",),
+    "account_store_keys": ("account_bi",),
     "ad_network_ads": ("account_bi",),
     "ad_network_reports": ("account_bi",),
     "ad_network_reviews": ("reviewer_bi",),
@@ -479,6 +481,7 @@ CIPHER_COLUMNS["ad_network_ads"] = ("owner_sealed",)
 CIPHER_COLUMNS["world_element_purchases"] = ("deposit_secret",)
 CIPHER_COLUMNS["not_found_paths"] = ("last_client",)
 CIPHER_COLUMNS["probe_bans"] = ("client",)
+CIPHER_COLUMNS["account_store_keys"] = ("wrapped",)
 
 # Client-sealed chat envelopes under DATA_KEY-derived room passphrases.
 CHAT_TABLE = ("chat_history", "body")
