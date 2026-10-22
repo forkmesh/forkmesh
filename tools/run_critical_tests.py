@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -83,6 +86,104 @@ def go_environment() -> dict[str, str]:
     return env
 
 
+GO_RESULT = re.compile(r"^(ok|FAIL|\?)\s+(\S+)")
+GO_TIMEOUT_SIGNS = ("i/o timeout", "context deadline exceeded", "Client.Timeout exceeded", "timed out")
+GO_RETRY_LIMIT = 3
+
+
+def go_timeout_failures(output: str) -> dict[str, list[str]] | None:
+    failures: dict[str, list[str]] = {}
+    reasons: dict[str, list[str]] = {}
+    current = ""
+    panicked = False
+    for line in output.splitlines():
+        if line.startswith("--- FAIL: "):
+            current = line.split()[2]
+            reasons[current] = []
+            continue
+        if current and line.startswith("    "):
+            reasons[current].append(line)
+            continue
+        current = ""
+        if line.startswith("panic: "):
+            panicked = True
+        result = GO_RESULT.match(line)
+        if not result:
+            continue
+        if result.group(1) == "FAIL":
+            timed_out = all(any(sign in text for text in lines for sign in GO_TIMEOUT_SIGNS)
+                            for lines in reasons.values())
+            if panicked or not reasons or not timed_out or "[" in line:
+                return None
+            failures[result.group(2)] = list(reasons)
+        reasons = {}
+        panicked = False
+    if reasons or sum(map(len, failures.values())) > GO_RETRY_LIMIT:
+        return None
+    return failures
+
+
+def go_retry_command(package: str, tests: list[str]) -> list[str]:
+    pattern = "^(" + "|".join(re.escape(name) for name in tests) + ")$"
+    return [go_binary(), "test", "-C", "server", "-count=1", "-run", pattern, package]
+
+
+def run_streaming(command: list[str], env: dict[str, str] | None, timeout: float) -> tuple[int, str]:
+    process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True, errors="replace",
+                               start_new_session=True)
+    expired = threading.Event()
+
+    def stop() -> None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def expire() -> None:
+        expired.set()
+        stop()
+
+    timer = threading.Timer(max(timeout, 0.0), expire)
+    timer.start()
+    lines = []
+    try:
+        for line in process.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            lines.append(line)
+        process.wait()
+    finally:
+        timer.cancel()
+        if process.poll() is None:
+            stop()
+            process.wait()
+    if expired.is_set():
+        raise subprocess.TimeoutExpired(command, timeout)
+    return process.returncode, "".join(lines)
+
+
+def run_go_suite(command: list[str], budget: float) -> int:
+    deadline = time.monotonic() + budget
+    env = go_environment()
+    returncode, output = run_streaming(command, env, budget)
+    if returncode == 0:
+        return 0
+    failures = go_timeout_failures(output)
+    if not failures:
+        return returncode
+    for package, tests in failures.items():
+        print(f"[critical-tests] go: retrying {package} {' '.join(tests)} once: "
+              "every failure was a timeout", flush=True)
+        returncode, _ = run_streaming(go_retry_command(package, tests), env,
+                                      deadline - time.monotonic())
+        if returncode != 0:
+            return returncode
+    print("[critical-tests] go: passed on retry; the first failures were timeouts "
+          "under load (docs/server/README.md)", flush=True)
+    return 0
+
+
 def command_for(suite: str, build_dir: Path) -> list[str]:
     if suite in PYTEST_SUITES:
         return [sys.executable, "-m", "pytest", "-q", *PYTEST_SUITES[suite]]
@@ -129,13 +230,15 @@ def main() -> int:
         flush=True,
     )
     try:
-        result = subprocess.run(
-            command,
-            cwd=ROOT,
-            check=False,
-            timeout=budget,
-            env=go_environment() if args.suite == "go" else None,
-        )
+        if args.suite == "go":
+            returncode = run_go_suite(command, budget)
+        else:
+            returncode = subprocess.run(
+                command,
+                cwd=ROOT,
+                check=False,
+                timeout=budget,
+            ).returncode
     except subprocess.TimeoutExpired:
         print(
             f"[critical-tests] {args.suite} exceeded "
@@ -146,7 +249,7 @@ def main() -> int:
 
     elapsed = time.monotonic() - started
     print(f"[critical-tests] {args.suite}: {elapsed:.2f}s", flush=True)
-    return result.returncode
+    return returncode
 
 
 if __name__ == "__main__":

@@ -40,8 +40,10 @@ const SAFETY_ITERATIONS = 5199;
 const ANNOUNCE_DURABLE_MS = DAY_MS;
 const STORE_PREFIX = "forkmesh.chat/e2ee/";
 const CALL_SIGNING_PREFIX = "forkmesh-call-e2ee-";
-const IDENTITY_KEY = STORE_PREFIX + "ed25519IdentityV3";
-const PREKEYS_KEY = STORE_PREFIX + "prekeysV3";
+const IDENTITY_KEY = "ed25519IdentityV3";
+const PREKEYS_KEY = "prekeysV3";
+const NODE_KEY = "ed25519NodeV1";
+const NODE_BIND_PREFIX = "forkmesh-chat-node-bind-v1\n";
 const LEGACY_KEYS = [
   "forkmesh.chat.e2ee.x25519.v2",
 ];
@@ -127,8 +129,13 @@ function browserStorage() {
   }
 }
 
-function storageKey(kind, name) {
-  return STORE_PREFIX + kind + "/" + bytesToB64Url(utf8(name));
+export function storePrefix(profile = "") {
+  const name = String(profile || "");
+  return name ? STORE_PREFIX + "p/" + bytesToB64Url(utf8(name)) + "/" : STORE_PREFIX;
+}
+
+function storageKey(ctx, kind, name) {
+  return ctx.prefix + kind + "/" + bytesToB64Url(utf8(name));
 }
 
 function readItem(storage, key) {
@@ -154,14 +161,16 @@ function removeItem(storage, key) {
   } catch (_) {}
 }
 
-function forgetLegacy(storage) {
+function forgetLegacy(storage, profiled = false) {
   for (const key of LEGACY_KEYS) removeItem(storage, key);
   try {
     const length = Number(storage?.length) || 0;
     const doomed = [];
     for (let index = 0; index < length; index += 1) {
       const key = storage.key(index);
-      if (key && LEGACY_PREFIXES.some((prefix) => key.startsWith(prefix))) doomed.push(key);
+      if (!key) continue;
+      const unprofiled = profiled && key.startsWith(STORE_PREFIX) && !key.startsWith(STORE_PREFIX + "p/");
+      if (unprofiled || LEGACY_PREFIXES.some((prefix) => key.startsWith(prefix))) doomed.push(key);
     }
     for (const key of doomed) removeItem(storage, key);
   } catch (_) {}
@@ -443,6 +452,31 @@ function wrapAad(room, sender, recipient, nonce, tag) {
   return utf8(["forkmesh-chat-e2ee-wrap-v3", room, sender, recipient, nonce, tag].join("\n"));
 }
 
+export function nodeBundleMessage(room, kid, idk, acct) {
+  return utf8(["forkmesh-chat-e2ee-node-v1", room, kid, idk, acct].join("\n"));
+}
+
+export function nodeBindMessage(account, node, ts) {
+  return utf8(NODE_BIND_PREFIX + [account, node, String(ts)].join("\n"));
+}
+
+export function isNodeKeyId(node) {
+  return typeof node === "string" && KEY32_RE.test(node) && b64UrlToBytes(node).length === 32;
+}
+
+export async function verifyNodeBinding(bundle, room) {
+  try {
+    if (!bundle || typeof bundle !== "object" || !isNodeKeyId(bundle.node)) return false;
+    return await edVerify(
+      b64UrlToBytes(bundle.node),
+      strictB64u(bundle.nsig, SIG_RE),
+      nodeBundleMessage(room, bundle.kid, bundle.idk, bundle.acct),
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
 export function bundleMessage(room, kid, idk, acct, node, spk) {
   return utf8([
     "forkmesh-chat-e2ee-bundle-v3", room, kid, idk, acct, node, spk.id, spk.x, spk.pq,
@@ -715,13 +749,16 @@ function sealedShape(frame) {
   }
 }
 
-function createContext({ storage, acct, node, now, wrappingKey }) {
+function createContext({ storage, acct, node, now, wrappingKey, profile }) {
   let wrapPromise = null;
   let chain = Promise.resolve();
   const ctx = {
     storage,
+    prefix: storePrefix(profile),
     acctSource: acct,
     node: String(node || ""),
+    nodeMode: !node,
+    nodeKey: null,
     now,
     identity: null,
     prekeys: [],
@@ -751,21 +788,36 @@ function createContext({ storage, acct, node, now, wrappingKey }) {
   return ctx;
 }
 
-async function loadIdentity(ctx) {
-  if (ctx.identity) return ctx.identity;
+async function loadSeed(ctx, name) {
+  const key = ctx.prefix + name;
   let seed = null;
-  const stored = await readSecret(ctx, IDENTITY_KEY);
+  const stored = await readSecret(ctx, key);
   if (stored) {
     try { seed = strictB64(stored, 32); } catch (_) { seed = null; }
   }
   if (!seed) {
     seed = randomBytes(32);
-    await writeSecret(ctx, IDENTITY_KEY, bytesToB64(seed));
-  } else if (!safeJson(readItem(ctx.storage, IDENTITY_KEY))?.wrapped && await ctx.wrapKey()) {
-    await writeSecret(ctx, IDENTITY_KEY, bytesToB64(seed));
+    await writeSecret(ctx, key, bytesToB64(seed));
+  } else if (!safeJson(readItem(ctx.storage, key))?.wrapped && await ctx.wrapKey()) {
+    await writeSecret(ctx, key, bytesToB64(seed));
   }
-  const { privateKey, publicBytes } = await edKeysFromSeed(seed);
+  const keys = await edKeysFromSeed(seed);
   seed.fill(0);
+  return keys;
+}
+
+async function loadNodeKey(ctx) {
+  if (!ctx.nodeMode) return null;
+  if (ctx.nodeKey) return ctx.nodeKey;
+  const { privateKey, publicBytes } = await loadSeed(ctx, NODE_KEY);
+  ctx.nodeKey = { privateKey, node: bytesToB64Url(publicBytes) };
+  ctx.node = ctx.nodeKey.node;
+  return ctx.nodeKey;
+}
+
+async function loadIdentity(ctx) {
+  if (ctx.identity) return ctx.identity;
+  const { privateKey, publicBytes } = await loadSeed(ctx, IDENTITY_KEY);
   ctx.identity = {
     privateKey,
     idkBytes: publicBytes,
@@ -776,7 +828,7 @@ async function loadIdentity(ctx) {
 }
 
 async function readStoredPrekeys(ctx) {
-  const list = safeJson(await readSecret(ctx, PREKEYS_KEY));
+  const list = safeJson(await readSecret(ctx, ctx.prefix + PREKEYS_KEY));
   if (!Array.isArray(list)) return [];
   const out = [];
   for (const entry of list.slice(-PREKEYS_KEPT * 2)) {
@@ -809,7 +861,7 @@ async function syncPrekeys(ctx, extra = []) {
 }
 
 async function persistPrekeys(ctx) {
-  await writeSecret(ctx, PREKEYS_KEY, JSON.stringify(ctx.prekeys.map(serialPrekey)));
+  await writeSecret(ctx, ctx.prefix + PREKEYS_KEY, JSON.stringify(ctx.prekeys.map(serialPrekey)));
 }
 
 async function ensurePrekey(ctx) {
@@ -833,7 +885,7 @@ async function ensurePrekey(ctx) {
 function trustFor(ctx, localScope) {
   let trust = ctx.trusts.get(localScope);
   if (!trust) {
-    trust = { key: storageKey("trustV3", localScope), data: emptyTrust(), version: 0 };
+    trust = { key: storageKey(ctx, "trustV3", localScope), data: emptyTrust(), version: 0 };
     ctx.trusts.set(localScope, trust);
   }
   const raw = readItem(ctx.storage, trust.key);
@@ -929,7 +981,7 @@ class RoomSeal {
         identity.privateKey,
         bundleMessage(this.roomName, identity.kid, identity.idk, this.acct, this.node, spk),
       ));
-      return {
+      const bundle = {
         type: KEY_TYPE,
         v: SEAL_VERSION,
         kid: identity.kid,
@@ -939,6 +991,15 @@ class RoomSeal {
         spk,
         sig: bytesToB64Url(signature),
       };
+      const nodeKey = await loadNodeKey(this.ctx);
+      if (nodeKey && nodeKey.node === this.node) {
+        bundle.nsig = bytesToB64Url(new Uint8Array(await subtle().sign(
+          { name: "Ed25519" },
+          nodeKey.privateKey,
+          nodeBundleMessage(this.roomName, identity.kid, identity.idk, this.acct),
+        )));
+      }
+      return bundle;
     });
   }
 
@@ -953,6 +1014,7 @@ class RoomSeal {
     const now = this.ctx.now();
     const identity = await loadIdentity(this.ctx);
     if (!await verifyBundle(bundle, this.roomName, now)) return null;
+    if (this.policy === "open" && !await verifyNodeBinding(bundle, this.roomName)) return null;
     if (this.policy === "strict" && this.participants && !this.participants.includes(bundle.acct)) return null;
     if (bundle.kid === identity.kid) return { state: "approved", kid: bundle.kid, isNew: false, released: [] };
     const trust = this.trust();
@@ -1106,14 +1168,14 @@ class RoomSeal {
 
   heldFrames() {
     if (!this.held) {
-      const parsed = safeJson(readItem(this.ctx.storage, storageKey("heldV3", this.localRoom)));
+      const parsed = safeJson(readItem(this.ctx.storage, storageKey(this.ctx, "heldV3", this.localRoom)));
       this.held = Array.isArray(parsed) ? parsed.filter((frame) => frame && typeof frame === "object") : [];
     }
     return this.held;
   }
 
   persistHeld() {
-    const key = storageKey("heldV3", this.localRoom);
+    const key = storageKey(this.ctx, "heldV3", this.localRoom);
     if (!this.held?.length) {
       removeItem(this.ctx.storage, key);
       return;
@@ -1152,7 +1214,7 @@ class RoomSeal {
   }
 
   nextCounter() {
-    const key = storageKey("ctrV3", this.localRoom);
+    const key = storageKey(this.ctx, "ctrV3", this.localRoom);
     const previous = Number(readItem(this.ctx.storage, key)) || 0;
     const ctr = Math.max(previous, this.counter) + 1;
     this.counter = ctr;
@@ -1161,7 +1223,7 @@ class RoomSeal {
   }
 
   ratchetKey() {
-    return storageKey("ratchetV4", this.localRoom);
+    return storageKey(this.ctx, "ratchetV4", this.localRoom);
   }
 
   async readRatchet() {
@@ -1195,7 +1257,7 @@ class RoomSeal {
   }
 
   openedKey() {
-    return storageKey("openedV4", this.localRoom);
+    return storageKey(this.ctx, "openedV4", this.localRoom);
   }
 
   async readOpened(now) {
@@ -1403,7 +1465,7 @@ class RoomSeal {
   }
 
   async open4(frame, identity, record, commit) {
-    const seenKey = storageKey("seenV3", this.localRoom);
+    const seenKey = storageKey(this.ctx, "seenV3", this.localRoom);
     const seenAll = seenFromJson(safeJson(readItem(this.ctx.storage, seenKey)));
     const seen = seenAll.get(frame.kid) || { max: 0, set: new Set() };
     const opened = (found) => ({ status: "opened", ...found, self: false, replayed: true });
@@ -1554,7 +1616,7 @@ class RoomSeal {
         return { status: "invalid" };
       }
       if (frame.v === SEAL_V4) return await withRatchetLock(() => this.open4(frame, identity, record, commit));
-      const seenKey = storageKey("seenV3", this.localRoom);
+      const seenKey = storageKey(this.ctx, "seenV3", this.localRoom);
       const seenAll = seenFromJson(safeJson(readItem(this.ctx.storage, seenKey)));
       const seen = seenAll.get(frame.kid) || { max: 0, set: new Set() };
       const replayed = frame.ctr <= seen.max - REPLAY_WINDOW || seen.set.has(frame.ctr);
@@ -1622,7 +1684,7 @@ class RoomSeal {
   }
 
   shouldPersistAdvertisement(now = this.ctx.now()) {
-    const key = storageKey("announcedV3", this.localRoom);
+    const key = storageKey(this.ctx, "announcedV3", this.localRoom);
     const previous = Number(readItem(this.ctx.storage, key)) || 0;
     const rotation = String(this.ctx.rotation);
     const lastRotation = readItem(this.ctx.storage, key + "/rotation");
@@ -1633,8 +1695,16 @@ class RoomSeal {
   }
 }
 
+export const FRAME_AUTH = "frameAuth";
+
+export function withoutFrameAuth(plain) {
+  if (!plain || typeof plain !== "object" || !Object.hasOwn(plain, FRAME_AUTH)) return plain;
+  const { [FRAME_AUTH]: _claimed, ...rest } = plain;
+  return rest;
+}
+
 export function authenticatedPlain(result) {
-  let plain = result?.plain;
+  let plain = withoutFrameAuth(result?.plain);
   if (!plain || typeof plain !== "object") return null;
   if (typeof plain.type === "string" && plain.type.startsWith("group-call-")) {
     plain = { ...plain, sealKid: String(result.kid || ""), sealAcct: String(result.acct || "") };
@@ -1642,7 +1712,18 @@ export function authenticatedPlain(result) {
   const node = String(result.node || "");
   if (!node) return plain;
   if (Object.hasOwn(plain, "reactorId") && plain.reactorId !== node) return null;
-  return Object.hasOwn(plain, "senderId") ? plain : { ...plain, senderId: node };
+  if (Object.hasOwn(plain, "senderId") && plain.senderId !== node) return null;
+  return {
+    ...plain,
+    senderId: node,
+    [FRAME_AUTH]: Object.freeze({
+      sealed: true,
+      node,
+      acct: String(result.acct || ""),
+      kid: String(result.kid || ""),
+      self: Boolean(result.self),
+    }),
+  };
 }
 
 export async function sealKeyFrame(seal) {
@@ -1685,10 +1766,11 @@ export function createRoomSealStore({
   node = "",
   now = () => Date.now(),
   wrappingKey = browserWrappingKey,
+  profile = "",
 } = {}) {
-  const ctx = createContext({ storage, acct, node, now, wrappingKey });
+  const ctx = createContext({ storage, acct, node, now, wrappingKey, profile });
   const rooms = new Map();
-  forgetLegacy(storage);
+  forgetLegacy(storage, Boolean(profile));
 
   return {
     has(scope) {
@@ -1696,6 +1778,28 @@ export function createRoomSealStore({
     },
     get node() {
       return ctx.node;
+    },
+    get profile() {
+      return String(profile || "");
+    },
+    async ready() {
+      await ctx.exclusive(() => loadNodeKey(ctx));
+      return ctx.node;
+    },
+    async nodeBindProof(account) {
+      const name = String(account || "").trim().toLowerCase();
+      if (!validAcct(name)) throw new TypeError("An account name is required.");
+      return ctx.exclusive(async () => {
+        const nodeKey = await loadNodeKey(ctx);
+        if (!nodeKey) throw new TypeError("This chat store has no node key.");
+        const ts = ctx.now();
+        const sig = new Uint8Array(await subtle().sign(
+          { name: "Ed25519" },
+          nodeKey.privateKey,
+          nodeBindMessage(name, nodeKey.node, ts),
+        ));
+        return { node: nodeKey.node, ts, sig: bytesToB64Url(sig) };
+      });
     },
     account() {
       return accountFor(ctx);
@@ -1729,6 +1833,7 @@ export function createRoomSealStore({
       const room = String(roomName || "").trim();
       const channel = String(scope || "").trim();
       if (!channel || !room) throw new TypeError("A chat room is required.");
+      await ctx.exclusive(() => loadNodeKey(ctx));
       const acct = accountFor(ctx);
       if (!validAcct(ctx.node) || !validAcct(acct)) throw new TypeError("A chat sender id is required.");
       removeItem(storage, "forkmesh.chat.seal." + channel);

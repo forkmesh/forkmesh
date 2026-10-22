@@ -348,9 +348,12 @@ void MainWindow::showLocalControlPairingPrompt(int connectionId,
             .arg(spaced));
     QPushButton *allow = box->addButton(QStringLiteral("Allow"),
                                         QMessageBox::AcceptRole);
-    box->addButton(QStringLiteral("Deny"), QMessageBox::RejectRole);
-    box->setDefaultButton(allow);
+    QPushButton *deny =
+        box->addButton(QStringLiteral("Deny"), QMessageBox::RejectRole);
+    box->setDefaultButton(deny);
+    box->setEscapeButton(deny);
     box->setModal(false);
+    box->setAttribute(Qt::WA_ShowWithoutActivating);
     m_localControlPrompts.insert(connectionId, box);
     connect(box, &QMessageBox::finished, this, [this, box, allow, connectionId] {
         m_localControlPrompts.remove(connectionId);
@@ -362,7 +365,6 @@ void MainWindow::showLocalControlPairingPrompt(int connectionId,
             m_localControl->denyPairing(connectionId);
     });
     box->show();
-    box->raise();
     QApplication::alert(this);
     logSystem(QStringLiteral("%1 asked to control this desktop over the local "
                              "network (code %2).")

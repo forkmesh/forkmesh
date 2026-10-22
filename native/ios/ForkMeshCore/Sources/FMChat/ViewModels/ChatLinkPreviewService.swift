@@ -36,23 +36,49 @@ public final class ChatLinkPreviewService {
     @ObservationIgnored private var imageTasks: [String: Task<Data?, Never>] = [:]
     @ObservationIgnored private let http: HTTPClient
     @ObservationIgnored private let store: KeyValueStore?
-    @ObservationIgnored private let file: URL?
+    @ObservationIgnored private let fileSource: @MainActor () -> URL?
+    @ObservationIgnored private var file: URL?
     @ObservationIgnored private let clock: Clock
     @ObservationIgnored private var warmed: Bool = false
     @ObservationIgnored private var saveQueued: Bool = false
+    @ObservationIgnored private var generation = 0
     public private(set) var enabled: Bool
 
-    public init(http: HTTPClient, store: KeyValueStore? = nil, file: URL? = nil, clock: Clock = SystemClock()) {
-        self.http = http
+    public init(
+        http: HTTPClient, store: KeyValueStore? = nil, file: (@MainActor () -> URL?)? = nil, clock: Clock = SystemClock(),
+        resolver: @escaping ChatHostResolver = ChatLinkAddresses.system
+    ) {
+        self.http = ChatLinkGuardedHTTP(base: http, resolver: resolver)
         self.store = store
-        self.file = file
+        self.fileSource = file ?? { nil }
         self.clock = clock
         enabled = store?.bool(forKey: ChatLinkPreviewService.enabledKey, or: true) ?? true
     }
 
-    public nonisolated static var defaultFile: URL? {
+    public nonisolated static func defaultFile(project: String) -> URL? {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("chat-link-previews.json")
+            .appendingPathComponent(fileName(project: project))
+    }
+
+    public nonisolated static func fileName(project: String) -> String {
+        "chat-link-previews-\(ChatHistoryCodec.scopeName(serverUrl: project, room: "link-previews")).json"
+    }
+
+    public func leaveProject() {
+        if warmed { flush() }
+        generation &+= 1
+        for task in inflight.values { task.cancel() }
+        for task in imageTasks.values { task.cancel() }
+        states = [:]
+        order = []
+        misses = [:]
+        inflight = [:]
+        images = [:]
+        imageOrder = []
+        imageBytes = 0
+        imageTasks = [:]
+        warmed = false
+        file = nil
     }
 
     public func setEnabled(_ on: Bool) {
@@ -90,9 +116,11 @@ public final class ChatLinkPreviewService {
         if states[key] == nil { states[key] = .loading }
         let http = self.http
         let now = clock.now
+        let started = generation
         let task = Task<ChatLinkPreview?, Never> { await ChatLinkPreviewService.resolve(url, http: http, now: now) }
         inflight[key] = task
         let result = await task.value
+        if started != generation { return }
         inflight[key] = nil
         if let result, !result.isEmpty {
             remember(key, .ready(result))
@@ -118,7 +146,9 @@ public final class ChatLinkPreviewService {
             return response.body.isEmpty ? nil : response.body
         }
         imageTasks[key] = task
+        let started = generation
         let data = await task.value
+        if started != generation { return data }
         imageTasks[key] = nil
         if let data { storeImage(data, for: key) }
         return data
@@ -148,6 +178,7 @@ public final class ChatLinkPreviewService {
     public func warm() {
         if warmed { return }
         warmed = true
+        file = fileSource()
         guard let file else { return }
         let saved = ChatLinkPreviewService.read(file)
         let now = clock.now
@@ -162,10 +193,11 @@ public final class ChatLinkPreviewService {
     private func scheduleSave() {
         guard file != nil, !saveQueued else { return }
         saveQueued = true
+        let started = generation
         Task {
             try? await Task.sleep(for: .seconds(2))
             saveQueued = false
-            flush()
+            if started == generation { flush() }
         }
     }
 

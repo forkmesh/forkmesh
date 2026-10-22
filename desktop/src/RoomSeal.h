@@ -77,6 +77,10 @@ QByteArray bundleMessage(const QString &room, const QString &kid,
                          const QString &idk, const QString &acct,
                          const QString &node, const QJsonObject &spk);
 bool verifyBundle(const QJsonObject &bundle, const QString &room, qint64 now);
+QByteArray nodeBindingMessage(const QString &room, const QString &kid,
+                              const QString &idk, const QString &acct);
+bool isNodeKey(const QString &node);
+bool verifyNodeBinding(const QJsonObject &bundle, const QString &room);
 QByteArray kek(const QString &room, const QString &sender,
                const QString &recipient, const QString &spkId,
                const QByteArray &ephPub, const QByteArray &ciphertext,
@@ -336,6 +340,7 @@ public:
     };
     static void useSignedTime(QJsonObject &plain, const Opened &opened);
     using BundleResult = forkmesh::chatv3::ChatDevice::BundleResult;
+    using NodeSigner = std::function<QByteArray(const QByteArray &)>;
 
     RoomSeal() = default;
     RoomSeal(const QString &roomName, const QString &trustScope, Policy policy,
@@ -359,6 +364,8 @@ public:
     void setParticipants(const QStringList &participants);
     Policy policy() const { return m_policy; }
     std::shared_ptr<forkmesh::chatv3::ChatDevice> device() const { return m_device; }
+    void setNodeSigner(NodeSigner signer) { m_nodeSigner = std::move(signer); }
+    bool hasNodeSigner() const { return bool(m_nodeSigner); }
 
     QJsonObject keyFrame() const;
     BundleResult acceptKeyFrame(const QJsonObject &frame, bool *changed = nullptr) const;
@@ -407,4 +414,5 @@ private:
     bool m_ratchet = false;
     QString m_error;
     std::shared_ptr<forkmesh::chatv3::ChatDevice> m_device;
+    NodeSigner m_nodeSigner;
 };

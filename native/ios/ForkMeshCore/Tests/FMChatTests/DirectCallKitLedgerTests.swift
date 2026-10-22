@@ -23,8 +23,13 @@ final class DirectCallKitLedgerTests: XCTestCase {
         ]
         XCTAssertEqual(
             DirectCallRingPush(fields: fields),
-            DirectCallRingPush(
-                callId: Self.callId, conversation: Self.conversation, caller: "bob", origin: "https://app.example"))
+            DirectCallRingPush(callId: Self.callId, conversation: Self.conversation, caller: "", origin: "https://app.example"),
+            "a push names no caller: CallKit shows a generic name until the sealed invite opens")
+        let ledger = DirectCallKitLedger()
+        let pushed = try? XCTUnwrap(DirectCallRingPush(fields: fields))
+        XCTAssertEqual(ledger.push(pushed ?? push()).first, .report(id: Self.callId, caller: "", video: false))
+        XCTAssertEqual(
+            ledger.engine(invite: invite(), activeCallId: ""), [.update(id: Self.callId, caller: "bob", video: true)])
         XCTAssertNil(DirectCallRingPush(fields: fields.merging(["topic": "direct-messages"]) { $1 }))
         XCTAssertNil(DirectCallRingPush(fields: fields.merging(["conversation": "#general"]) { $1 }))
         XCTAssertNil(DirectCallRingPush(fields: fields.merging(["conversation": "direct:short"]) { $1 }))

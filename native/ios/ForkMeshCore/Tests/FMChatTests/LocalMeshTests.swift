@@ -151,12 +151,19 @@ final class MeshWireTests: XCTestCase {
     }
 
     func testTheBeaconWireOrderIsTheV3Shape() {
-        let json = JSON.encode(.object(MeshBeacon(nodeId: "a", port: 1, reply: true, control: true, node: "desk").toJSON()))
-        XCTAssertEqual(
-            json, #"{"t":"forkmesh-lan-mesh","v":3,"id":"a","port":1,"ts":0,"reply":true,"control":true,"node":"desk"}"#)
-        XCTAssertFalse(JSON.encode(.object(MeshBeacon(nodeId: "a", port: 1, node: "desk").toJSON())).contains("desk"),
-            "the control node id rides only with control")
-        XCTAssertEqual(MeshBeacon.parse(MeshBeacon(nodeId: "a", port: 1, control: true, node: "desk").toJSON())?.node, "desk")
+        let json = JSON.encode(.object(MeshBeacon(nodeId: "a", port: 1, reply: true, control: true).toJSON()))
+        XCTAssertEqual(json, #"{"t":"forkmesh-lan-mesh","v":3,"id":"a","port":1,"ts":0,"reply":true,"control":true}"#)
+        var withNode = MeshBeacon(nodeId: "a", port: 1, control: true).toJSON()
+        withNode["node"] = "desk-node-key"
+        let parsed = try? XCTUnwrap(MeshBeacon.parse(withNode))
+        XCTAssertEqual(parsed?.control, true)
+        XCTAssertFalse(JSON.encode(.object(parsed?.toJSON() ?? [:])).contains("desk-node-key"), "a beacon names no node key")
+    }
+
+    func testABeaconIdIsRandomAndNeverTheKeyId() {
+        let first = MeshBeacon.randomId()
+        XCTAssertEqual(first.count, 16)
+        XCTAssertNotEqual(first, MeshBeacon.randomId())
     }
 
     func testAReplyBeaconSaysSoAndAnOrdinaryOneDoesNot() {
@@ -302,7 +309,7 @@ final class LocalMeshRoomTests: XCTestCase {
         XCTAssertTrue(ada.diagnosticsLine().contains("chat in 0 out 1 queued 0"), ada.diagnosticsLine())
         XCTAssertTrue(grace.diagnosticsLine().contains("fail 0 · in 1"), grace.diagnosticsLine())
         XCTAssertTrue(grace.diagnosticsLine().contains("chat in 1 out 0"), grace.diagnosticsLine())
-        XCTAssertTrue(grace.diagnosticsDetail().contains("peer ada"), grace.diagnosticsDetail())
+        XCTAssertTrue(grace.diagnosticsDetail().contains("peer Guest "), grace.diagnosticsDetail())
 
         await ada.stop()
         await grace.stop()
@@ -372,10 +379,13 @@ final class LocalMeshRoomTests: XCTestCase {
         let taken = await waitUntil { !ada.isQueued(sent) && grace.messages.contains { $0.id == sent } }
         XCTAssertTrue(taken, "the first device to join takes the queued message")
 
-        // carol links only to grace, and still gets ada's message.
         _ = await carol.connectToPeer(.loopbackIPv4, port: grace.listenPort)
-        let relayed = await waitUntil { carol.messages.contains { $0.id == sent && $0.text == "anyone out there?" } }
-        XCTAssertTrue(relayed, "a joiner gets the chat from whichever device it links to")
+        _ = await waitUntil { carol.peerCount == 1 }
+        let later = await ada.sendMessage("and now?")
+        let reached = await waitUntil { carol.messages.contains { $0.id == later } }
+        XCTAssertTrue(reached, "carol hears what is said after she joins, through grace")
+        XCTAssertFalse(
+            carol.messages.contains { $0.id == sent }, "a message grace already took is not sealed again to carol's new key")
 
         await carol.stop()
         await grace.stop()
@@ -423,7 +433,8 @@ final class LocalMeshRoomTests: XCTestCase {
         // never land, so only desk's answer and desk's own dial can bring them together.
         let deskDevice = ChatDevice(name: "desk")
         let desk = LocalMeshService(settings: deskDevice.settings, identity: deskDevice.identity, secureStore: deskDevice.secure)
-        let phone = makeMesh(ChatDevice(name: "phone"))
+        let phoneDevice = ChatDevice(name: "phone")
+        let phone = makeMesh(phoneDevice)
         desk.discoveryPort = 49741
         desk.beaconIntervalMs = 200
         desk.addressSweepEnabled = false
@@ -447,10 +458,10 @@ final class LocalMeshRoomTests: XCTestCase {
             }
         }
         defer { listener.cancel() }
-        let phoneId = phone.sealKeyId
+        let phoneId = MeshBeacon.randomId()
         func beacon(reply: Bool) throws {
             let envelope = try crypto.encrypt(
-                MeshBeacon(nodeId: phoneId, port: phone.listenPort, reply: reply).toJSON())
+                MeshBeacon(nodeId: phoneId, port: phone.listenPort, reply: reply, control: true).toJSON())
             _ = wire.send(Array(JSON.encode(.object(envelope)).utf8), to: .loopbackIPv4, port: 49741)
         }
 
@@ -463,6 +474,9 @@ final class LocalMeshRoomTests: XCTestCase {
         XCTAssertEqual(got.count, 1, "a beacon from an unlinked device is answered by unicast")
         XCTAssertEqual(got.first?.reply, true)
         XCTAssertEqual(got.first?.port, desk.listenPort)
+        XCTAssertEqual(got.first?.nodeId, desk.beaconId)
+        XCTAssertNotEqual(got.first?.nodeId, desk.sealKeyId, "the beacon never carries the long-lived key id")
+        XCTAssertTrue(desk.controlHosts().isEmpty, "a beacon alone names no desktop")
 
         try await Task.sleep(nanoseconds: 150_000_000)
         try beacon(reply: true)
@@ -470,12 +484,14 @@ final class LocalMeshRoomTests: XCTestCase {
         XCTAssertTrue(linked, "whichever id is higher, the pair ends up linked")
         let final = await answers.all
         XCTAssertEqual(final.count, 1, "a reply beacon is never answered")
+        let control = await waitUntil { desk.controlHosts().map(\.nodeId) == [phoneDevice.identity.nodeId] }
+        XCTAssertTrue(control, "the control node is the linked device's authenticated node id: \(desk.controlHosts())")
 
         await desk.stop()
         await phone.stop()
     }
 
-    func testALateJoinerIsBackfilledAndReachedWithNoDirectLink() async throws {
+    func testALateJoinerGetsNoEarlierMessagesButIsReachedWithNoDirectLink() async throws {
         let ada = makeMesh(ChatDevice(name: "ada"))
         let grace = makeMesh(ChatDevice(name: "grace"))
         let linus = makeMesh(ChatDevice(name: "linus"))
@@ -486,15 +502,12 @@ final class LocalMeshRoomTests: XCTestCase {
         _ = await waitUntil { !grace.messages.isEmpty }
 
         _ = await linus.connectToPeer(.loopbackIPv4, port: grace.listenPort)
-        let backfilled = await waitUntil { !linus.messages.isEmpty }
-        XCTAssertTrue(backfilled, "the devices already here backfill a late joiner")
-        XCTAssertEqual(linus.messages.first?.text, "anyone here?")
+        _ = await waitUntil { linus.peerCount == 1 && grace.peerCount == 2 }
 
-        // ada and linus never linked to each other: the room still reaches both.
         _ = await ada.sendMessage("second")
-        let reached = await waitUntil { linus.messages.count == 2 }
+        let reached = await waitUntil { linus.messages.contains { $0.text == "second" } }
         XCTAssertTrue(reached, "a message crosses the mesh to a device with no direct link")
-        XCTAssertEqual(linus.messages.last?.text, "second")
+        XCTAssertEqual(linus.messages.map(\.text), ["second"], "nothing said before linus joined is sealed again to him")
         XCTAssertEqual(grace.messages.count, 2)
 
         for service in [ada, grace, linus] { await service.stop() }
@@ -530,7 +543,7 @@ final class LocalMeshRoomTests: XCTestCase {
         let crossed = await waitUntil { !laptop.messages.isEmpty }
         XCTAssertTrue(crossed, "the message crosses Bluetooth")
         XCTAssertEqual(laptop.messages.first?.text, "no wifi here")
-        XCTAssertEqual(laptop.messages.first?.senderName, "phone")
+        XCTAssertEqual(laptop.messages.first?.senderName.hasPrefix("Guest "), true)
 
         await phone.stop()
         await laptop.stop()
@@ -711,40 +724,84 @@ final class LocalMeshRoomTests: XCTestCase {
         for service in [desk, phone, tablet] { await service.stop() }
     }
 
-    func testADeviceThatLeftIsWokenByTheNextMessage() async throws {
-        let expires = Int64(Date().timeIntervalSince1970 * 1000) + 3_600_000
-        let phoneToken = "mw1.\(String(repeating: "a", count: 64)).\(expires).sig"
-        let deskToken = "mw1.\(String(repeating: "b", count: 64)).\(expires).sig"
-        let phone = makeMesh(ChatDevice(name: "phone"))
-        phone.wakeTokenProvider = { phoneToken }
-        let desk = makeMesh(ChatDevice(name: "desk"))
-        desk.wakeTokenProvider = { deskToken }
-        var woken: [[String]] = []
-        desk.wakeSender = { woken.append($0) }
-        _ = await phone.start()
-        _ = await desk.start()
-        _ = await phone.connectToPeer(.loopbackIPv4, port: desk.listenPort)
-        let learned = await waitUntil { desk.wakeTargets() == [phoneToken] }
-        XCTAssertTrue(learned, "the phone's hello hands the desk its wake token")
-        XCTAssertEqual(phone.wakeTargets(), [deskToken])
+    func testStrangersNearbyLearnNoAccountAndNoWakeToken() async throws {
+        let dir = temporaryDirectory("mesh-wire")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let historyFile = dir.appendingPathComponent("history.json")
+        let adaDevice = ChatDevice(name: "ada")
+        let graceDevice = ChatDevice(name: "grace")
+        let ada = makeMesh(adaDevice)
+        let grace = makeMesh(graceDevice, historyFile: historyFile)
+        _ = await ada.start()
+        _ = await grace.start()
+        _ = await ada.connectToPeer(.loopbackIPv4, port: grace.listenPort)
+        _ = await waitUntil { ada.peerCount == 1 && grace.peerCount == 1 }
+        _ = await ada.sendMessage("hi")
+        let crossed = await waitUntil { grace.messages.contains { $0.text == "hi" } }
+        XCTAssertTrue(crossed)
+        XCTAssertEqual(grace.members().first { !$0.isSelf }?.owner, "")
+        await grace.stop()
+        await ada.stop()
 
-        await phone.stop()
-        let left = await waitUntil { desk.peerCount == 0 }
-        XCTAssertTrue(left)
-        _ = await desk.sendMessage("are you there?")
-        let sent = await waitUntil { woken == [[phoneToken]] }
-        XCTAssertTrue(sent, "a device that left is still woken, and the sender never wakes itself")
-        await desk.stop()
+        let saved = try String(contentsOf: historyFile, encoding: .utf8)
+        XCTAssertTrue(saved.contains("\"hi\""), saved)
+        XCTAssertFalse(saved.contains("ownerUser"), "a #mesh frame names no account: \(saved)")
+        XCTAssertFalse(saved.contains("\"sender\":\"ada\""), "nor carries the account as its name: \(saved)")
+        XCTAssertTrue(saved.contains(guestChatName(adaDevice.identity.publicKeyB64url)), saved)
+        XCTAssertFalse(saved.contains("\"wake\""), "a #mesh frame carries no wake token: \(saved)")
+        let trust = try ChatKeyring.shared(graceDevice.secure).trust(meshRoomName)
+        XCTAssertEqual(trust.record(ada.sealKeyId)?.acct, adaDevice.identity.nodeId, "the bundle's account is the node id")
     }
 
-    func testWakeTokensAreReadOnlyWhileUsable() {
-        XCTAssertEqual(meshWakeTokenExpiry("mw1.abc.42.sig"), 42)
-        XCTAssertNil(meshWakeTokenExpiry("mw2.abc.42.sig"))
-        XCTAssertNil(meshWakeTokenExpiry("mw1.abc.42"))
-        XCTAssertNil(meshWakeTokenExpiry("mw1.abc.soon.sig"))
-        XCTAssertNil(meshWakeTokenExpiry("mw1.\(String(repeating: "a", count: 200)).42.sig"))
-        XCTAssertTrue(meshWakeTokenUsable("mw1.abc.42.sig", now: 41))
-        XCTAssertFalse(meshWakeTokenUsable("mw1.abc.42.sig", now: 42))
+    func testTheBeaconIdIsRenewedWithTheNetwork() async throws {
+        let mesh = makeMesh(ChatDevice(name: "ada"))
+        _ = await mesh.start()
+        let first = mesh.beaconId
+        XCTAssertFalse(first.isEmpty)
+        XCTAssertNotEqual(first, mesh.sealKeyId)
+        await mesh.networkChanged()
+        XCTAssertNotEqual(mesh.beaconId, first, "a new network hears a new id")
+        let second = mesh.beaconId
+        await mesh.stop()
+        _ = await mesh.start()
+        XCTAssertNotEqual(mesh.beaconId, second, "and so does every start")
+        await mesh.stop()
+    }
+
+    func testAProjectSwitchRestartsTheMeshWithItsOwnHistoryAndKeys() async throws {
+        let dir = temporaryDirectory("mesh-projects")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var project = "alpha"
+        let device = ChatDevice(name: "ada")
+        let mesh = LocalMeshService(
+            settings: device.settings, identity: device.identity, secureStore: device.secure,
+            historyFile: { dir.appendingPathComponent(meshHistoryFileName(project: project)) })
+        mesh.multicastEnabled = false
+        mesh.bluetoothEnabled = false
+        mesh.addressSweepEnabled = false
+        mesh.loopbackIsLocalNetwork = true
+        mesh.projectScope = { project }
+        _ = await mesh.start()
+        XCTAssertEqual(mesh.meshSealScope, "\(meshRoomName)\nalpha")
+        let said = await mesh.sendMessage("alpha only")
+        XCTAssertFalse(said.isEmpty)
+
+        await mesh.leaveProject()
+        XCTAssertFalse(mesh.running)
+        XCTAssertTrue(mesh.messages.isEmpty, "nothing of alpha's #mesh stays on screen")
+        project = "beta"
+        await mesh.enterProject()
+        XCTAssertTrue(mesh.running, "the mesh that was running comes back up in the new project")
+        XCTAssertEqual(mesh.meshSealScope, "\(meshRoomName)\nbeta")
+        XCTAssertTrue(mesh.messages.isEmpty, "beta reads its own history file")
+        _ = await mesh.sendMessage("beta only")
+
+        await mesh.leaveProject()
+        project = "alpha"
+        await mesh.enterProject()
+        XCTAssertEqual(mesh.messages.map(\.text), ["alpha only"])
+        await mesh.stop()
+        XCTAssertNotEqual(meshHistoryFileName(project: "alpha"), meshHistoryFileName(project: "beta"))
     }
 
     func testTheLinkIsAuthenticatedAndEncrypted() async throws {
@@ -771,10 +828,10 @@ final class LocalMeshRoomTests: XCTestCase {
         let graceDevice = ChatDevice(name: "grace")
         let adaRoom = try RoomSeal.loadOrCreate(
             meshRoomName, scope: meshRoomName, policy: .open, acct: "ada", node: adaDevice.identity.nodeId,
-            secureStore: adaDevice.secure)
+            secureStore: adaDevice.secure, nodeIdentity: adaDevice.identity)
         let graceRoom = try RoomSeal.loadOrCreate(
             meshRoomName, scope: meshRoomName, policy: .open, acct: "grace", node: graceDevice.identity.nodeId,
-            secureStore: graceDevice.secure)
+            secureStore: graceDevice.secure, nodeIdentity: graceDevice.identity)
         XCTAssertNotNil(graceRoom.acceptBundle(adaRoom.keyFrame()))
         XCTAssertTrue(graceRoom.block(adaRoom.keyId))
         let ada = makeMesh(adaDevice)

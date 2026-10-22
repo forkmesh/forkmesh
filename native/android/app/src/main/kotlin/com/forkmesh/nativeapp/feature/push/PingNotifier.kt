@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.feature.push
 
 import com.forkmesh.nativeapp.chat.MESH_ALERT_HREF
 import com.forkmesh.nativeapp.chat.MeshAlert
+import com.forkmesh.nativeapp.chat.shown
 import com.forkmesh.nativeapp.push.DirectMessageAlert
 import com.forkmesh.nativeapp.push.DIRECT_MESSAGE_HREF
 import com.forkmesh.nativeapp.push.DIRECT_MESSAGE_PING_ID
@@ -44,6 +45,7 @@ object PingNotifier {
     const val MESH_NOTIFICATION_ID = 7304
     const val ACTION_OPEN = "com.forkmesh.push.OPEN"
     const val LINK_NOTIFICATION_ID = 7301
+    const val PUBLIC_PING_BODY = "New notification"
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -115,6 +117,8 @@ object PingNotifier {
             .setAutoCancel(true)
             .setCategory(if (alarm) Notification.CATEGORY_ALARM else Notification.CATEGORY_SOCIAL)
             .setContentIntent(openIntent(context, target))
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion(context, if (alarm) ALARMS_CHANNEL else PINGS_CHANNEL, PUBLIC_PING_BODY))
         if (!alarm) builder.setGroup("pings/$projectId")
         if (ping.ts > 0) builder.setWhen(ping.ts).setShowWhen(true)
         com.forkmesh.nativeapp.feature.inbox.InboxFeature.addActions(context, builder, projectId, projectId, target.notificationId(), ping)
@@ -137,6 +141,8 @@ object PingNotifier {
             .setGroup("pings/${target.projectId}")
             .setWhen(System.currentTimeMillis())
             .setShowWhen(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion(context, PINGS_CHANNEL, DirectMessagePreviews.GENERIC_BODY))
             .setContentIntent(openIntent(context, target))
         avatarBitmap(avatarPng)?.let { builder.setLargeIcon(Icon.createWithBitmap(it)) }
         manager.notify(target.projectId, target.notificationId(), builder.build())
@@ -167,11 +173,7 @@ object PingNotifier {
             previewLines[key] = merged
             merged
         }
-        val hidden = Notification.Builder(context, PINGS_CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_ping)
-            .setContentTitle(DirectMessagePreviews.GENERIC_TITLE)
-            .setContentText(DirectMessagePreviews.GENERIC_BODY)
-            .build()
+        val hidden = publicVersion(context, PINGS_CHANNEL, DirectMessagePreviews.GENERIC_BODY)
         val body = if (content == NotificationContent.NAME_ONLY && lines.size > 1) "${lines.size} new messages" else notice.body
         val builder = Notification.Builder(context, PINGS_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_ping)
@@ -207,18 +209,28 @@ object PingNotifier {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         ensureChannels(context)
         val target = PushTarget("", MESH_TAG, MESH_ALERT_HREF)
+        val shown = alert.shown(PingAlerts.notificationContent(context))
         val builder = Notification.Builder(context, MESH_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_ping)
-            .setContentTitle(alert.title)
-            .setContentText(alert.body)
-            .setStyle(Notification.BigTextStyle().bigText(alert.body))
+            .setContentTitle(shown.title)
+            .setContentText(shown.body)
+            .setStyle(Notification.BigTextStyle().bigText(shown.body))
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_MESSAGE)
             .setWhen(whenMs)
             .setShowWhen(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion(context, MESH_CHANNEL, DirectMessagePreviews.GENERIC_BODY))
             .setContentIntent(openIntent(context, target))
         manager.notify(MESH_TAG, MESH_NOTIFICATION_ID, builder.build())
     }
+
+    private fun publicVersion(context: Context, channel: String, body: String): Notification =
+        Notification.Builder(context, channel)
+            .setSmallIcon(R.drawable.ic_stat_ping)
+            .setContentTitle(DirectMessagePreviews.GENERIC_TITLE)
+            .setContentText(body)
+            .build()
 
     fun cancelMesh(context: Context) {
         context.getSystemService(NotificationManager::class.java)?.cancel(MESH_TAG, MESH_NOTIFICATION_ID)

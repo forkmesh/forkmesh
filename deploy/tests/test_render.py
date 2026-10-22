@@ -702,3 +702,12 @@ def test_ssh_helper_is_socket_activated_sandboxed_and_only_the_app_connects(tmp_
     env = files["/etc/forkmesh-next/app.env"][0]
     assert "FORKMESH_VAR_RUNNER_SSH_HELPER_SOCKET=/run/fmnext-ssh-helper.sock" in env
     assert "fmnext-ssh-helper.socket" in manifest["units"]
+
+
+def test_access_log_redacts_room_tickets_and_signed_node_reads(tmp_path):
+    files, _ = rendered(tmp_path, "n1")
+    caddy = files["/etc/caddy/Caddyfile"]
+    query = caddy[caddy.index("request>uri query {"):]
+    query = query[:query.index("}")]
+    for name in ("token", "sig", "ticket", "node"):
+        assert "\treplace %s REDACTED\n" % name in query

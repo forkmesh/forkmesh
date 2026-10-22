@@ -162,6 +162,7 @@ fun ChatMessageRow(
                         style = Fm.text.titleSmall.copy(color = FmColors.senderColor(message.senderName)),
                     )
                     if (row.visitor) Text(" visitor", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
+                    if (message.serverVisible) Text(" server-visible", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
                     if (message.ephemeral) {
                         Text(" ${AppsText.EPHEMERAL_NOTE}", maxLines = 1, style = Fm.text.bodySmall.copy(color = colors.textTertiary))
                     }

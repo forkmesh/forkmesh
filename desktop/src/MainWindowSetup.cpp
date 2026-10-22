@@ -16,6 +16,7 @@
 #include "MainWindowNextAccess.h"
 #include "NetworkReplyError.h"
 #include "NodeEventSocket.h"
+#include "OwnerOnlyFile.h"
 #include "SafeDelete.h"
 #include "LocalMeshNode.h"
 #include "OfficeChannelMirror.h"
@@ -218,10 +219,7 @@ void MainWindow::saveChatHistory()
                            {"dmNames", dmNames},
                            {"unread", unreadObj},
                            {"conversations", conversations}};
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QFile file(path);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        file.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
+    forkmesh::ownerfile::write(path, QJsonDocument(root).toJson(QJsonDocument::Compact));
 }
 
 void MainWindow::loadChatHistory()
@@ -242,7 +240,11 @@ void MainWindow::loadChatHistory()
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return;
-    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    int purged = 0;
+    const QJsonObject root = forkmesh::relayrules::purgedChatHistory(
+        QJsonDocument::fromJson(file.readAll()).object(), m_relayPrivatePurged, &purged);
+    if (purged > 0)
+        migrated = true;
 
     const qint64 loadedAtMs = QDateTime::currentMSecsSinceEpoch();
 
@@ -2315,12 +2317,17 @@ void MainWindow::startSession()
     forkmesh::settings::put(QSettings(), kRoomNameSetting, kDefaultRoomName);
     persistEditsToActiveServer();
     const QUrl url(fullServerUrl);
-    auto *server = new ServerNode(chatDisplayName(), machineNodeName(),
+    auto *server = new ServerNode(chatDisplayName(), sharedNodeName(),
                                   nodeOwnerDisplayName(),
                                   m_profileIdentity.publicKey(), url,
                                   kDefaultRoomName,
-                                  payoutAddress,
+                                  sharedTipAddress(),
                                   m_roomPassphrase, this);
+    server->setNodeSigner([this](const QByteArray &message) {
+        return forkmesh::chatv3::fromB64u(m_profileIdentity.signData(message));
+    });
+    ensureChatTrust();
+    server->setOwnerVerifier(m_chatNodeOwners);
     server->setConnectionAuthorizer([this](const QUrl &endpoint) {
         return authorizeFirewallConnection(QStringLiteral("WebSocket"), endpoint);
     });
@@ -3309,9 +3316,12 @@ void MainWindow::startOfficeChannelMirror()
                 });
     }
     m_officeChannelMirror->setApiBase(catalogApiUrl());
+    ensureChatTrust();
+    m_officeChannelMirror->setOwnerVerifier(m_chatNodeOwners);
     m_officeChannelMirror->setIdentity(node, m_profileIdentity.publicKey(),
                                        chatDisplayName());
     m_officeChannelMirror->start();
+    syncChatBlocks();
     wireDirectMesh();
     refreshDirectFocus();
 }
@@ -3320,7 +3330,7 @@ void MainWindow::startLocalMesh()
 {
     if (m_localMesh) {
         m_localMesh->setUserName(chatDisplayName());
-        m_localMesh->setNodeIdentity(machineNodeName(), nodeOwnerDisplayName());
+        m_localMesh->setNodeIdentity(sharedNodeName(), nodeOwnerDisplayName());
         m_localMesh->announceNow();
         startLocalControl();
         return;
@@ -3328,9 +3338,12 @@ void MainWindow::startLocalMesh()
     // Deliberately not gated on offline mode, an account, or a sign-in: the
     // mesh is local-only, and offline mode is switched on automatically when
     // the internet drops — which is exactly when this room matters.
-    m_localMesh = new LocalMeshNode(chatDisplayName(), machineNodeName(),
+    m_localMesh = new LocalMeshNode(chatDisplayName(), sharedNodeName(),
                                     nodeOwnerDisplayName(),
                                     m_profileIdentity.publicKey(), this);
+    m_localMesh->setNodeSigner([this](const QByteArray &message) {
+        return forkmesh::chatv3::fromB64u(m_profileIdentity.signData(message));
+    });
     // The room's history, and the messages still waiting for a device, live
     // with this identity, so a restart neither loses nor strands them.
     m_localMesh->setHistoryFile(
@@ -3342,7 +3355,6 @@ void MainWindow::startLocalMesh()
                 .toHex()
                 .left(16)) +
         QStringLiteral(".json"));
-    m_localMesh->setControlNode(m_profileIdentity.publicKey());
     connect(m_localMesh, &LocalMeshNode::messageArrived, this,
             &MainWindow::onMessage);
     connect(m_localMesh, &LocalMeshNode::queuedChanged, this,
@@ -4525,6 +4537,20 @@ QString MainWindow::machineNodeName() const
     return accountOwner();
 }
 
+QString MainWindow::sharedNodeName() const
+{
+    return accountNameFromInput(QSettings().value(kMachineNodeNameSetting).toString(),
+                                QString());
+}
+
+QString MainWindow::sharedTipAddress() const
+{
+    if (!QSettings().value(kShareTipAddressSetting, false).toBool())
+        return QString();
+    const QString address = savedSolanaAddress().trimmed();
+    return forkmesh::control::isValidSolanaPublicAddress(address) ? address : QString();
+}
+
 void MainWindow::saveMachineNodeName(const QString &name)
 {
     const QString clean = accountNameFromInput(name, QString());
@@ -4548,7 +4574,9 @@ void MainWindow::updateChatIdentity()
         m_backend->setUserName(name);
         m_lastChatDisplayName = name;
     }
-    m_backend->setNodeIdentity(machineNodeName(), nodeOwnerDisplayName());
+    m_backend->setNodeIdentity(sharedNodeName(), nodeOwnerDisplayName());
+    if (auto *server = qobject_cast<ServerNode *>(m_backend))
+        server->setTipAddress(sharedTipAddress());
     const QByteArray avatar = effectiveUserAvatar();
     if (avatar != m_lastChatAvatar) {
         m_backend->setAvatar(avatar);

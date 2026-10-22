@@ -1,5 +1,6 @@
 
 #include "MainWindow.h"
+#include "OfficeChannelMirror.h"
 #include "MainWindowInternal.h"
 #include "NetworkFilesPanel.h"
 #include "SecretDiffBanner.h"
@@ -3301,15 +3302,18 @@ void MainWindow::inviteUserToCurrentCove()
     auto deliverLink = [this, &cove, account, link, status](const QString &recipient) {
         if (recipient.isEmpty() || recipient == account)
             return;
-        if (m_backend) {
-            m_backend->notifyCoveInvited(recipient, cove.id, cove.name, account,
-                                         link, QDateTime::currentMSecsSinceEpoch());
+        if (!m_officeChannelMirror || !m_officeChannelMirror->isActive())
+            startOfficeChannelMirror();
+        if (m_officeChannelMirror && m_officeChannelMirror->isActive() &&
+            m_officeChannelMirror->sendDirectText(
+                recipient, QStringLiteral("@%1 invited you to the cove %2: %3")
+                               .arg(account, cove.name.left(160), link))) {
             status->setText(
-                QStringLiteral("Sent a Cove link notification to @%1.").arg(recipient));
+                QStringLiteral("Sent the Cove link to @%1 as a direct message.").arg(recipient));
         } else {
             QApplication::clipboard()->setText(link);
             status->setText(QStringLiteral(
-                "ForkMesh is offline, so the link was copied. Send it to @%1 when you reconnect.")
+                "Direct messages are not connected, so the link was copied. Send it to @%1 when you reconnect.")
                                 .arg(recipient));
         }
     };

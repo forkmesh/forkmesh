@@ -89,13 +89,18 @@ final class StoreConfigTests: XCTestCase {
         XCTAssertEqual(try plist(debug)["aps-environment"] as? String, "development")
     }
 
-    func testTheAppAndItsNotificationExtensionShareOneKeychainGroup() throws {
-        let expected = ["$(AppIdentifierPrefix)\(Self.appBundleId)"]
-        for file in [
-            "ForkMesh-Release", "ForkMesh-Debug", "NotificationService", "ForkMeshShare", "ForkMeshAutoFill", "ForkMeshWidgets",
-        ] {
-            let groups = try plist("Config/\(file).entitlements")["keychain-access-groups"] as? [String]
-            XCTAssertEqual(groups, expected, file)
+    func testOnlyTheAppReadsItsPrivateKeychainGroup() throws {
+        let prefix = "$(AppIdentifierPrefix)\(Self.appBundleId)"
+        let expected: [String: [String]] = [
+            "ForkMesh-Release": [prefix + ".private", prefix + ".push", prefix],
+            "ForkMesh-Debug": [prefix + ".private", prefix + ".push", prefix],
+            "NotificationService": [prefix + ".push"],
+            "ForkMeshShare": [prefix],
+            "ForkMeshAutoFill": [prefix],
+            "ForkMeshWidgets": [prefix],
+        ]
+        for (file, groups) in expected {
+            XCTAssertEqual(try plist("Config/\(file).entitlements")["keychain-access-groups"] as? [String], groups, file)
         }
     }
 

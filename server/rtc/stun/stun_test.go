@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const vectorPassword = "VOkJxbRl1RmTxUk/WvJxBt"
+const vectorPassword = "VOkJxbRl1RmTxUk/WvJxBt"  // forkmesh-secret-scan:ignore-line
 
 const sampleRequestHex = `
 00 01 00 58

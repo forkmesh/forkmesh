@@ -51,6 +51,10 @@ interface ChatRelay : ChatFrameSink {
     fun markAllRead() {}
 
     fun setReadElsewhere(check: (ChatMessage) -> Boolean) {}
+
+    fun setHiddenChannels(isHidden: (String) -> Boolean) {}
+
+    fun botAccount(node: String): String = ""
 }
 
 class RelayRoomChat(val room: RelayRoom) : ChatRelay {
@@ -105,6 +109,12 @@ class RelayRoomChat(val room: RelayRoom) : ChatRelay {
 
     override fun setReadElsewhere(check: (ChatMessage) -> Boolean) {
         room.isReadElsewhere = check
+    }
+
+    override fun botAccount(node: String): String = room.botAccount(node)
+
+    override fun setHiddenChannels(isHidden: (String) -> Boolean) {
+        room.isHiddenChannel = isHidden
     }
 }
 
@@ -174,9 +184,13 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         const val PING_FRESH_MS = 10 * 60 * 1000L
         const val WELCOME_CHANNEL = "#welcome"
         const val PUBLIC_SEAL_SUMMARY =
-            "This channel is public and controller-readable. It still uses authenticated AES-256-GCM transport, " +
-                "while allowing ForkBot, MCP, and incoming webhooks to read and post messages.\n\n" +
-                "Private channels and direct messages add automatic device-to-device encryption beyond the controller key."
+            "This channel is public: everyone in this room can read it, guests included. Every message is signed by the " +
+                "device that sent it and sealed to the devices in the room, so nobody can post, edit or delete as someone else. " +
+                "Integrations and webhooks post under their own name.\n\n" +
+                "Private channels and direct messages are kept by the server for their members only and add device-to-device encryption."
+        const val MESH_SEAL_SUMMARY =
+            "Anyone nearby with ForkMesh open can read #mesh. Messages stay on this network and Bluetooth and never reach the server."
+        const val GUEST_DIRECT_NOTICE = "Guests have no direct messages. Ask them to sign in first."
         const val PRIVATE_SEAL_SUMMARY =
             "Encryption is automatic. This device keeps a signing key and daily prekeys (X25519 and ML-KEM-768) that never leave it. " +
                 "Every message is signed and gets a fresh key wrapped for each approved device, so the server can forward and " +
@@ -267,6 +281,9 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
     @Volatile
     var selfName: () -> String = { relay.roster().firstOrNull { it.self }?.name ?: "" }
 
+    @Volatile
+    var blocks: ChatBlocks? = null
+
     private var history: ChatHistoryStore? = null
     private var historyScope: () -> String = { "" }
     private var historyFormerScopes: () -> List<String> = { emptyList() }
@@ -283,6 +300,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
 
     init {
         extras.sink = relay
+        extras.botAccount = { relay.botAccount(it) }
         extras.authorOf = { conversation, id -> messages(conversation).firstOrNull { it.id == id }?.senderId }
         extras.onChannelJoined = {
             relay.addChannel(it)
@@ -294,6 +312,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
             if (relay.currentConversation == it.conversation) queueReadMark(it.conversation)
         }
         relay.setReadElsewhere { isReadElsewhere(it) }
+        relay.setHiddenChannels(extras::isHiddenChannel)
     }
 
     fun filePing(message: ChatMessage, nowMs: Long = System.currentTimeMillis()) {
@@ -360,7 +379,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         val scope = historyScope()
         if (scope.isEmpty()) return false
         if (scope == loadedScope) return true
-        val snapshot = when (val load = store.read(scope, historyFormerScopes())) {
+        val loaded = when (val load = store.read(scope, historyFormerScopes())) {
             ChatHistoryLoad.Unreadable -> return false
             ChatHistoryLoad.Missing -> {
                 loadedScope = scope
@@ -370,7 +389,8 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         }
         loadedScope = scope
         val now = System.currentTimeMillis()
-        extras.restoreChannels(snapshot.privateChannels, snapshot.hiddenChannels)
+        val snapshot = withoutRelayPrivate(loaded)
+        extras.restoreChannels(snapshot.hiddenChannels)
         val shown = snapshot.messages.filter { it.conversation !in snapshot.hiddenChannels && live(it, now) }
         relay.restoreHistory(shown.filter { !DirectMessageFrames.isDirect(it.conversation) && !OfficeFrames.isOffice(it.conversation) })
         synchronized(heldLock) {
@@ -386,6 +406,29 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         extras.restore(snapshot.replies.filter { live(it, now) }, snapshot.replyRoots, snapshot.reactions, snapshot.reactionOrder, snapshot.edits, snapshot.stickers)
         extras.restoreHiddenMessages(snapshot.hiddenMessages)
         return true
+    }
+
+    fun withoutRelayPrivate(snapshot: ChatHistorySnapshot): ChatHistorySnapshot {
+        val privateNames = snapshot.privateChannels.toSet()
+        fun relayPrivate(conversation: String): Boolean = conversation.startsWith("@") || conversation in privateNames
+        val goneIds = (snapshot.messages + snapshot.replies).filter { relayPrivate(it.conversation) }.map { it.id }.toSet()
+        if (goneIds.isEmpty() && privateNames.isEmpty()) return snapshot
+        val replies = snapshot.replies.filter { !relayPrivate(it.conversation) && snapshot.replyRoots[it.id] !in goneIds }
+        val kept = replies.map { it.id }.toSet()
+        val gone = goneIds + (snapshot.replyRoots.keys - kept)
+        return snapshot.copy(
+            messages = snapshot.messages.filter { !relayPrivate(it.conversation) },
+            replies = replies,
+            replyRoots = snapshot.replyRoots.filterKeys { it in kept },
+            reactions = snapshot.reactions.filterKeys { it !in gone },
+            reactionOrder = snapshot.reactionOrder.filterKeys { it !in gone },
+            stickers = snapshot.stickers.filterKeys { it !in gone },
+            edits = snapshot.edits.filterKeys { it !in gone },
+            privateChannels = emptyList(),
+            hiddenMessages = snapshot.hiddenMessages.filter { it !in gone },
+            receipts = snapshot.receipts.filterKeys { it !in gone },
+            receiptTimes = snapshot.receiptTimes.filterKeys { it !in gone },
+        )
     }
 
     private fun restoreDirectHistory() {
@@ -454,7 +497,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
             reactionOrder = extras.snapshotReactionOrder().filterKeys { it in known },
             stickers = extras.snapshotStickers().filterKeys { it in known },
             edits = extras.snapshotEdits().filterKeys { it in known },
-            privateChannels = extras.privateChannels.sorted(),
+            privateChannels = emptyList(),
             hiddenChannels = extras.hiddenChannels.sorted(),
             hiddenMessages = extras.snapshotHiddenMessages(),
             receipts = receipts.filterKeys { it in kept },
@@ -484,6 +527,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
 
     fun directListRows(): List<Pair<DirectConversation, ChatListPreview?>> =
         directConversations
+            .filter { !isBlocked(it.otherUser) }
             .map { it to listPreview(it.conversation) }
             .sortedByDescending { (record, preview) -> maxOf(ChatListPreviews.recencyMs(record.updatedAt), preview?.timestamp ?: 0L) }
 
@@ -522,8 +566,26 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         return direct?.serverCopies(message.conversation) != 0
     }
 
+    fun isFromBlocked(message: ChatMessage): Boolean {
+        val list = blocks ?: return false
+        if (message.self) return false
+        if (DirectMessageFrames.isDirect(message.conversation)) return list.isBlocked(direct?.record(message.conversation)?.otherUser.orEmpty())
+        val owner = relay.roster().firstOrNull { it.id == message.senderId }?.owner.orEmpty()
+        return owner.isNotEmpty() && list.isBlocked(owner)
+    }
+
+    fun isBlocked(account: String): Boolean = blocks?.isBlocked(account) == true
+
+    fun setBlocked(account: String, blocked: Boolean): Boolean {
+        val list = blocks ?: return false
+        if (!list.set(account, blocked)) return false
+        val name = ChatBlocks.normalized(account)
+        notice(if (blocked) "$name is blocked. You won't see their messages on this device." else "$name is unblocked.")
+        return true
+    }
+
     fun rows(conversation: String): List<ChatRow> {
-        val stored = messages(conversation).filter { !extras.isHidden(it.id) }
+        val stored = messages(conversation).filter { !extras.isHidden(it.id) && !isFromBlocked(it) }
         val list = apps?.merge(stored, conversation) ?: stored
         val inDirect = DirectMessageFrames.isDirect(conversation)
         val relayRoom = !OfficeFrames.isOffice(conversation) && !inDirect && conversation != MESH_CONVERSATION
@@ -635,7 +697,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
             return ChatHubSend.Sent
         }
         extras.sendTyping(conversation, false)
-        val sent = if (extras.isPrivate(conversation)) extras.sendPrivateChat(conversation, text) else relay.sendMessage(text, conversation)
+        val sent = relay.sendMessage(text, conversation)
         if (!sent) {
             relay.connect()
             return ChatHubSend.Failed(OFFLINE_NOTICE)
@@ -736,14 +798,12 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
 
     fun isPrivateRoom(conversation: String): Boolean {
         if (conversation.startsWith("@") || DirectMessageFrames.isDirect(conversation)) return true
-        office?.room(conversation)?.let { return it.isPrivate }
-        return extras.isPrivate(conversation)
+        return office?.room(conversation)?.isPrivate == true
     }
 
     fun isConversation(conversation: String): Boolean {
         if (conversation.startsWith("@") || DirectMessageFrames.isDirect(conversation)) return true
-        office?.room(conversation)?.let { return it.isPrivate && !it.serverVisible && !it.readOnly }
-        return extras.isPrivate(conversation)
+        return office?.room(conversation)?.let { it.isPrivate && !it.serverVisible && !it.readOnly } == true
     }
 
     fun isGroupConversation(conversation: String): Boolean =
@@ -757,7 +817,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
     fun isReadOnly(conversation: String): Boolean = office?.room(conversation)?.readOnly == true
 
     fun sealSummary(conversation: String): String {
-        if (conversation == MESH_CONVERSATION) return ""
+        if (conversation == MESH_CONVERSATION) return MESH_SEAL_SUMMARY
         if (isServerVisible(conversation)) return SERVER_VISIBLE_SEAL_SUMMARY
         return if (isPrivateRoom(conversation)) PRIVATE_SEAL_SUMMARY else PUBLIC_SEAL_SUMMARY
     }
@@ -777,7 +837,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
     fun canAskForkbot(conversation: String): Boolean {
         if (!conversation.startsWith("#") || conversation == MESH_CONVERSATION) return false
         office?.room(conversation)?.let { return !it.isPrivate }
-        return !extras.isPrivate(conversation)
+        return true
     }
 
     fun maybeAskForkbot(conversation: String, text: String, threadRootId: String = "") {
@@ -923,24 +983,34 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         val name = conversation.drop(1).trim()
         if (name.isEmpty()) return null
         val others = relay.roster().filter { !it.self }
-        if (others.any { it.id == name }) return null
+        others.firstOrNull { it.id == name }?.let { return it.owner.trim().lowercase().ifEmpty { null } }
         val folded = name.lowercase()
         val matches = others.filter { it.owner.lowercase() == folded || it.name.lowercase() == folded || it.nodeName.lowercase() == folded }
-        val peer = matches.firstOrNull { it.online } ?: matches.firstOrNull()
-        return peer?.owner?.lowercase()?.ifEmpty { null } ?: folded
+        if (matches.isEmpty()) return folded
+        val peer = matches.firstOrNull { it.online && it.owner.isNotEmpty() } ?: matches.firstOrNull { it.owner.isNotEmpty() }
+        return peer?.owner?.trim()?.lowercase()?.ifEmpty { null }
+    }
+
+    fun messageAccount(member: Member): String? = if (member.self) null else member.owner.trim().lowercase().ifEmpty { null }
+
+    fun directConversation(account: String): String? {
+        val service = direct ?: return null
+        val name = account.trim().lowercase()
+        if (name.isEmpty()) return null
+        service.records.firstOrNull { it.otherUser == name }?.let { return it.conversation }
+        return service.start(name).conversation
     }
 
     fun switchConversation(conversation: String) {
-        val account = accountRecipient(conversation)
-        val service = direct
         revealRequests++
-        if (account != null && service != null) {
-            val record = service.records.firstOrNull { it.otherUser == account }
-            if (record != null) {
-                select(record.conversation)
+        if (conversation.startsWith("@")) {
+            val account = accountRecipient(conversation)
+            if (account == null) {
+                notice(GUEST_DIRECT_NOTICE)
             } else {
                 try {
-                    select(service.start(account).conversation)
+                    val target = directConversation(account)
+                    if (target == null) notice("Sign in to send direct messages.") else select(target)
                 } catch (error: Exception) {
                     notice(error.message ?: "The direct message could not be opened.")
                 }
@@ -955,6 +1025,16 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         val body = text.trim()
         if (body.isEmpty()) throw ChatReplyException(ChatReplyException.Kind.REFUSED)
         val conversation = ChatReplyTarget.resolve(channel, relay.channels, relay.roster(), officeChannels)
+        if (conversation.startsWith("@")) {
+            val account = accountRecipient(conversation) ?: throw ChatReplyException(ChatReplyException.Kind.REFUSED)
+            val target = try {
+                directConversation(account)
+            } catch (_: Exception) {
+                null
+            } ?: throw ChatReplyException(ChatReplyException.Kind.REFUSED)
+            if (direct?.send(target, body) != true) throw ChatReplyException(ChatReplyException.Kind.REFUSED)
+            return
+        }
         if (OfficeFrames.isOffice(conversation)) {
             if (office?.send(conversation, body) != true) throw ChatReplyException(ChatReplyException.Kind.REFUSED)
             return

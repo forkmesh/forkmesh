@@ -3501,6 +3501,7 @@ const QString kAccountNameSetting = QStringLiteral("account/nodeName");
 const QString kGeneratedNodeNameSetting =
     QStringLiteral("account/generatedNodeName");
 const QString kMachineNodeNameSetting = QStringLiteral("node/machineName");
+const QString kShareTipAddressSetting = QStringLiteral("chat/shareTipAddress");
 const QString kHostsSetting = QStringLiteral("hosts/list");
 // Hosts deleted from that list, stamped with when. Survives a relaunch: the
 // relay lease that keeps a destroyed mirror "online" outlives most sessions.

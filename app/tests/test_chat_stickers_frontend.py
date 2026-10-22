@@ -162,6 +162,9 @@ def _scenario(client):
       const runWhenConnected = (fn) => fn();
       const send = (plain) => sent.push(plain);
       const renderReactions = () => {};
+      const FRAME_AUTH = "frameAuth";
+      const frameAuth = { frameAuth: (plain) => plain?.frameAuth || null };
+      const sealedBy = (node) => ({ frameAuth: { sealed: true, node, acct: node, kid: "k".repeat(16), self: false } });
     """ + helpers + """
       const record = {
         id: "m1", channel: "#general", el: new El("div"),
@@ -169,9 +172,9 @@ def _scenario(client):
       };
       rows.set("m1", record);
       const frame = (extra) => ({ target: "m1", added: true, ...extra });
-      applyReaction(frame({ emoji: "\\u{1F389}", reactorId: "p1", reactorName: "Pat" }));
-      applyReaction(frame({ emoji: "\\u{1F389}", sticker: "party", reactorId: "p1", reactorName: "Pat" }));
-      applyReaction(frame({ emoji: "\\u2705", sticker: "lgtm", reactorId: "p2", reactorName: "Ana" }));
+      applyReaction(frame({ emoji: "\\u{1F389}", reactorId: "p1", sender: "Pat", reactorName: "Forged", ...sealedBy("p1") }));
+      applyReaction(frame({ emoji: "\\u{1F389}", sticker: "party", reactorId: "p1", sender: "Pat", reactorName: "Forged", ...sealedBy("p1") }));
+      applyReaction(frame({ emoji: "\\u2705", sticker: "lgtm", reactorId: "p2", sender: "Ana", reactorName: "Mallory", ...sealedBy("p2") }));
       applyReaction(frame({ emoji: "\\u2705", sticker: "lgtm", reactorId: "me", reactorName: "Me" }));
       applyReaction(frame({ emoji: "\\u{1F984}", sticker: "unicorn-from-the-future", reactorId: "p3", reactorName: "Kim" }));
       const badges = () => record.stickersEl.children.map((badge) => ({

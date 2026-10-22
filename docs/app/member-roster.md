@@ -26,6 +26,11 @@ dashboard and World read it. Code: `app/src/account_users.py`
   private profile before it consults `_account_lookup_cached`, so a warm entry
   cannot outlive a privacy toggle
   (`app/tests/test_security_controls.py::test_private_profiles_and_repo_pages_revoke_cached_public_metadata`).
+- Account search (`_WorldCommunityRuntime.search_accounts`, behind
+  `GET /api/chat/direct-messages/users?query=` and the notes share picker)
+  uses the same `_is_public_roster_member` test. Before 2026-10-22 it checked
+  only active `user`, so a prefix search listed private profiles the roster
+  hides. Tests: `app/tests/test_account_search_private_profiles.py`.
 - Thumbnails (`_avatar_render_thumbnail`, Pillow) refuse sources over
   4096×4096 and are cached in a 512-entry LRU keyed by content hash.
 - The host cache is per process; cross-core lag is bounded by the cache TTLs.

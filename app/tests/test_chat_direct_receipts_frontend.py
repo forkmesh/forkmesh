@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / "public"
 TRANSPORT = PUBLIC / "chat-room-transport.js"
 CRYPTO = PUBLIC / "chat-crypto.js"
+SEAL = PUBLIC / "chat-seal.js"
 CHAT_TEXT = (PUBLIC / "chat.js").read_text(encoding="utf-8")
 CHAT_CSS = (PUBLIC / "chat.css").read_text(encoding="utf-8")
 
@@ -44,8 +45,22 @@ def _transport_run(steps, direct=True):
     return _run_module(f"""
       import {{ createHash }} from "node:crypto";
       import {{ createChatRoomTransport }} from {json.dumps(TRANSPORT.as_uri())};
-      import {{ derivePassphraseKey, encryptObject }}
+      import {{ decryptObject, derivePassphraseKey, encryptObject }}
         from {json.dumps(CRYPTO.as_uri())};
+      import {{ acceptSealKey, createRoomSealStore, isSealKeyFrame, sealFrame, sealKeyFrame }}
+        from {json.dumps(SEAL.as_uri())};
+      const memory = () => {{
+        const items = new Map();
+        return {{
+          getItem: (k) => (items.has(k) ? items.get(k) : null),
+          setItem: (k, v) => items.set(k, String(v)),
+          removeItem: (k) => items.delete(k),
+        }};
+      }};
+      const dm = {{ participants: ["me", "peer"] }};
+      const sealStore = createRoomSealStore({{ storage: memory(), acct: "me", wrappingKey: null }});
+      const peerSeal = await createRoomSealStore({{ storage: memory(), acct: "peer", wrappingKey: null }})
+        .resolve("direct:alpha", "direct-alpha", "", dm);
       class FakeWebSocket {{
         static OPEN = 1;
         static instances = [];
@@ -81,6 +96,7 @@ def _transport_run(steps, direct=True):
           webSocketUrl: "/api/chat/direct-messages/alpha/ws",
         }}),
         allowsControllerAccess: () => true,
+        resolveSeal: (room, name) => sealStore.resolve(room.scope, name, "", dm),
         isDirectRoom: () => {json.dumps(direct)},
         onDelivered: (ids, room) => delivered.push([ids, room.scope]),
         onRead: (room) => reads.push(room.scope),
@@ -103,6 +119,14 @@ def _transport_run(steps, direct=True):
       socket.emit("message", {{ data: JSON.stringify({{
         kind: "forkmesh-history-end", v: 1 }}) }});
       await settle();
+      const myBundle = (await Promise.all(socket.sent.map((raw) =>
+        decryptObject(JSON.parse(raw), key)))).find(isSealKeyFrame);
+      await acceptSealKey(myBundle, peerSeal);
+      socket.emit("message", {{ data: JSON.stringify(
+        await encryptObject(await sealKeyFrame(peerSeal), key)) }});
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const fromPeer = async (plain) =>
+        encryptObject(await sealFrame(plain, peerSeal, "direct-alpha"), key);
       {steps}
       process.stdout.write(JSON.stringify({{ delivered, reads }}));
     """)
@@ -113,8 +137,8 @@ def test_delivered_refs_resolve_to_sent_and_replayed_message_ids():
       await transport.send({ type: "chat", id: "mine", text: "hi" },
         { persist: true });
       const sentRef = refOf(socket.sent[socket.sent.length - 1]);
-      const other = await encryptObject(
-        { type: "chat", id: "other-device", text: "yo" }, key);
+      const other = await fromPeer(
+        { type: "chat", id: "other-device", text: "yo" });
       other.persist = true;
       other.ref = "a".repeat(40);
       socket.emit("message", { data: JSON.stringify(other) });
@@ -322,7 +346,7 @@ def test_every_own_row_and_thread_reply_shows_the_receipt():
     assert "onRead: (room) => applyDirectRead(room.scope)," in CHAT_TEXT
     assert ".chat-receipt-check { stroke: var(--bg); }" in CHAT_CSS
     assert ".chat-receipt.is-read { color: var(--accent); }" in CHAT_CSS
-    assert "      true,\n    );" in _function_source("renderChatEntry")
+    assert "      viewOnce,\n      true,\n" in _function_source("renderChatEntry")
     assert "relayed: true," in _function_source("renderThreadEntry")
     send = _function_source("send")
     assert ('if (sent && envelope.persist && scope === "public-world-general")'
@@ -337,8 +361,8 @@ def test_delete_for_everyone_withdraws_the_server_copy():
       await transport.send({ type: "chat", id: "mine", text: "hi" },
         { persist: true });
       const sentRef = refOf(socket.sent[socket.sent.length - 1]);
-      const replayed = await encryptObject(
-        { type: "chat", id: "older", text: "yo" }, key);
+      const replayed = await fromPeer(
+        { type: "chat", id: "older", text: "yo" });
       replayed.persist = true;
       replayed.ref = "b".repeat(40);
       socket.emit("message", { data: JSON.stringify(replayed) });

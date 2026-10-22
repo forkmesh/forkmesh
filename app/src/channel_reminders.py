@@ -15,7 +15,6 @@ REMINDER_LOOKBACK_MS = 24 * 60 * 60 * 1000
 REMINDER_MAX_CHANNELS = 4
 REMINDER_MAX_RECIPIENTS = 4
 REMINDER_MAX_COUNTED = 200
-REMINDER_MAX_LISTED = 10
 MARK_READ_MAX_ACCOUNTS = 100
 CHANNEL_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 ACCOUNT_BI_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -161,71 +160,42 @@ async def _channel_unread(env, channel_id, audience, now):
     return unread_counts(times, audience, reads, now)
 
 
-def reminder_email(name, channels):
-    channels = list(channels)[:REMINDER_MAX_LISTED]
-    total = sum(count for _channel, count in channels)
+REMINDER_SUBJECT = "You have unread messages on ForkMesh"
+
+
+def reminder_email(name, counts):
+    total = sum(int(count) for count in counts)
     greeting = name or "there"
     chat_url = FORKMESH_SITE_URL + "chat"
-    if len(channels) == 1:
-        subject = "ForkMesh: %s in #%s" % (
-            _plural(total, "unread message"), channels[0][0])
-    else:
-        subject = "ForkMesh: %s in %d channels" % (
-            _plural(total, "unread message"), len(channels))
-    lines = ["#%s: %s" % (channel, _plural(count, "unread message"))
-             for channel, count in channels]
+    summary = "You have %s in private channels on ForkMesh." % _plural(
+        total, "unread message")
     text = (
-        "Hi " + greeting + ",\n\n"
-        "People posted in channels you're in while you were away:\n\n"
-        + "\n".join("- " + line for line in lines) + "\n\n"
-        "Messages are end-to-end encrypted, so their contents are not sent "
-        "over email. Open ForkMesh chat to read and reply: " + chat_url
-        + "\n\n"
+        "Hi " + greeting + ",\n\n" + summary + "\n\n"
+        "Messages are end-to-end encrypted, so neither their contents nor "
+        "the channels they were sent in are named over email. Open ForkMesh "
+        "chat to read and reply: " + chat_url + "\n\n"
         "This is a one-time reminder: you won't get another one for these "
-        "channels until you've opened them.\n"
+        "messages until you've opened chat.\n"
         "To stop these emails, turn off \"Unread channel messages\" in your "
         "notification settings."
     )
-    rows = "".join(
-        "<tr><td style=\"padding:10px 14px;" + (
-            "border-top:1px solid #d0d7de;" if index else "")
-        + "font-size:15px;font-weight:700\"><a href=\""
-        + _html_escape(chat_url) + "\" style=\"color:#24292f;"
-        "text-decoration:none\">#" + _html_escape(channel) + "</a></td>"
-        "<td align=\"right\" style=\"padding:10px 14px;" + (
-            "border-top:1px solid #d0d7de;" if index else "")
-        + "white-space:nowrap\"><span style=\"display:inline-block;"
-        "border-radius:999px;background:#ddf4ff;color:#0969da;"
-        "padding:2px 9px;font-size:12px;font-weight:700\">"
-        + _html_escape(_plural(count, "unread message")) + "</span></td></tr>"
-        for index, (channel, count) in enumerate(channels)
-    )
-    items = (
-        "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" "
-        "cellspacing=\"0\" style=\"border:1px solid #d0d7de;"
-        "border-radius:8px;border-collapse:separate;background:#ffffff;"
-        "margin:0 0 14px\">" + rows + "</table>"
-    )
     html = _forkmesh_email_card_html(
-        _html_escape(_plural(total, "unread message")),
+        _html_escape(REMINDER_SUBJECT),
         "Hi <strong class=\"fm-strong\" style=\"color:#f5f5f5\">"
-        + _html_escape(greeting)
-        + "</strong>, people posted in channels you're in while you were "
-        "away.",
-        items
-        + "<p class=\"fm-text\" style=\"margin:8px 0 0;color:#d4d4d8;"
-        "font-size:14px\">Messages are end-to-end encrypted, so their "
-        "contents are not sent over email. Open ForkMesh chat to read and "
-        "reply.</p>",
+        + _html_escape(greeting) + "</strong>. " + _html_escape(summary),
+        "<p class=\"fm-text\" style=\"margin:8px 0 0;color:#d4d4d8;"
+        "font-size:14px\">Messages are end-to-end encrypted, so neither "
+        "their contents nor the channels they were sent in are named over "
+        "email. Open ForkMesh chat to read and reply.</p>",
         "<p class=\"fm-muted\" style=\"margin:22px 0 0;color:#8a8a93;"
         "font-size:12px\">This is a one-time reminder: you won't get another "
-        "one for these channels until you've opened them. To stop these "
+        "one for these messages until you've opened chat. To stop these "
         "emails, turn off \"Unread channel messages\" in your notification "
         "settings.</p>",
         action_label="Open chat",
         action_url=chat_url,
     )
-    return subject, text, html
+    return REMINDER_SUBJECT, text, html
 
 
 async def _remind(env, account_bi, channels, now):
@@ -240,7 +210,8 @@ async def _remind(env, account_bi, channels, now):
     if not notification_email_enabled(email_rec, CHANNEL_UNREAD_KIND):
         return False
     name = clean_string(rec.get("name", ""), MAX_NODE_NAME).lower()
-    subject, text, html = reminder_email(name, channels)
+    subject, text, html = reminder_email(
+        name, [count for _channel, count in channels])
     ok = await _send_email(
         env, email, subject, text, html, email_kind=CHANNEL_UNREAD_KIND)
     _stamp_account_email(email_rec, CHANNEL_UNREAD_KIND, ok, now)
@@ -254,13 +225,11 @@ async def send_reminders(env):
         return 0
     await ensure_schema(env)
     now = int(Date.now())
-    names = {}
     pending = {}
     for channel_id in await _candidate_channels(env, now):
-        name, audience = await _channel_audience(env, channel_id)
+        _name, audience = await _channel_audience(env, channel_id)
         if not audience:
             continue
-        names[channel_id] = name
         counts = await _channel_unread(env, channel_id, audience, now)
         for account_bi, count in counts.items():
             pending.setdefault(account_bi, []).append((channel_id, count))
@@ -268,11 +237,7 @@ async def send_reminders(env):
     for account_bi in sorted(pending)[:REMINDER_MAX_RECIPIENTS]:
         channels = pending[account_bi]
         try:
-            if await _remind(
-                    env, account_bi,
-                    [(names[channel_id], count)
-                     for channel_id, count in channels],
-                    now):
+            if await _remind(env, account_bi, channels, now):
                 sent += 1
             await _mark_reminded(
                 env, account_bi,

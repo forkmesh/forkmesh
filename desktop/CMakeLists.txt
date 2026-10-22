@@ -860,6 +860,10 @@ set(FORKMESH_APP_SOURCES
     src/UserStatus.cpp
     src/ServerNode.h
     src/ServerNode.cpp
+    src/ChatNodeOwners.h
+    src/ChatNodeOwners.cpp
+    src/ChatAccountBlocks.h
+    src/ChatAccountBlocks.cpp
     src/OfficeChannelMirror.h
     src/OfficeChannelMirror.cpp
     src/BleMeshLink.h
@@ -1287,7 +1291,9 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/AgentRunner.h
     src/AgentRuntimeSession.h
     src/BackoffNetworkAccessManager.h
+    src/ChatAccountBlocks.h
     src/ChatBackend.h
+    src/ChatNodeOwners.h
     src/ClaudeIdeBridge.h
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
@@ -1393,7 +1399,9 @@ set_source_files_properties(
     src/AgentRunner.h
     src/AgentRuntimeSession.h
     src/BackoffNetworkAccessManager.h
+    src/ChatAccountBlocks.h
     src/ChatBackend.h
+    src/ChatNodeOwners.h
     src/ClaudeIdeBridge.h
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
@@ -1896,7 +1904,8 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-chat-v3-tests PRIVATE
         Qt6::Core OpenSSL::Crypto)
     target_compile_definitions(forkmesh-chat-v3-tests PRIVATE
-        FORKMESH_CHAT_V3_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../conformance/chat/v3/vectors.json")
+        FORKMESH_CHAT_V3_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../conformance/chat/v3/vectors.json"
+        FORKMESH_CHAT_NODE_BINDING_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../conformance/chat/v3/node-binding.json")
     if(APPLE)
         set_target_properties(forkmesh-chat-v3-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
@@ -1942,6 +1951,10 @@ if(FORKMESH_BUILD_TESTS)
         src/UserStatus.cpp
         src/ServerNode.h
         src/ServerNode.cpp
+        src/ChatNodeOwners.h
+        src/ChatNodeOwners.cpp
+        src/ChatAccountBlocks.h
+        src/ChatAccountBlocks.cpp
         src/OfficeChannelMirror.h
         src/OfficeChannelMirror.cpp
         src/BleMeshLink.h
