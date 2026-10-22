@@ -20,6 +20,13 @@ THEME_RGB_TOKENS = RGB_TOKENS + (
     "cta", "cta-foreground", "success", "attention")
 THEME_TOKENS = THEME_RGB_TOKENS + HEX_TOKENS
 DEFAULT_THEME = "default"
+COLOR_MODES = ("dark", "light", "system")
+DEFAULT_COLOR_MODE = "dark"
+RESOLVED_ATTRIBUTE = "data-dashboard-theme-resolved"
+BASE_THEME_PATH = Path(__file__).resolve().parents[1] / "public" / "dashboard" \
+    / "theme.json"
+BASE_LIGHT_HEX = {"link": "#0969da", "link-hover": "#0550ae",
+                  "tab-underline": "#fd8c73", "open": "#1a7f37"}
 THEMES_DIR = Path(__file__).resolve().parents[1] / "public" / "instance-themes"
 MAX_STYLESHEET_BYTES = 64 * 1024
 ALIASES = (
@@ -119,11 +126,31 @@ def _load_themes(directory=None):
                         and _HEX_RE.fullmatch(colour.lower())][:8],
             "colors": _theme_colours(entry.get("colors")),
             "stylesheet": _theme_stylesheet(entry.get("stylesheet")),
+            "mode": entry.get("colorMode")
+            if entry.get("colorMode") in COLOR_MODES else DEFAULT_COLOR_MODE,
         }
     return themes
 
 
+def _load_base_light(path=None):
+    try:
+        data = json.loads((path or BASE_THEME_PATH).read_text(
+            encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    light = {}
+    colours = (data or {}).get("colors") if isinstance(data, dict) else None
+    for name, values in (colours or {}).items():
+        parts = str((values or {}).get("light") or "").split()
+        if name in THEME_RGB_TOKENS and len(parts) == 3 and all(
+                part.isdigit() and int(part) < 256 for part in parts):
+            light[name] = "#%02x%02x%02x" % tuple(int(part) for part in parts)
+    light.update(BASE_LIGHT_HEX)
+    return light
+
+
 THEMES = _load_themes()
+BASE_LIGHT = _load_base_light()
 
 
 def theme_ready(name):
@@ -133,8 +160,19 @@ def theme_ready(name):
 
 def catalogue():
     return [{key: entry[key] for key in
-             ("id", "name", "description", "status", "palette")}
+             ("id", "name", "description", "status", "palette", "mode")}
             for entry in THEMES.values()]
+
+
+def preset_mode(name):
+    entry = THEMES.get(name or "")
+    return entry["mode"] if entry else DEFAULT_COLOR_MODE
+
+
+def color_mode(theme):
+    mode = (theme or {}).get("mode")
+    return mode if mode in COLOR_MODES else preset_mode(
+        (theme or {}).get("preset"))
 
 
 def clean(value):
@@ -149,7 +187,7 @@ def clean(value):
         value = PRESETS[name]
     if not isinstance(value, dict):
         raise ThemeError("the theme is not an object")
-    unknown = sorted(set(value) - set(MODES) - {"preset"})
+    unknown = sorted(set(value) - set(MODES) - {"preset", "mode"})
     if unknown:
         raise ThemeError("unknown theme mode: " + str(unknown[0])[:40])
     theme = {}
@@ -161,6 +199,12 @@ def clean(value):
             theme["preset"] = name
         else:
             raise ThemeError("unknown theme preset")
+    if value.get("mode") not in (None, ""):
+        wanted = str(value.get("mode")).strip().lower()
+        if wanted not in COLOR_MODES:
+            raise ThemeError("the colour mode must be dark, light or system")
+        if wanted != preset_mode(theme.get("preset")):
+            theme["mode"] = wanted
     for mode in MODES:
         tokens = value.get(mode)
         if tokens is None:
@@ -204,10 +248,27 @@ def _rgb(colour):
 def css(theme):
     preset = THEMES.get(theme.get("preset") or "")
     if not preset:
-        return _token_css(theme, RGB_TOKENS)
-    blocks = [_token_css(preset["colors"], THEME_RGB_TOKENS),
-              preset["stylesheet"], _token_css(theme, RGB_TOKENS)]
+        blocks = [_token_css(theme, RGB_TOKENS)]
+    else:
+        blocks = [_token_css(preset["colors"], THEME_RGB_TOKENS),
+                  preset["stylesheet"], _token_css(theme, RGB_TOKENS)]
+    blocks.append(mode_css(theme))
     return "".join(block.rstrip("\n") + "\n" for block in blocks if block)
+
+
+def mode_css(theme):
+    mode = color_mode(theme)
+    if mode == DEFAULT_COLOR_MODE:
+        return ""
+    preset = THEMES.get(theme.get("preset") or "") or {"colors": {}}
+    light = dict(BASE_LIGHT)
+    light.update(preset["colors"].get("light") or {})
+    light.update(theme.get("light") or {})
+    lines = _token_lines(light, THEME_RGB_TOKENS) + ["color-scheme:light"]
+    block = "html:not([%s]){%s}" % (RESOLVED_ATTRIBUTE, ";".join(lines))
+    if mode == "system":
+        block = "@media (prefers-color-scheme: light){%s}" % block
+    return ":root{--instance-color-mode:%s}\n%s\n" % (mode, block)
 
 
 def preview_css(name):
@@ -219,21 +280,24 @@ def preview_css(name):
     return css({"preset": name})
 
 
+def _token_lines(tokens, rgb_tokens):
+    lines = []
+    for name in rgb_tokens:
+        if name in tokens:
+            lines.append("--dashboard-%s-rgb:%s" % (name, _rgb(tokens[name])))
+    for name in HEX_TOKENS:
+        if name in tokens:
+            lines.append("--dashboard-%s:%s" % (name, tokens[name]))
+    for alias, name in ALIASES:
+        if name in tokens:
+            lines.append("--%s:%s" % (alias, tokens[name]))
+    return lines
+
+
 def _token_css(theme, rgb_tokens):
     blocks = []
     for mode in MODES:
-        tokens = theme.get(mode) or {}
-        lines = []
-        for name in rgb_tokens:
-            if name in tokens:
-                lines.append("--dashboard-%s-rgb:%s" % (
-                    name, _rgb(tokens[name])))
-        for name in HEX_TOKENS:
-            if name in tokens:
-                lines.append("--dashboard-%s:%s" % (name, tokens[name]))
-        for alias, name in ALIASES:
-            if name in tokens:
-                lines.append("--%s:%s" % (alias, tokens[name]))
+        lines = _token_lines(theme.get(mode) or {}, rgb_tokens)
         if lines:
             blocks.append(SELECTORS[mode] + "{" + ";".join(lines) + "}")
     return "\n".join(blocks) + ("\n" if blocks else "")

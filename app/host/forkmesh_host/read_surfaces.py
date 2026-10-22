@@ -61,10 +61,12 @@ LABEL_MAX = 100
 
 STYLE = (
     "<style>:root{color-scheme:light dark;--f:#1f2328;--b:#fff;--m:#59636e;--l:#0969da;"
-    "--r:#d1d9e0;--c:#f6f8fa;--a:#9a6700;--g:#1a7f37;--d:#cf222e;--h:#fff8c5}"
+    "--r:#d0d7de;--c:#f6f8fa;--a:#9a6700;--g:#1a7f37;--d:#d1242f;--h:#fff8c5;--p:#1f883d}"
     "@media(prefers-color-scheme:dark){:root{--f:#e6edf3;--b:#0d1117;--m:#8b949e;--l:#4493f8;"
-    "--r:#30363d;--c:#161b22;--a:#d29922;--g:#3fb950;--d:#f85149;--h:#272115}}body{max-width:48em;margin:0 auto;"
-    "padding:.5em 1em 2em;font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;"
+    "--r:#30363d;--c:#161b22;--a:#d29922;--g:#3fb950;--d:#f85149;--h:#272115;--p:#238636}}"
+    "body{max-width:48em;margin:0 auto;padding:.5em 1em 2em;font:16px/1.55 -apple-system,"
+    "BlinkMacSystemFont,\"Segoe UI\",\"Noto Sans\",Helvetica,Arial,sans-serif,"
+    "\"Apple Color Emoji\",\"Segoe UI Emoji\";"
     "color:var(--f);background:var(--b);overflow-wrap:anywhere}a{color:var(--l)}"
     "h1{font-size:1.4em;line-height:1.3}h2{font-size:1.15em}.m,article>p:first-child,"
     "nav{color:var(--m);font-size:.875em}ul.t{list-style:none;padding:0}ul.t li{padding:.4em 0;"
@@ -744,7 +746,7 @@ HOME_STYLE = (
     "margin-inline-end:.4em}section{margin:1em 0}.chips a{display:inline-block;"
     "margin:.15em .2em;padding:0 .5em;border:1px solid var(--r);border-radius:1em;"
     "text-decoration:none;font-size:.85em}.big{padding:.8em 1em}.big p{margin:.3em 0}"
-    ".go{display:inline-block;padding:.3em .9em;border-radius:6px;background:var(--l);"
+    ".go{display:inline-block;padding:.3em .9em;border-radius:6px;background:var(--p);"
     "color:#fff;font-weight:600;text-decoration:none}</style>")
 
 

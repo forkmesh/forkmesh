@@ -563,25 +563,56 @@
     return theme === "light" ? "light" : "dark";
   }
 
-  function readDashboardTheme() {
+  function dashboardThemeChoice() {
     try {
       const cookieTheme = document.cookie
         .split(";")
         .map((part) => part.trim())
         .find((part) => part.startsWith("forkmesh_theme="))
         ?.slice("forkmesh_theme=".length);
-      return normalizeDashboardTheme(
-        localStorage.getItem(DASHBOARD_THEME_KEY) ||
+      const choice = localStorage.getItem(DASHBOARD_THEME_KEY) ||
         localStorage.getItem("forkmesh.theme") ||
-        cookieTheme
-      );
+        cookieTheme;
+      return ["light", "dark", "system"].includes(choice) ? choice : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function instanceColorMode() {
+    try {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue("--instance-color-mode").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function systemDashboardTheme() {
+    try {
+      return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     } catch (_) {
       return "dark";
     }
   }
 
+  function readDashboardTheme() {
+    const choice = dashboardThemeChoice();
+    if (choice === "light" || choice === "dark") return choice;
+    const mode = choice || instanceColorMode();
+    if (mode === "system") return systemDashboardTheme();
+    return normalizeDashboardTheme(mode);
+  }
+
+  function dashboardAppearanceChoice() {
+    const choice = dashboardThemeChoice();
+    if (choice) return choice;
+    return instanceColorMode() === "system" ? "system" : readDashboardTheme();
+  }
+
   function renderAppearanceTheme(theme = readDashboardTheme()) {
-    const current = normalizeDashboardTheme(theme);
+    const effective = normalizeDashboardTheme(theme);
+    const current = dashboardAppearanceChoice();
     $$("[data-appearance-theme]").forEach((button) => {
       const active = button.dataset.appearanceTheme === current;
       button.setAttribute("aria-checked", active ? "true" : "false");
@@ -592,9 +623,12 @@
     });
     const status = $("[data-appearance-theme-status]");
     if (status) {
-      status.textContent = current === "light"
+      const active = effective === "light"
         ? "Light mode is active for the dashboard."
         : "Dark mode is active for the dashboard.";
+      status.textContent = current === "system"
+        ? `Following your system setting. ${active}`
+        : active;
     }
   }
 
@@ -611,7 +645,7 @@
   }
 
   function saveDashboardTheme(theme) {
-    const nextTheme = normalizeDashboardTheme(theme);
+    const nextTheme = theme === "system" ? "system" : normalizeDashboardTheme(theme);
     try {
       localStorage.setItem(DASHBOARD_THEME_KEY, nextTheme);
       localStorage.setItem("forkmesh.theme", nextTheme);
@@ -621,7 +655,17 @@
       document.cookie = `forkmesh_theme=${nextTheme}; Path=/; Max-Age=31536000; SameSite=Lax${sharedDomain}`
         + (location.protocol === "https:" ? "; Secure" : "");
     } catch (_) {}
-    applyDashboardTheme(nextTheme);
+    applyDashboardTheme(readDashboardTheme());
+  }
+
+  function followSystemDashboardTheme() {
+    try {
+      matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+        const choice = dashboardThemeChoice();
+        if (choice === "light" || choice === "dark") return;
+        applyDashboardTheme(readDashboardTheme());
+      });
+    } catch (_) {}
   }
 
   function renderGenieSetting() {
@@ -56320,6 +56364,7 @@
     window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
+    followSystemDashboardTheme();
     applyPlatformName();
     void instanceInfo();
     watchGenieSetting();

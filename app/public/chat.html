@@ -31,7 +31,8 @@
         const keys = ["forkmesh.dashboard.theme", "forkmesh.theme"];
         let theme = "dark";
         try {
-          theme = keys.map((key) => localStorage.getItem(key)).find((value) => value === "light" || value === "dark") || theme;
+          const stored = keys.map((key) => localStorage.getItem(key)).find((value) => ["light", "dark", "system"].includes(value));
+          theme = stored === "system" ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : stored || theme;
         } catch (_) {}
         document.documentElement.classList.toggle("dark", theme !== "light");
         document.documentElement.style.colorScheme = theme;
