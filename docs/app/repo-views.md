@@ -23,6 +23,61 @@ purged with the repository and rekeyed by the rekey tool
 - `GET /api/repo/<owner>/<repo>/view` → `{views, viewers, lastViewedAt}`
 - `POST /api/repo/<owner>/<repo>/view` → totals plus `counted`
 - `POST /api/repo-views` `{"repos": [...]}` (up to 200) → `{views: {...}}`
+- `POST /api/repo-fork-counts` `{"forks": [...]}` (up to 24) → `{counts: {...}}`
+  (see [Forks in Top repositories](#forks-in-top-repositories))
+
+## Forks in Top repositories
+
+Both "Top repositories" lists, the Home rail (`homeRepositoryGroup`) and the
+sidebar (`sidebarRepositoryGroup`), nest forks under their parent with
+`nestRepositoryForks` in `05-repo-list-explorer.js`. A row is a fork when
+`repoForkParent` reads a `forkedFrom` from its catalog row; its parent is the
+listed row that `repoMatchesKey` matches, or the listed row that
+`findRepository` resolves the parent key to. A fork of a fork goes under the
+top listed ancestor, and a fork whose parent is not listed stays an ordinary
+top-level row. Forks do not use up the list's top-level slots.
+
+The parent row stays as it was. Its forks sit below it, indented behind a thin
+left border as the tree guide line. Each one is a compact single line: the
+owner name (or `owner/name` when the fork was renamed, since the name is no
+longer implied), the ahead/behind badge, and on Home its view count. Forks are
+ordered by views, most first. Past three forks a "+N more forks" button expands
+the rest inline. It sits outside the row links (rows are `<a>`, so a button
+inside one would nest an interactive element), and the expanded set lives in
+`state.repositoryForksExpanded` for the session.
+
+### Ahead/behind badge
+
+After a list renders, `hydrateRepositoryForkCounts` collects the
+`data-repo-fork-counts` keys of public forks it has not asked about yet and
+sends them in one `POST /api/repo-fork-counts {"forks": [...]}` (up to 24 per
+request). The answer is cached in `state.repositoryForkCounts` and reused by
+both lists and by later renders. The badge reads `↑3 ↓12` with the title "3
+commits ahead, 12 behind <parent>". It stays hidden when the count is unknown
+(a private fork or parent, no answer, or a fork whose gateway does not serve
+the parent) and when it is 0/0.
+
+`app/src/fork_counts.py` answers that request. For each fork it requires a
+public catalog row for the fork, reads the parent from that row's
+`forkedFrom` (never from the request), and requires the parent to be public
+too. Organization addresses resolve through `_org_repo_node`. It then reads
+the parent's and the fork's default-branch tips from their `branches`
+operations (edge-cacheable reads, each parent read once per request) and asks
+the fork's gateway for
+`compare?base=<parent tip>&head=<fork tip>&cherry=<parent>&counts=1`.
+Results are cached per worker by (fork, parent, both tips), so a moved branch
+gives a fresh count. The response is `{ok, counts: {"<fork>": {ahead, behind,
+parent, branch}}}`; unknown forks are left out.
+
+`counts=1` is a mode of the gateway's upstream comparison (`cherry`): with
+the parent's objects as an alternate it runs
+`git rev-list --left-right --count <base>...<head>` and returns only
+`{ok, baseOid, headOid, ahead, behind}`. It takes commit ids for base and
+head, and it refuses `limit`, any value other than `1`, and an upstream the
+gateway does not serve. The Worker forwards `counts` for `compare` in
+`_https_mirror_request_query` and `edge_routing.masked_target_url`. The catalog
+already carries the default branch and its commit, but those are only as
+fresh as the last catalog publish, so the counts read live tips instead.
 
 ## Profile repository list and popular cards
 

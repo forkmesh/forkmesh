@@ -458,7 +458,7 @@ OPERATION_QUERY_FIELDS = {
     "raw": frozenset({"path", "ref"}),
     "history": frozenset({"ref", "all", "since", "until", "path"}),
     "commit": frozenset({"path"}),
-    "compare": frozenset({"base", "head", "cherry", "limit"}),
+    "compare": frozenset({"base", "head", "cherry", "limit", "counts"}),
     "merge-preview": frozenset({"base", "head", "rules", "pull", "orgRules"}),
     "update-pull-branch": frozenset(),
     "branches": frozenset(),
@@ -6204,6 +6204,25 @@ class GitRepository:
                 max_output=128, allow_exit_one=True,
             ).strip():
                 raise GatewayError("upstream comparison commit is missing")
+        if "counts" in query:
+            if str(query.get("counts")) != "1" or values["limit"]:
+                raise GatewayError("upstream counts take only base and head")
+            sides = git(
+                ["rev-list", "--left-right", "--count",
+                 values["base"] + "..." + values["head"]],
+                max_output=64,
+            ).decode("ascii", "replace").split()
+            try:
+                behind, ahead = int(sides[0]), int(sides[1])
+            except (IndexError, ValueError) as exc:
+                raise GitError("repository commit count is invalid") from exc
+            return {
+                "ok": True,
+                "baseOid": values["base"],
+                "headOid": values["head"],
+                "ahead": ahead,
+                "behind": behind,
+            }
         since = values["limit"] or values["base"]
         count_raw = git(
             ["rev-list", "--count", f"--max-count={MAX_COMPARE_COMMITS + 1}",
@@ -12318,7 +12337,7 @@ class GatewayApplication:
     def _compare(
         self, repository: GitRepository, query: Mapping[str, str]
     ) -> dict[str, Any]:
-        if "cherry" not in query and "limit" not in query:
+        if not {"cherry", "limit", "counts"} & set(query):
             return repository.compare(query)
         owner, _, name = str(query.get("cherry") or "").partition("/")
         owner = owner.lower()

@@ -3839,6 +3839,11 @@ class Default:
         if REPO_VIEWS_RE.match(url.path):
             return await repo_views_lookup_handler(self.env, request)
 
+        if REPO_FORK_COUNTS_RE.match(url.path):
+            import fork_counts
+            fork_counts._bind_runtime(globals())
+            return await fork_counts.handler(self.env, request)
+
         star_match = REPO_STAR_RE.match(url.path)
         if star_match:
             owner = safe_segment(star_match.group(1))
