@@ -101,6 +101,15 @@ phone's 20 s call timeout) before it checks the blockers. A failed fetch
 still answers `not_repo_owner`, and the next phone request tries the fetch
 again.
 
+The phone sends the repository's public owner (`displayOwner`), not the
+owner of the catalog row it opened. The public catalog lists
+`forkmesh/forkmesh` only as copies on serving nodes such as
+`fmnext-n1/forkmesh`, and the phone shows those copies as one repository
+under `forkmesh`. Sending the row's `owner` asked the desktop for
+`fmnext-n1/forkmesh`, which `repoIndexFor` does not know, so every phone
+request was refused with `unknown_repo` (2026-10-22).
+`PullMergeAllRules.owner` picks the owner on both phones.
+
 The confirmation happens on the phone, as it does for `mergequeue.`. The
 desktop shows no second dialog, because the person is not at it. A desktop
 without the family answers `unknown_method`, and the phone asks for an update.
