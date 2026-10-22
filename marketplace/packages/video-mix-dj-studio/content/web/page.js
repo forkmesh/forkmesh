@@ -5,8 +5,8 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   const el = (name) => root.querySelector(`[data-vmdj="${name}"]`);
   const key = "forkmesh.videoMixDjStudio.v1";
   const decks = {
-    a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
-    b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
+    a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, repeat: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
+    b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, repeat: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
   };
   const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null }, modal: "", modalOpener: null, searchTarget: "a", searchResults: [], searchBusy: false, searchEndpoint: "", savedAt: 0, leaving: false, autoDj: false, autoDjSeed: "", autoDjAt: 0, autoDjChoices: [], autoDjBusy: false, autoDjPlayed: [], autoDjHeard: [], autoDjEnded: "", autoDjMix: null };
   const autoDjNoise = new Set(["official", "video", "audio", "music", "lyrics", "lyric", "visualizer", "visualiser", "hd", "hq", "4k", "mv", "remastered", "remaster", "explicit", "clean", "version", "full", "feat", "ft", "featuring", "topic"]);
@@ -36,6 +36,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
         decks[name].level = safeNumber(value.level, 100, 0, 100);
         decks[name].rate = safeNumber(value.rate, 1, 0.25, 2);
         decks[name].loop = value.loop === true;
+        decks[name].repeat = value.repeat === true;
         decks[name].start = safeNumber(value.position, decks[name].cue, 0, 864000);
         decks[name].resume = value.playing === true && Boolean(decks[name].id);
       }
@@ -46,7 +47,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     const saved = { crossfader: state.crossfader, autoDj: state.autoDj, sampler: { level: state.sampler.level }, samples: state.samples, decks: {} };
     for (const name of ["a", "b"]) {
       const deck = decks[name];
-      saved.decks[name] = { url: deck.url, cue: deck.cue, level: deck.level, rate: deck.rate, loop: deck.loop, position: deck.time, playing: deck.playing || deck.resume };
+      saved.decks[name] = { url: deck.url, cue: deck.cue, level: deck.level, rate: deck.rate, loop: deck.loop, repeat: deck.repeat, position: deck.time, playing: deck.playing || deck.resume };
     }
     state.savedAt = Date.now();
     try { localStorage.setItem(key, JSON.stringify(saved)); } catch (_) {}
@@ -323,7 +324,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     if (!state.autoDj || state.autoDjMix) return;
     const live = liveDeck() || state.autoDjEnded;
     const deck = live && decks[live];
-    if (!deck?.id) return;
+    if (!deck?.id || deck.repeat) return;
     if (state.autoDjSeed !== deck.id || (!state.autoDjBusy && !state.autoDjChoices.length && Date.now() - state.autoDjAt > 30000)) findAutoDj(live);
     const left = deck.duration ? (deck.duration - deck.time) / deck.rate : Infinity;
     if ((left <= 10 || state.autoDjEnded === live) && state.autoDjSeed === deck.id && state.autoDjChoices.length) startAutoDjMix(live);
@@ -393,7 +394,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   function destroyDeck(name) {
     const deck = decks[name];
     if (deck.player) deck.player.src = "about:blank";
-    Object.assign(deck, { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false });
+    Object.assign(deck, { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, repeat: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false });
   }
 
   function volumeMix() {
@@ -616,6 +617,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       el(`loop-${name}`).disabled = !deck.player;
       el(`capture-${name}`).disabled = !deck.player || !deck.duration;
       el(`loop-${name}`).setAttribute("aria-pressed", deck.loop ? "true" : "false");
+      el(`repeat-${name}`).setAttribute("aria-pressed", deck.repeat ? "true" : "false");
       el(`seek-${name}`).disabled = !deck.player || !deck.duration;
       el(`seek-${name}`).value = String(deck.duration ? Math.round(deck.time / deck.duration * 1000) : 0);
       el(`time-${name}`).textContent = formatTime(deck.time);
@@ -679,7 +681,12 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     if (data.event === "onStateChange") {
       const playerState = Number(data.info);
       deck.playing = playerState === 1;
-      if (playerState === 0 && state.autoDj) state.autoDjEnded = name;
+      if (playerState === 0 && deck.repeat) {
+        deck.time = 0;
+        command(deck, "seekTo", [0, true]);
+        command(deck, "playVideo");
+        status(`Deck ${name.toUpperCase()} repeats its song.`);
+      } else if (playerState === 0 && state.autoDj) state.autoDjEnded = name;
       if (playerState === 1 || playerState === 0 || (playerState === 2 && !state.leaving)) deck.resume = false;
       if (!state.leaving) persist();
     }
@@ -707,6 +714,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     el(`cue-${name}`).addEventListener("click", () => cue(name));
     el(`set-cue-${name}`).addEventListener("click", () => { decks[name].cue = decks[name].time; status(`Deck ${name.toUpperCase()} cue set at ${formatTime(decks[name].cue)}.`); persist(); render(); });
     el(`loop-${name}`).addEventListener("click", () => { decks[name].loop = !decks[name].loop; status(decks[name].loop ? `Deck ${name.toUpperCase()} loops eight seconds from its cue.` : `Deck ${name.toUpperCase()} loop is off.`); persist(); render(); });
+    el(`repeat-${name}`).addEventListener("click", () => { decks[name].repeat = !decks[name].repeat; status(decks[name].repeat ? `Deck ${name.toUpperCase()} repeats its song when it ends.` : `Deck ${name.toUpperCase()} repeat is off.`); persist(); render(); });
     el(`capture-${name}`).addEventListener("click", () => captureSection(name));
     el(`seek-${name}`).addEventListener("input", (event) => { const deck = decks[name]; if (!deck.duration) return; deck.time = deck.duration * Number(event.target.value) / 1000; render(); });
     el(`seek-${name}`).addEventListener("change", () => command(decks[name], "seekTo", [decks[name].time, true]));

@@ -92,6 +92,18 @@ final class DjPartyTests: XCTestCase {
         XCTAssertEqual(DjAutomix.step(a: early, b: ending, favoured: .b, queued: true), .wait)
     }
 
+    func testAutomixNeverMixesOutOfARepeatingDeck() {
+        let cued = DjAutomixDeck(loaded: true, duration: 200)
+        let empty = DjAutomixDeck(loaded: false)
+        let repeating = DjAutomixDeck(loaded: true, playing: true, position: 196, duration: 200, repeats: true)
+        XCTAssertEqual(DjAutomix.step(a: repeating, b: cued, favoured: .a, queued: true), .wait)
+        XCTAssertEqual(DjAutomix.step(a: repeating, b: empty, favoured: .a, queued: true), .wait)
+        let idle = DjAutomixDeck(loaded: true, duration: 200, repeats: true)
+        XCTAssertEqual(DjAutomix.step(a: idle, b: empty, favoured: .a, queued: false), .start(.a))
+        let ending = DjAutomixDeck(loaded: true, playing: true, position: 194, duration: 200)
+        XCTAssertEqual(DjAutomix.step(a: ending, b: idle, favoured: .a, queued: false), .mix(from: .a, to: .b, seconds: 6))
+    }
+
     func testAutomixReplaysPlayedSongsOnceTheQueueRunsOut() {
         let library = [
             DjPlayedSong(id: "aaaaaaaaaaa", title: "Newest", author: "", plays: 3, last: 500),
