@@ -86,7 +86,7 @@ class FakeRuntime:
         return f"{self.webhook_tokens:064x}"
 
     def webhook_url(self, token):
-        return "https://forkmesh.test/api/chat/webhooks/" + token
+        return "https://forkmesh.test/api/chat/webhooks?token=" + token
 
     def invite_url(self, token):
         return "https://forkmesh.test/chat#invite=" + token
@@ -927,8 +927,8 @@ async def test_public_channels_support_incoming_webhooks():
     )
     assert webhook["status"] == 201
     assert webhook["data"]["url"].startswith(
-        "https://forkmesh.test/api/chat/webhooks/")
-    token = webhook["data"]["url"].rsplit("/", 1)[-1]
+        "https://forkmesh.test/api/chat/webhooks?token=")
+    token = webhook["data"]["url"].rsplit("=", 1)[-1]
     dump = "\n".join(runtime.db.iterdump())
     assert token not in dump
 
@@ -942,8 +942,8 @@ async def test_public_channels_support_incoming_webhooks():
     assert "url" not in listed["data"]["webhooks"][0]
 
     delivery = await api.handle(
-        runtime.use("POST", "", {"text": "Build passed"}),
-        f"/api/chat/webhooks/{token}",
+        runtime.use("POST", "", {"text": "Build passed"}, query={"token": token}),
+        "/api/chat/webhooks",
     )
     assert delivery["status"] == 202
     assert runtime.webhook_deliveries[0][0:2] == (channel_id, 1)
@@ -968,13 +968,13 @@ async def test_a_public_webhook_pings_everyone_at_most_once_per_window():
     for name in ("Deploy bot", "Other bot"):
         webhook = await api.handle(
             runtime.use("POST", "alice", {"name": name}), collection)
-        tokens.append(webhook["data"]["url"].rsplit("/", 1)[-1])
+        tokens.append(webhook["data"]["url"].rsplit("=", 1)[-1])
 
     async def post(token, text):
         runtime.webhook_notifications.clear()
         delivery = await api.handle(
-            runtime.use("POST", "", {"text": text}),
-            f"/api/chat/webhooks/{token}")
+            runtime.use("POST", "", {"text": text}, query={"token": token}),
+            "/api/chat/webhooks")
         assert delivery["status"] == 202
         return sorted(
             item["recipient"] for item in runtime.webhook_notifications)
@@ -1024,20 +1024,30 @@ async def test_the_site_wide_channel_ceiling_still_applies():
 
 
 @run_async_test
-async def test_private_channels_reject_controller_webhooks():
+async def test_private_channels_take_webhooks_for_their_members_only():
     runtime = FakeRuntime()
     created = await create_channel(
-        runtime, "private-updates", visibility="private", actor="alice")
+        runtime, "private-updates", visibility="private", members=["bob"],
+        actor="alice")
     channel_id = created["data"]["channel"]["id"]
-    result = await api.handle(
-        runtime.use("POST", "alice", {"name": "Deploy bot"}),
+    webhook = await api.handle(
+        runtime.use("POST", "alice", {"name": "Mail log"}),
         f"/api/chat/channels/{channel_id}/webhooks",
     )
-    assert result["status"] == 409
-    assert result["data"] == {"error": "public_channel_required"}
-    assert runtime.db.execute(
-        "SELECT COUNT(*) AS n FROM chat_channel_webhooks"
-    ).fetchone()["n"] == 0
+    assert webhook["status"] == 201
+    token = webhook["data"]["url"].rsplit("=", 1)[-1]
+    delivery = await api.handle(
+        runtime.use("POST", "", {"text": "Sent to pat"}, query={"token": token}),
+        "/api/chat/webhooks",
+    )
+    assert delivery["status"] == 202
+    plain = runtime.webhook_deliveries[0][2]
+    assert plain["channel"] == "#private-updates"
+    assert plain["webhook"] is True and plain["serverVisible"] is True
+    recipients = {
+        item["recipient"] for item in runtime.webhook_notifications
+    }
+    assert recipients == {"alice", "bob"}
 
 
 @run_async_test
@@ -1061,10 +1071,10 @@ async def test_webhook_management_is_owner_or_admin_only_and_revocable():
         f"{collection}/{webhook_id}",
     )
     assert removed["data"] == {"ok": True, "removed": True}
-    token = made["data"]["url"].rsplit("/", 1)[-1]
+    token = made["data"]["url"].rsplit("=", 1)[-1]
     missing = await api.handle(
-        runtime.use("POST", "", {"message": "too late"}),
-        f"/api/chat/webhooks/{token}",
+        runtime.use("POST", "", {"message": "too late"}, query={"token": token}),
+        "/api/chat/webhooks",
     )
     assert missing["status"] == 404
 
@@ -1146,7 +1156,7 @@ async def test_closing_a_public_channel_rotates_its_room_key():
         runtime.use("POST", "alice", {"name": "CI"}),
         f"{path}/webhooks",
     )
-    token = made["data"]["url"].rsplit("/", 1)[-1]
+    token = made["data"]["url"].rsplit("=", 1)[-1]
 
     invalid = await api.handle(
         runtime.use("PATCH", "alice", {"visibility": "secret"}), path)
@@ -1168,8 +1178,8 @@ async def test_closing_a_public_channel_rotates_its_room_key():
         "SELECT COUNT(*) AS n FROM chat_channel_webhooks"
     ).fetchone()["n"] == 0
     retired = await api.handle(
-        runtime.use("POST", "", {"text": "too late"}),
-        f"/api/chat/webhooks/{token}",
+        runtime.use("POST", "", {"text": "too late"}, query={"token": token}),
+        "/api/chat/webhooks",
     )
     assert retired["status"] == 404
 
@@ -1244,10 +1254,10 @@ async def test_rotating_a_webhook_reveals_a_new_url_and_retires_the_old():
     made = await api.handle(
         runtime.use("POST", "alice", {"name": "CI"}), collection)
     webhook_id = made["data"]["webhook"]["id"]
-    old_token = made["data"]["url"].rsplit("/", 1)[-1]
+    old_token = made["data"]["url"].rsplit("=", 1)[-1]
     await api.handle(
-        runtime.use("POST", "", {"text": "first"}),
-        f"/api/chat/webhooks/{old_token}",
+        runtime.use("POST", "", {"text": "first"}, query={"token": old_token}),
+        "/api/chat/webhooks",
     )
 
     denied = await api.handle(
@@ -1265,18 +1275,18 @@ async def test_rotating_a_webhook_reveals_a_new_url_and_retires_the_old():
     assert rotated["data"]["webhook"]["id"] == webhook_id
     assert rotated["data"]["webhook"]["name"] == "CI"
     assert rotated["data"]["webhook"]["lastUsedAt"] == 0
-    new_token = rotated["data"]["url"].rsplit("/", 1)[-1]
+    new_token = rotated["data"]["url"].rsplit("=", 1)[-1]
     assert new_token != old_token
     assert runtime.audits[-1]["action"] == "chat.channel.webhook.rotate"
 
     retired = await api.handle(
-        runtime.use("POST", "", {"text": "stale"}),
-        f"/api/chat/webhooks/{old_token}",
+        runtime.use("POST", "", {"text": "stale"}, query={"token": old_token}),
+        "/api/chat/webhooks",
     )
     assert retired["status"] == 404
     accepted = await api.handle(
-        runtime.use("POST", "", {"text": "fresh"}),
-        f"/api/chat/webhooks/{new_token}",
+        runtime.use("POST", "", {"text": "fresh"}, query={"token": new_token}),
+        "/api/chat/webhooks",
     )
     assert accepted["status"] == 202
     # Listing still never exposes a token.
@@ -1379,8 +1389,10 @@ async def test_invite_link_lets_someone_join_a_private_channel():
     again = await api.handle(runtime.use("GET", "alice"), path)
     assert again["data"]["invite"]["url"] == url
 
-    invite_path = f"/api/chat/invites/{token}"
-    preview = await api.handle(runtime.use("GET", "bob"), invite_path)
+    invite_path = "/api/chat/invites/accept"
+    preview = await api.handle(
+        runtime.use("POST", "bob", {"token": token}),
+        "/api/chat/invites/preview")
     assert preview["status"] == 200
     assert preview["data"]["channel"]["name"] == "release-team"
     assert preview["data"]["invitedBy"] == "alice"
@@ -1390,7 +1402,8 @@ async def test_invite_link_lets_someone_join_a_private_channel():
         runtime.use("GET", "bob"), f"/api/chat/channels/{channel_id}/history")
     assert denied["status"] == 404
 
-    joined = await api.handle(runtime.use("POST", "bob", {}), invite_path)
+    joined = await api.handle(
+        runtime.use("POST", "bob", {"token": token}), invite_path)
     assert joined["status"] == 201
     assert joined["data"]["alreadyMember"] is False
     assert joined["data"]["channel"]["id"] == channel_id
@@ -1407,7 +1420,8 @@ async def test_invite_link_lets_someone_join_a_private_channel():
         f"/api/chat/channels/{channel_id}/room-access")
     assert access["status"] == 200
 
-    repeat = await api.handle(runtime.use("POST", "bob", {}), invite_path)
+    repeat = await api.handle(
+        runtime.use("POST", "bob", {"token": token}), invite_path)
     assert repeat["status"] == 200
     assert repeat["data"]["alreadyMember"] is True
 
@@ -1436,14 +1450,14 @@ async def test_invite_links_are_manager_only_and_can_be_reset_or_revoked():
         ["data"]["invite"]["url"])
     assert first != second
     stale = await api.handle(
-        runtime.use("POST", "admin", {}), f"/api/chat/invites/{first}")
+        runtime.use("POST", "admin", {"token": first}), "/api/chat/invites/accept")
     assert stale["status"] == 404
     assert stale["data"] == {"error": "invite_not_found"}
 
     revoked = await api.handle(runtime.use("DELETE", "alice", {}), path)
     assert revoked["data"]["removed"] is True
     gone = await api.handle(
-        runtime.use("POST", "admin", {}), f"/api/chat/invites/{second}")
+        runtime.use("POST", "admin", {"token": second}), "/api/chat/invites/accept")
     assert gone["status"] == 404
 
 
@@ -1466,7 +1480,7 @@ async def test_invite_needs_a_signed_in_account_and_a_private_room():
             f"/api/chat/channels/{channel_id}/invite"))
         ["data"]["invite"]["url"])
     anonymous = await api.handle(
-        runtime.use("POST", "", {}), f"/api/chat/invites/{token}")
+        runtime.use("POST", "", {"token": token}), "/api/chat/invites/accept")
     assert anonymous["status"] == 401
     assert runtime.db.execute(
         "SELECT COUNT(*) FROM chat_channel_members").fetchone()[0] == 0
@@ -1482,7 +1496,7 @@ async def test_removing_a_member_retires_the_invite_link():
         (await api.handle(runtime.use("POST", "alice", {}), path))
         ["data"]["invite"]["url"])
     await api.handle(
-        runtime.use("POST", "bob", {}), f"/api/chat/invites/{token}")
+        runtime.use("POST", "bob", {"token": token}), "/api/chat/invites/accept")
     removed = await api.handle(
         runtime.use("DELETE", "alice", {"username": "bob"}),
         f"/api/chat/channels/{channel_id}/members",
@@ -1490,7 +1504,7 @@ async def test_removing_a_member_retires_the_invite_link():
     assert removed["data"]["removed"] is True
     assert removed["data"]["inviteReset"] is True
     rejoin = await api.handle(
-        runtime.use("POST", "bob", {}), f"/api/chat/invites/{token}")
+        runtime.use("POST", "bob", {"token": token}), "/api/chat/invites/accept")
     assert rejoin["status"] == 404
     assert (await api.handle(runtime.use("GET", "alice"), path))[
         "data"] == {"invite": None}
@@ -1573,3 +1587,84 @@ async def test_a_new_member_is_welcomed_in_welcome_by_the_server():
         "\U0001F389 Welcome to ForkMesh, @newbie! Everyone, come say hi \U0001F44B")
     assert runtime.webhook_notifications == []
 
+
+
+@run_async_test
+async def test_a_hidden_private_channel_name_is_never_revealed():
+    runtime = FakeRuntime()
+    hidden = await create_channel(runtime, "acquisition", actor="alice")
+    assert hidden["status"] == 201
+
+    probe = await create_channel(runtime, "acquisition", actor="bob")
+    assert probe["status"] == 201
+    unused = await create_channel(runtime, "unused-name", actor="bob")
+    assert unused["status"] == 201
+
+    renamed = await api.handle(
+        runtime.use("PATCH", "bob", {"name": "acquisition-two"}),
+        "/api/chat/channels/" + unused["data"]["channel"]["id"])
+    hidden_two = await create_channel(runtime, "merger", actor="alice")
+    assert hidden_two["status"] == 201
+    rename_probe = await api.handle(
+        runtime.use("PATCH", "bob", {"name": "merger"}),
+        "/api/chat/channels/" + unused["data"]["channel"]["id"])
+    assert renamed["status"] == rename_probe["status"] == 200
+
+    own_duplicate = await create_channel(runtime, "acquisition", actor="alice")
+    assert own_duplicate["status"] == 409
+    assert own_duplicate["data"] == {"error": "channel_name_taken"}
+
+    public = await create_channel(
+        runtime, "lobby-chat", visibility="public", actor="alice")
+    assert public["status"] == 201
+    public_duplicate = await create_channel(
+        runtime, "lobby-chat", visibility="public", actor="bob")
+    assert public_duplicate["status"] == 409
+    private_beside_public = await create_channel(
+        runtime, "lobby-chat", actor="bob")
+    assert private_beside_public["status"] == 201
+
+    reopened = await api.handle(
+        runtime.use("PATCH", "bob", {"visibility": "public"}),
+        "/api/chat/channels/" + private_beside_public["data"]["channel"]["id"])
+    assert reopened["status"] == 409
+    assert reopened["data"] == {"error": "channel_name_taken"}
+
+
+@run_async_test
+async def test_tokens_in_the_path_are_retired():
+    runtime = FakeRuntime()
+    for path in ("/api/chat/webhooks/" + "a" * 64,
+                 "/api/chat/invites/" + "b" * 64):
+        for method in ("GET", "POST"):
+            retired = await api.handle(runtime.use(method, "alice", {}), path)
+            assert retired["status"] == 410
+            assert retired["data"] == {"error": "token_path_retired"}
+    bare = await api.handle(
+        runtime.use("POST", "", {"text": "hi"}), "/api/chat/webhooks")
+    assert bare["status"] == 404
+    preview = await api.handle(
+        runtime.use("GET", "alice"), "/api/chat/invites/preview")
+    assert preview["status"] == 405
+    malformed = await api.handle(
+        runtime.use("POST", "alice", {"token": "short"}),
+        "/api/chat/invites/accept")
+    assert malformed["data"] == {"error": "invite_not_found"}
+
+
+@run_async_test
+async def test_a_webhook_token_may_ride_in_a_header():
+    runtime = FakeRuntime()
+    created = await create_channel(
+        runtime, "public-updates", visibility="public", actor="alice")
+    channel_id = created["data"]["channel"]["id"]
+    made = await api.handle(
+        runtime.use("POST", "alice", {"name": "CI"}),
+        f"/api/chat/channels/{channel_id}/webhooks")
+    token = made["data"]["url"].rsplit("=", 1)[-1]
+    runtime.header = lambda name: (
+        token.upper() if name == "x-forkmesh-webhook-token" else "")
+    delivered = await api.handle(
+        runtime.use("POST", "", {"text": "deployed"}), "/api/chat/webhooks")
+    assert delivered["status"] == 202
+    assert runtime.webhook_deliveries[-1][2]["text"] == "deployed"

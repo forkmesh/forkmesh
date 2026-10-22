@@ -1699,18 +1699,32 @@ int main(int argc, char *argv[])
         const QString sealRoom = QStringLiteral("world-general");
         auto senderDevice = forkmesh::chatv3::ChatDevice::inMemory(QByteArray(32, '\x41'));
         auto receiverDevice = forkmesh::chatv3::ChatDevice::inMemory(QByteArray(32, '\x42'));
+        const QByteArray adaNodeSeed(32, '\x51');
+        const QByteArray bobNodeSeed(32, '\x52');
+        const QString adaNode =
+            forkmesh::chatv3::b64u(forkmesh::chatv3::ed25519Public(adaNodeSeed));
+        const QString bobNode =
+            forkmesh::chatv3::b64u(forkmesh::chatv3::ed25519Public(bobNodeSeed));
         RoomSeal sender(sealRoom, sealRoom, RoomSeal::Policy::Open, QStringLiteral("ada"),
-                        QStringLiteral("ada-node"), senderDevice);
+                        adaNode, senderDevice);
         RoomSeal receiver(sealRoom, sealRoom, RoomSeal::Policy::Open, QStringLiteral("bob"),
-                          QStringLiteral("bob-node"), receiverDevice);
+                          bobNode, receiverDevice);
         check(sender.isValid() && receiver.isValid() &&
                   RoomSeal::isKeyFrame(sender.keyFrame()),
               "v3 room seals sign a bundle with the device identity");
+        check(receiver.acceptKeyFrame(sender.keyFrame()) == RoomSeal::BundleResult::Rejected,
+              "an open room refuses a bundle its node key did not sign");
+        sender.setNodeSigner([adaNodeSeed](const QByteArray &message) {
+            return forkmesh::chatv3::ed25519Sign(adaNodeSeed, message);
+        });
+        receiver.setNodeSigner([bobNodeSeed](const QByteArray &message) {
+            return forkmesh::chatv3::ed25519Sign(bobNodeSeed, message);
+        });
         receiver.acceptKeyFrame(sender.keyFrame());
         sender.acceptKeyFrame(receiver.keyFrame());
         const QJsonObject sealPlain{{"type", QStringLiteral("chat")},
                                     {"id", QStringLiteral("m1")},
-                                    {"senderId", QStringLiteral("ada-node")},
+                                    {"senderId", adaNode},
                                     {"text", QStringLiteral("no setup required")}};
         const QJsonObject sealed = sender.sealObject(sealPlain);
         check(RoomSeal::isSealedFrame(sealed) && sealed.value("v").toInt() == 3 &&

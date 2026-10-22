@@ -306,6 +306,9 @@ class SettingsScreen : AccountScreen() {
                                     settings.setSolanaAddress(it.trim())
                                 },
                             )
+                            VGap(FmSpace.x3)
+                            ChatTipsRow(settings)
+                            VGap(FmSpace.x3)
                             Text(
                                 "Non-custodial: ForkMesh saves only this public payout address. Wallet keys and recovery " +
                                     "phrases remain on your device. User-owned funds, the public community pool, pending " +
@@ -765,6 +768,28 @@ private fun ServeAsNodeRow(settings: SettingsService) {
             enabled = supported,
             onCheckedChange = { settings.setServeAsNode(it) },
             modifier = Modifier.testTag("serve-as-node"),
+        )
+    }
+}
+
+@Composable
+private fun ChatTipsRow(settings: SettingsService) {
+    val enabled by settings.chatTipsEnabled.collectAsState()
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Column(Modifier.weight(1f)) {
+            Text("Accept tips in chat", style = emphasisStyle())
+            VGap(FmSpace.x1)
+            Text(
+                "Shows this Solana address to everyone in shared chat rooms, guests included, so they can tip you. " +
+                    "Off by default.",
+                style = noteStyle(),
+            )
+        }
+        HGap(FmSpace.x3)
+        FmSwitch(
+            checked = enabled,
+            onCheckedChange = { settings.setChatTipsEnabled(it) },
+            modifier = Modifier.testTag("chat-tips"),
         )
     }
 }

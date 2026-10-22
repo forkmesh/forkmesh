@@ -1,6 +1,9 @@
 #include "MainnodeRoom.h"
 #include "BleMeshLink.h"
+#include "ChatAccountBlocks.h"
 #include "ChatBlocks.h"
+#include "ChatNodeOwners.h"
+#include "ChatRelayRules.h"
 #include "ChatFormat.h"
 #include "ChatListPreview.h"
 #include "ChatRecipients.h"
@@ -9,6 +12,7 @@
 #include "StickerCatalog.h"
 #include "LocalMeshNode.h"
 #include "MeshFirewall.h"
+#include "NodeDiagnostics.h"
 #include "OfficeChannelMirror.h"
 #include "RoomCrypto.h"
 #include "RoomSeal.h"
@@ -17,6 +21,7 @@
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
@@ -31,6 +36,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QUdpSocket>
+#include <QUrlQuery>
 #include <QThread>
 #include <QTimer>
 #include <QPointer>
@@ -58,6 +64,30 @@ QByteArray queryValue(const QString &query, const QByteArray &key)
         if (pair.startsWith(QString::fromUtf8(key) + QLatin1Char('=')))
             return pair.mid(key.size() + 1).toUtf8();
     return {};
+}
+
+QByteArray testNodeSeed(const QString &name)
+{
+    return forkmesh::chatv3::sha256("forkmesh-test-node:" + name.toUtf8());
+}
+
+QString nodeKey(const QString &name)
+{
+    return forkmesh::chatv3::b64u(forkmesh::chatv3::ed25519Public(testNodeSeed(name)));
+}
+
+RoomSeal::NodeSigner nodeSigner(const QString &name)
+{
+    const QByteArray seed = testNodeSeed(name);
+    return [seed](const QByteArray &message) {
+        return forkmesh::chatv3::ed25519Sign(seed, message);
+    };
+}
+
+QString meshNode(const QString &name)
+{
+    return forkmesh::chatv3::b64u(forkmesh::chatv3::ed25519Public(
+        forkmesh::chatv3::sha256("forkmesh-mesh-node-test:" + name.toUtf8())));
 }
 
 bool waitUntil(const std::function<bool()> &predicate, int timeoutMs)
@@ -256,10 +286,13 @@ class TestPeer
 {
 public:
     TestPeer(const QString &room, const QString &scope, RoomSeal::Policy policy,
-             const QString &node, char seed, const QString &acct = QString())
+             const QString &nodeName, char seed, const QString &acct = QString())
         : device(forkmesh::chatv3::ChatDevice::inMemory(QByteArray(32, seed))),
+          node(policy == RoomSeal::Policy::Open ? nodeKey(nodeName) : nodeName),
           seal(room, scope, policy, acct.isEmpty() ? node : acct, node, device)
     {
+        if (policy == RoomSeal::Policy::Open)
+            seal.setNodeSigner(nodeSigner(nodeName));
     }
 
     QJsonObject open(const QJsonObject &frame)
@@ -285,6 +318,7 @@ public:
     QJsonObject sealObject(const QJsonObject &plain) const { return seal.sealObject(plain); }
 
     std::shared_ptr<forkmesh::chatv3::ChatDevice> device;
+    QString node;
     RoomSeal seal;
     QHash<QString, QJsonObject> opened;
 };
@@ -476,27 +510,53 @@ void testLocalMeshBeaconIsCiphertext()
     beacon.port = 4242;
     beacon.timestampMs = 1750000000000ll;
     beacon.control = true;
-    beacon.node = QStringLiteral("desk-node-key");
 
     Beacon parsed;
     check(parseBeacon(beaconObject(beacon), &parsed) &&
               parsed.kid == beacon.kid && parsed.port == beacon.port &&
-              parsed.control && parsed.node == beacon.node &&
-              parsed.timestampMs == beacon.timestampMs,
-          "a beacon round-trips its device key id, port and control node");
+              parsed.control && parsed.timestampMs == beacon.timestampMs,
+          "a beacon round-trips its id, port and control flag");
     const QJsonObject wire = beaconObject(beacon);
     QStringList keys = wire.keys();
     keys.sort();
     check(keys == QStringList({QStringLiteral("control"), QStringLiteral("id"),
-                               QStringLiteral("node"), QStringLiteral("port"),
-                               QStringLiteral("t"), QStringLiteral("ts"),
-                               QStringLiteral("v")}) &&
+                               QStringLiteral("port"), QStringLiteral("t"),
+                               QStringLiteral("ts"), QStringLiteral("v")}) &&
               wire.value(QStringLiteral("v")).toInt() == 3,
-          "a v3 beacon carries no name, account or platform");
-    Beacon plain = beacon;
-    plain.control = false;
-    check(!beaconObject(plain).contains(QStringLiteral("node")),
-          "the control node key is sent only with control");
+          "a v3 beacon carries no name, account, platform or node key");
+    QJsonObject withNode = wire;
+    withNode.insert(QStringLiteral("node"), QStringLiteral("desk-node-key"));
+    check(parseBeacon(withNode, &parsed) &&
+              !beaconObject(parsed).contains(QStringLiteral("node")),
+          "a node key in a received beacon is not kept or repeated");
+
+    LocalMeshNode desk(QStringLiteral("desk"), QStringLiteral("workshop"),
+                       QStringLiteral("desk"), QStringLiteral("mesh-beacon-desk"));
+    desk.setMulticastEnabledForTests(false);
+    desk.setAddressSweepEnabledForTests(false);
+    desk.setBluetoothEnabledForTests(false);
+    desk.setControlHandler([](QTcpSocket *, const QByteArray &, const QByteArray &) {});
+    QStringList deskNotes;
+    QObject::connect(&desk, &LocalMeshNode::systemMessage, &desk,
+                     [&deskNotes](const QString &text) { deskNotes.append(text); });
+    check(desk.start(), "the beacon test device opens the mesh");
+    QString openLine;
+    for (const QString &note : std::as_const(deskNotes))
+        if (note.contains(QStringLiteral("is open over")) ||
+            note.contains(QStringLiteral("is waiting")))
+            openLine = note;
+    check(openLine.contains(QStringLiteral("is open over")) &&
+              openLine.contains(QStringLiteral("Anyone nearby")) &&
+              !openLine.contains(QStringLiteral("end-to-end")),
+          "the #mesh start line says anyone nearby can read the room");
+    const QString firstId = desk.beaconId();
+    check(firstId.size() == 16 && firstId != desk.sealKeyId() &&
+              !desk.nodeId().contains(firstId),
+          "the beacon id is random, not the device's key id or node key");
+    desk.stop();
+    check(desk.start() && desk.beaconId().size() == 16 && desk.beaconId() != firstId,
+          "a new network session draws a new beacon id");
+    desk.stop();
 
     QJsonObject wrongTag = beaconObject(beacon);
     wrongTag.insert(QStringLiteral("t"), QStringLiteral("something-else"));
@@ -591,7 +651,7 @@ void testLocalMeshRoom()
                      });
     ada.sendTyping(true);
     check(waitUntil([&] { return typingActive; }, 4000) &&
-              typingPeer == QStringLiteral("mesh-node-ada"),
+              typingPeer == meshNode(QStringLiteral("mesh-node-ada")),
           "typing in the mesh room shows on the other device");
 
     // A third device joining later is handed the room's recent history.
@@ -605,15 +665,16 @@ void testLocalMeshRoom()
     check(linus.start() &&
               linus.connectToPeer(QHostAddress::LocalHost, grace.listenPort()),
           "a third device joins the room");
-    check(waitUntil([&] { return !linusSaw.isEmpty(); }, 4000) &&
-              linusSaw.first().text == QStringLiteral("anyone here?"),
-          "a device that joins late is backfilled by the peers already here");
+    waitUntil([] { return false; }, 600);
+    check(linusSaw.isEmpty(),
+          "a device that joins late is not handed earlier messages re-sealed to "
+          "a key nobody had seen when they were sent");
 
     // linus and ada never dialled each other: the room still reaches both.
     const QString relayed = ada.sendChat(QStringLiteral("second"));
     check(!relayed.isEmpty() &&
-              waitUntil([&] { return linusSaw.size() == 2; }, 4000) &&
-              linusSaw.at(1).text == QStringLiteral("second"),
+              waitUntil([&] { return linusSaw.size() == 1; }, 4000) &&
+              linusSaw.at(0).text == QStringLiteral("second"),
           "a message crosses the mesh to a device with no direct link");
     check(waitUntil([&] { return graceSaw.size() == 2; }, 1000) &&
               graceSaw.at(1).text == QStringLiteral("second") &&
@@ -624,7 +685,7 @@ void testLocalMeshRoom()
     ada.stop();
     const auto roomHasAda = [&] {
         for (const MemberInfo &member : grace.members())
-            if (member.id == QStringLiteral("mesh-node-ada"))
+            if (member.id == meshNode(QStringLiteral("mesh-node-ada")))
                 return member.online;
         return false;
     };
@@ -633,6 +694,54 @@ void testLocalMeshRoom()
           "a device that leaves drops out of the room");
     grace.stop();
     linus.stop();
+}
+
+void testLocalMeshNoResealToDirectJoiner()
+{
+    using namespace forkmesh::localmesh;
+    auto quiet = [](LocalMeshNode &node) {
+        node.setMulticastEnabledForTests(false);
+        node.setBluetoothEnabledForTests(false);
+        node.setAddressSweepEnabledForTests(false);
+    };
+    LocalMeshNode ada(QStringLiteral("ada"), QString(), QString(),
+                      QStringLiteral("mesh-direct-ada"));
+    LocalMeshNode grace(QStringLiteral("grace"), QString(), QString(),
+                        QStringLiteral("mesh-direct-grace"));
+    LocalMeshNode carol(QStringLiteral("carol"), QString(), QString(),
+                        QStringLiteral("mesh-direct-carol"));
+    quiet(ada);
+    quiet(grace);
+    quiet(carol);
+    QList<ChatMessage> graceSaw;
+    QList<ChatMessage> carolSaw;
+    QObject::connect(&grace, &LocalMeshNode::messageArrived, &grace,
+                     [&graceSaw](const ChatMessage &m) { graceSaw.append(m); });
+    QObject::connect(&carol, &LocalMeshNode::messageArrived, &carol,
+                     [&carolSaw](const ChatMessage &m) { carolSaw.append(m); });
+    check(ada.start() && grace.start() && carol.start(), "three devices open the room");
+    ada.connectToPeer(QHostAddress::LocalHost, grace.listenPort());
+    check(waitUntil([&] { return ada.peerCount() == 1 && grace.peerCount() == 1; }, 4000),
+          "the first two devices link");
+    const QString first = ada.sendChat(QStringLiteral("before carol"));
+    check(waitUntil([&] { return !graceSaw.isEmpty(); }, 4000) && !ada.isQueued(first),
+          "the first message is delivered to the device that was there");
+    carol.connectToPeer(QHostAddress::LocalHost, ada.listenPort());
+    check(waitUntil([&] { return carol.peerCount() >= 1; }, 4000),
+          "a third device links straight to the sender");
+    waitUntil([] { return false; }, 600);
+    check(std::none_of(carolSaw.cbegin(), carolSaw.cend(),
+                       [&](const ChatMessage &m) { return m.id == first; }),
+          "a direct joiner is not handed earlier messages re-sealed to its key");
+    const QString later = ada.sendChat(QStringLiteral("after carol"));
+    check(waitUntil([&] {
+              return std::any_of(carolSaw.cbegin(), carolSaw.cend(),
+                                 [&](const ChatMessage &m) { return m.id == later; });
+          }, 4000),
+          "the joiner gets what is said once it is there");
+    carol.stop();
+    grace.stop();
+    ada.stop();
 }
 
 void testLocalMeshQueuedUntilJoin()
@@ -710,15 +819,12 @@ void testLocalMeshQueuedUntilJoin()
                      [&carolSaw](const ChatMessage &m) { carolSaw.append(m); });
     check(carol.start(), "a third device opens the room");
     carol.connectToPeer(QHostAddress::LocalHost, grace.listenPort());
-    check(waitUntil([&] {
-              return std::any_of(carolSaw.cbegin(), carolSaw.cend(),
-                                 [&](const ChatMessage &m) {
-                                     return m.id == sent &&
-                                            m.text == QStringLiteral(
-                                                          "anyone out there?");
-                                 });
-          }, 4000),
-          "a later joiner gets the chat from whichever device it links to");
+    check(waitUntil([&] { return carol.peerCount() == 1; }, 4000),
+          "a later joiner links to the room");
+    waitUntil([] { return false; }, 600);
+    check(std::none_of(carolSaw.cbegin(), carolSaw.cend(),
+                       [&](const ChatMessage &m) { return m.id == sent; }),
+          "a message already delivered is not re-sealed to a later joiner's key");
     carol.stop();
     grace.stop();
     ada.stop();
@@ -919,13 +1025,10 @@ void testLocalMeshUnicastDiscovery()
     // A device whose dial to this node never lands — an iPhone behind no
     // multicast, dialling a machine whose firewall drops it — still links:
     // this node answers its beacon by unicast, and dials it as the higher id.
-    LocalMeshNode first(QStringLiteral("high"), QStringLiteral("desk"),
-                        QStringLiteral("high"), QStringLiteral("mesh-unicast-z"));
-    LocalMeshNode second(QStringLiteral("low"), QStringLiteral("phone"),
-                         QStringLiteral("low"), QStringLiteral("mesh-unicast-a"));
-    const bool firstHigher = first.sealKeyId() > second.sealKeyId();
-    LocalMeshNode &high = firstHigher ? first : second;
-    LocalMeshNode &low = firstHigher ? second : first;
+    LocalMeshNode high(QStringLiteral("high"), QStringLiteral("desk"),
+                       QStringLiteral("high"), QStringLiteral("mesh-unicast-z"));
+    LocalMeshNode low(QStringLiteral("low"), QStringLiteral("phone"),
+                      QStringLiteral("low"), QStringLiteral("mesh-unicast-a"));
     high.setDiscoveryPortForTests(49733);
     high.setBeaconIntervalForTests(200);
     high.setAddressSweepEnabledForTests(false);
@@ -933,12 +1036,17 @@ void testLocalMeshUnicastDiscovery()
     for (LocalMeshNode *node : {&high, &low})
         node->setBluetoothEnabledForTests(false);
     check(high.start() && low.start(), "both devices open");
+    for (int tries = 0; tries < 32 && high.beaconId() <= low.beaconId(); ++tries) {
+        high.stop();
+        high.start();
+    }
+    check(high.beaconId() > low.beaconId(), "the beacon ids are ordered for the test");
 
     const RoomCrypto crypto(roomName());
     QUdpSocket wire;
     check(wire.bind(QHostAddress::LocalHost, 0), "the stand-in socket binds");
     Beacon beacon;
-    beacon.kid = low.sealKeyId();
+    beacon.kid = low.beaconId();
     beacon.port = low.listenPort();
     beacon.timestampMs = QDateTime::currentMSecsSinceEpoch();
     const auto sendBeacon = [&](bool reply) {
@@ -965,7 +1073,7 @@ void testLocalMeshUnicastDiscovery()
     sendBeacon(false);
     Beacon answer;
     check(takeAnswer(2000, &answer) && answer.reply &&
-              answer.kid == high.sealKeyId() &&
+              answer.kid == high.beaconId() && answer.kid != high.sealKeyId() &&
               answer.port == high.listenPort(),
           "a beacon from an unlinked device is answered by unicast");
     waitUntil([] { return false; }, 150);
@@ -1085,13 +1193,211 @@ void testLocalMeshFirewall()
     first.stop();
 }
 
+void testNodeOwnersAndBlocks()
+{
+    const QString node = nodeKey(QStringLiteral("owner-node"));
+    qint64 clock = 1000000;
+    int calls = 0;
+    QList<ChatNodeOwners::Reply> pending;
+    ChatNodeOwners owners;
+    owners.setClock([&clock] { return clock; });
+    owners.setFetcher([&](const QString &asked, ChatNodeOwners::Reply reply) {
+        ++calls;
+        check(asked == node, "the lookup asks for the node key it was given");
+        pending.append(reply);
+    });
+    check(owners.account(QStringLiteral("not-a-key")).isEmpty() && calls == 0,
+          "a sender id that is not a node key is never looked up");
+    check(owners.account(node).isEmpty() && owners.account(node).isEmpty() && calls == 1,
+          "an unanswered node shows no account and is asked about once");
+    QString resolvedAccount;
+    QObject::connect(&owners, &ChatNodeOwners::resolved, &owners,
+                     [&resolvedAccount](const QString &, const QString &account) {
+                         resolvedAccount = account;
+                     });
+    pending.takeFirst()(true, QStringLiteral("Alice"));
+    check(owners.account(node) == QLatin1String("alice") && resolvedAccount == "alice" &&
+              owners.shownAccount(node, QStringLiteral("alice")) == QLatin1String("alice") &&
+              owners.shownAccount(node, QString()) == QLatin1String("alice") &&
+              owners.shownAccount(node, QStringLiteral("bob")).isEmpty(),
+          "a verified account is shown only for a claim that matches it");
+    clock += ChatNodeOwners::kAnswerLifeMs - 1;
+    owners.account(node);
+    check(calls == 1, "an answer is cached for an hour");
+    clock += 2;
+    check(owners.account(node) == QString() && calls == 2,
+          "after an hour the node is asked about again");
+    pending.takeFirst()(false, QString());
+    owners.account(node);
+    check(calls == 2, "a failed lookup is not retried at once");
+    clock += ChatNodeOwners::kRetryAfterMs + 1;
+    owners.account(node);
+    check(calls == 3, "a failed lookup is retried after a minute");
+    pending.takeFirst()(true, QString());
+    check(owners.isAnswered(node) && owners.shownAccount(node, QStringLiteral("alice")).isEmpty(),
+          "a node bound to no account shows every claim as a guest");
+    QString parsed;
+    check(ChatNodeOwners::parseAnswer(R"({"account":"Bob"})", &parsed) && parsed == "bob" &&
+              ChatNodeOwners::parseAnswer(R"({"account":""})", &parsed) && parsed.isEmpty() &&
+              !ChatNodeOwners::parseAnswer("[]", &parsed) &&
+              !ChatNodeOwners::parseAnswer(R"({"account":3})", &parsed),
+          "only the server's {account} answer is read");
+    const QUrl lookup =
+        ChatNodeOwners::lookupUrl(QUrl(QStringLiteral("https://app.example.org/x?y=1")), node);
+    check(lookup.path() == QLatin1String("/api/chat/node-owner") &&
+              QUrlQuery(lookup).queryItemValue(QStringLiteral("node")) == node &&
+              lookup.host() == QLatin1String("app.example.org"),
+          "the lookup is GET /api/chat/node-owner?node=<b64u>");
+
+    QSettings().remove(QStringLiteral("chat/test-blocks"));
+    QList<QJsonObject> pushed;
+    ChatAccountBlocks blocks;
+    blocks.setSettingsKey(QStringLiteral("chat/test-blocks"));
+    blocks.setPusher([&pushed](const QJsonObject &body) { pushed.append(body); });
+    blocks.setBlocked(QStringLiteral("@Mallory"), true);
+    blocks.setBlocked(QStringLiteral("mallory"), true);
+    blocks.setBlocked(QStringLiteral("not a name"), true);
+    check(blocks.isBlocked(QStringLiteral("MALLORY")) && pushed.size() == 1 &&
+              pushed.first() == QJsonObject{{QStringLiteral("accounts"),
+                                             QJsonArray{QStringLiteral("mallory")}}},
+          "a block is pushed once, lowercased, as the whole list");
+    blocks.setBlocked(QStringLiteral("mallory"), false);
+    check(!blocks.isBlocked(QStringLiteral("mallory")) && pushed.size() == 2 &&
+              pushed.last().value(QStringLiteral("accounts")).toArray().isEmpty(),
+          "an unblock pushes the shorter list");
+    blocks.setBlocked(QStringLiteral("eve"), true);
+    pushed.clear();
+    blocks.mergeServerList(QJsonObject{
+        {QStringLiteral("accounts"), QJsonArray{QStringLiteral("Trent"), QStringLiteral("eve")}}});
+    check(blocks.accounts() == QStringList({QStringLiteral("eve"), QStringLiteral("trent")}) &&
+              pushed.isEmpty(),
+          "the server's list is read at sign-in");
+    blocks.setBlocked(QStringLiteral("zed"), true);
+    pushed.clear();
+    blocks.mergeServerList(QJsonObject{{QStringLiteral("accounts"), QJsonArray{}}});
+    check(blocks.accounts().size() == 3 && pushed.size() == 1 &&
+              pushed.first().value(QStringLiteral("accounts")).toArray().size() == 3,
+          "a block the server has not seen yet is pushed back, not lost");
+    ChatAccountBlocks reloaded;
+    reloaded.setSettingsKey(QStringLiteral("chat/test-blocks"));
+    check(reloaded.isBlocked(QStringLiteral("zed")), "blocks are kept across restarts");
+    QStringList many;
+    for (int i = 0; i < 600; ++i)
+        many.append(QStringLiteral("user%1").arg(i));
+    check(ChatAccountBlocks::body(many).value(QStringLiteral("accounts")).toArray().size() ==
+              ChatAccountBlocks::kMaxAccounts,
+          "at most 500 accounts are sent");
+    check(ChatAccountBlocks::endpoint(QUrl(QStringLiteral("https://app.example.org/a?b")))
+                  .toString() == QLatin1String("https://app.example.org/api/chat/blocks"),
+          "blocks live at /api/chat/blocks");
+    QSettings().remove(QStringLiteral("chat/test-blocks"));
+}
+
+void testRelayRules()
+{
+    using namespace forkmesh::relayrules;
+    const QSet<QString> relayPrivate = relayPrivateChannels(
+        {QStringLiteral("#plans"), QStringLiteral("secret"), QStringLiteral("#team"),
+         QStringLiteral("#office/design")});
+    check(relayPrivate == QSet<QString>({QStringLiteral("#plans"), QStringLiteral("#secret")}),
+          "the Team room and server channels are not relay private channels");
+    const QJsonObject saved{
+        {"current", QStringLiteral("@peer-node")},
+        {"openDms", QJsonArray{QStringLiteral("peer-node")}},
+        {"dmNames", QJsonObject{{QStringLiteral("peer-node"), QStringLiteral("Peer")}}},
+        {"unread", QJsonObject{{QStringLiteral("@peer-node"), 2},
+                               {QStringLiteral("#plans"), 1},
+                               {QStringLiteral("#general"), 3}}},
+        {"conversations",
+         QJsonObject{{QStringLiteral("@peer-node"), QJsonArray{QJsonObject{{"id", "d1"}}}},
+                     {QStringLiteral("#plans"),
+                      QJsonArray{QJsonObject{{"id", "p1"}},
+                                 QJsonObject{{"id", "p2"}, {"threadRootId", "p1"}}}},
+                     {QStringLiteral("#team"), QJsonArray{QJsonObject{{"id", "t1"}}}},
+                     {QStringLiteral("#mesh"), QJsonArray{QJsonObject{{"id", "m1"}}}},
+                     {QStringLiteral("#office/@bob"), QJsonArray{QJsonObject{{"id", "o1"}}}},
+                     {QStringLiteral("#general"), QJsonArray{QJsonObject{{"id", "g1"}}}}}}};
+    int removed = 0;
+    const QJsonObject purged = purgedChatHistory(saved, relayPrivate, &removed);
+    const QJsonObject kept = purged.value(QStringLiteral("conversations")).toObject();
+    QStringList keys = kept.keys();
+    keys.sort();
+    check(keys == QStringList({QStringLiteral("#general"), QStringLiteral("#mesh"),
+                               QStringLiteral("#office/@bob"), QStringLiteral("#team")}) &&
+              removed == 3,
+          "saved history drops relay private channels and @peer conversations, threads included");
+    check(!purged.contains(QStringLiteral("current")) &&
+              purged.value(QStringLiteral("openDms")).toArray().isEmpty() &&
+              purged.value(QStringLiteral("dmNames")).toObject().isEmpty() &&
+              purged.value(QStringLiteral("unread")).toObject().keys() ==
+                  QStringList{QStringLiteral("#general")},
+          "their unread counts, open DMs and names go with them");
+    int again = 0;
+    purgedChatHistory(purged, relayPrivate, &again);
+    check(again == 0, "a purged history has nothing left to drop");
+
+    check(senderAccount(QStringLiteral("node"), QStringLiteral("#office/@Bob"), QString()) ==
+                  QLatin1String("bob") &&
+              senderAccount(QStringLiteral("user:Carol"), QStringLiteral("#general"),
+                            QString()) == QLatin1String("carol") &&
+              senderAccount(QStringLiteral("node"), QStringLiteral("#general"),
+                            QStringLiteral("Dave")) == QLatin1String("dave") &&
+              senderAccount(QStringLiteral("node"), QStringLiteral("#general"), QString())
+                  .isEmpty(),
+          "a sender's account comes from the server, never from a name it claims");
+    check(profileAccount(QStringLiteral("node"), false, QStringLiteral("me"), QString(),
+                         QString())
+                  .isEmpty() &&
+              profileAccount(QStringLiteral("node"), true, QStringLiteral("Me"), QString(),
+                             QString()) == QLatin1String("me") &&
+              profileAccount(QStringLiteral("user:eve"), false, QString(), QString(),
+                             QString()) == QLatin1String("eve") &&
+              profileAccount(QStringLiteral("node"), false, QString(), QString(),
+                             QStringLiteral("frank")) == QLatin1String("frank"),
+          "a guest has no account to message; a verified node does");
+    check(botViaName(QStringLiteral("ForkBot"), QStringLiteral("Ada"), QStringLiteral("n")) ==
+                  QStringLiteral("forkbot · via ada") &&
+              botViaName(QStringLiteral("claude"), QString(), QStringLiteral("node-x")) ==
+                  QStringLiteral("claude · via ") + guestLabel(QStringLiteral("node-x")) &&
+              guestLabel(QStringLiteral("node-x")).size() == 10 &&
+              guestLabel(QStringLiteral("node-x")) == guestLabel(QStringLiteral("node-x")) &&
+              isNamedBot(QStringLiteral("Codex")) && !isNamedBot(QStringLiteral("alice")),
+          "a bot line is labelled with the poster's account or guest name");
+    check(webhooksAllowed(QStringLiteral("private")) &&
+              webhooksAllowed(QStringLiteral("public")) &&
+              !webhooksAllowed(QStringLiteral("notices")) &&
+              webhookNote(QStringLiteral("private")).contains(QStringLiteral("server can read")),
+          "private channels can have webhooks, with a note that the server reads them");
+    check(!roomBadge(RoomKind::Public).tooltip.contains(QStringLiteral("controller")) &&
+              roomBadge(RoomKind::Public).tooltip.contains(QStringLiteral("cannot read")) &&
+              roomBadge(RoomKind::Mesh).tooltip.contains(QStringLiteral("Anyone nearby")) &&
+              roomBadge(RoomKind::Mesh).text != QLatin1String("End-to-end") &&
+              roomBadge(RoomKind::DeviceLocal).text != QLatin1String("End-to-end"),
+          "neither #mesh nor the Team room is labelled end-to-end");
+}
+
 void testTeammateChatRelay()
 {
+    {
+        ServerNode shared(QStringLiteral("Alice"), QString(), QStringLiteral("alice"),
+                          nodeKey(QStringLiteral("shared-node")),
+                          QUrl(QStringLiteral("ws://127.0.0.1:9/ws")),
+                          forkmesh::mainnode::kDefaultRoomName, QString(),
+                          QStringLiteral("test-room-passphrase"));
+        QStringList privateJoined;
+        QObject::connect(&shared, &ServerNode::privateChannelJoined, &shared,
+                         [&privateJoined](const QString &name) { privateJoined.append(name); });
+        shared.createPrivateChannel(QStringLiteral("#private"));
+        shared.createPrivateChannel(QStringLiteral("#team"));
+        check(shared.isSharedRoom() && privateJoined == QStringList{QStringLiteral("#team")},
+              "a shared relay room makes no private channel except the local Team room");
+    }
     ServerNode node(QStringLiteral("Alice"), QStringLiteral("alice-laptop"),
                     QStringLiteral("alice"), QStringLiteral("stable-node-id"),
                     QUrl(QStringLiteral("ws://127.0.0.1:9/ws")),
                     forkmesh::mainnode::kDefaultRoomName, QString(),
                     QStringLiteral("test-room-passphrase"));
+    node.setSharedRoom(false);
     QList<ChatMessage> messages;
     QObject::connect(&node, &ServerNode::messageArrived, &node,
                      [&messages](const ChatMessage &message) {
@@ -1162,8 +1468,11 @@ void testTeammateChatRelay()
           "ForkBot cannot reply into a private thread");
 }
 
-// Public #channels admit controller integrations while private channels keep
-// the automatic recipient seal, all on the same mainnode connection.
+QJsonObject decryptedFrame(const RoomCrypto &relayKey, const QByteArray &raw)
+{
+    return relayKey.decryptObject(QJsonDocument::fromJson(raw).object());
+}
+
 void testPublicIntegrationsAndPrivateSeal()
 {
     WebSocketHarness harness;
@@ -1173,10 +1482,12 @@ void testPublicIntegrationsAndPrivateSeal()
 
     const QString room = forkmesh::mainnode::kDefaultRoomName;
     const QString roomPassphrase = QStringLiteral("test-room-passphrase");
+    const QString aliceNode = nodeKey(QStringLiteral("stable-node-id"));
 
     ServerNode node(QStringLiteral("Alice"), QStringLiteral("alice-laptop"),
-                    QStringLiteral("alice"), QStringLiteral("stable-node-id"),
+                    QStringLiteral("alice"), aliceNode,
                     harness.url(), room, QString(), roomPassphrase);
+    node.setNodeSigner(nodeSigner(QStringLiteral("stable-node-id")));
     QList<ChatMessage> messages;
     QObject::connect(&node, &ServerNode::messageArrived, &node,
                      [&messages](const ChatMessage &message) {
@@ -1188,6 +1499,11 @@ void testPublicIntegrationsAndPrivateSeal()
                                       const QString &) {
                          editedTargets.append(target);
                      });
+    QStringList deletedTargets;
+    QObject::connect(&node, &ServerNode::messageDeleted, &node,
+                     [&deletedTargets](const QString &, const QString &target) {
+                         deletedTargets.append(target);
+                     });
     QStringList mismatchKeyIds;
     QObject::connect(&node, &ServerNode::roomSealMismatch, &node,
                      [&mismatchKeyIds](const QString &keyId) {
@@ -1198,68 +1514,70 @@ void testPublicIntegrationsAndPrivateSeal()
     check(waitUntil([&] { return connected(node); }, 3000),
           "a sealed node reaches the relay");
 
-    check(!node.roomSealKeyId().isEmpty(),
-          "the node creates its device encryption identity automatically");
-
-    // Learn the node's public key exactly as another room device does. The
-    // relay can decrypt this announcement, but it contains no private key.
     RoomCrypto relayKey(room, roomPassphrase);
     check(waitUntil([&] { return !harness.textFrames.isEmpty(); }, 2000),
           "the node announces an E2EE public key on connect");
     QJsonObject nodeKeyFrame;
     for (const QByteArray &raw : harness.textFrames) {
-        const QJsonObject outer = QJsonDocument::fromJson(raw).object();
-        const QJsonObject inner = relayKey.decryptObject(outer);
+        const QJsonObject inner = decryptedFrame(relayKey, raw);
         if (RoomSeal::isKeyFrame(inner)) {
             nodeKeyFrame = inner;
             break;
         }
     }
     check(RoomSeal::isKeyFrame(nodeKeyFrame) &&
-              nodeKeyFrame.value("kid").toString() == node.roomSealKeyId(),
-          "the announcement identifies only the node's public key");
+              nodeKeyFrame.value("kid").toString() == node.roomSealKeyId() &&
+              nodeKeyFrame.value("node").toString() == aliceNode &&
+              forkmesh::chatv3::verifyNodeBinding(nodeKeyFrame, room),
+          "the bundle names the node key and is signed by it");
 
     TestPeer peerSeal(room, room, RoomSeal::Policy::Open,
                       QStringLiteral("peer-node"), '\x11');
     check(peerSeal.accept(nodeKeyFrame),
           "a peer learns the node's signed bundle without a shared phrase");
-    check(nodeKeyFrame.value("node").toString() == QStringLiteral("stable-node-id"),
-          "the bundle names the node's sender id");
+    QJsonObject unbound = nodeKeyFrame;
+    unbound.remove(QStringLiteral("nsig"));
+    TestPeer wary(room, room, RoomSeal::Policy::Open, QStringLiteral("wary-node"), '\x12');
+    check(!wary.accept(unbound), "a peer drops the same bundle without its node signature");
     const int framesBeforePeer = harness.textFrames.size();
     harness.sendText(QJsonDocument(relayKey.encryptObject(peerSeal.keyFrame()))
                          .toJson(QJsonDocument::Compact));
     check(waitUntil(
               [&] { return harness.textFrames.size() > framesBeforePeer; }, 2000),
           "the node answers a newly discovered peer with its public key");
-    bool answeredPeer = false;
-    for (int index = framesBeforePeer; index < harness.textFrames.size(); ++index) {
-        const QJsonObject reply = relayKey.decryptObject(
-            QJsonDocument::fromJson(harness.textFrames.at(index)).object());
-        answeredPeer = answeredPeer ||
-                       (RoomSeal::isKeyFrame(reply) &&
-                        reply.value("kid").toString() == node.roomSealKeyId());
-    }
-    check(answeredPeer, "the discovery reply carries the same public key");
+    check(waitUntil([&] { return node.roomSealPeerKeyIds().contains(peerSeal.keyId()); },
+                    2000),
+          "the node admits the peer's node-bound bundle");
 
-    // A public message is deliberately readable under the room key so MCP,
-    // ForkBot, and webhooks can participate.
     harness.textFrames.clear();
-    node.sendChat(QStringLiteral("#general"), QStringLiteral("for MCP"));
+    node.sendChat(QStringLiteral("#general"), QStringLiteral("for everyone"));
     check(waitUntil([&] { return !harness.textFrames.isEmpty(); }, 2000),
           "a public chat reaches the relay");
     if (harness.textFrames.isEmpty())
         return;
     const QJsonObject publicEnvelope =
         QJsonDocument::fromJson(harness.textFrames.constLast()).object();
-    const QJsonObject publicFrame = relayKey.decryptObject(publicEnvelope);
+    const QJsonObject publicView = relayKey.decryptObject(publicEnvelope);
     check(publicEnvelope.value("persist").toBool() &&
-              publicFrame.value("type").toString() == QLatin1String("chat") &&
-              publicFrame.value("channel").toString() == QLatin1String("#general") &&
-              publicFrame.value("text").toString() == QLatin1String("for MCP"),
-          "the controller can read a durable public-channel frame");
+              RoomSeal::isSealedFrame(publicView) &&
+              !QJsonDocument(publicView).toJson().contains("for everyone") &&
+              peerSeal.open(publicView).value("text").toString() ==
+                  QLatin1String("for everyone"),
+          "a public-channel message is sealed: the room key alone cannot read it");
 
-    // Team coordination is an internal desktop-to-Agent bridge, not a room on
-    // the shared mesh. Its local row exists, but no ciphertext leaves the host.
+    harness.textFrames.clear();
+    node.sendBotChat(QStringLiteral("#general"), QStringLiteral("bot answer"));
+    check(waitUntil([&] { return !harness.textFrames.isEmpty(); }, 2000),
+          "a ForkBot line relayed by this device reaches the relay");
+    const QJsonObject botPlain =
+        harness.textFrames.isEmpty()
+            ? QJsonObject()
+            : peerSeal.open(decryptedFrame(relayKey, harness.textFrames.constLast()));
+    check(botPlain.value("senderId").toString() == aliceNode &&
+              botPlain.value("bot").toString() == QLatin1String("forkbot") &&
+              botPlain.value("text").toString() == QLatin1String("bot answer"),
+          "a bot line keeps the device's own sender id and names the bot apart");
+
     node.createPrivateChannel(QStringLiteral("#team"));
     messages.clear();
     harness.textFrames.clear();
@@ -1273,122 +1591,268 @@ void testPublicIntegrationsAndPrivateSeal()
               messages.first().text == QLatin1String("local assignment"),
           "the private Team room works locally without writing a mesh frame");
 
-    // The same connection seals a channel as soon as it is marked private.
-    node.createPrivateChannel(QStringLiteral("#private"));
-    harness.textFrames.clear();
-    node.sendChat(QStringLiteral("#private"),
-                  QStringLiteral("beyond the relay"));
-    check(waitUntil([&] { return !harness.textFrames.isEmpty(); }, 2000),
-          "a private chat still reaches the relay");
-    if (harness.textFrames.isEmpty())
-        return;
-    const QJsonObject privateEnvelope =
-        QJsonDocument::fromJson(harness.textFrames.constLast()).object();
-    const QJsonObject relayView = relayKey.decryptObject(privateEnvelope);
-    check(privateEnvelope.value("persist").toBool() &&
-              RoomSeal::isSealedFrame(relayView),
-          "the controller's room key opens only a private recipient envelope");
-    check(!QJsonDocument(relayView).toJson(QJsonDocument::Compact)
-               .contains("beyond the relay") &&
-              peerSeal.open(relayView).value("text").toString() ==
-                  QLatin1String("beyond the relay"),
-          "a discovered peer, but not the controller, reads private chat");
-
-    // Controller-authored public chat is accepted. The identical attempt in a
-    // private channel is refused, while a recipient-sealed peer frame arrives.
     messages.clear();
-    QJsonObject publicBot{{"type", QStringLiteral("chat")},
-                          {"id", QStringLiteral("public-bot-1")},
-                          {"senderId", QStringLiteral("forkbot")},
-                          {"sender", QStringLiteral("forkbot")},
-                          {"channel", QStringLiteral("#general")},
-                          {"text", QStringLiteral("public integration")},
-                          {"ts", double(QDateTime::currentMSecsSinceEpoch())}};
-    harness.sendText(
-        QJsonDocument(relayKey.encryptObject(publicBot))
-            .toJson(QJsonDocument::Compact));
-    QJsonObject refusedPrivate = publicBot;
-    refusedPrivate["id"] = QStringLiteral("private-controller-1");
-    refusedPrivate["channel"] = QStringLiteral("#private");
-    refusedPrivate["private"] = true;
-    refusedPrivate["text"] = QStringLiteral("operator plaintext");
-    harness.sendText(
-        QJsonDocument(relayKey.encryptObject(refusedPrivate))
-            .toJson(QJsonDocument::Compact));
-
-    QJsonObject refusedRemoteTeam = refusedPrivate;
-    refusedRemoteTeam["id"] = QStringLiteral("remote-team-1");
-    refusedRemoteTeam["channel"] = QStringLiteral("#team");
-    refusedRemoteTeam["text"] = QStringLiteral("remote team injection");
-    harness.sendText(
-        QJsonDocument(relayKey.encryptObject(
-                          peerSeal.sealObject(refusedRemoteTeam)))
-            .toJson(QJsonDocument::Compact));
-
-    QJsonObject peer{{"type", QStringLiteral("chat")},
-                     {"id", QStringLiteral("private-peer-1")},
-                     {"senderId", QStringLiteral("peer-node")},
-                     {"sender", QStringLiteral("Peer")},
-                     {"channel", QStringLiteral("#private")},
-                     {"private", true},
-                     {"text", QStringLiteral("read me")},
-                     {"ts", double(QDateTime::currentMSecsSinceEpoch())}};
-    harness.sendText(QJsonDocument(relayKey.encryptObject(peerSeal.sealObject(peer)))
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QJsonObject controller{{"type", QStringLiteral("chat")},
+                           {"id", QStringLiteral("unsealed-1")},
+                           {"senderId", peerSeal.node},
+                           {"sender", QStringLiteral("Peer")},
+                           {"channel", QStringLiteral("#general")},
+                           {"text", QStringLiteral("unsealed claim")},
+                           {"ts", double(now)}};
+    harness.sendText(QJsonDocument(relayKey.encryptObject(controller))
                          .toJson(QJsonDocument::Compact));
+    const auto sendServer = [&](const QJsonObject &plain) {
+        QJsonObject envelope = relayKey.encryptObject(plain);
+        envelope.insert(QStringLiteral("srv"), true);
+        harness.sendText(QJsonDocument(envelope).toJson(QJsonDocument::Compact));
+    };
+    QJsonObject webhook{{"type", QStringLiteral("chat")},
+                        {"id", QStringLiteral("webhook-1")},
+                        {"senderId", QStringLiteral("webhook:abc")},
+                        {"sender", QStringLiteral("Deploys")},
+                        {"accountKind", QStringLiteral("user")},
+                        {"ownerUser", QStringLiteral("alice")},
+                        {"channel", QStringLiteral("#general")},
+                        {"text", QStringLiteral("deploy finished")},
+                        {"ts", double(now)}};
+    sendServer(webhook);
+    QJsonObject posing = webhook;
+    posing["id"] = QStringLiteral("webhook-2");
+    posing["senderId"] = peerSeal.node;
+    posing["text"] = QStringLiteral("posing as a person");
+    sendServer(posing);
+    QJsonObject srvReply = webhook;
+    srvReply["id"] = QStringLiteral("webhook-3");
+    srvReply["type"] = QStringLiteral("thread-reply");
+    srvReply["rootId"] = QStringLiteral("webhook-1");
+    sendServer(srvReply);
     check(waitUntil([&] { return messages.size() >= 2; }, 2000),
-          "public integration and sealed private peer frames reach the reader");
+          "frames the relay marks as its own reach the reader");
+    waitUntil([] { return false; }, 100);
     QStringList receivedTexts;
+    QString webhookSender;
+    QString posingSender;
+    for (const ChatMessage &message : std::as_const(messages)) {
+        receivedTexts.append(message.text);
+        if (message.id == QLatin1String("webhook-1"))
+            webhookSender = message.senderId;
+        if (message.id == QLatin1String("webhook-2"))
+            posingSender = message.senderId;
+    }
+    check(!receivedTexts.contains(QStringLiteral("unsealed claim")) &&
+              mismatchKeyIds.contains(QString()),
+          "an unsealed frame without the relay's mark is refused");
+    check(webhookSender == QLatin1String("webhook:abc") &&
+              posingSender == QStringLiteral("srv:") + peerSeal.node &&
+              posingSender != peerSeal.node,
+          "a relay frame is shown as the integration it names, never as a person");
+    check(std::none_of(messages.cbegin(), messages.cend(),
+                       [](const ChatMessage &m) { return m.id == QLatin1String("webhook-3"); }),
+          "a relay thread reply is not applied");
+
+    QJsonObject peerMessage{{"type", QStringLiteral("chat")},
+                            {"id", QStringLiteral("peer-message-1")},
+                            {"senderId", peerSeal.node},
+                            {"sender", QStringLiteral("Peer")},
+                            {"channel", QStringLiteral("#general")},
+                            {"text", QStringLiteral("peer said")},
+                            {"ts", double(now)}};
+    harness.sendText(QJsonDocument(relayKey.encryptObject(peerSeal.sealObject(peerMessage)))
+                         .toJson(QJsonDocument::Compact));
+    QJsonObject privateFrame = peerMessage;
+    privateFrame["id"] = QStringLiteral("peer-private-1");
+    privateFrame["channel"] = QStringLiteral("#private");
+    privateFrame["private"] = true;
+    privateFrame["text"] = QStringLiteral("relay private channel");
+    harness.sendText(QJsonDocument(relayKey.encryptObject(peerSeal.sealObject(privateFrame)))
+                         .toJson(QJsonDocument::Compact));
+    QJsonObject remoteTeam = peerMessage;
+    remoteTeam["id"] = QStringLiteral("remote-team-1");
+    remoteTeam["channel"] = QStringLiteral("#team");
+    remoteTeam["text"] = QStringLiteral("remote team injection");
+    harness.sendText(QJsonDocument(relayKey.encryptObject(peerSeal.sealObject(remoteTeam)))
+                         .toJson(QJsonDocument::Compact));
+    check(waitUntil([&] {
+              return std::any_of(messages.cbegin(), messages.cend(), [](const ChatMessage &m) {
+                  return m.id == QLatin1String("peer-message-1");
+              });
+          }, 2000),
+          "a sealed public message from a peer arrives");
+
+    const auto botLineFrom = [&](const QString &id) {
+        QJsonObject botLine = peerMessage;
+        botLine["id"] = id;
+        botLine["bot"] = QStringLiteral("forkbot");
+        botLine["sender"] = QStringLiteral("forkbot");
+        botLine["text"] = QStringLiteral("I am ForkBot");
+        harness.sendText(QJsonDocument(relayKey.encryptObject(peerSeal.sealObject(botLine)))
+                             .toJson(QJsonDocument::Compact));
+        ChatMessage shown;
+        waitUntil([&] {
+            for (const ChatMessage &m : std::as_const(messages))
+                if (m.id == id)
+                    shown = m;
+            return !shown.id.isEmpty();
+        }, 2000);
+        return shown;
+    };
+    const ChatMessage guestBot = botLineFrom(QStringLiteral("bot-line-1"));
+    check(guestBot.senderId == QLatin1String("forkbot") &&
+              guestBot.senderName == QStringLiteral("forkbot · via ") +
+                                         forkmesh::relayrules::guestLabel(peerSeal.node),
+          "a bot line from an unverified device names the guest that posted it");
+    ChatNodeOwners botOwners;
+    botOwners.setFetcher([](const QString &, ChatNodeOwners::Reply reply) {
+        reply(true, QStringLiteral("peer-account-with-a-long-name"));
+    });
+    botOwners.account(peerSeal.node);
+    node.setOwnerVerifier(&botOwners);
+    const ChatMessage accountBot = botLineFrom(QStringLiteral("bot-line-2"));
+    check(accountBot.senderName == QStringLiteral("forkbot · via peer-account-with-a-long-name"),
+          "a bot line from a verified device names the account that posted it");
+    node.setOwnerVerifier(nullptr);
+
+    QStringList joined;
+    QObject::connect(&node, &ServerNode::newMemberJoined, &node,
+                     [&joined](const QString &name) { joined.append(name); });
+    harness.sendText(QByteArrayLiteral(
+        "{\"kind\":\"forkmesh-new-member\",\"v\":1,\"name\":\"forged\"}"));
+    harness.sendText(QByteArrayLiteral(
+        "{\"kind\":\"forkmesh-new-member\",\"v\":1,\"name\":\"newbie\",\"srv\":true}"));
+    check(waitUntil([&] { return !joined.isEmpty(); }, 2000) &&
+              joined == QStringList{QStringLiteral("newbie")},
+          "a new-member announcement counts only when the relay injected it");
+    waitUntil([] { return false; }, 100);
+    receivedTexts.clear();
     for (const ChatMessage &message : std::as_const(messages))
         receivedTexts.append(message.text);
-    check(receivedTexts.contains(QStringLiteral("public integration")) &&
-              receivedTexts.contains(QStringLiteral("read me")) &&
-              !receivedTexts.contains(QStringLiteral("operator plaintext")) &&
+    check(!receivedTexts.contains(QStringLiteral("relay private channel")) &&
               !receivedTexts.contains(QStringLiteral("remote team injection")),
-          "public controller traffic and invited private peers cannot enter Team");
+          "a shared room accepts no private-channel or Team frame");
 
-    // The controller cannot use its public-channel authority to mutate a
-    // private message by copying (or guessing) that message's opaque id.
-    QJsonObject crossBoundaryEdit{
-        {"type", QStringLiteral("edit")},
-        {"id", QStringLiteral("public-cross-edit")},
-        {"senderId", QStringLiteral("peer-node")},
-        {"sender", QStringLiteral("Peer")},
-        {"conversation", QStringLiteral("#general")},
-        {"target", QStringLiteral("private-peer-1")},
-        {"text", QStringLiteral("controller rewrite")},
-        {"ts", double(QDateTime::currentMSecsSinceEpoch())}};
-    harness.sendText(
-        QJsonDocument(relayKey.encryptObject(crossBoundaryEdit))
-            .toJson(QJsonDocument::Compact));
-    QJsonObject publicSentinel = publicBot;
-    publicSentinel["id"] = QStringLiteral("public-sentinel");
-    publicSentinel["text"] = QStringLiteral("after rejected mutation");
-    harness.sendText(
-        QJsonDocument(relayKey.encryptObject(publicSentinel))
-            .toJson(QJsonDocument::Compact));
-    check(waitUntil([&] { return messages.size() >= 3; }, 2000) &&
-              editedTargets.isEmpty(),
-          "public controller authority cannot cross into a private target");
+    QJsonObject unsealedEdit{{"type", QStringLiteral("edit")},
+                             {"id", QStringLiteral("unsealed-edit")},
+                             {"senderId", peerSeal.node},
+                             {"conversation", QStringLiteral("#general")},
+                             {"target", QStringLiteral("peer-message-1")},
+                             {"text", QStringLiteral("rewritten")},
+                             {"ts", double(now)}};
+    harness.sendText(QJsonDocument(relayKey.encryptObject(unsealedEdit))
+                         .toJson(QJsonDocument::Compact));
+    QJsonObject srvEdit = unsealedEdit;
+    srvEdit["id"] = QStringLiteral("srv-edit");
+    sendServer(srvEdit);
+    QJsonObject srvDelete = unsealedEdit;
+    srvDelete["id"] = QStringLiteral("srv-delete");
+    srvDelete["type"] = QStringLiteral("delete");
+    srvDelete["target"] = QStringLiteral("webhook-1");
+    sendServer(srvDelete);
+    TestPeer carol(room, room, RoomSeal::Policy::Open, QStringLiteral("carol-node"), '\x13');
+    carol.accept(nodeKeyFrame);
+    harness.sendText(QJsonDocument(relayKey.encryptObject(carol.keyFrame()))
+                         .toJson(QJsonDocument::Compact));
+    waitUntil([&] { return node.roomSealPeerKeyIds().contains(carol.keyId()); }, 2000);
+    QJsonObject carolEdit = unsealedEdit;
+    carolEdit["id"] = QStringLiteral("carol-edit");
+    carolEdit["senderId"] = carol.node;
+    harness.sendText(QJsonDocument(relayKey.encryptObject(carol.sealObject(carolEdit)))
+                         .toJson(QJsonDocument::Compact));
+    QJsonObject carolDelete = carolEdit;
+    carolDelete["id"] = QStringLiteral("carol-delete");
+    carolDelete["type"] = QStringLiteral("delete");
+    harness.sendText(QJsonDocument(relayKey.encryptObject(carol.sealObject(carolDelete)))
+                         .toJson(QJsonDocument::Compact));
+    waitUntil([] { return false; }, 200);
+    check(editedTargets.isEmpty() && deletedTargets.isEmpty(),
+          "unsealed, relay or other people's edits and deletes are not applied");
+    QJsonObject authorEdit = unsealedEdit;
+    authorEdit["id"] = QStringLiteral("author-edit");
+    harness.sendText(QJsonDocument(relayKey.encryptObject(peerSeal.sealObject(authorEdit)))
+                         .toJson(QJsonDocument::Compact));
+    check(waitUntil([&] { return editedTargets == QStringList{QStringLiteral("peer-message-1")}; },
+                    2000),
+          "the authenticated author's sealed edit is applied");
 
-    // A frame not addressed to this installation is reported once by sender
-    // key id; this is how pre-discovery history looks on a new device.
     TestPeer otherSeal(room, room, RoomSeal::Policy::Open,
                        QStringLiteral("other-node"), '\x03');
-    QJsonObject stranger = peer;
+    QJsonObject stranger = peerMessage;
     stranger["id"] = QStringLiteral("stranger-1");
+    stranger["senderId"] = otherSeal.node;
     stranger["text"] = QStringLiteral("not for you");
+    mismatchKeyIds.clear();
     harness.sendText(
         QJsonDocument(relayKey.encryptObject(otherSeal.sealObject(stranger)))
             .toJson(QJsonDocument::Compact));
-    check(waitUntil([&] { return mismatchKeyIds.size() >= 2; }, 2000),
-          "an unaddressed sealed frame is reported rather than dropped in silence");
-    // The empty id is the refused private controller frame; the other is
-    // retained ciphertext that predates this device's discovery.
-    check(mismatchKeyIds == QStringList{QString(), otherSeal.keyId()} &&
-              messages.size() == 3,
-          "both ways a private channel falls out of step are reported by key id");
+    check(waitUntil([&] { return mismatchKeyIds.contains(otherSeal.keyId()); }, 2000),
+          "an unaddressed sealed frame is reported by key id");
 
     node.shutdown();
+}
+
+void testServerFramesInChannelRooms()
+{
+    const QString room = QStringLiteral("chat-channel:") + QString(32, QLatin1Char('a')) +
+                         QStringLiteral(":v1");
+    const QString passphrase = QStringLiteral("channel-passphrase");
+    RoomCrypto relayKey(room, passphrase);
+    for (const bool direct : {false, true}) {
+        WebSocketHarness harness;
+        check(harness.listen(), "channel-room harness listens");
+        if (!harness.server.isListening())
+            return;
+        const QString name = direct ? QStringLiteral("dm-room-node")
+                                    : QStringLiteral("channel-room-node");
+        ServerNode node(QStringLiteral("Ada"), QStringLiteral("ada"), QStringLiteral("ada"),
+                        nodeKey(name), harness.url(), room, QString(), passphrase);
+        OfficeChannelMirror::prepareRoomSender(node, [name](const QByteArray &message) {
+            return forkmesh::chatv3::b64u(nodeSigner(name)(message));
+        });
+        node.setChatAccount(QStringLiteral("ada"));
+        if (direct) {
+            node.setDirectParticipants({QStringLiteral("ada"), QStringLiteral("bob")});
+            node.setDirectRoom(true);
+        } else {
+            node.createPrivateChannel(QStringLiteral("#design"));
+        }
+        QList<ChatMessage> messages;
+        QObject::connect(&node, &ServerNode::messageArrived, &node,
+                         [&messages](const ChatMessage &m) { messages.append(m); });
+        node.setTransportLimitsForTests(60, 20, 1 << 20);
+        check(node.start() && waitUntil([&] { return connected(node); }, 3000),
+              "a channel-room node reaches the relay");
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const auto webhook = [&](const QString &id, bool srv) {
+            QJsonObject envelope = relayKey.encryptObject(QJsonObject{
+                {"type", QStringLiteral("chat")},
+                {"id", id},
+                {"senderId", QStringLiteral("webhook:hook")},
+                {"sender", QStringLiteral("Deploys")},
+                {"channel", QStringLiteral("#design")},
+                {"private", true},
+                {"webhook", true},
+                {"serverVisible", true},
+                {"text", QStringLiteral("deployed ") + id},
+                {"ts", double(now)}});
+            if (srv)
+                envelope.insert(QStringLiteral("srv"), true);
+            harness.sendText(QJsonDocument(envelope).toJson(QJsonDocument::Compact));
+        };
+        webhook(QStringLiteral("plain-hook"), false);
+        webhook(QStringLiteral("srv-hook"), true);
+        waitUntil([&] { return !messages.isEmpty(); }, direct ? 400 : 2000);
+        if (direct) {
+            check(messages.isEmpty(), "a direct-message room accepts no relay frame");
+        } else {
+            check(messages.size() == 1 && messages.first().id == QLatin1String("srv-hook") &&
+                      messages.first().senderId == QLatin1String("webhook:hook") &&
+                      messages.first().senderName ==
+                          QStringLiteral("Deploys · server-visible"),
+                  "a private channel shows the relay's webhook as a server-visible "
+                  "integration and drops the unmarked copy");
+        }
+        node.shutdown();
+    }
 }
 
 void testTargetedConversationSealing()
@@ -1401,8 +1865,12 @@ void testTargetedConversationSealing()
     const QString room = forkmesh::mainnode::kDefaultRoomName;
     const QString roomPassphrase = QStringLiteral("targeted-seal-passphrase");
     ServerNode node(QStringLiteral("Alice"), QStringLiteral("alice-laptop"),
-                    QStringLiteral("alice"), QStringLiteral("targeted-node"),
+                    QStringLiteral("alice"), nodeKey(QStringLiteral("targeted-node")),
                     harness.url(), room, QString(), roomPassphrase);
+    node.setNodeSigner(nodeSigner(QStringLiteral("targeted-node")));
+    QStringList notes;
+    QObject::connect(&node, &ServerNode::systemMessage, &node,
+                     [&notes](const QString &text) { notes.append(text); });
     QList<ChatMessage> messages;
     QObject::connect(&node, &ServerNode::messageArrived, &node,
                      [&messages](const ChatMessage &message) {
@@ -1463,47 +1931,94 @@ void testTargetedConversationSealing()
         return view;
     };
 
-    node.sendDirect(QStringLiteral("bob-node"), QStringLiteral("only for bob"));
-    check(waitUntil([&] { return !messages.isEmpty(); }, 2000),
-          "the own direct message is shown locally");
-    const QString dmId = messages.isEmpty() ? QString() : messages.constLast().id;
-    const QJsonObject dm = waitFor(QStringLiteral("dm"));
-    check(!bob.open(dm).isEmpty() && carol.open(dm).isEmpty(),
-          "a direct message opens for its recipient only");
-
+    const auto relayedTypes = [&] {
+        QStringList types;
+        for (const QByteArray &raw : std::as_const(harness.textFrames)) {
+            const QJsonObject view = inner(raw);
+            QJsonObject plain = bob.open(view);
+            if (plain.isEmpty())
+                plain = carol.open(view);
+            types.append(plain.value("type").toString());
+        }
+        return types;
+    };
+    const auto settle = [] {
+        QElapsedTimer quietTimer;
+        quietTimer.start();
+        while (quietTimer.elapsed() < 150)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    };
     harness.textFrames.clear();
-    node.editMessage(QStringLiteral("@bob-node"), dmId,
-                     QStringLiteral("edited for bob"));
-    const QJsonObject edit = waitFor(QStringLiteral("edit"));
-    check(bob.open(edit).value("text").toString() ==
-                  QLatin1String("edited for bob") &&
-              carol.open(edit).isEmpty(),
-          "an edit in a direct conversation is sealed to that peer, not the room");
+    messages.clear();
+    node.sendDirect(bob.node, QStringLiteral("only for bob"));
+    node.sendFile(QStringLiteral("@") + bob.node, QStringLiteral("a.txt"),
+                  QStringLiteral("text/plain"), QByteArrayLiteral("file for bob"));
+    node.sendReaction(QStringLiteral("@") + bob.node, QStringLiteral("some-id"),
+                      QStringLiteral("+1"));
+    node.sendTyping(QStringLiteral("@") + bob.node, true);
+    node.sendRoomEdit(QStringLiteral("@") + bob.node, QStringLiteral("some-id"),
+                      QStringLiteral("edited"));
+    node.sendRoomDelete(QStringLiteral("@") + bob.node, QStringLiteral("some-id"));
+    settle();
+    const QStringList directTypes = relayedTypes();
+    check(messages.isEmpty() && !directTypes.contains(QStringLiteral("dm")) &&
+              !directTypes.contains(QStringLiteral("reaction")) &&
+              !directTypes.contains(QStringLiteral("typing")) &&
+              !directTypes.contains(QStringLiteral("edit")) &&
+              !directTypes.contains(QStringLiteral("delete")) && !notes.isEmpty(),
+          "nothing addressed to an @peer conversation is sent on the shared room");
 
-    node.sendReaction(QStringLiteral("@bob-node"), dmId, QStringLiteral("+1"));
-    const QJsonObject reaction = waitFor(QStringLiteral("reaction"));
-    check(!bob.open(reaction).isEmpty() && carol.open(reaction).isEmpty(),
-          "a reaction in a direct conversation is sealed to that peer");
-
-    node.sendTyping(QStringLiteral("@bob-node"), true);
-    const QJsonObject typing = waitFor(QStringLiteral("typing"));
-    check(!bob.open(typing).isEmpty() && carol.open(typing).isEmpty(),
-          "typing in a direct conversation is sealed to that peer");
-
-    node.deleteMessage(QStringLiteral("@bob-node"), dmId);
-    const QJsonObject removal = waitFor(QStringLiteral("delete"));
-    check(!bob.open(removal).isEmpty() && carol.open(removal).isEmpty(),
-          "a delete in a direct conversation is sealed to that peer");
+    const qint64 sentAt = QDateTime::currentMSecsSinceEpoch();
+    messages.clear();
+    relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("dm")},
+                                     {"id", QStringLiteral("bob-dm-1")},
+                                     {"senderId", bob.node},
+                                     {"sender", QStringLiteral("Bob")},
+                                     {"to", nodeKeyFrame.value("node").toString()},
+                                     {"text", QStringLiteral("relay dm")},
+                                     {"ts", double(sentAt)}}));
+    relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("cove-invite")},
+                                     {"id", QStringLiteral("bob-cove-1")},
+                                     {"senderId", bob.node},
+                                     {"sender", QStringLiteral("Bob")},
+                                     {"invitee", QStringLiteral("alice")},
+                                     {"coveId", QStringLiteral("cove")},
+                                     {"ts", double(sentAt)}}));
+    relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("reaction")},
+                                     {"id", QStringLiteral("bob-react-1")},
+                                     {"senderId", bob.node},
+                                     {"conversation", QStringLiteral("@") + bob.node},
+                                     {"target", QStringLiteral("x")},
+                                     {"emoji", QStringLiteral("+1")},
+                                     {"added", true},
+                                     {"ts", double(sentAt)}}));
+    bool coveInvited = false;
+    QObject::connect(&node, &ServerNode::coveInvited, &node,
+                     [&coveInvited](const QString &, const QString &, const QString &,
+                                    const QString &, const QString &, qint64) {
+                         coveInvited = true;
+                     });
+    relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("chat")},
+                                     {"id", QStringLiteral("bob-public-1")},
+                                     {"senderId", bob.node},
+                                     {"sender", QStringLiteral("Bob")},
+                                     {"channel", QStringLiteral("#general")},
+                                     {"text", QStringLiteral("public sentinel")},
+                                     {"ts", double(sentAt)}}));
+    check(waitUntil([&] { return !messages.isEmpty(); }, 2000) && messages.size() == 1 &&
+              messages.first().id == QLatin1String("bob-public-1") && !coveInvited,
+          "relay dm, @peer and cove frames are not accepted from the shared room");
 
     node.createPrivateChannel(QStringLiteral("#hidden-plans"));
     harness.textFrames.clear();
-    node.sendTyping(QStringLiteral("#hidden-plans"), true);
-    QElapsedTimer quiet;
-    quiet.start();
-    while (quiet.elapsed() < 150)
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-    check(harness.textFrames.isEmpty(),
-          "typing in a private channel never leaves the desktop");
+    node.sendChat(QStringLiteral("#hidden-plans"), QStringLiteral("not private here"));
+    settle();
+    bool markedPrivate = false;
+    for (const QByteArray &raw : std::as_const(harness.textFrames))
+        markedPrivate = markedPrivate ||
+                        bob.open(inner(raw)).value("private").toBool();
+    check(!harness.textFrames.isEmpty() && !markedPrivate,
+          "the shared room has no relay private channel to mark a frame for");
 
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QJsonArray offered{QStringLiteral("#ok"), QStringLiteral("@bob-node"),
@@ -1514,7 +2029,7 @@ void testTargetedConversationSealing()
         offered.append(QStringLiteral("#flood-%1").arg(i));
     relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("hello")},
                                      {"id", QStringLiteral("bob-hello-1")},
-                                     {"senderId", QStringLiteral("bob-node")},
+                                     {"senderId", bob.node},
                                      {"sender", QStringLiteral("Bob")},
                                      {"channels", offered},
                                      {"ts", double(now)}}));
@@ -1531,13 +2046,13 @@ void testTargetedConversationSealing()
 
     relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("channel")},
                                      {"id", QStringLiteral("bob-channel-1")},
-                                     {"senderId", QStringLiteral("bob-node")},
+                                     {"senderId", bob.node},
                                      {"sender", QStringLiteral("Bob")},
                                      {"name", QStringLiteral("@carol-node")},
                                      {"ts", double(now)}}));
     relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("chat")},
                                      {"id", QStringLiteral("bob-sentinel-1")},
-                                     {"senderId", QStringLiteral("bob-node")},
+                                     {"senderId", bob.node},
                                      {"sender", QStringLiteral("Bob")},
                                      {"channel", QStringLiteral("#ok")},
                                      {"text", QStringLiteral("public line")},
@@ -1553,24 +2068,61 @@ void testTargetedConversationSealing()
 
     relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("chat")},
                                      {"id", QStringLiteral("bob-private-1")},
-                                     {"senderId", QStringLiteral("bob-node")},
+                                     {"senderId", bob.node},
                                      {"sender", QStringLiteral("Bob")},
                                      {"channel", QStringLiteral("#ok")},
                                      {"private", true},
                                      {"text", QStringLiteral("private line")},
                                      {"ts", double(now)}}));
+    relay(bob.sealObject(QJsonObject{{"type", QStringLiteral("chat")},
+                                     {"id", QStringLiteral("bob-sentinel-2")},
+                                     {"senderId", bob.node},
+                                     {"sender", QStringLiteral("Bob")},
+                                     {"channel", QStringLiteral("#ok")},
+                                     {"text", QStringLiteral("after private")},
+                                     {"ts", double(now)}}));
     check(waitUntil([&] {
               for (const ChatMessage &m : std::as_const(messages))
-                  if (m.id == QLatin1String("bob-private-1"))
+                  if (m.id == QLatin1String("bob-sentinel-2"))
                       return true;
               return false;
-          }, 2000),
-          "a private entry reaches the history");
+          }, 2000) &&
+              std::none_of(messages.cbegin(), messages.cend(), [](const ChatMessage &m) {
+                  return m.id == QLatin1String("bob-private-1");
+              }),
+          "a frame marked private is refused on the shared room");
+    const QString ownLine = node.sendChat(QStringLiteral("#ok"), QStringLiteral("my own line"));
+
+    messages.clear();
+    relay(carol.sealObject(QJsonObject{
+        {"type", QStringLiteral("history")},
+        {"id", QStringLiteral("carol-history-1")},
+        {"senderId", carol.node},
+        {"to", nodeKeyFrame.value("node").toString()},
+        {"entries",
+         QJsonArray{QJsonObject{{"type", QStringLiteral("chat")},
+                                {"id", QStringLiteral("carol-old-1")},
+                                {"senderId", carol.node},
+                                {"sender", QStringLiteral("Carol")},
+                                {"channel", QStringLiteral("#ok")},
+                                {"text", QStringLiteral("carol earlier")},
+                                {"ts", double(now - 1000)}},
+                    QJsonObject{{"type", QStringLiteral("chat")},
+                                {"id", QStringLiteral("forged-bob-1")},
+                                {"senderId", bob.node},
+                                {"sender", QStringLiteral("Bob")},
+                                {"channel", QStringLiteral("#ok")},
+                                {"text", QStringLiteral("words for bob")},
+                                {"ts", double(now - 1000)}}}},
+        {"ts", double(now)}}));
+    check(waitUntil([&] { return !messages.isEmpty(); }, 2000) &&
+              messages.size() == 1 && messages.first().id == QLatin1String("carol-old-1"),
+          "a history reply speaks only for its own sender");
 
     harness.textFrames.clear();
     relay(carol.sealObject(QJsonObject{{"type", QStringLiteral("hello")},
                                        {"id", QStringLiteral("carol-hello-1")},
-                                       {"senderId", QStringLiteral("carol-node")},
+                                       {"senderId", carol.node},
                                        {"sender", QStringLiteral("Carol")},
                                        {"channels", QJsonArray{}},
                                        {"ts", double(now)}}));
@@ -1587,9 +2139,10 @@ void testTargetedConversationSealing()
     QStringList historyIds;
     for (const QJsonValue &entry : history.value("entries").toArray())
         historyIds.append(entry.toObject().value("id").toString());
-    check(historyIds.contains(QStringLiteral("bob-sentinel-1")) &&
+    check(historyIds.contains(ownLine) &&
+              !historyIds.contains(QStringLiteral("bob-sentinel-1")) &&
               !historyIds.contains(QStringLiteral("bob-private-1")),
-          "history replay skips entries marked private");
+          "history replay carries only this device's own messages");
     bool bobReadHistory = false;
     for (const QByteArray &raw : std::as_const(harness.textFrames))
         bobReadHistory = bobReadHistory ||
@@ -1912,7 +2465,7 @@ void testRecipientCounts()
     const QString room = forkmesh::mainnode::kDefaultRoomName;
     const QString roomPassphrase = QStringLiteral("test-room-passphrase");
     ServerNode node(QStringLiteral("Alice"), QStringLiteral("alice-laptop"),
-                    QStringLiteral("alice"), QStringLiteral("recipients-node"),
+                    QStringLiteral("alice"), nodeKey(QStringLiteral("recipients-node")),
                     harness.url(), room, QString(), roomPassphrase);
     QList<ChatMessage> messages;
     QObject::connect(&node, &ServerNode::messageArrived, &node,
@@ -1928,6 +2481,7 @@ void testRecipientCounts()
                          acks.append(qMakePair(messageId, recipients));
                          ackNames.append(names);
                      });
+    node.setNodeSigner(nodeSigner(QStringLiteral("recipients-node")));
     node.setTransportLimitsForTests(60, 20, 1 << 20);
     check(node.start(), "a node starts for the recipient-count test");
     check(waitUntil([&] { return connected(node); }, 3000),
@@ -1956,7 +2510,7 @@ void testRecipientCounts()
                                   const QJsonValue &inner) {
         QJsonObject frame{{"type", "chat"},
                           {"id", id},
-                          {"senderId", QStringLiteral("bob-node")},
+                          {"senderId", peerSeal.node},
                           {"sender", QStringLiteral("bob")},
                           {"channel", QStringLiteral("#general")},
                           {"text", QStringLiteral("hello ") + id},
@@ -2654,14 +3208,17 @@ void testUserStatusOnPresenceFrames()
     const QString room = forkmesh::mainnode::kDefaultRoomName;
     const QString roomPassphrase = QStringLiteral("test-room-passphrase");
     ServerNode node(QStringLiteral("Alice"), QStringLiteral("alice-laptop"),
-                    QStringLiteral("alice"), QStringLiteral("status-frame-node"),
+                    QStringLiteral("alice"), nodeKey(QStringLiteral("status-frame-node")),
                     harness.url(), room, QString(), roomPassphrase);
     QList<MemberInfo> roster;
     QObject::connect(&node, &ServerNode::rosterChanged, &node,
                      [&roster](const QList<MemberInfo> &members) {
                          roster = members;
                      });
+    node.setNodeSigner(nodeSigner(QStringLiteral("status-frame-node")));
     node.setTransportLimitsForTests(60, 20, 1 << 20);
+    NodeDiagnostics::hostCollector().setDataDir(QDir::tempPath());
+    NodeDiagnostics::hostCollector().run();
     check(node.start(), "a node starts for the user-status frame test");
     check(waitUntil([&] { return connected(node); }, 3000),
           "the user-status node reaches the relay");
@@ -2688,7 +3245,7 @@ void testUserStatusOnPresenceFrames()
                                    qint64 ts, const QJsonValue &status) {
         QJsonObject frame{{"type", type},
                           {"id", id},
-                          {"senderId", QStringLiteral("bob-node")},
+                          {"senderId", peerSeal.node},
                           {"sender", QStringLiteral("bob")},
                           {"ownerUser", QStringLiteral("bob")},
                           {"ts", double(ts)}};
@@ -2698,9 +3255,10 @@ void testUserStatusOnPresenceFrames()
             QJsonDocument(relayKey.encryptObject(peerSeal.sealObject(frame)))
                 .toJson(QJsonDocument::Compact));
     };
-    const auto bob = [&roster]() -> MemberInfo {
+    const QString bobNode = peerSeal.node;
+    const auto bob = [&roster, bobNode]() -> MemberInfo {
         for (const MemberInfo &member : roster)
-            if (member.id == QLatin1String("bob-node"))
+            if (member.id == bobNode)
                 return member;
         return MemberInfo();
     };
@@ -2776,6 +3334,47 @@ void testUserStatusOnPresenceFrames()
                   QStringLiteral("In a meeting") &&
               qint64(sentStatus.value("expiresAt").toDouble()) == now + 3600000,
           "the presence frame carries our userStatus");
+    check(NodeDiagnostics::hostCollector().lastRunMs() > 0 &&
+              !sentPresence.contains(QStringLiteral("dg")) &&
+              !sentPresence.contains(QStringLiteral("solana")),
+          "a shared room's presence carries no diagnostics and no tip address");
+    harness.textFrames.clear();
+    node.setTipAddress(QStringLiteral("So1anaTipAddress111111111111111111111111111"));
+    QJsonObject tipHello;
+    waitUntil([&] {
+        for (const QByteArray &raw : harness.textFrames) {
+            const QJsonObject inner = peerSeal.open(
+                relayKey.decryptObject(QJsonDocument::fromJson(raw).object()));
+            if (inner.value("type").toString() == QLatin1String("hello"))
+                tipHello = inner;
+        }
+        return !tipHello.isEmpty();
+    }, 2000);
+    check(tipHello.value(QStringLiteral("solana")).toString() ==
+              QStringLiteral("So1anaTipAddress111111111111111111111111111"),
+          "a tip address the user chose to share goes out with the next hello");
+
+    check(bob().ownerUser.isEmpty() && bob().accountKind == QLatin1String("guest"),
+          "an account claim nobody verified is shown as a guest");
+    QStringList asked;
+    ChatNodeOwners owners;
+    owners.setFetcher([&asked](const QString &node, ChatNodeOwners::Reply reply) {
+        asked.append(node);
+        QTimer::singleShot(0, [reply] { reply(true, QStringLiteral("bob")); });
+    });
+    node.setOwnerVerifier(&owners);
+    check(waitUntil([&] { return bob().ownerUser == QLatin1String("bob"); }, 2000) &&
+              asked == QStringList{bobNode},
+          "the server's answer for the node key lets the roster show the account");
+    ChatNodeOwners liars;
+    liars.setFetcher([](const QString &, ChatNodeOwners::Reply reply) {
+        reply(true, QStringLiteral("mallory"));
+    });
+    node.setOwnerVerifier(&liars);
+    check(waitUntil([&] { return bob().ownerUser.isEmpty() &&
+                                 bob().accountKind == QLatin1String("guest"); }, 2000),
+          "a claim that does not match the node's account is shown as a guest");
+    node.setOwnerVerifier(nullptr);
     check(waitUntil(
               [&] {
                   return !roster.isEmpty() && roster.first().self &&
@@ -3777,6 +4376,41 @@ void testOfficePrivateRoomsAndDirectMessages()
     check(mirror.startDirectMessage(QStringLiteral("Bob")) &&
               ready == QStringLiteral("#office/@bob"),
           "a second Message click reuses the conversation it just opened");
+    {
+        QList<ChatMessage> invites;
+        QObject::connect(&mirror, &OfficeChannelMirror::messageArrived, &mirror,
+                         [&invites](const ChatMessage &message) { invites.append(message); });
+        ready.clear();
+        check(mirror.sendDirectText(QStringLiteral("@Carol"),
+                                    QStringLiteral("Join my cove: https://example.org/c")) &&
+                  invites.size() == 1 && invites.first().conversation == carol &&
+                  invites.first().self &&
+                  invites.first().text == QStringLiteral("Join my cove: https://example.org/c") &&
+                  ready.isEmpty(),
+              "a cove invite goes out as a direct message without opening the conversation");
+        {
+        const QString officeNode = nodeKey(QStringLiteral("office-room-node"));
+        ServerNode roomSender(QStringLiteral("Ada"), QStringLiteral("ada"), QStringLiteral("ada"),
+                              officeNode, QUrl(QStringLiteral("ws://127.0.0.1:9/ws")),
+                              QStringLiteral("chat-channel:") + QString(32, QLatin1Char('f')) +
+                                  QStringLiteral(":v1"),
+                              QString(), QStringLiteral("room-passphrase"));
+        const RoomSeal::NodeSigner sign = nodeSigner(QStringLiteral("office-room-node"));
+        OfficeChannelMirror::prepareRoomSender(roomSender, [sign](const QByteArray &message) {
+            return forkmesh::chatv3::b64u(sign(message));
+        });
+        roomSender.setChatAccount(QStringLiteral("ada"));
+        roomSender.createPrivateChannel(QStringLiteral("#design"));
+        const QJsonObject bundle = roomSender.roomSeal().keyFrame();
+        check(!roomSender.isSharedRoom() &&
+                  forkmesh::chatv3::verifyNodeBinding(bundle, roomSender.roomSeal().roomName()) &&
+                  bundle.value(QStringLiteral("node")).toString() == officeNode,
+              "an office room's node is not the shared room and signs its bundle with the node key");
+    }
+    check(!mirror.sendDirectText(QStringLiteral("ada"), QStringLiteral("self")),
+              "nobody sends a direct invite to themselves");
+        QObject::disconnect(&mirror, &OfficeChannelMirror::messageArrived, &mirror, nullptr);
+    }
 
     QList<ChatMessage> echoed;
     QObject::connect(&mirror, &OfficeChannelMirror::messageArrived, &mirror,
@@ -3846,10 +4480,13 @@ void testOfficeNoticesChannelShowsServerFrames()
             QByteArrayLiteral("\",\"name\":\"design\",\"visibility\":"
                               "\"private\",\"canManage\":true,\"topic\":\"\","
                               "\"keyVersion\":1}]}"));
-    auto history = [](const QString &channelId, const QString &messageId) {
+    auto history = [](const QString &channelId,
+                      const QList<QPair<QString, bool>> &entries) {
         const QString room = QStringLiteral("chat-channel:") + channelId +
                              QStringLiteral(":v1");
         const RoomCrypto crypto(room, QStringLiteral("room-passphrase"));
+        QJsonArray messages;
+        for (const auto &[messageId, srv] : entries) {
         const QJsonObject notice{
             {"type", "chat"},
             {"id", messageId},
@@ -3861,28 +4498,33 @@ void testOfficeNoticesChannelShowsServerFrames()
                      "accepted"},
             {"ts", 1790600000000.0},
             {"webhook", true},
+            {"serverVisible", true},
+            {"private", true},
             {"notice", true},
             {"recipients", 42}};
         QJsonObject envelope = crypto.encryptObject(notice);
         envelope.insert(QStringLiteral("persist"), true);
         envelope.insert(QStringLiteral("recipients"), 5);
+        if (srv)
+            envelope.insert(QStringLiteral("srv"), true);
+        messages.append(QJsonObject{
+            {"ts", 1790600000000.0},
+            {"body", QString::fromUtf8(QJsonDocument(envelope).toJson(QJsonDocument::Compact))}});
+        }
         const QJsonObject payload{
             {"room", room},
             {"passphrase", "room-passphrase"},
-            {"messages",
-             QJsonArray{QJsonObject{
-                 {"ts", 1790600000000.0},
-                 {"body", QString::fromUtf8(
-                              QJsonDocument(envelope)
-                                  .toJson(QJsonDocument::Compact))}}}}};
+            {"messages", messages}};
         return QJsonDocument(payload).toJson(QJsonDocument::Compact);
     };
     relay.responses.insert(QStringLiteral("/api/chat/channels/") + noticesId +
                                QStringLiteral("/history"),
-                           history(noticesId, QStringLiteral("notice-1")));
+                           history(noticesId, {{QStringLiteral("notice-1"), true},
+                                               {QStringLiteral("notice-forged"), false}}));
     relay.responses.insert(QStringLiteral("/api/chat/channels/") + privateId +
                                QStringLiteral("/history"),
-                           history(privateId, QStringLiteral("unsealed-1")));
+                           history(privateId, {{QStringLiteral("unsealed-1"), false},
+                                               {QStringLiteral("private-srv-1"), true}}));
 
     QNetworkAccessManager network;
     OfficeChannelMirror mirror(&network);
@@ -3911,12 +4553,18 @@ void testOfficeNoticesChannelShowsServerFrames()
     check(!mirror.canSend(notices) && !mirror.sendMessage(notices,
                                                           QStringLiteral("hi")),
           "the desktop never tries to post into a read-only notices channel");
-    check(waitUntil([&] { return !arrived.isEmpty(); }, 4000) &&
-              arrived.first().conversation == notices &&
-              arrived.first().senderName == QStringLiteral("Mail log (ForkMesh)") &&
-              arrived.first().text.contains(QStringLiteral("accepted")),
+    ChatMessage note;
+    check(waitUntil([&] {
+              for (const ChatMessage &message : std::as_const(arrived))
+                  if (message.id == QLatin1String("notice-1"))
+                      note = message;
+              return !note.id.isEmpty();
+          }, 4000) &&
+              note.conversation == notices &&
+              note.senderName == QStringLiteral("Mail log (ForkMesh) · server-visible") &&
+              note.text.contains(QStringLiteral("accepted")),
           "a server-written email-log note is shown in the notices channel");
-    check(!arrived.isEmpty() && arrived.first().recipientCount == 5,
+    check(note.recipientCount == 5,
           "history reads the recipient count from the outer envelope only");
     check(waitUntil([&] { return relay.lastCall(
                               "GET", QStringLiteral("/api/chat/channels/") +
@@ -3926,10 +4574,18 @@ void testOfficeNoticesChannelShowsServerFrames()
           "the private channel's history is read too");
     waitUntil([] { return false; }, 500);
     bool unsealedShown = false;
-    for (const ChatMessage &message : std::as_const(arrived))
-        unsealedShown = unsealedShown || message.conversation == design;
+    bool privateSrvShown = false;
+    for (const ChatMessage &message : std::as_const(arrived)) {
+        unsealedShown = unsealedShown || message.id == QLatin1String("unsealed-1") ||
+                        message.id == QLatin1String("notice-forged");
+        privateSrvShown = privateSrvShown ||
+                          (message.id == QLatin1String("private-srv-1") &&
+                           message.conversation == design &&
+                           message.senderId == QLatin1String("system:mail-log"));
+    }
     check(!unsealedShown,
-          "an ordinary private channel still refuses an unsealed frame");
+          "an unsealed frame the relay did not mark as its own is refused");
+    check(privateSrvShown, "a relay frame in a private channel's history is shown");
     mirror.stop();
 }
 
@@ -4009,15 +4665,23 @@ void testOfficeEveryoneChannels()
                                    "\xF0\x9F\x91\x8B")},
         {"ts", 1790600000000.0},
         {"webhook", true}};
+    QJsonObject markedWelcome = welcomeCrypto.encryptObject(welcomeNote);
+    markedWelcome.insert(QStringLiteral("srv"), true);
+    QJsonObject forgedWelcome = welcomeNote;
+    forgedWelcome.insert(QStringLiteral("id"), QStringLiteral("welcome-forged"));
     const QJsonObject welcomeHistory{
         {"room", welcomeRoom},
         {"passphrase", "room-passphrase"},
         {"messages",
          QJsonArray{QJsonObject{
-             {"ts", 1790600000000.0},
-             {"body", QString::fromUtf8(
-                          QJsonDocument(welcomeCrypto.encryptObject(welcomeNote))
-                              .toJson(QJsonDocument::Compact))}}}}};
+                        {"ts", 1790600000000.0},
+                        {"body", QString::fromUtf8(
+                                     QJsonDocument(welcomeCrypto.encryptObject(forgedWelcome))
+                                         .toJson(QJsonDocument::Compact))}},
+                    QJsonObject{
+                        {"ts", 1790600000000.0},
+                        {"body", QString::fromUtf8(QJsonDocument(markedWelcome)
+                                                       .toJson(QJsonDocument::Compact))}}}}};
     relay.responses.insert(
         QStringLiteral("/api/chat/channels/") + welcomeId +
             QStringLiteral("/history"),
@@ -4114,6 +4778,10 @@ void testOfficeEveryoneChannels()
                     message.text.contains(QStringLiteral("@newbie")) &&
                     !message.self;
     check(shown, "the welcome note shows as a normal message in #welcome");
+    check(std::none_of(arrived.cbegin(), arrived.cend(), [](const ChatMessage &message) {
+              return message.id == QStringLiteral("welcome-forged");
+          }),
+          "the same note without the relay's mark is refused");
     mirror.stop();
 }
 
@@ -4510,11 +5178,16 @@ void testLocalMeshLinkV3()
     check(nextFrame(&first) && first.value(QStringLiteral("type")).toString() ==
                                    QStringLiteral("e2ee-key") &&
               verifyBundle(first, roomName(), QDateTime::currentMSecsSinceEpoch()) &&
+              verifyNodeBinding(first, roomName()) &&
               first.value(QStringLiteral("node")).toString() ==
-                  QStringLiteral("mesh-v3-node"),
-          "the first encrypted frame is the desktop's signed #mesh bundle");
-    RoomSeal phoneSeal(roomName(), roomName(), RoomSeal::Policy::Open,
-                       QStringLiteral("phone-node"), QStringLiteral("phone-node"), phone);
+                  meshNode(QStringLiteral("mesh-v3-node")) &&
+              first.value(QStringLiteral("acct")).toString() ==
+                  first.value(QStringLiteral("node")).toString(),
+          "the first encrypted frame is the desktop's #mesh bundle, bound to its node key");
+    const QString phoneNode = nodeKey(QStringLiteral("phone-node"));
+    RoomSeal phoneSeal(roomName(), roomName(), RoomSeal::Policy::Open, phoneNode,
+                       phoneNode, phone);
+    phoneSeal.setNodeSigner(nodeSigner(QStringLiteral("phone-node")));
     phoneSeal.acceptKeyFrame(first);
     const auto sendLink = [&](const QJsonObject &frame) {
         client.send(linkSeal(i2r, outCounter++, compact(frame)));
@@ -4523,7 +5196,8 @@ void testLocalMeshLinkV3()
     sendLink(phoneSeal.sealObject(QJsonObject{
         {QStringLiteral("type"), QStringLiteral("hello")},
         {QStringLiteral("id"), QStringLiteral("phone-hello-1")},
-        {QStringLiteral("senderId"), QStringLiteral("phone-node")},
+        {QStringLiteral("senderId"), phoneNode},
+        {QStringLiteral("ownerUser"), QStringLiteral("someone-else")},
         {QStringLiteral("sender"), QStringLiteral("Phone")},
         {QStringLiteral("platform"), QStringLiteral("ios")},
         {QStringLiteral("conversation"), conversation()}}));
@@ -4531,22 +5205,29 @@ void testLocalMeshLinkV3()
           "the desktop admits the authenticated phone to #mesh");
     bool named = false;
     for (const MemberInfo &member : node.members())
-        named = named || (member.id == QStringLiteral("phone-node") &&
-                          member.name == QStringLiteral("Phone"));
-    check(named, "names arrive only inside the encrypted link");
+        named = named || (member.id == phoneNode &&
+                          member.name == QStringLiteral("Phone") &&
+                          member.ownerUser.isEmpty());
+    check(named, "names arrive only inside the encrypted link, and no account claim is kept");
     const QString said = node.sendChat(QStringLiteral("over v3"));
     bool heard = false;
+    bool ownerSent = false;
+    int helloSeen = 0;
     QJsonObject frame;
     for (int i = 0; i < 8 && !heard && nextFrame(&frame); ++i) {
         const QJsonObject plain = phoneSeal.unsealObject(frame);
+        ownerSent = ownerSent || plain.contains(QStringLiteral("ownerUser"));
+        if (plain.value(QStringLiteral("type")).toString() == QStringLiteral("hello"))
+            ++helloSeen;
         heard = plain.value(QStringLiteral("id")).toString() == said &&
                 plain.value(QStringLiteral("text")).toString() == QStringLiteral("over v3");
     }
     check(heard, "#mesh chat reaches the phone as a v3 sealed frame inside the link");
+    check(helloSeen == 1 && !ownerSent, "#mesh frames carry no ownerUser");
     sendLink(phoneSeal.sealObject(QJsonObject{
         {QStringLiteral("type"), QStringLiteral("chat")},
         {QStringLiteral("id"), QStringLiteral("phone-chat-1")},
-        {QStringLiteral("senderId"), QStringLiteral("phone-node")},
+        {QStringLiteral("senderId"), phoneNode},
         {QStringLiteral("sender"), QStringLiteral("Phone")},
         {QStringLiteral("conversation"), conversation()},
         {QStringLiteral("text"), QStringLiteral("from the phone")}}));
@@ -5006,6 +5687,7 @@ int main(int argc, char **argv)
         testLocalMeshFraming();
         testLocalMeshBeaconIsCiphertext();
         testLocalMeshRoom();
+        testLocalMeshNoResealToDirectJoiner();
         testLocalMeshQueuedUntilJoin();
         testLocalMeshWakesDevicesThatLeft();
         testLocalMeshReturningDeviceReplacesStaleLink();
@@ -5017,10 +5699,13 @@ int main(int argc, char **argv)
             std::puts("All local mesh tests passed.");
         return failures == 0 ? 0 : 1;
     }
+    testNodeOwnersAndBlocks();
+    testRelayRules();
     testTeammateChatRelay();
     if (!discordOnly) {
         testSavedRoomMigration();
         testPublicIntegrationsAndPrivateSeal();
+        testServerFramesInChannelRooms();
         testTargetedConversationSealing();
         testDeterministicRecovery();
         testStatusIsEventDriven();
@@ -5046,6 +5731,7 @@ int main(int argc, char **argv)
         testLocalMeshFraming();
         testLocalMeshBeaconIsCiphertext();
         testLocalMeshRoom();
+        testLocalMeshNoResealToDirectJoiner();
         testLocalMeshQueuedUntilJoin();
         testLocalMeshWakesDevicesThatLeft();
         testLocalMeshReturningDeviceReplacesStaleLink();

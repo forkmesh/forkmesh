@@ -148,7 +148,8 @@ def test_every_write_that_moves_an_unread_count_pushes():
     # ...and the retained-message counter is the only thing that moves a
     # conversation's unreadCount, for the participant who did not send it.
     retained = _function_source("_chat_direct_message_retained")
-    assert "_chat_direct_message_recipient(" in retained
+    assert "_chat_direct_message_parties(" in retained
+    assert "not await _chat_blocked_by(env, recipient, sender)" in retained
     assert 'env, recipient, "direct-messages",' in retained
     assert ("direct_message_alert(\n                conversation_id=conversation_id, ref=ref,\n"
             "                key_version=key_version, frame=frame)") in retained

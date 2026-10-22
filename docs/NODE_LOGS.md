@@ -58,14 +58,21 @@ The redacted query keys are `ACCESS_LOG_QUERY_KEYS` in `deploy/core/render.py`.
 were written to the journal in full; a ticket is a short-lived socket
 credential and `node` ties each signed read to an account.
 
-Bearer tokens carried in a path (`/api/chat/invites/<token>`,
-`/api/chat/webhooks/<token>`) are still logged by Caddy. Caddy applies one
-filter per log field, and `request>uri` already uses the `query` filter, so
-redacting the path would mean replacing that filter with hand-written regular
-expressions over the whole URI; that was not done. The app's own error and
-Sentry logs replace both with `[token]` (`_privacy_safe_log_path` in
-`app/src/entry.py`; `/api/chat/webhooks/` was added on 2026-10-22). Tests:
-`deploy/tests/test_render.py`, `app/tests/test_sentry_worker.py`.
+Bearer tokens no longer travel in a path. Chat invite tokens go in the
+request body (`POST /api/chat/invites/preview|accept`) and webhook tokens in
+the `token` query key or the `x-forkmesh-webhook-token` header
+(`/api/chat/webhooks?token=<token>`); the old `/api/chat/invites/<token>` and
+`/api/chat/webhooks/<token>` paths answer `410` (2026-10-22,
+[app/chat-private-rooms.md](app/chat-private-rooms.md#invite-links)). Caddy
+applies one filter per log field and `request>uri` already uses the `query`
+filter, so redacting a path would mean replacing it with hand-written regular
+expressions over the whole URI, and there is no Caddy binary here to validate
+such a config before it ships; moving the tokens was the safer fix. A client
+that still calls an old path is logged once, gets the `410`, and the owner
+rotates the token. The app's own error and Sentry logs replace both old paths
+with `[token]` (`_privacy_safe_log_path` in `app/src/entry.py`). Tests:
+`deploy/tests/test_render.py`, `app/tests/test_sentry_worker.py`,
+`app/tests/test_chat_relay_hardening.py`.
 
 ## Rolling it out
 

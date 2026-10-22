@@ -67,7 +67,7 @@ final class ChatReadMarksTests: XCTestCase {
         let api = FakeAccountApi()
         hub.readMarks = marks(api)
         for (id, ts) in [("unread-1", base + 1_000), ("unread-2", base + 2_000)] {
-            try h.sendPlain([
+            try await h.sendProtected([
                 "type": "chat", "id": .string(id), "senderId": "remote-node", "sender": "Remote", "ts": .int(ts),
                 "channel": "#random", "text": "unread",
             ])
@@ -82,11 +82,11 @@ final class ChatReadMarksTests: XCTestCase {
         XCTAssertEqual(h.relay.totalUnread, 2, "a second read within a few seconds is skipped")
         await hub.applyReadMarks(force: true)
         XCTAssertEqual(h.relay.totalUnread, 0)
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "replayed", "senderId": "remote-node", "sender": "Remote", "ts": .int(base + 1_800),
             "channel": "#random", "text": "already read on the phone",
         ])
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "fresh", "senderId": "remote-node", "sender": "Remote", "ts": .int(base + 3_000),
             "channel": "#random", "text": "new",
         ])
@@ -104,7 +104,7 @@ final class ChatReadMarksTests: XCTestCase {
         let api = FakeAccountApi()
         let readMarks = marks(api)
         hub.readMarks = readMarks
-        try h.sendPlain([
+        try await h.sendProtected([
             "type": "chat", "id": "one", "senderId": "remote-node", "sender": "Remote", "ts": .int(base + 7_000),
             "channel": "#random", "text": "hello",
         ])

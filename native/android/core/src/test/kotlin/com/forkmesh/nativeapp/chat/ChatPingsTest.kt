@@ -45,10 +45,8 @@ class ChatPingsTest {
         val (hub, _, log) = hub()
         var changed = 0
         hub.onPingsChanged = { changed++ }
-        hub.extras.restoreChannels(listOf("#hush"), emptyList())
         hub.filePing(message("d1", "@pat-node", text = "secret one"), now)
         hub.filePing(message("d2", "direct:" + "d".repeat(32), text = "", fileName = "plan.pdf"), now)
-        hub.filePing(message("d3", "#hush", text = "secret two"), now)
         assertEq(0, changed)
         assertEq(emptyList<String>(), log.pings.map { it.id })
     }
@@ -59,16 +57,10 @@ class ChatPingsTest {
         stored.recordChat("p1", "Pat", "Pat in #general", "hello", "#general", now - 3_000, false)
         stored.recordChat("p2", "Pat", "Pat sent you a message", "secret", "@pat-node", now - 2_000, false)
         stored.recordChat("p3", "Pat", "Pat sent you a message", "secret", "direct:" + "d".repeat(32), now - 1_000, false)
-        stored.recordChat("p4", "Pat", "Pat in #hush", "secret", "#hush", now - 500, false)
         stored.record("git", "Push failed", "x")
         val hub = ChatHub(FakeChatRelay())
         val log = LocalPingLog(prefs, { now })
         hub.pings = log
-        assertEq(listOf("chat:p4", "chat:p1"), log.pings.filter { it.kind == "chat" }.map { it.id })
-        var changed = 0
-        hub.onPingsChanged = { changed++ }
-        hub.extras.restoreChannels(listOf("#hush"), emptyList())
-        assertEq(1, changed)
         assertEq(listOf("chat:p1"), log.pings.filter { it.kind == "chat" }.map { it.id })
         assertEq(listOf("chat:p1"), LocalPingLog(prefs).pings.filter { it.kind == "chat" }.map { it.id })
         expect(log.pings.any { it.title == "Push failed" })

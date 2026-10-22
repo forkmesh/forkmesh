@@ -92,6 +92,7 @@ def _harness():
         "CHAT_DIRECT_MESSAGE_READ_RE": re.compile(
             r"^/api/chat/direct-messages/([0-9a-f]{32})/read/?$"),
         "CHAT_READS_RE": re.compile(r"^/api/chat/reads/?$"),
+        "CHAT_BLOCKS_RE": re.compile(r"^/api/chat/blocks/?$"),
         "chat_reads_api": chat_reads_api,
         "Date": SimpleNamespace(now=lambda: int(TS)),
     })

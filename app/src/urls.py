@@ -16,7 +16,6 @@ import re
 
 # Each room exposes a WebSocket (/ws) and a read-only live client count
 # (/clients); the Durable Object picks behavior from the upgrade header.
-ROOM_RE = re.compile(r"^/api/room/([^/]+)/(?:ws|clients)$")
 REPO_ROOM_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/rooms/([^/]+)/(?:ws|clients)$")
 # User-created public/private chat channels. Public paths use only
 # opaque 128-bit identifiers; human-readable channel names stay encrypted.
@@ -38,11 +37,11 @@ CHAT_CHANNEL_WEBHOOKS_RE = re.compile(
 CHAT_CHANNEL_WEBHOOK_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/webhooks/([0-9a-f]{32})/?$")
 CHAT_WEBHOOK_DELIVERY_RE = re.compile(
-    r"^/api/chat/webhooks/([0-9a-f]{64})/?$")
+    r"^/api/chat/webhooks(?:/[0-9a-f]{64})?/?$")
 CHAT_CHANNEL_INVITE_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/invite/?$")
 CHAT_INVITE_RE = re.compile(
-    r"^/api/chat/invites/([0-9a-f]{64})/?$")
+    r"^/api/chat/invites/(?:[0-9a-f]{64}|preview|accept)/?$")
 CHAT_CHANNEL_WS_RE = re.compile(
     r"^/api/chat/channels/([0-9a-f]{32})/ws/?$")
 # One-to-one direct messages use opaque conversation identifiers and a
@@ -61,6 +60,7 @@ CHAT_DIRECT_MESSAGE_DELIVERED_RE = re.compile(
 CHAT_DIRECT_MESSAGE_WS_RE = re.compile(
     r"^/api/chat/direct-messages/([0-9a-f]{32})/ws/?$")
 CHAT_READS_RE = re.compile(r"^/api/chat/reads/?$")
+CHAT_BLOCKS_RE = re.compile(r"^/api/chat/blocks/?$")
 # Issue inbox: signed submissions from people without write access to the repo.
 REPO_ISSUES_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/issues$")
 # Pull-request inbox: signed PR submissions from any node.

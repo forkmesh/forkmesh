@@ -166,6 +166,13 @@ class AccountSettings(
 
     fun setSolanaAddress(value: String) = setProject(SOLANA_KEY, value)
 
+    val chatTipsEnabled: Boolean get() = projectPrefs.getBool(CHAT_TIPS_KEY) ?: false
+
+    fun setChatTipsEnabled(value: Boolean) {
+        projectPrefs.putBool(CHAT_TIPS_KEY, value)
+        notifyListeners()
+    }
+
     fun setGithubToken(value: String) {
         githubTokenValue = value
         if (value.isEmpty()) secrets.delete(GITHUB_TOKEN_KEY) else secrets.write(GITHUB_TOKEN_KEY, value)
@@ -229,6 +236,7 @@ class AccountSettings(
         const val DISPLAY_NAME_KEY = "profile/name"
         const val ROOM_KEY = "server/room"
         const val SOLANA_KEY = "profile/solana"
+        const val CHAT_TIPS_KEY = "chat/tipsEnabled"
         const val BUG_BUTTON_ANCHOR_KEY = "bugReport/anchor"
         const val BUG_BUTTON_LEFT_KEY = "bugReport/onLeft"
         const val SERVE_AS_NODE_KEY = "node/serve"

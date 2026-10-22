@@ -3307,8 +3307,10 @@ void MainWindow::syncNativePackagePages()
             if (!forkmesh::ui::isValidNodeName(name))
                 return;
             MemberInfo member;
+            member.id = QStringLiteral("user:") + name;
             member.name = name;
             member.nodeName = name;
+            member.ownerUser = name;
             member.accountKind = QStringLiteral("user");
             showChatUserProfile(member, {});
         };

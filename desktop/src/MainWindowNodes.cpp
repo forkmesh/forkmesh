@@ -2472,12 +2472,12 @@ QWidget *MainWindow::buildNodeProfilePanel()
         for (const MemberInfo &member : std::as_const(m_homeRoster)) {
             if (member.id != m_profileNodeId)
                 continue;
-            account = member.ownerUser.trimmed().isEmpty()
-                          ? member.nodeName.trimmed()
-                          : member.ownerUser.trimmed();
+            account = member.ownerUser.trimmed();
             break;
         }
-        startDirectMessageWith(account, m_profileNodeId, m_profileNodeName);
+        if (account.isEmpty())
+            account = verifiedChatAccount(m_profileNodeId, QString());
+        startDirectMessageWith(account, QString(), QString());
     });
 
     // Admin-only: request ownership of someone else's node. This
@@ -3158,7 +3158,12 @@ void MainWindow::showNodeProfile(const QString &nodeId, const QString &nodeName,
     m_profileNote->setText(info.note.toHtmlEscaped());
     m_profileNote->setVisible(!info.note.trimmed().isEmpty());
 
-    m_profileMessageButton->setVisible(!info.self && !info.id.isEmpty());
+    m_profileMessageButton->setVisible(
+        !info.self && !info.id.isEmpty() &&
+        !(info.ownerUser.trimmed().isEmpty()
+              ? verifiedChatAccount(info.id, QString())
+              : info.ownerUser.trimmed())
+             .isEmpty());
     // Admin-only takeover request; hidden entirely for non-admins and for your
     // own profile (nothing to take ownership of there).
     if (m_profileTakeOwnershipButton)

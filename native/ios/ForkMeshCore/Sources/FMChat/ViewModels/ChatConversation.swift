@@ -173,9 +173,9 @@ public enum ChatPeerPresence: String, Equatable, Sendable {
 
 extension ChatHub {
     public func isConversation(_ conversation: String) -> Bool {
-        if conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation) { return true }
+        if DirectMessageFrames.isDirect(conversation) { return true }
         if let room = office?.room(for: conversation) { return room.isPrivate && !room.serverVisible && !room.readOnly }
-        return extras.isPrivate(conversation)
+        return false
     }
 
     public func isGroupConversation(_ conversation: String) -> Bool {
@@ -412,12 +412,5 @@ extension ChatHub {
 
     public func clearConversationHistory() {
         deleteConversation(relay.currentConversation)
-    }
-
-    public func leaveGroupConversation() {
-        let conversation = relay.currentConversation
-        guard extras.isPrivate(conversation) else { return }
-        extras.removeChannel(conversation)
-        select(generalConversation)
     }
 }

@@ -155,9 +155,17 @@ class DirectMessagesTest {
         assertEq("direct:$conversationId", hub.currentConversation)
         assertEq(1, api.calls.count { it.first == "POST" && it.second == "/api/chat/direct-messages" })
         relay.peers.add(com.forkmesh.nativeapp.model.Member(id = "peer-9", name = "Pat", online = true, owner = "pat"))
+        hub.select("#general")
         hub.switchConversation("@peer-9")
-        assertEq("@peer-9", hub.currentConversation)
+        assertEq("direct:$conversationId", hub.currentConversation, "Message on a person opens their account's direct conversation")
         dm.closeAll()
+    }
+
+    fun testAServerMarkedUnsealedFrameNeverShowsInADirectMessage() {
+        val rig = rig()
+        rig.socket.onText(envelope(peerChat("srv-1", "from the server"), "srv" to true))
+        rig.fromPeer(peerChat("p-1", "sealed hello"))
+        assertEq(listOf("sealed hello"), rig.dm.messages(rig.conversation).map { it.text })
     }
 
     fun testOwnFramesComingBackFromTheRelayAreIgnored() {

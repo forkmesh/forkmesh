@@ -341,6 +341,7 @@ public final class DirectMessageService {
     @ObservationIgnored public var isRemoved: (@MainActor (String) -> Bool)?
     @ObservationIgnored public var onRemoved: (@MainActor (String, String) -> Void)?
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
+    @ObservationIgnored public var onConversations: (@MainActor ([DirectConversation]) -> Void)?
     @ObservationIgnored private var refBooks: [String: DirectRefBook] = [:]
     @ObservationIgnored private var receiptOrder: [String] = []
     @ObservationIgnored private var pendingDeletes: [String: [String: String]] = [:]
@@ -485,7 +486,10 @@ public final class DirectMessageService {
                 if let socket = sockets[old.id] { Task { await self.close(socket) } }
             }
         }
-        if records != merged { records = merged }
+        if records != merged {
+            records = merged
+            onConversations?(merged)
+        }
     }
 
     public func searchUsers(_ query: String) async -> [String] {

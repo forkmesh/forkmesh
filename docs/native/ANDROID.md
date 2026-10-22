@@ -259,24 +259,17 @@ signed with the v3 key (`native/android/README.md`); the default application id
     ([chat-private-rooms.md](../app/chat-private-rooms.md#delivery-ticks)).
 - **Relay room** (`C/chat/RelayRoom.kt`): every frame encrypted twice
   (`RoomCrypto` room key and a v3 `RoomSeal`, open trust, scope = room name),
-  except public `#channel` chat. Every frame with a non-empty `to` except
-  `hello` (DMs and their edits, reactions, stickers, typing and deletes, and
-  channel invites) is sealed to the devices whose bundle `node` is the
-  recipient plus this account's own devices (`RelayRoom.sealRecipients`,
-  2026-10-22): before, only `type == "dm"` was, so an edit or reaction in an
-  `@peer` conversation could be opened by every device in the room. The
-  `hello` and its replies list only `RelayRoom.advertisedChannels` (no
-  private, hidden or `#office/` channel, from `ChatExtras.isPrivate` and
-  `isHiddenChannel` through `ChatRelay.setChannelPrivacy`), and a peer's
-  `hello` adds only `#` channels that are neither `#office/` nor hidden; a
-  chat frame or restored history no longer brings a hidden channel back. A
-  `private` frame for a channel this phone is not in is dropped unless its
-  `ownerUser` is this account (`acceptsPrivate`), and an accepted private
-  chat reaches `ChatExtras` before the message is filed, so it is never
-  pinged ([PARITY.md](PARITY.md), "Chat is per project"). v2 frames
-  are ignored. Dial timeout 15 s; ping every 25 s; reconnect 1, 2, 4, 8,
-  16, then 30 s; presence every 60 s, peers dropped after 180 s. Envelope
-  `version` matches iOS.
+  public `#channel` chat included, and the bundle carries `nsig` by the node
+  key (section 35). A frame with a non-empty `to` other than `hello` is
+  sealed to the devices whose bundle `node` is the recipient plus this
+  account's own devices (`RelayRoom.sealRecipients`). The relay carries no
+  DMs, private channels or invites (section 35). The `hello` and its replies
+  list only `RelayRoom.advertisedChannels` (no hidden or `#office/` channel),
+  and a peer's `hello` adds only `#` channels that are neither `#office/` nor
+  hidden; a chat frame or restored history no longer brings a hidden channel
+  back. v2 frames are ignored. Dial timeout 15 s; ping every 25 s; reconnect
+  1, 2, 4, 8, 16, then 30 s; presence every 60 s, peers dropped after 180 s.
+  Envelope `version` matches iOS.
 - **RoomCrypto**: AES-256-GCM, key PBKDF2-HMAC-SHA256(passphrase or app key,
   salt SHA-256("ForkMesh room:" + room)[0..16], 210000 rounds), cached per
   (room, secret).
@@ -315,8 +308,9 @@ signed with the v3 key (`native/android/README.md`); the default application id
   reordering, old chains, simultaneous starts, reset, `commit = false`,
   limits and reload from the store.
 - **Local mesh** (`C/chat/LocalMeshRoom.kt`): mesh links v3. Encrypted
-  multicast beacon (TTL 1) carrying only `{t, v:3, id: kid, port, ts,
-  reply, control, node}`, direct TCP links, local-address checks before any
+  multicast beacon (TTL 1) carrying only `{t, v:3, id, port, ts, reply}`,
+  `id` a random value made at start and whenever the address set changes
+  (section 35), direct TCP links, local-address checks before any
   socket, subnet broadcast and a paced /24 sweep where multicast is filtered,
   Bluetooth RFCOMM, and a BLE scan for the iPhone's GATT service
   (`C/chat/MeshBle.kt`, wire format in
@@ -326,12 +320,11 @@ signed with the v3 key (`native/android/README.md`); the default application id
   with per-direction counters; a bad frame closes the link. Peers are keyed
   by the authenticated kid; names travel in the sealed mesh `hello`. The
   phone forwards every new `#mesh` bundle to its other links and relays
-  sealed frames it cannot open to links whose device is addressed, and when
-  it learns a device it has no link to it re-seals its own history to that
-  device: without that a late joiner two hops away could never read anything,
-  because a v3 frame can only be opened by the devices it was sealed to. The
-  history file (v2) keeps each received message's original sealed frame for
-  backfill. The same links carry `direct-sealed`, `direct-ack` and `focus`.
+  sealed frames it cannot open to links whose device is addressed. It no
+  longer re-seals its earlier messages to a device it learns about later
+  (section 35): a late joiner gets only frames already sealed to it. The
+  history file (v2) keeps each message's original sealed frame, its own
+  included, and backfill resends only those. The same links carry `direct-sealed`, `direct-ack` and `focus`.
 - **Bluetooth stays off the air during calls** (`C/net/RadioPolicy.kt`,
   `A/platform/AudioActivityProbe.kt`). The mesh search pass (paired devices,
   classic inquiry up to 15 s, a 15 s BLE scan, every 2 minutes) and Glasses
@@ -968,13 +961,14 @@ default in new projects except the chosen starter pack
   different conversation (the scope between `forkmesh-safety:3:` and the
   last `:` differs), or a mismatch.
 - **Message from People opens the account's DM (S027).** People's Message
-  button opens `Route.Dm(name)`, which reached chat as "@name" and became a
-  relay "@peer" chat. `ChatHub.switchConversation` now treats "@name" that is
-  not a roster peer id as an account, as iOS does (a matching roster peer
-  gives its owner account): it selects that account's existing direct
-  conversation, or starts one with `POST /api/chat/direct-messages`. An
-  exact peer id, or no direct-message service (signed out), keeps the relay
-  path. `Route.Dm` also accepts a `direct:<id>` conversation unchanged.
+  button opens `Route.Dm(name)`, which reaches chat as "@name".
+  `ChatHub.switchConversation` treats "@name" as an account, as iOS does (a
+  matching roster peer gives its verified owner account, section 35): it
+  selects that account's existing direct conversation, or starts one with
+  `POST /api/chat/direct-messages`. A guest, or no direct-message service
+  (signed out), opens nothing and shows a notice; there is no relay `@peer`
+  path any more. `Route.Dm` also accepts a `direct:<id>` conversation
+  unchanged.
 - **Direct messages across a sign-out (S024).** `ChatHub.directSessionChanged`
   mirrors iOS: on sign-out the hub holds the service's DMs and receipts
   before `DirectMessageService.clear()` empties it, a save while signed out
@@ -983,9 +977,9 @@ default in new projects except the chosen starter pack
 
 ### Message bubbles (SYNC.md S011)
 
-- **Which rooms.** `ChatHub.isConversation` is iOS's rule: relay DMs
-  (`@<peer>`), server DMs (`direct:<id>`), relay private channels and private
-  office rooms that are neither server-visible nor read-only. Those draw as
+- **Which rooms.** `ChatHub.isConversation` is iOS's rule: server DMs
+  (`direct:<id>`) and private office rooms that are neither server-visible
+  nor read-only (relay DMs and relay private channels are gone, section 35). Those draw as
   bubbles (`ChatConversationList.kt`, `ChatBubbles.kt`); public channels,
   office channels and `#mesh` keep the Slack-style rows.
 - **Layout.** `ChatConversationLayout` (core) ports iOS's: a bold time line
@@ -2232,3 +2226,82 @@ their own.
   no setting; and NEXUS counts `10.0.0.0/8` and `100.64.0.0/10` as the local
   network without asking for confirmation, which on mobile data covers the
   carrier's network (`IPv4Addr.isLocalScope`, as iOS `IPAddress`).
+
+## 35. Chat relay hardening (2026-10-22)
+
+Android's side of [chat-relay-hardening.md](../app/chat-relay-hardening.md)
+(R1 to R7). Shared rooms are joined by every device of an instance, guests
+included, so the relay now carries only public content and nobody can speak,
+edit or delete as somebody else. Nothing here talks to older builds.
+
+- **R1, bundles bound to the node key.** The node id was already the `b64u`
+  Ed25519 public key of `Identity` (`DeviceIdentity.nodeId`), so it did not
+  change. `ChatNodeKey` (`C/crypto/ChatNodeKey.kt`) signs with that key;
+  `RoomSeal.nodeKey` adds `nsig` over
+  `forkmesh-chat-e2ee-node-v1\n<room>\n<kid>\n<idk>\n<acct>` to every
+  open-room bundle (relay, office rooms, `#mesh`), and an open room drops a
+  bundle whose `node` is not a canonical 32-byte key or whose `nsig` fails
+  (`ChatV3.verifyNodeBinding`). Strict rooms keep the v3 bundle.
+  `ChatNodeBindingTest` replays `conformance/chat/v3/node-binding.json`
+  (copy in test resources) including its three rejects.
+- **R2, nothing private on the relay.** `RelayFrames.isPrivate` (`dm`,
+  `invite`, `cove-invite`, `cove-open`, `private: true`, a conversation
+  starting with `@`) is refused by `RelayRoom.send` and dropped on receipt
+  before the history, the roster hooks or `ChatExtras` see it. `ChatExtras`
+  lost its relay private channels and invites; private channels are office
+  rooms created with `POST /api/chat/channels` (the existing New channel
+  sheet). Message on a person, a reply to "@name", and share targets for
+  people go through the person's server DM; a guest has no Message action.
+  `ChatHub.withoutRelayPrivate` drops `@peer` conversations and relay private
+  channels, with their replies, reactions, stickers, edits and receipts, from
+  saved history every time it is loaded, so the first start with these rules
+  purges them and later starts find nothing to purge. `#mesh` keeps its own
+  frames. Android never sent cove invites over the relay (an invite is a
+  server cove grant, `CovesModel.invite`), so there was nothing to move.
+- **R3, only authenticated frames act for a person.** Every person frame is
+  sealed, public channel chat included (it used to go in the clear).
+  `RelayFrames.authenticated` fills a missing `senderId` with the sealed
+  sender's stored node (RoomSeal already rejects a different one). An
+  unsealed frame is accepted only when the envelope has `srv: true`, only as
+  `chat` in a `#` channel, with its sender id prefixed `srv:` unless it
+  already names an integration (`webhook:`, `app:`, `system:`), account
+  claims removed and `accountKind: integration`; it never reaches the roster,
+  and edits, deletes, reactions and thread frames are never taken from it. A
+  delete for a message whose author is unknown is ignored. Office rooms do
+  the same (`OfficeChannelService.accept`) in every server channel room,
+  public or private, the `#email-log` notices channel included, live or from
+  the HTTP history; DM rooms never take an unsealed frame. A server frame
+  with `serverVisible: true` (webhooks) is marked "server-visible" next to
+  its sender name (`ChatMessage.serverVisible`, kept in saved history as
+  `sv`). Android has no channel webhook settings, so creating or rotating a
+  webhook stays on the web and desktop. ForkBot replies posted by this
+  phone keep its own `senderId` and name the bot in `bot`. Since any sealed
+  sender, a guest too, can set `bot`, a bot line shows as
+  "<bot> · via <verified account or Guest ####>" (`RelayFrames.botLabel`)
+  in the transcript, thread replies, office rooms, list previews and pings;
+  its sender id is `bot:<node>:<bot>`, and labels are redrawn when
+  `NodeOwners` confirms the account (`relabelBots`). A ping filed before
+  the answer keeps the guest label.
+- **R4, accounts checked with the server.** `NodeOwners` asks
+  `GET /api/chat/node-owner?node=` once per node and hour (a failure is
+  retried after a minute); the roster shows a peer's `ownerUser` only when it
+  matches, otherwise the peer is a guest. Sign-in already binds the node key
+  (`AuthController.bindLogin` sends `publicKeyB64url`).
+- **R5, blocks kept by the server.** Android had no account blocks.
+  `ChatBlocks` keeps the list (prefs `chat/blockedAccounts`), pushes it with
+  `PUT /api/chat/blocks` on every change, and at sign-in reads it with `GET`,
+  unless a push failed, in which case it pushes first. `ChatHub` hides a
+  blocked account's messages and DM. A DM tile's long press offers Block;
+  the channel list shows a Blocked section with Unblock.
+- **R7, less about you.** Relay frames never had a time zone, host name or
+  `dg`; the Solana address now goes out only with "Accept tips in chat"
+  (Settings, Funding and payouts, `AccountSettings.chatTipsEnabled`, off by
+  default). `#mesh`: bundles use the node id as `acct`, frames carry no
+  `ownerUser` (and a received one is ignored), `resealOwnHistory` is gone and
+  backfill resends only frames already sealed to that device, the beacon id
+  is random (new at start and on a network change; a beacon is matched to a
+  linked peer by address), `setFocus` goes only to links of the DM partner's
+  approved devices (`DirectMessageService.partnerKids`), and the `#mesh`
+  header and info sheet say "Anyone nearby with ForkMesh open can read
+  #mesh." Android has no setting that turns the mesh off, so it still starts
+  with chat.

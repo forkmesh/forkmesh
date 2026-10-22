@@ -5,6 +5,7 @@ import FMChat
 import FMControl
 import FMDiscord
 import FMNet
+import FMPush
 import SwiftUI
 
 @MainActor
@@ -39,6 +40,7 @@ struct ChatInstaller: AppServicesInstaller {
             switcher.onSuspend = {
                 try await suspend?()
                 await hub.leaveProject()
+                Services.get(ChatLinkPreviewService.self)?.leaveProject()
                 DirectLiveMotionFeed.shared.stop()
             }
             switcher.onResume = {
@@ -47,14 +49,24 @@ struct ChatInstaller: AppServicesInstaller {
             }
         }
         if let api = api, let sockets = Services.get(WebSocketConnector.self), let secure = Services.get(SecureStore.self) {
+            let owners: ChatNodeOwners = ChatNodeOwners(api: api)
+            let verifiedNames: PushVerifiedNames = PushVerifiedNames(
+                store: KeychainSharedItemStore(service: PushCredentialStore.service, accessGroup: PushCredentialStore.accessGroup))
+            owners.onAnswer = { (node: String, account: String) in verifiedNames.remember(node: node, account: account) }
             let office: OfficeChannelService = OfficeChannelService(
                 api: api, connector: sockets, secureStore: secure, origin: { api.url("/") },
-                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
+                selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" }, nodeIdentity: relay.nodeIdentity)
             let direct: DirectMessageService = DirectMessageService(
                 api: api, connector: sockets, secureStore: secure, origin: { api.url("/") },
                 selfId: { relay.selfId }, displayName: { auth?.session?.nodeName ?? "" })
+            office.nodeOwners = owners
+            direct.onConversations = { (records: [DirectConversation]) in
+                verifiedNames.rememberDirect(records.map { (conversation: $0.conversation, account: $0.otherUser) })
+            }
             hub.office = office
             hub.direct = direct
+            hub.accountApi = api
+            relay.nodeOwners = owners
             let prefs: KeyValueStore? = Services.get(KeyValueStore.self)
             let roomsKey: @MainActor () -> String = {
                 let account: String = (auth?.session?.nodeName ?? "").lowercased()
@@ -159,7 +171,7 @@ struct ChatInstaller: AppServicesInstaller {
             }
         }
         _ = Services.put(
-            ChatReplySender(relay: relay, extras: hub.extras, office: { hub.office }),
+            ChatReplySender(relay: relay, extras: hub.extras, office: { hub.office }, direct: { hub.direct }),
             as: (any NotificationReplySending).self)
         if let desktops = Services.get(DesktopControlHub.self) {
             Services.put(DiscordBridge(channel: desktops))

@@ -234,7 +234,7 @@ def test_desktop_keeps_the_address_a_web_message_carries():
     assert "forkmesh::chatformat::bodySource(message, maxChars)" in SERVER_NODE
     assert 'rich.value(QStringLiteral("source")).toString()' in CHAT_FORMAT
     assert SERVER_NODE.count(
-        "out.text = filteredChatText(chatBodyText(message, kMaxTextChars));") == 2
+        "out.text = filteredChatText(chatBodyText(message, kMaxTextChars));") == 1
     assert 'chatBodyText(message, kMaxTextChars));' in SERVER_NODE
     # An oversized rich source is refused with the rest of the payload, and an
     # edited message drops the source it superseded.

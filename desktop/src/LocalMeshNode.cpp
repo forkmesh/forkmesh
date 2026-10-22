@@ -120,7 +120,6 @@ constexpr qsizetype kMaxFrameBytes = 24ll * 1024 * 1024;
 const char kBeaconTag[] = "forkmesh-lan-mesh";
 constexpr int kMaxSessionRecipients = 63;
 constexpr int kForwardedCacheLimit = 4096;
-constexpr int kMaxNodeKeyChars = 200;
 
 bool validKid(const QString &kid)
 {
@@ -370,11 +369,8 @@ QJsonObject beaconObject(const Beacon &beacon)
         {QStringLiteral("ts"), double(beacon.timestampMs)}};
     if (beacon.reply)
         object.insert(QStringLiteral("reply"), true);
-    if (beacon.control) {
+    if (beacon.control)
         object.insert(QStringLiteral("control"), true);
-        if (!beacon.node.isEmpty())
-            object.insert(QStringLiteral("node"), beacon.node);
-    }
     return object;
 }
 
@@ -395,9 +391,6 @@ bool parseBeacon(const QJsonObject &object, Beacon *out)
     out->timestampMs = qint64(object.value(QStringLiteral("ts")).toDouble());
     out->reply = object.value(QStringLiteral("reply")).toBool();
     out->control = object.value(QStringLiteral("control")).toBool();
-    out->node = out->control
-                    ? object.value(QStringLiteral("node")).toString().left(kMaxNodeKeyChars)
-                    : QString();
     return true;
 }
 
@@ -495,8 +488,17 @@ LocalMeshNode::LocalMeshNode(const QString &userName, const QString &nodeName,
       m_linkReplaceAfterMs(kLinkReplaceAfterMs)
 {
 #ifdef FORKMESH_LOCAL_MESH_TESTS
+    const QString testName = m_nodeId;
+    if (!forkmesh::chatv3::isNodeKey(m_nodeId)) {
+        const QByteArray seed =
+            forkmesh::chatv3::sha256("forkmesh-mesh-node-test:" + testName.toUtf8());
+        m_nodeId = forkmesh::chatv3::b64u(forkmesh::chatv3::ed25519Public(seed));
+        m_nodeSigner = [seed](const QByteArray &message) {
+            return forkmesh::chatv3::ed25519Sign(seed, message);
+        };
+    }
     attachDevice(forkmesh::chatv3::ChatDevice::sharedForTests(
-        forkmesh::chatv3::sha256("forkmesh-mesh-test:" + m_nodeId.toUtf8())));
+        forkmesh::chatv3::sha256("forkmesh-mesh-test:" + testName.toUtf8())));
 #else
     attachDevice(forkmesh::chatv3::ChatDevice::local());
 #endif
@@ -518,6 +520,7 @@ void LocalMeshNode::attachDevice(std::shared_ptr<forkmesh::chatv3::ChatDevice> d
     m_device = std::move(device);
     m_seal = RoomSeal(roomName(), roomName(), RoomSeal::Policy::Open, m_nodeId, m_nodeId,
                       m_device);
+    m_seal.setNodeSigner(m_nodeSigner);
     m_deviceToken = m_device->subscribe(
         [this](forkmesh::chatv3::ChatDevice::Event event, const QString &,
                const QString &) { onDeviceEvent(event); });
@@ -547,9 +550,49 @@ void LocalMeshNode::onDeviceEvent(forkmesh::chatv3::ChatDevice::Event event)
         Qt::QueuedConnection);
 }
 
-void LocalMeshNode::setControlNode(const QString &nodeKey)
+void LocalMeshNode::setNodeSigner(RoomSeal::NodeSigner signer)
 {
-    m_controlNode = nodeKey.trimmed().left(kMaxNodeKeyChars);
+    m_nodeSigner = std::move(signer);
+    m_seal.setNodeSigner(m_nodeSigner);
+}
+
+void LocalMeshNode::renewBeaconId()
+{
+    m_beaconId = forkmesh::chatv3::b64u(forkmesh::chatv3::randomBytes(12));
+    m_heard.clear();
+}
+
+void LocalMeshNode::bindHeard(const QHostAddress &address, quint16 port,
+                              const QString &kid)
+{
+    if (kid.isEmpty() || port == 0)
+        return;
+    QHostAddress plain(address);
+    plain.setScopeId(QString());
+    bool isIPv4 = false;
+    const quint32 v4 = plain.toIPv4Address(&isIPv4);
+    if (isIPv4)
+        plain = QHostAddress(v4);
+    for (auto it = m_heard.begin(); it != m_heard.end(); ++it) {
+        QHostAddress heard(it->address);
+        const quint32 heardV4 = heard.toIPv4Address(&isIPv4);
+        if (isIPv4)
+            heard = QHostAddress(heardV4);
+        if (heard == plain && it->port == port) {
+            it->kid = kid;
+            it->unlinkedSinceMs = 0;
+        }
+    }
+}
+
+const LocalMeshNode::Heard *LocalMeshNode::heardFor(const QString &kid) const
+{
+    if (kid.isEmpty())
+        return nullptr;
+    for (auto it = m_heard.constBegin(); it != m_heard.constEnd(); ++it)
+        if (it->kid == kid)
+            return &it.value();
+    return nullptr;
 }
 
 void LocalMeshNode::setDirectHandler(DirectHandler handler)
@@ -571,6 +614,7 @@ bool LocalMeshNode::start()
     m_startedMs = QDateTime::currentMSecsSinceEpoch();
     m_running = true;
     m_addressSignature = meshAddressSignature();
+    renewBeaconId();
     const bool lan = openNetwork();
     const bool bluetooth = openBluetooth();
     if (!m_beaconTimer) {
@@ -609,8 +653,9 @@ bool LocalMeshNode::start()
                 .arg(conversation()));
     else
         emit systemMessage(
-            QStringLiteral("Local mesh: %1 is open over %2, end-to-end "
-                           "encrypted, and never leaves the room.")
+            QStringLiteral("Local mesh: %1 is open over %2. Anyone nearby "
+                           "running ForkMesh can join it and read what is said "
+                           "there.")
                 .arg(conversation(), carried.join(QStringLiteral(" and "))));
     return true;
 }
@@ -644,6 +689,7 @@ void LocalMeshNode::refreshNetwork()
         openDiscovery();
     if (!changed)
         return;
+    renewBeaconId();
     m_beaconCount = 0;
     const QList<QHostAddress> current = QNetworkInterface::allAddresses();
     QSet<QString> addresses;
@@ -1157,12 +1203,11 @@ QByteArray LocalMeshNode::beaconDatagram(bool reply) const
     if (!m_server)
         return {};
     Beacon beacon;
-    beacon.kid = m_seal.keyId();
+    beacon.kid = m_beaconId;
     beacon.port = m_server->serverPort();
     beacon.timestampMs = QDateTime::currentMSecsSinceEpoch();
     beacon.reply = reply;
     beacon.control = bool(m_controlHandler);
-    beacon.node = beacon.control ? m_controlNode : QString();
     const QJsonObject envelope = m_crypto.encryptObject(beaconObject(beacon));
     if (envelope.isEmpty())
         return {};
@@ -1181,8 +1226,8 @@ void LocalMeshNode::sendUnicastBeacons()
     // inbound. A unicast beacon from the discovery port gets an answer from
     // the same port, which such a firewall lets back in as a reply.
     QSet<QHostAddress> sent;
-    for (auto it = m_peers.cbegin(); it != m_peers.cend(); ++it) {
-        if (it->address.isNull() || linkForPeer(it.key()) ||
+    for (auto it = m_heard.cbegin(); it != m_heard.cend(); ++it) {
+        if (it->address.isNull() || linkForPeer(it->kid) ||
             sent.contains(it->address))
             continue;
         sent.insert(it->address);
@@ -1247,6 +1292,7 @@ void LocalMeshNode::drainSweep()
 
 void LocalMeshNode::onDatagrams()
 {
+    bool membershipChanged = false;
     while (m_discovery && m_discovery->hasPendingDatagrams()) {
         QByteArray datagram(int(m_discovery->pendingDatagramSize()), Qt::Uninitialized);
         QHostAddress sender;
@@ -1273,29 +1319,32 @@ void LocalMeshNode::onDatagrams()
             ++m_diag.undecryptableIn;
             continue;
         }
-        if (beacon.kid == m_seal.keyId()) {
+        if (beacon.kid == m_beaconId) {
             ++m_diag.ownBeaconsIn;
             continue;
         }
         ++m_diag.peerBeaconsIn;
-        m_diag.lastBeaconMs = QDateTime::currentMSecsSinceEpoch();
-        const QString heardName = m_peers.value(beacon.kid).name;
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        m_diag.lastBeaconMs = now;
+        membershipChanged = membershipChanged || !m_heard.contains(beacon.kid);
+        Heard &heard = m_heard[beacon.kid];
+        const QString heardName = m_peers.value(heard.kid).name;
         m_diag.lastBeaconFrom =
             QStringLiteral("%1 %2:%3%4")
                 .arg(heardName.isEmpty() ? beacon.kid.left(8) : heardName,
                      sender.toString())
                 .arg(beacon.port)
                 .arg(beacon.reply ? QStringLiteral(" (reply)") : QString());
-        rememberPeer(beacon.kid, QJsonObject(), false, false);
-        if (!m_running || !m_discovery)
-            break;
-        Peer &peer = m_peers[beacon.kid];
         QHostAddress reachable(sender);
         reachable.setScopeId(QString());
-        peer.address = reachable;
-        peer.port = beacon.port;
-        if (linkForPeer(beacon.kid)) {
-            peer.unlinkedSinceMs = 0;
+        if (heard.address != reachable || heard.port != beacon.port)
+            heard.kid.clear();
+        heard.address = reachable;
+        heard.port = beacon.port;
+        heard.lastSeenMs = now;
+        if (linkForPeer(heard.kid)) {
+            heard.unlinkedSinceMs = 0;
+            m_peers[heard.kid].lastSeenMs = now;
             continue;
         }
         // Answer straight back, so a sender that never hears this node's
@@ -1311,13 +1360,17 @@ void LocalMeshNode::onDatagrams()
         // lower id's dial never lands — this machine's firewall drops it —
         // the higher id dials too, once the peer has stayed unlinked for half
         // a beat.
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        if (peer.unlinkedSinceMs == 0)
-            peer.unlinkedSinceMs = now;
-        if (m_seal.keyId() < beacon.kid ||
-            now - peer.unlinkedSinceMs >= m_beaconIntervalMs / 2)
+        if (heard.unlinkedSinceMs == 0)
+            heard.unlinkedSinceMs = now;
+        const qint64 unlinkedSince = heard.unlinkedSinceMs;
+        if (m_beaconId < beacon.kid ||
+            now - unlinkedSince >= m_beaconIntervalMs / 2)
             connectToPeer(reachable, beacon.port);
+        if (!m_running || !m_discovery)
+            break;
     }
+    if (membershipChanged)
+        noteMembershipChange();
 }
 
 void LocalMeshNode::announceNow()
@@ -1586,6 +1639,9 @@ void LocalMeshNode::onLinkAuthenticated(Link &link)
         return;
     m_peers[kid].unlinkedSinceMs = 0;
     m_peers[kid].lastSeenMs = now;
+    if (const auto *tcp = qobject_cast<const QTcpSocket *>(live->socket);
+        tcp && live->outbound)
+        bindHeard(tcp->peerAddress(), tcp->peerPort(), kid);
     const QJsonObject bundle = m_seal.keyFrame();
     if (!bundle.isEmpty())
         writeLink(*live, bundle);
@@ -1763,7 +1819,8 @@ void LocalMeshNode::resealOwnHistory(Link &link, const QString &kid)
 {
     QIODevice *socket = link.socket;
     for (const QJsonObject &entry : std::as_const(m_history)) {
-        if (entry.value(QStringLiteral("senderId")).toString() != m_nodeId)
+        if (entry.value(QStringLiteral("senderId")).toString() != m_nodeId ||
+            !m_queued.contains(entry.value(QStringLiteral("id")).toString()))
             continue;
         const QJsonObject frame = m_seal.sealObjectFor(entry, {kid});
         Link *current = linkFor(socket);
@@ -1827,8 +1884,7 @@ void LocalMeshNode::dropLink(QIODevice *socket, const QString &reason)
             if (peer != m_peers.end()) {
                 peer->linked = false;
                 noteMembershipChange();
-                if (!superseded && settled && m_running &&
-                    !peer->address.isNull())
+                if (!superseded && settled && m_running && heardFor(peerId))
                     QTimer::singleShot(kRedialDelayMs, this, [this, peerId] {
                         redialPeer(peerId);
                     });
@@ -1847,10 +1903,10 @@ void LocalMeshNode::redialPeer(const QString &peerId)
 {
     if (!m_running || linkForPeer(peerId))
         return;
-    const auto peer = m_peers.constFind(peerId);
-    if (peer == m_peers.constEnd() || peer->address.isNull() || !peer->port)
+    const Heard *heard = heardFor(peerId);
+    if (!heard || heard->address.isNull() || !heard->port)
         return;
-    connectToPeer(peer->address, peer->port);
+    connectToPeer(heard->address, heard->port);
 }
 
 void LocalMeshNode::sweepPeers()
@@ -1868,9 +1924,16 @@ void LocalMeshNode::sweepPeers()
             changed = true;
             continue;
         }
+        ++it;
+    }
+    for (auto it = m_heard.begin(); it != m_heard.end();) {
+        if (now - it->lastSeenMs > m_peerTimeoutMs) {
+            it = m_heard.erase(it);
+            continue;
+        }
         // Still beaconing, long since dialled from both ends, and no link:
         // the beacons get through and the links do not.
-        if (!it->bluetooth && it->unlinkedSinceMs > 0 &&
+        if (!linkForPeer(it->kid) && it->unlinkedSinceMs > 0 &&
             now - it->unlinkedSinceMs >=
                 qint64(m_beaconIntervalMs) * kLinksBlockedAfterBeats &&
             now - it->lastSeenMs <= qint64(m_beaconIntervalMs) * 2)
@@ -1897,8 +1960,6 @@ QJsonObject LocalMeshNode::makeMessage(const QString &type) const
         {QStringLiteral("ts"), double(QDateTime::currentMSecsSinceEpoch())}};
     if (!m_nodeName.isEmpty())
         message.insert(QStringLiteral("nodeName"), m_nodeName);
-    if (!m_ownerUser.isEmpty())
-        message.insert(QStringLiteral("ownerUser"), m_ownerUser);
     if (!m_accountKind.isEmpty())
         message.insert(QStringLiteral("accountKind"), m_accountKind);
     if (!m_platform.isEmpty())
@@ -1997,7 +2058,8 @@ void LocalMeshNode::sendHistoryTo(Link &link)
         if (!current)
             return;
         const QString id = entry.value(QStringLiteral("id")).toString();
-        if (entry.value(QStringLiteral("senderId")).toString() == m_nodeId) {
+        if (entry.value(QStringLiteral("senderId")).toString() == m_nodeId &&
+            m_queued.contains(id)) {
             writeSealedTo(*current, entry);
             continue;
         }
@@ -2094,8 +2156,13 @@ void LocalMeshNode::handleEnvelope(Link &link, const QJsonObject &plain,
          type == QLatin1String("bye")) &&
         !fromLink)
         return;
-    if (type == QLatin1String("hello"))
+    if (type == QLatin1String("hello")) {
         link.peerId = senderId;
+        const int port = plain.value(QStringLiteral("port")).toInt();
+        if (const auto *tcp = qobject_cast<const QTcpSocket *>(link.socket);
+            tcp && fromLink && port > 0 && port <= 65535)
+            bindHeard(tcp->peerAddress(), quint16(port), senderKid);
+    }
 
     rememberPeer(senderKid, plain, fromLink && link.peerId == senderId, link.bluetooth);
     rememberWake(senderId, plain);
@@ -2139,14 +2206,12 @@ void LocalMeshNode::rememberPeer(const QString &kid, const QJsonObject &plain,
         plain.value(QStringLiteral("senderId")).toString().left(160);
     const QString name = boundedText(plain, "sender", kMaxDisplayNameChars);
     const QString nodeName = boundedText(plain, "nodeName", kMaxDisplayNameChars);
-    const QString ownerUser = boundedText(plain, "ownerUser", kMaxDisplayNameChars);
     const QString accountKind = boundedText(plain, "accountKind", 16);
     const QString platform = boundedText(plain, "platform", 16);
     const QString version = boundedText(plain, "version", kMaxVersionChars);
     const bool changed = isNew || (!nodeId.isEmpty() && nodeId != peer.nodeId) ||
                          (!name.isEmpty() && name != peer.name) ||
                          (!nodeName.isEmpty() && nodeName != peer.nodeName) ||
-                         (!ownerUser.isEmpty() && ownerUser != peer.ownerUser) ||
                          (linked && !peer.linked);
     if (!nodeId.isEmpty())
         peer.nodeId = nodeId;
@@ -2154,8 +2219,6 @@ void LocalMeshNode::rememberPeer(const QString &kid, const QJsonObject &plain,
         peer.name = name;
     if (!nodeName.isEmpty())
         peer.nodeName = nodeName;
-    if (!ownerUser.isEmpty())
-        peer.ownerUser = ownerUser;
     if (!accountKind.isEmpty())
         peer.accountKind = accountKind;
     if (!platform.isEmpty())
@@ -2431,6 +2494,16 @@ QList<MemberInfo> LocalMeshNode::members() const
                                     : QStringLiteral("On this network");
         roster.append(member);
     }
+    for (auto it = m_heard.constBegin(); it != m_heard.constEnd(); ++it) {
+        if (!it->kid.isEmpty() && m_peers.contains(it->kid))
+            continue;
+        MemberInfo member;
+        member.id = it.key();
+        member.name = it.key();
+        member.online = (now - it->lastSeenMs) <= m_peerTimeoutMs;
+        member.note = QStringLiteral("On this network");
+        roster.append(member);
+    }
     return roster;
 }
 
@@ -2601,10 +2674,12 @@ QString LocalMeshNode::diagnosticsDetail() const
                         .arg(ageText(now, it->unlinkedSinceMs));
         else
             state = QStringLiteral("unlinked");
+        const Heard *heard = heardFor(it.key());
         lines << QStringLiteral("peer %1 (%2) %3:%4 %5 %6 · %7 · seen %8")
                      .arg(it->name.isEmpty() ? QStringLiteral("?") : it->name,
-                          it.key().left(8), it->address.toString())
-                     .arg(it->port)
+                          it.key().left(8),
+                          heard ? heard->address.toString() : QString())
+                     .arg(heard ? heard->port : 0)
                      .arg(it->platform, it->version, state,
                           ageText(now, it->lastSeenMs));
     }

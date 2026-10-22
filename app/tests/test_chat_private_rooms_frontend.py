@@ -116,8 +116,8 @@ def test_desktop_member_list_never_falls_back_to_everyone_for_private_rooms():
 def test_desktop_message_actions_open_or_reuse_one_server_dm():
     start = _cpp_function(MESSAGES, "void MainWindow::startDirectMessageWith(")
     assert "m_officeChannelMirror->startDirectMessage(name)" in start
-    assert start.index("startDirectMessage(name)") < start.index("openDirectChat(")
-    assert "startDirectMessageWith(account, peerId, peerName);" in MESSAGES
+    assert "openDirectChat(" not in start
+    assert "startDirectMessageWith(account, QString(), QString());" in MESSAGES
     assert "openUserProfile(account, name)" in MESSAGES
     assert 'showChatSenderProfile(QStringLiteral("user:") + key,' in MESSAGES
     assert "&MainWindow::showNewMessageDialog" in ISSUES

@@ -5,7 +5,6 @@ import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
 import com.forkmesh.nativeapp.model.ChatRetention
 import java.util.Base64
-import java.util.UUID
 
 enum class ChatAttachmentKind {
     IMAGE, AUDIO, VIDEO, FILE;
@@ -97,6 +96,9 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
     var authorOf: ((String, String) -> String?)? = null
 
     @Volatile
+    var botAccount: ((String) -> String)? = null
+
+    @Volatile
     var onChannelJoined: ((String) -> Unit)? = null
 
     @Volatile
@@ -110,9 +112,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     private val lastTypingSent = HashMap<String, Long>()
     private var revisionValue = 0
-    private val privateSet = LinkedHashSet<String>()
     private val hiddenSet = LinkedHashSet<String>()
-    private var notice: String? = null
     private val replies = HashMap<String, List<ChatMessage>>()
     private val replyRoot = HashMap<String, String>()
     private val rootChannel = HashMap<String, String>()
@@ -130,11 +130,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     val revision: Int get() = synchronized(lock) { revisionValue }
 
-    val privateChannels: Set<String> get() = synchronized(lock) { LinkedHashSet(privateSet) }
-
     val hiddenChannels: Set<String> get() = synchronized(lock) { LinkedHashSet(hiddenSet) }
-
-    val inviteNotice: String? get() = synchronized(lock) { notice }
 
     private inner class Batch {
         var changed = false
@@ -156,8 +152,6 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         if (b.changed) onChange?.invoke()
         return result
     }
-
-    fun clearInviteNotice() = synchronized(lock) { notice = null }
 
     fun replies(rootId: String): List<ChatMessage> = synchronized(lock) { replies[rootId].orEmpty() }
 
@@ -241,8 +235,6 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         names
     }
 
-    fun isPrivate(channel: String): Boolean = synchronized(lock) { channel in privateSet }
-
     fun isHiddenChannel(channel: String): Boolean = synchronized(lock) { channel in hiddenSet }
 
     fun apply(frame: Map<String, Any?>) {
@@ -251,18 +243,12 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val conversation = ChatFrameText.conversation(frame)
         if (conversation == "#team") return
         when (type) {
-            "chat", "dm" -> batch {
-                rememberFile(frame)
-                if (frame["private"] == true && conversation.startsWith("#") && conversation !in hiddenSet) {
-                    if (privateSet.add(conversation)) changed()
-                }
-            }
+            "chat", "dm" -> batch { rememberFile(frame) }
             "thread-reply" -> batch { applyReply(frame, senderId) }
             "reaction" -> batch { applyReaction(frame, senderId) }
             "edit" -> applyEdit(frame, senderId, conversation)
             "delete" -> applyDelete(frame, senderId)
             "typing" -> batch { applyTyping(frame, senderId, conversation) }
-            "invite" -> batch { applyInvite(frame) }
             "channel" -> {
                 val name = normalizedChannel(jsonText(frame["name"]))
                 val joined = synchronized(lock) { name.isNotEmpty() && name != "#team" && name !in hiddenSet }
@@ -282,14 +268,16 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val ts = frame["ts"]
         val millis = if (ts is Number) ts.toLong() else now()
         if (retention?.isExpired(millis, channel, now()) == true) return
+        val shown = RelayFrames.shownSender(frame)
         val message = ChatMessage(
             id = id,
             conversation = channel,
-            senderId = senderId,
-            senderName = ChatFrameText.bounded(frame["sender"], ChatLimits.MAX_DISPLAY_NAME_CHARS),
+            senderId = shown,
+            senderName = RelayFrames.shownName(frame) { botAccount?.invoke(it).orEmpty() }
+                .let { if (RelayFrames.botName(frame).isEmpty()) it.take(ChatLimits.MAX_DISPLAY_NAME_CHARS) else it },
             text = ChatFrameText.bounded(frame["text"], ChatLimits.MAX_TEXT_CHARS),
             timestamp = millis,
-            self = senderId.isNotEmpty() && senderId == selfId,
+            self = shown.isNotEmpty() && shown == selfId,
             fileName = ChatFrameText.bounded(frame["fileName"], ChatLimits.MAX_FILE_NAME_CHARS),
         )
         val list = insertSorted(replies[rootId].orEmpty(), message)
@@ -300,7 +288,6 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         replies[rootId] = list
         replyRoot[id] = rootId
         rootChannel[rootId] = channel
-        if (frame["private"] == true) privateSet.add(channel)
         rememberFile(frame)
         changed()
     }
@@ -377,11 +364,11 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     private fun applyDelete(frame: Map<String, Any?>, senderId: String) {
         val target = jsonText(frame["target"])
-        if (target.isEmpty()) return
+        if (target.isEmpty() || senderId.isEmpty()) return
         val (isReply, replyAuthor) = replyAuthor(target)
         if (!isReply) {
-            val author = authorOf?.invoke(ChatFrameText.conversation(frame), target)
-            if (author != null && author != senderId) return
+            val author = authorOf?.invoke(ChatFrameText.conversation(frame), target) ?: return
+            if (author != senderId) return
         } else if (replyAuthor != senderId) {
             return
         }
@@ -423,29 +410,20 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         changed()
     }
 
-    private fun Batch.applyInvite(frame: Map<String, Any?>) {
-        val me = selfId
-        if (jsonText(frame["to"]) != me || me.isEmpty()) return
-        val channel = normalizedChannel(jsonText(frame["channel"]).take(120))
-        if (channel.isEmpty() || channel == "#team" || channel in hiddenSet) return
-        privateSet.add(channel)
-        after.add { onChannelJoined?.invoke(channel) }
-        val sender = frame["sender"]?.let(::jsonText) ?: "Someone"
-        notice = "$sender invited you to private room $channel."
-        changed()
-    }
-
     private fun applyHistory(frame: Map<String, Any?>) {
         val to = jsonText(frame["to"])
         if (to.isNotEmpty() && to != selfId) return
         val target = sink ?: return
+        val sender = jsonText(frame["senderId"])
+        if (sender.isEmpty() || !RelayFrames.actsForPerson(frame)) return
         val accepted = synchronized(lock) {
             jsonMaps(frame["entries"]).take(ChatLimits.HISTORY_ENTRIES_PER_CHANNEL).filter { entry ->
+                if (jsonText(entry["senderId"]) != sender || jsonText(entry["bot"]).isNotEmpty()) return@filter false
                 val type = jsonText(entry["type"])
                 if (type != "chat" && type != "thread-reply") return@filter false
                 val channel = jsonText(entry["channel"])
                 if (!channel.startsWith("#") || channel == "#team" || channel in hiddenSet) return@filter false
-                !(entry["private"] == true && channel !in privateSet)
+                !RelayFrames.isPrivate(entry)
             }
         }
         for (entry in accepted) target.applyFrame(entry)
@@ -481,18 +459,6 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     fun store(attachment: ChatAttachment) = batch { storeLocked(attachment) }
 
-    fun createPrivateChannel(raw: String): String? {
-        if (!validChannelName(raw)) return null
-        val name = normalizedChannel(raw).lowercase()
-        return batch {
-            hiddenSet.remove(name)
-            privateSet.add(name)
-            after.add { onChannelJoined?.invoke(name) }
-            changed()
-            name
-        }
-    }
-
     fun addPublicChannel(raw: String): String? {
         val target = sink ?: return null
         if (!validChannelName(raw)) return null
@@ -513,7 +479,6 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         if (channel == "#general") return
         batch {
             hiddenSet.add(channel)
-            privateSet.remove(channel)
             for ((root, owner) in HashMap(rootChannel)) {
                 if (owner != channel) continue
                 for (reply in replies[root].orEmpty()) replyRoot.remove(reply.id)
@@ -525,24 +490,16 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         }
     }
 
-    fun restoreChannels(privateChannels: List<String>, hiddenChannels: List<String>) = batch {
+    fun restoreChannels(hiddenChannels: List<String>) = batch {
         hiddenSet.addAll(hiddenChannels)
-        for (channel in privateChannels) {
-            if (channel in hiddenSet) continue
-            privateSet.add(channel)
-            after.add { onChannelJoined?.invoke(channel) }
-        }
         changed()
     }
 
-    private fun routed(frame: LinkedHashMap<String, Any?>, conversation: String, persist: Boolean, private: Boolean) {
+    private fun routed(frame: LinkedHashMap<String, Any?>, conversation: String, persist: Boolean) {
         frame["conversation"] = conversation
         if (conversation.startsWith("#")) {
             frame["channel"] = conversation
-            if (private) frame["private"] = true
             if (persist) frame["persist"] = true
-        } else if (conversation.startsWith("@")) {
-            frame["to"] = conversation.drop(1)
         }
     }
 
@@ -553,22 +510,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         target.applyFrame(undo)
     }
 
-    fun sendPrivateChat(channel: String, text: String): Boolean {
-        val body = text.trim().take(ChatLimits.MAX_TEXT_CHARS)
-        val target = sink ?: return false
-        if (body.isEmpty() || !channel.startsWith("#")) return false
-        val frame = target.makeFrame("chat")
-        frame["text"] = body
-        routed(frame, channel, persist = true, private = true)
-        frame["private"] = true
-        target.applyFrame(frame)
-        if (target.sendFrame(frame)) return true
-        takeBack(target, jsonText(frame["id"]), channel)
-        return false
-    }
-
     fun sendText(conversation: String, text: String): Boolean {
-        if (isPrivate(conversation)) return sendPrivateChat(conversation, text)
         val target = sink ?: return false
         return target.sendMessage(text.take(ChatLimits.MAX_TEXT_CHARS), conversation)
     }
@@ -576,18 +518,12 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
     fun sendBotReply(channel: String, rootId: String, text: String): Boolean {
         val body = text.trim().take(ChatLimits.MAX_TEXT_CHARS)
         val target = sink ?: return false
-        if (body.isEmpty() || !channel.startsWith("#") || isPrivate(channel)) return false
+        if (body.isEmpty() || !channel.startsWith("#")) return false
         val root = rootId.take(ChatLimits.MAX_ROOT_ID_CHARS)
-        val frame = linkedMapOf<String, Any?>(
-            "type" to if (root.isEmpty()) "chat" else "thread-reply",
-            "id" to UUID.randomUUID().toString().lowercase(),
-            "senderId" to "forkbot",
-            "sender" to "forkbot",
-            "accountKind" to "user",
-            "ts" to now(),
-            "channel" to channel,
-            "text" to body,
-        )
+        val frame = target.makeFrame(if (root.isEmpty()) "chat" else "thread-reply")
+        frame["bot"] = "forkbot"
+        frame["text"] = body
+        routed(frame, channel, persist = true)
         if (root.isNotEmpty()) frame["rootId"] = root
         target.applyFrame(frame)
         return target.sendFrame(frame)
@@ -601,7 +537,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val frame = target.makeFrame("thread-reply")
         frame["rootId"] = root
         frame["text"] = body
-        routed(frame, channel, persist = true, private = isPrivate(channel))
+        routed(frame, channel, persist = true)
         target.applyFrame(frame)
         if (target.sendFrame(frame)) return true
         takeBack(target, jsonText(frame["id"]), channel)
@@ -619,7 +555,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         frame["reactorId"] = me
         frame["reactorName"] = jsonText(frame["sender"])
         frame["added"] = added
-        routed(frame, conversation, persist = true, private = isPrivate(conversation))
+        routed(frame, conversation, persist = true)
         target.applyFrame(frame)
         if (target.sendFrame(frame)) return true
         val undo = target.makeFrame("reaction")
@@ -642,7 +578,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         frame["reactorId"] = me
         frame["reactorName"] = jsonText(frame["sender"])
         frame["added"] = added
-        routed(frame, conversation, persist = true, private = isPrivate(conversation))
+        routed(frame, conversation, persist = true)
         target.applyFrame(frame)
         if (target.sendFrame(frame)) return true
         val undo = target.makeFrame("reaction")
@@ -661,7 +597,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val frame = target.makeFrame("edit")
         frame["target"] = messageId
         frame["text"] = body
-        routed(frame, conversation, persist = true, private = isPrivate(conversation))
+        routed(frame, conversation, persist = true)
         val previous = synchronized(lock) { editedText[messageId] }
         target.applyFrame(frame)
         if (target.sendFrame(frame)) return true
@@ -677,14 +613,14 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         if (reply.senderId != target.selfId || !isThreadReply(reply.id)) return false
         val frame = target.makeFrame("delete")
         frame["target"] = reply.id
-        routed(frame, reply.conversation, persist = true, private = isPrivate(reply.conversation))
+        routed(frame, reply.conversation, persist = true)
         target.applyFrame(frame)
         return target.sendFrame(frame)
     }
 
     fun sendTyping(conversation: String, active: Boolean): Boolean {
         val target = sink ?: return false
-        if (!(conversation.startsWith("#") || conversation.startsWith("@"))) return false
+        if (!conversation.startsWith("#")) return false
         val at = now()
         val proceed = synchronized(lock) {
             if (active) {
@@ -699,17 +635,8 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         if (!proceed) return false
         val frame = target.makeFrame("typing")
         frame["active"] = active
-        routed(frame, conversation, persist = false, private = isPrivate(conversation))
+        routed(frame, conversation, persist = false)
         frame.remove("channel")
-        return target.sendFrame(frame)
-    }
-
-    fun invite(peerId: String, channel: String): Boolean {
-        val target = sink ?: return false
-        if (peerId.isEmpty() || peerId == target.selfId || !isPrivate(channel) || channel == "#team") return false
-        val frame = target.makeFrame("invite")
-        frame["to"] = peerId
-        frame["channel"] = channel
         return target.sendFrame(frame)
     }
 
@@ -717,11 +644,12 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val name = fileName.trim().take(ChatLimits.MAX_FILE_NAME_CHARS)
         val target = sink ?: return false
         if (name.isEmpty() || data.isEmpty() || data.size > ChatLimits.MAX_SEND_FILE_BYTES) return false
-        val frame = target.makeFrame(if (conversation.startsWith("@")) "dm" else "chat")
+        if (!conversation.startsWith("#")) return false
+        val frame = target.makeFrame("chat")
         frame["fileName"] = name
         frame["fileMime"] = mime.take(ChatLimits.MAX_MIME_CHARS)
         frame["file"] = Base64.getEncoder().encodeToString(data)
-        routed(frame, conversation, persist = true, private = isPrivate(conversation))
+        routed(frame, conversation, persist = true)
         if (frame["channel"] == null) frame.remove("persist")
         val id = jsonText(frame["id"])
         store(ChatAttachment(id, name, mime, data))
@@ -733,6 +661,16 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
             changed()
         }
         return false
+    }
+
+    fun relabelBots() = batch {
+        for ((root, list) in HashMap(replies)) {
+            val next = list.map { RelayFrames.relabel(it) { node -> botAccount?.invoke(node).orEmpty() } }
+            if (next != list) {
+                replies[root] = next
+                changed()
+            }
+        }
     }
 
     fun snapshotThreads(): List<ChatMessage> = synchronized(lock) { replies.values.flatten() }

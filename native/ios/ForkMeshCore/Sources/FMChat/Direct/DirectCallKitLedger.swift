@@ -19,8 +19,7 @@ public struct DirectCallRingPush: Equatable, Sendable {
         guard DirectCallRingPush.validConversation(conversation) else { return nil }
         let callId = (fields["callId"] ?? "").lowercased()
         self.init(
-            callId: DirectCallRingPush.validCallId(callId) ? callId : "", conversation: conversation,
-            caller: String((fields["caller"] ?? "").trimmingCharacters(in: .whitespaces).lowercased().prefix(64)),
+            callId: DirectCallRingPush.validCallId(callId) ? callId : "", conversation: conversation, caller: "",
             origin: fields["origin"] ?? "")
     }
 

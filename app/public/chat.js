@@ -30,7 +30,22 @@ import {
 } from "./chat-issue-filing.js";
 import { createAccountEventChannel } from "./account-events.js";
 import { createChatRoomTransport } from "./chat-room-transport.js";
-import { createRoomSealStore } from "./chat-seal.js";
+import { FRAME_AUTH, createRoomSealStore } from "./chat-seal.js";
+import {
+  attributeFrame,
+  bindNodeKey,
+  botLine as botViaLine,
+  chatProfileFor,
+  createNodeOwners,
+  forgetLegacySelfId,
+  guestLabel,
+  historyEntries,
+  isBotViaName,
+  isIntegrationSenderId,
+  isSealedPlain,
+  isServerPlain,
+  mayChangeMessage,
+} from "./chat-frame-auth.js";
 import { createFmmLocal } from "./fmm/fmm-local.js";
 import { moderateChatPlain, moderateChatText } from "./chat-moderation.js";
 import { celebrateNewMember, NEW_MEMBER_GREETING } from "./member-welcome.js";
@@ -77,9 +92,6 @@ import { installViewOnceFilters, viewOnceFilterChoices } from "./chat-view-once-
 // crypto (PBKDF2 + AES-256-GCM) and message envelope so the website can join
 // the public encrypted rooms and talk to connected clients. Frames are
 // ciphertext on the wire, but the relay derives the default shared passphrase.
-// Public channels intentionally stop at that controller-readable layer.
-// chat-seal.js automatically adds a second layer with signed, post-quantum device keys
-// for private channels and DMs; participants never configure a phrase.
 //
 // Layout: rooms on the left, conversation in the middle (ts-ordered, newest at
 // the bottom, avatars + timestamps + reactions), and people on the right.
@@ -331,7 +343,7 @@ const groupCalls = createGroupCalls({
   accountName: () => String(userSession()?.nodeName || "").trim().toLowerCase(),
   onChange: () => renderGroupCall(),
   callSigner: groupCallSigner,
-  callAccount: () => roomSeals.account(),
+  callAccount: () => roomSeals?.account() || "",
   callId: (channelKey) => (roomTransport?.room?.scope === channelKey ? String(roomTransport?.access?.roomName || "") : ""),
   prepareLocal: createFmmLocal(),
 });
@@ -398,36 +410,75 @@ const composerControls = [...new Set([
 ].filter(Boolean))];
 
 const enc = new TextEncoder();
-// A stable per-browser chat id. The relay holds no roster — every participant
-// is reconstructed client-side from the senderId on decrypted frames — so a
-// fresh random id per page load made each reload/tab of the same person show up
-// as a brand-new "ghost" participant (the "lots of jett users" symptom).
-// Persisting it collapses reloads/tabs of the same browser into one entry;
-// signed-in users still display under their account name via displayName().
-const selfId = (() => {
-  const STORAGE_KEY = "forkmesh.chat.selfId";
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return saved;
-  } catch (_) {}
-  const fresh =
-    (crypto.randomUUID && crypto.randomUUID()) ||
-    String(Math.random()).slice(2) + Date.now();
-  try { localStorage.setItem(STORAGE_KEY, fresh); } catch (_) {}
-  return fresh;
-})();
+let selfId = "";
+forgetLegacySelfId();
+const nodeOwners = createNodeOwners();
+const sealStores = new Map();
+let roomSeals = null;
 
 const roomPassphrases = new Map();
 const roomKeys = new Map();
-// One automatically generated device key plus public keys learned per room.
-// Private key material stays in this browser; only signed public bundles travel.
-const roomSeals = createRoomSealStore({
-  acct: () => userSession()?.nodeName || "",
-  node: selfId,
-});
 const trustNotices = new Map();
 const trustNoticeKeys = new Set();
-roomSeals.subscribe((event) => handleSealEvent(event));
+
+function sessionAccount() {
+  return String(userSession()?.nodeName || "").trim().toLowerCase();
+}
+
+function sealStoreForSession() {
+  const account = sessionAccount();
+  const profile = chatProfileFor(account);
+  let store = sealStores.get(profile);
+  if (!store) {
+    store = createRoomSealStore({ acct: account, profile });
+    store.subscribe((event) => handleSealEvent(event));
+    sealStores.set(profile, store);
+  }
+  return store;
+}
+
+async function activateChatIdentity() {
+  const store = sealStoreForSession();
+  const node = await store.ready();
+  roomSeals = store;
+  selfId = node;
+  const account = sessionAccount();
+  if (account) {
+    const token = String(userSession()?.sessionToken || "");
+    void bindNodeKey({
+      store,
+      account,
+      owners: nodeOwners,
+      headers: token && token !== "cookie" ? { authorization: `Bearer ${token}` } : {},
+    }).catch(() => false);
+  }
+  return store;
+}
+
+let inboundPlains = Promise.resolve();
+
+function attributedPlains(plains, scope) {
+  return plains
+    .map((plain) => attributeFrame(plain, {
+      owners: nodeOwners,
+      selfNode: selfId,
+      selfAccount: sessionAccount(),
+      selfName: displayName(),
+      direct: isDirectMessageKey(scope),
+    }))
+    .filter(Boolean);
+}
+
+function receivePlains(plains, room, history) {
+  const scope = room?.scope || roomScopeForChannel();
+  inboundPlains = inboundPlains.then(async () => {
+    await nodeOwners.prefetch(plains, { selfNode: selfId });
+    const attributed = attributedPlains(plains, scope);
+    if (history) handleHistory(attributed, room);
+    else for (const plain of attributed) handlePlain(plain, scope);
+  }).catch(() => {});
+  return inboundPlains;
+}
 // Per scope, why frames were dropped: sender ids whose content key was not
 // wrapped for this browser, and whether an unsealed frame was refused. Both
 // leave a reader staring at what looks like a broken relay.
@@ -571,9 +622,6 @@ function roomScopeForChannel(channel = activeChannel) {
   return channel === "#general" ? "public-world-general" : channel;
 }
 
-// Public is an explicit channel policy, not something a relay frame can opt
-// into. Those channels use the controller-readable room layer so integrations
-// can participate; private channels and DMs require the automatic device seal.
 function controllerReadableScope(scope = roomScopeForChannel()) {
   if (scope === "public-world-general") return true;
   const record = isPrivateChannelKey(scope) ? privateChannelForKey(scope) : null;
@@ -944,8 +992,7 @@ function unlockChatForUser() {
       nameInput.value = session.nodeName || "";
       nameInput.disabled = true;
     } else {
-      nameInput.value =
-        `World Guest ${String(selfId).replace(/[^A-Za-z0-9]/g, "").slice(0, 6)}`;
+      nameInput.value = guestLabel(selfId);
       nameInput.disabled = true;
     }
   }
@@ -2262,6 +2309,7 @@ function reconcilePrivateChannels(records, options = {}) {
       updatedAt: Number(value.updatedAt) || 0,
       keyVersion: Number(value.keyVersion) || 1,
       kind: value.kind === "everyone" ? "everyone" : "channel",
+      office: value.kind === "office",
       memberCount: Math.max(0, Number(value.memberCount) || 0),
       canManage: Boolean(value.canManage) && value.kind !== "everyone",
       visibility: value.visibility === "public" ? "public" : "private",
@@ -2860,7 +2908,10 @@ async function openChatLinkFromHash() {
   clearChatLinkHash();
   let preview;
   try {
-    preview = await privateChannelRequest(CHAT_INVITES_ENDPOINT + "/" + token);
+    preview = await privateChannelRequest(CHAT_INVITES_ENDPOINT + "/preview", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
   } catch (error) {
     showJoinDialog("Invite link not valid", chatInviteErrorMessage(error), false);
     return;
@@ -2886,9 +2937,9 @@ async function acceptPendingInvite() {
   pendingInviteToken = "";
   if (!token) return;
   try {
-    const data = await privateChannelRequest(CHAT_INVITES_ENDPOINT + "/" + token, {
+    const data = await privateChannelRequest(CHAT_INVITES_ENDPOINT + "/accept", {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify({ token }),
     });
     await openJoinedChannel(String(data.channel?.id || ""));
   } catch (error) {
@@ -3151,13 +3202,15 @@ function populateChannelSettings() {
   if (channelMembersSection) {
     channelMembersSection.hidden = channel.visibility !== "private";
   }
-  // A webhook originates at the controller and therefore cannot author a
-  // recipient-sealed frame. Expose integrations only where the channel owner
-  // has deliberately chosen controller-readable Public visibility.
   if (channelWebhooksSection) {
-    channelWebhooksSection.hidden = channel.visibility !== "public";
+    channelWebhooksSection.hidden = !channelAcceptsWebhooks(channel);
   }
   resetChannelDeleteConfirm();
+}
+
+function channelAcceptsWebhooks(channel) {
+  return Boolean(channel) && !channel.serverVisible && !channel.office &&
+    channel.kind !== "everyone";
 }
 
 function openChannelSettings() {
@@ -3173,7 +3226,7 @@ function openChannelSettings() {
     refreshChannelMembers();
     refreshChannelInviteLink();
   }
-  if (channel.visibility === "public") refreshChannelWebhooks();
+  if (channelAcceptsWebhooks(channel)) refreshChannelWebhooks();
   channelSettingsName?.focus();
 }
 
@@ -3475,13 +3528,15 @@ function schedulePeopleRender() {
 
 function noteRoster(plain) {
   const id = plain && plain.senderId;
-  if (!id || String(id).startsWith("system:")) return;
+  if (!id || String(id).startsWith("system:") || plain.botVia) return;
   const name = String(plain.sender || "").trim().slice(0, MAX_NAME) || "peer";
-  const kind = plain.accountKind === "user"
-    ? (id === FORKBOT_SENDER_ID ? "bot" : "user")
-    : plain.accountKind === "guest"
-      ? "guest"
-      : "node";
+  const kind = plain.accountKind === "integration"
+    ? "bot"
+    : plain.accountKind === "user"
+      ? (id === FORKBOT_SENDER_ID ? "bot" : "user")
+      : plain.accountKind === "guest"
+        ? "guest"
+        : "node";
   // Use the frame's own timestamp (bounded by now): the relay replays retained
   // frames to a joining client, and a days-old replayed message must not paint
   // its author online. Never move lastSeen backwards either — a replayed old
@@ -3975,7 +4030,7 @@ function applyReaction(plain) {
   const perEmoji = perMessage.get(emoji) || new Map();
   perMessage.set(emoji, perEmoji);
   if (plain.added) {
-    perEmoji.set(reactor, String(plain.reactorName || plain.sender || "peer"));
+    perEmoji.set(reactor, String((plain[FRAME_AUTH] ? plain.sender : plain.reactorName || plain.sender) || "peer"));
   } else {
     perEmoji.delete(reactor);
   }
@@ -4036,7 +4091,7 @@ function applySticker(plain, sticker) {
   const placers = perMessage.get(sticker.slug) || new Map();
   perMessage.set(sticker.slug, placers);
   if (plain.added) {
-    placers.set(reactor, String(plain.reactorName || plain.sender || "peer"));
+    placers.set(reactor, String((plain[FRAME_AUTH] ? plain.sender : plain.reactorName || plain.sender) || "peer"));
   } else {
     placers.delete(reactor);
   }
@@ -4770,11 +4825,12 @@ function renderThreadSummary(rootId) {
 function threadMessageHeader(record) {
   const header = document.createElement("div");
   header.className = "chat-thread-message-head";
-  const avatar = makeAvatar(record.sender, record.senderId === FORKBOT_SENDER_ID ? "bot" : "user");
+  const isBot = record.senderId === FORKBOT_SENDER_ID || isIntegrationSenderId(record.senderId);
+  const avatar = makeAvatar(record.sender, isBot ? "bot" : "user");
   const meta = document.createElement("div");
   meta.className = "chat-thread-message-meta";
   const author = document.createElement("strong");
-  if (record.senderId === FORKBOT_SENDER_ID) {
+  if (isBot) {
     author.textContent = record.sender;
   } else {
     const authorLink = document.createElement("a");
@@ -5293,7 +5349,7 @@ function buildRow(record, prev) {
     sameLocalDate(prev.ts, record.ts) &&
     Number(record.ts) - Number(prev.ts) < GROUP_WINDOW_MS);
   const row = document.createElement("div");
-  const isBot = record.senderId === FORKBOT_SENDER_ID;
+  const isBot = record.senderId === FORKBOT_SENDER_ID || isIntegrationSenderId(record.senderId);
   row.className = "chat-msg" +
     (grouped ? " is-continuation" : " is-group-start") +
     (record.self ? " is-self" : "") +
@@ -5333,6 +5389,13 @@ function buildRow(record, prev) {
     time.textContent = fmtTime(record.ts);
     time.title = new Date(Number(record.ts) || Date.now()).toLocaleString();
     head.append(author);
+    if (record.serverVisible) {
+      const marker = document.createElement("span");
+      marker.className = "chat-server-visible";
+      marker.textContent = "server-visible";
+      marker.title = "Posted through the server, which can read this message";
+      head.append(marker);
+    }
     const authorBadge = isBot ? null : userStatusBadge(record.sender);
     if (authorBadge) head.append(authorBadge);
     head.append(time);
@@ -5553,6 +5616,7 @@ function appendMessage(
   recipientNames = [],
   viewOnce = null,
   relayed = false,
+  serverVisible = false,
 ) {
   const channelKey = normalizeChannelKey(channel) || activeChannel;
   const record = {
@@ -5569,6 +5633,7 @@ function appendMessage(
     recipients: knownRecipientCount(recipients),
     recipientNames: knownRecipientNames(recipientNames),
     relayed: Boolean(relayed),
+    serverVisible: Boolean(serverVisible),
   };
   if (viewOnce) {
     record.viewOnce = viewOnce;
@@ -5719,9 +5784,8 @@ function watchUserStatuses() {
   });
 }
 
-function allowedChatAccountKind(value, scope = roomScopeForChannel()) {
-  return value === "user" ||
-    (scope === "public-world-general" && value === "guest");
+function allowedChatAccountKind(value) {
+  return value === "user" || value === "guest" || value === "integration";
 }
 
 function normalizedPublicWorldFrame(
@@ -5734,8 +5798,8 @@ function normalizedPublicWorldFrame(
   }
   return {
     ...plain,
-    accountKind: plain.accountKind === "user" ? "user" : "guest",
-    sender: publicWorldName(plain.sender),
+    accountKind: ["user", "integration"].includes(plain.accountKind) ? plain.accountKind : "guest",
+    sender: plain.botVia ? plain.sender : publicWorldName(plain.sender),
   };
 }
 
@@ -5750,7 +5814,7 @@ function frameMatchesScope(plain, scope) {
   if (plain.type === "history") return true;
   if (plain.type === "hello" || plain.type === "presence" ||
       plain.type === "bye") {
-    return allowedChatAccountKind(plain.accountKind, scope);
+    return allowedChatAccountKind(plain.accountKind);
   }
   return plain.channel === "#general" ||
     plain.conversation === "#general";
@@ -5769,7 +5833,8 @@ function renderChatEntry(
   recipients = null,
   recipientNames = [],
 ) {
-  if (!entry || !allowedChatAccountKind(entry.accountKind, scope)) return;
+  if (!entry || !allowedChatAccountKind(entry.accountKind)) return;
+  if (!isSealedPlain(entry) && !isServerPlain(entry)) return;
   entry = normalizedPublicWorldFrame(entry, scope);
   const channelKey = scope === "public-world-general" ? "#general" : scope;
   if (scope === "public-world-general" && entry.channel !== "#general") return;
@@ -5781,7 +5846,7 @@ function renderChatEntry(
   noteRoster(entry);
   if (!once(entry.id)) return;
   if (chatRetention.isExpired(entry.ts, channelKey)) return;
-  const who = (entry.sender || "peer").slice(0, MAX_NAME);
+  const who = entry.botVia ? entry.sender : (entry.sender || "peer").slice(0, MAX_NAME);
   const viewOnce = isDirectMessageKey(scope) ? viewOnceFromEntry(entry) : null;
   const text = viewOnce ? "" : entry.text || "";
   const attachment = viewOnce ? null : attachmentFromEntry(entry);
@@ -5804,11 +5869,13 @@ function renderChatEntry(
       recipientNames,
       viewOnce,
       true,
+      isServerPlain(entry) && entry.serverVisible === true,
     );
   }
 }
 
 function appMessageFromEntry(entry, channelKey) {
+  if (!isServerPlain(entry)) return null;
   const senderId = String(entry?.senderId || "");
   const notice = senderId.startsWith("system:");
   if (!senderId.startsWith("app:") && !notice) return null;
@@ -5828,7 +5895,7 @@ function renderThreadEntry(
   recipients = null,
   recipientNames = [],
 ) {
-  if (!entry || !allowedChatAccountKind(entry.accountKind, scope)) return;
+  if (!entry || !allowedChatAccountKind(entry.accountKind) || !isSealedPlain(entry)) return;
   entry = normalizedPublicWorldFrame(entry, scope);
   const channelKey = scope === "public-world-general" ? "#general" : scope;
   if (scope === "public-world-general" && entry.channel !== "#general") return;
@@ -5842,7 +5909,7 @@ function renderThreadEntry(
   const record = portableMessageRecord({
     ...entry,
     channel: channelKey,
-    sender: (entry.sender || "peer").slice(0, MAX_NAME),
+    sender: entry.botVia ? entry.sender : (entry.sender || "peer").slice(0, MAX_NAME),
     text,
     attachment,
     self: entry.senderId === selfId,
@@ -5938,12 +6005,11 @@ function targetMatchesScope(targetId, scope) {
 }
 
 function handlePlain(plain, scope = roomScopeForChannel()) {
+  if (!isSealedPlain(plain) && !isServerPlain(plain)) return;
   plain = botLine(plain);
   const type = plain.type;
   if (!frameMatchesScope(plain, scope)) return;
-  if (type !== "history" && !allowedChatAccountKind(plain.accountKind, scope)) {
-    return;
-  }
+  if (!allowedChatAccountKind(plain.accountKind)) return;
   plain = normalizedPublicWorldFrame(plain, scope);
   // Roster + channel discovery run for EVERY decrypted frame — desktop nodes
   // announce themselves (hello/presence) without accountKind, and the people
@@ -5978,7 +6044,7 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
       plain, scope, plain.relayRecipients ?? null,
       plain.relayRecipientNames ?? []);
   } else if (type === "history") {
-    const entries = Array.isArray(plain.entries) ? plain.entries : [];
+    const entries = historyEntries(plain);
     for (const entry of entries) {
       if (entry?.type === "thread-reply") {
         renderThreadEntry(entry, scope);
@@ -5993,16 +6059,15 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
       }
     }
   } else if (type === "reaction") {
-    if (targetMatchesScope(plain.target, scope) && once(plain.id)) {
+    if (isSealedPlain(plain) && targetMatchesScope(plain.target, scope) && once(plain.id)) {
       applyReaction(plain);
     }
   } else if (type === "edit") {
-    // The author edited their own message; only honour it from that author.
     if (!targetMatchesScope(plain.target, scope)) return;
     const rec = rows.get(plain.target);
     const reply = rec ? null : threads.target(plain.target);
     const target = rec || reply;
-    if (target && target.senderId === plain.senderId) {
+    if (target && mayChangeMessage(plain, target)) {
       const patch = {
         text: plain.text || "",
         richText: plain.richText || null,
@@ -6023,10 +6088,9 @@ function handlePlain(plain, scope = roomScopeForChannel()) {
       if (activeThreadRootId === rec.id) renderThread();
     }
   } else if (type === "delete") {
-    // A plain delete is only valid from the message's own author.
     if (!targetMatchesScope(plain.target, scope)) return;
     const rec = rows.get(plain.target) || threads.target(plain.target);
-    if (rec && rec.senderId === plain.senderId) removeMessage(plain.target);
+    if (rec && mayChangeMessage(plain, rec)) removeMessage(plain.target);
   } else if (type === "admin-delete") {
     // Moderation: remove any message once the admin signature checks out.
     if (!targetMatchesScope(plain.target, scope)) return;
@@ -6336,7 +6400,7 @@ function sendMissedCallLine(channelKey, media) {
 
 const chatCalls = createChatCalls({
   iceServers: CALL_ICE_SERVERS,
-  selfId,
+  selfId: () => selfId,
   accountName: () => String(userSession()?.nodeName || "").trim().toLowerCase(),
   sendSignal: sendCallSignal,
   partnerFor: (channelKey) => directMessageForKey(channelKey)?.otherUser || "",
@@ -6578,9 +6642,7 @@ function makeForkbotPlain(text) {
 }
 
 function botLine(plain) {
-  const bot = String(plain?.bot || "").trim().toLowerCase();
-  if (!["forkbot", "claude", "codex"].includes(bot)) return plain;
-  return { ...plain, sender: bot, senderId: bot, postedBy: plain.senderId };
+  return botViaLine(plain, ["forkbot", "claude", "codex"]);
 }
 
 async function broadcastForkbotMessage(text) {
@@ -6670,7 +6732,7 @@ async function maybeAskForkbot(text) {
   // the room the mention happened in.
   const context = (recentContext.get(activeChannel) || [])
     .slice(0, -1)
-    .filter((m) => m.sender.toLowerCase() !== "forkbot")
+    .filter((m) => m.sender.toLowerCase() !== "forkbot" && !isBotViaName(m.sender))
     .slice(-12);
   try {
     const response = await fetch(FORKBOT_ENDPOINT, {
@@ -6821,7 +6883,7 @@ function renderSealControl() {
   sealBtn.title = serverNotices
     ? "Server notices written by ForkMesh itself; not end-to-end encrypted"
     : controllerReadable
-    ? "Controller-readable public channel — ForkBot, MCP, and webhooks can participate"
+    ? "Public channel: sealed to the devices here, but anyone can join, the server included. Apps and webhooks post through the server"
     : "Automatic device-to-device encryption — the controller key alone cannot read messages";
   renderSealState();
 }
@@ -6840,11 +6902,12 @@ function renderSealState() {
   }
   if (controllerReadableScope(scope)) {
     sealStateEl.textContent = unavailable
-      ? "This channel is public and controller-readable, so ForkBot, MCP, and " +
-        "webhooks can participate. Some older end-to-end encrypted history " +
-        "was not addressed to this device."
-      : "This channel is public and controller-readable, so ForkBot, MCP, and " +
-        "webhooks can participate.";
+      ? "This channel is public: messages are sealed to the devices here, but " +
+        "anyone can join and read them, the server included. Apps and webhooks " +
+        "post through the server. Some older history was not addressed to this device."
+      : "This channel is public: messages are sealed to the devices here, but " +
+        "anyone can join and read them, the server included. Apps and webhooks " +
+        "post through the server.";
     return;
   }
   sealStateEl.textContent = refusedUnsealed
@@ -7083,14 +7146,14 @@ function newRoomTransport() {
     isDirectRoom: (room) => isDirectMessageKey(room.scope),
     // Separate from authorize() on purpose: private E2EE identity material may
     // never come from the relay, so it is resolved from this browser only.
-    resolveSeal: (room, roomName) =>
-      roomSeals.resolve(room.scope, roomName, RELAY_HOST, sealOptionsFor(room.scope)),
+    resolveSeal: async (room, roomName) =>
+      (await activateChatIdentity()).resolve(room.scope, roomName, RELAY_HOST, sealOptionsFor(room.scope)),
     onSealed: (keyId, room) => noteSealMismatch(keyId, room.scope),
     onTrust: (event, room) => {
       if (room.scope === roomScopeForChannel()) renderTrustBanner();
     },
-    onPlain: (plain, room) => handlePlain(plain, room.scope),
-    onHistory: (plains, room) => handleHistory(plains, room),
+    onPlain: (plain, room) => receivePlains([plain], room, false),
+    onHistory: (plains, room) => receivePlains(plains, room, true),
     onRecipients: (id, count, _room, names) =>
       applyRecipientCount(id, count, names),
     onServerCopies: (stored, room) => applyDirectServerCopies(stored, room.scope),
@@ -7890,6 +7953,7 @@ async function initChat() {
   wireThreadControls();
   wireMessageActionControls();
   await hydrateUserSession();
+  await activateChatIdentity().catch(() => null);
   await loadOfficeOrganizationMembership();
   ensureChannel("#general");
   await refreshPrivateChannels({ connect: false });

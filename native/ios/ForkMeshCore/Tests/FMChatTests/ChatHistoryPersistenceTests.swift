@@ -26,6 +26,62 @@ private let legacyUrl = "wss://forkmesh.com/api/repo/mainnode/forkmesh/rooms/gen
 private let nextUrl = "wss://app.next.forkmesh.com/api/repo/mainnode/forkmesh/rooms/world-general/ws"
 
 final class ChatHistoryPersistenceTests: XCTestCase {
+    @MainActor func testRelayDirectAndPrivateHistoryIsDroppedOnLoad() async throws {
+        let dir = temporaryDirectory("chat-history-purge")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ChatHistoryStore(directory: dir, delay: 0)
+        let dm = "direct:" + String(repeating: "b", count: 32)
+        var old = ChatHistorySnapshot()
+        old.messages = [
+            note("pub", "#general"), note("peer-dm", "@peer-1"), note("secret-1", "#secret"), note("office-1", "#office/crew"),
+            note("server-dm", dm),
+        ]
+        old.replies = [note("r-pub", "#general"), note("r-secret", "#secret"), note("r-under-dm", "#general")]
+        old.replyRoots = ["r-pub": "pub", "r-secret": "secret-1", "r-under-dm": "peer-dm"]
+        old.reactions = ["pub": ["like": ["x": "X"]], "peer-dm": ["like": ["x": "X"]], "r-secret": ["like": ["x": "X"]]]
+        old.reactionOrder = ["pub": ["like"], "peer-dm": ["like"], "r-secret": ["like"]]
+        old.stickers = ["peer-dm": ["lgtm": ["x": "X"]]]
+        old.edits = ["pub": "fixed", "secret-1": "edited"]
+        old.privateChannels = ["#secret", "#office/crew"]
+        var look = ChatLook()
+        look.backgroundPreset = "sunset"
+        old.looks = ["@peer-1": look, "#secret": look, "#general": look]
+        old.lookEvents = [
+            ChatLookEvent(
+                id: "e-1", conversation: "@peer-1", field: .background, actorName: "Pat", isSelf: false, timestamp: Date(),
+                cleared: false)
+        ]
+        store.save(old, scope: "s")
+
+        let h = try await RelayHarness.start()
+        let mesh = LocalMeshService(settings: h.device.settings, identity: h.device.identity, secureStore: h.device.secure)
+        let hub = ChatHub(relay: h.relay, mesh: mesh)
+        hub.attachHistory(store, scope: { "s" })
+        XCTAssertEqual(h.relay.messages("#general").map(\.id), ["pub"])
+        XCTAssertTrue(h.relay.messages("@peer-1").isEmpty)
+        XCTAssertTrue(h.relay.messages("#secret").isEmpty)
+        XCTAssertFalse(hub.channels.contains("#secret"))
+        XCTAssertEqual(hub.extras.replies(to: "pub").map(\.id), ["r-pub"])
+        XCTAssertTrue(hub.extras.replies(to: "secret-1").isEmpty)
+        XCTAssertTrue(hub.extras.replies(to: "peer-dm").isEmpty)
+        XCTAssertEqual(hub.extras.reactions(for: "pub").count, 1)
+        XCTAssertTrue(hub.extras.reactions(for: "peer-dm").isEmpty)
+        XCTAssertTrue(hub.extras.stickers(for: "peer-dm").isEmpty)
+        XCTAssertEqual(hub.extras.look(for: "#general").backgroundPreset, "sunset")
+        XCTAssertEqual(hub.extras.look(for: "@peer-1"), ChatLook())
+        XCTAssertTrue(hub.extras.lookEvents(in: "@peer-1").isEmpty)
+        let kept = hub.historySnapshot()
+        XCTAssertEqual(Set(kept.messages.map(\.id)), ["pub", "office-1", "server-dm"])
+        XCTAssertTrue(kept.privateChannels.isEmpty)
+        XCTAssertNil(kept.edits["secret-1"])
+        XCTAssertEqual(kept.edits["pub"], "fixed")
+        await store.flush()
+        let rewritten = try XCTUnwrap(store.load(scope: "s"))
+        XCTAssertEqual(Set(rewritten.messages.map(\.id)), ["pub", "office-1", "server-dm"], "the purge is saved")
+        XCTAssertTrue(rewritten.privateChannels.isEmpty)
+        await h.close()
+    }
+
     @MainActor func testAFileFromANewerOrOlderBuildStillLoads() async throws {
         var object = JSON.parseObject(ChatHistoryCodec.encode(snapshot([note("a", "#general")])))
         object["v"] = 7

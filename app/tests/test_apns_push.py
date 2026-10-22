@@ -500,10 +500,11 @@ def test_an_alert_outlives_a_night_in_flight_mode(apns):
     assert expiration == 1_700_000_000 + apns.APNS_EXPIRATION_SECONDS
 
 
-def test_a_call_push_rings_names_the_caller_and_the_conversation(apns):
-    alert = apns.direct_call_alert(conversation_id="A" * 32, caller=" Bob ")
+def test_a_call_push_rings_the_conversation_without_naming_the_caller(apns):
+    alert = apns.direct_call_alert(conversation_id="A" * 32)
     assert alert["conversation"] == "direct:" + "a" * 32
-    assert alert["body"] == "@bob is calling you"
+    assert alert["body"] == "Incoming call"
+    assert "caller" not in alert
     assert "Incoming call" in alert["title"]
     payload = json.loads(apns.alert_payload(alert, "calls"))
     assert payload["topic"] == "calls"
@@ -515,14 +516,14 @@ def test_a_call_push_rings_names_the_caller_and_the_conversation(apns):
         "call-direct:" + "a" * 32)
     unnamed = apns.direct_call_alert(conversation_id="nothex")
     assert "conversation" not in unnamed
-    assert unnamed["body"] == "Someone is calling you in ForkMesh"
+    assert unnamed["body"] == "Incoming call"
 
 
 def test_a_call_push_expires_with_the_ring(apns):
     fetch_impl = _fetch(_Response(200))
     asyncio.run(apns.send_one(
         types.SimpleNamespace(), fetch_impl, "jwt", "ab" * 32, "development",
-        apns.direct_call_alert(conversation_id="a" * 32, caller="bob"),
+        apns.direct_call_alert(conversation_id="a" * 32),
         topic="calls"))
     expiration = int(fetch_impl.calls[0][1]["headers"]["apns-expiration"])
     assert expiration == 1_700_000_000 + apns.APNS_CALL_EXPIRATION_SECONDS
@@ -1641,12 +1642,13 @@ _CALL_ID = "0b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"
 
 def test_a_voip_call_push_names_the_call_for_callkit(apns):
     alert = apns.direct_call_alert(
-        conversation_id="a" * 32, caller="bob", call_id=_CALL_ID.upper())
+        conversation_id="a" * 32, call_id=_CALL_ID.upper())
     assert alert["callId"] == _CALL_ID
-    payload = json.loads(apns.voip_payload(alert, "https://app.example"))
+    payload = json.loads(apns.voip_payload(
+        {**alert, "caller": "bob"}, "https://app.example"))
     assert payload == {
         "topic": "calls", "conversation": "direct:" + "a" * 32,
-        "caller": "bob", "callId": _CALL_ID, "origin": "https://app.example"}
+        "callId": _CALL_ID, "origin": "https://app.example"}
     assert apns.voip_payload({"callId": _CALL_ID}) == ""
     assert "callId" not in apns.direct_call_alert(
         conversation_id="a" * 32, call_id="not-a-uuid")

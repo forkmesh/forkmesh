@@ -7329,10 +7329,12 @@ class ForkMeshWorld extends HTMLElement {
     this.recentWorldChatMessages.sort((left, right) => left.ts - right.ts);
     this.recentWorldChatMessages = this.recentWorldChatMessages.slice(-40);
     this.world?.updateWorldGeneralChat?.(this.recentWorldChatMessages);
-    this.world?.setAvatarRecentPublicMessage?.(
-      sender,
-      text || `Shared ${attachmentName}`,
-    );
+    if (data.account === true || data.self === true) {
+      this.world?.setAvatarRecentPublicMessage?.(
+        sender,
+        text || `Shared ${attachmentName}`,
+      );
+    }
     if (data.history === true) return;
     // Own lines never count as unread — `self` is this browser, `own` also
     // covers the signed-in account talking from another tab or device.
@@ -7359,6 +7361,8 @@ class ForkMeshWorld extends HTMLElement {
     }
     const senderName = sender.toLowerCase();
     if (!senderName) return;
+    if (data.via === true || /\s·\svia\s/.test(sender)) return;
+    if (data.bot !== true && data.integration !== true) return;
     // ForkBot replies are broadcast into the room with the fixed sender
     // "forkbot"; float them over the wandering ForkBot avatar.
     if (senderName === "forkbot") {

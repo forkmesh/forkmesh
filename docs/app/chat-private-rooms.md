@@ -55,14 +55,38 @@ bound to the resource and body (`_chat_channel_signed_session`,
 - Manager endpoints `GET|POST|DELETE /api/chat/channels/<id>/invite` read,
   rotate or disable the link. Only private rooms take one
   (`409 private_channel_required`).
-- Joining: `GET|POST /api/chat/invites/<token>` previews or joins, under the
-  `MAX_CHANNEL_MEMBERS` cap. Removing any member, deleting the room, or
-  changing its creator invalidates the link.
+- Joining: `POST /api/chat/invites/preview` and
+  `POST /api/chat/invites/accept`, each with the body `{"token": "<64 hex>"}`,
+  preview or join, under the `MAX_CHANNEL_MEMBERS` cap. Removing any member,
+  deleting the room, or changing its creator invalidates the link.
 - The web link is `/chat#invite=<token>`: a fragment, so the token never
-  reaches the server in a page request or `Referer`. The app's own error and
-  Sentry logs record `/api/chat/invites/[token]` (`_privacy_safe_log_path`);
-  the Caddy access log still records the path as sent
-  ([NODE_LOGS.md](../NODE_LOGS.md#caddy-access-log)).
+  reaches the server in a page request or `Referer`, and the API takes it in
+  the request body, so it never appears in a URL either. Until 2026-10-22 the
+  API path was `/api/chat/invites/<token>`, which put the token in every Caddy
+  access log line ([NODE_LOGS.md](../NODE_LOGS.md#caddy-access-log)); that
+  path now answers `410 token_path_retired`. The body was chosen over a
+  Caddy `regexp` log filter because no Caddy binary is available to validate
+  a new log config before it ships.
+- Incoming webhook URLs are `/api/chat/webhooks?token=<64 hex>` (the
+  `x-forkmesh-webhook-token` header works too). The access log replaces the
+  `token` query value with `REDACTED` (`ACCESS_LOG_QUERY_KEYS` in
+  `deploy/core/render.py`). The old `/api/chat/webhooks/<token>` URLs answer
+  `410 token_path_retired`; their owners rotate the webhook to get a new URL.
+
+## Private channel names
+
+A private channel's name is unique only among its creator's private channels
+(`name_bi` is the blind index of `chat-channel-private-name:<creator_bi>:<name>`);
+public channel names stay unique among public channels
+(`chat-channel-name:<name>`). Before 2026-10-22 every channel shared one name
+space, so creating or renaming a channel answered `409 channel_name_taken`
+when someone else's private channel, invisible to the caller, already had the
+name: anyone could test whether a private channel with a given name existed.
+Now the only `409` a caller can see names a public channel or one of their own
+private channels. Switching visibility moves the row to the other name space
+and is refused with `409` if that name is taken there. The `UNIQUE` constraint
+on `chat_channels.name_bi` is unchanged, so no migration was needed; channels
+made before the change keep their old global `name_bi` until they are renamed.
 
 ## Channel limits and webhook pings
 
@@ -84,6 +108,14 @@ bound to the resource and body (`_chat_channel_signed_session`,
   for every active user, so anyone holding a webhook URL could flood every
   phone. A steady stream of posts therefore pings the audience once, when it
   starts after a quiet window; the messages themselves are all delivered.
+- Private channels take webhooks too (2026-10-22), so rooms fed by a tool
+  (a deploy log, a mail log) can be private. The server writes a webhook
+  message with the room cipher as it arrives (`_chat_channel_deliver`),
+  marks the envelope `srv` and the frame `webhook` and `serverVisible`; every
+  client accepts such frames in public and private channel rooms, never in
+  direct messages, and labels them server-visible. A private channel's
+  webhook notifies its creator and members only. Notices and office channels
+  still take no webhooks.
 
 ## Server copies of direct messages
 

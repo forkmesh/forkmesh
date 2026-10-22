@@ -302,6 +302,18 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 
 - Keys live in the Keychain (`native/ios/ForkMesh/Platform/KeychainStore.swift`)
   and the Android Keystore (`app/platform/SecureStore`).
+- iOS Keychain groups (2026-10-22, `FMAccount/KeychainPlacement.swift`): the
+  app lists `…forkmesh.private`, `…forkmesh.push` and `…forkmesh`, in that
+  order. The node key, owner key, sessions, vault copy and every other
+  secure-store item live in `private`, which no extension lists. The
+  notification service extension lists only `push`: it holds the push
+  session items, the room keys, the verified-names map and the chat keyring
+  (`chat/e2ee/…`: identity, prekeys, trust, ratchets), which it needs to open
+  sealed chat pushes. Share, Widgets and AutoFill keep `…forkmesh` for the
+  share drop, surface snapshot and AutoFill cache. Before, every item sat in
+  `…forkmesh` and every extension listed it, so any extension could read the
+  node key and sessions. `KeychainStore` moves old items out of `…forkmesh`
+  once per launch (add to the new group, then delete the old copy).
 - Ed25519 is never delegated to CryptoKit (randomised signatures would break
   the pinned deterministic vectors).
 - The iOS app shows no prices, plans or paid features and moves no money

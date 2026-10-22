@@ -660,6 +660,8 @@ void MainWindow::buildSettingsProfileParts(SettingsSectionParts &parts)
         saveSolanaAddress(addr);
         if (m_solanaEdit && m_solanaEdit->text().trimmed() != addr)
             m_solanaEdit->setText(addr);
+        if (auto *server = qobject_cast<ServerNode *>(m_backend))
+            server->setTipAddress(sharedTipAddress());
         updateSolanaNotice();
         updateHomeStats();
     });
@@ -671,6 +673,16 @@ void MainWindow::buildSettingsProfileParts(SettingsSectionParts &parts)
     form->addRow("Node name", m_settingsMachineNodeEdit);
     form->addRow("Node labels", m_settingsNodeLabelsEdit);
     form->addRow("Solana", m_settingsSolanaEdit);
+    auto *shareTipAddress =
+        new QCheckBox(QStringLiteral("Show this address in shared chat rooms so people can tip you"));
+    shareTipAddress->setObjectName(QStringLiteral("settingsShareTipAddress"));
+    shareTipAddress->setChecked(QSettings().value(kShareTipAddressSetting, false).toBool());
+    connect(shareTipAddress, &QCheckBox::toggled, this, [this](bool on) {
+        QSettings().setValue(kShareTipAddressSetting, on);
+        if (auto *server = qobject_cast<ServerNode *>(m_backend))
+            server->setTipAddress(sharedTipAddress());
+    });
+    form->addRow(QString(), shareTipAddress);
     m_settingsEmailLabel = new QLabel("Email");
     m_settingsEmailVerifiedBadge = new QLabel;
     m_settingsEmailVerifiedBadge->setObjectName("emailVerifiedBadge");

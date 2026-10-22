@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.chat
 import com.forkmesh.nativeapp.api.AccountSettings
 import com.forkmesh.nativeapp.api.DartException
 import com.forkmesh.nativeapp.api.ServerUrl
+import com.forkmesh.nativeapp.crypto.ChatNodeKey
 import com.forkmesh.nativeapp.crypto.RoomCrypto
 import com.forkmesh.nativeapp.crypto.RoomSeal
 import com.forkmesh.nativeapp.crypto.SealOpen
@@ -101,7 +102,16 @@ class RelayRoom(
     var isReadElsewhere: ((ChatMessage) -> Boolean)? = null
 
     @Volatile
-    var isPrivateChannel: ((String) -> Boolean)? = null
+    var owners: NodeOwners? = null
+        set(value) {
+            field = value
+            value?.addListener {
+                loop.post {
+                    relabelBots()
+                    notifyListeners()
+                }
+            }
+        }
 
     @Volatile
     var isHiddenChannel: ((String) -> Boolean)? = null
@@ -155,9 +165,9 @@ class RelayRoom(
         var owner = ""
         var nodeName = ""
         var mirrors: List<String> = emptyList()
+        var diagnostics: List<Any?>? = null
         var status: UserStatus? = null
         var statusTs = 0L
-        var diagnostics: List<Any?>? = null
         var online = true
         var lastSeenMs = 0L
     }
@@ -191,6 +201,8 @@ class RelayRoom(
     private val name: String get() = persona.name
 
     val selfId: String get() = identity.nodeId
+
+    val nodeKey: ChatNodeKey get() = ChatNodeKey.of(identity)
 
     @Volatile
     private var ownStatusValue: UserStatus? = null
@@ -277,7 +289,7 @@ class RelayRoom(
                     version = p.version,
                     solanaAddress = p.solana,
                     mirrors = p.mirrors,
-                    owner = p.owner,
+                    owner = verifiedOwner(id, p.owner),
                     nodeName = p.nodeName,
                     userStatus = p.status ?: UserStatus(),
                     diagnostics = p.diagnostics,
@@ -410,7 +422,7 @@ class RelayRoom(
                 RoomCrypto.withPassphrase(room, shared)
             }
             if (!loop.call { (generation == openGeneration).also { if (it) crypto = roomCrypto } }) return
-            val roomSeal = RoomSeal.loadOrCreate(room, scope = room, policy = SealPolicy.OPEN, acct = sealAccount(), secureStore = secureStore, node = nodeId)
+            val roomSeal = RoomSeal.loadOrCreate(room, scope = room, policy = SealPolicy.OPEN, acct = sealAccount(), secureStore = secureStore, node = nodeId, nodeKey = ChatNodeKey.of(identity))
             val current = loop.call {
                 (generation == openGeneration).also {
                     if (it) {
@@ -566,7 +578,7 @@ class RelayRoom(
         self.stamp(m)
         announcedPersona = self
         val solana = settings.solanaAddress
-        if (solana.isNotEmpty()) m["solana"] = solana
+        if (solana.isNotEmpty() && settings.chatTipsEnabled) m["solana"] = solana
         return m
     }
 
@@ -578,12 +590,13 @@ class RelayRoom(
             return EventLoop.done(false)
         }
         val roomSeal = seal
+        if (RelayFrames.isPrivate(plain)) return EventLoop.done(false)
         return writer.submit {
             try {
                 val persist = plain["persist"] == true
                 val payload = if (persist) LinkedHashMap(plain).apply { remove("persist") } else plain
                 if (roomSeal == null) throw IllegalStateException("End-to-end encryption unavailable.")
-                val framed = if (isControllerReadableFrame(payload)) payload else roomSeal.seal(payload, only = directRecipients(roomSeal, payload))
+                val framed = roomSeal.seal(payload, only = directRecipients(roomSeal, payload))
                 if (roomSeal.needsAdvertisement()) loop.post { sendKeyAdvertisement(true) }
                 val envelope = LinkedHashMap(roomCrypto.encrypt(framed))
                 if (persist) {
@@ -643,7 +656,7 @@ class RelayRoom(
     val advertisedChannels: List<String> get() = loop.call { advertisedNow() }
 
     private fun advertisedNow(): List<String> =
-        channelList.filter { !OfficeFrames.isOffice(it) && isPrivateChannel?.invoke(it) != true && !hidden(it) }
+        channelList.filter { !OfficeFrames.isOffice(it) && !hidden(it) }
 
     private fun hidden(channel: String): Boolean = isHiddenChannel?.invoke(channel) == true
 
@@ -663,15 +676,12 @@ class RelayRoom(
     fun deleteMessage(msg: ChatMessage): Boolean {
         val pending = loop.call {
             val target = msg.conversation
+            if (!target.startsWith("#")) return@call EventLoop.done(false)
             val del = envelopeBase("delete")
             del["conversation"] = target
             del["target"] = msg.id
-            if (target.startsWith("#")) {
-                del["channel"] = target
-                del["persist"] = true
-            } else {
-                del["to"] = target.removePrefix("@")
-            }
+            del["channel"] = target
+            del["persist"] = true
             removeMessage(target, msg.id)
             seenIds.add(del["id"] as String)
             notifyListeners()
@@ -701,18 +711,14 @@ class RelayRoom(
 
     fun sendMessage(text: String, to: String): Boolean {
         val trimmed = dartTrimText(text)
-        if (trimmed.isEmpty() || !(to.startsWith("#") || to.startsWith("@"))) return false
+        if (trimmed.isEmpty() || !to.startsWith("#")) return false
         val (pending, target, id) = loop.call {
             val target = to
-            val msg = envelopeBase(if (target.startsWith("@")) "dm" else "chat")
+            val msg = envelopeBase("chat")
             msg["text"] = trimmed
             msg["conversation"] = target
-            if (target.startsWith("#")) {
-                msg["channel"] = target
-                msg["persist"] = true
-            } else {
-                msg["to"] = target.substring(1)
-            }
+            msg["channel"] = target
+            msg["persist"] = true
             val id = msg["id"] as String
             val appended = appendMessage(
                 ChatMessage(
@@ -866,8 +872,9 @@ class RelayRoom(
             return
         }
         if (!RoomSeal.isSealedFrame(decrypted)) {
-            if (isControllerReadableFrame(decrypted)) {
-                session.onLoop { handle(decrypted) }
+            val injected = RelayFrames.serverFrame(envelope, decrypted)
+            if (injected != null) {
+                session.onLoop { handle(injected) }
             } else {
                 session.onLoop { noteSealMismatch("") }
             }
@@ -878,7 +885,10 @@ class RelayRoom(
 
     private fun openSealed(session: Session, frame: Map<String, Any?>, history: Boolean) {
         when (val opened = session.seal.open(frame, history = history, meta = if (history) mapOf("history" to true) else emptyMap())) {
-            is SealOpen.Opened -> session.onLoop { handle(opened.plain) }
+            is SealOpen.Opened -> {
+                val plain = RelayFrames.authenticated(opened.plain, opened.senderNode) ?: return
+                session.onLoop { handle(plain) }
+            }
             is SealOpen.NotForMe -> {
                 val keyId = RoomSeal.frameKeyId(frame)
                 session.onLoop { noteSealMismatch(keyId) }
@@ -888,10 +898,12 @@ class RelayRoom(
         }
     }
 
-    private fun isControllerReadableFrame(frame: Map<String, Any?>): Boolean {
-        if (jsonText(frame["type"]) != "chat" || frame["private"] == true) return false
-        return jsonText(frame["channel"]).startsWith("#")
+    fun receive(envelope: Map<String, Any?>, decrypted: Map<String, Any?>, senderNode: String?) = loop.call {
+        val frame = if (senderNode == null) RelayFrames.serverFrame(envelope, decrypted) else RelayFrames.authenticated(decrypted, senderNode)
+        if (frame != null) handle(frame)
     }
+
+    private fun verifiedOwner(node: String, claimed: String): String = owners?.verified(node, claimed).orEmpty()
 
     private fun noteSealMismatch(keyId: String) {
         if (!reportedSealKeyIds.add(keyId)) return
@@ -913,13 +925,15 @@ class RelayRoom(
             val id = jsonText(m["id"])
             if (id.isNotEmpty()) {
                 if (id in seenIds) {
-                    if (senderId.isNotEmpty() && senderId != nodeId) rememberPeer(senderId, sender, m)
+                    if (!RelayFrames.isIntegration(m) && senderId.isNotEmpty() && senderId != nodeId) rememberPeer(senderId, sender, m)
                     return
                 }
                 seenIds.add(id)
             }
         }
-        if (senderId.isNotEmpty() && senderId != nodeId) rememberPeer(senderId, sender, m)
+        val person = !RelayFrames.isIntegration(m)
+        if (person && senderId.isNotEmpty() && senderId != nodeId) rememberPeer(senderId, sender, m)
+        if (RelayFrames.isPrivate(m)) return
 
         when (type) {
             "hello" -> {
@@ -934,18 +948,12 @@ class RelayRoom(
             }
             "chat" -> {
                 val target = if (m["channel"] == null) "#general" else jsonText(m["channel"])
-                if (!acceptsPrivate(m, target)) return
+                if (!target.startsWith("#")) return
                 if (target !in channelList && !hidden(target)) channelList.add(target)
-                if (m["private"] == true) {
-                    observe(m)
-                    receive(toMessage(m, target))
-                    notifyListeners()
-                    return
-                }
                 receive(toMessage(m, target))
             }
-            "dm" -> if (jsonText(m["to"]) == nodeId) receive(toMessage(m, "@$senderId"))
             "delete" -> {
+                if (!person) return
                 val target = jsonText(m["conversation"])
                 val id = jsonText(m["target"])
                 if (target.isNotEmpty() && id.isNotEmpty()) {
@@ -953,10 +961,9 @@ class RelayRoom(
                     if (original != null && original.senderId == senderId) removeMessage(target, id)
                 }
             }
-            "bye" -> if (peers.remove(senderId) != null) logLine("$sender left")
+            "bye" -> if (person && peers.remove(senderId) != null) logLine("$sender left")
         }
-        val conversation = ChatFrameText.conversation(m)
-        if (conversation.startsWith("#") && !acceptsPrivate(m, conversation)) return
+        if (!person && type != "chat") return
         observe(m)
         notifyListeners()
     }
@@ -971,26 +978,32 @@ class RelayRoom(
         }
     }
 
-    private fun acceptsPrivate(m: Map<String, Any?>, channel: String): Boolean {
-        if (m["private"] != true || isPrivateChannel?.invoke(channel) == true) return true
-        val owner = jsonText(m["ownerUser"]).trim().lowercase()
-        val account = (accountProvider?.invoke() ?: "").trim().lowercase()
-        return account.isNotEmpty() && owner == account
-    }
-
     private fun toMessage(m: Map<String, Any?>, conversation: String): ChatMessage {
-        val senderId = jsonText(m["senderId"])
+        val senderId = RelayFrames.shownSender(m)
         val tsRaw = m["ts"]
         return ChatMessage(
             id = jsonText(m["id"]),
             conversation = conversation,
             senderId = senderId,
-            senderName = jsonText(m["sender"]),
+            senderName = RelayFrames.shownName(m, ::botAccountNow),
             text = jsonText(m["text"]),
             timestamp = if (tsRaw is Number) tsRaw.toLong() else System.currentTimeMillis(),
             self = senderId == nodeId,
             fileName = jsonText(m["fileName"]),
+            serverVisible = RelayFrames.serverVisible(m),
         )
+    }
+
+    fun botAccount(node: String): String = loop.call { botAccountNow(node) }
+
+    private fun botAccountNow(node: String): String =
+        if (node == nodeId) persona.ownerUser.trim().lowercase() else owners?.account(node).orEmpty()
+
+    private fun relabelBots() {
+        for ((key, list) in ArrayList(history.entries)) {
+            if (list.none { RelayFrames.botParts(it.senderId) != null }) continue
+            history[key] = java.util.Collections.unmodifiableList(list.map { RelayFrames.relabel(it, ::botAccountNow) })
+        }
     }
 
     private fun receive(msg: ChatMessage) {

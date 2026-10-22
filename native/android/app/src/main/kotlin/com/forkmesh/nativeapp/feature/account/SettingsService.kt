@@ -22,6 +22,7 @@ class SettingsService(val core: AccountSettings) {
     private val githubTokenState = MutableStateFlow(core.githubToken)
     private val gitlabTokenState = MutableStateFlow(core.gitlabToken)
     private val serveAsNodeState = MutableStateFlow(core.serveAsNode)
+    private val chatTipsEnabledState = MutableStateFlow(core.chatTipsEnabled)
     private val bugButtonAnchorState = MutableStateFlow(core.bugButtonAnchor)
     private val bugButtonOnLeftState = MutableStateFlow(core.bugButtonOnLeft)
     private val showSponsoredMessagesState = MutableStateFlow(core.showSponsoredMessages)
@@ -45,6 +46,8 @@ class SettingsService(val core: AccountSettings) {
     val gitlabToken: StateFlow<String> = gitlabTokenState.asStateFlow()
 
     val serveAsNode: StateFlow<Boolean> = serveAsNodeState.asStateFlow()
+
+    val chatTipsEnabled: StateFlow<Boolean> = chatTipsEnabledState.asStateFlow()
 
     val bugButtonAnchor: StateFlow<Double> = bugButtonAnchorState.asStateFlow()
 
@@ -78,6 +81,7 @@ class SettingsService(val core: AccountSettings) {
         githubTokenState.value = core.githubToken
         gitlabTokenState.value = core.gitlabToken
         serveAsNodeState.value = core.serveAsNode
+        chatTipsEnabledState.value = core.chatTipsEnabled
         bugButtonAnchorState.value = core.bugButtonAnchor
         bugButtonOnLeftState.value = core.bugButtonOnLeft
         showSponsoredMessagesState.value = core.showSponsoredMessages
@@ -107,6 +111,10 @@ class SettingsService(val core: AccountSettings) {
 
     fun setServeAsNode(value: Boolean) {
         core.setServeAsNode(value)
+    }
+
+    fun setChatTipsEnabled(value: Boolean) {
+        core.setChatTipsEnabled(value)
     }
 
     fun setShowSponsoredMessages(value: Boolean) {

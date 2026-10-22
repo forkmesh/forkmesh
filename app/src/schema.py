@@ -679,6 +679,10 @@ SCHEMA_STATEMENTS = [
         PRIMARY KEY (account_bi, conversation))""",
     "CREATE INDEX IF NOT EXISTS idx_chat_read_marks_updated "
     "ON chat_read_marks(account_bi, updated_at)",
+    """CREATE TABLE IF NOT EXISTS chat_blocks (
+        account_bi TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT 0 CHECK (updated_at >= 0))""",
     # Rotate the shared-key namespace atomically whenever a real membership is
     # removed. An idempotent DELETE that matches no row does not fire it.
     # The body is deterministic (migration 0191): rqlite replicates statement

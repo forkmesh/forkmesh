@@ -22,6 +22,42 @@ public struct ChatHistorySnapshot: Equatable, Sendable {
     public init() {}
 }
 
+extension ChatHistorySnapshot {
+    public static func isRelayPrivate(_ conversation: String, privateChannels: Set<String>) -> Bool {
+        if conversation.hasPrefix("@") { return true }
+        if OfficeFrames.isOffice(conversation) || DirectMessageFrames.isDirect(conversation) { return false }
+        return privateChannels.contains(conversation)
+    }
+
+    public var withoutRelayPrivate: ChatHistorySnapshot {
+        let channels = Set(privateChannels)
+        let purged: (String) -> Bool = { ChatHistorySnapshot.isRelayPrivate($0, privateChannels: channels) }
+        var out = self
+        var dropped = Set<String>()
+        out.messages = messages.filter { message in
+            if !purged(message.conversation) { return true }
+            dropped.insert(message.id)
+            return false
+        }
+        out.replies = replies.filter { reply in
+            if !purged(reply.conversation) && !dropped.contains(replyRoots[reply.id] ?? "") { return true }
+            dropped.insert(reply.id)
+            return false
+        }
+        out.replyRoots = replyRoots.filter { !dropped.contains($0.key) && !dropped.contains($0.value) }
+        out.reactions = reactions.filter { !dropped.contains($0.key) }
+        out.reactionOrder = reactionOrder.filter { !dropped.contains($0.key) }
+        out.stickers = stickers.filter { !dropped.contains($0.key) }
+        out.edits = edits.filter { !dropped.contains($0.key) }
+        out.receipts = receipts.filter { !dropped.contains($0.key) }
+        out.receiptTimes = receiptTimes.filter { !dropped.contains($0.key) }
+        out.looks = looks.filter { !purged($0.key) }
+        out.lookEvents = lookEvents.filter { !purged($0.conversation) }
+        out.privateChannels = []
+        return out
+    }
+}
+
 public enum ChatHistoryCodec {
     public static let version = 1
 
@@ -31,7 +67,7 @@ public enum ChatHistoryCodec {
         var out: [ChatMessage] = []
         for key in conversations.keys.sorted() {
             if key == "#team" || key == meshConversation
-                || !(key.hasPrefix("#") || key.hasPrefix("@") || DirectMessageFrames.isDirect(key))
+                || !(key.hasPrefix("#") || DirectMessageFrames.isDirect(key))
             {
                 continue
             }
@@ -58,6 +94,7 @@ public enum ChatHistoryCodec {
         ]
         if message.isSelf { object["self"] = true }
         if !message.fileName.isEmpty { object["f"] = .string(message.fileName) }
+        if message.serverVisible { object["sv"] = true }
         if let quote = message.replyTo { object["r"] = DirectMessageFrames.replyFields(quote) }
         return .object(object)
     }
@@ -66,13 +103,15 @@ public enum ChatHistoryCodec {
         let id = object["id"]?.text ?? ""
         let conversation = object["c"]?.text ?? ""
         if id.isEmpty || conversation.isEmpty { return nil }
-        return ChatMessage(
+        var message = ChatMessage(
             id: id, conversation: conversation, senderId: object["sid"]?.text ?? "",
-            senderName: String((object["s"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars)),
+            senderName: String((object["s"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars * 3)),
             text: String((object["t"]?.text ?? "").prefix(ChatLimits.maxTextChars)),
             timestamp: Date(epochMillis: object["ts"]?.int64Value ?? 0), isSelf: object["self"]?.isTrue == true,
             fileName: String((object["f"]?.text ?? "").prefix(ChatLimits.maxFileNameChars)),
             replyTo: DirectMessageFrames.replyQuote(object["r"]))
+        message.serverVisible = object["sv"]?.isTrue == true
+        return message
     }
 
     static func encodeMarks(_ marks: [String: [String: [String: String]]]) -> JSONValue {
@@ -348,7 +387,7 @@ final class ChatHistoryWriter: @unchecked Sendable {
         let data = ChatHistoryCodec.encode(snapshot)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         #if os(iOS)
-        let options: Data.WritingOptions = [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+        let options: Data.WritingOptions = [.atomic, .completeFileProtectionUnlessOpen]
         #else
         let options: Data.WritingOptions = [.atomic]
         #endif

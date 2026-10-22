@@ -190,6 +190,15 @@
           <ul>
             <li>Edits, reactions, typing and deletes in direct messages now reach only the person you are talking to, on iPhone, Android and desktop.</li>
             <li>Webhook posts in public channels notify everyone at most once every ten minutes, and each account can create up to 20 channels.</li>
+            <li>Direct messages and private channels always go through the server's member-checked rooms, and the shared room carries only public messages; nobody can post, edit or delete as someone else.</li>
+            <li>Account names in chat are checked with the server, so an unverified sender shows as a guest, and a bot reply shows who asked for it.</li>
+            <li>Private channels can take webhooks, and webhook messages are marked server-visible.</li>
+            <li>Blocking someone now also stops their direct messages, pushes and calls at the server.</li>
+            <li>#mesh says that anyone nearby can read it and no longer shares your account name.</li>
+          </ul>
+          <h3>iPhone</h3>
+          <ul>
+            <li>Link previews in shared rooms load only when you tap them, and private network addresses are never fetched.</li>
           </ul>
           <h3>Android</h3>
           <ul>

@@ -23,7 +23,6 @@ struct ChatChannelSidebar: View {
     @State private var groupName: String = ""
     @State private var renaming: String?
     @State private var moving: String?
-    @State private var inviting: String?
     @State private var managing: OfficeRoom?
     @State private var leaving: String?
     @State private var deleting: String?
@@ -126,9 +125,6 @@ struct ChatChannelSidebar: View {
                 })
         }
         .sheet(isPresented: $newChannel) { NewChatChannelSheet(hub: hub, onCreated: { select($0) }) }
-        .sheet(item: Binding(get: { inviting.map(ChatSheetKey.init) }, set: { inviting = $0?.value })) { key in
-            InviteToChannelSheet(hub: hub, channel: key.value)
-        }
         .sheet(item: Binding(get: { moving.map(ChatSheetKey.init) }, set: { moving = $0?.value })) { key in
             MoveChannelSheet(channel: key.value, rows: rows, onMove: { group in move(key.value, to: group) })
         }
@@ -389,7 +385,7 @@ struct ChatChannelSidebar: View {
     ) -> some View {
         let office: OfficeRoom? = hub.office?.room(for: conversation)
         let person: Bool = conversation.hasPrefix("@") || DirectMessageFrames.isDirect(conversation)
-        let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(conversation)
+        let locked: Bool = office?.isPrivate ?? false
         let icon: String = conversation == meshConversation ? "point.3.connected.trianglepath.dotted" : (person ? "at" : (locked ? "lock.fill" : "number"))
         let title: String = direct.map { $0.name } ?? hub.conversationLabel(conversation)
         let preview: ChatListPreview? = hub.listPreview(conversation)
@@ -482,7 +478,7 @@ struct ChatChannelSidebar: View {
 
     @ViewBuilder private func channelTile(_ channel: String) -> some View {
         let office: OfficeRoom? = hub.office?.room(for: channel)
-        let locked: Bool = office?.isPrivate ?? hub.extras.isPrivate(channel)
+        let locked: Bool = office?.isPrivate ?? false
         let preview: ChatListPreview? = hub.listPreview(channel)
         ChatChannelTile(
             title: office?.name.isEmpty == false ? "#\(office!.name)" : hub.conversationLabel(channel),
@@ -501,9 +497,6 @@ struct ChatChannelSidebar: View {
                         Button(action: { managing = office }) { Label("Channel settings", systemImage: "gearshape") }
                     }
                 } else {
-                    if hub.extras.isPrivate(channel) {
-                        Button(action: { inviting = channel }) { Label("Invite people", systemImage: "person.badge.plus") }
-                    }
                     if hub.canLeaveChannel(channel) {
                         Button(role: .destructive, action: { leaving = channel }) {
                             Label("Leave channel", systemImage: "rectangle.portrait.and.arrow.right")
@@ -523,6 +516,7 @@ struct ChatChannelSidebar: View {
         if group.isSelf {
             return canSetStatus ? { statusSheet = true } : nil
         }
+        if group.account.isEmpty { return nil }
         return { open(ChatHub.recipient(for: group)) }
     }
 
@@ -898,50 +892,6 @@ struct NewChatChannelSheet: View {
             }
             onCreated(created)
             dismiss()
-        }
-    }
-}
-
-struct InviteToChannelSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let hub: ChatHub
-    let channel: String
-    @State private var invited: Set<String> = []
-
-    private var people: [Member] {
-        hub.relay.roster().filter { !$0.isSelf && $0.online && !ChatVisitorPresence.isTransientVisitor(name: $0.name) }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if people.isEmpty {
-                    Text("Nobody else is online right now. Invitations go to devices that are connected.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(people) { (member: Member) in
-                    Button(action: {
-                        if hub.extras.invite(peerId: member.id, to: channel) { invited.insert(member.id) }
-                    }) {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(member.owner.isEmpty ? member.name : member.owner)
-                                if !member.nodeName.isEmpty {
-                                    Text(member.nodeName).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            if invited.contains(member.id) {
-                                Image(systemName: "checkmark").foregroundStyle(.green)
-                            }
-                        }
-                    }
-                    .disabled(invited.contains(member.id))
-                }
-            }
-            .navigationTitle("Invite to \(channel)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
 }
