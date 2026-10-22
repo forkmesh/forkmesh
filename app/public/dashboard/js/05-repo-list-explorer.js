@@ -1225,7 +1225,7 @@
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
-  function homeRepositoryRow(entry) {
+  function homeRepositoryRow(entry, nestedForks = 0) {
     const repo = entry.repo;
     const live = repoIsLive(repo);
     const status = live
@@ -1236,6 +1236,7 @@
       || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
     const description = String(repo.description || "").trim();
     const views = Number(homeRepositoryViewTotals(repo)?.views) || 0;
+    const forks = Math.max(Number(repo.forkCount) || 0, Number(nestedForks) || 0);
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
       ${logo}
       <span class="min-w-0 flex-1">
@@ -1245,6 +1246,7 @@
           ${statusHtml}
           ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
           ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
+          ${forks ? `<span data-home-repo-fork-count class="inline-flex items-center gap-1" title="${escapeHtml(`${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}`)}"><i data-lucide="git-fork" class="h-3 w-3"></i>${escapeHtml(formatCount(forks))} ${forks === 1 ? "fork" : "forks"}</span>` : ""}
           ${repositoryTermsBadge(repo, true)}
         </span>
       </span>
@@ -1265,7 +1267,7 @@
     if (!group.forks.length) return homeRepositoryRow(group.entry);
     const { shown } = repositoryShownForks("home", group);
     return `<div data-home-repo-group class="grid min-w-0">
-      ${homeRepositoryRow(group.entry)}
+      ${homeRepositoryRow(group.entry, group.forks.length)}
       <div data-home-repo-forks class="ml-5 grid min-w-0 gap-0.5 border-l border-border pl-2">
         ${shown.map((fork) => homeRepositoryForkRow(fork, group.entry)).join("")}
         ${repositoryForksToggleHtml("home", group, "px-2 py-1 text-left text-xs font-medium text-muted-foreground hover:text-accent")}
@@ -1333,6 +1335,11 @@
     if (!root) return href;
     const kind = String(item?.kind || "");
     if (number > 0 && (kind === "issue_assigned" || kind.startsWith("bounty_"))) return `${root}/issues/${number}`;
+    if (number > 0 && (kind === "mention" || kind === "subscribed")) {
+      const section = { pull: "pull", discussion: "discussions" }[String(meta.source || "")] || "issues";
+      const comment = String(meta.comment || "").trim();
+      return `${root}/${section}/${number}${comment ? `#comment-${encodeURIComponent(comment)}` : ""}`;
+    }
     if (kind === "repo_activity") {
       if (meta.event === "pull.merged" && number > 0) return `${root}/pull/${number}`;
       return `${root}/commits`;
