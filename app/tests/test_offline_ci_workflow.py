@@ -336,3 +336,23 @@ def test_security_guards_and_go_tests_run_in_ci_and_the_quality_gate():
     runner = CRITICAL_RUNNER.read_text(encoding="utf-8")
     assert '"test", "-C", "server", "./..."' in runner
     assert 'GOPROXY="off"' in runner and 'GOTOOLCHAIN="local"' in runner
+
+
+def test_go_suite_caps_gomaxprocs_to_the_actions_cpu_quota(monkeypatch):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("run_critical_tests", CRITICAL_RUNNER)
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+
+    monkeypatch.delenv("GOMAXPROCS", raising=False)
+    monkeypatch.setenv("FORKMESH_ACTIONS_CPUS", "8")
+    assert runner.go_environment()["GOMAXPROCS"] == "8"
+
+    monkeypatch.setenv("GOMAXPROCS", "3")
+    assert runner.go_environment()["GOMAXPROCS"] == "3"
+
+    monkeypatch.delenv("GOMAXPROCS")
+    for unusable in ("", "0", "eight"):
+        monkeypatch.setenv("FORKMESH_ACTIONS_CPUS", unusable)
+        assert "GOMAXPROCS" not in runner.go_environment()

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func datagramWindowAfterLoss(t *testing.T, exempt bool) (int, int) {
+func datagramWindowAfterLoss(t *testing.T, exempt bool) (int, int, int) {
 	sconf, cconf := testServerConfig(t), testClientConfig(t)
 	cconf.DatagramLossExempt = exempt
 	p := newPair(t, sconf, cconf, func(pc net.PacketConn) net.PacketConn {
@@ -26,6 +26,7 @@ func datagramWindowAfterLoss(t *testing.T, exempt bool) (int, int) {
 			got++
 		}
 	}()
+	start, _ := p.cliConn.PathInfo(0)
 	b := make([]byte, 1000)
 	tick := time.NewTicker(2 * time.Millisecond)
 	defer tick.Stop()
@@ -37,15 +38,18 @@ func datagramWindowAfterLoss(t *testing.T, exempt bool) (int, int) {
 	cancel()
 	<-done
 	info, _ := p.cliConn.PathInfo(0)
-	return info.CongestionWindow, got
+	return start.CongestionWindow, info.CongestionWindow, got
 }
 
 func TestDatagramLossExemptKeepsTheWindowOpen(t *testing.T) {
-	plain, plainGot := datagramWindowAfterLoss(t, false)
-	exempt, exemptGot := datagramWindowAfterLoss(t, true)
-	t.Logf("10%% datagram loss: window %d B (%d delivered) without the exemption, %d B (%d delivered) with it", plain, plainGot, exempt, exemptGot)
-	if exempt < 4*plain {
-		t.Fatalf("window with the exemption %d, without %d", exempt, plain)
+	plainStart, plain, plainGot := datagramWindowAfterLoss(t, false)
+	exemptStart, exempt, exemptGot := datagramWindowAfterLoss(t, true)
+	t.Logf("10%% datagram loss: window %d -> %d B (%d delivered) without the exemption, %d -> %d B (%d delivered) with it", plainStart, plain, plainGot, exemptStart, exempt, exemptGot)
+	if plain > plainStart/2 {
+		t.Fatalf("window without the exemption %d, started at %d: datagram loss did not back it off", plain, plainStart)
+	}
+	if exempt < exemptStart {
+		t.Fatalf("window with the exemption %d, started at %d: datagram loss shrank it", exempt, exemptStart)
 	}
 }
 
