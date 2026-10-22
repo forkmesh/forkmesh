@@ -1565,7 +1565,7 @@ def drill_offline_bootstrap(d):
     tool = carried / "tools" / "forkmesh_disaster_recovery.py"
     d.disaster()
     with d.step("verify-bootstrap-kit", "verify the carried kit with the network blocked"):
-        result = _run_offline(tool, "kit", "verify", carried, "--trusted-key", paper_key, "--json")
+        result = _run_offline(tool, "kit", "verify", carried, "--trusted-key=" + paper_key, "--json")
         if result.returncode != 0 and paper_key != kit_key:
             d.need("pinned-keys-on-paper", "the kit key on paper does not match the kit")
         d.check("the kit verifies offline against the key on paper", result.returncode == 0, result.stdout[-300:])
@@ -1587,7 +1587,7 @@ def drill_offline_bootstrap(d):
         _git(d.work, "init", "-q", "--bare", region)
         export_key = _b64(offline.ed25519_public_key(c.export_seed))
         result = _run_offline(carried / "tools" / "forkmesh_offline_sync.py", "import", c.media, region,
-                              "--trusted-key", export_key, "--json")
+                              "--trusted-key=" + export_key, "--json")
         d.check("the kit's offline sync imports verified media", result.returncode == 0, result.stderr[-300:])
         d.check("connectivity check passes", _fsck(region))
     d.measure_loss(c.origin, region)

@@ -40,6 +40,12 @@
      ]
     },
     {
+     "title": "Settings",
+     "items": [
+      "Closing the web status editor now returns keyboard focus to the control that opened it."
+     ]
+    },
+    {
      "title": "iPhone",
      "items": [
       "With Status Page installed, tiny status dots now sit in the thin strip above the Dynamic Island, so you can see ForkMesh's health on every screen.",
