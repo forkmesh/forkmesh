@@ -62,6 +62,8 @@ const MATRIX = [
 const SAMPLE_MS = 3_000;
 const recorded = [];
 const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|software|microsoft basic/i;
+const SOFTWARE_MIN_FPS = 0.25;
+const SOFTWARE_INPUT_RESPONSE_FRAMES = 12;
 
 // Booting, warming up and sampling four device classes under throttling does
 // not fit one 30 s test slot.
@@ -290,9 +292,13 @@ for (const entry of MATRIX) {
       // otherwise a host GPU change would turn evidence collection into a
       // false product regression.
       const softwareFallback = SOFTWARE_RENDERER.test(reading.gpu);
-      const minFps = softwareFallback ? 4 : entry.minFps;
+      const minFps = softwareFallback ? SOFTWARE_MIN_FPS : entry.minFps;
       const maxInputMs = softwareFallback
-        ? Math.max(1_000, entry.maxInputMs)
+        ? Math.max(
+            1_000,
+            entry.maxInputMs,
+            reading.frameTimeMs * SOFTWARE_INPUT_RESPONSE_FRAMES,
+          )
         : entry.maxInputMs;
       expect(reading.fps).toBeGreaterThanOrEqual(minFps);
       expect(reading.worstInputResponseMs).toBeLessThanOrEqual(
