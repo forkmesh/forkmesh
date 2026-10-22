@@ -865,7 +865,7 @@
   }
 
   async function loadWebIssueSubscription(repo, number) {
-    if (!state.session?.nodeName || !state.session?.sessionToken) return false;
+    if (!state.session?.nodeName || !state.session?.sessionToken) return { subscribed: false, reason: "" };
     const response = await fetch(`${repoApiBase(repo)}/subscribe`, {
       method: "POST",
       headers: {
@@ -881,8 +881,8 @@
       }),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok === false) return false;
-    return data.subscribed === true;
+    if (!response.ok || data.ok === false) return { subscribed: false, reason: "" };
+    return { subscribed: data.subscribed === true, reason: String(data.reason || (data.subscribed === true ? "subscribed" : "")) };
   }
 
   // Mirrors DiscussionStore::contentForSigning's "comment" case (just the
@@ -1682,6 +1682,7 @@
       try {
         await setWebIssueSubscription(repo, number, action === "subscribe");
         detail.parsed.issueSubscribed = action === "subscribe";
+        detail.parsed.issueSubscriptionReason = action === "subscribe" ? "subscribed" : "muted";
         renderCurrentWebIssueDetail();
       } catch (error) {
         showErrorNotice(webIssueActionError(error));
