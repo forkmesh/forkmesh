@@ -645,7 +645,7 @@ def test_a_main_push_queues_runner_actions_only_while_the_desktop_is_offline(
         (ROOT / "migrations" / "0272_actions_instance.sql").read_text()
         .split("INSERT INTO schema_meta")[0])
     db.executescript(
-        (ROOT / "migrations" / "0280_actions_pull_requests.sql").read_text()
+        (ROOT / "migrations" / "0285_actions_pull_requests.sql").read_text()
         .split("INSERT INTO schema_meta")[0])
     online = {"forkmesh"}
 
@@ -692,7 +692,7 @@ def test_an_instance_queues_every_pushed_branch_with_before_and_skips_actions_pu
     db.execute("CREATE TABLE repositories (key_bi TEXT, data TEXT)")
     for name in ("0193_runner_nodes.sql", "0248_repo_action_jobs.sql",
                  "0272_actions_instance.sql",
-                 "0280_actions_pull_requests.sql"):
+                 "0285_actions_pull_requests.sql"):
         db.executescript(
             (ROOT / "migrations" / name).read_text()
             .split("-- The runtime schema text changed")[0]
@@ -738,7 +738,7 @@ def test_a_contributor_push_queues_no_workflows(module):
     db.execute("CREATE TABLE repositories (key_bi TEXT, data TEXT)")
     for name in ("0193_runner_nodes.sql", "0248_repo_action_jobs.sql",
                  "0272_actions_instance.sql",
-                 "0280_actions_pull_requests.sql"):
+                 "0285_actions_pull_requests.sql"):
         db.executescript(
             (ROOT / "migrations" / name).read_text()
             .split("-- The runtime schema text changed")[0]
