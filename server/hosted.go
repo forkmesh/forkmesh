@@ -125,6 +125,10 @@ type hostedReplicator struct {
 	pushState  map[string]hostedPushState
 	runPush    hostedPushRunner
 	clock      func() time.Time
+
+	archiveState  map[string]hostedArchiveState
+	uploadArchive hostedArchiveUploader
+	archiveWork   sync.WaitGroup
 }
 
 type hostedCopyState struct {
@@ -149,8 +153,9 @@ type hostedHistoryStats struct {
 }
 
 type hostedReplicaRequest struct {
-	Repositories map[string]hostedCopyState  `json:"repositories"`
-	PushMirrors  map[string]hostedPushReport `json:"pushMirrors,omitempty"`
+	Repositories map[string]hostedCopyState     `json:"repositories"`
+	PushMirrors  map[string]hostedPushReport    `json:"pushMirrors,omitempty"`
+	ArchiveSyncs map[string]hostedArchiveReport `json:"archiveSyncs,omitempty"`
 }
 
 type hostedInitFile struct {
@@ -186,6 +191,7 @@ type hostedDesired struct {
 	// Organization names the repository is also served under (org_repos).
 	Aliases      []string            `json:"aliases,omitempty"`
 	PushMirror   *hostedPushMirror   `json:"pushMirror,omitempty"`
+	ArchiveSync  *hostedArchiveSync  `json:"archiveSync,omitempty"`
 	ForkOf       string              `json:"forkOf,omitempty"`
 	ForkUpstream *hostedForkUpstream `json:"forkUpstream,omitempty"`
 	Network      string              `json:"network,omitempty"`
@@ -232,7 +238,8 @@ func newHostedReplicator(d *Daemon) (*hostedReplicator, error) {
 		d: d, cfg: cfg, client: &http.Client{Timeout: 30 * time.Second},
 		pending: true, fetchedAt: map[string]int64{},
 		lastReport: map[string]hostedCopyState{}, pushState: map[string]hostedPushState{},
-		stats: map[string]hostedHistoryStats{},
+		archiveState: map[string]hostedArchiveState{},
+		stats:        map[string]hostedHistoryStats{},
 	}, nil
 }
 
@@ -296,6 +303,7 @@ func (r *hostedReplicator) reconcile(ctx context.Context) error {
 		}
 	}
 	r.pushMirrors(ctx, response)
+	r.archiveSyncs(ctx, response)
 	if len(failures) > 0 {
 		return errors.New(strings.Join(failures, "; "))
 	}
@@ -366,7 +374,7 @@ func (r *hostedReplicator) exchange(ctx context.Context) (hostedReplicaResponse,
 	}
 	origin := base.Scheme + "://" + base.Host
 	body, err := json.Marshal(hostedReplicaRequest{Repositories: r.localStates(ctx),
-		PushMirrors: r.pushMirrorReports()})
+		PushMirrors: r.pushMirrorReports(), ArchiveSyncs: r.archiveSyncReports()})
 	if err != nil {
 		return response, err
 	}

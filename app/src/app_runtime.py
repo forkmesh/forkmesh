@@ -3814,6 +3814,15 @@ class Default:
             return await repo_provider_mirror_handler(
                 self.env, request, owner, repo)
 
+        archive_sync_match = REPO_ARCHIVE_SYNC_RE.match(url.path)
+        if archive_sync_match:
+            owner = safe_segment(archive_sync_match.group(1))
+            repo = safe_segment(archive_sync_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await repo_archive_sync_handler(
+                self.env, request, owner, repo)
+
         repo_media_match = REPO_MEDIA_RE.match(url.path)
         if repo_media_match:
             owner = safe_segment(repo_media_match.group(1))
