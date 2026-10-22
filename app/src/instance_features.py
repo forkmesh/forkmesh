@@ -100,6 +100,15 @@ FEATURES = (
      "Issue lists open on Newest first, as on GitHub, and each row shows the "
      "thread's last few commenters.",
      (), ()),
+    ("post-translate", "Translate posts",
+     "A Translate bar under every post: the site's own machine translations "
+     "(made on the server, see tools/forge_translate.py), shown on hover or "
+     "at once, and the browser's on-device translator for other languages.",
+     (), ()),
+    ("community-translations", "Community translations",
+     "Signed translations that members attach to posts in issues, pull "
+     "requests and discussions, shown beside the original.",
+     (), (r"^/api/repo/[^/]+/[^/]+/translations$",)),
 )
 OFFSITE_HOSTS = ("forkmesh.com", "www.forkmesh.com", "app.forkmesh.com",
                  "world.forkmesh.com", "www.patreon.com")
@@ -134,6 +143,8 @@ INSTANCE_NOTES = {
                      "page for readers on slow or filtered links and feed readers.",
     "mirror-quota": "Lets maintainers set how many independent mirrors a "
                     "repository should have and checks them.",
+    "post-translate": "Translates posts into the reader's language without "
+                      "sending them to a translation service.",
     "mirrored-attachments": "Never makes readers' browsers fetch images from "
                             "the forge a repository mirrors.",
     "forum-list": "Lists a repository's issues newest first and shows who "
@@ -143,9 +154,14 @@ INSTANCE_NOTES = {
     "fediverse-ui": "Shows replies from the fediverse beside a thread and "
                     "how to follow a repository from Mastodon. Off, the "
                     "replies endpoint answers 404 too.",
+    "community-translations": "Lets signed-in members attach a translation "
+                              "to any post; readers see it next to the "
+                              "original. The on-device Translate button "
+                              "works either way.",
 }
 DEFAULT_ON = frozenset({"issue-ai-prompt", "fediverse-ui"})
-OPT_IN = frozenset({"forum-list", "read-surfaces", "mirror-quota", "mirrored-attachments"})
+OPT_IN = frozenset({"forum-list", "read-surfaces", "mirror-quota", "mirrored-attachments",
+                    "post-translate", "community-translations"})
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)
@@ -364,6 +380,7 @@ PLUGIN_ELEMENTS = {
     "genie": ".fm-genie, .fm-genie-bubble, .fm-genie-fx, genie-spider",
     "issue-ai-prompt": "[data-repo-issue-ai-prompt]",
     "fediverse-ui": "[data-repo-federated-thread], [data-repo-watch-wrap]",
+    "community-translations": "[data-post-translations]",
 }
 OFFSITE_PAGES = {"/world": "https://world.forkmesh.com"}
 

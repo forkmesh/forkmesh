@@ -415,6 +415,7 @@ COMMENT_GIFS_RE = re.compile(r"^/api/gifs/(config|search|trending|settings)$")
 COMMENT_TIPS_RE = re.compile(r"^/api/tips/(config|recipients|verify|settings)$")
 REPO_MODERATION_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/moderation$")
 ORG_MODERATION_RE = re.compile(r"^/api/orgs/([^/]+)/moderation$")
+REPO_TRANSLATIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/translations$")
 REPO_VIEW_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/view$")
 REPO_VIEWS_RE = re.compile(r"^/api/repo-views/?$")
 # Forks for this repo: GET returns the public list of repositories that publish

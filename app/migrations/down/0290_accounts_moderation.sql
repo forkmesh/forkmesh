@@ -6,4 +6,4 @@ DROP TABLE IF EXISTS moderation_blocks;
 DROP TABLE IF EXISTS moderation_roles;
 
 DELETE FROM schema_meta
-WHERE k = 'schema_fingerprint:4be62252332156941c0bc41834fdf253cf3425aef0076a9b94841ba6a789df79';
+WHERE k = 'schema_fingerprint:01dbf02dd2eaf225fcde111b1508221befaedda2ad1de70f9d646fa15bec5822';

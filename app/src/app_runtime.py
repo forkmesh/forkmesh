@@ -3907,6 +3907,15 @@ class Default:
             return await comment_tips_handler(
                 self.env, request, comment_tips_match.group(1))
 
+        translations_match = REPO_TRANSLATIONS_RE.match(url.path)
+        if translations_match:
+            owner = safe_segment(translations_match.group(1))
+            repo = safe_segment(translations_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await post_translations_handler(
+                self.env, request, owner, repo)
+
         forks_match = REPO_FORKS_RE.match(url.path)
         if forks_match:
             owner = safe_segment(forks_match.group(1))

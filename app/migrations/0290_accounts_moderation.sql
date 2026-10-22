@@ -48,6 +48,6 @@ CREATE TABLE IF NOT EXISTS moderation_log (
 CREATE INDEX IF NOT EXISTS idx_moderation_log_scope ON moderation_log(scope_bi, id);
 
 INSERT INTO schema_meta (k, v) VALUES (
-  'schema_fingerprint:4be62252332156941c0bc41834fdf253cf3425aef0076a9b94841ba6a789df79',
+  'schema_fingerprint:01dbf02dd2eaf225fcde111b1508221befaedda2ad1de70f9d646fa15bec5822',
   'applied'
 ) ON CONFLICT(k) DO UPDATE SET v='applied';

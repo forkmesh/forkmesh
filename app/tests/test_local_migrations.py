@@ -74,7 +74,6 @@ def test_latest_native_migration_stamps_exact_runtime_schema_fingerprint():
     assert stamps
     migration_name, fingerprint = stamps[-1]
     assert migration_name == "0290_accounts_moderation.sql"
-    assert migration_name == "0290_accounts_moderation.sql"
     assert fingerprint == _runtime_schema_fingerprint()
     # Production must not import/hash the complete schema merely to discover
     # the marker the deploy migration just wrote. Pinning the literal keeps a
