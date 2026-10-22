@@ -29,6 +29,7 @@ public enum WalkEvent: Equatable, Sendable {
 public struct WalkDetector: Equatable, Sendable {
     public static let startAfter: TimeInterval = 30
     public static let endAfter: TimeInterval = 3 * 60
+    public static let leaveStartAfter: TimeInterval = 10
 
     public private(set) var walkStartedAt: Date?
     public private(set) var movingSince: Date?
@@ -66,13 +67,27 @@ public struct WalkDetector: Equatable, Sendable {
         movingSince = nil
     }
 
+    public mutating func paced(_ stepping: Bool, at date: Date) -> WalkEvent? {
+        guard !walking else { return nil }
+        if !stepping {
+            movingSince = nil
+        } else if movingSince == nil {
+            movingSince = date
+        }
+        return tick(date)
+    }
+
     public mutating func tick(_ now: Date) -> WalkEvent? {
         if walking {
             guard let still = stillSince, now.timeIntervalSince(still) >= Self.endAfter else { return nil }
             self = WalkDetector()
             return .ended(still)
         }
-        guard let moving = movingSince, now.timeIntervalSince(moving) >= Self.startAfter else { return nil }
+        return begin(now, after: Self.startAfter)
+    }
+
+    public mutating func begin(_ now: Date, after minimum: TimeInterval) -> WalkEvent? {
+        guard !walking, let moving = movingSince, now.timeIntervalSince(moving) >= minimum else { return nil }
         walkStartedAt = moving
         movingSince = nil
         stillSince = nil

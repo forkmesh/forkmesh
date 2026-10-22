@@ -72,6 +72,12 @@ final class WalkActivityController {
         if walk != nil { showActivity() }
     }
 
+    func appLeaving() {
+        guard watching, pacing, stepping else { return }
+        apply(detector.begin(Date(), after: WalkDetector.leaveStartAfter))
+        scheduleCheck()
+    }
+
     func appPaused() {
         stopPace()
     }
@@ -98,6 +104,10 @@ final class WalkActivityController {
     private func publishPace() {
         if cadence != pace.cadence { cadence = pace.cadence }
         if running != pace.running { running = pace.running }
+        if watching {
+            apply(detector.paced(pace.moving, at: Date()))
+            scheduleCheck()
+        }
         paceExpiry?.cancel()
         paceExpiry = nil
         guard let expires = pace.expiresAt else { return }
@@ -203,7 +213,7 @@ final class WalkActivityController {
         guard let walk, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let attributes: WalkActivityAttributes = WalkActivityAttributes(startedAt: walk.startedAt)
         if activities.contains(where: { $0.attributes == attributes }) { return }
-        guard UIApplication.shared.applicationState == .active else { return }
+        guard UIApplication.shared.applicationState != .background else { return }
         do {
             _ = try Activity.request(attributes: attributes, content: content(walk, endedAt: nil), pushType: nil)
         } catch {

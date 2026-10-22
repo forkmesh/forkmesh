@@ -123,6 +123,11 @@ user decision: Android SDK and AVDs, Gradle homes, `~/Backups`,
   `data/actions/sandbox`, removes stale `.part` files before each run, skips a
   run when less than 5 GiB is free (`kBackupFreeReserveBytes`, failure code
   `low_disk`), and kills a tar that would take free space below that.
+- An Actions run checks free space after sweeping stranded sandboxes and
+  before the checkout, and fails when less than the workspace quota (2 GiB)
+  is left. Its message names this workflow (Desktop client CI tests run
+  #6604, 2026-10-22: 1.5 GiB free, 8.9 GiB again within the hour once
+  sibling agent builds finished).
 - The disk refills about daily while many agents run. If it hits 0 bytes,
   a write can truncate a source file to 0 bytes (`git checkout -- <file>`)
   and leave a stale `index.lock`.
