@@ -316,7 +316,8 @@ reduced motion).
   roster's picture for a row whose `login`, `github` or `gitlab` matches the
   name case-insensitively (`avatar` when it points into
   `.forkmesh/contributors/`, else `<slug>.png`), then the initials. A name
-  links to `/@<name>` when the forge account exists, else to the roster
+  links to `/@<name>` when the forge account is linkable (a taken, public
+  user or node account; [profile-links.md](profile-links.md)), else to the roster
   `profile` (plain `https:` only, new tab), else not at all. Bots (`…[bot]`
   and the names `repoContributorIsBot` already treats as bots, such as
   `<org>-actions`) get the lucide `bot` mark and no link. Faces have fixed

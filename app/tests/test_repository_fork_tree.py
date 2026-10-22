@@ -140,7 +140,7 @@ out.expanded = home.innerHTML;
     assert "+2 more forks" in collapsed
     assert collapsed.count("data-home-repo-row") == 2
     group = collapsed[collapsed.index("data-home-repo-group"):]
-    owners = re.findall(r'<span class="min-w-0 flex-1 truncate text-foreground">([^<]+)</span>', group)
+    owners = re.findall(r'data-home-repo-fork-owner[^>]*><span class=""><span data-user-name="([^"]+)"', group)
     assert owners == ["carol", "dave", "bob"]
     assert "<a" not in re.sub(r"<a [^>]*>.*?</a>", "", group, flags=re.S)
     assert out["toggled"] is True
@@ -202,7 +202,7 @@ out.count = sidebarCount.textContent;
     assert html.count("data-sidebar-repo-fork ") == 3
     assert "dashboard-nav-repo-forks-toggle" in html and "+2 more forks" in html
     assert 'data-repo-fork-counts="carol/widget"' in html
-    assert ">zed/<" in html
+    assert '<span class=""><span data-user-name="zed">zed</span></span>/' in html
 
 
 def test_toggles_rerender_both_lists_and_the_styles_and_docs_exist():
