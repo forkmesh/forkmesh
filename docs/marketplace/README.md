@@ -23,7 +23,8 @@ developer home for how the pieces fit.
 | `marketplace/tools/generate_desktop_packages.py` | Desktop: turns the listed plugins' `content/desktop/build.json` descriptors into `marketplace.qrc`, one `plugins/<id>.qrc` per module plugin, `packages.cmake` and the build's own `catalog.json`, `packs.json` and `guides.json` under the build dir. Run by `desktop/CMakeLists.txt` at configure time with `FORKMESH_PLUGINS`. |
 | `marketplace/tools/generate_world_packages.py` | World: writes `world/public/world/world-marketplace-packages.js`. |
 | `app/tools/build_app_plugins.py` | App: stages the listed plugins' `dashboard.page` contributions into `app/dist` and their Worker modules into `app/src_build/plugins` (both ignored). Called from `app/tools/build_site_assets.py` and `app/tools/build_worker_python.py`. |
-| `app/tools/build_market_catalog.py` | Rewrites the tracked `www/public/market.html` landing page from the catalog. |
+| `app/tools/build_market_catalog.py` | Rewrites the tracked `www/public/market.html` landing page from the catalog, and stages one page per package at `/market/<id>` at build time ([Share links and package pages](#share-links-and-package-pages)). |
+| `www/templates/layouts/market-package.html`, `www/public/market-package.{css,js}` | The package page layout, its styles, and its rating, usage and share script. |
 | `app/src/plugin_data.py`, `app/src/plugin_registry.py` | Organization install/uninstall engine, account install state for `install.sync: "account"` packages (`/api/plugins/@account`, dependencies, declared settings), reminder and account-purge hooks. |
 | `app/src/entry.py` (`_PluginApiRuntime`) | The least-privilege runtime handed to a package's Worker module. |
 | `app/src/marketplace_runtime.py`, `app/src/marketplace_governance.py` | `/market` publication review and the public catalog route. |
@@ -226,21 +227,44 @@ affiliate program).
   reported and does not stop the rest. forkmesh.com/market links to
   `app.forkmesh.com/dashboard/apps?installAll=1`, which opens that
   confirmation; the other apps are reached from the Market screen.
+  `?install=<id>` (from a package page) asks to install that one
+  account-synced package, or says it can't be installed there.
 - **Category shortcuts.** The desktop Market filters the All list with
   Virtual goods (`virtual.*`), Agents (`agent`), Services (`service.*`) and
   Themes (`theme`) buttons. Clicking the selected button again clears it;
   search terms apply with the selected category.
 
-## Share links
+## Share links and package pages
 
 Every catalog package has one public link, `https://forkmesh.com/market/<id>`
-(only the official `forkmesh` market has public pages). There is no separate
-page per package. The www Worker (`MARKET_PACKAGE` in `www/worker.js`) and the
-App (`static_routes.is_market_package_path`) serve the `/market` document for
-that path. The page script then outlines the package's card, scrolls to it and
-puts its name in the title. `/market/previews/*` stays a static asset path:
-`previews` is never read as a package id, and every `run_worker_first` list
-pairs `/market/*` with `!/market/previews/*`.
+(only the official `forkmesh` market has public pages), and that link is the
+package's own page (since 2026-10-22). `build_market_catalog.stage_package_pages`
+writes `market/<id>.html` into the staged site at build time (`stage_www` and
+`stage_cutover` in `app/tools/build_site_assets.py`), from the manifest, the
+package README and `www/templates/layouts/market-package.html`; nothing is
+committed, so a manifest or README change reaches the page on the next deploy.
+The pages are in the sitemap with that link as canonical.
+
+A page shows the type, shelf, category and price, the live rating and usage
+(`www/public/market-package.js`, from the same `/api/market/installs` and
+`/api/market/reviews/summary` as the list), an install box chosen by
+`install_place` (account-synced packages link to
+`app.forkmesh.com/dashboard/apps?install=<id>`; organization, desktop, phone,
+editor and World packages say where to install them), Share and Copy link,
+screenshots, the README (links resolved to the public repository, headings
+shifted one level down), the facts and permissions, the parent, nested,
+required and requiring packages, the packs it is in, and up to six others in
+its category. Every card on `/market` has the anchor `#package-<id>` and links
+to its page.
+
+The www Worker (`MARKET_PACKAGE` in `www/worker.js`) serves the page asset for
+that path, and the `/market` document when no page exists (an id that is not in
+the catalog). The App (`static_routes.is_market_package_path`,
+`site_document_asset_path`) does the same on a self-hosted instance. The
+`/market` script still outlines a card when the document is served for a
+package path. `/market/previews/*` stays a static asset path: `previews` is
+never read as a package id, and every `run_worker_first` list pairs
+`/market/*` with `!/market/previews/*`.
 
 - **forkmesh.com/market:** each card gets **Share** and **Copy link** buttons,
   written by `build_market_catalog.render_share`. Share opens the system

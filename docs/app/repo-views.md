@@ -404,6 +404,49 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   scaled down inside it, so the conversation below does not move when it
   loads.
 
+## Pull requests for AI reviewers
+
+A user who pasted a pull request link into ChatGPT and asked for a review
+got "the page isn't exposing the PR description or code changes", and was
+asked to paste the diff (October 2026). ChatGPT's browser (`ChatGPT-User`)
+does not run `dashboard.js`, so it reads only the first HTML, and that HTML
+held no pull request:
+
+- **Short addresses.** On an instance with short addresses
+  (`/<name>/pull/<n>`) a pull page got only the repository header and tab
+  strip; only issues were drawn into the page.
+- **Cold pages.** On `/<owner>/<repo>/pull/<n>` the node waits only
+  `VIEW_BUDGET_SECONDS` (0.04 s) for the pull's read bundle, which is long
+  enough only once the bundle is remembered. A one-off visitor reaching one
+  of several nodes nearly always arrived before that.
+- **No diff address.** `/pull/<n>.diff` and `.patch` led to the same empty
+  page.
+
+What changed (`repo_ssr.py`, `repo_views.py`):
+
+- A short-address pull page is drawn like a long one (`inject_view`, the
+  pull's own frame with links under `/<name>`). When the bundle is not ready
+  in time, the page keeps the header and tab strip and starts the bundle
+  read, as before.
+- A request whose user agent names an AI fetcher (`READER_AGENTS`:
+  `ChatGPT-User`, `OAI-SearchBot`, `Claude-User`, `Perplexity-User` and
+  similar) waits up to `READER_BUDGET_SECONDS` (5 s) for the bundle, and its
+  Conversation page also carries the Files changed diff under a heading, so
+  one fetch holds everything a review needs. People's pages are unchanged:
+  the bundle build has already started either way, and only the wait
+  differs.
+- `GET /<owner>/<repo>/pull/<n>.diff` (or `.patch`, or `/pulls/`), and
+  `/<name>/pull/<n>.diff` on short addresses, answers the pull's patch as
+  `text/plain` (`nosniff`, `no-cache`) from the same bundle; a pull with no
+  patch (closed or merged) answers 404. A short name is resolved to its
+  owner from the repository page's `forkmesh-repo-owner` meta, then
+  remembered. A repository the gateway does not serve publicly falls through
+  to the Worker, so the route reveals nothing new.
+- The first view's pull header has a **Raw diff** link to that address, and
+  a diff cut at `MAX_DIFF_FILES` / `MAX_DIFF_LINES` points to it.
+
+Tests: `app/tests/host/test_repo_views.py`.
+
 ## Repository share card
 
 The repository page's `og:image` points at `repo_card_handler`

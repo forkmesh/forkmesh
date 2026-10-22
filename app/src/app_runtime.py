@@ -4608,9 +4608,12 @@ class Default:
             return await self._proxy_site_document(request, url, upstream)
         base = url.scheme + "://" + url.netloc + "/"
         try:
+            query = ("?" + url.query) if url.query else ""
             local = await self.env.ASSETS.fetch(
-                base + site_document_asset_path(url.path).lstrip("/")
-                + (("?" + url.query) if url.query else ""))
+                base + site_document_asset_path(url.path).lstrip("/") + query)
+            if (int(getattr(local, "status", 0) or 0) == 404
+                    and is_market_package_path(url.path)):
+                local = await self.env.ASSETS.fetch(base + "market" + query)
             if int(getattr(local, "status", 0) or 0) == 200:
                 return self._without_head_body(request, JsResponse.new(
                     local.body, to_js({

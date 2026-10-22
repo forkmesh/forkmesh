@@ -494,3 +494,186 @@ def test_server_rendered_mentions_come_from_the_index():
     mentions = repo_ssr_issue.mentions_of(rows, 5)
     assert [(m["authorName"], m["ts"], m["sourceNumber"], m["sourceStatus"])
             for m in mentions] == [("amy", 10, 9, "closed")]
+
+
+CHATGPT = b"Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot)"
+
+
+def http_scope(path, agent=b"Mozilla/5.0 Safari/605.1.15"):
+    return {"type": "http", "method": "GET", "path": path,
+            "raw_path": path.encode(), "query_string": b"",
+            "headers": [(b"user-agent", agent)]}
+
+
+def test_a_reader_gets_the_diff_under_the_conversation_and_a_raw_link():
+    bundle, _fast = build("pull", 4)
+    page = repo_views.render(bundle)
+    assert 'href="/forkmesh/forkmesh/pull/4.diff" data-pull-raw-diff' in page
+    assert "Files changed</h3>" not in page and 'class="a">+new' not in page
+    reader = repo_views.render(bundle, reader=True)
+    assert "Body of pull 4." in reader and "frank" in reader
+    assert "Files changed</h3>" in reader and 'class="a">+new' in reader
+    assert reader.count("data-ssr-usable") == page.count("data-ssr-usable")
+    short = repo_views.render(bundle, "files", link="/forkmesh")
+    assert 'href="/forkmesh/pull/4.diff"' in short
+    assert '<h1 class="fm-ssr-title"><a href="/forkmesh">forkmesh</a></h1>' in short
+    merged, _fast = build("pull", 3)
+    assert "data-pull-raw-diff" not in repo_views.render(merged)
+
+
+def test_a_cut_diff_points_at_the_raw_diff():
+    patch = "".join("diff --git a/f%d b/f%d\n+x\n" % (n, n)
+                    for n in range(repo_views.MAX_DIFF_FILES + 2))
+    html = repo_views._diff(patch, "/o/r/pull/1.diff")
+    assert 'the full diff is at <a href="/o/r/pull/1.diff">' in html
+    assert "loads with the page" in repo_views._diff(patch)
+
+
+@pytest.mark.parametrize("path,expected", [
+    ("/ForkMesh/forkmesh/pull/4.diff", ("forkmesh", "forkmesh", 4)),
+    ("/forkmesh/forkmesh/pulls/4.patch", ("forkmesh", "forkmesh", 4)),
+    ("/Garden/pull/12.diff", (None, "Garden", 12)),
+    ("/Garden/pulls/12.patch", (None, "Garden", 12)),
+    ("/forkmesh/forkmesh/pull/4", None),
+    ("/forkmesh/forkmesh/pull/0.diff", None),
+    ("/forkmesh/forkmesh/pull/4.txt", None),
+    ("/api/pull/4.diff", None),
+    ("/dashboard/forkmesh/pull/4.diff", None),
+])
+def test_diff_target(path, expected):
+    assert repo_views.diff_target(http_scope(path)) == expected
+
+
+def run_fetch(scope, fast, worker_pages=None):
+    from forkmesh_host import js
+    asked = []
+
+    async def worker_fetch(request):
+        asked.append(str(request.url))
+        path = urllib.parse.urlsplit(str(request.url)).path
+        page = (worker_pages or {}).get(path)
+        if page is None:
+            return js.Response(b"worker", 308, "", js.Headers(
+                {"content-type": "text/plain"}))
+        return js.Response(page.encode(), 200, "", js.Headers(
+            {"content-type": "text/html; charset=utf-8"}))
+
+    async def main():
+        ticket = repo_ssr.start(fast, scope)
+        request = js.Request("https://forge.test" + scope["path"], "GET",
+                             js.Headers({}))
+        response = await repo_ssr.fetch(ticket, worker_fetch, request)
+        response = await repo_ssr.finish(ticket, response)
+        return response, (await response._read()).decode()
+    response, body = asyncio.run(main())
+    return response, body, asked
+
+
+def test_raw_diff_route_serves_the_pull_patch_as_text():
+    response, body, asked = run_fetch(http_scope("/forkmesh/forkmesh/pull/4.diff"),
+                                      FakeFastPath())
+    assert int(response.status) == 200 and not asked
+    assert response.headers.get("content-type") == "text/plain; charset=utf-8"
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert body == FILES[LEDGER][".forkmesh/pulls/4/changes.patch"]
+    response, body, _asked = run_fetch(
+        http_scope("/forkmesh/forkmesh/pulls/3.patch"), FakeFastPath())
+    assert int(response.status) == 404 and "No diff" in body
+    repo_views._public.clear()
+    response, body, asked = run_fetch(
+        http_scope("/forkmesh/forkmesh/pull/4.diff"), FakeFastPath(public=False))
+    assert body == "worker" and asked
+
+
+SHORT_META = ('<meta name="forkmesh-repo-short" content="forkmesh">'
+              '<meta name="forkmesh-repo-owner" content="forkmesh">'
+              '<meta name="forkmesh-repo-canonical" content="forkmesh">')
+
+
+def short_repo_page():
+    from forkmesh_host.paths import APP_DIR
+    page = (APP_DIR / "public" / "dashboard" / "repo.html").read_text("utf-8")
+    return page.replace("</head>", SHORT_META + "</head>", 1)
+
+
+@pytest.fixture
+def no_short_owners():
+    repo_ssr._short_owners.clear()
+    yield
+    repo_ssr._short_owners.clear()
+
+
+def test_short_raw_diff_learns_the_owner_from_the_repository_page(no_short_owners):
+    pages = {"/forkmesh": short_repo_page()}
+    response, body, asked = run_fetch(http_scope("/forkmesh/pull/4.diff"),
+                                      FakeFastPath(), pages)
+    assert int(response.status) == 200 and "+new" in body
+    assert asked == ["https://forge.test/forkmesh"]
+    _response, again, asked = run_fetch(http_scope("/forkmesh/pull/4.diff"),
+                                        FakeFastPath(), pages)
+    assert again == body and not asked
+    repo_ssr._short_owners.clear()
+    _response, body, asked = run_fetch(http_scope("/nobody/pull/4.diff"),
+                                       FakeFastPath(), pages)
+    assert body == "worker"
+
+
+def test_a_reader_on_a_short_pull_page_gets_the_pull_and_its_diff(no_short_owners):
+    pages = {"/forkmesh/pull/4": short_repo_page(),
+             "/forkmesh/pull/4/files": short_repo_page()}
+    _response, text, _asked = run_fetch(http_scope("/forkmesh/pull/4", CHATGPT),
+                                        FakeFastPath(), pages)
+    view = text[text.index("<div class=\"fm-ssr\" data-repo-ssr>"):]
+    assert "Patch pull" in view and "Body of pull 4." in view
+    assert "Files changed</h3>" in view and 'class="a">+new' in view
+    assert 'href="/forkmesh/pull/4.diff"' in view
+    assert "window.__forkmeshView=" in text
+    _response, files, _asked = run_fetch(
+        http_scope("/forkmesh/pull/4/files", CHATGPT), FakeFastPath(), pages)
+    assert 'class="a">+new' in files and "Files changed</h3>" not in files
+
+
+def test_a_person_on_a_cold_short_pull_page_still_gets_the_header(
+        monkeypatch, no_short_owners):
+    def slow_bundle(fastpath, owner, repo, view, number):
+        return asyncio.get_running_loop().create_future()
+    monkeypatch.setattr(repo_ssr, "_view_bundle", slow_bundle)
+    data = {"owner": "forkmesh", "repo": "forkmesh", "ref": "main",
+            "commit": MAIN, "servedBy": "n", "tree": {"entries": []},
+            "readme": None}
+
+    async def prerendered(fastpath, owner, repo):
+        return data
+    monkeypatch.setattr(repo_ssr, "prerender", prerendered)
+    repo_ssr._prerendered.clear()
+    _response, text, _asked = run_fetch(
+        http_scope("/forkmesh/pull/4"), FakeFastPath(),
+        {"/forkmesh/pull/4": short_repo_page()})
+    repo_ssr._prerendered.clear()
+    assert "data-repo-ssr" in text and "Patch pull" not in text
+    assert '"view":"pull","number":4' in text
+
+
+def test_reader_agents():
+    assert repo_ssr.reader_agent(http_scope("/a/b", CHATGPT))
+    assert repo_ssr.reader_agent(http_scope("/a/b", b"Claude-User/1.0"))
+    assert not repo_ssr.reader_agent(http_scope("/a/b"))
+    assert not repo_ssr.reader_agent({"headers": []})
+
+
+def test_a_reader_waits_for_a_cold_pull_that_a_person_does_not(monkeypatch):
+    real = repo_views.build
+
+    async def slow_build(*args):
+        await asyncio.sleep(repo_ssr.VIEW_BUDGET_SECONDS * 3)
+        return await real(*args)
+    monkeypatch.setattr(repo_views, "build", slow_build)
+    pages = {"/forkmesh/forkmesh/pull/4": short_repo_page()}
+    _response, person, _asked = run_fetch(
+        http_scope("/forkmesh/forkmesh/pull/4"), FakeFastPath(), pages)
+    assert "Patch pull" not in person
+    repo_views._latest.clear()
+    _response, reader, _asked = run_fetch(
+        http_scope("/forkmesh/forkmesh/pull/4", CHATGPT), FakeFastPath(), pages)
+    assert "Patch pull" in reader and 'class="a">+new' in reader
+    assert 'href="/forkmesh/forkmesh/pull/4.diff"' in reader

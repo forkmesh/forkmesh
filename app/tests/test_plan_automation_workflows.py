@@ -7,9 +7,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ISSUE_WORKFLOW = ROOT / ".github" / "workflows" / "github-issue-sync.yml"
 WORLD_BROWSER_WORKFLOW = ROOT / ".github" / "workflows" / "world-browser-e2e.yml"
-CHECKOUT_PIN = "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 UPLOAD_PIN = (
-    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
 )
 
 

@@ -77,6 +77,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | [Third-party APIs called by workflow integration steps](#workflow-integrations) | forge-api, email, payments, ai-provider, social, infrastructure | Optional, off unless enabled | app-worker | Only for a user who adds an integration step to a workflow: the credential they paste and whatever data the step sends or reads. Importing a workflow by URL fetches it from GitHub, a gist or the n8n template API. |
 | [Open Food Facts and USDA FoodData Central for the Calories package](#nutrition-data) | infrastructure | Optional, off unless enabled | marketplace-package | For users of the Calories package: the food names and barcodes they look up. |
 | [oEmbed and public APIs for chat link previews](#link-previews) | media-embed, social | Optional, off unless enabled | mobile, app-worker | The link a user posted in chat and the device's IP address, when a preview for that site is built. |
+| [GIPHY for GIFs in comments](#giphy) | media-embed, social | Optional, off unless enabled | app-browser, app-worker | The app sends GIPHY the trending and search requests a signed-in user makes in the GIF picker, with the administrator's key; every browser that shows a comment with a GIF loads it from GIPHY's media hosts, which see the viewer's IP address. |
 | [Invidious and YouTube thumbnails for Video Mix DJ Studio](#video-mix-sources) | media-embed | Optional, off unless enabled | marketplace-package, mobile | For users of the package: video searches, the device's IP address and the thumbnails it loads. |
 | [Apple iTunes lookup for the current App Store version](#app-store-lookup) | package-registry | Optional, off unless enabled | mobile, marketplace-package | The device's IP address and the app id being looked up. |
 | [Hugging Face downloads for local voices and models](#hugging-face-models) | ai-provider | Optional, off unless enabled | desktop, mobile | The device's IP address and which voice or model file is downloaded. |
@@ -121,6 +122,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | Third-party APIs called by workflow integration steps | The step fails and the run stops unless the step continues on failure; other workflows and ForkMesh itself are unaffected. | Use a webhook step to a service the user hosts, or leave the integration out. | tested |
 | Open Food Facts and USDA FoodData Central for the Calories package | Food search in the package returns nothing; logged entries are unaffected. | Enter foods by hand. | **gap** |
 | oEmbed and public APIs for chat link previews | The link shows without a rich preview. | Turn off link previews. | **gap** |
+| GIPHY for GIFs in comments | The GIF picker reports the failure and GIFs already in comments do not load; comments, stickers and reactions keep working. | Leave the GIPHY key unset, which hides the GIF buttons; stickers and custom reactions stay on the instance. | tested |
 | Invidious and YouTube thumbnails for Video Mix DJ Studio | Video search in the package fails; saved mixes are unaffected. | Add local videos. | **gap** |
 | Apple iTunes lookup for the current App Store version | The update prompt and the Marketing package's App Store figures are not refreshed. | None needed. | **gap** |
 | Hugging Face downloads for local voices and models | A voice or local model that is not yet downloaded cannot be used. | Use a voice or model already on the device. | **gap** |
@@ -735,6 +737,25 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Alternative:** Turn off link previews.
 - **Known gap:** No drill builds a preview with the site unreachable.
 - **Evidence:** `native/ios/ForkMeshCore/Sources/FMChat/ViewModels/ChatLinkPreviewService.swift`, `native/ios/ForkMeshCore/Sources/FMChat/Threads/ChatLinkSites.swift`, `app/src/plugin_race.py`
+
+<a id="giphy"></a>
+
+### GIPHY for GIFs in comments
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** media-embed, social
+- **Components:** app-browser, app-worker
+- **Hosts:** `api.giphy.com`, `media.giphy.com`
+- **Observes:** The app sends GIPHY the trending and search requests a signed-in user makes in the GIF picker, with the administrator's key; every browser that shows a comment with a GIF loads it from GIPHY's media hosts, which see the viewer's IP address.
+- **Retention:** Set by GIPHY.
+- **Jurisdiction:** GIPHY, Inc. (United States), owned by Shutterstock.
+- **Canonical data:** None; a comment keeps only the GIF's media address.
+- **When it is gone:** The GIF picker reports the failure and GIFs already in comments do not load; comments, stickers and reactions keep working.
+- **Recovery:** None required; searches work again once GIPHY answers.
+- **Alternative:** Leave the GIPHY key unset, which hides the GIF buttons; stickers and custom reactions stay on the instance.
+- **Failure drills:** `app/tests/test_comment_gifs.py::test_results_are_cached_and_upstream_failures_are_reported`
+- **Known gap:** The privacy notice does not name GIPHY yet.
+- **Evidence:** `app/src/comment_gifs.py`, `app/public/dashboard/js/09-comment-gifs.js`, `docs/app/comment-gifs.md`
 
 <a id="video-mix-sources"></a>
 

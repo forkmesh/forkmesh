@@ -32,7 +32,7 @@ App's clients. Public, user-facing descriptions live in `www/docs/`.
 | `app/wrangler.toml` | Not deployed. Source of `[vars]`, binding lists, queue consumer settings and `run_worker_first`, read by `app/host/forkmesh_host/env.py` and `deploy/core/caddy_routes.py` |
 | `app/host/` | The CPython host: ASGI front, bindings, rqlite D1 adapter, clustered Durable Objects, vault, request guard, IDS records |
 | `app/public/` | Static pages (login, signup, dashboard shells, chat, notes, status) |
-| `app/public/dashboard/js/*.js` | Dashboard fragments, concatenated into `app/public/dashboard.js` by `app/tools/build_dashboard_assets.py` |
+| `app/public/dashboard/js/*.js` | Dashboard fragments, concatenated into `app/public/dashboard.js` by `app/tools/build_dashboard_assets.py`. Git merges fragments as plain text, so a merge can produce a bundle that does not parse; `test_composed_bundle_and_chunks_parse` runs `node --check` on the core bundle and every chunk, after a merge on 2026-10-22 kept both sides of two conflicts and broke the node deploy's esbuild step |
 | `app/tools/build_worker_python.py` | Stages `app/src`, `world/src` and package modules into `app/src_build/` with comments stripped |
 | `world/tools/build_worker_footprint.py` | Source footprint report and static budgets |
 | `app/tests/`, `app/tests/host/`, `app/browser_tests/` | Python tests, host tests, Playwright specs |

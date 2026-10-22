@@ -401,6 +401,8 @@ CACHE_BUSTED_ASSETS = (
     "docs-page.js",
     "docs-page.css",
     # Per-page site bundles.
+    "market-package.js",
+    "market-package.css",
     "auth-mesh.js",
     "login.js",
     "signup.js",

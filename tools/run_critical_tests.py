@@ -77,6 +77,9 @@ def go_environment() -> dict[str, str]:
     env.update(GOTOOLCHAIN="local", GOPROXY="off", GOFLAGS="-mod=readonly", CGO_ENABLED="0")
     env.setdefault("GOCACHE", str(Path(tempfile.gettempdir()) / "forkmesh-go-cache"))
     env.setdefault("GOPATH", str(Path(tempfile.gettempdir()) / "forkmesh-go-path"))
+    cpus = env.get("FORKMESH_ACTIONS_CPUS", "")
+    if cpus.isdigit() and int(cpus) > 0:
+        env.setdefault("GOMAXPROCS", cpus)
     return env
 
 

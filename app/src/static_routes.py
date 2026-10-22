@@ -421,7 +421,7 @@ def site_document_asset_path(pathname):
     if is_ecosystem_project_path(pathname):
         return "/ecosystem"
     if is_market_package_path(pathname):
-        return "/market"
+        return "/market/" + path_parts(pathname)[1]
     return pathname
 
 
