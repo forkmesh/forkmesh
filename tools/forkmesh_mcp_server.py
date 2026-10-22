@@ -145,8 +145,11 @@ WRITE_TOOLS = {
 }
 DESTRUCTIVE_TOOLS = {"delete_task", "crm_merge_contacts"}
 WINDOW_TOOLS = {"show_window", "read_window", "close_window",
-                "open_browser_window", "read_browser_page"}
+                "open_browser_window", "read_browser_page", "browser_action",
+                "show_widget", "suggest_session"}
 WINDOW_READ_TOOLS = {"read_window", "read_browser_page"}
+HUB_TOOLS = {"list_agents", "send_agent_message", "list_runners", "notify_user"}
+HUB_READ_TOOLS = {"list_agents", "list_runners"}
 
 
 def log(msg):
@@ -274,6 +277,14 @@ def require_write_access(name):
             f"{name} needs the connector token: desktop windows show the user "
             "content and read their answers and browser pages, so once this "
             "node publishes an MCP connector they require a matching "
+            "FORKMESH_MCP_TOKEN as well as the desktop's per-agent channel. "
+            "Copy the config from the desktop client's Settings -> MCP tab and "
+            "restart the agent.")
+    if name in HUB_TOOLS:
+        raise ValueError(
+            f"{name} needs the connector token: the desktop's agent tools list "
+            "and message the user's other agents and runners, so once this node "
+            "publishes an MCP connector they require a matching "
             "FORKMESH_MCP_TOKEN as well as the desktop's per-agent channel. "
             "Copy the config from the desktop client's Settings -> MCP tab and "
             "restart the agent.")
@@ -3190,6 +3201,233 @@ def tool_close_window(args):
     return json.dumps(close_window(args), indent=2)
 
 
+SESSION_MAX_REASON = 300
+HUB_MAX_MESSAGE = 8000
+HUB_MAX_LISTED = 100
+NOTIFY_MAX_TITLE = 120
+NOTIFY_MAX_BODY = 1000
+WIDGET_MAX_HTML = 50000
+WIDGET_MAX_DATA = 16000
+ACTION_MAX_SELECTOR = 500
+ACTION_MAX_VALUE = 5000
+ACTION_MAX_WAIT_MS = 8000
+BROWSER_ACTIONS = ("navigate", "back", "forward", "reload", "click", "type",
+                   "press", "scroll", "wait_for")
+
+
+def suggest_session_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    prompt = _agent_text(args, "prompt").strip()
+    if not prompt:
+        raise ValueError("prompt is required")
+    if len(prompt) > AGENT_MAX_PROMPT:
+        raise ValueError(f"prompt must be at most {AGENT_MAX_PROMPT} characters")
+    params = {"prompt": prompt}
+    repository = _agent_text(args, "repository").strip()
+    if repository:
+        params["repository"] = agent_repository(repository)
+    title = " ".join(_agent_text(args, "title").split())
+    if len(title) > AGENT_MAX_TITLE:
+        raise ValueError(f"title must be at most {AGENT_MAX_TITLE} characters")
+    if title:
+        params["title"] = title
+    reason = " ".join(_agent_text(args, "reason").split())
+    if len(reason) > SESSION_MAX_REASON:
+        raise ValueError(f"reason must be at most {SESSION_MAX_REASON} characters")
+    if reason:
+        params["reason"] = reason
+    provider = _agent_text(args, "provider").strip()
+    if provider:
+        if not AGENT_PROVIDER_RE.match(provider):
+            raise ValueError("provider is not a valid provider id")
+        params["provider"] = provider
+    model = _agent_text(args, "model").strip()
+    if model:
+        if not AGENT_MODEL_RE.match(model):
+            raise ValueError("model is not a valid model id")
+        params["model"] = model
+    return params
+
+
+def suggest_session(args):
+    wait = _window_wait(args)
+    state = window_request("sessions.suggest", suggest_session_params(args))
+    if wait > 0 and state.get("window_id"):
+        state = wait_for_window(state["window_id"], wait)
+    return state
+
+
+def list_agents_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    params = {}
+    if _page_flag(args, "include_finished"):
+        params["include_finished"] = True
+    limit = args.get("limit")
+    if limit is not None:
+        if isinstance(limit, bool) or not isinstance(limit, int) or \
+                not 1 <= limit <= HUB_MAX_LISTED:
+            raise ValueError(f"limit must be a whole number from 1 to {HUB_MAX_LISTED}")
+        params["limit"] = limit
+    return params
+
+
+def send_agent_message_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    agent_id = args.get("agent_id")
+    if isinstance(agent_id, bool) or not isinstance(agent_id, int) or agent_id < 1:
+        raise ValueError("agent_id must be the id list_agents returned")
+    message = _agent_text(args, "message").strip()
+    if not message:
+        raise ValueError("message is required")
+    if len(message) > HUB_MAX_MESSAGE:
+        raise ValueError(f"message must be at most {HUB_MAX_MESSAGE} characters")
+    return {"agent_id": agent_id, "message": message}
+
+
+def notify_user_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    title = " ".join(_agent_text(args, "title").split())
+    if not title or len(title) > NOTIFY_MAX_TITLE:
+        raise ValueError(f"title must be 1 to {NOTIFY_MAX_TITLE} characters")
+    body = _agent_text(args, "body").strip()
+    if len(body) > NOTIFY_MAX_BODY:
+        raise ValueError(f"body must be at most {NOTIFY_MAX_BODY} characters")
+    params = {"title": title}
+    if body:
+        params["body"] = body
+    return params
+
+
+def show_widget_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    params = {}
+    window_id = _window_id(args, False)
+    if window_id:
+        params["window_id"] = window_id
+    title = " ".join(_agent_text(args, "title").split())
+    if len(title) > WINDOW_MAX_TITLE:
+        raise ValueError(f"title must be at most {WINDOW_MAX_TITLE} characters")
+    if title:
+        params["title"] = title
+    html = _agent_text(args, "html")
+    if len(html) > WIDGET_MAX_HTML:
+        raise ValueError(f"html must be at most {WIDGET_MAX_HTML} characters")
+    if html.strip():
+        params["html"] = html
+    if "data" in args:
+        encoded = json.dumps([args["data"]], separators=(",", ":"))
+        if len(encoded) > WIDGET_MAX_DATA + 2:
+            raise ValueError(f"data must encode to at most {WIDGET_MAX_DATA} characters")
+        params["data"] = args["data"]
+    if "html" not in params:
+        if not window_id or "data" not in params:
+            raise ValueError("html is required, unless window_id and data update "
+                             "a widget")
+    elif not title and not window_id:
+        raise ValueError("title is required")
+    width = _window_size(args, "width", 240, 1400)
+    if width is not None:
+        params["width"] = width
+    height = _window_size(args, "height", 160, 1000)
+    if height is not None:
+        params["height"] = height
+    if len(json.dumps(params).encode()) > WINDOW_MAX_REQUEST:
+        raise ValueError("the widget is larger than 60 KiB")
+    return params
+
+
+def show_widget(args):
+    wait = _window_wait(args)
+    state = window_request("windows.widget", show_widget_params(args))
+    if wait > 0 and state.get("window_id") and not state.get("events"):
+        state = wait_for_window(state["window_id"], wait)
+    return state
+
+
+def browser_action_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    action = _agent_text(args, "action").strip().lower()
+    if action not in BROWSER_ACTIONS:
+        raise ValueError("action must be one of " + ", ".join(BROWSER_ACTIONS))
+    params = {"window_id": _window_id(args, True), "action": action}
+    if action == "navigate":
+        params["url"] = browser_url(args.get("url"))
+    for key, limit in (("selector", ACTION_MAX_SELECTOR),
+                       ("target", ACTION_MAX_SELECTOR),
+                       ("value", ACTION_MAX_VALUE)):
+        value = _agent_text(args, key)
+        if len(value) > limit:
+            raise ValueError(f"{key} must be at most {limit} characters")
+        if key == "value":
+            if value:
+                params[key] = value
+        elif value.strip():
+            params[key] = value.strip()
+    if action in ("click", "type", "wait_for") and \
+            "selector" not in params and "target" not in params:
+        raise ValueError(f"{action} needs selector or target")
+    if action == "press" and not params.get("value", "").strip():
+        raise ValueError("press needs value, the key such as Enter or Escape")
+    for key in ("submit", "clear"):
+        value = args.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, bool):
+            raise ValueError(f"{key} must be true or false")
+        params[key] = value
+    delta = args.get("delta")
+    if delta is not None:
+        if isinstance(delta, bool) or not isinstance(delta, int) or \
+                not -100000 <= delta <= 100000:
+            raise ValueError("delta must be a whole number of pixels")
+        params["delta"] = delta
+    wait_ms = args.get("wait_ms")
+    if wait_ms is not None:
+        if isinstance(wait_ms, bool) or not isinstance(wait_ms, int) or \
+                not 0 <= wait_ms <= ACTION_MAX_WAIT_MS:
+            raise ValueError(f"wait_ms must be a whole number from 0 to "
+                             f"{ACTION_MAX_WAIT_MS}")
+        params["wait_ms"] = wait_ms
+    return params
+
+
+def tool_suggest_session(args):
+    return json.dumps(suggest_session(args), indent=2)
+
+
+def tool_list_agents(args):
+    return json.dumps(window_request("agents.list", list_agents_params(args)), indent=2)
+
+
+def tool_send_agent_message(args):
+    return json.dumps(window_request("agents.message", send_agent_message_params(args)),
+                      indent=2)
+
+
+def tool_list_runners(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    return json.dumps(window_request("agents.runners", {}), indent=2)
+
+
+def tool_notify_user(args):
+    return json.dumps(window_request("desktop.notify", notify_user_params(args)), indent=2)
+
+
+def tool_show_widget(args):
+    return json.dumps(show_widget(args), indent=2)
+
+
+def tool_browser_action(args):
+    return json.dumps(window_request("windows.act", browser_action_params(args)), indent=2)
+
+
 RELEASE_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
 RELEASE_MAX_TITLE = 200
 RELEASE_MAX_NOTES = 20000
@@ -3323,6 +3561,7 @@ def tool_whoami(_args):
         (os.environ.get(AGENT_INTAKE_TOKEN_ENV) or "").strip())
     info["canOpenWindows"] = info["canCreateAgents"] and level != "read"
     info["windowTools"] = sorted(WINDOW_TOOLS)
+    info["agentTools"] = sorted(HUB_TOOLS)
     info["canManageReleases"] = info["canCreateAgents"]
     if level == "read":
         info["hint"] = ("Set FORKMESH_MCP_TOKEN from the desktop client's "
@@ -5095,6 +5334,185 @@ TOOLS += [
         },
         "handler": tool_close_window,
     },
+    {
+        "name": "suggest_session",
+        "description": "Ask the user whether to start a new ForkMesh agent "
+                       "session for a separate piece of work you noticed "
+                       "(a bug outside this task, a follow-up, a cleanup). "
+                       "The desktop shows a small \"Start a new session?\" "
+                       "window with the title, reason and prompt and the "
+                       "buttons Start session and Not now; nothing runs "
+                       "unless the user presses Start session. Prefer this "
+                       "to create_agent when the user has not asked for "
+                       "the work. Returns window_id and suggestion: offered, "
+                       "started (with session_id), dismissed or failed; "
+                       "read_window shows the latest state and wait_seconds "
+                       "waits for the user's choice. The repository defaults "
+                       "to this agent's own. Works only inside an agent the "
+                       "desktop launched.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "maxLength": AGENT_MAX_PROMPT,
+                           "description": "the task brief the new session "
+                                          "starts with; it sees nothing "
+                                          "else, so say what to do and where"},
+                "title": {"type": "string", "maxLength": AGENT_MAX_TITLE,
+                          "description": "short name for the session"},
+                "reason": {"type": "string", "maxLength": SESSION_MAX_REASON,
+                           "description": "one sentence on why this is "
+                                          "worth a separate session"},
+                "repository": {"type": "string",
+                               "description": "owner/name; default this "
+                                              "agent's repository"},
+                "provider": {"type": "string"},
+                "model": {"type": "string"},
+                "wait_seconds": {"type": "number", "minimum": 0,
+                                 "maximum": WINDOW_MAX_WAIT},
+            },
+            "required": ["prompt"],
+        },
+        "handler": tool_suggest_session,
+    },
+    {
+        "name": "list_agents",
+        "description": "List the agent sessions on this ForkMesh desktop: "
+                       "id, title, repository, branch, state, provider, "
+                       "model, permission mode, whether it runs here or in "
+                       "the cloud, which one is you (self) and whether you "
+                       "may message it (can_message). By default only "
+                       "running, queued and paused sessions; "
+                       "include_finished adds the rest. Works only inside "
+                       "an agent the desktop launched.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "include_finished": {"type": "boolean", "default": False},
+                "limit": {"type": "integer", "minimum": 1,
+                          "maximum": HUB_MAX_LISTED, "default": 30},
+            },
+        },
+        "handler": tool_list_agents,
+    },
+    {
+        "name": "send_agent_message",
+        "description": "Send a message to another agent session on this "
+                       "desktop (an id from list_agents). A running agent "
+                       "gets it at its next step; an idle one resumes with "
+                       "it. The receiver is told it came from you, not the "
+                       "user, and how to answer. Refused for cloud, "
+                       "paused and merged sessions and for sessions in a more "
+                       "permissive mode than yours. At most 30 messages "
+                       "every 10 minutes per desktop.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "integer", "minimum": 1},
+                "message": {"type": "string", "maxLength": HUB_MAX_MESSAGE},
+            },
+            "required": ["agent_id", "message"],
+        },
+        "handler": tool_send_agent_message,
+    },
+    {
+        "name": "list_runners",
+        "description": "List the ForkMesh runners the desktop's account "
+                       "can use for cloud agent runs: name, scope, status, "
+                       "when each was last seen, how many jobs it runs, and "
+                       "per provider (claude-code, codex) whether the CLI "
+                       "is installed and signed in. Needs the desktop to be "
+                       "signed in to a ForkMesh account.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "handler": tool_list_runners,
+    },
+    {
+        "name": "notify_user",
+        "description": "Send the user a ForkMesh notification: a ping in "
+                       "the desktop and, when ForkMesh is not the active "
+                       "window, a system notification. Clicking it opens "
+                       "this agent. Use it for something the user should "
+                       "see now (a long job finished, a decision is "
+                       "needed). At most 10 every 10 minutes per desktop.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "maxLength": NOTIFY_MAX_TITLE},
+                "body": {"type": "string", "maxLength": NOTIFY_MAX_BODY},
+            },
+            "required": ["title"],
+        },
+        "handler": tool_notify_user,
+    },
+    {
+        "name": "show_widget",
+        "description": "Open a small interactive widget window in the "
+                       "ForkMesh desktop from your own HTML, CSS and "
+                       "JavaScript: a dashboard, form, chart, checklist, "
+                       "timer or picker the user can work with next to the "
+                       "agent. The page runs in a sandbox with no network "
+                       "and no files: inline everything, images as data: "
+                       "URLs. window.forkmesh.data holds the data you pass; "
+                       "window.forkmesh.send(value) sends a JSON value back "
+                       "(read it with read_window, which returns and clears "
+                       "events); window.forkmesh.onData(fn) and the "
+                       "forkmesh-data window event deliver later updates. "
+                       "Call again with window_id and only data to update a "
+                       "widget without reloading it, or with html to replace "
+                       "it. wait_seconds waits for the first event. Needs a "
+                       "desktop built with Qt WebEngine; otherwise use "
+                       "show_window.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "maxLength": WINDOW_MAX_TITLE},
+                "html": {"type": "string", "maxLength": WIDGET_MAX_HTML,
+                         "description": "a complete HTML document or "
+                                        "fragment with inline script and "
+                                        "style"},
+                "data": {"description": "any JSON value for the widget"},
+                "window_id": {"type": "string"},
+                "wait_seconds": {"type": "number", "minimum": 0,
+                                 "maximum": WINDOW_MAX_WAIT},
+                "width": {"type": "integer", "minimum": 240, "maximum": 1400},
+                "height": {"type": "integer", "minimum": 160, "maximum": 1000},
+            },
+        },
+        "handler": tool_show_widget,
+    },
+    {
+        "name": "browser_action",
+        "description": "Use a page in a browser window open_browser_window "
+                       "opened: navigate to a url, go back or forward, "
+                       "reload, click an element, type into a field (value; "
+                       "submit presses Enter; clear false appends; select "
+                       "boxes take an option's value or text), press a key, "
+                       "scroll (delta pixels, or to the element), or "
+                       "wait_for an element to appear (wait_ms, at most "
+                       "8000). Pick the element with a CSS selector or "
+                       "target, its visible text, label, placeholder or "
+                       "aria-label. Password fields are refused: the user "
+                       "signs in. Returns the page's url and title; follow "
+                       "with read_browser_page to see the result. Refused "
+                       "with not_shared when the user turned sharing off.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "window_id": {"type": "string"},
+                "action": {"type": "string", "enum": list(BROWSER_ACTIONS)},
+                "url": {"type": "string", "maxLength": WINDOW_MAX_URL},
+                "selector": {"type": "string", "maxLength": ACTION_MAX_SELECTOR},
+                "target": {"type": "string", "maxLength": ACTION_MAX_SELECTOR},
+                "value": {"type": "string", "maxLength": ACTION_MAX_VALUE},
+                "submit": {"type": "boolean", "default": False},
+                "clear": {"type": "boolean", "default": True},
+                "delta": {"type": "integer"},
+                "wait_ms": {"type": "integer", "minimum": 0,
+                            "maximum": ACTION_MAX_WAIT_MS},
+            },
+            "required": ["window_id", "action"],
+        },
+        "handler": tool_browser_action,
+    },
 ]
 
 TOOLS_BY_NAME = {t["name"]: t for t in TOOLS}
@@ -5106,7 +5524,8 @@ def tools_list_payload():
         item = {key: tool[key]
                 for key in ("name", "description", "inputSchema")}
         writable = tool["name"] in WRITE_TOOLS or (
-            tool["name"] in WINDOW_TOOLS and tool["name"] not in WINDOW_READ_TOOLS)
+            tool["name"] in WINDOW_TOOLS and tool["name"] not in WINDOW_READ_TOOLS) or (
+            tool["name"] in HUB_TOOLS and tool["name"] not in HUB_READ_TOOLS)
         item["annotations"] = {
             "readOnlyHint": not writable,
             "destructiveHint": tool["name"] in DESTRUCTIVE_TOOLS,
@@ -5176,10 +5595,18 @@ def handle_request(msg):
             "local dev server) in a small browser window, read_window reads "
             "the answer or current page, read_browser_page returns the page's "
             "text, console messages and optionally a screenshot, "
-            "close_window closes either. ")
+            "close_window closes either; browser_action clicks, types, "
+            "scrolls and navigates in a browser window; show_widget opens an "
+            "interactive HTML widget that sends events back through "
+            "read_window; suggest_session asks the user whether to start a "
+            "new session for separate work. "
+            "Desktop agents and runners (same condition): list_agents lists "
+            "the desktop's agent sessions, send_agent_message messages one, "
+            "list_runners lists the account's cloud runners, notify_user "
+            "sends the user a notification. ")
         instructions += (
             "This connector is read-only: no valid FORKMESH_MCP_TOKEN was "
-            "presented, so write, CRM and window tools will refuse."
+            "presented, so write, CRM, window and agent tools will refuse."
             if level == "read" else
             "This connector may write.")
         return _result(mid, {

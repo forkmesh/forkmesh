@@ -73,6 +73,12 @@ struct WindowResult {
     qint64 totalChars = 0;
     int consoleErrors = 0;
     bool screenshot = false;
+    bool widget = false;
+    int events = 0;
+    QString action;
+    QString suggestion;
+    int sessionId = 0;
+    QString message;
     bool valid = false;
 };
 WindowResult parseWindowResult(const QString &text);

@@ -533,7 +533,9 @@ def main():
         "restore_task", "create_agent", "show_window", "read_window",
         "close_window", "open_browser_window", "read_browser_page",
         "list_releases", "create_release", "publish_release",
-        "record_expense", "send_email"})
+        "record_expense", "send_email", "suggest_session", "list_agents",
+        "send_agent_message", "list_runners", "notify_user", "show_widget",
+        "browser_action"})
     check("work item attach merges on repository, branch and node",
           work_item_merge_cases())
     check("persistent reminder rides its own signed task PATCH",

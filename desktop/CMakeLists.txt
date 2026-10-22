@@ -513,6 +513,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentAccess.cpp
     src/MainWindowGlobalAgentRules.cpp
     src/MainWindowAgentIntake.cpp
+    src/MainWindowAgentHub.cpp
     src/MainWindowCommandPermissions.cpp
     src/MainWindowBranches.cpp
     src/MainWindowReleases.cpp
@@ -1168,6 +1169,8 @@ set(FORKMESH_APP_SOURCES
     src/ReleaseDraft.cpp
     src/AgentWindows.h
     src/AgentWindows.cpp
+    src/AgentHub.h
+    src/AgentHub.cpp
     src/ScrollJumpButtons.h
     src/ScrollJumpButtons.cpp
     src/SplitterHairline.h
@@ -1300,6 +1303,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
     src/ClaudeTranscriptView.h
+    src/PromptDeckBar.h
     src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
     src/KebabHeaderView.h
@@ -1409,6 +1413,7 @@ set_source_files_properties(
     src/ClaudeStreamSession.h
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
+    src/PromptDeckBar.h
     src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
     src/KebabHeaderView.h
@@ -2880,6 +2885,24 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-agent-hub-tests
+        tests/test_agent_hub.cpp
+        src/AgentHub.h
+        src/AgentHub.cpp
+        src/AgentIntake.h
+        src/AgentIntake.cpp
+        src/ReleaseDraft.h
+        src/ReleaseDraft.cpp
+        src/LocalControlHandoff.h
+    )
+    target_include_directories(forkmesh-agent-hub-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-agent-hub-tests PRIVATE Qt6::Core Qt6::Network)
+    if(APPLE)
+        set_target_properties(forkmesh-agent-hub-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-claude-transcript-tools-tests
         tests/test_claude_transcript_tools.cpp
         src/ClaudeTranscriptTools.h
@@ -3833,6 +3856,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-local-control-attachments-tests
         forkmesh-local-control-handoff-tests
         forkmesh-agent-intake-tests
+        forkmesh-agent-hub-tests
         forkmesh-org-agent-job-attachments-tests
         forkmesh-local-control-prompt-images-tests
         forkmesh-vm-runtime-tests
@@ -4146,6 +4170,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         COMMAND forkmesh-local-control-handoff-tests)
     add_test(NAME forkmesh-agent-intake-tests
         COMMAND forkmesh-agent-intake-tests)
+    add_test(NAME forkmesh-agent-hub-tests
+        COMMAND forkmesh-agent-hub-tests)
     add_test(NAME forkmesh-agent-windows-tests
         COMMAND forkmesh-agent-windows-tests)
     set_tests_properties(forkmesh-agent-windows-tests PROPERTIES
@@ -4370,6 +4396,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-local-control-attachments-tests
         forkmesh-local-control-handoff-tests
         forkmesh-agent-intake-tests
+        forkmesh-agent-hub-tests
         forkmesh-org-agent-job-attachments-tests
         forkmesh-local-control-prompt-images-tests
         forkmesh-vm-runtime-tests
