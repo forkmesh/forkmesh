@@ -56,6 +56,8 @@ const VOICE_READY_MS = 2500;
 const VIBRATE_PATTERN = [600, 300, 600, 1500];
 const VIBRATE_EVERY_MS = 3000;
 const TITLE_FLASH_MS = 1000;
+const LOCAL_CORNER_KEY = "fm.call.previewCorner";
+const LOCAL_CORNERS = new Set(["top-left", "top-right", "bottom-left", "bottom-right"]);
 
 export const CALL_FRAME_TYPES = new Set([
   "call-invite",
@@ -1133,6 +1135,65 @@ export function createChatCalls({
     renderPanel();
   }
 
+  function savedLocalCorner() {
+    try {
+      const corner = storage?.getItem(LOCAL_CORNER_KEY) || "";
+      return LOCAL_CORNERS.has(corner) ? corner : "bottom-right";
+    } catch (_) {
+      return "bottom-right";
+    }
+  }
+
+  function placeLocal(corner) {
+    if (localVideo?.dataset) localVideo.dataset.corner = corner;
+  }
+
+  function watchLocalDrag() {
+    if (!localVideo?.addEventListener) return;
+    placeLocal(savedLocalCorner());
+    let drag = null;
+    localVideo.addEventListener("pointerdown", (event) => {
+      if (!call || call.phase === "preview" || localVideo.hidden) return;
+      const box = localVideo.parentElement?.getBoundingClientRect?.();
+      const own = localVideo.getBoundingClientRect?.();
+      if (!box || !own) return;
+      drag = {
+        id: event.pointerId,
+        box,
+        dx: event.clientX - own.left,
+        dy: event.clientY - own.top,
+        width: own.width,
+        height: own.height,
+      };
+      localVideo.setPointerCapture?.(event.pointerId);
+      localVideo.classList?.add("is-dragging");
+      event.preventDefault?.();
+    });
+    localVideo.addEventListener("pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.id) return;
+      const left = Math.min(Math.max(event.clientX - drag.box.left - drag.dx, 0), drag.box.width - drag.width);
+      const top = Math.min(Math.max(event.clientY - drag.box.top - drag.dy, 0), drag.box.height - drag.height);
+      Object.assign(localVideo.style, { left: `${left}px`, top: `${top}px`, right: "auto", bottom: "auto" });
+    });
+    const drop = (event) => {
+      if (!drag || event.pointerId !== drag.id) return;
+      const own = localVideo.getBoundingClientRect();
+      const x = own.left + own.width / 2 - drag.box.left;
+      const y = own.top + own.height / 2 - drag.box.top;
+      const corner = `${y < drag.box.height / 2 ? "top" : "bottom"}-${x < drag.box.width / 2 ? "left" : "right"}`;
+      drag = null;
+      localVideo.classList?.remove("is-dragging");
+      Object.assign(localVideo.style, { left: "", top: "", right: "", bottom: "" });
+      placeLocal(corner);
+      try {
+        storage?.setItem(LOCAL_CORNER_KEY, corner);
+      } catch (_) {}
+    };
+    localVideo.addEventListener("pointerup", drop);
+    localVideo.addEventListener("pointercancel", drop);
+  }
+
+  watchLocalDrag();
   muteBtn?.addEventListener("click", toggleMute);
   cameraBtn?.addEventListener("click", toggleCamera);
   hangupBtn?.addEventListener("click", hangUp);

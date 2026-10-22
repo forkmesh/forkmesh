@@ -119,16 +119,14 @@ struct NativeCallSurface: View {
     let media: DirectCallKind
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             if media == .video {
                 NativeVideoView(track: factory.remoteVideo)
                     .ignoresSafeArea()
                 if let local = factory.localVideo {
-                    NativeVideoView(track: local, mirrored: true)
-                        .frame(width: 110, height: 160)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .padding(.top, 90)
-                        .padding(.trailing, 14)
+                    DraggableCallPreview {
+                        NativeVideoView(track: local, mirrored: true)
+                    }
                 }
             }
         }
