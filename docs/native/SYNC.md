@@ -164,4 +164,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S089 | 2026-10-21 | Calls | fix | Calls you place to an iPhone show its camera and play its voice once it answers. | 478fbe6a9c | n/a | Android calls run in the WebView page, which already adds its tracks with addTrack |
 | S090 | 2026-10-21 | Calls | ui | Call buttons move to two rows when one row does not fit the screen. | 478fbe6a9c | pending |  |
 | S091 | 2026-10-21 | Calls | feature | Drag your own video in a call to any corner and it stays there for the next call. | 478fbe6a9c | pending |  |
+| S092 | 2026-10-21 | Inbox | feature | Review and merge-conflict pings on your own pull requests have their own icon, label, settings switch and open the pull request | ff273c2c19 | synced | ff273c2c19 |
+| S093 | 2026-10-22 | Shell | feature | With Status Page installed, tiny status dots sit in the thin strip above the Dynamic Island on every screen. | 360acccbd4 | pending |  |
 <!-- ledger:end -->

@@ -96,8 +96,9 @@ the head the same way:
 - The Python executor (`tools/headless_mirror_refresh.py`) still merges only
   `derive: branch` pulls.
 - Required checks still lock a patch-backed pull on a policy branch: the
-  attestation names a head commit, and nothing runs checks on `refs/pr/<n>/head`
-  yet.
+  attestation names a head commit. Instance runners now run `pull_request`
+  workflows on `refs/pr/<n>/head` ([instance-actions.md](instance-actions.md#pull-requests)),
+  but do not sign attestations yet.
 - "Update branch" on the web is still branch-backed only. The author replaces a
   patch-backed pull's patch with a revision instead
   ([../app/pull-revisions.md](../app/pull-revisions.md)); the head is rebuilt the

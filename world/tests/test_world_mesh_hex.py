@@ -309,3 +309,83 @@ def test_walking_onto_a_single_hexagon_is_a_visit_not_a_page_load():
                            ["move", None, 10, 15]]
     assert out["back"] == [[watch, True], [visit, True], [watch, False]]
     assert out["visits"] == [["a" * 32, ""], ["", "a" * 32]]
+
+
+ADMISSION = r"""
+globalThis.window = globalThis;
+const { WorldMeshLinks } = await import("./world-mesh.js");
+const sockets = [];
+const admitted = [];
+class FakeSocket {
+  constructor(url) {
+    this.url = url;
+    this.readyState = 0;
+    this.sent = [];
+    this.handlers = {};
+    sockets.push(this);
+  }
+  addEventListener(name, handler) { this.handlers[name] = handler; }
+  send(data) { this.sent.push(JSON.parse(data)); }
+  close() { this.readyState = 3; }
+  open() { this.readyState = 1; this.handlers.open?.(); }
+  receive(frame) { this.handlers.message?.({ data: JSON.stringify(frame) }); }
+  drop() { this.readyState = 3; this.handlers.close?.(); }
+}
+const links = new WorldMeshLinks({
+  createSocket: (url) => new FakeSocket(url),
+  requestVisa: async () => "",
+  onVisitAdmitted: (world) => admitted.push(world?.id || ""),
+  presenceFrame: () => ({ name: "walker" }),
+  moveIntervalMs: 0,
+});
+const hex = {
+  id: "a".repeat(32), name: "Acme", host: "code.example.org", shape: "hex",
+  world: "https://code.example.org", api: "https://code.example.org",
+  x: 700, z: 0, dx: 690, dz: -10,
+};
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const out = {};
+links.setNeighbors([hex]);
+links.update(300, 0, "");
+await tick();
+sockets.at(-1).open();
+sockets.at(-1).receive({ type: "welcome", id: "w1", peers: [{ id: "resident1", x: 1, z: 2 }] });
+out.watchAdmitted = admitted.slice();
+links.update(650, 0, hex.id);
+await tick();
+out.pending = { admitted: links.admittedId, visiting: links.visiting?.id || "", calls: admitted.slice() };
+out.keptPeers = links.peers().map((entry) => entry.peer.id);
+sockets.at(-1).open();
+out.openedAdmitted = links.admittedId;
+sockets.at(-1).receive({ type: "welcome", id: "v1", peers: [{ id: "resident1", x: 1, z: 2 }] });
+out.welcomed = { admitted: links.admittedId, calls: admitted.slice() };
+sockets.at(-1).drop();
+out.dropped = { admitted: links.admittedId, calls: admitted.slice(), visiting: links.visiting?.id || "" };
+await new Promise((resolve) => setTimeout(resolve, 1600));
+sockets.at(-1).open();
+sockets.at(-1).receive({ type: "welcome", id: "v2", peers: [] });
+out.rejoined = links.admittedId;
+links.update(300, 0, "");
+await tick();
+out.back = { admitted: links.admittedId, calls: admitted.slice() };
+links.destroy();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_a_visit_counts_only_once_the_neighbour_admits_the_walker():
+    if not NODE:
+        pytest.skip("node is not installed")
+    run = subprocess.run([NODE, "--input-type=module", "-e", ADMISSION],
+                         cwd=WORLD, capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stderr
+    out = json.loads(run.stdout)
+    acme = "a" * 32
+    assert out["watchAdmitted"] == []
+    assert out["pending"] == {"admitted": "", "visiting": acme, "calls": []}
+    assert out["keptPeers"] == ["resident1"]
+    assert out["openedAdmitted"] == ""
+    assert out["welcomed"] == {"admitted": acme, "calls": [acme]}
+    assert out["dropped"] == {"admitted": "", "calls": [acme, ""], "visiting": acme}
+    assert out["rejoined"] == acme
+    assert out["back"] == {"admitted": "", "calls": [acme, "", acme, ""]}

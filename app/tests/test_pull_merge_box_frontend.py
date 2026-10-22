@@ -1,3 +1,4 @@
+"""Merge box, branch update, ledger re-pinning and repository tab strip."""
 
 import json
 import re
@@ -164,6 +165,8 @@ def _run(script):
 
 @needs_node
 def test_a_moved_ledger_is_re_pinned_and_the_merge_retried_once_with_a_new_request():
+    # The owner's report: the pull's author commented a minute before the
+    # merge, forkmesh/pulls moved, and the mirror answered stale_pull_metadata.
     out = _run(r"""
       const repo = { owner: "alice", name: "widgets" };
       const parsed = detail();
@@ -245,6 +248,8 @@ def test_a_second_stale_answer_is_reported_instead_of_looping():
     assert out["failed"]["resumable"] is False
     assert "Merge again" in out["failed"]["message"] or "newest state" in out["failed"]["message"]
     assert out["label"] is True
+    # The Retry button never replays a request the relay already answered:
+    # every attempt after a terminal answer carries a fresh request id.
     assert len(out["ids"]) == 3 and len(set(out["ids"])) == 3
     assert out["state"] == "merged"
 
@@ -340,6 +345,8 @@ def test_merge_readiness_names_each_blocker_and_its_action():
     assert out["conflict"]["conflicts"] == ["a.py", "b.py"]
     assert "git merge origin/main" in out["conflict"]["detail"]
     assert out["conflict"]["actions"] == []
+    # A pull submitted as a patch series has no branch here to update: only
+    # its author can refresh it, and being behind does not block the merge.
     assert out["fork"]["actions"] == []
     assert "only the author can refresh it" in out["fork"]["detail"]
     assert "replays the submitted commits onto the newest main" in out["fork"]["detail"]
@@ -410,6 +417,9 @@ def test_update_requests_are_typed_and_pin_the_current_tips():
 
 
 def test_the_relay_replays_a_used_request_id_so_the_page_must_mint_a_new_one():
+    # Root cause, part two: the relay keeps a terminal answer per request id
+    # (idempotency), and the old Retry button resent the same id, so it could
+    # only ever read back the stored stale_pull_metadata failure.
     assert 'if row.get("status") in ("succeeded", "failed"):' in ROUTES
     assert "previous.resumable === true ? previous.request : null" in CONTENT
     assert "existing.requestId || createRepoPullMergeRequestId()" not in CONTENT
@@ -417,6 +427,9 @@ def test_the_relay_replays_a_used_request_id_so_the_page_must_mint_a_new_one():
 
 
 def test_merge_pins_bypass_the_page_bundle_and_the_session_cache():
+    # Root cause, part one: the pull page's bundle (repo_views) is served
+    # stale-while-revalidate for up to five minutes, and its forkmesh/pulls
+    # read pinned the page to an old ledger tip even after a reload.
     fetch = _function("fetchRepoJson")
     assert "const remembered = options.canonical || options.fresh;" in fetch
     assert "const seeded = remembered ? null : await seededRepoRead(path);" in fetch

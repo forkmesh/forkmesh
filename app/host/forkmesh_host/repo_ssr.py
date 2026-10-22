@@ -151,7 +151,15 @@ def short_sub_target(scope):
 
 
 SHORT_ISSUE_RE = re.compile(r"^/[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}/issues/([1-9]\d{0,8})/?$")
+SHORT_PULL_RE = re.compile(
+    r"^/[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}/pull/([1-9]\d{0,8})"
+    r"(?:/(files|commits|checks))?/?$")
 ISSUE_BUDGET_SECONDS = 0.3
+READER_BUDGET_SECONDS = 5.0
+READER_AGENTS = ("chatgpt-user", "oai-searchbot", "gptbot", "claude-user",
+                 "claude-searchbot", "claudebot", "perplexity-user",
+                 "perplexitybot", "mistralai-user")
+DIFF_MAX_PAGE_BYTES = 4 * 1024 * 1024
 
 
 def short_issue_number(scope):
@@ -161,14 +169,33 @@ def short_issue_number(scope):
     return int(match.group(1)) if match else 0
 
 
-def _issue_bundle(fastpath, owner, repo, number):
+def short_pull(scope):
+    raw = scope.get("raw_path")
+    path = raw.decode("latin-1") if raw else (scope.get("path") or "")
+    match = SHORT_PULL_RE.match(path)
+    return (int(match.group(1)), match.group(2) or "") if match else (0, "")
+
+
+def reader_agent(scope):
+    for name, value in scope.get("headers") or []:
+        if name == b"user-agent":
+            agent = value.decode("latin-1").lower()
+            return any(token in agent for token in READER_AGENTS)
+    return False
+
+
+def _view_bundle(fastpath, owner, repo, view, number):
     from . import repo_views
-    bundle = repo_views.cached(fastpath, owner, repo, "issue", number)
+    bundle = repo_views.cached(fastpath, owner, repo, view, number)
     if bundle is not None:
         done = asyncio.get_running_loop().create_future()
         done.set_result(bundle)
         return done
-    return asyncio.ensure_future(repo_views.build(fastpath, owner, repo, "issue", number))
+    return asyncio.ensure_future(repo_views.build(fastpath, owner, repo, view, number))
+
+
+def _issue_bundle(fastpath, owner, repo, number):
+    return _view_bundle(fastpath, owner, repo, "issue", number)
 
 
 async def _within(task, seconds):
@@ -253,16 +280,31 @@ def repo_info(blob):
 
 
 class ShortTicket:
-    def __init__(self, fastpath, name, tab=None, issue=0, code=None):
+    def __init__(self, fastpath, name, tab=None, issue=0, code=None, pull=0,
+                 section="", reader=False):
         self.fastpath = fastpath
         self.name = name
         self.tab = tab
         self.issue = issue
         self.code = code
+        self.pull = pull
+        self.section = section
+        self.reader = reader
         self.bundle = None
-        self.bundle_owner = _short_owners.get(name.lower()) if issue else None
+        self.bundle_owner = _short_owners.get(name.lower()) \
+            if issue or pull else None
         if self.bundle_owner:
-            self.bundle = _issue_bundle(fastpath, self.bundle_owner, name, issue)
+            self.bundle = _view_bundle(
+                fastpath, self.bundle_owner, name, "pull" if pull else "issue",
+                pull or issue)
+
+
+class DiffTicket:
+    def __init__(self, fastpath, owner, repo, number):
+        self.fastpath = fastpath
+        self.owner = owner
+        self.repo = repo
+        self.number = number
 
 
 class CodeRefTicket:
@@ -275,11 +317,12 @@ class ViewTicket:
     """A pull request, issue or discussion page being rendered
     (repo_views): the bundle build and the tab it opens on."""
 
-    def __init__(self, task, section, target=None, root=None):
+    def __init__(self, task, section, target=None, root=None, reader=False):
         self.task = task
         self.section = section
         self.target = target
         self.root = root
+        self.reader = reader
         self.origin = ""
         self.reactions = None
 
@@ -344,6 +387,9 @@ def start(fastpath, scope):
     if key is not None:
         return key
     from . import repo_views
+    diff = repo_views.diff_target(scope)
+    if diff is not None:
+        return DiffTicket(fastpath, *diff)
     view = repo_views.view_target(scope)
     if view is not None:
         owner, repo, name, number, section = view
@@ -356,7 +402,8 @@ def start(fastpath, scope):
                 fastpath, owner, repo, name, number))
         root = remembered_prerender(fastpath, owner, repo) \
             if name == "issue" and not section else None
-        return ViewTicket(task, section, (owner, repo, name, number), root)
+        return ViewTicket(task, section, (owner, repo, name, number), root,
+                          reader_agent(scope))
     target = page_target(scope)
     if target is None:
         name = short_target(scope)
@@ -371,8 +418,11 @@ def start(fastpath, scope):
             return ShortTicket(fastpath, name, "code", code=short)
         sub = short_sub_target(scope)
         if sub:
+            pull, section = short_pull(scope)
             return ShortTicket(fastpath, sub[0], sub[1],
-                               short_issue_number(scope) if sub[1] == "issues" else 0)
+                               short_issue_number(scope) if sub[1] == "issues" else 0,
+                               pull=pull, section=section,
+                               reader=reader_agent(scope))
         return None
     return remembered_prerender(fastpath, *target)
 
@@ -614,8 +664,67 @@ def _remember_warmer(worker_fetch, request):
         pass
 
 
+async def _short_owner(worker_fetch, request, name):
+    owner = _short_owners.get(name.lower())
+    if owner:
+        return owner
+    from . import js as _js
+    origin = request_origin(request)
+    if not origin:
+        return None
+    parts = urllib.parse.urlsplit(origin)
+    headers = _js.Headers({"host": parts.netloc,
+                           "user-agent": "forkmesh-host-first-view",
+                           "cf-connecting-ip": "127.0.0.1",
+                           "accept": "text/html"})
+    response = await worker_fetch(_js.Request(
+        "%s/%s" % (origin, urllib.parse.quote(name)), "GET", headers))
+    if int(response.status) != 200:
+        return None
+    body = await response._read()
+    if len(body) > DIFF_MAX_PAGE_BYTES:
+        return None
+    named = short_page(body.decode("utf-8", "replace"))
+    if named is None or named[1].lower() != name.lower():
+        return None
+    if len(_short_owners) > 1024:
+        _short_owners.clear()
+    _short_owners[name.lower()] = named[0]
+    return named[0]
+
+
+async def _diff_response(ticket, worker_fetch, request):
+    from . import js as _js
+    from . import repo_views
+    owner = ticket.owner or await _short_owner(worker_fetch, request,
+                                               ticket.repo)
+    if not owner:
+        return None
+    bundle = await repo_views.build(ticket.fastpath, owner, ticket.repo,
+                                    "pull", ticket.number)
+    if bundle is None:
+        return None
+    patch = repo_views.pull_patch(bundle)
+    headers = {"content-type": "text/plain; charset=utf-8",
+               "x-content-type-options": "nosniff",
+               "cache-control": "no-cache"}
+    if not patch.strip():
+        return _js.Response(b"No diff for this pull request.\n", 404, "",
+                            _js.Headers(headers))
+    return _js.Response(patch.encode("utf-8"), 200, "", _js.Headers(headers))
+
+
 async def fetch(ticket, worker_fetch, request):
     """The Worker's answer, or the micro-cache's for an anonymous read."""
+    if isinstance(ticket, DiffTicket):
+        try:
+            answer = await _diff_response(ticket, worker_fetch, request)
+        except Exception as error:
+            print("pull diff skipped: %r" % (error,))
+            answer = None
+        if answer is not None:
+            return answer
+        return await worker_fetch(request)
     if isinstance(ticket, CodeRefTicket):
         target = await repo_code_ref.redirect(ticket.fastpath, *ticket.target)
         if target:
@@ -652,7 +761,7 @@ async def fetch(ticket, worker_fetch, request):
 
 async def finish(task, response):
     """Add the rendered first view to the Worker's repository page."""
-    if task is None or isinstance(task, (MicroKey, CodeRefTicket)):
+    if task is None or isinstance(task, (MicroKey, CodeRefTicket, DiffTicket)):
         return response
     view = task if isinstance(task, ViewTicket) else None
     if view is not None:
@@ -668,7 +777,9 @@ async def finish(task, response):
         try:
             data = await asyncio.wait_for(
                 asyncio.shield(task),
-                (ISSUE_BUDGET_SECONDS if view.root is not None else VIEW_BUDGET_SECONDS)
+                READER_BUDGET_SECONDS if view is not None and view.reader
+                else (ISSUE_BUDGET_SECONDS if view.root is not None
+                      else VIEW_BUDGET_SECONDS)
                 if view is not None else SSR_BUDGET_SECONDS)
         except asyncio.TimeoutError:
             if view is None or view.target is None:
@@ -696,7 +807,8 @@ async def finish(task, response):
                 rendered = inject_issue(page, root, data, origin=view.origin,
                                         reactions=reactions)
         if rendered is None:
-            rendered = inject_view(page, data, view.section, reactions) \
+            rendered = inject_view(page, data, view.section, reactions,
+                                   reader=view.reader) \
                 if view else inject(page, data)
         if rendered is None:
             return _js.Response(body, response.status, "", response.headers)
@@ -710,7 +822,6 @@ async def finish(task, response):
 
 
 async def _finish_short(ticket, response):
-    from . import js as _js
     body = await response._read()
     page = body.decode("utf-8")
     named = short_page(page)
@@ -725,19 +836,35 @@ async def _finish_short(ticket, response):
         loop = asyncio.get_running_loop()
         started = loop.time()
         bundle_task = None
-        if ticket.issue:
+        if ticket.issue or ticket.pull:
             if len(_short_owners) > 1024:
                 _short_owners.clear()
             _short_owners[ticket.name.lower()] = owner
             bundle_task = ticket.bundle if ticket.bundle is not None \
                 and ticket.bundle_owner == owner \
-                else _issue_bundle(ticket.fastpath, owner, repo, ticket.issue)
+                else _view_bundle(ticket.fastpath, owner, repo,
+                                  "pull" if ticket.pull else "issue",
+                                  ticket.pull or ticket.issue)
+        if ticket.pull:
+            link = "/" + urllib.parse.quote(repo) if canonical else None
+            bundle = await _within(bundle_task, READER_BUDGET_SECONDS
+                                   if ticket.reader else VIEW_BUDGET_SECONDS)
+            if bundle is not None and (bundle.owner, bundle.repo.lower()) == (
+                    owner, repo.lower()):
+                rendered = inject_view(page, bundle, ticket.section, None,
+                                       link=link, reader=ticket.reader)
+            if rendered is not None:
+                return _finished_short(body, response, rendered)
         try:
             data = await asyncio.wait_for(asyncio.shield(remembered_prerender(
                 ticket.fastpath, owner, repo)), SSR_BUDGET_SECONDS)
         except asyncio.TimeoutError:
             data = None
-        if data and bundle_task is not None:
+        if data and ticket.pull:
+            rendered = inject_header(page, data, ticket.tab, short=canonical)
+            rendered = inject_view_reads(rendered or page, owner, repo, "pull",
+                                         ticket.pull) or rendered
+        elif data and bundle_task is not None:
             bundle = await _within(bundle_task, ISSUE_BUDGET_SECONDS - (
                 loop.time() - started))
             if bundle is not None and (bundle.owner, bundle.repo) == (owner, repo):
@@ -750,6 +877,11 @@ async def _finish_short(ticket, response):
         elif data:
             rendered = inject(page, data, short=canonical) if ticket.tab is None \
                 else inject_header(page, data, ticket.tab, short=canonical)
+    return _finished_short(body, response, rendered)
+
+
+def _finished_short(body, response, rendered):
+    from . import js as _js
     if rendered is None:
         return _js.Response(body, response.status, "", response.headers)
     headers = response.headers
@@ -927,7 +1059,8 @@ def inject_view_reads(page, owner, repo, view, number):
     return page.replace(CHARSET, _view_reads_head(meta), 1)
 
 
-def inject_view(page, bundle, section="", reactions=None):
+def inject_view(page, bundle, section="", reactions=None, link=None,
+                reader=False):
     """A pull request, issue or discussion page with its first view
     (repo_views.render) and the address of its read bundle, which a small
     head script starts fetching at once; the dashboard takes its reads from
@@ -936,7 +1069,7 @@ def inject_view(page, bundle, section="", reactions=None):
             or CHARSET not in page:
         return None
     from . import repo_views
-    view = repo_views.render(bundle, section, reactions)
+    view = repo_views.render(bundle, section, reactions, link, reader)
     if view is None:
         return None
     meta = {"base": ("/api/repo/%s/%s" % (
