@@ -155,6 +155,11 @@ provider_mirror_push_config = _repository_provider_mirror.export(
 provider_mirror_record_push = _repository_provider_mirror.export(
     "record_push")
 PROVIDER_MIRROR_CRON_DELIVERIES = 10
+_repository_archive_sync = _LazyModule("repository_archive_sync")
+repo_archive_sync_handler = _repository_archive_sync.export(
+    "repo_archive_sync_handler")
+archive_sync_config = _repository_archive_sync.export("sync_config")
+archive_sync_record = _repository_archive_sync.export("record_sync")
 _apps_runtime = _LazyModule("apps_runtime")
 apps_handler = _apps_runtime.export("apps_handler")
 apps_oauth_token_handler = _apps_runtime.export("oauth_token_handler")
@@ -1206,7 +1211,7 @@ _URL_EXPORT_NAMES = (
     "AP_USER_SUB_RE", "AP_REPO_RE", "AP_REPO_SUB_RE", "AP_OBJECT_RE",
     "AP_OBJECT_MEDIA_RE", "REPO_FEDI_COMMENTS_RE", "REPO_AP_PUBLISH_RE",
     "REPO_AP_DIGEST_RE", "REPO_AP_POSTS_RE", "REPO_WEBHOOKS_RE",
-    "REPO_PROVIDER_MIRROR_RE",
+    "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
     "REPO_VIEWS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
@@ -13970,7 +13975,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "a2baca528d73942f6a58a0dccba59b0121d5ae9b3a1b786bf72d63fec59447b4"
+    "4a97a7c9f133e3faf47c1d4b57a01f652fb5a550daf61b386207e3f0e1f16246"
 )
 
 
@@ -19075,7 +19080,7 @@ async def _move_repo_namespace(env, old_owner_bi, old_owner, new_owner_bi,
                 "repo_webhook_sequence", "repo_webhook_outbox",
                 "repo_webhook_deliveries", "repo_provider_mirrors",
                 "repo_provider_mirror_links",
-                "repo_provider_mirror_outbox"):
+                "repo_provider_mirror_outbox", "repo_archive_syncs"):
             try:
                 await d1_run(
                     env,
@@ -19332,6 +19337,7 @@ _REPO_SCOPED_TABLES = (
     ("repo_provider_mirrors", "repo_bi"),
     ("repo_provider_mirror_links", "repo_bi"),
     ("repo_provider_mirror_outbox", "repo_bi"),
+    ("repo_archive_syncs", "repo_bi"),
     ("world_fediverse_mentions", "repo_bi"),
     ("security_advisories", "repo_bi"),
     ("security_advisory_members", "repo_bi"),

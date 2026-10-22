@@ -320,6 +320,17 @@
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
         </div>
+        <div data-repo-archive-sync-card id="archive" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
+            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="archive" class="h-3.5 w-3.5 text-muted-foreground"></i>Back up to the Internet Archive</span>
+            <span data-repo-archive-sync-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
+          </div>
+          <div class="grid gap-4 p-4">
+            <p class="text-[11px] leading-5 text-muted-foreground">Upload a copy of this repository to archive.org every day, week or month with your own archive.org S3 keys. Each upload is a git bundle of every branch and tag that anyone can clone, and it is skipped when nothing has changed. Only public repositories can be archived.</p>
+            <div data-repo-archive-sync-body class="text-xs text-muted-foreground">Loading archive settings…</div>
+            <span data-repo-archive-sync-status class="text-[11px] text-muted-foreground"></span>
+          </div>
+        </div>
         <div data-repo-danger-zone class="mt-5 overflow-hidden rounded-lg border border-destructive/50 bg-background">
           <div class="border-b border-destructive/30 px-4 py-3">
             <h3 class="text-sm font-semibold text-destructive">Danger zone</h3>
@@ -2749,6 +2760,7 @@
       }
 
       if (await handleRepoForgeMirrorClick(event)) return;
+      if (await handleRepoArchiveSyncClick(event)) return;
 
       const webhookRow = event.target.closest("[data-repo-webhook-row]");
       if (
@@ -4009,6 +4021,7 @@
       return;
     }
     if (await handleRepoForgeMirrorSubmit(event)) return;
+    if (await handleRepoArchiveSyncSubmit(event)) return;
     const settingsLogoForm = event.target.closest("[data-repo-settings-logo-form]");
     if (settingsLogoForm && state.selectedRepo) {
       event.preventDefault();
