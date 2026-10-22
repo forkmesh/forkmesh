@@ -173,4 +173,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S098 | 2026-10-22 | Chat | feature | Chat relay hardening: DMs and private channels only through the server, signed device keys, sealed person frames, verified account names, server-kept blocks and webhook rooms marked server-visible | 440e84220c | synced | 440e84220c |
 | S099 | 2026-10-22 | Chat | fix | #mesh carries no account name, uses a random beacon id and says anyone nearby can read it; less identity in shared rooms | 440e84220c | synced | 440e84220c |
 | S100 | 2026-10-22 | Chat | ui | Link previews in shared rooms load on tap and never reach private addresses | 440e84220c | n/a | Android has no link previews |
+| S101 | 2026-10-22 | Settings | feature | Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete. | 306a20abda | pending |  |
 <!-- ledger:end -->

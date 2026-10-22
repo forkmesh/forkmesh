@@ -129,6 +129,32 @@ handler on a thread while the client reads, and both sockets have a 10 s
 timeout. The server itself is not affected, because `ThreadingHTTPServer`
 gives each connection its own thread.
 
+The `@critical` suite has a 55 s global budget (`playwright.config.js`,
+pinned by `app/tests/test_offline_ci_workflow.py`). The GitHub workflow runs it
+with `npm test -- --global-timeout=0`, bounded by the job's `timeout-minutes`,
+as `test:device-tiers` already is: `ubuntu-latest` has 4 vCPUs and no GPU, so
+Chromium draws with SwiftShader at 120–250 ms a frame and the six tests take
+two to three minutes. The 55 s cap failed every run of
+`.github/workflows/world-browser-e2e.yml` before a test could report
+(22 Oct 2026).
+
+On a software renderer the browser specs gate on frames, not milliseconds:
+
+- The input-response test keeps its 100 ms budget on hardware; under
+  SwiftShader it allows twelve measured frames (100 ms is six at 60 Hz,
+  doubled for SwiftShader's frame-to-frame jitter) and drops its first camera
+  drag, which carries about 700 ms of one-time work (816 ms against ~130 ms for
+  the next four on the mobile viewport).
+- `world-device-tiers.spec.js` applies its calibrated per-tier floors only to
+  a hardware run; under SwiftShader it asks that the world keeps presenting
+  (0.25 fps: desktop-high at 1600×900 with shadows draws about one frame a
+  second on four cores) and that input lands within twelve of its frames.
+- The two-client sync test boots two worlds and is `test.slow()`.
+
+To reproduce CI locally, unset `DISPLAY` and `WAYLAND_DISPLAY` (otherwise
+headless Chromium cannot create a WebGL context in an agent shell) and pin to
+four cores with `taskset -c 0-3`.
+
 The desktop's World page prefers a local dev server at
 `http://127.0.0.1:8788/world/` when one answers (`worldDevServerUrl` in
 `desktop/src/ControlNode.cpp`; the setting value `off` disables it; only

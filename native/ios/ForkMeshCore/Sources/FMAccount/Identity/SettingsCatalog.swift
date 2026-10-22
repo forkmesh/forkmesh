@@ -57,7 +57,7 @@ public enum SettingsCatalog {
         .init(id: .chatPrivacy, title: "Chat privacy", icon: "lock_outline", keywords: ["app switcher", "privacy screen", "screenshot", "face id", "touch id", "passcode", "lock", "chat lock", "hide chats"]),
         .init(id: .relay, title: "Relay", icon: "cloud_outlined", keywords: ["server", "relay", "room", "passphrase", "network"]),
         .init(id: .imports, title: "Import tokens", icon: "download_outlined", keywords: ["github", "gitlab", "import"]),
-        .init(id: .data, title: "Data", icon: "storage_outlined", keywords: ["export", "download", "cache", "clear", "backup"]),
+        .init(id: .data, title: "Data", icon: "storage_outlined", keywords: ["export", "download", "cache", "clear", "backup", "sync", "save", "restore", "privacy", "delete", "my data", "layout", "subscriptions"]),
         .init(id: .security, title: "Report a vulnerability", icon: "verified_user_outlined", keywords: ["security", "vulnerability", "report", "bug bounty"]),
         .init(id: .account, title: "Account", icon: "person_outline_rounded", keywords: ["sign out", "log out", "switch account", "delete account", "guest"]),
         .init(id: .sponsored, title: "Sponsored messages", icon: "info_outline", keywords: ["ads", "sponsored"]),

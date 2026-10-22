@@ -487,7 +487,7 @@ struct SettingsScreen: View {
                             AccountDataScreen()
                                 .shellPageClearance()
                         } label: {
-                            SettingsLinkRow(icon: "storage_outlined", title: "Data", subtitle: "Export your account, clear cached data")
+                            SettingsLinkRow(icon: "storage_outlined", title: "Data", subtitle: "Save to ForkMesh, see and download everything about you")
                         }
                         .buttonStyle(FmPressStyle(highlight: fm.accentSubtle))
                     }
