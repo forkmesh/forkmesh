@@ -1141,6 +1141,7 @@ _URL_EXPORT_NAMES = (
     "CHAT_DIRECT_MESSAGE_WS_RE", "CHAT_READS_RE", "REPO_ISSUES_RE", "REPO_PULLS_RE",
     "REPO_PULL_MERGE_RE", "REPO_PULL_UPDATE_RE", "REPO_PULL_RULES_RE",
     "REPO_PULL_ATTENTION_RE",
+    "REPO_PULL_CHECKS_RE",
     "REPO_BRANCH_OPS_RE", "REPO_BRANCH_OP_RESULTS_RE", "REPO_BRANCH_DELETE_RE",
     "REPO_ACTION_RUNS_RE", "REPO_ACTION_CONTROL_RE", "REPO_DISCUSSIONS_RE",
     "REPO_ACTION_RUN_LOG_RE", "REPO_ACTION_SECRETS_RE",
@@ -13734,6 +13735,11 @@ SCHEMA_PRE_CREATE_ALTER_STATEMENTS = [
     "ALTER TABLE repo_action_jobs ADD COLUMN token_hash TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE repo_action_jobs ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE repo_action_jobs ADD COLUMN pushed_commit TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN pull_number INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE repo_action_jobs ADD COLUMN approval TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN approved_by TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN base_branch TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE repo_action_jobs ADD COLUMN base_oid TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE runner_nodes ADD COLUMN actions_trusted INTEGER NOT NULL DEFAULT 0",
 ]
 
@@ -13891,7 +13897,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "f22b32b55ddc50081fd103a2be3bc5a287d3286257493a5dbd8edbd5f3c3a536"
+    "77e8e7ee1d331dc3ee91089720e9d4a54f90ec2ce1599cad171e3020f61e1e88"
 )
 
 
@@ -52169,6 +52175,8 @@ _self_update = _LazyModule("self_update")
 repo_pull_rules_handler = _pull_rules.export("repo_pull_rules_handler")
 _ai_disclosure = _LazyModule("ai_disclosure")
 pull_ai_disclosure_check = _ai_disclosure.export("pull_ai_disclosure_check")
+_pull_actions = _LazyModule("pull_actions")
+repo_pull_checks_handler = _pull_actions.export("repo_pull_checks_handler")
 org_pull_rules_handler = _pull_rules.export("org_pull_rules_handler")
 repository_branch_ops_handler = _route_handlers.export("repository_branch_ops_handler")
 repository_branch_op_results_handler = _route_handlers.export(
@@ -53852,8 +53860,13 @@ async def _actions_schedule_cron(env, minute_slot):
     import actions_cron
     import runner_leases
     runner_leases._bind_runtime(globals())
-    return await actions_cron.run(
+    queued = await actions_cron.run(
         runner_leases.WorkerRuntime(env, None), minute_slot)
+    try:
+        queued += await _pull_actions.sync_all(env)
+    except Exception:
+        pass
+    return queued
 
 
 def _cron_tick_phase_order(minute_slot):

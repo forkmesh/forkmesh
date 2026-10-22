@@ -57,7 +57,8 @@ class World:
         self.module = importlib.import_module("actions_job_api")
         self.db = sqlite3.connect(":memory:")
         self.db.row_factory = sqlite3.Row
-        for name in ("0248_repo_action_jobs.sql", "0272_actions_instance.sql"):
+        for name in ("0248_repo_action_jobs.sql", "0272_actions_instance.sql",
+                     "0280_actions_pull_requests.sql"):
             text = (ROOT / "migrations" / name).read_text()
             self.db.executescript(
                 "\n".join(part + ";" for part in text.split(

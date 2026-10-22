@@ -3769,6 +3769,15 @@
         if (!consumeRepoPullQuickReplyLongPress(replyId)) {
           void sendRepoPullQuickReply(state.selectedRepo, replyId);
         }
+      const pullCheckDecision = event.target.closest("[data-repo-pull-check-approve], [data-repo-pull-check-trust], [data-repo-pull-check-untrust]");
+      if (pullCheckDecision && state.selectedRepo) {
+        const data = pullCheckDecision.dataset;
+        const [action, value] = data.repoPullCheckApprove !== undefined
+          ? ["approve", data.repoPullCheckApprove]
+          : data.repoPullCheckTrust !== undefined
+            ? ["trust", data.repoPullCheckTrust]
+            : ["untrust", data.repoPullCheckUntrust];
+        handleRepoPullCheckDecision(state.selectedRepo, action, value, pullCheckDecision);
         return;
       }
 
