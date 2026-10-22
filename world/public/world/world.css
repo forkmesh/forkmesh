@@ -8404,6 +8404,120 @@ html[data-dashboard-theme] .world-dashboard-embed .world-topbar {
   font: 0.75rem/1.55 var(--world-mono, ui-monospace, monospace);
 }
 
+.world-prompt-deck {
+  position: relative;
+  margin-top: 0.8rem;
+  user-select: none;
+  outline: none;
+}
+
+.world-prompt-deck[data-behind="1"] {
+  margin-bottom: 3px;
+}
+
+.world-prompt-deck[data-behind="2"] {
+  margin-bottom: 6px;
+}
+
+.world-prompt-deck::before,
+.world-prompt-deck::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #e2e5ea;
+  border-radius: 0.55rem;
+  background: #ffffff;
+  content: "";
+  pointer-events: none;
+  transform-origin: bottom;
+}
+
+.world-prompt-deck::before {
+  transform: translateY(6px) scaleX(0.9);
+}
+
+.world-prompt-deck::after {
+  transform: translateY(3px) scaleX(0.95);
+}
+
+.world-prompt-deck[data-behind="0"]::before,
+.world-prompt-deck[data-behind="0"]::after,
+.world-prompt-deck[data-behind="1"]::before {
+  display: none;
+}
+
+.world-prompt-deck:focus-visible .world-prompt-deck-card {
+  outline: 2px solid #1093c6;
+  outline-offset: 1px;
+}
+
+.world-prompt-deck-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #e2e5ea;
+  border-radius: 0.55rem;
+  background: #f4f8fb;
+  touch-action: pan-y;
+}
+
+.world-prompt-deck-mark {
+  color: #1093c6;
+  font: 700 0.85rem/1.5 var(--world-mono, ui-monospace, monospace);
+}
+
+.world-prompt-deck-text {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: #111827;
+  font: 0.75rem/1.55 var(--world-mono, ui-monospace, monospace);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.world-prompt-deck-text[data-expanded="true"] {
+  max-height: 10rem;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.world-prompt-deck-position {
+  color: #6b7280;
+  font: 0.66rem/1.8 var(--world-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.world-prompt-deck-step {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.35rem;
+  background: none;
+  color: #6b7280;
+  font: 700 1rem/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.world-prompt-deck-step:hover:not(:disabled) {
+  background: #e2e5ea;
+  color: #1093c6;
+}
+
+.world-prompt-deck-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 /* Final shared chrome pass: feature-specific rules may control layout, but
    every user-facing surface finishes with the same GitHub dark primitives. */
 .fm-world :is(

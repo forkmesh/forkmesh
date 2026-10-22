@@ -409,10 +409,19 @@ on 2026-10-21): `AgentRunScreen` (desktop, node and runner runs),
   being sent counts as soon as it shows.
 - `AgentPromptDeck` draws it as one compact line, a stack of cards with up to
   two edges peeking out below for earlier prompts, and `3/5` when there is more
-  than one. Pull the card down to flip back to an earlier prompt (it slides off
-  and the one beneath rises); push it up to come forward. The card tilts as it
-  is dragged and resists past either end. Tap to read the whole prompt, long
-  press to copy it or jump back to the latest.
+  than one.
+  - Swipe right to go back to the previous prompt and left to go forward to
+    the next (2026-10-22; it used to be pull down and push up).
+  - The card follows your finger with a slight tilt and resists past either
+    end.
+  - Tap to read the whole prompt. Long press to copy it or jump back to the
+    latest.
+- The edges are drawn as the card's `background`, so they take the card's
+  size. They used to be shapes in the same `ZStack`, and a `Shape` fills all
+  the height it is offered, so on `AgentRunScreen` the deck grew into a tall
+  empty box under the line (fixed 2026-10-22).
+- The desktop (`PromptDeckBar`, `docs/desktop/agents-ui.md`) and the web
+  session pages (`docs/agents/README.md`) have the same deck.
 - A new prompt drops in on top, and the deck returns to it even when you were
   reading back. Cards are keyed by the prompt's position from the first, so
   this animates instead of swapping text.

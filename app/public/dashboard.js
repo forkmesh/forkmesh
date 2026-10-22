@@ -36066,6 +36066,7 @@
             ${orgAgentDeleteButtonHtml(facts)}
           </div>
         </div>
+        ${promptDeckSlot("org-agent-detail", `org:${facts.id}`, facts.history.filter((item) => item?.role === "user").map((item) => item.text))}
         <div data-org-agent-detail-body class="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-4 py-4">
           <header class="grid gap-1">
             <span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(facts.agentLabel)} · ${escapeHtml(facts.modelLabel)}</span>
@@ -36391,6 +36392,7 @@
   // once here would leave every later render's forms inert, and doing both
   // would double-submit the follow-up that survived a redraw.
   function wireOrgAgentSessionActions(repo, container) {
+    bindPromptDecks();
     container.querySelectorAll("[data-org-agent-open]").forEach((button) => {
       button.addEventListener("click", () => {
         openOrgAgentDetail(repo, button.dataset.orgAgentOpen || "");
@@ -36603,6 +36605,7 @@
     const keepFoot = Boolean(draft && (draft.value || document.activeElement === draft));
     const answering = document.activeElement?.closest("[data-desktop-agent-answer]") && !document.activeElement.disabled;
     const parts = (keepFoot ? ["head", "body"] : ["head", "body", "foot"]).filter((part) => part !== "body" || !answering);
+    patchPromptDeck(current, fresh, "org-agent-detail");
     parts.forEach((part) => {
       const selector = `[data-org-agent-detail-${part}]`;
       const before = current.querySelector(selector);
@@ -37211,6 +37214,187 @@
     return `<dl class="grid gap-2">${Object.entries(value).map(([key, item]) => `<div class="min-w-0"><dt class="text-xs font-semibold text-muted-foreground">${escapeHtml(key.replace(/[_/]/g, " "))}</dt><dd class="min-w-0 text-sm">${desktopAgentDataHtml(item)}</dd></div>`).join("")}</dl>`;
   }
 
+  const promptDecks = { bound: false, prompts: new Map(), held: new Map(), wheelAt: 0, wheel: 0, drag: null, quietUntil: 0 };
+
+  function promptDeckClean(text) {
+    return String(text || "").replace(/^\s*Attached image:.*$/gm, "").trim();
+  }
+
+  function promptDeckIndex(key) {
+    const prompts = promptDecks.prompts.get(key) || [];
+    const held = promptDecks.held.get(key);
+    if (!held || held.count !== prompts.length) return prompts.length - 1;
+    return Math.max(0, Math.min(held.index, prompts.length - 1));
+  }
+
+  function promptDeckHtml(key, said) {
+    const prompts = (Array.isArray(said) ? said : []).map(promptDeckClean).filter(Boolean);
+    promptDecks.prompts.set(key, prompts);
+    if (!prompts.length) {
+      promptDecks.held.delete(key);
+      return "";
+    }
+    const held = promptDecks.held.get(key);
+    if (held && held.count !== prompts.length) promptDecks.held.delete(key);
+    const index = promptDeckIndex(key);
+    const expanded = Boolean(promptDecks.held.get(key)?.expanded);
+    const latest = index === prompts.length - 1;
+    const prompt = prompts[index];
+    const behind = Math.min(2, index);
+    const position = prompts.length > 1 ? `${index + 1}/${prompts.length}` : "";
+    const arrow = (dir, icon, label, enabled) => `<button type="button" data-prompt-deck-step="${dir}" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-40" aria-label="${label}" title="${label}"${enabled ? "" : " disabled"}><i data-lucide="${icon}" class="h-3.5 w-3.5"></i></button>`;
+    const edges = [2, 1].filter((depth) => depth <= behind).map((depth) => `<span aria-hidden="true" class="pointer-events-none absolute inset-0 rounded-lg border border-border bg-background" style="transform:translateY(${depth * 3}px) scaleX(${1 - depth * 0.05});transform-origin:bottom"></span>`).join("");
+    return `<div data-prompt-deck="${escapeHtml(key)}" tabindex="0" role="group" aria-roledescription="prompt deck" aria-label="${latest ? "Last prompt" : "Earlier prompt"}${position ? `, ${position}` : ""}" class="relative select-none outline-none" style="margin-bottom:${behind * 3}px">
+        ${edges}
+        <div data-prompt-deck-card class="relative flex items-start gap-2 rounded-lg border border-border bg-secondary px-2.5 py-1.5" style="touch-action:pan-y">
+          <i data-lucide="${latest ? "quote" : "history"}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary"></i>
+          <button type="button" data-prompt-deck-toggle class="min-w-0 flex-1 text-left text-xs leading-5 text-foreground" title="${expanded ? "Show one line" : "Read the whole prompt"}" aria-expanded="${expanded}">
+            <span class="${expanded ? "block max-h-40 overflow-y-auto whitespace-pre-wrap break-words" : "block truncate"}">${escapeHtml(expanded ? prompt : prompt.replace(/\s+/g, " "))}</span>
+          </button>
+          ${position ? `<span class="shrink-0 font-mono text-[11px] leading-5 text-muted-foreground">${position}</span>
+          ${arrow("older", "chevron-left", "Earlier prompt", index > 0)}${arrow("newer", "chevron-right", "Later prompt", !latest)}` : ""}
+        </div>
+      </div>`;
+  }
+
+  function promptDeckRedraw(deck, direction) {
+    const key = deck.dataset.promptDeck;
+    const scratch = document.createElement("div");
+    scratch.innerHTML = promptDeckHtml(key, promptDecks.prompts.get(key));
+    const fresh = scratch.firstElementChild;
+    if (!fresh) return;
+    const focused = deck.contains(document.activeElement);
+    deck.replaceWith(fresh);
+    window.lucide?.createIcons();
+    if (focused) fresh.focus({ preventScroll: true });
+    const card = fresh.querySelector("[data-prompt-deck-card]");
+    if (direction && card?.animate && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      card.animate([
+        { transform: `translateX(${direction < 0 ? -32 : 32}px)`, opacity: 0.2 },
+        { transform: "translateX(0)", opacity: 1 },
+      ], { duration: 200, easing: "cubic-bezier(.2,.8,.2,1)" });
+    }
+  }
+
+  function promptDeckStep(deck, delta) {
+    const key = deck.dataset.promptDeck;
+    const prompts = promptDecks.prompts.get(key) || [];
+    const index = promptDeckIndex(key);
+    const next = Math.max(0, Math.min(prompts.length - 1, index + delta));
+    if (next === index) return false;
+    promptDecks.held.set(key, { index: next, count: prompts.length, expanded: false });
+    promptDeckRedraw(deck, delta);
+    return true;
+  }
+
+  function promptDeckToggle(deck) {
+    const key = deck.dataset.promptDeck;
+    const prompts = promptDecks.prompts.get(key) || [];
+    const held = promptDecks.held.get(key);
+    promptDecks.held.set(key, { index: promptDeckIndex(key), count: prompts.length, expanded: !held?.expanded });
+    promptDeckRedraw(deck, 0);
+  }
+
+  function bindPromptDecks() {
+    if (promptDecks.bound) return;
+    promptDecks.bound = true;
+    const deckOf = (target) => target?.closest?.("[data-prompt-deck]") || null;
+    document.addEventListener("click", (event) => {
+      const deck = deckOf(event.target);
+      if (!deck) return;
+      if (Date.now() < promptDecks.quietUntil) {
+        event.preventDefault();
+        return;
+      }
+      const step = event.target.closest("[data-prompt-deck-step]");
+      if (step) promptDeckStep(deck, step.dataset.promptDeckStep === "older" ? -1 : 1);
+      else if (event.target.closest("[data-prompt-deck-toggle]")) promptDeckToggle(deck);
+    });
+    document.addEventListener("keydown", (event) => {
+      const deck = deckOf(event.target);
+      if (!deck || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        promptDeckStep(deck, event.key === "ArrowLeft" ? -1 : 1);
+      }
+    });
+    document.addEventListener("pointerdown", (event) => {
+      const deck = deckOf(event.target);
+      const card = deck?.querySelector("[data-prompt-deck-card]");
+      if (!card || event.button !== 0 || event.target.closest("[data-prompt-deck-step]")) return;
+      promptDecks.drag = { deck, card, x: event.clientX, y: event.clientY, id: event.pointerId, moved: false, dx: 0 };
+    });
+    document.addEventListener("pointermove", (event) => {
+      const drag = promptDecks.drag;
+      if (!drag || drag.id !== event.pointerId) return;
+      const dx = event.clientX - drag.x;
+      if (!drag.moved) {
+        if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(event.clientY - drag.y)) return;
+        drag.moved = true;
+        drag.card.setPointerCapture?.(event.pointerId);
+      }
+      const prompts = promptDecks.prompts.get(drag.deck.dataset.promptDeck) || [];
+      const index = promptDeckIndex(drag.deck.dataset.promptDeck);
+      const free = dx > 0 ? index > 0 : index < prompts.length - 1;
+      drag.dx = dx;
+      drag.card.style.transform = `translateX(${dx * (free ? 0.6 : 0.15)}px)`;
+    });
+    const release = (event) => {
+      const drag = promptDecks.drag;
+      if (!drag || drag.id !== event.pointerId) return;
+      promptDecks.drag = null;
+      if (!drag.moved) return;
+      promptDecks.quietUntil = Date.now() + 300;
+      const stepped = event.type === "pointerup" && Math.abs(drag.dx) > 48 && promptDeckStep(drag.deck, drag.dx > 0 ? -1 : 1);
+      if (!stepped) {
+        drag.card.style.transform = "";
+        drag.card.animate?.([{ transform: `translateX(${drag.dx * 0.6}px)` }, { transform: "translateX(0)" }], { duration: 180, easing: "ease-out" });
+      }
+    };
+    document.addEventListener("pointerup", release);
+    document.addEventListener("pointercancel", release);
+    document.addEventListener("wheel", (event) => {
+      const deck = deckOf(event.target);
+      if (!deck || Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+      event.preventDefault();
+      const now = Date.now();
+      if (now - promptDecks.wheelAt < 350) {
+        promptDecks.wheel = 0;
+        return;
+      }
+      promptDecks.wheel += event.deltaX;
+      if (Math.abs(promptDecks.wheel) < 40) return;
+      const delta = promptDecks.wheel > 0 ? 1 : -1;
+      promptDecks.wheel = 0;
+      promptDecks.wheelAt = now;
+      promptDeckStep(deck, delta);
+    }, { passive: false });
+  }
+
+  function promptDeckSlot(part, key, said) {
+    const deck = promptDeckHtml(key, said);
+    return deck
+      ? `<div data-${part}-deck class="border-b border-border px-4 py-2">${deck}</div>`
+      : `<div data-${part}-deck hidden></div>`;
+  }
+
+  function patchPromptDeck(current, fresh, part) {
+    const before = current.querySelector(`[data-${part}-deck]`);
+    const after = fresh.querySelector(`[data-${part}-deck]`);
+    if (!before || !after) return;
+    const focused = before.contains(document.activeElement);
+    if (promptDecks.drag && before.contains(promptDecks.drag.deck)) return;
+    if (before.outerHTML.replace(/<svg[\s\S]*?<\/svg>/g, "") === after.outerHTML.replace(/<i [^>]*><\/i>/g, "")) return;
+    before.replaceWith(after);
+    if (focused) after.querySelector("[data-prompt-deck]")?.focus({ preventScroll: true });
+  }
+
+  function desktopAgentPrompts(text) {
+    return String(text || "").split("\n").map((line) => {
+      try { return JSON.parse(line); } catch (_) { return null; }
+    }).filter((event) => event?.type === "_local_user").map((event) => String(event.text || ""));
+  }
+
   function desktopAgentTranscriptHtml(text) {
     const events = String(text || "").split("\n").map((line) => {
       try { return JSON.parse(line); } catch (_) { return line; }
@@ -37279,6 +37463,7 @@
             ${desktopAgentButton("refresh", "refresh-cw", "Refresh")}
           </div>
         </div>
+        ${promptDeckSlot("desktop-agent-detail", `desktop:${session.id}`, desktopAgentPrompts(transcript?.text))}
         <div data-desktop-agent-detail-body data-desktop-agent-mode="${diffOpen ? "diff" : "transcript"}" class="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-4 py-4">
           <header class="grid gap-1">
             <span class="font-mono text-[11px] text-muted-foreground">Desktop agent on ${escapeHtml(session.desktopNode)}</span>
@@ -37345,6 +37530,7 @@
     const keepFoot = Boolean(draft && (draft.value || document.activeElement === draft));
     const answering = document.activeElement?.closest("[data-desktop-agent-answer]") && !document.activeElement.disabled;
     const parts = (keepFoot ? ["head", "body"] : ["head", "body", "foot"]).filter((part) => part !== "body" || !answering);
+    patchPromptDeck(current, fresh, "desktop-agent-detail");
     parts.forEach((part) => {
       const selector = `[data-desktop-agent-detail-${part}]`;
       const before = current.querySelector(selector);
@@ -37475,6 +37661,7 @@
   }
 
   function wireDesktopAgentActions(repo, container) {
+    bindPromptDecks();
     container.querySelectorAll("[data-desktop-agent-answer]").forEach((form) => {
       form.addEventListener("submit", async (event) => {
         event.preventDefault();

@@ -16,21 +16,11 @@ struct AgentPromptDeck: View {
     var body: some View {
         if !deck.isEmpty {
             ZStack(alignment: .top) {
-                ForEach(Array((1...2).reversed()), id: \.self) { (depth: Int) in
-                    if depth <= deck.behind(index) {
-                        cardShape
-                            .fill(fm.accentSubtle.opacity(0.6))
-                            .background(cardShape.fill(fm.bgRaised))
-                            .overlay(cardShape.stroke(fm.border, lineWidth: 0.5))
-                            .scaleEffect(x: 1 - CGFloat(depth) * 0.05, y: 1, anchor: .bottom)
-                            .offset(y: CGFloat(depth) * 3)
-                    }
-                }
                 card
                     .id(deck.count - 1 - index)
                     .transition(cardTransition)
-                    .zIndex(1)
             }
+            .background(alignment: .top) { edges }
             .padding(.bottom, CGFloat(deck.behind(index)) * 3)
             .animation(spring, value: deck.behind(index))
             .onChange(of: deck.count) { (_: Int, _: Int) in
@@ -61,6 +51,21 @@ struct AgentPromptDeck: View {
         RoundedRectangle(cornerRadius: FmRadius.lg, style: .continuous)
     }
 
+    private var edges: some View {
+        ZStack(alignment: .top) {
+            ForEach(Array((1...2).reversed()), id: \.self) { (depth: Int) in
+                if depth <= deck.behind(index) {
+                    cardShape
+                        .fill(fm.accentSubtle.opacity(0.6))
+                        .background(cardShape.fill(fm.bgRaised))
+                        .overlay(cardShape.stroke(fm.border, lineWidth: 0.5))
+                        .scaleEffect(x: 1 - CGFloat(depth) * 0.05, y: 1, anchor: .bottom)
+                        .offset(y: CGFloat(depth) * 3)
+                }
+            }
+        }
+    }
+
     private var card: some View {
         let shown: Int = index
         return HStack(alignment: .firstTextBaseline, spacing: FmSpace.x2) {
@@ -84,8 +89,8 @@ struct AgentPromptDeck: View {
         .background(cardShape.fill(fm.bgRaised))
         .overlay(cardShape.stroke(fm.border, lineWidth: 0.5))
         .contentShape(cardShape)
-        .offset(y: drag)
-        .rotation3DEffect(.degrees(reduceMotion ? 0 : Double(-drag) * 0.6), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
+        .offset(x: drag)
+        .rotationEffect(.degrees(reduceMotion ? 0 : Double(drag) * 0.04), anchor: .bottom)
         .onTapGesture {
             withAnimation(spring) { expanded.toggle() }
         }
@@ -107,18 +112,23 @@ struct AgentPromptDeck: View {
     }
 
     private var swipe: some Gesture {
-        DragGesture(minimumDistance: 8)
+        DragGesture(minimumDistance: 12)
             .onChanged { (value: DragGesture.Value) in
-                let dy: CGFloat = value.translation.height
-                let free: Bool = dy > 0 ? deck.older(than: index) != index : deck.newer(than: index) != index
-                drag = free ? dy * 0.5 : dy * 0.15
+                let dx: CGFloat = value.translation.width
+                guard abs(dx) > abs(value.translation.height) else {
+                    return
+                }
+                let free: Bool = dx > 0 ? deck.older(than: index) != index : deck.newer(than: index) != index
+                drag = free ? dx * 0.6 : dx * 0.15
             }
             .onEnded { (value: DragGesture.Value) in
-                let dy: CGFloat = value.predictedEndTranslation.height
-                if dy > 30 {
-                    step(older: true)
-                } else if dy < -30 {
-                    step(older: false)
+                let dx: CGFloat = value.predictedEndTranslation.width
+                if abs(dx) > abs(value.predictedEndTranslation.height) {
+                    if dx > 50 {
+                        step(older: true)
+                    } else if dx < -50 {
+                        step(older: false)
+                    }
                 }
                 withAnimation(spring) { drag = 0 }
             }
@@ -153,11 +163,12 @@ struct AgentPromptDeck: View {
         if reduceMotion {
             return .opacity
         }
+        let fromLeft: AnyTransition = .offset(x: -80).combined(with: .opacity)
+        let fromRight: AnyTransition = .offset(x: 80).combined(with: .opacity)
         let sink: AnyTransition = .scale(scale: 0.9, anchor: .bottom).combined(with: .opacity)
-        let slide: AnyTransition = .offset(y: 28).combined(with: .opacity)
         switch motion {
-        case .back: return .asymmetric(insertion: sink, removal: slide)
-        case .forward: return .asymmetric(insertion: slide, removal: sink)
+        case .back: return .asymmetric(insertion: fromLeft, removal: fromRight)
+        case .forward: return .asymmetric(insertion: fromRight, removal: fromLeft)
         case .arrive: return .asymmetric(insertion: .offset(y: -24).combined(with: .opacity), removal: sink)
         }
     }
