@@ -1304,6 +1304,11 @@ never carry it.
   The Mirrors tab stays as the full diagnostic view. The "Powered by
   ForkMesh" badge is not a served-by label and stays (see the top of this
   page).
+- **Mirror goal.** The rail's "Mirrors" card is not a served-by label: it
+  counts plain git copies kept elsewhere (this instance, the original named
+  by `.forkmesh/forge-source.json`, and copies people register) against a
+  goal the maintainers set, and is shown on instances too. See
+  [app/mirror-quota.md](app/mirror-quota.md).
 
 ## Directory
 

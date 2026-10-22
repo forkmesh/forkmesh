@@ -982,8 +982,13 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None):
     feeds = ('<p class="fm-ssr-sub" data-repo-issue-feeds><a href="%s/issues.atom" '
              'type="application/atom+xml">Feed</a> &middot; <a href="%s/lite">Lite view</a>'
              '</p>' % (_esc(base), _esc(base))) if kind == "issues" else ""
-    return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s</div>%s' % (
-        head, "".join(items), feeds))
+    banner = ""
+    if kind == "issues" and "mirror-quota" not in _plugins_off():
+        from . import mirror_help, repo_ssr
+        banner = mirror_help.dashboard_banner_for(base, repo_ssr.cached_quota(
+            bundle.owner, bundle.repo))
+    return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s%s</div>%s' % (
+        banner, head, "".join(items), feeds))
 
 
 def _diff(patch):

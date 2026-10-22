@@ -214,6 +214,7 @@
       initCommentGifs();
       initCommentTips();
       void initReactionSettings();
+      initRepoMirrorQuota();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

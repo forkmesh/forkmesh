@@ -23,6 +23,7 @@ JavaScript, from data the node already has:
 | `/<o>/<r>/lite/issues/<n>` | The whole thread on one page |
 | `/lite` | The instance's public repositories, the home repository first |
 | `/` | The forum home page, on an instance with a home repository |
+| `/<o>/<r>/mirror` | How to help: run a mirror, join the federation, register it |
 
 The user-facing guide is [www/docs/feeds-and-email.md](../../www/docs/feeds-and-email.md).
 
@@ -212,3 +213,60 @@ Every read-surface page wraps its body in `<!--email_off-->` …
 `<!--/email_off-->`: behind Cloudflare, Email Address Obfuscation otherwise
 injects an `email-decode.min.js` script into any page with an address-like
 string, which broke the "no JavaScript" promise of the lite pages.
+
+## Asking for mirrors
+
+The forum needs independent copies more than anything else, so every read
+surface asks for them while a repository is below its mirror goal
+([mirror-quota.md](mirror-quota.md)). The texts and markup live in
+`app/host/forkmesh_host/mirror_help.py`.
+
+**When.** `mirror_help.help_state(quota, home)` decides: with a mirror quota
+answer, only when it has a goal and fewer healthy mirrors than the goal
+(`{healthy, target, known: true}`); without one (the API is off, slow or
+missing), only for the instance's home repository, and then without a count
+(`known: false`), because the message matters more than the number. The
+quota is read through the Worker (`read_surfaces.quota_for`, anonymous,
+`QUOTA_BUDGET_SECONDS`, or `QUOTA_PAGE_BUDGET_SECONDS` for the how-to-help
+page) and remembered for `QUOTA_FRESH_SECONDS`; a failed read keeps the last
+good answer. The help state is part of each cache key, so a page changes when
+the count does, not only on a push.
+
+**`/<o>/<r>/mirror`.** A lite page (same style, no script, no image, links on
+the instance except the installer, forge sync docs, mirror docs and
+`https://forkmesh.com/start`): "Help keep this forum reachable", why copies
+matter (a clone carries every thread in `.forkmesh/issues`, signed), the
+status word in its colour (goal met, behind, urgent: `success`, `attention`,
+`destructive`), "N of goal healthy mirrors", the list (name, address as text,
+host, status, last check in UTC) and "N more mirrors needed", then four steps
+with copy-paste blocks: a git mirror (`git clone --mirror`, a cron line with
+`remote update --prune` and `update-server-info`, `caddy file-server`), a
+ForkMesh instance (a minimal `settings.json`, the `install-instance.sh`
+command, forge sync's mirror mode, the Start your own instance page), a static
+read-only copy (generic until the export tool lands), and registering it (Add
+a mirror on the repository page, or `POST .../mirror-quota`). "Why we're
+asking" quotes the forum's requirement for example/forum
+(`mirror_help.REQUIREMENTS`, linking the local #637). The page works for any
+public repository, also one without issues; without a quota answer it says
+the count is not available and keeps the instructions, with the clone address
+built from the request's origin.
+
+**Banners.**
+
+- Forum home: `<aside class="help big" data-forum-help>` right under the
+  header, with "This forum needs your help — N of goal mirrors running.", one
+  line on why, and one button in `primary` blue (`.go`) to the page.
+- Lite list: one `<p class="help">` line under the breadcrumb, an `attention`
+  border on the subtle background.
+- Issue list: `banner_dashboard` in the first view (`repo_views._list`, from
+  the remembered quota) and `repoMirrorHelpBanner` in the dashboard
+  (`09-read-surfaces.js`), the same markup (a parity test runs the JS under
+  node): one truncated line in `bg-attention/10` with an `attention` dot
+  above the list's filter bar. The dashboard version has a dismiss button
+  that stores `forkmesh.mirrorHelpDismissed:/<o>/<r>` in `localStorage`; the
+  first view and the lite pages always show it. When the dashboard has no
+  quota yet, `repoMirrorHelpSlot` loads it and fills the slot.
+- Feeds: the feed's `<subtitle>` ("This forum needs your help: N of goal
+  mirrors running. Run a mirror or join the federation.") and a
+  `<link rel="related" type="text/html">` to the page, both valid Atom feed
+  metadata placed before the entries. Thread feeds do not carry it.

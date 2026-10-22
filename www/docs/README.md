@@ -55,6 +55,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Availability proof and repository risk | [Availability proof](availability-proof.md) |
 | Signed availability contracts backed by mirror capacity | [Repository availability contracts](availability-contract.md) |
 | Fast preservation during shutdowns and takedowns | [Crisis preservation](crisis-preservation.md) |
+| A goal of healthy mirrors and the copies people run | [Mirror goals](mirror-quota.md) |
 | Removable-media exports and resumable low-bandwidth fetches | [Offline and low-bandwidth sync](offline-sync.md) |
 | Clearnet, Tor, I2P, overlay and LAN transports | [Transports and anonymity postures](transports.md) |
 | Recovery from origin, DNS, key, region and backup loss | [Disaster recovery](disaster-recovery/README.md) and its [printable runbook](disaster-recovery/runbook.md) |

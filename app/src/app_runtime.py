@@ -2141,6 +2141,11 @@ class Default:
             if action == "viewer-permission" and len(pieces) == 5:
                 return await repo_viewer_permission_handler(
                     self.env, request, owner, repo)
+            if action == "mirror-quota" and len(pieces) == 5:
+                import mirror_quota
+                mirror_quota._bind_runtime(globals())
+                return await mirror_quota.handler(
+                    self.env, request, owner, repo)
             if action == "security":
                 import security_advisories
                 security_advisories._bind_runtime(globals())

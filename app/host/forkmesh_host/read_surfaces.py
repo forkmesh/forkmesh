@@ -9,6 +9,7 @@ import re
 import time
 import urllib.parse
 
+from . import mirror_help
 from . import repo_ssr_issue as issue_md
 
 OWNER = r"([A-Za-z0-9][A-Za-z0-9_-]{0,63})"
@@ -20,6 +21,7 @@ ROUTES = (
     ("label-feed", re.compile(r"^/%s/%s/labels/([^/]{1,300})\.atom$" % (OWNER, REPO))),
     ("lite", re.compile(r"^/%s/%s/lite/?$" % (OWNER, REPO))),
     ("lite-thread", re.compile(r"^/%s/%s/lite/issues/%s/?$" % (OWNER, REPO, NUMBER))),
+    ("mirror", re.compile(r"^/%s/%s/mirror/?$" % (OWNER, REPO))),
 )
 LITE_HOME_RE = re.compile(r"^/lite/?$")
 ISSUES_DIR = ".forkmesh/issues"
@@ -38,6 +40,8 @@ HEAD_FRESH_SECONDS = 5.0
 INSTANCE_FRESH_SECONDS = 60.0
 WORKER_BUDGET_SECONDS = 0.5
 QUOTA_BUDGET_SECONDS = 0.15
+QUOTA_PAGE_BUDGET_SECONDS = 0.6
+QUOTA_FRESH_SECONDS = 30.0
 CACHE_BYTES = 24 * 1024 * 1024
 CACHE_CONTROL = "public, max-age=60"
 ATOM_TYPE = "application/atom+xml; charset=utf-8"
@@ -57,8 +61,9 @@ LABEL_MAX = 100
 
 STYLE = (
     "<style>:root{color-scheme:light dark;--f:#1f2328;--b:#fff;--m:#59636e;--l:#0969da;"
-    "--r:#d1d9e0;--c:#f6f8fa}@media(prefers-color-scheme:dark){:root{--f:#e6edf3;--b:#0d1117;"
-    "--m:#8b949e;--l:#4493f8;--r:#30363d;--c:#161b22}}body{max-width:48em;margin:0 auto;"
+    "--r:#d1d9e0;--c:#f6f8fa;--a:#9a6700;--g:#1a7f37;--d:#cf222e;--h:#fff8c5}"
+    "@media(prefers-color-scheme:dark){:root{--f:#e6edf3;--b:#0d1117;--m:#8b949e;--l:#4493f8;"
+    "--r:#30363d;--c:#161b22;--a:#d29922;--g:#3fb950;--d:#f85149;--h:#272115}}body{max-width:48em;margin:0 auto;"
     "padding:.5em 1em 2em;font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;"
     "color:var(--f);background:var(--b);overflow-wrap:anywhere}a{color:var(--l)}"
     "h1{font-size:1.4em;line-height:1.3}h2{font-size:1.15em}.m,article>p:first-child,"
@@ -68,7 +73,8 @@ STYLE = (
     "blockquote{margin:0;padding-inline-start:1em;border-inline-start:3px solid var(--r);"
     "color:var(--m)}img{max-width:100%;height:auto}table{border-collapse:collapse;"
     "display:block;overflow:auto}td,th{border:1px solid var(--r);padding:.2em .5em}"
-    "hr{border:0;border-top:1px solid var(--r)}</style>")
+    "hr{border:0;border-top:1px solid var(--r)}.help{margin:.6em 0;padding:.4em .7em;"
+    "background:var(--h);border:1px solid var(--a);border-inline-start-width:4px}</style>")
 
 
 def target(scope):
@@ -206,6 +212,7 @@ def label_list(value):
 _heads = {}      # (owner, repo) -> (monotonic, commit or "")
 _instance = {}   # "doc" -> (monotonic, dict or None)
 _listing = {}    # "repos" -> (monotonic, list)
+_quotas = {}     # (origin, owner, repo) -> (monotonic, quota or None)
 _cache = {}      # key -> (etag, body, last_modified, content_type)
 _cache_bytes = [0]
 
@@ -469,18 +476,22 @@ def atom_entry(origin, owner, repo, row, post, ctx, total=None):
     return "".join(parts)
 
 
-def atom_feed(origin, feed_id, title, self_href, alt_href, entries, updated):
+def atom_feed(origin, feed_id, title, self_href, alt_href, entries, updated, plea=None):
+    extra = ""
+    if plea:
+        extra = ('<subtitle>%s</subtitle><link rel="related" type="text/html" href="%s" '
+                 'title="%s"/>' % (esc(plea[0]), esc(plea[1]), esc(mirror_help.TITLE)))
     return ('<?xml version="1.0" encoding="utf-8"?>\n'
             '<feed xmlns="http://www.w3.org/2005/Atom" '
             'xmlns:thr="http://purl.org/syndication/thread/1.0">'
-            '<id>%s</id><title>%s</title><updated>%s</updated>'
+            '<id>%s</id><title>%s</title>%s<updated>%s</updated>'
             '<link rel="self" type="application/atom+xml" href="%s"/>'
             '<link rel="alternate" type="text/html" href="%s"/>%s</feed>\n' % (
-                feed_id, esc(title), rfc3339(updated), esc(self_href), esc(alt_href),
+                feed_id, esc(title), extra, rfc3339(updated), esc(self_href), esc(alt_href),
                 "".join(entries)))
 
 
-async def feed_threads(source, rows, origin, limit, self_path, title, feed_name):
+async def feed_threads(source, rows, origin, limit, self_path, title, feed_name, plea=None):
     owner, repo = source.owner, source.repo
     chosen = rows[:limit]
     records = await source.threads(chosen, attachments=True)
@@ -499,7 +510,8 @@ async def feed_threads(source, rows, origin, limit, self_path, title, feed_name)
         newest = max(newest, seconds(first["updated"]) or 0, seconds(first["ts"]) or 0)
     base = origin + repo_base(owner, repo)
     body = atom_feed(origin, tag_id(origin, owner, repo, *feed_name), title,
-                     origin + self_path, base + "/issues", entries, newest or row_time(rows))
+                     origin + self_path, base + "/issues", entries, newest or row_time(rows),
+                     plea)
     return body, newest
 
 
@@ -507,7 +519,7 @@ def row_time(rows):
     return max((row["updated"] for row in rows), default=0)
 
 
-async def feed_activity(source, rows, origin, limit, self_path):
+async def feed_activity(source, rows, origin, limit, self_path, plea=None):
     owner, repo = source.owner, source.repo
     active = sorted(rows, key=lambda row: (-row["updated"], -row["number"]))[:limit]
     records = await source.threads(active, attachments=True)
@@ -528,7 +540,8 @@ async def feed_activity(source, rows, origin, limit, self_path):
     base = origin + repo_base(owner, repo)
     body = atom_feed(origin, tag_id(origin, owner, repo, "activity"),
                      "%s/%s: new threads and comments" % (owner, repo),
-                     origin + self_path, base + "/issues", entries, newest or row_time(rows))
+                     origin + self_path, base + "/issues", entries, newest or row_time(rows),
+                     plea)
     return body, newest
 
 
@@ -606,7 +619,7 @@ def row_html(base, row, lite=True):
         " &middot; " + labels if labels else "")
 
 
-def lite_list(owner, repo, rows, params):
+def lite_list(owner, repo, rows, params, help_state=None):
     base = repo_base(owner, repo)
     label = str(params.get("label") or "").strip()[:LABEL_MAX]
     active = params.get("sort") == "active"
@@ -632,6 +645,7 @@ def lite_list(owner, repo, rows, params):
     feed = (base + "/labels/%s.atom" % urllib.parse.quote(label, safe="")) if label \
         else base + "/issues.atom"
     head = ['<nav><a href="/lite">Lite</a> / <b>%s/%s</b></nav>' % (esc(owner), esc(repo)),
+            mirror_help.banner_lite(base, help_state),
             "<h1>%s%s</h1>" % (esc("%s/%s" % (owner, repo)),
                                (": " + esc(label)) if label else ""),
             '<p class="m">%d thread%s &middot; %s &middot; <a href="%s">Feed</a> &middot; '
@@ -729,7 +743,9 @@ HOME_STYLE = (
     "margin-inline-end:auto}header img{width:28px;height:28px;vertical-align:middle;"
     "margin-inline-end:.4em}section{margin:1em 0}.chips a{display:inline-block;"
     "margin:.15em .2em;padding:0 .5em;border:1px solid var(--r);border-radius:1em;"
-    "text-decoration:none;font-size:.85em}</style>")
+    "text-decoration:none;font-size:.85em}.big{padding:.8em 1em}.big p{margin:.3em 0}"
+    ".go{display:inline-block;padding:.3em .9em;border-radius:6px;background:var(--l);"
+    "color:#fff;font-weight:600;text-decoration:none}</style>")
 
 
 def readme_sections(markup):
@@ -737,7 +753,7 @@ def readme_sections(markup):
     return "".join('<section dir="auto">%s</section>' % chunk for chunk in chunks)
 
 
-def home_page(doc, owner, repo, rows, readme, quota):
+def home_page(doc, owner, repo, rows, readme, quota, help_state=None):
     base = repo_base(owner, repo)
     name = str(doc.get("name") or "%s/%s" % (owner, repo))
     logo = str(doc.get("logo") or "")
@@ -752,7 +768,7 @@ def home_page(doc, owner, repo, rows, readme, quota):
     chips = "".join('<a href="%s">%s <span class="m">%d</span></a>' % (
         esc(label_href(base, label)), esc(label), count)
         for label, count in label_counts(rows)[:HOME_LABELS])
-    parts = [header]
+    parts = [header, mirror_help.banner_home(base, help_state)]
     if readme:
         parts.append('<section data-forum-readme>%s</section>' % readme_sections(readme))
     parts.append('<section><h2>Latest threads</h2><ul class="t">%s</ul><p class="m">'
@@ -849,6 +865,24 @@ async def public_repositories(worker_fetch, origin):
         _listing.clear()
     _listing[origin] = (now, repos)
     return repos
+
+
+async def quota_for(worker_fetch, origin, owner, repo, budget=QUOTA_BUDGET_SECONDS):
+    key = (origin, owner, repo)
+    known = _quotas.get(key)
+    now = time.monotonic()
+    if known is not None and now - known[0] < QUOTA_FRESH_SECONDS:
+        return known[1]
+    data = await worker_json(worker_fetch, origin, "/api/repo/%s/%s/mirror-quota" % (
+        urllib.parse.quote(owner, safe=""), urllib.parse.quote(repo, safe="")), budget)
+    if not mirror_help.valid(data):
+        data = None
+    if data is None and known is not None and known[1] is not None:
+        return known[1]
+    if len(_quotas) > 1024:
+        _quotas.clear()
+    _quotas[key] = (now, data)
+    return data
 
 
 # -- caching and the ASGI answer ---------------------------------------------------
@@ -955,9 +989,23 @@ async def _answer(fastpath, worker_fetch, scope, send, origin, found, params, do
         label = found[3]
     key_params = (limit, label) if kind in ("feed", "label-feed", "thread-feed") else \
         tuple(sorted((k, v) for k, v in params.items() if k in ("page", "label", "sort")))
+    quota, state = None, None
+    mirrors = plugin_on(doc if kind == "home" else await instance_doc(worker_fetch, origin),
+                        "mirror-quota")
+    if kind == "mirror" and not mirrors:
+        return False
+    if mirrors and kind in ("feed", "label-feed", "lite", "home", "mirror"):
+        quota = await quota_for(worker_fetch, origin, owner, repo, QUOTA_PAGE_BUDGET_SECONDS
+                                if kind == "mirror" else QUOTA_BUDGET_SECONDS)
+        home = home_repository(doc if kind == "home" else await instance_doc(
+            worker_fetch, origin))
+        state = mirror_help.help_state(quota, home == (owner, repo))
+    plea = (mirror_help.subtitle(state), origin + mirror_help.mirror_href(
+        repo_base(owner, repo))) if state else None
     key = (kind, owner, repo, found[3:], key_params, source.commit, origin,
            (json.dumps(doc, sort_keys=True), int(time.time() // HOME_SECONDS))
-           if kind == "home" else "")
+           if kind == "home" else "",
+           json.dumps(quota if kind == "mirror" else state, sort_keys=True, default=str))
     etag = etag_for(key)
     if etag and not_modified(scope, etag):
         await send_answer(scope, send, 200, b"", ATOM_TYPE if "feed" in kind else HTML_TYPE,
@@ -967,7 +1015,7 @@ async def _answer(fastpath, worker_fetch, scope, send, origin, found, params, do
     if kept is not None:
         await send_answer(scope, send, 200, kept[1], kept[3], kept[0], kept[2])
         return True
-    index = await source.index()
+    index = await source.index() if kind != "mirror" else {}
     if index is None:
         return False
     rows = summaries(index)
@@ -980,12 +1028,13 @@ async def _answer(fastpath, worker_fetch, scope, send, origin, found, params, do
             chosen = with_label(rows, label)
             title = "%s/%s: %s" % (owner, repo, label)
             body, newest = await feed_threads(source, chosen, origin, limit, self_path, title,
-                                              ("labels", label))
+                                              ("labels", label), plea)
         elif found[3] == "activity":
-            body, newest = await feed_activity(source, rows, origin, limit, self_path)
+            body, newest = await feed_activity(source, rows, origin, limit, self_path, plea)
         else:
             body, newest = await feed_threads(source, rows, origin, limit, self_path,
-                                              "%s/%s: new threads" % (owner, repo), ("issues",))
+                                              "%s/%s: new threads" % (owner, repo), ("issues",),
+                                              plea)
     elif kind == "thread-feed":
         row = next((row for row in rows if row["number"] == found[3]), None)
         body = None
@@ -995,9 +1044,15 @@ async def _answer(fastpath, worker_fetch, scope, send, origin, found, params, do
             await send_answer(scope, send, 404, b"no such thread\n",
                               "text/plain; charset=utf-8", cache="no-cache")
             return True
+    elif kind == "mirror":
+        content_type = HTML_TYPE
+        base = repo_base(owner, repo)
+        body = page(mirror_help.TITLE, mirror_help.mirror_page(
+            owner, repo, base, origin, quota, state), head_links(owner, repo) + mirror_help.STYLE)
+        newest = 0
     elif kind == "lite":
         content_type = HTML_TYPE
-        body = lite_list(owner, repo, rows, params)
+        body = lite_list(owner, repo, rows, params, state)
         newest = row_time(rows)
     elif kind == "lite-thread":
         content_type = HTML_TYPE
@@ -1014,11 +1069,8 @@ async def _answer(fastpath, worker_fetch, scope, send, origin, found, params, do
     else:
         content_type = HTML_TYPE
         readme = await home_readme(source)
-        quota = await worker_json(worker_fetch, origin, "/api/repo/%s/%s/mirror-quota" % (
-            urllib.parse.quote(owner, safe=""), urllib.parse.quote(repo, safe="")),
-            QUOTA_BUDGET_SECONDS)
         recent = sorted(rows, key=lambda row: (-row["updated"], -row["number"]))
-        body = home_page(doc or {}, owner, repo, recent, readme, quota)
+        body = home_page(doc or {}, owner, repo, recent, readme, quota, state)
         newest = row_time(rows)
     data = body.encode("utf-8")
     modified = http_date(newest) if newest else ""

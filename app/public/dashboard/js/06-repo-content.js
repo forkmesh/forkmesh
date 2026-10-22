@@ -11417,7 +11417,7 @@
       ? `<p data-repo-issue-search-pending role="status" class="border-b border-border px-4 py-2 text-[12px] text-muted-foreground">${loadingHtml("Searching descriptions and comments...")}</p>`
       : "";
     setRepoIssueRecordOpen(false);
-    container.innerHTML = filterBar + warnBar + searchHint + (filtered.length
+    container.innerHTML = repoMirrorHelpSlot(state.selectedRepo) + filterBar + warnBar + searchHint + (filtered.length
       ? renderRepoRecordList(filtered, config, "issues")
       : issuesView.closedLoading
         ? `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`
@@ -15458,6 +15458,7 @@
     loadRepoAboutInfo(repo);
     loadRepoAboutRelease(repo);
     loadRepoAboutInsights(repo);
+    loadRepoMirrorQuota(repo);
   }
 
   function scheduleRepoAboutRail(repo) {
