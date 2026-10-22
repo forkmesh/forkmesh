@@ -508,6 +508,12 @@ async def plan_pull(reader, branch, number):
         return {"pull": None}
     values, body = parse_front_matter(blob_text(blob))
     is_open = str(values.get("status") or "open").lower() == "open"
+    # The review prompt reads .forkmesh/pulls.json in the same request the
+    # dashboard makes (loadRepoCollabSettings), so it is in the bundle.
+    settings = asyncio.ensure_future(reader.get(
+        "blobs", [("path", path) for path in COLLAB_SETTINGS_PATHS]
+        + [("ref", branch)])) if is_open else None
+    patch_ref = []
 
     async def patch():
         if not is_open:
@@ -517,6 +523,8 @@ async def plan_pull(reader, branch, number):
             ("ref", commit)], negative=True)
         text = blob_text(data)
         if text.strip():
+            if is_commit(commit):
+                patch_ref.append(commit)
             return text
         base, head = (str(values.get("creationBaseOid") or "").strip(),
                       str(values.get("creationHeadOid") or "").strip())
@@ -536,13 +544,15 @@ async def plan_pull(reader, branch, number):
     # behind for every branch) and only the merge controls need it.
     diff, conversation, _c = await asyncio.gather(
         patch(), _pull_conversation(reader, number, commit), commits())
+    settings_data = await settings if settings is not None else None
     await root
-    return {"pull": {
+    return {"settings": (settings_data or {}).get("blobs") or {}, "pull": {
         "number": number, "title": values.get("title") or
         "pull request #%d" % number, "state": values.get("status") or "open",
         "author": _record_author(values), "ts": values.get("ts") or values.get("createdAt") or "",
         "base": values.get("base", ""), "head": values.get("head", ""),
-        "body": body, "conversation": conversation, "patch": diff}}
+        "body": body, "conversation": conversation, "patch": diff,
+        "patchRef": patch_ref[0] if patch_ref else ""}}
 
 
 async def plan_discussion(reader, branch, number):
@@ -834,6 +844,7 @@ VIEW_STYLE = """<style>
 .fm-ssr-event>.fm-ssr-reactions{padding:0 24px 12px}
 .fm-ssr-diff{font-family:ui-monospace,monospace;font-size:12px;line-height:20px;overflow-x:auto}
 .fm-ssr-diff div{white-space:pre;padding:0 16px;min-width:max-content}.fm-ssr-diff .a{background:rgba(46,160,67,.15)}.fm-ssr-diff .d{background:rgba(248,81,73,.15)}.fm-ssr-diff .h{color:rgb(var(--dashboard-muted-foreground-rgb));background:rgba(56,139,253,.1)}
+.fm-ssr [data-repo-pull-review-prompt]{margin-bottom:16px}
 .fm-ssr-file{padding:8px 16px;font-family:ui-monospace,monospace;font-size:12px;border-bottom:1px solid rgb(var(--dashboard-border-rgb));background:rgb(var(--dashboard-subtle-rgb,22 27 34))}
 </style>"""
 
@@ -1068,15 +1079,17 @@ def reaction_subject(bundle):
     return "%s:%d" % (name, bundle.number) if name and bundle.number else ""
 
 
-def render(bundle, section="", reactions=None, link=None, reader=False):
+def render(bundle, section="", reactions=None, link=None, reader=False, origin=""):
     """HTML of the first view for a bundle, or None (kept per bundle and
-    reaction summary)."""
-    key = (section, reactions_digest(reactions), link, reader)
+    reaction summary and public origin)."""
+    from .repo_ssr_issue import public_site_origin
+    origin = public_site_origin(origin)
+    key = (section, reactions_digest(reactions), link, reader, origin)
     if key not in bundle.rendered:
         if len(bundle.rendered) >= RENDERED_PER_BUNDLE:
             bundle.rendered.clear()
         bundle.rendered[key] = _render(bundle, section, reactions, link,
-                                       reader)
+                                       reader, origin)
     return bundle.rendered[key]
 
 
@@ -1087,7 +1100,23 @@ def reactions_digest(reactions):
         ",", ":")).encode()).hexdigest()[:16]
 
 
-def _render(bundle, section="", reactions=None, link=None, reader=False):
+def _review_prompt(bundle, pull, origin, link):
+    from . import pull_review_prompt
+    if not pull_review_prompt.is_open(pull):
+        return ""
+    owner = urllib.parse.quote(bundle.owner, safe="")
+    repo = urllib.parse.quote(bundle.repo, safe="")
+    link = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
+                                urllib.parse.quote(bundle.repo))
+    values = pull_review_prompt.fields(
+        origin, link, "/api/repo/%s/%s" % (owner, repo), pull["number"], pull,
+        pull.get("patchRef") or "")
+    return pull_review_prompt.render(
+        values, pull["number"], pull_review_prompt.template_from_blobs(
+            (bundle.model or {}).get("settings")))
+
+
+def _render(bundle, section="", reactions=None, link=None, reader=False, origin=""):
     subject = reaction_subject(bundle)
     model = bundle.model or {}
     base = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
@@ -1108,13 +1137,14 @@ def _render(bundle, section="", reactions=None, link=None, reader=False):
         raw = "%s/pull/%d.diff" % (base, pull["number"]) if patch.strip() else ""
         head = ('<h2 class="fm-ssr-h1">%s <span>#%d</span></h2>'
                 '<p class="fm-ssr-sub">%s<b>%s</b> wants to merge into '
-                '<code>%s</code> from <code>%s</code> &middot; %s%s</p>'
-                '<nav class="fm-ssr-tabs">%s</nav>' % (
+                '<code>%s</code> from <code>%s</code> &middot; %s</p>'
+                '%s<nav class="fm-ssr-tabs">%s</nav>' % (
                     _esc(pull["title"]), pull["number"], _pill(pull["state"]),
                     _person(pull["author"]), _esc(pull["base"]),
                     _esc(pull["head"]), _date(pull["ts"]),
                     ' &middot; <a href="%s" data-pull-raw-diff>Raw diff</a>'
-                    % _esc(raw) if raw else "", tabs))
+                    % _esc(raw) if raw else "",
+                    _review_prompt(bundle, pull, origin, link), tabs))
         if section == "files":
             body = _diff(patch, raw)
         else:
