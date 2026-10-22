@@ -52,6 +52,12 @@ their own, and sent as UTF-8 JSON; folding, caching and limits are in
   issue list reads `.forkmesh/issues/open` as one listing. With the 500 cap a
   mirror of a forge with 547 open issues showed "Open 500" and never loaded
   the rest.
+- `sizes` folds each directory to its 40 largest entries plus a `summary`
+  (`MAX_SIZES_CHILDREN`), except inside the collaboration folders, which list
+  every entry (up to `MAX_COLLABORATION_TREE_ENTRIES`). The code map turned a
+  summary into "more" tiles of lazy stubs that each needed their own `/tree`
+  read on zoom, so a 600-issue forum showed a grid of empty dashed folders;
+  with every issue folder and file sized up front they render at once.
 - The HTTPS gateway has no `receive-pack`. Pushes go through SSH or through the
   Worker's hosted-push path ([hosted-repositories.md](../../www/docs/hosted-repositories.md)).
 - A search for a common word is a repository answer too, not an outage.

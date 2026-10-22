@@ -125,6 +125,7 @@ MAX_CHERRY_UPSTREAM_COMMITS = 2000
 MAX_PREVIEW_CONFLICTS = 200
 MAX_TREE_ENTRIES = 500
 MAX_COLLABORATION_TREE_ENTRIES = 50000
+MAX_SIZES_CHILDREN = 40
 MAX_SEARCH_RESULTS = 200
 MAX_SEARCH_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_ANALYSIS_FILES = 320
@@ -7542,7 +7543,6 @@ class GitRepository:
         commit = self.resolve_commit(query.get("ref", ""))
         blobs = self._all_blobs(commit)
         max_depth = 8
-        max_children = 40
         root: dict[str, Any] = {
             "name": "",
             "size": 0,
@@ -7576,7 +7576,7 @@ class GitRepository:
                 "type": "file",
             }
 
-        def serialize(node: dict[str, Any]) -> dict[str, Any]:
+        def serialize(node: dict[str, Any], path: str = "") -> dict[str, Any]:
             result = {
                 "name": node["name"],
                 "size": node["size"],
@@ -7589,8 +7589,19 @@ class GitRepository:
                 node["_children"].values(),
                 key=lambda item: (-item["size"], item["name"]),
             )
+            collaboration = any(
+                path == folder or path.startswith(folder + "/")
+                for folder in COLLABORATION_TREE_ROOTS
+            )
+            max_children = (
+                MAX_COLLABORATION_TREE_ENTRIES if collaboration
+                else MAX_SIZES_CHILDREN
+            )
             shown = children[:max_children]
-            output = [serialize(item) for item in shown]
+            output = [
+                serialize(item, f"{path}/{item['name']}" if path else item["name"])
+                for item in shown
+            ]
             if len(children) > max_children:
                 output.append(
                     {
