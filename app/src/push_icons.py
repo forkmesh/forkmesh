@@ -3,6 +3,7 @@ PUSH_CHAT_ICON = "\U0001F4AC"
 PUSH_DIRECT_MESSAGE_ICON = "\U0001F4E8"
 PUSH_DIRECT_START_ICON = "\U0001F44B"
 PUSH_CALL_ICON = "\U0001F4DE"
+PUSH_PULL_CONFLICT_ICON = "\u26A0\uFE0F"
 PUSH_KIND_ICONS = {
     "mention": "\U0001F4E3",
     "hackathon_squad": "\U0001F3C1",
@@ -45,6 +46,7 @@ PUSH_KIND_ICONS = {
     "security_advisory": "\U0001F6E1\uFE0F",
     "package_review": "\u2B50",
     "reaction": "\U0001F389",
+    "pull_attention": "\U0001F4DD",
     "badge": "\U0001F3C5",
 }
 PUSH_DESKTOP_CATEGORY_ICONS = {
@@ -59,6 +61,8 @@ PUSH_DESKTOP_ALARM_ICONS = {
 def alert_icon(kind="", meta=None):
     meta = meta if isinstance(meta, dict) else {}
     kind = str(kind or "").strip()
+    if kind == "pull_attention" and meta.get("reason") == "conflict":
+        return PUSH_PULL_CONFLICT_ICON
     if kind == "desktop_ping":
         alarm = str(meta.get("alarm") or "").strip()
         if alarm in PUSH_DESKTOP_ALARM_ICONS:

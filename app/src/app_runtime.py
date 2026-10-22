@@ -3617,6 +3617,16 @@ class Default:
                 self.env, request, owner, repo,
                 int(pull_rules_match.group(3)))
 
+        pull_attention_match = REPO_PULL_ATTENTION_RE.match(url.path)
+        if pull_attention_match:
+            owner = safe_segment(pull_attention_match.group(1))
+            repo = safe_segment(pull_attention_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await pull_attention_handler(
+                self.env, request, owner, repo,
+                int(pull_attention_match.group(3)))
+
         for pull_mutation, pull_mutation_pattern in (
             ("merge", REPO_PULL_MERGE_RE),
             ("update", REPO_PULL_UPDATE_RE),

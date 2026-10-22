@@ -896,6 +896,7 @@ NOTIFICATION_KINDS = frozenset({
     # your review (app/src/marketplace_reviews.py).
     "package_review",
     "reaction",
+    "pull_attention",
 })
 # The ping kinds a marketplace package's Worker API may raise.
 PLUGIN_NOTIFICATION_KINDS = frozenset({"plugin_activity"})
@@ -962,6 +963,7 @@ NOTIFICATION_EMAIL_KINDS = (
     "calendar_reminder",
     "calendar_rsvp",
     "package_review",
+    "pull_attention",
     "channel_unread",
     "direct_unread",
 )
@@ -988,6 +990,7 @@ NOTIFICATION_EMAIL_DEFAULTS = {
     "calendar_reminder": True,
     "calendar_rsvp": True,
     "package_review": True,
+    "pull_attention": True,
     "security_advisory": True,
     "channel_unread": True,
     "direct_unread": True,
@@ -1018,13 +1021,14 @@ NOTIFICATION_DELIVERY_DEFAULT = "digest"
 NOTIFICATION_INSTANT_MAX_RECIPIENTS = 2
 NOTIFICATION_INSTANT_MAX_ITEMS = 3
 NOTIFICATION_IMMEDIATE_KINDS = frozenset({
-    "issue_opened", "pull_submitted", "issue_assigned"})
+    "issue_opened", "pull_submitted", "issue_assigned", "pull_attention"})
 NOTIFICATION_IMMEDIATE_SOURCES = frozenset({"issue", "pull", "discussion"})
 NOTIFICATION_IMMEDIATE_CONTEXTS = frozenset({"reminder"})
 NOTIFICATION_EMAIL_SKIP_SOURCES = frozenset({"ios_build"})
 NOTIFICATION_IMMEDIATE_SCAN = 20
 NOTIFICATION_IMMEDIATE_FRESH_MS = 60 * 60 * 1000
-NOTIFICATION_PULL_STATE_KINDS = frozenset({"pull_submitted", "pending_inbox"})
+NOTIFICATION_PULL_STATE_KINDS = frozenset({
+    "pull_submitted", "pending_inbox", "pull_attention"})
 NOTIFICATION_PULL_STATE_MAX_READS = 4
 # Pause notifications: an account-scoped snooze deadline (ms epoch) that mutes
 # mail and desktop notification cards without touching what is filed. The
@@ -1136,6 +1140,7 @@ _URL_EXPORT_NAMES = (
     "CHAT_DIRECT_MESSAGE_PENDING_RE", "CHAT_DIRECT_MESSAGE_DELIVERED_RE",
     "CHAT_DIRECT_MESSAGE_WS_RE", "CHAT_READS_RE", "REPO_ISSUES_RE", "REPO_PULLS_RE",
     "REPO_PULL_MERGE_RE", "REPO_PULL_UPDATE_RE", "REPO_PULL_RULES_RE",
+    "REPO_PULL_ATTENTION_RE",
     "REPO_BRANCH_OPS_RE", "REPO_BRANCH_OP_RESULTS_RE", "REPO_BRANCH_DELETE_RE",
     "REPO_ACTION_RUNS_RE", "REPO_ACTION_CONTROL_RE", "REPO_DISCUSSIONS_RE",
     "REPO_ACTION_RUN_LOG_RE", "REPO_ACTION_SECRETS_RE",
@@ -13886,7 +13891,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "c2e13456ad9d0136ad26e9eabbd25c00d3d4abec60cd170945039e339350c10a"
+    "f22b32b55ddc50081fd103a2be3bc5a287d3286257493a5dbd8edbd5f3c3a536"
 )
 
 
@@ -16593,6 +16598,16 @@ _comment_tips = _LazyModule("comment_tips")
 comment_tips_handler = _comment_tips.export("handler")
 comment_tips_intent_handler = _comment_tips.export("intent_handler")
 comment_tips_verify_cron = _comment_tips.export("verify_cron")
+_pull_attention = _LazyModule("pull_attention")
+pull_attention_watch = _pull_attention.export("watch")
+pull_attention_forget = _pull_attention.export("forget")
+pull_attention_pushed = _pull_attention.export("pushed")
+pull_attention_moved = _pull_attention.export("moved")
+pull_attention_merged = _pull_attention.export("merged")
+pull_attention_cron = _pull_attention.export("cron")
+pull_attention_handler = _pull_attention.export("handler")
+pull_attention_review_posted = _pull_attention.export("review_posted")
+pull_attention_claim_quick_reply = _pull_attention.export("claim_quick_reply")
 
 
 def _repo_identity_from_clone_url(value):
@@ -19193,6 +19208,8 @@ _REPO_SCOPED_TABLES = (
     ("issue_seq", "repo_bi"),
     ("private_mirror_routes", "repo_bi"),
     ("pull_batch_sent", "repo_bi"),
+    ("pull_merge_watch", "repo_bi"),
+    ("pull_quick_replies", "repo_bi"),
     ("pull_submission_receipts", "repo_bi"),
     ("recent_pushes", "repo_bi"),
     ("comment_reactions", "repo_bi"),
@@ -37550,7 +37567,7 @@ async def subscribe_thread(env, owner, repo, source, number, subscriber,
 
 
 async def notify_subscribers(env, owner, repo, source, number, actor, title,
-                             body, href):
+                             body, href, skip=()):
     # Fan a new comment out to everyone following the thread, minus the commenter
     # and anyone already covered by an @mention on this same event (so a mentioned
     # subscriber gets one notification, not two).
@@ -37588,7 +37605,8 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
         if not rec or rec.get("muted"):
             continue
         name = clean_string(rec.get("node", ""), MAX_NODE_NAME).lower()
-        if not valid_node_name(name) or name == actor or name in mentioned:
+        if (not valid_node_name(name) or name == actor or name in mentioned
+                or name in skip):
             continue
         if readers is not None and not await readers(name):
             continue
@@ -41373,6 +41391,12 @@ async def _record_pull_review(env, request, data, owner, repo, number, event):
         pass
 
 
+def _pull_attention_public_owner(request, owner):
+    match = REPO_API_PREFIX_RE.match(urlparse(request.url).path)
+    public = safe_segment(match.group(1)) if match else ""
+    return str(public or owner or "").strip().lower()
+
+
 async def _bind_session_author(env, request, data, record, session=None):
     if not isinstance(record, dict):
         return None
@@ -41645,6 +41669,19 @@ async def pulls_handler(env, request, owner, repo):
             if await _inbox_author_over_quota(
                     env, "pull_inbox", repo_bi, submitter_bi):
                 return json_response({"error": "author_quota"}, status=429)
+            quick_reply = data.get("quickReply")
+            if (quick_reply is not None
+                    and event.get("type") in ("review", "comment")):
+                claimed = await pull_attention_claim_quick_reply(
+                    env, repo_bi, number,
+                    event.get("authorName") or event.get("author", ""),
+                    quick_reply)
+                if claimed is None:
+                    return json_response(
+                        {"error": "invalid_quick_reply"}, status=400)
+                if not claimed:
+                    return json_response(
+                        {"error": "quick_reply_sent"}, status=409)
             item = {
                 "number": number,
                 "event": event,
@@ -41672,11 +41709,25 @@ async def pulls_handler(env, request, owner, repo):
                                        text=event.get("body", ""))
             await notify_mentions(env, owner, repo, actor, "Pull request comment", event.get("body", ""),
                                   repo_web_href(owner, repo), "pull", number=number)
+            pull_author = ""
+            if event.get("type") in ("status", "delete"):
+                await _best_effort_inbox_side_effect(pull_attention_forget(
+                    env, owner, repo, number))
+            else:
+                try:
+                    pull_author = await pull_attention_review_posted(
+                        env, owner, repo, number, event, actor,
+                        public_owner=_pull_attention_public_owner(
+                            request, owner),
+                        quick=quick_reply)
+                except Exception:
+                    pull_author = ""
             # Subscriptions (issue #361): fan the comment out to the PR's
             # followers, then auto-subscribe the commenter.
             await notify_subscribers(env, owner, repo, "pull", number, actor,
                                      "", event.get("body", ""),
-                                     repo_web_href(owner, repo))
+                                     repo_web_href(owner, repo),
+                                     skip=(pull_author,) if pull_author else ())
             await subscribe_thread(env, owner, repo, "pull", number, actor)
             await notify_repo_host(env, owner, repo, "pulls")
             await notify_repo_mirrors(env, owner, repo, "pulls")
@@ -41849,6 +41900,13 @@ async def pulls_handler(env, request, owner, repo):
             pass
         actor = clean_string(pull.get("authorName", "") or pull.get("author", ""), MAX_NODE_NAME).lower()
         title = clean_string(pull.get("title", "") or pull.get("subject", ""), 240)
+        await _best_effort_inbox_side_effect(pull_attention_watch(
+            env, owner, repo, number, base=pull.get("base", ""),
+            head=pull.get("head", ""),
+            derive="branch" if ":" not in str(pull.get("head", "")) else "",
+            author=pull.get("author", ""),
+            author_name=pull.get("authorName", ""),
+            public_owner=_pull_attention_public_owner(request, owner)))
         await notify_pending_inbox(
             env, owner, repo, "pull", actor, title, number, opened=True)
         await notify_mentions(env, owner, repo, actor, title, description,
@@ -53616,6 +53674,8 @@ def _cron_due_phases(minute_slot):
         phases.append("attribution-clone-snapshot")
     if minute % 5 == 0:
         phases.append("probe-bans")
+    if minute % 2 == 0:
+        phases.append("pull-attention")
     return tuple(phases)
 
 
@@ -53693,6 +53753,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         await ensure_schema(env)
         return await provider_mirror_run_cron(
             env, PROVIDER_MIRROR_CRON_DELIVERIES)
+    if phase == "pull-attention":
+        return await pull_attention_cron(env)
     if phase == "self-deploy-pings":
         return await _deploy_approvals.announce(env)
     if phase == "mail-log":
