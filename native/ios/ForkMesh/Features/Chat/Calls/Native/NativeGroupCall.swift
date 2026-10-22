@@ -53,6 +53,7 @@ final class NativeGroupCall {
     private(set) var engine: GroupCallEngine = .webrtc
     private(set) var verify: GroupCallVerifyState?
     private(set) var verifyRejected = false
+    let quality = CallQualityMonitor()
 
     @ObservationIgnored let roster = GroupCallRoster()
     @ObservationIgnored weak var office: OfficeChannelService?
@@ -70,6 +71,8 @@ final class NativeGroupCall {
     @ObservationIgnored private var reconnecting: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var audioStarted = false
+    private let probe = NativeQualityProbe()
+    @ObservationIgnored private var qualityTask: Task<Void, Never>?
     #if canImport(Fmm) && canImport(Opus)
     @ObservationIgnored private var fmm: FmmGroupSession?
     #endif
@@ -152,6 +155,7 @@ final class NativeGroupCall {
         }
         conversation = scope
         media = kind
+        quality.reset()
         state = "joining"
         engine = .webrtc
         verify = nil
@@ -188,6 +192,8 @@ final class NativeGroupCall {
         for timer in timers { timer.cancel() }
         timers.removeAll()
         dropConnection()
+        probe.stop()
+        quality.reset()
         encryptor = nil
         video?.1.stop()
         video = nil
@@ -330,7 +336,27 @@ final class NativeGroupCall {
         state = "live"
         retries = 0
         refreshVerify()
+        watchFmmQuality(session)
         return true
+    }
+
+    private func watchFmmQuality(_ session: FmmGroupSession) {
+        probe.stop()
+        qualityTask?.cancel()
+        qualityTask = Task { @MainActor [weak self, weak session] in
+            var tick = 0
+            while !Task.isCancelled {
+                guard let self, let session, self.fmm === session else { return }
+                self.quality.push(level: session.takeLevels())
+                if tick % NativeQualityProbe.statsEveryTicks == 0 {
+                    let sample = await session.qualitySample()
+                    guard !Task.isCancelled, self.fmm === session else { return }
+                    self.quality.push(sample: sample)
+                }
+                tick += 1
+                try? await Task.sleep(nanoseconds: UInt64(CallQuality.levelEvery * 1_000_000_000))
+            }
+        }
     }
 
     private func refreshVerify() {
@@ -380,6 +406,8 @@ final class NativeGroupCall {
 
     private func dropConnection() {
         if !peer.isEmpty { announce("out") }
+        qualityTask?.cancel()
+        qualityTask = nil
         #if canImport(Fmm) && canImport(Opus)
         if let session = fmm {
             video?.1.setTap(nil)
@@ -493,6 +521,10 @@ final class NativeGroupCall {
                 NativeCallMedia.shared.beginAudio()
             }
             if let connection { NativeCallMedia.capSenders(connection, videoBitrate: CallMediaTuning.groupVideoMaxBitrate) }
+            probe.start(
+                monitor: quality,
+                connections: { [weak self] in self?.connection.map { [$0] } ?? [] },
+                muted: { [weak self] in self?.muted ?? true })
         case .failed:
             connectionLost("The call connection failed.")
         default:

@@ -264,6 +264,7 @@ private fun DirectCallScreen(state: DirectCallView) {
     val facesSupported = peers?.facesSupported?.collectAsState()?.value == true
     val thumbs = peers?.backgrounds?.collectAsState()?.value
     val route = peers?.route?.collectAsState()?.value.orEmpty()
+    val quality = peers?.quality?.collectAsState()?.value
     val video = state.media == DirectCallKind.VIDEO
     DisposableEffect(hostView) {
         hostView.keepScreenOn = true
@@ -287,7 +288,11 @@ private fun DirectCallScreen(state: DirectCallView) {
             }
         }
         Column(
-            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = FmSpace.x6, start = FmSpace.x4, end = FmSpace.x4),
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(top = FmSpace.x6, start = FmSpace.x4, end = FmSpace.x4),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -313,6 +318,9 @@ private fun DirectCallScreen(state: DirectCallView) {
                     color = Color.White.copy(alpha = .75f),
                     style = Fm.text.bodySmall,
                 )
+            }
+            if (quality != null) {
+                CallQualityWidget(quality, video = video, modifier = Modifier.align(Alignment.Start).padding(top = FmSpace.x2))
             }
         }
         Row(

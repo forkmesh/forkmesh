@@ -47,6 +47,11 @@ import {
   tuneCallSenders,
 } from "./chat-call-quality.js";
 import { createCallTones } from "./chat-call-tones.js";
+import {
+  createCallQualityMeter,
+  mountCallQualityWidget,
+  rtcStatsReader,
+} from "./call-quality-meter.js";
 
 const RING_TIMEOUT_MS = 45000;
 const INVITE_RESEND_MS = 3000;
@@ -114,6 +119,7 @@ export function createChatCalls({
   navigatorRef = globalThis.navigator,
   recordTestClipImpl = recordTestClip,
   readRouteImpl = readCallRoute,
+  createQualityMeterImpl = createCallQualityMeter,
   URLImpl = globalThis.URL,
 } = {}) {
   const panel = documentRef.querySelector("#chat-call-panel");
@@ -144,10 +150,39 @@ export function createChatCalls({
   const testBtn = documentRef.querySelector("#chat-call-test");
   const testPlayer = documentRef.querySelector("#chat-call-test-player");
   const incomingKind = documentRef.querySelector("#chat-call-incoming-kind");
+  const qualityHost = panel?.querySelector?.(".chat-call-head") || null;
 
   let call = null;
   let invite = null;
   let ringAlert = null;
+  let quality = null;
+
+  function stopQuality() {
+    if (!quality) return;
+    quality.widget?.destroy();
+    quality.meter.stop();
+    quality = null;
+  }
+
+  function startQuality(pc = null) {
+    if (!call || !qualityHost || !createQualityMeterImpl) return;
+    if (quality?.call === call && (!pc || quality.pc === pc)) return;
+    stopQuality();
+    const current = call;
+    const meter = createQualityMeterImpl({
+      readStats: pc ? rtcStatsReader(() => (call === current && current.pc === pc ? [pc] : [])) : null,
+      tracks: () => ({
+        mic: call === current ? outgoingTrack("audio") : null,
+        peers: call === current ? current.remoteStream?.getAudioTracks?.() || [] : [],
+      }),
+    });
+    const widget = mountCallQualityWidget(qualityHost, meter, {
+      documentRef,
+      storage,
+      video: () => call === current && current.media === "video",
+    });
+    quality = { call: current, pc, meter, widget };
+  }
 
   function newCallId() {
     return (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
@@ -226,6 +261,7 @@ export function createChatCalls({
     renderVoice();
     if (voiceRow && call.phase === "preview") voiceRow.hidden = true;
     panel.hidden = false;
+    startQuality();
   }
 
   function renderVoice() {
@@ -558,6 +594,7 @@ export function createChatCalls({
 
   function teardown() {
     if (!call) return;
+    stopQuality();
     clearCallTimers();
     clearTest();
     stopVoicePreview();
@@ -647,6 +684,7 @@ export function createChatCalls({
         setPhase("live", "Connected · end-to-end encrypted");
         renderRoute();
         watchRoute(pc);
+        startQuality(pc);
         void tuneCallSenders(pc);
       } else if (
         pc.connectionState === "failed" ||
@@ -1278,6 +1316,7 @@ export function createChatCalls({
     previewing: () => call?.phase === "preview",
     recordTest,
     route: () => call?.route || null,
+    quality: () => quality?.meter || null,
     setBackground: (id, image = "") => chooseBackground(id, image),
     background: () => call?.backgroundId || "",
     stage: () => call?.stage || null,

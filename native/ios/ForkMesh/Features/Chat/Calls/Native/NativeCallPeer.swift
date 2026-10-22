@@ -27,6 +27,8 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
     let videoTrack: RTCVideoTrack?
     let camera: NativeCameraPipeline?
     private(set) var remoteVideo: RTCVideoTrack?
+    weak var quality: CallQualityMonitor?
+    private let probe = NativeQualityProbe()
     private var closed = false
     private var live = false
     private var grace: Task<Void, Never>?
@@ -125,6 +127,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
         closed = true
         grace?.cancel()
         routeWatch?.cancel()
+        probe.stop()
         camera?.stop()
         connection.close()
         if audioStarted {
@@ -192,6 +195,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
                 }
                 NativeCallMedia.capSenders(connection, videoBitrate: CallMediaTuning.videoMaxBitrate)
                 watchRoute()
+                watchQuality()
                 onLive?()
             }
         case .failed, .closed:
@@ -212,6 +216,17 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
         guard let track = receiver.track as? RTCVideoTrack else { return }
         remoteVideo = track
         onRemoteVideo?(track)
+    }
+
+    private func watchQuality() {
+        guard let quality else { return }
+        probe.start(
+            monitor: quality,
+            connections: { [weak self] in
+                guard let self, !self.closed else { return [] }
+                return [self.connection]
+            },
+            muted: { [weak self] in !(self?.audioTrack.isEnabled ?? false) })
     }
 
     private func watchRoute() {

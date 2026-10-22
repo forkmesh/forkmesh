@@ -137,6 +137,7 @@ internal fun PreCallScreen(precall: PreCall) {
     val previewing = peers?.previewing?.collectAsState()?.value == true
     val faces = peers?.facesSupported?.collectAsState()?.value == true
     val thumbs = peers?.backgrounds?.collectAsState()?.value
+    val quality = peers?.quality?.collectAsState()?.value
 
     fun cancel() {
         DirectCallFeature.closePreCall()
@@ -340,7 +341,11 @@ internal fun PreCallScreen(precall: PreCall) {
             PreviewPhase.READY -> Unit
         }
         Column(
-            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = FmSpace.x4, start = FmSpace.x4, end = FmSpace.x4),
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(top = FmSpace.x4, start = FmSpace.x4, end = FmSpace.x4),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -382,6 +387,9 @@ internal fun PreCallScreen(precall: PreCall) {
                         .background(Color.Black.copy(alpha = .55f))
                         .padding(horizontal = FmSpace.x3, vertical = FmSpace.x1),
                 )
+            }
+            if (quality != null && previewing && phase == PreviewPhase.READY && clipPhase != ClipPhase.PLAYING && clipPhase != ClipPhase.DONE) {
+                CallQualityWidget(quality, video = video, modifier = Modifier.align(Alignment.Start).padding(top = FmSpace.x2))
             }
         }
         Column(

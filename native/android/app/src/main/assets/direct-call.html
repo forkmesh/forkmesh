@@ -7979,6 +7979,752 @@ function mountVoicePreviewControls(container, preview, { documentRef = globalThi
 return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, normalizeVoiceChoice, rememberCallerPitch, resolveCallVoice, savedCallerPitch };
 })();
 </script>
+<script id="fm-call-quality">
+"use strict";
+window.FmCallQuality = (() => {
+const QUALITY_LEVEL_MS = 100;
+const QUALITY_STATS_MS = 1000;
+const QUALITY_LEVEL_SAMPLES = 50;
+const QUALITY_STATS_SAMPLES = 60;
+const QUALITY_OPEN_KEY = "fm.call.qualityOpen";
+const QUALITY_RTT_STEPS = Object.freeze([150, 300, 500]);
+const QUALITY_LOSS_STEPS = Object.freeze([1, 3, 8]);
+const QUALITY_JITTER_STEPS = Object.freeze([30, 60, 100]);
+
+const GRADE_LABELS = Object.freeze({
+  good: "Good connection",
+  fair: "Fair connection",
+  poor: "Poor connection",
+  unknown: "Measuring connection",
+});
+const LIMIT_LABELS = Object.freeze({
+  bandwidth: "limited by bandwidth",
+  cpu: "limited by CPU",
+  other: "limited",
+});
+const QUALITY_COLORS = Object.freeze({
+  you: "#58a6ff",
+  them: "#98a2ae",
+  line: "#e6edf3",
+  grid: "rgba(152, 162, 174, 0.35)",
+  good: "#3fb950",
+  fair: "#d29922",
+  poor: "#f85149",
+});
+
+function finite(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function maxOf(current, value) {
+  if (value === null || value === undefined) return current;
+  return current === null ? value : Math.max(current, value);
+}
+
+function statsList(report) {
+  if (!report) return [];
+  if (Array.isArray(report)) return report;
+  if (typeof report.values === "function") return [...report.values()];
+  const list = [];
+  if (typeof report.forEach === "function") report.forEach((value) => list.push(value));
+  return list;
+}
+
+function emptySample(at) {
+  return {
+    at,
+    rttMs: null,
+    lossPct: null,
+    jitterMs: null,
+    sendKbps: null,
+    recvKbps: null,
+    inWidth: null,
+    inHeight: null,
+    inFps: null,
+    outWidth: null,
+    outHeight: null,
+    outFps: null,
+    limit: "",
+    micLevel: null,
+    peerLevel: null,
+  };
+}
+
+function rate(bytes, previousBytes, seconds) {
+  if (bytes === null || previousBytes === null || previousBytes === undefined || seconds <= 0) return null;
+  return Math.max(0, ((bytes - previousBytes) * 8) / 1000 / seconds);
+}
+
+function summarizeRtcStats(reports, previous = null, at = Date.now()) {
+  const sample = emptySample(at);
+  const counters = { at, sent: 0, received: 0, lost: 0, packets: 0, frames: new Map() };
+  const seconds = previous ? (at - previous.at) / 1000 : 0;
+  let sentSeen = false;
+  let receivedSeen = false;
+  let inArea = 0;
+  let outArea = 0;
+  let remoteLoss = null;
+  const list = Array.isArray(reports) && reports.some((item) => item && !item.type) ? reports : [reports];
+  list.forEach((report, index) => {
+    const entries = statsList(report);
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    let pair = null;
+    for (const entry of entries) {
+      if (entry.type === "transport" && entry.selectedCandidatePairId) pair = byId.get(entry.selectedCandidatePairId) || pair;
+    }
+    if (!pair) {
+      pair = entries.find((entry) => entry.type === "candidate-pair" && entry.state === "succeeded" &&
+        (entry.selected || entry.nominated)) || null;
+    }
+    const pairRtt = finite(pair?.currentRoundTripTime);
+    if (pairRtt !== null) sample.rttMs = maxOf(sample.rttMs, pairRtt * 1000);
+    for (const entry of entries) {
+      const kind = entry.kind || entry.mediaType || "";
+      if (entry.type === "outbound-rtp") {
+        const bytes = finite(entry.bytesSent);
+        if (bytes !== null) {
+          counters.sent += bytes;
+          sentSeen = true;
+        }
+        if (kind === "video") {
+          const width = finite(entry.frameWidth) || 0;
+          const height = finite(entry.frameHeight) || 0;
+          if (width * height >= outArea && width * height > 0) {
+            outArea = width * height;
+            sample.outWidth = width;
+            sample.outHeight = height;
+            sample.outFps = finite(entry.framesPerSecond);
+            const reason = String(entry.qualityLimitationReason || "");
+            sample.limit = reason && reason !== "none" ? reason : "";
+          }
+        }
+      } else if (entry.type === "inbound-rtp") {
+        const bytes = finite(entry.bytesReceived);
+        if (bytes !== null) {
+          counters.received += bytes;
+          receivedSeen = true;
+        }
+        const lost = finite(entry.packetsLost);
+        const packets = finite(entry.packetsReceived);
+        if (lost !== null) counters.lost += Math.max(0, lost);
+        if (packets !== null) counters.packets += packets;
+        if (kind === "audio") {
+          const jitter = finite(entry.jitter);
+          if (jitter !== null) sample.jitterMs = maxOf(sample.jitterMs, jitter * 1000);
+          const level = finite(entry.audioLevel);
+          if (level !== null) sample.peerLevel = maxOf(sample.peerLevel, level);
+        } else if (kind === "video") {
+          const width = finite(entry.frameWidth) || 0;
+          const height = finite(entry.frameHeight) || 0;
+          const key = index + ":" + entry.id;
+          const decoded = finite(entry.framesDecoded);
+          if (decoded !== null) counters.frames.set(key, decoded);
+          let fps = finite(entry.framesPerSecond);
+          const before = previous?.frames?.get(key);
+          if (fps === null && decoded !== null && before !== undefined && seconds > 0) fps = Math.max(0, (decoded - before) / seconds);
+          if (width * height >= inArea && width * height > 0) {
+            inArea = width * height;
+            sample.inWidth = width;
+            sample.inHeight = height;
+            sample.inFps = fps;
+          }
+        }
+      } else if (entry.type === "remote-inbound-rtp") {
+        const fraction = finite(entry.fractionLost);
+        if (fraction !== null) remoteLoss = maxOf(remoteLoss, fraction * 100);
+        const rtt = finite(entry.roundTripTime);
+        if (rtt !== null && pairRtt === null) sample.rttMs = maxOf(sample.rttMs, rtt * 1000);
+      } else if (entry.type === "media-source" && kind === "audio") {
+        const level = finite(entry.audioLevel);
+        if (level !== null) sample.micLevel = maxOf(sample.micLevel, level);
+      }
+    }
+  });
+  if (previous) {
+    sample.sendKbps = sentSeen ? rate(counters.sent, previous.sent, seconds) : null;
+    sample.recvKbps = receivedSeen ? rate(counters.received, previous.received, seconds) : null;
+    const lost = counters.lost - (previous.lost || 0);
+    const packets = counters.packets - (previous.packets || 0);
+    if (lost >= 0 && packets >= 0 && lost + packets > 0) sample.lossPct = (lost * 100) / (lost + packets);
+    else if (packets === 0 && lost === 0 && receivedSeen) sample.lossPct = 0;
+  }
+  if (remoteLoss !== null) sample.lossPct = maxOf(sample.lossPct, remoteLoss);
+  return { sample, counters };
+}
+
+function summarizeFmmStats(stats, previous = null, at = Date.now()) {
+  const sample = emptySample(at);
+  const counters = { at, sent: 0, received: 0, frames: new Map() };
+  if (!stats) return { sample, counters };
+  const seconds = previous ? (at - previous.at) / 1000 : 0;
+  const transport = stats.transport || {};
+  const rtt = finite(transport.currentRoundTripTime);
+  if (rtt !== null && rtt > 0) sample.rttMs = rtt * 1000;
+  const loss = finite(transport.loss);
+  if (loss !== null) sample.lossPct = loss * 100;
+  let inArea = 0;
+  for (const entry of stats.outbound || []) {
+    counters.sent += finite(entry.bytesSent) || 0;
+    if (entry.kind === "video" && entry.representation !== "off") {
+      const width = finite(entry.frameWidth) || 0;
+      const height = finite(entry.frameHeight) || 0;
+      if (width && height) {
+        sample.outWidth = width;
+        sample.outHeight = height;
+      }
+      const frames = finite(entry.framesSent);
+      if (frames !== null) counters.frames.set("out", frames);
+      const before = previous?.frames?.get("out");
+      if (frames !== null && before !== undefined && seconds > 0) sample.outFps = Math.max(0, (frames - before) / seconds);
+    }
+  }
+  for (const entry of stats.inbound || []) {
+    if (entry.kind === "audio") continue;
+    counters.received += finite(entry.bytesReceived) || 0;
+    const key = String(entry.peer || "") + ":" + String(entry.ssrc ?? "");
+    const decoded = finite(entry.framesDecoded);
+    if (decoded !== null) counters.frames.set(key, decoded);
+    const before = previous?.frames?.get(key);
+    const fps = decoded !== null && before !== undefined && seconds > 0 ? Math.max(0, (decoded - before) / seconds) : null;
+    const width = finite(entry.frameWidth) || 0;
+    const height = finite(entry.frameHeight) || 0;
+    if (width * height >= inArea && width * height > 0) {
+      inArea = width * height;
+      sample.inWidth = width;
+      sample.inHeight = height;
+      sample.inFps = fps;
+    }
+  }
+  if (previous) {
+    sample.sendKbps = rate(counters.sent, previous.sent, seconds);
+    sample.recvKbps = rate(counters.received, previous.received, seconds);
+  }
+  return { sample, counters };
+}
+
+function rtcStatsReader(connections) {
+  let previous = null;
+  return async () => {
+    const list = [].concat(connections() || []).filter((pc) => pc && typeof pc.getStats === "function");
+    if (!list.length) {
+      previous = null;
+      return null;
+    }
+    const reports = await Promise.all(list.map((pc) => pc.getStats().catch(() => null)));
+    const result = summarizeRtcStats(reports.filter(Boolean), previous, Date.now());
+    previous = result.counters;
+    return result.sample;
+  };
+}
+
+function fmmStatsReader(session) {
+  let previous = null;
+  return async () => {
+    const current = session();
+    if (!current || typeof current.stats !== "function") {
+      previous = null;
+      return null;
+    }
+    const stats = await current.stats();
+    if (!stats) return null;
+    const result = summarizeFmmStats(stats, previous, Date.now());
+    previous = result.counters;
+    return result.sample;
+  };
+}
+
+function step(value, steps) {
+  if (value === null || value === undefined) return 0;
+  let penalty = 0;
+  for (const limit of steps) if (value >= limit) penalty += 1;
+  return penalty;
+}
+
+function qualityBars(sample) {
+  if (!sample || (sample.rttMs === null && sample.lossPct === null)) return 0;
+  const penalty = Math.max(
+    step(sample.rttMs, QUALITY_RTT_STEPS),
+    step(sample.lossPct, QUALITY_LOSS_STEPS),
+    step(sample.jitterMs, QUALITY_JITTER_STEPS),
+  );
+  return Math.max(1, 4 - penalty);
+}
+
+function gradeCallQuality(sample) {
+  const bars = qualityBars(sample);
+  if (!bars) return "unknown";
+  if (bars === 4) return "good";
+  if (bars === 1) return "poor";
+  return "fair";
+}
+
+function qualityGradeLabel(grade) {
+  return GRADE_LABELS[grade] || GRADE_LABELS.unknown;
+}
+
+function levelFromSamples(data) {
+  if (!data || !data.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < data.length; i += 1) sum += data[i] * data[i];
+  const rms = Math.sqrt(sum / data.length);
+  if (rms <= 0) return 0;
+  const db = 20 * Math.log10(rms);
+  return Math.min(1, Math.max(0, (db + 60) / 60));
+}
+
+function formatKbps(kbps) {
+  if (kbps === null || kbps === undefined) return "";
+  if (kbps >= 1000) return (kbps / 1000).toFixed(1) + " Mb/s";
+  return Math.round(kbps) + " kb/s";
+}
+
+function describeNetwork(sample) {
+  if (!sample || sample.rttMs === null) return "Measuring…";
+  const parts = [Math.round(sample.rttMs) + " ms"];
+  if (sample.lossPct !== null) parts.push(sample.lossPct.toFixed(sample.lossPct < 10 ? 1 : 0) + "% loss");
+  if (sample.jitterMs !== null) parts.push(Math.round(sample.jitterMs) + " ms jitter");
+  return parts.join(" · ");
+}
+
+function describeVideo(sample, direction = "in") {
+  if (!sample) return "";
+  const width = direction === "in" ? sample.inWidth : sample.outWidth;
+  const height = direction === "in" ? sample.inHeight : sample.outHeight;
+  const fps = direction === "in" ? sample.inFps : sample.outFps;
+  const kbps = direction === "in" ? sample.recvKbps : sample.sendKbps;
+  const parts = [];
+  if (width && height) parts.push(width + "×" + height);
+  if (fps !== null && fps !== undefined) parts.push(Math.round(fps) + " fps");
+  const speed = formatKbps(kbps);
+  if (speed) parts.push(speed);
+  if (direction === "out" && sample.limit) parts.push(LIMIT_LABELS[sample.limit] || LIMIT_LABELS.other);
+  return parts.join(" · ");
+}
+
+function qualityEvent(sample, levels) {
+  const grade = gradeCallQuality(sample);
+  const round = (value, digits = 0) => (value === null || value === undefined ? null : Number(value.toFixed(digits)));
+  return {
+    event: "quality",
+    grade,
+    bars: qualityBars(sample),
+    rttMs: round(sample?.rttMs),
+    lossPct: round(sample?.lossPct, 1),
+    jitterMs: round(sample?.jitterMs),
+    sendKbps: round(sample?.sendKbps),
+    recvKbps: round(sample?.recvKbps),
+    inWidth: sample?.inWidth ?? null,
+    inHeight: sample?.inHeight ?? null,
+    inFps: round(sample?.inFps),
+    outWidth: sample?.outWidth ?? null,
+    outHeight: sample?.outHeight ?? null,
+    outFps: round(sample?.outFps),
+    limit: sample?.limit || "",
+    mic: (levels || []).map((entry) => round(entry.mic, 2)),
+    peer: (levels || []).map((entry) => (entry.peer === null ? null : round(entry.peer, 2))),
+  };
+}
+
+function createLevelTap(track, context) {
+  if (!track || !context || typeof context.createMediaStreamSource !== "function") return null;
+  const Stream = globalThis.MediaStream;
+  if (typeof Stream !== "function") return null;
+  let source;
+  let analyser;
+  let sink = null;
+  try {
+    source = context.createMediaStreamSource(new Stream([track]));
+    analyser = context.createAnalyser();
+    analyser.fftSize = 1024;
+    source.connect(analyser);
+    if (typeof context.createGain === "function" && context.destination) {
+      sink = context.createGain();
+      sink.gain.value = 0;
+      analyser.connect(sink);
+      sink.connect(context.destination);
+    }
+  } catch (_) {
+    return null;
+  }
+  const data = new Float32Array(analyser.fftSize);
+  return {
+    track,
+    level() {
+      if (track.readyState === "ended" || track.enabled === false) return 0;
+      analyser.getFloatTimeDomainData(data);
+      return levelFromSamples(data);
+    },
+    stop() {
+      try {
+        source.disconnect();
+        sink?.disconnect();
+      } catch (_) {}
+    },
+  };
+}
+
+function createCallQualityMeter({
+  readStats = null,
+  tracks = () => ({ mic: null, peers: [] }),
+  scope = globalThis,
+  levelMs = QUALITY_LEVEL_MS,
+  statsMs = QUALITY_STATS_MS,
+  levelSamples = QUALITY_LEVEL_SAMPLES,
+  statsSamples = QUALITY_STATS_SAMPLES,
+  AudioContextImpl = scope.AudioContext || scope.webkitAudioContext,
+} = {}) {
+  const levels = [];
+  const samples = [];
+  const listeners = new Set();
+  const taps = new Map();
+  let context = null;
+  let latest = null;
+  let drained = 0;
+  let reading = false;
+  let stopped = false;
+
+  function audioContext() {
+    if (context || !AudioContextImpl) return context;
+    try {
+      context = new AudioContextImpl();
+      if (context.state === "suspended") context.resume?.().catch?.(() => {});
+    } catch (_) {
+      context = null;
+    }
+    return context;
+  }
+
+  function syncTaps() {
+    const wanted = tracks() || {};
+    const live = new Map();
+    const mic = wanted.mic && wanted.mic.readyState !== "ended" ? wanted.mic : null;
+    if (mic) live.set("mic:" + mic.id, { role: "mic", track: mic });
+    for (const track of wanted.peers || []) {
+      if (track && track.kind === "audio" && track.readyState !== "ended") live.set("peer:" + track.id, { role: "peer", track });
+    }
+    for (const [key, tap] of taps) {
+      if (!live.has(key)) {
+        tap.stop();
+        taps.delete(key);
+      }
+    }
+    for (const [key, entry] of live) {
+      if (taps.has(key)) continue;
+      const tap = createLevelTap(entry.track, audioContext());
+      if (tap) taps.set(key, { ...tap, role: entry.role });
+    }
+    return { hasMic: Boolean(mic), hasPeers: [...live.values()].some((entry) => entry.role === "peer") };
+  }
+
+  let present = syncTaps();
+
+  function emit() {
+    for (const listener of listeners) {
+      try {
+        listener(api);
+      } catch (_) {}
+    }
+  }
+
+  function tickLevels() {
+    if (stopped) return;
+    let mic = null;
+    let peer = null;
+    for (const tap of taps.values()) {
+      const value = tap.level();
+      if (tap.role === "mic") mic = Math.max(mic || 0, value);
+      else peer = Math.max(peer || 0, value);
+    }
+    if (mic === null) mic = present.hasMic ? latest?.micLevel ?? 0 : 0;
+    if (peer === null) peer = latest?.peerLevel ?? null;
+    levels.push({ at: Date.now(), mic, peer });
+    if (levels.length > levelSamples) levels.splice(0, levels.length - levelSamples);
+    drained = Math.min(drained + 1, levelSamples);
+    emit();
+  }
+
+  async function tickStats() {
+    if (stopped) return;
+    present = syncTaps();
+    if (!readStats || reading) return;
+    reading = true;
+    try {
+      const sample = await readStats();
+      if (stopped || !sample) return;
+      latest = sample;
+      samples.push(sample);
+      if (samples.length > statsSamples) samples.splice(0, samples.length - statsSamples);
+      emit();
+    } catch (_) {
+    } finally {
+      reading = false;
+    }
+  }
+
+  const levelTimer = scope.setInterval(tickLevels, levelMs);
+  const statsTimer = scope.setInterval(() => void tickStats(), statsMs);
+  void tickStats();
+
+  const api = {
+    get latest() { return latest; },
+    get samples() { return samples; },
+    get levels() { return levels; },
+    get hasStats() { return Boolean(readStats); },
+    grade: () => gradeCallQuality(latest),
+    drain() {
+      const fresh = levels.slice(levels.length - drained);
+      drained = 0;
+      return fresh;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      scope.clearInterval(levelTimer);
+      scope.clearInterval(statsTimer);
+      for (const tap of taps.values()) tap.stop();
+      taps.clear();
+      listeners.clear();
+      try {
+        context?.close?.();
+      } catch (_) {}
+      context = null;
+    },
+  };
+  return api;
+}
+
+function canvasFor(documentRef, width, height, name) {
+  const canvas = documentRef.createElement("canvas");
+  canvas.className = "fm-q-chart";
+  canvas.dataset.chart = name;
+  canvas.style.width = width + "px";
+  canvas.style.height = height + "px";
+  canvas.setAttribute("role", "img");
+  return canvas;
+}
+
+function prepare(canvas) {
+  const ratio = Math.max(1, Math.min(3, globalThis.devicePixelRatio || 1));
+  const width = parseFloat(canvas.style.width) || canvas.clientWidth || 48;
+  const height = parseFloat(canvas.style.height) || canvas.clientHeight || 16;
+  if (canvas.width !== Math.round(width * ratio)) canvas.width = Math.round(width * ratio);
+  if (canvas.height !== Math.round(height * ratio)) canvas.height = Math.round(height * ratio);
+  const context = canvas.getContext?.("2d");
+  if (!context) return null;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  return { context, width, height };
+}
+
+function readColors(element) {
+  const style = globalThis.getComputedStyle?.(element);
+  const pick = (name, fallback) => (style?.getPropertyValue("--fm-q-" + name) || "").trim() || fallback;
+  const colors = {};
+  for (const [name, fallback] of Object.entries(QUALITY_COLORS)) colors[name] = pick(name, fallback);
+  return colors;
+}
+
+function drawVoiceWave(canvas, levels, colors, count = QUALITY_LEVEL_SAMPLES) {
+  const view = prepare(canvas);
+  if (!view) return;
+  const { context, width, height } = view;
+  const middle = height / 2;
+  const slot = width / count;
+  const bar = Math.max(1, slot - 1);
+  const recent = levels.slice(-count);
+  const offset = count - recent.length;
+  context.fillStyle = colors.grid;
+  context.fillRect(0, middle - 0.5, width, 1);
+  recent.forEach((entry, i) => {
+    const x = (offset + i) * slot;
+    const up = Math.max(0.5, (entry.mic || 0) * (middle - 1));
+    context.fillStyle = colors.you;
+    context.fillRect(x, middle - 0.5 - up, bar, up);
+    if (entry.peer !== null && entry.peer !== undefined) {
+      const down = Math.max(0.5, entry.peer * (middle - 1));
+      context.fillStyle = colors.them;
+      context.fillRect(x, middle + 0.5, bar, down);
+    }
+  });
+}
+
+function drawSparkline(canvas, values, colors, { color = colors.line, floor = 0, marks = [] } = {}) {
+  const view = prepare(canvas);
+  if (!view) return;
+  const { context, width, height } = view;
+  const count = QUALITY_STATS_SAMPLES;
+  const known = values.filter((value) => value !== null && value !== undefined);
+  context.fillStyle = colors.grid;
+  context.fillRect(0, height - 1, width, 1);
+  const slot = width / Math.max(1, count - 1);
+  const offset = count - values.length;
+  marks.forEach((mark, i) => {
+    if (!mark) return;
+    context.fillStyle = mark;
+    context.fillRect((offset + i) * slot - 1, 0, 2, height - 1);
+  });
+  if (!known.length) return;
+  const top = Math.max(floor, ...known) * 1.15 || 1;
+  context.strokeStyle = color;
+  context.lineWidth = 1.5;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  context.beginPath();
+  let drawing = false;
+  values.forEach((value, i) => {
+    if (value === null || value === undefined) {
+      drawing = false;
+      return;
+    }
+    const x = (offset + i) * slot;
+    const y = height - 2 - (value / top) * (height - 4);
+    if (drawing) context.lineTo(x, y);
+    else context.moveTo(x, y);
+    drawing = true;
+  });
+  context.stroke();
+}
+
+function mountCallQualityWidget(host, meter, {
+  documentRef = globalThis.document,
+  storage = globalThis.localStorage,
+  video = () => false,
+  peerLabel = "Them",
+} = {}) {
+  if (!host || !meter || !documentRef) return null;
+  const root = documentRef.createElement("div");
+  root.className = "fm-q";
+  root.dataset.grade = "unknown";
+  const pill = documentRef.createElement("button");
+  pill.type = "button";
+  pill.className = "fm-q-pill";
+  const bars = documentRef.createElement("span");
+  bars.className = "fm-q-bars";
+  bars.setAttribute("aria-hidden", "true");
+  for (let i = 0; i < 4; i += 1) bars.append(documentRef.createElement("i"));
+  const wave = canvasFor(documentRef, 40, 16, "wave");
+  wave.setAttribute("aria-hidden", "true");
+  const pillText = documentRef.createElement("span");
+  pillText.className = "fm-q-text";
+  pill.append(bars, wave, pillText);
+  const panel = documentRef.createElement("div");
+  panel.className = "fm-q-panel";
+  const heading = documentRef.createElement("div");
+  heading.className = "fm-q-heading";
+  const rows = {};
+  const row = (name, label, chartWidth) => {
+    const line = documentRef.createElement("div");
+    line.className = "fm-q-row";
+    line.dataset.row = name;
+    const title = documentRef.createElement("span");
+    title.className = "fm-q-label";
+    title.textContent = label;
+    const chart = canvasFor(documentRef, chartWidth, 22, name);
+    const value = documentRef.createElement("span");
+    value.className = "fm-q-value";
+    line.append(title, chart, value);
+    panel.append(line);
+    rows[name] = { line, chart, value };
+  };
+  panel.append(heading);
+  row("voice", "Voice", 120);
+  row("network", "Network", 120);
+  row("video", "Video in", 120);
+  row("send", "Video out", 120);
+  root.append(pill, panel);
+  host.append(root);
+
+  let open = false;
+  try {
+    open = storage?.getItem(QUALITY_OPEN_KEY) === "1";
+  } catch (_) {}
+  let colors = readColors(root);
+  let colorsAt = Date.now();
+
+  function setOpen(value) {
+    open = Boolean(value);
+    root.dataset.open = open ? "true" : "false";
+    panel.hidden = !open;
+    pill.setAttribute("aria-expanded", open ? "true" : "false");
+    try {
+      storage?.setItem(QUALITY_OPEN_KEY, open ? "1" : "0");
+    } catch (_) {}
+    colors = readColors(root);
+    render();
+  }
+
+  function render() {
+    if (Date.now() - colorsAt > 1000) {
+      colors = readColors(root);
+      colorsAt = Date.now();
+    }
+    const latest = meter.latest;
+    const grade = meter.hasStats ? gradeCallQuality(latest) : "unknown";
+    const count = meter.hasStats ? qualityBars(latest) : 0;
+    root.dataset.grade = grade;
+    root.dataset.stats = meter.hasStats ? "true" : "false";
+    [...bars.children].forEach((bar, i) => bar.classList.toggle("is-on", i < count));
+    const network = meter.hasStats ? describeNetwork(latest) : "";
+    pillText.textContent = meter.hasStats && latest?.rttMs !== null && latest?.rttMs !== undefined
+      ? Math.round(latest.rttMs) + " ms"
+      : "";
+    pillText.hidden = !pillText.textContent;
+    bars.hidden = !meter.hasStats;
+    const summary = meter.hasStats ? qualityGradeLabel(grade) + (network && latest ? " · " + network : "") : "Microphone level";
+    pill.title = summary + (open ? ". Hide live charts" : ". Show live charts");
+    pill.setAttribute("aria-label", "Call quality: " + summary);
+    drawVoiceWave(wave, meter.levels, colors, 20);
+    if (!open) return;
+    heading.textContent = meter.hasStats ? qualityGradeLabel(grade) : "Microphone";
+    drawVoiceWave(rows.voice.chart, meter.levels, colors);
+    const hasPeer = meter.levels.some((entry) => entry.peer !== null && entry.peer !== undefined);
+    rows.voice.value.textContent = hasPeer ? "You ▲ · " + peerLabel + " ▼" : "You";
+    rows.voice.chart.setAttribute("aria-label", "Voice levels over the last five seconds");
+    rows.network.line.hidden = !meter.hasStats;
+    rows.video.line.hidden = !meter.hasStats || !video();
+    rows.send.line.hidden = !meter.hasStats || !video();
+    if (!meter.hasStats) return;
+    const samples = meter.samples;
+    const marks = samples.map((sample) => {
+      if (sample.lossPct === null || sample.lossPct < QUALITY_LOSS_STEPS[0]) return "";
+      return sample.lossPct >= QUALITY_LOSS_STEPS[2] ? colors.poor : colors.fair;
+    });
+    drawSparkline(rows.network.chart, samples.map((sample) => sample.rttMs), colors, { floor: 100, marks });
+    rows.network.value.textContent = network;
+    rows.network.chart.setAttribute("aria-label", "Round-trip time over the last minute; ticks mark packet loss. " + network);
+    if (!rows.video.line.hidden) {
+      drawSparkline(rows.video.chart, samples.map((sample) => sample.recvKbps), colors, { floor: 200 });
+      rows.video.value.textContent = describeVideo(latest, "in") || "No video";
+      rows.video.chart.setAttribute("aria-label", "Incoming bitrate over the last minute. " + rows.video.value.textContent);
+      drawSparkline(rows.send.chart, samples.map((sample) => sample.sendKbps), colors, { floor: 200 });
+      rows.send.value.textContent = describeVideo(latest, "out") || "Camera off";
+      rows.send.chart.setAttribute("aria-label", "Outgoing bitrate over the last minute. " + rows.send.value.textContent);
+    }
+    for (const entry of Object.values(rows)) entry.value.title = entry.value.textContent;
+  }
+
+  pill.addEventListener("click", () => setOpen(!open));
+  const unsubscribe = meter.subscribe(() => render());
+  setOpen(open);
+
+  return {
+    element: root,
+    render,
+    setOpen,
+    destroy() {
+      unsubscribe();
+      root.remove();
+    },
+  };
+}
+return { createCallQualityMeter, rtcStatsReader, qualityEvent };
+})();
+</script>
 <script>
 "use strict";
 (() => {
@@ -8038,6 +8784,9 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
   const cameraWaiters = new Map();
   let routeTimer = null;
   let route = null;
+  let quality = null;
+  let qualityTimer = null;
+  const QUALITY_POST_MS = 1000;
 
   const post = (message) => {
     const text = JSON.stringify(message);
@@ -8412,6 +9161,27 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
     if (!routeTimer) routeTimer = setInterval(check, ROUTE_CHECK_MS);
     check();
   };
+  const stopQuality = () => {
+    if (qualityTimer) clearInterval(qualityTimer);
+    qualityTimer = null;
+    if (quality) quality.stop();
+    quality = null;
+  };
+  const startQuality = (connection) => {
+    stopQuality();
+    const meter = window.FmCallQuality;
+    if (!meter) return;
+    const live = Boolean(connection);
+    quality = meter.createCallQualityMeter({
+      readStats: live ? meter.rtcStatsReader(() => (pc === connection ? [connection] : [])) : null,
+      tracks: () => ({ mic: outgoingAudio(), peers: remoteStream ? remoteStream.getAudioTracks() : [] }),
+    });
+    const current = quality;
+    qualityTimer = setInterval(() => {
+      if (quality !== current) return;
+      post({ ...meter.qualityEvent(current.latest, current.drain()), live });
+    }, QUALITY_POST_MS);
+  };
   const dropRecording = () => {
     const current = recording;
     recording = null;
@@ -8489,6 +9259,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
         if (state === "connected") {
           post({ event: "live" });
           watchRoute(current);
+          startQuality(current);
           tuneSenders().catch(() => {});
         } else if (state === "failed" || state === "closed") post({ event: "closed" });
         else if (state === "disconnected") {
@@ -8550,6 +9321,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
         showLocal();
       }
       const voiced = useVoice(String(voice || ""));
+      if (!quality) startQuality(null);
       return Promise.race([voiced, wait(VOICE_READY_MS).then(() => reportVoice())]);
     },
     async background(id, image) {
@@ -8652,6 +9424,7 @@ return { CALL_VOICES, callVoiceById, callVoicesSupported, createVoiceStage, norm
       dropRecording();
       if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
       stopRoute();
+      stopQuality();
       const closing = pc;
       pc = null;
       videoSender = null;

@@ -61,6 +61,12 @@ import {
   groupCallEncryptionMode,
 } from "./chat-group-calls.js";
 import {
+  createCallQualityMeter,
+  fmmStatsReader,
+  mountCallQualityWidget,
+  rtcStatsReader,
+} from "./call-quality-meter.js";
+import {
   CHAT_RETENTION_ENDPOINT,
   CHAT_RETENTION_PRESETS,
   chatRetentionLabel,
@@ -6329,9 +6335,36 @@ function renderGroupCallVerification(active) {
   groupCallVerifyActions.hidden = !code || view.verified;
 }
 
+let groupCallQuality = null;
+
+function syncGroupCallQuality(active) {
+  if (groupCallQuality && groupCallQuality.call === active) return;
+  groupCallQuality?.widget?.destroy();
+  groupCallQuality?.meter.stop();
+  groupCallQuality = null;
+  const host = groupCallPanel?.querySelector(".chat-call-head");
+  if (!active || !host) return;
+  const current = () => groupCalls.active === active;
+  const rtc = rtcStatsReader(() => (current() && active.pc ? [active.pc] : []));
+  const fmm = fmmStatsReader(() => (current() ? active.fmm : null));
+  const meter = createCallQualityMeter({
+    readStats: () => (active.fmm ? fmm() : rtc()),
+    tracks: () => ({
+      mic: current() ? (active.outgoing?.stream || active.local)?.getAudioTracks?.()[0] || null : null,
+      peers: current() ? [...active.tiles.values()].flatMap((tile) => tile.stream?.getAudioTracks?.() || []) : [],
+    }),
+  });
+  const widget = mountCallQualityWidget(host, meter, {
+    video: () => current() && active.media === "video",
+    peerLabel: "Others",
+  });
+  groupCallQuality = { call: active, meter, widget };
+}
+
 function renderGroupCall() {
   if (!groupCallBar || !groupCallPanel) return;
   const active = groupCalls.active;
+  syncGroupCallQuality(active || null);
   const channel = privateChannelForKey(activeChannel);
   const roster = channel?.visibility === "private" ? groupCalls.roster(activeChannel) : [];
   groupCallBar.hidden = Boolean(active) || roster.length === 0;

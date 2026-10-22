@@ -160,6 +160,47 @@ not copied: it is end-to-end encrypted to the original two participants.
 - The desktop has no WebRTC stack; its call buttons open
   `/chat?dm=<name>&call=audio|video`, which asks for confirmation before
   ringing, so a link can never ring someone on its own.
+- **Live quality widget** (2026-10-22). Every call shows a small pill with
+  live charts, so you can see what the call is doing without opening
+  developer tools. `call-quality-meter.js` is the one implementation; the
+  direct call panel puts the pill in its head next to the route line (the
+  `.fm-q` element uses `display: contents`), group calls and the Office
+  (`docs/office/README.md`) mount the same widget.
+  - **Pill.** Four signal bars coloured by grade (success, attention, danger),
+    a tiny mirrored voice waveform (your microphone up in the accent blue,
+    the other side down in grey) and the round-trip time. Clicking it opens
+    or closes the charts; the choice is kept in `localStorage` under
+    `fm.call.qualityOpen`. In the pre-call check and while ringing it shows
+    only the microphone waveform, so you can see the microphone works.
+  - **Charts.** Voice (the last 5 s of levels, 10 per second), Network
+    (round-trip time over the last minute, with amber ticks at 1 % packet
+    loss and red ticks at 8 %), and on video calls Video in and Video out
+    (bitrate over the last minute, with resolution, frame rate and WebRTC's
+    `qualityLimitationReason`, such as "limited by bandwidth").
+  - **Data.** Voice levels come from a Web Audio `AnalyserNode` on the
+    outgoing microphone track and on each received audio track (RMS mapped
+    from -60..0 dB to 0..1), falling back to `audioLevel` in `getStats()`.
+    Once a second `rtcStatsReader` reads `getStats()` from every peer
+    connection: the selected candidate pair's `currentRoundTripTime`,
+    `inbound-rtp` loss, jitter and bytes, `remote-inbound-rtp`
+    `fractionLost`, frame size and rate. Several connections (Office) are
+    summed for bitrate and take the worst round-trip time, loss and jitter.
+    `fmmStatsReader` turns the FM Media worker's `stats` reply into the same
+    sample for group calls on FM Media.
+  - **Grade.** Bars are 4 minus the worst step reached by round-trip time
+    (150, 300, 500 ms), loss (1, 3, 8 %) or jitter (30, 60, 100 ms), at
+    least 1: 4 is a good connection, 1 a poor one, 2 and 3 fair. With no
+    round-trip time and no loss yet it says "Measuring connection". The
+    phone apps use the same thresholds.
+  - **Phones.** `app/tools/sync_call_quality.py` inlines the module into both
+    copies of `direct-call.html` as `window.FmCallQuality`;
+    `app/tests/test_call_quality_meter.py` fails if a copy is stale. The page posts
+    `{event: "quality", live, grade, bars, rttMs, lossPct, jitterMs, sendKbps,
+    recvKbps, inWidth, inHeight, inFps, outWidth, outHeight, outFps, limit,
+    mic: [...], peer: [...]}` once a second: `mic` and `peer` are the level
+    samples taken since the last event, `live` is false during the preview
+    (microphone only) and true once connected. The apps draw the widget
+    natively (`native/ios/docs/FMChat.md`, `docs/native/ANDROID.md`).
 
 ### Mobile apps
 

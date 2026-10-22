@@ -25,6 +25,11 @@ struct FaceChangerScreen: View {
 
     private var look: FaceChangerLook { studio.look }
 
+    private var reviewing: Bool {
+        if case .review = record { return true }
+        return false
+    }
+
     private var opening: WebCallPeer? {
         guard let current = studio.factory.current, current.previewing else { return nil }
         return current
@@ -64,6 +69,10 @@ struct FaceChangerScreen: View {
             }
             VStack {
                 header
+                if peer != nil && !failed && !busy && !reviewing {
+                    CallQualityWidget(monitor: studio.factory.quality)
+                        .padding(.top, 6)
+                }
                 Spacer()
                 controls
                     .padding(.bottom, FmSpace.x5)

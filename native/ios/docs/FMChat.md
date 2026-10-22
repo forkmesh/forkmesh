@@ -725,6 +725,41 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   no server in between" or "Relayed · through a TURN relay server (third party)". The live state
   line is "Connected · end-to-end encrypted", since the route is unknown until then. The pre-call
   screen shows the hint "Calls go directly between your devices when possible."
+- **Live quality widget** (2026-10-22). Mirrors `app/public/call-quality-meter.js` (thresholds,
+  strings and chart shapes are the same on web, Android and iOS). `CallQualityWidget`
+  (`Calls/CallQualityViews.swift`) is a small dark-material pill under the call's name and state
+  line: four signal bars coloured by grade (success green, warning amber, danger red), a mirrored
+  waveform of the last 20 voice levels (your mic up in accent blue, the other side down in grey)
+  and the round-trip time ("48 ms"). VoiceOver reads "Call quality: Good connection · 48 ms ·
+  0.0% loss · 3 ms jitter". A tap opens a card (kept open across calls with
+  `@AppStorage("fm.call.qualityOpen")`) with the grade and 120 × 22 pt Canvas charts: Voice (50
+  levels, 5 s), Network (RTT line over 60 samples, 1 min, with amber loss ticks from 1 % and red
+  from 8 %) and, in video calls, Video in and Video out (kbps line; resolution, fps, rate and
+  "limited by bandwidth/CPU"). Before a call is connected it shows only the mic waveform.
+  - **Pure logic** is in FMChat `Direct/CallQuality.swift`, tested in `CallQualityTests`:
+    `CallQuality` (bars = 4 − the worst of RTT ≥ 150/300/500 ms, loss ≥ 1/3/8 %, jitter ≥
+    30/60/100 ms, at least 1; 0 = "Measuring connection" when RTT and loss are both unknown;
+    levels are `clamp((20·log10(rms) + 60) / 60, 0, 1)`), `CallStatsSummary` (the web's
+    `summarizeRtcStats`: selected candidate pair RTT, inbound loss and byte deltas, jitter, largest
+    incoming video, outbound `qualityLimitationReason`, `remote-inbound-rtp` `fractionLost`),
+    `CallQualityEvent` (the page's `quality` event) and `CallQualityHistory` (50 levels, 60 samples).
+  - **WebView engine.** The page posts `{event: "quality", live, rttMs, lossPct, …, mic, peer}`
+    about once a second (`live: false` in the pre-call preview and the Face Changer studio).
+    `WebCallPeer` passes it to `WebCallPeerFactory.quality` (a `CallQualityMonitor`, reset per
+    call and preview), which plays the ~10 levels of each event out at 10 Hz so the waveform moves
+    smoothly, about a second behind.
+  - **Native engine.** `NativeQualityProbe` (`Calls/Native/NativeCallQuality.swift`) reads
+    `RTCPeerConnection.statistics` every 100 ms once live: levels from `audioLevel` (`media-source`
+    for the mic, forced to 0 while muted; `inbound-rtp` audio for the other side) and, every tenth
+    read, a full sample through `CallStatsSummary`. One-to-one calls feed
+    `NativeCallPeerFactory.quality`; WebRTC group calls feed `NativeGroupCall.quality` (one
+    connection to the call server, so the worst RTT/loss and the largest incoming video across
+    everyone). FMM group calls take levels from `FmmAudioEngine` (peak per 100 ms of the sent frame
+    and of the mixed playout) and once a second `FmmmobileCall.stats()` (RTT, loss, target bitrate
+    as the send rate; no receive rate). The native pre-call screen meters the mic with an
+    `AVAudioRecorder` writing to `/dev/null` (`NativeMicMeter`), stopped before the call starts.
+  - **Where.** `DirectCallScreen`, `DirectCallPreviewScreen`, `NativePreCallScreen`,
+    `GroupCallPanel` ("Others ▼" instead of "Them ▼") and `FaceChangerScreen`.
 - **Limits.** Media runs in a WebView, which only captures the camera and microphone while the
   app is in front, so a call answered on the lock screen connects its signaling at once but its
   audio and picture start once the user unlocks and opens ForkMesh (the app button on the call
