@@ -4210,3 +4210,20 @@ def test_a_cut_text_blob_stays_text_at_a_character_boundary():
         prefix.decode("utf-8")
     broken = b"ok\xff\xfeok"
     assert gateway._utf8_prefix(broken) == broken
+
+
+def test_sizes_lists_every_issue_folder_but_still_folds_code(application, monkeypatch):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    blobs = [(100 + n, f".forkmesh/issues/open/{n}/issue-{n}.json") for n in range(1, 121)]
+    blobs += [(10, f"vendor/pkg{n}.js") for n in range(60)]
+    monkeypatch.setattr(repository, "_all_blobs", lambda _commit: blobs)
+    payload = repository.sizes({})
+    forkmesh = next(item for item in payload["children"] if item["name"] == ".forkmesh")
+    open_dir = forkmesh["children"][0]["children"][0]
+    assert open_dir["name"] == "open"
+    assert len(open_dir["children"]) == 120
+    assert all(item["type"] == "directory" and item["children"][0]["type"] == "file"
+               for item in open_dir["children"])
+    vendor = next(item for item in payload["children"] if item["name"] == "vendor")
+    assert len(vendor["children"]) == 41 and vendor["children"][-1]["type"] == "summary"
