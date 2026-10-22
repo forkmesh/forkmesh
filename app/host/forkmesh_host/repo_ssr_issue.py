@@ -182,9 +182,20 @@ def actor_pixels(size):
 FORGE_AVATARS = contextvars.ContextVar("forge_avatars", default=(None, frozenset()))
 
 
+FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+class AvatarSet(frozenset):
+    def __new__(cls, names=(), commit=""):
+        found = super().__new__(cls, names)
+        found.commit = str(commit or "") if FULL_COMMIT_RE.match(str(commit or "")) else ""
+        return found
+
+
 def forge_avatars(index):
     names = (index or {}).get("forgeAvatars") if isinstance(index, dict) else None
-    return frozenset(name.lower() for name in names or () if isinstance(name, str))
+    return AvatarSet((name.lower() for name in names or () if isinstance(name, str)),
+                     (index or {}).get("commit") if isinstance(index, dict) else "")
 
 
 def forge_avatar_src(forge):
@@ -192,7 +203,11 @@ def forge_avatar_src(forge):
     login = forge["login"].lower()
     if ctx is None or "%s:%s" % (forge["provider"], login) not in known:
         return ""
-    return ctx.raw_url(".forkmesh/contributors/%s-%s.png" % (forge["provider"], login))
+    path = ".forkmesh/contributors/%s-%s.png" % (forge["provider"], login)
+    commit = getattr(known, "commit", "")
+    if commit:
+        return "%s/raw?path=%s&ref=%s" % (ctx.api_base, urllib.parse.quote(path, safe="!'()*"), commit)
+    return ctx.raw_url(path)
 
 
 def avatar_html(name, author="", size="h-7 w-7", agent=False, link=True):
@@ -1867,7 +1882,7 @@ class IssueParts:
 def render_issue_parts(issue, ctx, owner, path, index=None, now=None, viewer="both",
                        repo="", prompt="", reactions=None, off=frozenset(), source="",
                        avatars=frozenset()):
-    avatars = frozenset(avatars)
+    avatars = avatars if isinstance(avatars, frozenset) else frozenset(avatars)
     token = FORGE_AVATARS.set((ctx, avatars))
     try:
         article, rest = _render_issue(issue, ctx, owner, path, index, now, viewer, repo,

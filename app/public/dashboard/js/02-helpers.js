@@ -858,10 +858,12 @@
   }
 
   const forgeAvatarSets = new Map();
+  const forgeAvatarCommits = new Map();
 
-  function rememberForgeAvatars(repo, names) {
+  function rememberForgeAvatars(repo, names, commit = "") {
     if (!repo || !Array.isArray(names) || !names.length) return;
     const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    if (/^[0-9a-f]{40}$/.test(String(commit || ""))) forgeAvatarCommits.set(key, String(commit));
     const known = forgeAvatarSets.get(key) || new Set();
     names.forEach((name) => { if (typeof name === "string") known.add(name.toLowerCase()); });
     forgeAvatarSets.set(key, known);
@@ -870,10 +872,11 @@
   function forgeAvatarSrc(forge) {
     const repo = state.selectedRepo;
     if (!repo || !forge) return "";
-    const known = forgeAvatarSets.get(`${repo.owner || ""}/${repo.name || ""}`.toLowerCase());
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    const known = forgeAvatarSets.get(key);
     const login = forge.login.toLowerCase();
     return known?.has(`${forge.provider}:${login}`)
-      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`) : "";
+      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`, forgeAvatarCommits.get(key) || "") : "";
   }
 
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
@@ -929,12 +932,45 @@
     return png.length <= 400_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? png : "";
   }
 
+  const issueActorBatch = { names: new Set(), promise: null };
+
+  function issueActorKnown(key) {
+    issueActorBatch.names.add(key);
+    if (!issueActorBatch.promise) {
+      issueActorBatch.promise = new Promise((resolve) => setTimeout(resolve, 0)).then(async () => {
+        const names = [...issueActorBatch.names];
+        issueActorBatch.names = new Set();
+        issueActorBatch.promise = null;
+        const found = new Set();
+        for (let start = 0; start < names.length; start += USER_NAME_BATCH) {
+          const batch = names.slice(start, start + USER_NAME_BATCH);
+          try {
+            const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+              credentials: "omit",
+              headers: { accept: "application/json" },
+            });
+            const data = response.ok ? await response.json() : null;
+            if (!data || typeof data.names !== "object") return null;
+            Object.keys(data.names).forEach((name) => found.add(name.toLowerCase()));
+          } catch (_) {
+            return null;
+          }
+        }
+        return found;
+      });
+    }
+    return issueActorBatch.promise.then((found) => (found ? found.has(key) : true));
+  }
+
   function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
     if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "" });
     if (!issueActorAccounts.has(key)) {
-      issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
+      issueActorAccounts.set(key, issueActorKnown(key)
+        .then((exists) => (exists
+          ? fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
+            .then((response) => (response.ok ? response.json() : null))
+          : { exists: false }))
         .then((profile) => ({
           exists: profile?.exists === true,
           png: profile?.exists === true && profile?.profilePrivate !== true

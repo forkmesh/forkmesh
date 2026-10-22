@@ -2677,7 +2677,7 @@ def test_dashboard_repository_blob_viewer_previews_media_csv_pdf_and_binary():
 
     for marker in (
         "function repoPreviewKindFromPath(path)",
-        "function repoRawUrl(repo, path)",
+        'function repoRawUrl(repo, path, ref = "")',
         "function repoPreviewMeta(data, repo, path)",
         "function renderRepoMediaPreview(meta)",
         "function renderRepoCsvPreview(meta)",

@@ -371,7 +371,8 @@ def _indexed_issues(index):
     return {"rows": rows, "open": open_count,
             "closed": int(index.get("closedFolders") or 0),
             "avatars": [name for name in index.get("forgeAvatars") or []
-                        if isinstance(name, str)]}
+                        if isinstance(name, str)],
+            "avatarCommit": str(index.get("commit") or "")}
 
 
 async def plan_issues(reader, branch):
@@ -1104,8 +1105,9 @@ def _render(bundle, section="", reactions=None):
         ctx = repo_ssr_issue.Context(base, "/api/repo/%s/%s" % (
             urllib.parse.quote(bundle.owner, safe=""),
             urllib.parse.quote(bundle.repo, safe="")), str(bundle.ref or "main"))
-        token = repo_ssr_issue.FORGE_AVATARS.set((ctx, frozenset(
-            name.lower() for name in model.get("avatars") or [])))
+        token = repo_ssr_issue.FORGE_AVATARS.set((ctx, repo_ssr_issue.AvatarSet(
+            (name.lower() for name in model.get("avatars") or []),
+            model.get("avatarCommit"))))
         try:
             return _list(bundle, "issues", model.get("rows") or [],
                          model.get("open"), model.get("closed"))

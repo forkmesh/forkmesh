@@ -97,9 +97,12 @@ about 490 KB, 56 KB gzip.
   commit (one `ls-tree` of that folder, part of the cache key). The full
   answer lists all of them; the `related` answer only those among the asked
   issue's participants, assignees and commenters. The dashboard keeps them per
-  repository (`rememberForgeAvatars`) and the server renderer takes them from
-  the bundle's answer; both then draw the picture from the repository's own
-  raw URL over the initial (`loading="lazy"`, `width`/`height`, `alt=""`,
+  repository (`rememberForgeAvatars`, with the answer's `commit`) and the
+  server renderer takes them from the bundle's answer; both then draw the
+  picture from the repository's own raw URL pinned to that commit, which the
+  host serves as `immutable` and keeps in memory, so a thread's faces are not
+  asked for again on the next visit (with a branch name they were `no-cache`,
+  32 revalidations per visit on bbs#519), over the initial (`loading="lazy"`, `width`/`height`, `alt=""`,
   `referrerpolicy="no-referrer"`). A person not listed keeps the initial, so
   no page asks for a file that is not there, and nothing ever loads from the
   provider.

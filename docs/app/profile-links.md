@@ -29,8 +29,10 @@ This page lists the shared helpers per surface and the rules they all follow.
 
 - `issuePersonNameHtml(name, classes)` renders a name as
   `<a href="/@name" data-issue-person>`. The person hydration
-  (`hydrateIssuePersonLink`) asks `/api/accounts/<name>` whether the account
-  exists; a name that is not an account loses its `href`, or points at the
+  (`hydrateIssuePersonLink`) first asks, for every name on the page in one
+  request, `/api/accounts/name-case?names=…` which of them are accounts, and
+  reads `/api/accounts/<name>` (for the portrait) only for those; on a mirror
+  whose threads mention GitHub logins that saves one request per name. A name that is not an account loses its `href`, or points at the
   repository roster's profile when the roster knows it. Bots render as plain
   text. Use it for every standalone name.
 - `mdMentionHtml(login)` is the markdown mention link; `renderMarkdown` uses it
