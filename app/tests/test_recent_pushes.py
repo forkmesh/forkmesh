@@ -53,7 +53,9 @@ def rt(monkeypatch):
         "bob/lib": {"branch": "main", "forkedFrom": "upstream/lib"},
         "mirror/src": {"branch": "main", "mirrorOf": "https://example.org/x"},
         "bob/src": {"branch": "main", "forkedFrom": "mirror/src"},
+        "carol/app": {"branch": "main", "forkedFrom": "acme/app"},
     }
+    organizations = {"acme/app": "alice"}
 
     async def blind_index(env, text):
         return hashlib.sha256(str(text).strip().lower().encode()).hexdigest()
@@ -74,6 +76,9 @@ def rt(monkeypatch):
     async def public_path(env, owner, repo):
         return "/%s/%s" % (owner, repo)
 
+    async def org_repo_node(env, org, repo):
+        return organizations.get((org + "/" + repo).lower(), "")
+
     async def nothing(env):
         return None
 
@@ -93,6 +98,7 @@ def rt(monkeypatch):
         "decrypt_row": decrypt_row, "_repo_catalog_record": catalog_record,
         "_read_only_mirror_fields": mirror_fields,
         "_repo_public_path": public_path, "ensure_schema": nothing,
+        "_org_repo_node": org_repo_node,
         "bounded_json_request": body, "_authed_account_name": authed,
         "json_response": json_response,
         "method_name": lambda request: request.method,
@@ -277,3 +283,11 @@ def test_branch_names_are_validated_and_escaped_in_urls(rt):
 def test_unsupported_methods_are_refused(rt):
     request = SimpleNamespace(method="DELETE", account="alice", body=None)
     assert run(recent_pushes.handler(SimpleNamespace(), request)).status == 405
+
+
+def test_a_fork_of_an_organization_address_compares_back_to_it(rt):
+    push("carol", "app", "carol", ("refs/heads/fix", ZERO, A))
+    item = get("carol").data["pushes"][0]
+    assert item["fork"] is True
+    assert item["target"] == "acme/app"
+    assert item["base"] == "main"

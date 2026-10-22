@@ -37900,8 +37900,9 @@ async def enqueue_notification(env, recipient, kind, title, body="", repo="",
     public_href = globals().get("_repo_public_href")
     if callable(public_href):
         href = await public_href(env, href)
-    if repo and repo.count("/") == 1:
-        shown = await _repo_public_key(env, repo)
+    public_key = globals().get("_repo_public_key")
+    if callable(public_key) and repo and repo.count("/") == 1:
+        shown = await public_key(env, repo)
         if shown != repo:
             title = str(title or "").replace(repo, shown)
             body = str(body or "").replace(repo, shown)

@@ -153,6 +153,7 @@ def _run(endpoint, records=None, copies=None, cores=()):
         "edge_cache_match": no_cache,
         "edge_cache_put": noop,
         "_catalog_logical_owners": noop,
+        "_catalog_organization_projection": lambda *_args: None,
         "decrypt_row": identity,
         "_is_blocked_catalog_identity": lambda _env, _owner, _repo: False,
         "_admin_query": lambda _value: "",

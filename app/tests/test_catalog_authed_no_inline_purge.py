@@ -100,6 +100,7 @@ def _run(url, *, cached=False):
         "edge_cache_match": edge_cache_match,
         "edge_cache_put": noop,
         "_catalog_logical_owners": noop,
+        "_catalog_organization_projection": lambda *_args: None,
         "decrypt_row": identity,
         "_is_blocked_catalog_identity": (lambda env, o, n: False),
         "_admin_query": (lambda admin: ""),
