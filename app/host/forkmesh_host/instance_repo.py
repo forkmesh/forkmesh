@@ -185,8 +185,8 @@ async def read_parent(runtime, spec):
     if record.get("visibility") != "public":
         raise RepoError("--fork-of %s is not public" % spec["forkOf"])
     stored_name = str(record.get("name") or name).lower()
-    public = owner if node != owner else await _public_owner(
-        entry, env, node, stored_name)
+    public = owner if node != owner else (
+        await entry._repo_organization(env, node, stored_name) or node)
     parent = public + "/" + stored_name
     if node == spec["owner"] and stored_name == spec["name"].lower():
         raise RepoError("a repository cannot be a fork of itself")
@@ -197,16 +197,6 @@ async def read_parent(runtime, spec):
         raise RepoError("--fork-of %s has no published commits to compare"
                         % spec["forkOf"])
     return {"forkedFrom": parent, "commits": commits}
-
-
-async def _public_owner(entry, env, node, name):
-    rows = await entry.d1_all(
-        env, "SELECT o.name AS name FROM org_repos r JOIN orgs o ON "
-        "o.org_bi=r.org_bi WHERE r.node_owner=? AND r.repo=? LIMIT 2",
-        node, name)
-    names = [str(row.get("name") or "").lower() for row in rows or []]
-    return names[0] if len(names) == 1 and NAME_RE.fullmatch(names[0]) \
-        else node
 
 
 def shares_history(git, git_dir, parent, cwd=None):

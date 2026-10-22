@@ -15,6 +15,24 @@ def _bind_runtime(runtime):
             namespace[name] = value
 
 
+def _catalog_organization_projection(env, repos, ssh_gateway):
+    for rec in repos:
+        if rec.get("ownerKind") != "organization":
+            continue
+        organization = str(rec.get("logicalOwner") or "")
+        owner = str(rec.get("owner") or "")
+        name = str(rec.get("name") or "")
+        if not organization or not owner or not name:
+            continue
+        if (not rec.get("signature") and not rec.get("stateSig")
+                and rec.get("channel") == "#%s-%s" % (owner, name)):
+            rec["channel"] = "#%s-%s" % (organization, name)
+        if ssh_gateway["configured"]:
+            ssh_url = _ssh_alias_repository_url(env, organization, owner, name)
+            if ssh_url:
+                rec["sshUrl"] = ssh_url
+
+
 async def rehome_organization_aliases_before_node_delete(
         env, target, account_owner):
     """Move durable org aliases off a disposable node before retirement."""
@@ -513,6 +531,7 @@ async def catalog_handler(env, request):
             repos.append(mirror)
             repository_owner_rows.append((mirror, ""))
         await _catalog_logical_owners(env, repository_owner_rows)
+        _catalog_organization_projection(env, repos, ssh_gateway)
         # Second pass: mark each repo cloneable when its own host is offline but a
         # peer mirroring the same logical repo is online — the relay serves that
         # mirror in place through the repo's own URL (adhoc #61), so the website
