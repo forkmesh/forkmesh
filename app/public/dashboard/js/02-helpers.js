@@ -1618,6 +1618,7 @@
 
   let instanceInfoRequest = null;
   let instanceGitNode = "";
+  let instancePluginStates = null;
 
   // GET /api/instance is the same public document for every visitor. One
   // request per page serves every reader: an instance page starts it from
@@ -1641,6 +1642,9 @@
       instanceInfoRequest = sharedInstanceDocument()
         .then((info) => {
           instanceGitNode = String(info?.gitNode || "").toLowerCase();
+          instancePluginStates = new Map((Array.isArray(info?.plugins) ? info.plugins : [])
+            .filter((plugin) => plugin && typeof plugin.id === "string")
+            .map((plugin) => [plugin.id, plugin.enabled !== false]));
           return info;
         })
         .catch(() => null);
@@ -1662,6 +1666,15 @@
     const info = await instanceInfo();
     const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
     return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
+  function instancePluginOff(id) {
+    if (!dashboardOnInstance()) return false;
+    if (!instancePluginStates) {
+      void instanceInfo();
+      return false;
+    }
+    return instancePluginStates.get(id) === false;
   }
 
   const DIRECT_MIRROR_ORIGINS_KEY = "forkmesh.directMirrorOrigins.v1";
