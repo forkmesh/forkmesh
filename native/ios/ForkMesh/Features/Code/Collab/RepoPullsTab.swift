@@ -15,7 +15,7 @@ struct RepoPullsTab: View {
 
     init(repo: Repository) {
         _model = State(initialValue: RepoPullsModel(repo: repo, api: CollabEnv.api))
-        _mergeAll = State(initialValue: PullMergeAllFlow(owner: repo.owner, name: repo.name))
+        _mergeAll = State(initialValue: PullMergeAllFlow(owner: PullMergeAllRules.owner(of: repo), name: repo.name))
     }
 
     var body: some View {
