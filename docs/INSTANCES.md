@@ -848,6 +848,39 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   and never turns a page on. forkmesh.com keeps its own pages and links.
   Details: [app/instance-legal-pages.md](app/instance-legal-pages.md).
 
+- **ForkMesh's own sites** (install setting `"whiteLabel": true`, off by
+  default; `apply_instance_brand --white-label`, `INSTANCE_WHITE_LABEL=1`;
+  `apply_instance_brand.offsite_chrome`, `instance_features.OFFSITE_CHROME`):
+  the brand tool removes header and
+  sidebar links to forkmesh.com pages (Marketplace `forkmesh.com/market`,
+  Pricing, Membership), app.forkmesh.com and Patreon from every built page,
+  points the sidebar's Home at `/` and the header and sidebar World links at
+  `/world` (which the World plugin's rule hides while it is off). The links
+  are gone at the first paint and for a reader without JavaScript, where
+  before `instance-brand.js` hid them only after `/api/instance` answered.
+  `/instance-theme.css` also hides any such link the dashboard draws later in
+  `header`, `nav`, `aside` or `footer`, except inside the Powered by badge,
+  which stays only while `poweredBy` is on. forkmesh.com is untouched.
+
+## Home page
+
+An admin chooses a home repository from the admin console, Platform → Home
+page (`instance_console.render_home`, `save_home`; `app/src/instance_home.py`).
+It is one `instance_settings` row (`k = 'home'`,
+`{"repository": "owner/name"}`), CSRF-checked and audited as
+`admin.console_save_home`; an empty field turns the page off. `GET
+/api/instance` reports it as `home` (`{"repository": ...}` or `null`; always
+`null` on forkmesh.com).
+
+With a home repository set, `/` is a forum front page rendered by the host
+(`app/host/forkmesh_host/read_surfaces.py`): the repository's README with one
+`dir="auto"` section per heading, the latest threads from its issue index,
+its labels, links to its Atom feeds and lite view, and a slot for the
+repository's mirror line. It needs no JavaScript and makes no request to
+another site. Without one, or while the repository is not public, `/`
+redirects to `/dashboard` as before. example sets `example/forum`.
+Details: [app/feeds-and-lite.md](app/feeds-and-lite.md).
+
 ## Plugins
 
 An admin turns optional plugins on and off from the admin console, Platform →

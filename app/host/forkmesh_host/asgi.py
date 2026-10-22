@@ -34,6 +34,7 @@ import urllib.parse
 from . import d1_caller
 from . import error_log
 from . import js as _js
+from . import read_surfaces
 from . import repo_ssr
 from . import request_guard
 from .request_policy import RequestPolicy
@@ -575,6 +576,16 @@ class HostASGI:
             await self._send_response(send, self._plain_response(
                 400, "Bad Request\n"), method)
             return
+        if (self.repo_fastpath is not None and method in ("GET", "HEAD")
+                and read_surfaces.target(scope) is not None):
+            origin = read_surfaces.origin_of(_url_from_scope(
+                scope, _headers_from_scope(scope), self.trust_forwarded))
+            try:
+                if await read_surfaces.handle(self.repo_fastpath, self.runtime.fetch,
+                                              scope, send, origin):
+                    return
+            except Exception as error:
+                error_log.report("read surface failed on %s" % path, error)
         if (self.serve_assets and method in ("GET", "HEAD")
                 and not self.rules.worker_first(path)):
             assets = getattr(self.runtime.env, "ASSETS", None)

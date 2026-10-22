@@ -11421,7 +11421,8 @@
       ? renderRepoRecordList(filtered, config, "issues")
       : issuesView.closedLoading
         ? `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`
-        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint;
+        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint
+      + repoIssueFeedLinks(state.selectedRepo);
     const viewsNav = $("[data-repo-issue-views]");
     if (viewsNav) viewsNav.innerHTML = renderIssueViewsNav();
     const heading = $("[data-repo-issue-view-title]");
