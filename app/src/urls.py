@@ -407,6 +407,12 @@ REPO_CARD_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/card\.png$")
 # account (session-token authenticated, same as ACCOUNT_FOLLOW_RE).
 REPO_STAR_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/star$")
 REPO_REACTIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/reactions$")
+REPO_TIPS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/tips$")
+CUSTOM_REACTIONS_RE = re.compile(r"^/api/reactions/custom(?:/(manage))?$")
+CUSTOM_REACTION_ASSET_RE = re.compile(
+    r"^/api/reactions/custom/asset/([0-9a-f]{40})\.(svg|png|gif|webp)$")
+COMMENT_GIFS_RE = re.compile(r"^/api/gifs/(config|search|trending|settings)$")
+COMMENT_TIPS_RE = re.compile(r"^/api/tips/(config|recipients|verify|settings)$")
 REPO_VIEW_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/view$")
 REPO_VIEWS_RE = re.compile(r"^/api/repo-views/?$")
 # Forks for this repo: GET returns the public list of repositories that publish

@@ -453,6 +453,8 @@ export function createBugSwarm(THREE, { bounds, ring, height = 8, interactive })
     if (!bug.favicon) return;
     const image = new Image();
     image.decoding = "async";
+    image.crossOrigin = "anonymous";
+    image.referrerPolicy = "no-referrer";
     image.onload = () => {
       if (current !== generation) return;
       if (faviconUsable(image)) atlas.draw(cell, { image, domain: bug.domain, hue: traits.hue, ring });

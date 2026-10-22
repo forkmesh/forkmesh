@@ -10,15 +10,21 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
 import com.forkmesh.nativeapp.MainActivity
 import com.forkmesh.nativeapp.R
 import com.forkmesh.nativeapp.chat.DirectCallInvite
 import com.forkmesh.nativeapp.chat.DirectCallKind
+import com.forkmesh.nativeapp.feature.push.PingNotifier
+import com.forkmesh.nativeapp.push.CallRings
 
 object IncomingCallNotifier {
     const val CHANNEL = "incoming-calls"
+    const val RING_CHANNEL = "incoming-call-rings"
     const val NOTIFICATION_ID = 7480
+    const val RING_NOTIFICATION_ID = 7484
     const val ACTION_SHOW = "com.forkmesh.call.SHOW"
     const val ACTION_ACCEPT = "com.forkmesh.call.ACCEPT"
     const val ACTION_DECLINE = "com.forkmesh.call.DECLINE"
@@ -35,6 +41,53 @@ object IncomingCallNotifier {
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
         )
+    }
+
+    private fun ensureRingChannel(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        if (manager.getNotificationChannel(RING_CHANNEL) != null) return
+        val ringtone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        manager.createNotificationChannel(
+            NotificationChannel(RING_CHANNEL, "Incoming call alerts", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Rings when someone calls you in a direct message while ForkMesh is in the background."
+                setSound(
+                    ringtone,
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 1000, 1000)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            },
+        )
+    }
+
+    fun postRing(context: Context, projectId: String, conversation: String, partner: String) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        if (!allowed(context, manager)) return
+        ensureRingChannel(context)
+        val open = PingNotifier.openIntent(context, CallRings.target(projectId, conversation))
+        val builder = Notification.Builder(context, RING_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_ping)
+            .setContentTitle(CallRings.title(partner))
+            .setContentText(CallRings.text(partner))
+            .setCategory(Notification.CATEGORY_CALL)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+            .setShowWhen(false)
+            .setTimeoutAfter(CallRings.RING_MS)
+            .setContentIntent(open)
+            .addAction(Notification.Action.Builder(null, "Answer", open).build())
+        if (fullScreenAllowed(manager)) builder.setFullScreenIntent(open, true)
+        val notification = builder.build()
+        notification.flags = notification.flags or Notification.FLAG_INSISTENT
+        runCatching { manager.notify(RING_NOTIFICATION_ID, notification) }
+    }
+
+    fun cancelRing(context: Context) {
+        context.getSystemService(NotificationManager::class.java)?.cancel(RING_NOTIFICATION_ID)
     }
 
     private fun allowed(context: Context, manager: NotificationManager): Boolean {

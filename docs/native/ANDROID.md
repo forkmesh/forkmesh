@@ -843,11 +843,33 @@ default in new projects except the chosen starter pack
     status line reads "Connected · end-to-end encrypted" (relayed media is
     still encrypted end to end). The pre-call layer says "Calls go directly
     between your devices when possible."
-  - **Limits.** Calls ring only while the app is running and the room
-    socket is connected: the invite arrives over the DM socket, and there is
-    no call push yet, so a killed or long-backgrounded app does not ring.
-    Ringing a killed app needs a server-sent push that starts the
-    notification (server work). The ringback tone follows the voice-call
+  - **Call rings** (since 2026-10-21; protocol in
+    `docs/app/chat-direct-calls.md`). `DirectMessageService.sendCallFrame`
+    marks every `call-invite` envelope `ring: true`, and the relay sends the
+    callee a `calls` account event naming the conversation
+    (`CallRings.conversation`, `C/push/CallRing.kt`). In the foreground
+    `ChatDepth` hears it through `AccountEventChannel.onEvent` and calls
+    `DirectMessageService.openRinging`, which reloads the list if the
+    conversation is unknown and opens its room socket, so the next resent
+    invite (every 3 s) brings up the incoming screen. In the background
+    `BackgroundLinkService.ringCall` handles it: when the ringing project is
+    the active one and `DirectCallFeature.wake` opens the DM, the normal
+    ringer and call notification take over, and if no invite has shown up
+    after 6 s (`CallRings.WAKE_WAIT_MS`) it falls back to
+    `IncomingCallNotifier.postRing`. When the call engine is not running (the
+    process was started for the background link only, or another project is
+    active) it posts that notification at once. It goes on the "Incoming call
+    alerts" channel (`incoming-call-rings`: the default ringtone and a
+    vibration pattern, `IMPORTANCE_HIGH`), `CATEGORY_CALL`,
+    `FLAG_INSISTENT` so the ringtone repeats, `setTimeoutAfter(45 s)`, a
+    full-screen intent and an Answer action that open the DM through the
+    same `PushTarget` a DM notification uses (`/chat/direct-messages/<id>`).
+    The caller's name comes from `ApiService.directMessagePartner`.
+    `CallRinger` cancels it as soon as an invite or call exists or the app is
+    in front.
+  - **Limits.** A ring needs the background connection to be on and
+    connected (it is paused by Doze and network loss; there is no FCM), so a
+    force-stopped app does not ring. The ringback tone follows the voice-call
     stream, so it is quiet through the earpiece on some phones.
 
 ### Chat rows ported from iOS (SYNC.md S022 to S027)

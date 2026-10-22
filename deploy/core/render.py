@@ -650,7 +650,8 @@ IDS_EXCLUDE = ("/etc/forkmesh-next/tls", "/etc/forkmesh-next/tls/*",
 
 
 def ids_core_stop_units(fleet):
-    return IDS_CORE_STOP_UNITS + ((TURN_UNIT,) if turn_enabled(fleet) else ())
+    return IDS_CORE_STOP_UNITS + ((TURN_UNIT,) if turn_enabled(fleet) else ()) + (
+        (CALLS_UNIT,) if calls_enabled(fleet) else ())
 
 
 def ids_settings(fleet):
@@ -847,6 +848,9 @@ def ids_config(fleet, name, role, paths):
                               else ([], []))
         turn_users = ({TURN_USER: {"units": [TURN_UNIT], "exe": [TURN_BIN]}}
                       if turn_enabled(fleet) else {})
+        calls_tcp, calls_udp = calls_ports(fleet)
+        calls_users = ({CALLS_USER: {"units": [CALLS_UNIT], "exe": [CALLS_BIN]}}
+                       if calls_enabled(fleet) else {})
         config.update({
             "processes": {
                 "service_users": {
@@ -872,6 +876,7 @@ def ids_config(fleet, name, role, paths):
                         "shell_severity": "alert",
                         "outside_severity": "alert"},
                     **turn_users,
+                    **calls_users,
                 },
                 "protected_units": ["forkmesh-app.service", "rqlite.service",
                                     "caddy.service",
@@ -886,9 +891,10 @@ def ids_config(fleet, name, role, paths):
                                int(app.get("mesh_port", 8792)),
                                int(app.get("certsync_port", 8793)),
                                int(app.get("acme_forward_port", 8794)),
-                               *turn_tcp}),
+                               *turn_tcp, *calls_tcp}),
                 "udp": sorted({53, 68, 123, 323, 443, 546,
-                               int(wg.get("port", 51820)), *turn_udp}),
+                               int(wg.get("port", 51820)), *turn_udp,
+                               *calls_udp}),
                 "udp_max_port": 10240},
             "rqlite": {"url": "http://127.0.0.1:%d" % int(
                 rq.get("http_port", 4001)),
@@ -1247,6 +1253,164 @@ def add_turn_files(fleet, node, paths, values, add, units,
         add(unit + TURN_CERT_PATH_UNIT, template(TURN_CERT_PATH_UNIT, values))
         add(unit + TURN_CERT_UNIT, template(TURN_CERT_UNIT, values))
         units.append(TURN_CERT_PATH_UNIT)
+    return True
+
+
+CALLS_SECRET_CREDENTIAL = "FORKMESH_CALLS_SECRET"
+CALLS_NODES_VAR = "FORKMESH_CALLS_NODES"
+CALLS_USER = "fmnext-calls"
+CALLS_BIN = "/usr/local/bin/forkmesh-calls"
+CALLS_UNIT = "fmnext-calls.service"
+CALLS_UNIT_PATH = "/etc/systemd/system/" + CALLS_UNIT
+CALLS_DEFAULTS = {"enabled": False, "udp_port": 3479, "http_port": 7881,
+                  "origins": [], "fmm": False, "fmm_port": 4433}
+CALLS_RESERVED_UDP = (53, 68, 123, 323, 443, 546)
+CALLS_RESERVED_TCP = (22, 25, 53, 80, 443, 8791)
+CALLS_ORIGIN = re.compile(r"^https://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+                          r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$")
+
+
+def calls_settings(fleet):
+    raw = fleet.get("calls") or {}
+    if not isinstance(raw, dict):
+        raise RenderError("[calls] must be a table")
+    unknown = set(raw) - set(CALLS_DEFAULTS)
+    if unknown:
+        raise RenderError("unknown [calls] keys: %s" % ", ".join(sorted(unknown)))
+    settings = dict(CALLS_DEFAULTS, **raw)
+    for key in ("enabled", "fmm"):
+        if not isinstance(settings[key], bool):
+            raise RenderError("calls.%s must be true or false" % key)
+    for key in ("udp_port", "http_port", "fmm_port"):
+        value = settings[key]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RenderError("calls.%s must be an integer" % key)
+    for key in ("udp_port", "fmm_port"):
+        if not 1024 < settings[key] < 10240:
+            raise RenderError("calls.%s must be in 1025-10239" % key)
+    if not 1024 < settings["http_port"] < 65536:
+        raise RenderError("calls.http_port must be in 1025-65535")
+    origins = settings["origins"]
+    if not isinstance(origins, list) or not all(
+            isinstance(o, str) and CALLS_ORIGIN.match(o) for o in origins):
+        raise RenderError("calls.origins must list https://host origins")
+    if not settings["enabled"]:
+        return settings
+    rq = fleet.get("rqlite") or {}
+    app = fleet.get("app") or {}
+    wg = fleet.get("wireguard") or {}
+    udp_taken = set(CALLS_RESERVED_UDP) | {int(wg.get("port", 51820))}
+    tcp_taken = set(CALLS_RESERVED_TCP) | {
+        int(rq.get("http_port", 4001)), int(rq.get("raft_port", 4002)),
+        int(app.get("port", 8080)), int(app.get("gateway_port", 8790)),
+        int(app.get("mesh_port", 8792)), int(app.get("certsync_port", 8793)),
+        int(app.get("acme_forward_port", 8794))}
+    if turn_enabled(fleet):
+        turn_tcp, turn_udp, _ = turn_ports(fleet)
+        udp_taken |= set(turn_udp)
+        tcp_taken |= set(turn_tcp)
+    if settings["udp_port"] in udp_taken:
+        raise RenderError("calls.udp_port %d is already used on the cores"
+                          % settings["udp_port"])
+    if settings["fmm"] and settings["fmm_port"] in udp_taken | {
+            settings["udp_port"]}:
+        raise RenderError("calls.fmm_port %d is already used on the cores"
+                          % settings["fmm_port"])
+    if settings["http_port"] in tcp_taken:
+        raise RenderError("calls.http_port %d is already used on the cores"
+                          % settings["http_port"])
+    if CALLS_SECRET_CREDENTIAL not in app_secret_names(fleet):
+        raise RenderError("[calls] enabled needs %s in app.secrets or "
+                          "app.optional_secrets (the app signs the join "
+                          "tickets with it)" % CALLS_SECRET_CREDENTIAL)
+    if CALLS_NODES_VAR in (production(fleet).get("vars") or {}):
+        raise RenderError("[calls] sets %s; remove it from production.vars"
+                          % CALLS_NODES_VAR)
+    return settings
+
+
+def calls_enabled(fleet):
+    return calls_settings(fleet)["enabled"]
+
+
+def calls_urls(fleet):
+    return ["wss://%s.%s/calls/ws" % (n["name"], fleet["domain"])
+            for n in fleet.get("nodes") or []]
+
+
+def calls_origins(fleet):
+    hosts = ["https://" + served_app_host(fleet), "https://" + fleet["app_host"]]
+    return list(dict.fromkeys(hosts + list(calls_settings(fleet)["origins"])))
+
+
+def calls_app_settings(fleet):
+    if not calls_enabled(fleet):
+        return ""
+    return "\n%s=%s" % ("FORKMESH_VAR_" + CALLS_NODES_VAR,
+                         ",".join(calls_urls(fleet)))
+
+
+def calls_fmm_enabled(fleet):
+    settings = calls_settings(fleet)
+    return settings["enabled"] and settings["fmm"]
+
+
+def calls_ports(fleet):
+    settings = calls_settings(fleet)
+    if not settings["enabled"]:
+        return [], []
+    udp = [settings["udp_port"]]
+    if settings["fmm"]:
+        udp.append(settings["fmm_port"])
+    return [settings["http_port"]], udp
+
+
+def calls_fmm_unit_lines(fleet):
+    if not calls_fmm_enabled(fleet):
+        return ""
+    return "".join("\n" + line for line in (
+        "Environment=FORKMESH_CALLS_FMM=:%d" % calls_settings(fleet)["fmm_port"],
+        "StateDirectory=" + CALLS_USER,
+        "StateDirectoryMode=0700"))
+
+
+def calls_ip_deny():
+    return " ".join(item for item in turn_ip_deny().split() if item != "localhost")
+
+
+def calls_caddy_handle(fleet):
+    if not calls_enabled(fleet):
+        return []
+    port = calls_settings(fleet)["http_port"]
+    return ["\thandle /calls/* {",
+            "\t\treverse_proxy 127.0.0.1:%d {" % port,
+            "\t\t\tflush_interval -1",
+            "\t\t}",
+            "\t}"]
+
+
+def runs_calls(fleet, node):
+    return calls_enabled(fleet) and not is_app_node(node)
+
+
+def add_calls_files(fleet, node, paths, values, add, units,
+                    credentials_by_unit):
+    if not runs_calls(fleet, node):
+        return False
+    settings = calls_settings(fleet)
+    addresses = [node["public_ipv4"]] + (
+        [node["public_ipv6"]] if node.get("public_ipv6") else [])
+    values = dict(values, CALLS_BIN=CALLS_BIN, CALLS_USER=CALLS_USER,
+                  CALLS_SECRET=CALLS_SECRET_CREDENTIAL,
+                  CALLS_HTTP_PORT=settings["http_port"],
+                  CALLS_UDP_PORT=settings["udp_port"],
+                  CALLS_ADDRESSES=",".join(addresses),
+                  CALLS_ORIGINS=",".join(calls_origins(fleet)),
+                  CALLS_FMM=calls_fmm_unit_lines(fleet),
+                  CALLS_IP_DENY=calls_ip_deny())
+    add(CALLS_UNIT_PATH, template(CALLS_UNIT, values))
+    units.append(CALLS_UNIT)
+    credentials_by_unit[CALLS_UNIT] = [CALLS_SECRET_CREDENTIAL]
     return True
 
 
@@ -1657,6 +1821,7 @@ def caddyfile(fleet, node, paths, per_node=True):
         "\t\t\timport app_proxy_app_host",
         "\t\t}",
         "\t}",
+        *calls_caddy_handle(fleet),
         "\t@git_push_app {",
         "\t\tpath_regexp git_push %s" % GIT_PUSH_PATH,
         "\t}",
@@ -1906,6 +2071,7 @@ def render_core(fleet, node_name, replacement=False):
         "PUBLIC_HOSTS": ",".join(public_hosts(fleet)),
         "PRODUCTION_SETTINGS": production_settings(fleet) + core_role_settings(fleet),
         "TURN_SETTINGS": turn_app_settings(fleet),
+        "CALLS_SETTINGS": calls_app_settings(fleet),
         "MESH_PEERS": mesh_peers(fleet),
         **request_rules_paths(paths),
         "CERTSYNC_SECRET": CERTSYNC_SECRET_NAME,
@@ -1961,6 +2127,7 @@ def render_core(fleet, node_name, replacement=False):
     if turn_enabled(fleet):
         turn_tcp, turn_udp, relay = turn_ports(fleet)
         public_tcp, public_udp = public_tcp + turn_tcp, public_udp + turn_udp + [relay]
+    public_udp = public_udp + calls_ports(fleet)[1]
     add("/etc/nftables.conf", nftables_conf(
         fleet, node_name, mesh_ports, public_tcp, public_udp,
         output_rules=core_output_rules(fleet) + (
@@ -2023,6 +2190,8 @@ def render_core(fleet, node_name, replacement=False):
             AUTOSCALE_CERTSYNC_CREDENTIAL)
     turn = add_turn_files(fleet, node, paths, values, add, units,
                           credentials_by_unit)
+    calls = add_calls_files(fleet, node, paths, values, add, units,
+                            credentials_by_unit)
     add_ids_files(fleet, node_name, "core", paths, values, add, units,
                   credentials_by_unit)
     if not replica:
@@ -2032,6 +2201,7 @@ def render_core(fleet, node_name, replacement=False):
     manifest = {
         "role": "core",
         "turn": turn,
+        "calls": calls,
         "logread": logread,
         "node": node_name,
         "public_ipv4": node["public_ipv4"],

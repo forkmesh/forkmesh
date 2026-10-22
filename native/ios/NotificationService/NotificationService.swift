@@ -70,6 +70,10 @@ final class NotificationService: UNNotificationServiceExtension {
             deliver(request.content)
             return
         }
+        if (request.content.userInfo["topic"] as? String) == "calls" {
+            deliver(request.content)
+            return
+        }
 
         // Chat and direct messages are sealed end to end: the relay stores
         // ciphertext, and a direct message's push carries that sealed frame

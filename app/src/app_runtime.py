@@ -3831,6 +3831,32 @@ class Default:
             return await comment_reactions_handler(
                 self.env, request, owner, repo)
 
+        tips_match = REPO_TIPS_RE.match(url.path)
+        if tips_match:
+            owner = safe_segment(tips_match.group(1))
+            repo = safe_segment(tips_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await comment_tips_intent_handler(
+                self.env, request, owner, repo)
+
+        custom_match = CUSTOM_REACTIONS_RE.match(url.path)
+        if custom_match:
+            return await custom_reactions_handler(
+                self.env, request, custom_match.group(1) or "")
+        asset_match = CUSTOM_REACTION_ASSET_RE.match(url.path)
+        if asset_match:
+            return await custom_reactions_asset_handler(
+                self.env, request, asset_match.group(1), asset_match.group(2))
+        gifs_match = COMMENT_GIFS_RE.match(url.path)
+        if gifs_match:
+            return await comment_gifs_handler(
+                self.env, request, gifs_match.group(1))
+        comment_tips_match = COMMENT_TIPS_RE.match(url.path)
+        if comment_tips_match:
+            return await comment_tips_handler(
+                self.env, request, comment_tips_match.group(1))
+
         forks_match = REPO_FORKS_RE.match(url.path)
         if forks_match:
             owner = safe_segment(forks_match.group(1))

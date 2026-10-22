@@ -55,7 +55,11 @@ import { buildRepositoryGraphEntities } from "./world-repository-graph.js";
 import { officeFloorsForTeam } from "./world-office-tower.js";
 import { createWorldSocketRecoveryTimers } from "./world-socket-recovery.js";
 import { WorldFederation, meshRootRoute } from "./world-federation.js";
-import { neighbourSceneLink } from "./world-neighbour-scene.js";
+import {
+  loadNeighbourScene,
+  neighbourIconURL,
+  neighbourSceneLink,
+} from "./world-neighbour-scene.js";
 import {
   WORLD_MESH_OUTDOOR_SPACES,
   WORLD_MESH_SPACE,
@@ -91,6 +95,7 @@ import {
   territoryBugs,
   territoryCrossingURL,
   territoryDisabledElements,
+  territoryForNeighbour,
   territoryFromInstance,
   territoryLinkURL,
   territoryRawURL,
@@ -6499,6 +6504,7 @@ class ForkMeshWorld extends HTMLElement {
     this.meshRoot = null;
     this.meshRootGeneration = 0;
     this.meshRestoreChecked = false;
+    this.meshTerritories = new Map();
     this.meshPlaced = [];
     this.meshSwitching = false;
     this.arrivalVisa = takeArrivalVisa();
@@ -11637,6 +11643,10 @@ class ForkMeshWorld extends HTMLElement {
         this.worldMesh.worlds.find((world) => world.id === this.meshRoot.id) ||
         this.meshRoot;
     }
+    if (home && this.meshRoot?.shape === "hex") {
+      this.placeMeshHexRoot(home);
+      return;
+    }
     const self = home && this.meshRoot ? this.meshRoot : home;
     const neighbors = self
       ? this.worldMesh.worlds.filter((world) => world.id !== self.id)
@@ -11649,10 +11659,80 @@ class ForkMeshWorld extends HTMLElement {
       ) || [];
     this.meshPlaced = placed;
     this.meshHexNeighbors = placed.filter((world) => world.shape === "hex");
+    if (!this.meshRoot) this.meshHexNeighbors.forEach((world) => this.meshHexTerritory(world));
     this.worldMeshLinks()?.setNeighbors(this.meshLinkWorlds(placed));
     this.applyWorldMeshArrival();
     this.leaveRestoredNeighbourHex();
     this.syncWorldMeshPosition();
+  }
+
+  placeMeshHexRoot(home) {
+    this.world.updateInstanceHexes?.([], -1, "flower");
+    const territory = this.meshTerritories.get(this.meshRoot.id)?.territory;
+    if (territory) this.world.enterTerritoryVisit?.(territory);
+    const shift = this.world.territoryForkmeshShift?.();
+    const placed = shift
+      ? [{ ...home, dx: shift.x, dz: shift.z, x: shift.townX, z: shift.townZ }]
+      : [];
+    this.meshPlaced = placed;
+    this.meshHexNeighbors = [];
+    this.worldMeshLinks()?.setNeighbors(this.meshLinkWorlds(placed));
+    this.syncWorldMeshPosition();
+  }
+
+  meshHexTerritory(world) {
+    const id = String(world?.id || "");
+    if (
+      !/^[0-9a-f]{32}$/.test(id) ||
+      world?.shape !== "hex" ||
+      this.worldMesh?.self?.shape === "hex"
+    ) {
+      return null;
+    }
+    const known = this.meshTerritories.get(id);
+    if (known) return known.territory;
+    const record = { territory: null };
+    this.meshTerritories.set(id, record);
+    void this.loadMeshHexTerritory(world, record);
+    return null;
+  }
+
+  async loadMeshHexTerritory(world, record) {
+    try {
+      const [instance, scene] = await Promise.all([
+        this.neighbourInstance(world),
+        world.scene ? loadNeighbourScene(world.scene) : null,
+      ]);
+      const territory = territoryForNeighbour(world, instance, scene, (icon) =>
+        neighbourIconURL(world.id, icon));
+      if (!territory) throw new Error("not_a_territory");
+      record.territory = territory;
+      if (!this.destroyed) this.syncWorldMeshPosition();
+    } catch (_) {
+      window.setTimeout(() => {
+        if (this.meshTerritories.get(world.id) === record) {
+          this.meshTerritories.delete(world.id);
+        }
+      }, 60_000);
+    }
+  }
+
+  async neighbourInstance(world) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 6000);
+    try {
+      const response = await fetch(new URL("/api/instance", world.api).href, {
+        mode: "cors",
+        credentials: "omit",
+        redirect: "error",
+        signal: controller.signal,
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`status_${response.status}`);
+      return await response.json();
+    } finally {
+      window.clearTimeout(timer);
+    }
   }
 
   meshLinkWorlds(placed) {
@@ -11688,7 +11768,25 @@ class ForkMeshWorld extends HTMLElement {
     const home = this.worldMesh?.self || null;
     const target = (this.meshPlaced || []).find((world) => world.id === id);
     if (!home || !target || this.meshSwitching) return false;
-    if (!this.world?.shiftPlayer?.(-target.dx, -target.dz)) return false;
+    const hex = id !== home.id && target.shape === "hex";
+    const leaving = this.meshRoot?.shape === "hex"
+      ? this.meshTerritories.get(this.meshRoot.id)?.territory || null
+      : null;
+    if (hex) {
+      const territory = this.meshRoot ? null : this.meshHexTerritory(target);
+      if (!territory || !this.world?.enterTerritoryVisit?.(territory)) return false;
+    }
+    if (leaving) this.world?.leaveTerritoryVisit?.();
+    if (!this.world?.shiftPlayer?.(-target.dx, -target.dz)) {
+      if (hex) this.world?.leaveTerritoryVisit?.();
+      if (leaving) this.world?.enterTerritoryVisit?.(leaving);
+      return false;
+    }
+    if (hex) {
+      const territory = this.meshTerritories.get(id)?.territory;
+      this.world.updateTerritoryVisitBugs?.(id, territory?.visitBugs || []);
+    }
+    const visited = this.meshVisitId;
     this.meshSwitching = true;
     try {
       this.meshRoot =
@@ -11710,12 +11808,14 @@ class ForkMeshWorld extends HTMLElement {
       this.meshSwitching = false;
     }
     const root = this.meshRoot;
-    this.hudNotice(
-      root
-        ? `Entering ${root.name} · ${root.host}`
-        : `Back in ${home.name || "your world"}`,
-    );
-    this.setOfficeOwner(root);
+    if (!root || root.id !== visited) {
+      this.hudNotice(
+        root
+          ? `Entering ${root.name} · ${root.host}`
+          : `Back in ${home.name || "your world"}`,
+      );
+    }
+    this.setOfficeOwner(root?.shape === "hex" ? null : root);
     this.reloadMeshRootData();
     this.sendPresenceNow({ type: "presence" });
     this.schedulePeerRender();
@@ -11805,13 +11905,21 @@ class ForkMeshWorld extends HTMLElement {
       this.meshLinks.update(x, z, this.world?.territoryOwnerAt?.(x, z) || "");
       return;
     }
+    if (this.meshRoot?.shape === "hex") {
+      const home = this.worldMesh?.self;
+      if (home && this.world?.territoryOwnerAt?.(x, z) && this.enterMeshWorld(home.id)) {
+        return;
+      }
+      this.meshLinks.update(x, z, rootId);
+      return;
+    }
     const owner =
       this.world?.worldMeshOwner?.(x, z, WORLD_MESH_SWITCH_MARGIN) || null;
     const ownerId = owner?.shape === "hex" && !owner.onLand ? "" : owner?.id || "";
     const standing = rootId || this.worldMesh?.self?.id || "";
     let visit = rootId;
     if (ownerId && ownerId !== standing) {
-      if (owner.shape !== "hex" && this.enterMeshWorld(ownerId)) return;
+      if (this.enterMeshWorld(ownerId)) return;
       if (!rootId) visit = ownerId;
     }
     this.meshLinks.update(x, z, visit);
@@ -31900,7 +32008,7 @@ class ForkMeshWorld extends HTMLElement {
   }
 
   rememberWorldPosition(position, flush = false) {
-    if (!this.positionKey) return;
+    if (!this.positionKey || this.meshRoot?.shape === "hex") return;
     if (
       String(position?.space || this.currentSpace || "") === "town-square" &&
       this.neighbourHexLandAt(position?.x, position?.z)

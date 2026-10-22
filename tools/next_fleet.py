@@ -97,8 +97,8 @@ RUNNER_APT_PACKAGES = (
 )
 # "daemon" (the Go daemon, role core/runner) runs after the first app deploy:
 # the daemon's catalog and lease calls need the App to answer.
-INSTALL_STEPS = ("base", "wireguard", "rqlite", "turn", "files", "caddy",
-                 "secrets", "start")
+INSTALL_STEPS = ("base", "wireguard", "rqlite", "turn", "calls", "files",
+                 "caddy", "secrets", "start")
 RUNNER_STEPS = ("base", "files", "start")
 APP_STEPS = ("base", "wireguard", "ids", "rqlite", "turn", "files", "caddy",
              "secrets", "start")
@@ -106,7 +106,7 @@ BURST_STEPS = ("base", "ids", "files", "secrets", "start", "daemon")
 # "ids" generates the node's IDS signing key on the node (docs/IDS.md); run
 # it on every node before the files step that first renders the IDS.
 ALL_STEPS = INSTALL_STEPS + ("daemon", "ids", "caddy-debian", "logread")
-CORE_ONLY_STEPS = ("caddy", "caddy-debian", "turn")
+CORE_ONLY_STEPS = ("caddy", "caddy-debian", "turn", "calls")
 # Files the Go daemon runs next to itself (desktop MainWindowHostInstall.cpp).
 DAEMON_TOOLS = (
     "tools/mirror_gateway.py", "app/src/mirror_replica.py",
@@ -127,6 +127,7 @@ DEFAULT_SECRETS = {
     # (tools/next_ids.py node_key; each node gets only its own).
     "FMNEXT_IDS_MASTER": lambda: _secrets.token_urlsafe(48),
     "OFFICE_TURN_SECRET": lambda: _secrets.token_urlsafe(48),
+    "FORKMESH_CALLS_SECRET": lambda: _secrets.token_urlsafe(48),
 }
 IDS_MASTER = "FMNEXT_IDS_MASTER"
 CERTSYNC_SECRET = "FORKMESH_CERTSYNC_SECRET"
@@ -471,6 +472,7 @@ VAULT_RES = (re.compile(r"(?m)^vault = (?:true|false)$"),
 # The [ids] table (fingerprints, allowlist, operator key) is this fleet's own.
 IDS_SECTION_RE = re.compile(r"(?ms)^\[ids\]\n.*?(?=^\[|\Z)")
 TURN_SECTION_RE = re.compile(r"(?ms)^\[turn\]\n.*?(?=^\[|\Z)")
+CALLS_SECTION_RE = re.compile(r"(?ms)^\[calls\]\n.*?(?=^\[|\Z)")
 PRODUCTION_SECTION_RE = re.compile(
     r"(?ms)^\[production\]\n.*?(?=^\[(?!production\.)|\Z)")
 HOSTED_SECTION_RE = re.compile(r"(?ms)^\[hosted\]\n.*?(?=^\[|\Z)")
@@ -578,6 +580,9 @@ def fleet_toml_text(instances, state=None, example=None, current=None):
     kept_turn = TURN_SECTION_RE.search(current or "")
     if kept_turn and TURN_SECTION_RE.search(header):
         header = TURN_SECTION_RE.sub(lambda _m: kept_turn.group(0), header, count=1)
+    kept_calls = CALLS_SECTION_RE.search(current or "")
+    if kept_calls and CALLS_SECTION_RE.search(header):
+        header = CALLS_SECTION_RE.sub(lambda _m: kept_calls.group(0), header, count=1)
     kept_production = PRODUCTION_SECTION_RE.search(current or "")
     if kept_production and not PRODUCTION_SECTION_RE.search(header):
         anchor = re.search(r"(?m)^\[dns\]$", header)
@@ -624,7 +629,8 @@ def shq(value):
 def base_script(role):
     users = ["forkmesh-node"]
     if role == "core":
-        users += ["rqlite", "forkmesh-app", "fmnext-certsync", "fmnext-build"]
+        users += ["rqlite", "forkmesh-app", "fmnext-certsync", "fmnext-build",
+                  "fmnext-calls"]
     else:
         users += [JOB_USER]
     lines = [
@@ -864,6 +870,9 @@ RQLITE_UNIT_DIGEST = ("{ cat /etc/systemd/system/rqlite.service "
 DAEMON_UNIT_DIGEST = ("{ cat /etc/systemd/system/forkmesh-mirror-node.service "
                       "/etc/systemd/system/forkmesh-mirror-node.service.d/*.conf 2>/dev/null "
                       "|| true; } | sha256sum")
+CALLS_UNIT_DIGEST = ("{ cat /etc/systemd/system/fmnext-calls.service "
+                     "/etc/systemd/system/fmnext-calls.service.d/*.conf 2>/dev/null "
+                     "|| true; } | sha256sum")
 
 
 def files_script(manifest, archive):
@@ -877,6 +886,9 @@ def files_script(manifest, archive):
     if is_core:
         lines.append("rqlite_unit_before=$(%s)" % RQLITE_UNIT_DIGEST)
     lines.append("daemon_unit_before=$(%s)" % DAEMON_UNIT_DIGEST)
+    calls = "/etc/systemd/system/fmnext-calls.service" in manifest["files"]
+    if calls:
+        lines.append("calls_unit_before=$(%s)" % CALLS_UNIT_DIGEST)
     for path, mode in sorted(manifest["files"].items()):
         lines.append("install -D -m %s \"$stage\"%s %s" % (
             mode.replace("0o", "0"), shq(path), shq(path)))
@@ -933,6 +945,10 @@ def files_script(manifest, archive):
     lines.append("if [ \"$daemon_unit_before\" != \"$(%s)\" ] && "
                  "systemctl is-active -q forkmesh-mirror-node.service; then "
                  "systemctl restart forkmesh-mirror-node.service; fi" % DAEMON_UNIT_DIGEST)
+    if calls:
+        lines.append("if [ \"$calls_unit_before\" != \"$(%s)\" ] && "
+                     "systemctl is-active -q fmnext-calls.service; then "
+                     "systemctl restart fmnext-calls.service; fi" % CALLS_UNIT_DIGEST)
     return "\n".join(lines)
 
 
@@ -1278,6 +1294,10 @@ def install(fleet, name, ssh, runner, steps, vultr=None, replacement=False,
             if not is_core_like(name):
                 raise ToolError("step turn is for core nodes only")
             install_turn(fleet, name, ip, ssh, runner)
+        elif step == "calls":
+            if not is_core_like(name):
+                raise ToolError("step calls is for core nodes only")
+            install_calls(fleet, name, ip, ssh, runner)
         elif step == "daemon":
             install_daemon(fleet, name, ip, ssh, runner, idle_guard=idle_guard)
         elif step == "ids":
@@ -1495,7 +1515,7 @@ def install_daemon(fleet, name, ip, ssh, runner, idle_guard=False):
                     name, "core" if name.startswith("n") else "runner"), action)
 
 
-ROLL_STEPS = ("daemon", "turn", "files", "start")
+ROLL_STEPS = ("daemon", "turn", "calls", "files", "start")
 ROLL_HEALTH_SECONDS = 90
 ROLL_READD_SECONDS = 600
 ROLL_DRAIN_MARGIN_SECONDS = 30
@@ -1532,6 +1552,8 @@ def roll(fleet, names, ssh, runner, steps=ROLL_STEPS, mail=False, vultr=None,
     done = []
     if runner.execute and "turn" in steps:
         turn_payloads(fleet, common.read_env_file(secrets_path()))
+    if runner.execute and "calls" in steps:
+        calls_payloads(fleet, common.read_env_file(secrets_path()))
     for name in names:
         ip = node_ip(fleet, name)
         started = clock()
@@ -1679,6 +1701,8 @@ def required_secret_names(fleet):
         extras.append(IDS_MASTER)
     if render.turn_enabled(fleet):
         extras.append(render.TURN_SECRET_CREDENTIAL)
+    if render.calls_enabled(fleet):
+        extras.append(render.CALLS_SECRET_CREDENTIAL)
     for extra in extras:
         if extra not in names:
             names.append(extra)
@@ -1802,6 +1826,8 @@ def credential_payloads(fleet, name, values):
                             % render.AUTOSCALE_CERTSYNC_CREDENTIAL)
         payloads[render.AUTOSCALE_CERTSYNC_CREDENTIAL] = replica.encode()
     payloads.update(turn_payloads(fleet, values))
+    if render.CALLS_SECRET_CREDENTIAL in node_local_credential_names(fleet, name):
+        payloads.update(calls_payloads(fleet, values))
     payloads.update(ids_payloads(fleet, name, values))
     return payloads
 
@@ -1843,6 +1869,8 @@ def node_local_credential_names(fleet, name):
         names.add(render.AUTOSCALE_CERTSYNC_CREDENTIAL)
     if render.turn_enabled(fleet) and is_core_like(name):
         names.add(render.TURN_SECRET_CREDENTIAL)
+    if render.calls_enabled(fleet) and name.startswith("n"):
+        names.add(render.CALLS_SECRET_CREDENTIAL)
     return names
 
 
@@ -1912,6 +1940,100 @@ def install_turn(fleet, name, ip, ssh, runner):
                        "%s runs it) and systemd-creds encrypt %s (value on "
                        "stdin only)" % (name, render.TURN_UNIT,
                                         render.TURN_SECRET_CREDENTIAL), action)
+
+
+def calls_payloads(fleet, values):
+    import render
+    if not render.calls_enabled(fleet):
+        return {}
+    name = render.CALLS_SECRET_CREDENTIAL
+    secret = values.get(name, "")
+    if len(secret) < 32 or not re.fullmatch(r"[A-Za-z0-9_-]+", secret):
+        raise ToolError("%s is missing from secrets.env or is not a 32+ "
+                        "character URL-safe value (run init-secrets --execute)"
+                        % name)
+    if secret in {v for k, v in values.items() if k != name}:
+        raise ToolError("%s must not reuse another secret's value" % name)
+    return {name: secret.encode()}
+
+
+CALLS_STAGE = "/tmp/fmnext-calls"
+CALLS_STAGE_SCRIPT = ("install -d -o root -g root -m 0700 %s && rm -f %s/forkmesh-calls"
+                      % (CALLS_STAGE, CALLS_STAGE))
+CALLS_INSTALL_SCRIPT = """
+set -eu
+umask 077
+user=%(user)s
+bin=%(bin)s
+unit=%(unit)s
+name=%(name)s
+creds=%(creds)s
+stage=%(stage)s
+running="/run/credentials/$unit/$name"
+id "$user" >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$user"
+secret=$(cat)
+restart=0
+test -s "$stage/forkmesh-calls"
+if ! cmp -s "$stage/forkmesh-calls" "$bin"; then
+  install -m 0755 "$stage/forkmesh-calls" "$bin"
+  restart=1
+fi
+rm -f "$stage/forkmesh-calls"
+rmdir "$stage" 2>/dev/null || true
+old=$(systemd-creds decrypt --name="$name" "$creds/$name.cred" - 2>/dev/null || true)
+if [ "$old" != "$secret" ]; then
+  install -d -m 0700 "$creds"
+  printf '%%s' "$secret" | systemd-creds encrypt --with-key=host --name="$name" - "$creds/$name.cred.new"
+  mv "$creds/$name.cred.new" "$creds/$name.cred"
+fi
+if systemctl is-active -q "$unit"; then
+  if [ -r "$running" ] && [ "$(cat "$running")" != "$secret" ]; then restart=1; fi
+  if [ "$restart" = 1 ]; then systemctl restart "$unit"; fi
+fi
+"""
+
+
+def calls_binary():
+    import next_deploy
+    return next_deploy.dist_dir() / "forkmesh-calls"
+
+
+def build_calls(binary):
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["go", "build", "-trimpath", "-o", str(binary),
+                    "./cmd/forkmesh-calls"], cwd=common.REPO / "server",
+                   check=True, env=dict(common.os.environ, CGO_ENABLED="0",
+                                        GOOS="linux", GOARCH="amd64"))
+
+
+def install_calls(fleet, name, ip, ssh, runner):
+    import render
+    if not render.calls_enabled(fleet):
+        return runner.step("%s: [calls] is off in the fleet file; nothing to "
+                           "install" % name, lambda: None)
+    if not name.startswith("n"):
+        return runner.step("%s: app replicas run no group-call server" % name,
+                           lambda: None)
+    binary = calls_binary()
+
+    def action():
+        payloads = calls_payloads(fleet, common.read_env_file(secrets_path()))
+        build_calls(binary)
+        ssh.run(ip, CALLS_STAGE_SCRIPT)
+        ssh.put(ip, binary, CALLS_STAGE + "/forkmesh-calls")
+        ssh.run(ip, CALLS_INSTALL_SCRIPT % {
+            "user": shq(render.CALLS_USER), "bin": shq(render.CALLS_BIN),
+            "unit": shq(render.CALLS_UNIT),
+            "name": shq(render.CALLS_SECRET_CREDENTIAL),
+            "creds": shq(render.fleet_paths(fleet)["creds"]),
+            "stage": shq(CALLS_STAGE)},
+            input_bytes=payloads[render.CALLS_SECRET_CREDENTIAL])
+    return runner.step("%s: build server/cmd/forkmesh-calls, install it as %s, "
+                       "systemd-creds encrypt %s (value on stdin only); restart "
+                       "%s only when the binary or its secret changed" % (
+                           name, render.CALLS_BIN,
+                           render.CALLS_SECRET_CREDENTIAL, render.CALLS_UNIT),
+                       action)
 
 
 def push_secrets(fleet, name, ssh, runner):

@@ -1341,8 +1341,12 @@ void MessageRow::showReactionPicker()
         button->setAutoRaise(true);
         button->setCursor(Qt::PointingHandCursor);
         button->setToolTip(choice.label);
-        button->setIcon(QIcon(
-            reactions::emojiPixmap(choice.value, 22, devicePixelRatio())));
+        const QPixmap glyph =
+            reactions::emojiPixmap(choice.value, 22, devicePixelRatio());
+        if (glyph.isNull())
+            button->setText(choice.emoji);
+        else
+            button->setIcon(QIcon(glyph));
         button->setIconSize(QSize(22, 22));
         button->setFixedSize(34, 34);
         const QString value = choice.value;

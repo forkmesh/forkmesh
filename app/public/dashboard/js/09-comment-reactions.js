@@ -19,6 +19,8 @@
     press: null,
     suppressClick: null,
     loads: new Map(),
+    customLoads: new Map(),
+    walletLoads: new Map(),
   };
 
   function commentReactionMotionOk() {
@@ -75,7 +77,12 @@
         if (!data || data.ok === false || !data.reactions || typeof data.reactions !== "object") return null;
         if (!state.commentReactions) state.commentReactions = {};
         state.commentReactions[subject] = { base, reactions: data.reactions, signedIn: data.signedIn === true };
+        if (data.tips && typeof data.tips === "object") {
+          if (!state.commentTips) state.commentTips = {};
+          state.commentTips[subject] = data.tips;
+        }
         refreshCommentReactionBars(subject);
+        if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(subject);
         return data;
       } catch (_) {
         return null;
@@ -145,6 +152,8 @@
     if (on) {
       if (!tally) {
         tally = { emoji, count: 0, mine: false, people: [] };
+        const custom = state.customReactions?.items?.[emoji];
+        if (custom) tally.custom = { label: custom.label, src: custom.src, animatedSrc: custom.animatedSrc || "" };
         tallies.push(tally);
       }
       if (!tally.mine) tally.count += 1;
@@ -175,7 +184,7 @@
     const comment = bar.getAttribute("data-comment-id") || "";
     const parts = commentReactionParts(subject);
     const repo = state.repoRecordDetail?.repo || state.selectedRepo;
-    if (!parts || !comment || !repo || !ISSUE_REACTION_EMOJI[emoji]) return;
+    if (!parts || !comment || !repo || !commentReactionKnown(emoji)) return;
     if (!state.session?.sessionToken) {
       showCommentReactionNotice(bar, "signin");
       return;
@@ -236,7 +245,9 @@
     for (let index = 0; index < 6; index += 1) {
       const angle = (Math.PI * 2 * index) / 6 - Math.PI / 2;
       const particle = document.createElement("span");
-      particle.textContent = ISSUE_REACTION_EMOJI[emoji] || "";
+      const image = chip.querySelector(".fm-reaction-img");
+      if (image) particle.append(Object.assign(image.cloneNode(false), { width: 14, height: 14 }));
+      else particle.textContent = ISSUE_REACTION_EMOJI[emoji] || "";
       particle.style.setProperty("--fm-dx", `${Math.round(Math.cos(angle) * 26)}px`);
       particle.style.setProperty("--fm-dy", `${Math.round(Math.sin(angle) * 26)}px`);
       particle.style.animationDelay = `${index * 12}ms`;
@@ -308,7 +319,7 @@
     const more = tally.count - Math.min(tally.people.length, COMMENT_REACTION_WHO_SHOWN);
     const verb = window.matchMedia?.("(pointer: coarse)").matches ? "Tap" : "Click";
     const hint = signedIn ? (tally.mine ? `${verb} to take yours back` : `${verb} to add yours`) : "Sign in to react";
-    return `<div class="fm-reaction-who-head"><span class="fm-reaction-who-stack">${stack}</span><span aria-hidden="true">${escapeHtml(ISSUE_REACTION_EMOJI[tally.emoji] || tally.emoji)}</span><span>${escapeHtml(commentReactionLabel(tally.emoji))} · ${escapeHtml(formatCount(tally.count))}</span></div><ul>${rows}</ul>${more > 0 ? `<div class="fm-reaction-who-more">and ${escapeHtml(formatCount(more))} more</div>` : ""}<div class="fm-reaction-who-hint">${hint}</div>`;
+    return `<div class="fm-reaction-who-head"><span class="fm-reaction-who-stack">${stack}</span><span aria-hidden="true" class="fm-reaction-who-glyph">${commentReactionGlyph(tally.emoji, tally.custom, 16)}</span><span>${escapeHtml(commentReactionLabel(tally.emoji, tally.custom))} · ${escapeHtml(formatCount(tally.count))}</span></div><ul>${rows}</ul>${more > 0 ? `<div class="fm-reaction-who-more">and ${escapeHtml(formatCount(more))} more</div>` : ""}<div class="fm-reaction-who-hint">${hint}</div>`;
   }
 
   function showCommentReactionWho(chip) {
@@ -360,8 +371,15 @@
     }, message === "signin" ? COMMENT_REACTION_NOTICE_MS * 2 : COMMENT_REACTION_NOTICE_MS);
   }
 
-  function commentReactionOptionHtml(slug, mine) {
-    return `<button type="button" role="gridcell" data-reaction-option="${escapeHtml(slug)}" aria-pressed="${mine.has(slug) ? "true" : "false"}" aria-label="${escapeHtml(commentReactionLabel(slug))}" title="${escapeHtml(commentReactionLabel(slug))}" class="fm-reaction-option">${escapeHtml(ISSUE_REACTION_EMOJI[slug] || slug)}</button>`;
+  function commentReactionOptionHtml(slug, mine, custom = null) {
+    const label = commentReactionLabel(slug, custom);
+    return `<button type="button" role="gridcell" data-reaction-option="${escapeHtml(slug)}" aria-pressed="${mine.has(slug) ? "true" : "false"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}" class="fm-reaction-option">${commentReactionGlyph(slug, custom, 26)}</button>`;
+  }
+
+  function commentReactionSectionHtml(title, slugs, mine, customs = null) {
+    if (!slugs.length) return "";
+    const cells = slugs.map((slug) => commentReactionOptionHtml(slug, mine, customs?.[slug] || null)).join("");
+    return `<div class="fm-reaction-section" role="presentation">${escapeHtml(title)}</div><div role="row" class="fm-reaction-grid">${cells}</div>`;
   }
 
   function renderCommentReactionPicker(bar, query = "") {
@@ -372,12 +390,18 @@
     const needle = String(query || "").trim().toLowerCase();
     const matches = COMMENT_REACTIONS.filter(([slug, label, words]) => !needle
       || `${slug} ${label} ${words}`.toLowerCase().includes(needle));
-    const quick = needle ? "" : `<div role="row" class="fm-reaction-grid" data-reaction-quick>${COMMENT_REACTION_QUICK.map((slug) => commentReactionOptionHtml(slug, mine)).join("")}</div>`;
-    const rest = needle ? matches : matches.filter(([slug]) => !COMMENT_REACTION_QUICK.includes(slug));
-    const all = rest.length
-      ? `<div role="row" class="fm-reaction-grid">${rest.map(([slug]) => commentReactionOptionHtml(slug, mine)).join("")}</div>`
-      : `<p class="fm-reaction-picker-empty">No reaction matches "${escapeHtml(query)}".</p>`;
-    return `${quick}${all}`;
+    const customs = state.customReactions?.items || {};
+    const customMatches = Object.values(customs).filter((item) => !needle
+      || `${item.slug} ${item.label}`.toLowerCase().includes(needle)).map((item) => item.emoji);
+    if (needle) {
+      if (!matches.length && !customMatches.length) return `<p class="fm-reaction-picker-empty">No reaction matches "${escapeHtml(query)}".</p>`;
+      const found = matches.map(([slug]) => slug).concat(customMatches);
+      return `<div role="row" class="fm-reaction-grid">${found.map((slug) => commentReactionOptionHtml(slug, mine, customs[slug] || null)).join("")}</div>`;
+    }
+    const quick = `<div role="row" class="fm-reaction-grid" data-reaction-quick>${COMMENT_REACTION_QUICK.map((slug) => commentReactionOptionHtml(slug, mine)).join("")}</div>`;
+    const grouped = new Set([...COMMENT_REACTION_QUICK, ...COMMENT_REACTION_GRATITUDE]);
+    const rest = matches.map(([slug]) => slug).filter((slug) => !grouped.has(slug));
+    return `${quick}${commentReactionSectionHtml("Gratitude", [...COMMENT_REACTION_GRATITUDE], mine)}${commentReactionSectionHtml("This community", customMatches, mine, customs)}${commentReactionSectionHtml("More", rest, mine)}`;
   }
 
   function closeCommentReactionPicker(restoreFocus = false) {
@@ -402,11 +426,17 @@
     el.className = "fm-popover fm-reaction-picker";
     el.setAttribute("role", "dialog");
     el.setAttribute("aria-label", "Choose a reaction");
-    el.innerHTML = `<input type="search" data-reaction-search class="fm-reaction-search" placeholder="Search reactions" aria-label="Search reactions" autocomplete="off" spellcheck="false"><div role="grid" aria-label="Reactions" data-reaction-options>${renderCommentReactionPicker(bar)}</div><div class="fm-reaction-picker-label" data-reaction-picker-label aria-live="polite"></div>`;
+    const gifs = typeof commentGifsEnabled === "function" && commentGifsEnabled();
+    el.innerHTML = `<input type="search" data-reaction-search class="fm-reaction-search" placeholder="Search reactions" aria-label="Search reactions" autocomplete="off" spellcheck="false"><div role="grid" aria-label="Reactions" data-reaction-options class="fm-reaction-options">${renderCommentReactionPicker(bar)}</div><div class="fm-reaction-picker-label" data-reaction-picker-label aria-live="polite"></div>${gifs ? `<button type="button" data-reaction-gif-reply class="fm-reaction-gif-reply"><span class="fm-gif-chip" aria-hidden="true">GIF</span>Reply with a GIF</button>` : ""}`;
     document.body.append(el);
     commentReactionUi.picker = { el, bar, button };
     button.setAttribute("aria-expanded", "true");
     commentReactionPlace(el, button, "below");
+    void loadCustomReactions().then((changed) => {
+      if (!changed || commentReactionUi.picker?.el !== el) return;
+      const field = el.querySelector("[data-reaction-search]");
+      el.querySelector("[data-reaction-options]").innerHTML = renderCommentReactionPicker(bar, field?.value || "");
+    });
     const search = el.querySelector("[data-reaction-search]");
     const narrow = window.matchMedia?.("(max-width: 640px)").matches;
     if (narrow) el.querySelector("[data-reaction-option]")?.focus();
@@ -425,6 +455,12 @@
       if (option && label) label.textContent = option.getAttribute("aria-label") || "";
     });
     el.addEventListener("click", (event) => {
+      if (event.target.closest?.("[data-reaction-gif-reply]")) {
+        const target = commentReactionUi.picker?.bar || bar;
+        closeCommentReactionPicker(false);
+        if (typeof openGifReply === "function") openGifReply(target, button);
+        return;
+      }
       const option = event.target.closest?.("[data-reaction-option]");
       if (!option) return;
       const target = commentReactionUi.picker?.bar || bar;
@@ -465,6 +501,55 @@
     options[Math.max(0, Math.min(options.length - 1, next))].focus();
   }
 
+  async function loadCustomReactions() {
+    const repo = state.repoRecordDetail?.repo || state.selectedRepo;
+    const owner = String(repo?.owner || "").toLowerCase();
+    if (state.customReactions?.owner === owner && state.customReactions.loaded) return false;
+    if (commentReactionUi.customLoads.has(owner)) return commentReactionUi.customLoads.get(owner);
+    const load = (async () => {
+      try {
+        const data = await fetchJson(`/api/reactions/custom${owner ? `?owner=${encodeURIComponent(owner)}` : ""}`);
+        const items = {};
+        for (const item of Array.isArray(data?.reactions) ? data.reactions : []) {
+          if (!item || !COMMENT_REACTION_CUSTOM_RE.test(String(item.emoji || ""))) continue;
+          const src = commentReactionSafeSrc(item.src);
+          if (!src) continue;
+          items[item.emoji] = { emoji: String(item.emoji), slug: String(item.slug || ""), label: String(item.label || item.slug || ""), src, animatedSrc: commentReactionSafeSrc(item.animatedSrc) };
+        }
+        state.customReactions = { owner, items, loaded: true };
+        return Object.keys(items).length > 0;
+      } catch (_) {
+        state.customReactions = { owner, items: {}, loaded: true };
+        return false;
+      } finally {
+        commentReactionUi.customLoads.delete(owner);
+      }
+    })();
+    commentReactionUi.customLoads.set(owner, load);
+    return load;
+  }
+
+  function sayCommentThanks(bar) {
+    if (!bar) return;
+    const subject = bar.getAttribute("data-comment-reactions") || "";
+    const comment = bar.getAttribute("data-comment-id") || "";
+    const mine = commentReactionTallies(subject, comment, commentReactionLedgerFor(subject, comment))
+      .some((tally) => tally.emoji === "thankyou" && tally.mine);
+    if (!mine) void toggleCommentReaction(bar, "thankyou");
+  }
+
+  function commentReactionAnimate(target, on) {
+    const host = target?.closest?.("[data-reaction], [data-reaction-option]");
+    const image = host?.querySelector?.("img[data-reaction-animated]");
+    if (!image) return;
+    if (on && commentReactionMotionOk()) {
+      if (!image.dataset.reactionStill) image.dataset.reactionStill = image.getAttribute("src") || "";
+      image.setAttribute("src", image.dataset.reactionAnimated);
+    } else if (image.dataset.reactionStill) {
+      image.setAttribute("src", image.dataset.reactionStill);
+    }
+  }
+
   function commentReactionChipFrom(target) {
     const chip = target?.closest?.("[data-reaction]");
     return chip && chip.closest("[data-comment-reactions]") ? chip : null;
@@ -473,6 +558,18 @@
   function initCommentReactions() {
     seedCommentReactions();
     document.addEventListener("click", (event) => {
+      const thanks = event.target.closest?.("[data-comment-reactions] [data-reaction-thanks]");
+      if (thanks) {
+        event.preventDefault();
+        sayCommentThanks(thanks.closest("[data-comment-reactions]"));
+        return;
+      }
+      const tip = event.target.closest?.("[data-comment-reactions] [data-comment-tip]");
+      if (tip) {
+        event.preventDefault();
+        if (typeof openCommentTipSheet === "function") openCommentTipSheet(tip.closest("[data-comment-reactions]"), tip);
+        return;
+      }
       const add = event.target.closest?.("[data-comment-reactions] [data-reaction-add]");
       if (add) {
         event.preventDefault();
@@ -495,6 +592,7 @@
       if (commentReactionUi.picker && !commentReactionUi.picker.el.contains(event.target)) closeCommentReactionPicker();
     });
     document.addEventListener("pointerover", (event) => {
+      commentReactionAnimate(event.target, true);
       if (event.pointerType !== "mouse") return;
       const chip = commentReactionChipFrom(event.target);
       if (!chip || chip === commentReactionUi.whoChip) return;
@@ -502,6 +600,7 @@
       commentReactionUi.whoTimer = setTimeout(() => showCommentReactionWho(chip), COMMENT_REACTION_HOVER_MS);
     });
     document.addEventListener("pointerout", (event) => {
+      if (!event.target.closest?.("[data-reaction], [data-reaction-option]")?.contains(event.relatedTarget)) commentReactionAnimate(event.target, false);
       if (event.pointerType !== "mouse") return;
       const chip = commentReactionChipFrom(event.target);
       if (!chip || chip.contains(event.relatedTarget)) return;

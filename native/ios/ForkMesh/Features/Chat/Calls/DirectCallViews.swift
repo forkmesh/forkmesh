@@ -12,6 +12,12 @@ enum DirectCallActions {
             hub.post("A call is already using the camera and microphone.")
             return
         }
+        #if canImport(WebRTC)
+        if NativeCallPeerFactory.shared.busy {
+            hub.post("A call is already using the camera and microphone.")
+            return
+        }
+        #endif
         let conversation = hub.currentConversation
         let partner = engine.partnerName(for: conversation)
         guard !partner.isEmpty else {
@@ -155,6 +161,14 @@ struct DirectCallCover: View {
 
     private var precheck: DirectCallPrecheck { DirectCallPrecheck.shared }
 
+    private var nativeFactory: AnyObject? {
+        #if canImport(WebRTC)
+        return engine.peerFactory as? NativeCallPeerFactory
+        #else
+        return nil
+        #endif
+    }
+
     var body: some View {
         if engine.active {
             DirectCallScreen(engine: engine, factory: factory)
@@ -162,6 +176,8 @@ struct DirectCallCover: View {
             DirectCallIncomingScreen(invite: invite, engine: engine, hub: hub)
         } else if let request = precheck.request, let factory {
             DirectCallPreviewScreen(request: request, engine: engine, factory: factory)
+        } else if let request = precheck.request, nativeFactory != nil {
+            NativePreCallScreen(request: request, engine: engine)
         } else {
             Color.black.ignoresSafeArea()
         }
@@ -241,6 +257,22 @@ struct DirectCallScreen: View {
     let factory: WebCallPeerFactory?
     @State private var notice = ""
 
+    private var nativeRoute: DirectCallRoute? {
+        #if canImport(WebRTC)
+        return (engine.peerFactory as? NativeCallPeerFactory)?.route
+        #else
+        return nil
+        #endif
+    }
+
+    private var hasNativeVideo: Bool {
+        #if canImport(WebRTC)
+        return (engine.peerFactory as? NativeCallPeerFactory)?.remoteVideo != nil
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -249,7 +281,12 @@ struct DirectCallScreen: View {
                     .ignoresSafeArea()
                     .opacity(engine.media == .video ? 1 : 0.01)
             }
-            if engine.media == .audio || factory?.current == nil {
+            #if canImport(WebRTC)
+            if let native = engine.peerFactory as? NativeCallPeerFactory {
+                NativeCallSurface(factory: native, media: engine.media)
+            }
+            #endif
+            if engine.media == .audio || (factory?.current == nil && !hasNativeVideo) {
                 VStack(spacing: FmSpace.x3) {
                     FmAvatar(name: engine.partner, size: 110, fontSize: 40)
                     Text("@\(engine.partner)")
@@ -264,7 +301,7 @@ struct DirectCallScreen: View {
                     Text(engine.stateLine)
                         .font(.system(size: 13))
                         .opacity(0.8)
-                    if engine.phase == .live, let route = factory?.route {
+                    if engine.phase == .live, let route = factory?.route ?? nativeRoute {
                         Text(route.note)
                             .font(.system(size: 12, weight: .medium))
                             .multilineTextAlignment(.center)

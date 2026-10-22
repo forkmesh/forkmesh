@@ -92,6 +92,8 @@ class DirectCallEngine(
         const val RING_TIMEOUT_MS = 45_000L
         const val INVITE_RESEND_MS = 3_000L
         const val INVITE_STALE_MS = 9_000L
+        const val CALL_INVITE_TYPE = "call-invite"
+        const val RING_TOPIC = "calls"
         val FRAME_TYPES = setOf(
             "call-invite", "call-accept", "call-decline", "call-offer", "call-answer", "call-ice", "call-bye",
         )

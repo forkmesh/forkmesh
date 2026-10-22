@@ -604,18 +604,16 @@ them without changing page.
   `DESERT_HEXES`) and shares an edge with the town. Slot 0 is petal 1, slot 4
   petal 5; petal 0 keeps the beach. That petal's sand, cacti and sign step
   aside (`replacePetals` in `desert-plots.js`), the roads stay as they are,
-  and the town no longer claims the ground (`worldMeshOwnerAt`). Stepping
-  off the road onto its land is a visit (see Visits below): the page stays
-  in the World it is in and draws the neighbour's own scene on its petal.
-  An instance World is one hexagon of its own (`docs/INSTANCES.md`), not a
-  copy of the town, so the page never switches into it; on 2026-10-21 it
-  briefly did, and a walker who had stepped onto OWASP BLT reloaded into
-  ForkMesh's town filled with BLT's members. On the shared road strip the
-  walker stays in the World they came from. A spot on a neighbour's
-  hexagon is not saved as the World position (`neighbourHexLandAt`), and a
-  position saved there before is replaced by the fresh arrival at the
-  campfire (`leaveRestoredNeighbourHex`), so opening the World lands in it,
-  at the last spot walked in it. The page used to
+  and the town no longer claims the ground (`worldMeshOwnerAt`). From a
+  distance the petal shows the neighbour's published scene (Neighbour scenes
+  below). Stepping off the road onto its land puts the page in that World,
+  laid out the way the instance's own World draws itself (Standing in an
+  instance's hexagon below). On the shared road strip the walker stays in
+  the World they came from. A spot on a neighbour's hexagon is not saved as
+  the World position (`neighbourHexLandAt`, and nothing is saved while the
+  page stands in a hexagon), and a position saved there before is replaced
+  by the fresh arrival at the campfire (`leaveRestoredNeighbourHex`), so
+  opening the World lands in it, at the last spot walked in it. The page used to
   load `<world>/world/?from=forkmesh&slot=n&pos=x,z` instead, which reloaded
   the whole World on every crossing; `worldMeshCrossingURL()` still builds
   that URL for a neighbour's own page. Arriving from such a page,
@@ -708,9 +706,48 @@ them without changing page.
   hide `visiting` peers and see the visitor through their own watch socket
   instead, so nobody is drawn twice. Walking back reverses the swap. A notice
   says which world you entered or returned to.
+- **Standing in an instance's hexagon.** Until 2026-10-21 stepping onto
+  OWASP BLT only drew its published scene, a stand-in with a plaza, a sign,
+  a house and a terrarium, and the rest of BLT's World (its members,
+  repositories, padlocks and shield, benches, trees, its residents as
+  residents) was not there. That evening the page briefly switched into BLT
+  as if it were a flower, and a walker stood in ForkMesh's town filled with
+  BLT's members. Now the page enters an instance's World as that World draws
+  itself (`docs/INSTANCES.md`, An instance World is its own hexagon):
+  - As soon as the hexagon is placed, the page reads the instance's
+    `/api/instance` (`neighbourInstance()`: CORS, no credentials, no
+    redirects, 6 seconds; the federation client's path list stays as it is)
+    and its neighbour scene, and `territoryForNeighbour()` (`world-territory.js`)
+    turns them into the same territory settings the instance builds from:
+    name, style, accent, houses and the terrarium. The logo is the
+    directory's logo, else `/instance-logo.png` through
+    `/api/world/neighbour-icon`; the bugs are the scene's terrarium list with
+    their icons through the same relay, since the instance's raw-file route
+    sends no CORS header. Until this has loaded (or when it fails; it is
+    retried after a minute) stepping onto the land stays a visit to the
+    published scene.
+  - `enterMeshWorld()` then calls the scene's `enterTerritoryVisit()`
+    (`scene/instance-territory.js`): it builds the hexagon with
+    `buildInstanceTerritory()` at the town's centre, moves ForkMesh's
+    scenery (`TERRITORY_NEIGHBOUR_ELEMENTS`) next door by
+    `forkmeshShiftAround()`, switches off `TERRITORY_HIDDEN_ELEMENTS` (only
+    those the visitor had on), walks the hexagon and ForkMesh's tiles, and
+    recentres the walker by minus the hexagon's offset. The Members Circle,
+    repository portals and other town reads come from the instance
+    (`reloadMeshRootData()`), its residents arrive over the visit socket,
+    the houses and terrarium are walled and clickable as on the instance,
+    and home's peers stay visible next door. ForkMesh's Office stays home's
+    (`setOfficeOwner(null)`).
+  - The hub's single-hexagon layer is cleared while the page stands there
+    (`placeMeshHexRoot`), and home is the one neighbour, at the shift the
+    territory reports. Stepping onto ForkMesh's ground (its tiles grown to
+    the road's midline, `territoryOwnerAt()`) returns home:
+    `leaveTerritoryVisit()` moves the scenery back, gives back its clicks,
+    turns the hidden elements on again and keeps the built hexagon for the
+    next visit.
 - **Standing in another World.** A flower neighbour runs the same town, so
   its real town is this page's town with that World's data. Single-hexagon
-  neighbours are visits only (see Single hexagons above). Before,
+  neighbours are entered as their own hexagon (see above). Before,
   stepping onto a neighbour kept the page in the home World, and the
   neighbour stayed a placeholder: a meadow with a logo, or its published
   scene, with nobody but passers-by from the watch socket. Now

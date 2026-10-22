@@ -25,7 +25,8 @@
      "title": "Projects",
      "items": [
       "An instance belongs to only one project.",
-      "Add your own instance from the Federated instances list."
+      "Add your own instance from the Federated instances list.",
+      "An instance on a forkmesh.com address can reach its own domain, and an instance installed from a config file no longer removes itself when nobody signs in within five minutes."
      ]
     },
     {
@@ -49,13 +50,15 @@
      "title": "World",
      "items": [
       "Walk from your World onto a neighbouring instance's hexagon and see its scene, without reloading.",
-      "Visitors can walk into a neighbour's Office."
+      "Visitors can walk into a neighbour's Office.",
+      "Walk into an instance's hexagon, such as OWASP BLT, and you stand in its real World: its members, repositories, buildings and bug terrarium, with ForkMesh's town next door."
      ]
     },
     {
      "title": "Settings",
      "items": [
-      "What's new in the app and forkmesh.com/changelog now show the same notes."
+      "What's new in the app and forkmesh.com/changelog now show the same notes.",
+      "Instance and organization admins can add their own reactions under Settings, Reactions, GIFs & tips."
      ]
     },
     {
@@ -69,7 +72,11 @@
      "items": [
       "Issues and pull requests link up from Development and from \"fixes #N\" comments.",
       "Mirrors fetch issue, pull request and discussion changes as soon as they are committed.",
-      "Delete branches one at a time or several at once."
+      "Delete branches one at a time or several at once.",
+      "Say thanks on any comment with the new gratitude reactions and Thank you sticker, reply with a GIF, or tip the author wallet to wallet with Solana Pay.",
+      "Issue search now looks through descriptions and comments, and the issue list stays quick with thousands of issues.",
+      "Pull requests whose code contains a byte-order mark or another invisible character are accepted and flagged instead of failing with a bad signature.",
+      "The code map no longer shows text files as binary at random."
      ]
     },
     {

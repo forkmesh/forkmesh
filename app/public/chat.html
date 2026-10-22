@@ -1588,6 +1588,12 @@
             <button id="chat-trust-block" class="chat-trust-block" type="button">Block</button>
           </div>
 
+          <div id="chat-group-call-bar" class="chat-group-call-bar" role="status" hidden>
+            <span id="chat-group-call-bar-text"></span>
+            <button id="chat-group-call-join-audio" type="button">Join with audio</button>
+            <button id="chat-group-call-join-video" type="button">Join with video</button>
+          </div>
+
           <div id="chat-log" aria-live="polite" aria-label="Chat messages">
             <div class="chat-empty">
               <svg class="chat-empty-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1889,6 +1895,33 @@
           <button id="chat-call-mute" type="button">Mute</button>
           <button id="chat-call-camera" type="button" hidden>Camera off</button>
           <button id="chat-call-hangup" type="button" class="chat-call-hangup">Hang up</button>
+        </div>
+      </div>
+
+      <div id="chat-group-call-panel" class="chat-call-panel chat-group-call-panel" role="dialog" aria-label="Group call" hidden>
+        <div class="chat-call-head">
+          <strong id="chat-group-call-title"></strong>
+          <span id="chat-group-call-state" role="status" aria-live="polite"></span>
+        </div>
+        <div id="chat-group-call-grid" class="chat-group-call-grid"></div>
+        <div id="chat-group-call-verify" class="chat-group-call-verify" hidden>
+          <p id="chat-group-call-verify-title" class="chat-group-call-verify-title">Compare these with everyone in the call</p>
+          <div id="chat-group-call-verify-emoji" class="chat-group-call-verify-emoji" role="group" aria-label="Verification code"></div>
+          <p id="chat-group-call-verify-digits" class="chat-group-call-verify-digits"></p>
+          <p id="chat-group-call-verify-note" class="chat-group-call-verify-note" role="status" aria-live="polite"></p>
+          <div id="chat-group-call-verify-actions" class="chat-group-call-verify-actions">
+            <button id="chat-group-call-verify-match" type="button">They match</button>
+            <button id="chat-group-call-verify-mismatch" type="button">They don't match</button>
+          </div>
+        </div>
+        <p class="chat-call-meta">
+          Group calls are end-to-end encrypted: ForkMesh's call server forwards
+          everyone's audio and video without being able to see or hear them.
+        </p>
+        <div class="chat-call-actions">
+          <button id="chat-group-call-mute" type="button">Mute</button>
+          <button id="chat-group-call-camera" type="button" hidden>Camera off</button>
+          <button id="chat-group-call-leave" type="button" class="chat-call-hangup">Leave</button>
         </div>
       </div>
 

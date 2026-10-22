@@ -949,3 +949,112 @@ def test_live_budget_frame_and_envelope_rules():
     assert envelope(_live_frame(data="x" * 20_000)) is None
     assert envelope(json.dumps({"kind": "forkmesh-received", "live": True})) is None
     assert envelope("not json \"live\"") is None
+
+
+def _ring_harness():
+    namespace, room_type, stored = _harness(participants=(ALICE, BOB))
+    rings = []
+    clock = {"now": NOW}
+
+    async def ring(_env, conversation_id, caller_bi, call_id=""):
+        rings.append((conversation_id, caller_bi, call_id))
+
+    class _Clock:
+        @staticmethod
+        def now():
+            return clock["now"]
+
+    namespace.update({
+        "_chat_direct_call_ring": ring,
+        "_CHAT_DIRECT_RING_MEMO": {},
+        "CHAT_DIRECT_RING_EVERY_MS": 20_000,
+        "CHAT_DIRECT_RING_MEMO_MAX": 256,
+        "_CHAT_DIRECT_RING_BUDGET": {},
+        "CHAT_DIRECT_RINGS_PER_WINDOW": 8,
+        "CHAT_DIRECT_RING_WINDOW_MS": 60_000,
+        "Date": _Clock,
+    })
+    return room_type, stored, rings, clock
+
+
+CALL = "0b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"
+
+
+def _call_frame(**extra):
+    return json.dumps(
+        {"kind": "cipher", "v": 1, "iv": "i", "data": "d", "ring": True,
+         "call": CALL, **extra},
+        separators=(",", ":"))
+
+
+def test_a_call_invite_rings_the_other_person_without_storing_it():
+    room_type, stored, rings, _clock = _ring_harness()
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+    bob = _Socket("s2", BOB, direct_id=DIRECT)
+
+    _relay(room_type, [alice, bob], alice, _call_frame())
+
+    assert rings == [(DIRECT, ALICE, CALL)]
+    assert _kind(bob, "cipher")[0]["data"] == "d"
+    assert stored == []
+
+
+def test_resent_invites_ring_at_most_every_twenty_seconds():
+    room_type, _stored, rings, clock = _ring_harness()
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+
+    for step in range(7):
+        clock["now"] = NOW + step * 3_000
+        _relay(room_type, [alice], alice, _call_frame())
+    assert len(rings) == 1
+    clock["now"] = NOW + 20_000
+    _relay(room_type, [alice], alice, _call_frame())
+    assert len(rings) == 2
+    _relay(room_type, [alice], alice, _call_frame(
+        call="1b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"))
+    assert len(rings) == 3
+
+
+def test_a_redial_rings_straight_away():
+    room_type, _stored, rings, clock = _ring_harness()
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+
+    _relay(room_type, [alice], alice, _call_frame())
+    clock["now"] = NOW + 500
+    _relay(room_type, [alice], alice, _call_frame(
+        call="1b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"))
+    assert [ring[2] for ring in rings] == [
+        CALL, "1b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"]
+
+
+def test_fresh_call_ids_cannot_ring_a_phone_more_than_eight_times_a_minute():
+    room_type, _stored, rings, clock = _ring_harness()
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+
+    for step in range(30):
+        clock["now"] = NOW + step * 1_000
+        _relay(room_type, [alice], alice, _call_frame(
+            call="%08x-3f40-4a5b-8c6d-7e8f90a1b2c3" % step))
+    assert len(rings) == 8
+    clock["now"] = NOW + 60_000
+    _relay(room_type, [alice], alice, _call_frame())
+    assert len(rings) == 9
+
+
+def test_a_long_call_id_is_cut_before_it_rings():
+    room_type, _stored, rings, _clock = _ring_harness()
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+
+    _relay(room_type, [alice], alice, _call_frame(call="c" * 5_000))
+    assert rings == [(DIRECT, ALICE, "c" * 64)]
+
+
+def test_only_live_direct_room_frames_ring():
+    room_type, _stored, rings, _clock = _ring_harness()
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+    member = _Socket("s3", ALICE, channel_id=CHANNEL)
+
+    _relay(room_type, [alice], alice, _call_frame(persist=True))
+    _relay(room_type, [alice], alice, _call_frame(ring="yes"))
+    _relay(room_type, [member], member, _call_frame())
+    assert rings == []

@@ -68,6 +68,9 @@ public final class DirectCallEngine {
     public static let ringTimeout: TimeInterval = 45
     public static let inviteResend: TimeInterval = 3
     public static let inviteStale: TimeInterval = 9
+    public static let ringTopic = "calls"
+    public static let ringSound = "forkmesh-call-ring.wav"
+    public static let ringSoundSeconds: Double = 27
     public static let frameTypes: Set<String> = [
         "call-invite", "call-accept", "call-decline", "call-offer", "call-answer", "call-ice", "call-bye",
     ]

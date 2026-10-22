@@ -52,11 +52,13 @@ public protocol PushPlatform: AnyObject {
     /// under its own app's apns-topic (`apns_device_tokens.bundle_id`); "" leaves the relay on the
     /// App Store app's id (com.forkmesh.forkmesh), which is wrong for any other build.
     func appBundleId() -> String
+    func registerForCalls() async throws
 }
 
 extension PushPlatform {
     public func clearCredentials(origin: String) async throws { try await clearCredentials() }
     public func appBundleId() -> String { "" }
+    public func registerForCalls() async throws {}
 }
 
 @MainActor
@@ -73,6 +75,7 @@ public final class PushNotificationService {
     public let supported: Bool
 
     public private(set) var token = ""
+    public private(set) var voipToken = ""
     /// `development` for a token minted against the APNs sandbox, `production` otherwise.
     public private(set) var environment = ""
     /// iOS's answer the last time permission was checked, or `unknown` before the first check.
@@ -218,15 +221,12 @@ public final class PushNotificationService {
                 let granted = try await platform.requestPermission() ?? false
                 permission = granted ? "authorized" : "denied"
                 if !granted {
-                    log("permission declined at the system prompt")
-                    notify()
-                    return
+                    log("permission declined at the system prompt; registering for calls only")
+                    try await platform.registerForCalls()
                 }
             } else if status == "denied" {
-                // Nothing to do until the user turns it back on in Settings.
-                log("permission denied in iOS Settings; not registering")
-                notify()
-                return
+                log("permission denied in iOS Settings; registering for calls only")
+                try await platform.registerForCalls()
             } else {
                 // Already authorized: registering again makes iOS hand back the token.
                 _ = try await platform.requestPermission()
@@ -297,12 +297,12 @@ public final class PushNotificationService {
         // Re-POST whenever the token or the account changes. The origin is part of it: the same
         // account name on two projects is two registrations, on two instances.
         let api = self.api
-        let fingerprint = "\(api.gitOrigin)|\(accountKey):\(token):\(environment)"
+        let fingerprint = "\(api.gitOrigin)|\(accountKey):\(token):\(environment):\(voipToken)"
         if fingerprint == registeredFor || fingerprint == publishingFor { return }
         publishingFor = fingerprint
         let result = await api.registerPushDevice(
             deviceToken: token, environment: environment.isEmpty ? "production" : environment,
-            bundleId: platform?.appBundleId() ?? "")
+            bundleId: platform?.appBundleId() ?? "", voipToken: voipToken)
         if publishingFor == fingerprint { publishingFor = "" }
         // A project switch while the POST was in flight: the answer is about the project that was
         // left, and says nothing about this one.
@@ -369,6 +369,14 @@ public final class PushNotificationService {
         if let environment { self.environment = environment }
         lastError = ""
         log("APNs issued a \(self.environment) token")
+        if started { await publish(accountKeyProvider?() ?? "") }
+        notify()
+    }
+
+    public func didReceiveVoipToken(_ token: String) async {
+        if token == voipToken { return }
+        voipToken = token
+        log(token.isEmpty ? "PushKit withdrew the VoIP token" : "PushKit issued a VoIP token")
         if started { await publish(accountKeyProvider?() ?? "") }
         notify()
     }
@@ -501,7 +509,8 @@ public struct PushOpen: Equatable, Hashable, Sendable, CustomStringConvertible {
 
     public var isChat: Bool { topic == "chat" }
     public var isAlarm: Bool { !alarm.isEmpty }
-    public var isDirectMessage: Bool { topic == "direct-messages" }
+    public var isDirectMessage: Bool { topic == "direct-messages" || isCall }
+    public var isCall: Bool { topic == "calls" }
     /// A push about code pushed to a repository (topic `code-push`). Its href names the
     /// repository's commits on the pushed branch (`/owner/repo/commits/<branch>`).
     public var isCodePush: Bool { topic == "code-push" }

@@ -144,6 +144,13 @@ struct ChatInstaller: AppServicesInstaller {
                         Task { await hub.applyReadMarks() }
                     }
                 }
+                let previousEvent: (@MainActor (String, JSONObject) -> Void)? = events.onEvent
+                events.onEvent = { (topic: String, frame: JSONObject) in
+                    previousEvent?(topic, frame)
+                    guard topic == DirectCallEngine.ringTopic else { return }
+                    let conversation: String = frame.str("conversation")
+                    Task { await direct.openRinging(conversation) }
+                }
                 let previousConnected: (@MainActor () -> Void)? = events.onConnected
                 events.onConnected = {
                     previousConnected?()
@@ -186,7 +193,12 @@ struct ChatInstaller: AppServicesInstaller {
                 await direct.sendCallFrame(conversation, type: type, extra: extra)
             },
             look: studio.look)
+        #if canImport(WebRTC)
+        NativeCallMedia.shared.follow(studio.look)
+        calls.peerFactory = NativeCallPeerFactory.shared
+        #else
         calls.peerFactory = studio.factory
+        #endif
         calls.onMissed = { (conversation: String, media: DirectCallKind) in
             Task { _ = await direct.send(conversation, text: "📞 Missed \(media.rawValue) call") }
         }
@@ -195,7 +207,14 @@ struct ChatInstaller: AppServicesInstaller {
         }
         hub.calls = calls
         Services.put(calls)
+        #if canImport(WebRTC)
+        NativeGroupCall.shared.office = hub.office
+        hub.onGroupCallFrame = { (frame: JSONObject, conversation: String) in
+            NativeGroupCall.shared.handleFrame(frame, conversation: conversation)
+        }
+        #endif
         CallRinger.shared.attach(calls)
+        DirectCallKit.shared.attach(calls, direct: direct)
     }
 
     private func installLive(hub: ChatHub, direct: DirectMessageService) -> DirectLiveEngine {

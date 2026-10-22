@@ -838,6 +838,10 @@ export function createChatRoomTransport({
       if (persist && NOTIFY_TYPES.has(plain && plain.type)) {
         envelope.notify = true;
       }
+      if (!persist && plain?.type === "call-invite" && isDirectRoom(room)) {
+        envelope.ring = true;
+        if (plain.call) envelope.call = String(plain.call);
+      }
       const text = JSON.stringify(envelope);
       const ref = persist ? await frameRef(text) : "";
       if (persist && plain?.id) rememberRecipientRef(ref, String(plain.id));

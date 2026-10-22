@@ -1,8 +1,5 @@
 // ForkMesh's own QR-code generator — no third-party library.
 //
-// Scope: byte mode, error-correction level L, QR versions 1–5 (a single error
-// block, which keeps placement simple). That covers up to 108 bytes — plenty
-// for a "bitcoincash:<addr>?amount=..." URI. Exposes:
 //   ForkMeshQR.toCanvas(text, pxSize) -> <canvas>
 //   ForkMeshQR.render(text, containerEl, pxSize)
 (function (global) {
@@ -63,16 +60,29 @@
     4: { data: 80, ec: 20, blocks: 1 },
     5: { data: 108, ec: 26, blocks: 1 },
     6: { data: 136, ec: 18, blocks: 2 },
+    7: { data: 156, ec: 20, blocks: 2 },
+    8: { data: 194, ec: 24, blocks: 2 },
+    9: { data: 232, ec: 30, blocks: 2 },
   };
-  // Single alignment-pattern center (only one for v2-6 at these sizes).
-  const ALIGN = { 2: 18, 3: 22, 4: 26, 5: 30, 6: 34 };
+  const ALIGN = {
+    2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34],
+    7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46],
+  };
+  const MAX_VERSION = 9;
 
   function chooseVersion(byteLen) {
-    for (let v = 1; v <= 6; v++) {
+    for (let v = 1; v <= MAX_VERSION; v++) {
       // 4-bit mode + 8-bit count + 8*len bits must fit in dataCodewords*8.
       if (4 + 8 + byteLen * 8 <= CAP_L[v].data * 8) return v;
     }
-    throw new Error("data too long for QR v1–5");
+    throw new Error("data too long for QR v1–9");
+  }
+
+  function versionBits(version) {
+    let d = version << 12;
+    const g = 0x1f25;
+    for (let i = 17; i >= 12; i--) if ((d >> i) & 1) d ^= g << (i - 12);
+    return (version << 12) | d;
   }
 
   // --- Bit stream -> data codewords -----------------------------------------
@@ -154,15 +164,29 @@
     // Dark module.
     set(4 * version + 9, 8, true);
 
-    // Alignment pattern (v >= 2).
-    if (ALIGN[version] !== undefined) {
-      const ac = ALIGN[version];
-      for (let dr = -2; dr <= 2; dr++)
-        for (let dc = -2; dc <= 2; dc++) {
-          const ring =
-            Math.max(Math.abs(dr), Math.abs(dc)) !== 1; // center + outer ring
-          set(ac + dr, ac + dc, ring);
-        }
+    const centers = ALIGN[version] || [];
+    const last = centers.length - 1;
+    for (let i = 0; i <= last; i++)
+      for (let j = 0; j <= last; j++) {
+        if ((i === 0 && j === 0) || (i === 0 && j === last) ||
+            (i === last && j === 0)) continue; // under a finder
+        const ar = centers[i], ac = centers[j];
+        for (let dr = -2; dr <= 2; dr++)
+          for (let dc = -2; dc <= 2; dc++) {
+            const ring =
+              Math.max(Math.abs(dr), Math.abs(dc)) !== 1; // center + outer ring
+            set(ar + dr, ac + dc, ring);
+          }
+      }
+
+    if (version >= 7) {
+      const info = versionBits(version);
+      for (let i = 0; i < 18; i++) {
+        const bit = ((info >> i) & 1) === 1;
+        const a = Math.floor(i / 3), b = size - 11 + (i % 3);
+        set(a, b, bit);
+        set(b, a, bit);
+      }
     }
 
     // Reserve the format-info regions (filled later, after masking).
@@ -225,9 +249,8 @@
     m[8][8] = bit(7);
     m[8][7] = bit(8);
     for (let i = 9; i <= 14; i++) m[8][14 - i] = bit(i);
-    // Around the other two finders.
-    for (let i = 0; i <= 7; i++) m[size - 1 - i][8] = bit(i);
-    for (let i = 8; i <= 14; i++) m[8][size - 15 + i] = bit(i);
+    for (let i = 0; i <= 7; i++) m[8][size - 1 - i] = bit(i);
+    for (let i = 8; i <= 14; i++) m[size - 15 + i][8] = bit(i);
     m[size - 8][8] = true; // dark module stays set
   }
 
@@ -315,5 +338,6 @@
   // Internals exposed for the self-consistency test harness only.
   global.ForkMeshQR._test = {
     makeMatrix, buildCodewords, chooseVersion, rsEncode, MASKS, CAP_L, formatBits,
+    versionBits, applyFormat,
   };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -11,7 +11,7 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 
 | Path | Responsibility |
 | --- | --- |
-| `deploy/fleet.toml` | the live fleet: `[[nodes]]`, `[[runners]]`, `[paths]`, `[wireguard]`, `[rqlite]`, `[caddy]`, `[app]`, `[production]`, `[dns]`, `[ids]`, `[logs]`, `[hosted]`. No secrets, no addresses. |
+| `deploy/fleet.toml` | the live fleet: `[[nodes]]`, `[[runners]]`, `[paths]`, `[wireguard]`, `[rqlite]`, `[caddy]`, `[app]`, `[production]`, `[turn]`, `[calls]`, `[dns]`, `[ids]`, `[logs]`, `[hosted]`. No secrets, no addresses. |
 | `deploy/fleet.example.toml` | annotated template |
 | `deploy/core/render.py` | renders a node's files into a tree plus `MANIFEST.json`; never reads secrets |
 | `deploy/core/caddy_routes.py` | Caddy route snippets shipped with each release |
@@ -35,8 +35,8 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 
 - **Render, then push.** `render.py` produces files only;
   `next_fleet.py install <node> --steps …` copies them and runs each step over
-  SSH. Core steps: `base`, `wireguard`, `rqlite`, `files`, `secrets`, `start`
-  (plus `daemon`, `caddy`, `ids`, `logread`). Runner steps: `base`, `files`,
+  SSH. Core steps: `base`, `wireguard`, `rqlite`, `turn`, `calls`, `files`,
+  `secrets`, `start` (plus `daemon`, `caddy`, `ids`, `logread`). Runner steps: `base`, `files`,
   `start`, `daemon`.
 - **Secrets never rendered.** Units load encrypted credentials by name
   (`LoadCredentialEncrypted=`). With `[app] vault = true` the app gets only
@@ -69,6 +69,7 @@ chosen at run time among live cores:
 | certificates, cron, Durable Objects, autoscaler | rendezvous or rotation over live `cluster_members` |
 | WireGuard, firewall, mesh, certsync, IDS keys, Git upstreams | full mesh from `fleet.toml` |
 | runner-pool and hosted-git core lists | rendered into `app.env` from the fleet's cores |
+| group calls | every core runs `fmnext-calls`; the app places each room by rendezvous over the healthy cores in `FORKMESH_CALLS_NODES` ([calls.md](calls.md)) |
 
 `deploy/tests/test_no_main_node.py` checks this.
 
@@ -87,7 +88,7 @@ the plan. Steps:
 | 5 | keys | WireGuard and IDS keys generated on the node |
 | 6 | mesh | re-render peers one at a time while the new core installs |
 | 7 | join | start; rqlite joins over the mesh; the IDS starts last |
-| 8 | services | daemon, files, start; sync every repository from peers |
+| 8 | services | daemon, calls, files, start; sync every repository from peers |
 | 9 | activate | deploy the served release, unseal |
 | 10 | repos | wait until every repository is present and synced |
 | 11 | ids | install the log reader, sign the baseline |
@@ -230,6 +231,13 @@ python3 deploy/core/render.py --help
 python3 tools/next_fleet.py install n1 --steps files      # dry run
 python3 tools/next_deploy.py all --execute
 ```
+
+## Services on every core
+
+- Office TURN relay: `fmnext-turn.service`, `[turn]`
+  ([office/README.md](../office/README.md)).
+- Group-call server (SFU): `fmnext-calls.service`, `[calls]`, UDP 3479 and
+  `/calls/*` on each per-node name ([calls.md](calls.md)).
 
 ## Traps
 

@@ -43,6 +43,12 @@ public enum DirectCallTones {
         render(frequencies: ringHz, bursts: ringBursts, cycle: ringCycle, rate: rate)
     }
 
+    public static func ringLoop(seconds: Double, rate: Int = DirectCallTones.rate) -> [Int16] {
+        let cycle = ring(rate: rate)
+        let count = max(1, Int(seconds / ringCycle))
+        return Array([[Int16]](repeating: cycle, count: count).joined())
+    }
+
     public static func render(frequencies: [Double], bursts: [DirectCallToneBurst], cycle: Double, rate: Int) -> [Int16] {
         let perSecond = Double(rate)
         let total = max(0, Int(cycle * perSecond))
