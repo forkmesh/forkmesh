@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import datetime
 import html
 import json
@@ -174,6 +175,22 @@ def actor_pixels(size):
     return int(float(match.group(1)) * 4 + 0.5) if match else 28
 
 
+FORGE_AVATARS = contextvars.ContextVar("forge_avatars", default=(None, frozenset()))
+
+
+def forge_avatars(index):
+    names = (index or {}).get("forgeAvatars") if isinstance(index, dict) else None
+    return frozenset(name.lower() for name in names or () if isinstance(name, str))
+
+
+def forge_avatar_src(forge):
+    ctx, known = FORGE_AVATARS.get()
+    login = forge["login"].lower()
+    if ctx is None or "%s:%s" % (forge["provider"], login) not in known:
+        return ""
+    return ctx.raw_url(".forkmesh/contributors/%s-%s.png" % (forge["provider"], login))
+
+
 def avatar_html(name, author="", size="h-7 w-7", agent=False, link=True):
     label = str(name or author or ("Agent" if agent else "unknown"))
     bot = agent or actor_is_bot(label)
@@ -184,6 +201,11 @@ def avatar_html(name, author="", size="h-7 w-7", agent=False, link=True):
                  else "h-5 w-5", "text-muted-foreground") if bot else (
         '<span class="text-[9px] font-bold text-muted-foreground">%s</span>' % esc(
             ((forge["login"] if forge else label)[:1] or "?").upper()))
+    picture = forge_avatar_src(forge) if forge and not bot else ""
+    if picture:
+        inner += ('<img src="%s" alt="" width="%d" height="%d" loading="lazy" decoding="async" '
+                  'referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full '
+                  'object-cover" />' % (esc(picture), pixels, pixels))
     hydrate = ' data-issue-actor-avatar="%s"' % esc(handle) if handle else ""
     classes = ("relative flex %s shrink-0 items-center justify-center overflow-hidden "
                "rounded-full border border-border bg-secondary" % size)
@@ -287,6 +309,9 @@ ICONS = {
         '<circle cx="8" cy="8" r="6"></circle><path d="M18.09 10.37A6 6 0 1 1 10.34 18"></path><path d="M7 6h1v4"></path><path d="m16.71 13.88.7.71-2.82 2.82"></path>'),
     'copy': (
         '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>'),
+    'external-link': (
+        '<path d="M15 3h6v6"></path><path d="M10 14 21 3"></path>'
+        '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>'),
     'flag': (
         '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" x2="4" y1="22" y2="15"></line>'),
     'gauge': (
@@ -1699,6 +1724,39 @@ def ai_prompt_html(ctx, number, title, repo, template=""):
             icon("copy", "copy-icon h-3.5 w-3.5"), icon("check", "copy-check h-3.5 w-3.5")))
 
 
+SOURCE_URL_RE = re.compile(r"^https://[A-Za-z0-9.-]+(?::\d{1,5})?/[A-Za-z0-9._~/-]*$")
+
+
+def source_url(value):
+    url = str(value or "")
+    return url if len(url) <= 500 and SOURCE_URL_RE.match(url) else ""
+
+
+def index_source_url(index, number):
+    if not isinstance(index, dict):
+        return ""
+    if index.get("related") == number:
+        return source_url(index.get("sourceUrl"))
+    own = next((item for item in index.get("issues") or []
+                if isinstance(item, dict) and item.get("number") == number), {})
+    return source_url(own.get("sourceUrl"))
+
+
+def source_link_html(url):
+    safe = source_url(url)
+    if not safe:
+        return ""
+    host = re.split(r"[/:]", safe[8:])[0].lower()
+    label = "View on GitHub" if host == "github.com" else "View on %s" % host
+    return ('<a data-repo-issue-source href="%s" target="_blank" rel="noopener noreferrer '
+            'nofollow" aria-label="%s" title="Open the original issue in a new tab" '
+            'class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border '
+            'bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">'
+            '%s<span class="hidden sm:inline">%s</span></a>' % (
+                esc(safe), esc(label), icon("external-link", "h-4 w-4", "text-muted-foreground"),
+                esc(label)))
+
+
 def plugins_off():
     features = sys.modules.get("instance_features")
     try:
@@ -1708,7 +1766,18 @@ def plugins_off():
 
 
 def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
-                 repo="", prompt="", reactions=None, off=frozenset()):
+                 repo="", prompt="", reactions=None, off=frozenset(), source="",
+                 avatars=frozenset()):
+    token = FORGE_AVATARS.set((ctx, frozenset(avatars)))
+    try:
+        return _render_issue(issue, ctx, owner, path, index, now, viewer, repo, prompt,
+                             reactions, off, source)
+    finally:
+        FORGE_AVATARS.reset(token)
+
+
+def _render_issue(issue, ctx, owner, path, index, now, viewer, repo, prompt, reactions,
+                  off, source):
     now = time.time() if now is None else now
     number = issue["number"]
     title = issue["title"] or "Issue #%d" % number
@@ -1900,7 +1969,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
         'font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">%s '
         '<span class="font-light text-muted-foreground">%s</span></h1>\n            \n'
         '            <div class="flex shrink-0 items-center gap-2 pt-1">\n              \n'
-        '              <button type="button" data-repo-issue-new class="inline-flex h-8 '
+        '              %s<button type="button" data-repo-issue-new class="inline-flex h-8 '
         'items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground '
         'hover:bg-cta/90">New issue</button>\n              <button type="button" '
         'data-dashboard-copy="%s" aria-label="Copy link to this issue" title="Copy link" '
@@ -1925,7 +1994,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
         '              \n              \n            </div>\n          </aside>\n        </div>\n'
         '      </article>' % (
             number, pill_class, icon(pill_icon, "h-3.5 w-3.5"), state_label, esc(title),
-            record_label, esc(title), record_label,
+            record_label, esc(title), record_label, source_link_html(source),
             esc(ctx.origin + ctx.record_url("issues", number)),
             icon("link", "copy-icon h-4 w-4"), icon("check", "copy-check h-4 w-4"),
             parents_html(ctx, parents), pill_class, icon(pill_icon, "h-4 w-4"), state_label,

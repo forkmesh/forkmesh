@@ -352,6 +352,8 @@ def index_list_row(summary):
         "ts": created or "",
         "labels": [str(label) for label in summary.get("labels") or []][:20],
         "body": ("" if body is None else str(body))[:300],
+        "commenters": [str(name) for name in summary.get("recentCommenters") or []
+                       if isinstance(name, str)][:4],
     }
 
 
@@ -367,7 +369,9 @@ def _indexed_issues(index):
         1 for row in rows if row["number"] in legacy
         and row["state"] != "closed" and not row["deleted"])
     return {"rows": rows, "open": open_count,
-            "closed": int(index.get("closedFolders") or 0)}
+            "closed": int(index.get("closedFolders") or 0),
+            "avatars": [name for name in index.get("forgeAvatars") or []
+                        if isinstance(name, str)]}
 
 
 async def plan_issues(reader, branch):
@@ -819,6 +823,7 @@ VIEW_STYLE = """<style>
 .fm-ssr-item{padding:8px 16px;border-top:1px solid rgb(var(--dashboard-border-rgb))}.fm-ssr-item:first-child{border-top:0}
 .fm-ssr-item>a{font-weight:600;color:rgb(var(--dashboard-foreground-rgb));font-size:15px}.fm-ssr-item .m{color:rgb(var(--dashboard-muted-foreground-rgb));font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fm-ssr-pill{display:inline-block;border-radius:2em;padding:2px 10px;font-size:12px;font-weight:600;color:#fff;background:#238636;margin-right:8px;vertical-align:middle}.fm-ssr-pill.closed{background:#8957e5}.fm-ssr-pill.merged{background:#8957e5}
+.fm-ssr-item .p{float:right;display:flex;margin-top:1px}.fm-ssr-item .p>*{margin-left:-6px;box-shadow:0 0 0 2px rgb(var(--dashboard-canvas-rgb))}
 .fm-ssr-label{display:inline-block;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:2em;padding:0 7px;font-size:11px;margin-left:6px;color:rgb(var(--dashboard-muted-foreground-rgb))}
 .fm-ssr-h1{font-size:26px;font-weight:400;margin:0 0 8px;overflow-wrap:anywhere}.fm-ssr-h1 span{color:rgb(var(--dashboard-muted-foreground-rgb))}
 .fm-ssr-sub{color:rgb(var(--dashboard-muted-foreground-rgb));margin:0 0 16px;overflow-wrap:anywhere}.fm-ssr-sub code{font-family:ui-monospace,monospace;font-size:12px}
@@ -912,6 +917,21 @@ def _frame(bundle, active, inner):
             _esc(repo), tabs, inner))
 
 
+def _plugins_off():
+    from . import repo_ssr_issue
+    return repo_ssr_issue.plugins_off()
+
+
+def _created_ms(value):
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    if number != number or number in (float("inf"), float("-inf")):
+        return 0
+    return number * 1000 if 0 < number < 10_000_000_000 else number
+
+
 def _list(bundle, kind, rows, open_count=None, closed_count=None):
     base = "/%s/%s" % (urllib.parse.quote(bundle.owner),
                        urllib.parse.quote(bundle.repo))
@@ -919,7 +939,7 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None):
         shown = [r for r in rows if str(r.get("state") or "open").lower()
                  == "open" and not r.get("deleted")]
         if kind == "issues":
-            shown.sort(key=lambda r: -r["number"])
+            shown.sort(key=lambda r: (-_created_ms(r.get("ts")), -r["number"]))
         if open_count is None:
             open_count = len(shown)
         if closed_count is None:
@@ -944,10 +964,16 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None):
             meta += " &middot; " + _esc(row["category"])
         labels = "".join('<span class="fm-ssr-label">%s</span>' % _esc(x)
                          for x in row.get("labels") or [])
+        faces = ""
+        if row.get("commenters") and "forum-list" not in _plugins_off():
+            from .repo_ssr_issue import avatar_html
+            faces = '<span class="p" data-repo-issue-row-commenters>%s</span>' % "".join(
+                avatar_html(name, name, "h-5 w-5", False, False)
+                for name in row["commenters"][:4])
         items.append(
-            '<div class="fm-ssr-item" data-ssr-record="%s"%s><a href="%s/%s/%d">'
+            '<div class="fm-ssr-item" data-ssr-record="%s"%s>%s<a href="%s/%s/%d">'
             '%s</a>%s<div class="m">%s</div></div>' % (
-                kind, " data-ssr-usable" if index == 0 else "", _esc(base),
+                kind, " data-ssr-usable" if index == 0 else "", faces, _esc(base),
                 "pull" if kind == "pulls" else kind, number,
                 _esc(row.get("title")), labels, meta))
     if not items:
@@ -1054,8 +1080,17 @@ def _render(bundle, section="", reactions=None):
     if bundle.view in ("pulls", "discussions"):
         return _list(bundle, bundle.view, model.get("rows") or [])
     if bundle.view == "issues":
-        return _list(bundle, "issues", model.get("rows") or [],
-                     model.get("open"), model.get("closed"))
+        from . import repo_ssr_issue
+        ctx = repo_ssr_issue.Context(base, "/api/repo/%s/%s" % (
+            urllib.parse.quote(bundle.owner, safe=""),
+            urllib.parse.quote(bundle.repo, safe="")), str(bundle.ref or "main"))
+        token = repo_ssr_issue.FORGE_AVATARS.set((ctx, frozenset(
+            name.lower() for name in model.get("avatars") or [])))
+        try:
+            return _list(bundle, "issues", model.get("rows") or [],
+                         model.get("open"), model.get("closed"))
+        finally:
+            repo_ssr_issue.FORGE_AVATARS.reset(token)
     if bundle.view == "pull" and model.get("pull"):
         pull = model["pull"]
         tabs = "".join('<a href="%s/pull/%d%s"%s>%s</a>' % (

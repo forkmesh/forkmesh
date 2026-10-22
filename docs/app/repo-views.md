@@ -398,6 +398,36 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   view, which are usually remembered; otherwise it is served without them.
   Without a remembered `/about`, a feature tab's page still draws the tabs a
   repository has by default.
+- **View on GitHub.** When the issue index knows the provider issue an issue
+  was mirrored from (`sourceUrl`, see
+  [issue-scale-limits.md](issue-scale-limits.md#the-issue-index)), the title
+  actions start with a link to it (`renderIssueSourceLink` /
+  `source_link_html`): "View on GitHub" for github.com, "View on <host>"
+  otherwise, the text hidden below `sm` so the row stays one line on a phone.
+  It opens in a new tab with `rel="noopener noreferrer nofollow"`; both
+  renderers accept only an `https` address of plain path characters. It is
+  a link the reader chooses to follow: nothing on the page loads from the
+  provider. The dashboard learns the address with the issue's relations
+  (`loadRepoIssueRelations`, kept per issue in `repoIssueSources`), the
+  server renderer from the bundle's `related` answer (`index_source_url`).
+- **Order, as on GitHub (`forum-list` plugin).** With the instance plugin
+  `forum-list` on (an `OPT_IN` plugin: off on instances and on forkmesh.com
+  until chosen), the issue list's default sort is Newest (`newest`: created
+  time descending, ties by number descending), GitHub's
+  `sort=created&direction=desc`; without it the default stays "Recently
+  updated" (`issueDefaultSort`). Both stay in the Sort menu, and "Recently
+  updated" is what the Recent view picks. The default is not written into the search
+  box (`sort:` appears only for another choice). `issueSortItems` falls back
+  to Newest for an unknown sort, and the server-rendered list orders its rows
+  the same way (`_created_ms`, seconds read as milliseconds like `stamp`).
+  A thread shows its comments and events oldest first by their `ts`
+  (`renderIssueTimeline` / `Renderer.timeline`, both stable sorts), whatever
+  order the record stores them in; mirrored comments carry the provider's
+  creation time.
+- **Instance switches.** With the `issue-ai-prompt` or `fediverse-ui` plugin
+  off ([INSTANCES.md](../INSTANCES.md#plugins)) neither renderer draws the
+  prompt box or the Fediverse thread; the server renderer reads
+  `plugins_off()` and keys its kept article by it.
 - **Pictures.** A paragraph that is one picture of unknown size (no width or
   height, `mdLoneImage` / `lone_image`) is drawn in a fixed 16:9 frame,
   `img[data-md-figure]` in `shell.html`, at most 24rem high, with the picture

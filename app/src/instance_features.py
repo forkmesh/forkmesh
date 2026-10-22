@@ -83,6 +83,10 @@ FEATURES = (
      "The Fediverse thread under issues, pull requests and discussions, and "
      "the Watch on the fediverse menu of a repository.",
      (), (r"^/api/repo/[^/]+/[^/]+/fedi-comments$",)),
+    ("forum-list", "Forum-style issue lists",
+     "Issue lists open on Newest first, as on GitHub, and each row shows the "
+     "thread's last few commenters.",
+     (), ()),
 )
 OFFSITE_HOSTS = ("forkmesh.com", "www.forkmesh.com", "app.forkmesh.com",
                  "world.forkmesh.com", "www.patreon.com")
@@ -113,6 +117,8 @@ INSTANCE_NOTES = {
     "genie": "The spider at the bottom of each page that offers tips.",
     "developer-docs": "Shows the docs/ folder of this instance's read-only "
                       "forkmesh mirror in the dashboard.",
+    "forum-list": "Lists a repository's issues newest first and shows who "
+                  "commented last, like a forum.",
     "issue-ai-prompt": "Offers readers a prompt to paste into a coding agent "
                        "on each open issue.",
     "fediverse-ui": "Shows replies from the fediverse beside a thread and "
@@ -120,7 +126,7 @@ INSTANCE_NOTES = {
                     "replies endpoint answers 404 too.",
 }
 DEFAULT_ON = frozenset({"issue-ai-prompt", "fediverse-ui"})
-OPT_IN = frozenset()
+OPT_IN = frozenset({"forum-list"})
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)
@@ -284,8 +290,10 @@ def blocked(env, path):
 
 def switched_off(env=None):
     env = _REMEMBERED["env"] if env is None else env
-    if env is None or not branded(env):
-        return frozenset()
+    if env is None:
+        return frozenset(OPT_IN)
+    if not branded(env):
+        return frozenset(set(IDS) - core_ids(env))
     return frozenset(set(IDS) - enabled_ids(env))
 
 

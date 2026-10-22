@@ -1010,6 +1010,13 @@
       .map((event) => String(event.target)));
     const commentCount = events.filter((event) => event?.type === "comment"
       && !deletedEventIds.has(String(event.id || ""))).length;
+    const recentCommenters = [];
+    for (let index = events.length - 1; index >= 0 && recentCommenters.length < 4; index -= 1) {
+      const event = events[index];
+      if (event?.type !== "comment" || deletedEventIds.has(String(event.id || ""))) continue;
+      const name = String(event.authorName || event.author || "").trim();
+      if (name && !recentCommenters.includes(name)) recentCommenters.push(name);
+    }
     return {
       number,
       events,
@@ -1024,6 +1031,7 @@
       meta: [status, labels, issue.milestone].filter(Boolean).join(" · "),
       body: effectiveOpen.body || issue.body || "",
       commentCount,
+      recentCommenters,
       wantsAgent: Boolean(issue.wantsAgent),
       milestone: String(issue.milestone || ""),
       priority: Number(issue.priority || 0) || 0,
@@ -1055,11 +1063,32 @@
     };
   }
 
+  const repoIssueSources = new Map();
+
+  function issueSourceUrlSafe(value) {
+    const url = String(value || "");
+    return url.length <= 500 && /^https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/.test(url) ? url : "";
+  }
+
+  function repoIssueSourceUrl(repo, number, items = []) {
+    const own = (Array.isArray(items) ? items : []).find((issue) => Number(issue?.number) === Number(number));
+    return issueSourceUrlSafe(own?.sourceUrl) || repoIssueSources.get(`${repoKey(repo)}#${Number(number)}`) || "";
+  }
+
+  function renderIssueSourceLink(url) {
+    const safe = issueSourceUrlSafe(url);
+    if (!safe) return "";
+    const host = safe.slice(8).split(/[/:]/)[0].toLowerCase();
+    const label = host === "github.com" ? "View on GitHub" : `View on ${host}`;
+    return `<a data-repo-issue-source href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer nofollow" aria-label="${escapeHtml(label)}" title="Open the original issue in a new tab" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="external-link" class="h-4 w-4 text-muted-foreground"></i><span class="hidden sm:inline">${escapeHtml(label)}</span></a>`;
+  }
+
   async function fetchRepoIssueIndex(repo, options = {}) {
     try {
       const params = options.ref ? { ref: options.ref } : {};
       if (options.related) params.related = Number(options.related);
       const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", params));
+      if (data && typeof rememberForgeAvatars === "function") rememberForgeAvatars(repo, data.forgeAvatars);
       if (!data || data.truncated || !Array.isArray(data.issues)) return null;
       return data;
     } catch (_) {
@@ -1380,6 +1409,9 @@
       || await fetchRepoIssueIndex(repo);
     if (indexed) {
       const items = indexed.issues.map(issueFromIndex);
+      if (number && issueSourceUrlSafe(indexed.sourceUrl)) {
+        repoIssueSources.set(`${repoKey(repo)}#${Number(number)}`, issueSourceUrlSafe(indexed.sourceUrl));
+      }
       state.issueRelationIndex = { key, at: Date.now(), items };
       return items;
     }
@@ -1413,6 +1445,7 @@
       issueDependencies: dependencies,
       issueSubIssues: subIssues,
       issueMentions: issueMentionsOf(relationIndex, number),
+      issueSourceUrl: repoIssueSourceUrl(repo, number, relationIndex),
     };
   }
 
@@ -2773,6 +2806,15 @@
     return `<span data-repo-issue-row-assignees class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml([item.wantsAgent ? "Agent" : "", ...assignees].filter(Boolean).join(", "))}">${faces.join("")}</span>`;
   }
 
+  function renderIssueRowCommenters(item) {
+    if (!instancePluginOn("forum-list")) return "";
+    const names = (Array.isArray(item.recentCommenters) ? item.recentCommenters : [])
+      .map((name) => String(name || "").trim()).filter(Boolean).slice(0, 4);
+    if (!names.length) return "";
+    const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
+    return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
+  }
+
   function pullStateIconHtml(stateLabel, extra = "") {
     const value = String(stateLabel || "open").toLowerCase();
     const [icon, tone] = value === "open" ? ["git-pull-request", "text-[var(--dashboard-open)]"]
@@ -2824,6 +2866,7 @@
             <span class="hidden w-14 justify-end sm:flex">${Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px] text-muted-foreground" title="Priority ${Number(item.priority)} — 1 is highest">P${Number(item.priority)}</span>` : ""}</span>
             <span class="flex w-12 justify-end">${commentCount ? `<span class="inline-flex items-center gap-1 leading-5 hover:text-[var(--dashboard-link)]" title="${formatCount(commentCount)} comment${commentCount === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(commentCount)}</span>` : ""}</span>
             <span class="hidden w-[4.5rem] justify-end sm:flex">${renderIssueRowAvatars(item)}</span>
+            <span class="hidden w-16 justify-end md:flex">${renderIssueRowCommenters(item)}</span>
           </span>` : `
           ${pullStateIconHtml(stateLabel, "mt-1")}
           <span class="min-w-0">
@@ -8896,7 +8939,7 @@
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
               ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
-              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
+              ${renderIssueSourceLink(parsed.issueSourceUrl)}<button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
           </div>
@@ -10031,7 +10074,8 @@
           Object.assign(parsed, early);
           issueRelations = null;
         } else {
-          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [] });
+          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [],
+            issueSourceUrl: repoIssueSourceUrl(repo, number, state.issuesView?.items) });
         }
       }
       if (collabSettings) parsed.repoCollabSettings = await collabSettings;
@@ -10615,12 +10659,16 @@
   const ISSUE_FILTER_ME = "__forkmesh_me__";
   const ISSUE_FILTER_ASSIGNED = "__forkmesh_assigned__";
 
+  function issueDefaultSort() {
+    return instancePluginOn("forum-list") ? "newest" : "recently_updated";
+  }
+
   function issueFilterState() {
     const filters = state.issuesView?.filters;
     if (filters && typeof filters === "object") return filters;
     state.issuesView.filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     return state.issuesView.filters;
   }
@@ -10706,8 +10754,8 @@
     }
     if (field === "sort") {
       return [
-        { value: "recently_updated", label: "Recently updated" },
         { value: "newest", label: "Newest" },
+        { value: "recently_updated", label: "Recently updated" },
         { value: "oldest", label: "Oldest" },
         { value: "priority", label: "Highest priority" },
         { value: "comments", label: "Most commented" },
@@ -10839,8 +10887,12 @@
         || stamp(b, "updatedAtMs") - stamp(a, "updatedAtMs")
         || stableNewest(a, b));
     }
-    return items.sort((a, b) => stamp(b, "updatedAtMs")
-      - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    if (sort === "recently_updated") {
+      return items.sort((a, b) => stamp(b, "updatedAtMs")
+        - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    }
+    return items.sort((a, b) => stamp(b, "createdAtMs")
+      - stamp(a, "createdAtMs") || stableNewest(a, b));
   }
 
   // The Issues sidebar: GitHub's saved views, each a set of filters. A view is
@@ -10975,7 +11027,7 @@
     if (filters.milestone === ISSUE_FILTER_NONE) parts.push("no:milestone");
     else if (filters.milestone) parts.push(`milestone:${issueQueryValue(filters.milestone)}`);
     if (filters.type) parts.push(`type:${filters.type}`);
-    if (filters.sort && filters.sort !== "recently_updated") {
+    if (filters.sort && filters.sort !== issueDefaultSort()) {
       parts.push(`sort:${ISSUE_QUERY_SORTS[filters.sort] || filters.sort}`);
     }
     const free = String(state.issuesView.query || "").trim();
@@ -10989,7 +11041,7 @@
   function parseIssueQuery(text) {
     const filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     // With no state qualifier the search spans every issue, as on GitHub.
     let status = "all";

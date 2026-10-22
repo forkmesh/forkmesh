@@ -57,7 +57,7 @@ def test_without_a_saved_choice_the_install_setting_decides():
         "world", "blog"} | ON
     assert instance_features.enabled_ids(env("")) == ON
     assert instance_features.enabled_ids(env("", name="")) == set(
-        instance_features.IDS)
+        instance_features.IDS) - instance_features.OPT_IN
 
 
 def test_a_saved_choice_wins_over_the_install_setting():
@@ -69,7 +69,7 @@ def test_a_saved_choice_wins_over_the_install_setting():
     instance_features.remember(None, NOW)
     assert instance_features.enabled_ids(env("blog")) == {"blog"} | ON
     assert instance_features.enabled_ids(env("", name="")) == set(
-        instance_features.IDS)
+        instance_features.IDS) - instance_features.OPT_IN
 
 
 def test_a_stored_row_is_read_strictly():
@@ -321,7 +321,7 @@ def test_the_fediverse_switch_gates_the_replies_endpoint_and_panels():
     assert not instance_features.switched_off(branded) & ON
     assert "[data-repo-federated-thread]" not in instance_features.chrome_css(
         branded)
-    assert instance_features.switched_off(env("", name="")) == frozenset()
+    assert instance_features.switched_off(env("", name="")) == instance_features.OPT_IN
 
 
 def test_opt_in_features_stay_off_on_the_core_unless_listed(monkeypatch):
