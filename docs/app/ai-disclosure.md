@@ -16,6 +16,7 @@ and nothing changes for a repository without them.
 | --- | --- | --- |
 | `.forkmesh/pulls.json` | `"requireAiDisclosure": true` | A pull request must say which AI model was used (or `None`). Anything other than JSON `true` means optional. |
 | `.forkmesh/issues.json` | `"aiPromptTemplate": "..."` | Replaces the default issue prompt. At most 500 characters, folded to one line. |
+| `.forkmesh/issues.json` | `"assignmentHours": 24` | Shows each assignee a deadline bar ([issue-assignment-deadline.md](issue-assignment-deadline.md)). |
 | `AI_POLICY.md` (repository root) | present or not | The composer links to it next to the AI model field. |
 
 Example:

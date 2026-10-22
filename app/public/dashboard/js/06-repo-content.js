@@ -9320,9 +9320,103 @@
       : "";
     return {
       aiPromptTemplate: template,
+      assignmentHours: issueAssignmentHours(issues.assignmentHours),
       requireAiDisclosure: pulls.requireAiDisclosure === true,
       aiPolicy: Boolean(blobs?.["AI_POLICY.md"]),
     };
+  }
+
+  const ISSUE_ASSIGNMENT_HOURS_MAX = 24 * 365;
+  const ISSUE_ASSIGNMENT_WARN_FRACTION = 0.25;
+
+  function issueAssignmentHours(value) {
+    const hours = typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\s*\d+(?:\.\d+)?\s*$/.test(value) ? Number(value) : NaN;
+    return Number.isFinite(hours) && hours > 0 ? Math.min(hours, ISSUE_ASSIGNMENT_HOURS_MAX) : 0;
+  }
+
+  function issueAssignmentTimes(events) {
+    const since = new Map();
+    let current = [];
+    (Array.isArray(events) ? events : []).forEach((event) => {
+      let next;
+      if (event?.type === "assignees") next = (Array.isArray(event.assignees) ? event.assignees : []).map(String);
+      else if (event?.type === "claim") next = webIssueClaimApplied(current, event);
+      else return;
+      const ts = Number(event.ts) || 0;
+      const keys = new Set(next.map((name) => name.trim().toLowerCase()));
+      Array.from(since.keys()).forEach((key) => { if (!keys.has(key)) since.delete(key); });
+      keys.forEach((key) => { if (key && !since.has(key)) since.set(key, ts); });
+      current = next;
+    });
+    return since;
+  }
+
+  function issueAssigneeHasPull(assignee, number, events, pulls) {
+    const name = String(assignee || "").trim().toLowerCase();
+    if (!name || !Array.isArray(pulls)) return false;
+    const linked = new Set(issueLinkedPullNumbers(number, events, pulls));
+    const author = (value) => String(value || "").replace(/\s+\(unverified\)$/i, "").trim().toLowerCase();
+    return pulls.some((pull) => linked.has(Number(pull?.number))
+      && String(pull?.state || "open").toLowerCase() !== "closed"
+      && (author(pull?.author) === name || author(pull?.authorKey) === name));
+  }
+
+  function issueDeadlineDuration(ms) {
+    const minutes = Math.max(1, Math.floor(Math.abs(ms) / 60_000));
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    return hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
+  }
+
+  function issueAssignmentDeadline(assignedAt, hours, now = Date.now()) {
+    const total = Number(hours) * 3_600_000;
+    if (!(Number(assignedAt) > 0) || !(total > 0)) return null;
+    const left = total - Math.max(0, now - Number(assignedAt));
+    const overdue = left < 0;
+    return {
+      fraction: Math.min(1, Math.max(0, 1 - left / total)),
+      left,
+      overdue,
+      warn: overdue || left < total * ISSUE_ASSIGNMENT_WARN_FRACTION,
+      label: overdue ? `overdue by ${issueDeadlineDuration(left)}` : `${issueDeadlineDuration(left)} left`,
+      dueAt: Number(assignedAt) + total,
+    };
+  }
+
+  function renderIssueAssignmentDeadline(deadline) {
+    if (!deadline) return "";
+    const percent = Math.round(deadline.fraction * 100);
+    const stateName = deadline.overdue ? "overdue" : deadline.warn ? "soon" : "on-track";
+    const due = formatRecordDateTime(deadline.dueAt);
+    return `<span data-repo-issue-deadline-state="${stateName}" title="${escapeHtml(`Due ${due.label}`)}" class="flex min-w-0 items-center gap-2 pl-7"><span role="progressbar" aria-label="Assignment time used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" class="block h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-[var(--dashboard-counter)]"><span class="block h-full rounded-full ${deadline.warn ? "bg-attention" : "bg-primary"}" style="width:${percent}%"></span></span><span class="truncate text-[11px] ${deadline.warn ? "text-attention" : "text-muted-foreground"}">${escapeHtml(deadline.label)}</span></span>`;
+  }
+
+  function issueAssigneeDeadlineHtml(issue, assignee, now = Date.now()) {
+    const hours = Number(issue?.settings?.assignmentHours) || 0;
+    if (!hours || issue?.closed) return "";
+    if (issueAssigneeHasPull(assignee, issue.number, issue.events, issue.pulls)) return "";
+    const assignedAt = issueAssignmentTimes(issue.events).get(String(assignee || "").trim().toLowerCase());
+    return renderIssueAssignmentDeadline(issueAssignmentDeadline(assignedAt, hours, now));
+  }
+
+  function renderRepoIssueDeadlines() {
+    const detail = state.repoRecordDetail;
+    if (detail?.kind !== "issues") return;
+    const parsed = detail.parsed || {};
+    const issue = {
+      number: detail.number,
+      closed: String(parsed.values?.status || parsed.values?.state || "open") === "closed",
+      events: parsed.issueEvents,
+      pulls: developmentPulls(parsed),
+      settings: parsed.repoCollabSettings,
+    };
+    document.querySelectorAll("[data-repo-issue-deadline]").forEach((node) => {
+      const html = issueAssigneeDeadlineHtml(issue, node.dataset.repoIssueDeadline);
+      if (node.innerHTML !== html) node.innerHTML = html;
+      node.hidden = !html;
+    });
   }
 
   async function loadRepoCollabSettings(repo) {
@@ -9486,6 +9580,13 @@
         <div class="text-[12px] text-foreground">${value}</div>
       </div>`;
     const issueAssignees = webIssueAssigneesWithClaims(parseFrontMatterList(values.assignees), events);
+    const deadlineIssue = {
+      number,
+      closed,
+      events,
+      pulls: developmentPulls(parsed),
+      settings: parsed.repoCollabSettings,
+    };
     const viewerAccount = String(state.session?.nodeName || "").trim();
     const viewerAssigned = Boolean(viewerAccount) && issueAssignees.some(
       (assignee) => assignee.trim().toLowerCase() === viewerAccount.toLowerCase());
@@ -9494,7 +9595,13 @@
     // clicks route through /login.
     const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
     const assigneeValue = `${issueAssignees.length
-      ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`).join("")}</div>`
+      ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => {
+        const row = `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`;
+        const deadline = issueAssigneeDeadlineHtml(deadlineIssue, assignee);
+        return deadline
+          ? `<span class="grid min-w-0 gap-1">${row}<span data-repo-issue-deadline="${escapeHtml(assignee)}">${deadline}</span></span>`
+          : row;
+      }).join("")}</div>`
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
     const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
@@ -10062,6 +10169,7 @@
     node.innerHTML = detail.kind === "issues"
       ? renderIssueDevelopment(detail.repo, detail.number, detail.parsed?.issueEvents, developmentPulls(detail.parsed))
       : renderPullDevelopment(detail.repo, detail.number, detail.parsed || {});
+    if (detail.kind === "issues") renderRepoIssueDeadlines();
     const hint = node.querySelector("[data-repo-development-hint]");
     if (hint && hintText) {
       hint.textContent = hintText;
