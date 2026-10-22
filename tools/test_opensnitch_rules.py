@@ -23,7 +23,8 @@ def test_rules_allow_forkmesh_programs_for_one_user(tmp_path):
     (tmp_path / "projects" / "forkmesh").mkdir(parents=True)
     rules = rules_tool.build_rules(1234, tmp_path)
     names = [item["name"] for item in rules]
-    assert names == ["000-forkmesh-programs", "000-forkmesh-dev-trees", "000-forkmesh-loopback"]
+    assert names == ["000-forkmesh-programs", "000-forkmesh-dev-trees",
+                     "000-forkmesh-agent-clis", "000-forkmesh-loopback"]
     for item in rules:
         assert item["action"] == "allow" and item["duration"] == "always"
         assert item["precedence"] is True and item["enabled"] is True
@@ -45,13 +46,25 @@ def test_rules_allow_forkmesh_programs_for_one_user(tmp_path):
     assert trees.search(f"{tmp_path}/projects/forkmesh/src/.worktrees/x/build/chat_transport_copy")
     assert trees.search(f"{tmp_path}/.cache/fm824/swift/Tests.xctest")
     assert not trees.search(f"{tmp_path}/.cache/other/tool")
+    clis = regexps["000-forkmesh-agent-clis"]
+    for path in (f"{tmp_path}/.local/share/claude/versions/2.1.308",
+                 f"{tmp_path}/.local/share/claude/versions/2.2.0",
+                 f"{tmp_path}/.config/Claude/claude-code/2.1.304/0f3468fa285f/claude",
+                 f"{tmp_path}/.codex/packages/standalone/0.48.0/bin/codex"):
+        assert clis.search(path), path
+    for path in (f"{tmp_path}/.local/share/claude/versions/2.1.308/evil",
+                 f"{tmp_path}/.local/share/claude/claude",
+                 f"{tmp_path}/.codex/packages/standalone/0.48.0/bin/python3",
+                 "/home/someone-else/.local/share/claude/versions/2.1.308",
+                 "/usr/bin/curl"):
+        assert not clis.search(path), path
     loopback = regexps["000-forkmesh-loopback"]
     assert loopback.search("127.0.0.1") and loopback.search("127.0.0.2") and loopback.search("::1")
     assert not loopback.search("10.0.0.1") and not loopback.search("1127.0.0.1")
 
 
 def test_options_drop_optional_rules(tmp_path):
-    rules = rules_tool.build_rules(1, tmp_path, loopback=False)
+    rules = rules_tool.build_rules(1, tmp_path, loopback=False, agent_clis=False)
     assert [item["name"] for item in rules] == ["000-forkmesh-programs"]
 
 
@@ -64,7 +77,7 @@ def test_install_writes_into_the_rules_folder(tmp_path, monkeypatch):
         "pw", (), {"pw_uid": 42, "pw_dir": str(home)})())
     assert rules_tool.main(["install", "--rules-dir", str(rules_dir)]) == 0
     written = sorted(p.name for p in rules_dir.iterdir())
-    assert written == ["000-forkmesh-dev-trees.json", "000-forkmesh-loopback.json",
-                       "000-forkmesh-programs.json"]
+    assert written == ["000-forkmesh-agent-clis.json", "000-forkmesh-dev-trees.json",
+                       "000-forkmesh-loopback.json", "000-forkmesh-programs.json"]
     assert (rules_dir / "000-forkmesh-programs.json").stat().st_mode & 0o777 == 0o600
     assert rules_tool.main(["install", "--rules-dir", str(tmp_path / "missing")]) == 2
