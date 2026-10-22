@@ -286,6 +286,13 @@ Crawlers and scrapers:
   knockouts are masks; keep the `.fx-sprite mask > g` rule, and hide the
   sprite with zero size, not `display: none`. Its six-column grid's
   `nth-child` centring rules must stay scoped to their breakpoints.
+  The counts are written by hand: a card added or removed changes its
+  section's `.fx-count` line, its `.fx-toc-count`, the hero's `.fx-stats`
+  line and the outro title. A card whose feature is a Market package
+  (`marketplace/catalog.json`, including the core switches in
+  [core-plugins](../marketplace/core-plugins.md)) carries a `.fx-tag-plugin`
+  chip with the package's name and counts as a plugin; built-in features have
+  none. Removed features leave the page (issue bounties went 2026-10-22).
 - The textured button recipe is copied as tokens into each stylesheet that
   owns buttons (`--btn-*`, `--button-*`, `--fm-btn-*`, `--mesh-btn-*`,
   `--bs-*`); `www/tests/test_button_texture.py` and the page tests check the

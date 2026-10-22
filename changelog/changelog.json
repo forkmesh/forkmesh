@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-22",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Other improvements",
+     "items": [
+      "forkmesh.com/features lists every feature again, with a count for each section and a mark on every feature that is a Market plugin."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-21",
    "version": "",
    "title": "Neighbours, stickers and runners",
