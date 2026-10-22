@@ -252,6 +252,84 @@ struct DirectCallIncomingScreen: View {
     }
 }
 
+enum CallPreviewCorner: String, CaseIterable {
+    case topLeading, topTrailing, bottomLeading, bottomTrailing
+}
+
+struct DraggableCallPreview<Content: View>: View {
+    static var tile: CGSize { CGSize(width: 110, height: 160) }
+    static var margin: CGFloat { 14 }
+    static var topClearance: CGFloat { 90 }
+    static var bottomClearance: CGFloat { 180 }
+
+    @AppStorage("fm.call.previewCorner") private var stored = CallPreviewCorner.topTrailing.rawValue
+    @State private var drag: CGSize = .zero
+    @State private var dragging = false
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    private var corner: CallPreviewCorner { CallPreviewCorner(rawValue: stored) ?? .topTrailing }
+
+    var body: some View {
+        GeometryReader { (proxy: GeometryProxy) in
+            let spot = Self.center(of: corner, in: proxy.size)
+            content
+                .frame(width: Self.tile.width, height: Self.tile.height)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.35), lineWidth: 1))
+                .shadow(color: .black.opacity(0.4), radius: 8, y: 2)
+                .scaleEffect(dragging ? 1.05 : 1)
+                .position(x: spot.x + drag.width, y: spot.y + drag.height)
+                .gesture(
+                    DragGesture(minimumDistance: 4)
+                        .onChanged { (value: DragGesture.Value) in
+                            dragging = true
+                            drag = value.translation
+                        }
+                        .onEnded { (value: DragGesture.Value) in
+                            let end = CGPoint(
+                                x: spot.x + value.predictedEndTranslation.width,
+                                y: spot.y + value.predictedEndTranslation.height)
+                            let next = Self.nearest(to: end, in: proxy.size)
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                stored = next.rawValue
+                                drag = .zero
+                                dragging = false
+                            }
+                        }
+                )
+                .accessibilityElement()
+                .accessibilityLabel("Your video")
+                .accessibilityHint("Drag to move it to another corner")
+                .accessibilityIdentifier("chat-call-local-preview")
+        }
+    }
+
+    static func center(of corner: CallPreviewCorner, in size: CGSize) -> CGPoint {
+        let left = margin + tile.width / 2
+        let right = max(left, size.width - margin - tile.width / 2)
+        let top = topClearance + tile.height / 2
+        let bottom = max(top, size.height - bottomClearance - tile.height / 2)
+        switch corner {
+        case .topLeading: return CGPoint(x: left, y: top)
+        case .topTrailing: return CGPoint(x: right, y: top)
+        case .bottomLeading: return CGPoint(x: left, y: bottom)
+        case .bottomTrailing: return CGPoint(x: right, y: bottom)
+        }
+    }
+
+    static func nearest(to point: CGPoint, in size: CGSize) -> CallPreviewCorner {
+        CallPreviewCorner.allCases.min { (a: CallPreviewCorner, b: CallPreviewCorner) in
+            let pa = center(of: a, in: size)
+            let pb = center(of: b, in: size)
+            return hypot(pa.x - point.x, pa.y - point.y) < hypot(pb.x - point.x, pb.y - point.y)
+        } ?? .topTrailing
+    }
+}
+
 struct DirectCallScreen: View {
     let engine: DirectCallEngine
     let factory: WebCallPeerFactory?
@@ -332,6 +410,7 @@ struct DirectCallScreen: View {
                 }
                 Spacer()
                 controls
+                    .padding(.horizontal, FmSpace.x3)
                     .padding(.bottom, FmSpace.x5)
             }
         }
@@ -339,32 +418,54 @@ struct DirectCallScreen: View {
     }
 
     private var controls: some View {
-        HStack(spacing: FmSpace.x4) {
-            control(engine.muted ? "mic.slash.fill" : "mic.fill", label: engine.muted ? "Unmute" : "Mute", on: engine.muted) {
-                engine.toggleMute()
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: FmSpace.x4) {
+                looks
+                essentials
             }
-            if engine.media == .video {
-                control(
-                    engine.cameraOff ? "video.slash.fill" : "video.fill",
-                    label: engine.cameraOff ? "Turn camera on" : "Turn camera off", on: engine.cameraOff
-                ) {
-                    engine.toggleCamera()
-                }
-                FaceChangerFaceMenu(look: engine.look, peer: factory?.current, notice: $notice)
-                FaceChangerBackgroundButton(look: engine.look, peer: factory?.current)
+            HStack(spacing: FmSpace.x2) {
+                looks
+                essentials
             }
-            FaceChangerVoiceMenu(look: engine.look, shown: engine.voice)
-            Button(action: { Task { await engine.hangUp() } }) {
-                Image(systemName: "phone.down.fill")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 64, height: 64)
-                    .background(Circle().fill(Color.red))
+            VStack(spacing: FmSpace.x4) {
+                HStack(spacing: FmSpace.x5) { looks }
+                HStack(spacing: FmSpace.x6) { essentials }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Hang up")
-            .accessibilityIdentifier("chat-call-hangup")
         }
+    }
+
+    @ViewBuilder
+    private var looks: some View {
+        if engine.media == .video {
+            FaceChangerFaceMenu(look: engine.look, peer: factory?.current, notice: $notice)
+            FaceChangerBackgroundButton(look: engine.look, peer: factory?.current)
+        }
+        FaceChangerVoiceMenu(look: engine.look, shown: engine.voice)
+    }
+
+    @ViewBuilder
+    private var essentials: some View {
+        control(engine.muted ? "mic.slash.fill" : "mic.fill", label: engine.muted ? "Unmute" : "Mute", on: engine.muted) {
+            engine.toggleMute()
+        }
+        if engine.media == .video {
+            control(
+                engine.cameraOff ? "video.slash.fill" : "video.fill",
+                label: engine.cameraOff ? "Turn camera on" : "Turn camera off", on: engine.cameraOff
+            ) {
+                engine.toggleCamera()
+            }
+        }
+        Button(action: { Task { await engine.hangUp() } }) {
+            Image(systemName: "phone.down.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 64, height: 64)
+                .background(Circle().fill(Color.red))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Hang up")
+        .accessibilityIdentifier("chat-call-hangup")
     }
 
     private func control(_ symbol: String, label: String, on: Bool, action: @escaping () -> Void) -> some View {

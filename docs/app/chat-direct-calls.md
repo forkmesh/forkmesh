@@ -142,6 +142,15 @@ not copied: it is end-to-end encrypted to the original two participants.
   `call-studio.js`. The face stage still draws at 24 fps and at most 960 px
   on the long side, so a filtered picture is limited by that, not by the
   camera.
+- **Layout** (2026-10-21). Your own video in the call panel (`#chat-call-local`) can be
+  dragged with a mouse or a finger (pointer events, `touch-action: none`); on release it snaps
+  to the nearest corner of the video (`data-corner`), and the corner is kept in `localStorage`
+  under `fm.call.previewCorner`. It does not drag in the pre-call check, where it fills the
+  panel. On screens up to 480 px wide the panel spans the width with 8 px margins and scrolls
+  if taller than the screen, and the Start / Mute / Camera off / Hang up buttons share each row
+  equally at 44 px tall, so they are easy to hit; the incoming call's Accept and Decline share
+  the card's width. The phone apps' call screens follow the same idea
+  (`native/ios/docs/FMChat.md`).
 - The desktop has no WebRTC stack; its call buttons open
   `/chat?dm=<name>&call=audio|video`, which asks for confirmation before
   ringing, so a link can never ring someone on its own.
@@ -1305,6 +1314,8 @@ repository.
 `app/tests/test_chat_direct_calls_frontend.py`,
 `app/tests/test_chat_call_checks.py` (pre-call check, tones, incoming alert,
 quality and route),
+`app/tests/test_chat_call_layout.py` (the answering iPhone's tracks, the
+self-view drag and small-screen buttons),
 `app/tests/test_chat_call_faces.py`, `app/tests/test_chat_call_voice.py`,
 `app/tests/test_chat_call_voice_realism.py`,
 `app/tests/test_call_face_native_parity.py` (with the iOS

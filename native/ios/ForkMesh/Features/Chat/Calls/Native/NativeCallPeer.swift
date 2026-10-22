@@ -55,19 +55,18 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
         super.init()
         relay.peer = self
         delegateRelay = relay
-        let audioInit = RTCRtpTransceiverInit()
-        audioInit.direction = .sendRecv
-        audioInit.streamIds = ["forkmesh"]
-        connection.addTransceiver(with: self.audioTrack, init: audioInit)
-        let videoInit = RTCRtpTransceiverInit()
-        videoInit.direction = .sendRecv
-        videoInit.streamIds = ["forkmesh"]
+        connection.add(self.audioTrack, streamIds: Self.streamIds)
         if let videoTrack {
-            connection.addTransceiver(with: videoTrack, init: videoInit)
+            connection.add(videoTrack, streamIds: Self.streamIds)
         } else {
+            let videoInit = RTCRtpTransceiverInit()
+            videoInit.direction = .sendRecv
+            videoInit.streamIds = Self.streamIds
             connection.addTransceiver(of: .video, init: videoInit)
         }
     }
+
+    private static let streamIds = ["forkmesh"]
 
     private var delegateRelay: NativePeerDelegate?
 

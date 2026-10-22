@@ -681,9 +681,22 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   - `NativeCallPeer` is the one-to-one `DirectCallPeer`: two `sendrecv` transceivers (audio,
     video) like `/chat`, the same `{type, sdp}` and candidate JSON, `CallMediaTuning.tune` on every
     local description (the web page's Opus parameters, checked against the JS output), sender caps,
-    the 8 s disconnect grace and the 4 s route check. `NativeCallPeerFactory` is the engine's
+    the 8 s disconnect grace and the 4 s route check. The camera and microphone go on with
+    `addTrack` (`connection.add(_:streamIds:)`), not `addTransceiver(with:)` (fixed 2026-10-21):
+    when the iPhone answers, WebRTC matches the caller's offer only to transceivers made by
+    `addTrack` (JSEP); ones made by `addTransceiver` stay unused, the answer comes back
+    `recvonly`, and the person who placed the call got no picture or sound from the iPhone while
+    the iPhone still showed theirs. A voice call keeps a trackless video transceiver so its offer
+    has the same two m-lines as `/chat`. `NativeCallPeerFactory` is the engine's
     `peerFactory`; `DirectCallScreen` draws `NativeCallSurface` (remote video plus a mirrored self
     view) and `NativePreCallScreen` replaces the WebView pre-call check.
+  - **Call screen layout** (2026-10-21). The self view is `DraggableCallPreview`: drag it
+    anywhere and it springs to the nearest of four corners (clear of the name at the top and
+    the buttons at the bottom), following the drag's predicted end so a flick works; the corner
+    is kept in `@AppStorage("fm.call.previewCorner")`. The buttons (face, background, voice, mute,
+    camera, hang up) use `ViewThatFits`: one row with 16 pt gaps, then 8 pt gaps, then two rows,
+    the look pickers above and mute, camera and hang up below. Before, six 56-64 pt buttons in
+    one row needed about 424 pt and ran off the edges of every iPhone narrower than a Pro Max.
   - `NativeGroupCall` joins group calls in private channels (`docs/app/chat-group-calls.md`): it
     asks `OfficeChannelService.callTicket` for a ticket, speaks the call-server protocol over a
     `URLSessionWebSocketTask`, attaches one `RTCFmFrameEncryptor` from our patch to both its senders
