@@ -219,6 +219,7 @@ const parsed = { body: "" };
 const state = { repoRecordDetail: { parsed } };
 function renderRepoRecordDetail(repo, kind, number, value) { return `rendered:${value.issueMentions.length}`; }
 function mountIssueStickyHeader() {}
+function paintRepoIssueDetail(target, html) { target.innerHTML = html; }
 %s
 %s
 (async () => {

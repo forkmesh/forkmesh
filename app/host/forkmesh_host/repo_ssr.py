@@ -693,8 +693,12 @@ async def finish(task, response):
             root = await _within(view.root, ISSUE_BUDGET_SECONDS - (
                 asyncio.get_running_loop().time() - started))
             if root:
-                rendered = inject_issue(page, root, data, origin=view.origin,
-                                        reactions=reactions)
+                rendered = inject_issue_page(page, root, data, origin=view.origin,
+                                             reactions=reactions)
+                if rendered is not None:
+                    headers = response.headers
+                    headers.set("cache-control", "no-cache")
+                    return rendered.response(response.status, headers)
         if rendered is None:
             rendered = inject_view(page, data, view.section, reactions) \
                 if view else inject(page, data)
@@ -741,7 +745,11 @@ async def _finish_short(ticket, response):
             bundle = await _within(bundle_task, ISSUE_BUDGET_SECONDS - (
                 loop.time() - started))
             if bundle is not None and (bundle.owner, bundle.repo) == (owner, repo):
-                rendered = inject_issue(page, data, bundle, short=canonical)
+                rendered = inject_issue_page(page, data, bundle, short=canonical)
+                if rendered is not None:
+                    headers = response.headers
+                    headers.set("cache-control", "no-cache")
+                    return rendered.response(response.status, headers)
             if rendered is None:
                 rendered = inject_header(page, data, ticket.tab, short=canonical)
                 if rendered is not None:
@@ -860,20 +868,68 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
     issue = repo_ssr_issue.parse_issue(model["issueJson"], bundle.number)
     if issue["deleted"]:
         return None
-    article = repo_ssr_issue.render_issue(
+    article = repo_ssr_issue.render_issue_parts(
         issue, ctx, owner, "%s/issues/%d" % (link, bundle.number),
         index=repo_ssr_issue.index_rows(model.get("index")), now=now, repo=repo,
         prompt=repo_ssr_issue.prompt_template(model.get("settings")),
         reactions=reactions, off=off,
         source=repo_ssr_issue.index_source_url(model.get("index"), bundle.number),
         avatars=repo_ssr_issue.forge_avatars(model.get("index")))
-    if len(bundle.rendered) >= repo_views.RENDERED_PER_BUNDLE:
-        bundle.rendered.clear()
-    bundle.rendered[key] = (now, article)
+
+    def keep(text):
+        if len(bundle.rendered) >= repo_views.RENDERED_PER_BUNDLE:
+            bundle.rendered.clear()
+        bundle.rendered[key] = (now, text)
+    article.keep = keep
     return article
 
 
+class IssuePage:
+    def __init__(self, page, article):
+        self.article = article
+        if isinstance(article, str):
+            self.prefix, self.suffix = page, ""
+        else:
+            self.prefix, self.suffix = page.split(article.mark, 1)
+
+    def __str__(self):
+        if isinstance(self.article, str):
+            return self.prefix
+        rest = "".join(self.article.chunks())
+        self.article.keep(self.article.before + rest + self.article.after)
+        return self.prefix + rest + self.suffix
+
+    async def stream(self):
+        if isinstance(self.article, str):
+            yield self.prefix
+            return
+        yield self.prefix
+        rest = []
+        try:
+            for chunk in self.article.chunks():
+                await asyncio.sleep(0)
+                rest.append(chunk)
+                yield chunk
+        except Exception as error:
+            print("issue ssr stream cut: %r" % (error,))
+            rest = None
+        yield self.suffix
+        if rest is not None:
+            self.article.keep(self.article.before + "".join(rest) + self.article.after)
+
+    def response(self, status, headers):
+        from . import js as _js
+        if isinstance(self.article, str):
+            return _js.Response(self.prefix.encode("utf-8"), status, "", headers)
+        return _js.Response(_js.ReadableStream(self.stream()), status, "", headers)
+
+
 def inject_issue(page, data, bundle, short=False, origin="", reactions=None):
+    rendered = inject_issue_page(page, data, bundle, short, origin, reactions)
+    return None if rendered is None else str(rendered)
+
+
+def inject_issue_page(page, data, bundle, short=False, origin="", reactions=None):
     if 'data-page="repo"' not in page or PLACEHOLDER not in page \
             or CHARSET not in page or bundle is None or bundle.view != "issue":
         return None
@@ -895,7 +951,7 @@ def inject_issue(page, data, bundle, short=False, origin="", reactions=None):
         urllib.parse.quote(bundle.owner, safe=""),
         urllib.parse.quote(bundle.repo, safe=""))).lower(),
         "view": bundle.view, "number": bundle.number, "url": bundle.url()}
-    page = page.replace(CHARSET, _view_reads_head(meta) + reactions_seed(
+    page = page.replace(CHARSET, _view_reads_head(meta, True) + reactions_seed(
         meta["base"], reaction_subject("issue", bundle.number), reactions)
         + "\n    " + STYLE + repo_ssr_issue.VIEWER_STYLE, 1)
     page = page.replace(HEADER_CONTEXT, header_context(data, short), 1)
@@ -905,15 +961,21 @@ def inject_issue(page, data, bundle, short=False, origin="", reactions=None):
         "></span>", ">public</span>"), 1)
     page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
         'class="inline-flex', 'class="hidden inline-flex'), 1)
-    return page.replace(PLACEHOLDER, (
+    drawn = article if isinstance(article, str) \
+        else article.before + article.mark + article.after
+    return IssuePage(page.replace(PLACEHOLDER, (
         '<div data-repo-ssr data-repo-layout="first-view" class="min-w-0">%s%s%s</div>'
-        % (_icon_sprite(), tabs, repo_ssr_issue.FRAME % article)), 1)
+        % (_icon_sprite(), tabs, repo_ssr_issue.FRAME % drawn)), 1), article)
 
 
-def _view_reads_head(meta):
+def _view_reads_head(meta, after_page=False):
+    start = ("new Promise(function(r){document.readyState==='loading'?"
+             "document.addEventListener('DOMContentLoaded',r,{once:true}):r()})"
+             ".then(function(){return fetch(" if after_page else "fetch(")
+    end = ")})" if after_page else ")"
     return (CHARSET + "\n    <script>window.__forkmeshView=" +
-            _json_for_script(meta) + ";window.__forkmeshView.pending=fetch("
-            "window.__forkmeshView.url,{headers:{accept:'application/json'}})"
+            _json_for_script(meta) + ";window.__forkmeshView.pending=" + start +
+            "window.__forkmeshView.url,{headers:{accept:'application/json'}}" + end +
             ".then(function(r){return r.ok?r.json():null})"
             ".catch(function(){return null});</script>")
 

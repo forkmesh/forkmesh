@@ -334,26 +334,26 @@ def test_web_issue_thread_draws_reactions_instead_of_activity_lines():
     # conversation they were meant to acknowledge.
     assert "function foldIssueReactions(events)" in REPO_UI
     assert "function renderCommentReactionBar(subject, comment, ledger = null, extraClass = \"\")" in REPO_UI
-    timeline = _slice(REPO_UI, "function renderIssueTimeline(events)",
-                      "function projectJsonPath(number)")
+    timeline = _slice(REPO_UI, "function issueTimelineEntries(events)",
+                      "const ISSUE_TIMELINE_FIRST")
     assert 'if (ev.type === "reaction") continue;' in timeline
     assert 'reactionIds.has(String(ev.target))) continue;' in timeline
     assert "renderCommentReactionBar(commentReactionSubject(\"issues\", options.number)" in timeline
-    assert "reactionsByTarget.get(String(ev.id))" in timeline
+    assert "reactionsByTarget.get(String(comment.id))" in timeline
     assert "eyes: " in REPO_UI
 
 
 def test_issue_timeline_draws_activity_on_a_rail_and_comments_as_cards():
     timeline = _slice(
         REPO_UI,
-        "function renderIssueTimeline(events)",
-        "function projectJsonPath(number)",
+        "function issueTimelineEntries(events)",
+        "const ISSUE_TIMELINE_FIRST",
     )
     # Every non-comment event, mentions and pull request links included, is
     # one line on the rail.
     assert timeline.count("renderIssueTimelineEvent(") == 3
     assert "ISSUE_PULL_LINK_LINE.test(line)" in timeline
-    assert "renderIssueTimelineComment(ev)" in timeline
+    assert "html: () => renderIssueTimelineComment({" in timeline
     event = _slice(
         REPO_UI,
         "function renderIssueTimelineEvent(",
