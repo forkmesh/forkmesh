@@ -195,4 +195,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S120 | 2026-10-23 | DJ Studio | feature | DJ Studio's queue opens its menu (with Remove from Queue) when a song is held, drags a song onto a deck as soon as the finger moves across the queue, and plays a song added while nothing is playing right away. | fcd3936166 | pending |  |
 | S121 | 2026-10-23 | Chat | fix | When several new devices join a private chat at once, one banner asks to approve or block all of them instead of one banner per device. | a0c1f528fa | pending |  |
 | S122 | 2026-10-23 | Inbox | ui | Each ping in the Inbox shows the logo of the instance it came from, under the ping's icon. | 9d95e08a10 | pending |  |
+| S123 | 2026-10-23 | DJ Studio | ui | In a DJ Studio jam, each queued song's thumbnail shows who added it and the date and time, and its menu says both in full. | 6740ef7e4c | pending |  |
 <!-- ledger:end -->
