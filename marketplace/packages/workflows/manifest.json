@@ -12,7 +12,7 @@
   "type": "extension.native",
   "category": "Automation",
   "version": "1.4.0",
-  "summary": "Build automations on a visual canvas with 100 integrations, Shortcuts-style text, number, list and date steps and your own scripts. On the desktop it runs your repositories' workflows: special agents, shortcuts and desktop steps, each run saved with its output, pinned to any rail.",
+  "summary": "Build automations on a visual canvas with 100 integrations, Shortcuts-style steps and your own scripts. On the desktop it runs your repositories' special agents, shortcuts and desktop steps as workflows you can pin to any rail.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -149,7 +149,7 @@
     },
     {
       "id": "desktop.workflows.run",
-      "label": "Run the workflows in your repositories' .forkmesh/workflows on this desktop: special agents with only the permissions each step grants, shortcuts and desktop steps, and keep each run's output",
+      "label": "Run your repositories' workflows on this desktop: special agents, shortcuts and desktop steps",
       "risk": "high"
     },
     {
