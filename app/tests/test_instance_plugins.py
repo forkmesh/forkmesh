@@ -56,6 +56,8 @@ def test_without_a_saved_choice_the_install_setting_decides():
     assert instance_features.enabled_ids(env("world,blog")) == {
         "world", "blog"} | ON
     assert instance_features.enabled_ids(env("")) == ON
+    assert instance_features.enabled_ids(env("world,-changelog")) == {
+        "world"} | (ON - {"changelog"})
     assert instance_features.enabled_ids(env("", name="")) == set(
         instance_features.IDS)
 
@@ -86,6 +88,9 @@ def test_a_stored_row_is_read_strictly():
     assert instance_features.parse(doc) == {"world", "genie"}
     doc = instance_features.dump({"world"} | ON)
     assert json.loads(doc) == {"enabled": sorted({"world"} | ON)}
+    assert instance_features.parse(
+        '{"enabled": [], "disabled": ["changelog", 3]}') == ON - {
+            "changelog"}
 
 
 def test_the_console_only_turns_offered_plugins_on_or_off():
@@ -294,12 +299,12 @@ def test_the_plugins_view_is_in_the_platform_menu_and_routed():
 def test_issue_prompt_and_fediverse_panels_stay_on_through_an_upgrade():
     saved_before = '{"enabled":["genie","world"]}'
     assert instance_features.parse(saved_before) == {"genie", "world"} | ON
-    assert ON == {"issue-ai-prompt", "fediverse-ui"}
+    assert {"issue-ai-prompt", "fediverse-ui"} <= ON
     assert ON <= set(instance_features.CHOOSABLE)
     assert instance_features.enabled_ids(env("world")) >= ON
     refused = env("world,-fediverse-ui")
     assert instance_features.enabled_ids(refused) == {
-        "world", "issue-ai-prompt"}
+        "world"} | (ON - {"fediverse-ui"})
     off = instance_features.parse(instance_features.dump({"world"}))
     assert off == {"world"}
 
@@ -331,3 +336,35 @@ def test_opt_in_features_stay_off_on_the_core_unless_listed(monkeypatch):
     assert "world" in instance_features.enabled_ids(core)
     core.FORKMESH_CORE_PLUGINS = "community-translations, world"
     assert "community-translations" in instance_features.enabled_ids(core)
+
+
+def test_the_changelog_is_its_own_plugin_and_on_by_default():
+    assert "changelog" in instance_features.CHOOSABLE
+    assert instance_features.feature_for("/changelog") == "changelog"
+    website = dict((feature[0], feature) for feature in
+                   instance_features.FEATURES)["website"]
+    assert "/changelog" not in website[3]
+    branded = env("")
+    assert instance_features.blocked(branded, "/changelog") == ""
+    assert instance_features.blocked(branded, "/about") == "website"
+    described = {item["id"]: item for item in instance_features.describe(
+        branded)}
+    assert described["changelog"]["enabled"] is True
+    assert described["changelog"]["scope"] == "instance"
+    assert described["changelog"]["description"] == (
+        "Platform changelog: what changed in each platform version.")
+    css = instance_features.chrome_css(branded)
+    assert 'a[href="/changelog"]' not in css
+    assert 'a[href="/about"]' in css
+    instance_features.remember(
+        instance_features.parse(instance_features.dump(set())), NOW)
+    assert instance_features.blocked(branded, "/changelog") == "changelog"
+    assert 'a[href="/changelog"]' in instance_features.chrome_css(branded)
+
+
+def test_a_choice_saved_before_the_changelog_plugin_keeps_it_on(monkeypatch):
+    rows = {"plugins": json.dumps({"enabled": ["world"]})}
+    reads, load = loader(monkeypatch, rows, [NOW])
+    load()
+    assert instance_features.enabled_ids(env("")) == {"world"} | ON
+    assert instance_features.blocked(env(""), "/changelog") == ""

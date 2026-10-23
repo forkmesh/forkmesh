@@ -6,7 +6,10 @@ ForkMesh has one changelog, `changelog/changelog.json`. Two places show it:
   entries through the `changelog_releases` variable that
   `app/tools/site_templates.py` fills from the file
   ([www/templates.md](www/templates.md)). The site also serves the file itself
-  at `/changelog.json` (`build_site_assets.stage_www`).
+  at `/changelog.json` (`build_site_assets.stage_www`). A self-hosted
+  instance serves the same rendered page at its own `/changelog`
+  (`build_site_assets.stage_app` bundles it; the `changelog` plugin, on by
+  default, see [INSTANCES.md](INSTANCES.md#plugins)).
 - **The phone apps' What's new**, under the version row of the You hub
   ([native/NAVIGATION.md](native/NAVIGATION.md)). The iOS build step "Bundle
   the changelog" and the release host's Android APK build export the file into

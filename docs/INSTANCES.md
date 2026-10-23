@@ -833,7 +833,8 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   See [Named themes](#named-themes) for whole-look themes such as BLT.
 - **Plugins** (`app/src/instance_features.py`): ForkMesh-company features
   (world, hackathon, ads, rewards, blog, status, developer docs, website
-  pages and others) are off on an instance unless turned on. A disabled
+  pages and others) are off on an instance unless turned on; the platform
+  changelog is on unless turned off. A disabled
   plugin's routes answer 404 before any other route; tagged UI
   (`data-instance-plugin`) is hidden. See [Plugins](#plugins) below.
 - **Market packages:** every account on an instance has the
@@ -884,6 +885,7 @@ reinstall or restart.
 | `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
 | `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" box under an open issue's title, which readers copy into a coding agent. On by default. |
 | `fediverse-ui` | The Fediverse thread panel under issues, pull requests and discussions, and the repository's Watchers row with its "Watch on the fediverse" menu. Off also answers 404 to `GET /api/repo/<o>/<r>/fedi-comments`. On by default. |
+| `changelog` | The platform changelog at `/changelog`: what changed in the platform version the instance runs. On by default. |
 
 Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
 `discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
@@ -895,6 +897,29 @@ services" with the reason (`FORKMESH_ONLY`) and offers no switch;
 `note`. An operator who really wants one can still name it in
 `INSTANCE_PLUGINS`; a saved choice keeps it as it is.
 
+- **On by default.** `changelog`, `issue-ai-prompt` and `fediverse-ui` are
+  in `DEFAULT_ON`: each stays on until an admin switches it off, including
+  on an instance that saved its choice before the plugin existed.
+- **The changelog on an instance.** `/changelog` was part of `website`
+  until 2026-10-21, so instances answered 404 and hid the sidebar's
+  Resources → Changelog link. The page is the static
+  `www/public/changelog.html`, rendered from `changelog/changelog.json` at
+  the commit the instance runs ([changelog.md](changelog.md)), so it needs
+  nothing from forkmesh.com. `build_site_assets.stage_app` copies it into
+  `app/dist` (`BACKEND_ASSETS`, like `blog.html`); with `WWW_ORIGIN` set to
+  the instance's own origin, `external_site_delivery` answers `local` and
+  `_serve_site_document` serves that copy. forkmesh.com's app origin still
+  308s `/changelog` to forkmesh.com. The brand pass renames the platform
+  word on it as on every other page.
+- **The Company group.** About, Careers and Press are `website` pages, so
+  their links were already hidden on an instance, but the sidebar kept the
+  "Company" title over an empty group. The group (`sidebarGroupCompany` in
+  `app/public/dashboard/partials/sidebar.html`, and the Company group of the
+  site header menu in `www/public/site-header.js`) now carries
+  `data-instance-plugin="website"`, so `chrome_css` hides the whole group,
+  title included, from the first paint while `website` is off. forkmesh.com
+  serves neither `instance-theme.css` nor `instance-brand.js`, so it keeps
+  the group.
 - **Where the choice lives.** Saving writes the `instance_settings` row
   `plugins` (`{"enabled": [...]}`), CSRF-checked and audited as
   `admin.console_save_plugins` with the plugins turned on and off. Until the
@@ -903,8 +928,9 @@ services" with the reason (`FORKMESH_ONLY`) and offers no switch;
   `--update` only rewrites `INSTANCE_PLUGINS`, so an update keeps the
   admin's choice.
 - **Plugins that start on (`DEFAULT_ON`).** `issue-ai-prompt` and
-  `fediverse-ui` were always shown before they became switches, so they stay
-  on unless an admin turns them off. A saved row from before them lists only
+  `fediverse-ui` were always shown before they became switches, and
+  `changelog` is available without ForkMesh services, so they stay on unless
+  an admin turns them off. A saved row from before them lists only
   `enabled`; `parse` adds every `DEFAULT_ON` plugin the row does not name in
   its `disabled` list, so an upgrade keeps both on. Saving writes the
   `DEFAULT_ON` plugins left off as `disabled`
@@ -1113,7 +1139,29 @@ relay over a visit socket with a visitor token, so they are `name@<this
 host>` there; the Office runs against ForkMesh's API (`setOfficeOwner`),
 giving visitors its lobby and rooftop. Pieces that would show the
 instance's own data inside ForkMesh's town stay off
-(`TERRITORY_HIDDEN_ELEMENTS`).
+(`TERRITORY_HIDDEN_ELEMENTS`) while the walker stands in the instance.
+
+**Stepping into the ForkMesh World.** Crossing the road's midline onto
+ForkMesh's ground (`territoryOwnerAt()`) puts the page in the ForkMesh World
+without a reload, the way world.forkmesh.com enters an instance: the address
+stays the same and the walker stays signed in to this instance, visiting
+ForkMesh with a visa. `enterMeshWorld()` asks the scene to
+`leaveOwnTerritory()`, which moves ForkMesh's scenery back to its own place,
+hides the instance hexagon and its clicks, switches on the hidden ForkMesh
+pieces the visitor had not switched off themselves, and gives back the
+town's walk surface. The walker is recentred by the hub's offset, the page
+lays the mesh out from the hub (`placeWorldMesh`, so the instance shows as
+the hub's neighbouring hexagon), town reads go to ForkMesh through the
+federation client (`meshRoot`), its residents arrive over the visit socket,
+and the notice reads `Entering ForkMesh · world.forkmesh.com`. Stepping back
+onto the instance's land returns home: `placeTerritoryNeighbour()` calls
+`enterOwnTerritory()`, which puts the hexagon, its clicks, the hidden list
+and ForkMesh's place next door back. The saved position stays in the
+instance's frame, so a reload on ForkMesh's ground switches again. Until
+2026-10-22 ForkMesh's ground next door only moved the walker's presence:
+the town stayed the instance's, without ForkMesh's members, boards or bots,
+so walking from the instance into ForkMesh did not enter it the way walking
+from ForkMesh into the instance does.
 
 **What ForkMesh's World draws.** From a distance forkmesh.com draws the
 instance hexagon from `GET /api/world/neighbour-scene`
@@ -1127,9 +1175,11 @@ this instance ([world/README.md](world/README.md), Standing in an instance's
 hexagon). Their World opens a visit socket to this instance's relay with a
 visa, and they appear here as `name@world.forkmesh.com`.
 
-**Crossing the road.** `checkTerritoryCrossing()` runs after every walking
-step: when the avatar's step enters the land of a neighbouring tile
-(`crossedInto`), the World navigates. On an instance it goes to
+**Crossing the road (address arrivals).** The instance installs no
+crossings (`crossings` stays empty), so walking never navigates; the
+in-place switch above replaced it. `checkTerritoryCrossing()` still runs
+after every walking step and would navigate when a step entered the land of
+a listed crossing tile (`crossedInto`), going to
 `<home>?from=<instance domain>&slot=<n>&pos=<x>,<z>`, where `home` is the
 directory's `portal.home` or `https://world.forkmesh.com/world/`. The
 reverse direction (walking from world.forkmesh.com into an instance) is the

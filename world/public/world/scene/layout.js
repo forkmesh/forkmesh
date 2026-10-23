@@ -254,15 +254,17 @@ export const WORLD_HEX_TILES = Object.freeze([
   ...DESERT_HEXES,
 ]);
 export const WORLD_ROAD_JUNCTIONS = Object.freeze(
-  [0, 1, 2, 3, 4, 5].map((corner) => {
-    const angle = Math.PI / 6 + (corner * Math.PI) / 3;
-    const reach = (WORLD_BIKE_LANE_APOTHEM * 2) / Math.sqrt(3);
-    return Object.freeze({
-      x: WORLD_BIKE_LANE_CENTER_X + Math.cos(angle) * reach,
-      z: CONTINUOUS_CITY_CENTER_Z + Math.sin(angle) * reach,
-      angle,
-    });
-  }),
+  [1, 2].flatMap((loop) =>
+    [0, 1, 2, 3, 4, 5].map((corner) => {
+      const angle = Math.PI / 6 + (corner * Math.PI) / 3;
+      const reach = ((WORLD_BIKE_LANE_APOTHEM * 2) / Math.sqrt(3)) * loop;
+      return Object.freeze({
+        x: WORLD_BIKE_LANE_CENTER_X + Math.cos(angle) * reach,
+        z: CONTINUOUS_CITY_CENTER_Z + Math.sin(angle) * reach,
+        angle,
+      });
+    }),
+  ),
 );
 export const DESERT_PLOT_APOTHEM = 88;
 const DESERT_PLOT_TANGENT_OFFSET = 104;

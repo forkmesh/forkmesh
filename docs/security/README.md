@@ -33,6 +33,7 @@ under `www/docs/security/`; report vulnerabilities as described in
 | MCP server | `tools/forkmesh_mcp_server.py` | reads Git objects only |
 | Releases | `www/public/install.sh`, release tooling | [release/README.md](../release/README.md) |
 | Destructive actions | guarded delete helpers | [engineering/destructive-actions.md](../engineering/destructive-actions.md) |
+| Vulnerability reports | `security_report_handler` in `app/src/entry.py` | [sentinel.md](sentinel.md#reports-from-the-security-webhook) |
 | Protocol threat model | `conformance/protocol/v1/threats.json` | |
 
 ## Trust boundaries

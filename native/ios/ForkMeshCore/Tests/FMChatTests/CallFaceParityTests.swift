@@ -513,7 +513,7 @@ final class CallFaceParityTests: XCTestCase {
         let outputs = P.list(P.at(sequence, "outputs"))
         XCTAssertEqual(frames.count, 60)
         let probe = CallFaceExpressionProbe()
-        let pointSmoother = CallFacePointSmoother(count: 68, minCutoff: 1.5, beta: 1.5)
+        let pointSmoother = CallFaceLandmarkSmoother()
         let anchorSmoother = CallFaceAnchorSmoother()
         let outfitSmoother = CallOutfitSmoother()
         let template = CallFaces.template
@@ -526,7 +526,7 @@ final class CallFaceParityTests: XCTestCase {
             let found = CallFaces.located(P.regions(P.at(frame, "regions")), scale: scale)
             if let stored = P.at(out, "found") { P.point(s, stored, found.points?[30] ?? CallFacePoint(.nan, .nan), "\(k).found") } else { XCTAssertNil(found.points, "frame \(k) found") }
             if let stored = P.at(out, "pupils") { P.points(s, stored, found.pupils ?? [], "\(k).pupils") } else { XCTAssertNil(found.pupils, "frame \(k) pupils") }
-            let points = found.points.map { pointSmoother.smooth($0, time: time, scale: CallFaceGeometry.faceFrame($0).span) }
+            let points = found.points.map { pointSmoother.smooth($0, time: time) }
             if let points {
                 P.points(s, P.at(out, "points"), points, "\(k).points")
                 live = points

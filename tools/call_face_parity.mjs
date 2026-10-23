@@ -335,7 +335,7 @@ function sequence() {
   const crops = [];
   const documentRef = probeDocument(crops);
   const probe = X.createExpressionProbe({ documentRef });
-  const pointSmoother = G.createPointSmoother(68, 1.5, 1.5);
+  const pointSmoother = G.createLandmarkSmoother();
   const anchorSmoother = F.createAnchorSmoother();
   const outfitSmoother = O.createOutfitSmoother();
   const frames = [];
@@ -370,7 +370,7 @@ function sequence() {
     const ellipses = scene(p, { close: blink, gaze, open, tongue });
     frames.push({ time, regions, ellipses });
     const found = F.hostResult({ regions }, SEQUENCE_SCALE, true);
-    const points = found.points ? pointSmoother.smooth(found.points, time, G.faceFrame(found.points).span) : null;
+    const points = found.points ? pointSmoother.smooth(found.points, time) : null;
     if (points) live = points;
     const out = { found: found.points ? found.points[30] : null, pupils: found.pupils, points };
     if (points) {
