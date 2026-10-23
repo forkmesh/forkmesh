@@ -514,6 +514,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowGlobalAgentRules.cpp
     src/MainWindowAgentIntake.cpp
     src/MainWindowAgentHub.cpp
+    src/MainWindowSessions.cpp
     src/MainWindowCommandPermissions.cpp
     src/MainWindowBranches.cpp
     src/MainWindowReleases.cpp
@@ -1062,6 +1063,8 @@ set(FORKMESH_APP_SOURCES
     src/TeammateMood.cpp
     src/TeammateWorkspace.h
     src/TeammateWorkspace.cpp
+    src/StallRepairRouting.h
+    src/StallRepairRouting.cpp
     src/QrCode.h
     src/QrCode.cpp
     src/ReactionCatalog.h
@@ -3108,6 +3111,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_user_activity.cpp
         src/UserActivityLog.h
         src/UserActivityLog.cpp
+        src/BackgroundFileWriter.h
+        src/BackgroundFileWriter.cpp
         src/UserActivityChart.h
         src/UserActivityChart.cpp
         src/SourceCheckout.h
@@ -3207,6 +3212,14 @@ forkmesh_link_opengl(forkmesh-window-tests)
     )
     target_link_libraries(forkmesh-teammate-mood-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-teammate-mood-tests PRIVATE src)
+
+    qt_add_executable(forkmesh-stall-repair-tests
+        tests/test_stall_repair_routing.cpp
+        src/StallRepairRouting.h
+        src/StallRepairRouting.cpp
+    )
+    target_link_libraries(forkmesh-stall-repair-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-stall-repair-tests PRIVATE src)
 
     qt_add_executable(forkmesh-user-avatar-tests
         tests/test_user_avatar_store.cpp
@@ -3905,6 +3918,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-teammate-tests
         forkmesh-teammate-workspace-tests
         forkmesh-teammate-mood-tests
+        forkmesh-stall-repair-tests
         forkmesh-ledger-tests
         ${FORKMESH_MARKETPLACE_TEST_TARGETS}
         forkmesh-network-log-tests
@@ -3984,6 +3998,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     set_tests_properties(forkmesh-native-package-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-teammate-tests COMMAND forkmesh-teammate-tests)
+    add_test(NAME forkmesh-stall-repair-tests COMMAND forkmesh-stall-repair-tests)
     add_test(NAME forkmesh-teammate-workspace-tests
              COMMAND forkmesh-teammate-workspace-tests)
     add_test(NAME forkmesh-teammate-mood-tests COMMAND forkmesh-teammate-mood-tests)
@@ -4444,6 +4459,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-e2e forkmesh-teammate-tests
         forkmesh-teammate-workspace-tests
         forkmesh-teammate-mood-tests
+        forkmesh-stall-repair-tests
         forkmesh-issue-mention-tests
         forkmesh-ledger-tests
         forkmesh-prompt-spellcheck-tests

@@ -388,6 +388,7 @@ private:
     QJsonObject makeMessage(const QString &type) const;
     bool writeRaw(Link &link, const QJsonObject &frame);
     bool writeLink(Link &link, const QJsonObject &frame);
+    bool writeLinkBytes(Link &link, const QByteArray &plain);
     bool writeSealedTo(Link &link, const QJsonObject &plain);
     void sendToAll(const QJsonObject &plain, bool store = false);
     QStringList sessionKeyIds() const;
@@ -434,6 +435,7 @@ private:
     RoomCrypto m_crypto;
     RoomSeal m_seal;
     std::shared_ptr<forkmesh::chatv3::ChatDevice> m_device;
+    forkmesh::chatv3::SendGate m_sendGate{this};
     int m_deviceToken = 0;
     QHash<QString, QJsonObject> m_bundles;
     QStringList m_bundleOrder;

@@ -2878,8 +2878,9 @@ void MainWindow::buildSettingsAgentProviderParts(SettingsSectionParts &parts)
     autoStallAgentCheck->setToolTip(
         "When a special agent's UI-stall log monitor crosses its configured threshold, "
         "start the task-specific agent selected for UI stall repair. On by "
-        "default; each special agent monitor starts at most one repair run until the "
-        "diagnostics are cleared.");
+        "default. While an agent session is already working on UI stalls, new "
+        "stall reports are added to that session in batches instead of "
+        "starting another agent.");
     connect(autoStallAgentCheck, &QCheckBox::toggled, this, [](bool enabled) {
         QSettings().setValue(kAutoAgentOnStallSetting, enabled);
     });
@@ -9489,6 +9490,8 @@ void MainWindow::logSystemFrom(const QString &text, const QString &sourcePath,
             line, LogLineStyle{plain, badge, accentForBadge(badge)});
     if (badge == QLatin1String("ERROR"))
         NodeDiagnostics::hostCollector().noteErrorLine(plain);
+    if (m_networkLog.capacity() <= kNetworkLogLimit)
+        m_networkLog.reserve(2 * kNetworkLogLimit);
     m_networkLog.append(line);
     forkmesh::agentfeed::publishLogLine(line);
     bool chipsChanged = false;

@@ -55,7 +55,8 @@
       "The prompt box shows the last three lines of the conversation it will reply to, its follow-up button now reads chat, the branch, cloud and vibe switches are icons on the right with an outline when on, and the send buttons have icons.",
       "In the iPhone terminal, every key now fits on screen, a Ctrl key sends any Ctrl combination such as Ctrl+X then Ctrl+S, and scrolling up to read earlier output no longer jumps back to the bottom.",
       "Agents keep running after you log out or switch users: ForkMesh no longer shuts itself down when your desktop session's message bus restarts.",
-      "Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once."
+      "Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once.",
+      "A new Sessions page, just above Agents in the left rail, lists every agent session with its live transcript and lets you message a session or pass one session's reply to another."
      ]
     },
     {
@@ -100,7 +101,9 @@
       "A run waiting for your approval now says why it is held, such as a first-time contributor's pull request, instead of only saying the workflow has no changes.",
       "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back.",
       "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has.",
-      "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room and chat posts to it."
+      "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room and chat posts to it.",
+      "New UI stall reports now go to the agent already working on stalls instead of starting another agent.",
+      "Fixed many of the pauses where the desktop window froze for a moment."
      ]
     },
     {

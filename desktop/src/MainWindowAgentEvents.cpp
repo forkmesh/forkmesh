@@ -606,6 +606,8 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         ev.insert(QStringLiteral("_ts"),
                   double(QDateTime::currentMSecsSinceEpoch()));
     m_streamEvents[sessionId].append(ev);
+    if (m_sessionsUi)
+        noteSessionsPageEvent(sessionId, ev);
     if (sessionId == m_promptChatSessionId || sessionId == m_selectedAgentSessionId)
         schedulePromptChatPreview();
     // Every run's events pass through here; the sonifier ignores the ones
@@ -797,7 +799,19 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         if (limitsById.isEmpty())
             limitsById =
                 ev.value(QStringLiteral("rate_limits_by_limit_id")).toObject();
-        applyCodexRateLimits(limits, limitsById);
+        if (!limits.isEmpty() || !limitsById.isEmpty()) {
+            m_pendingCodexRateLimits = limits;
+            m_pendingCodexRateLimitsByLimitId = limitsById;
+            if (!m_codexRateLimitsApplyScheduled) {
+                m_codexRateLimitsApplyScheduled = true;
+                QTimer::singleShot(2000, this, [this] {
+                    m_codexRateLimitsApplyScheduled = false;
+                    applyCodexRateLimits(
+                        std::exchange(m_pendingCodexRateLimits, {}),
+                        std::exchange(m_pendingCodexRateLimitsByLimitId, {}));
+                });
+            }
+        }
         // Claude Code reports one window per event, under its own key. Reading
         // it here rather than in the transcript view means a run that hits the
         // limit while another session is on screen still starts the countdown.
@@ -929,35 +943,41 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
     }
 
     if (sessionId == m_selectedAgentSessionId && m_agentTranscript) {
-        if (m_agentTranscriptRenderSession == sessionId) {
-            // The replay queue is an implicit-shared snapshot. Extend it with
-            // live events that arrive while its time-sliced render is running,
-            // rather than abandoning the partial view and starting over.
-            m_agentTranscriptRenderEvents.append(ev);
+        if (m_agentTranscriptRenderSession == sessionId)
             return;
-        }
         const int rendered = m_renderedTranscriptSession == sessionId
                                  ? m_renderedTranscriptCount
                                  : -1;
-        const int have = m_streamEvents.value(sessionId).size();
-        if (QApplication::activeModalWidget()) {
-        } else if (rendered == have - 1) {
-            if (ev.value(QStringLiteral("type")).toString() == QLatin1String("_local_user"))
-                m_agentTranscript->addUserTurn(ev.value(QStringLiteral("text")).toString(),
-                                               ClaudeTranscriptView::eventTime(ev));
-            else
-                m_agentTranscript->handleEvent(ev);
-            const bool streamingOnly =
-                type == QLatin1String("stream_event") ||
-                type == QLatin1String("_codex_agent_delta") ||
-                type == QLatin1String("_codex_tool_delta") ||
-                type == QLatin1String("_codex_usage") ||
-                type == QLatin1String("_codex_rate_limits");
+        const QList<QJsonObject> events = m_streamEvents.value(sessionId);
+        const int have = events.size();
+        constexpr int kLiveCatchUpEvents = 32;
+        if (QApplication::activeModalWidget() || rendered == have) {
+        } else if (rendered >= 0 && rendered < have &&
+                   have - rendered <= kLiveCatchUpEvents) {
+            bool streamingOnly = true;
+            for (int i = rendered; i < have; ++i) {
+                const QJsonObject &pending = events.at(i);
+                const QString pendingType =
+                    pending.value(QStringLiteral("type")).toString();
+                if (pendingType == QLatin1String("_local_user"))
+                    m_agentTranscript->addUserTurn(
+                        pending.value(QStringLiteral("text")).toString(),
+                        ClaudeTranscriptView::eventTime(pending));
+                else
+                    m_agentTranscript->handleEvent(pending);
+                streamingOnly = streamingOnly &&
+                    (pendingType == QLatin1String("stream_event") ||
+                     pendingType == QLatin1String("_codex_agent_delta") ||
+                     pendingType == QLatin1String("_codex_tool_delta") ||
+                     pendingType == QLatin1String("_codex_usage") ||
+                     pendingType == QLatin1String("_codex_rate_limits"));
+            }
             if (!streamingOnly)
                 refreshAgentFilesPanel(sessionId);
             m_renderedTranscriptCount = have;
         } else {
-            renderTranscriptForSession(sessionId);
+            if (!renderTranscriptTail(sessionId))
+                renderTranscriptForSession(sessionId);
             refreshAgentFilesPanel(sessionId);
         }
     }

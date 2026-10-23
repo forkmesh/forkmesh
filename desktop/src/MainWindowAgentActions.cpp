@@ -1479,10 +1479,25 @@ QWidget *MainWindow::buildAgentEfficiencyPage()
     return page;
 }
 
+void MainWindow::ensureAgentEfficiencyPage()
+{
+    if (!m_agentPageStack || !m_agentEfficiencyPlaceholder)
+        return;
+    QWidget *placeholder = m_agentEfficiencyPlaceholder;
+    m_agentEfficiencyPlaceholder = nullptr;
+    const int index = m_agentPageStack->indexOf(placeholder);
+    QWidget *page = buildAgentEfficiencyPage();
+    m_agentPageStack->insertWidget(index < 0 ? 1 : index, page);
+    m_agentPageStack->removeWidget(placeholder);
+    placeholder->deleteLater();
+}
+
 void MainWindow::setAgentPageTab(int index)
 {
     if (!m_agentPageStack || index < 0 || index >= m_agentPageStack->count())
         return;
+    if (index == 1)
+        ensureAgentEfficiencyPage();
     m_agentPageStack->setCurrentIndex(index);
     if (index == 1)
         refreshAgentEfficiencyBoard();
@@ -1565,8 +1580,10 @@ void MainWindow::recordAgentToolEfficiency(int sessionId, const QJsonObject &ev)
                         ? session->prompt.section(QLatin1Char('\n'), 0, 0).left(80)
                         : session->issueTitle;
     }
-    run.disabledFamilies =
-        m_agentRunDisabledFamilies.value(sessionId, disabledAgentToolFamilies());
+    const auto runFamilies = m_agentRunDisabledFamilies.constFind(sessionId);
+    run.disabledFamilies = runFamilies != m_agentRunDisabledFamilies.cend()
+                               ? *runFamilies
+                               : disabledAgentToolFamilies();
     if (type == QLatin1String("result") ||
         type == QLatin1String("_codex_agent_complete")) {
         // The turn is over: any tool call still waiting for its result will
@@ -1840,8 +1857,12 @@ void MainWindow::noteAgentRunToolConfig(int sessionId, const QJsonObject &launch
 
 QStringList MainWindow::disabledAgentToolFamilies() const
 {
-    return AgentToolPolicy::normalizeDisabledFamilies(
-        QSettings().value(AgentToolPolicy::DisabledFamiliesSetting).toStringList());
+    if (!m_disabledAgentToolFamiliesLoaded) {
+        m_disabledAgentToolFamilies = AgentToolPolicy::normalizeDisabledFamilies(
+            QSettings().value(AgentToolPolicy::DisabledFamiliesSetting).toStringList());
+        m_disabledAgentToolFamiliesLoaded = true;
+    }
+    return m_disabledAgentToolFamilies;
 }
 
 QJsonObject MainWindow::agentRuntimeLaunchOptions() const
@@ -1871,6 +1892,8 @@ void MainWindow::setAgentToolFamilyEnabled(const QString &family, bool enabled)
         else
             settings.setValue(AgentToolPolicy::DisabledFamiliesSetting, disabled);
     }
+    m_disabledAgentToolFamilies = disabled;
+    m_disabledAgentToolFamiliesLoaded = true;
     const QSet<QString> set(disabled.cbegin(), disabled.cend());
     if (m_agentToolLedger)
         m_agentToolLedger->setDisabledFamilies(set);

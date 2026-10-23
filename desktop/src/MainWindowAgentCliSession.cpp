@@ -70,6 +70,19 @@ constexpr int kExitAfterSighup = 128 + 1;
 const QString kExternalClaudeFolderName = QStringLiteral("External Claude Code");
 const QString kExternalClaudeMemberPrefix = QStringLiteral("claude:");
 
+void appendBoundedStreamRaw(QString &buf, const QString &piece)
+{
+    constexpr qsizetype kMax = 400000;
+    constexpr qsizetype kKeep = 300000;
+    if (buf.size() + piece.size() > kMax && piece.size() >= kKeep) {
+        buf = piece.right(kKeep);
+        return;
+    }
+    buf.append(piece);
+    if (buf.size() > kMax)
+        buf.remove(0, buf.size() - kKeep);
+}
+
 struct ExternalTranscriptRead {
     bool full = false;
     bool redraw = false;
@@ -368,10 +381,7 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         const QString line = redactProviderCredentials(
             rawLine, providerCredentialValues);
         noteAgentActivity(sid, line.size()); // pulse the list's night-rider light
-        QString &buf = m_streamRaw[sid];
-        buf.append(line).append(QLatin1String("\n\n"));
-        if (buf.size() > 400000)
-            buf.remove(0, buf.size() - 300000);
+        appendBoundedStreamRaw(m_streamRaw[sid], line + QLatin1String("\n\n"));
         if (sid == m_selectedAgentSessionId)
             appendAgentRawLog(line + QStringLiteral("\n\n"));
     };
@@ -383,12 +393,10 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         if (text.isEmpty())
             return;
         noteAgentActivity(sid, text.size());
-        QString &buf = m_streamRaw[sid];
-        buf.append(QLatin1String("[stderr] ")).append(text);
-        if (!buf.endsWith(QLatin1Char('\n')))
-            buf += QLatin1Char('\n');
-        if (buf.size() > 400000)
-            buf.remove(0, buf.size() - 300000);
+        QString piece = QLatin1String("[stderr] ") + text;
+        if (!piece.endsWith(QLatin1Char('\n')))
+            piece += QLatin1Char('\n');
+        appendBoundedStreamRaw(m_streamRaw[sid], piece);
         if (sid == m_selectedAgentSessionId)
             appendAgentRawLog(QStringLiteral("[stderr] ") + text);
     };
@@ -1978,6 +1986,7 @@ void MainWindow::applyExternalClaudeScan()
     if (isExternalSession(m_selectedAgentSessionId) &&
         m_externalSurfaced.contains(m_selectedAgentSessionId))
         renderExternalTranscript(m_selectedAgentSessionId, /*full=*/false);
+    scheduleSessionsPageRefresh();
 }
 
 bool MainWindow::externalIsLive(const QString &uuid) const
@@ -2080,7 +2089,13 @@ void MainWindow::fileExternalSessionInFolder(const QString &repoKey,
             !surfaced.contains(stale))
             m_agentFolders.assign(repoKey, stale, QString());
     m_agentFolders.assign(repoKey, member, folderId);
-    m_agentFolders.save();
+    if (m_agentFoldersSaveQueued)
+        return;
+    m_agentFoldersSaveQueued = true;
+    QTimer::singleShot(0, this, [this] {
+        m_agentFoldersSaveQueued = false;
+        m_agentFolders.save();
+    });
 }
 
 void MainWindow::surfaceExternalSession(const QString &uuid)
@@ -2265,7 +2280,6 @@ void MainWindow::renderExternalTranscript(int sessionId, bool full)
     if (full) {
         ++m_agentTranscriptRenderGeneration;
         m_agentTranscriptRenderSession = -1;
-        m_agentTranscriptRenderEvents.clear();
         ++m_externalTranscriptRenderGeneration;
         m_externalTranscriptRenderSession = -1;
         m_externalTranscriptRenderEvents.clear();

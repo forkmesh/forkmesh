@@ -3878,6 +3878,8 @@ const QString kAutoBackupEnabledSetting = QStringLiteral("backup/hourlyEnabled")
 const QString kAutoBackupKeepSetting = QStringLiteral("backup/keepCount");
 const QString kAutoAgentOnStallSetting =
     QStringLiteral("diagnostics/autoAgentOnStall");
+const QString kStallRepairSessionSetting =
+    QStringLiteral("diagnostics/stallRepairSession");
 const QString kHighMemoryAutoKillSetting =
     QStringLiteral("diagnostics/highMemoryAutoKill");
 const QString kAutoAgentOnErrorLogSetting =
@@ -6154,6 +6156,7 @@ public:
             if (category.badge == normalized)
                 return false;
         mutableCategories().append({normalized, accent, icon});
+        categoryLanes() = buildCategoryLanes();
         return true;
     }
 
@@ -6164,6 +6167,7 @@ public:
         for (int i = builtinCategoryCount(); i < values.size(); ++i) {
             if (values.at(i).badge == normalized) {
                 values.removeAt(i);
+                categoryLanes() = buildCategoryLanes();
                 return;
             }
         }
@@ -6191,22 +6195,17 @@ public:
 
     static QString iconForBadge(const QString &badge)
     {
-        for (int i = 0; i < categoryCount(); ++i) {
-            if (badge == categories().at(i).badge)
-                return categories().at(i).icon;
-        }
-        return QStringLiteral("info");
+        const int lane = laneForBadge(badge);
+        return lane >= 0 ? categories().at(lane).icon : QStringLiteral("info");
     }
 
     // The one place a category's colour is written down: the log's badge
     // column, its filter chips and these lights all read it from here.
     static QString accentForBadge(const QString &badge)
     {
-        for (int i = 0; i < categoryCount(); ++i) {
-            if (badge == categories().at(i).badge)
-                return categories().at(i).accent;
-        }
-        return QStringLiteral("#8b949e");
+        const int lane = laneForBadge(badge);
+        return lane >= 0 ? categories().at(lane).accent
+                         : QStringLiteral("#8b949e");
     }
 
     quint64 countFor(const QString &badge) const
@@ -6529,11 +6528,34 @@ private:
 
     static int categoryIndex(const QString &badge)
     {
-        for (int i = 0; i < categoryCount(); ++i) {
-            if (badge == categories().at(i).badge)
-                return i;
-        }
+        if (const int lane = laneForBadge(badge); lane >= 0)
+            return lane;
         return builtinCategoryCount() - 1; // unknown categories pulse INFO
+    }
+
+    static QHash<QString, int> buildCategoryLanes()
+    {
+        QHash<QString, int> lanes;
+        const QList<Category> &values = categories();
+        lanes.reserve(values.size());
+        for (int i = 0; i < values.size(); ++i) {
+            if (!lanes.contains(values.at(i).badge))
+                lanes.insert(values.at(i).badge, i);
+        }
+        return lanes;
+    }
+
+    static QHash<QString, int> &categoryLanes()
+    {
+        static QHash<QString, int> lanes = buildCategoryLanes();
+        return lanes;
+    }
+
+    static int laneForBadge(const QString &badge)
+    {
+        const QHash<QString, int> &lanes = categoryLanes();
+        const auto found = lanes.constFind(badge);
+        return found == lanes.cend() ? -1 : found.value();
     }
 
     static int stallCategoryIndex()

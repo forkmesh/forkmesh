@@ -1,7 +1,9 @@
 #include "RoomSeal.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -520,6 +522,93 @@ void testPersistence()
           "the persisted device's frame opens");
 }
 
+void testOrderedWriter()
+{
+    clearStoredState();
+    auto local = ChatDevice::local();
+    auto peerDevice = ChatDevice::inMemory(randomBytes(32));
+    const QString dmRoom = QStringLiteral("chat-direct:ffffffffffffffffffffffffffffffff:v1");
+    const QString dmScope = QStringLiteral("direct:ffffffffffffffffffffffffffffffff");
+    RoomSeal mine(dmRoom, dmScope, Policy::Strict, QStringLiteral("alice"),
+                  QStringLiteral("alice-desk"), local);
+    RoomSeal theirs(dmRoom, dmScope, Policy::Strict, QStringLiteral("bob"),
+                    QStringLiteral("bob-desk"), peerDevice);
+    mine.setParticipants({QStringLiteral("alice"), QStringLiteral("bob")});
+    theirs.setParticipants({QStringLiteral("alice"), QStringLiteral("bob")});
+    mine.acceptKeyFrame(theirs.keyFrame());
+    theirs.acceptKeyFrame(mine.keyFrame());
+    const QString ratchetKey = QStringLiteral("chat/e2ee/ratchetV4/") + b64u(dmRoom.toUtf8());
+    const QString ratchetPath = storedStateKeyFile(ratchetKey);
+    const QJsonObject chat{{QStringLiteral("type"), QStringLiteral("chat")},
+                           {QStringLiteral("senderId"), QStringLiteral("alice-desk")}};
+
+    QObject owner;
+    SendGate gate(&owner);
+    QList<int> sent;
+    QList<QByteArray> onDiskAtSend;
+    QList<QByteArray> expected;
+    quint64 previous = local->writeTicket();
+    bool ticketsGrow = true;
+    for (int i = 0; i < 12; ++i) {
+        const QJsonObject frame = mine.sealObject(chat);
+        check(!frame.isEmpty(), "a persisted device seals a v4 frame");
+        ticketsGrow = ticketsGrow && local->writeTicket() > previous;
+        previous = local->writeTicket();
+        expected.append(compact(local->exportRatchets(dmRoom)));
+        gate.send(local->writeTicket(), nullptr, [&sent, &onDiskAtSend, ratchetPath, i] {
+            QFile file(ratchetPath);
+            onDiskAtSend.append(file.open(QIODevice::ReadOnly) ? file.readAll()
+                                                               : QByteArray());
+            sent.append(i);
+            return true;
+        });
+        gate.send(0, nullptr, [&sent] {
+            sent.append(-1);
+            return true;
+        });
+    }
+    check(ticketsGrow, "every seal takes a later write ticket");
+    QElapsedTimer waited;
+    waited.start();
+    while (sent.size() < 24 && waited.elapsed() < 10000)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    bool ordered = sent.size() == 24;
+    for (int i = 0; ordered && i < 12; ++i)
+        ordered = sent.at(2 * i) == i && sent.at(2 * i + 1) == -1;
+    check(ordered, "gated frames leave in the order they were queued, unsealed ones included");
+    bool durable = onDiskAtSend.size() == 12;
+    for (int i = 0; durable && i < 12; ++i)
+        durable = onDiskAtSend.at(i) == expected.at(i) ||
+                  (i + 1 < 12 && expected.mid(i + 1).contains(onDiskAtSend.at(i)));
+    check(durable, "a sealed frame leaves only after its ratchet state is on disk");
+    ChatDevice::waitForWrites();
+    QFile last(ratchetPath);
+    check(ChatDevice::isWritten(local->writeTicket()) && last.open(QIODevice::ReadOnly) &&
+              last.readAll() == expected.last(),
+          "the newest ratchet snapshot is the one left on disk");
+
+    const QString heldScope = QStringLiteral("ordered-held-scope");
+    const QString heldRoom = QStringLiteral("ordered-held-room");
+    for (int i = 0; i < 40; ++i)
+        local->hold(heldScope, heldRoom,
+                    QJsonObject{{QStringLiteral("sig"), QStringLiteral("held-%1").arg(i)},
+                                {QStringLiteral("kid"), QStringLiteral("pendingKid000002")}});
+    const QString trustKey = QStringLiteral("chat/e2ee/trustV3/") + b64u(heldScope.toUtf8());
+    check(!QFileInfo::exists(storedStateKeyFile(trustKey)),
+          "held frames are coalesced instead of written one by one");
+    local->flush();
+    const QJsonArray stored = QJsonDocument::fromJson(storedSetting(trustKey).toByteArray())
+                                  .object()
+                                  .value(QStringLiteral("held"))
+                                  .toObject()
+                                  .value(heldRoom)
+                                  .toArray();
+    check(stored.size() == 40 &&
+              stored.last().toObject().value(QStringLiteral("sig")).toString() ==
+                  QStringLiteral("held-39"),
+          "one coalesced write carries every held frame");
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -557,6 +646,7 @@ int main(int argc, char **argv)
     testSessionsBounded();
     testVersionsStayInTheirRooms();
     testPersistence();
+    testOrderedWriter();
 
     if (failures) {
         std::fprintf(stderr, "%d chat v4 check(s) failed.\n", failures);

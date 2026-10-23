@@ -110,6 +110,26 @@ The desktop has no toasts or floating cards; information is shown inline.
   `src/SystemPressure.*` reads Linux PSI to tell system-wide starvation from an
   app freeze.
 
+### Qt runtime diagnostics cost
+
+`src/QtRuntimeDiagnostics.*` runs a 10 Hz heartbeat and a 1 Hz sample for the
+session; per-event accounting (`QtEventDeliveryProbe` in
+`ForkMeshApplication::notify`) is on only while the debug strip is open. Since
+2026-10-22 the per-event path allocates nothing:
+
+- Paint tallies are keyed by the receiver's class, the nearest object name
+  and whether it is the receiver's own (`PaintKey`), looked up once in the
+  probe's constructor. The readable name is built only the first time a key
+  is seen; it used to be built (and hashed as a string) for every paint.
+- The slowest receiver of each event group is copied into a fixed buffer and
+  turned into a string once per sample (`publishSlowestReceivers`).
+- The widget, object and timer counts come from one walk of the object tree
+  done in 4 ms slices on a zero-length timer (`advanceStructureWalk`), keeping
+  `QPointer`s only for the path being walked so a subtree deleted between
+  slices is skipped. The whole-tree `findChildren` passes it replaced froze
+  the window for 2.5 s to 85 s on a paging machine. Enabling the strip and
+  **Reset** still count synchronously.
+
 ### Desktop resource diagnostics
 
 The CPU quadrant in the debug bar opens **Logs → Desktop**. The page samples
@@ -197,6 +217,35 @@ Triage: check the starvation verdict first; group `stalls.log` by
 `addr2line -fCpe /proc/<pid>/exe` of the running binary; rank GUI-thread git
 waits by summing `"execution":"ui-blocking"` `finished` records by `source`.
 
+### Stalls to an agent: one session at a time (2026-10-22)
+
+Settings > Agents "Let special agents create repair agents from UI stall
+logs" (`diagnostics/autoAgentOnStall`) lets a special agent's `STALL` log
+monitor (Quality ships one, threshold 50) hand UI stalls to an agent. Stalls
+used to start a fresh agent each time a monitor or the **Send to agent**
+button fired; now every route adds to the session already working on stalls.
+
+- `src/StallRepairRouting.*` picks that session (`pickSession`): the one
+  remembered in `diagnostics/stallRepairSession` while it is running, queued,
+  waiting, or finished successfully and not merged; otherwise the newest
+  running session whose title or prompt is stall work. Merged, stopped,
+  failed, external and cloud sessions, and sessions in another repository,
+  never take stalls.
+- `MainWindow::maybeTriggerStallMonitoringTeammates` starts a run only when
+  no such session exists. While one is working, new reports are batched into
+  one follow-up (`deliverStallFollowUp`, sent with
+  `sendPromptToAgentSession`) at most every 10 minutes, after a 1 minute
+  settle. A finished session is resumed only when the reports not yet handed
+  over cross the monitor threshold again, so a burst cannot restart it per
+  stall. `m_stallHandedOffThrough` counts the reports already sent;
+  **Clear** resets it.
+- **Send to agent** (`sendStallLogToAgent`) and the phone's per-stall send
+  (`diag.run` `sendStall`) add to the open session too and start a new one
+  only when there is none.
+- A background (`--headless`) or offscreen instance never routes stalls to
+  an agent, whatever the setting says: its stalls are mirror work, and
+  agent builds there would make the next stall worse.
+
 ### Reading summed stall frames
 
 The scan also picks up stale return addresses from calls that already
@@ -210,6 +259,16 @@ returned, so summed frame totals overstate a function's own cost.
   `resizeEdgesAtGlobalPos`, `updateFramelessResizeCursor`) and event-delivery
   instrumentation (`QtEventDeliveryProbe`, `QtRuntimeDiagnostics::noteDelivery`,
   `recordEventDelivery`). A record naming only those is unattributed.
+- `likely origin:` names a system wait first when one sits at the top of the
+  first sample, before any real application frame: `Qt window flush: GPU
+  buffer swap waiting on the compositor` (`swapBuffers` / `QRhi::endFrame`),
+  `QSettings write flushed to disk by fsync on the UI thread`, or `Qt
+  style-sheet polish` (`QCss::StyleSelector`). The application frames follow
+  after `, under`, and may be stale. In the 2026-10-22 logs most "Qt widget
+  paint" and "application frame unresolved" stalls were these waits, and two
+  thirds of them had `io full` above 10%: machine pressure and the compositor,
+  not a code path. A window holding a `QWebEngineView` flushes through OpenGL,
+  so every repaint is a buffer swap.
 - Before optimizing, check the worker's own `duration_ms` in `actions.jsonl`
   and aggregate a group's demangled frames before blaming its origin.
 
@@ -295,6 +354,76 @@ returned, so summed frame totals overstate a function's own cost.
   `QRegularExpression` for every changed path and pattern pair; a 20,000-path
   push against 4 patterns took 1,979 ms, compiled once it takes 21.5 ms
   (report #8, `applyWorkflowScan`).
+- **Agents, transcript and pull list (2026-10-22 stall log).**
+  `forkMeshAvatarPng` keeps the last 512 generated avatars (a mutex-guarded
+  `QCache`): the pull list painted and PNG-encoded one per row on every
+  rebuild (29 stalls in `refreshPullList`). A landed worktree merge records
+  its pull status (`reconcileMergedPulls`, which reads every pull) in the
+  merge worker (`mergeBranchIntoBase`) instead of in `applyWorktreeMergeStep`,
+  still before cleanup deletes the branch. The hourly and startup agent
+  recycle-bin sweep runs on a worker
+  (`purgeExpiredAgentRecycleBinInBackground`); the retention control and its
+  local-control method still sweep at once. `saveRecentUserInstance` writes
+  only when the account's instance or its place at the top of the recent
+  list changes, and `refreshQuickAddTaskAssignees` leaves an unchanged picker
+  alone (its re-selection rewrote `quickAdd/taskAssignee`). The transcript
+  and Agents page fixes are in
+  [agents-ui.md](agents-ui.md#transcript). Still open: the stalls under
+  `scanExternalClaudeSessions` wait in `pthread_create` inside
+  `runOffThread`, which starts a new `QThread` per call; under memory
+  pressure the kernel took over 500 ms to create one. Fixing that means
+  reusing threads in `runOffThread` itself, with the same teardown guarantees.
+- **Logging, package pages and mirror push (2026-10-22 stall log).** Many of
+  these reports came from a process with 400 MB swapped out, where touching
+  20,000 scattered strings means 20,000 page faults.
+  - The in-memory log (`m_networkLog`, 20,000 lines) was deep-copied on the
+    GUI thread whenever a line arrived while another copy shared it: the
+    `reallocateAndGrow` frames under `logSystemFrom` (and the stale
+    `accentForBadge` and `drainCoreLogFeedLines` frames above them) are that
+    copy, which bumps every line's reference count. The global search and the
+    search page now hand their snapshot to the worker, which copies it there
+    and drops the shared one (`networkLogShare`,
+    `SearchPageInputs::LogSnapshot`); the saved-search check, which never
+    searches the log, drops it first thing. `logSystemFrom` reserves room for
+    twice the limit, so trimming from the front slides the array instead of
+    reallocating. The popout's fill copy (`m_logPopoutFillHistory`) still
+    shares the buffer while it fills.
+  - `LogActivityLights` looks badges up in a table (`categoryLanes`) rebuilt
+    when a category is registered, instead of comparing against 40 names per
+    call. The footer tail renders only the last `kFooterLogSeedLines` of a
+    batch that would scroll the rest out anyway.
+  - `syncNativePackagePageSearch` calls a package's `setHostSearchQuery` only
+    when its query changes, and never for a hidden page that has not been
+    given one: every navigation re-sent `""` to every page and Computer
+    Security re-rendered its tree each time. `preparePackagePages` and
+    `preparePackageRails` prepare one package per event-loop turn
+    (`drainPackagePreparation`) instead of all CRM, Marketing and other
+    loads in one call.
+  - `PackageRegistry::setPackageSetting` returns before `sync()` when the value
+    is unchanged (`applyStatusMonitorsPayload` rewrote `ForkMesh.conf` on every
+    status-monitor poll).
+  - Ordinary managed-host pushes list the retained release CAS on a worker
+    (`retainedManagedPushArtifacts`) and start artifact reconciliation when
+    it returns; the ref push no longer waits for the directory walk or builds
+    per-blob SSH commands it never uses. Release pushes still check their
+    signed blobs first.
+  - `deleteCancelledRunsAutomatically` reads its setting only when a run was
+    cancelled; `cancelSupersededRuns` called it with an empty list on every
+    run and waited on the `QSettings` lock.
+  - The user activity log writes through `diskwrite::writeLater` once a
+    minute and `writeNow` at quit, instead of a `QSaveFile` commit on the GUI
+    thread from the input event filter.
+  - The branch diff re-scores merge health on a worker when a patch over the
+    synchronous render limit (`kBranchDiffSyncRenderChars`) gets a new Git
+    verdict (`updateBranchDiffHealth`); the secret scan of a large patch was
+    the `findSecretsInDiff` stalls.
+  - The first network request waited for libproxy to load
+    (`systemProxyForQuery` under `refreshRepoPinBanner`); the window now
+    makes one proxy lookup on a worker at start.
+  - No change: `ActivityTally::noteStatement` appears only in starved
+    reports, and the `noteBackgroundActivity` frames are stale return
+    addresses whose leaves were GL buffer swaps, text layout and
+    `purgeSessionState`.
 
 ### Background file writes
 
@@ -500,7 +629,8 @@ drop-ins. Linux only.
   `forkmesh-component-health-board-tests`, `forkmesh-binary-size-tests`,
   `forkmesh-process-memory-tests`, `forkmesh-stats-dashboard-tests`,
   `forkmesh-systemd-timers-tests` (fake `systemctl`),
-  `tests/test_stall_watchdog.cpp`, and grouping/relay-flap checks in
+  `tests/test_stall_watchdog.cpp`, `forkmesh-stall-repair-tests`
+  (`tests/test_stall_repair_routing.cpp`), and grouping/relay-flap checks in
   `tests/test_crypto.cpp`.
 - Window tests: `forkmesh-window-tests` (inline notices, error alerts,
   `--error-log-triage-only`), `forkmesh-high-memory-panel-window-tests`,

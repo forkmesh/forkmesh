@@ -8484,6 +8484,31 @@ QString promptDraftText(const QWidget *w)
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
+    switch (event->type()) {
+    case QEvent::MouseMove:
+    case QEvent::HoverMove:
+    case QEvent::Enter:
+    case QEvent::Leave:
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonRelease:
+    case QEvent::MouseButtonDblClick:
+    case QEvent::Wheel:
+    case QEvent::KeyPress:
+    case QEvent::FocusOut:
+    case QEvent::ContextMenu:
+    case QEvent::ToolTip:
+    case QEvent::Resize:
+    case QEvent::Move:
+    case QEvent::Show:
+    case QEvent::ShowToParent:
+    case QEvent::Hide:
+    case QEvent::Close:
+    case QEvent::WindowStateChange:
+        break;
+    default:
+        return QMainWindow::eventFilter(obj, event);
+    }
+
     if (handleFramelessResizeEvent(obj, event))
         return true;
 
@@ -9011,15 +9036,16 @@ bool MainWindow::handleFramelessResizeEvent(QObject *obj, QEvent *event)
         return false;
 
     switch (event->type()) {
-    case QEvent::MouseMove:
+    case QEvent::MouseMove: {
+        auto *mouse = static_cast<QMouseEvent *>(event);
+        updateFramelessResizeCursor(
+            resizeEdgesAtGlobalPos(mouse->globalPosition().toPoint()));
+        return false;
+    }
     case QEvent::HoverMove: {
-        if (auto *mouse = dynamic_cast<QMouseEvent *>(event)) {
-            updateFramelessResizeCursor(
-                resizeEdgesAtGlobalPos(mouse->globalPosition().toPoint()));
-        } else if (auto *hover = dynamic_cast<QHoverEvent *>(event)) {
-            updateFramelessResizeCursor(
-                resizeEdgesAtGlobalPos(mapToGlobal(hover->position().toPoint())));
-        }
+        auto *hover = static_cast<QHoverEvent *>(event);
+        updateFramelessResizeCursor(
+            resizeEdgesAtGlobalPos(mapToGlobal(hover->position().toPoint())));
         return false;
     }
     case QEvent::Leave:

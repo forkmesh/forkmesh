@@ -15,7 +15,7 @@ Topic pages in this folder:
 - [build-and-test.md](build-and-test.md): CMake, `run.sh`, Rebuild & restart, ctest, CI
 - [diagnostics.md](diagnostics.md): logs, stall watchdog, crash repair, inline notices, Health and Memory pages
 - [networking.md](networking.md): relay transport, HTTP/3 client, local mesh, phone LAN control, hosts
-- [agents-ui.md](agents-ui.md): Agents page, activity window, sounds and announcer
+- [agents-ui.md](agents-ui.md): Agents page, Sessions page, activity window, sounds and announcer
 - [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in
 - [pull-merge-all.md](pull-merge-all.md): Merge all with AI on the Pull requests list: the no-branch Auto agent, its prompt, and the cleanup of merged pull requests and branches
 - [tasks-page.md](tasks-page.md): Tasks page layout, top-search filtering, row and detail design, task work items and delete cleanup

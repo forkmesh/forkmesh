@@ -3463,11 +3463,36 @@ void ClaudeTranscriptView::clear()
     while (m_col->count() > 1) { // keep the trailing spacer
         QLayoutItem *it = m_col->takeAt(m_col->count() - 2);
         if (QWidget *w = it->widget())
-            w->deleteLater();
+            retireRow(w);
         delete it;
     }
     if (hostUpdates)
         host->setUpdatesEnabled(true);
+}
+
+void ClaudeTranscriptView::retireRow(QWidget *row)
+{
+    row->hide();
+    m_retiredRows.append(row);
+    if (m_retiredRowsScheduled)
+        return;
+    m_retiredRowsScheduled = true;
+    QTimer::singleShot(0, this, [this] { deleteRetiredRows(); });
+}
+
+void ClaudeTranscriptView::deleteRetiredRows()
+{
+    m_retiredRowsScheduled = false;
+    QElapsedTimer budget;
+    budget.start();
+    while (!m_retiredRows.isEmpty() && budget.elapsed() < 8) {
+        const QPointer<QWidget> row = m_retiredRows.takeLast();
+        delete row.data();
+    }
+    if (m_retiredRows.isEmpty() || m_retiredRowsScheduled)
+        return;
+    m_retiredRowsScheduled = true;
+    QTimer::singleShot(0, this, [this] { deleteRetiredRows(); });
 }
 
 QString ClaudeTranscriptView::accentFor(const QString &name) const

@@ -1791,6 +1791,32 @@ void MainWindow::purgeExpiredAgentRecycleBin()
     }
 }
 
+void MainWindow::purgeExpiredAgentRecycleBinInBackground()
+{
+    if (!m_agentStore || m_agentRecyclePurgeInFlight)
+        return;
+    m_agentRecyclePurgeInFlight = true;
+    AgentStore *store = m_agentStore;
+    const qint64 retentionMs = agentRecycleRetentionMs();
+    runOffThread<int>(
+        [store, retentionMs] {
+            return store->purgeExpiredRecycledSessions(
+                retentionMs, QDateTime::currentMSecsSinceEpoch());
+        },
+        [this](int purged) {
+            m_agentRecyclePurgeInFlight = false;
+            if (purged <= 0)
+                return;
+            logSystem(QStringLiteral("Removed %1 expired agent recycle bin "
+                                     "entr%2 (retention %3 hours).")
+                          .arg(purged)
+                          .arg(purged == 1 ? QStringLiteral("y")
+                                           : QStringLiteral("ies"))
+                          .arg(agentRecycleRetentionHours()));
+            reloadAgentRecycleBin();
+        });
+}
+
 void MainWindow::deleteAgentSessionEntry(int sessionId)
 {
     if (isCloudSession(sessionId)) {
@@ -2001,8 +2027,14 @@ void MainWindow::purgeSessionState(int sessionId)
         stream->deleteLater();
     if (CodexAppServerSession *stream = m_codexStreams.take(sessionId))
         stream->deleteLater();
-    m_streamEvents.remove(sessionId);
-    m_streamRaw.remove(sessionId);
+    if (auto events = m_streamEvents.find(sessionId); events != m_streamEvents.end()) {
+        releaseOffGuiThread(std::move(*events));
+        m_streamEvents.erase(events);
+    }
+    if (auto raw = m_streamRaw.find(sessionId); raw != m_streamRaw.end()) {
+        releaseOffGuiThread(std::move(*raw));
+        m_streamRaw.erase(raw);
+    }
     m_streamFiles.remove(sessionId);
     m_streamWorktree.remove(sessionId);
     m_streamPending.remove(sessionId);
@@ -2040,7 +2072,6 @@ void MainWindow::purgeSessionState(int sessionId)
     if (m_agentTranscriptRenderSession == sessionId) {
         ++m_agentTranscriptRenderGeneration;
         m_agentTranscriptRenderSession = -1;
-        m_agentTranscriptRenderEvents.clear();
         if (m_agentTranscript)
             m_agentTranscript->setBulkPopulate(false);
     }

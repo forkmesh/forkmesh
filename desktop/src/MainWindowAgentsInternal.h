@@ -51,6 +51,7 @@
 #include <QFrame>
 #include <QShowEvent>
 #include <QSignalBlocker>
+#include <QThreadPool>
 
 #include <algorithm>
 #include <limits>
@@ -73,6 +74,14 @@ bool paintWorkspaceSessionRow(QPainter *painter,
 using namespace forkmesh::ui;
 
 namespace {
+
+template <typename T>
+inline void releaseOffGuiThread(T &&value)
+{
+    using Held = std::decay_t<T>;
+    QThreadPool::globalInstance()->start(
+        [held = Held(std::forward<T>(value))]() mutable { Held drop = std::move(held); });
+}
 
 inline QString agentMergeBase(const AgentSession &s);
 

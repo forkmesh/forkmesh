@@ -131,8 +131,7 @@ int MainWindow::pushRefsToManagedHosts(
     }
     QList<MirrorReleaseBlob> releaseArtifacts;
     if (!collectManagedPushArtifacts(repo, releaseTag, releaseArtifactHashes,
-                                     releasePush, reconcileArtifacts,
-                                     &releaseArtifacts)) {
+                                     releasePush, false, &releaseArtifacts)) {
         if (onFinished)
             QTimer::singleShot(0, this,
                                [onFinished] { onFinished(0, 1); });
@@ -141,12 +140,12 @@ int MainWindow::pushRefsToManagedHosts(
     const QString managedRepoKey =
         (repo.owner + QLatin1Char('/') + repo.name).toLower();
     const bool startArtifactReconciliation =
-        !releasePush && reconcileArtifacts && !releaseArtifacts.isEmpty() &&
+        !releasePush && reconcileArtifacts &&
         !m_managedArtifactReconciling.contains(managedRepoKey);
 
     int unavailableTargets = 0;
-    QList<ManagedPushTarget> targets = managedPushTargets(
-        releaseArtifacts, startArtifactReconciliation, &unavailableTargets);
+    QList<ManagedPushTarget> targets =
+        managedPushTargets(releaseArtifacts, false, &unavailableTargets);
     if (targets.isEmpty()) {
         if (onFinished) {
             QTimer::singleShot(
@@ -200,9 +199,26 @@ int MainWindow::pushRefsToManagedHosts(
     // should receive a new ref immediately. Releases keep the stricter
     // artifact-before-tag ordering in the separate branch below.
     if (startArtifactReconciliation) {
-        startManagedArtifactReconciliation(managedRepoKey, targets,
-                                           unavailableTargets,
-                                           releaseArtifacts);
+        m_managedArtifactReconciling.insert(managedRepoKey);
+        const QString mirrorPath = repo.mirrorPath;
+        runOffThread<QList<MirrorReleaseBlob>>(
+            [mirrorPath, releaseArtifacts] {
+                return retainedManagedPushArtifacts(mirrorPath,
+                                                    releaseArtifacts);
+            },
+            [this, managedRepoKey](QList<MirrorReleaseBlob> artifacts) {
+                int unavailable = 0;
+                const QList<ManagedPushTarget> reconcileTargets =
+                    artifacts.isEmpty()
+                        ? QList<ManagedPushTarget>()
+                        : managedPushTargets(artifacts, true, &unavailable);
+                if (reconcileTargets.isEmpty()) {
+                    m_managedArtifactReconciling.remove(managedRepoKey);
+                    return;
+                }
+                startManagedArtifactReconciliation(
+                    managedRepoKey, reconcileTargets, unavailable, artifacts);
+            });
     }
 
     // A release manifest authorizes blobs that live outside Git. Advancing the
@@ -265,24 +281,33 @@ bool MainWindow::collectManagedPushArtifacts(
     // which objects it lacks, then stream only that difference. This is what
     // lets a newly provisioned or repaired node converge from zero artifacts
     // without retransmitting every retained binary on every safety pass.
-    if (!releasePush && reconcileArtifacts) {
-        for (const MirrorReleaseBlob &artifact :
-             mirrorReleaseBlobs(repo.mirrorPath)) {
-            const QString hash = artifact.hash.trimmed().toLower();
-            if (seenArtifactHashes.contains(hash) || artifact.size <= 0 ||
-                forkmesh::control::managedReleaseArtifactSeedCommand(hash)
-                    .isEmpty()) {
-                continue;
-            }
-            const QFileInfo info(artifact.path);
-            if (!info.isFile() || info.isSymLink())
-                continue;
-            seenArtifactHashes.insert(hash);
-            releaseArtifacts->append(
-                {hash, info.absoluteFilePath(), info.size()});
-        }
-    }
+    if (!releasePush && reconcileArtifacts)
+        *releaseArtifacts =
+            retainedManagedPushArtifacts(repo.mirrorPath, *releaseArtifacts);
     return true;
+}
+
+QList<MirrorReleaseBlob> MainWindow::retainedManagedPushArtifacts(
+    const QString &mirrorPath, const QList<MirrorReleaseBlob> &signedArtifacts)
+{
+    QList<MirrorReleaseBlob> artifacts = signedArtifacts;
+    QSet<QString> seenArtifactHashes;
+    for (const MirrorReleaseBlob &artifact : signedArtifacts)
+        seenArtifactHashes.insert(artifact.hash);
+    for (const MirrorReleaseBlob &artifact : mirrorReleaseBlobs(mirrorPath)) {
+        const QString hash = artifact.hash.trimmed().toLower();
+        if (seenArtifactHashes.contains(hash) || artifact.size <= 0 ||
+            forkmesh::control::managedReleaseArtifactSeedCommand(hash)
+                .isEmpty()) {
+            continue;
+        }
+        const QFileInfo info(artifact.path);
+        if (!info.isFile() || info.isSymLink())
+            continue;
+        seenArtifactHashes.insert(hash);
+        artifacts.append({hash, info.absoluteFilePath(), info.size()});
+    }
+    return artifacts;
 }
 
 // Every saved, active root host that can carry a managed ref push, with its

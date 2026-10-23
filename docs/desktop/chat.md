@@ -25,7 +25,8 @@ Tests: `forkmesh-chat-v3-tests` (`tests/test_chat_v3.cpp`, the wire vectors of
 vector `sequence` replayed as `app/tests/test_chat_v4_vectors.py` does, state
 import/export, and round trips: shuffled turns, a late message from an old
 chain, simultaneous first messages, reset recovery, `commit = false`,
-`MAX_SKIP`, session limits, v3/v4 room separation, persistence) and
+`MAX_SKIP`, session limits, v3/v4 room separation, persistence, the ordered
+state writer and its send gate) and
 `forkmesh-chat-transport-tests` (relay rooms, DMs, mesh links,
 `testLocalMeshLinkV3`, `testDirectMessagesOverLocalMesh`,
 `testDirectRoomRatchetRecovery`).
@@ -101,9 +102,87 @@ leaves the previous file, and other local users cannot read message text.
   in the spec's canonical JSON (the same shape `exportRatchets` returns and
   `importRatchets` reads, so the vector states load unchanged). It is kept on
   `ChatDevice`, per room, so the mirror's direct seal and the room's
-  `ServerNode` share one ratchet. A seal writes it synchronously before the
-  frame is returned (like the counter reservation); an open writes it with
-  the delayed writer, like the seen sets.
+  `ServerNode` share one ratchet. A seal queues it on the ordered state
+  writer at once and the frame waits at the transport until that write is on
+  disk; an open writes it with the delayed writer, like the seen sets (see
+  "State writes off the GUI thread" below).
+
+## State writes off the GUI thread (2026-10-22)
+
+The stall log of 2026-10-21/22 had about 60 reports in this code: the ratchet
+save after every v4 seal (`ChatDevice::saveRatchets` <- `RoomSeal::sealV4`,
+mostly from `ServerNode::sendPresence`) waiting in `fdatasync` for 0.5 to 2.5 s
+under IO load, the trust scope re-serialised with all its held frames on every
+held frame (`ChatDevice::saveScope` <- `ChatDevice::hold` <- `RoomSeal::openV4`,
+20 reports, about 1 s each), and the delayed writer's own `QSaveFile` commits on
+the GUI thread. Now:
+
+- **One ordered writer.** Every write of a `trustV3`, `ratchetV4` or `seenV3`
+  key runs on one worker thread (a `QThreadPool` of one thread), first in,
+  first out. The GUI thread only takes a snapshot of the in-memory state (an
+  implicitly shared copy, no serialising); the worker turns it into JSON and
+  writes it with `QSaveFile` (fsync and rename). Snapshots are taken from the
+  live state when a write is queued, and the queue never reorders, so a later
+  snapshot of a key never lands before an earlier one: the file only moves
+  forward.
+- **Coalescing.** A delayed save (`hold`, `setHeld`, `markSeen`, the open side
+  of the ratchet, policy and record changes) only marks the key dirty; the
+  snapshot is taken once, when the 2 s timer fires. Forty held frames from a
+  pending device are one write instead of forty full serialisations
+  (`testOrderedWriter`).
+- **Durability before a frame leaves.** A save that must not be lost (the
+  send side of the ratchet in `sealV4`, `resetRatchet`, `importRatchets`,
+  approve/block, verify) is queued at once and returns a write ticket
+  (`ChatDevice::writeTicket()`). `ServerNode::sendTextFrame` and
+  `LocalMeshNode::writeLink` pass every outgoing frame through a
+  `forkmesh::chatv3::SendGate`: while the device's latest ticket is not on
+  disk, frames wait in order (unsealed ones too, so nothing overtakes) and go
+  out when the worker reports the write done (`ChatDevice::whenWritten`). So
+  the guarantee of the old synchronous save holds: no sealed frame reaches a
+  peer before the ratchet step that produced it is on disk, and a crash before
+  that point loses only frames that were never sent, so a restart cannot
+  reuse a message key a peer has seen. The link counter of a mesh link is
+  taken when the frame is released, so link frames stay in sequence. The
+  gate follows the node's own device; a direct frame handed to the mesh must
+  carry that device's key id (`sendDirectSealed`), and in the app every
+  component uses `ChatDevice::local()`.
+- **What a crash can still lose** is what it could before: the delayed saves
+  of the last 2 s (the receive side of the ratchet, seen sets, held frames).
+  A failed write is handled as before (fallback to `state.ini`, then the
+  settings file); the gate opens once the write has been attempted.
+- **Shutdown.** `aboutToQuit` and a `qAddPostRoutine` hook flush the dirty
+  keys and wait for the worker; `ServerNode::shutdown` and
+  `LocalMeshNode::stop` wait for pending writes and release their gated
+  frames (the `bye`) before closing sockets. A closed or replaced socket drops
+  its gated frames, as bytes still in its buffer would have been.
+- Reading a key that has a write queued (`storedSetting`, `migrateStoredState`,
+  `clearStoredState`, `ChatDevice::flush`) first waits for the writer, so a
+  read never sees an older file than memory.
+- A gated frame can reach the relay in the same read as the frame queued
+  behind it, so the direct-room transport tests pick the sealed frame out of
+  what arrived instead of taking the last one.
+
+Two other GUI-thread costs from the same log:
+
+- `MainWindow::startLocalMesh` derives the `#mesh` room key (210k PBKDF2
+  rounds in `RoomCrypto`, 1.2 s in four reports) on a worker first
+  (`RoomCrypto::warmDefaultKey`) and builds the `LocalMeshNode` when it is
+  cached.
+- `MainWindow::saveChatHistory` (1.4 s in three reports) copies the history
+  (implicitly shared) and serialises and writes it on a one-thread writer, in
+  order. `loadChatHistory` waits for that writer first, and the save from the
+  close event waits for it, so nothing is lost on quit.
+
+Not changed: `RoomCrypto::decryptObject` in `ServerNode::processFrame` (three
+reports, all with the watchdog's machine-wide memory/IO starvation verdict;
+AES-GCM on a 4 MB frame takes milliseconds). Moving it off the thread would
+need an ordered pipeline for every relay frame type, because acks, receipts
+and `history-end` depend on arriving in order, and the seal open after it
+mutates the shared device on the GUI thread. The `RoomSeal::open` and
+`refreshChannelList` -> `conversationForChannel` reports were also starvation
+verdicts with stale frames (`setParticipants` and `conversationForChannel`
+are a few string operations); the real work in them was the per-frame saves
+above.
 
 ## Identities per room
 

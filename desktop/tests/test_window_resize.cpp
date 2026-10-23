@@ -14564,6 +14564,161 @@ void checkUiSnapshots(MainWindow &window)
     settle();
 }
 
+void checkSessionsPage(MainWindow &window)
+{
+    window.testEnableSessionStartBypass(true);
+    window.testSetSetupInputs(QStringLiteral("qa-tester"), QString());
+    window.testStartSession();
+    window.resize(1440, 900);
+    window.show();
+    QApplication::processEvents();
+    const auto waitUntil = [](const std::function<bool()> &ready) {
+        QElapsedTimer clock;
+        clock.start();
+        while (!ready() && clock.elapsed() < 5000)
+            QApplication::processEvents(QEventLoop::AllEvents, 25);
+        return ready();
+    };
+
+    QPushButton *sessions = window.testSessionsNavButton();
+    QPushButton *agents = window.testAgentsNavButton();
+    const QStringList rail = window.testRailOrderKeys();
+    const int sessionsAt = rail.indexOf(QStringLiteral("sessions"));
+    check(sessions && agents && sessionsAt >= 0 &&
+              rail.indexOf(QStringLiteral("agents")) == sessionsAt + 1 &&
+              sessions->parentWidget() == agents->parentWidget(),
+          QStringLiteral("the rail has a Sessions button directly above Agents (%1)")
+              .arg(rail.join(QStringLiteral(", "))));
+    if (!sessions || !agents)
+        return;
+
+    const auto assistant = [](const QString &text) {
+        return QJsonObject{
+            {QStringLiteral("type"), QStringLiteral("assistant")},
+            {QStringLiteral("message"),
+             QJsonObject{{QStringLiteral("content"),
+                          QJsonArray{QJsonObject{{QStringLiteral("type"),
+                                                  QStringLiteral("text")},
+                                                 {QStringLiteral("text"), text}}}}}}};
+    };
+    const auto userTurn = [](const QString &text) {
+        return QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
+                           {QStringLiteral("text"), text}};
+    };
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const auto seed = [&window, now](int id, const QString &title,
+                                     const QString &status, const QString &mode) {
+        AgentSession session;
+        session.id = id;
+        session.owner = QStringLiteral("forkmesh");
+        session.name = QStringLiteral("sessions-probe");
+        session.issueTitle = title;
+        session.prompt = title;
+        session.provider = QStringLiteral("claude-code");
+        session.model = QStringLiteral("claude-opus-5-5");
+        session.mode = mode;
+        session.branchName = QStringLiteral("agent/%1").arg(id);
+        session.status = status;
+        session.createdAtMs = now - id;
+        window.testAddAgentSession(session);
+        return session;
+    };
+    const AgentSession first = seed(9411, QStringLiteral("Wire the sessions page"),
+                                    AgentStatus::Running, QStringLiteral("Auto"));
+    const AgentSession second = seed(9412, QStringLiteral("Review the relay rules"),
+                                     AgentStatus::Success, QStringLiteral("Auto"));
+    const AgentSession planner = seed(9413, QStringLiteral("Plan the next step"),
+                                      AgentStatus::Success, QStringLiteral("Plan"));
+    window.testSetAgentTranscriptEvents(
+        first.id, {userTurn(QStringLiteral("wire the sessions page")),
+                   assistant(QStringLiteral("The sessions sidebar now lists every run."))});
+    window.testSetAgentTranscriptEvents(
+        second.id, {userTurn(QStringLiteral("review the relay rules")),
+                    assistant(QStringLiteral("Relays keep the permission rule."))});
+    window.testSetAgentTranscriptEvents(planner.id, {});
+
+    sessions->click();
+    QApplication::processEvents();
+    check(window.testSectionIndex() == window.testSessionsSectionIndex() &&
+              sessions->isChecked() && !agents->isChecked(),
+          QStringLiteral("clicking Sessions shows the Sessions page and checks only "
+                         "its rail button"));
+    const QList<int> listed = window.testSessionsListIds();
+    check(listed.contains(first.id) && listed.contains(second.id) &&
+              listed.indexOf(first.id) < listed.indexOf(second.id),
+          QStringLiteral("the Sessions list shows the seeded sessions, the running "
+                         "one in Active above the finished ones"));
+
+    window.showSessionsPage(first.id);
+    check(waitUntil([&] {
+              return window.testSessionsOpenId() == first.id &&
+                     window.testSessionsTranscriptIdle() &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("sidebar now lists")) > 0;
+          }),
+          QStringLiteral("selecting a session renders its stored transcript in the "
+                         "page's own transcript view"));
+
+    window.testApplyAgentTranscriptEvent(
+        first.id, assistant(QStringLiteral("Live rows land as they stream.")));
+    check(waitUntil([&] {
+              return window.testSessionsTranscriptIdle() &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("Live rows land")) > 0;
+          }),
+          QStringLiteral("a new event of the open session is appended live"));
+
+    window.testSetAgentSessionLiveTransport(first.id, true);
+    window.testSetAgentSessionLiveTransport(second.id, true);
+    check(window.testSessionsComposerState().startsWith(
+              QStringLiteral("1|%1|").arg(first.id)),
+          QStringLiteral("the composer is enabled and addressed to the open session "
+                         "(%1)")
+              .arg(window.testSessionsComposerState()));
+    window.testSessionsComposerSend(QStringLiteral("please cover the relay strip"),
+                                    second.id);
+    check(waitUntil([&] {
+              return window.testSessionsTranscriptIdle() &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("please cover the relay strip")) > 0;
+          }),
+          QStringLiteral("Enter in the composer sends through "
+                         "sendPromptToAgentSession and the turn shows live"));
+
+    QString why;
+    check(!window.relayBetweenSessions(planner.id, first.id,
+                                       QStringLiteral("take over"), &why) &&
+              why.contains(QStringLiteral("mode")),
+          QStringLiteral("a Plan session may not direct an Auto session (%1)").arg(why));
+    why.clear();
+    check(window.forwardLastSessionReply(first.id, second.id, &why),
+          QStringLiteral("the last reply forwards to another session (%1)").arg(why));
+
+    window.showSessionsPage(second.id);
+    check(waitUntil([&] {
+              return window.testSessionsOpenId() == second.id &&
+                     window.testSessionsTranscriptIdle() &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("please cover the relay strip")) > 0 &&
+                     window.testSessionsTranscriptMatches(
+                         QStringLiteral("another agent, not the user")) > 0;
+          }),
+          QStringLiteral("Also send to reached the second session and the "
+                         "forwarded reply arrived wrapped as an agent message"));
+    check(window.testSessionsRelayStrip().join(QLatin1Char(' ')).contains(
+              QStringLiteral("#%1").arg(first.id)),
+          QStringLiteral("the strip shows the conversation between sessions (%1)")
+              .arg(window.testSessionsRelayStrip().join(QStringLiteral(" | "))));
+
+    window.testSetAgentSessionLiveTransport(first.id, false);
+    window.testSetAgentSessionLiveTransport(second.id, false);
+    window.testRemoveAgentSession(first.id);
+    window.testRemoveAgentSession(second.id);
+    window.testRemoveAgentSession(planner.id);
+    window.testShowHomeSection();
+    QApplication::processEvents();
+}
+
 int runWorkspaceSnapshots(MainWindow &window);
 
 int main(int argc, char *argv[])
@@ -14885,6 +15040,8 @@ else:
         app.arguments().contains(QStringLiteral("--agent-efficiency-only"));
     const bool agentLandingOnly =
         app.arguments().contains(QStringLiteral("--agent-landing-only"));
+    const bool sessionsOnly =
+        app.arguments().contains(QStringLiteral("--sessions-only"));
     const bool errorLogTriageOnly =
         app.arguments().contains(QStringLiteral("--error-log-triage-only"));
     const bool viewModesOnly =
@@ -15518,6 +15675,12 @@ else:
 
     if (agentLandingOnly) {
         checkRequestedPullFailureReason(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (sessionsOnly) {
+        checkSessionsPage(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }

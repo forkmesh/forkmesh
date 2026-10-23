@@ -9070,10 +9070,8 @@ void MainWindow::maybeAutoFixFailedRun(const ActionRun &run)
 
 bool MainWindow::deleteCancelledRunsAutomatically(const QList<ActionRun> &runs)
 {
-    if (!m_actionStore ||
-        !QSettings().value(kAutoDeleteCancelledRunsSetting, true).toBool()) {
+    if (!m_actionStore || runs.isEmpty())
         return false;
-    }
 
     QList<ActionRun> doomed;
     QSet<int> doomedIds;
@@ -9085,7 +9083,8 @@ bool MainWindow::deleteCancelledRunsAutomatically(const QList<ActionRun> &runs)
         doomed.append(run);
         doomedIds.insert(run.id);
     }
-    if (doomed.isEmpty())
+    if (doomed.isEmpty() ||
+        !QSettings().value(kAutoDeleteCancelledRunsSetting, true).toBool())
         return false;
 
     // ActionStore drops its in-memory entries synchronously and unlinks the

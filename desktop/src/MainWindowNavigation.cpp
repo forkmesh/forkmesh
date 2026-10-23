@@ -379,6 +379,19 @@ QWidget *MainWindow::buildBreadcrumb()
     connect(m_agentsNavButton, &QPushButton::clicked, this,
             &MainWindow::openAgentsOverview);
 
+    m_sessionsNavButton = new ActivityRailButton(QStringLiteral("history"),
+                                                 QStringLiteral("Sessions"));
+    m_sessionsNavButton->setObjectName(QStringLiteral("sessionsNavButton"));
+    m_sessionsNavButton->setCheckable(true);
+    m_sessionsNavButton->setCursor(Qt::PointingHandCursor);
+    m_sessionsNavButton->setToolTip(
+        QStringLiteral("Sessions: every agent session, its live transcript, "
+                       "and messages between sessions"));
+    setOcticon(m_sessionsNavButton, "history", 16);
+    m_navGroup->addButton(m_sessionsNavButton, kSessionsSectionIndex);
+    connect(m_sessionsNavButton, &QPushButton::clicked, this,
+            [this] { showSessionsPage(); });
+
     {
         const QStringList hidden =
             QSettings().value(kHiddenTopBarIndicatorsSetting).toStringList();
@@ -926,6 +939,7 @@ QList<QPair<QString, QWidget *>> MainWindow::railHomeButtons() const
     QList<QPair<QString, QWidget *>> canonical = {
         {QStringLiteral("home"), m_homeGridNavButton},
         {QStringLiteral("code"), m_railCodeButton},
+        {QStringLiteral("sessions"), m_sessionsNavButton},
         {QStringLiteral("agents"), m_agentsNavButton},
         {QStringLiteral("git"), m_railGitButton},
         {QStringLiteral("repos"), m_reposNavButton},
@@ -1796,11 +1810,18 @@ void MainWindow::applyRailOrder()
     if (!saved.isEmpty()) {
         QList<std::pair<double, QPair<QString, QWidget *>>> ranked;
         double previous = -1;
+        const int savedAgents = saved.indexOf(QStringLiteral("agents"));
         for (const auto &entry : std::as_const(order)) {
             const int at = entry.first.isEmpty() ? -1 : saved.indexOf(entry.first);
             if (at >= 0)
                 previous = at;
-            ranked.append({at >= 0 ? at : previous + 0.5, entry});
+            const bool sessionsUnsaved =
+                at < 0 && savedAgents >= 0 &&
+                entry.first == QLatin1String("sessions");
+            ranked.append({at >= 0          ? double(at)
+                           : sessionsUnsaved ? savedAgents - 0.5
+                                             : previous + 0.5,
+                           entry});
         }
         std::stable_sort(ranked.begin(), ranked.end(),
                          [](const auto &a, const auto &b) {
@@ -6485,6 +6506,7 @@ void MainWindow::ensureSectionBuilt(int index)
     case kHomeGridSectionIndex: section = buildHomeGridSection(); break;
     case kGovernorSectionIndex: section = buildGovernorSection(); break;
     case kProjectSettingsSectionIndex: section = buildProjectSettingsSection(); break;
+    case kSessionsSectionIndex: section = buildSessionsSection(); break;
     default: break;
     }
     if (!section)
@@ -6606,6 +6628,8 @@ void MainWindow::showSection(int index)
             m_homeGridBoard->setFocus(Qt::OtherFocusReason);
     } else if (index == kGovernorSectionIndex) {
         refreshGovernorPage();
+    } else if (index == kSessionsSectionIndex) {
+        refreshSessionsPage();
     } else if (index == kCalendarSectionIndex) {
         refreshCalendar();
     } else if (index == kMarketSectionIndex) {

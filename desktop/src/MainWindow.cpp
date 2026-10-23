@@ -41,6 +41,8 @@
 #include "WindowFrameControl.h"
 #include "WorldSpeechBridge.h"
 
+#include <QNetworkProxyFactory>
+
 using namespace forkmesh::ui;
 
 namespace {
@@ -601,6 +603,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         });
     });
     m_networkAccess = network;
+    static bool proxyLookupWarmed = false;
+    if (!std::exchange(proxyLookupWarmed, true)) {
+        runOffThread<bool>(
+            [] {
+                QNetworkProxyFactory::systemProxyForQuery(
+                    QNetworkProxyQuery(QUrl(kDefaultServerUrl)));
+                return true;
+            },
+            [](bool) {});
+    }
     connect(m_networkAccess, &QNetworkAccessManager::finished, this,
             [this](QNetworkReply *reply) {
                 if (!reply)
@@ -838,10 +850,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     // A bin whose window elapsed while ForkMesh was closed must not survive
     // the next launch, and a long-running session needs the sweep to keep
     // happening (issue #578).
-    purgeExpiredAgentRecycleBin();
+    purgeExpiredAgentRecycleBinInBackground();
     m_agentRecycleSweepTimer = new QTimer(this);
     connect(m_agentRecycleSweepTimer, &QTimer::timeout, this,
-            &MainWindow::purgeExpiredAgentRecycleBin);
+            &MainWindow::purgeExpiredAgentRecycleBinInBackground);
     m_agentRecycleSweepTimer->start(60 * 60 * 1000);
 #ifndef FORKMESH_WINDOW_TESTS
     startAgentParityWatch();
