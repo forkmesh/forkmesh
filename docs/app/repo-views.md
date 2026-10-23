@@ -282,7 +282,7 @@ reduced motion).
   text file stays text.
 - **HTML entities in markdown** (`MD_ESCAPED_ENTITY` in `renderMarkdownInline`):
   text is escaped first, so `&rlm;` used to show as the literal "&rlm;" (the
-  net4people/bbs README marks its Persian and Arabic headings with `&rlm;` and
+  example/forum README marks its Persian and Arabic headings with `&rlm;` and
   `&zwnj;`). After code spans are parked, a well-formed named or numeric
   entity is restored, as GitHub renders it; an entity only ever yields text,
   `&lt;script&gt;` stays visible text, and code spans keep the literal.

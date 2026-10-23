@@ -128,7 +128,7 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   (`arm_first_login_timeout`, `forkmesh-instance-first-login-cleanup.timer`),
   so an abandoned launch does not leave a server running. A manual
   `--config` install has no `launchId` and is never armed: the operator runs
-  it unattended, and net4people.forkmesh.com came within four minutes of
+  it unattended, and forum.example.org came within four minutes of
   removing itself after a detached install finished with nobody watching.
 - `--update` pulls, rebuilds, migrates and restarts, keeping secrets, data
   and admin; local source changes are saved to a patch file first. See
@@ -1333,7 +1333,7 @@ to every provider.
 - The instance app's egress guard refuses forkmesh.com except
   `app.forkmesh.com` (`FORKMESH_EGRESS_PRODUCTION_ALLOW` in the app unit),
   which only the directory announcement uses, and the instance's own domain.
-  An instance on a `*.forkmesh.com` name (net4people.forkmesh.com) used to
+  An instance on a `*.forkmesh.com` name (example.forkmesh.com) used to
   refuse its own endpoint registration ("production host … is off limits for
   Next"), so the git node never leased its endpoint and the `repo` step waited
   on the platform mirror until the guard was widened.
