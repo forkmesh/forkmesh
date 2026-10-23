@@ -528,6 +528,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowTeammateRail.cpp
     src/MainWindowPackageRail.cpp
     src/MainWindowTeammates.cpp
+    src/MainWindowRepoWorkflows.cpp
     src/MainWindowSearch.cpp
     src/MainWindowSettings.cpp
     src/MainWindowOrganizations.cpp
@@ -1065,6 +1066,10 @@ set(FORKMESH_APP_SOURCES
     src/AgentRunner.cpp
     src/TeammateStore.h
     src/TeammateStore.cpp
+    src/RepoWorkflow.h
+    src/RepoWorkflow.cpp
+    src/RepoWorkflowRunner.h
+    src/RepoWorkflowRunner.cpp
     src/TeammateMood.h
     src/TeammateMood.cpp
     src/TeammateWorkspace.h
@@ -3231,9 +3236,23 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_teammate_store.cpp
         src/TeammateStore.h
         src/TeammateStore.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
     )
     target_link_libraries(forkmesh-teammate-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-teammate-tests PRIVATE src)
+
+    qt_add_executable(forkmesh-repo-workflow-tests
+        tests/test_repo_workflow.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
+        src/RepoWorkflowRunner.h
+        src/RepoWorkflowRunner.cpp
+        src/TeammateStore.h
+        src/TeammateStore.cpp
+    )
+    target_link_libraries(forkmesh-repo-workflow-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-repo-workflow-tests PRIVATE src)
 
     qt_add_executable(forkmesh-teammate-workspace-tests
         tests/test_teammate_workspace.cpp
@@ -3241,6 +3260,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/TeammateWorkspace.cpp
         src/TeammateStore.h
         src/TeammateStore.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
     )
     target_link_libraries(forkmesh-teammate-workspace-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-teammate-workspace-tests PRIVATE src)
@@ -3251,6 +3272,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/TeammateMood.cpp
         src/TeammateStore.h
         src/TeammateStore.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
     )
     target_link_libraries(forkmesh-teammate-mood-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-teammate-mood-tests PRIVATE src)
@@ -3962,6 +3985,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-package-tests
         forkmesh-native-package-tests
         forkmesh-teammate-tests
+        forkmesh-repo-workflow-tests
         forkmesh-teammate-workspace-tests
         forkmesh-teammate-mood-tests
         forkmesh-stall-repair-tests
@@ -4049,6 +4073,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     set_tests_properties(forkmesh-native-package-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-teammate-tests COMMAND forkmesh-teammate-tests)
+    add_test(NAME forkmesh-repo-workflow-tests COMMAND forkmesh-repo-workflow-tests)
     add_test(NAME forkmesh-stall-repair-tests COMMAND forkmesh-stall-repair-tests)
     add_test(NAME forkmesh-teammate-workspace-tests
              COMMAND forkmesh-teammate-workspace-tests)
@@ -4507,7 +4532,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-host-log-tests
         forkmesh-core-node-log-tests
         forkmesh-deploy-log-tests
-        forkmesh-e2e forkmesh-teammate-tests
+        forkmesh-e2e forkmesh-teammate-tests forkmesh-repo-workflow-tests
         forkmesh-teammate-workspace-tests
         forkmesh-teammate-mood-tests
         forkmesh-stall-repair-tests
@@ -4770,6 +4795,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         src/LocalControlInsights.cpp
         src/TeammateStore.h
         src/TeammateStore.cpp
+        src/RepoWorkflow.h
+        src/RepoWorkflow.cpp
     )
     target_include_directories(forkmesh-local-control-teammates-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)

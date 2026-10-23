@@ -188,8 +188,10 @@ POST only), authenticated by an organization bot bearer token:
 
 ## Teammates
 
-Teammates (`.forkmesh/teammates/*.json`) are desktop Claude Code or Codex
-runs and get that provider's tools; the JSON has no tool list. Permissions
+Teammates (special agents: the Special agent step of a
+`.forkmesh/workflows/*.json` workflow, or a legacy `.forkmesh/teammates/*.json`
+file) are desktop Claude Code or Codex runs and get that provider's tools; the
+JSON has no tool list. Permissions
 and modes are enforced as in [access-rules.md](access-rules.md#teammates).
 Some teammates use repository CLIs through the shell (for example
 `tools/discord_community.py`, which posts only with `--send`, and

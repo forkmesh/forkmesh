@@ -723,7 +723,7 @@ int main(int argc, char **argv)
                               return c.name == QLatin1String("Quality Renamed");
                           }),
               "a save shows in the very next load");
-        QFile outside(QDir(root).filePath(QStringLiteral("outside.json")));
+        QFile outside(store.pathFor(QStringLiteral("outside")));
         Config external = quality;
         external.id = QStringLiteral("outside");
         external.name = QStringLiteral("Outside");

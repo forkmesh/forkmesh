@@ -270,6 +270,52 @@ void desktopCases()
           QStringLiteral("a failure reports the last line printed"));
 }
 
+void localCases()
+{
+    Catalog local;
+    local.load(QJsonDocument::fromJson(R"json({
+      "core": [
+        {"type": "workflow.manual", "name": "Run by hand", "trigger": true, "outputs": ["main"], "fields": []},
+        {"type": "workflow.schedule", "name": "Schedule", "trigger": true, "outputs": ["main"],
+         "fields": [{"key": "mode", "label": "How often", "type": "select", "default": "daily"}]},
+        {"type": "workflow.monitor", "name": "Log monitor", "trigger": true, "outputs": ["main"],
+         "fields": [{"key": "badge", "label": "Badge", "type": "string"}]},
+        {"type": "agent.run", "name": "Special agent", "outputs": ["main"],
+         "fields": [{"key": "specialty", "label": "Specialty", "type": "string"}]}
+      ]
+    })json").object());
+    Draft draft = Draft::fromLocal(QJsonDocument::fromJson(R"json({
+      "kind": "forkmesh.workflow", "id": "guard", "name": "Guard", "icon": "sentinel", "enabled": false,
+      "description": "Watches", "createdAtMs": 5,
+      "nodes": [{"id": "schedule", "type": "workflow.schedule", "name": "Schedule", "x": 0, "y": 0, "params": {}},
+                {"id": "agent", "type": "agent.run", "name": "Guard", "x": 288, "y": 0,
+                 "params": {"specialty": "Security"}}],
+      "connections": [{"from": "schedule", "output": "main", "to": "agent"}]
+    })json").object(), QStringLiteral("forkmesh/forkmesh"));
+    check(draft.isLocal() && !draft.active && draft.icon == QLatin1String("sentinel") && draft.hasAgentStep(),
+          QStringLiteral("a desktop workflow opens with its repository, state, icon and agent step"));
+    const QString monitor = draft.addTrigger(local, QStringLiteral("workflow.monitor"));
+    check(!monitor.isEmpty() && draft.nodes.size() == 3 &&
+              draft.inputs(QStringLiteral("agent")).size() == 2,
+          QStringLiteral("a desktop workflow takes another trigger beside its schedule"));
+    draft.retype(local, monitor, QStringLiteral("workflow.manual"));
+    check(draft.node(monitor).value(QStringLiteral("type")).toString() == QLatin1String("workflow.manual") &&
+              draft.node(QStringLiteral("schedule")).value(QStringLiteral("type")).toString() ==
+                  QLatin1String("workflow.schedule"),
+          QStringLiteral("changing one trigger's kind leaves the others"));
+    const QJsonObject saved = draft.localJson();
+    check(saved.value(QStringLiteral("kind")).toString() == QLatin1String("forkmesh.workflow") &&
+              saved.value(QStringLiteral("enabled")).toBool() == false &&
+              saved.value(QStringLiteral("description")).toString() == QLatin1String("Watches") &&
+              saved.value(QStringLiteral("createdAtMs")).toDouble() == 5,
+          QStringLiteral("a desktop workflow saves in the repository file format"));
+    check(localWorkflowId(QStringLiteral("Deploy & Ship it!")) == QLatin1String("deploy-ship-it") &&
+              localWorkflowId(QStringLiteral("  ")) == QLatin1String("workflow"),
+          QStringLiteral("a new desktop workflow gets a file id from its name"));
+    check(statusLabel(QStringLiteral("stopped")) == QLatin1String("Stopped"),
+          QStringLiteral("a stopped run says so"));
+}
+
 } // namespace
 
 void workflowsCheck(bool condition, const QString &message)
@@ -288,6 +334,7 @@ int main(int argc, char **argv)
     statsCases();
     textCases();
     desktopCases();
+    localCases();
     workflowsFeatureChecks();
     if (failures)
         qCritical("%d workflows model checks failed", failures);

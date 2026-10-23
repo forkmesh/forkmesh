@@ -1,6 +1,8 @@
 import json
 import re
 
+import repo_workflows as repo_wf
+
 ACTION_PATH_RE = re.compile(r"^\.forkmesh/[A-Za-z0-9._-]{1,96}\.ya?ml$")
 SHORTCUT_PATH_RE = re.compile(r"^\.forkmesh/shortcuts/[A-Za-z0-9._-]{1,96}$")
 SKILL_PATH_RE = re.compile(r"^\.forkmesh/skills/[A-Za-z0-9._-]{1,96}\.skill$")
@@ -304,7 +306,9 @@ KINDS = {
               "root": "agent.profile", "pattern": AGENT_PATH_RE.pattern,
               "description": "Agents with a role, schedule, skills and a "
                              "playbook."},
+    "workflow": repo_wf.KIND,
 }
+FILE_NODES.update(repo_wf.NODES)
 
 
 def catalog():
@@ -314,6 +318,8 @@ def catalog():
 
 def kind_for_path(path):
     text = str(path or "")
+    if repo_wf.PATH_RE.match(text):
+        return "workflow"
     if AGENT_PATH_RE.match(text):
         return "agent"
     if SKILL_PATH_RE.match(text):
@@ -1441,12 +1447,20 @@ def parse_file(path, text):
         nodes, connections, meta, warnings = parse_action(path, text)
     elif kind == "agent":
         nodes, connections, meta, warnings = parse_agent(path, text)
+    elif kind == "workflow":
+        try:
+            nodes, connections, meta, warnings = repo_wf.parse(
+                path, text, MAX_FILE_BYTES)
+        except repo_wf.WorkflowFileError as error:
+            raise FileError(str(error))
     else:
         nodes, connections, meta, warnings = parse_header_file(
             kind, path, text)
     root = nodes[0]
     name = str((root.get("params") or {}).get("name") or "") or \
         path.rsplit("/", 1)[-1]
+    if kind == "workflow":
+        name = str(meta["original"].get("name") or "") or name
     return {"kind": kind, "path": path, "name": name, "nodes": nodes,
             "connections": connections, "meta": meta}, warnings
 
@@ -1501,6 +1515,12 @@ def render_file(document, now_ms=0):
     kind, path, nodes, connections, meta = clean_document(document)
     if kind == "agent":
         text, warnings = render_agent(path, nodes, connections, meta, now_ms)
+    elif kind == "workflow":
+        try:
+            text, warnings = repo_wf.render(path, nodes, connections, meta,
+                                            now_ms, qt_json)
+        except repo_wf.WorkflowFileError as error:
+            raise FileError(str(error))
     else:
         chain, warnings = _chain(nodes, connections, KINDS[kind]["root"])
         if kind == "action":
@@ -1528,6 +1548,8 @@ def new_document(kind, path):
     elif kind == "skill":
         text = ("# name: New skill\n# description: What the skill teaches\n"
                 "\nWhen this skill is installed:\n\n- Follow these steps.\n")
+    elif kind == "workflow":
+        text = repo_wf.new_text(path, qt_json)
     else:
         agent_id = AGENT_PATH_RE.match(path).group(1)
         text = qt_json({"id": agent_id, "name": agent_id.replace("-", " ")
