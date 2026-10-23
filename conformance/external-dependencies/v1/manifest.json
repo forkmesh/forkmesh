@@ -132,18 +132,19 @@
       "necessity": "optional",
       "hosts": ["api.github.com", "gitlab.com", "codeberg.org", "gitea.com"],
       "configuredHosts": [],
-      "credentials": [],
-      "observes": "The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases.",
+      "credentials": ["GITHUB_ACTIONS_WATCH_TOKEN"],
+      "observes": "The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. The relay's GitHub Actions watcher reads the public workflow runs, jobs and annotations of forkmesh/forkmesh every 5 minutes, with an optional read-only GITHUB_ACTIONS_WATCH_TOKEN.",
       "retention": "Set by each forge's API log terms. ForkMesh never stores user-supplied import tokens. A mirror's access token is stored encrypted until the owner disconnects the mirror.",
       "jurisdiction": "GitHub, Inc. (United States); GitLab Inc. (United States); Codeberg e.V. (Germany); CommitGo, Inc. (United States) for gitea.com.",
       "canonicalData": "The forge is canonical for its own repository until import; after import the ForkMesh repository and its signed records are canonical, and the stored external id only links the two.",
-      "outage": "New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. Imported repositories, clones, and collaboration keep working.",
+      "outage": "New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. The GitHub Actions watcher sends no pings until GitHub answers again. Imported repositories, clones, and collaboration keep working.",
       "recovery": "Retry the import; the sync workflow resumes on its next schedule and is idempotent.",
       "alternative": "Push the repository directly to a ForkMesh mirror with stock Git; no forge API is needed.",
-      "evidence": ["app/src/repository_imports.py", "app/src/repository_provider_mirror.py", "server/hosted_push_mirror.go", "tools/github_forkmesh_bridge.py", "tools/github_issue_sync.py"],
+      "evidence": ["app/src/repository_imports.py", "app/src/repository_provider_mirror.py", "server/hosted_push_mirror.go", "tools/github_forkmesh_bridge.py", "tools/github_issue_sync.py", "app/src/github_actions_watch.py", "tools/github_actions_status.py"],
       "drills": [
         "app/tests/test_repository_imports.py::test_provider_snapshot_stops_immediately_when_rate_budget_is_exhausted",
-        "app/tests/test_repository_imports.py::test_worker_adapter_uses_primary_apis_and_never_logs_provider_exception"
+        "app/tests/test_repository_imports.py::test_worker_adapter_uses_primary_apis_and_never_logs_provider_exception",
+        "app/tests/test_github_actions_watch.py::test_github_errors_write_nothing"
       ]
     },
     {
