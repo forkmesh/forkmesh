@@ -423,6 +423,9 @@ QJsonObject MainWindow::localControlAgentsPayload()
         if (s->awaitingStart())
             row.insert(QStringLiteral("held"), true);
         row.insert(QStringLiteral("unread"), agentSessionUnread(*s));
+        if (const auto tasks = m_agentCliTasks.constFind(s->id);
+            tasks != m_agentCliTasks.constEnd() && tasks->openBackground() > 0)
+            row.insert(QStringLiteral("backgroundTasks"), tasks->openBackground());
         if (const QString terminal = localControlTerminalForRow(s->id); !terminal.isEmpty())
             row.insert(QStringLiteral("terminal"), terminal);
         const auto stat = m_agentDiffStats.constFind(s->id);

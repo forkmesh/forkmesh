@@ -69,10 +69,11 @@ public struct LocalAgentRow: Equatable, Sendable, Identifiable {
     public let attachments: [AgentAttachmentMeta]
     public let mode: String
     public let unread: Bool?
+    public let backgroundTasks: Int
 
     public init(
         owner: String, name: String, session: AgentSession, prompt: String = "", stoppable: Bool = false,
-        attachments: [AgentAttachmentMeta] = [], mode: String = "", unread: Bool? = nil
+        attachments: [AgentAttachmentMeta] = [], mode: String = "", unread: Bool? = nil, backgroundTasks: Int = 0
     ) {
         self.owner = owner
         self.name = name
@@ -82,6 +83,7 @@ public struct LocalAgentRow: Equatable, Sendable, Identifiable {
         self.attachments = attachments
         self.mode = mode
         self.unread = unread
+        self.backgroundTasks = backgroundTasks
     }
 
     public var id: Int { session.id }
@@ -103,7 +105,8 @@ public struct LocalAgentRow: Equatable, Sendable, Identifiable {
             owner: dartString(json["repositoryOwner"]), name: dartString(json["repositoryName"]),
             session: AgentSession(json: json), prompt: dartString(json["prompt"]),
             stoppable: json["stoppable"] == .bool(true), attachments: AgentAttachmentMeta.list(json["attachments"]),
-            mode: dartString(json["mode"]), unread: json["unread"]?.boolValue)
+            mode: dartString(json["mode"]), unread: json["unread"]?.boolValue,
+            backgroundTasks: max(json.int("backgroundTasks"), 0))
     }
 }
 

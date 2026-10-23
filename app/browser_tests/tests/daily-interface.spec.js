@@ -38,9 +38,8 @@ function maximumFor(metric, source = "remote") {
   return row[source === "local" ? "localMaximum" : "remoteMaximum"];
 }
 
-async function installDashboardRoutes(page, { catalogOffline = false, repoPage = false } = {}) {
+async function installDashboardRoutes(page, { network = { online: true }, repoPage = false } = {}) {
   let repositoryRequests = 0;
-  let offline = catalogOffline;
   await page.route("https://cdn.tailwindcss.com/**", (route) =>
     route.fulfill({ contentType: "text/javascript", body: "window.tailwind = {};" }),
   );
@@ -73,7 +72,7 @@ async function installDashboardRoutes(page, { catalogOffline = false, repoPage =
     const url = new URL(route.request().url());
     if (url.pathname === "/api/repositories") {
       repositoryRequests += 1;
-      if (offline) {
+      if (!network.online) {
         return route.fulfill({
           status: 503,
           contentType: "application/json; charset=utf-8",
@@ -109,11 +108,7 @@ async function installDashboardRoutes(page, { catalogOffline = false, repoPage =
       body: JSON.stringify(body),
     });
   });
-  const requestCount = () => repositoryRequests;
-  requestCount.reconnect = () => {
-    offline = false;
-  };
-  return requestCount;
+  return () => repositoryRequests;
 }
 
 async function metric(page, name, source) {
@@ -260,12 +255,13 @@ test("daily interface command palette is keyboard complete and restores focus", 
 
   const feedback = await metric(page, "feedback", "local");
   expect(feedback.duration).toBeLessThanOrEqual(maximumFor("feedback", "local"));
-  const focusRing = await filter.evaluate((element) => {
+  const outline = await filter.evaluate((element) => {
     const style = getComputedStyle(element);
-    return { style: style.outlineStyle, width: Number.parseFloat(style.outlineWidth) };
+    return { width: style.outlineWidth, style: style.outlineStyle, color: style.outlineColor };
   });
-  expect(focusRing.style).not.toBe("none");
-  expect(focusRing.width).toBeGreaterThanOrEqual(1);
+  expect(Number.parseFloat(outline.width)).toBeGreaterThanOrEqual(1);
+  expect(outline.style).toBe("solid");
+  expect(outline.color).not.toMatch(/^rgba\(.*,\s*0\)$|^transparent$/);
 });
 
 test("daily interface skip navigation, contrast, zoom, and reduced motion are accessible", async ({ page }) => {
@@ -334,15 +330,17 @@ test.describe("daily interface mobile", () => {
 });
 
 test("daily interface offline state retries and recovers with announced feedback", async ({ page }) => {
-  const requestCount = await installDashboardRoutes(page, { catalogOffline: true });
+  const network = { online: false };
+  const requestCount = await installDashboardRoutes(page, { network });
   await page.goto("/dashboard/repos");
   const status = page.getByRole("status").filter({ hasText: "Repositories are unavailable" });
   await expect(status).toBeVisible();
+  const failedRequests = requestCount();
+  network.online = true;
   const retry = page.getByRole("button", { name: "Retry repository list" });
-  requestCount.reconnect();
   await retry.click();
   await expect(page.locator("#repoList .repo-card")).toHaveCount(REPOSITORIES.length);
-  expect(requestCount()).toBeGreaterThanOrEqual(2);
+  expect(requestCount()).toBeGreaterThan(failedRequests);
   await expect(page.locator("[data-interface-status]")).toContainText("Retrying repository list");
   const feedback = await metric(page, "feedback", "local");
   expect(feedback.duration).toBeLessThanOrEqual(maximumFor("feedback", "local"));

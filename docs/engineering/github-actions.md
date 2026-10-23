@@ -95,17 +95,12 @@ failure still fails the step.
 
 The workflow had failed all 91 of its GitHub runs, at the "Enforce daily
 interaction and accessibility budgets" step
-(`app/browser_tests/tests/daily-interface.spec.js`). Six tests no longer
-matched the dashboard:
-
-| Test | Cause | Fix |
-| --- | --- | --- |
-| Offline state retries | `fetchJson` now retries a 503 itself (3 attempts), and the page's early catalog read uses up another request, so one mocked failure never reached the error state | The mock stays offline until the test calls `requestCount.reconnect()` |
-| Clone commands | Since the canonical short addresses (2026-10-17), `cloneUrl()` builds the URL from the site origin, not the catalog's `cloneUrl` | Expect `git clone <origin>/alpha/engine` |
-| Command palette focus | Text fields have had a 1px focus outline instead of the 3px ring since 2026-10-15 (`docs/app/dashboard-components.md`) | Check that the outline is visible (style not `none`, at least 1px) |
-| Reduced motion | "New repository" became a link | Look it up by the link role |
-| Touch budget | Under `pointer: coarse` the shell set only `min-height: 44px`, so the icon-only menu button was 32px wide | `[data-mobile-menu-toggle] { min-width: 44px; }` in the coarse block of `app/public/dashboard/shell.html` |
-| Contrast | White on the dark-mode `primary` (`68 147 248`) is 3.1:1, under the 4.5:1 budget, on solid blue buttons such as Publish advisory and the chat Send button | Dark `primary-foreground` is `1 4 9` (6.6:1), see `docs/app/dashboard-colors.md` |
+(`app/browser_tests/tests/daily-interface.spec.js`): six checks no longer
+matched the dashboard (fetch retries, clone URLs from the page origin, the
+text-field focus outline, the New repository link, the 44px menu button on
+touch screens, and dark-theme text contrast on solid `primary`). The fixes
+and what the check relies on are in
+[daily-interface-validation.md](../../www/docs/engineering/daily-interface-validation.md).
 
 These tests mock every request with `page.route`, so they run against a static
 server on any free port (see below). The suite's next step, the full
