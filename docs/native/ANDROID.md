@@ -844,6 +844,22 @@ default in new projects except the chosen starter pack
     recording, because it captures audio and video too. Android has no
     group-call screen. Tests:
     `C/chat/CallQualityTest.kt`.
+  - **Call screen layout (2026-10-22, iOS `DraggableCallPreview`).** The
+    self view is drawn by `direct-call.html`, under the native controls, so
+    `DraggableSelfView` lays a transparent 110x160 dp box over it and moves
+    the page's `#local` with `window.fmCallPlaceLocal(x, y, w, h, settle)`
+    (CSS px equal dp at `width=device-width`; `body.placed` styles it, and
+    `settle` adds the spring-like transition). On release it snaps to the
+    nearest of four corners after the fling's last 0.15 s
+    (`C/chat/CallScreenLayout.kt`, `CallPreviewLayout.settle`), clear of the
+    measured header above and the controls below, and keeps the corner in
+    the `fm.call.previewCorner` pref, iOS's `@AppStorage` key. It shows only
+    in a live video call with the camera on; the pre-call check still fills
+    the screen. The page function is inert until called, so iOS's WebView
+    fallback is unchanged. The buttons follow iOS's `ViewThatFits`
+    (`CallControlsLayout.arrange`): one row with 16 dp gaps, then 8 dp, then
+    two rows, face, background and voice above (24 dp gaps) and mute,
+    camera and a 64 dp hang up below (32 dp).
   - **Ringback.** `CallRinger` listens to the engine on the main thread.
     While the phase is RINGING (only a caller rings) it plays
     `ToneGenerator(STREAM_VOICE_CALL, 80)` `TONE_SUP_RINGTONE` and stops it on
