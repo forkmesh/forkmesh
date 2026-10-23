@@ -169,9 +169,8 @@ struct NativePreCallScreen: View {
         #endif
         let session = AVAudioSession.sharedInstance()
         do {
-            if session.category != .playAndRecord {
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP])
-            }
+            try session.setCategory(
+                .playAndRecord, mode: video ? .videoChat : .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP])
             try session.setActive(true)
         } catch {
             failed = "The microphone could not start."
@@ -219,7 +218,15 @@ struct NativePreCallScreen: View {
         guard case .recording = test, let made = recorder else { return }
         made.stop()
         recorder = nil
+        preparePlayback()
         test = .review(made.url)
+    }
+
+    private func preparePlayback() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(
+            .playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP])
+        try? session.setActive(true)
     }
 
     private func dropTest() {
