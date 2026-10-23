@@ -3,7 +3,7 @@ import { ROOMS, MAX_TEXT, chanForZone, roomLabel, mentionQuery, receiptState, re
 import { handleOf } from './profile/logic.js';
 import { createChatRoomTransport } from '../../../app/public/chat-room-transport.js';
 import { createRoomSealStore } from '../../../app/public/chat-seal.js';
-import { attributeFrame, bindNodeKey, botViaName, chatProfileFor, createNodeOwners, forgetLegacySelfId, isSealedPlain, mayChangeMessage } from '../../../app/public/chat-frame-auth.js';
+import { attributeFrame, bindNodeKey, botViaName, chatProfileFor, createGuestRelabeler, createNodeOwners, forgetLegacySelfId, isSealedPlain, mayChangeMessage } from '../../../app/public/chat-frame-auth.js';
 import { moderateChatText } from '../../../app/public/chat-moderation.js';
 import { createChatRetention, CHAT_RETENTION_ENDPOINT } from '../../../app/public/chat-retention.js';
 import { renderRichText, plainTextFromRichSource } from '../../../app/public/chat-rich-text.js';
@@ -41,6 +41,7 @@ export default function setup(api) {
   let me = '';
   forgetLegacySelfId();
   const owners = createNodeOwners();
+  const guestLines = createGuestRelabeler({ owners, onConfirmed: renameConfirmedGuest });
   const sealStores = new Map();
   async function seals() {
     const name = account().trim().toLowerCase();
@@ -151,6 +152,23 @@ export default function setup(api) {
     return true;
   }
 
+  function renameConfirmedGuest(node, account, ids) {
+    const wanted = new Set(ids);
+    let changed = false;
+    let current = false;
+    for (const c of S.convs.values()) {
+      for (const m of c.msgs) {
+        if (!wanted.has(m.id) || m.senderId !== node) continue;
+        m.sender = String(account).slice(0, 63);
+        changed = true;
+        if (S.cur === c.key) current = true;
+      }
+    }
+    if (!changed) return;
+    renderList();
+    if (current) renderMsgs(atBottom() ? 'bottom' : null);
+  }
+
   function mutate(c, plain) {
     if (!plain || (plain.conversation !== c.wire && plain.channel !== c.wire)) return false;
     const m = c.msgs.find((x) => x.id === plain.target);
@@ -198,6 +216,7 @@ export default function setup(api) {
     inbound = inbound.then(async () => {
       await owners.prefetch(plains, { selfNode: me });
       const shown = attributed(plains, room);
+      for (const plain of shown) guestLines.note(plain);
       if (history) onHistory(shown, room);
       else for (const plain of shown) onPlain(plain, room);
     }).catch(() => {});

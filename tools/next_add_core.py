@@ -49,7 +49,7 @@ STEPS = (
     ("health", "Health checks: readyz, units, IDS, public probes", 20),
     ("dns", "Add it to DNS after the health probes pass", 15),
     ("register", "Node account and owner; monitoring, backups, DNS health loop, autodeploy and roll", 8),
-    ("commit", "Commit deploy/fleet.toml to a branch", 2),
+    ("commit", "Commit deploy/fleet.toml to a branch and merge it into main", 2),
 )
 STEP_IDS = tuple(step for step, _, _ in STEPS)
 RECHECK = ("health", "dns")
@@ -392,6 +392,85 @@ class Git:
                            ).stdout.strip()
         self.call("update-ref", ref, commit, tip or "0" * 40)
         return commit, True
+
+    def is_ancestor(self, commit, ref):
+        return self.call("merge-base", "--is-ancestor", commit, ref,
+                         check=False).returncode == 0
+
+    def main_checkout(self):
+        path = None
+        for line in self.call("worktree", "list", "--porcelain").stdout.splitlines():
+            if line.startswith("worktree "):
+                path = line[len("worktree "):]
+            elif line == "branch " + MAIN_REF and path:
+                return Path(path)
+        return None
+
+    def merge_command(self, branch):
+        checkout = self.main_checkout()
+        return "git -C %s merge --no-ff %s" % (checkout or self.repo, branch)
+
+    def merge_into_main(self, commit, message):
+        main = self.rev(MAIN_REF)
+        if not main:
+            raise ToolError("no %s in %s" % (MAIN_REF, self.repo))
+        if self.is_ancestor(commit, main):
+            return main, False
+        result = self.call("merge-tree", "--write-tree", "--no-messages", main, commit,
+                           check=False)
+        if result.returncode != 0:
+            raise GuardError("%s does not merge cleanly into main" % commit[:12])
+        tree = result.stdout.split()[0]
+        checkout = self.main_checkout()
+        if checkout is None:
+            merged = self.call("commit-tree", tree, "-p", main, "-p", commit,
+                               "-m", message).stdout.strip()
+            self.call("update-ref", MAIN_REF, merged, main)
+            return merged, True
+        return Git(checkout, run=self._run).merge_checked_out(main, commit, tree,
+                                                             message), True
+
+    def merge_checked_out(self, main, commit, tree, message):
+        changed = self.call("diff", "--name-only", "-z", main, tree).stdout.split("\0")
+        changed = [path for path in changed if path]
+        restored = {}
+        for path in changed:
+            target = self.repo / path
+            if self.call("diff", "--cached", "--quiet", "--", path,
+                         check=False).returncode != 0:
+                raise GuardError("%s is staged in %s; commit or unstage it first"
+                                 % (path, self.repo))
+            if self.call("diff", "--quiet", "--", path, check=False).returncode == 0:
+                continue
+            wanted = self.call("rev-parse", "%s:%s" % (tree, path)).stdout.strip()
+            have = self.call("hash-object", "--", path).stdout.strip()
+            if have != wanted:
+                raise GuardError("%s in %s has other uncommitted changes" % (path,
+                                                                            self.repo))
+            restored[target] = target.read_bytes()
+            target.write_bytes(self.call("show", "%s:%s" % (main, path)).stdout.encode())
+        merged = self.call("merge", "--no-ff", "--no-edit", "-m", message, commit,
+                           check=False)
+        if merged.returncode != 0:
+            for target, data in restored.items():
+                target.write_bytes(data)
+            raise ToolError("git merge in %s failed: %s" % (
+                self.repo, (merged.stderr or merged.stdout or "").strip()[-300:]))
+        return self.rev("HEAD")
+
+
+def land_on_main(git, job, branch, commit):
+    try:
+        merged, created = git.merge_into_main(commit, "Merge %s into main" % branch)
+    except (GuardError, ToolError) as error:
+        job.state.set(merged="", merge_error=str(error))
+        job.say("%s is NOT on main yet: %s. Autodeploy checks the cores main lists and "
+                "fails until it is merged:\n  %s" % (branch, error,
+                                                     git.merge_command(branch)))
+        return
+    job.state.set(merged=merged, merge_error="")
+    job.say("%s %s main (%s); autodeploy and roll use the new %s" % (
+        branch, "merged into" if created else "is already on", merged[:12], FLEET_PATH))
 
 
 def fleet_state_path():
@@ -1010,8 +1089,8 @@ class FleetBackend:
     def step_commit(self, job):
         branch = BRANCH_PREFIX + job.name
         if not job.execute:
-            job.say("[dry-run] commit %s with the %s block on %s (base %s), "
-                    "not pushed" % (FLEET_PATH, job.name, branch, MAIN_REF))
+            job.say("[dry-run] commit %s with the %s block on %s (base %s) "
+                    "and merge it into main" % (FLEET_PATH, job.name, branch, MAIN_REF))
             return
         block = self.node_block(job)
         base_text = self.git.show(self.git.rev(MAIN_REF), FLEET_PATH)
@@ -1024,10 +1103,9 @@ class FleetBackend:
                       job.state.get("rev")))
         commit, created = self.git.commit_file(branch, MAIN_REF, FLEET_PATH, text, message)
         job.state.set(branch=branch, commit=commit)
-        job.say("%s %s on %s: merge it into main so autodeploy and roll include %s:\n"
-                "  git -C %s merge --autostash --no-ff %s" % (
-                    "committed" if created else "already committed", commit[:12],
-                    branch, job.name, self.repo, branch))
+        job.say("%s %s on %s" % ("committed" if created else "already committed",
+                                 commit[:12], branch))
+        land_on_main(self.git, job, branch, commit)
 
     def contain(self, job):
         import next_dns
@@ -1167,8 +1245,10 @@ class FleetBackend:
                     "fleet-instances.json; nothing else to add",
                     "autodeploy and roll: read deploy/fleet.toml on main"]
         if step == "commit":
-            return ["git: commit %s on %s%s from %s (plumbing: HEAD, index and "
-                    "working tree untouched); print the merge command" % (
+            return ["git: commit %s on %s%s from %s (plumbing), then merge it into "
+                    "main where main is checked out, after a git merge-tree check; "
+                    "refused while that file has other staged or unsaved changes, "
+                    "and then the merge command is printed" % (
                         FLEET_PATH, BRANCH_PREFIX, name, MAIN_REF)]
         return []
 
@@ -1244,8 +1324,8 @@ def summary(state):
     if state is None:
         return None
     keys = ("name", "label", "provider", "region", "plan", "voter", "voter_reason", "rev", "ip",
-            "ipv6", "instance_id", "branch", "commit", "finished", "failed",
-            "started_at", "updated_at", "log")
+            "ipv6", "instance_id", "branch", "commit", "merged", "merge_error",
+            "finished", "failed", "started_at", "updated_at", "log")
     out = {key: state.get(key) for key in keys if state.get(key) is not None}
     out["steps"] = {step: state.status(step) for step in STEP_IDS}
     out["state_file"] = str(state.path)

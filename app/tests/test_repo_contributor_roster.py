@@ -59,7 +59,10 @@ let countFormatter = null;
 %s
 %s
 """ % (
-        "\n".join(_function(HELPERS, name) for name in ("escapeHtml", "formatCount", "repoApiBase")),
+        "\n".join(_function(HELPERS, name) for name in (
+            "escapeHtml", "formatCount", "repoApiBase", "botAvatarKind", "botAvatarSvg"))
+        + "\n" + HELPERS[HELPERS.index("  const BOT_AVATAR_GLYPHS = {"):
+                         HELPERS.index("\n  };\n", HELPERS.index("  const BOT_AVATAR_GLYPHS = {")) + 5],
         "\n".join(_function(EXPLORER, name) for name in ("repoRawUrl", "repoLiveUrl")),
         _constants(CONTENT, "REPO_CONTRIBUTOR_ROSTER_") + "\n" + "\n".join(
             _function(CONTENT, name) for name in (

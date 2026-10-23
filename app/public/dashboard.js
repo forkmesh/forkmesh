@@ -1166,10 +1166,44 @@
     return ISSUE_PERSON_HANDLE_RE.test(text) && !text.includes("--") ? text.toLowerCase() : "";
   }
 
+  const BOT_AVATAR_GLYPHS = {
+    actions: "<circle cx=\"12\" cy=\"12\" r=\"3\"></circle><path d=\"M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1\"></path><circle cx=\"12\" cy=\"12\" r=\"6.5\"></circle>",
+    node: "<circle cx=\"6\" cy=\"6\" r=\"2.25\"></circle><circle cx=\"6\" cy=\"18\" r=\"2.25\"></circle><circle cx=\"18\" cy=\"8\" r=\"2.25\"></circle><path d=\"M6 8.25v7.5M18 10.25c0 4-5.5 3.5-10.2 6.4\"></path>",
+    runner: "<rect x=\"3.5\" y=\"4\" width=\"17\" height=\"6.5\" rx=\"1.5\"></rect><rect x=\"3.5\" y=\"13.5\" width=\"17\" height=\"6.5\" rx=\"1.5\"></rect><path d=\"M7.5 7.25h.01M7.5 16.75h.01M11.5 7.25h5M11.5 16.75h5\"></path>",
+    ai: "<path d=\"M11 3.5l1.9 4.6 4.6 1.9-4.6 1.9L11 16.5l-1.9-4.6L4.5 10l4.6-1.9z\"></path><path d=\"M18 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z\"></path>",
+    bot: "<rect x=\"4.5\" y=\"8\" width=\"15\" height=\"11\" rx=\"2.5\"></rect><path d=\"M12 8V4.5M9.5 4.5h5M2.5 12.5v3M21.5 12.5v3\"></path><circle cx=\"9.5\" cy=\"13\" r=\"1\"></circle><circle cx=\"14.5\" cy=\"13\" r=\"1\"></circle><path d=\"M9.5 16.25h5\"></path>",
+  };
+
+  function botAvatarKind(name, email = "") {
+    const text = String(name || "").trim();
+    const mail = String(email || "").trim().toLowerCase();
+    if (!text && !mail) return "";
+    if (/^(?:ai[\s_-]?review(?:er)?|forkbot|ai[\s_-]?agent)(?:\[bot\])?$/i.test(text)) return "ai";
+    if (/(?:^|[\s_-])runner(?:\[bot\])?$/i.test(text)) return "runner";
+    const lowered = text.toLowerCase();
+    const platform = String(typeof platformName === "function" ? platformName() : "").trim().toLowerCase();
+    if (/^forkmesh(?:[\s_-]mirror(?:[\s_-]reconciler)?)?$/i.test(text)
+      || (platform && [platform, `${platform} mirror`, `${platform} mirror reconciler`].includes(lowered))
+      || (typeof platformAccount === "function" && platformAccount(text))) return "node";
+    if (/^github[\s_-]?actions?(?:\[bot\])?$/i.test(text)
+      || /^[a-z0-9][a-z0-9_-]*-actions(?:\[bot\])?$/i.test(text)
+      || /^forkmesh[\s_-](?:actions|deploy)$/i.test(text)
+      || (platform && lowered === `${platform} actions`)
+      || ["actions@forkmesh.local", "deploy@forkmesh.local"].includes(mail)) return "actions";
+    if (/\[bot\]$/i.test(text) || /^(?:dependabot|renovate)$/i.test(text)
+      || /(?:^|[\s_-])bot$/i.test(text) || mail.includes("[bot]@")) return "bot";
+    return "";
+  }
+
+  function botAvatarSvg(kind, classes = "h-4 w-4") {
+    const name = Object.prototype.hasOwnProperty.call(BOT_AVATAR_GLYPHS, kind) ? kind : "bot";
+    return `<svg data-bot-avatar="${name}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="${classes} text-muted-foreground">${BOT_AVATAR_GLYPHS[name]}</svg>`;
+  }
+
   function issueActorIsBot(name) {
     const text = String(name || "").trim();
     if (!text) return false;
-    if (/\[bot\]$/i.test(text)) return true;
+    if (botAvatarKind(text)) return true;
     return typeof repoContributorIsBot === "function" && repoContributorIsBot({ name: text });
   }
 
@@ -1206,12 +1240,15 @@
     const forge = bot ? null : forgeIdentity(label);
     const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
+    const botKind = bot ? (agent && !botAvatarKind(label) ? "ai" : botAvatarKind(label) || "bot") : "";
     const inner = bot
-      ? `<i data-lucide="bot" class="${pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5"} text-muted-foreground"></i>`
+      ? botAvatarSvg(botKind, pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5")
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
         : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
-    const hydrate = handle && !ownAvatar ? ` data-issue-actor-avatar="${escapeHtml(handle)}"` : "";
+    const override = bot && !agent ? issuePersonHandle(label) : "";
+    const hydrate = (handle || override) && !ownAvatar
+      ? ` data-issue-actor-avatar="${escapeHtml(handle || override)}"` : "";
     if (hydrate) watchIssueActorAvatars();
     const classes = `relative flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary`;
     const title = bot ? `${label} (bot)` : label;
@@ -5687,7 +5724,8 @@
     }
     container.classList.toggle("font-mono", !avatarPng);
     const handle = profileAvatarHandle(session);
-    if (container.dataset.profileAvatarFor !== handle || container.dataset.profileAvatarState === "image") {
+    if (container.dataset.profileAvatarFor !== handle
+      || ["image", "bot"].includes(container.dataset.profileAvatarState)) {
       delete container.dataset.profileAvatarState;
       delete container.dataset.profileAvatarTried;
     }
@@ -5763,13 +5801,22 @@
     container.classList.remove("font-mono");
   }
 
+  function showProfileAvatarBot(container) {
+    const kind = botAvatarKind(container.dataset.profileAvatarFor);
+    const initialEl = container.querySelector("[data-avatar-initial]");
+    if (!kind || !initialEl) return;
+    initialEl.innerHTML = botAvatarSvg(kind, "h-auto w-1/2");
+    initialEl.classList.add("flex", "h-full", "w-full", "items-center", "justify-center");
+    container.dataset.profileAvatarState = "bot";
+  }
+
   function hydrateProfileAvatar(container) {
     const handle = container?.dataset?.profileAvatarFor;
     if (!handle) return;
     const repos = profileAvatarRosterRepos(handle);
     const tried = repos.map((repo) => repositoryViewKey(repo)).join(",");
     const known = container.dataset.profileAvatarState;
-    if (known === "image" || known === "loading"
+    if (known === "image" || known === "loading" || known === "bot"
       || (known === "initial" && container.dataset.profileAvatarTried === tried)) return;
     container.dataset.profileAvatarState = "loading";
     container.dataset.profileAvatarTried = tried;
@@ -5777,6 +5824,7 @@
       if (container.dataset.profileAvatarFor !== handle) return;
       container.dataset.profileAvatarState = src ? "image" : "initial";
       if (src) showProfileAvatarPicture(container, src);
+      else showProfileAvatarBot(container);
     });
   }
 
@@ -13680,8 +13728,9 @@
 
   function repositoryShownForks(listName, group) {
     const expanded = repositoryForksExpanded(listName, group.entry);
-    const hidden = Math.max(0, group.forks.length - REPOSITORY_FORKS_SHOWN);
-    return { shown: expanded ? group.forks : group.forks.slice(0, REPOSITORY_FORKS_SHOWN), hidden, expanded };
+    const limit = sidebarForksShown();
+    const hidden = Math.max(0, group.forks.length - limit);
+    return { shown: expanded ? group.forks : group.forks.slice(0, limit), hidden, expanded };
   }
 
   function repositoryForksToggleHtml(listName, group, className) {
@@ -13793,6 +13842,50 @@
         </div>`;
   }
 
+  function sidebarSetting() {
+    const setting = state.sidebarSetting;
+    return setting && typeof setting === "object" ? setting : null;
+  }
+
+  function sidebarForksShown() {
+    const forks = Number(sidebarSetting()?.forks);
+    return Number.isInteger(forks) && forks >= 0 && forks <= 50 ? forks : REPOSITORY_FORKS_SHOWN;
+  }
+
+  function loadSidebarSetting() {
+    if (state.sidebarSettingRequested) return;
+    state.sidebarSettingRequested = true;
+    instanceInfo()
+      .then((info) => {
+        if (!info?.sidebar) return;
+        state.sidebarSetting = info.sidebar;
+        renderSidebarRepositories(state.session);
+        renderHomeRepositories();
+      })
+      .catch(() => {});
+  }
+
+  function sidebarPinnedGroups(groups, fallback = (all) => all.slice(0, 6)) {
+    const pinned = Array.isArray(sidebarSetting()?.pinned) ? sidebarSetting().pinned : [];
+    if (!pinned.length) return fallback(groups);
+    const matches = (group, key) => {
+      const repo = group.entry.repo;
+      const wanted = String(key).toLowerCase();
+      if (repoMatchesKey(repo, wanted)) return true;
+      if (!wanted.includes("/")) return String(repo?.name || "").toLowerCase() === wanted;
+      return repositoryEntryLabel(group.entry).toLowerCase() === wanted
+        || `${String(repoPublicOwner(repo) || repo?.owner || "").toLowerCase()}/${String(repo?.name || "").toLowerCase()}` === wanted;
+    };
+    const picked = [];
+    pinned.forEach((key) => {
+      const group = groups
+        .filter((candidate) => !picked.includes(candidate) && matches(candidate, key))
+        .sort((a, b) => b.forks.length - a.forks.length)[0];
+      if (group) picked.push(group);
+    });
+    return picked.length ? picked : fallback(groups);
+  }
+
   function renderSidebarRepositories(session) {
     const list = $("[data-sidebar-repo-list]");
     const count = $("[data-sidebar-repo-count]");
@@ -13829,8 +13922,9 @@
       list.innerHTML = '<div class="dashboard-nav-repo-empty">No mirrored repositories yet.</div>';
       return;
     }
-    list.innerHTML = nestRepositoryForks(entries, (entry) => homeRepositoryViewTotals(entry.repo)?.views)
-      .slice(0, 6)
+    loadSidebarSetting();
+    list.innerHTML = sidebarPinnedGroups(
+      nestRepositoryForks(entries, (entry) => homeRepositoryViewTotals(entry.repo)?.views))
       .map(sidebarRepositoryGroup)
       .join("");
     window.lucide?.createIcons();
@@ -13907,7 +14001,7 @@
     return label.owner ? `${repositoryOwnerNameHtml(label.owner)}/${escapeHtml(label.name)}` : escapeHtml(label.name);
   }
 
-  function homeRepositoryRow(entry) {
+  function homeRepositoryRow(entry, nestedForks = 0) {
     const repo = entry.repo;
     const live = repoIsLive(repo);
     const status = live
@@ -13918,6 +14012,7 @@
       || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
     const description = String(repo.description || "").trim();
     const views = Number(homeRepositoryViewTotals(repo)?.views) || 0;
+    const forks = Math.max(Number(repo.forkCount) || 0, Number(nestedForks) || 0);
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
       ${logo}
       <span class="min-w-0 flex-1">
@@ -13927,6 +14022,7 @@
           ${statusHtml}
           ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
           ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
+          ${forks ? `<span data-home-repo-fork-count class="inline-flex items-center gap-1" title="${escapeHtml(`${formatCount(forks)} ${forks === 1 ? "fork" : "forks"}`)}"><i data-lucide="git-fork" class="h-3 w-3"></i>${escapeHtml(formatCount(forks))} ${forks === 1 ? "fork" : "forks"}</span>` : ""}
           ${repositoryTermsBadge(repo, true)}
         </span>
       </span>
@@ -13947,7 +14043,7 @@
     if (!group.forks.length) return homeRepositoryRow(group.entry);
     const { shown } = repositoryShownForks("home", group);
     return `<div data-home-repo-group class="grid min-w-0">
-      ${homeRepositoryRow(group.entry)}
+      ${homeRepositoryRow(group.entry, group.forks.length)}
       <div data-home-repo-forks class="ml-5 grid min-w-0 gap-0.5 border-l border-border pl-2">
         ${shown.map((fork) => homeRepositoryForkRow(fork, group.entry)).join("")}
         ${repositoryForksToggleHtml("home", group, "px-2 py-1 text-left text-xs font-medium text-muted-foreground hover:text-accent")}
@@ -13969,9 +14065,12 @@
     const query = (search?.value || "").trim().toLowerCase();
     const matches = all.filter((entry) => repositoryMatchesPageFilter(entry.repo, query));
     const groups = nestRepositoryForks(matches, (entry) => homeRepositoryViewTotals(entry.repo)?.views);
+    loadSidebarSetting();
     const entries = state.homeRepositoriesExpanded
       ? groups
-      : groups.slice(0, HOME_TOP_REPOSITORY_LIMIT);
+      : query
+        ? groups.slice(0, HOME_TOP_REPOSITORY_LIMIT)
+        : sidebarPinnedGroups(groups, (all) => all.slice(0, HOME_TOP_REPOSITORY_LIMIT));
     const showMore = $("[data-home-repos-show-more]");
     if (showMore) {
       showMore.classList.toggle(
@@ -14015,6 +14114,11 @@
     if (!root) return href;
     const kind = String(item?.kind || "");
     if (number > 0 && (kind === "issue_assigned" || kind.startsWith("bounty_"))) return `${root}/issues/${number}`;
+    if (number > 0 && (kind === "mention" || kind === "subscribed")) {
+      const section = { pull: "pull", discussion: "discussions" }[String(meta.source || "")] || "issues";
+      const comment = String(meta.comment || "").trim();
+      return `${root}/${section}/${number}${comment ? `#comment-${encodeURIComponent(comment)}` : ""}`;
+    }
     if (kind === "repo_activity") {
       if (meta.event === "pull.merged" && number > 0) return `${root}/pull/${number}`;
       return `${root}/commits`;
@@ -17817,7 +17921,7 @@
       ? `<span>Logs are shown to the repository owner and organization writers.</span>`
       : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
     const facts = [
-      run.actor ? `Triggered by ${issuePersonNameHtml(run.actor, "font-medium text-foreground")}` : "",
+      run.actor ? `Triggered by <span class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)}${issuePersonNameHtml(run.actor, "font-medium text-foreground")}</span>` : "",
       run.event ? `on ${escapeHtml(run.event)}` : "",
       run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
     ].filter(Boolean).join(" ");
@@ -17882,7 +17986,7 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, run.pullNumber ? "" : escapeHtml(repoActionsRefLabel(run.ref)),
-        run.actor ? `<span data-repo-actions-run-actor>${issuePersonNameHtml(run.actor, "")}</span>` : "",
+        run.actor ? `<span data-repo-actions-run-actor class="inline-flex items-center gap-1 align-middle">${issueActorAvatarHtml(run.actor, run.actor, "h-4 w-4", false, false)}${issuePersonNameHtml(run.actor, "")}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `
@@ -18250,7 +18354,11 @@
     const messageNode = summary.querySelector("[data-repo-commit-message]");
     const hashNode = summary.querySelector("[data-repo-commit-hash]");
     const dateNode = summary.querySelector("[data-repo-commit-date]");
-    if (avatar) avatar.textContent = (author[0] || repo.owner?.[0] || "F").toUpperCase();
+    if (avatar) {
+      const botKind = botAvatarKind(author);
+      if (botKind) avatar.innerHTML = botAvatarSvg(botKind, "h-3.5 w-3.5");
+      else avatar.textContent = (author[0] || repo.owner?.[0] || "F").toUpperCase();
+    }
     if (authorNode) authorNode.textContent = author;
     if (messageNode) messageNode.textContent = subject || "published latest mirror metadata";
     if (hashNode) hashNode.textContent = hash ? hash.slice(0, 7) : "live";
@@ -34227,7 +34335,8 @@ Your reply
     const title = `${name}${email ? ` <${email}>` : ""}` +
       (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
     const classes = "relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground";
-    const initialsHtml = `<span>${escapeHtml(initials)}</span>`;
+    const botKind = platform ? "node" : botAvatarKind(contributor?.name, contributor?.email);
+    const initialsHtml = botKind ? botAvatarSvg(botKind) : `<span>${escapeHtml(initials)}</span>`;
     const picture = repoContributorAvatarUrl(contributor?.avatarUrl);
     if (picture) {
       return `<span title="${escapeHtml(title)}" data-repo-contributor-avatar class="${classes}">${initialsHtml}<img src="${escapeHtml(picture)}" alt="" width="28" height="28" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" /></span>`;
@@ -47006,7 +47115,7 @@ Your reply
       const unreadItem = !item.readAt;
       const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
       const avatar = lead.actor
-        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
+        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(lead.actor.replace(/^@/, "")) ? botAvatarSvg(botAvatarKind(lead.actor.replace(/^@/, "")), "h-4 w-4") : escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
           <span class="absolute bottom-0 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">${icon}</span>`
         : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
       return `
@@ -47066,7 +47175,7 @@ Your reply
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(repoPublicHref(item.href))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+        ${item.href ? `<a href="${escapeHtml(repoPublicHref(homeFeedHref(item)))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
@@ -53244,6 +53353,56 @@ Your reply
     return chip && chip.closest("[data-comment-reactions]") ? chip : null;
   }
 
+  function commentAnchorId() {
+    const match = /^#comment-(.+)$/.exec(String(location.hash || ""));
+    if (!match) return "";
+    try {
+      return decodeURIComponent(match[1]);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function revealAnchoredComment() {
+    const id = commentAnchorId();
+    if (!id) return;
+    const started = Date.now();
+    let observer = null;
+    const attempt = () => {
+      const marker = document.querySelector(`[data-comment-id="${CSS.escape(id)}"]`);
+      if (!marker) {
+        if (Date.now() - started > 20000) observer?.disconnect();
+        return false;
+      }
+      observer?.disconnect();
+      const target = marker.closest("[data-repo-issue-comment]") || marker.parentElement || marker;
+      [0, 300, 900, 1800].forEach((delay) => setTimeout(() => {
+        if (target.isConnected) target.scrollIntoView({ block: "center" });
+      }, delay));
+      target.style.outline = "2px solid rgb(var(--dashboard-accent-rgb))";
+      target.style.outlineOffset = "2px";
+      target.style.borderRadius = target.style.borderRadius || "8px";
+      setTimeout(() => {
+        target.style.outline = "";
+        target.style.outlineOffset = "";
+      }, 4000);
+      return true;
+    };
+    if (attempt()) return;
+    observer = new MutationObserver(() => { attempt(); });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => observer?.disconnect(), 20000);
+  }
+
+  function initCommentAnchor() {
+    revealAnchoredComment();
+    window.addEventListener("hashchange", revealAnchoredComment);
+    window.addEventListener("popstate", revealAnchoredComment);
+    document.addEventListener("click", (event) => {
+      if (event.target?.closest?.('a[href*="#comment-"]')) setTimeout(revealAnchoredComment, 50);
+    });
+  }
+
   function initCommentReactions() {
     seedCommentReactions();
     document.addEventListener("click", (event) => {
@@ -56584,6 +56743,7 @@ Your reply
       initDashboardUpdateNotice();
       initRecentPushes();
       initCommentReactions();
+      initCommentAnchor();
       initCommentGifs();
       initCommentTips();
       void initReactionSettings();
