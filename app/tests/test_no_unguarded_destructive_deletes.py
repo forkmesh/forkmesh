@@ -63,6 +63,11 @@ KEYWORDS = re.compile(
     r"|prune=now|filter-branch")
 
 ALLOW: list[tuple[str, str, str]] = [
+    ("tools/instance_follow.py",
+     'git\\(work, "push", "--quiet", "--force", args.publish,',
+     'publishes into the follow tool\'s own scratch bare repository, which nothing '
+     'else writes; instance-repo imports it without --force, so the forge still '
+     'refuses anything that is not a fast-forward'),
     ("desktop/src/DestructiveCommandReview.cpp",
      '^\\.arg\\(code\\(',
      'prompt text that names the command being reviewed; this file runs nothing'),

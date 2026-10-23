@@ -279,6 +279,42 @@ a merge files no update, while the source branch is not protected.
 The operator's `instance-repo` stays a root-only bypass and never triggers
 an update.
 
+### Following ForkMesh
+
+An instance built from its own repository falls behind ForkMesh unless
+someone merges ForkMesh into that repository. **Follow ForkMesh** on the
+Update page does it on the server:
+
+1. Set `"followOwner": "<account>"` in `instance.json`: the account that
+   owns the `sourceUrl` repository (the `--owner` given to `instance-repo`).
+   `followUrl` (default `https://app.forkmesh.com/forkmesh/forkmesh`) and
+   `followRef` (default `main`) say what to merge. The installer keeps all
+   three on later updates.
+2. **Merge ForkMesh now** asks for one follow; **Turn on** writes
+   `/var/lib/forkmesh-instance/update/follow`, and the hourly
+   `forkmesh-instance-follow.timer` then asks for a follow once 20 hours
+   have passed since the last one, never while a runner is working on an
+   Actions job (a restart would cut it off); queued jobs do not hold it back.
+
+A follow (`tools/instance_follow.py`, run by `instance-update.sh`) merges
+`followUrl`'s branch into the source branch in
+`/var/lib/forkmesh-instance-update/follow`, a work tree of its own. It
+resolves only conflicts with one right answer: generated dashboard bundles
+are rebuilt, changelog entries from both sides are kept, a migration
+ForkMesh added gets the next number after the instance's own (the database
+applied the instance's numbering; when ForkMesh numbers a migration the
+instance already applied under its own number, the instance's copy stays), the
+schema fingerprint is restamped and
+`test_local_migrations.py` names the newest migration. Anything else stops
+the follow: the Update page lists the files, the source repository and the
+running build stay as they were, and a person syncs by hand. A clean merge
+is published to the source repository with `instance-repo` (a root-only
+push, like the operator's) and the ordinary update deploys it.
+
+Following pushes ForkMesh's code to the protected branch without a pull
+request, so turn it on only when the instance means to run whatever
+ForkMesh ships.
+
 ## Private admin console path
 
 The admin console has always lived at `/<ADMIN_PATH>` (`app_runtime._fetch_inner`,

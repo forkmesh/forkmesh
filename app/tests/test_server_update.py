@@ -660,3 +660,84 @@ def test_the_merge_handler_hands_merges_to_the_self_update():
     assert "_self_update.on_merge(" in block
     status = server_update.instance_status(SimpleNamespace())
     assert status["trigger"] == ""
+
+
+def test_the_console_turns_following_on_and_starts_a_follow(tmp_path, monkeypatch):
+    audits = []
+    (tmp_path / "status.json").write_text(json.dumps({
+        "state": "failed", "followState": "conflict", "followAt": 1_799_999_000,
+        "followUpstream": "c" * 40, "followBehind": 12,
+        "followMessage": "2 files need a manual sync.",
+        "followFiles": "app/src/entry.py docs/<x>.md"}))
+
+    async def audit(env, account, action, kind, target, outcome, details):
+        audits.append((action, outcome, details["notice"]))
+
+    async def nav_badges(env):
+        return {}
+
+    monkeypatch.setattr(admin_shell, "nav_badges", nav_badges)
+    bind(monkeypatch, tmp_path, {"_audit_sensitive_action": audit})
+    env = SimpleNamespace(
+        ADMIN_PATH="secret", INSTANCE_UPDATE_REQUEST=str(tmp_path / "request"),
+        INSTANCE_UPDATE_STATUS=str(tmp_path / "status.json"))
+
+    def page():
+        return asyncio.run(admin.admin_handler(
+            env, FakeRequest("https://code.example.com/secret?view=update"),
+            {"view": ["update"]}, "<csrf>", "", "ada")).body
+
+    def post(fields):
+        return asyncio.run(admin.admin_handler(
+            env, FakeRequest("https://code.example.com/secret", "POST",
+                             dict(fields, csrf="ok")),
+            {"view": ["update"]}, "", "", "ada")).headers["location"]
+
+    body = page()
+    assert "Follow ForkMesh" in body and "Needs a manual sync" in body
+    assert "12 new commits" in body and "app/src/entry.py" in body
+    assert "docs/<x>.md" not in body and 'name="follow" value="1"' in body
+    assert "notice=follow_on" in post({"action": "save_follow", "follow": "1"})
+    assert (tmp_path / "follow").read_text() == "on\n"
+    assert server_update.follow_on(env)
+    assert 'name="follow" value="0"' in page()
+    assert "notice=unconfirmed" in post({"action": "start_follow"})
+    assert "notice=follow_started" in post({"action": "start_follow",
+                                            "confirm": "yes"})
+    assert (tmp_path / "request").read_text() == "follow\n"
+    (tmp_path / "request").unlink()
+    assert "notice=follow_off" in post({"action": "save_follow", "follow": "0"})
+    assert not (tmp_path / "follow").exists()
+    assert audits[-1] == ("admin.console_save_follow", "success", "follow_off")
+
+
+def tick(instance):
+    return subprocess.run(["bash", str(HELPER), "--tick"], env=instance.env,
+                          capture_output=True, text=True, timeout=60)
+
+
+def test_the_hourly_tick_asks_for_a_follow_only_when_on_and_due(instance):
+    flag = instance.request.parent / "follow"
+    assert tick(instance).returncode == 0 and not instance.request.exists()
+    flag.write_text("on\n")
+    assert tick(instance).returncode == 0
+    assert instance.request.read_text() == "follow\n"
+    instance.request.unlink()
+    (instance.state / "status.json").write_text(json.dumps(
+        {"followAt": int(__import__("time").time()) - 60}))
+    tick(instance)
+    assert not instance.request.exists()
+    (instance.state / "status.json").write_text(json.dumps({"followAt": 1}))
+    tick(instance)
+    assert instance.request.read_text() == "follow\n"
+
+
+def test_a_follow_needs_a_source_on_this_instance_and_an_owner(instance):
+    status = helper(instance, "follow")
+    assert status["state"] == "failed" and status["trigger"] == "follow"
+    assert "sourceUrl" in status["lastError"]
+    (instance.request.parent / "instance.json").write_text(json.dumps({
+        "sourceUrl": "https://code.example.com/acme/forkmesh",
+        "sourceRef": "main", "domain": "code.example.com"}))
+    status = helper(instance, "follow")
+    assert status["state"] == "failed" and "followOwner" in status["lastError"]

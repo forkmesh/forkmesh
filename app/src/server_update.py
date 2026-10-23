@@ -5,8 +5,8 @@ import re
 INSTANCE_REQUEST_ROOT = "/var/lib/forkmesh-instance/"
 INSTANCE_STATUS_ROOT = "/var/lib/forkmesh-instance-update/"
 BUILD_INFO_NAME = re.compile(r"^/[A-Za-z0-9._/-]+\.json$")
-ACTIONS = ("check", "update", "auto")
-TRIGGERS = ("admin", "merge")
+ACTIONS = ("check", "update", "auto", "follow")
+TRIGGERS = ("admin", "merge", "follow")
 DAEMON_STATES = ("current", "stale", "unknown", "release")
 RUNNING = ("checking", "updating")
 MAX_FILE_BYTES = 16 * 1024
@@ -14,6 +14,7 @@ OID_RE = re.compile(r"^[0-9a-f]{7,64}$")
 VERSION_RE = re.compile(r"^[0-9][0-9.]{0,31}$")
 STEP_RE = re.compile(r"^[a-z]{1,32}$")
 STATES = ("idle", "checking", "updating", "done", "failed")
+FOLLOW_STATES = ("current", "merged", "conflict", "failed")
 CORE_KIND = "admin"
 CORE_UPSTREAM_KEY = "core_upstream"
 CORE_OPEN = ("pending", "deploying")
@@ -21,6 +22,7 @@ STEP_LABELS = {
     "system": "Checking the server",
     "packages": "Installing packages",
     "source": "Downloading the source",
+    "follow": "Merging the latest ForkMesh",
     "build": "Building the app",
     "configure": "Saving settings",
     "database": "Migrating the database",
@@ -146,6 +148,17 @@ def instance_status(env):
                            doc.get("upstreamSubject"),
                            doc.get("upstreamVersion")),
         "requested": "",
+        "follow": {
+            "state": str(doc.get("followState") or "")
+            if doc.get("followState") in FOLLOW_STATES else "",
+            "at": _int(doc.get("followAt")),
+            "upstream": commit(doc.get("followUpstream"))["commit"],
+            "commit": commit(doc.get("followCommit"))["commit"],
+            "behind": _int(doc.get("followBehind")),
+            "message": _text(doc.get("followMessage"), 300),
+            "files": [f for f in _text(doc.get("followFiles")).split()
+                      if re.fullmatch(r"[A-Za-z0-9._/@+-]{1,200}", f)][:20],
+        },
     }
     path = request_path(env)
     if path:
@@ -171,6 +184,39 @@ def request_instance(env, action):
         with open(tmp, "w", encoding="ascii") as handle:
             handle.write(action + "\n")
         os.replace(tmp, path)
+    except OSError:
+        return False
+    return True
+
+
+def follow_path(env):
+    path = request_path(env)
+    return os.path.join(os.path.dirname(path), "follow") if path else ""
+
+
+def follow_on(env):
+    path = follow_path(env)
+    if not path or os.path.islink(path):
+        return False
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(8).decode("ascii", "ignore").strip() == "on"
+    except OSError:
+        return False
+
+
+def set_follow(env, on):
+    path = follow_path(env)
+    if not path:
+        return False
+    try:
+        if on:
+            tmp = path + ".new"
+            with open(tmp, "w", encoding="ascii") as handle:
+                handle.write("on\n")
+            os.replace(tmp, path)
+        elif os.path.lexists(path):
+            os.unlink(path)
     except OSError:
         return False
     return True
