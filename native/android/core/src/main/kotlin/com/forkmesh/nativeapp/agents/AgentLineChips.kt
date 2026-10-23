@@ -67,6 +67,7 @@ data class AgentChipFacts(
     val linesRemoved: Int = -1,
     val branch: String = "",
     val hasWorktree: Boolean = false,
+    val backgroundTasks: Int = 0,
 )
 
 object AgentLineChips {
@@ -155,7 +156,28 @@ object AgentLineChips {
         linesAdded = row.linesAdded,
         linesRemoved = row.linesRemoved,
         branch = row.branchName,
+        backgroundTasks = row.backgroundTasks,
     )
+
+    fun churnShare(added: Int, removed: Int): Float? {
+        val plus = maxOf(added, 0)
+        val minus = maxOf(removed, 0)
+        if (plus + minus == 0) return null
+        return plus.toFloat() / (plus + minus)
+    }
+
+    fun backgroundTasksLabel(count: Int): String = when {
+        count <= 0 -> ""
+        count == 1 -> "1 background task"
+        else -> "$count background tasks"
+    }
+
+    fun eagleSummary(facts: AgentChipFacts): String = listOf(
+        facts.status.word,
+        if (facts.filesChanged >= 0) "${facts.filesChanged} ${if (facts.filesChanged == 1) "file" else "files"}" else "",
+        if (facts.linesAdded > 0 || facts.linesRemoved > 0) "${maxOf(facts.linesAdded, 0)} added, ${maxOf(facts.linesRemoved, 0)} removed" else "",
+        backgroundTasksLabel(facts.backgroundTasks),
+    ).filter { it.isNotEmpty() }.joinToString(", ")
 
     fun runnerWord(name: String): String {
         val clean = name.trim()

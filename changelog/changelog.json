@@ -23,7 +23,8 @@
       "On Android, Genie auto-send can ask the paired desktop's Claude Code or Codex to write the email.",
       "On Android, ping notifications lead with who acted and where, with what they wrote straight under it.",
       "On Android, New project loads the checked instance's logo and can quick-add an instance from the ForkMesh directory.",
-      "On Android, a walk shows as a live notification with its time, steps and distance, on the lock screen too, and stays when you lock the phone mid-walk."
+      "On Android, a walk shows as a live notification with its time, steps and distance, on the lock screen too, and stays when you lock the phone mid-walk.",
+      "On Android, Agents Eagle rows drop the left agent dot and show a tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots."
      ]
     }
    ]

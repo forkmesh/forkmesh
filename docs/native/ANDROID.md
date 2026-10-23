@@ -2502,3 +2502,19 @@ edit or delete as somebody else. Nothing here talks to older builds.
   stops), so locking the phone mid-walk keeps it in the notification until
   three minutes of stillness end it. Coming back to the app restarts the full
   pace sensors. `WalkDetectorTest` ports the four new iOS cases.
+- **Eagle rows (S112).** `AgentEagleRow` has no status dot on the left any
+  more: the title and the dialog ticker start at the row's edge, and a 32 dp
+  tile (`AgentEagleTile`) sits on the right. Android rows carry no image
+  thumbnail, so the tile is a plain `bgOverlay` rounded square. Its border is
+  the churn: one continuous 2 dp stroke around the rounded rectangle, green
+  for the added share (`AgentLineChips.churnShare`) and red for the rest, or a
+  hairline with no churn. A pill on the top right (`AgentTilePill`) holds the
+  file count and a status dot (accent running, warning waiting, success done,
+  `#a371f7` merged, danger failed, tertiary otherwise); the bottom left shows
+  one dot per open background task, up to three then `+n` (`AgentTileTasks`),
+  blinking on a 1.4 s cosine while the agent runs or waits and still under
+  Reduce Motion; the unread dot sits on the top left. `backgroundTasks` is read
+  from the desktop's `agents.list` rows (`LocalAgentRow`, clamped at 0) into
+  `UnifiedAgentRow` and `AgentChipFacts`, and the row's spoken summary
+  (`AgentLineChips.eagleSummary`) ends with "N background tasks". Repository
+  desktop-session rows built from `AgentSession` alone carry no task count.

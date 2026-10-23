@@ -74,6 +74,7 @@ data class UnifiedAgentRow(
     val terminal: String = "",
     val finishedAtMs: Long = 0,
     val unread: Boolean? = null,
+    val backgroundTasks: Int = 0,
 ) {
     val repoLabel: String get() = if (repoOwner.isEmpty()) repoName else "$repoOwner/$repoName"
     val isDesktop: Boolean get() = badge != AgentTransportBadge.Node && badge != AgentTransportBadge.Runner
@@ -173,6 +174,7 @@ data class UnifiedAgentRow(
                 conflicted = session.conflicted && !session.merged,
                 finishedAtMs = if (session.isActive) 0 else session.finishedAtMs,
                 unread = row.unread,
+                backgroundTasks = row.backgroundTasks,
             )
         }
 

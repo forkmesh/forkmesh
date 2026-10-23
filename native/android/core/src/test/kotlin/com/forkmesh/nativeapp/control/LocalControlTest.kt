@@ -1019,6 +1019,16 @@ class LocalControlTest {
         assertEq(0L, UnifiedAgentRow.fromDesktop(running, ControlTransport.Relay, "studio").finishedAtMs)
     }
 
+    fun testDesktopRowsCarryTheirOpenBackgroundTasks() {
+        val busy = LocalAgentRow.fromJson(mapOf("id" to 7, "status" to "running", "backgroundTasks" to 2))
+        assertEq(2, busy.backgroundTasks)
+        assertEq(0, LocalAgentRow.fromJson(mapOf("id" to 8, "status" to "done")).backgroundTasks)
+        assertEq(0, LocalAgentRow.fromJson(mapOf("id" to 9, "status" to "done", "backgroundTasks" to -3)).backgroundTasks)
+        val unified = UnifiedAgentRow.fromDesktop(busy, ControlTransport.Lan, "studio")
+        assertEq(2, unified.backgroundTasks)
+        assertEq(2, com.forkmesh.nativeapp.agents.AgentLineChips.facts(unified).backgroundTasks)
+    }
+
     fun testCloudRowsSurviveTheListWindowAndFailedRefresh() {
         var answer = 200 to """{"sessions":[{"id":"run","status":"running","updatedAt":1700000003000},{"id":"old","status":"completed","updatedAt":1700000001000},{"id":"gone","status":"failed","updatedAt":1700000002000},{"id":"late","status":"completed","updatedAt":1700000005000}],"finishedBefore":0}"""
         val transport = HttpTransport { HttpClient.Response(answer.first, emptyMap(), answer.second.toByteArray()) }
