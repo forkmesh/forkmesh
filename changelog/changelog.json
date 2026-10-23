@@ -58,7 +58,8 @@
     {
      "title": "World",
      "items": [
-      "Stepping into a neighbouring World's hexagon is seamless: its hexagon is built ahead of time, people stay visible on both sides while you cross, and the World no longer blanks out or stalls after a while on slower devices."
+      "Stepping into a neighbouring World's hexagon is seamless: its hexagon is built ahead of time, people stay visible on both sides while you cross, and the World no longer blanks out or stalls after a while on slower devices.",
+      "Road edges now join continuously around the outer bike loop."
      ]
     },
     {
