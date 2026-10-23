@@ -955,6 +955,7 @@ void MainWindow::onMessage(const ChatMessage &message)
     refreshChatListPreview(conversation);
 
     if (conversation == m_currentConversation) {
+        schedulePromptChatPreview();
         const bool wasAtBottom = m_stickToBottom;
         // A reply changes its root's summary row, and a message that landed
         // earlier than the one before it changes the order — both need the
@@ -3974,6 +3975,7 @@ void MainWindow::switchConversation(const QString &conversation)
         m_officeChannelMirror->watchConversation(conversation);
     refreshTypingLabel();
     refreshChatMembers();
+    updateQuickAddEnterTarget();
     scheduleNavRecord();
 
     if (isDirectConversation(conversation)) {

@@ -198,3 +198,229 @@ def test_every_call_surface_mounts_the_widget():
     page = PAGES[0].read_text(encoding="utf-8")
     assert "window.FmCallQuality" in page
     assert "startQuality(current);" in page and "stopQuality();" in page
+
+
+DIAGNOSTICS_HARNESS = r'''
+import { pathToFileURL } from "node:url";
+const Q = await import(pathToFileURL(process.argv.at(-1)).href);
+const out = {};
+const base = { rttMs: 40, lossPct: 0, jitterMs: 5, sendKbps: 1500, recvKbps: 1500, outWidth: 1280, outHeight: 720, outFps: 30, inWidth: 1280, inHeight: 720, inFps: 30, limit: "", faceMs: null, faceFps: null, faceLevel: null };
+const series = (patch, count = 8) => Array.from({ length: count }, (_, i) => ({ ...base, at: 1000 * (i + 1), ...patch }));
+out.healthy = Q.diagnoseCall(series({}), { video: true });
+out.early = Q.diagnoseCall(series({ rttMs: 900 }, 2), { video: true });
+out.network = Q.diagnoseCall(series({ rttMs: 620, lossPct: 4, jitterMs: 70 }), { video: true });
+out.video = Q.diagnoseCall(series({ limit: "cpu", outFps: 6, inHeight: 180, inFps: 9, faceMs: 58, faceFps: 14, faceLevel: 3 }), { video: true });
+out.cameraOff = Q.diagnoseCall(series({ limit: "bandwidth", outFps: 1 }), { video: true, sending: false });
+out.theirCameraOff = Q.diagnoseCall(series({ recvKbps: 4, inFps: 0 }), { video: true });
+out.voiceOnly = Q.diagnoseCall(series({ outFps: 3, limit: "cpu" }), { video: false });
+
+const memory = Q.emptyDiagnosticsMemory();
+const latency = out.network.issues.find((issue) => issue.id === "latency");
+out.firstRank = Q.rankFixes(latency, memory).map((fix) => fix.id);
+Q.recordFixOutcome(memory, "latency", "wired", false);
+Q.recordFixOutcome(memory, "latency", "vpn", true);
+out.learnedRank = Q.rankFixes(latency, memory).map((fix) => fix.id);
+Q.rememberReport(memory, { ...out.network, at: 1 });
+Q.rememberReport(memory, out.network);
+out.noteSaved = Q.rememberNote(memory, "  LESSON:  turn the VPN off first ");
+out.noteEmpty = Q.rememberNote(memory, "lesson:   ");
+for (let i = 0; i < 30; i += 1) Q.rememberReport(memory, { ...out.healthy, at: 100 + i });
+out.reports = memory.reports.length;
+out.notes = memory.notes;
+const stored = new Map();
+const storage = { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) };
+Q.saveDiagnosticsMemory(storage, memory);
+out.reloaded = Q.loadDiagnosticsMemory(storage).fixes;
+out.broken = Q.loadDiagnosticsMemory({ getItem: () => "{not json" });
+const promptMemory = Q.emptyDiagnosticsMemory();
+Q.rememberReport(promptMemory, { ...out.network, at: 5 });
+Q.recordFixOutcome(promptMemory, "latency", "vpn", true);
+Q.recordFixOutcome(promptMemory, "loss", "wired", false);
+Q.rememberNote(promptMemory, "LESSON: the office Wi-Fi drops packets; use the cable");
+Q.rememberReport(promptMemory, out.network);
+out.prompt = Q.diagnosticsPrompt(out.network, promptMemory, { userAgent: "TestBrowser/1", cores: 8 });
+out.healthyPrompt = Q.diagnosticsPrompt(out.healthy, Q.emptyDiagnosticsMemory(), {});
+
+const timers = [];
+const scope = {
+  setInterval(fn, ms) { timers.push({ fn, ms }); return timers.length; },
+  clearInterval(id) { timers[id - 1] = null; },
+};
+const stage = { frames: 0, frameMs: 0, level: 0 };
+let clock = 1000;
+const realNow = Date.now;
+Date.now = () => clock;
+const meter = Q.createCallQualityMeter({ readStats: async () => ({ ...base, at: clock }), face: () => stage, scope, AudioContextImpl: null });
+await new Promise((resolve) => setTimeout(resolve, 5));
+const statsTimer = timers.find((timer) => timer && timer.ms === Q.QUALITY_STATS_MS);
+for (let i = 0; i < 3; i += 1) {
+  clock += 1000;
+  stage.frames += 20;
+  stage.frameMs += 20 * 45;
+  stage.level = 2;
+  await statsTimer.fn();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+}
+out.face = { fps: meter.latest.faceFps, ms: meter.latest.faceMs, level: meter.latest.faceLevel, first: meter.samples[0].faceMs };
+meter.stop();
+Date.now = realNow;
+console.log(JSON.stringify(out));
+'''
+
+WIDGET_HARNESS = r'''
+import { pathToFileURL } from "node:url";
+const Q = await import(pathToFileURL(process.argv.at(-1)).href);
+class Element {
+  constructor(tag) { this.tagName = tag; this.children = []; this.dataset = {}; this.attributes = {}; this.listeners = {}; this.hidden = false; this.textContent = ""; this.value = ""; this.style = {}; this.className = ""; }
+  append(...nodes) { this.children.push(...nodes); for (const node of nodes) node.parent = this; }
+  replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
+  remove() { if (this.parent) this.parent.children = this.parent.children.filter((node) => node !== this); }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return this.attributes[name] ?? null; }
+  addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
+  click() { for (const fn of this.listeners.click || []) fn(); }
+  get classList() { return { toggle: () => {} }; }
+  select() { this.selected = true; }
+  getContext() { return null; }
+  find(name) { if (String(this.className).split(" ").includes(name)) return this; for (const child of this.children) { const hit = child.find?.(name); if (hit) return hit; } return null; }
+  text() { return [this.textContent, ...this.children.map((child) => child.text?.() || "")].join(" "); }
+}
+const documentRef = { createElement: (tag) => new Element(tag) };
+const stored = new Map();
+const storage = { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) };
+const listeners = new Set();
+const base = { rttMs: 40, lossPct: 0, jitterMs: 5, sendKbps: 1500, recvKbps: 1500, outWidth: 1280, outHeight: 720, outFps: 30, inWidth: 1280, inHeight: 720, inFps: 30, limit: "" };
+const meter = { samples: [], levels: [], latest: null, hasStats: true, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } };
+const push = (patch) => { const sample = { ...base, at: 1000 * (meter.samples.length + 1), ...patch }; meter.samples.push(sample); meter.latest = sample; for (const fn of listeners) fn(meter); };
+let copied = "";
+const scope = { navigator: { userAgent: "TestBrowser/1", hardwareConcurrency: 4, clipboard: { writeText: async (text) => { copied = text; } } } };
+const host = new Element("div");
+const widget = Q.mountCallQualityWidget(host, meter, { documentRef, storage, scope, video: () => true });
+const diag = widget.element.find("fm-q-diag");
+const panel = widget.element.find("fm-q-diag-panel");
+const out = {};
+for (let i = 0; i < 4; i += 1) push({});
+out.calm = diag.dataset.state;
+for (let i = 0; i < 8; i += 1) push({ rttMs: 640 });
+out.alert = diag.dataset.state;
+out.alertLabel = diag.getAttribute("aria-label");
+out.closedBefore = panel.hidden;
+diag.click();
+out.open = !panel.hidden;
+out.panelText = panel.text();
+out.prompt = panel.find("fm-q-prompt").value;
+panel.find("fm-q-actions").children[0].click();
+await new Promise((resolve) => setTimeout(resolve, 5));
+out.copied = copied === out.prompt;
+const memory = JSON.parse(stored.get(Q.DIAG_KEY));
+out.reports = memory.reports.length;
+for (let i = 0; i < 8; i += 1) push({});
+out.cleared = diag.dataset.state;
+out.learned = JSON.parse(stored.get(Q.DIAG_KEY)).fixes;
+const input = panel.find("fm-q-note-input");
+input.value = "LESSON: plug in the cable";
+panel.children.at(-1).children[1].click();
+out.notes = JSON.parse(stored.get(Q.DIAG_KEY)).notes;
+out.promptAfter = panel.find("fm-q-prompt").value;
+diag.click();
+out.closed = panel.hidden;
+for (let i = 0; i < 8; i += 1) push({ lossPct: 12 });
+diag.click();
+widget.destroy();
+out.failed = JSON.parse(stored.get(Q.DIAG_KEY)).fixes;
+out.removed = host.children.length;
+console.log(JSON.stringify(out));
+'''
+
+
+def _run(harness):
+    if not shutil.which("node"):
+        pytest.skip("node is not installed")
+    run = subprocess.run(
+        ["node", "--input-type=module", "-e", harness, str(MODULE)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert run.returncode == 0, run.stderr[-2000:]
+    return json.loads(run.stdout)
+
+
+@pytest.fixture(scope="module")
+def diagnostics():
+    return _run(DIAGNOSTICS_HARNESS)
+
+
+@pytest.fixture(scope="module")
+def widget():
+    return _run(WIDGET_HARNESS)
+
+
+def test_diagnosis_finds_sustained_problems_only(diagnostics):
+    assert diagnostics["healthy"]["severity"] == "ok" and diagnostics["healthy"]["issues"] == []
+    assert diagnostics["early"]["severity"] == "unknown"
+    network = {issue["id"]: issue["severity"] for issue in diagnostics["network"]["issues"]}
+    assert network == {"latency": "bad", "loss": "warn", "jitter": "warn"}
+    assert diagnostics["network"]["severity"] == "bad"
+    assert diagnostics["network"]["issues"][0]["id"] == "latency"
+    video = {issue["id"]: issue["severity"] for issue in diagnostics["video"]["issues"]}
+    assert video == {"cpu": "warn", "sendFps": "bad", "receive": "warn", "face": "bad"}
+    face = next(issue for issue in diagnostics["video"]["issues"] if issue["id"] == "face")
+    assert "58 ms a frame" in face["detail"] and "14 frames a second" in face["detail"]
+    assert diagnostics["cameraOff"]["issues"] == []
+    assert diagnostics["theirCameraOff"]["issues"] == []
+    assert diagnostics["voiceOnly"]["issues"] == []
+
+
+def test_fix_order_learns_from_outcomes(diagnostics):
+    assert diagnostics["firstRank"] == ["wired", "traffic", "vpn", "relay"]
+    assert diagnostics["learnedRank"] == ["vpn", "traffic", "relay", "wired"]
+    assert diagnostics["noteSaved"] is True and diagnostics["noteEmpty"] is False
+    assert diagnostics["notes"] == ["turn the VPN off first"]
+    assert diagnostics["reports"] == 20
+    assert diagnostics["reloaded"]["latency:vpn"] == {"worked": 1, "failed": 0}
+    assert diagnostics["broken"] == {"reports": [], "fixes": {}, "notes": []}
+
+
+def test_prompt_carries_measurements_history_and_lessons(diagnostics):
+    prompt = diagnostics["prompt"]
+    assert prompt.startswith("Prompt v2 · learned from 1 earlier report on this device.")
+    assert "620 ms round trip, 4.0% loss, 70 ms jitter" in prompt
+    assert "TestBrowser/1; 8 CPU cores" in prompt
+    assert "1. High latency (severe, network)." in prompt
+    assert "Seen in 1 of 1 earlier reports on this device." in prompt
+    assert "Worked here before: Turn off a VPN or proxy for the call. (1×)" in prompt
+    assert "Tried here without clearing it: Use a wired connection" in prompt
+    assert "- the office Wi-Fi drops packets; use the cable" in prompt
+    assert 'starts with "LESSON:"' in prompt
+    assert "No problem was detected automatically." in diagnostics["healthyPrompt"]
+
+
+def test_meter_measures_the_face_stage(diagnostics):
+    face = diagnostics["face"]
+    assert face["first"] is None
+    assert face["fps"] == pytest.approx(20)
+    assert face["ms"] == pytest.approx(45)
+    assert face["level"] == 2
+
+
+def test_widget_turns_red_and_explains(widget):
+    assert widget["calm"] == "ok"
+    assert widget["alert"] == "bad"
+    assert widget["alertLabel"].startswith("Call diagnostics: 1 problem found: high latency")
+    assert widget["closedBefore"] is True and widget["open"] is True
+    assert "High latency" in widget["panelText"] and "Use a wired connection" in widget["panelText"]
+    assert widget["prompt"].startswith("Prompt v1 · learned from 0 earlier reports")
+    assert widget["copied"] is True
+    assert widget["reports"] == 1
+
+
+def test_widget_learns_what_cleared_the_problem(widget):
+    assert widget["cleared"] == "ok"
+    assert widget["learned"] == {"latency:wired": {"worked": 1, "failed": 0}}
+    assert widget["notes"] == ["plug in the cable"]
+    assert "- plug in the cable" in widget["promptAfter"]
+    assert widget["closed"] is True
+    assert widget["failed"]["loss:wired"] == {"worked": 0, "failed": 1}
+    assert widget["removed"] == 0

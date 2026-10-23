@@ -1693,7 +1693,9 @@ void NextAccess::workspaceCommand(MainWindow &window, int command)
     }
     case CmdSend: {
         QPushButton *target =
-            window.m_quickAddSendToAgentButton &&
+            !window.promptChatRoom().isEmpty() && window.m_quickAddSendToChannelButton
+                ? window.m_quickAddSendToChannelButton
+            : window.m_quickAddSendToAgentButton &&
                     window.m_quickAddSendToAgentButton->property("enterTarget")
                         .toBool()
                 ? window.m_quickAddSendToAgentButton

@@ -1384,11 +1384,20 @@ void checkFooterOverlayGeometry(MainWindow &window)
         window.findChild<QPushButton *>(QStringLiteral("promptDetachButton"));
     auto *promptText =
         window.findChild<QPlainTextEdit *>(QStringLiteral("issueQuickAdd"));
-    check(promptClear && promptText && promptGrip &&
+    check(promptClear && promptText && promptGrip && promptDetach &&
               promptClear->parentWidget() == promptGrip->parentWidget() &&
-              promptClear->geometry().left() > promptGrip->geometry().right(),
-          QStringLiteral("the tiny clear button sits immediately right of the "
-                         "prompt resize grip"));
+              promptGrip->geometry().left() > promptDetach->geometry().right() &&
+              promptGrip->geometry().left() > promptClear->geometry().right(),
+          QStringLiteral("the prompt resize grip sits at the right end of the "
+                         "floating button bar"));
+    check(!window.findChild<QWidget *>(QStringLiteral("promptDragPill")) &&
+              promptHandle && promptWrapper &&
+              promptHandle->parentWidget() == promptWrapper &&
+              promptWrapper->layout()->indexOf(promptHandle) < 0 &&
+              promptHandle->geometry().right() >= promptWrapper->width() - 2 &&
+              promptHandle->geometry().top() <= 1,
+          QStringLiteral("the composer has no centre drag bar and its buttons "
+                         "float over the top-right corner"));
     if (promptClear && promptText) {
         promptText->setPlainText(QStringLiteral("a prompt to clear"));
         promptClear->click();
@@ -1479,8 +1488,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
         const QPoint gripAt = promptGrip->mapToGlobal(
             QPoint(promptGrip->width() / 2, promptGrip->height() / 2));
         sendMouse(promptGrip, QEvent::MouseButtonPress, gripAt);
-        sendMouse(promptGrip, QEvent::MouseMove, gripAt + QPoint(-60, -40));
-        sendMouse(promptGrip, QEvent::MouseButtonRelease, gripAt + QPoint(-60, -40));
+        sendMouse(promptGrip, QEvent::MouseMove, gripAt + QPoint(60, -40));
+        sendMouse(promptGrip, QEvent::MouseButtonRelease, gripAt + QPoint(60, -40));
         QApplication::processEvents();
         check(prompt->width() > dragged.width() &&
                   prompt->height() > dragged.height(),
@@ -3035,6 +3044,55 @@ void checkAgentAttentionDoesNotTakeFocus(MainWindow &window)
 
     window.testRemoveAgentSession(waiting.id);
     window.testClearPageNotices();
+    QApplication::processEvents();
+}
+
+void checkPromptPreviewShowsChatRoom(MainWindow &window)
+{
+    const QString room = QStringLiteral("#prompt-preview");
+    const QString current = window.testCurrentConversation();
+    const QString restore =
+        current.isEmpty() ? QStringLiteral("#general") : current;
+    window.testShowChatSection();
+    window.testSwitchConversation(room);
+    window.testDeliverChatMessage(room, QStringLiteral("peer-ana"),
+                                  QStringLiteral("ana"),
+                                  QStringLiteral("morning, room"));
+    window.testDeliverChatMessage(room, QStringLiteral("peer-ben"),
+                                  QStringLiteral("ben"),
+                                  QStringLiteral("standup in five"));
+    window.testRefreshPromptChatPreview();
+    QApplication::processEvents();
+    QLabel *preview = window.testPromptChatPreview();
+    check(preview && !preview->isHidden() &&
+              preview->text().contains(QStringLiteral("ana: morning, room")) &&
+              preview->text().contains(QStringLiteral("ben: standup in five")),
+          QStringLiteral("with a chat room open the composer previews that room "
+                         "(%1)")
+              .arg(preview ? preview->text().left(200) : QStringLiteral("none")));
+    QPushButton *add = nullptr;
+    for (QPushButton *button :
+         window.findChildren<QPushButton *>(QStringLiteral("quickAddSendIcon")))
+        if (button->text() == QLatin1String("add"))
+            add = button;
+    check(add && !add->property("enterTarget").toBool(),
+          QStringLiteral("with a chat room open the follow-up button still reads "
+                         "add and Enter does not pick it"));
+    auto *sendTo = window.findChild<QPushButton *>(QStringLiteral("quickAddGenieButton"));
+    check(sendTo && sendTo->isEnabled() &&
+              sendTo->text().startsWith(QStringLiteral("send to: #prompt")) &&
+              sendTo->toolTip().contains(QStringLiteral("prompt-preview")) &&
+              sendTo->toolTip().contains(QStringLiteral("(Enter)")),
+          QStringLiteral("send to names the open room and takes Enter (%1 | %2)")
+              .arg(sendTo ? sendTo->text() : QStringLiteral("none"),
+                   sendTo ? sendTo->toolTip() : QString()));
+    const QString shots = qEnvironmentVariable("FORKMESH_WORKSPACE_SHOT");
+    if (auto *wrapper = window.findChild<QWidget *>(QStringLiteral("promptWrapper"));
+        wrapper && !shots.isEmpty()) {
+        QDir().mkpath(shots);
+        wrapper->grab().save(QDir(shots).filePath(QStringLiteral("composer-room.png")));
+    }
+    window.testSwitchConversation(restore);
     QApplication::processEvents();
 }
 
@@ -10392,6 +10450,27 @@ void checkWorkspaceDesign(MainWindow &window)
           QStringLiteral("three compact lines of the latest chat sit over the prompt "
                          "(%1)")
               .arg(preview ? preview->text().left(200) : QStringLiteral("none")));
+    if (preview && wrapper) {
+        auto *bar = wrapper->findChild<QWidget *>(QStringLiteral("promptDragHandle"));
+        const QRect previewInWrapper(preview->mapTo(wrapper, QPoint()), preview->size());
+        check(preview->height() >= preview->sizeHint().height() &&
+                  previewInWrapper.top() <= 2 && bar && bar->isVisibleTo(wrapper) &&
+                  bar->geometry().intersects(previewInWrapper) &&
+                  bar->geometry().left() > previewInWrapper.left() + 40,
+              QStringLiteral("the chat starts at the composer's top, every line fits, "
+                             "and the buttons float over its right end (preview %1 of "
+                             "%2 px at y %3)")
+                  .arg(preview->height())
+                  .arg(preview->sizeHint().height())
+                  .arg(previewInWrapper.top()));
+        auto *spacer = wrapper->findChild<QWidget *>(QStringLiteral("promptTopSpacer"));
+        check(spacer && spacer->isHidden(),
+              QStringLiteral("the top band only reserves room while there is no chat"));
+        if (!shots.isEmpty()) {
+            settle();
+            wrapper->grab().save(QDir(shots).filePath(QStringLiteral("composer.png")));
+        }
+    }
     QPushButton *chat = nullptr;
     for (QPushButton *button :
          window.findChildren<QPushButton *>(QStringLiteral("quickAddSendIcon")))
@@ -15493,6 +15572,7 @@ else:
 
     if (workspaceDesignOnly) {
         checkWorkspaceDesign(window);
+        checkPromptPreviewShowsChatRoom(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -22779,6 +22859,7 @@ else:
     checkChatPingRaisesNoCard(window);
     checkPrivateChatNotFiledAsPing(window);
     checkReplayedBacklogRepaintsOnce(window);
+    checkPromptPreviewShowsChatRoom(window);
     checkLongFeedRendersRecentWindow(window);
     checkCloudLogMonitorAlert(window);
     checkCloudLogMerged(window);
