@@ -1,6 +1,7 @@
 #include "QueryInspector.h"
 
 #include "FleetVisualizer.h"
+#include "FontSizing.h"
 
 #include <QDateTime>
 #include <QFontMetricsF>
@@ -504,7 +505,7 @@ void QueryInspector::paintEvent(QPaintEvent *)
 void QueryInspector::paintHeader(QPainter &p, const QRectF &area)
 {
     QFont title = font();
-    title.setPointSizeF(title.pointSizeF() * 1.25);
+    title = forkmesh::scaledFont(title, 1.25);
     title.setBold(true);
     p.setFont(title);
     p.setPen(ink());
@@ -698,7 +699,7 @@ void QueryInspector::paintShapes(QPainter &p, const QRectF &area)
     QFont bold = font();
     bold.setBold(true);
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.9);
+    small = forkmesh::scaledFont(small, 0.9);
     const QFontMetricsF metrics(font());
     const QFontMetricsF smallMetrics(small);
     p.setFont(bold);
@@ -846,7 +847,7 @@ void QueryInspector::paintRecent(QPainter &p, const QRectF &area)
     QFont bold = font();
     bold.setBold(true);
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.9);
+    small = forkmesh::scaledFont(small, 0.9);
     const QFontMetricsF metrics(font());
     const QFontMetricsF smallMetrics(small);
     p.setFont(bold);

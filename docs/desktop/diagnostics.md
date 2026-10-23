@@ -515,6 +515,7 @@ drop-ins. Linux only.
   `forkmesh-qt-runtime-diagnostics-tests`, `forkmesh-code-health-tests`,
   `forkmesh-component-health-board-tests`, `forkmesh-binary-size-tests`,
   `forkmesh-process-memory-tests`, `forkmesh-stats-dashboard-tests`,
+  `forkmesh-font-sizing-tests`,
   `forkmesh-systemd-timers-tests` (fake `systemctl`),
   `tests/test_stall_watchdog.cpp`, and grouping/relay-flap checks in
   `tests/test_crypto.cpp`.

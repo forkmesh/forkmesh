@@ -115,15 +115,6 @@ PAGES = {
         "title": "Network - ForkMesh",
         "description": "Relay health, connected nodes, and live network activity on ForkMesh.",
     },
-    "chat": {
-        "view": "chat",
-        "section": "chat",
-        "nav": "chat",
-        "route": "/dashboard/chat",
-        "asset": "dashboard/chat/index.html",
-        "title": "Chat - ForkMesh",
-        "description": "ForkMesh public #general chat: every message is sealed and signed by the device that sent it, and it stays controller-readable: anyone who joins, the server included, can read it.",
-    },
     # The referral program keeps its own top-level public URL (/referral is
     # linked from the site header, the site footer and the privacy page) and is
     # composed like any other dashboard page, so the asset sits outside
@@ -576,15 +567,9 @@ def compose_page_from_reader(
         "title": meta["title"],
         "description": meta["description"],
         "section": meta["section"],
-        "chatscript": (
-            '<script src="/dashboard-chat.js?v=${version}" defer></script>'
-            if page_id == "chat" else ""
-        ),
         "pluginscript": plugin_script,
-        "geniescript": (
-            "" if page_id == "chat"
-            else '    <script src="/genie-spider.js?v=${version}" defer></script>'
-        ),
+        "geniescript":
+            '    <script src="/genie-spider.js?v=${version}" defer></script>',
         # The repository page starts its first reads from the top of <head>
         # (partials/repo-early-reads.html, docs/PERF_REPO_PAGE.md).
         "earlyreads": (
