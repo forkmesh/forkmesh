@@ -15,6 +15,12 @@
      ]
     },
     {
+     "title": "Calls",
+     "items": [
+      "iPhone video calls switch to the other person's picture as soon as it arrives, play through the loudspeaker, and the microphone test now plays back what you said."
+     ]
+    },
+    {
      "title": "Projects",
      "items": [
       "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.",

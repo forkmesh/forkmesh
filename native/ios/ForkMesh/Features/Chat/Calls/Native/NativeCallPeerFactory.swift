@@ -21,6 +21,7 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
     @ObservationIgnored var filter: NativeFrameFilter? = NativeCallMedia.shared.lookFilter
     @ObservationIgnored private var preview: (RTCVideoTrack, NativeCameraPipeline)?
     @ObservationIgnored private var previewAudio: RTCAudioTrack?
+    @ObservationIgnored private var meterVideo = false
 
     var busy: Bool { current != nil }
 
@@ -38,7 +39,7 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
         peer.camera?.setFilter(filter)
         peer.quality = quality
         route = nil
-        remoteVideo = nil
+        remoteVideo = peer.remoteVideo
         remoteVideoActive = false
         remoteVideoSeen = false
         localVideo = peer.videoTrack
@@ -72,9 +73,10 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
     }
 
     func startPreview(media: DirectCallKind) async -> Bool {
+        meterVideo = media == .video
         if current == nil, !micMeter.running {
             quality.reset()
-            _ = micMeter.start(into: quality)
+            _ = micMeter.start(into: quality, video: meterVideo)
         }
         if media == .video {
             let made = preview ?? NativeCallMedia.shared.makeVideo()
@@ -95,11 +97,11 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
 
     func resumeMeter() {
         guard current == nil, !micMeter.running else { return }
-        _ = micMeter.start(into: quality)
+        _ = micMeter.start(into: quality, video: meterVideo)
     }
 
     func endPreview() {
-        micMeter.stop(deactivate: current == nil && !NativeGroupCall.shared.active && !OtherAppCall.ownCall)
+        micMeter.stop(deactivate: current == nil && !DirectCallAudio.callBusy)
         preview?.1.stop()
         preview = nil
         previewAudio = nil

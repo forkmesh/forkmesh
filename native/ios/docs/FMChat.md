@@ -918,6 +918,32 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   stays live, feeds the waveform from the recorder's meter, then plays it back with
   `CallClipAudioPlayer` (on the speaker without headphones), with Again and Discard. The file is
   deleted on discard, again, call, cancel and when the screen goes away.
+- **Remote video, loudspeaker and the silent test clip** (2026-10-23, second pass). Real calls
+  showed each side only its own camera full screen: the other person's picture never replaced it.
+  `NativeCallPeer` no longer waits for the once-a-second `framesDecoded` sample to decide the
+  remote video is on. It takes the remote track straight from the video transceiver's receiver
+  when the peer is made (Unified Plan gives every transceiver its receiver track up front, so the
+  view no longer depends on `didAdd rtpReceiver` arriving), and attaches `NativeFrameCounter`, an
+  `RTCVideoRenderer` that counts the frames WebRTC actually hands to renderers. The first frame
+  turns `remoteVideoActive` on at once; the 2 s stall check uses the larger of the rendered count
+  and `framesDecoded`. `receiverAdded` compares track ids, since the Objective-C wrapper is a new
+  object on every `receiver.track` read.
+  - Video calls now run the audio session in `.videoChat` mode (`beginAudio(video:)` sets it as
+    WebRTC's default configuration too, because the audio unit re-applies that configuration when
+    it starts), which plays through the loudspeaker like FaceTime; `.voiceChat` sent a video
+    call's sound to the earpiece, too quiet to hear with the phone at arm's length. Voice calls
+    keep `.voiceChat`. The pre-call mic meter and the test recording use the same mode, so the
+    ringback of a video call is on the speaker as well. `.playAndRecord` already ignores the
+    ring/silent switch.
+  - The test clip recorded silence: the button's click cue (`FmHaptics.tap` →
+    `FmSoundCues`) switched the shared session to `.playback` a moment after the recorder
+    started, because nothing counted as a call yet. `DirectCallAudio` now treats an open pre-call
+    check (`DirectCallPrecheck.shared.request`) as our own call, so app sounds, speech and
+    dictation leave the session alone there too. `NativeCallPeerFactory.endPreview` decides
+    whether to deactivate from `DirectCallAudio.callBusy` (a real call or group call) instead of
+    `OtherAppCall.ownCall`, so cancelling the check still releases the session. Before playback
+    the screen sets `.playAndRecord` with mode `.default` and `.defaultToSpeaker` (loud, on the
+    speaker, and not muted by the silent switch); the meter goes back to the call mode afterwards.
 - **Limits.** Media runs in a WebView, which only captures the camera and microphone while the
   app is in front, so a call answered on the lock screen connects its signaling at once but its
   audio and picture start once the user unlocks and opens ForkMesh (the app button on the call
