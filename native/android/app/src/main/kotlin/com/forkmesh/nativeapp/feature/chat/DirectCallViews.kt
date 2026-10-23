@@ -116,7 +116,7 @@ private fun deniedNotice(kind: DirectCallKind): String =
     if (kind == DirectCallKind.VIDEO) "Allow the camera and microphone to use video calls." else "Allow the microphone to use voice calls."
 
 @Composable
-private fun rememberCallPermissionGate(onGranted: (DirectCallKind) -> Unit): (DirectCallKind) -> Unit {
+internal fun rememberCallPermissionGate(onGranted: (DirectCallKind) -> Unit): (DirectCallKind) -> Unit {
     val context = LocalContext.current
     val granted by rememberUpdatedState(onGranted)
     var wanted by remember { mutableStateOf<DirectCallKind?>(null) }

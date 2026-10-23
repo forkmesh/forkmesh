@@ -518,6 +518,7 @@ class ChatScreen : Screen() {
                         }
                     }
                     DirectCallButtons(conversation)
+                    GroupCallButtons(conversation)
                 }
                 if (liveHere) {
                     DirectLivePartnerPhone(

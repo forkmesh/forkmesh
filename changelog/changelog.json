@@ -10,7 +10,8 @@
     {
      "title": "Android",
      "items": [
-      "Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh."
+      "Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh.",
+      "Private channels on Android can hold end-to-end encrypted group voice and video calls, with Join buttons when a call is in progress."
      ]
     }
    ]

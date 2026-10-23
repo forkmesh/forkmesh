@@ -200,6 +200,7 @@ object ChatDepth {
             }
             office = service
             chat.office = service
+            GroupCallFeature.install(app, service) { auth?.session?.value?.nodeName.orEmpty() }
             val directService = DirectMessageService(
                 api = calling,
                 connector = WebSocketOfficeConnector,

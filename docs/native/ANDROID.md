@@ -884,6 +884,35 @@ default in new projects except the chosen starter pack
     (`CallControlsLayout.arrange`): one row with 16 dp gaps, then 8 dp, then
     two rows, face, background and voice above (24 dp gaps) and mute,
     camera and a 64 dp hang up below (32 dp).
+  - **Group calls** (2026-10-23, sync ledger S084; protocol in
+    `docs/app/chat-group-calls.md`). Android has no native WebRTC engine
+    (libwebrtc is not brought back; FM Media replaces it), so it runs the
+    browser's `chat-group-calls.js` and its frame-encryption worker in a
+    WebView, as direct calls run `direct-call.html`. `GroupCallPage` loads
+    `https://appassets.androidplatform.net/group-call/index.html` and serves
+    only `assets/group-call/` through `shouldInterceptRequest`; the copies of
+    `chat-group-calls.js`, `chat-group-call-crypto.js` (started from a blob
+    URL), `chat-call-e2ee.js`, `chat-mlkem.js`, `call-quality-meter.js` and
+    `fmm/fmm-call.js`/`fmm-e2ee.js` are kept byte-identical by
+    `app/tools/sync_android_group_call.py` (`--check` in
+    `app/tests/test_android_group_call_page.py`, which also joins in headless
+    Chromium); `index.html` and `group-call-host.js` are hand-written. The
+    page draws the tile grid (iOS sizes: 150 px minimum columns, 6 px gaps,
+    3:4 tiles, name capsule, initial avatar without video, mirrored "You");
+    `GroupCallViews.kt` draws the title, state line, quality pill ("Others"),
+    the encryption note and Mute, Camera and Leave. Native code does what
+    the browser's `chat.js` does: `OfficeChannelService.sendLiveFrame` seals
+    `group-call-*` frames into the private channel's room without
+    `persist`/`notify` (fields like `sender` or `id` from the page are
+    ignored), incoming ones go to `onLiveFrame` instead of the history, and
+    `callTicket` asks for the ticket. `GroupCallFeature` keeps a
+    `GroupCallRoster` for the header's "Join · N" capsule and the last
+    minute of call frames (`GroupCallFrameBuffer`) to replay into the page
+    before it joins, so names and keys are known at once. FM Media is off
+    (`fmm: { enabled: false }`, no call signer), so joining a room that
+    already runs on FM Media fails with the server's `room_engine` error
+    (ledger S116). Header buttons show for private, writable channels; a
+    direct call and a group call refuse each other.
   - **Ringback.** `CallRinger` listens to the engine on the main thread.
     While the phase is RINGING (only a caller rings) it plays
     `ToneGenerator(STREAM_VOICE_CALL, 80)` `TONE_SUP_RINGTONE` and stops it on
