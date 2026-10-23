@@ -191,5 +191,7 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S116 | 2026-10-23 | Agents | ui | The green and red churn ring around an agent's tile in the agent list turns while the agent is working and stops still when it is done. | d8dffb957e | pending |  |
 | S117 | 2026-10-23 | Market | feature | Each Feed post has a share button to view it on the website or copy its public link. | 98e35b20f3 | synced | 6a733017ec |
 | S118 | 2026-10-23 | Agents | feature | When a merge is blocked by uncommitted edits on the desktop, a Set aside and merge button saves them on a wip/ branch, merges, and puts them back. | 07bb2e29c5 | pending |  |
-| S119 | 2026-10-23 | Market | ui | In a DJ Studio jam, each queued song's thumbnail shows who added it and the date and time, and tapping it says both in full. | 6740ef7e4c | pending |  |
+| S119 | 2026-10-23 | Settings | ui | With Diagnostics on, the core node and desktop lights show tiny CPU, memory and disk bars, sit further from the corner, and the desktop charts left the top right. | a345e3890b | pending |  |
+| S120 | 2026-10-23 | DJ Studio | feature | DJ Studio's queue opens its menu (with Remove from Queue) when a song is held, drags a song onto a deck as soon as the finger moves across the queue, and plays a song added while nothing is playing right away. | fcd3936166 | pending |  |
+| S121 | 2026-10-23 | DJ Studio | ui | In a DJ Studio jam, each queued song's thumbnail shows who added it and the date and time, and its menu says both in full. | 6740ef7e4c | pending |  |
 <!-- ledger:end -->

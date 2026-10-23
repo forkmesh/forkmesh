@@ -92,6 +92,20 @@ final class DjPartyTests: XCTestCase {
         XCTAssertEqual(DjAutomix.step(a: early, b: ending, favoured: .b, queued: true), .wait)
     }
 
+    func testAQueuedSongPlaysAtOnceOnlyWhenNothingPlays() {
+        let empty = DjAutomixDeck(loaded: false)
+        let cued = DjAutomixDeck(loaded: true, duration: 200)
+        let live = DjAutomixDeck(loaded: true, playing: true, position: 20, duration: 200)
+        XCTAssertNil(DjAutomix.playNow(a: live, b: empty, crossfader: 0))
+        XCTAssertNil(DjAutomix.playNow(a: cued, b: live, crossfader: -1))
+        XCTAssertEqual(DjAutomix.playNow(a: empty, b: empty, crossfader: 0), .a)
+        XCTAssertEqual(DjAutomix.playNow(a: empty, b: empty, crossfader: 0.4), .b)
+        XCTAssertEqual(DjAutomix.playNow(a: cued, b: empty, crossfader: 0), .b)
+        XCTAssertEqual(DjAutomix.playNow(a: cued, b: empty, crossfader: -1), .a)
+        XCTAssertEqual(DjAutomix.playNow(a: empty, b: cued, crossfader: 0.2), .a)
+        XCTAssertEqual(DjAutomix.playNow(a: cued, b: cued, crossfader: 0.8), .b)
+    }
+
     func testAutomixNeverMixesOutOfARepeatingDeck() {
         let cued = DjAutomixDeck(loaded: true, duration: 200)
         let empty = DjAutomixDeck(loaded: false)
