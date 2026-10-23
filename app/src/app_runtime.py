@@ -1849,7 +1849,8 @@ class Default:
         if not isinstance(doc, dict):
             doc = {}
         pinned = []
-        for value in doc.get("pinned") or []:
+        values = doc.get("pinned")
+        for value in values if isinstance(values, list) else []:
             text = str(value or "").strip().lower()
             if 0 < len(text) <= 161 and text.count("/") <= 1 \
                     and text not in pinned:

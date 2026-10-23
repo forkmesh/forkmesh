@@ -95,6 +95,8 @@ def test_the_instance_document_carries_a_cleaned_setting(monkeypatch):
     cleaned = _setting(monkeypatch, json.dumps({"pinned": pinned, "forks": 99}))
     assert cleaned["pinned"][:2] == ["alice/widget", "lamp"]
     assert len(cleaned["pinned"]) == 10
+    assert _setting(monkeypatch, json.dumps({"pinned": "acme/app"})) == {
+        "pinned": [], "forks": 3}
     assert cleaned["forks"] == 50
     assert _setting(monkeypatch, json.dumps({"forks": -4}))["forks"] == 0
     assert _setting(monkeypatch, json.dumps({"forks": "two"}))["forks"] == 3

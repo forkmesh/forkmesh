@@ -103,7 +103,8 @@ ON CONFLICT(k) DO UPDATE SET doc=excluded.doc, updated_at=excluded.updated_at;
 `Default._instance_sidebar_setting` cleans the row for `/api/instance`
 (`sidebar`): `pinned` is lower-cased and de-duplicated, and keeps at most 10
 entries of at most 161 characters with at most one `/`. A missing, unreadable
-or non-object row answers `{"pinned": [], "forks": 3}`. The dashboard reads it
+or non-object row answers `{"pinned": [], "forks": 3}`. A `pinned` that is not a list
+counts as empty, so a lone string is not read letter by letter. The dashboard reads it
 once per page through `instanceInfo` (`loadSidebarSetting` in
 `05-repo-list-explorer.js`) and redraws both lists when it arrives. With no
 row, an empty `pinned` list, or a list where nothing matches, the lists keep
