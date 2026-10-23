@@ -16263,7 +16263,7 @@ Report
   // file text and folded directories arrive through the batched /blobs and
   // /tree reads below, so mirror routing and ref pinning stay in one place.
   // Bump the version when codemap.js changes: /assets/ is long-cached.
-  const REPO_CODEMAP_SCRIPT = "/assets/codemap/codemap.js?v=4";
+  const REPO_CODEMAP_SCRIPT = "/assets/codemap/codemap.js?v=5";
   let repoCodeMapModuleLoader = null;
   function loadRepoCodeMapModule() {
     if (window.ForkMeshCodeMap?.open) return Promise.resolve(true);
