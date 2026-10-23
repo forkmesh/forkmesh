@@ -543,10 +543,11 @@ count toward the safe-mode reboot; visible crashes are kind `crash`.
   ([../app/instance-federation.md](../app/instance-federation.md#world-connectivity)).
   On an instance with its own hexagon (a territory), the World is drawn as
   that one hexagon with the ForkMesh hexagons next door, and walking across
-  its road onto ForkMesh's land travels to the ForkMesh World
-  (`checkTerritoryCrossing`); while a
-  territory is active `placeWorldMesh` draws no world-mesh neighbours, so the
-  two layouts never overlap. Off a territory the world-mesh flowers below
+  its road puts the page in the ForkMesh World without a reload
+  (`leaveOwnTerritory()`, [../INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon),
+  Stepping into the ForkMesh World); while the walker stands in the
+  territory `placeWorldMesh` draws no world-mesh neighbours, so the two
+  layouts never overlap. Off a territory the world-mesh flowers below
   replace the old road crossing into an instance hexagon
   ([../INSTANCES.md](../INSTANCES.md#an-instance-world-is-its-own-hexagon)).
 - **Bounds.** `desertWalkSurfaceContains()` is the union of all hexes grown
