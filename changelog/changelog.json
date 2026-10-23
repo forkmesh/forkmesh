@@ -49,7 +49,8 @@
       "The pinned last prompt above an agent's transcript no longer leaves an empty box under it on the phone, you can swipe it left and right to go through earlier and later prompts, and the desktop app and the website's agent session pages now pin it too.",
       "Desktop agents can now offer to start a new session for side work, list and message your other agents and runners, send you notifications, click and type in their browser windows, and open small interactive widgets in ForkMesh, like Claude Code's desktop app.",
       "In the iPhone terminal, every key now fits on screen, a Ctrl key sends any Ctrl combination such as Ctrl+X then Ctrl+S, and scrolling up to read earlier output no longer jumps back to the bottom.",
-      "Agents keep running after you log out or switch users: ForkMesh no longer shuts itself down when your desktop session's message bus restarts."
+      "Agents keep running after you log out or switch users: ForkMesh no longer shuts itself down when your desktop session's message bus restarts.",
+      "Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once."
      ]
     },
     {

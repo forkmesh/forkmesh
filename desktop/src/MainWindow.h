@@ -6817,6 +6817,10 @@ private:
     bool moveAgentSessionsToFolder(const QList<int> &sessionIds,
                                    const QString &folderId);
     void selectAgentFolderSessions(const QString &folderId);
+    QList<int> agentFolderSessionIds(const QString &folderId,
+                                     const QList<int> &candidates) const;
+    void startAgentFolderSessions(const QString &folderId);
+    void stopAgentFolderSessions(const QString &folderId);
     void dropAgentSessions(const QList<int> &sessionIds, int targetSessionId,
                            const QString &folderId, bool after);
     void dropAgentFolder(const QString &folderId, const QString &targetFolderId,
@@ -7123,6 +7127,7 @@ private:
     bool parkRunningAgentSession(int sessionId);
     QList<int> stoppableAgentSessionIds() const;
     void stopAllRunningAgents();
+    void stopAgentSessions(const QList<int> &ids);
     bool stopAgentSessionById(int sessionId);
     int stopRepositoryAgentsForGuardrailChange(const QString &owner,
                                                 const QString &name);
@@ -7135,6 +7140,7 @@ private:
     static constexpr qint64 kAgentSilentStaleMs = 90'000;
     QList<int> startableAgentSessionIds() const;
     void startAllStoppedAgents();
+    void startAgentSessions(const QList<int> &ids);
     // The hover control on an agent row: AgentRunToggleNone/Start/Stop.
     int agentRunToggleMode(const AgentSession &session) const;
     void toggleAgentSessionRun(int sessionId);
