@@ -47,6 +47,8 @@ protected:
 
 private:
     void load();
+    QByteArray snapshotBytes() const;
+    void flushInBackground();
 
     QString m_path;
     QDate m_day;
@@ -57,6 +59,7 @@ private:
     QStringList m_otherKinds;
     quint64 m_revision = 0;
     qint64 m_lastSaveMs = 0;
+    bool m_writeQueued = false;
     bool m_dirty = false;
 };
 

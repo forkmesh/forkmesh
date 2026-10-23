@@ -157,19 +157,22 @@ protected:
 
 void guardWidget(QWidget *widget)
 {
-    if (!widget || widget->property(kGuardedProperty).toBool())
+    if (!widget)
         return;
-    if (auto *line = qobject_cast<QLineEdit *>(widget)) {
+    auto *line = qobject_cast<QLineEdit *>(widget);
+    auto *plain = line ? nullptr : qobject_cast<QPlainTextEdit *>(widget);
+    auto *rich = line || plain ? nullptr : qobject_cast<QTextEdit *>(widget);
+    if (!line && !plain && !rich)
+        return;
+    if (widget->property(kGuardedProperty).toBool())
+        return;
+    if (line) {
         widget->setProperty(kGuardedProperty, true);
         if (!line->validator() && line->inputMask().isEmpty())
             line->setValidator(new LineValidator(line));
         return;
     }
-    QTextDocument *document = nullptr;
-    if (auto *plain = qobject_cast<QPlainTextEdit *>(widget))
-        document = plain->document();
-    else if (auto *rich = qobject_cast<QTextEdit *>(widget))
-        document = rich->document();
+    QTextDocument *document = plain ? plain->document() : rich->document();
     if (!document)
         return;
     widget->setProperty(kGuardedProperty, true);

@@ -1,6 +1,7 @@
 #include "UserActivityLog.h"
 
 #include "AppPaths.h"
+#include "BackgroundFileWriter.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -165,7 +166,7 @@ void UserActivityLog::record(const QDateTime &when)
     m_dirty = true;
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
     if (nowMs - m_lastSaveMs >= kSaveIntervalMs)
-        flush();
+        flushInBackground();
 }
 
 QVector<int> UserActivityLog::localSlotsFor(const QDate &day) const
@@ -213,11 +214,8 @@ QVector<int> UserActivityLog::today() const
     return slotsFor(QDate::currentDate());
 }
 
-void UserActivityLog::flush()
+QByteArray UserActivityLog::snapshotBytes() const
 {
-    m_lastSaveMs = QDateTime::currentMSecsSinceEpoch();
-    if (!m_dirty || m_path.isEmpty() || !m_day.isValid())
-        return;
     QJsonArray counts;
     for (int value : std::as_const(m_counts))
         counts.append(value);
@@ -226,13 +224,28 @@ void UserActivityLog::flush()
         {QStringLiteral("device"), m_deviceKey},
         {QStringLiteral("counts"), counts},
     };
-    QDir().mkpath(QFileInfo(m_path).absolutePath());
-    QSaveFile file(m_path);
-    if (!file.open(QIODevice::WriteOnly))
+    return QJsonDocument(object).toJson(QJsonDocument::Compact);
+}
+
+void UserActivityLog::flush()
+{
+    m_lastSaveMs = QDateTime::currentMSecsSinceEpoch();
+    if ((!m_dirty && !m_writeQueued) || m_path.isEmpty() || !m_day.isValid())
         return;
-    file.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
-    if (file.commit())
+    if (forkmesh::diskwrite::writeNow(m_path, snapshotBytes())) {
         m_dirty = false;
+        m_writeQueued = false;
+    }
+}
+
+void UserActivityLog::flushInBackground()
+{
+    m_lastSaveMs = QDateTime::currentMSecsSinceEpoch();
+    if (!m_dirty || m_path.isEmpty() || !m_day.isValid())
+        return;
+    forkmesh::diskwrite::writeLater(m_path, snapshotBytes());
+    m_dirty = false;
+    m_writeQueued = true;
 }
 
 bool UserActivityLog::eventFilter(QObject *watched, QEvent *event)

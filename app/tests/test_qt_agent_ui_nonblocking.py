@@ -51,7 +51,9 @@ def test_agent_transcript_replay_is_time_sliced_and_stale_safe():
         "void MainWindow::loadEarlierTranscriptEvents()",
     )
 
-    assert "m_agentTranscriptRenderEvents = m_streamEvents.value(sessionId)" in start
+    assert "m_agentTranscriptRenderEvents" not in start + slices
+    assert "m_agentTranscriptRenderCursor = 0" in start
+    assert "m_streamEvents.value(sessionId)" in slices
     assert "QTimer::singleShot(0" in start
     assert "QElapsedTimer budget" in slices
     assert "budget.elapsed() < 8" in slices

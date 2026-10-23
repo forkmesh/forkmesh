@@ -5,7 +5,9 @@ sandboxing, website jobs, mirrors, errors): [../agents/README.md](../agents/READ
 
 ## Agents page
 
-Rail **Agents**. Main sources:
+Rail **Agents**. The rail button directly above it, **Sessions**, opens the
+[Sessions page](#sessions-page), a Claude-desktop style view of the same
+sessions. Main sources:
 
 | Part | Files |
 | --- | --- |
@@ -324,6 +326,11 @@ receive them in `agents.list`, and a change rings `agents.changed`.
   externally started rows are never touched, and each is disabled when the
   folder has nothing to start or stop. Stopping a folder takes only its own
   sessions off the queue.
+- Filing external Claude Code rows saves once per scan, on the next event-loop
+  turn, and `AgentFolders::save()` skips the write when the stored JSON is
+  unchanged. Each newly surfaced session used to rewrite and fsync
+  `ForkMesh.conf` from inside the scan result (five stalls of about a second,
+  2026-10-22).
 
 ### Unread dot
 
@@ -451,6 +458,35 @@ event that drew it (`m_rowSource`, `transcripttools::rawLogLineStart()`).
   used to end in `jumpToBottom()`, which pulled anyone reading earlier turns
   back down on every update (2026-10-21). Only opening a session, or a reader
   already at the tail, lands at the end.
+
+**Keeping live updates cheap (2026-10-22 stall log).**
+
+- A live event appends rows; it never rebuilds the view. When the view is
+  behind by up to 32 events (a modal dialog was open, or a notice was added
+  from inside another event's handling), `applyTranscriptEvent` draws the
+  missing ones in place; a longer gap goes through `renderTranscriptTail`.
+  Only a session that is not on screen yet takes `renderTranscriptForSession`.
+  Rebuilding on every event froze the window for up to 17 s
+  (`beginBatchBuild` grabbing and hiding the whole column per event).
+- The time-sliced replay reads `m_streamEvents` by index instead of keeping
+  its own copy. The copy shared the list, so every live event appended
+  during a replay copied the whole history.
+- `ClaudeTranscriptView::clear()` hides the old rows and deletes them a few
+  at a time, 8 ms per event-loop turn (`retireRow`, `deleteRetiredRows`).
+  `deleteLater()` on every row destroyed hundreds of command cards in one
+  deferred-delete pass, up to 22 s (`~CommandLineView`, `~TranscriptPanel`).
+- Deleting a session hands its event list and raw buffer to a pool thread to
+  free (`releaseOffGuiThread`, `MainWindowAgentsInternal.h`); `QJsonObject` is
+  implicitly shared, so whichever owner drops the last reference frees it.
+  Erasing a long history from `m_streamEvents` took 1.7 s on the GUI thread.
+- The raw buffer keeps its last 300,000 characters as before, but a line
+  longer than that replaces the buffer with its own tail instead of being
+  appended and then cut (`appendBoundedStreamRaw`).
+- Rate-limit events from a transcript are applied at most once every 2 s,
+  latest payload wins: each change rewrote a dozen settings and the nested
+  `QSettings` in `refreshCodexUsageRemaining` synced the file mid-event.
+- `disabledAgentToolFamilies()` is cached and updated by
+  `setAgentToolFamilyEnabled`; it was read from `QSettings` for every event.
 
 ### Composer
 
@@ -688,6 +724,87 @@ A background task that never reports back keeps the run Running until it is
 stopped. The unit test is `forkmesh-agent-cli-tasks-tests`
 (`desktop/tests/test_agent_cli_tasks.cpp`).
 
+## Sessions page
+
+Rail **Sessions** (`sessionsNavButton`, rail key `sessions`, section
+`kSessionsSectionIndex`), directly above **Agents** (2026-10-22). It is the
+Claude-desktop way to manage the same sessions the Agents page lists: one list
+of every session, the open session's live transcript, and a composer that can
+talk to it or relay between sessions.
+
+| Part | Files |
+| --- | --- |
+| Page, list, relays | `src/MainWindowSessions.cpp` |
+| Styles | `resources/theme/next/63-sessions.qss` |
+| Hooks | `applyTranscriptEvent` (`MainWindowAgentEvents.cpp`), `refreshAgentTable` and `refreshAgentDotMatrix` (`MainWindowAgentList.cpp`), `applyExternalClaudeScan` (`MainWindowAgentCliSession.cpp`), `refreshAgentTranscriptTheme` |
+
+**Rail.** The button is in `m_navGroup`, so it is checked by `showSection` like
+every section button, and the Agents button unchecks through
+`updateRepoActivityRail`. It sits in the Work group, follows the `agents`
+package (`syncPackageSurfaces`, desktop-offline dot), and the Code button is
+inserted above it. A saved rail order from before the button existed places
+it just above Agents (`applyRailOrder`).
+
+**Layout.**
+
+- Sidebar: **New session** (the page's one green button), search, a
+  **Between sessions** filter, then **Active** (Waiting first, then Running,
+  then Queued) and **Recent** (newest first, at most 300). Each row is painted
+  by a delegate: status dot, title, repository · branch · model, age, unread
+  dot and a `⇄ N` badge when the session sent or received messages from other
+  sessions. Right-click: Open in Agents, Continue, Stop, Send message to
+  another session…, Delete (confirms through `deleteAgentSessionFromRow`).
+- Centre: header (title, status chip, repository, branch, provider/model,
+  mode, Stop, Continue, Open in Agents), the **Between sessions** strip (the
+  last six messages to or from the open session; click one to open the other
+  session), and the page's own `ClaudeTranscriptView`. It never borrows the
+  Agents page's view.
+- Composer: Enter sends, Shift+Enter adds a line. **To** defaults to the open
+  session; **Also send to** sends the same text to a second session;
+  **Forward last reply to…** sends the open session's latest reply to another
+  session. In new-session mode the row shows Repository and Agent instead,
+  and Send calls `startAdHocAgentForRepo` without leaving the page, then opens
+  the new session.
+
+**Sources.** Local sessions render `m_streamEvents` (loaded with
+`ensureStreamEventsLoadedAsync`; a session with no events shows its prompt and
+last reply). External Claude Code sessions read their `.jsonl` off the GUI
+thread from the page's own offset (the last 400 KB first, then only what was
+appended), redacted like the Agents page. Cloud runs render
+`cloudAgentTranscriptEvents` and redraw when the relay history changes.
+
+**Sending.** Local and cloud sessions go through `sendPromptToAgentSession`.
+An external Claude Code session is messaged through `ClaudePeerMessaging`
+(the same peer check as the phone's outside-session prompt: refused or held
+messages are reported). One with no messaging socket shows the composer
+disabled with the reason.
+
+**Messages between sessions.** A forward or a context-menu message is sent
+as the source session, not as the user: `hub::messageEnvelope`, the same
+permission rule as agent-to-agent messages (`hub::messageAllowed`: a session
+in a less permissive mode may not direct a more permissive one; an outside
+session's mode counts as unknown), and the same `m_agentMessageLimiter`.
+Both sessions are logged like `MainWindowAgentHub.cpp` does: the sender gets
+a "Sent a message to agent #N" notice, the receiver "==> Message from agent
+#M". Messages that agents send each other through the hub show up too:
+`applyTranscriptEvent` hands every event to `noteSessionsPageEvent`, which
+spots the envelope's lead line and records it for the strip, the badge and
+the filter (kept in memory, at most 200).
+
+**No stalls.**
+
+- The `applyTranscriptEvent` hook only notes the event: when the page is
+  hidden it marks the transcript dirty and returns; when visible it queues
+  one coalesced catch-up.
+- Transcript rows are built from a queue in 8 ms slices on single-shot
+  timers, at most the last 300 events at first (**Load earlier** adds 300),
+  with bulk populate during a replay. Slices stop while the page is hidden
+  and resume when it is shown.
+- The list refreshes on a 400 ms coalescing timer only while visible, updates
+  rows in place when the order is unchanged, and has no widgets per row.
+  There is no polling: refreshes come from the Agents list's own
+  notifications and the external-session scan.
+
 ## Workspace layout in the new interface
 
 In the new interface (`app/design` = `next`) the Agents page has a **New**
@@ -724,6 +841,11 @@ The browser tab (`src/WorkspaceBrowserPane.*`, library
 `-DFORKMESH_BROWSER_PANE=ON` and Qt WebEngine. Only `http` and `https` load.
 
 ## Tool efficiency and Models board
+
+The tool-efficiency page is built the first time it is opened
+(`ensureAgentEfficiencyPage`); until then a placeholder holds its slot in the
+page stack. Building and style-polishing it during deferred startup stalled
+the window. The `test*` accessors for its widgets build it first.
 
 **Runs view** (`src/AgentRunTable.*`, `src/AgentRunEfficiencyLog.*`). A run is
 one prompt to its `result` event, recorded with provider, model, tool families
@@ -1033,7 +1155,7 @@ Build the test targets with `cmake -S desktop -B desktop/build
 
 | Area | Tests |
 | --- | --- |
-| Window behaviour | `forkmesh-window-tests` with `--workspace-snapshots-only`, `--agent-list-view-only`, `--agent-folders-only`, `--agent-task-link-only`, `--command-approval-only`, `--agent-code-only`; `tests/test_window_resize.cpp` |
+| Window behaviour | `forkmesh-window-tests` with `--workspace-snapshots-only`, `--agent-list-view-only`, `--agent-folders-only`, `--agent-task-link-only`, `--command-approval-only`, `--agent-code-only`, `--sessions-only` (Sessions page: rail placement, list, live transcript, composer, relays); `tests/test_window_resize.cpp` |
 | Transcript tools | `forkmesh-claude-transcript-tools-tests` |
 | Claude Code session control | `forkmesh-claude-control-tests`, `forkmesh-agent-cli-tasks-tests`, `runHostControlProtocolTest` in `forkmesh-agent-transport-tests` (a scripted `claude` on stdio) |
 | List | `forkmesh-agent-folders-tests`, `forkmesh-agent-ticker-tests` |

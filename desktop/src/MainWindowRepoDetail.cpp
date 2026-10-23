@@ -6568,6 +6568,7 @@ void MainWindow::rebuildGlobalSearchResults()
         {"Health", "stopwatch", kComponentHealthSectionIndex},
         {"Memory", "database", kMemorySectionIndex},
         {"Agent governor", "shield-check", kGovernorSectionIndex},
+        {"Sessions", "history", kSessionsSectionIndex},
         {"Home", "home", kHomeGridSectionIndex},
         {"Special Agents", "people", kTeamSectionIndex},
         {"Settings", "gear", 1},
@@ -7862,6 +7863,9 @@ QString MainWindow::navPlaceLabel(const NavPlace &place) const
         case kGovernorSectionIndex:
             destination = QStringLiteral("Memory · Agent governor");
             break;
+        case kSessionsSectionIndex:
+            destination = QStringLiteral("Sessions");
+            break;
         case kProjectSettingsSectionIndex:
             destination = place.itemId.isEmpty()
                               ? QStringLiteral("Project settings")
@@ -8095,7 +8099,11 @@ struct MainWindow::SearchPageInputs {
     QList<AgentSession> sessions;
     QHash<int, AgentDiffStat> diffStats;
     QList<ActionRun> runs;
-    QStringList networkLog;
+    struct LogSnapshot {
+        QMutex mutex;
+        QStringList lines;
+    };
+    std::shared_ptr<LogSnapshot> networkLog = std::make_shared<LogSnapshot>();
     QVector<GlobalSearchGitRepo> gitRepos;
     QVector<SearchRepoRow> repoRows;
     QVector<GlobalSearchGitRepo> recordRepos;
@@ -8130,7 +8138,7 @@ MainWindow::searchPageInputs(int repoIndex, const QString &query) const
     in->sessions = m_agentSessions;
     in->diffStats = m_agentDiffStats;
     in->runs = m_actionRuns;
-    in->networkLog = m_networkLog;
+    in->networkLog->lines = m_networkLog;
     in->gitRepos = globalSearchGitRepos();
     // The searched repository leads, so its hits survive every per-kind cap.
     std::stable_partition(in->gitRepos.begin(), in->gitRepos.end(),
@@ -8428,9 +8436,15 @@ QVector<GlobalSearchHit> MainWindow::searchPageKindHits(const SearchPageInputs &
         return hits;
     }
     if (kind == QLatin1String("log")) {
+        QStringList networkLog;
+        {
+            const QMutexLocker locker(&in.networkLog->mutex);
+            networkLog.swap(in.networkLog->lines);
+        }
+        networkLog.detach();
         QVector<GlobalSearchHit> hits;
-        for (auto it = in.networkLog.crbegin();
-             it != in.networkLog.crend() && hits.size() < kMaxSearchPageRecords;
+        for (auto it = networkLog.crbegin();
+             it != networkLog.crend() && hits.size() < kMaxSearchPageRecords;
              ++it) {
             if (!containsFold(*it, in.query))
                 continue;
@@ -9959,6 +9973,11 @@ void MainWindow::runNextSavedSearchAlertCheck()
         m_savedSearchCheckRunning = true;
         runOffThread<QVector<GlobalSearchHit>>(
             [inputs] {
+                {
+                    QStringList unused;
+                    const QMutexLocker locker(&inputs->networkLog->mutex);
+                    unused.swap(inputs->networkLog->lines);
+                }
                 QVector<GlobalSearchHit> hits;
                 for (const QString &kind :
                      {QStringLiteral("repo"), QStringLiteral("issue"),
@@ -13501,15 +13520,20 @@ QWidget *MainWindow::buildRepoDetailSection()
         scheduleNavRecord();
     });
     if (m_appNavigationRailLayout) {
+        QWidget *firstAgentButton =
+            m_sessionsNavButton ? m_sessionsNavButton : m_agentsNavButton;
         const int codeAt =
-            m_agentsNavButton
-                ? m_appNavigationRailLayout->indexOf(m_agentsNavButton)
+            firstAgentButton
+                ? qMax(0, m_appNavigationRailLayout->indexOf(firstAgentButton))
                 : 0;
         m_appNavigationRailLayout->insertWidget(
             codeAt, m_railCodeButton, 0, Qt::AlignLeft);
+        const int gitAt = m_agentsNavButton
+                              ? m_appNavigationRailLayout->indexOf(
+                                    m_agentsNavButton) + 1
+                              : codeAt + 1;
         m_appNavigationRailLayout->insertWidget(
-            m_agentsNavButton ? codeAt + 2 : codeAt + 1, m_railGitButton, 0,
-            Qt::AlignLeft);
+            qMax(codeAt + 1, gitAt), m_railGitButton, 0, Qt::AlignLeft);
         applyRailCaptionPreference();
         applyRailOrder();
     }

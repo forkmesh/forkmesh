@@ -4827,6 +4827,26 @@ void MainWindow::refreshQuickAddTaskAssignees()
             : QSettings().value(kQuickAddTaskAssigneeSetting).toString();
     const QIcon nobody =
         themedOcticon(QStringLiteral("person"), QColor("#8b949e"), 18);
+    bool unchanged = m_quickAddTaskAssignee->currentIndex() >= 0 &&
+                     m_quickAddTaskAssignee->count() == members.size() + 1 &&
+                     m_quickAddTaskAssignee->itemData(0).toString() ==
+                         QLatin1String("unassigned");
+    for (int i = 0; unchanged && i < members.size(); ++i) {
+        const QString &member = members.at(i);
+        unchanged =
+            m_quickAddTaskAssignee->itemData(i + 1).toString() ==
+                QStringLiteral("user:") + member &&
+            m_quickAddTaskAssignee->itemText(i + 1) ==
+                (member == actor ? QStringLiteral("%1 (you)").arg(member) : member);
+    }
+    if (unchanged) {
+        for (int i = 0; i < members.size(); ++i) {
+            const QPixmap face = chatSenderAvatarSource(QString(), members.at(i));
+            m_quickAddTaskAssignee->setItemIcon(i + 1,
+                                                face.isNull() ? nobody : QIcon(face));
+        }
+        return;
+    }
     {
         const QSignalBlocker blocker(m_quickAddTaskAssignee);
         m_quickAddTaskAssignee->clear();

@@ -2623,7 +2623,7 @@ QWidget *MainWindow::buildChatPage()
     for (int index = 3; index <= 8; ++index)
         addDeferredSection();
     m_sectionStack->addWidget(new QWidget);              // 9 retired Firewall redirect
-    for (int index = 10; index <= kProjectSettingsSectionIndex; ++index)
+    for (int index = 10; index <= kSessionsSectionIndex; ++index)
         addDeferredSection();
     logStartup(QStringLiteral("  buildChatPage: secondary sections deferred"));
 
@@ -2677,7 +2677,8 @@ QWidget *MainWindow::buildChatPage()
     m_appNavigationRailLayout->setSpacing(1);
     railOuterLayout->addLayout(m_appNavigationRailLayout, 1);
     for (QPushButton *button :
-         {m_homeGridNavButton, m_agentsNavButton, m_reposNavButton,
+         {m_homeGridNavButton, m_sessionsNavButton, m_agentsNavButton,
+          m_reposNavButton,
           m_marketNavButton, m_ledgerNavButton, m_chatButton,
           m_controlNodeNavButton,
           m_networkNavButton, m_usersNavButton, m_teamNavButton,
@@ -4550,7 +4551,7 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
                        m_promptPlacementStartRect.bottom() -
                            m_promptOverlaySize.height() + 1);
         }
-        positionGlobalFooterOverlays();
+        schedulePositionGlobalFooterOverlays();
         m_promptOverlayHost->raise();
         return true;
     }
@@ -4571,6 +4572,8 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
             savePromptOverlayPlacement();
             return true;
         }
+        if (m_footerOverlaysPositionQueued)
+            positionGlobalFooterOverlays();
         m_promptPlacementDragging = false;
         m_promptPlacementResizing = false;
         if (m_promptDragHandle)
@@ -4582,6 +4585,20 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
     default:
         return false;
     }
+}
+
+void MainWindow::schedulePositionGlobalFooterOverlays()
+{
+    if (m_footerOverlaysPositionQueued)
+        return;
+    m_footerOverlaysPositionQueued = true;
+    QMetaObject::invokeMethod(
+        this,
+        [this] {
+            m_footerOverlaysPositionQueued = false;
+            positionGlobalFooterOverlays();
+        },
+        Qt::QueuedConnection);
 }
 
 void MainWindow::positionGlobalFooterOverlays()
@@ -4629,18 +4646,28 @@ void MainWindow::positionGlobalFooterOverlays()
                                     promptOverDetailPane ? 0 : 8, 0);
         QLayoutItem *spacerSlot = dockRow->itemAt(1);
         QSpacerItem *spacer = spacerSlot ? spacerSlot->spacerItem() : nullptr;
-        if (spacer) {
-            spacer->changeSize(0, 0,
-                               promptOverDetailPane ? QSizePolicy::Fixed
-                                                    : QSizePolicy::Minimum,
-                               QSizePolicy::Minimum);
+        const QSizePolicy::Policy spacerPolicy =
+            promptOverDetailPane ? QSizePolicy::Fixed : QSizePolicy::Minimum;
+        bool rowChanged = false;
+        if (spacer &&
+            (spacer->sizePolicy().horizontalPolicy() != spacerPolicy ||
+             spacer->sizePolicy().verticalPolicy() != QSizePolicy::Minimum ||
+             spacer->sizeHint() != QSize(0, 0))) {
+            spacer->changeSize(0, 0, spacerPolicy, QSizePolicy::Minimum);
+            rowChanged = true;
         }
         dockRow->setStretch(1, promptOverDetailPane ? 0 : 1); // transparent spacer
-        dockRow->setAlignment(
-            m_promptOverlayHost,
-            dockAgentPrompt ? Qt::AlignBottom
-                            : Qt::AlignRight | Qt::AlignBottom);
-        dockRow->invalidate();
+        const Qt::Alignment promptAlignment =
+            dockAgentPrompt ? Qt::AlignBottom : Qt::AlignRight | Qt::AlignBottom;
+        const int promptSlot = dockRow->indexOf(m_promptOverlayHost);
+        QLayoutItem *promptItem =
+            promptSlot >= 0 ? dockRow->itemAt(promptSlot) : nullptr;
+        if (promptItem && promptItem->alignment() != promptAlignment) {
+            dockRow->setAlignment(m_promptOverlayHost, promptAlignment);
+            rowChanged = true;
+        }
+        if (rowChanged)
+            dockRow->invalidate();
     }
     if (m_promptOverlayHost && m_promptWrapper) {
         const bool showPrompt = !m_promptOverlayCollapsed || m_promptOverlayDetached;
@@ -4712,7 +4739,6 @@ void MainWindow::positionGlobalFooterOverlays()
             ? detailRect.width()
             : qMax(0, m_globalOverlayHost->width() - 2 * kHorizontalMargin),
         height);
-    m_footerDock->show();
     m_footerDock->raise();
     if (m_promptOverlayHost && m_userAvatarNavButton) {
         const int x = m_promptOverlayCollapsed ? 4 : 8;

@@ -1026,8 +1026,11 @@ void GenieSpiderWidget::wander()
 
 void GenieSpiderWidget::tick()
 {
-    const QWindow *handle = window() ? window()->windowHandle() : nullptr;
-    if (handle && !handle->isExposed()) {
+    const QWidget *top = window();
+    const QWindow *handle = top ? top->windowHandle() : nullptr;
+    const Qt::ApplicationState state = QGuiApplication::applicationState();
+    if ((handle && !handle->isExposed()) || (top && top->isMinimized()) ||
+        state == Qt::ApplicationHidden || state == Qt::ApplicationSuspended) {
         pace(500);
         return;
     }
