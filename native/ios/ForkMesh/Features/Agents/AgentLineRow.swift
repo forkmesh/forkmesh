@@ -252,8 +252,11 @@ struct AgentEagleTile: View {
     var body: some View {
         ZStack {
             picture
-            AgentChurnRing(added: line.linesAdded, removed: line.linesRemoved, radius: radius, width: Self.ring)
-                .allowsHitTesting(false)
+            AgentChurnRing(
+                added: line.linesAdded, removed: line.linesRemoved, radius: radius, width: Self.ring,
+                spinning: line.isActive
+            )
+            .allowsHitTesting(false)
         }
         .frame(width: Self.side, height: Self.side)
         .overlay(alignment: .topTrailing) {
@@ -288,10 +291,15 @@ struct AgentEagleTile: View {
 
 struct AgentChurnRing: View {
     @Environment(\.fmPalette) private var fm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shellTabHidden) private var tabHidden
     let added: Int
     let removed: Int
     let radius: CGFloat
     let width: CGFloat
+    var spinning = false
+
+    private static let period = 2.4
 
     private var share: CGFloat? {
         let plus = max(added, 0)
@@ -300,16 +308,48 @@ struct AgentChurnRing: View {
         return CGFloat(plus) / CGFloat(plus + minus)
     }
 
+    private var turns: Bool { spinning && !reduceMotion && share != nil }
+
     var body: some View {
-        let edge = RoundedRectangle(cornerRadius: radius, style: .continuous).inset(by: width / 2)
-        ZStack {
-            if let share {
-                edge.trim(from: 0, to: share).stroke(fm.success, style: StrokeStyle(lineWidth: width))
-                edge.trim(from: share, to: 1).stroke(fm.danger, style: StrokeStyle(lineWidth: width))
-            } else {
-                edge.stroke(fm.border, lineWidth: 0.5)
-            }
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !turns || tabHidden)) {
+            (context: TimelineViewDefaultContext) in
+            ring(turns ? Self.phase(context.date) : 0)
         }
+    }
+
+    private static func phase(_ date: Date) -> CGFloat {
+        CGFloat(date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period)
+    }
+
+    @ViewBuilder private func ring(_ phase: CGFloat) -> some View {
+        if let share {
+            ZStack {
+                AgentRingArc(radius: radius, inset: width / 2, start: phase, length: share)
+                    .stroke(fm.success, style: StrokeStyle(lineWidth: width))
+                AgentRingArc(radius: radius, inset: width / 2, start: phase + share, length: 1 - share)
+                    .stroke(fm.danger, style: StrokeStyle(lineWidth: width))
+            }
+        } else {
+            RoundedRectangle(cornerRadius: radius, style: .continuous).inset(by: width / 2)
+                .stroke(fm.border, lineWidth: 0.5)
+        }
+    }
+}
+
+struct AgentRingArc: Shape {
+    let radius: CGFloat
+    let inset: CGFloat
+    let start: CGFloat
+    let length: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let edge = RoundedRectangle(cornerRadius: radius, style: .continuous).inset(by: inset).path(in: rect)
+        let from = start - floor(start)
+        let to = from + length
+        guard to > 1 else { return edge.trimmedPath(from: from, to: to) }
+        var path = edge.trimmedPath(from: from, to: 1)
+        path.addPath(edge.trimmedPath(from: 0, to: to - 1))
+        return path
     }
 }
 

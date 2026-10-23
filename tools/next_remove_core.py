@@ -645,6 +645,11 @@ class RemoveBackend:
             job.say("[dry-run] commit %s without the %s block on %s (base %s) and "
                     "merge it into main" % (FLEET_PATH, job.name, branch, MAIN_REF))
             return
+        if job.state.get("replaced_by"):
+            job.say("%s is committed together with %s by add-core --replace" % (
+                FLEET_PATH, job.state.get("replaced_by")))
+            job.state.set(branch="", commit="")
+            return
         base_text = self.git.show(self.git.rev(MAIN_REF), FLEET_PATH)
         text = next_fleet.retire_core_block(
             next_fleet.remove_core_block(base_text, job.name), job.name)
@@ -906,6 +911,8 @@ def run(job, backend, clock=time.monotonic):
     job.emit(event="result", status="ok", name=job.name, seconds=total,
              summary=summary, branch=job.state.get("branch"),
              commit=job.state.get("commit"),
+             merged=job.state.get("merged") or "",
+             merge_error=job.state.get("merge_error") or "",
              destroyed=bool(job.state.get("destroyed")))
     job.say("%s (%d s)" % (summary, total))
     return total

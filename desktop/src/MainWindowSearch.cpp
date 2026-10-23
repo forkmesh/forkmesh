@@ -1180,7 +1180,7 @@ void MainWindow::runGlobalSearch(const QString &rawQuery)
     const QList<AgentSession> sessions = m_agentSessions;
     const QHash<int, AgentDiffStat> diffStats = m_agentDiffStats;
     const QList<ActionRun> runs = m_actionRuns;
-    const QStringList networkLog = m_networkLog;
+    const auto networkLogShare = std::make_shared<QStringList>(m_networkLog);
     const QVector<GlobalSearchGitRepo> gitRepos = globalSearchGitRepos();
 
     auto deliver = [this, gen, query](const QVector<GlobalSearchHit> &hits) {
@@ -1211,6 +1211,8 @@ void MainWindow::runGlobalSearch(const QString &rawQuery)
 
     runOffThread<QVector<GlobalSearchHit>>(
         [=]() -> QVector<GlobalSearchHit> {
+            QStringList networkLog = std::move(*networkLogShare);
+            networkLog.detach();
             HitBag bag;
 
             for (const RepoBrief &repo : repos) {
