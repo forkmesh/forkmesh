@@ -493,10 +493,11 @@ data class DjSavedDeck(
     val loop: Boolean = false,
     val position: Double = 0.0,
     val playing: Boolean = false,
+    val repeats: Boolean = false,
 ) {
     fun toJson(): Map<String, Any?> = linkedMapOf(
         "videoId" to videoId, "title" to title, "author" to author, "cue" to cue, "level" to level, "rate" to rate,
-        "bpm" to bpm, "loop" to loop, "position" to position, "playing" to playing,
+        "bpm" to bpm, "loop" to loop, "repeats" to repeats, "position" to position, "playing" to playing,
     )
 
     companion object {
@@ -516,6 +517,7 @@ data class DjSavedDeck(
                 loop = row["loop"] == true,
                 position = DjSavedJson.clamp(row["position"], cue, 0.0, 864_000.0),
                 playing = videoId.isNotEmpty() && row["playing"] == true,
+                repeats = row["repeats"] == true,
             )
         }
     }
@@ -586,6 +588,7 @@ data class DjSaved(
     val queue: List<DjQueueItem> = emptyList(),
     val automix: Boolean = false,
     val library: List<DjPlayedSong> = emptyList(),
+    val autoDj: Boolean = false,
 ) {
     val playing: Boolean get() = a.playing || b.playing
 
@@ -597,7 +600,7 @@ data class DjSaved(
         linkedMapOf(
             "a" to a.toJson(), "b" to b.toJson(), "crossfader" to crossfader, "samplerLevel" to samplerLevel,
             "sections" to sections.map { it?.toJson() }, "history" to history.map { it.toJson() },
-            "queue" to queue.map { it.toJson() }, "automix" to automix, "library" to library.map { it.toJson() },
+            "queue" to queue.map { it.toJson() }, "automix" to automix, "autoDj" to autoDj, "library" to library.map { it.toJson() },
         ),
     )
 
@@ -632,6 +635,7 @@ data class DjSaved(
                 queue = queue,
                 automix = root["automix"] == true,
                 library = library,
+                autoDj = root["automix"] == true && root["autoDj"] == true,
             )
         }
     }

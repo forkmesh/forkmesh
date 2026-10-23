@@ -78,4 +78,16 @@ class AgentLineChipsTest {
         assertEq(AgentLineStatus.Running, outside.status)
         assertEq("Outside", AgentLineChips.chips(outside, now).first { it.slot == AgentChipSlot.Host }.word)
     }
+
+    fun testEagleTileChurnShareAndBackgroundTasksSummary() {
+        assertEq(null, AgentLineChips.churnShare(0, 0))
+        assertEq(null, AgentLineChips.churnShare(-1, -1))
+        assertEq(0.75f, AgentLineChips.churnShare(30, 10))
+        assertEq(1f, AgentLineChips.churnShare(5, -1))
+        assertEq("", AgentLineChips.backgroundTasksLabel(0))
+        assertEq("1 background task", AgentLineChips.backgroundTasksLabel(1))
+        val facts = AgentChipFacts(AgentLineStatus.Running, filesChanged = 4, linesAdded = 30, linesRemoved = 5, backgroundTasks = 2)
+        assertEq("Running, 4 files, 30 added, 5 removed, 2 background tasks", AgentLineChips.eagleSummary(facts))
+        expect(!AgentLineChips.eagleSummary(AgentChipFacts(AgentLineStatus.Success)).contains("background"))
+    }
 }

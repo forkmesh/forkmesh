@@ -133,6 +133,25 @@ address is a `RenderError` naming the node and that operator file, and nothing
 renders an empty address. Tests and docs use documentation ranges
 (`203.0.113.0/24`, `198.51.100.0/24`, `2001:19f0:ffff::/48`).
 
+### Reaching nodes over IPv6
+
+On 2026-10-07 the operator box lost IPv4 while IPv6 kept working, and a deploy
+stopped mid-rollout. Node configs, firewall rules and DNS A records keep using
+`ip`; only the operator's own connections can switch address family. Those are
+`next_common.Ssh` (ssh, scp, tunnels) and the autodeploy `/api/version` probe,
+and both go through `next_common.route_address`. `FMNEXT_ROUTE_FAMILY` picks
+the family:
+
+- `auto` (the default): use `ip` while it answers on port 22. If it doesn't
+  and the node's `ipv6` does, use `ipv6`. The choice is made once per process.
+- `4`: always use `ip`.
+- `6`: use `ipv6` for every node that has one.
+
+Over IPv6, ssh passes `-o HostKeyAlias=<ip>`, so the host key pinned under the
+IPv4 address is still checked; no new key is accepted. A node without `ipv6`
+(the runner today) always uses `ip`. Tests that inject a fake runner never
+route.
+
 ## Cloud providers
 
 Vultr and AWS EC2 sit behind `next_cloud.Provider`; the label's `provider`

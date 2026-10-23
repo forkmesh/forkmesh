@@ -911,7 +911,7 @@ default in new projects except the chosen starter pack
     before it joins, so names and keys are known at once. FM Media is off
     (`fmm: { enabled: false }`, no call signer), so joining a room that
     already runs on FM Media fails with the server's `room_engine` error
-    (ledger S116). Header buttons show for private, writable channels; a
+    (ledger S117). Header buttons show for private, writable channels; a
     direct call and a group call refuse each other.
   - **Ringback.** `CallRinger` listens to the engine on the main thread.
     While the phase is RINGING (only a caller rings) it plays
@@ -2412,3 +2412,201 @@ edit or delete as somebody else. Nothing here talks to older builds.
   header and info sheet say "Anyone nearby with ForkMesh open can read
   #mesh." Android has no setting that turns the mesh off, so it still starts
   with chat.
+
+## 36. Sync ledger, third round (2026-10-22)
+
+- **Agent page actions (S074).** `FmNavBar` gives its trailing actions the bar
+  width less 52 dp for the Back button (never under 184 dp,
+  `FmNavActionsRoom`) in a horizontal scroller that starts at the trailing
+  end, so a page with many actions scrolls them instead of drawing the first
+  one under the Back button. The unified agent page's action row does the
+  same: its buttons scroll inside the width left after the badges.
+- **Pinned last prompt (S079, S102).** `AgentPromptDeck`
+  (`A/feature/agents/AgentPromptDeck.kt`) pins what you last wrote above the
+  transcript of the unified agent page, the desktop session page, the queued
+  session page and the phone's own agent. `PromptDeck` (`C/control`, tested
+  as on iOS) holds the prompts newest first: `Prompt` blocks and steers from
+  you (`Steer.fromYou`), a queued run's user turns, or `AgentUserMessage`
+  events. The card is one line (tap for up to eight), with `3/5` when there is
+  more than one; up to two edges peek out below it, drawn with
+  `matchParentSize` behind the card so they never stretch past it (the empty
+  box of S102). Swipe right for an earlier prompt and left for a later one;
+  the card follows the finger, tilts 0.04° per dp and resists past either
+  end. Long press offers Copy prompt and Back to the latest. A new prompt
+  drops in on top and returns the deck to it. TalkBack reads it as one item
+  with Earlier prompt and Later prompt actions; reduced motion fades between
+  cards without the tilt.
+- **Terminal keys and scrollback (S106).** `AgentTerminalPane` (every phone
+  terminal: desktop, runner, host and sign-in) puts its keys in two rows of
+  equal-width keys (`TerminalKeyBar`: Esc, Tab, Ctrl, ^C, ⌫, Paste; ←, ↑, ↓,
+  →, Enter at double width), so none hides behind a sideways scroll. Ctrl is a
+  one-shot modifier: it focuses the input, and the next typed letter is sent
+  as its control byte (`terminalChordTyped`, `terminalControlBytes`) or the
+  next arrow as `ESC [1;5` + letter (`terminalKeyBytes(control = true)`). The
+  grid follows new output only while it is scrolled to the bottom; scrolled
+  up, it stays put and shows a round jump-to-newest button.
+- **Match the instance's theme (S110).** Settings, Appearance has the switch
+  (`appearance/matchInstanceTheme`). While it is on, `HomeShell` asks
+  `AppearanceStore.refreshInstanceTheme` for the active project's
+  `GET /api/instance` at launch, on return to the foreground and on a project
+  switch; `InstanceTheme` (`C/settings`, the iOS mapping and tests) maps
+  `themeColors` (or an older server's `theme.dark`/`theme.light`) onto the 13
+  tokens and the result is kept in `appearance/instanceThemeColors`, so the
+  next launch starts in it. `Appearance.effectiveTheme` is what
+  `MainActivity` paints with; the readable switch still applies. A project
+  without an instance or an instance on the default look clears the colours,
+  a failed read keeps them, and turning the switch off drops them.
+- **Home loading (S065, S105).** Home has no loading bar any more. While a
+  count is read, a small spinner (`ShellHomeCountSpinner`) sits where the
+  count pill goes: the repository section icons and Code while the current
+  repository's counts load, Tasks while the task board loads, and RSS Reader
+  while it refreshes (`ShellBadges.pending`); an unread badge still wins, and
+  TalkBack reads "Loading". The current repository's counts are saved per
+  repository (`shell/repoCounts/<owner>/<repo>`, `ShellRepoCounts.encode`)
+  and shown at once, then read again once a session. **Refresh everything**
+  in the Home background, section and tile menus re-reads the tasks, bug
+  reports, the repository counts and pulls, the organisation packages, the
+  account packages and status checks, the inbox and the RSS feeds
+  (`ShellBadges.refreshEverything`). The tile grid was already fitted to the
+  measured height in the first frame, and the organisation packages were
+  already saved per project, so nothing else resized on load. The count pill
+  now hangs from the glyph's top-right corner and rises at most 2 dp above
+  the icon box (`ShellHomeMetrics.anchorRise`), so it no longer covers the
+  name of the icon above, and it draws over the update dot, which is 6 dp.
+- **Status dots on every screen (S093).** Android has no Dynamic Island
+  strip, so while Status Page is installed `StatusPageFeature.TopStrip`
+  draws the same service dots (5 dp, troubled ones blinking) in a 7 dp strip
+  just under the status bar, over every tab and pushed page. It is drawn over
+  the content without taking layout height and does not take touches.
+- **Account data (S101).** Settings > Data follows iOS ([account-data.md](../app/account-data.md)).
+  `AccountSyncService` (`C/settings/AccountSync.kt`) saves three items to
+  `/api/accounts/data/store/<key>`: `android.home` (layout: `shell/*` and the
+  Insights layout keys), `android.rss` (the RSS library from
+  `RssLibrary.syncData`, without articles, activity or fetch state) and
+  `android.settings` (every other preference). The keys differ from iOS's
+  `ios.*` because the two apps encode settings differently
+  (`DataFolder.exportSettings` writes typed `forkmesh.android-settings`
+  values), so neither phone overwrites the other's copy. Preferences under
+  `AccountSyncKeys.skippedPrefixes` never leave the phone: project-scoped keys
+  (`p/`), sign-in, identity, owner keys, chat keys and history, server and relay
+  addresses, caches, read state, recents and counters; secrets live in
+  `SecureStore` and are never preferences. A value over 32 KiB is skipped.
+  Saving is off until "Save my settings to ForkMesh" is switched on; then
+  `AccountSyncSetup` saves on every foreground change, only items whose
+  SHA-256 differs from the last copy saved for the account
+  (`accountSync/hash/<account>/<key>`). Restore asks first, writes the
+  preferences directly (Appearance reloads at once, the rest on the next
+  launch) and replaces the RSS subscriptions with `RssLibrary.restoreSync`,
+  which keeps a local feed's id, articles and fetch state when its address
+  matches. `AccountDataBrowser` (`C/settings/AccountDataInventory.kt`) lists
+  the inventory by subject, category and table, pages rows 50 at a time,
+  removes a row only where the server marks it `deletable`, and deletes one or
+  all saved items; the export button downloads `/api/accounts/export`.
+- **DJ Studio (S063, S104, S109).** AUTO DJ is a round sparkle button in the
+  utility row next to AUTOMIX (`DjAutoDjButton`, `DjStudioAutoDj.kt`). While
+  on it turns AUTOMIX on (and off again if it switched it on), reads the
+  playing song's Invidious recommendations (`invidiousData`, falling back to a
+  search for the song), keeps songs only and puts the artist's own, Topic,
+  VEVO, official or remastered uploads first, drops the seed, anything on a
+  deck, played this session or already heard under another upload, checks the
+  like counts of the first six (`/api/v1/videos/<id>?fields=likeCount,viewCount`)
+  and ranks by likes and relatedness (`DjAutoDj`, core, the iOS rules and
+  tests). `preload` takes the next pick before the replay pool, and shake
+  loads a new pick instead of the song just mixed out of. The state is saved
+  with AUTOMIX (`DjSaved.autoDj`, only kept with `automix`). Android had no
+  false end reports to filter (its own decoder knows the length), so iOS's
+  `DjEnd` was not needed. **Repeat** is a lit `repeat` round button by
+  each deck's clock (`DjRepeatButton`) and "Repeat song" in the deck sheet;
+  it is saved with the deck (`DjSavedDeck.repeats`), cleared by Reset All, and
+  AUTOMIX never mixes out of a repeating deck (`DjAutomixDeck.repeats`). The
+  deck wraps from where the sound ends back to where it starts, skipping the
+  waveform's quiet head and tail (`DjRepeat.span`, `step`: the studio tick
+  wraps at the end or schedules the wrap when it is under 0.6 s away), and a
+  decoder end on a repeating deck restarts from that point too.
+- **CRM email reading report (S059).** `CrmActivity` decodes the CRM worker's
+  `automated`, `opens`, `clicks`, `readSeconds`, `scrollDepth` (capped at
+  100), `slideCount`, `slideReached` (capped at the slide count), `slideTitle`,
+  `mailClient` and `readingReported`; counts are read as longs and clamped to
+  0..Int.MAX_VALUE so a hostile payload cannot overflow. `engagementLine`
+  ("2 opens · read 4 min+ · reached slide 9/14 · Market · iPhone · Apple
+  Mail", or "Gmail doesn't report read time") sits under each sent email in
+  the contact's activity list (`CrmEmailRowView`), and `CrmEmailScreen` adds a
+  Reading card (Opens, Clicks, Read for, Scrolled or Reached, Mail app) with
+  the note on which mail apps report it, shown whenever that line is not
+  empty. `CrmReadingReportTest` ports the iOS tests.
+- **Genie auto-send asks the desktop (S066).** `GenieFeature.outreachWriters`
+  ends with `desktopWriter()`: when a desktop is paired it sends the whole
+  prompt to `agents.write` over `AgentsFeature.hub` (LAN or relay, 300 s,
+  `GenieOutreach.DESKTOP_TIMEOUT`) and the desktop's default agent, Claude Code
+  or Codex, writes the email (`GenieDesktopWriter`). Android has no on-device
+  model, so the order is the saved agent API key, then the desktop. With no
+  writer at all and a server without a model, auto-send pauses with
+  `GenieAutoSend.NO_WRITER`, which says what to set up; with writers that all
+  failed it says `UNWRITTEN`.
+- **Ping banners lead with who and where (S078).** The server change
+  (`docs/app/content-first-pings.md`) reaches Android only through the inbox
+  rows, so `PingNotifier.post` builds the banner with `PingLead.of`: a ping
+  with an actor reads "bob · acme/widgets #42" over the text (the event label
+  when there is no text); a ping without one keeps its label, with "#42" in
+  front, over the body. The label drops a trailing "for/in/on owner/repo" or
+  a leading "owner/repo" the way `_notification_digest_title` does. The
+  project suffix for several signed-in projects still follows the body.
+  `PingLeadTest` covers it.
+- **New project: instance logo and the ForkMesh directory (S068).** Once
+  "Check instance" passes, `AddProjectDialog` fetches the instance's logo at
+  once and shows it as the project image (a spinner sits in the logo box while
+  it loads); the user can still change or remove it. The candidates are
+  `InstanceDirectory.logoCandidates` (core `account/projects`): the `logo` from
+  `/api/instance`, the instance's logo in the ForkMesh directory, then the two
+  favicons, left out for a branded instance. A picked logo is never replaced;
+  one taken from the instance goes when the host is edited. Under the form,
+  "Instances on ForkMesh" lists ForkMesh plus every `listed` https entry of
+  `GET https://app.forkmesh.com/api/start/instances` (directory logos only in
+  the `/api/start/instances/<32 hex>/logo?v=<n>` shape); Add fills the
+  instance in, checks it, loads its logo and creates the project in one tap,
+  and a project that already exists shows "Added". An unreadable directory
+  lists only ForkMesh. The dialog's content now scrolls. `InstanceDirectoryTest`
+  ports the iOS cases.
+- **A walk as a live notification (S108).** Android's answer to the Dynamic
+  Island and Lock Screen Live Activity is an ongoing notification held by
+  `WalkLiveService`, a foreground service of type `health`
+  (`FOREGROUND_SERVICE_HEALTH`; the runtime permission it needs on Android 14+
+  is the `ACTIVITY_RECOGNITION` that steps already require). It appears as soon
+  as `WalkDetector` starts a walk and shows "Walking · N steps", the distance,
+  today's steps and a running clock from the walk's start
+  (`setUsesChronometer`), on the lock screen too (public visibility). The pace
+  already counted as movement on Android (`WalkActivity.publish` feeds the
+  live cadence to the detector), so the iOS `paced` change only adds
+  `WalkDetector.paced` and `begin` to core for parity. When the app leaves the
+  screen while the user is stepping and has been moving for 10 s
+  (`LEAVE_START_AFTER`), the walk starts there; a walk under way keeps the step
+  counter and the detector running in the background (the accelerometer
+  stops), so locking the phone mid-walk keeps it in the notification until
+  three minutes of stillness end it. Coming back to the app restarts the full
+  pace sensors. `WalkDetectorTest` ports the four new iOS cases.
+- **Eagle rows (S112).** `AgentEagleRow` has no status dot on the left any
+  more: the title and the dialog ticker start at the row's edge, and a 32 dp
+  tile (`AgentEagleTile`) sits on the right. Android rows carry no image
+  thumbnail, so the tile is a plain `bgOverlay` rounded square. Its border is
+  the churn: one continuous 2 dp stroke around the rounded rectangle, green
+  for the added share (`AgentLineChips.churnShare`) and red for the rest, or a
+  hairline with no churn. A pill on the top right (`AgentTilePill`) holds the
+  file count and a status dot (accent running, warning waiting, success done,
+  `#a371f7` merged, danger failed, tertiary otherwise); the bottom left shows
+  one dot per open background task, up to three then `+n` (`AgentTileTasks`),
+  blinking on a 1.4 s cosine while the agent runs or waits and still under
+  Reduce Motion; the unread dot sits on the top left. `backgroundTasks` is read
+  from the desktop's `agents.list` rows (`LocalAgentRow`, clamped at 0) into
+  `UnifiedAgentRow` and `AgentChipFacts`, and the row's spoken summary
+  (`AgentLineChips.eagleSummary`) ends with "N background tasks". Repository
+  desktop-session rows built from `AgentSession` alone carry no task count.
+- **Usage reset clocks (S061).** Already on Android since c0ee86dab1: Refresh
+  and pull to refresh send `agentops.usage` with `refresh: true`, opening the
+  screen is a plain read, and each meter shows `UsageFormat.resetClock`
+  ("Resets 3:45 PM", "Resets Tue 9:00 AM", "Resets Oct 26, 10:00 AM";
+  `UsageResetClockTest`).
+- **NEXUS in the You hub, scan range from the phone's address (S067).** Already
+  on Android with the NEXUS port (62f90e0718, sync row S046):
+  `HubCatalog.workspace` lists `Route.Nexus`, `/dashboard/nexus` opens it, and
+  the Scan tab fills an empty target from `LocalNetwork.current()` with a
+  "Use this network" row (`NexusTest.testLocalNetworkSuggestion`).

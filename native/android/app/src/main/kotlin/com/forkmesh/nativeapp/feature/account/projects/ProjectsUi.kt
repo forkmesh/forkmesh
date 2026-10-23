@@ -66,7 +66,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.ui.navigation.AppNavigation
+import com.forkmesh.nativeapp.account.projects.InstanceDirectory
+import com.forkmesh.nativeapp.account.projects.InstanceDirectoryEntry
 import com.forkmesh.nativeapp.account.projects.LegalLinks
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.forkmesh.nativeapp.account.projects.ProbeResult
 import com.forkmesh.nativeapp.account.projects.Project
 import com.forkmesh.nativeapp.account.projects.ProjectCatalogEntry
@@ -572,11 +579,22 @@ private fun AddProjectDialog(projects: ProjectsService, done: (Project?) -> Unit
     var result by remember { mutableStateOf<ProbeResult?>(null) }
     var logo by remember { mutableStateOf<Bitmap?>(null) }
     var logoError by remember { mutableStateOf("") }
+    var logoFromInstance by remember { mutableStateOf(false) }
+    var logoLoading by remember { mutableStateOf(false) }
+    var instances by remember { mutableStateOf<List<InstanceDirectoryEntry>>(emptyList()) }
+    var loadingInstances by remember { mutableStateOf(true) }
+    var adding by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        instances = withContext(Dispatchers.IO) { InstanceDirectory().list() }
+        loadingInstances = false
+    }
     val pickLogo = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val shrunk = withContext(Dispatchers.IO) { ProjectLogoStore.read(context, uri)?.let { ProjectLogoStore.shrink(it) } }
             logo = shrunk
+            logoFromInstance = false
             logoError = if (shrunk == null) "That image could not be read. Try a PNG or JPEG." else ""
         }
     }
@@ -584,41 +602,93 @@ private fun AddProjectDialog(projects: ProjectsService, done: (Project?) -> Unit
     val verified = result?.takeIf { it.ok }?.project
     val canCreate = !checking && if (hasHost) verified != null else name.isNotBlank()
 
-    fun check() {
-        if (checking || !hasHost) return
-        checking = true
-        scope.launch {
-            val outcome = projects.check(host, name, world)
-            result = outcome
-            if (outcome.ok && name.isBlank()) name = outcome.instanceName
-            checking = false
+    suspend fun loadInstanceLogo() {
+        if (logo != null && !logoFromInstance) return
+        val checkedHost = host
+        val candidates = InstanceDirectory.logoCandidates(result, instances)
+        if (candidates.isEmpty()) {
+            if (logoFromInstance) {
+                logo = null
+                logoFromInstance = false
+            }
+            return
         }
+        logoLoading = true
+        val found = withContext(Dispatchers.IO) { ProjectImages.instanceLogo(candidates) }
+        logoLoading = false
+        if (found == null || host != checkedHost || InstanceDirectory.logoCandidates(result, instances) != candidates) return
+        if (logo != null && !logoFromInstance) return
+        logo = found
+        logoFromInstance = true
     }
 
-    fun create() {
-        scope.launch {
+    suspend fun runCheck() {
+        if (checking || host.isBlank()) return
+        checking = true
+        val outcome = projects.check(host, name, world)
+        result = outcome
+        if (outcome.ok && name.isBlank()) name = outcome.instanceName
+        checking = false
+        if (adding == null) loadInstanceLogo()
+    }
+
+    fun check() {
+        scope.launch { runCheck() }
+    }
+
+    suspend fun createNow() {
+        if (saving) return
+        saving = true
+            val withHost = host.isNotBlank()
+            val checked = result?.takeIf { it.ok }?.project
+        try {
             val picked = logo
             val logoName = if (picked == null) {
                 ""
             } else {
                 withContext(Dispatchers.IO) { projects.logos.save(ProjectLogoStore.png(picked), name.ifBlank { host }) }.orEmpty()
             }
-            val created = if (hasHost) {
-                verified?.let { project -> projects.add(if (name.isBlank()) project else project.copy(label = name.trim())) }
+            val created = if (withHost) {
+                checked?.let { project -> projects.add(if (name.isBlank()) project else project.copy(label = name.trim())) }
             } else {
                 projects.addNamed(name, logoName)
             }
             if (created == null) {
                 if (logoName.isNotEmpty()) projects.logos.delete(logoName)
-                return@launch
+                return
             }
             if (picked != null && logoName.isNotEmpty()) {
                 ProjectImages.remember(logoName, picked)
-                if (hasHost) projects.setLogo(created.id, logoName)
-            } else if (hasHost) {
+                if (withHost) projects.setLogo(created.id, logoName)
+            } else if (withHost) {
                 projects.adoptInstanceLogo(created.id, result?.logoUrl.orEmpty(), result?.branded == true)
             }
             done(projects.directory.byId(created.id) ?: created)
+        } finally {
+            saving = false
+        }
+    }
+
+    fun create() {
+        scope.launch { createNow() }
+    }
+
+    fun quickAdd(entry: InstanceDirectoryEntry) {
+        if (adding != null || checking || projects.directory.byId(entry.id) != null) return
+        logoError = ""
+        adding = entry.id
+        scope.launch {
+            try {
+                host = entry.id
+                result = null
+                if (name.isBlank()) name = entry.name
+                runCheck()
+                if (result?.ok != true) return@launch
+                loadInstanceLogo()
+                if (!saving) createNow()
+            } finally {
+                adding = null
+            }
         }
     }
 
@@ -636,47 +706,139 @@ private fun AddProjectDialog(projects: ProjectsService, done: (Project?) -> Unit
             }
         },
         content = {
-            Text(
-                "A project keeps its own sign-in, keys and data on this phone. A name is all it needs; attach an instance if it lives on one. Without one it is not linked to any instance and shows no repositories until you choose one.",
-                style = Fm.text.bodySmall.copy(color = c.textSecondary),
-            )
-            Spacer(Modifier.height(FmSpace.x3))
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = FmSpace.x3)) {
-                val picked = logo
-                if (picked != null) {
-                    Image(
-                        bitmap = picked.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(c.bgRaised),
-                    )
-                } else {
-                    ProjectIcon(Project(id = "preview", label = name.trim().ifEmpty { "?" }, serverUrl = "", hasInstance = false), size = 48.dp)
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "A project keeps its own sign-in, keys and data on this phone. A name is all it needs; attach an instance if it lives on one. Without one it is not linked to any instance and shows no repositories until you choose one.",
+                    style = Fm.text.bodySmall.copy(color = c.textSecondary),
+                )
+                Spacer(Modifier.height(FmSpace.x3))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = FmSpace.x3)) {
+                    val picked = logo
+                    if (logoLoading && picked == null) {
+                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(c.bgRaised), contentAlignment = Alignment.Center) {
+                            androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), color = c.accent, strokeWidth = 2.dp)
+                        }
+                    } else if (picked != null) {
+                        Image(
+                            bitmap = picked.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(c.bgRaised),
+                        )
+                    } else {
+                        ProjectIcon(Project(id = "preview", label = name.trim().ifEmpty { "?" }, serverUrl = "", hasInstance = false), size = 48.dp)
+                    }
+                    Spacer(Modifier.width(FmSpace.x3))
+                    FmTextButton(
+                        onClick = { pickLogo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        modifier = Modifier.testTag("add-project-logo"),
+                    ) { Text(if (picked == null) "Choose logo…" else "Change logo") }
+                    if (picked != null) {
+                        FmTextButton(onClick = {
+                            logo = null
+                            logoFromInstance = false
+                        }) { Text("Remove") }
+                    }
                 }
-                Spacer(Modifier.width(FmSpace.x3))
-                FmTextButton(
-                    onClick = { pickLogo.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                    modifier = Modifier.testTag("add-project-logo"),
-                ) { Text(if (picked == null) "Choose logo…" else "Change logo") }
-                if (picked != null) FmTextButton(onClick = { logo = null }) { Text("Remove") }
-            }
-            if (logoError.isNotEmpty()) Text(logoError, style = Fm.text.bodySmall.copy(color = c.danger))
-            AccountLabeledField(label = "Name", value = name, onValueChange = { name = it }, hint = "My project")
-            AccountLabeledField(label = "Instance (optional)", value = host, onValueChange = { host = it; result = null }, hint = "relay.example.com")
-            if (hasHost) {
-                AccountLabeledField(label = "World host (optional)", value = world, onValueChange = { world = it; result = null }, hint = "world.example.com")
-            }
-            result?.let { probe ->
-                Text(probe.message, style = Fm.text.bodySmall.copy(color = if (probe.ok) c.success else c.danger))
-                if (probe.ok && probe.missingOptional.isNotEmpty()) {
-                    Text(
-                        "Not on this instance: " + probe.missingOptional.joinToString(", ") { it.label },
-                        style = Fm.text.bodySmall.copy(color = c.textTertiary),
-                    )
+                if (logoError.isNotEmpty()) Text(logoError, style = Fm.text.bodySmall.copy(color = c.danger))
+                AccountLabeledField(label = "Name", value = name, onValueChange = { name = it }, hint = "My project")
+                AccountLabeledField(label = "Instance (optional)", value = host, onValueChange = {
+                    host = it
+                    result = null
+                    if (logoFromInstance) {
+                        logo = null
+                        logoFromInstance = false
+                    }
+                }, hint = "relay.example.com")
+                if (hasHost) {
+                    AccountLabeledField(label = "World host (optional)", value = world, onValueChange = { world = it; result = null }, hint = "world.example.com")
+                }
+                result?.let { probe ->
+                    Text(probe.message, style = Fm.text.bodySmall.copy(color = if (probe.ok) c.success else c.danger))
+                    if (probe.ok && probe.missingOptional.isNotEmpty()) {
+                        Text(
+                            "Not on this instance: " + probe.missingOptional.joinToString(", ") { it.label },
+                            style = Fm.text.bodySmall.copy(color = c.textTertiary),
+                        )
+                    }
+                }
+                if (loadingInstances || instances.isNotEmpty()) {
+                    Spacer(Modifier.height(FmSpace.x4))
+                    Column(Modifier.testTag("add-project-instances"), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                        Text("Instances on ForkMesh", style = Fm.text.labelLarge.copy(color = c.textSecondary))
+                        if (instances.isEmpty()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), color = c.accent, strokeWidth = 2.dp)
+                                Spacer(Modifier.width(FmSpace.x3))
+                                Text("Reading the ForkMesh directory…", style = Fm.text.bodySmall.copy(color = c.textSecondary))
+                            }
+                        }
+                        instances.forEach { entry ->
+                            InstanceDirectoryRow(
+                                entry,
+                                added = projects.directory.byId(entry.id) != null,
+                                adding = adding == entry.id,
+                                enabled = adding == null && !saving && !checking,
+                            ) { quickAdd(entry) }
+                        }
+                    }
                 }
             }
         },
     )
+}
+
+@Composable
+private fun InstanceDirectoryRow(entry: InstanceDirectoryEntry, added: Boolean, adding: Boolean, enabled: Boolean, onAdd: () -> Unit) {
+    val c = Fm.colors
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("add-project-instance-${entry.id}"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        InstanceDirectoryLogo(entry)
+        Spacer(Modifier.width(FmSpace.x3))
+        Column(Modifier.weight(1f)) {
+            Text(entry.name, style = Fm.text.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (entry.online) entry.id else "${entry.id} · checking",
+                style = Fm.text.bodySmall.copy(color = c.textSecondary),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        when {
+            added -> Text("Added", style = Fm.text.labelLarge.copy(color = c.textTertiary))
+            adding -> Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), color = c.accent, strokeWidth = 2.dp)
+            }
+            else -> FmTextButton(
+                onClick = onAdd,
+                enabled = enabled,
+                modifier = Modifier.semantics { contentDescription = "Add ${entry.name}" },
+            ) {
+                FmIcon("add", size = 18.dp, tint = if (enabled) c.accent else c.textTertiary)
+                Spacer(Modifier.width(FmSpace.x1))
+                Text("Add")
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstanceDirectoryLogo(entry: InstanceDirectoryEntry) {
+    val c = Fm.colors
+    var image by remember(entry.logoUrl) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(entry.logoUrl) {
+        if (entry.logoUrl.isNotEmpty()) image = withContext(Dispatchers.IO) { ProjectImages.directoryLogo(entry.logoUrl) }
+    }
+    Box(Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)).background(c.bgRaised), contentAlignment = Alignment.Center) {
+        val shown = image
+        if (shown != null) {
+            Image(bitmap = shown.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.size(36.dp))
+        } else {
+            Text(entry.initial, style = Fm.text.labelLarge.copy(color = c.textSecondary))
+        }
+    }
 }
 
 class ProjectsScreen : AccountScreen() {

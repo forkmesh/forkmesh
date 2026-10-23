@@ -170,6 +170,7 @@ LAZY_MODULES = {
     "dashboard_bundle.py",
     "dashboard_shell.py",
     "discord_bugs.py",
+    "github_actions_watch.py",
     "discord_rate.py",
     "edge_routing.py",
     "events.py",

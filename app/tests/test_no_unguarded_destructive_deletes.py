@@ -243,7 +243,7 @@ ALLOW: list[tuple[str, str, str]] = [
     ('native/android/app/src/main/kotlin/com/forkmesh/nativeapp/feature/account/projects/ProjectsService.kt',
      'dir\\.deleteRecursively\\(\\)',
      'erases one project folder strictly inside the app projects root'),
-    ('native/android/app/src/main/kotlin/com/forkmesh/nativeapp/feature/account/settings/AccountToolsScreens.kt',
+    ('native/android/app/src/main/kotlin/com/forkmesh/nativeapp/feature/account/settings/AccountDataScreens.kt',
      'cacheDir\\.listFiles\\(\\)',
      'clears the app sandbox cache directory on user request'),
     ('native/ios/ForkMesh/Features/Agents/AgentAttachmentViews.swift',
