@@ -72,3 +72,90 @@ class CallFaceAnchorSmoother {
         return CallFaceAnchors(eyeL = eyeL, eyeR = eyeR, mouth = lips, open = CallFaceGeometry.clampValue(opened, 0.0, 1.0), yaw = yaw)
     }
 }
+
+class CallFaceGroupFilter(val minCutoff: Double = 1.2, val beta: Double = 0.6, val derivativeCutoff: Double = 1.0) {
+    var values: DoubleArray? = null
+        private set
+    var speed = 0.0
+        private set
+    var time = 0.0
+        private set
+
+    fun reset() {
+        values = null
+        speed = 0.0
+    }
+
+    fun filter(input: DoubleArray, now: Double, scale: Double = 1.0): DoubleArray {
+        val current = values
+        if (current == null || current.size != input.size || !(now > time)) {
+            values = input.copyOf()
+            time = now
+            return input.copyOf()
+        }
+        val elapsed = (now - time) / 1000
+        time = now
+        fun smoothing(cutoff: Double): Double {
+            val tau = 1 / (2 * Math.PI * cutoff)
+            return 1 / (1 + tau / elapsed)
+        }
+        var fastest = 0.0
+        for (i in input.indices) fastest = Math.max(fastest, Math.abs(input[i] - current[i]) / elapsed)
+        speed += smoothing(derivativeCutoff) * (fastest / CallFaceJS.or(scale, 1.0) - speed)
+        val k = smoothing(minCutoff + beta * speed)
+        for (i in input.indices) current[i] += k * (input[i] - current[i])
+        return current.copyOf()
+    }
+}
+
+data class CallFaceSmoothGroup(val points: List<Int>, val minCutoff: Double, val beta: Double, val derivativeCutoff: Double)
+
+class CallFaceLandmarkSmoother {
+    companion object {
+        val HEAD = CallFaceSmoothGroup(emptyList(), 3.0, 5.0, 4.0)
+        val GROUPS = listOf(
+            CallFaceSmoothGroup(CallFaceGeometry.jaw, 1.2, 2.0, 2.0),
+            CallFaceSmoothGroup((17 until 27).toList(), 2.0, 3.0, 3.0),
+            CallFaceSmoothGroup((27 until 36).toList(), 1.5, 2.0, 2.0),
+            CallFaceSmoothGroup((36 until 48).toList(), 2.5, 4.0, 3.0),
+            CallFaceSmoothGroup((48 until 68).toList(), 2.5, 6.0, 4.0),
+        )
+    }
+
+    private val eyes = CallFaceGroupFilter(HEAD.minCutoff, HEAD.beta, HEAD.derivativeCutoff)
+    private val filters = GROUPS.map { it.points to CallFaceGroupFilter(it.minCutoff, it.beta, it.derivativeCutoff) }
+
+    fun reset() {
+        eyes.reset()
+        for ((_, filter) in filters) filter.reset()
+    }
+
+    fun smooth(points: List<CallFacePoint>, time: Double): List<CallFacePoint> {
+        if (points.size < CallFaceGeometry.LANDMARK_COUNT) return points
+        val raw = CallFaceGeometry.faceFrame(points)
+        val eye = eyes.filter(doubleArrayOf(raw.left.x, raw.left.y, raw.right.x, raw.right.y), time, raw.span)
+        val steady = CallFaceGeometry.faceFrame(CallFacePoint(eye[0], eye[1]), CallFacePoint(eye[2], eye[3]))
+        val out = points.toMutableList()
+        for ((indices, filter) in filters) {
+            val flat = ArrayList<Double>()
+            for (i in indices) {
+                val local = CallFaceGeometry.toFrame(raw, points[i])
+                flat.add(local.x / raw.span)
+                flat.add(local.y / raw.span)
+                points[i].z?.let { flat.add(it / raw.span) }
+            }
+            val smooth = filter.filter(flat.toDoubleArray(), time)
+            var at = 0
+            for (i in indices) {
+                var point = CallFaceGeometry.fromFrame(steady, smooth[at] * steady.span, smooth[at + 1] * steady.span)
+                at += 2
+                if (points[i].z != null) {
+                    point = point.copy(z = smooth[at] * steady.span)
+                    at += 1
+                }
+                out[i] = point
+            }
+        }
+        return out
+    }
+}

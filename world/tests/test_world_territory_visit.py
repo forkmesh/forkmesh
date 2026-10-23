@@ -161,6 +161,25 @@ runtime.leaveTerritoryVisit();
 out.leftTwice = runtime.leaveTerritoryVisit();
 const instancePage = territoryRuntime.functions({ THREE, ctx, fns, territory, onTerritoryCross() {} });
 out.instancePage = instancePage.enterTerritoryVisit(territory);
+TERRITORY_HIDDEN_ELEMENTS.forEach((id) => disabled.add(id));
+const ownPage = territoryRuntime.functions({ THREE, ctx, fns, territory: { ...territory }, onTerritoryCross() {} });
+const ownBuilt = ownPage.installInstanceTerritory();
+const forkmeshTown = { x: geometry.TERRITORY_CENTER.x + shift.x, z: geometry.TERRITORY_CENTER.z + shift.z };
+const ownView = () => ({
+  town: { x: town.position.x, z: town.position.z },
+  shown: ownBuilt.root.visible,
+  clickable: ctx.interactive.some((item) => item.userData?.interactive === "territory-link"),
+  walk: territoryWalkActive(),
+  owner: ownPage.territoryOwnerAt(forkmeshTown.x, forkmeshTown.z),
+  off: TERRITORY_HIDDEN_ELEMENTS.filter((id) => disabled.has(id)),
+});
+out.own = { start: ownView() };
+out.own.left = ownPage.leaveOwnTerritory(["forkbot"]);
+out.own.away = ownView();
+out.own.leftAgain = ownPage.leaveOwnTerritory(["forkbot"]);
+out.own.entered = ownPage.enterOwnTerritory();
+out.own.back = ownView();
+out.own.visitPage = runtime.leaveOwnTerritory([]);
 out.hiddenList = TERRITORY_HIDDEN_ELEMENTS;
 process.stdout.write(JSON.stringify(out));
 """
@@ -258,3 +277,22 @@ def test_coming_back_reuses_the_built_hexagon(result):
 
 def test_an_instance_page_keeps_its_own_territory(result):
     assert result["instancePage"] is False
+
+
+def test_an_instance_page_hands_its_ground_to_forkmesh_and_takes_it_back(result):
+    own = result["own"]
+    shift = result["visit"]["shift"]
+    start, away, back = own["start"], own["away"], own["back"]
+    assert start["town"] == pytest.approx(shift)
+    assert start["shown"] is True and start["clickable"] is True and start["walk"] is True
+    assert start["owner"] == "forkmesh"
+    assert set(start["off"]) == set(result["hiddenList"])
+    assert own["left"] is True
+    assert away["town"] == {"x": 0, "z": 0}
+    assert away["shown"] is False and away["clickable"] is False and away["walk"] is False
+    assert away["owner"] == ""
+    assert away["off"] == ["forkbot"]
+    assert own["leftAgain"] is False
+    assert own["entered"] is True
+    assert back == start
+    assert own["visitPage"] is False

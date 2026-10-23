@@ -422,7 +422,8 @@ struct ShellIslandStatusDots: View {
 
     var body: some View {
         GeometryReader { (proxy: GeometryProxy) in
-            if let gap = ShellIslandStatusDots.gap(top: proxy.safeAreaInsets.top) {
+            let origin: CGFloat = proxy.frame(in: .global).minY
+            if let gap = ShellIslandStatusDots.gap(top: origin + proxy.safeAreaInsets.top) {
                 HStack(spacing: 2) {
                     ForEach(lights) { (light: StatusLight) in
                         ShellStatusDot(light: light, size: ShellIslandStatusDots.dotSize)
@@ -430,6 +431,7 @@ struct ShellIslandStatusDots: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: gap)
+                .offset(y: -origin)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(lights.map(\.label).joined(separator: "; ")))
                 .accessibilityIdentifier("top-island-status-dots")
