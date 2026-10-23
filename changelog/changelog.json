@@ -8,15 +8,18 @@
    "pitch": "",
    "sections": [
     {
-     "title": "Chat",
+     "title": "Projects",
      "items": [
-      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."
+      "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.",
+      "Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.",
+      "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.",
+      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows."
      ]
     },
     {
-     "title": "Projects",
+     "title": "Chat",
      "items": [
-      "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar."
+      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."
      ]
     },
     {
@@ -29,7 +32,14 @@
      "title": "World",
      "items": [
       "Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve.",
+      "Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside.",
       "You can drag the chat box anywhere in the World by the grip at its left edge (double-click it to put it back), and the last two messages now fit in it without being cut off."
+     ]
+    },
+    {
+     "title": "iPhone",
+     "items": [
+      "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock."
      ]
     },
     {
@@ -57,6 +67,14 @@
      "items": [
       "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.",
       "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings."
+     ]
+    },
+    {
+     "title": "Other improvements",
+     "items": [
+      "Administrators can turn on an automated AI review that posts a first-pass review comment on pull requests, using Cloudflare Workers AI.",
+      "Bots and system accounts such as Actions, runners, the git node and the AI reviewer now have their own avatars.",
+      "A mention or reply notification now opens the exact comment, and Home's repository rows show their fork count."
      ]
     }
    ]

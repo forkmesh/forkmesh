@@ -2475,10 +2475,32 @@ def _avatar_not_found():
         {"error": "not_found"}, status=404, cache_control="no-store")
 
 
+def _avatar_bot_kind(raw_name):
+    import bot_avatars
+    from urllib.parse import unquote
+    return bot_avatars.bot_avatar_kind(unquote(str(raw_name or ""))[:120])
+
+
+def _avatar_bot_response(kind):
+    import bot_avatars
+    body = bot_avatars.bot_avatar_svg(kind).encode("utf-8")
+    return JsResponse.new(Uint8Array.new(_to_js(body)), to_js({
+        "status": 200,
+        "headers": {
+            "content-type": "image/svg+xml",
+            "cache-control": AVATAR_SHORT_CACHE_CONTROL,
+            "cdn-cache-control": "no-store",
+            "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+            "x-content-type-options": "nosniff",
+        },
+    }))
+
+
 async def _account_avatar(env, request, raw_name):
+    bot_kind = _avatar_bot_kind(raw_name)
     name = clean_string(raw_name, MAX_NODE_NAME).strip().lower()
     if not valid_node_name(name):
-        return _avatar_not_found()
+        return _avatar_bot_response(bot_kind) if bot_kind else _avatar_not_found()
     query = parse_qs(urlparse(request.url).query)
     size = str(query.get("size", [""])[0] or "")
     version = str(query.get("v", [""])[0] or "")
@@ -2487,13 +2509,13 @@ async def _account_avatar(env, request, raw_name):
             {"error": "bad_size"}, status=400, cache_control="no-store")
     rec = await _account_identity_rec_by_bi(env, await blind_index(env, name))
     if not _is_public_roster_member(rec):
-        return _avatar_not_found()
+        return _avatar_bot_response(bot_kind) if bot_kind else _avatar_not_found()
     if clean_string(rec.get("name", ""), MAX_NODE_NAME).lower() != name:
         return _avatar_not_found()
     avatar_b64 = _avatar_b64(rec.get("avatar_png", ""))
     raw = _avatar_png_bytes(avatar_b64)
     if not raw:
-        return _avatar_not_found()
+        return _avatar_bot_response(bot_kind) if bot_kind else _avatar_not_found()
     digest = _avatar_digest(avatar_b64)
     if size:
         body = _avatar_thumbnail_webp(avatar_b64, digest)

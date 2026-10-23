@@ -300,11 +300,12 @@ class ShortTicket:
 
 
 class DiffTicket:
-    def __init__(self, fastpath, owner, repo, number):
+    def __init__(self, fastpath, owner, repo, number, text=False):
         self.fastpath = fastpath
         self.owner = owner
         self.repo = repo
         self.number = number
+        self.text = text
 
 
 class CodeRefTicket:
@@ -704,10 +705,15 @@ async def _diff_response(ticket, worker_fetch, request):
                                     "pull", ticket.number)
     if bundle is None:
         return None
-    patch = repo_views.pull_patch(bundle)
     headers = {"content-type": "text/plain; charset=utf-8",
                "x-content-type-options": "nosniff",
                "cache-control": "no-cache"}
+    if ticket.text:
+        text = repo_views.pull_text(bundle)
+        if not text:
+            return None
+        return _js.Response(text.encode("utf-8"), 200, "", _js.Headers(headers))
+    patch = repo_views.pull_patch(bundle)
     if not patch.strip():
         return _js.Response(b"No diff for this pull request.\n", 404, "",
                             _js.Headers(headers))

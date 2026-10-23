@@ -210,6 +210,65 @@ def test_the_default_route_is_the_old_town_loop():
     assert result["hex"] == 0
 
 
+
+def test_riding_the_outer_edge_stays_on_the_outer_road_unless_steered_in():
+    result = run_node(
+        """
+        const g = roads.worldRoadGraph();
+        const start = g.edges.find((e) => e.hexes.length === 1);
+        const lap = 18 * g.pieceLength;
+        const ride = (direction) => {
+          const route = roads.createRoadRoute(g);
+          route.edge = start.id;
+          route.hex = start.hexes[0];
+          route.next = roads.roadDefaultTurn(start, route.hex);
+          route.s = g.straightLength / 2;
+          const seen = new Set();
+          let inner = 0;
+          for (let step = 0; step < 3600; step += 1) {
+            roads.roadRouteAdvance(route, (direction * lap) / 3600, 0);
+            const edge = g.edges[route.edge];
+            if (edge.hexes.length !== 1) inner += 1;
+            seen.add(Math.min(edge.id, edge.reverse));
+          }
+          return { inner, roads: seen.size, back: route.edge === start.id, s: route.s };
+        };
+        const junction = g.nodes.find((n) =>
+          n.out.length === 3 && n.out.filter((id) => g.edges[id].hexes.length === 1).length === 2,
+        );
+        const incoming = g.edges.find((e) => e.to === junction.id && e.hexes.length === 1);
+        const inwardSide = incoming.turns.find((t) => g.edges[t.edge].hexes.length === 2).side;
+        const steerAt = (steer) => {
+          const route = roads.createRoadRoute(g);
+          route.edge = incoming.id;
+          route.hex = incoming.hexes[0];
+          route.next = roads.roadDefaultTurn(incoming, route.hex);
+          route.s = g.straightLength - 40;
+          for (let step = 0; step < 400; step += 1) {
+            roads.roadRouteAdvance(route, 0.5, route.edge === incoming.id ? steer : 0);
+          }
+          return g.edges[route.edge].hexes.length;
+        };
+        out({
+          forward: ride(1),
+          backward: ride(-1),
+          straight: steerAt(0),
+          outward: steerAt(-inwardSide),
+          inward: steerAt(inwardSide),
+          options: incoming.turns.length,
+        });
+        """
+    )
+    for lap in (result["forward"], result["backward"]):
+        assert lap["inner"] == 0
+        assert lap["roads"] == 18
+        assert lap["back"]
+        assert abs(lap["s"] - result["forward"]["s"]) < 1e-6
+    assert result["options"] == 2
+    assert result["straight"] == 1
+    assert result["outward"] == 1
+    assert result["inward"] == 2
+
 def ride_through_junction(steer, start_before=45, hold_until=0):
     return run_node(
         f"""

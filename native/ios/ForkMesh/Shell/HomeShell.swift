@@ -399,6 +399,11 @@ struct HomeShell: View {
         return fleet.shownSystems
     }
 
+    private var islandFleet: [FleetLight] {
+        guard statusPageOn, diagnosticsEnabled, let fleet = fleet, fleet.loaded else { return [] }
+        return fleet.shownLights
+    }
+
     private var diagnosticsTroubled: Bool {
         diagnosticsEnabled && statusPageOn && fleet?.loaded == true && fleet?.allHealthy == false
     }
@@ -748,8 +753,11 @@ struct HomeShell: View {
                 }
             }
             .overlay(alignment: .top) {
-                if !islandSystems.isEmpty {
-                    ShellIslandStatusDots(lights: islandSystems)
+                if diagnosticsEnabled {
+                    ShellIslandStatusDots(
+                        lights: islandSystems, fleet: islandFleet, runnerAgents: ShellCounts.shared.runnerAgents,
+                        desktop: Services.get(ShellLocalDesktopBridge.self)?.localDesktop ?? .hidden,
+                        desktopLoad: InsightsFeature.desktopLoadLight?.load, buildMac: InsightsFeature.buildMacLight?.light)
                 }
             }
             .overlay { hubDropdown }
@@ -903,6 +911,9 @@ struct HomeShell: View {
                 Task { await ShellPullsWatch.shared.refresh() }
                 if let fleet = fleet, statusPageOn, diagnosticsEnabled {
                     Task { await fleet.refresh() }
+                }
+                if diagnosticsEnabled, let desktopLoad = InsightsFeature.desktopLoadLight {
+                    Task { await desktopLoad.refresh() }
                 }
             }
             .onChange(of: auth?.isAuthenticated) { (_: Bool?, _: Bool?) in

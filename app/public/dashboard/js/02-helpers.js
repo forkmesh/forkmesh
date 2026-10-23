@@ -782,10 +782,44 @@
     return ISSUE_PERSON_HANDLE_RE.test(text) && !text.includes("--") ? text.toLowerCase() : "";
   }
 
+  const BOT_AVATAR_GLYPHS = {
+    actions: "<circle cx=\"12\" cy=\"12\" r=\"3\"></circle><path d=\"M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1\"></path><circle cx=\"12\" cy=\"12\" r=\"6.5\"></circle>",
+    node: "<circle cx=\"6\" cy=\"6\" r=\"2.25\"></circle><circle cx=\"6\" cy=\"18\" r=\"2.25\"></circle><circle cx=\"18\" cy=\"8\" r=\"2.25\"></circle><path d=\"M6 8.25v7.5M18 10.25c0 4-5.5 3.5-10.2 6.4\"></path>",
+    runner: "<rect x=\"3.5\" y=\"4\" width=\"17\" height=\"6.5\" rx=\"1.5\"></rect><rect x=\"3.5\" y=\"13.5\" width=\"17\" height=\"6.5\" rx=\"1.5\"></rect><path d=\"M7.5 7.25h.01M7.5 16.75h.01M11.5 7.25h5M11.5 16.75h5\"></path>",
+    ai: "<path d=\"M11 3.5l1.9 4.6 4.6 1.9-4.6 1.9L11 16.5l-1.9-4.6L4.5 10l4.6-1.9z\"></path><path d=\"M18 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z\"></path>",
+    bot: "<rect x=\"4.5\" y=\"8\" width=\"15\" height=\"11\" rx=\"2.5\"></rect><path d=\"M12 8V4.5M9.5 4.5h5M2.5 12.5v3M21.5 12.5v3\"></path><circle cx=\"9.5\" cy=\"13\" r=\"1\"></circle><circle cx=\"14.5\" cy=\"13\" r=\"1\"></circle><path d=\"M9.5 16.25h5\"></path>",
+  };
+
+  function botAvatarKind(name, email = "") {
+    const text = String(name || "").trim();
+    const mail = String(email || "").trim().toLowerCase();
+    if (!text && !mail) return "";
+    if (/^(?:ai[\s_-]?review(?:er)?|forkbot|ai[\s_-]?agent)(?:\[bot\])?$/i.test(text)) return "ai";
+    if (/(?:^|[\s_-])runner(?:\[bot\])?$/i.test(text)) return "runner";
+    const lowered = text.toLowerCase();
+    const platform = String(typeof platformName === "function" ? platformName() : "").trim().toLowerCase();
+    if (/^forkmesh(?:[\s_-]mirror(?:[\s_-]reconciler)?)?$/i.test(text)
+      || (platform && [platform, `${platform} mirror`, `${platform} mirror reconciler`].includes(lowered))
+      || (typeof platformAccount === "function" && platformAccount(text))) return "node";
+    if (/^github[\s_-]?actions?(?:\[bot\])?$/i.test(text)
+      || /^[a-z0-9][a-z0-9_-]*-actions(?:\[bot\])?$/i.test(text)
+      || /^forkmesh[\s_-](?:actions|deploy)$/i.test(text)
+      || (platform && lowered === `${platform} actions`)
+      || ["actions@forkmesh.local", "deploy@forkmesh.local"].includes(mail)) return "actions";
+    if (/\[bot\]$/i.test(text) || /^(?:dependabot|renovate)$/i.test(text)
+      || /(?:^|[\s_-])bot$/i.test(text) || mail.includes("[bot]@")) return "bot";
+    return "";
+  }
+
+  function botAvatarSvg(kind, classes = "h-4 w-4") {
+    const name = Object.prototype.hasOwnProperty.call(BOT_AVATAR_GLYPHS, kind) ? kind : "bot";
+    return `<svg data-bot-avatar="${name}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="${classes} text-muted-foreground">${BOT_AVATAR_GLYPHS[name]}</svg>`;
+  }
+
   function issueActorIsBot(name) {
     const text = String(name || "").trim();
     if (!text) return false;
-    if (/\[bot\]$/i.test(text)) return true;
+    if (botAvatarKind(text)) return true;
     return typeof repoContributorIsBot === "function" && repoContributorIsBot({ name: text });
   }
 
@@ -822,12 +856,15 @@
     const forge = bot ? null : forgeIdentity(label);
     const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
+    const botKind = bot ? (agent && !botAvatarKind(label) ? "ai" : botAvatarKind(label) || "bot") : "";
     const inner = bot
-      ? `<i data-lucide="bot" class="${pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5"} text-muted-foreground"></i>`
+      ? botAvatarSvg(botKind, pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5")
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
         : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
-    const hydrate = handle && !ownAvatar ? ` data-issue-actor-avatar="${escapeHtml(handle)}"` : "";
+    const override = bot && !agent ? issuePersonHandle(label) : "";
+    const hydrate = (handle || override) && !ownAvatar
+      ? ` data-issue-actor-avatar="${escapeHtml(handle || override)}"` : "";
     if (hydrate) watchIssueActorAvatars();
     const classes = `relative flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary`;
     const title = bot ? `${label} (bot)` : label;

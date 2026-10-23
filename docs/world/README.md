@@ -979,6 +979,11 @@ them without changing page.
 - **Bikes** follow the road graph (`districts/roads.js`); tapping left or
   right before a junction picks a branch, holding leaves the road, and riding
   onto a road along it rejoins. Tests: `world/tests/test_world_bike_junctions.py`.
+  On the outer edge of the world (a road with only one drawn hex beside it)
+  the default turn at each junction stays on the outer road (`outerTurn` and
+  `outerIncoming` on each graph edge), so a rider circles the whole edge
+  without steering and only goes back in after a tap toward the inside. Test:
+  `test_riding_the_outer_edge_stays_on_the_outer_road_unless_steered_in`.
   The six outer junctions, where two drawn hexes meet open land, are T
   junctions: each carries a `bend` (the centre of the missing third hex and its
   corner), and the roads along that hex curve into each other around its

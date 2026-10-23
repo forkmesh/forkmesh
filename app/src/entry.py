@@ -1219,6 +1219,7 @@ _URL_EXPORT_NAMES = (
     "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
     "REPO_FORK_COUNTS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
     "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
+    "AI_REVIEW_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
@@ -13980,7 +13981,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "c841261a4d250195503c8582103050794b077a64668e7d1060abe2c94466bceb"
+    "4a86f7d139c6259f7a25728fb8b972f15241c8344eab2ab7c0794f408af49bf7"
 )
 
 
@@ -16721,6 +16722,11 @@ core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
 core_push_pulls_synchronized = _core_push.export("pulls_synchronized")
 _recent_pushes = _LazyModule("recent_pushes")
+_ai_review = _LazyModule("ai_review")
+ai_review_handler = _ai_review.export("handler")
+ai_review_cron = _ai_review.export("run_cron")
+ai_review_enqueue = _ai_review.export("enqueue")
+ai_review_note_push = _ai_review.export("note_push")
 recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
 recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
@@ -38051,7 +38057,7 @@ async def _private_repo_reader_filter(env, owner, repo):
 
 
 async def notify_mentions(env, owner, repo, actor, title, body, href, source,
-                          number=0):
+                          number=0, comment=""):
     # number is optional (0 = not a numbered item, e.g. a brand-new PR before
     # the owner assigns it) so every existing call site keeps working
     # unchanged; callers that DO know the number pass it as a keyword so the
@@ -38069,7 +38075,9 @@ async def notify_mentions(env, owner, repo, actor, title, body, href, source,
             dedupe="mention:" + owner + "/" + repo + ":" + source + ":" + name +
                    ":" + clean_string(actor, 80) + ":" + clean_string(title, 80) +
                    ":" + clean_string(body, 80),
-            meta={"number": number} if number else {},
+            meta=({"number": number, "source": source,
+                   **({"comment": clean_string(str(comment), 80)} if comment else {})}
+                  if number else {}),
         )
         if source in ("issue", "pull") and number:
             await subscribe_thread(env, owner, repo, source, number, name)
@@ -38127,7 +38135,7 @@ async def subscribe_thread(env, owner, repo, source, number, subscriber,
 
 
 async def notify_subscribers(env, owner, repo, source, number, actor, title,
-                             body, href, skip=()):
+                             body, href, skip=(), comment=""):
     # Fan a new comment out to everyone following the thread, minus the commenter
     # and anyone already covered by an @mention on this same event (so a mentioned
     # subscriber gets one notification, not two).
@@ -38177,7 +38185,8 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
             dedupe="subscribed:" + owner + "/" + repo + ":" + source + ":" +
                    str(number) + ":" + name + ":" + clean_string(actor, 80) +
                    ":" + snippet,
-            meta={"number": number, "source": source},
+            meta={"number": number, "source": source,
+                  **({"comment": clean_string(str(comment), 80)} if comment else {})},
         )
 
 
@@ -41923,7 +41932,8 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         notify_mentions(
             env, owner, repo, actor, item.get("titleIfNew", ""),
             event.get("body", ""), repo_web_href(owner, repo), "issue",
-            number=number))
+            number=number,
+            comment=event.get("id", "") if event_type == "comment" else ""))
     assignees = list(meta.get("assignees", [])) if isinstance(meta, dict) else []
     if isinstance(event.get("assignees"), list):
         assignees.extend(event.get("assignees"))
@@ -41943,7 +41953,8 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         notify_subscribers(
             env, owner, repo, "issue", number, actor,
             item.get("titleIfNew", ""), event.get("body", ""),
-            repo_web_href(owner, repo)))
+            repo_web_href(owner, repo),
+            comment=event.get("id", "") if event_type == "comment" else ""))
     await _best_effort_inbox_side_effect(
         subscribe_thread(env, owner, repo, "issue", number, actor))
     if event_type == "comment" or (
@@ -42435,7 +42446,8 @@ async def pulls_handler(env, request, owner, repo):
                                        pull_title, number,
                                        text=event.get("body", ""), event=event)
             await notify_mentions(env, owner, repo, actor, "Pull request comment", event.get("body", ""),
-                                  repo_web_href(owner, repo), "pull", number=number)
+                                  repo_web_href(owner, repo), "pull", number=number,
+                                  comment=str(event.get("id", "") or ""))
             pull_author = ""
             if event.get("type") in ("status", "delete"):
                 await _best_effort_inbox_side_effect(pull_attention_forget(
@@ -42454,7 +42466,8 @@ async def pulls_handler(env, request, owner, repo):
             await notify_subscribers(env, owner, repo, "pull", number, actor,
                                      "", event.get("body", ""),
                                      repo_web_href(owner, repo),
-                                     skip=(pull_author,) if pull_author else ())
+                                     skip=(pull_author,) if pull_author else (),
+                                     comment=str(event.get("id", "") or ""))
             await subscribe_thread(env, owner, repo, "pull", number, actor)
             await notify_repo_host(env, owner, repo, "pulls")
             await notify_repo_mirrors(env, owner, repo, "pulls")
@@ -42646,6 +42659,10 @@ async def pulls_handler(env, request, owner, repo):
                 env, owner, repo, "pull.opened",
                 {"number": number, "title": title, "author": actor,
                  "body": str(description or "")[:2000]}, source_actor=actor)
+        queue_ai_review = globals().get("ai_review_enqueue")
+        if queue_ai_review is not None:
+            await _best_effort_inbox_side_effect(
+                queue_ai_review(env, owner, repo, number, "opened", actor))
         # Badge (adhoc #44): render the PR's visual fingerprint from the
         # signed patch and attach it to the federated note as its lead image.
         # Best-effort — a badge failure must never block the submission.
@@ -42870,11 +42887,13 @@ async def discussions_handler(env, request, owner, repo):
         if content_event:
             await _best_effort_inbox_side_effect(notify_mentions(
                 env, owner, repo, actor, title, event.get("body", ""),
-                repo_web_href(owner, repo), "discussion", number=number))
+                repo_web_href(owner, repo), "discussion", number=number,
+                comment=str(event.get("id", "") or "") if event_type == "comment" else ""))
         if event_type == "comment":
             await _best_effort_inbox_side_effect(notify_subscribers(
                 env, owner, repo, "discussion", number, actor, title,
-                event.get("body", ""), repo_web_href(owner, repo)))
+                event.get("body", ""), repo_web_href(owner, repo),
+                comment=str(event.get("id", "") or "")))
             await _best_effort_inbox_side_effect(subscribe_thread(
                 env, owner, repo, "discussion", number, actor))
         await notify_repo_host(env, owner, repo, "discussions")
@@ -54513,6 +54532,8 @@ def _cron_due_phases(minute_slot):
         phases.append("workflow-schedules")
     if minute % 15 == 6:
         phases.append("member-activity")
+    if minute % 5 == 0:
+        phases.append("ai-review")
     hourly = minute % 60
     if hourly == 7:
         phases.append("microjob-payouts")
@@ -54709,6 +54730,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _chat_member_stats.refresh_member_repo_activity(env)
     if phase == "workflow-schedules":
         return await run_due_workflow_schedules(env)
+    if phase == "ai-review":
+        return await ai_review_cron(env)
     if phase == "actions-schedule":
         return await _actions_schedule_cron(env, minute)
     raise ValueError("unknown cron phase")
