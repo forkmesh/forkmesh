@@ -791,6 +791,22 @@ default in new projects except the chosen starter pack
   desktop, iOS and web already accept and show as text (up to 16 code points).
 - **Stickers** (`StickerCatalog`, `ChatStickers`): tilted badges on a message's
   top-end corner, sent as reaction frames; see [chat-stickers.md](../app/chat-stickers.md#android).
+- **Brief inactive steps** (2026-10-22, iOS `AppReturnGate`, sync ledger
+  S095). `AppLifecycle.foreground` follows `onResume`/`onPause`, so a
+  permission prompt, the biometric sheet, a share sheet or a system dialog
+  used to close and reopen the account event socket and the node sync
+  socket, rerun the relay room's resume and read marks, and drop the direct
+  message focus and live sharing. `MainActivity` now also reports
+  `AppLifecycle.visibility` (`C/core/AppReturnGate.kt`: `RESUMED` on
+  resume, `INACTIVE` on start and pause, `HIDDEN` on stop) and `visible`.
+  The account event socket (`AccountEventChannel`), node sync, DM focus and
+  live sharing follow `visible`; `ChatFeature` runs `RelayRoom.onResumed`
+  and the mesh announce only on a resume after `HIDDEN` (the first resume
+  after an install counts, as before). `ChatHub.applyReadMarks` skips a
+  fetch while one runs or within 5 s of the last (`force` for the read
+  marks push and a sign-in), and `DirectMessageService.refresh` shows
+  `loading` only while the list is empty and notifies listeners only when
+  records, cursor or error changed. Other features keep `foreground`.
 - **Chat list** (`A/feature/chat/ChatChannelList.kt`): server DMs listed newest
   first with unread pills and avatars; each row has a last-line preview built
   only from messages on the phone (`C/chat/ChatListPreview.kt`).

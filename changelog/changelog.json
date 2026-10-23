@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-23",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Android",
+     "items": [
+      "Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-22",
    "version": "",
    "title": "",
