@@ -317,23 +317,42 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 | **Cloud** (`promptCloudButton`) | `agents/composerRunInCloud` | **new** queues the run on an account agent node (`startQuickAddCloudAgent`, signed `POST /api/repo/<owner>/<repo>/agent-sessions`); Claude Code and Codex, published repositories, no attachments |
 | **Vibe** (`promptVibeCheck`, sparkle icon) | `agents/composerVibe` (off) | Stamps `AgentSession::vibe`; a successful worktree run is merged with clean-up (`maybeAutoMergeForSession`) and pushed (`pushCurrentRepoUpstream`). All merge gates apply |
 
-- The three toggles are icon buttons at the right end of the composer's top
-  strip, before the clear (×), reset and pop-out buttons; only the resize grip
-  stays on the left. An "on" toggle gets a thin accent border, so the branch
-  icon (on by default) reads as connected. They were a checkbox, a
-  checkbox-plus-icon pair and a "vibe" checkbox on the left until 2026-10-22,
-  which crowded the grip and hid what was on.
+- The three toggles are icon buttons in the composer's floating button bar
+  (`FloatingPromptBar`, `promptDragHandle`), before the clear (×), reset and
+  pop-out buttons, with the resize grip at its right end. An "on" toggle gets a
+  thin accent border, so the branch icon (on by default) reads as connected.
+  They were a checkbox, a checkbox-plus-icon pair and a "vibe" checkbox on the
+  left until 2026-10-22, which crowded the grip and hid what was on.
+- The bar is not a row of its own: it floats over the composer's top-right
+  corner, so the chat preview starts at the very top. Its left edge fades from
+  transparent to the composer's surface, so a chat line running under the
+  buttons fades out instead of colliding with them. With no chat to show, a
+  band of the bar's height (`promptTopSpacer`) keeps it off the prompt text.
+  The fade and the gaps between buttons still drag the composer; the grip in
+  the top-right corner resizes it with the bottom-left corner fixed. Until
+  2026-10-22 the bar was a full-width strip with a centre drag pill and the
+  grip on the left.
 - **Chat preview** (`ChatPreviewLabel`, `promptChatPreview`): up to three
   one-line rows over the prompt with the latest messages of the conversation
-  the follow-up button sends to (`promptChatTargetSessionId`: the agent open
-  above, else the last selected one). Rows come from the session's stream
-  events (`_local_user`, `assistant` text, `_codex_agent_complete`), last
-  paragraph of each, elided to the width; with no events, the prompt and
-  `m_lastAssistantText`. Clicking it opens that agent.
+  the follow-up button sends to, each with the sender's small round avatar
+  (16 px). With a chat room open on the Chat page (`promptChatRoom`: #general
+  or any other room, channel or direct message), the rows are that room's
+  latest top-level messages (`chatActorAvatar`), and **chat** and Enter post
+  the prompt to the room through its own send path (`sendPromptToChatRoom`,
+  which hands the text to `sendCurrentMessage`; attachments stay in the
+  room's own message box). Otherwise the rows follow the agent open above, else
+  the last selected one (`promptChatTargetSessionId`), with the agent's model
+  icon and your avatar. Agent rows come from the session's stream events
+  (`_local_user`, `assistant` text, `_codex_agent_complete`), last paragraph of
+  each, elided to the width; with no events, the prompt and
+  `m_lastAssistantText`. Clicking an agent preview opens that agent.
   `refreshPromptChatPreview` runs (debounced 250 ms) from
-  `updateQuickAddEnterTarget` and on each new event of that session. Showing
-  or hiding it adds or removes its height from the docked composer
-  (`baseAnchoredHeight`).
+  `updateQuickAddEnterTarget`, on each new event of that session and on each
+  new message in the open room. The rows are painted at a fixed pitch (avatar
+  height plus a 4 px gap) and the docked composer's height is recomputed
+  whenever the row count changes (`baseAnchoredHeight`), so the third line is
+  never clipped; before 2026-10-22 the height only followed showing or hiding
+  the preview, which cut a third line in half.
 - With a chat to reply to, the follow-up button reads **chat** (comment icon)
   instead of **add**, so it is clear the text goes to that conversation.
   **new** (plus), **chat**/**add** (paper airplane) and **task** (checklist)
