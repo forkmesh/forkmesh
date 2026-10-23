@@ -6,6 +6,7 @@
 #include "HeaderWrapLayout.h"
 #include "RepoStatsStore.h"
 #include "KebabHeaderView.h"
+#include "FontSizing.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QCheckBox>
@@ -7133,8 +7134,9 @@ void MainWindow::showSizeMapScanProgress(
         auto *line = new QLabel(QStringLiteral("…"), m_sizeMapWorkersBox);
         line->setObjectName("statusLine");
         line->setTextFormat(Qt::PlainText);
-        QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-        mono.setPointSizeF(m_sizeMapStatus->font().pointSizeF());
+        const QFont mono = forkmesh::fontSizedLike(
+            QFontDatabase::systemFont(QFontDatabase::FixedFont),
+            m_sizeMapStatus->font());
         line->setFont(mono);
         line->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
         col->addWidget(line);

@@ -1988,7 +1988,7 @@ const WORLD_BRAND_NAV_PAGES = Object.freeze([
     icon: `<path d="M3 12h3.5l3 7 4-14 3 7H20"></path>`,
   },
   {
-    href: "/dashboard/chat",
+    href: "/chat",
     label: "Chat",
     copy: "Rooms, direct messages, #general",
     icon: `<path d="M20 15a2 2 0 0 1-2 2H8.6L4 20.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"></path>`,
@@ -8391,7 +8391,7 @@ class ForkMeshWorld extends HTMLElement {
         },
         onWorldBulletinSelect: () => this.openLandmark("events"),
         onWorldGeneralChatSelect: () => {
-          this.openWorldChat("/dashboard/chat");
+          this.openWorldChat("/chat");
         },
         onWorldDiscordBoardSelect: () => {
           window.dispatchEvent(new CustomEvent("forkmesh:open-discord"));
@@ -13625,7 +13625,7 @@ class ForkMeshWorld extends HTMLElement {
         this.openWorldChat(
           chatLink.getAttribute("href") ||
             chatLink.dataset.worldChatOpen ||
-            "/dashboard/chat",
+            "/chat",
           chatLink,
         );
         return;
@@ -14844,7 +14844,7 @@ class ForkMeshWorld extends HTMLElement {
       this.setHudIslandExpanded(island.dataset.expanded !== "true");
     });
     this.$("[data-world-island-full-chat]")?.addEventListener("click", () => {
-      window.open("/dashboard/chat", "_blank", "noopener,noreferrer");
+      window.open("/chat", "_blank", "noopener,noreferrer");
     });
     this.$("[data-world-island-feed]")?.addEventListener("click", (event) => {
       if (island.dataset.expanded === "true") return;
@@ -27635,7 +27635,7 @@ class ForkMeshWorld extends HTMLElement {
     return true;
   }
 
-  openWorldChat(href = "/dashboard/chat", returnFocus = null) {
+  openWorldChat(href = "/chat", returnFocus = null) {
     this.chatReturnFocus =
       returnFocus instanceof HTMLElement ? returnFocus : null;
     this.openChatTerminal();

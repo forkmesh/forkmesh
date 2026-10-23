@@ -145,7 +145,7 @@ def test_switched_off_plugins_are_not_requested_or_shown():
 
 def test_content_page_partials_mark_the_platform_name():
     partials = DASHBOARD / "partials"
-    for relative in ("views/profile-overview.html", "views/repos.html", "views/chat.html", "main.html"):
+    for relative in ("views/profile-overview.html", "views/repos.html", "main.html"):
         text = (partials / relative).read_text(encoding="utf-8")
         text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
         text = text.replace("<span data-platform-name>ForkMesh</span>", "")

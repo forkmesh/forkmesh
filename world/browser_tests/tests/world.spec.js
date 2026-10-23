@@ -12408,7 +12408,7 @@ test("World logo opens a dashboard switcher instead of silently reloading", asyn
     ["/dashboard/repos", "_top"],
     ["/dashboard/tasks", "_top"],
     ["/dashboard/network", "_top"],
-    ["/dashboard/chat", "_top"],
+    ["/chat", "_top"],
     ["/dashboard/settings", "_top"],
     // Public pages ride along as chips under the dashboard list.
     ["/", "_top"],

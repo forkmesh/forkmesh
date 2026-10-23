@@ -1648,7 +1648,7 @@
     home: "/dashboard",
     repos: "/dashboard/repos",
     network: "/dashboard/network",
-    chat: "/dashboard/chat",
+    chat: "/chat",
     profile: "/dashboard/settings",
     "profile-overview": "/dashboard/profile",
     "profile-repositories": "/dashboard/profile/repositories",
@@ -1920,10 +1920,6 @@
 
   function initNetworkPage() {
     renderNetwork();
-  }
-
-  function initChatPage() {
-    // dashboard-chat.js self-boots off the #fullChatMessages markup.
   }
 
   function initProfileOverviewPage() {
@@ -3811,6 +3807,12 @@
       const reviewPromptToggle = event.target.closest("[data-repo-pull-review-prompt-toggle]");
       if (reviewPromptToggle) {
         togglePullReviewPrompt(reviewPromptToggle);
+        return;
+      }
+
+      const mergeStatusButton = event.target.closest("[data-repo-pull-merge-status]");
+      if (mergeStatusButton) {
+        showRepoPullMergeBox(mergeStatusButton.closest("[data-repo-record-detail]"));
         return;
       }
 
