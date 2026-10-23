@@ -24,7 +24,7 @@ INVISIBLE_RE = re.compile(
 COLLAPSE_LINES = 5
 COLLAPSE_CHARS = 360
 CHATGPT_URL = "https://chatgpt.com/?q="
-CHATGPT_MAX = 6000          # percent-encoded characters of the prompt
+CHATGPT_MAX = 8000          # percent-encoded characters of the prompt
 
 DEFAULT_TEMPLATE = """Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"

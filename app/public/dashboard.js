@@ -28250,7 +28250,7 @@
   const PULL_REVIEW_COLLAPSE_LINES = 5;
   const PULL_REVIEW_COLLAPSE_CHARS = 360;
   const PULL_REVIEW_CHATGPT_URL = "https://chatgpt.com/?q=";
-  const PULL_REVIEW_CHATGPT_MAX = 6000;
+  const PULL_REVIEW_CHATGPT_MAX = 8000;
   const PULL_REVIEW_INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const PULL_REVIEW_PROMPT_DEFAULT = `Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"
