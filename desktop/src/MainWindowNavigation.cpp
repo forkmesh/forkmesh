@@ -157,6 +157,7 @@ QWidget *MainWindow::buildBreadcrumb()
         showAgentAccountMenu(QStringLiteral("claude-code"), position);
     };
     tokenUsage->onChanged = [this] { refreshAgentToolbarAccountButtons(); };
+    attachAgentUsageHoverCard(tokenUsage, [] { return kClaudeCodeProvider; });
     {
         QSettings settings;
         auto restore = [&](bool weekly, const QString &key) {
@@ -198,6 +199,7 @@ QWidget *MainWindow::buildBreadcrumb()
     codexUsage->onContextMenu = [this](const QPoint &position) {
         showAgentAccountMenu(QStringLiteral("codex"), position);
     };
+    attachAgentUsageHoverCard(codexUsage, [] { return kCodexProvider; });
     codexUsage->onChanged = [this] { refreshAgentToolbarAccountButtons(); };
     refreshCodexUsageRemaining();
     QTimer::singleShot(0, this, &MainWindow::restoreUsageLimitReminders);

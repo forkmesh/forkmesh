@@ -419,6 +419,24 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   still opens the account and terminal menus below. From 2026-10-18 until
   this change a click opened the web `/dashboard/usage` page; before that it
   opened the menu.
+- **Hover card (2026-10-22).** Hovering the Claude Code or Codex usage chart
+  in the bottom bar, or the agents toolbar's **Usage** button, shows a card
+  (`agentUsageHoverCard`, `MainWindow::attachAgentUsageHoverCard` and
+  `fillAgentUsageHoverCard` in `src/MainWindowAgentUsagePage.cpp`) instead of
+  the plain text tooltip. It holds the active account's usage bars
+  (`TokenUsageMenuRow`, with the 12-hour reset clock and the reset countdown
+  button), the session stats line, and the Usage page's controls for that
+  account: Refresh, Open the Usage page, Open in a terminal, Launch in system
+  terminal, Edit account…, Log in…, Log out…, Add account…, a switch to each
+  other account, Runner accounts… and **Use … for new agents**. The card is a
+  `Qt::ToolTip` window that takes clicks; it opens 350 ms after the pointer
+  enters, stays while the pointer is on the chart or the card, and closes
+  about 360 ms after it leaves both, or on a click on the chart. It refills
+  from `scheduleAgentUsagePagesRefresh` when usage changes, and skips the
+  rebuild when nothing it shows changed, so a click is not lost to a refill.
+  The chart's tooltip text is kept for accessibility and the toolbar button.
+  `forkmesh-window-tests --usage-hover-only` checks both providers' cards
+  (`checkAgentUsageHoverCard`).
 - Both account popups start with **Open the Usage page**
   (`addAgentUsagePageAction`), which opens the in-app page.
 - Usage rows (`TokenUsageMenuRow`) segment the bar per hour or day of the

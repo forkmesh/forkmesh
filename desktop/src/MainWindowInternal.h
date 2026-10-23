@@ -1234,6 +1234,7 @@ public:
         });
     }
 
+    QString stats() const { return m_stats; }
     void setStats(const QString &stats)
     {
         if (m_stats == stats)
