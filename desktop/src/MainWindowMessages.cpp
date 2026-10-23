@@ -3343,6 +3343,7 @@ void MainWindow::removeChatMember(const QString &id, const QString &name)
     if (m_currentConversation == conversation) {
         if (m_channels.isEmpty()) {
             m_currentConversation.clear();
+            refreshQuickAddSendToChannelButton();
             m_channelTitle->setText(QStringLiteral("No conversation"));
             m_messageInput->setPlaceholderText(QStringLiteral("Message"));
             rebuildConversationView();
