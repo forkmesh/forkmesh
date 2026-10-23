@@ -1231,7 +1231,10 @@
     const system = typeof platformAccount === "function" && platformAccount(label);
     const shown = system ? escapeHtml(shownAccountName(label)) : userNameHtml(label);
     if (system || issueActorIsBot(label)) {
-      const account = system || options?.inLink === true || ["actions", "node", "runner"].includes(botAvatarKind(label)) ? "" : issuePersonHandle(label);
+      const kind = typeof botAvatarKind === "function" ? botAvatarKind(label) : "";
+      const nonAccountBot = ["actions", "node", "runner"].includes(kind)
+        || /(?:-actions|\[bot\])$/i.test(label);
+      const account = system || options?.inLink === true || nonAccountBot ? "" : issuePersonHandle(label);
       if (account) watchIssueActorAvatars();
       return `<span${account ? ` data-issue-bot-account="${escapeHtml(account)}"` : ""} class="${classes}">${system ? shown : escapeHtml(label)}</span>`;
     }
