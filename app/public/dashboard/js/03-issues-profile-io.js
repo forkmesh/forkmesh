@@ -1236,7 +1236,7 @@
     }
     const ownPull = withPullAiModel(await signWebPull(repo, repo, title, body, base, head, head), aiModel);
     const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull: ownPull });
-    return { ...data, pull: ownPull, targetRepo: repo };
+    return { ...data, pull: ownPull, targetRepo: repo, refusedBy: targetRepo };
   }
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;

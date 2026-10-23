@@ -1124,6 +1124,9 @@
       }
       navigateHistory(detailUrl);
       await loadRepoRecordDetail(targetRepo, "pulls", number);
+      if (result.refusedBy) {
+        showErrorNotice(`${repoDisplayName(result.refusedBy)} is a read-only mirror here, so it cannot take pull requests. #${number} was opened on your fork instead. To send it upstream, open the pull request where ${repoDisplayName(result.refusedBy)} is hosted.`);
+      }
     } catch (error) {
       setSubmitBusy(submit, false);
       console.error("[forkmesh] pull request submission failed", error);
