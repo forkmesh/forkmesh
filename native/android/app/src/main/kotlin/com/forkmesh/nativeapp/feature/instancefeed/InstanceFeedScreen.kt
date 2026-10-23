@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.feature.instancefeed
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -51,6 +55,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.api.ApiService
+import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.code.DetailScaffold
 import com.forkmesh.nativeapp.feature.market.MarketFeature
 import com.forkmesh.nativeapp.format.relativeTime
@@ -65,6 +71,8 @@ import com.forkmesh.nativeapp.market.PackagesException
 import com.forkmesh.nativeapp.ui.kit.FmCard
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
@@ -154,6 +162,8 @@ internal class InstanceFeedScreen(
         val scope = rememberCoroutineScope()
         val listState = rememberLazyListState()
         val openLink = rememberLinkOpener()
+        val context = LocalContext.current
+        val origin = remember { Services.get<ApiService>()?.gitOrigin.orEmpty() }
         LaunchedEffect(Unit) {
             val target = pendingPost
             if (target != null) {
@@ -172,6 +182,9 @@ internal class InstanceFeedScreen(
             boost = { post -> toggle(scope, post, boost = true) },
             favourite = { post -> toggle(scope, post, boost = false) },
             delete = { post -> confirmDelete = post },
+            publicUrl = { post -> InstanceFeed.publicUrl(post.id, origin) },
+            openWebsite = { post -> InstanceFeed.publicUrl(post.id, origin)?.let(openLink) },
+            copyLink = { post -> InstanceFeed.publicUrl(post.id, origin)?.let { copyLink(context, it) } },
         )
         DetailScaffold(
             title,
@@ -507,6 +520,12 @@ internal class InstanceFeedScreen(
         }
     }
 
+    private fun copyLink(context: Context, url: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(ClipData.newPlainText("Feed post", url))
+        if (clipboard == null) status.error("Could not reach the clipboard.") else status.show("Link copied")
+    }
+
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
 }
 
@@ -519,6 +538,9 @@ private class FeedActions(
     val boost: (FeedPost) -> Unit,
     val favourite: (FeedPost) -> Unit,
     val delete: (FeedPost) -> Unit,
+    val publicUrl: (FeedPost) -> String?,
+    val openWebsite: (FeedPost) -> Unit,
+    val copyLink: (FeedPost) -> Unit,
 )
 
 @Composable
@@ -659,8 +681,21 @@ private fun PostActions(post: FeedPost, busy: Boolean, actions: FeedActions) {
             enabled = !busy,
         ) { actions.favourite(post) }
         Spacer(Modifier.weight(1f))
+        if (actions.publicUrl(post) != null) PostLinkMenu(post, actions)
         if (post.canDelete) {
             FmIconButton("delete_outline", "Delete post", onPressed = if (busy) null else ({ actions.delete(post) }), color = c.textTertiary, iconSize = 18.dp)
+        }
+    }
+}
+
+@Composable
+private fun PostLinkMenu(post: FeedPost, actions: FeedActions) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        FmIconButton("share", "Post link", onPressed = { open = true }, color = Fm.colors.textTertiary, iconSize = 18.dp)
+        FmDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            FmDropdownMenuItem("View on the website", onClick = { open = false; actions.openWebsite(post) }, icon = "public")
+            FmDropdownMenuItem("Copy link", onClick = { open = false; actions.copyLink(post) }, icon = "link")
         }
     }
 }
