@@ -408,6 +408,18 @@ def test_commit_goes_to_a_branch_and_merges_it_into_main(tmp_path, monkeypatch):
     assert git(repo, "rev-parse", "main") == merged
 
 
+def test_commit_is_left_to_add_core_when_the_removal_is_a_replacement(tmp_path, monkeypatch):
+    seed()
+    repo = repo_with_n4(tmp_path, monkeypatch)
+    job, _, ssh, out = make_job(tmp_path, fleet_path=repo / "deploy" / "fleet.toml",
+                                replaced_by="n5")
+    backend = rc.RemoveBackend(ssh=ssh, repo=repo)
+    backend.step_commit(job)
+    assert job.state.get("commit") == "" and job.state.get("branch") == ""
+    assert "fleet/remove-core-n4" not in git(repo, "branch", "--list")
+    assert "together with n5" in out.getvalue()
+
+
 def test_commit_refuses_other_branches(tmp_path, monkeypatch):
     repo = repo_with_n4(tmp_path, monkeypatch)
     with pytest.raises(GuardError):
