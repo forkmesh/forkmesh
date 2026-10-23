@@ -1219,6 +1219,7 @@ _URL_EXPORT_NAMES = (
     "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
     "REPO_FORK_COUNTS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
     "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
+    "AI_REVIEW_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
@@ -13980,7 +13981,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "c841261a4d250195503c8582103050794b077a64668e7d1060abe2c94466bceb"
+    "4a86f7d139c6259f7a25728fb8b972f15241c8344eab2ab7c0794f408af49bf7"
 )
 
 
@@ -16721,6 +16722,11 @@ core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
 core_push_pulls_synchronized = _core_push.export("pulls_synchronized")
 _recent_pushes = _LazyModule("recent_pushes")
+_ai_review = _LazyModule("ai_review")
+ai_review_handler = _ai_review.export("handler")
+ai_review_cron = _ai_review.export("run_cron")
+ai_review_enqueue = _ai_review.export("enqueue")
+ai_review_note_push = _ai_review.export("note_push")
 recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
 recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
@@ -42646,6 +42652,10 @@ async def pulls_handler(env, request, owner, repo):
                 env, owner, repo, "pull.opened",
                 {"number": number, "title": title, "author": actor,
                  "body": str(description or "")[:2000]}, source_actor=actor)
+        queue_ai_review = globals().get("ai_review_enqueue")
+        if queue_ai_review is not None:
+            await _best_effort_inbox_side_effect(
+                queue_ai_review(env, owner, repo, number, "opened", actor))
         # Badge (adhoc #44): render the PR's visual fingerprint from the
         # signed patch and attach it to the federated note as its lead image.
         # Best-effort — a badge failure must never block the submission.
@@ -54513,6 +54523,8 @@ def _cron_due_phases(minute_slot):
         phases.append("workflow-schedules")
     if minute % 15 == 6:
         phases.append("member-activity")
+    if minute % 5 == 0:
+        phases.append("ai-review")
     hourly = minute % 60
     if hourly == 7:
         phases.append("microjob-payouts")
@@ -54709,6 +54721,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _chat_member_stats.refresh_member_repo_activity(env)
     if phase == "workflow-schedules":
         return await run_due_workflow_schedules(env)
+    if phase == "ai-review":
+        return await ai_review_cron(env)
     if phase == "actions-schedule":
         return await _actions_schedule_cron(env, minute)
     raise ValueError("unknown cron phase")

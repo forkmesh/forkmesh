@@ -150,6 +150,9 @@ CRON_PHASE_CATALOG = (
     ("tip-verify", 5, (2,), "rewards",
      "Look for the Solana transfers paying up to three pending comment "
      "tips (read-only RPC; the forge never signs or holds funds)."),
+    ("ai-review", 5, (0,), "platform",
+     "Review at most one queued pull request with Cloudflare Workers AI "
+     "when an administrator turned AI review on."),
     ("world-satellites", 180, (11,), "platform",
      "Refresh the world satellite snapshot."),
     ("attribution-clone-snapshot", 1440, (5,), "platform",

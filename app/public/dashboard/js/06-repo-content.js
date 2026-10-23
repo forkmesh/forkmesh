@@ -5784,12 +5784,15 @@
   }
 
   function renderRepoPullConversation(events) {
-    const rows = Array.isArray(events) ? events : [];
-    return rows.filter((ev) => ev?.type !== "open")
+    const rows = (Array.isArray(events) ? events : []).filter((ev) => ev?.type !== "open");
+    const latestAiReview = latestPullAiReviewEvent(rows);
+    return rows
       .map((ev) => (ev.id && !ev.pending && PULL_EDITABLE_COMMENT_TYPES.has(ev.type) && webSessionAuthored(ev)
         ? { ...ev, _canManage: true }
         : ev))
-      .map(renderPullConversationEvent).join("");
+      .map((ev) => (isPullAiReviewEvent(ev)
+        ? renderPullAiReviewComment(ev, ev.id === latestAiReview?.id && ev.ts === latestAiReview?.ts)
+        : renderPullConversationEvent(ev))).join("");
   }
 
   function pullTimestamp(value) {
@@ -9615,6 +9618,7 @@
           </div>
           <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start">
             ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-1">${renderPullReviewers(pullConversation, values.author || "")}</span>`) : ""}
+            ${isPulls ? renderPullAiReviewSidebar(repo, number) : ""}
             ${isPulls ? sidebarSection("Assignees", `<span class="text-muted-foreground">No one assigned</span>`) : sidebarSection("Category", `<span class="inline-flex items-center gap-1.5 font-semibold"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`)}
             ${sidebarSection("Labels", labelValue)}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
@@ -11381,6 +11385,7 @@ Your reply
       if (kind === "issues") recordIssueView(repo, number);
       void refreshRepoRecordDevelopment(repo, kind, number);
       if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
+      if (kind === "pulls") void loadPullAiReview(repo, number);
       // Members watch an open pull for agent activity; signed-out visitors
       // cannot read organization sessions at all, so they get no timer.
       if (kind === "pulls" && state.session?.sessionToken) {
