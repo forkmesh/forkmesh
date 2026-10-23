@@ -602,9 +602,15 @@ def test_render_repo_issues_applies_the_search_filter_after_the_status_filter():
     # the only one that narrows it, so text left in the header search box can
     # no longer empty the list (issue #673).
     assert '}).filter((issue) => issueMatchesFilters(issue, issueFilterState()))' in render
-    assert '.filter((issue) => localFilterQueries(issuesView.query)' in render
+    assert '.filter((issue) => issueMatchesSearch(issue, issuesView.query));' in render
     assert 'pageFilterQueries(' not in render
-    assert '.every((query) => issueMatchesQuery(issue, query)));' in render
+    search = DASHBOARD_JS[
+        DASHBOARD_JS.index("function issueMatchesSearch")
+        : DASHBOARD_JS.index("function issueSearchState")
+    ]
+    assert 'const queries = localFilterQueries(query);' in search
+    assert 'pageFilterQueries(' not in search
+    assert 'queries.every((text) => issueMatchesQuery(issue, text))' in search
 
 
 def test_issue_metadata_dropdowns_are_real_filters_with_live_options():

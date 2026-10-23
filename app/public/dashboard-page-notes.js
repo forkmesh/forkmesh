@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["notes"] = (core) => {
-  const { $, escapeHtml, issuePersonNameHtml, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, submitWebIssue } = core;
+  const { $, escapeHtml, issuePersonNameHtml, platformName, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, submitWebIssue } = core;
   // Collaborative Markdown notes. Edits autosave through the version-checked
   // PATCH; the socket only announces persisted changes, in-progress drafts,
   // and lightweight presence.
@@ -38,8 +38,8 @@
     owner_required: "Only the note's owner can do that.",
     editor_required: "You need edit access to do that.",
     note_not_found: "This note no longer exists, or you no longer have access to it.",
-    upstream_unavailable: "ForkMesh is restarting. Try again in a few seconds.",
-    sealed: "ForkMesh is restarting. Try again in a few seconds.",
+    get upstream_unavailable() { return `${platformName()} is restarting. Try again in a few seconds.`; },
+    get sealed() { return `${platformName()} is restarting. Try again in a few seconds.`; },
   };
   const NOTE_READ_RETRY_DELAYS_MS = [500, 1500, 4000];
 

@@ -310,18 +310,19 @@ def test_notification_mentions_extract_node_handles_once_without_false_positives
 
 
 def test_worker_indexes_notifications_from_existing_event_sources():
-    assert "_best_effort_inbox_side_effect(\n            notify_pending_inbox(" in ENTRY_TEXT
+    assert re.search(r"_best_effort_inbox_side_effect\(\s*notify_pending_inbox\(", ENTRY_TEXT)
     assert 'env, owner, repo, "issue", actor' in ENTRY_TEXT
-    assert "_best_effort_inbox_side_effect(\n            notify_issue_assignees(" in ENTRY_TEXT
+    assert re.search(r"_best_effort_inbox_side_effect\(\s*notify_issue_assignees\(", ENTRY_TEXT)
     for marker in (
         "await notify_pending_inbox(env, owner, repo, \"pull\"",
-        "await notify_pending_inbox(env, owner, repo, \"discussion\"",
         "await notify_mentions(env, owner, repo,",
         "await enqueue_notification(env, grantee, \"repo_shared\"",
         "async def notify_release_published",
         "await notify_host_status(env, repo_bi, \"host_offline\"",
     ):
         assert marker in ENTRY_TEXT
+    assert re.search(r'_best_effort_inbox_side_effect\(notify_pending_inbox\(\s*'
+                     r'env, owner, repo, "discussion", actor', ENTRY_TEXT)
     # Legacy Worker-held bounty funding/payout mutation is frozen; public
     # historical status polling must not emit a new event or move funds.
     bounty_handler = ENTRY_TEXT[
@@ -374,9 +375,9 @@ def test_worker_exposes_signed_thread_subscription_route_and_schema():
 def test_worker_auto_subscribes_commenters_and_fans_out_to_followers():
     # Anyone who comments is auto-subscribed and existing followers are notified,
     # for both issues and PRs.
-    assert "_best_effort_inbox_side_effect(\n            notify_subscribers(" in ENTRY_TEXT
+    assert re.search(r"_best_effort_inbox_side_effect\(\s*notify_subscribers\(", ENTRY_TEXT)
     assert 'env, owner, repo, "issue", number, actor' in ENTRY_TEXT
-    assert "_best_effort_inbox_side_effect(\n            subscribe_thread(" in ENTRY_TEXT
+    assert re.search(r"_best_effort_inbox_side_effect\(\s*subscribe_thread\(", ENTRY_TEXT)
     assert 'subscribe_thread(env, owner, repo, "issue", number, actor)' in ENTRY_TEXT
     for marker in (
         'await notify_subscribers(env, owner, repo, "pull"',
@@ -1370,7 +1371,9 @@ def test_pause_notifications_is_wired_through_worker_dashboard_and_desktop():
         )
     ]
     assert "kPingPauseUntilSetting" in header
-    assert "inline bool pingsPaused()" in header
+    assert "bool pingsPaused();" in header
+    internal = (qt_src / "MainWindowInternal1.cpp").read_text(encoding="utf-8")
+    assert "bool pingsPaused()\n{\n    return pingPauseUntilMs() > 0" in internal
     for choice in ("For 1 hour", "For 1 day", "Until next week", "Custom"):
         assert choice in actions
     assert "Resume notifications" in actions
@@ -1381,11 +1384,12 @@ def test_pause_notifications_is_wired_through_worker_dashboard_and_desktop():
     # files the Ping and never raises a card or an inline notice.
     assert "kNativeSystemNotificationsSetting" in header
     assert "nativeSystemNotificationsEnabled()" in header
-    assert "kSystemAlertSetting, false" in header
+    assert "kSystemAlertSetting" in header
+    assert "QSettings().value(kSystemAlertSetting, false)" in internal
     assert "pingsPaused() || !nativeSystemNotificationsEnabled()" in actions
     assert "void MainWindow::flashPingMessage" in settings
     assert "NoticeRoute::Ping" in settings
-    assert "const bool paused = pingsPaused();" in settings
+    assert "if (!pingsPaused() && forkmesh::pings::pingKindEnabled(kind))" in settings
     assert "!nativeSystemNotificationsEnabled()" in settings
     assert "flashPingMessage(summary" in agents
     assert "if (!pingsPaused())\n        flashCelebrationBorder();" in agents

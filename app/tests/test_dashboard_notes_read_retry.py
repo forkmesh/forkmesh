@@ -34,6 +34,7 @@ globalThis.fetch = async (path, init) => {
   return { ok: status < 400, status, json: async () => body };
 };
 const state = { session: { sessionToken: "t" } };
+function platformName() { return "ForkMesh"; }
 %s
 noteRequest("/api/notes", %s, %s).then(
   (data) => console.log(JSON.stringify({ calls: calls.length, data })),

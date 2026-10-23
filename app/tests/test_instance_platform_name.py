@@ -54,6 +54,7 @@ KEPT = {
     "07-repo-pull-batch.js": ["runs a ForkMesh version"],
     "08-repo-detail-network.js": ["other ForkMesh instances"],
     "09-workflows.js": ["an n8n or ForkMesh workflow file"],
+    "09-apps.js": ["Open Market in the ForkMesh desktop or phone app"],
 }
 
 
@@ -355,6 +356,7 @@ PAGE_KEPT = (
     "forkmesh-profile=username",
     "demo@forkmesh.local",
     "forkmesh-demo",
+    ".forkmesh/pulls.json",
 )
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
         "source", "track", "wbr"}
@@ -433,8 +435,10 @@ def test_the_instance_git_node_is_shown_as_the_instance_in_commits():
     assert "return Boolean(value) && dashboardOnInstance() && value === instanceGitNode;" in helpers
     assert "void instanceInfo();" in (JS / "10-boot.js").read_text(encoding="utf-8")
     compose = (JS / "07-repo-compose-branch.js").read_text(encoding="utf-8")
-    assert compose.count("shownAccountName(commit.author)") == 3
-    assert "${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}" in compose
+    assert compose.count("shownAccountName(commit.author)") == 1
+    assert compose.count('issuePersonNameHtml(commit.author || "unknown"') == 2
+    assert "const shown = system ? escapeHtml(shownAccountName(label)) : userNameHtml(label);" in helpers
+    assert 'issuePersonNameHtml(item.author, "font-medium text-foreground", { git: true })' in compose
     content = (JS / "06-repo-content.js").read_text(encoding="utf-8")
     assert "const platform = platformAccount(contributor?.name);" in content
     assert "shownAccountName(commit.author)" in content

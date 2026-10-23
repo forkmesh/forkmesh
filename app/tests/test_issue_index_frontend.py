@@ -37,6 +37,11 @@ async function primeRepoViewReads() {}
 function isMissingMirrorFolder() { return false; }
 function immutableGitCommit(value) { return value; }
 function repoKey(repo) { return repo; }
+function repoViewKey(repo, view) { return `${repo}:${view}`; }
+function repoStaleReadMark() { return 0; }
+function repoReconnectActive() { return false; }
+function finishRepoRead() {}
+function handleRepoReadFailure() { return false; }
 function repoLiveUrl(repo, action, params = {}) {
   return `${action}?${new URLSearchParams(params).toString()}`;
 }
