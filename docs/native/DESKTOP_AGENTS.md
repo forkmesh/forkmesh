@@ -507,6 +507,37 @@ on 2026-10-21): `AgentRunScreen` (desktop, node and runner runs),
   queueing behind it (`awaitDesktopDuringMerge` also refuses the phone merges
   already queued).
 
+### Set aside and merge
+
+The desktop refuses to merge into a checkout whose uncommitted changes touch
+files the merge changes ("Can't merge … yet: the checkout has uncommitted
+changes in files this merge touches"). On 2026-10-23 that blocked a phone
+merge while another agent was mid-edit in the primary checkout, and the only
+fix was at the desktop. Now the phone can do it:
+
+- The phone always sends `offerSetAside: true` with `agentops.merge`. When the
+  refusal is only that overlap (the checkout is on the base branch, nothing is
+  staged, and every overlapping file is an unstaged edit, `" M"`), the desktop
+  answers `checkout_dirty` with the same message instead of `merge_failed`. An
+  older phone never sends the flag, so it keeps getting `merge_failed`.
+- `MergeCleanupModel.canSetAside` turns on, and `MergeFailureNote` (Changes
+  screen) and `MergeCleanupSheet` show **Set aside and merge**, which runs the
+  merge again with `setAside: true`.
+- The desktop (`desktop/src/MergeSetAside.cpp`, called from
+  `prepareWorktreeMerge`) saves all uncommitted work with `git stash create`
+  on a branch `wip/<base>-before-<branch>-<yyyyMMdd-HHmmss>` (the shared stash
+  list is never touched), keeps the overlapping files' diff, checks only those
+  files out at `HEAD`, runs the normal merge, then reapplies the diff with
+  `git apply --3way` and unstages it. Other uncommitted files are never
+  touched, so an agent working in that checkout keeps its edits.
+- If the edits clash with the merge, those files keep conflict markers and
+  the `wip/` branch holds the untouched copy. The note saying what happened
+  (`putBackNote`) is posted on the desktop and answered as `setAside` next to
+  `branch` and `stats`; the phone appends it to the merge message and shows it
+  on the landed screen.
+- Staged changes, untracked or deleted files, and a checkout on another
+  branch still refuse as before: those need a person at the desktop.
+
 ### Merge stats
 
 `agentops.merge` answers `stats` next to `branch`:
