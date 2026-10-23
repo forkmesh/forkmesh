@@ -334,13 +334,12 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   grip on the left.
 - **Chat preview** (`ChatPreviewLabel`, `promptChatPreview`): up to three
   one-line rows over the prompt with the latest messages of the conversation
-  the follow-up button sends to, each with the sender's small round avatar
+  the composer sends to, each with the sender's small round avatar
   (16 px). With a chat room open on the Chat page (`promptChatRoom`: #general
   or any other room, channel or direct message), the rows are that room's
-  latest top-level messages (`chatActorAvatar`), and **chat** and Enter post
-  the prompt to the room through its own send path (`sendPromptToChatRoom`,
-  which hands the text to `sendCurrentMessage`; attachments stay in the
-  room's own message box). Otherwise the rows follow the agent open above, else
+  latest top-level messages (`chatActorAvatar`), and Enter (and the centred
+  layout's send button) post the prompt to the room through **send to**
+  (below). Otherwise the rows follow the agent open above, else
   the last selected one (`promptChatTargetSessionId`), with the agent's model
   icon and your avatar. Agent rows come from the session's stream events
   (`_local_user`, `assistant` text, `_codex_agent_complete`), last paragraph of
@@ -353,11 +352,27 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   whenever the row count changes (`baseAnchoredHeight`), so the third line is
   never clipped; before 2026-10-22 the height only followed showing or hiding
   the preview, which cut a third line in half.
-- With a chat to reply to, the follow-up button reads **chat** (comment icon)
-  instead of **add**, so it is clear the text goes to that conversation.
-  **new** (plus), **chat**/**add** (paper airplane) and **task** (checklist)
-  carry small icons in both interfaces (`tintComposerActionButton`; on the
-  accent fill of the Enter target the icon uses the on-accent colour).
+- The follow-up button always reads **add**, chat preview or not (the centred
+  workspace layout's send button reads **Add** when it is the Enter target).
+  For part of 2026-10-22 it read **chat** over a preview; the label went back
+  to **add** because "chat" now means a chat channel (below).
+- The top of the send column is **send to: #channel**
+  (`m_quickAddSendToChannelButton`, object name still `quickAddGenieButton`
+  for the stylesheets): it names the chat conversation open on the Chat page
+  (`m_currentConversation`, labelled by `chatConversationLabel`) and posts the
+  prompt there through `sendChatText`, the same path as the Chat page's own
+  composer (`sendCurrentMessage`), refusing attachments and a room you cannot
+  post in. `updateChatConversationHeading` and `updateQuickAddEnterTarget`
+  refresh its label. While the Chat page is open (`promptChatRoom`) it takes
+  Enter, and **add** and **new** step aside. For part of 2026-10-22 the
+  follow-up button did this as **chat**, by pasting the text into the room's
+  own message box (`sendPromptToChatRoom`). It replaced
+  the **task** button, which filed the prompt in General: that lives in the
+  agent/model dropdown as **Task · assign**, where leaving the assignee on
+  Unassigned files the task in General.
+- **new** (plus), **add** (paper airplane) and **send to** (comment) carry
+  small icons in both interfaces (`tintComposerActionButton`; on the accent
+  fill of the Enter target the icon uses the on-accent colour).
 
 - The repository comes from `resolveAgentRepositoryIndex` for local and cloud
   runs. Phones expose the same switches through `agents.start`.

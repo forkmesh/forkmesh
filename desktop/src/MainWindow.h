@@ -4954,6 +4954,8 @@ private:
                                  const QString &prefillDetails,
                                  std::function<void()> onCreated);
     void createQuickAddOrganizationTask();
+    void sendQuickAddToChannel();
+    void refreshQuickAddSendToChannelButton();
     QStringList organizationTaskMemberNames() const;
     QString organizationTaskActorName() const;
     void refreshQuickAddTaskAssignees();
@@ -7211,7 +7213,6 @@ private:
     void schedulePromptChatPreview();
     int promptChatTargetSessionId() const;
     QString promptChatRoom() const;
-    bool sendPromptToChatRoom(const QString &text);
     void refreshInstanceTheme();
     void applyInstanceThemeChoice(bool enabled);
     bool quickAddShouldFollowUpAgent() const;
@@ -10556,6 +10557,7 @@ private:
     QString privateChannelsSettingsKey() const;
     void ensureTeamRoom();
     void sendCurrentMessage();
+    bool sendChatText(const QString &conversation, const QString &text);
     void maybeAskForkbot(const QString &conversation, const QString &text,
                          const QString &threadRootId = QString());
     void onComposerEdited(const QString &text);
@@ -12490,7 +12492,7 @@ private:
     QComboBox *m_quickAddSpeedSelector = nullptr;
     QCheckBox *m_quickAddCreatePr = nullptr;    // request PR from quick-add agent
     QPushButton *m_quickAddSendToAgentButton = nullptr;
-    QPushButton *m_quickAddGenieButton = nullptr;
+    QPushButton *m_quickAddSendToChannelButton = nullptr;
     QPushButton *m_quickAddSendButton = nullptr;
     QPushButton *m_quickAddImageButton = nullptr;
     QStringList m_quickAddImages;               // image paths queued for next send
