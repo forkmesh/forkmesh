@@ -52,6 +52,7 @@ Qt statically in an older-distribution container
 
 ```sh
 ./desktop/run.sh            # (or "run") configure Release, build incrementally, launch
+./desktop/run.sh launch     # launch the last build without configuring or building
 ./desktop/run.sh test       # configure with tests ON, build critical-tests, run tools/run_critical_tests.py qt
 ./desktop/run.sh clean      # remove desktop/build
 ./desktop/run.sh rebuild    # clean, build, launch
@@ -63,6 +64,46 @@ sizes `--parallel` from free memory (6 GiB reserved, 2 GiB per job, at most 12;
 same as `ramCappedBuildJobs()`), and configures `-DFORKMESH_BUILD_TESTS=OFF` for
 `run`. CMake also declares a heavy-compile job pool for the `MainWindow*.cpp`
 units (`FORKMESH_HEAVY_JOBS`, override `FORKMESH_HEAVY_JOBS_OVERRIDE`).
+
+### Skipping the configure step
+
+`cmake -B build` cost about 10 s on every launch even when nothing changed (the
+4,900-line `CMakeLists.txt`, its globs and the package modules). run.sh now
+writes the configure arguments, plus the path of `ccache` if one is installed,
+to `build/run-sh-configure.args` after a successful configure, and skips the
+step when `CMakeCache.txt` and `build.ninja` (or `Makefile`) exist, the
+arguments match, and the cache is not newer than that file. It logs
+`build tree already configured; skipping the configure step`, the same line as
+the desktop's Rebuild & restart. Ninja itself re-runs CMake when
+`CMakeLists.txt` or a `CONFIGURE_DEPENDS` glob changes. Changing the arguments
+(`run` after `test`, a new Qt prefix, installing ccache) or anything else that
+rewrites the cache (the desktop's own configure, Ninja's re-run) makes the next
+run configure again.
+
+### Build lock
+
+Two builds in the same `build/` overwrite each other's objects and the shared
+precompiled header (`cmake_pch.hxx.pch`). On 2026-10-23 one build failed with
+`PCH file ... not found` because a second build replaced the header mid-build.
+`run`, `rebuild`, `test`, `clean` and `launch` take `build/.run-sh.lock` (a
+directory holding the owner's pid) before touching the tree. A second run.sh
+prints `==> Waiting for the build already running in <dir> (pid N)...` and
+waits. A lock whose pid is gone, or which has had no pid for about five
+seconds, is removed. The lock is released on exit and before the script hands
+over to the app or the test runner with `exec`; `rebuild`, and a stale-cache
+cleanup, take it again right after deleting `build/`. Only run.sh uses this
+lock. The desktop's Rebuild & restart and a bare `ninja`/`cmake --build` in the
+same folder do not.
+
+### ccache
+
+`CMakeLists.txt` already compiles through ccache when it finds one; without it,
+a fresh `build/`, `rebuild` or a branch switch recompiles about 380 app sources
+(roughly 21 CPU-minutes, 4 to 5½ minutes on a 10-core, 16 GB Mac at five
+jobs). Install it with `brew install ccache`; the next run configures again
+because the stamp records ccache's path. `FORKMESH_SOURCE_DIR` puts the
+checkout path in every compile line, so separate checkouts do not share cached
+objects.
 
 ### Step and timing log
 
@@ -90,9 +131,9 @@ else the output's tail. Each step's output is also kept in
 The desktop's log is C++ in the running app and run.sh is a shell script, so the
 two cannot share one implementation; `app/tests/test_desktop_run_sh_restart_log.py`
 pins the shared wording against the C++ strings and runs run.sh with a fake
-`cmake` to check the order, the quiet mode and the failure line. run.sh does not
-copy the parts of Rebuild & restart that it never did: it still configures every
-time, builds once (no extra pass when the sources move), and does not build the
+`cmake` to check the order, the quiet mode, the failure line, the configure
+skip, `launch` and the build lock. run.sh does not
+copy the parts of Rebuild & restart that it never did: it builds once (no extra pass when the sources move), and does not build the
 Go mirror-node companion, install, or record restart history for the countdown.
 
 ## Machine-wide compile gate
