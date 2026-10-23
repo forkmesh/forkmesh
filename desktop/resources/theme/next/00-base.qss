@@ -109,13 +109,13 @@ QPushButton#repoAction {
 QPushButton#repoAction:hover { background-color: @surfaceActive; }
 
 QScrollBar::handle:vertical {
-    background: @borderStrong; border-radius: 3px; min-height: 30px; margin: 2px;
+    background: @surfaceActive; border-radius: 3px; min-height: 30px; margin: 2px;
 }
-QScrollBar::handle:vertical:hover { background: @fgSubtle; }
+QScrollBar::handle:vertical:hover { background: @borderStrong; }
 QScrollBar::handle:horizontal {
-    background: @borderStrong; border-radius: 3px; min-width: 30px; margin: 2px;
+    background: @surfaceActive; border-radius: 3px; min-width: 30px; margin: 2px;
 }
-QScrollBar::handle:horizontal:hover { background: @fgSubtle; }
+QScrollBar::handle:horizontal:hover { background: @borderStrong; }
 
 QSplitter::handle:horizontal {
     width: 9px;
@@ -253,7 +253,7 @@ QSlider::handle:horizontal:hover { border-color: @accentHover; }
 #settingsRowTitle { color: @fg; font-size: 14px; font-weight: 500; }
 #settingsRowDescription { color: @fgMuted; font-size: 12px; }
 #groupHeading { color: @fgSecondary; font-size: 14px; font-weight: 500; background: transparent; }
-#pageTitle { color: @fg; font-size: 20px; font-weight: 600; background: transparent; }
+#pageTitle { color: @fg; font-size: 15px; font-weight: 600; background: transparent; }
 #pageLede { color: @fgMuted; font-size: 14px; background: transparent; }
 #fieldLabel { color: @fg; font-size: 13px; font-weight: 500; background: transparent; }
 #fieldHint { color: @fgMuted; font-size: 12px; background: transparent; }

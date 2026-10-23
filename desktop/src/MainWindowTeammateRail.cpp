@@ -38,6 +38,7 @@ constexpr int kTeammateRailInset = 2;
 constexpr int kTeammateRailSquare = kTeammateRailItemWidth - 2 * kTeammateRailInset;
 constexpr int kTeammateRailFaceRadius = 7;
 constexpr int kTeammateRailHud = 14;
+constexpr int kTeammateRailNextChip = 40;
 constexpr int kTeammateRailMood = 16;
 constexpr int kTeammateRailHudInset = 3;
 constexpr int kTeammateRailMinWindowWidth = 1000;
@@ -1281,7 +1282,8 @@ void MainWindow::refreshTeammateRail()
         delete item;
     }
 
-    auto *title = new QLabel(QStringLiteral("Specials"));
+    auto *title = new QLabel(Theme::isNext() ? QStringLiteral("TEAM")
+                                             : QStringLiteral("Specials"));
     title->setObjectName(QStringLiteral("teammateRailTitle"));
     title->setAlignment(Qt::AlignHCenter);
     m_teammateRailLayout->addWidget(title, 0, Qt::AlignHCenter);
@@ -1353,6 +1355,75 @@ QWidget *MainWindow::buildTeammateRailItem(const Config &config,
     item->setProperty("teammateId", config.id);
     item->setProperty("status", status);
     item->setProperty("doneUnseen", doneUnseen);
+    if (Theme::isNext()) {
+        const AgentChoice primary = forkmesh::teammates::agentChoiceFor(config);
+        const int sessionId = session ? session->id : 0;
+        const QString modelLabel = agentModelLabel(primary.model).isEmpty()
+                                       ? agentProviderName(primary.provider)
+                                       : agentModelLabel(primary.model);
+        const RailFaceLook look =
+            railFaceLook(config, status, inFlight, doneUnseen, sessionId, mood,
+                         modelLabel, dark);
+        item->setProperty("runWindowState", static_cast<int>(look.windowState));
+        item->setProperty("mood", mood.key);
+        item->setFixedSize(kTeammateRailItemWidth, kTeammateRailNextChip + 4);
+
+        const QString name = config.name.trimmed();
+        QString initials = name.size() <= 3 ? name : name.left(2);
+        if (initials.isEmpty())
+            initials = QStringLiteral("?");
+        auto *chip = new QPushButton(initials, item);
+        chip->setObjectName(QStringLiteral("teammateRailAvatar"));
+        chip->setProperty("nextChip", true);
+        chip->setProperty("enabledTeammate", config.enabled);
+        chip->setFixedSize(kTeammateRailNextChip, kTeammateRailNextChip);
+        chip->move((kTeammateRailItemWidth - kTeammateRailNextChip) / 2, 2);
+        chip->setCursor(Qt::PointingHandCursor);
+        chip->setAccessibleName(look.accessibleName);
+        chip->setToolTip(look.tooltip);
+        chip->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(chip, &QPushButton::clicked, this,
+                [this, id = config.id] { openTeammateHome(id); });
+        connect(chip, &QWidget::customContextMenuRequested, this,
+                [this, id = config.id] { showTeammateRailMenu(id, nullptr); });
+
+        QColor dotColor;
+        if (!inFlight && session && session->status == AgentStatus::Failed)
+            dotColor = Theme::color(Theme::Role::Danger);
+        else if (inFlight)
+            dotColor = Theme::color(Theme::Role::Accent);
+        else if (doneUnseen || mood.wantsAttention)
+            dotColor = Theme::color(Theme::Role::Warning);
+        if (dotColor.isValid()) {
+            auto *dot = new QLabel(item);
+            dot->setObjectName(QStringLiteral("teammateRailStatusDot"));
+            dot->setFixedSize(10, 10);
+            dot->setAttribute(Qt::WA_TransparentForMouseEvents);
+            dot->setStyleSheet(QStringLiteral("background:%1;border:2px solid %2;"
+                                              "border-radius:5px;")
+                                   .arg(dotColor.name(),
+                                        Theme::hex(Theme::Role::BgSubtle)));
+            dot->move(chip->x() + kTeammateRailNextChip - 7, 0);
+            dot->raise();
+        }
+
+        const QList<QPushButton *> hud =
+            addTeammateRailHud(item, config, inFlight, sessionId, mood,
+                               QStringLiteral("teammateRail"), kTeammateRailHud,
+                               kTeammateRailHud);
+        const QPoint corners[] = {
+            QPoint(chip->x() - 3, chip->y() + kTeammateRailNextChip - kTeammateRailHud + 3),
+            QPoint(chip->x() + kTeammateRailNextChip - kTeammateRailHud + 3,
+                   chip->y() + kTeammateRailNextChip - kTeammateRailHud + 3),
+            QPoint(chip->x() + kTeammateRailNextChip - kTeammateRailHud + 3, chip->y() - 3),
+            QPoint(chip->x() - 3, chip->y() - 3)};
+        for (int i = 0; i < hud.size() && i < 4; ++i) {
+            hud.at(i)->move(corners[i]);
+            hud.at(i)->raise();
+            item->addHoverButton(hud.at(i));
+        }
+        return item;
+    }
     const double staleness =
         inFlight ? 0.0 : forkmesh::teammates::runStaleness(config);
     item->setProperty("staleness", staleness);
