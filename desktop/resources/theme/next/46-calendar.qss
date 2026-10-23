@@ -97,3 +97,50 @@
 #calendarDayList::item:selected, #calendarAgendaList::item:selected {
     background-color: @surfaceActive; color: @fg;
 }
+
+#calendarSection QLabel#mutedLabel[calendarHeader="subtitle"] {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#calendarSection QLabel#sectionTitle[calendarHeader="range"] {
+    color: @fg; font-size: 13px; font-weight: 500; background: transparent;
+}
+#calendarSection QPushButton#ghostButton[calendarNav="outline"] {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 12px; font-weight: 500;
+    padding: 0px 10px; min-height: 28px; max-height: 28px; text-align: center;
+}
+#calendarSection QPushButton#ghostButton[calendarNav="outline"]:hover {
+    background-color: @surfaceRaised;
+}
+#calendarSection QPushButton#ghostButton[calendarNav="ghostStep"] {
+    background-color: transparent; border: none; border-radius: 6px; padding: 0px;
+    min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px;
+}
+#calendarSection QPushButton#ghostButton[calendarNav="ghostStep"]:hover {
+    background-color: @surfaceRaised;
+}
+#calendarSection QPushButton#ghostButton[calendarNav="outline"]:pressed,
+#calendarSection QPushButton#ghostButton[calendarNav="ghostStep"]:pressed {
+    background-color: @surfaceActive;
+}
+#calendarSection QPushButton#primaryButton[calendarNav="create"] {
+    border-radius: 8px; padding: 0px 12px 0px 10px;
+    min-height: 28px; max-height: 28px; font-size: 12px; font-weight: 500;
+}
+#calendarSection QFrame#calendarViewTabs {
+    background-color: @surface; border: none; border-radius: 8px;
+}
+#calendarSection QToolButton#calendarViewTab {
+    background: transparent; border: none; border-radius: 6px; color: @fgMuted;
+    padding: 0px 10px; min-height: 24px; max-height: 24px;
+    font-size: 13px; font-weight: 500;
+}
+#calendarSection QToolButton#calendarViewTab:hover { color: @fg; }
+#calendarSection QToolButton#calendarViewTab:checked {
+    background-color: @surfaceActive; color: @fg;
+}
+#calendarSection QToolButton#calendarMiniStep {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+}
+#calendarSection QToolButton#calendarMiniStep:hover { background-color: @surfaceRaised; }
+#calendarWeekTable QHeaderView::section:vertical { color: @fgSubtle; }
