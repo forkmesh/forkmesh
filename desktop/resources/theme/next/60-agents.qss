@@ -109,7 +109,6 @@ QToolButton#agentStatusPill:hover { background-color: @surfaceRaised; }
 #agentMetaPopup, #slashActionsPopup { border-color: @borderStrong; }
 
 #promptWrapper, #promptWrapper:focus-within { border-color: @borderStrong; }
-#promptResizeGrip:hover { background-color: @accent; }
 QCheckBox#promptWorktreeCheck::indicator:checked, QCheckBox#promptVibeCheck::indicator:checked {
     border-color: @accent; background: @accent;
 }
