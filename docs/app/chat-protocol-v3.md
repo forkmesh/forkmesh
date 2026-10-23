@@ -127,7 +127,10 @@ Each room has a trust policy and a trust scope (where approvals are stored):
 
 Clients show a system line in the conversation for every new pending device
 ("A new device for Alex wants to join this chat. Check the safety number,
-then approve or block.") and a banner with Approve and Block.
+then approve or block.") and a banner with Approve and Block. The iPhone app
+folds every waiting device into one line and one banner ("2 new devices for
+Alex want to join this chat"), so a safety-number change that brings several
+devices at once asks once; Approve and Block act on all of them.
 
 ## Sealed frames v3
 
