@@ -265,6 +265,28 @@ QMap<QString, QString> overridePalette(Design design, bool dark)
     return palette;
 }
 
+QMap<QString, QString> halloweenRoleColors()
+{
+    static const PaletteEntry kHalloween[] = {
+        {"bg", "#120b10"},           {"bgSubtle", "#0b0609"},
+        {"surface", "#1a1016"},      {"surfaceRaised", "#24151d"},
+        {"surfaceActive", "#331d29"}, {"border", "#3a2330"},
+        {"borderStrong", "#5a3447"}, {"fg", "#f6e9dc"},
+        {"fgSecondary", "#e2cdb8"},  {"fgMuted", "#b39a8a"},
+        {"fgSubtle", "#8a7266"},     {"accent", "#f97316"},
+        {"accentHover", "#fb8a3c"},  {"accentPressed", "#d65f0c"},
+        {"accentFg", "#ffa24d"},     {"accentSubtle", "#3a1d0c"},
+        {"onAccent", "#1b0d05"},     {"selection", "#6b2f0e"},
+        {"success", "#a3e635"},      {"successSubtle", "#1e2a0d"},
+        {"warning", "#facc15"},      {"warningSubtle", "#2e240a"},
+        {"danger", "#ef4444"},       {"dangerSubtle", "#2e0f12"},
+    };
+    QMap<QString, QString> roles;
+    for (const PaletteEntry &entry : kHalloween)
+        roles.insert(QString::fromLatin1(entry.from), QString::fromLatin1(entry.to));
+    return roles;
+}
+
 QString hex(Role role, Design design, bool dark)
 {
     const RoleValues &entry = values(role);
