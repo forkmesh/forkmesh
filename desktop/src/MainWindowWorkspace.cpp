@@ -600,8 +600,10 @@ void refreshIcons(Chrome *chrome)
     chrome->panelNewShell->setIcon(glyph(QStringLiteral("plus"), muted));
     chrome->panelClose->setIcon(glyph(QStringLiteral("x"), muted));
     if (chrome->composerSend) {
+        const bool chat = chrome->composerSend->property("workspaceChat").toBool();
         chrome->composerSend->setIcon(
-            glyph(QStringLiteral("arrow-up"), Theme::Role::Fg, 16));
+            glyph(QStringLiteral("arrow-up"),
+                  chat ? Theme::Role::OnAccent : Theme::Role::Fg, chat ? 14 : 16));
         chrome->composerMenu->setIcon(glyph(QStringLiteral("kebab"), muted));
     }
     if (chrome->browser) {
@@ -1382,6 +1384,27 @@ void NextAccess::syncWorkspace(MainWindow &window)
         return;
     }
 
+    if (chrome->composerSend) {
+        const bool chat =
+            window.m_quickAddSendToAgentButton &&
+            window.m_quickAddSendToAgentButton->property("enterTarget").toBool() &&
+            window.m_quickAddSendToAgentButton->text() == QLatin1String("chat");
+        const QString label = chat ? QStringLiteral("Chat") : QString();
+        if (chrome->composerSend->text() != label) {
+            chrome->composerSend->setText(label);
+            chrome->composerSend->setFixedSize(chat ? 78 : 34, 34);
+            chrome->composerSend->setToolTip(
+                chat ? QStringLiteral("Send to this chat (Enter)")
+                     : QStringLiteral("Send (Enter)"));
+            chrome->composerSend->setAccessibleName(
+                chat ? QStringLiteral("Send to chat") : QStringLiteral("Send"));
+            setFlag(chrome->composerSend, "workspaceChat", chat);
+            chrome->composerSend->setIcon(
+                glyph(QStringLiteral("arrow-up"),
+                      chat ? Theme::Role::OnAccent : Theme::Role::Fg, chat ? 14 : 16));
+        }
+    }
+
     if (window.m_agentListView != MainWindow::AgentListView::Full) {
         window.setAgentListView(MainWindow::AgentListView::Full);
         QSettings().setValue(QLatin1String(kListViewSetting),
@@ -1903,7 +1926,12 @@ void NextAccess::placeWorkspaceComposer(MainWindow &window, bool overDetail)
             window.m_issueQuickAdd->viewport()->setAutoFillBackground(
                 centred ? false : chrome->classicEditFill);
     }
-    const int host = centred ? kComposerHeight : window.m_promptAnchoredHeight;
+    const int preview = window.m_promptChatPreview &&
+                                !window.m_promptChatPreview->isHidden()
+                            ? window.m_promptChatPreview->sizeHint().height()
+                            : 0;
+    const int host =
+        centred ? kComposerHeight + preview : window.m_promptAnchoredHeight;
     const int height = host + 8 + (centred ? kComposerBottomPad : 0);
     if (window.m_footerDock->minimumHeight() != height ||
         window.m_footerDock->maximumHeight() != height)

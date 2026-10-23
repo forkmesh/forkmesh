@@ -64,6 +64,7 @@
 #endif
 #include "MainWindowAgentsInternal.h"
 #include "MainWindowNextAccess.h"
+#include "OverflowActionRow.h"
 
 using namespace forkmesh::ui;
 
@@ -1237,38 +1238,14 @@ QWidget *MainWindow::buildAgentsTab()
     metaPopupLayout->addLayout(popOutRow);
     buildAgentDetailActionButtons();
 
-    auto *actionRow = new QHBoxLayout;
-    actionRow->setContentsMargins(0, 0, 0, 0);
-    actionRow->setSpacing(6);
-    actionRow->addWidget(m_agentMoveToCloudButton);
-    actionRow->addWidget(m_agentContinueHereButton);
-    actionRow->addWidget(m_agentSignInRunnerButton);
-    actionRow->addWidget(m_agentRetryInCloudButton);
-    actionRow->addWidget(m_agentCloudMergeButton);
-    actionRow->addWidget(m_agentCloudCleanupButton);
-    actionRow->addWidget(m_agentCloudUpdateButton);
-    actionRow->addWidget(m_agentCloudActionsButton);
-    actionRow->addWidget(m_agentViewTaskButton);
-    actionRow->addWidget(m_agentCreateIssueButton);
-    actionRow->addWidget(m_agentViewIssueButton);
-    actionRow->addWidget(m_agentCreatePrButton);
-    actionRow->addWidget(m_agentViewPrButton);
-    actionRow->addWidget(m_agentStartButton);
-    actionRow->addWidget(m_agentTaskGradeCombo);
-    actionRow->addWidget(m_agentStopButton);
-    actionRow->addWidget(m_agentDeleteAllButton);
-    actionRow->addWidget(m_agentWorktreeButton);
-
     auto *topRow = new QVBoxLayout;
     topRow->setContentsMargins(0, 0, 0, 0);
     topRow->setSpacing(4);
     auto *statusRow = new QHBoxLayout;
     statusRow->setContentsMargins(0, 0, 0, 0);
     statusRow->setSpacing(8);
-    statusRow->addStretch(1);
     statusRow->addWidget(m_agentStatusPill, 0, Qt::AlignVCenter);
     statusRow->addSpacing(4);
-    statusRow->addLayout(actionRow);
     topRow->addLayout(statusRow);
     m_agentPromptImages = new QWidget;
     m_agentPromptImages->setObjectName(QStringLiteral("agentPromptImages"));
@@ -1289,12 +1266,57 @@ QWidget *MainWindow::buildAgentsTab()
 
     buildAgentOutputViews(detailPane);
 
-    statusRow->addWidget(m_agentListenButton, 0, Qt::AlignVCenter);
-    statusRow->addWidget(m_agentOutputModeButton, 0, Qt::AlignVCenter);
-    statusRow->addWidget(m_agentCodeButton, 0, Qt::AlignVCenter);
-    statusRow->addWidget(m_agentSyncLabel, 0, Qt::AlignVCenter);
-    statusRow->addWidget(m_agentSyncButton, 0, Qt::AlignVCenter);
-    statusRow->addWidget(m_agentBranchButton, 0, Qt::AlignVCenter);
+    m_agentHeaderActions =
+        new forkmesh::ui::OverflowActionRow(QStringLiteral("agents/headerActionUses"));
+    m_agentHeaderActions->setObjectName(QStringLiteral("agentHeaderActions"));
+    m_agentHeaderActions->setInlineLimit(5);
+    {
+        auto *more = railActionButton(QStringLiteral("kebab-horizontal"),
+                                      QStringLiteral("More"), QString());
+        more->setObjectName(QStringLiteral("agentHeaderMoreButton"));
+        m_agentHeaderActions->setMoreButton(more);
+    }
+    m_agentHeaderActions->setIconProvider([](const QString &name) {
+        return themedOcticon(name, Theme::color(Theme::Role::FgMuted), 16);
+    });
+    const struct {
+        QWidget *widget;
+        int rank;
+        const char *icon;
+        const char *label;
+    } headerActions[] = {
+        {m_agentMoveToCloudButton, 17, "cloud", "Move to cloud"},
+        {m_agentContinueHereButton, 2, "device-desktop", nullptr},
+        {m_agentSignInRunnerButton, 8, "key", nullptr},
+        {m_agentRetryInCloudButton, 9, "sync", nullptr},
+        {m_agentCloudMergeButton, 3, "check-circle", nullptr},
+        {m_agentCloudCleanupButton, 12, "trash", nullptr},
+        {m_agentCloudUpdateButton, 10, "download", nullptr},
+        {m_agentCloudActionsButton, 11, "workflow", nullptr},
+        {m_agentViewTaskButton, 15, "checklist", nullptr},
+        {m_agentCreateIssueButton, 16, "issue-opened", "Create issue"},
+        {m_agentViewIssueButton, 14, "issue-opened", "Open issue"},
+        {m_agentCreatePrButton, 4, "git-pull-request", nullptr},
+        {m_agentViewPrButton, 5, "git-pull-request", "Open pull request"},
+        {m_agentStartButton, 0, "play", nullptr},
+        {m_agentTaskGradeCombo, 7, "star", "Grade task"},
+        {m_agentStopButton, 1, "circle-slash", nullptr},
+        {m_agentDeleteAllButton, 20, "trash", "Delete session"},
+        {m_agentWorktreeButton, 19, "worktree", "Open worktree"},
+        {m_agentListenButton, 18, "unmute", nullptr},
+        {m_agentOutputModeButton, 13, "terminal", nullptr},
+        {m_agentCodeButton, 6, "code", nullptr},
+        {m_agentSyncButton, 5, "download", nullptr},
+        {m_agentBranchButton, 6, "git-branch", "Open branch"},
+    };
+    for (const auto &action : headerActions) {
+        if (action.widget == m_agentSyncButton)
+            m_agentHeaderActions->addPinned(m_agentSyncLabel);
+        m_agentHeaderActions->addItem(
+            action.widget, action.rank, QString::fromLatin1(action.icon),
+            action.label ? QString::fromLatin1(action.label) : QString());
+    }
+    statusRow->addWidget(m_agentHeaderActions, 1, Qt::AlignVCenter);
 
     buildAgentFilesPanel();
 
@@ -1591,12 +1613,22 @@ QWidget *MainWindow::buildAgentListToolBar()
 
     // A thin bar across the top of the list, like the code page's mode bar,
     // rather than a card floating over the first rows of the table.
-    auto *agentToolBar = new QWidget;
+    auto *agentToolBar =
+        new forkmesh::ui::OverflowActionRow(QStringLiteral("agents/listActionUses"));
     agentToolBar->setObjectName(QStringLiteral("agentsActionBar"));
     agentToolBar->setAttribute(Qt::WA_StyledBackground);
-    auto *agentQueueLayout = new QHBoxLayout(agentToolBar);
-    agentQueueLayout->setContentsMargins(8, 2, 8, 2);
-    agentQueueLayout->setSpacing(6);
+    agentToolBar->setContentsMargins(8, 2, 8, 2);
+    agentToolBar->setInlineLimit(6);
+    {
+        auto *more = railActionButton(QStringLiteral("kebab-horizontal"),
+                                      QStringLiteral("More"), QString());
+        more->setObjectName(QStringLiteral("agentListMoreButton"));
+        agentToolBar->setMoreButton(more);
+    }
+    agentToolBar->setIconProvider([](const QString &name) {
+        return themedOcticon(name, Theme::color(Theme::Role::FgMuted), 16);
+    });
+    m_agentListActions = agentToolBar;
 
     m_agentUsageButton = railActionButton(
         QStringLiteral("terminal"), QStringLiteral("Usage"), QString());
@@ -1779,18 +1811,6 @@ QWidget *MainWindow::buildAgentListToolBar()
                 });
     }
 
-    agentQueueLayout->addWidget(m_agentStartAllButton);
-    agentQueueLayout->addWidget(m_agentStopAllButton);
-    agentQueueLayout->addWidget(m_agentUpdateAllButton);
-    agentQueueLayout->addWidget(m_agentDeleteSelectedButton);
-    agentQueueLayout->addWidget(m_agentEfficiencyButton);
-    agentQueueLayout->addWidget(m_agentGuardrailsButton);
-    agentQueueLayout->addWidget(m_agentModelsButton);
-    agentQueueLayout->addWidget(m_agentAnnouncerButton);
-    agentQueueLayout->addWidget(m_agentDeleteMergedButton);
-    agentQueueLayout->addSpacing(8);
-    agentQueueLayout->addWidget(m_agentUsageButton);
-    agentQueueLayout->addStretch(1);
     m_agentMoveToDesktopButton = railActionButton(
         QStringLiteral("device-desktop"), QStringLiteral("To desktop"),
         QStringLiteral("Move every cloud run on the relay to this desktop"));
@@ -1798,12 +1818,39 @@ QWidget *MainWindow::buildAgentListToolBar()
         QStringLiteral("agentMoveToDesktopButton"));
     connect(m_agentMoveToDesktopButton, &QPushButton::clicked, this,
             [this] { moveQueuedCloudAgentsHere(); });
-    agentQueueLayout->addWidget(m_agentMoveToDesktopButton);
+    const struct {
+        QWidget *widget;
+        int rank;
+        const char *icon;
+        const char *label;
+    } listActions[] = {
+        {m_agentStartAllButton, 2, "rocket", nullptr},
+        {m_agentStopAllButton, 1, "circle-slash", nullptr},
+        {m_agentUpdateAllButton, 3, "sync", nullptr},
+        {m_agentDeleteSelectedButton, 6, "trash", nullptr},
+        {m_agentEfficiencyButton, 10, "graph", nullptr},
+        {m_agentGuardrailsButton, 11, "shield-check", nullptr},
+        {m_agentModelsButton, 9, "smart-toy", nullptr},
+        {m_agentAnnouncerButton, 12, "broadcast", "Announcer"},
+        {m_agentDeleteMergedButton, 7, "trash", "Delete merged"},
+        {m_agentUsageButton, 4, "terminal", nullptr},
+    };
+    for (const auto &action : listActions)
+        agentToolBar->addItem(action.widget, action.rank,
+                              QString::fromLatin1(action.icon),
+                              action.label ? QString::fromLatin1(action.label)
+                                           : QString());
+    agentToolBar->addStretch();
+    agentToolBar->addItem(m_agentMoveToDesktopButton, 5,
+                          QStringLiteral("device-desktop"),
+                          QStringLiteral("Move cloud runs to this desktop"));
     updateMoveToDesktopButton();
-    agentQueueLayout->addWidget(m_agentViewButton);
-    agentQueueLayout->addWidget(m_agentTeammateFilterButton);
-    agentQueueLayout->addWidget(m_agentSortButton);
-    agentQueueLayout->addWidget(m_agentQueueButton);
+    agentToolBar->addItem(m_agentViewButton, 13, QStringLiteral("list-unordered"),
+                          QStringLiteral("Change list view"));
+    agentToolBar->addItem(m_agentTeammateFilterButton, 14, QStringLiteral("people"));
+    agentToolBar->addItem(m_agentSortButton, 8, QStringLiteral("sort-desc"),
+                          QStringLiteral("Sort by"));
+    agentToolBar->addPinned(m_agentQueueButton);
     setAgentListSort(AgentListSort::RecentActivity);
     setAgentTeammateFilter(m_agentTeammateFilter);
     setAgentListView(forkmesh::ui::loadListViewMode(
@@ -1859,11 +1906,20 @@ QWidget *MainWindow::buildAgentRecycleBinBar()
     connect(deleteButton, &QPushButton::clicked, this,
             &MainWindow::deleteAllRecycledAgentsInOpenRepo);
 
-    row->addWidget(m_agentRecycleBinLabel, 0, Qt::AlignVCenter);
-    row->addStretch(1);
-    row->addWidget(showButton);
-    row->addWidget(restoreButton);
-    row->addWidget(deleteButton);
+    m_agentRecycleBinLabel->setSizePolicy(QSizePolicy::Ignored,
+                                          QSizePolicy::Preferred);
+    m_agentRecycleBinLabel->setMinimumWidth(0);
+    m_agentRecycleActions = new forkmesh::ui::OverflowActionRow(QString());
+    m_agentRecycleActions->setObjectName(QStringLiteral("agentRecycleActions"));
+    m_agentRecycleActions->setInlineLimit(3);
+    m_agentRecycleActions->setIconProvider([](const QString &name) {
+        return themedOcticon(name, Theme::color(Theme::Role::FgMuted), 14);
+    });
+    m_agentRecycleActions->addItem(showButton, 0, QStringLiteral("trash"));
+    m_agentRecycleActions->addItem(restoreButton, 1, QStringLiteral("arrow-left"));
+    m_agentRecycleActions->addItem(deleteButton, 2, QStringLiteral("x"));
+    row->addWidget(m_agentRecycleBinLabel, 1, Qt::AlignVCenter);
+    row->addWidget(m_agentRecycleActions, 0, Qt::AlignVCenter);
 
     m_agentRecycleBinBar->hide();
     reloadAgentRecycleBin();
@@ -1896,6 +1952,8 @@ void MainWindow::updateAgentRecycleBinBar()
     const int count = agentRecycledInOpenRepo().size();
     if (count > 0) {
         m_agentRecycleBinLabel->setText(
+            QStringLiteral("%1 deleted").arg(count));
+        m_agentRecycleBinLabel->setToolTip(
             QStringLiteral("Recycle bin: %1 deleted agent%2, kept for %3 hours")
                 .arg(count)
                 .arg(count == 1 ? QString() : QStringLiteral("s"))

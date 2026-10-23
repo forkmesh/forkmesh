@@ -120,6 +120,7 @@ namespace forkmesh::ui { class ChannelGroupTree; }
 namespace forkmesh::ui { class OnboardingTour; }
 namespace forkmesh::ui { class WindowBackdrop; }
 namespace forkmesh::ui { class WindowFade; }
+namespace forkmesh::ui { class OverflowActionRow; }
 namespace forkmesh::ui { class QtRuntimeDiagnostics; }
 namespace forkmesh::ui::kit { class InlineNotice; }
 namespace forkmesh { struct SystemPressureSnapshot; }
@@ -2910,6 +2911,16 @@ public:
     void testCycleAppViewMode() { cycleAppViewMode(); }
     QPushButton *testViewModeButton() const { return m_viewModeButton; }
     QWidget *testAppNavigationRail() const { return m_appNavigationRail; }
+    void testRefreshPromptChatPreview() { refreshPromptChatPreview(); }
+    QLabel *testPromptChatPreview() const { return m_promptChatPreview; }
+    forkmesh::ui::OverflowActionRow *testAgentHeaderActions() const
+    {
+        return m_agentHeaderActions;
+    }
+    forkmesh::ui::OverflowActionRow *testAgentListActions() const
+    {
+        return m_agentListActions;
+    }
     QWidget *testAppStatusArea() const { return m_appStatusArea; }
     QWidget *testWorkspaceTerminalDock() const { return m_workspaceTerminalDock; }
     QSplitter *testAgentWorkspaceSplit() const { return m_agentWorkspaceSplit; }
@@ -7196,6 +7207,11 @@ private:
     void onAgentNeedsAttention(int sessionId, const QString &message);
     void updateAgentActionState();
     void updateQuickAddEnterTarget();
+    void refreshPromptChatPreview();
+    void schedulePromptChatPreview();
+    int promptChatTargetSessionId() const;
+    void refreshInstanceTheme();
+    void applyInstanceThemeChoice(bool enabled);
     bool quickAddShouldFollowUpAgent() const;
     int quickAddFollowUpAgentSessionId() const;
     // The real agent behind the PR open in its detail pane, plus its head
@@ -11445,9 +11461,17 @@ private:
     QPushButton *m_promptClearButton = nullptr; // empties the prompt text area
     // Ticked (default): a prompt's agent gets its own branch and worktree.
     // Unticked: the run works directly in the repository's checkout.
-    QCheckBox *m_promptWorktreeCheck = nullptr;
+    QPushButton *m_promptWorktreeCheck = nullptr;
     QPushButton *m_promptCloudButton = nullptr;
-    QCheckBox *m_promptVibeCheck = nullptr;
+    QPushButton *m_promptVibeCheck = nullptr;
+    QLabel *m_promptChatPreview = nullptr;
+    QTimer *m_promptChatPreviewTimer = nullptr;
+    int m_promptChatSessionId = -1;
+    forkmesh::ui::OverflowActionRow *m_agentHeaderActions = nullptr;
+    forkmesh::ui::OverflowActionRow *m_agentListActions = nullptr;
+    forkmesh::ui::OverflowActionRow *m_agentRecycleActions = nullptr;
+    QCheckBox *m_matchInstanceThemeCheck = nullptr;
+    QString m_instanceThemeOrigin;
     int m_promptAnchoredHeight = 0;
     bool m_positioningFooterOverlays = false;
     QWidget *m_promptDetachWindow = nullptr;

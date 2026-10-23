@@ -829,6 +829,17 @@ struct AppearanceCard: View {
             Text("Theme").fmText(.labelMedium, color: fm.textSecondary)
             modeTrack
                 .padding(.top, FmSpace.x2)
+            Toggle(isOn: Binding<Bool>(
+                get: { settings.matchesInstanceTheme },
+                set: { (on: Bool) in settings.setMatchesInstanceTheme(on) })
+            ) {
+                Text("Match the instance's theme").fmText(.bodyMedium)
+            }
+            .tint(fm.accent)
+            .accessibilityIdentifier("appearance-match-instance-theme")
+            .padding(.top, FmSpace.x3)
+            SettingsNote(text: "Wear the colours this instance's admin picked. Your own accent and surfaces below come back when this is off.")
+                .padding(.top, FmSpace.x1)
             Text("Accent colour").fmText(.labelMedium, color: fm.textSecondary)
                 .padding(.top, FmSpace.x4)
             ThemeAccentPicker(theme: theme, dark: fm.dark, onChange: apply)

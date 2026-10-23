@@ -17404,7 +17404,11 @@ async def repo_about_handler(env, request, owner, repo):
         return json_response({"error": "not_authorized"}, status=403)
     if not await _owner_pubkey(env, owner) and not (
             await _branch_protection.settings_only(env, data, owner, repo)):
-        return json_response({"error": "account_required"}, status=403)
+        linked = await d1_first(
+            env, "SELECT 1 AS linked FROM org_repos WHERE node_owner=? AND repo=? "
+            "LIMIT 1", owner, repo)
+        if not linked:
+            return json_response({"error": "account_required"}, status=403)
 
     # Absent = unchanged, so a settings-only save (Qt fediverse switches)
     # never blanks the description.

@@ -3,6 +3,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 
@@ -11,13 +12,26 @@ namespace forkmesh::ui {
 namespace {
 
 const char kRailExpandedSetting[] = "ui/railExpanded";
+const char kRailWidthSetting[] = "ui/railExpandedWidth";
 const char kRailToggleName[] = "railToggleButton";
+const char kRailHandleName[] = "railResizeHandle";
 constexpr int kRowIconLeft = 12;
 constexpr int kRowLabelLeft = 36;
 constexpr int kRowRightPad = 10;
 constexpr int kRowPillHeight = 16;
 constexpr int kTileIconPx = 16;
 constexpr int kTileBadgeHeight = 14;
+
+int &railWidthState()
+{
+    static int width = qBound(
+        kRailExpandedMinWidth,
+        QSettings()
+            .value(QLatin1String(kRailWidthSetting), kRailExpandedItemWidth)
+            .toInt(),
+        kRailExpandedMaxWidth);
+    return width;
+}
 
 bool &railExpandedState()
 {
@@ -139,6 +153,92 @@ void refreshRailToggle(QPushButton *button)
                                       : QStringLiteral("Expand sidebar"));
 }
 
+class RailResizeHandle : public QWidget
+{
+public:
+    RailResizeHandle(MainWindow &window, QWidget *parent = nullptr)
+        : QWidget(parent), m_window(window)
+    {
+        setObjectName(QLatin1String(kRailHandleName));
+        setCursor(Qt::SizeHorCursor);
+        setFixedWidth(5);
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+        setMouseTracking(true);
+        setToolTip(QStringLiteral("Drag to resize the sidebar; double-click to "
+                                  "reset its width"));
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        const bool lit = m_dragging || underMouse();
+        painter.fillRect(QRect(width() - 1, 0, 1, height()),
+                         Theme::color(Theme::Role::Border));
+        if (lit)
+            painter.fillRect(QRect(width() - 3, 0, 3, height()),
+                             Theme::color(Theme::Role::Accent, 160));
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        update();
+        QWidget::enterEvent(event);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        update();
+        QWidget::leaveEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() != Qt::LeftButton)
+            return QWidget::mousePressEvent(event);
+        m_dragging = true;
+        m_startX = event->globalPosition().toPoint().x();
+        m_startWidth = railExpandedItemWidth();
+        update();
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (!m_dragging)
+            return QWidget::mouseMoveEvent(event);
+        NextAccess::setRailWidth(
+            m_window,
+            m_startWidth + event->globalPosition().toPoint().x() - m_startX,
+            false);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (!m_dragging)
+            return QWidget::mouseReleaseEvent(event);
+        m_dragging = false;
+        NextAccess::setRailWidth(m_window, railExpandedItemWidth(), true);
+        update();
+    }
+
+    void mouseDoubleClickEvent(QMouseEvent *) override
+    {
+        NextAccess::setRailWidth(m_window, kRailExpandedItemWidth, true);
+    }
+
+private:
+    MainWindow &m_window;
+    bool m_dragging = false;
+    int m_startX = 0;
+    int m_startWidth = 0;
+};
+
+void refreshRailHandle(QWidget *handle)
+{
+    if (handle)
+        handle->setVisible(railExpanded());
+}
+
 }
 
 bool railExpanded()
@@ -151,6 +251,16 @@ void setRailExpanded(bool expanded)
     railExpandedState() = expanded;
 }
 
+int railExpandedItemWidth()
+{
+    return railWidthState();
+}
+
+void setRailExpandedItemWidth(int width)
+{
+    railWidthState() = qBound(kRailExpandedMinWidth, width, kRailExpandedMaxWidth);
+}
+
 bool railButtonRowLayout(const QWidget *button, bool captionAlwaysVisible)
 {
     return !captionAlwaysVisible && railExpanded() && !inFolderBody(button);
@@ -160,7 +270,7 @@ QSize railButtonSizeHook(const QWidget *button, const RailButtonPaintState &stat
 {
     if (!railButtonRowLayout(button, state.captionAlwaysVisible))
         return QSize();
-    return QSize(kRailExpandedItemWidth, kRailRowHeight);
+    return QSize(railExpandedItemWidth(), kRailRowHeight);
 }
 
 bool paintRailButtonHook(QWidget *button, QPainter &painter,
@@ -355,7 +465,7 @@ QSize tabButtonSizeHook(const QWidget *button, const TabButtonPaintState &state)
 {
     if (!state.inRail || !railExpanded() || inFolderBody(button))
         return QSize();
-    return QSize(kRailExpandedItemWidth, kRailRowHeight);
+    return QSize(railExpandedItemWidth(), kRailRowHeight);
 }
 
 bool paintTabButtonHook(QWidget *button, QPainter &painter,
@@ -587,6 +697,7 @@ void NextAccess::themeChanged(MainWindow &window)
     kit::syncStockWidgets();
     refreshRailToggle(
         window.findChild<QPushButton *>(QLatin1String(kRailToggleName)));
+    refreshRailHandle(window.findChild<QWidget *>(QLatin1String(kRailHandleName)));
     refreshSectionCards(&window);
     if (auto *designCombo =
             window.findChild<QComboBox *>(QStringLiteral("appDesignCombo"))) {
@@ -629,6 +740,7 @@ void NextAccess::setRailExpanded(MainWindow &window, bool expanded)
     relayoutRail(window.m_appNavigationRailLayout);
     refreshRailToggle(
         window.findChild<QPushButton *>(QLatin1String(kRailToggleName)));
+    refreshRailHandle(window.findChild<QWidget *>(QLatin1String(kRailHandleName)));
     if (auto *check = window.findChild<QCheckBox *>(
             QStringLiteral("railExpandedCheck"))) {
         const QSignalBlocker blocker(check);
@@ -639,6 +751,26 @@ void NextAccess::setRailExpanded(MainWindow &window, bool expanded)
 void NextAccess::toggleRailExpanded(MainWindow &window)
 {
     setRailExpanded(window, !railExpandedState());
+}
+
+void NextAccess::setRailWidth(MainWindow &window, int width, bool remember)
+{
+    const int before = railExpandedItemWidth();
+    forkmesh::ui::setRailExpandedItemWidth(width);
+    if (remember)
+        QSettings().setValue(QLatin1String(kRailWidthSetting),
+                             railExpandedItemWidth());
+    if (before == railExpandedItemWidth())
+        return;
+    window.applyRailCaptionPreference();
+    relayoutRail(window.m_appNavigationRailLayout);
+}
+
+QWidget *NextAccess::railResizeHandle(MainWindow &window)
+{
+    auto *handle = new RailResizeHandle(window);
+    refreshRailHandle(handle);
+    return handle;
 }
 
 QWidget *NextAccess::overlayParent(MainWindow &window)

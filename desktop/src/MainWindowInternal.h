@@ -8069,6 +8069,8 @@ void applyStoredOcticon(QPushButton *button);
 void setOcticon(QPushButton *button, const QString &name, int size = 16,
                        qreal rotationDeg = 0.0);
 
+void tintComposerActionButton(QPushButton *button);
+
 void applyStoredLabelOcticon(QLabel *label);
 
 void setLabelOcticon(QLabel *label, const QString &name, int size = 12);
@@ -9809,7 +9811,7 @@ public:
 
     void followRailCaptionPreference()
     {
-        const QSize wanted(railExpanded() ? kRailExpandedItemWidth
+        const QSize wanted(railExpanded() ? railExpandedItemWidth()
                                           : railCompactItemWidth(),
                            captionShown() ? 14 : 7);
         if (size() != wanted)

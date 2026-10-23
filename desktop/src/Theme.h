@@ -171,8 +171,11 @@ inline QString remapSheet(const QString &sheet)
 
 inline const char *checkedIconColorForButton(const QString &objectName, bool dark)
 {
-    if (objectName == QStringLiteral("promptCloudButton"))
+    if (objectName == QStringLiteral("promptCloudButton") ||
+        objectName == QStringLiteral("promptWorktreeCheck"))
         return dark ? "#58a6ff" : "#0969da";
+    if (objectName == QStringLiteral("promptVibeCheck"))
+        return dark ? "#d2a8ff" : "#8250df";
     return nullptr;
 }
 
@@ -1087,7 +1090,12 @@ QPushButton#promptDetachButton, QPushButton#promptResetButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
-QPushButton#promptCloudButton:checked { background: rgba(88,166,255,0.22); border-radius: 3px; }
+QPushButton#promptWorktreeCheck, QPushButton#promptVibeCheck {
+    background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0;
+}
+QPushButton#promptCloudButton:checked { background: rgba(88,166,255,0.22); border: 1px solid #58a6ff; border-radius: 4px; }
+QPushButton#promptWorktreeCheck:checked { background: rgba(88,166,255,0.10); border-color: #58a6ff; }
+QPushButton#promptVibeCheck:checked { background: rgba(163,113,247,0.16); border-color: #a371f7; }
 #promptDetachWindow, #promptOverlayHost { background: transparent; }
 #footerLogPanel {
     background-color: #0d1117;
@@ -1900,27 +1908,12 @@ QPushButton#promptDetachButton, QPushButton#promptResetButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
-QPushButton#promptCloudButton:checked { background: rgba(88,166,255,0.22); border-radius: 3px; }
-QCheckBox#promptWorktreeCheck { background: transparent; spacing: 0; padding: 0; }
-QCheckBox#promptWorktreeCheck::indicator {
-    width: 8px; height: 8px; border-radius: 2px;
-    border: 1px solid rgba(139,148,158,0.7); background: transparent;
+QPushButton#promptWorktreeCheck, QPushButton#promptVibeCheck {
+    background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0;
 }
-QCheckBox#promptWorktreeCheck::indicator:checked {
-    border-color: #2ea043; background: #2ea043;
-}
-QCheckBox#promptVibeCheck {
-    background: transparent; spacing: 3px; padding: 0 0 0 2px;
-    font-size: 10px; color: rgba(139,148,158,0.9);
-}
-QCheckBox#promptVibeCheck:checked { color: #d2a8ff; }
-QCheckBox#promptVibeCheck::indicator {
-    width: 8px; height: 8px; border-radius: 2px;
-    border: 1px solid rgba(139,148,158,0.7); background: transparent;
-}
-QCheckBox#promptVibeCheck::indicator:checked {
-    border-color: #a371f7; background: #a371f7;
-}
+QPushButton#promptCloudButton:checked { background: rgba(88,166,255,0.22); border: 1px solid #58a6ff; border-radius: 4px; }
+QPushButton#promptWorktreeCheck:checked { background: rgba(88,166,255,0.10); border-color: #58a6ff; }
+QPushButton#promptVibeCheck:checked { background: rgba(163,113,247,0.16); border-color: #a371f7; }
 #promptDetachWindow, #promptOverlayHost { background: transparent; }
 #footerLogPanel {
     background-color: #0d1117;
@@ -3329,7 +3322,12 @@ QPushButton#promptDetachButton, QPushButton#promptResetButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
-QPushButton#promptCloudButton:checked { background: rgba(9,105,218,0.14); border-radius: 3px; }
+QPushButton#promptWorktreeCheck, QPushButton#promptVibeCheck {
+    background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0;
+}
+QPushButton#promptCloudButton:checked { background: rgba(9,105,218,0.14); border: 1px solid #0969da; border-radius: 4px; }
+QPushButton#promptWorktreeCheck:checked { background: rgba(9,105,218,0.10); border-color: #0969da; }
+QPushButton#promptVibeCheck:checked { background: rgba(130,80,223,0.16); border-color: #8250df; }
 #promptDetachWindow, #promptOverlayHost { background: transparent; }
 #footerLogPanel {
     background-color: #ffffff;
@@ -4128,27 +4126,12 @@ QPushButton#promptDetachButton, QPushButton#promptResetButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
-QPushButton#promptCloudButton:checked { background: rgba(9,105,218,0.14); border-radius: 3px; }
-QCheckBox#promptWorktreeCheck { background: transparent; spacing: 0; padding: 0; }
-QCheckBox#promptWorktreeCheck::indicator {
-    width: 8px; height: 8px; border-radius: 2px;
-    border: 1px solid rgba(87,96,106,0.7); background: transparent;
+QPushButton#promptWorktreeCheck, QPushButton#promptVibeCheck {
+    background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0;
 }
-QCheckBox#promptWorktreeCheck::indicator:checked {
-    border-color: #1a7f37; background: #1a7f37;
-}
-QCheckBox#promptVibeCheck {
-    background: transparent; spacing: 3px; padding: 0 0 0 2px;
-    font-size: 10px; color: rgba(87,96,106,0.9);
-}
-QCheckBox#promptVibeCheck:checked { color: #8250df; }
-QCheckBox#promptVibeCheck::indicator {
-    width: 8px; height: 8px; border-radius: 2px;
-    border: 1px solid rgba(87,96,106,0.7); background: transparent;
-}
-QCheckBox#promptVibeCheck::indicator:checked {
-    border-color: #8250df; background: #8250df;
-}
+QPushButton#promptCloudButton:checked { background: rgba(9,105,218,0.14); border: 1px solid #0969da; border-radius: 4px; }
+QPushButton#promptWorktreeCheck:checked { background: rgba(9,105,218,0.10); border-color: #0969da; }
+QPushButton#promptVibeCheck:checked { background: rgba(130,80,223,0.16); border-color: #8250df; }
 #promptDetachWindow, #promptOverlayHost { background: transparent; }
 #footerLogPanel {
     background-color: #ffffff;
