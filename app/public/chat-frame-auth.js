@@ -10,6 +10,9 @@ const NODE_BIND_STORE = "forkmesh.chat.nodeBound.v1";
 const NODE_BIND_REFRESH_MS = 24 * 60 * 60 * 1000;
 const LOOKUP_TIMEOUT_MS = 6000;
 const LOOKUPS_AT_ONCE = 6;
+const GUEST_RECHECKS = 10;
+const GUEST_PENDING_NODES = 256;
+const GUEST_PENDING_LINES = 200;
 const LEGACY_SELF_ID_KEY = "forkmesh.chat.selfId";
 const PRIVATE_RELAY_TYPES = new Set(["dm", "invite", "cove-invite", "cove-open"]);
 const SERVER_SENDER_RE = /^(?:app|system|webhook|srv):/;
@@ -249,7 +252,7 @@ export function createNodeOwners({
   if (saved) {
     for (const [node, entry] of Object.entries(saved)) {
       const at = Number(entry?.at);
-      if (isNodeKeyId(node) && Number.isFinite(at) && entry?.ok === true) {
+      if (isNodeKeyId(node) && Number.isFinite(at) && entry?.ok === true && normalAccount(entry.account)) {
         cache.set(node, { account: normalAccount(entry.account), at, ok: true });
       }
     }
@@ -258,12 +261,12 @@ export function createNodeOwners({
   function fresh(entry) {
     if (!entry) return false;
     const age = now() - entry.at;
-    return age >= 0 && age < (entry.ok ? ttlMs : retryMs);
+    return age >= 0 && age < (entry.ok && entry.account ? ttlMs : retryMs);
   }
 
   function persist() {
     const out = {};
-    const kept = [...cache.entries()].filter(([, entry]) => entry.ok && fresh(entry)).slice(-NODE_OWNER_KEPT);
+    const kept = [...cache.entries()].filter(([, entry]) => entry.ok && entry.account && fresh(entry)).slice(-NODE_OWNER_KEPT);
     for (const [node, entry] of kept) out[node] = { account: entry.account, at: entry.at, ok: true };
     writeJson(store, NODE_OWNER_STORE, out);
   }
@@ -407,4 +410,102 @@ async function bindNodeKeyOnce({
   writeJson(memory, NODE_BIND_STORE, { [marker]: now() });
   owners?.remember(node, name);
   return true;
+}
+
+export function unconfirmedClaim(plain) {
+  const auth = frameAuth(plain);
+  if (!auth || auth.sealed !== true || auth.self === true || !auth.node) return "";
+  if (plain.accountKind !== "guest" || plain.botVia) return "";
+  return auth.acct !== auth.node ? normalAccount(auth.acct) : "";
+}
+
+export function createGuestRelabeler({
+  owners,
+  onConfirmed,
+  retryMs = NODE_OWNER_RETRY_MS,
+  tries = GUEST_RECHECKS,
+  setTimer = (...args) => globalThis.setTimeout(...args),
+  clearTimer = (...args) => globalThis.clearTimeout(...args),
+} = {}) {
+  const pending = new Map();
+
+  function drop(node) {
+    const entry = pending.get(node);
+    if (!entry) return;
+    if (entry.timer) clearTimer(entry.timer);
+    pending.delete(node);
+  }
+
+  function settle(node) {
+    const entry = pending.get(node);
+    if (!entry) return;
+    const account = owners?.cached(node) || "";
+    if (!account) return;
+    const ids = [];
+    for (const [id, claim] of entry.lines) {
+      if (claim !== account) continue;
+      ids.push(id);
+      entry.lines.delete(id);
+    }
+    if (!entry.lines.size) drop(node);
+    if (ids.length) {
+      try { onConfirmed?.(node, account, ids); } catch (_) {}
+    }
+  }
+
+  function schedule(node) {
+    const entry = pending.get(node);
+    if (!entry || entry.timer || entry.tries >= tries) return;
+    entry.timer = setTimer(() => {
+      entry.timer = null;
+      entry.tries += 1;
+      if (pending.get(node) !== entry) return;
+      Promise.resolve(owners?.lookup(node)).catch(() => "").then(() => {
+        settle(node);
+        schedule(node);
+      });
+    }, retryMs + 1000);
+  }
+
+  function noteLine(node, id, claim) {
+    let entry = pending.get(node);
+    if (!entry) {
+      if (pending.size >= GUEST_PENDING_NODES) drop(pending.keys().next().value);
+      entry = { lines: new Map(), tries: 0, timer: null };
+      pending.set(node, entry);
+    }
+    entry.lines.delete(id);
+    entry.lines.set(id, claim);
+    while (entry.lines.size > GUEST_PENDING_LINES) entry.lines.delete(entry.lines.keys().next().value);
+  }
+
+  function note(plain) {
+    const claim = unconfirmedClaim(plain);
+    if (!claim) return;
+    const node = frameAuth(plain).node;
+    const lines = plain.type === "history" ? historyEntries(plain) : [plain];
+    let added = false;
+    for (const line of lines) {
+      const id = String(line?.id || "");
+      if (!id || (line.type && line.type !== "chat" && line.type !== "thread-reply")) continue;
+      noteLine(node, id, claim);
+      added = true;
+    }
+    if (added) schedule(node);
+  }
+
+  const unsubscribe = owners?.subscribe?.(settle);
+
+  return {
+    note,
+    settle,
+    pending: () => [...pending.entries()].map(([node, entry]) => [node, [...entry.lines.keys()]]),
+    clear() {
+      for (const node of [...pending.keys()]) drop(node);
+    },
+    stop() {
+      for (const node of [...pending.keys()]) drop(node);
+      unsubscribe?.();
+    },
+  };
 }

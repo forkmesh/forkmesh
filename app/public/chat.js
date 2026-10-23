@@ -36,6 +36,7 @@ import {
   bindNodeKey,
   botLine as botViaLine,
   chatProfileFor,
+  createGuestRelabeler,
   createNodeOwners,
   forgetLegacySelfId,
   guestLabel,
@@ -462,6 +463,10 @@ const enc = new TextEncoder();
 let selfId = "";
 forgetLegacySelfId();
 const nodeOwners = createNodeOwners();
+const guestLines = createGuestRelabeler({
+  owners: nodeOwners,
+  onConfirmed: (node, account, ids) => renameConfirmedGuest(node, account, ids),
+});
 const sealStores = new Map();
 let roomSeals = null;
 
@@ -523,6 +528,7 @@ function receivePlains(plains, room, history) {
   inboundPlains = inboundPlains.then(async () => {
     await nodeOwners.prefetch(plains, { selfNode: selfId });
     const attributed = attributedPlains(plains, scope);
+    for (const plain of attributed) guestLines.note(plain);
     if (history) handleHistory(attributed, room);
     else for (const plain of attributed) handlePlain(plain, scope);
   }).catch(() => {});
@@ -3611,6 +3617,37 @@ function noteRoster(plain) {
     window.ForkMeshUserStatus?.remember(name, plain.userStatus, "frame");
   }
   schedulePeopleRender();
+}
+
+function renameConfirmedGuest(node, account, ids) {
+  const name = String(account).slice(0, MAX_NAME);
+  const channels = new Set();
+  const roots = new Set();
+  for (const id of ids) {
+    const rec = rows.get(id);
+    if (rec && rec.senderId === node && !rec.self) {
+      rec.sender = name;
+      threads.updateTarget(id, { sender: name });
+      channels.add(rec.channel);
+      continue;
+    }
+    const reply = threads.target(id);
+    if (reply?.rootId && reply.senderId === node && !reply.self) {
+      threads.updateTarget(id, { sender: name });
+      roots.add(reply.rootId);
+    }
+  }
+  const person = roster.get(node);
+  if (person && person.kind === "guest") {
+    roster.set(node, { ...person, name, kind: "user" });
+    schedulePeopleRender();
+  }
+  for (const channel of channels) {
+    repaintChannel(channel);
+    queueRoomPreview(channel);
+  }
+  for (const rootId of roots) renderThreadSummary(rootId);
+  if (activeThreadRootId && (channels.size || roots.size)) renderThread();
 }
 
 function noteSelfRoster() {

@@ -19,7 +19,8 @@
     {
      "title": "Chat",
      "items": [
-      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."
+      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name.",
+      "A message from someone signed in on a new phone or browser no longer stays labelled Guest: it switches to their account name as soon as the server confirms the device."
      ]
     },
     {
