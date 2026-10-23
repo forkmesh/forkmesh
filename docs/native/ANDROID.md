@@ -2461,3 +2461,12 @@ edit or delete as somebody else. Nothing here talks to older builds.
   writer at all and a server without a model, auto-send pauses with
   `GenieAutoSend.NO_WRITER`, which says what to set up; with writers that all
   failed it says `UNWRITTEN`.
+- **Ping banners lead with who and where (S078).** The server change
+  (`docs/app/content-first-pings.md`) reaches Android only through the inbox
+  rows, so `PingNotifier.post` builds the banner with `PingLead.of`: a ping
+  with an actor reads "bob · acme/widgets #42" over the text (the event label
+  when there is no text); a ping without one keeps its label, with "#42" in
+  front, over the body. The label drops a trailing "for/in/on owner/repo" or
+  a leading "owner/repo" the way `_notification_digest_title` does. The
+  project suffix for several signed-in projects still follows the body.
+  `PingLeadTest` covers it.

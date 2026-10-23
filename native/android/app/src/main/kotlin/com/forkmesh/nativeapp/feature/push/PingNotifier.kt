@@ -33,6 +33,7 @@ import com.forkmesh.nativeapp.model.ForkNotification
 import com.forkmesh.nativeapp.push.PushTarget
 import com.forkmesh.nativeapp.push.pingAlarm
 import com.forkmesh.nativeapp.push.pingIcon
+import com.forkmesh.nativeapp.push.PingLead
 import com.forkmesh.nativeapp.push.pingNotificationTitle
 import com.forkmesh.nativeapp.push.withPingIcon
 
@@ -107,7 +108,8 @@ object PingNotifier {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         ensureChannels(context)
         val target = PushTarget.forPing(projectId, ping)
-        val (title, body) = pingNotificationTitle(ping.title, ping.body, projectLabel, multipleProjects)
+        val (leadTitle, leadBody) = PingLead.of(ping)
+        val (title, body) = pingNotificationTitle(leadTitle, leadBody, projectLabel, multipleProjects)
         val alarm = pingAlarm(ping.kind, ping.meta).isNotEmpty()
         val builder = Notification.Builder(context, if (alarm) ALARMS_CHANNEL else PINGS_CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_ping)
