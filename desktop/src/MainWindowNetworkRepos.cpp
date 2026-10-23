@@ -28,6 +28,7 @@
 #include "RewardPoolSigner.h"
 #include "TerminalWidget.h"
 #include "WorldSpeechBridge.h"
+#include "FontSizing.h"
 
 #include <QBrush>
 #include <QGridLayout>
@@ -463,7 +464,7 @@ QWidget *MainWindow::buildNetworkReposSection()
     auto *title = new QLabel(QStringLiteral("Repos"));
     title->setObjectName("sectionTitle");
     QFont titleFont = title->font();
-    titleFont.setPointSizeF(titleFont.pointSizeF() + 4);
+    titleFont = forkmesh::resizedFont(titleFont, 4);
     titleFont.setBold(true);
     title->setFont(titleFont);
     header->addWidget(title);
@@ -578,7 +579,7 @@ QWidget *MainWindow::buildNetworkReposSection()
     auto *localTitle = new QLabel(QStringLiteral("Private & local"));
     localTitle->setObjectName("sectionTitle");
     QFont localTitleFont = localTitle->font();
-    localTitleFont.setPointSizeF(localTitleFont.pointSizeF() + 1);
+    localTitleFont = forkmesh::resizedFont(localTitleFont, 1);
     localTitleFont.setBold(true);
     localTitle->setFont(localTitleFont);
     localHeader->addWidget(localTitle);

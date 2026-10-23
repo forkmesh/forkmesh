@@ -14,7 +14,6 @@
     "docs": initDocsPage,
     "apps": initAppsPage,
     "apps-build": initAppsBuildPage,
-    "chat": initChatPage,
     "tasks": initTasksPage,
     "calendar": initCalendarPage,
     "notes": initNotesPage,

@@ -37,6 +37,7 @@ import {
   WORLD_HEX_TILES,
   WORLD_MESH_FLOWER_REACH,
   WORLD_RADIUS,
+  WORLD_ROAD_BEND_WALK_REACH,
   WORLD_ROAD_JUNCTIONS,
   WORLD_ROAD_JUNCTION_WALK_RADIUS,
   WORLD_ROAD_WIDTH,
@@ -256,6 +257,38 @@ function junctionContains(px, pz, junctions, margin) {
   return false;
 }
 
+function roadBendContains(px, pz, margin) {
+  for (let index = 0; index < WORLD_ROAD_JUNCTIONS.length; index += 1) {
+    const junction = WORLD_ROAD_JUNCTIONS[index];
+    const bend = junction.bend;
+    if (!bend) continue;
+    if (Math.hypot(px - junction.x, pz - junction.z) > WORLD_ROAD_BEND_WALK_REACH) continue;
+    if (
+      roundedHexagonContains(
+        px,
+        pz,
+        bend.x,
+        bend.z,
+        CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
+        CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
+        margin,
+      ) &&
+      !roundedHexagonContains(
+        px,
+        pz,
+        bend.x,
+        bend.z,
+        CONTINUOUS_CITY_RADIUS,
+        CONTINUOUS_CITY_CORNER_RADIUS,
+        -margin,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function worldMeshFlowerAt(x, z, radius = 0) {
   const px = Number(x);
   const pz = Number(z);
@@ -311,6 +344,7 @@ export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
       if (grownHexContains(px, pz, WORLD_HEX_TILES[index], margin)) return true;
     }
     if (junctionContains(px, pz, WORLD_ROAD_JUNCTIONS, margin)) return true;
+    if (roadBendContains(px, pz, margin)) return true;
   }
   for (let index = 0; index < worldMeshHexes.length; index += 1) {
     if (grownHexContains(px, pz, worldMeshHexes[index], margin)) return true;

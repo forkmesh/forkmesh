@@ -120,6 +120,7 @@ export const WORLD_BIKE_LANE_CORNER_RADIUS =
   CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH / 2;
 export const WORLD_ROAD_JUNCTION_REACH = 18;
 export const WORLD_ROAD_JUNCTION_WALK_RADIUS = 16;
+export const WORLD_ROAD_BEND_WALK_REACH = 48;
 export const DESERT_HEXES = Object.freeze(
   [0, 1, 2, 3, 4, 5].map((side) => {
     const angle = (side * Math.PI) / 3;
@@ -227,11 +228,20 @@ export const WORLD_ROAD_JUNCTIONS = Object.freeze(
   [1, 2].flatMap((loop) =>
     [0, 1, 2, 3, 4, 5].map((corner) => {
       const angle = Math.PI / 6 + (corner * Math.PI) / 3;
-      const reach = ((WORLD_BIKE_LANE_APOTHEM * 2) / Math.sqrt(3)) * loop;
+      const side = (WORLD_BIKE_LANE_APOTHEM * 2) / Math.sqrt(3);
+      const reach = side * loop;
+      const x = WORLD_BIKE_LANE_CENTER_X + Math.cos(angle) * reach;
+      const z = CONTINUOUS_CITY_CENTER_Z + Math.sin(angle) * reach;
+      if (loop === 1) return Object.freeze({ x, z, angle, bend: null });
       return Object.freeze({
-        x: WORLD_BIKE_LANE_CENTER_X + Math.cos(angle) * reach,
-        z: CONTINUOUS_CITY_CENTER_Z + Math.sin(angle) * reach,
-        angle,
+        x,
+        z,
+        angle: angle + Math.PI,
+        bend: Object.freeze({
+          x: x + Math.cos(angle) * side,
+          z: z + Math.sin(angle) * side,
+          vertex: (corner + 3) % 6,
+        }),
       });
     }),
   ),

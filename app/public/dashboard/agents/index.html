@@ -385,6 +385,14 @@
       .fm-flash-neutral > svg, .fm-flash-neutral > i { color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-flash > .fm-flash-icon-accent { color: rgb(var(--dashboard-primary-rgb)); }
 
+      .fm-merge-status { --fm-merge-status-rgb: var(--dashboard-muted-foreground-rgb); border-color: rgb(var(--fm-merge-status-rgb) / .45); background: rgb(var(--fm-merge-status-rgb) / .1); color: rgb(var(--fm-merge-status-rgb)); font-weight: 600; }
+      .fm-merge-status:hover { background: rgb(var(--fm-merge-status-rgb) / .18); }
+      .fm-merge-status svg, .fm-merge-status i { color: currentColor; }
+      .fm-merge-status .fm-counter { color: currentColor; }
+      .fm-merge-status[data-tone="good"] { --fm-merge-status-rgb: var(--dashboard-success-rgb); }
+      .fm-merge-status[data-tone="warn"], .fm-merge-status[data-tone="pending"] { --fm-merge-status-rgb: var(--dashboard-attention-rgb); }
+      .fm-merge-status[data-tone="bad"] { --fm-merge-status-rgb: var(--dashboard-destructive-rgb); }
+      [data-repo-title-row]:has(~ [data-repo-content-grid] [data-dashboard-repo-tab-panel="pulls"]:not(.hidden) > [data-repo-collection-layout="pulls"][data-record-open="true"] [data-repo-record-detail="pulls"]) { display: none; }
       .fm-merge-box { overflow: hidden; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 8px; background: rgb(var(--dashboard-background-rgb)); font-size: 13px; line-height: 1.5; }
       .fm-merge-row { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 10px; row-gap: 8px; padding: 12px 16px; border-bottom: 1px solid rgb(var(--dashboard-border-rgb)); }
       .fm-merge-row-icon { display: flex; padding-top: 2px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
@@ -3580,7 +3588,6 @@
     <script src="/dashboard.js?v=${version}" defer></script>
     <script src="/dashboard-composer.js?v=${version}" defer></script>
     <script src="/membership-prompt.js?v=${version}" defer></script>
-
     <script src="/genie-spider.js?v=${version}" defer></script>
   </head>
   <body class="bg-background text-foreground" data-page="agents">
@@ -3903,7 +3910,7 @@
             <div role="group" aria-labelledby="sidebarGroupCommunity" class="dashboard-nav-group">
               <span id="sidebarGroupCommunity" class="dashboard-nav-title">Community</span>
               <a href="https://world.forkmesh.com/" data-plugin-entry="world"><span class="dashboard-nav-icon"><i data-lucide="globe"></i></span>World</a>
-              <a data-nav="chat" data-nav-link href="/dashboard/chat" data-plugin-entry="chat"><span class="dashboard-nav-icon"><i data-lucide="messages-square"></i></span>Chat</a>
+              <a data-nav="chat" data-nav-link href="/chat" data-plugin-entry="chat"><span class="dashboard-nav-icon"><i data-lucide="messages-square"></i></span>Chat</a>
               <a data-nav="network" data-nav-link href="/dashboard/network" data-plugin-entry="network"><span class="dashboard-nav-icon"><i data-lucide="share-2"></i></span>Network</a>
               <a href="/ecosystem"><span class="dashboard-nav-icon"><i data-lucide="box"></i></span>Ecosystem</a>
               <a href="/leaderboards"><span class="dashboard-nav-icon"><i data-lucide="trophy"></i></span>Leaderboards</a>
