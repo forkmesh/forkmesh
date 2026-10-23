@@ -13728,8 +13728,9 @@
 
   function repositoryShownForks(listName, group) {
     const expanded = repositoryForksExpanded(listName, group.entry);
-    const hidden = Math.max(0, group.forks.length - REPOSITORY_FORKS_SHOWN);
-    return { shown: expanded ? group.forks : group.forks.slice(0, REPOSITORY_FORKS_SHOWN), hidden, expanded };
+    const limit = sidebarForksShown();
+    const hidden = Math.max(0, group.forks.length - limit);
+    return { shown: expanded ? group.forks : group.forks.slice(0, limit), hidden, expanded };
   }
 
   function repositoryForksToggleHtml(listName, group, className) {
@@ -13841,6 +13842,50 @@
         </div>`;
   }
 
+  function sidebarSetting() {
+    const setting = state.sidebarSetting;
+    return setting && typeof setting === "object" ? setting : null;
+  }
+
+  function sidebarForksShown() {
+    const forks = Number(sidebarSetting()?.forks);
+    return Number.isInteger(forks) && forks >= 0 && forks <= 50 ? forks : REPOSITORY_FORKS_SHOWN;
+  }
+
+  function loadSidebarSetting() {
+    if (state.sidebarSettingRequested) return;
+    state.sidebarSettingRequested = true;
+    instanceInfo()
+      .then((info) => {
+        if (!info?.sidebar) return;
+        state.sidebarSetting = info.sidebar;
+        renderSidebarRepositories(state.session);
+        renderHomeRepositories();
+      })
+      .catch(() => {});
+  }
+
+  function sidebarPinnedGroups(groups, fallback = (all) => all.slice(0, 6)) {
+    const pinned = Array.isArray(sidebarSetting()?.pinned) ? sidebarSetting().pinned : [];
+    if (!pinned.length) return fallback(groups);
+    const matches = (group, key) => {
+      const repo = group.entry.repo;
+      const wanted = String(key).toLowerCase();
+      if (repoMatchesKey(repo, wanted)) return true;
+      if (!wanted.includes("/")) return String(repo?.name || "").toLowerCase() === wanted;
+      return repositoryEntryLabel(group.entry).toLowerCase() === wanted
+        || `${String(repoPublicOwner(repo) || repo?.owner || "").toLowerCase()}/${String(repo?.name || "").toLowerCase()}` === wanted;
+    };
+    const picked = [];
+    pinned.forEach((key) => {
+      const group = groups
+        .filter((candidate) => !picked.includes(candidate) && matches(candidate, key))
+        .sort((a, b) => b.forks.length - a.forks.length)[0];
+      if (group) picked.push(group);
+    });
+    return picked.length ? picked : fallback(groups);
+  }
+
   function renderSidebarRepositories(session) {
     const list = $("[data-sidebar-repo-list]");
     const count = $("[data-sidebar-repo-count]");
@@ -13877,8 +13922,9 @@
       list.innerHTML = '<div class="dashboard-nav-repo-empty">No mirrored repositories yet.</div>';
       return;
     }
-    list.innerHTML = nestRepositoryForks(entries, (entry) => homeRepositoryViewTotals(entry.repo)?.views)
-      .slice(0, 6)
+    loadSidebarSetting();
+    list.innerHTML = sidebarPinnedGroups(
+      nestRepositoryForks(entries, (entry) => homeRepositoryViewTotals(entry.repo)?.views))
       .map(sidebarRepositoryGroup)
       .join("");
     window.lucide?.createIcons();
@@ -14017,9 +14063,12 @@
     const query = (search?.value || "").trim().toLowerCase();
     const matches = all.filter((entry) => repositoryMatchesPageFilter(entry.repo, query));
     const groups = nestRepositoryForks(matches, (entry) => homeRepositoryViewTotals(entry.repo)?.views);
+    loadSidebarSetting();
     const entries = state.homeRepositoriesExpanded
       ? groups
-      : groups.slice(0, HOME_TOP_REPOSITORY_LIMIT);
+      : query
+        ? groups.slice(0, HOME_TOP_REPOSITORY_LIMIT)
+        : sidebarPinnedGroups(groups, (all) => all.slice(0, HOME_TOP_REPOSITORY_LIMIT));
     const showMore = $("[data-home-repos-show-more]");
     if (showMore) {
       showMore.classList.toggle(
