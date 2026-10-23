@@ -1,4 +1,5 @@
 import base64
+import re
 import json
 import sys
 from pathlib import Path
@@ -289,7 +290,7 @@ def test_branded_email_shows_the_instance_logo():
 
 
 def test_instance_api_names_the_logo_apps_use_as_the_project_icon():
-    import re
+
     names = {"re": re}
     for helper in ("instance_name", "instance_branded", "instance_logo_path", "instance_logo_url"):
         source = "def " + helper + "(env):" + ENTRY.split("def " + helper + "(env):", 1)[1].split("\n\n\n", 1)[0]
@@ -389,3 +390,57 @@ def test_powered_by_badge_can_be_switched_off(tmp_path):
     assert 'c.get("poweredBy", True)' in installer
     assert "--no-powered-by" in installer
     assert 'echo "INSTANCE_POWERED_BY=$CFG_poweredBy"' in installer
+
+
+def test_the_company_group_is_a_website_section_hidden_from_the_first_paint():
+    sidebar = (ROOT / "public" / "dashboard" / "partials" / "sidebar.html").read_text(
+        encoding="utf-8")
+    group = re.search(
+        r'<div role="group" aria-labelledby="sidebarGroupCompany"[^>]*>(.*?)</div>',
+        sidebar, re.S)
+    assert group and 'data-instance-plugin="website"' in group.group(0).split(">", 1)[0]
+    assert '<span id="sidebarGroupCompany" class="dashboard-nav-title">Company</span>' in group.group(1)
+    for href in ("/about", "/careers", "/press"):
+        assert 'href="%s"' % href in group.group(1)
+        assert instance_features.feature_for(href) == "website"
+    for page in ("dashboard/index.html", "dashboard/repo.html", "referral/index.html"):
+        built = (ROOT / "public" / page).read_text(encoding="utf-8")
+        assert ('aria-labelledby="sidebarGroupCompany" class="dashboard-nav-group" '
+                'data-instance-plugin="website"') in built
+    header = (ROOT.parent / "www" / "public" / "site-header.js").read_text(encoding="utf-8")
+    assert ('<div class="fm-nav-group" data-instance-plugin="website">\n'
+            '        <span class="fm-nav-group-title">Company</span>') in header
+    css = instance_features.chrome_css(env(INSTANCE_NAME="Acme Code"))
+    website_rule = next(line for line in css.splitlines()
+                        if '[data-instance-plugin~="website"]' in line)
+    assert website_rule.endswith("{display:none !important}")
+    shown = instance_features.chrome_css(env(INSTANCE_NAME="Acme Code", INSTANCE_PLUGINS="website"))
+    assert '[data-instance-plugin~="website"]' not in shown
+    assert instance_features.chrome_css(env()) == ":root{--instance-plugins:ready}\n"
+    assert "[data-instance-plugin] { display: none !important; }" in BRAND_JS
+    assert 'if (!name || name === "ForkMesh") return;' in BRAND_JS
+
+
+def test_the_changelog_link_shows_on_an_instance_and_the_page_is_bundled():
+    import build_site_assets
+    import static_routes
+    sidebar = (ROOT / "public" / "dashboard" / "partials" / "sidebar.html").read_text(
+        encoding="utf-8")
+    resources = sidebar.split('id="sidebarGroupResources"', 1)[1].split("</div>", 1)[0]
+    assert 'href="/changelog"' in resources
+    branded = env(INSTANCE_NAME="Acme Code")
+    assert instance_features.blocked(branded, "/changelog") == ""
+    assert 'href="/changelog"' not in instance_features.chrome_css(branded)
+    off = [item for item in instance_features.describe(branded) if not item["enabled"]]
+    assert "/changelog" not in {path for item in off for path in item["paths"]}
+    assert "changelog.html" in build_site_assets.BACKEND_ASSETS
+    assert static_routes.external_site_delivery(
+        "/changelog", "https://code.example.com", "https://code.example.com",
+        ()) == ("local", "")
+    page = (ROOT.parent / "www" / "public" / "changelog.html").read_text(encoding="utf-8")
+    assert not re.search(r"""(?:src|href|fetch\()\s*=?\s*["']https?://(?:[a-z0-9-]+\.)*forkmesh\.com""",
+                         page)
+    assert "changelog.json" not in page
+    entries = json.loads((ROOT.parent / "changelog" / "changelog.json").read_text(
+        encoding="utf-8"))["entries"]
+    assert entries and entries[0]["title"] in page

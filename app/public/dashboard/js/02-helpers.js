@@ -841,18 +841,29 @@
     return `<span title="${escapeHtml(title)}"${bot ? ' data-issue-actor-bot=""' : ""}${hydrate} class="${classes}">${inner}</span>`;
   }
 
-  function issuePersonNameHtml(name, classes = "font-semibold text-foreground") {
+  function issuePersonNameHtml(name, classes = "font-semibold text-foreground", options = {}) {
     const label = String(name || "").trim() || "unknown";
-    if (issueActorIsBot(label)) return `<span class="${classes}">${escapeHtml(label)}</span>`;
+    const git = options?.git === true;
+    const system = typeof platformAccount === "function" && platformAccount(label);
+    const shown = system ? escapeHtml(shownAccountName(label)) : userNameHtml(label);
+    if (system || issueActorIsBot(label)) {
+      const kind = typeof botAvatarKind === "function" ? botAvatarKind(label) : "";
+      const nonAccountBot = ["actions", "node", "runner"].includes(kind)
+        || /(?:-actions|\[bot\])$/i.test(label);
+      const account = system || options?.inLink === true || nonAccountBot ? "" : issuePersonHandle(label);
+      if (account) watchIssueActorAvatars();
+      return `<span${account ? ` data-issue-bot-account="${escapeHtml(account)}"` : ""} class="${classes}">${system ? shown : escapeHtml(label)}</span>`;
+    }
     const forge = forgeIdentity(label);
     if (forge) {
+      if (options?.inLink === true) return `<span class="${classes}">@${escapeHtml(forge.login)}</span>`;
       return `<a ${forgeLinkAttrs(forge)} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">@${escapeHtml(forge.login)}</a>`;
     }
     const handle = issuePersonHandle(label);
-    if (!handle) return `<span class="${classes}">${userNameHtml(label)}</span>`;
+    if (!handle || options?.inLink === true) return `<span class="${classes}">${shown}</span>`;
     watchIssueActorAvatars();
-    const href = issuePersonProfileHref(handle);
-    return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}" class="${classes} hover:text-[var(--dashboard-link)] hover:underline">${userNameHtml(label)}</a>`;
+    const href = git ? "" : issuePersonProfileHref(handle);
+    return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}"${git ? ' data-issue-person-git=""' : ""} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">${shown}</a>`;
   }
 
   const issueActorAccounts = new Map();
@@ -867,7 +878,7 @@
 
   function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
-    if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "" });
+    if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "", linkable: false });
     if (!issueActorAccounts.has(key)) {
       issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
         .then((response) => (response.ok ? response.json() : null))
@@ -875,8 +886,11 @@
           exists: profile?.exists === true,
           png: profile?.exists === true && profile?.profilePrivate !== true
             ? issueActorPortraitPng(profile.avatarPng) : "",
+          linkable: profile?.exists === true && profile?.available === false
+            && profile?.profilePrivate !== true
+            && (profile?.kind === "user" || profile?.kind === "node"),
         }))
-        .catch(() => ({ exists: false, png: "" }))
+        .catch(() => ({ exists: false, png: "", linkable: false }))
         .then((account) => {
           issueActorAccountsSettled.set(key, account);
           return account;
@@ -915,9 +929,14 @@
   }
 
   function hydrateIssuePersonLink(link, found) {
-    if (found.account.exists) {
-      const href = issuePersonProfileHref(link.dataset.issuePerson);
-      if (href) link.setAttribute("href", href);
+    const linkable = found.account.exists && found.account.linkable !== false;
+    const href = linkable ? issuePersonProfileHref(link.dataset.issuePerson) : "";
+    if (href) {
+      link.setAttribute("href", href);
+      return;
+    }
+    if (link.hasAttribute("data-issue-person-git")) {
+      link.removeAttribute("href");
       return;
     }
     const profile = found.roster?.profile || "";
@@ -947,6 +966,25 @@
         avatar.dataset.issueActorState = png ? "image" : picture ? "roster" : "initial";
         if (!picture || !avatar.isConnected) return;
         issueActorAvatarImage(avatar, picture);
+      });
+    }
+    const bots = [];
+    if (root.matches?.("[data-issue-bot-account]")) bots.push(root);
+    root.querySelectorAll?.("[data-issue-bot-account]").forEach((bot) => bots.push(bot));
+    for (const bot of bots) {
+      if (bot.dataset.issuePersonState) continue;
+      bot.dataset.issuePersonState = "loading";
+      void issueActorAccount(bot.dataset.issueBotAccount).then((account) => {
+        bot.dataset.issuePersonState = "done";
+        const href = account.exists && account.linkable !== false ? issuePersonProfileHref(bot.dataset.issueBotAccount) : "";
+        if (!href || !bot.isConnected) return;
+        const link = document.createElement("a");
+        link.href = href;
+        link.className = `${bot.className} hover:text-[var(--dashboard-link)] hover:underline`.trim();
+        link.dataset.issuePersonState = "done";
+        link.setAttribute("data-issue-person", bot.dataset.issueBotAccount);
+        link.replaceChildren(...bot.childNodes);
+        bot.replaceWith(link);
       });
     }
     const links = [];

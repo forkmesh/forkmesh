@@ -83,6 +83,7 @@ WWW_APP_PAGES = (
 
 BACKEND_ASSETS = (
     "blog.html",
+    "changelog.html",
     "index.html",
     "install.sh",
     "uninstall.sh",

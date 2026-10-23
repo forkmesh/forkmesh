@@ -1514,6 +1514,7 @@ def _about_rail(about, readme_href, info=None, values=None, base="", raw=""):
 
 
 def render_view(data, short=False, about=None):
+    from . import repo_ssr_issue
     owner, repo = data["owner"], data["repo"]
     base = "/%s/%s" % (urllib.parse.quote(owner), urllib.parse.quote(repo))
     if short:
@@ -1545,15 +1546,16 @@ def render_view(data, short=False, about=None):
         'sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center"><div class="flex '
         'min-w-0 items-center gap-2"><span class="flex h-6 w-6 shrink-0 items-center '
         'justify-center rounded-full border border-border/30 bg-primary/10 font-mono '
-        'text-[10px] font-semibold text-muted-foreground">%s</span><span class="min-w-0 '
-        'truncate text-foreground font-medium">%s</span><span class="min-w-0 truncate '
+        'text-[10px] font-semibold text-muted-foreground">%s</span>%s<span class="min-w-0 truncate '
         'text-muted-foreground">%s</span></div><span class="font-mono '
         'text-muted-foreground">%s</span><span class="font-mono text-muted-foreground">'
         '%s</span><a href="%s/commits" class="inline-flex items-center gap-1 font-medium '
         'text-foreground transition-colors hover:text-accent">%s<span>History</span>'
         '<span class="inline-block w-10 rounded-full bg-background px-1.5 py-0.5 font-mono text-[10px]">&nbsp;</span></a>'
         '</div>' % (
-            html.escape((author[:1] or "F").upper()), html.escape(author),
+            html.escape((author[:1] or "F").upper()),
+            repo_ssr_issue.person_name_html(
+                author, "min-w-0 truncate text-foreground font-medium", git=True),
             html.escape(str(latest.get("subject") or latest.get("message")
                             or "published latest mirror metadata")),
             html.escape(str(latest.get("hash") or data.get("commit") or "")[:7]

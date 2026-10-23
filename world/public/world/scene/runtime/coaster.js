@@ -8,6 +8,7 @@ import { coasterSample, coasterTrack } from "../coaster.js";
 import {
   COASTER_MOUNT_DISTANCE,
   COASTER_RIDING_ACTIVITY,
+  FIRST_PERSON_EYE_HEIGHT,
 } from "../gameplay-constants.js";
 
 const SEAT_TOP = 0.93;
@@ -36,6 +37,9 @@ export function functions({
   const up = new THREE.Vector3();
   const back = new THREE.Vector3();
   const seat = new THREE.Vector3();
+  const eyeLift = new THREE.Vector3();
+  const look = new THREE.Euler(0, 0, 0, "YXZ");
+  const lookTurn = new THREE.Quaternion();
   let hud = null;
   let shownSpeed = "";
   let shownMessage = "";
@@ -89,9 +93,10 @@ export function functions({
 
   function seatRider(distance) {
     coasterSample(distance, sample);
-    back.set(-sample.tx, -sample.ty, -sample.tz);
+    back.set(-sample.tx, -sample.ty, -sample.tz).normalize();
     up.set(sample.ux, sample.uy, sample.uz);
     right.crossVectors(up, back).normalize();
+    up.crossVectors(back, right);
     basis.makeBasis(right, up, back);
     const lift = seatedAvatarY(SEAT_TOP, ctx.player.scale.x);
     seat
@@ -141,6 +146,8 @@ export function functions({
       travelled: 0,
       speed: 0,
       heading: null,
+      lookYaw: 0,
+      cameraYaw: ctx.cameraYaw,
       mark: "",
       markUntil: 0,
       laps: 0,
@@ -237,7 +244,9 @@ export function functions({
     }
     placeTrain(ride.distance);
     const current = seatRider(ride.distance);
+    ride.lookYaw = wrapAngle(ride.lookYaw + wrapAngle(ctx.cameraYaw - ride.cameraYaw));
     followHeading(ride, current);
+    ride.cameraYaw = ctx.cameraYaw;
     const section = track.sections[current.section];
     if (section.mark && section.mark !== ride.mark) {
       ride.mark = section.mark;
@@ -258,6 +267,19 @@ export function functions({
     return true;
   }
 
+  function placeCoasterEye(camera) {
+    const ride = ctx.coasterRide;
+    if (!ride) return false;
+    eyeLift.set(0, FIRST_PERSON_EYE_HEIGHT, 0).applyQuaternion(ctx.player.quaternion);
+    camera.position.copy(ctx.player.position).add(eyeLift);
+    look.set(-ctx.firstPersonPitch, ride.lookYaw, 0);
+    camera.quaternion
+      .copy(ctx.player.quaternion)
+      .multiply(lookTurn.setFromEuler(look))
+      .normalize();
+    return true;
+  }
+
   function coasterState() {
     const ride = ctx.coasterRide;
     const track = coasterTrack();
@@ -275,6 +297,7 @@ export function functions({
   return {
     coasterState,
     dismountCoaster,
+    placeCoasterEye,
     rideCoaster,
     toggleNearestCoasterRide,
     updateCoasterRide,

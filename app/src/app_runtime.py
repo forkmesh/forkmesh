@@ -3853,6 +3853,29 @@ class Default:
         if REPO_VIEWS_RE.match(url.path):
             return await repo_views_lookup_handler(self.env, request)
 
+        issue_view_match = REPO_ISSUE_VIEW_RE.match(url.path)
+        if issue_view_match:
+            owner = safe_segment(issue_view_match.group(1))
+            repo = safe_segment(issue_view_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await issue_view_handler(
+                self.env, request, owner, repo,
+                int(issue_view_match.group(3)))
+
+        issue_views_match = REPO_ISSUE_VIEWS_RE.match(url.path)
+        if issue_views_match:
+            owner = safe_segment(issue_views_match.group(1))
+            repo = safe_segment(issue_views_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await issue_views_lookup_handler(
+                self.env, request, owner, repo)
+        if REPO_FORK_COUNTS_RE.match(url.path):
+            import fork_counts
+            fork_counts._bind_runtime(globals())
+            return await fork_counts.handler(self.env, request)
+
         star_match = REPO_STAR_RE.match(url.path)
         if star_match:
             owner = safe_segment(star_match.group(1))

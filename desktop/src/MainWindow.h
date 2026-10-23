@@ -13778,11 +13778,12 @@ private:
         int behind = 0;
         QString worktree; // linked checkout holding the head branch, if any
         int dirty = -1;   // uncommitted entries in that checkout; -1 unknown
+        QString codeBranch;
         bool operator==(const PullBranchState &other) const
         {
             return counted == other.counted && ahead == other.ahead &&
                    behind == other.behind && worktree == other.worktree &&
-                   dirty == other.dirty;
+                   dirty == other.dirty && codeBranch == other.codeBranch;
         }
     };
     QHash<int, PullBranchState> m_pullBranchState;

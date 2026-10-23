@@ -212,8 +212,8 @@ console.log(JSON.stringify({
     assert out["roster"]["target"] == "_blank" and out["roster"]["rel"] == "noopener noreferrer nofollow ugc"
     assert "href" not in out["nobody"]
     assert out["mention"] == "@dave"
-    assert out["accounts"][0] == {"exists": True, "png": "iVBORw0KGgo="} == out["accounts"][1]
-    assert out["accounts"][2] == {"exists": False, "png": ""}
+    assert out["accounts"][0] == {"exists": True, "png": "iVBORw0KGgo=", "linkable": False} == out["accounts"][1]
+    assert out["accounts"][2] == {"exists": False, "png": "", "linkable": False}
     assert out["fetched"] == ["/api/accounts/alice"]
     assert out["match"] == {"name": "Vandana", "login": "Vandana42", "profile": "https://github.com/vandana42",
                             "avatarUrl": "/raw/vandana42.png", "commits": 3}

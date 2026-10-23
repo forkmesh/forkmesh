@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -93,6 +94,10 @@ def run(body, store=None, links=(), path="/dashboard"):
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
+def _text(html):
+    return re.sub(r"<[^>]+>", "", html)
+
+
 def fresh(doc):
     return {"forkmesh.repoAddresses": json.dumps(doc),
             "forkmesh.repoAddressesSavedAt": "NOW"}
@@ -171,9 +176,11 @@ out.labels = [...sidebar.innerHTML.matchAll(/data-sidebar-repo="([^"]+)"/g)].map
 """, store=fresh(DOC))
     assert sorted(out["labels"]) == ["Repo", "bob/tools", "forkmesh"]
     assert sorted(out["hrefs"]) == ["/Repo", "/bob/tools", "/forkmesh"]
-    assert "alice/" not in out["html"] and "acme/" not in out["html"]
-    assert ">forkmesh/<" not in out["html"]
-    assert ">bob/<" in out["html"]
+    text = _text(out["html"])
+    assert "alice/" not in text and "acme/" not in text
+    assert "forkmesh/" not in text
+    assert "bob/tools" in text
+    assert "data-issue-person" not in out["html"]
     assert out["count"] == "3"
 
 
@@ -184,7 +191,7 @@ out.html = sidebar.innerHTML;
 out.hrefs = [...sidebar.innerHTML.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
 """, store=fresh({"owner": "acme", "short": True, "canonical": False}))
     assert "/acme/Repo" in out["hrefs"] and "/alice/Repo" in out["hrefs"]
-    assert ">alice/<" in out["html"] and ">acme/<" in out["html"]
+    assert "alice/Repo" in _text(out["html"]) and "acme/Repo" in _text(out["html"])
 
 
 def test_changed_addresses_rerender_links_and_the_address_bar():

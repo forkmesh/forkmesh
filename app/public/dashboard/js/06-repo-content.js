@@ -3035,7 +3035,8 @@
               ${issueLabels.map((label) => renderIssueLabelChip(label, `data-repo-issue-label="${escapeHtml(label)}"`).replace('class="issue-label"', 'class="issue-label ml-1 align-[2px]"')).join("")}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              <span>${escapeHtml(numberLabel)} · ${issuePersonNameHtml(item.author, "", { inLink: true })} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              ${issueRowViewsHtml(state.selectedRepo, item.number)}
               ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
               ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
@@ -3051,7 +3052,7 @@
               <span data-repo-pull-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
+              <span>${escapeHtml(numberLabel)} · ${issuePersonNameHtml(item.author, "", { inLink: true })} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
               ${!["open", "closed", "merged"].includes(String(stateLabel).toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
               ${pullListReviewChipHtml(item.review)}
             </span>
@@ -3089,6 +3090,11 @@
     const pagination = ["issues", "pulls"].includes(kind)
       ? renderRepoCollectionPagination(kind, safePage, totalPages, items.length)
       : "";
+    if (kind === "issues") {
+      const repo = state.selectedRepo;
+      const numbers = pageItems.map((item) => item.number);
+      setTimeout(() => loadIssueListViews(repo, numbers), 0);
+    }
     return rows + unavailableWarning + pagination;
   }
 
@@ -5825,7 +5831,7 @@
     if (!commits.length) {
       return `<div class="px-4 py-3 text-sm text-muted-foreground">No pull-specific commits are available from this mirror yet.</div>`;
     }
-    return commits.map((commit) => `<div class="grid gap-1 px-4 py-3"><span class="text-sm font-medium text-foreground">${escapeHtml(commit.body || "Commit")}</span><span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(String(commit.hash || "").slice(0, 12))} · ${escapeHtml(commit.authorName || "unknown")}</span></div>`).join("");
+    return commits.map((commit) => `<div class="grid gap-1 px-4 py-3"><span class="text-sm font-medium text-foreground">${escapeHtml(commit.body || "Commit")}</span><span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(String(commit.hash || "").slice(0, 12))} · ${issuePersonNameHtml(commit.authorName || "unknown", "", { git: true })}</span></div>`).join("");
   }
 
   function normalizePullHistoryCommit(commit) {
@@ -9597,9 +9603,103 @@
     return {
       aiPromptTemplate: template,
       reviewPromptTemplate: pullsSmall ? normalizePullReviewTemplate(pulls.reviewPromptTemplate) : "",
+      assignmentHours: issueAssignmentHours(issues.assignmentHours),
       requireAiDisclosure: pulls.requireAiDisclosure === true,
       aiPolicy: Boolean(blobs?.["AI_POLICY.md"]),
     };
+  }
+
+  const ISSUE_ASSIGNMENT_HOURS_MAX = 24 * 365;
+  const ISSUE_ASSIGNMENT_WARN_FRACTION = 0.25;
+
+  function issueAssignmentHours(value) {
+    const hours = typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\s*\d+(?:\.\d+)?\s*$/.test(value) ? Number(value) : NaN;
+    return Number.isFinite(hours) && hours > 0 ? Math.min(hours, ISSUE_ASSIGNMENT_HOURS_MAX) : 0;
+  }
+
+  function issueAssignmentTimes(events) {
+    const since = new Map();
+    let current = [];
+    (Array.isArray(events) ? events : []).forEach((event) => {
+      let next;
+      if (event?.type === "assignees") next = (Array.isArray(event.assignees) ? event.assignees : []).map(String);
+      else if (event?.type === "claim") next = webIssueClaimApplied(current, event);
+      else return;
+      const ts = Number(event.ts) || 0;
+      const keys = new Set(next.map((name) => name.trim().toLowerCase()));
+      Array.from(since.keys()).forEach((key) => { if (!keys.has(key)) since.delete(key); });
+      keys.forEach((key) => { if (key && !since.has(key)) since.set(key, ts); });
+      current = next;
+    });
+    return since;
+  }
+
+  function issueAssigneeHasPull(assignee, number, events, pulls) {
+    const name = String(assignee || "").trim().toLowerCase();
+    if (!name || !Array.isArray(pulls)) return false;
+    const linked = new Set(issueLinkedPullNumbers(number, events, pulls));
+    const author = (value) => String(value || "").replace(/\s+\(unverified\)$/i, "").trim().toLowerCase();
+    return pulls.some((pull) => linked.has(Number(pull?.number))
+      && String(pull?.state || "open").toLowerCase() !== "closed"
+      && (author(pull?.author) === name || author(pull?.authorKey) === name));
+  }
+
+  function issueDeadlineDuration(ms) {
+    const minutes = Math.max(1, Math.floor(Math.abs(ms) / 60_000));
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    return hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
+  }
+
+  function issueAssignmentDeadline(assignedAt, hours, now = Date.now()) {
+    const total = Number(hours) * 3_600_000;
+    if (!(Number(assignedAt) > 0) || !(total > 0)) return null;
+    const left = total - Math.max(0, now - Number(assignedAt));
+    const overdue = left < 0;
+    return {
+      fraction: Math.min(1, Math.max(0, 1 - left / total)),
+      left,
+      overdue,
+      warn: overdue || left < total * ISSUE_ASSIGNMENT_WARN_FRACTION,
+      label: overdue ? `overdue by ${issueDeadlineDuration(left)}` : `${issueDeadlineDuration(left)} left`,
+      dueAt: Number(assignedAt) + total,
+    };
+  }
+
+  function renderIssueAssignmentDeadline(deadline) {
+    if (!deadline) return "";
+    const percent = Math.round(deadline.fraction * 100);
+    const stateName = deadline.overdue ? "overdue" : deadline.warn ? "soon" : "on-track";
+    const due = formatRecordDateTime(deadline.dueAt);
+    return `<span data-repo-issue-deadline-state="${stateName}" title="${escapeHtml(`Due ${due.label}`)}" class="flex min-w-0 items-center gap-2 pl-7"><span role="progressbar" aria-label="Assignment time used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" class="block h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-[var(--dashboard-counter)]"><span class="block h-full rounded-full ${deadline.warn ? "bg-attention" : "bg-primary"}" style="width:${percent}%"></span></span><span class="truncate text-[11px] ${deadline.warn ? "text-attention" : "text-muted-foreground"}">${escapeHtml(deadline.label)}</span></span>`;
+  }
+
+  function issueAssigneeDeadlineHtml(issue, assignee, now = Date.now()) {
+    const hours = Number(issue?.settings?.assignmentHours) || 0;
+    if (!hours || issue?.closed) return "";
+    if (issueAssigneeHasPull(assignee, issue.number, issue.events, issue.pulls)) return "";
+    const assignedAt = issueAssignmentTimes(issue.events).get(String(assignee || "").trim().toLowerCase());
+    return renderIssueAssignmentDeadline(issueAssignmentDeadline(assignedAt, hours, now));
+  }
+
+  function renderRepoIssueDeadlines() {
+    const detail = state.repoRecordDetail;
+    if (detail?.kind !== "issues") return;
+    const parsed = detail.parsed || {};
+    const issue = {
+      number: detail.number,
+      closed: String(parsed.values?.status || parsed.values?.state || "open") === "closed",
+      events: parsed.issueEvents,
+      pulls: developmentPulls(parsed),
+      settings: parsed.repoCollabSettings,
+    };
+    document.querySelectorAll("[data-repo-issue-deadline]").forEach((node) => {
+      const html = issueAssigneeDeadlineHtml(issue, node.dataset.repoIssueDeadline);
+      if (node.innerHTML !== html) node.innerHTML = html;
+      node.hidden = !html;
+    });
   }
 
   async function loadRepoCollabSettings(repo) {
@@ -9879,6 +9979,13 @@ Report
         <div class="text-[12px] text-foreground">${value}</div>
       </div>`;
     const issueAssignees = webIssueAssigneesWithClaims(parseFrontMatterList(values.assignees), events);
+    const deadlineIssue = {
+      number,
+      closed,
+      events,
+      pulls: developmentPulls(parsed),
+      settings: parsed.repoCollabSettings,
+    };
     const viewerAccount = String(state.session?.nodeName || "").trim();
     const viewerAssigned = Boolean(viewerAccount) && issueAssignees.some(
       (assignee) => assignee.trim().toLowerCase() === viewerAccount.toLowerCase());
@@ -9887,7 +9994,13 @@ Report
     // clicks route through /login.
     const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
     const assigneeValue = `${issueAssignees.length
-      ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`).join("")}</div>`
+      ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => {
+        const row = `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`;
+        const deadline = issueAssigneeDeadlineHtml(deadlineIssue, assignee);
+        return deadline
+          ? `<span class="grid min-w-0 gap-1">${row}<span data-repo-issue-deadline="${escapeHtml(assignee)}">${deadline}</span></span>`
+          : row;
+      }).join("")}</div>`
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
     const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
@@ -9959,6 +10072,7 @@ Report
             <span>${formatCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}</span>
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
+            ${issueViewsHtml(repo, number)}
           </p>
           ${closed || instancePluginOff("issue-ai-prompt") ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
@@ -10455,6 +10569,7 @@ Report
     node.innerHTML = detail.kind === "issues"
       ? renderIssueDevelopment(detail.repo, detail.number, detail.parsed?.issueEvents, developmentPulls(detail.parsed))
       : renderPullDevelopment(detail.repo, detail.number, detail.parsed || {});
+    if (detail.kind === "issues") renderRepoIssueDeadlines();
     const hint = node.querySelector("[data-repo-development-hint]");
     if (hint && hintText) {
       hint.textContent = hintText;
@@ -11153,6 +11268,7 @@ Report
       }
       loadFederatedReplies(repo, kind, number, container);
       if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
+      if (kind === "issues") recordIssueView(repo, number);
       void refreshRepoRecordDevelopment(repo, kind, number);
       if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
       // Members watch an open pull for agent activity; signed-out visitors
@@ -11303,7 +11419,7 @@ Report
       : `<span class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[10px] text-muted-foreground">${escapeHtml(owner.slice(0, 1).toUpperCase())}</span>`;
     const who = profileUrl
       ? `<a href="${escapeHtml(profileUrl)}" class="shrink-0 hover:underline">${escapeHtml(owner)}</a>`
-      : `<span class="shrink-0">${escapeHtml(owner)}</span>`;
+      : issuePersonNameHtml(owner, "shrink-0");
     return `<div class="flex items-center gap-1.5 py-0.5">${portrait}${who}<span class="text-muted-foreground/60">/</span><a href="${escapeHtml(url)}" class="min-w-0 truncate text-foreground hover:underline">${escapeHtml(name)}</a></div>`;
   }
 
@@ -13549,7 +13665,7 @@ Report
           <span aria-hidden="true" class="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-[18px]">${discussionCategoryEmoji(category)}</span>
           <span class="min-w-0">
             <span data-repo-discussion-row-title class="block text-[16px] font-semibold leading-6 text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
-            <span class="block text-[12px] text-muted-foreground">${userNameHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
+            <span class="block text-[12px] text-muted-foreground">${issuePersonNameHtml(item.author, "", { inLink: true })} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
           </span>
           <span class="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground">
             ${issueActorAvatarHtml(item.author, item.authorKey || item.author, "h-5 w-5", false, false)}
@@ -16809,6 +16925,99 @@ Report
             lastViewedAt: Number(data.lastViewedAt) || 0,
           },
         };
+      })
+      .catch(() => {});
+  }
+
+  function issueViewKey(repo, number) {
+    return `${repositoryViewKey(repo)}#${Number(number) || 0}`;
+  }
+
+  function issueViewTotals(data) {
+    return {
+      views: Number(data?.views) || 0,
+      viewers: Number(data?.viewers) || 0,
+      lastViewedAt: Number(data?.lastViewedAt) || 0,
+    };
+  }
+
+  function issueViewsLabel(totals) {
+    const views = Number(totals?.views) || 0;
+    return `${formatCount(views)} ${views === 1 ? "view" : "views"}`;
+  }
+
+  function issueViewsHtml(repo, number) {
+    if (!repo || repo.isPrivate) return "";
+    const totals = state.issueViewTotals?.[issueViewKey(repo, number)];
+    const shown = Number(totals?.views) > 0;
+    return `<span data-repo-issue-views-separator aria-hidden="true"${shown ? "" : " hidden"}>·</span><span data-repo-issue-views="${escapeHtml(number)}" title="Views by people, counted once a day per viewer" class="inline-flex items-center gap-1"${shown ? "" : " hidden"}><i data-lucide="eye" class="h-4 w-4"></i><span data-repo-issue-views-label>${shown ? escapeHtml(issueViewsLabel(totals)) : ""}</span></span>`;
+  }
+
+  function issueRowViewsHtml(repo, number) {
+    if (!repo || repo.isPrivate || !/^\d+$/.test(String(number))) return "";
+    const totals = state.issueViewTotals?.[issueViewKey(repo, number)];
+    const shown = Number(totals?.views) > 0;
+    return `<span data-repo-issue-row-views="${escapeHtml(number)}" class="inline-flex items-center gap-1 pl-1"${shown ? "" : " hidden"}><i data-lucide="eye" class="h-3 w-3 shrink-0"></i><span data-repo-issue-views-label>${shown ? escapeHtml(issueViewsLabel(totals)) : ""}</span></span>`;
+  }
+
+  function showIssueViews(repo, number, data) {
+    const totals = issueViewTotals(data);
+    state.issueViewTotals = { ...(state.issueViewTotals || {}), [issueViewKey(repo, number)]: totals };
+    const shown = totals.views > 0;
+    const selector = `[data-repo-issue-views="${Number(number)}"], [data-repo-issue-row-views="${Number(number)}"]`;
+    document.querySelectorAll(selector).forEach((node) => {
+      const label = node.querySelector("[data-repo-issue-views-label]");
+      if (label) label.textContent = shown ? issueViewsLabel(totals) : "";
+      node.hidden = !shown;
+      if (node.matches("[data-repo-issue-views]")) {
+        const separator = node.previousElementSibling;
+        if (separator?.matches("[data-repo-issue-views-separator]")) separator.hidden = !shown;
+      }
+    });
+    return totals;
+  }
+
+  function recordIssueView(repo, number) {
+    if (!repo || repo.isPrivate || !(Number(number) > 0)) return;
+    const key = issueViewKey(repo, number);
+    if (state.recordedIssueViews.has(key)) return;
+    state.recordedIssueViews.add(key);
+    const body = state.session?.sessionToken
+      ? { sessionToken: state.session.sessionToken }
+      : {};
+    fetch(`${repoApiBase(repo)}/issues/${Number(number)}/view`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data && data.ok !== false) showIssueViews(repo, number, data);
+      })
+      .catch(() => {});
+  }
+
+  const ISSUE_LIST_VIEWS_MAX = 100;
+  const ISSUE_LIST_VIEWS_FRESH_MS = 60_000;
+  const issueListViewsFetched = new Map();
+
+  function loadIssueListViews(repo, numbers) {
+    if (!repo || repo.isPrivate) return;
+    const wanted = [...new Set((numbers || []).map(Number).filter((n) => n > 0))].slice(0, ISSUE_LIST_VIEWS_MAX);
+    if (!wanted.length) return;
+    const fetchKey = `${repositoryViewKey(repo)}|${wanted.join(",")}`;
+    const now = Date.now();
+    if (now - (issueListViewsFetched.get(fetchKey) || 0) < ISSUE_LIST_VIEWS_FRESH_MS) return;
+    issueListViewsFetched.set(fetchKey, now);
+    fetch(`${repoApiBase(repo)}/issue-views?numbers=${wanted.join(",")}`, {
+      headers: { accept: "application/json" },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const views = data?.views && typeof data.views === "object" ? data.views : {};
+        wanted.forEach((number) => {
+          if (views[String(number)]) showIssueViews(repo, number, views[String(number)]);
+        });
       })
       .catch(() => {});
   }

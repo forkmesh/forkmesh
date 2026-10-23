@@ -72,9 +72,9 @@ FEATURES = (
      ("/start", "/api/start"), ()),
     ("website", "ForkMesh website pages",
      "forkmesh.com's own pages: about, careers, press, pricing, features, "
-     "the ecosystem, leaderboards, the blog and the changelog.",
+     "the ecosystem, leaderboards and the blog.",
      ("/about", "/careers", "/press", "/pricing", "/features", "/ecosystem",
-      "/leaderboards", "/blog", "/changelog", "/market"), ()),
+      "/leaderboards", "/blog", "/market"), ()),
     ("issue-ai-prompt", "Issue AI prompt",
      "The copyable \"Fix <issue>: read the issue, make the change\u2026\" "
      "prompt under an open issue's title.",
@@ -83,6 +83,9 @@ FEATURES = (
      "The Fediverse thread under issues, pull requests and discussions, and "
      "the Watch on the fediverse menu of a repository.",
      (), (r"^/api/repo/[^/]+/[^/]+/fedi-comments$",)),
+    ("changelog", "Changelog",
+     "Platform changelog: what changed in each platform version.",
+     ("/changelog",), ()),
 )
 OFFSITE_HOSTS = ("forkmesh.com", "www.forkmesh.com", "app.forkmesh.com",
                  "world.forkmesh.com", "www.patreon.com")
@@ -118,8 +121,10 @@ INSTANCE_NOTES = {
     "fediverse-ui": "Shows replies from the fediverse beside a thread and "
                     "how to follow a repository from Mastodon. Off, the "
                     "replies endpoint answers 404 too.",
+    "changelog": "The changelog of the platform version this instance runs, "
+                 "at /changelog. On unless turned off.",
 }
-DEFAULT_ON = frozenset({"issue-ai-prompt", "fediverse-ui"})
+DEFAULT_ON = frozenset({"changelog", "issue-ai-prompt", "fediverse-ui"})
 OPT_IN = frozenset()
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000

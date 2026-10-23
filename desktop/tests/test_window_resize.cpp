@@ -38289,6 +38289,26 @@ else:
               QStringLiteral("set up a pull whose head is one commit ahead, one "
                              "behind, and checked out in a dirty worktree: %1")
                   .arg(pullBranchError));
+        const QString awayPatch = QStringLiteral(
+            "diff --git a/only-on-author.txt b/only-on-author.txt\n"
+            "--- a/only-on-author.txt\n"
+            "+++ b/only-on-author.txt\n"
+            "@@ -1 +1 @@\n"
+            "-text only the author's machine has\n"
+            "+changed on the author's machine\n");
+        const int codeAwayPr =
+            branchStatePr > 0
+                ? pullBranchStore.createPull(
+                      QStringLiteral("Code on another machine"),
+                      QStringLiteral("its patch does not apply here"),
+                      QStringLiteral("main"),
+                      QStringLiteral("feature/code-elsewhere"), awayPatch,
+                      QString(), /*branchBacked=*/false, &pullBranchError)
+                : 0;
+        const bool codeAwayReady = codeAwayPr > 0;
+        check(codeAwayReady,
+              QStringLiteral("set up a pull whose patch cannot be replayed here: %1")
+                  .arg(pullBranchError));
         if (branchStatePr > 0) {
             const int branchStateIdx = window.testAddLocalRepository(
                 "me", "branchstate", pullBranchRepo.path());
@@ -38326,10 +38346,30 @@ else:
                       branchTip.contains(QStringLiteral("Worktree: ") +
                                          reportedWorktree) &&
                       branchTip.contains(
-                          QStringLiteral("1 uncommitted change in that worktree")),
+                          QStringLiteral("1 uncommitted change in that worktree")) &&
+                      branchTip.contains(QStringLiteral("Code on this machine: ") +
+                                         headBranch),
                   QStringLiteral("hovering the row spells the branch state out "
                                  "(%1)")
                       .arg(branchTip));
+            if (codeAwayReady) {
+                QString awayTip;
+                QElapsedTimer awayWait;
+                awayWait.start();
+                while (awayWait.elapsed() < 10000) {
+                    awayTip = window.testPullListRowTooltip(codeAwayPr);
+                    if (awayTip.contains(QStringLiteral("Code not on this machine")))
+                        break;
+                    QApplication::processEvents(QEventLoop::AllEvents, 10);
+                    QThread::msleep(1);
+                }
+                check(awayTip.contains(QStringLiteral("Code not on this machine")) &&
+                          !branchTip.contains(
+                              QStringLiteral("Code not on this machine")),
+                      QStringLiteral("a pull whose code no local branch holds is "
+                                     "marked as not on this machine (%1)")
+                          .arg(awayTip));
+            }
         }
         // Both temporary directories go with this scope, so the linked
         // checkout needs no explicit `worktree remove` to clean up after.
