@@ -25427,6 +25427,18 @@
     }
   }
 
+  const PULL_BRANCH_WRITER_PERMISSIONS = new Set(["write", "maintain", "admin"]);
+
+  async function loadRepoPullUpdateAuthorization(repo, values, mergeAuthorized) {
+    if (mergeAuthorized === true) return true;
+    if (!repo || !state.session?.sessionToken || values?.derive !== "branch") return false;
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (me && pullHeadBranchRef(values).startsWith(`pr/${me}/`)) return true;
+    const known = await loadRepoViewerPermission(repo).catch(() => null);
+    return Boolean(known && (known.viewerCanAdmin === true
+      || PULL_BRANCH_WRITER_PERMISSIONS.has(String(known.permission || "").toLowerCase())));
+  }
+
   async function loadRepoIssueMutationAuthorization(repo) {
     if (!repo || !state.session?.sessionToken) return false;
     if (isRepoOwner(repo) || state.session?.isAdmin) return true;
@@ -26030,9 +26042,10 @@
   }
 
   const PULL_UPDATE_MESSAGES = {
-    forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can update this branch.",
+    forbidden: "Only someone who can push to this pull request's branch can update it.",
+    branch_protected: "This pull request's branch is protected, so it cannot be updated from here.",
     already_current: "This branch already contains the base branch.",
-    merge_conflict: "The base branch conflicts with this branch; resolve it locally and push.",
+    merge_conflict: "This branch has merge conflicts with the base branch. Resolve them locally, push, and the pull request updates.",
     stale_base: "The base branch moved again; reload to review the new state.",
     stale_head: "The head branch moved; reload before updating it again.",
     stale_pull_metadata: "The pull-request metadata changed; reload before updating.",
@@ -26256,6 +26269,7 @@
     const branchBacked = values.derive === "branch";
     const readiness = parsed?.pullReadiness || { available: false };
     const authorized = parsed?.pullMergeAuthorized === true;
+    const updateAuthorized = authorized || parsed?.pullUpdateAuthorized === true;
     const merge = parsed?.pullMerge || {};
     const update = parsed?.pullUpdate || {};
     const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "");
@@ -26331,19 +26345,23 @@
       branchRow.detail = branchBacked
         ? `Resolve the conflicts locally and push to ${headBranch}: git fetch origin && git switch ${shellWord(headBranch)} && git merge ${shellWord(`origin/${baseBranch}`)}, fix the files, commit, and git push.`
         : `This pull request was submitted as a patch series, so only its author can resolve the conflicts: rebase the change onto the newest ${baseBranch}, fix the files, and submit it again.`;
+      if (branchBacked && updateAuthorized) {
+        branchRow.actions.push({ kind: "update", label: update.state === "processing" ? "Updating branch…" : "Update branch", busy: update.state === "processing" });
+      }
+    } else if (readiness.behind > 0 && !branchBacked) {
+      const behind = readiness.behind;
+      branchRow.tone = "good";
+      branchRow.title = `Merges cleanly into ${baseBranch}`;
+      branchRow.detail = `${baseBranch} has ${formatCount(behind)} new commit${behind === 1 ? "" : "s"} since this pull request was sent. No update is needed: it was submitted as a patch series, and the mirror replays it onto the newest ${baseBranch} when it is merged. Update it only to resolve conflicts or to run the checks on the combined code.`;
     } else if (readiness.behind > 0) {
       const behind = readiness.behind;
       branchRow.tone = "warn";
       branchRow.title = `${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${baseBranch}`;
-      if (branchBacked) {
-        branchRow.detail = authorized
-          ? `It merges cleanly, so being behind does not block the merge. Update the branch to bring ${baseBranch} into ${headBranch} and re-run the checks on the combined code.`
-          : `It merges cleanly, so being behind does not block the merge. The author can bring ${baseBranch} in with git fetch origin && git merge ${shellWord(`origin/${baseBranch}`)} && git push; an organization owner can also update the branch here.`;
-        if (authorized && repoPullUpdateContext(repo, number, values, parsed?.pullMetadataCommit || "", readiness)) {
-          branchRow.actions.push({ kind: "update", label: update.state === "processing" ? "Updating branch…" : "Update branch", busy: update.state === "processing" });
-        }
-      } else {
-        branchRow.detail = `It merges cleanly, so being behind does not block the merge: the mirror replays the submitted commits onto the newest ${baseBranch}. It was submitted as a patch series from the author's own copy, so there is no branch here to update; only the author can refresh it, by rebasing onto ${baseBranch} and submitting it again.`;
+      branchRow.detail = updateAuthorized
+        ? `It merges cleanly, so being behind does not block the merge. Update the branch to bring ${baseBranch} into ${headBranch} and re-run the checks on the combined code.`
+        : `It merges cleanly, so being behind does not block the merge. The author can bring ${baseBranch} in with git fetch origin && git merge ${shellWord(`origin/${baseBranch}`)} && git push; anyone who can push to ${headBranch} can also update the branch here.`;
+      if (updateAuthorized && repoPullUpdateContext(repo, number, values, parsed?.pullMetadataCommit || "", readiness)) {
+        branchRow.actions.push({ kind: "update", label: update.state === "processing" ? "Updating branch…" : "Update branch", busy: update.state === "processing" });
       }
     } else {
       branchRow.tone = "good";
@@ -26351,7 +26369,9 @@
       branchRow.detail = `This branch already contains ${baseBranch} and merges cleanly.`;
     }
     if (update.state === "updated") {
-      branchRow.note = { tone: "good", text: "The branch was updated. Checks re-run on the new head." };
+      const at = update.at ? new Date(update.at) : null;
+      const when = at ? ` · ${at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : "";
+      branchRow.note = { tone: "good", text: `Synced this branch with ${baseBranch}${when}. Checks re-run on the new head.` };
     } else if (update.state === "current") {
       branchRow.note = { tone: "good", text: `This branch already contains the newest ${baseBranch}.` };
     } else if (update.state === "failed" && update.message) {
@@ -27311,7 +27331,7 @@
       && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
       && immutableGitCommit(payload.headAfter)
     ) {
-      return { state: "updated", request };
+      return { state: "updated", request, at: Date.now() };
     }
     const error = String(payload?.error || "");
     return {
@@ -27319,7 +27339,7 @@
       error,
       resumable: PULL_MERGE_RESUMABLE_ERRORS.has(error),
       request,
-      message: PULL_UPDATE_MESSAGES[error] || "The mirror branch update could not be confirmed.",
+      message: PULL_UPDATE_MESSAGES[error] || payload?.message || "The mirror branch update could not be confirmed.",
     };
   }
 
@@ -27327,7 +27347,7 @@
     const detail = state.repoRecordDetail;
     if (!repo || detail?.kind !== "pulls") return;
     const parsed = detail.parsed || {};
-    if (!parsed.pullMergeAuthorized) return;
+    if (!parsed.pullMergeAuthorized && !parsed.pullUpdateAuthorized) return;
     const number = detail.number;
     const previous = parsed.pullUpdate || {};
     if (previous.state === "processing") return;
@@ -27339,11 +27359,14 @@
       if (!pullDetailIsCurrent(repo, number)) return;
       request = changes.length ? null : buildRepoPullUpdateRequest(repo, number, parsed);
       if (!request) {
+        const readiness = parsed.pullReadiness || {};
         parsed.pullUpdate = changes.length
           ? { state: "failed", message: `Nothing was updated: ${changes.join(" ")}` }
-          : parsed.pullReadiness?.available && parsed.pullReadiness.behind <= 0
+          : readiness.available && readiness.behind <= 0
             ? { state: "current" }
-            : { state: "failed", message: "The branch cannot be updated right now; the merge trial on the mirror did not answer." };
+            : readiness.available && readiness.clean === false
+              ? { state: "failed", error: "merge_conflict", message: PULL_UPDATE_MESSAGES.merge_conflict }
+              : { state: "failed", message: "The branch cannot be updated right now; the merge trial on the mirror did not answer." };
         updateRepoPullMergePanel(repo, number, parsed);
         return;
       }
@@ -29671,6 +29694,7 @@ Your reply
         parsed.pullAgents = agents;
         parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, agents);
         parsed.pullMergeAuthorized = mergeAuthorized;
+        parsed.pullUpdateAuthorized = await loadRepoPullUpdateAuthorization(repo, values, mergeAuthorized);
         parsed.pullReadiness = await readiness;
         parsed.pullMergeBase = mergeBase;
         parsed.pullChecks = checks;

@@ -59,6 +59,7 @@ review file that names an owner as the approver.
 | `git push` over SSH (`ssh_gateway_routes`) | the authorize call does not see refs, so receive-pack is refused for the whole repository; push over HTTPS |
 | Branches page create/update/delete/merge (`repository_branch_ops_handler`, `agent_branches.core_branch_op`) | refused when the moved branch, or a merge's base, is protected; a resumed core op is checked again because it carries its own base |
 | Agent branch merge (`agent_branches._merge`) | refused when the merge base is protected; only owners may merge at all (`merge_allowed`) |
+| Pull request Update branch (`repository_pull_merge_handler`, mutation `update`) | refused when the pull's head branch is protected |
 | Pull request merge (`repository_pull_merge_handler`) | `merge_refusal` before the job is queued (below) |
 | Actions (`runner_actions.lease`) | a job on a protected branch gets no `actions-push` grant; it still runs, with its token and secrets, but cannot push |
 | Operator `instance-repo` | not checked: the root shell on the server is the authority, and it never counts as a merge |

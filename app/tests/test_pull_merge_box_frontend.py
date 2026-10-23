@@ -319,6 +319,8 @@ def test_merge_readiness_names_each_blocker_and_its_action():
       });
       const fork = rows(patch);
       const visitor = repoPullMergeModel(repo, 7, detail({ pullMergeAuthorized: false, pullReadiness: readiness({ behind: 5 }) }));
+      const writer = repoPullMergeModel(repo, 7, detail({ pullMergeAuthorized: false, pullUpdateAuthorized: true, pullReadiness: readiness({ behind: 5 }) }));
+      const visitorStatus = repoPullMergeStatus(repoPullMergeModel(repo, 7, detail({ pullMergeAuthorized: false, pullConversation: [{ type: "review", state: "approved", author: "k".repeat(43), authorName: "carol" }] })));
       const checks = rows(detail({
         pullChecks: { available: true, controlAvailable: true, node: "mirror-1", runs: [{ id: 9, workflow: "ci", status: "failed" }] },
         pullRequiredChecks: { known: true, names: ["ci", "lint"] },
@@ -336,7 +338,7 @@ def test_merge_readiness_names_each_blocker_and_its_action():
       }));
       const ready = repoPullMergeModel(repo, 7, detail({ pullChecks: { available: true, runs: [{ id: 1, workflow: "ci", status: "success" }] } }));
       const conflictModel = repoPullMergeModel(repo, 7, detail({ pullReadiness: readiness({ clean: false, conflicts: ["a.py"] }) }));
-      console.log(JSON.stringify({ behind: behind.branch, conflict: conflict.branch, fork: fork.branch, visitor: { rows: visitor.rows.find((row) => row.id === "branch"), footer: visitor.footer, canMerge: visitor.canMerge }, checks: checks.checks, strangerChecks: strangerChecks.checks, nodeless: nodeless.checks, hostile: hostile.branch, ready: { canMerge: ready.canMerge, canOverride: ready.canOverride, footer: ready.footer }, conflictModel: { canMerge: conflictModel.canMerge, canOverride: conflictModel.canOverride } }));
+      console.log(JSON.stringify({ behind: behind.branch, conflict: conflict.branch, fork: fork.branch, visitor: { rows: visitor.rows.find((row) => row.id === "branch"), footer: visitor.footer, canMerge: visitor.canMerge }, writer: { rows: writer.rows.find((row) => row.id === "branch"), canMerge: writer.canMerge, authorized: writer.authorized }, visitorStatus, checks: checks.checks, strangerChecks: strangerChecks.checks, nodeless: nodeless.checks, hostile: hostile.branch, ready: { canMerge: ready.canMerge, canOverride: ready.canOverride, footer: ready.footer }, conflictModel: { canMerge: conflictModel.canMerge, canOverride: conflictModel.canOverride } }));
     """)
     assert out["behind"]["title"] == "80 commits behind main"
     assert out["behind"]["actions"] == [{"kind": "update", "label": "Update branch", "busy": False}]
@@ -344,12 +346,16 @@ def test_merge_readiness_names_each_blocker_and_its_action():
     assert out["conflict"]["tone"] == "bad"
     assert out["conflict"]["conflicts"] == ["a.py", "b.py"]
     assert "git merge origin/main" in out["conflict"]["detail"]
-    assert out["conflict"]["actions"] == []
-    # A pull submitted as a patch series has no branch here to update: only
-    # its author can refresh it, and being behind does not block the merge.
+    assert out["conflict"]["actions"] == [{"kind": "update", "label": "Update branch", "busy": False}]
     assert out["fork"]["actions"] == []
-    assert "only the author can refresh it" in out["fork"]["detail"]
-    assert "replays the submitted commits onto the newest main" in out["fork"]["detail"]
+    assert out["fork"]["tone"] == "good"
+    assert out["fork"]["title"] == "Merges cleanly into main"
+    assert "No update is needed" in out["fork"]["detail"]
+    assert "replays it onto the newest main" in out["fork"]["detail"]
+    assert out["writer"]["rows"]["actions"] == [{"kind": "update", "label": "Update branch", "busy": False}]
+    assert out["writer"]["canMerge"] is False and out["writer"]["authorized"] is False
+    assert out["visitorStatus"]["label"] != "Ready to merge"
+    assert out["visitorStatus"]["tone"] != "good"
     assert out["visitor"]["rows"]["actions"] == []
     assert "The author can bring main in" in out["visitor"]["rows"]["detail"]
     assert out["visitor"]["canMerge"] is False
@@ -387,7 +393,9 @@ def test_update_branch_re_pins_and_retries_once_then_refreshes_the_page():
       console.log(JSON.stringify({ updated, note, current: parsed.pullUpdate.state, urls: world.sent.map((item) => item.url), refreshed }));
     """ % (TIP_A, TIP_B))
     assert out["updated"] == "updated"
-    assert out["note"] == {"tone": "good", "text": "The branch was updated. Checks re-run on the new head."}
+    assert out["note"]["tone"] == "good"
+    assert out["note"]["text"].startswith("Synced this branch with main · ")
+    assert out["note"]["text"].endswith(". Checks re-run on the new head.")
     assert out["current"] == "current"
     assert out["urls"] == []
     assert out["refreshed"] == [7]
@@ -413,7 +421,7 @@ def test_update_requests_are_typed_and_pin_the_current_tips():
     assert sent["body"]["expectedHeadOid"] == HEAD
     assert sent["body"]["expectedPullsOid"] == TIP_A
     assert out["update"]["state"] == "failed"
-    assert "resolve it locally" in out["update"]["message"]
+    assert "Resolve them locally" in out["update"]["message"]
 
 
 def test_the_relay_replays_a_used_request_id_so_the_page_must_mint_a_new_one():
