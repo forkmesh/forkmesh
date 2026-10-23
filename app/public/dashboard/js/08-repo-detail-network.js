@@ -1324,7 +1324,7 @@
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(repoPublicHref(item.href))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+        ${item.href ? `<a href="${escapeHtml(repoPublicHref(homeFeedHref(item)))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
