@@ -44212,6 +44212,13 @@ Your reply
     const owners = [repo?.owner, ...repoLogicalOwners(repo).map((value) => value.owner)]
       .map((owner) => String(owner || "").trim())
       .filter(Boolean);
+    const known = new Set(owners.map((owner) => owner.toLowerCase()));
+    (state.repositories || []).forEach((row) => {
+      if (String(row?.name || "").trim().toLowerCase() !== name.toLowerCase()) return;
+      if (!repoLogicalOwners(row).some((value) => known.has(value.owner.toLowerCase()))) return;
+      const owner = String(row?.owner || "").trim();
+      if (owner) owners.push(owner);
+    });
     return [...new Set(owners)].map((owner) => `forkmesh.${kind}-contribution-tip.v1:${owner}/${name}`);
   }
 

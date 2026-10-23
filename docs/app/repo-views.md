@@ -130,7 +130,10 @@ under its storage owner (the catalog row, `drew/Widgets`) or its organization
 (`acme/Widgets`), depending on the route and listing that opened it, so a key
 built from `repo.owner` alone missed a dismissal made under the other name.
 `contributionTipKeys` lists one key per name the repository has (`repo.owner`
-and each of `repoLogicalOwners`). Dismissing writes all of them, and the tip
+and each of `repoLogicalOwners`, plus the storage owner of any catalog row
+with the same name and one of those organizations, so a dismissal saved under
+the member's name before the organization became the public owner still
+counts). Dismissing writes all of them, and the tip
 stays hidden if any of them is set. "Dismiss for all repositories" on Issues
 is still the single `forkmesh.issue-contribution-tip.v1:all` key.
 

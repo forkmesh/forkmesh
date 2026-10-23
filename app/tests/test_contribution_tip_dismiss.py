@@ -26,6 +26,10 @@ globalThis.localStorage = {
   getItem: (key) => (key in store ? store[key] : null),
   setItem: (key, value) => { store[key] = String(value); },
 };
+const state = { repositories: [
+  { owner: "drew", name: "Widgets", logicalOwners: [{ kind: "organization", owner: "acme" }] },
+  { owner: "drew", name: "Other", logicalOwners: [{ kind: "organization", owner: "acme" }] },
+] };
 %s
 const member = { owner: "drew", name: "Widgets", logicalOwners: [{ kind: "organization", owner: "acme" }] };
 const organization = { owner: "acme", name: "Widgets", logicalOwners: [{ kind: "organization", owner: "acme" }] };
@@ -37,7 +41,10 @@ for (const key of Object.keys(store)) delete store[key];
 dismissContributionTip("issue", organization);
 const afterOrganization = [issueContributionTipDismissed(member), issueContributionTipDismissed(organization),
   contributionTipDismissed("pull", member), issueContributionTipDismissed(other)];
-console.log(JSON.stringify({ before, afterMember, afterOrganization }));
+for (const key of Object.keys(store)) delete store[key];
+store["forkmesh.pull-contribution-tip.v1:drew/Widgets"] = "1";
+const legacy = [contributionTipDismissed("pull", organization), contributionTipDismissed("pull", { owner: "acme", name: "Other" })];
+console.log(JSON.stringify({ before, afterMember, afterOrganization, legacy }));
 """
 
 
@@ -57,6 +64,7 @@ def test_dismissal_holds_under_every_owner_name_the_repository_loads_with():
         "before": [False, False],
         "afterMember": [True, True],
         "afterOrganization": [True, True, False, False],
+        "legacy": [True, False],
     }
 
 
