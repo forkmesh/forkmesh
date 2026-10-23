@@ -57,3 +57,15 @@ to the repository root. `pending_inbox_action` now names the event:
 An event type it does not know still gets `There's new activity on issue #12.`
 instead of the desktop inbox sentence. The pull request title is looked up
 only for events without text, so a plain comment costs no extra read.
+
+## Opening the comment
+
+A mention or a followed-thread ping for a comment stores the comment's event
+id with the number and source (`meta.comment`, at most 80 characters;
+`notify_mentions` and `notify_subscribers` take it as `comment=`). The feed
+and its detail panel (`homeFeedHref` in `05-repo-list-explorer.js`) link
+`/<owner>/<repo>/{issues,pull,discussions}/<n>#comment-<id>`, and
+`initCommentAnchor` in `09-comment-reactions.js` waits up to 20 seconds for
+that comment's reaction bar, scrolls it into view and outlines it for four
+seconds. Pings without a comment id still open the thread.
+`app/tests/test_comment_notification_links.py` covers the links.

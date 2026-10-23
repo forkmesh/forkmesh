@@ -2717,7 +2717,8 @@
     }
     container.classList.toggle("font-mono", !avatarPng);
     const handle = profileAvatarHandle(session);
-    if (container.dataset.profileAvatarFor !== handle || container.dataset.profileAvatarState === "image") {
+    if (container.dataset.profileAvatarFor !== handle
+      || ["image", "bot"].includes(container.dataset.profileAvatarState)) {
       delete container.dataset.profileAvatarState;
       delete container.dataset.profileAvatarTried;
     }
@@ -2793,13 +2794,22 @@
     container.classList.remove("font-mono");
   }
 
+  function showProfileAvatarBot(container) {
+    const kind = botAvatarKind(container.dataset.profileAvatarFor);
+    const initialEl = container.querySelector("[data-avatar-initial]");
+    if (!kind || !initialEl) return;
+    initialEl.innerHTML = botAvatarSvg(kind, "h-auto w-1/2");
+    initialEl.classList.add("flex", "h-full", "w-full", "items-center", "justify-center");
+    container.dataset.profileAvatarState = "bot";
+  }
+
   function hydrateProfileAvatar(container) {
     const handle = container?.dataset?.profileAvatarFor;
     if (!handle) return;
     const repos = profileAvatarRosterRepos(handle);
     const tried = repos.map((repo) => repositoryViewKey(repo)).join(",");
     const known = container.dataset.profileAvatarState;
-    if (known === "image" || known === "loading"
+    if (known === "image" || known === "loading" || known === "bot"
       || (known === "initial" && container.dataset.profileAvatarTried === tried)) return;
     container.dataset.profileAvatarState = "loading";
     container.dataset.profileAvatarTried = tried;
@@ -2807,6 +2817,7 @@
       if (container.dataset.profileAvatarFor !== handle) return;
       container.dataset.profileAvatarState = src ? "image" : "initial";
       if (src) showProfileAvatarPicture(container, src);
+      else showProfileAvatarBot(container);
     });
   }
 

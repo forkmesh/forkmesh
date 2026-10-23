@@ -128,39 +128,69 @@ struct TelemetryStrip: View {
         Button {
             target = TelemetryTarget(metric: nil, category: nil)
         } label: {
-            HStack(spacing: 2) {
-                if let vitals, vitals.watching {
-                    ForEach(DesktopVital.allCases, id: \.self) { (vital: DesktopVital) in
-                        let values: [Double] = vitals.values(vital)
-                        TelemetryChart(
-                            values: values,
-                            slots: DesktopVitals.seconds, floor: 100,
-                            line: color(vital.tone(values)), fill: Color.clear, strokeWidth: 1)
-                            .frame(width: TelemetryStrip.chartWidth, height: TelemetryStrip.height)
-                    }
-                    Spacer().frame(width: 4)
-                }
-                ForEach(TelemetryMetric.allCases, id: \.self) { (metric: TelemetryMetric) in
-                    let values: [Double] = telemetry.history(metric).lastSeconds(TelemetryStrip.sparkSeconds)
-                    TelemetryChart(
-                        values: values,
-                        slots: TelemetryStrip.sparkSeconds, floor: metric.floor,
-                        line: color(metric.health(values)), fill: Color.clear, strokeWidth: 1)
-                        .frame(width: TelemetryStrip.chartWidth, height: TelemetryStrip.height)
-                }
-            }
-            .fixedSize()
-            .padding(.vertical, 3)
-            .frame(maxWidth: .infinity)
-            .clipped()
-            .contentShape(Rectangle())
+            TelemetrySparks(telemetry: telemetry, vitals: vitals, chartWidth: TelemetryStrip.chartWidth, height: TelemetryStrip.height)
+                .fixedSize()
+                .padding(.vertical, 3)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(summary(telemetry)))
+        .accessibilityLabel(Text(TelemetrySparks.summary(telemetry, vitals)))
         .accessibilityHint(Text("Opens Diagnostics"))
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("telemetry-strip")
+    }
+}
+
+struct TelemetrySparks: View {
+    static let spacing: CGFloat = 2
+    static let groupGap: CGFloat = 4
+    static let fillOpacity: Double = 0.35
+
+    @Environment(\.fmPalette) private var fm
+    let telemetry: AppTelemetry
+    let vitals: DesktopVitals?
+    let chartWidth: CGFloat
+    let height: CGFloat
+    var spacing: CGFloat = TelemetrySparks.spacing
+    var groupGap: CGFloat = TelemetrySparks.groupGap
+
+    static func fitted(width: CGFloat, count: Int, spacing: CGFloat, groupGap: CGFloat, widest: CGFloat) -> CGFloat {
+        guard count > 0 else { return widest }
+        let room: CGFloat = width - spacing * CGFloat(count - 1) - groupGap
+        return max(2, min(widest, room / CGFloat(count)))
+    }
+
+    static func chartCount(_ vitals: DesktopVitals?) -> Int {
+        TelemetryMetric.allCases.count + (vitals?.watching == true ? DesktopVital.allCases.count : 0)
+    }
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            if let vitals, vitals.watching {
+                ForEach(DesktopVital.allCases, id: \.self) { (vital: DesktopVital) in
+                    let values: [Double] = vitals.values(vital)
+                    let tone: Color = color(vital.tone(values))
+                    TelemetryChart(
+                        values: values,
+                        slots: DesktopVitals.seconds, floor: 100,
+                        line: tone, fill: tone.opacity(TelemetrySparks.fillOpacity), strokeWidth: 1)
+                        .frame(width: chartWidth, height: height)
+                }
+                Spacer().frame(width: groupGap)
+            }
+            ForEach(TelemetryMetric.allCases, id: \.self) { (metric: TelemetryMetric) in
+                let values: [Double] = telemetry.history(metric).lastSeconds(TelemetryStrip.sparkSeconds)
+                let tone: Color = color(metric.health(values))
+                TelemetryChart(
+                    values: values,
+                    slots: TelemetryStrip.sparkSeconds, floor: metric.floor,
+                    line: tone, fill: tone.opacity(TelemetrySparks.fillOpacity), strokeWidth: 1)
+                    .frame(width: chartWidth, height: height)
+            }
+        }
     }
 
     private func color(_ health: TelemetryHealth?) -> Color {
@@ -181,7 +211,7 @@ struct TelemetryStrip: View {
         }
     }
 
-    private func summary(_ telemetry: AppTelemetry) -> String {
+    static func summary(_ telemetry: AppTelemetry, _ vitals: DesktopVitals?) -> String {
         var desktop: [String] = []
         if let vitals, vitals.watching {
             desktop = DesktopVital.allCases.map { (vital: DesktopVital) -> String in
@@ -192,5 +222,38 @@ struct TelemetryStrip: View {
             "\(metric.title) \(metric.format(telemetry.latest(metric)))"
         }
         return (["Diagnostics"] + desktop + metrics).joined(separator: ", ")
+    }
+}
+
+struct TelemetryEarSparks: View {
+    static let spacing: CGFloat = 1
+    static let groupGap: CGFloat = 3
+
+    @State private var telemetry: AppTelemetry?
+    @State private var vitals: DesktopVitals?
+    let width: CGFloat
+    let height: CGFloat
+
+    init(width: CGFloat, height: CGFloat) {
+        self.width = width
+        self.height = height
+        _telemetry = State(initialValue: Services.get(AppTelemetry.self))
+        _vitals = State(initialValue: DesktopRemoteFeature.vitals)
+    }
+
+    var body: some View {
+        if let telemetry = telemetry {
+            TelemetrySparks(
+                telemetry: telemetry, vitals: vitals,
+                chartWidth: TelemetrySparks.fitted(
+                    width: width, count: TelemetrySparks.chartCount(vitals),
+                    spacing: TelemetryEarSparks.spacing, groupGap: TelemetryEarSparks.groupGap,
+                    widest: TelemetryStrip.chartWidth),
+                height: height, spacing: TelemetryEarSparks.spacing, groupGap: TelemetryEarSparks.groupGap)
+                .fixedSize()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(TelemetrySparks.summary(telemetry, vitals)))
+                .accessibilityIdentifier("top-ear-telemetry")
+        }
     }
 }

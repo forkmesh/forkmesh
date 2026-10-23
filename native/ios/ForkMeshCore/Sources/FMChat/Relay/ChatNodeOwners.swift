@@ -14,6 +14,7 @@ public final class ChatNodeOwners {
     private var pending: [String: Task<String?, Never>] = [:]
     private var failures: [String: Date] = [:]
     public var onAnswer: (@MainActor (String, String) -> Void)?
+    private var answerObservers: [@MainActor (String, String) -> Void] = []
 
     public init(lookup: @escaping @MainActor (String) async throws -> String, clock: Clock = SystemClock()) {
         self.lookup = lookup
@@ -35,7 +36,8 @@ public final class ChatNodeOwners {
             failures.removeValue(forKey: node)
         }
         guard let answer = answers[node] else { return nil }
-        if clock.now.timeIntervalSince(answer.at) >= ChatNodeOwners.ttl {
+        let life = answer.account.isEmpty ? ChatNodeOwners.retryAfter : ChatNodeOwners.ttl
+        if clock.now.timeIntervalSince(answer.at) >= life {
             answers.removeValue(forKey: node)
             return nil
         }
@@ -64,11 +66,16 @@ public final class ChatNodeOwners {
             answers[node] = (account, clock.now)
             failures.removeValue(forKey: node)
             onAnswer?(node, account)
+            for observer in answerObservers { observer(node, account) }
         } else {
             if failures.count >= ChatNodeOwners.maxEntries { failures.removeAll() }
             failures[node] = clock.now
         }
         return account
+    }
+
+    public func addAnswerObserver(_ observer: @escaping @MainActor (String, String) -> Void) {
+        answerObservers.append(observer)
     }
 
     public func clear() {

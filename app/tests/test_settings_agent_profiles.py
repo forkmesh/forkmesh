@@ -61,7 +61,7 @@ def test_the_settings_page_has_an_agents_and_runners_tab():
 
 
 def test_the_tab_is_a_known_section_that_loads_desktops_and_runners():
-    assert '"danger", "apps", "agents", "ai-review"];' in DASHBOARD_JS
+    assert '"danger", "apps", "agents", "reactions", "ai-review"];' in DASHBOARD_JS
     assert 'if (activeSection === "agents") initSettingsAgents();' in DASHBOARD_JS
     init = function_source(FRAGMENT, "initSettingsAgents")
     assert "loadAgentProfiles()" in init

@@ -79,6 +79,39 @@ gateway does not serve. The Worker forwards `counts` for `compare` in
 already carries the default branch and its commit, but those are only as
 fresh as the last catalog publish, so the counts read live tips instead.
 
+## Pinned repositories and fork count
+
+An instance can choose what both Top repositories lists show with the
+`instance_settings` row `sidebar`:
+
+```sql
+INSERT INTO instance_settings (k, doc, updated_at)
+VALUES ('sidebar', '{"pinned":["acme/app","acme/docs"],"forks":5}',
+        CAST(strftime('%s','now') AS INTEGER) * 1000)
+ON CONFLICT(k) DO UPDATE SET doc=excluded.doc, updated_at=excluded.updated_at;
+```
+
+- `pinned`: repositories shown instead of the most viewed ones, in this order.
+  An entry is `owner/name` (the catalog address or the public owner shown on
+  the row) or a bare `name`, which pins the listed repository with that name.
+  When several rows match, the one with the most forks wins, and entries that
+  match nothing are skipped. The sidebar shows only the pinned rows; the Home
+  card shows them too, unless a search is typed or "Show more" is open.
+- `forks`: how many forks each row shows before "+N more forks", in both lists
+  (0 to 50, default 3).
+
+`Default._instance_sidebar_setting` cleans the row for `/api/instance`
+(`sidebar`): `pinned` is lower-cased and de-duplicated, and keeps at most 10
+entries of at most 161 characters with at most one `/`. A missing, unreadable
+or non-object row answers `{"pinned": [], "forks": 3}`. A `pinned` that is not a list
+counts as empty, so a lone string is not read letter by letter. The dashboard reads it
+once per page through `instanceInfo` (`loadSidebarSetting` in
+`05-repo-list-explorer.js`) and redraws both lists when it arrives. With no
+row, an empty `pinned` list, or a list where nothing matches, the lists keep
+their usual order (six sidebar rows, eight Home rows). Outside an instance
+`instanceInfo` answers nothing, so the lists never change there.
+`/api/instance` is cached for 60 seconds, so a new row shows within a minute.
+
 ## Profile repository list and popular cards
 
 `/dashboard/profile/repositories` and `/@name/repositories` follow GitHub's

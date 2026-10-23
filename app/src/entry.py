@@ -38057,7 +38057,7 @@ async def _private_repo_reader_filter(env, owner, repo):
 
 
 async def notify_mentions(env, owner, repo, actor, title, body, href, source,
-                          number=0):
+                          number=0, comment=""):
     # number is optional (0 = not a numbered item, e.g. a brand-new PR before
     # the owner assigns it) so every existing call site keeps working
     # unchanged; callers that DO know the number pass it as a keyword so the
@@ -38075,7 +38075,9 @@ async def notify_mentions(env, owner, repo, actor, title, body, href, source,
             dedupe="mention:" + owner + "/" + repo + ":" + source + ":" + name +
                    ":" + clean_string(actor, 80) + ":" + clean_string(title, 80) +
                    ":" + clean_string(body, 80),
-            meta={"number": number} if number else {},
+            meta=({"number": number, "source": source,
+                   **({"comment": clean_string(str(comment), 80)} if comment else {})}
+                  if number else {}),
         )
         if source in ("issue", "pull") and number:
             await subscribe_thread(env, owner, repo, source, number, name)
@@ -38133,7 +38135,7 @@ async def subscribe_thread(env, owner, repo, source, number, subscriber,
 
 
 async def notify_subscribers(env, owner, repo, source, number, actor, title,
-                             body, href, skip=()):
+                             body, href, skip=(), comment=""):
     # Fan a new comment out to everyone following the thread, minus the commenter
     # and anyone already covered by an @mention on this same event (so a mentioned
     # subscriber gets one notification, not two).
@@ -38183,7 +38185,8 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
             dedupe="subscribed:" + owner + "/" + repo + ":" + source + ":" +
                    str(number) + ":" + name + ":" + clean_string(actor, 80) +
                    ":" + snippet,
-            meta={"number": number, "source": source},
+            meta={"number": number, "source": source,
+                  **({"comment": clean_string(str(comment), 80)} if comment else {})},
         )
 
 
@@ -41929,7 +41932,8 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         notify_mentions(
             env, owner, repo, actor, item.get("titleIfNew", ""),
             event.get("body", ""), repo_web_href(owner, repo), "issue",
-            number=number))
+            number=number,
+            comment=event.get("id", "") if event_type == "comment" else ""))
     assignees = list(meta.get("assignees", [])) if isinstance(meta, dict) else []
     if isinstance(event.get("assignees"), list):
         assignees.extend(event.get("assignees"))
@@ -41949,7 +41953,8 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         notify_subscribers(
             env, owner, repo, "issue", number, actor,
             item.get("titleIfNew", ""), event.get("body", ""),
-            repo_web_href(owner, repo)))
+            repo_web_href(owner, repo),
+            comment=event.get("id", "") if event_type == "comment" else ""))
     await _best_effort_inbox_side_effect(
         subscribe_thread(env, owner, repo, "issue", number, actor))
     if event_type == "comment" or (
@@ -42441,7 +42446,8 @@ async def pulls_handler(env, request, owner, repo):
                                        pull_title, number,
                                        text=event.get("body", ""), event=event)
             await notify_mentions(env, owner, repo, actor, "Pull request comment", event.get("body", ""),
-                                  repo_web_href(owner, repo), "pull", number=number)
+                                  repo_web_href(owner, repo), "pull", number=number,
+                                  comment=str(event.get("id", "") or ""))
             pull_author = ""
             if event.get("type") in ("status", "delete"):
                 await _best_effort_inbox_side_effect(pull_attention_forget(
@@ -42460,7 +42466,8 @@ async def pulls_handler(env, request, owner, repo):
             await notify_subscribers(env, owner, repo, "pull", number, actor,
                                      "", event.get("body", ""),
                                      repo_web_href(owner, repo),
-                                     skip=(pull_author,) if pull_author else ())
+                                     skip=(pull_author,) if pull_author else (),
+                                     comment=str(event.get("id", "") or ""))
             await subscribe_thread(env, owner, repo, "pull", number, actor)
             await notify_repo_host(env, owner, repo, "pulls")
             await notify_repo_mirrors(env, owner, repo, "pulls")
@@ -42880,11 +42887,13 @@ async def discussions_handler(env, request, owner, repo):
         if content_event:
             await _best_effort_inbox_side_effect(notify_mentions(
                 env, owner, repo, actor, title, event.get("body", ""),
-                repo_web_href(owner, repo), "discussion", number=number))
+                repo_web_href(owner, repo), "discussion", number=number,
+                comment=str(event.get("id", "") or "") if event_type == "comment" else ""))
         if event_type == "comment":
             await _best_effort_inbox_side_effect(notify_subscribers(
                 env, owner, repo, "discussion", number, actor, title,
-                event.get("body", ""), repo_web_href(owner, repo)))
+                event.get("body", ""), repo_web_href(owner, repo),
+                comment=str(event.get("id", "") or "")))
             await _best_effort_inbox_side_effect(subscribe_thread(
                 env, owner, repo, "discussion", number, actor))
         await notify_repo_host(env, owner, repo, "discussions")
