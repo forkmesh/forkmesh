@@ -7,6 +7,7 @@
 import FMAccount
 import FMApi
 import FMBase
+import FMDesktopRemote
 import FMInsights
 import SwiftUI
 import TipKit
@@ -420,6 +421,7 @@ struct ShellIslandStatusDots: View {
     static let clockClear: CGFloat = 12
     static let earHeight: CGFloat = 12
     static let earMargin: CGFloat = 10
+    static let earLeadingInset: CGFloat = 24
     static let dotSize: CGFloat = 5
 
     let lights: [StatusLight]
@@ -466,7 +468,8 @@ struct ShellIslandStatusDots: View {
                     }
                     if earShown {
                         ear
-                            .frame(width: earWidth)
+                            .frame(width: max(0, earWidth - ShellIslandStatusDots.earLeadingInset))
+                            .padding(.leading, ShellIslandStatusDots.earLeadingInset)
                             .padding(.top, ShellIslandStatusDots.earTop(gap: gap))
                     }
                     TelemetryEarSparks(
@@ -599,9 +602,20 @@ struct ShellFooterDesktopLight: View {
         return load == .busy ? fm.warning : fm.success
     }
 
+    private var usage: NodeResources? {
+        guard desktop.isConnected, let vitals = Services.get(DesktopVitals.self), vitals.watching else { return nil }
+        return NodeResources(cpu: vitals.latest(.cpu), memory: vitals.latest(.memory), disk: vitals.latest(.disk))
+    }
+
     private var label: String {
-        guard desktop.isConnected, let load = load else { return desktop.label }
-        return "\(desktop.label), \(load.label)"
+        var parts: [String] = [desktop.label]
+        if desktop.isConnected, let load = load {
+            parts.append(load.label)
+        }
+        if let usage = usage {
+            parts.append(usage.label)
+        }
+        return parts.joined(separator: ", ")
     }
 
     var body: some View {
@@ -620,13 +634,17 @@ struct ShellFooterDesktopLight: View {
                         .opacity(alarmed && dim ? 0.25 : 1)
                         .offset(x: 3, y: -2)
                 }
+                .overlay(alignment: .bottomLeading) {
+                    if relayed && usage != nil {
+                        relayGlobe.offset(x: -4, y: 3)
+                    }
+                }
                 .overlay(alignment: .bottomTrailing) {
-                    if relayed {
-                        Image(systemName: "globe")
-                            .font(.system(size: 7, weight: .bold))
-                            .foregroundStyle(fm.textSecondary)
-                            .background(Circle().fill(fm.bgBase).padding(-1))
-                            .offset(x: 4, y: 3)
+                    if let usage = usage {
+                        ShellResourceBars(values: usage.values)
+                            .offset(x: 3, y: 2)
+                    } else if relayed {
+                        relayGlobe.offset(x: 4, y: 3)
                     }
                 }
                 .frame(minWidth: side, minHeight: side)
@@ -638,6 +656,13 @@ struct ShellFooterDesktopLight: View {
         .accessibilityLabel(Text(label))
         .accessibilityHint(Text("Opens your desktops, runners and core nodes"))
         .accessibilityIdentifier("footer-desktop-light")
+    }
+
+    private var relayGlobe: some View {
+        Image(systemName: "globe")
+            .font(.system(size: 7, weight: .bold))
+            .foregroundStyle(fm.textSecondary)
+            .background(Circle().fill(fm.bgBase).padding(-1))
     }
 
     private func blink() {
@@ -706,6 +731,11 @@ struct ShellFleetLight: View {
             .opacity(!light.healthy && dim ? 0.25 : 1)
             .padding(1)
             .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(fm.bgBase))
+            .overlay(alignment: .bottomTrailing) {
+                if let resources = light.resources {
+                    ShellResourceBars(values: resources.values)
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 if agents > 0 {
                     ShellRunnerAgentCount(count: agents)
@@ -726,6 +756,44 @@ struct ShellFleetLight: View {
         withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
             dim = true
         }
+    }
+}
+
+struct ShellResourceBars: View {
+    static let warning: Double = 75
+    static let bad: Double = 90
+
+    @Environment(\.fmPalette) var fm
+    let values: [Double?]
+    var barWidth: CGFloat = 1.5
+    var height: CGFloat = 6
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0.5) {
+            ForEach(Array(values.enumerated()), id: \.offset) { (entry: (offset: Int, element: Double?)) in
+                bar(entry.element)
+            }
+        }
+        .padding(0.75)
+        .background(RoundedRectangle(cornerRadius: 1.5, style: .continuous).fill(fm.bgBase))
+        .accessibilityHidden(true)
+    }
+
+    private func bar(_ value: Double?) -> some View {
+        ZStack(alignment: .bottom) {
+            Rectangle().fill(fm.textTertiary.opacity(0.35))
+            if let value {
+                Rectangle()
+                    .fill(color(value))
+                    .frame(height: max(1.5, height * CGFloat(min(100, max(0, value)) / 100)))
+            }
+        }
+        .frame(width: barWidth, height: height)
+    }
+
+    private func color(_ value: Double) -> Color {
+        if value >= ShellResourceBars.bad { return fm.danger }
+        return value >= ShellResourceBars.warning ? fm.warning : fm.success
     }
 }
 

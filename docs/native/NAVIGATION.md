@@ -410,7 +410,11 @@ pinned above the island whatever the overlay's frame.
 puts the footer's desktop light, the office MacBook light and the core node
 and runner lights (`ShellFooterDesktopLight`, `ShellFooterMacLight`,
 `ShellFleetLight`, glyphs at 10 to 11 pt in a 12 pt row) in the status bar's
-left ear, centred above the clock. The row's top is the strip height less
+left ear, centred above the clock's side of the ear less its first 24 pt
+(`ShellIslandStatusDots.earLeadingInset`), so the screen's rounded corner does
+not clip the desktop light; the operator asked for that nudge on 2026-10-23,
+when the row was centred in the whole ear and the corner cut the first icon.
+The row's top is the strip height less
 12 pt (at least 1 pt), which leaves a couple of points between the icons and
 the time; the lights sit 8 pt apart and the node lights 1 pt apart. The ear is
 half of the screen width less the island's 126 pt. The operator asked on
@@ -420,13 +424,33 @@ footer's; the desktop light shows whenever Diagnostics is on, red while no
 desktop is connected. The shell refreshes the desktop load light on
 activation alongside the fleet.
 
+**Resource bars on the machine lights.** Each core node light and the desktop
+light carry three tiny bars (`ShellResourceBars`, 1.5 pt wide, 6 pt tall, on a
+`bgBase` plate in the icon's bottom-right corner, so the icon keeps its size):
+CPU, memory and disk, left to right. A bar fills to its percentage and is green
+below 75 %, orange from 75 % and red from 90 %, the desktop vitals' limits; a
+missing reading leaves an empty track. Core readings come from the status
+feed: each core publishes `cpuPct` (from `/proc/stat` between samples at least
+5 s apart), `memPct` (`MemTotal` less `MemAvailable`) and `diskPct` (the root
+file system, as `df` counts it) in its `host_metrics` row every 30 s, and
+`/api/status` adds `resources: {cpu, memory, disk}` to a `core:` system while
+that row is under 3 minutes old (`STATUS_CORE_METRICS_FRESH_MS`). The desktop's
+bars read the latest per-second desktop vitals (`DesktopVitals`) while the
+phone watches a linked desktop; with the bars on, a relayed desktop's globe
+moves to the icon's bottom-left. The VoiceOver labels add the three
+percentages. The operator asked for them on 2026-10-23, and for the desktop
+charts to leave the right ear now that its icon shows the same three numbers.
+
 **Telemetry charts above the battery.** On the same screens the top bar's
 telemetry strip leaves the bar (`ShellIslandStatusDots.earsShown`: an inset
 of at least 54 pt and not a compact height) and its charts
 (`TelemetryEarSparks`) sit in the right ear at the lights' height, above the
-signal, Wi-Fi and battery. Each chart is squeezed to fit the ear less 10 pt a
-side (`TelemetrySparks.fitted`, at most the strip's 12 pt), 12 pt tall, 1 pt
-apart with 3 pt between the desktop and phone groups. Elsewhere (notched
+signal, Wi-Fi and battery. The ear shows only the phone's own charts: the
+desktop's memory, CPU, disk and swap charts left it on 2026-10-23, since the
+desktop light's bars now carry them. Each chart is squeezed to fit the ear
+less 10 pt a side (`TelemetrySparks.fitted`, at most the strip's 12 pt), 12 pt
+tall, 1 pt apart. The in-bar strip still leads with the desktop group, 2 pt
+apart with 4 pt before the phone's charts. Elsewhere (notched
 iPhones, landscape, iPad) the strip stays in the bar.
 
 These rows ignore touches, since a tap that high belongs to the status bar's
