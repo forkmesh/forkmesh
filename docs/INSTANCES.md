@@ -128,7 +128,7 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   (`arm_first_login_timeout`, `forkmesh-instance-first-login-cleanup.timer`),
   so an abandoned launch does not leave a server running. A manual
   `--config` install has no `launchId` and is never armed: the operator runs
-  it unattended, and net4people.forkmesh.com came within four minutes of
+  it unattended, and forum.example.org came within four minutes of
   removing itself after a detached install finished with nobody watching.
 - `--update` pulls, rebuilds, migrates and restarts, keeping secrets, data
   and admin; local source changes are saved to a patch file first. See
@@ -382,6 +382,23 @@ upload CSS.
   when it is finished, and check it with `/instance-theme.css?preset=<id>`
   before shipping. `app/tests/test_instance_theme.py` requires every ready theme to
   define every theme token in both modes.
+
+### When an update restarts the git node
+
+`--update` restarts `forkmesh-mirror-node` only when `daemon_digest` changes:
+the binary, the systemd unit, the gateway tools in
+`/usr/local/share/forkmesh/tools`, the node config without its `version`
+field, and the gateway config fields the installer itself writes
+(`routerPublicKey`, `publicOrigin`, `dashboard.canonicalOrigin`, the
+`forkmesh` repository entries). Before 2026-10-21 the digest hashed the raw
+node config, whose `version` is the source commit, and the raw gateway config,
+which the running daemon rewrites on every ref change; every deploy therefore
+restarted the node and its gateway, and on a single-server instance pull request pages
+showed "unavailable until a reachable mirror host serves …" for about 40 s.
+The gateway tools were not in the digest at all, so a gateway code change only
+took effect because of that spurious restart. The cost now is that the
+`version` label in the catalog stays at the commit of the last real restart
+when an update changed nothing the node runs.
 
 ## Private admin console path
 
@@ -1316,7 +1333,7 @@ to every provider.
 - The instance app's egress guard refuses forkmesh.com except
   `app.forkmesh.com` (`FORKMESH_EGRESS_PRODUCTION_ALLOW` in the app unit),
   which only the directory announcement uses, and the instance's own domain.
-  An instance on a `*.forkmesh.com` name (net4people.forkmesh.com) used to
+  An instance on a `*.forkmesh.com` name (example.forkmesh.com) used to
   refuse its own endpoint registration ("production host … is off limits for
   Next"), so the git node never leased its endpoint and the `repo` step waited
   on the platform mirror until the guard was widened.

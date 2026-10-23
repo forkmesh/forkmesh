@@ -16682,6 +16682,7 @@ core_push_tag_moves_handler = _core_push.export("tag_moves_handler")
 core_push_grant_tag_move = _core_push.export("grant_tag_move")
 core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
+core_push_pulls_synchronized = _core_push.export("pulls_synchronized")
 _recent_pushes = _LazyModule("recent_pushes")
 recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
@@ -41239,6 +41240,38 @@ async def _drain_collaboration_inbox_on_mirror(
     return count
 
 
+async def _pull_inbox_synchronized(env, request, repo_bi, claimant_bi):
+    ids = _drain_ids_from_request(request)
+    if not ids or not claimant_bi:
+        return []
+    try:
+        rows = await d1_all(
+            env,
+            "SELECT data FROM pull_inbox WHERE repo_bi=? AND id IN (%s) "
+            "AND claimed_by_bi=?" % ",".join("?" for _ in ids),
+            repo_bi, *ids, claimant_bi)
+    except Exception:
+        return []
+    items = []
+    for row in rows or []:
+        try:
+            item = await decrypt_row(env, row.get("data"))
+        except Exception:
+            continue
+        if isinstance(item, dict) and item.get("source") == "synchronize":
+            items.append(item)
+    return items[:20]
+
+
+async def _pulls_synchronized_after_intake(env, owner, repo, items):
+    if not items:
+        return
+    try:
+        await core_push_pulls_synchronized(env, owner, repo, items)
+    except Exception:
+        pass
+
+
 async def _release_inbox_claim(env, table, repo_bi, claimant_bi):
     """Drop this node's lease on the rows it read but did not ack.
 
@@ -42480,6 +42513,8 @@ async def pulls_handler(env, request, owner, repo):
             ) if signing_key else ""
             if not claimant_bi:
                 return json_response({"error": "unauthorized"}, status=401)
+            synced = await _pull_inbox_synchronized(
+                env, request, repo_bi, claimant_bi)
             drained = await _drain_collaboration_inbox_on_mirror(
                 env, request, "pull_inbox", repo_bi, claimant_bi,
                 mirror_node)
@@ -42487,6 +42522,7 @@ async def pulls_handler(env, request, owner, repo):
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
                 await _wake_mirrors_after_intake(env, owner, repo)
+                await _pulls_synchronized_after_intake(env, owner, repo, synced)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -42500,10 +42536,14 @@ async def pulls_handler(env, request, owner, repo):
         ) if signing_key else ""
         if not claimant_bi:
             return json_response({"error": "unauthorized"}, status=401)
+        synced = await _pull_inbox_synchronized(
+            env, request, repo_bi, claimant_bi)
         drained = await _drain_collaboration_inbox_on_mirror(
             env, request, "pull_inbox", repo_bi, claimant_bi, "source")
         await _release_inbox_claim(
             env, "pull_inbox", repo_bi, claimant_bi)
+        if drained:
+            await _pulls_synchronized_after_intake(env, owner, repo, synced)
         return json_response({"ok": True, "drained": drained})
 
     return json_response({"error": "method_not_allowed"}, status=405)
@@ -53458,13 +53498,17 @@ def _ref_updates_from(upstream):
         except (TypeError, ValueError):
             commits = 0
         update = {"ref": ref, "old": old, "new": new, "commits": commits}
+        pulls = item.get("pulls")
+        if ref.startswith("refs/heads/") and isinstance(pulls, list):
+            numbers = sorted({
+                int(number) for number in pulls[:10]
+                if isinstance(number, int) and not isinstance(number, bool)
+                and 0 < number < 10 ** 9})
+            if numbers:
+                update["pulls"] = numbers
         if item.get("forced") is True and ref.startswith("refs/heads/"):
             update["forced"] = True
-            pulls = item.get("pulls")
-            update["pulls"] = sorted({
-                int(number) for number in (
-                    pulls if isinstance(pulls, list) else [])[:10]
-                if isinstance(number, int) and 0 < number < 10 ** 9})
+            update.setdefault("pulls", [])
             kept = clean_string(item.get("kept", ""), 300)
             if re.fullmatch(r"refs/forkmesh/history(?:-tips)?/[^\x00-\x20]+",
                             kept):

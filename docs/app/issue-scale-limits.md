@@ -1,7 +1,7 @@
 # Issue and forum scale limits
 
 Part of [the App docs](README.md). A repository can be used as a forum: the
-net4people/bbs mirror (net4people.forkmesh.com) carries 609 issues and about
+example/forum mirror (forum.example.org) carries 609 issues and about
 5,900 comments in a dozen languages, with single threads over 600 KB of JSON.
 Every cap on the issue path was sized for small project trackers and cut that
 forum short (the list stopped at 500 open issues). They were raised together
@@ -32,7 +32,7 @@ The issues list used to download every open issue record (and the whole
 closed history once Closed was chosen) to show 25 titles, and every issue page
 downloaded the open records again for mentions and sub-issues. Since
 2026-10-21 they read commit-pinned summaries instead. Measured on
-net4people/bbs, the first index (with each opening description) cut the
+example/forum, the first index (with each opening description) cut the
 issues bundle from 13 MB (3.6 MB gzip) to 2.7 MB (836 KB gzip); the slim
 index below drops the descriptions and the mention lists, and a synthetic
 forum of the same shape (609 issues, 6,000 comments, 400 people) comes to

@@ -99,6 +99,12 @@ const primeRepoViewReads = async () => {};
 const loadRepoCollabSettings = async () => ({});
 const prepareCommentReactions = () => "";
 const loadCommentReactions = async () => null;
+const repoViewKey = (repo, view) => `${repoKey(repo)}|${view}`;
+const repoReconnectActive = () => false;
+const repoStaleReadMark = () => 0;
+const finishRepoRead = () => {};
+const repoReadIsTransient = () => false;
+const handleRepoReadFailure = () => false;
 
 __LOADER__
 
