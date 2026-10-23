@@ -239,6 +239,31 @@ def test_dashboard_uses_related_icons_on_every_ping_surface():
     assert dashboard.count("data-notification-kind-icon") == 4
 
 
+def test_inbox_ping_rows_show_the_instance_logo_beside_or_under_the_icon():
+    dashboard = _read(PUBLIC / "dashboard.js")
+    helper = _source_block(
+        dashboard, "  function notificationInstanceLogoHtml() {", "\n  }\n")
+    assert 'src="/assets/logo.svg"' in helper
+    assert "platformName()" in helper
+    for start, end, icon in (
+        ("  function renderNotificationPreview() {",
+         "\n  function notificationLead", '<span class="relative">${avatar}'),
+        ("  function renderNotificationModal() {",
+         "\n  async function loadNotifications", "<i data-notification-kind-icon"),
+    ):
+        block = _source_block(dashboard, start, end)
+        assert "flex-col-reverse items-center gap-1 sm:flex-row" in block
+        assert block.index("${notificationInstanceLogoHtml()}") < block.index(icon)
+    row = _source_block(
+        _read(ROOT.parent / "native" / "ios" / "ForkMesh" / "Features" /
+              "Inbox" / "InboxScreen.swift"),
+        "struct InboxRow: View {", "\n}\n")
+    assert "item.source == .local ? nil : settings?.project" in row
+    icon = row.index("FmIcon(item.icon")
+    assert icon < row.index("ProjectIcon(project: instance") < row.index(
+        "VStack(alignment: .leading")
+
+
 def _source_block(text, start, end):
     begin = text.index(start)
     return text[begin:text.index(end, begin)]

@@ -37,6 +37,26 @@ person to lead with. Its title already names the event.
 Chat messages and mentions were already content-first (sender as title,
 message as body) on every surface and are unchanged.
 
+## Instance logo
+
+Each ping row in the inbox shows the logo of the instance it came from, so
+someone signed in to several instances can tell them apart at a glance.
+
+- **Web** (pings dropdown and Show all pings list):
+  `notificationInstanceLogoHtml` draws `/assets/logo.svg` at 16px, named with
+  `platformName()`. On a branded instance `app/tools/apply_instance_brand.py`
+  writes the instance's logo over that file, so the path is always the
+  instance serving the page. The logo sits left of the kind icon from the
+  `sm` breakpoint up and under it on narrower screens
+  (`flex-col-reverse sm:flex-row`).
+- **iPhone** (Inbox tab, `InboxRow` in
+  `native/ios/ForkMesh/Features/Inbox/InboxScreen.swift`): the active
+  project's `ProjectIcon` at 16pt under the kind icon, the same image as the
+  top bar's project slot. The inbox only ever holds the active project's
+  pings and tasks, so that project is the instance each row came from. Rows
+  the phone filed itself (`InboxSource.local`) have no instance and show no
+  logo. VoiceOver reads "From <project>" after the title.
+
 ## Email subjects
 
 The `ForkMesh: ` prefix is kept only when an item has neither an actor nor

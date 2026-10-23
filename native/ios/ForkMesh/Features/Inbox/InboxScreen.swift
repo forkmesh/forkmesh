@@ -430,7 +430,12 @@ struct InboxRowLink: View {
 
 struct InboxRow: View {
     @Environment(\.fmPalette) private var fm
+    @State private var settings: SettingsService? = Services.get(SettingsService.self)
     let item: InboxItem
+
+    private var instance: RelayProfile? {
+        item.source == .local ? nil : settings?.project
+    }
 
     private var tint: Color {
         switch item.tone {
@@ -445,8 +450,14 @@ struct InboxRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            FmIcon(item.icon, size: 18, color: tint)
-                .frame(width: 22, height: 22)
+            VStack(spacing: FmSpace.x1) {
+                FmIcon(item.icon, size: 18, color: tint)
+                    .frame(width: 22, height: 22)
+                if let instance {
+                    ProjectIcon(project: instance, size: 16)
+                        .accessibilityIdentifier("inbox-row-instance-logo")
+                }
+            }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(item.kindLabel).font(.caption.weight(.semibold)).foregroundStyle(item.unread ? tint : fm.textTertiary)
@@ -475,6 +486,6 @@ struct InboxRow: View {
                 .padding(.top, 5)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(item.unread ? "Unread" : "Read"). \(item.kindLabel). \(item.title)")
+        .accessibilityLabel("\(item.unread ? "Unread" : "Read"). \(item.kindLabel). \(item.title)\(instance.map { ". From \($0.label)" } ?? "")")
     }
 }

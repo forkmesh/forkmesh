@@ -47085,6 +47085,11 @@ Your reply
     return icons[String(kind || "").trim().toLowerCase()] || "bell";
   }
 
+  function notificationInstanceLogoHtml() {
+    const name = escapeHtml(platformName());
+    return `<img data-notification-instance-logo src="/assets/logo.svg" alt="${name}" title="${name}" class="h-4 w-4 shrink-0 rounded-sm object-contain" />`;
+  }
+
   function notificationTimeLabel(ts) {
     const value = Number(ts) || 0;
     if (!value) return "just now";
@@ -47121,7 +47126,7 @@ Your reply
       return `
       <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="w-full rounded-md px-2.5 py-2 text-left hover:bg-secondary transition-colors">
         <div class="flex items-start gap-2.5">
-          <span class="relative mt-0.5 shrink-0">${avatar}</span>
+          <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">${notificationInstanceLogoHtml()}<span class="relative">${avatar}</span></span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
@@ -47374,8 +47379,11 @@ Your reply
         <div data-notification-row class="mb-1 flex items-stretch gap-1 rounded-md ${active ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
           <button type="button" data-notification-open="${escapeHtml(item.id || "")}" class="min-w-0 flex-1 rounded-md px-3 py-2 text-left transition-colors">
             <span class="flex min-w-0 items-start gap-2">
-              <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
-                <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
+              <span class="mt-0.5 flex shrink-0 flex-col-reverse items-center gap-1 sm:flex-row">
+                ${notificationInstanceLogoHtml()}
+                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
+                  <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
+                </span>
               </span>
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
