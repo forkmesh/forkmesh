@@ -406,6 +406,43 @@ def test_overview_reports_referrals_channels_sessions_and_engagement():
         result["timeseries"]["labels"])
 
 
+def test_overview_splits_traffic_by_site_and_follows_links_in_and_out():
+    runtime = Runtime()
+    item = project(runtime)
+    key = item["writeKey"]
+    home = {"$host": "example.org"}
+    bumper = {"$host": "blog.example.org"}
+    capture(runtime, key, [
+        pageview("/", "a", 3 * HOUR, "sess-site-000a", **home,
+                 **{"$referrer": "https://github.com/acme/widgets"}),
+        pageview("/leaderboard", "a", 3 * HOUR - 30000, "sess-site-000a", **home),
+        event("$autocapture", "a", 3 * HOUR - 20000, "sess-site-000a", **home,
+              **{"$event_type": "click", "$elements": [
+                  {"tag": "span", "attrs": {}},
+                  {"tag": "a", "attrs": {"href": "https://chat.example.com/"}}]}),
+        event("$autocapture", "a", 3 * HOUR - 10000, "sess-site-000a", **home,
+              **{"$event_type": "click", "$elements": [
+                  {"tag": "a", "attrs": {"href": "https://example.org/docs"}}]})])
+    capture(runtime, key, [
+        pageview("/", "b", 2 * HOUR, "sess-site-000b", **bumper,
+                 **{"$referrer": "https://example.org/", "utm_term": "bugs"}),
+        pageview("/", "c", 30000, "sess-site-000c", **home)])
+    result = query(runtime, item, "overview", **{"from": NOW - DAY, "to": NOW})
+    breakdowns = result["breakdowns"]
+    assert breakdowns["sites"] == [
+        {"value": "example.org", "count": 3, "visitors": 2, "sessions": 2},
+        {"value": "blog.example.org", "count": 1, "visitors": 1, "sessions": 1}]
+    assert {row["value"] for row in breakdowns["referralLandings"]} == {
+        "github.com → example.org/", "example.org → blog.example.org/"}
+    assert breakdowns["outboundLinks"] == [
+        {"value": "https://chat.example.com/", "count": 1}]
+    assert breakdowns["terms"] == [{"value": "bugs", "count": 1}]
+    assert result["totals"]["liveVisitors"] == 1
+    assert result["totals"]["sites"] == 2
+    later = query(runtime, item, "overview", **{"from": NOW - DAY})
+    assert "liveVisitors" not in later["totals"]
+
+
 def test_campaigns_attribute_sessions_bounces_and_goals_to_their_first_touch():
     runtime = Runtime()
     item = project(runtime)
