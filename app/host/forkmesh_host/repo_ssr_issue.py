@@ -1737,7 +1737,7 @@ def ai_prompt_text(ctx, number, title, repo, template=""):
     return re.sub(r"\s+", " ", AI_PROMPT_CONTROL_RE.sub(" ", text)).strip()
 
 
-def ai_prompt_html(ctx, number, title, repo, template=""):
+def ai_prompt_html(ctx, number, title, repo, template="", extra=""):
     prompt = esc(ai_prompt_text(ctx, number, title, repo, template))
     return (
         '<div data-repo-issue-ai-prompt class="grid min-w-0 gap-1.5">\n            <code '
@@ -1747,9 +1747,9 @@ def ai_prompt_html(ctx, number, title, repo, template=""):
         'class="flex flex-wrap items-center gap-1"><button type="button" '
         'data-dashboard-copy="%s" aria-label="AI prompt for this issue" title="Copy this prompt '
         'into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary">%s%s<span class="copy-icon">Copy prompt</span>'
-        '<span class="copy-check">Copied</span></button></span>\n          </div>' % (
+        '<span class="copy-check">Copied</span></button>%s</span>\n          </div>' % (
             prompt, prompt, prompt,
-            icon("copy", "copy-icon h-3 w-3"), icon("check", "copy-check h-3 w-3")))
+            icon("copy", "copy-icon h-3 w-3"), icon("check", "copy-check h-3 w-3"), extra))
 
 
 def plugins_off():
@@ -1872,11 +1872,16 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
                               agent["agentStatus"]) if agent.get("agentStatus") else ""))
     else:
         agent_head = '<span class="text-muted-foreground">No agent assigned</span>'
-    agent_value = (
-        '%s\n        <button type="button" data-repo-issue-mcp-prompt title="Sign in to copy the '
-        'agent prompt for this issue" class="mt-2 flex items-center gap-1.5 text-[12px] '
-        'text-muted-foreground hover:text-[var(--dashboard-link)]">%sCopy MCP prompt</button>' % (
-            agent_head, icon("copy", "h-3.5 w-3.5")))
+    mcp_button = (
+        '<button type="button" data-repo-issue-mcp-prompt title="Sign in to copy the agent '
+        'prompt for this issue" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md '
+        'border border-border px-1.5 text-[11px] font-medium text-foreground '
+        'hover:bg-secondary">%sCopy MCP prompt</button>' % icon("copy", "h-3 w-3"))
+    agent_value = '%s\n        <div class="mt-2">%s</div>' % (
+        agent_head,
+        '<span class="flex flex-wrap items-center gap-1">%s</span>' % mcp_button
+        if closed or "issue-ai-prompt" in off
+        else ai_prompt_html(ctx, number, title, repo, prompt, mcp_button))
     label_value = ('<div class="flex flex-wrap gap-1">%s</div>' % "".join(
         label_chip(label) for label in labels)) if labels \
         else '<span class="text-muted-foreground">No labels</span>'
@@ -1995,9 +2000,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
             "" if "fediverse-ui" in off else FEDERATED_THREAD % (
                 icon("radio", "h-4 w-4"), icon(
                     "chevron-down", "ml-auto h-4 w-4 transition-transform group-open:rotate-180")),
-            section("Assignees", assignee_value, "assignees"), section("Agent", agent_value) + (
-                "" if closed or "issue-ai-prompt" in off else section(
-                    "AI prompt", ai_prompt_html(ctx, number, title, repo, prompt))),
+            section("Assignees", assignee_value, "assignees"), section("Agent", agent_value),
             section("Labels", label_value, "labels"), section("Type", "Issue"),
             section("Fields", fields_value, "fields"),
             section("Milestone", milestone_value, "milestone"),
