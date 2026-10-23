@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import app_runtime  # noqa: E402
+import instance_sidebar  # noqa: E402
 from test_repository_fork_tree import run  # noqa: E402
 
 RUNTIME = (ROOT / "src" / "app_runtime.py").read_text(encoding="utf-8")
@@ -83,6 +84,7 @@ def _setting(monkeypatch, doc):
         return {"doc": doc} if doc is not None else None
     monkeypatch.setattr(app_runtime, "d1_first", d1_first, raising=False)
     monkeypatch.setattr(app_runtime, "json", json, raising=False)
+    monkeypatch.setattr(app_runtime, "instance_sidebar", instance_sidebar, raising=False)
     return asyncio.run(app_runtime.Default._instance_sidebar_setting(
         SimpleNamespace(env=SimpleNamespace())))
 
