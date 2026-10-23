@@ -1821,7 +1821,7 @@ void MainWindow::applyRailOrder()
                 at < 0 && savedAgents >= 0 &&
                 entry.first == QLatin1String("sessions");
             ranked.append({at >= 0          ? double(at)
-                           : sessionsUnsaved ? savedAgents - 0.5
+                           : sessionsUnsaved ? savedAgents - 0.25
                                              : previous + 0.5,
                            entry});
         }
