@@ -239,6 +239,17 @@ removed by every uninstall path. The launcher claims only
 `x-scheme-handler/forkmesh`, never `inode/directory`, so `xdg-open <folder>`
 keeps opening the file manager. macOS has no entry.
 
+The app-menu and dock icon is the `forkmesh` icon that `desktop/install.sh`
+puts in `~/.local/share/icons/hicolor`. In-app updates never re-run that
+script, so a launcher installed before the logo changed kept showing the old
+square icon with its black background. Five seconds after the window opens,
+`src/DesktopLauncherIcon.cpp` rewrites those icons (16 to 512 px, the scalable
+SVG and the unthemed `~/.local/share/icons/forkmesh.png` if present) from the
+transparent `:/app/forkmesh.png` and `:/app/forkmesh.svg` built into the app,
+then rebuilds the GTK icon cache. It only acts when
+`~/.local/share/applications/forkmesh.desktop` exists, writes only files whose
+bytes differ, and does nothing on Windows or macOS.
+
 ## Data layout and paths
 
 `src/AppPaths.cpp` resolves `~/projects/<project>/` (override with
