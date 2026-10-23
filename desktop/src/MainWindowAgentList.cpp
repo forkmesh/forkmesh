@@ -603,6 +603,7 @@ void MainWindow::updateAgentsNavBadge()
 
 void MainWindow::refreshAgentDotMatrix()
 {
+    scheduleSessionsPageRefresh();
     if (!m_agentDotMatrix)
         return;
     QVector<AgentDotMatrix::Dot> dots;
@@ -1169,6 +1170,7 @@ void MainWindow::showAgentSessionImages(int sessionId)
 void MainWindow::refreshAgentTable()
 {
     scheduleTeammateRailRefresh();
+    scheduleSessionsPageRefresh();
     if (!m_agentTable)
         return;
     if (m_agentTableRefreshing)

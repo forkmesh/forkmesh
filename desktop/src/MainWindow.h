@@ -293,6 +293,7 @@ class AgentCapabilityBroker;
 class AgentPermissionController;
 class StallWatchdog;
 class ClaudeTranscriptView;
+struct SessionsPageUi;
 class AgentLoginPty;
 class NodeEventSocket;
 class WorldSpeechBridge;
@@ -629,6 +630,13 @@ public:
     static const Issue *looperPickNext(
         const QList<Issue> &issues,
         const std::function<bool(int)> &hasLocalSession);
+
+    void showSessionsPage(int sessionId = 0);
+    void openSessionInSessionsPage(int sessionId);
+    void startNewSessionInSessionsPage();
+    bool relayBetweenSessions(int fromId, int toId, const QString &text,
+                              QString *why = nullptr);
+    bool forwardLastSessionReply(int fromId, int toId, QString *why = nullptr);
 
 #ifdef FORKMESH_WINDOW_TESTS
     using TestIssueHistoryDeleteRunner =
@@ -1040,6 +1048,15 @@ public:
     }
     void testFloatPromptOntoAgentDetail(const QString &prompt);
     QPushButton *testAgentsNavButton() const { return m_agentsNavButton; }
+    QPushButton *testSessionsNavButton() const { return m_sessionsNavButton; }
+    int testSessionsSectionIndex() const { return kSessionsSectionIndex; }
+    QList<int> testSessionsListIds() const;
+    int testSessionsOpenId() const;
+    bool testSessionsTranscriptIdle() const;
+    int testSessionsTranscriptMatches(const QString &text);
+    void testSessionsComposerSend(const QString &text, int alsoTo = 0);
+    QString testSessionsComposerState() const;
+    QStringList testSessionsRelayStrip() const;
     void testCloudLogMonitorLine(const QString &line)
     {
         handleCloudLogMonitorLine(line);
@@ -2898,8 +2915,9 @@ public:
     {
         return m_agentToolLedger.get();
     }
-    AgentToolEfficiencyBoard *testAgentEfficiencyBoard() const
+    AgentToolEfficiencyBoard *testAgentEfficiencyBoard()
     {
+        ensureAgentEfficiencyPage();
         return m_agentEfficiencyBoard;
     }
     QStackedWidget *testAgentPageStack() const { return m_agentPageStack; }
@@ -2934,13 +2952,19 @@ public:
         return m_agentToolImprovements.get();
     }
     AgentRunEfficiencyLog *testAgentRunLog() const { return m_agentRunLog.get(); }
-    AgentRunTable *testAgentRunTable() const { return m_agentRunTable; }
-    QWidget *testAgentEfficiencyDetailsPanel() const
+    AgentRunTable *testAgentRunTable()
     {
+        ensureAgentEfficiencyPage();
+        return m_agentRunTable;
+    }
+    QWidget *testAgentEfficiencyDetailsPanel()
+    {
+        ensureAgentEfficiencyPage();
         return m_agentEfficiencyDetailsPanel;
     }
-    QTextBrowser *testAgentEfficiencyDetails() const
+    QTextBrowser *testAgentEfficiencyDetails()
     {
+        ensureAgentEfficiencyPage();
         return m_agentEfficiencyDetails;
     }
     void testRefreshAgentEfficiencyBoard() { refreshAgentEfficiencyBoard(); }
@@ -3743,6 +3767,7 @@ private:
     static constexpr int kHomeGridSectionIndex = 26;
     static constexpr int kGovernorSectionIndex = 27;
     static constexpr int kProjectSettingsSectionIndex = 28;
+    static constexpr int kSessionsSectionIndex = 29;
 
     // What the relay stores for a task title, and so what the composer
     // accepts and what a converted note is elided to before it gets there.
@@ -4742,6 +4767,11 @@ private:
                    const QString &likelyOrigin, const QString &blockingCall,
                    const QString &report, qint64 startedAtMs = -1);
     void maybeTriggerStallMonitoringTeammates();
+    int openStallRepairSessionId(int repoIndex);
+    void rememberStallRepairSession(int sessionId);
+    QStringList stallEntriesNotHandedOff() const;
+    bool addStallsToOpenRepairSession(bool immediate);
+    void deliverStallFollowUp();
     int stallReportRepoIndex() const;
     void clearStallLog();
     bool sendStallLogToAgent();
@@ -5707,6 +5737,8 @@ private:
     void openAddCoreNodeDialog();
     void ensureRemoveCoreNodeController();
     void openRemoveCoreNodeDialog(const QString &name);
+    void openReplaceCoreNodeDialog(const QString &name);
+    void showAddCoreNodeDialog(const QString &replace);
     void refreshRunners(std::function<void()> then = {});
     void renderRunnersTable();
     void refreshRunnerAttention(bool force = false);
@@ -6035,6 +6067,31 @@ private:
     QString m_memoryLastReport;
     QWidget *buildGovernorSection();
     void refreshGovernorPage();
+    QWidget *buildSessionsSection();
+    bool sessionsPageOnScreen() const;
+    void scheduleSessionsPageRefresh();
+    void refreshSessionsPage();
+    void refreshSessionsList();
+    void refreshSessionsHeader();
+    void refreshSessionsComposer();
+    void refreshSessionsRelayStrip();
+    void refreshSessionsPageTheme(bool dark);
+    void noteSessionsPageEvent(int sessionId, const QJsonObject &event);
+    void recordSessionsRelay(int fromId, int toId, qint64 atMs);
+    void prepareSessionsTranscript(int sessionId);
+    void syncSessionsTranscript();
+    void readSessionsExternalTranscript(int sessionId);
+    void scheduleSessionsTranscriptSlice();
+    void renderSessionsTranscriptSlice(quint64 generation);
+    void sendSessionsComposer();
+    void deliverToExternalSession(int sessionId, const QString &text);
+    void showSessionsContextMenu(int sessionId, const QPoint &globalPos);
+    void promptSessionsMessage(int fromId, int toId);
+    void fillSessionsPicker(QComboBox *combo, int keepId, int excludeId,
+                            const QString &noneLabel);
+    QString sessionsTitle(const AgentSession &session) const;
+    QString sessionsModeLabel(const AgentSession &session) const;
+    QString sessionsLastReply(int sessionId) const;
     void sampleGovernorPage();
     bool governorPageOnScreen() const;
     void applyGovernorSample(
@@ -6838,6 +6895,7 @@ private:
                             const QString &query);
     bool agentTableRowsMatch(const QStringList &identities) const;
     AgentFolders m_agentFolders;
+    bool m_agentFoldersSaveQueued = false;
     QString agentFolderRepo() const;
     void applyAgentFolderRowCells(int row, const AgentFolder &folder,
                                   const QList<const AgentSession *> &members,
@@ -7017,6 +7075,7 @@ private:
     // Sweeps recycle-bin entries past the retention window (issue #578). Safe
     // to call at any time: it only removes bins that have already expired.
     void purgeExpiredAgentRecycleBin();
+    void purgeExpiredAgentRecycleBinInBackground();
     // The strip over the Agents list naming the open repository's deleted
     // agents, with Show (the bin dialog), Restore all and Delete all. Hidden
     // while that repository's bin is empty.
@@ -7702,6 +7761,7 @@ private:
     void setGitPromptOverlay(bool enabled);
     void positionGitPromptOverlay();
     void positionGlobalFooterOverlays();
+    void schedulePositionGlobalFooterOverlays();
     void setPromptOverlayCollapsed(bool collapsed);
     void setPromptOverlayDetached(bool detached);
     void resetPromptOverlayPlacement();
@@ -8248,6 +8308,8 @@ private:
     std::shared_ptr<forkmesh::ui::DiffHealthReport> m_branchDiffHealthReport;
     QString m_branchDiffHealthReportKey;   // inputs the stored report describes
     QString m_branchDiffHealthReportPatch; // patch the stored report describes
+    QString m_branchDiffHealthScoringKey;
+    QString m_branchDiffHealthScoringPatch;
 
     // The activity log above the range pane's diff: every step of reading,
     // rendering and laying out the branch's changes, as it happens, so a long
@@ -8545,6 +8607,9 @@ private:
         const QStringList &releaseArtifactHashes, bool releasePush,
         bool reconcileArtifacts,
         QList<forkmesh::ui::MirrorReleaseBlob> *releaseArtifacts);
+    static QList<forkmesh::ui::MirrorReleaseBlob> retainedManagedPushArtifacts(
+        const QString &mirrorPath,
+        const QList<forkmesh::ui::MirrorReleaseBlob> &signedArtifacts);
     QList<ManagedPushTarget> managedPushTargets(
         const QList<forkmesh::ui::MirrorReleaseBlob> &releaseArtifacts,
         bool startArtifactReconciliation, int *unavailableTargets);
@@ -8811,6 +8876,15 @@ private:
     void preparePackageRails();
     void preparePackagePage(forkmesh::market::NativePackageWidget *widget);
     void preparePackagePages();
+    void queuePackagePreparation(forkmesh::market::NativePackageWidget *widget,
+                                 bool wholePage);
+    void drainPackagePreparation();
+    struct PendingPackagePreparation {
+        QPointer<forkmesh::market::NativePackageWidget> widget;
+        bool wholePage = false;
+    };
+    QList<PendingPackagePreparation> m_packagePreparationQueue;
+    bool m_packagePreparationScheduled = false;
     bool packageRailEnabled() const;
     void setPackageRailEnabled(bool enabled);
     void applyPackageRailVisibility();
@@ -10989,6 +11063,8 @@ private:
         // The page was opened, or warmed for the top search box, so its
         // records are loading or loaded and searchHits has something to read.
         bool searchPrepared = false;
+        QPointer<QWidget> hostSearchTarget;
+        QString hostSearchQuery;
     };
     QList<NativePackagePage> m_nativePackagePages;
     QString m_packageDataTestFilePath;
@@ -11299,6 +11375,8 @@ private:
     QList<std::function<void()>> m_organizationsWaiters;
     int m_organizationsSettingsTabIndex = -1;
     QPushButton *m_agentsNavButton = nullptr;
+    QPushButton *m_sessionsNavButton = nullptr;
+    SessionsPageUi *m_sessionsUi = nullptr;
     AgentDotMatrix *m_agentDotMatrix = nullptr;
     NodeDotMatrix *m_nodeDotMatrix = nullptr;
     QWidget *m_chromeDotDivider = nullptr;
@@ -11498,6 +11576,7 @@ private:
     QString m_instanceThemeOrigin;
     int m_promptAnchoredHeight = 0;
     bool m_positioningFooterOverlays = false;
+    bool m_footerOverlaysPositionQueued = false;
     QWidget *m_promptDetachWindow = nullptr;
     bool m_promptOverlayFloating = false;
     bool m_promptOverlayDetached = false;
@@ -12013,6 +12092,7 @@ private:
     QPushButton *m_addCoreNodeButton = nullptr;
     forkmesh::fleet::AddCoreNodeController *m_addCoreNodeController = nullptr;
     QPointer<QDialog> m_addCoreNodeDialog;
+    bool m_addCoreNodeWasRunning = false;
     forkmesh::fleet::RemoveCoreNodeController *m_removeCoreNodeController = nullptr;
     QPointer<QDialog> m_removeCoreNodeDialog;
     QTableWidget *m_runnersTable = nullptr;
@@ -12557,6 +12637,7 @@ private:
     WorldSpeechBridge *m_worldSpeechBridge = nullptr;
     OfficeChannelMirror *m_officeChannelMirror = nullptr;
     LocalMeshNode *m_localMesh = nullptr;
+    int m_localMeshKeyState = 0;
     ChatNodeOwners *m_chatNodeOwners = nullptr;
     ChatAccountBlocks *m_chatBlocks = nullptr;
     QSet<QString> m_relayPrivatePurged;
@@ -12715,6 +12796,9 @@ private:
     // Teammate/log-monitor pairs already handed a repair run this session.
     // Clearing diagnostics resets these alongside the observed counts.
     QSet<QString> m_triggeredTeammateLogMonitors;
+    int m_stallHandedOffThrough = 0;
+    qint64 m_stallFollowUpLastMs = 0;
+    QTimer *m_stallFollowUpTimer = nullptr;
     QString m_lastStallReportSignature;
     qint64 m_lastStallReportMs = 0;
     bool m_highMemoryAlertArmed = true;
@@ -14224,6 +14308,9 @@ private:
     QTimer *m_agentSessionSaveTimer = nullptr;
     QJsonObject m_lastCodexRateLimits; // last payload applyCodexRateLimits() applied
     QJsonObject m_lastCodexRateLimitsByLimitId;
+    QJsonObject m_pendingCodexRateLimits;
+    QJsonObject m_pendingCodexRateLimitsByLimitId;
+    bool m_codexRateLimitsApplyScheduled = false;
     bool m_nodesTableStale = false;    // refreshNodesTable() skipped an off-screen rebuild
     QHash<QString, QPixmap> m_chatMemberAvatarCache; // 28 px rounded member medallions
     QString m_chatMembersSignature; // what the member cards currently render
@@ -14511,7 +14598,6 @@ private:
     // event-loop slice short so selecting an agent never monopolises input.
     quint64 m_agentTranscriptRenderGeneration = 0;
     int m_agentTranscriptRenderSession = -1;
-    QList<QJsonObject> m_agentTranscriptRenderEvents;
     int m_agentTranscriptRenderCursor = 0;
     int m_agentTranscriptRenderSkipped = 0;
     bool m_agentTranscriptSkippedNoticeAdded = false;
@@ -14686,6 +14772,8 @@ private:
     void showAgentToolFamilyDetails(const QString &family);
     void refreshAgentToolFamilyDetails();
     QWidget *buildAgentEfficiencyPage();
+    void ensureAgentEfficiencyPage();
+    QPointer<QWidget> m_agentEfficiencyPlaceholder;
     // "Send to agent" on the Tool efficiency page: the improvement digest
     // wrapped in the ask to fix every signal at its source. Empty while
     // nothing has been recorded, so there is nothing to launch on.
@@ -14699,6 +14787,8 @@ private:
     // tab. Stored in QSettings, mirrored into the ledger and board, and
     // handed to every runtime launch as AgentRuntimeLaunch.options.
     QStringList disabledAgentToolFamilies() const;
+    mutable QStringList m_disabledAgentToolFamilies;
+    mutable bool m_disabledAgentToolFamiliesLoaded = false;
     void setAgentToolFamilyEnabled(const QString &family, bool enabled);
     QJsonObject agentRuntimeLaunchOptions() const;
     // Project settings > Agents: the folder lock and the external-call gate
@@ -15681,6 +15771,7 @@ private:
     QTimer *m_chatExpiryTimer = nullptr;
     QPointer<QComboBox> m_chatRetentionCombo;
     QTimer *m_agentRecycleSweepTimer = nullptr; // periodic pruneExpiredChatHistory()
+    bool m_agentRecyclePurgeInFlight = false;
     QHash<QString, MessageRow *> m_visibleRows; // messageId -> row (current conv)
     QString m_activeChatThreadRootId;
     QSplitter *m_chatSplit = nullptr;

@@ -6,6 +6,7 @@
 #include "MainWindowNextAccess.h"
 
 #include <QCache>
+#include <QMutex>
 
 namespace forkmesh::ui {
 
@@ -509,7 +510,7 @@ QPixmap restartProgressPixmap(const QColor &color, double angleDeg, int size,
     return pm;
 }
 
-QByteArray forkMeshAvatarPng(const QString &seed)
+static QByteArray renderForkMeshAvatarPng(const QString &seed)
 {
     const QByteArray h =
         QCryptographicHash::hash(seed.toUtf8(), QCryptographicHash::Sha256);
@@ -847,6 +848,21 @@ QByteArray forkMeshAvatarPng(const QString &seed)
     QBuffer buffer(&png);
     buffer.open(QIODevice::WriteOnly);
     img.save(&buffer, "PNG");
+    return png;
+}
+
+QByteArray forkMeshAvatarPng(const QString &seed)
+{
+    static QMutex mutex;
+    static QCache<QString, QByteArray> cache(512);
+    {
+        const QMutexLocker lock(&mutex);
+        if (const QByteArray *hit = cache.object(seed))
+            return *hit;
+    }
+    const QByteArray png = renderForkMeshAvatarPng(seed);
+    const QMutexLocker lock(&mutex);
+    cache.insert(seed, new QByteArray(png));
     return png;
 }
 

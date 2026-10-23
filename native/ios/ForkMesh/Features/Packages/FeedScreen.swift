@@ -2,6 +2,8 @@ import FMApi
 import FMBase
 import FMTools
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 struct FeedScreen: View {
     @Environment(\.fmPalette) private var fm
@@ -126,6 +128,7 @@ private enum FeedLinks {
 private struct FeedContent: View {
     @Environment(\.fmPalette) private var fm
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Bindable var model: InstanceFeedModel
     let pushed: Bool
     @State private var push: FeedPush?
@@ -336,9 +339,21 @@ private struct FeedContent: View {
                 onReply: { model.startReply(post) },
                 onBoost: { Task { await model.toggleBoost(post) } },
                 onFavourite: { Task { await model.toggleFavourite(post) } },
-                onDelete: { deleting = post })
+                onDelete: { deleting = post },
+                publicURL: model.publicURL(post),
+                onCopyLink: { copyLink(post) },
+                onOpenWebsite: {
+                    if let url = model.publicURL(post) { openURL(url) }
+                })
             FmHairline()
         }
+    }
+
+    private func copyLink(_ post: InstanceFeedPost) {
+        guard let url = model.publicURL(post) else { return }
+        UIPasteboard.general.items = [[UTType.url.identifier: url, UTType.plainText.identifier: url.absoluteString]]
+        model.linkCopied()
+        FmHaptics.commit()
     }
 
     private func openThread(_ id: String) {
@@ -373,6 +388,9 @@ private struct FeedPostRow: View {
     let onBoost: () -> Void
     let onFavourite: () -> Void
     let onDelete: () -> Void
+    let publicURL: URL?
+    let onCopyLink: () -> Void
+    let onOpenWebsite: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: FmSpace.x2) {
@@ -497,6 +515,7 @@ private struct FeedPostRow: View {
                 label: post.favourited ? "Remove favourite" : "Favourite", count: post.favourites,
                 active: post.favourited, activeColor: fm.warning, onPressed: onFavourite)
             Spacer(minLength: 0)
+            if publicURL != nil { linkMenu }
             if post.canDelete {
                 FeedActionButton(
                     symbol: "trash", label: "Delete post", count: 0,
@@ -504,6 +523,30 @@ private struct FeedPostRow: View {
             }
         }
         .padding(.top, FmSpace.x1)
+    }
+}
+
+extension FeedPostRow {
+    fileprivate var linkMenu: some View {
+        Menu {
+            Button(action: onOpenWebsite) {
+                Label("View on the website", systemImage: "globe")
+            }
+            .accessibilityIdentifier("feed-post-view-website")
+            Button(action: onCopyLink) {
+                Label("Copy link", systemImage: "link")
+            }
+            .accessibilityIdentifier("feed-post-copy-link")
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(fm.textSecondary)
+                .frame(minWidth: 44, minHeight: 36, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Post link")
+        .accessibilityIdentifier("feed-post-link")
     }
 }
 

@@ -13,6 +13,8 @@
 #include <functional>
 #include <memory>
 
+class QObject;
+
 namespace forkmesh::chatv3 {
 
 constexpr qint64 kDayMs = 24ll * 60 * 60 * 1000;
@@ -237,6 +239,11 @@ public:
     void unsubscribe(int token);
 
     void flush();
+    quint64 writeTicket() const { return m_ticket; }
+    static bool isWritten(quint64 ticket);
+    static void whenWritten(quint64 ticket, QObject *context,
+                            std::function<void()> callback);
+    static void waitForWrites();
 
 private:
     struct Scope {
@@ -273,6 +280,8 @@ private:
     void loadRatchets(const QString &room, Room &state);
     void saveScope(const QString &scope, bool now);
     void saveSeen(const QString &room);
+    void persist(const QString &key, std::function<std::function<QVariant()>()> snapshot,
+                 bool immediately);
     void refreshSafety(const QString &scope);
     void notify(Event event, const QString &scope, const QString &kid);
 
@@ -287,6 +296,31 @@ private:
     QHash<QString, qint64> m_sessionResets;
     QHash<int, Listener> m_listeners;
     int m_nextToken = 1;
+    quint64 m_ticket = 0;
+};
+
+class SendGate
+{
+public:
+    explicit SendGate(QObject *owner) : m_owner(owner) {}
+    bool send(quint64 ticket, const void *tag, std::function<bool()> write);
+    void release();
+    void releaseAll();
+    void drop(const void *tag);
+    void clear();
+    bool isEmpty() const { return m_entries.isEmpty(); }
+
+private:
+    struct Entry {
+        quint64 ticket = 0;
+        const void *tag = nullptr;
+        std::function<bool()> write;
+    };
+    void arm();
+
+    QObject *m_owner = nullptr;
+    QList<Entry> m_entries;
+    bool m_waiting = false;
 };
 
 } // namespace forkmesh::chatv3
