@@ -662,7 +662,7 @@ export function functions({
     // layout writes while movement and WebGL rendering remain full-rate.
     if (time >= nextProximityUpdateAt) {
       nextProximityUpdateAt = time + 80;
-      fns.updateBoardProximity();
+      fns.updateBillboardPads();
       if (ctx.officeSceneMode === "town") {
         fns.nearestLandmark();
         fns.updateRepositoryPortalLabels();

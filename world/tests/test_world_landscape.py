@@ -277,10 +277,10 @@ def test_leaderboard_contents_are_always_mounted_in_the_open_district():
     )
     assert "leaderboardInterior.visible = false" not in district
     assert "leaderboardInterior.add(\n    createDistrictGroundCircle" in district
-    # Boards mount on their own circle, and every circle mounts on the open
+    # Boards mount on the one billboard ring, and the ring mounts on the open
     # district interior, so nothing is hidden behind a cover or a gate.
     assert "leaderboardInterior.add(group);" in scene
-    assert "circle.group.add(object);" in scene
+    assert "ring.group.add(object);" in scene
     assert "updateLeaderboardCircleOccupancy" not in scene
     assert "leaderboardCoverContainsWorldPoint" not in scene
 

@@ -248,16 +248,17 @@ def test_the_shared_stat_painter_leaves_the_three_richer_cards_alone():
     assert "leaderboardStatTexture(THREE, board)" in update
 
 
-def test_the_leaderboard_circle_only_fetches_when_a_visitor_walks_onto_it():
-    # Nothing on the circle is read at boot; the approach callback is the only
-    # thing that starts a fetch, and each card spins while it is open.
+def test_a_leaderboard_card_only_fetches_when_a_visitor_steps_onto_its_pad():
+    # Nothing on the ring is read at boot; stepping onto a card's refresh pad
+    # is the only thing that starts a fetch, and only that card spins.
     assert "void this.loadReferralLeaderboard();\n      void this.loadLobbyLinkBoard();" not in WORLD
-    assert "startLeaderboardCircleWatch({ refetch = true } = {}) {" in WORLD
+    assert "startBillboardWatch(feed, { refetch = true } = {}) {" in WORLD
+    assert 'feed === "leaderboards"' in WORLD
     assert "if (refetch) void this.loadReferralLeaderboard();" in WORLD
-    assert 'onLeaderboardCircleNearby: ({ refetch } = {}) =>' in WORLD
+    assert "onBillboardNearby: ({ feed, refetch } = {}) =>" in WORLD
     assert 'this.world?.setBillboardRefreshing?.("leaderboards", true);' in WORLD
     assert 'this.world?.setBillboardRefreshing?.("leaderboards", false);' in WORLD
-    assert "onEnter: (refetch) => onLeaderboardCircleNearby({ refetch })," in SCENE
+    assert "onBillboardNearby({ feed: record.feed, refetch });" in SCENE
     assert "function setBillboardRefreshing(feed, loading)" in SCENE
     assert "setBillboardRefreshing," in SCENE
 

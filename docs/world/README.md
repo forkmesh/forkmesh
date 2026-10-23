@@ -587,6 +587,46 @@ flat side facing the town path.
   `forkmesh-world-built` and `forkmesh-world-deploy` metas (falling back to
   `/api/version`).
 
+### Board ring
+
+Leaderboard Island's boards stand on one ring
+(`scene/districts/billboard-circles.js`, sized by `BILLBOARD_RING` in
+`scene/layout.js`). It replaced three separate circles (hub, social,
+leaderboards), which read as three plazas and fetched everything on a circle
+as soon as you walked onto it.
+
+- **Layout.** Boards are grouped by section (`sections`: hub, social,
+  leaderboards; a placement's `circle` option names the section, so existing
+  packages keep working) and then by `order`. Each board gets the arc it
+  needs, the spare arc is shared evenly, and an `entryGap` is left open
+  towards the causeway. `minRadius` (38) already fits every board, X and
+  Reddit banners included, so the ring is sized once and does not regrow as
+  boards are placed at boot.
+- **Refresh pads.** Every board with a `feed` has a small semicircle in front
+  of it (`padRadius` 2.2). A board fetches only when you step onto its own
+  pad: `updateBillboardPads()` runs with the other proximity checks at
+  12.5 Hz, rejects anyone outside the pad band with one distance test, and
+  reports `onBillboardNearby({ feed, refetch })` / `onBillboardAway({ feed })`
+  to the shell. Leaving needs `padExit` more distance than entering, so
+  standing on the edge cannot flap the request. Each board has its own
+  cooldown (`cooldownMs`, 60 s; the QA board 5 s), so walking along the
+  leaderboard cards refreshes each card once rather than the whole family.
+  The shell's `startBillboardWatch(feed)` maps a feed to its loader; the QA
+  deck polls only while you stand on its pad, and the Mastodon and social
+  banner countdowns refetch only while you stand on their pads.
+- **Spinners.** Only the board whose pad started a request spins. Feeds that
+  share one request (all leaderboard cards read `/api/leaderboards`) still
+  repaint together from that one snapshot, but only the approached card
+  shows the spinner. A request started elsewhere (a QA action, copying a
+  referral link) spins every board of that feed.
+- **Draw cost.** The ring is one textured apron (a unit circle scaled to the
+  ring), one rim, and one `InstancedMesh` holding every pad, so all pads are a
+  single draw call and the active pad is lit by its instance colour (`muted`
+  idle, `accent` underfoot). The rim and pads are flat decals with
+  `polygonOffset`, so they never z-fight the apron. Geometry comes from the
+  resource authority (the pad is a cached half-disc, laid flat by its
+  instance rotation).
+
 ### Members Circle
 
 Members sit in rings around a campfire by lifecycle band; members with a

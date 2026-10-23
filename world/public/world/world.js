@@ -6790,6 +6790,7 @@ class ForkMeshWorld extends HTMLElement {
     this.systemCapacityFocus = "";
     this.systemCapacitySort = { key: "rowCount", direction: "desc" };
     this.qaTimer = 0;
+    this.billboardFeedsNear = new Set();
     this.orgAgentTimer = 0;
     this.sessionWatchActive = false;
     // A World that just booted restored or read its session moments ago.
@@ -8377,15 +8378,9 @@ class ForkMeshWorld extends HTMLElement {
         },
         onSystemCapacityTableSelect: (table) =>
           this.openSystemCapacityTables(table),
-        onQaBoardNearby: ({ refetch } = {}) =>
-          this.startQaDeckWatch({ refetch }),
-        onQaBoardAway: () => this.stopQaDeckWatch(),
-        onLeaderboardCircleNearby: ({ refetch } = {}) =>
-          this.startLeaderboardCircleWatch({ refetch }),
-        onLeaderboardCircleAway: () => this.stopLeaderboardCircleWatch(),
-        onSocialCircleNearby: ({ refetch } = {}) =>
-          this.startSocialCircleWatch({ refetch }),
-        onSocialCircleAway: () => this.stopSocialCircleWatch(),
+        onBillboardNearby: ({ feed, refetch } = {}) =>
+          this.startBillboardWatch(feed, { refetch }),
+        onBillboardAway: ({ feed } = {}) => this.stopBillboardWatch(feed),
         onQaVerdict: ({ verdict }) => void this.recordQaVerdict(verdict),
         onQaAction: (action) => void this.handleQaAction(action),
         onRendererStateChange: (state, detail) => {
@@ -8535,15 +8530,7 @@ class ForkMeshWorld extends HTMLElement {
       }
       this.world.updateRewardPool?.(this.rewardState);
       this.world.updateWorldBulletin?.(this.events);
-      // Boot requests nothing for the billboard circles. Any snapshot this
-      // page already holds is pushed onto the rebuilt scene, and the
-      // one-second ticks below only drive the stand clocks — the first fetch
-      // for the kiosk, the feeds, and the rankings waits
-      // until the visitor walks onto the circle that carries them. A rebuilt
-      // scene therefore starts every circle "away", and its own first
-      // proximity pass is what reports the visitor back onto one.
-      this.leaderboardCircleNear = false;
-      this.socialCircleNear = false;
+      this.billboardFeedsNear.clear();
       this.syncMemberLounge();
       this.seatFreshArrivalAtCampfire();
       this.applyTerritoryArrival();
@@ -9072,20 +9059,27 @@ class ForkMeshWorld extends HTMLElement {
     this.qaTimer = 0;
   }
 
-  // The three billboard circles follow the same rule as the task boards, and
-  // it is the only rule they follow: nothing standing on a circle is fetched
-  // until a visitor walks onto it. The near flags are what the one-second
-  // stand-clock ticks consult before they are allowed to start a request, so
-  // a page parked anywhere else in the World holds no cadence for these
-  // boards at all. `refetch` is false when the scene judged the last approach
-  // recent enough that re-entering does not justify another read.
-  startLeaderboardCircleWatch({ refetch = true } = {}) {
-    this.leaderboardCircleNear = true;
-    if (refetch) void this.loadReferralLeaderboard();
+  startBillboardWatch(feed, { refetch = true } = {}) {
+    this.billboardFeedsNear.add(feed);
+    if (feed === "qa-board") {
+      this.startQaDeckWatch({ refetch });
+    } else if (feed === "leaderboards") {
+      if (refetch) void this.loadReferralLeaderboard();
+    } else if (feed === "mastodon") {
+      if (refetch) void this.loadMastodonBoard();
+      this.syncMastodonCountdown();
+    } else if (feed === "social") {
+      if (refetch) {
+        void this.loadSocialBanners();
+        void this.loadSocialWorldData();
+      }
+      this.syncSocialBannerTimers();
+    }
   }
 
-  stopLeaderboardCircleWatch() {
-    this.leaderboardCircleNear = false;
+  stopBillboardWatch(feed) {
+    this.billboardFeedsNear.delete(feed);
+    if (feed === "qa-board") this.stopQaDeckWatch();
   }
 
   loadSocialWorldData() {
@@ -9140,12 +9134,12 @@ class ForkMeshWorld extends HTMLElement {
 
   // The one place the Town Square panel's two sources are ordered. It takes
   // the settled community-placement request and nothing else, so it can only
-  // run where that request already ran: on the social circle, or in the
-  // explicit full refresh. The community-voted placement is governance-backed
-  // and always wins. The ForkMesh Ads network is asked only after that request
-  // resolved with no placement -- never in parallel, never when it failed, and
-  // never on World's boot path -- so a live community placement costs the
-  // network no request at all.
+  // run where that request already ran: at a social board's refresh pad, or
+  // in the explicit full refresh. The community-voted placement is
+  // governance-backed and always wins. The ForkMesh Ads network is asked only
+  // after that request resolved with no placement -- never in parallel, never
+  // when it failed, and never on World's boot path -- so a live community
+  // placement costs the network no request at all.
   settleSponsoredPlacement(result, { keepOnError = false } = {}) {
     const resolved = result?.status === "fulfilled";
     if (resolved) {
@@ -9211,21 +9205,6 @@ class ForkMeshWorld extends HTMLElement {
     } catch (_) {}
     this.networkAd = null;
     this.renderCommunityPlacement();
-  }
-
-  startSocialCircleWatch({ refetch = true } = {}) {
-    this.socialCircleNear = true;
-    if (refetch) {
-      void this.loadMastodonBoard();
-      void this.loadSocialBanners();
-      void this.loadSocialWorldData();
-    }
-    this.syncMastodonCountdown();
-    this.syncSocialBannerTimers();
-  }
-
-  stopSocialCircleWatch() {
-    this.socialCircleNear = false;
   }
 
   applyQaDeck(payload = {}, { afterKey = "" } = {}) {
@@ -12088,7 +12067,7 @@ class ForkMeshWorld extends HTMLElement {
     this.fountainDataLoad = null;
     void this.loadNearbyMemberData();
     void this.loadOfficeData();
-    if (this.socialCircleNear) this.startSocialCircleWatch();
+    for (const feed of this.billboardFeedsNear) this.startBillboardWatch(feed);
     void this.refreshCommunityEvents(true);
     void this.refreshFediverseMentions();
     void this.fetchLeaderboardSnapshot();
@@ -19060,8 +19039,8 @@ class ForkMeshWorld extends HTMLElement {
   // Like the Mastodon kiosk, a one-second tick drives the stand clocks and
   // counts the ten-minute window down. Reaching zero only marks the banners
   // as due: the tick refetches when — and only when — somebody is standing on
-  // the social circle, and a repaint from a fresh snapshot restarts the same
-  // window the boards were counting down.
+  // a banner's refresh pad, and a repaint from a fresh snapshot restarts the
+  // same window the boards were counting down.
   startSocialBannersRefresh() {
     window.clearInterval(this.socialFeedsTimer);
     this.socialFeedsTimer = window.setInterval(() => {
@@ -19094,7 +19073,7 @@ class ForkMeshWorld extends HTMLElement {
     const loading = Boolean(this.socialFeedsLoad);
     const remaining = this.socialRefreshRemaining();
     this.world?.setBillboardRefreshing?.("social", loading);
-    if (!loading && remaining <= 0 && this.socialCircleNear) {
+    if (!loading && remaining <= 0 && this.billboardFeedsNear.has("social")) {
       void this.loadSocialBanners();
       return;
     }
@@ -19264,9 +19243,9 @@ class ForkMeshWorld extends HTMLElement {
     const remaining = this.mastodonRefreshRemaining();
     this.world?.setBillboardRefreshing?.("mastodon", loading);
     // An elapsed window no longer starts a fetch on its own: it only means the
-    // kiosk is due, and the next visitor to walk onto the social circle is
-    // what actually reloads it.
-    if (!loading && remaining <= 0 && this.socialCircleNear) {
+    // kiosk is due, and the next visitor to step onto the kiosk's refresh pad
+    // is what actually reloads it.
+    if (!loading && remaining <= 0 && this.billboardFeedsNear.has("mastodon")) {
       void this.loadMastodonBoard(true);
       return;
     }
@@ -34061,10 +34040,9 @@ class ForkMeshWorld extends HTMLElement {
     )}`;
   }
 
-  // One edge-cached snapshot keeps every card on the leaderboard circle
-  // synchronized with the website hub. Custom referral faces still retain
-  // their richer tap actions. Every card spins while the read is open, since
-  // the visitor's own approach is what started it.
+  // One edge-cached snapshot keeps every leaderboard card synchronized with
+  // the website hub. Custom referral faces still retain their richer tap
+  // actions. Only the card whose refresh pad started the read spins.
   async loadReferralLeaderboard() {
     if (
       !this.world?.updateLeaderboards &&

@@ -174,12 +174,8 @@ export async function createWorldScene({
   onNeighbourDoor = () => {},
   onNeighbourBugSelect = () => {},
   onSystemCapacityTableSelect = () => {},
-  onQaBoardNearby = () => {},
-  onQaBoardAway = () => {},
-  onLeaderboardCircleNearby = () => {},
-  onLeaderboardCircleAway = () => {},
-  onSocialCircleNearby = () => {},
-  onSocialCircleAway = () => {},
+  onBillboardNearby = () => {},
+  onBillboardAway = () => {},
   onQaVerdict = () => {},
   onQaAction = () => {},
   onRendererStateChange = () => {},
@@ -245,9 +241,6 @@ export async function createWorldScene({
     get bikeRide() { return bikeRide; } set bikeRide(value) { bikeRide = value; }
     get bikeSeatPosition() { return bikeSeatPosition; }
     get bikeStates() { return bikeStates; } set bikeStates(value) { bikeStates = value; }
-    get billboardCircleOrigin() { return billboardCircleOrigin; } set billboardCircleOrigin(value) { billboardCircleOrigin = value; }
-    get billboardIslandBounds() { return billboardIslandBounds; } set billboardIslandBounds(value) { billboardIslandBounds = value; }
-    get billboardSpinners() { return billboardSpinners; } set billboardSpinners(value) { billboardSpinners = value; }
     get bootQualityTier() { return bootQualityTier; }
     get botAgents() { return botAgents; }
     get bulletinFace() { return bulletinFace; }
@@ -486,8 +479,6 @@ export async function createWorldScene({
     get pointerLast() { return pointerLast; }
     get pointerStart() { return pointerStart; }
     get primaryPointerId() { return primaryPointerId; } set primaryPointerId(value) { primaryPointerId = value; }
-    get proximityBoards() { return proximityBoards; }
-    get proximityBoardWorldPosition() { return proximityBoardWorldPosition; }
     get pushSurges() { return pushSurges; }
     get qaBoardFace() { return qaBoardFace; }
     get qaBoardFrame() { return qaBoardFrame; }
@@ -506,7 +497,6 @@ export async function createWorldScene({
     get raycaster() { return raycaster; }
     get reflectionCamera() { return reflectionCamera; }
     get reflectionTarget() { return reflectionTarget; }
-    get relayoutBillboardCircle() { return relayoutBillboardCircle; } set relayoutBillboardCircle(value) { relayoutBillboardCircle = value; }
     get remoteDetailFrustum() { return remoteDetailFrustum; }
     get remoteDetailMatrix() { return remoteDetailMatrix; }
     get remoteDetailSphere() { return remoteDetailSphere; }
@@ -657,6 +647,8 @@ export async function createWorldScene({
     billboardCirclesDistrict.functions({
       THREE,
       ctx,
+      onBillboardNearby,
+      onBillboardAway,
     }),
   );
   Object.assign(
@@ -1035,7 +1027,6 @@ export async function createWorldScene({
     beginGymExercise,
     beginOfficeExit,
     beginRepositoryDistrictReveal,
-    billboardCircle,
     buildSkyEnvironment,
     clearFocus,
     completeAgentTask,
@@ -1097,6 +1088,7 @@ export async function createWorldScene({
     performGymRep,
     pickWorldObject,
     placeBillboardOnIsland,
+    tickBillboardSpinners,
     playEmote,
     playHandshake,
     playRewardEvent,
@@ -1729,13 +1721,10 @@ export async function createWorldScene({
   });
   await sceneSlice();
 
-  let billboardIslandBounds, billboardCircleOrigin, billboardSpinners,
-    relayoutBillboardCircle;
   billboardCirclesDistrict.build({
-    THREE,
     animated,
-    ctx,
     placeBillboardOnIsland,
+    tickBillboardSpinners,
     worldBulletin,
     worldDiscordBoard,
     worldGeneralChatBoard,
@@ -2105,7 +2094,6 @@ export async function createWorldScene({
   const officeDisplaysDistrictParts = await officeDisplaysDistrict.build({
     THREE,
     animated,
-    billboardCircle,
     compactRenderer,
     ctx,
     interactive,
@@ -2113,17 +2101,9 @@ export async function createWorldScene({
     officeClockInTexture,
     officeFloorAccent,
     officeInterior,
-    onLeaderboardCircleAway,
-    onLeaderboardCircleNearby,
-    onQaBoardAway,
-    onQaBoardNearby,
-    onSocialCircleAway,
-    onSocialCircleNearby,
     sceneSlice,
-    worldQaBoard,
   });
   const {
-    proximityBoards,
     officeAttendanceBoard,
     officeClockInBoard,
     reflectionTarget,
@@ -2233,7 +2213,6 @@ export async function createWorldScene({
   const diagnosticsDrawingBuffer = new THREE.Vector2();
   const officeDoorLocalPosition = new THREE.Vector3();
   const officeReceptionLocalPosition = new THREE.Vector3();
-  const proximityBoardWorldPosition = new THREE.Vector3();
   const localPointLightPosition = new THREE.Vector3();
   scene.traverse((object) => {
     if (object.isPointLight) localPointLights.add(object);
