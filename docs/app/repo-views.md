@@ -271,6 +271,13 @@ reduced motion).
   beside the name on phones, where the column is hidden. The roster is read
   once per repository and branch (`repoContributorRosterCached`), shared with
   the About rail. Tests: `app/tests/test_issue_timeline_people.py`.
+- **Code map No wrap** (`layoutPrefs`, `fitCode` in `app/public/assets/codemap/codemap.js`):
+  by default a file's lines flow into newspaper columns, each cut at the
+  file's 97th-percentile line length (at most 110 characters). The toolbar's
+  "No wrap" toggle lays the file out as one column, one row per line, sized to
+  the tile height (no wider than 80 characters of text), and clips each line at
+  the tile's edge instead (`code.clip`). The choice is kept in `localStorage`
+  (`forkmesh-codemap-wrap`).
 - **Code map text vs binary** (`createLoader` in `app/public/assets/codemap/codemap.js`,
   glue `openRepoCodeMap`): a file is drawn as a binary card only when the host
   answered it as base64 (not UTF-8) or its text holds a NUL byte. A path the
