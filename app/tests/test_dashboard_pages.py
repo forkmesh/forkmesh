@@ -59,10 +59,7 @@ def test_client_bundle_sources_use_the_shared_version_placeholder():
     for meta in dashboard_shell.PAGES.values():
         html = (PUBLIC / meta["asset"]).read_text(encoding="utf-8")
         assert 'src="/dashboard.js?v=${version}"' in html, meta["asset"]
-        if meta["asset"] == dashboard_shell.PAGES["chat"]["asset"]:
-            assert 'src="/dashboard-chat.js?v=${version}"' in html, meta["asset"]
-        else:
-            assert 'src="/dashboard-chat.js' not in html, meta["asset"]
+        assert 'src="/dashboard-chat.js' not in html, meta["asset"]
 
 
 def test_each_page_document_has_exactly_one_view_and_its_page_marker():
@@ -98,7 +95,7 @@ def test_sidebar_marks_the_active_page_at_build_time():
 def test_sidebar_nav_is_real_links_not_section_buttons():
     html = assembled_dashboard_page("home")
     for path in ("/dashboard", "/dashboard/profile", "/dashboard/repos",
-                 "/dashboard/network", "/dashboard/chat", "/ledger"):
+                 "/dashboard/network", "/chat", "/ledger"):
         assert ('href="%s"' % path) in html, path
     assert 'data-nav="ledger" data-nav-link href="/ledger"' in html
     # The old client-side section router markup is gone everywhere.
@@ -145,7 +142,10 @@ def test_worker_serves_repo_document_and_redirects_legacy_urls():
     legacy = set(static_routes.DASHBOARD_SECTION_PATHS)
     assert legacy == {"home", "repos", "network", "chat", "profile",
                       "profile-overview", "profile-repositories"}
-    for target in static_routes.DASHBOARD_SECTION_PATHS.values():
+    for section, target in static_routes.DASHBOARD_SECTION_PATHS.items():
+        if section == "chat":
+            assert target == "/chat"
+            continue
         assert target in static_routes.DASHBOARD_PAGE_ASSETS, target
 
 

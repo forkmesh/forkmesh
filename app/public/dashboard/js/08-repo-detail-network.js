@@ -1648,7 +1648,7 @@
     home: "/dashboard",
     repos: "/dashboard/repos",
     network: "/dashboard/network",
-    chat: "/dashboard/chat",
+    chat: "/chat",
     profile: "/dashboard/settings",
     "profile-overview": "/dashboard/profile",
     "profile-repositories": "/dashboard/profile/repositories",
@@ -1920,10 +1920,6 @@
 
   function initNetworkPage() {
     renderNetwork();
-  }
-
-  function initChatPage() {
-    // dashboard-chat.js self-boots off the #fullChatMessages markup.
   }
 
   function initProfileOverviewPage() {

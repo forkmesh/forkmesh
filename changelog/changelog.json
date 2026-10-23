@@ -8,6 +8,12 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Chat",
+     "items": [
+      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."
+     ]
+    },
+    {
      "title": "Agents",
      "items": [
       "The composer hides its character count until a prompt nears the limit, then shows it in orange and red."

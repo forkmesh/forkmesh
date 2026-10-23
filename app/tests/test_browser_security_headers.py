@@ -60,7 +60,6 @@ def test_only_explicit_embedded_documents_are_frameable():
     # Chat renders inside World frames; issue and pull details render inside
     # the World workbench. These documents stay same-origin only.
     for path in (
-        "/dashboard/chat*",
         "/chat",
         "/chat.html",
         "/:owner/:repo/issues/:number",
@@ -100,8 +99,8 @@ def test_only_explicit_embedded_documents_are_frameable():
         assert "https://cdn.jsdelivr.net" in rule
         assert "https://static.cloudflareinsights.com" in rule
 
-    assert HEADERS.count("frame-ancestors 'self'") == 7
-    assert HEADERS.count("X-Frame-Options: SAMEORIGIN") == 5
+    assert HEADERS.count("frame-ancestors 'self'") == 6
+    assert HEADERS.count("X-Frame-Options: SAMEORIGIN") == 4
     assert HEADERS.count(world_ancestors) == 2
     assert "https://cdn.tailwindcss.com" not in HEADERS
 

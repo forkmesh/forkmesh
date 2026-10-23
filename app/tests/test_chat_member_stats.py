@@ -18,13 +18,8 @@ APP_RUNTIME = (ROOT / "src" / "app_runtime.py").read_text(encoding="utf-8")
 FOOTPRINT = (
     REPOSITORY / "world" / "tools" / "build_worker_footprint.py"
 ).read_text(encoding="utf-8")
-CHAT = (ROOT / "public" / "dashboard-chat.js").read_text(encoding="utf-8")
-CHAT_VIEW = (
-    ROOT / "public" / "dashboard" / "partials" / "views" / "chat.html"
-).read_text(encoding="utf-8")
-CHAT_PAGE = (
-    ROOT / "public" / "dashboard" / "chat" / "index.html"
-).read_text(encoding="utf-8")
+CHAT = (ROOT / "public" / "chat.js").read_text(encoding="utf-8")
+CHAT_CSS = (ROOT / "public" / "chat.css").read_text(encoding="utf-8")
 NOW = 1_800_000_000_000
 TODAY = "2027-01-15"
 YESTERDAY = "2027-01-14"
@@ -402,48 +397,54 @@ def test_member_list_requests_one_batch_for_visible_rows():
     assert CHAT.count("MEMBER_STATS_ENDPOINT") == 2
     assert 'const MEMBER_STATS_ENDPOINT = "/api/chat/member-stats";' in CHAT
     assert "const MEMBER_STATS_BATCH = 50;" in CHAT
-    flush = CHAT[CHAT.index("async function flushMemberStats("):
-                 CHAT.index("function watchMemberStats(")]
+    flush = CHAT[CHAT.index("async function flushMemberStats("):]
+    flush = flush[:flush.index("\n}\n")]
     assert flush.count("fetch(") == 1
     assert ".slice(0, MEMBER_STATS_BATCH)" in flush
-    entry = CHAT[CHAT.index("function memberListEntry("):
-                 CHAT.index("function isAutomatedMemberName(")]
-    assert "fetch(" not in entry
-    assert "freshMemberStats(person.name)" in entry
-    assert "memberStatsObserver.observe(row)" in entry
-    assert "!isAutomatedMemberName(person.name)" in entry
-    assert "new IntersectionObserver(" in CHAT
-    assert "root: memberPane" in CHAT
+    people = CHAT[CHAT.index("function renderPeople("):
+                  CHAT.index("function isAutomatedMemberName(")]
+    assert "fetch(" not in people
+    assert "freshMemberStats(stats.dataset.memberStats)" in people
+    assert "observeMemberStats(row, stats.dataset.memberStats)" in people
+    assert "hasProfile && !isAutomatedMemberName(person.name)" in people
+    assert "memberStatsObserver?.disconnect();" in people
+    observe = CHAT[CHAT.index("function observeMemberStats("):
+                   CHAT.index("async function flushMemberStats(")]
+    assert "new IntersectionObserver(" in observe
+    assert "root: peopleEl" in observe
+    assert "memberStatsObserver.observe(row)" in observe
+
+
+def test_member_stats_state_is_declared_before_the_people_pane_renders():
+    assert CHAT.index("let memberStatsObserver = null;") < CHAT.index(
+        "function renderPeople(")
 
 
 def test_member_stats_row_has_icons_tooltip_and_screen_reader_text():
     fill = CHAT[CHAT.index("function fillMemberStats("):
                 CHAT.index("function applyMemberStats(")]
+    icons = CHAT[CHAT.index("const MEMBER_STATS_ICONS"):
+                 CHAT.index("const MEMBER_STATS_LABELS")]
     for kind in ("pulls", "commits", "issues", "reviews", "recent"):
-        assert 'data-member-stat="' in fill
-        assert kind in CHAT[CHAT.index("const MEMBER_STATS_ICONS"):
-                            CHAT.index("const MEMBER_STATS_LABELS")]
+        assert kind + ":" in icons
+    assert "memberStatPart(kind, compactMemberCount(count))" in fill
     assert "stats.title = summary;" in fill
-    assert "data-member-stats-label" in fill
-    assert 'aria-hidden="true"' in fill
-    assert "escapeHtml(" in fill
+    assert 'spoken.className = "chat-visually-hidden"' in fill
+    assert 'visible.setAttribute("aria-hidden", "true")' in fill
+    assert "innerHTML" not in fill
+    assert "createElementNS(ns, tag)" in CHAT
 
 
-def test_member_rows_stay_two_lines_and_open_as_a_drawer_on_phones():
-    for source in (CHAT_VIEW, CHAT_PAGE):
-        stats = source[source.index("[data-member-stats-visible] {"):]
-        stats = stats[:stats.index("}")]
-        assert "white-space: nowrap;" in stats
-        assert "overflow: hidden;" in stats
-        assert re.search(
-            r"@media \(max-width: 1199px\) \{.*?\[data-members-open\] "
-            r"\[data-dashboard-chat-members\] \{[^}]*position: absolute;",
-            source, re.S)
-        row = source[source.index(
-            'html:not([data-world-embed="1"]) [data-dashboard-chat-member] {'):]
-        row = row[:row.index("}")]
-        assert "min-height: 40px;" in row
-        assert "height: 40px;" not in row.replace("min-height: 40px;", "")
+def test_member_rows_stay_at_most_two_lines():
+    figures = CHAT_CSS[CHAT_CSS.index(".chat-person-stats-figures {"):]
+    figures = figures[:figures.index("}")]
+    assert "height: 14px;" in figures
+    assert "overflow: hidden;" in figures
+    assert "flex-wrap: wrap;" in figures
+    stat = CHAT_CSS[CHAT_CSS.index(".chat-person-stat {"):]
+    stat = stat[:stat.index("}")]
+    assert "white-space: nowrap;" in stat
+    assert ".chat-person-stats[hidden] { display: none; }" in CHAT_CSS
 
 
 
