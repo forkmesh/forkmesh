@@ -355,7 +355,11 @@ bool PackageRegistry::setPackageSetting(const QString &id, const QString &key,
             *error = QStringLiteral("Invalid package setting for %1.").arg(id);
         return false;
     }
-    m_settings->setValue(packageDataPrefix(id) + QLatin1Char('/') + key, value);
+    const QString settingKey = packageDataPrefix(id) + QLatin1Char('/') + key;
+    if (m_settings->contains(settingKey) &&
+        m_settings->value(settingKey) == value)
+        return true;
+    m_settings->setValue(settingKey, value);
     m_settings->sync();
     if (m_settings->status() == QSettings::NoError)
         return true;

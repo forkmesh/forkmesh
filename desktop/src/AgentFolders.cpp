@@ -1,5 +1,7 @@
 #include "AgentFolders.h"
 
+#include "SettingsWrite.h"
+
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSet>
@@ -90,10 +92,11 @@ void AgentFolders::save() const
     const QJsonObject json = toJson();
     QSettings settings;
     if (json.isEmpty())
-        settings.remove(kAgentFoldersSetting);
+        forkmesh::settings::drop(settings, kAgentFoldersSetting);
     else
-        settings.setValue(kAgentFoldersSetting,
-                          QJsonDocument(json).toJson(QJsonDocument::Compact));
+        forkmesh::settings::put(
+            settings, kAgentFoldersSetting,
+            QJsonDocument(json).toJson(QJsonDocument::Compact));
 }
 
 int AgentFolders::indexOf(const QString &repo, const QString &id) const

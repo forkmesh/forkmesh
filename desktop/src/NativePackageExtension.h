@@ -103,6 +103,7 @@ struct NativePackageHost {
     std::function<void(const QString &, QWidget *, NativePackageLoginHandler)>
         findLogins;
     std::function<void(const QString &)> openWebPage;
+    std::function<QString(const QString &)> publicPageUrl;
 };
 
 struct NativePackagePromptTarget {
@@ -245,5 +246,6 @@ bool nativePackageRequestPathAllowed(const QString &packageId,
                                      const QString &apiPrefix,
                                      const QString &path);
 QUrl nativePackageWebPageUrl(const QUrl &base, const QString &path);
+QUrl nativePackagePublicPageUrl(const QUrl &base, const QString &path);
 
 } // namespace forkmesh::market

@@ -107,12 +107,43 @@ void checkEventFilterResidueIsNotOrigin()
           "the origin skips filter residue to the frames that did the work");
 }
 
+void checkSystemWaitsAreNamed()
+{
+    const QString exe = QStringLiteral("/tmp/forkmesh-test");
+    const QString swap = QStringLiteral(
+        "/lib/x86_64-linux-gnu/libc.so.6(poll+0x16) [0x0]\n"
+        "/lib/x86_64-linux-gnu/libwayland-client.so.0(wl_display_dispatch_queue+0xfc) [0x1]\n"
+        "/lib/x86_64-linux-gnu/libQt6Gui.so.6(_ZN14QOpenGLContext11swapBuffersEP8QSurface+0x79) [0x2]\n"
+        "/tmp/forkmesh-test(_ZN10MainWindow11eventFilterEP7QObjectP6QEvent+0x36e) [0x3]\n"
+        "/tmp/forkmesh-test(_ZN17GenieSpiderWidget4tickEv+0x4c) [0x4]\n");
+    const QString swapOrigin = stallwatch::likelyOrigin(swap, exe);
+    check(swapOrigin.startsWith(QStringLiteral("Qt window flush")) &&
+              swapOrigin.contains(QStringLiteral("GenieSpiderWidget::tick")),
+          "a compositor buffer swap is named before the app frames under it");
+    const QString settings = QStringLiteral(
+        "/lib/x86_64-linux-gnu/libc.so.6(fdatasync+0x1a) [0x0]\n"
+        "/lib/x86_64-linux-gnu/libQt6Core.so.6(_ZN13QFSFileEngine10syncToDiskEv+0x84) [0x1]\n"
+        "/lib/x86_64-linux-gnu/libQt6Core.so.6(_ZN9QSaveFile6commitEv+0xd5) [0x2]\n"
+        "/tmp/forkmesh-test(_ZN10MainWindow26handleFramelessResizeEventEP7QObjectP6QEvent+0x29) [0x3]\n"
+        "/lib/x86_64-linux-gnu/libQt6Core.so.6(_ZN9QSettings5eventEP6QEvent+0x2e) [0x4]\n");
+    check(stallwatch::likelyOrigin(settings, exe)
+              .startsWith(QStringLiteral("QSettings write flushed to disk")),
+          "a QSettings fsync is named even past filter residue");
+    const QString plain = QStringLiteral(
+        "/lib/x86_64-linux-gnu/libQt6Gui.so.6(+0x3bc944) [0x0]\n"
+        "/tmp/forkmesh-test(_ZN10MainWindow20applyBranchDiffChunkEiRK7QStringii+0x4c) [0x1]\n");
+    check(stallwatch::likelyOrigin(plain, exe)
+              .startsWith(QStringLiteral("MainWindow::applyBranchDiffChunk")),
+          "an ordinary sample keeps its application frame as the origin");
+}
+
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     checkStackScan();
     checkInstrumentationFramesAreNotOrigins();
     checkEventFilterResidueIsNotOrigin();
+    checkSystemWaitsAreNamed();
     QTemporaryDir scratch;
     check(scratch.isValid(), "temporary directory");
     const QString logPath = QDir(scratch.path()).filePath(QStringLiteral("stalls.log"));

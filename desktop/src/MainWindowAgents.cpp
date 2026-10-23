@@ -1398,6 +1398,7 @@ QWidget *MainWindow::buildAgentsTab()
     auto *agentOutputLayout = new QVBoxLayout(agentOutputPage);
     agentOutputLayout->setContentsMargins(0, 8, 0, 0);
     agentOutputLayout->setSpacing(6);
+    agentOutputLayout->addWidget(buildAgentSubSessionStrip());
     agentOutputLayout->addWidget(m_agentCodeSplit, 1);
 
     filesChangedPage->setParent(detailPane);
@@ -1473,7 +1474,8 @@ QWidget *MainWindow::buildAgentsTab()
     m_agentPageStack = new QStackedWidget;
     m_agentPageStack->setObjectName(QStringLiteral("agentPageStack"));
     m_agentPageStack->addWidget(splitter);
-    m_agentPageStack->addWidget(buildAgentEfficiencyPage());
+    m_agentEfficiencyPlaceholder = new QWidget;
+    m_agentPageStack->addWidget(m_agentEfficiencyPlaceholder);
     m_agentPageStack->addWidget(buildAgentGuardrailPage());
     m_agentPageStack->addWidget(buildAgentModelsPage());
 
@@ -3167,6 +3169,7 @@ void MainWindow::answerAgentQuestion(int sessionId, const QString &toolUseId,
                     /*error=*/true);
             }
         }
+        syncClaudePermissionMode(sessionId);
         markAgentSessionRunning(sessionId);
         scheduleAgentSessionsPush();
         return;

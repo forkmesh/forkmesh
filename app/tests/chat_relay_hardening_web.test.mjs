@@ -24,6 +24,7 @@ import {
   botViaName,
   isBotViaName,
   chatProfileFor,
+  createGuestRelabeler,
   createNodeOwners,
   forgetLegacySelfId,
   guestLabel,
@@ -31,6 +32,7 @@ import {
   isPrivateRelayFrame,
   mayChangeMessage,
   serverPlain,
+  unconfirmedClaim,
 } from "../public/chat-frame-auth.js";
 import { createChatRoomTransport } from "../public/chat-room-transport.js";
 
@@ -466,4 +468,85 @@ test("a guest gets the same name the phones and the desktop give it", async () =
   assert.equal(guestLabel("vMHdwpa4f6TzmYXkeTWtKxKuUQXNefMzP6Q7-i9Vp1c"), "Guest 5502");
   assert.equal(guestLabel("node-alice-phone"), "Guest 2483");
   assert.equal(guestLabel(""), "Guest");
+});
+
+test("a line shown as a guest takes the account name once the server confirms the device", async () => {
+  const node = bytesToB64Url(new Uint8Array(32).fill(9));
+  let clock = NOW;
+  let answer = { account: "" };
+  const calls = [];
+  const storage = memoryStorage();
+  const owners = createNodeOwners({
+    storage,
+    now: () => clock,
+    fetchImpl: async (url) => {
+      calls.push(url);
+      return { ok: true, json: async () => answer };
+    },
+  });
+  const sealed = (id, acct = "jett", extra = {}) => authenticatedPlain({
+    plain: { type: "chat", id, sender: acct, accountKind: "user", text: "we launched", ...extra }, node, acct, kid: "k".repeat(16),
+  });
+  const timers = [];
+  const renamed = [];
+  const lines = createGuestRelabeler({
+    owners,
+    onConfirmed: (who, account, ids) => renamed.push([who, account, ids]),
+    setTimer: (callback, ms) => { timers.push({ callback, ms }); return timers.length; },
+    clearTimer: () => {},
+  });
+  await owners.prefetch([sealed("m1")]);
+  const shown = attributeFrame(sealed("m1"), { owners });
+  assert.equal(shown.sender, guestLabel(node));
+  assert.equal(unconfirmedClaim(shown), "jett");
+  assert.equal(unconfirmedClaim(attributeFrame(sealed("m0", node), { owners })), "");
+  lines.note(shown);
+  lines.note(attributeFrame(sealed("m2", "mallory"), { owners }));
+  assert.deepEqual(JSON.parse(storage.getItem("forkmesh.chat.nodeOwners.v1") || "{}"), {});
+  assert.equal(timers.length, 1);
+  assert.ok(timers[0].ms > 60 * 1000);
+  await owners.prefetch([sealed("m3")]);
+  assert.equal(calls.length, 1);
+  clock += 61 * 1000;
+  answer = { account: "jett" };
+  timers.shift().callback();
+  await settle(10);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(renamed, [[node, "jett", ["m1"]]]);
+  assert.equal(attributeFrame(sealed("m4"), { owners }).sender, "jett");
+  assert.deepEqual(lines.pending(), [[node, ["m2"]]]);
+  lines.note(attributeFrame(sealed("m5", "mallory"), { owners }));
+  assert.equal(timers.length, 1);
+  lines.stop();
+  assert.deepEqual(lines.pending(), []);
+});
+
+test("a late answer renames every guest line of a replayed history", async () => {
+  const node = bytesToB64Url(new Uint8Array(32).fill(11));
+  const owners = createNodeOwners({
+    storage: memoryStorage(),
+    fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }),
+  });
+  const renamed = [];
+  const lines = createGuestRelabeler({
+    owners,
+    onConfirmed: (who, account, ids) => renamed.push(ids),
+    setTimer: () => 1,
+    clearTimer: () => {},
+  });
+  const history = authenticatedPlain({
+    plain: {
+      type: "history", id: "h", sender: "jett", senderId: node,
+      entries: [
+        { type: "chat", id: "a", senderId: node, text: "one" },
+        { type: "chat", id: "b", senderId: node, text: "two" },
+        { type: "reaction", id: "c", senderId: node, target: "a" },
+      ],
+    },
+    node, acct: "jett", kid: "k".repeat(16),
+  });
+  await owners.prefetch([history]);
+  lines.note(attributeFrame(history, { owners }));
+  owners.remember(node, "jett");
+  assert.deepEqual(renamed, [["a", "b"]]);
 });

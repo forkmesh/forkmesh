@@ -223,16 +223,7 @@ reader_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMG2ajXAEwFNW/LoahHVcCr
 access_log = true
 
 [hosted]
-retired_cores = ["n1"]
-
-[[nodes]]
-name = "n2"
-role = "core"
-label = "fmnext-core-2"
-instance_id = "9485844e-e8a2-4760-bfd9-497ed4a7b7f6"
-wg_ip = "10.77.0.2"
-wg_pubkey = "ju2Pcr0WX/MOpn7qdHmy1Af91HaBakjxx92ovt8GmWI="
-rqlite_id = "n2"
+retired_cores = ["n1", "n2"]
 
 [[nodes]]
 name = "n3"
@@ -251,6 +242,15 @@ instance_id = "d493c0e6-aaff-4259-a996-5eee9fbb887c"
 wg_ip = "10.77.0.4"
 wg_pubkey = "5+V9EYpw2A7JjF/5tQeX2o2cDHiiBgCHyu00dlXw73U="
 rqlite_id = "n4"
+
+[[nodes]]
+name = "n5"
+role = "core"
+label = "fmnext-core-5"
+instance_id = "1963e65c-46bf-4f1a-bf87-b19f92d50c6c"
+wg_ip = "10.77.0.5"
+wg_pubkey = "nUtPbbiGai9xczJDKg1u9h13tUjlLFye/koaLwShWWY="
+rqlite_id = "n5"
 
 [[runners]]
 name = "r1"

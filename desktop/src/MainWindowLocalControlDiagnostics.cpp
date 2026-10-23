@@ -670,7 +670,29 @@ void MainWindow::runLocalControlDiagnosticsAction(int connectionId, int requestI
                            "the main thread, or skip it when nothing changed).\n\n%1\nRecorded "
                            "stall:\n\n%2")
                 .arg(stallLogLocationsBlock(), m_stallLog.at(index).left(kMaxStallChars / 4));
-        if (startAdHocAgentForRepo(repoIndex, prompt, forkmesh::ui::defaultAgentProvider(), false) <= 0) {
+        if (const int openSessionId = openStallRepairSessionId(repoIndex);
+            openSessionId > 0) {
+            sendPromptToAgentSession(openSessionId, prompt);
+            logSystem(QStringLiteral("Added a UI stall report from %1 to agent "
+                                     "session #%2.")
+                          .arg(who)
+                          .arg(openSessionId));
+            server->respond(connectionId, requestId,
+                            {{QStringLiteral("started"), true},
+                             {QStringLiteral("action"), action},
+                             {QStringLiteral("subject"), subject},
+                             {QStringLiteral("sessionId"), openSessionId},
+                             {QStringLiteral("message"),
+                              QStringLiteral("Added to the agent already "
+                                             "working on UI stalls.")}});
+            server->broadcast(QStringLiteral("agents.changed"));
+            return;
+        }
+        const int sessionId = startAdHocAgentForRepo(
+            repoIndex, prompt, forkmesh::ui::defaultAgentProvider(), false);
+        if (sessionId > 0)
+            rememberStallRepairSession(sessionId);
+        if (sessionId <= 0) {
             server->respondError(connectionId, requestId, QStringLiteral("agent_not_started"));
             return;
         }

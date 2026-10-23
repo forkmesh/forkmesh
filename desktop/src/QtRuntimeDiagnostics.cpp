@@ -27,6 +27,8 @@ constexpr qint64 kStructureRefreshNs = 5'000'000'000LL;
 constexpr qint64 kObjectWalkRefreshNs = 60'000'000'000LL;
 qint64 g_lastObjectWalkNs = -1;
 constexpr qint64 kMinimumRateWindowNs = 250'000'000LL;
+constexpr qint64 kWalkSliceNs = 4'000'000LL;
+constexpr int kWalkClockStride = 128;
 
 const char *receiverClassName(QObject *receiver)
 {
@@ -78,6 +80,12 @@ QtRuntimeDiagnostics::QtRuntimeDiagnostics(QObject *parent) : QObject(parent)
     QObject::connect(m_sampleTimer, &QTimer::timeout, this,
                      [this] { sampleNow(); });
     m_sampleTimer->start();
+
+    m_walkTimer = new QTimer(this);
+    m_walkTimer->setSingleShot(true);
+    m_walkTimer->setInterval(0);
+    QObject::connect(m_walkTimer, &QTimer::timeout, this,
+                     [this] { continueStructureWalkSlice(); });
     sampleNow();
 }
 
@@ -107,6 +115,7 @@ void QtRuntimeDiagnostics::setDetailedEnabled(bool enabled)
             qApp->removeEventFilter(this);
         m_filterInstalled = false;
         disconnectDispatcher();
+        cancelStructureWalk();
     }
     m_snapshot.detailed = enabled;
     if (onSnapshot)
@@ -141,34 +150,110 @@ void QtRuntimeDiagnostics::noteDelivery(const char *receiverClass,
                                         qint64 elapsedUs,
                                         const QString &paintReceiver)
 {
-    if (!paintReceiver.isEmpty()) {
-        auto tally = m_paintReceivers.find(paintReceiver);
-        if (tally == m_paintReceivers.end()) {
-            const QString key = m_paintReceivers.size() < kMaxPaintReceivers
-                                    ? paintReceiver
-                                    : QStringLiteral("(other receivers)");
-            tally = m_paintReceivers.find(key);
-            if (tally == m_paintReceivers.end())
-                tally = m_paintReceivers.insert(key, PaintReceiver{key});
-        }
-        ++tally->count;
-        tally->totalUs += qMax<qint64>(0, elapsedUs);
-    }
+    if (!paintReceiver.isEmpty())
+        tallyPaint(paintSlotForName(paintReceiver), elapsedUs);
+    noteEventTiming(receiverClass, receiverClassLength, eventType, elapsedUs);
+}
+
+void QtRuntimeDiagnostics::noteProbeDelivery(const char *receiverClass,
+                                             int receiverClassLength,
+                                             QEvent::Type eventType,
+                                             qint64 elapsedUs, int paintSlot,
+                                             quint32 paintGeneration)
+{
+    if (paintSlot >= 0 && paintGeneration == m_paintGeneration)
+        tallyPaint(paintSlot, elapsedUs);
+    noteEventTiming(receiverClass, receiverClassLength, eventType, elapsedUs);
+}
+
+void QtRuntimeDiagnostics::noteEventTiming(const char *receiverClass,
+                                           int receiverClassLength,
+                                           QEvent::Type eventType,
+                                           qint64 elapsedUs)
+{
     const EventGroup group = groupForEvent(eventType);
     EventStats &interval = m_intervalEvents[group];
     EventStats &session = m_sessionEvents[group];
     interval.totalUs += qMax<qint64>(0, elapsedUs);
     session.totalUs += qMax<qint64>(0, elapsedUs);
+    const auto remember = [&](SlowestReceiver &slowest) {
+        slowest.length = qBound(0, receiverClassLength,
+                                int(slowest.name.size()));
+        std::copy_n(receiverClass, slowest.length, slowest.name.begin());
+        slowest.dirty = true;
+    };
     if (elapsedUs > interval.maxUs) {
         interval.maxUs = elapsedUs;
-        interval.slowestReceiverClass = QString::fromLatin1(
-            receiverClass, receiverClassLength);
+        remember(m_intervalSlowest[group]);
     }
     if (elapsedUs > session.maxUs) {
         session.maxUs = elapsedUs;
-        session.slowestReceiverClass = QString::fromLatin1(
-            receiverClass, receiverClassLength);
+        remember(m_sessionSlowest[group]);
     }
+}
+
+void QtRuntimeDiagnostics::publishSlowestReceivers()
+{
+    for (int i = 0; i < EventGroupCount; ++i) {
+        SlowestReceiver &interval = m_intervalSlowest[i];
+        if (interval.dirty) {
+            m_intervalEvents[i].slowestReceiverClass =
+                QString::fromLatin1(interval.name.data(), interval.length);
+            interval.dirty = false;
+        }
+        SlowestReceiver &session = m_sessionSlowest[i];
+        if (session.dirty) {
+            m_sessionEvents[i].slowestReceiverClass =
+                QString::fromLatin1(session.name.data(), session.length);
+            session.dirty = false;
+        }
+    }
+}
+
+int QtRuntimeDiagnostics::paintSlotFor(QObject *receiver)
+{
+    PaintKey key;
+    key.meta = receiver ? receiver->metaObject() : nullptr;
+    int depth = 0;
+    for (QObject *at = receiver; at && depth < 8; at = at->parent(), ++depth) {
+        QString objectName = at->objectName();
+        if (objectName.isEmpty())
+            continue;
+        key.objectName = std::move(objectName);
+        key.self = at == receiver;
+        break;
+    }
+    const auto found = m_paintSlots.constFind(key);
+    if (found != m_paintSlots.constEnd())
+        return found.value();
+    if (m_paintSlots.size() >= kMaxPaintReceivers)
+        return paintSlotForName(QStringLiteral("(other receivers)"));
+    const int slot = paintSlotForName(paintReceiverName(receiver));
+    m_paintSlots.insert(key, slot);
+    return slot;
+}
+
+int QtRuntimeDiagnostics::paintSlotForName(const QString &name)
+{
+    const auto found = m_paintNamedSlots.constFind(name);
+    if (found != m_paintNamedSlots.constEnd())
+        return found.value();
+    if (m_paintNamedSlots.size() >= kMaxPaintReceivers &&
+        name != QLatin1String("(other receivers)"))
+        return paintSlotForName(QStringLiteral("(other receivers)"));
+    const int slot = int(m_paintTallies.size());
+    m_paintTallies.append(PaintReceiver{name});
+    m_paintNamedSlots.insert(name, slot);
+    return slot;
+}
+
+void QtRuntimeDiagnostics::tallyPaint(int slot, qint64 elapsedUs)
+{
+    if (slot < 0 || slot >= m_paintTallies.size())
+        return;
+    PaintReceiver &tally = m_paintTallies[slot];
+    ++tally.count;
+    tally.totalUs += qMax<qint64>(0, elapsedUs);
 }
 
 QtRuntimeDiagnostics::EventGroup
@@ -270,6 +355,7 @@ void QtRuntimeDiagnostics::sampleNow()
     // one-second timer. Dividing their few events by that tiny window produced
     // artificial five-digit event and paint rates in copied reports. Publish
     // session counters, but retain the interval until it spans real time.
+    publishSlowestReceivers();
     if (elapsedNs < kMinimumRateWindowNs) {
         m_snapshot.sessionEvents = m_sessionEvents;
         m_snapshot.topPaintReceivers = topPaintReceivers();
@@ -309,12 +395,22 @@ void QtRuntimeDiagnostics::sampleNow()
     if (m_detailed &&
         (m_lastStructureRefreshNs <= 0 ||
          nowNs - m_lastStructureRefreshNs >= kStructureRefreshNs)) {
-        refreshStructure();
+        refreshCheapStructure();
+        if (!m_walk.active) {
+            const bool countObjects =
+                g_lastObjectWalkNs < 0 || nowNs < g_lastObjectWalkNs ||
+                nowNs - g_lastObjectWalkNs >= kObjectWalkRefreshNs;
+            if (countObjects)
+                g_lastObjectWalkNs = nowNs;
+            beginStructureWalk(countObjects);
+            m_walkTimer->start();
+        }
         m_lastStructureRefreshNs = nowNs;
     }
 
     appendSnapshot(m_snapshot);
     m_intervalEvents = {};
+    m_intervalSlowest = {};
     m_intervalBusyNs = 0;
     m_intervalWakeups = 0;
     if (onSnapshot)
@@ -324,17 +420,21 @@ void QtRuntimeDiagnostics::sampleNow()
 QVector<QtRuntimeDiagnostics::PaintReceiver>
 QtRuntimeDiagnostics::topPaintReceivers() const
 {
-    QVector<PaintReceiver> top;
-    top.reserve(m_paintReceivers.size());
-    for (const PaintReceiver &tally : m_paintReceivers)
-        top.append(tally);
-    const int keep = qMin(kTopPaintReceivers, int(top.size()));
-    std::partial_sort(top.begin(), top.begin() + keep, top.end(),
-                      [](const PaintReceiver &a, const PaintReceiver &b) {
+    QVector<int> order(m_paintTallies.size());
+    for (int i = 0; i < order.size(); ++i)
+        order[i] = i;
+    const int keep = qMin(kTopPaintReceivers, int(order.size()));
+    std::partial_sort(order.begin(), order.begin() + keep, order.end(),
+                      [this](int left, int right) {
+                          const PaintReceiver &a = m_paintTallies.at(left);
+                          const PaintReceiver &b = m_paintTallies.at(right);
                           return a.count != b.count ? a.count > b.count
                                                     : a.name < b.name;
                       });
-    top.resize(keep);
+    QVector<PaintReceiver> top;
+    top.reserve(keep);
+    for (int i = 0; i < keep; ++i)
+        top.append(m_paintTallies.at(order.at(i)));
     return top;
 }
 
@@ -365,49 +465,157 @@ void QtRuntimeDiagnostics::refreshStructure()
 {
     if (!qApp)
         return;
-    const auto widgets = QApplication::allWidgets();
-    m_snapshot.widgetCount = widgets.size();
-    m_snapshot.visibleWidgetCount = 0;
-    for (QWidget *widget : widgets)
-        if (widget && widget->isVisible())
-            ++m_snapshot.visibleWidgetCount;
+    cancelStructureWalk();
+    refreshCheapStructure();
+    const qint64 nowNs = m_clock.nsecsElapsed();
+    const bool countObjects = g_lastObjectWalkNs < 0 ||
+                              nowNs < g_lastObjectWalkNs ||
+                              nowNs - g_lastObjectWalkNs >= kObjectWalkRefreshNs;
+    if (countObjects)
+        g_lastObjectWalkNs = nowNs;
+    beginStructureWalk(countObjects);
+    advanceStructureWalk(-1);
+    finishStructureWalk();
+}
 
+void QtRuntimeDiagnostics::refreshCheapStructure()
+{
     const auto windows = QGuiApplication::allWindows();
     m_snapshot.windowCount = windows.size();
     m_snapshot.visibleWindowCount = 0;
     for (QWindow *window : windows)
         if (window && window->isVisible())
             ++m_snapshot.visibleWindowCount;
-
-    const qint64 nowNs = m_clock.nsecsElapsed();
-    if (g_lastObjectWalkNs < 0 || nowNs < g_lastObjectWalkNs
-        || nowNs - g_lastObjectWalkNs >= kObjectWalkRefreshNs) {
-        g_lastObjectWalkNs = nowNs;
-        int objectCount = 0;
-        int timerCount = 0;
-        int activeTimerCount = 0;
-        const auto countTree = [&](QObject *root, bool includeRoot) {
-            if (includeRoot)
-                ++objectCount;
-            objectCount += int(root->findChildren<QObject *>().size());
-            const auto timers = root->findChildren<QTimer *>();
-            timerCount += int(timers.size());
-            for (QTimer *timer : timers)
-                if (timer->isActive())
-                    ++activeTimerCount;
-        };
-        countTree(qApp, false);
-        for (QWidget *topLevel : QApplication::topLevelWidgets())
-            if (topLevel && !topLevel->parent())
-                countTree(topLevel, true);
-        m_snapshot.objectCount = objectCount;
-        m_snapshot.timerCount = timerCount;
-        m_snapshot.activeTimerCount = activeTimerCount;
-    }
     if (QThreadPool *pool = QThreadPool::globalInstance()) {
         m_snapshot.threadPoolActive = pool->activeThreadCount();
         m_snapshot.threadPoolMax = pool->maxThreadCount();
     }
+}
+
+void QtRuntimeDiagnostics::beginStructureWalk(bool countObjects)
+{
+    m_walk = StructureWalk{};
+    if (!qApp)
+        return;
+    m_walk.active = true;
+    m_walk.countObjects = countObjects;
+    if (countObjects) {
+        m_walk.roots.append(QPointer<QObject>(qApp));
+        m_walk.rootIncluded.append(false);
+    }
+    for (QWidget *topLevel : QApplication::topLevelWidgets()) {
+        if (!topLevel || topLevel->parent())
+            continue;
+        m_walk.roots.append(QPointer<QObject>(topLevel));
+        m_walk.rootIncluded.append(true);
+    }
+}
+
+bool QtRuntimeDiagnostics::advanceStructureWalk(qint64 deadlineNs)
+{
+    StructureWalk &walk = m_walk;
+    if (!walk.active)
+        return true;
+    if (!walk.savedFrames.isEmpty()) {
+        walk.frames.clear();
+        for (const QPointer<QObject> &saved : std::as_const(walk.savedFrames)) {
+            if (!saved)
+                break;
+            walk.frames.append(WalkFrame{saved.data(), 0});
+        }
+        for (int i = 0; i < walk.frames.size(); ++i)
+            walk.frames[i].next = walk.savedNext.value(i);
+        walk.savedFrames.clear();
+        walk.savedNext.clear();
+    }
+    const auto visit = [&walk](QObject *object) {
+        if (walk.countObjects) {
+            ++walk.objects;
+            if (auto *timer = qobject_cast<QTimer *>(object)) {
+                ++walk.timers;
+                if (timer->isActive())
+                    ++walk.activeTimers;
+            }
+        }
+        if (object->isWidgetType()) {
+            ++walk.widgets;
+            if (static_cast<QWidget *>(object)->isVisible())
+                ++walk.visibleWidgets;
+        }
+    };
+    int stride = 0;
+    for (;;) {
+        if (deadlineNs >= 0 && ++stride >= kWalkClockStride) {
+            stride = 0;
+            if (m_clock.nsecsElapsed() >= deadlineNs) {
+                for (const WalkFrame &frame : std::as_const(walk.frames)) {
+                    walk.savedFrames.append(QPointer<QObject>(frame.object));
+                    walk.savedNext.append(frame.next);
+                }
+                walk.frames.clear();
+                return false;
+            }
+        }
+        if (walk.frames.isEmpty()) {
+            if (walk.nextRoot >= walk.roots.size())
+                return true;
+            const int index = walk.nextRoot++;
+            QObject *root = walk.roots.at(index).data();
+            if (!root)
+                continue;
+            if (walk.rootIncluded.at(index))
+                visit(root);
+            walk.frames.append(WalkFrame{root, 0});
+            continue;
+        }
+        WalkFrame &top = walk.frames.last();
+        const QObjectList &children = top.object->children();
+        if (top.next >= children.size()) {
+            walk.frames.removeLast();
+            continue;
+        }
+        QObject *child = children.at(top.next++);
+        if (!child || (!walk.countObjects && !child->isWidgetType()))
+            continue;
+        visit(child);
+        if (!child->children().isEmpty())
+            walk.frames.append(WalkFrame{child, 0});
+    }
+}
+
+void QtRuntimeDiagnostics::finishStructureWalk()
+{
+    if (!m_walk.active)
+        return;
+    m_snapshot.widgetCount = m_walk.widgets;
+    m_snapshot.visibleWidgetCount = m_walk.visibleWidgets;
+    if (m_walk.countObjects) {
+        m_snapshot.objectCount = m_walk.objects;
+        m_snapshot.timerCount = m_walk.timers;
+        m_snapshot.activeTimerCount = m_walk.activeTimers;
+    }
+    m_walk = StructureWalk{};
+}
+
+void QtRuntimeDiagnostics::cancelStructureWalk()
+{
+    if (m_walkTimer)
+        m_walkTimer->stop();
+    m_walk = StructureWalk{};
+}
+
+void QtRuntimeDiagnostics::continueStructureWalkSlice()
+{
+    if (!m_walk.active)
+        return;
+    if (!m_detailed) {
+        cancelStructureWalk();
+        return;
+    }
+    if (advanceStructureWalk(m_clock.nsecsElapsed() + kWalkSliceNs))
+        finishStructureWalk();
+    else
+        m_walkTimer->start();
 }
 
 void QtRuntimeDiagnostics::connectDispatcher()
@@ -449,7 +657,12 @@ void QtRuntimeDiagnostics::resetSession()
     m_historyNext = 0;
     m_intervalEvents = {};
     m_sessionEvents = {};
-    m_paintReceivers.clear();
+    m_intervalSlowest = {};
+    m_sessionSlowest = {};
+    m_paintTallies.clear();
+    m_paintSlots.clear();
+    m_paintNamedSlots.clear();
+    ++m_paintGeneration;
     m_intervalBusyNs = 0;
     m_intervalWakeups = 0;
     m_snapshot = {};
@@ -608,18 +821,22 @@ QtEventDeliveryProbe::QtEventDeliveryProbe(QObject *receiver, QEvent *event)
             int(std::strlen(className)), int(m_receiverClass.size()) - 1);
         std::copy_n(className, m_receiverClassLength, m_receiverClass.begin());
         m_eventType = event->type();
-        if (m_eventType == QEvent::Paint)
-            m_paintReceiver = paintReceiverName(receiver);
+        if (m_eventType == QEvent::Paint) {
+            m_paintSlot = QtRuntimeDiagnostics::s_instance->paintSlotFor(receiver);
+            m_paintGeneration =
+                QtRuntimeDiagnostics::s_instance->m_paintGeneration;
+        }
         m_elapsed.start();
     }
 }
 
 QtEventDeliveryProbe::~QtEventDeliveryProbe()
 {
-    if (m_active)
-        QtRuntimeDiagnostics::recordEventDelivery(
+    QtRuntimeDiagnostics *diagnostics = QtRuntimeDiagnostics::s_instance;
+    if (m_active && diagnostics && diagnostics->m_detailed)
+        diagnostics->noteProbeDelivery(
             m_receiverClass.data(), m_receiverClassLength, m_eventType,
-            m_elapsed.nsecsElapsed() / 1000, m_paintReceiver);
+            m_elapsed.nsecsElapsed() / 1000, m_paintSlot, m_paintGeneration);
 }
 
 } // namespace forkmesh::ui

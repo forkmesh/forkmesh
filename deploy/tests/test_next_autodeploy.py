@@ -1451,3 +1451,36 @@ def test_version_probe_brackets_an_ipv6_route(monkeypatch):
     seen.clear()
     auto.curl("app.forkmesh.com", "198.51.100.10", "/api/version", run=run)
     assert "app.forkmesh.com:443:198.51.100.10" in seen[0]
+
+
+def test_fleet_branches_main_does_not_reflect_are_pending(repo):
+    main = git(repo, "rev-parse", "main")
+    git(repo, "branch", "fleet/remove-core-n2")
+    git(repo, "branch", "fleet/add-core-n3")
+    git(repo, "branch", "fleet/add-core-n1")
+    git(repo, "branch", "fleet/remove-core-n7")
+    git(repo, "branch", "fleet/other")
+    assert auto.unmerged_fleet_branches(auto.Git(repo), main) == [
+        "fleet/add-core-n3", "fleet/remove-core-n2"]
+    retired = FLEET_TOML.replace('[[nodes]]\nname = "n2"\nrole = "core"\n'
+                                 'public_ipv4 = "203.0.113.12"\n\n', "")
+    later = commit(repo, {"deploy/fleet.toml": retired + '\n[hosted]\nretired_cores = ["n3"]\n'},
+                   "fleet change landed by another commit")
+    assert auto.unmerged_fleet_branches(auto.Git(repo), later) == []
+
+
+def test_gate_one_names_the_fleet_branch_main_is_missing(repo, monkeypatch):
+    git(repo, "branch", "fleet/remove-core-n2")
+    pipeline = auto.Pipeline(repo, auto.Log(echo=False))
+
+    def silent(hosts, **kwargs):
+        raise GuardError("n2 did not answer /api/version (HTTP 0); the fleet must be "
+                         "healthy before a deploy")
+    monkeypatch.setattr(auto, "live_revs", silent)
+    target = git(repo, "rev-parse", "main")
+    with pytest.raises(GuardError, match=r"n2 did not answer .*fleet/remove-core-n2 not "
+                                         r"merged into main"):
+        pipeline._execute(target, target[:12], None, {})
+    git(repo, "branch", "-m", "fleet/remove-core-n2", "fleet/remove-core-n9")
+    with pytest.raises(GuardError, match=r"healthy before a deploy$"):
+        pipeline._execute(target, target[:12], None, {})

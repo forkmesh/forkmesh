@@ -186,28 +186,38 @@
           <time class="when" datetime="2026-10-23">October 23, 2026</time>
         </div>
         <div class="release-body">
+          <h3>Market</h3>
+          <ul>
+            <li>Feed posts have a Copy link button and a link to the post's public page on the website, which anyone can open without signing in.</li>
+          </ul>
           <h3>Projects</h3>
           <ul>
             <li>Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.</li>
             <li>Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.</li>
             <li>The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.</li>
+            <li>Instances can pin the repositories shown in Top repositories and choose how many forks each row shows.</li>
           </ul>
           <h3>Chat</h3>
           <ul>
             <li>Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name.</li>
+            <li>A message from someone signed in on a new phone or browser no longer stays labelled Guest: it switches to their account name as soon as the server confirms the device.</li>
           </ul>
           <h3>Agents</h3>
           <ul>
             <li>The composer hides its character count until a prompt nears the limit, then shows it in orange and red.</li>
+            <li>Claude Code agents on the desktop now take their name from their Claude Code session and follow its renames, ask for tool permissions, plan approval and MCP input in the transcript or a small window instead of refusing the call, list their running sub-sessions with a Stop button, and can be renamed from the agent list.</li>
+            <li>On the phone, the green and red ring around an agent's picture in the agent list turns while the agent is working and stops when it is done.</li>
           </ul>
           <h3>World</h3>
           <ul>
             <li>Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve.</li>
             <li>Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside.</li>
+            <li>You can drag the chat box anywhere in the World by the grip at its left edge (double-click it to put it back), and the last two messages now fit in it without being cut off.</li>
           </ul>
           <h3>iPhone</h3>
           <ul>
             <li>With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock.</li>
+            <li>With Diagnostics on, your desktop and node lights now sit just above the clock with a little more room, and the diagnostic charts sit above the battery, each filled in under its line.</li>
           </ul>
           <h3>Android</h3>
           <ul>
@@ -231,7 +241,14 @@
           <ul>
             <li>On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.</li>
             <li>Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with "Point size &lt;= 0" font warnings.</li>
+            <li>Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies.</li>
             <li>Right-click any item in the left rail or a repository tab and choose to hide it: it leaves the rail but stays on Home, where right-clicking its icon puts it back.</li>
+          </ul>
+          <h3>Other improvements</h3>
+          <ul>
+            <li>Administrators can turn on an automated AI review that posts a first-pass review comment on pull requests, using Cloudflare Workers AI.</li>
+            <li>Bots and system accounts such as Actions, runners, the git node and the AI reviewer now have their own avatars.</li>
+            <li>A mention or reply notification now opens the exact comment, and Home's repository rows show their fork count.</li>
           </ul>
         </div>
       </section>
@@ -282,6 +299,7 @@
             <li>Agents keep running after you log out or switch users: ForkMesh no longer shuts itself down when your desktop session's message bus restarts.</li>
             <li>Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once.</li>
             <li>An Import button above the Agents list brings in your Claude Code and Claude Desktop sessions, named as they are in Claude, with their whole conversation, and you can carry on any of them from ForkMesh.</li>
+            <li>A new Sessions page, just above Agents in the left rail, lists every agent session with its live transcript and lets you message a session or pass one session's reply to another.</li>
           </ul>
           <h3>World</h3>
           <ul>
@@ -324,6 +342,8 @@
             <li>On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room.</li>
             <li>The prompt composer keeps its add button, files tasks from the model menu, and has a send to: button that posts the prompt to the chat channel you have open, such as #general; with the Chat page open, Enter sends there.</li>
             <li>Pick a theme straight from the view menu at the top right, try the new Halloween theme, and drag the timers clock to the left, middle or right of the top bar.</li>
+            <li>New UI stall reports now go to the agent already working on stalls instead of starting another agent.</li>
+            <li>Fixed many of the pauses where the desktop window froze for a moment.</li>
           </ul>
           <h3>Server</h3>
           <ul>

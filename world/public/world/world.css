@@ -16174,9 +16174,63 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   box-shadow:
     0 18px 44px -22px rgb(15 23 42 / 0.45),
     0 2px 6px rgb(15 23 42 / 0.06);
-  transform: translateX(-50%);
+  transform: translate(calc(-50% + var(--world-hud-island-x, 0px)), var(--world-hud-island-y, 0px));
   transition: border-color 160ms ease, box-shadow 160ms ease;
   pointer-events: auto;
+}
+
+.fm-world .world-hud-island[data-dragging="true"] {
+  box-shadow:
+    0 24px 56px -20px rgb(15 23 42 / 0.5),
+    0 0 0 2px rgb(37 99 235 / 0.35);
+  user-select: none;
+}
+
+.fm-world .world-hud-island-grip {
+  position: relative;
+  display: grid;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 30px;
+  place-items: center;
+  margin-right: 2px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 0;
+  color: #9ca3af;
+  cursor: grab;
+  touch-action: none;
+}
+
+.fm-world .world-hud-island-grip::after {
+  position: absolute;
+  inset: -7px -4px;
+  content: "";
+}
+
+.fm-world .world-hud-island-grip:is(:hover, :focus-visible) {
+  background: #f1f3f5;
+  color: #4b5563;
+}
+
+.fm-world .world-hud-island-grip:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.fm-world .world-hud-island[data-dragging="true"] .world-hud-island-grip {
+  cursor: grabbing;
+}
+
+.fm-world .world-hud-island .world-hud-island-grip .world-ui-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.fm-world .world-hud-island[data-placement="top"] :is(.world-hud-channel-menu, .world-hud-model-menu, .world-hud-runners) {
+  top: calc(100% + 8px);
+  bottom: auto;
 }
 
 .fm-world .world-hud-island[data-composer-mode="agent"] {
@@ -16297,7 +16351,7 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   display: none;
 }
 
-.fm-world .world-hud-island-feed {
+.fm-world .world-hud-island .world-hud-island-feed {
   position: relative;
   display: block;
   min-width: 0;
@@ -16312,12 +16366,12 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   padding-top: 2px;
 }
 
-.fm-world .world-hud-island-feed #fullChatMessages {
+.fm-world .world-hud-island .world-hud-island-feed #fullChatMessages {
   box-sizing: border-box;
   display: block;
   height: auto;
   min-height: 0;
-  max-height: 46px;
+  max-height: 48px;
   overflow: hidden;
   margin: 0;
   border: 0;
@@ -16325,8 +16379,8 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   padding: 0 2px;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.55) 0, #000 8px);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.55) 0, #000 8px);
   transition: max-height 180ms ease;
   cursor: pointer;
 }
@@ -16340,33 +16394,33 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   cursor: auto;
 }
 
-.fm-world .world-hud-island-feed #fullChatMessages:empty::before {
+.fm-world .world-hud-island .world-hud-island-feed #fullChatMessages:empty::before {
   display: block;
   padding: 4px 6px;
   color: #9ca3af;
   content: "Connecting to #general…";
 }
 
-.fm-world .world-hud-island-feed #fullChatMessages [hidden] {
+.fm-world .world-hud-island .world-hud-island-feed #fullChatMessages [hidden] {
   display: none !important;
 }
 
-.fm-world .world-hud-island-feed .chat-message-row {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-row {
   position: relative;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: start;
-  gap: 7px;
+  gap: 8px;
   margin: 0;
   border-radius: 8px;
   padding: 2px 4px;
 }
 
-.fm-world .world-hud-island-feed .chat-message-avatar {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-avatar {
   display: grid;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
+  width: 20px;
+  height: 20px;
+  margin-top: 0;
   overflow: hidden;
   place-items: center;
   border: 0;
@@ -16376,13 +16430,13 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   line-height: 1;
 }
 
-.fm-world .world-hud-island-feed .chat-message-avatar img {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.fm-world .world-hud-island-feed .chat-message-bubble {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-bubble {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
@@ -16395,7 +16449,7 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   box-shadow: none;
 }
 
-.fm-world .world-hud-island-feed .chat-message-bubble > div:first-child {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-bubble > div:first-child {
   display: inline-flex;
   flex: none;
   align-items: baseline;
@@ -16403,38 +16457,39 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   margin: 0;
 }
 
-.fm-world .world-hud-island-feed .chat-message-bubble > div:first-child > :first-child {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-bubble > div:first-child > :first-child {
   color: #111827;
-  font: 600 12.5px/18px var(--font-sans);
+  font: 600 12.5px/20px var(--font-sans);
+  text-decoration: none;
 }
 
-.fm-world .world-hud-island-feed .chat-message-bubble > div:first-child .font-mono {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-bubble > div:first-child .font-mono {
   color: #9ca3af;
-  font: 400 10.5px/18px var(--font-sans);
+  font: 400 10.5px/20px var(--font-sans);
 }
 
-.fm-world .world-hud-island-feed :is(.chat-message-source, .chat-message-actions, .chat-reactions:empty, .chat-history-indicator) {
+.fm-world .world-hud-island .world-hud-island-feed :is(.chat-message-source, .chat-message-actions, .chat-reactions:empty, .chat-history-indicator) {
   display: none;
 }
 
-.fm-world .world-hud-island-feed .chat-message-bubble p {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-bubble p {
   flex: 1 1 12ch;
   min-width: 0;
   margin: 0;
   color: #374151;
-  font: 400 13px/18px var(--font-sans);
+  font: 400 13px/20px var(--font-sans);
   overflow-wrap: anywhere;
 }
 
-.fm-world .world-hud-island-feed .chat-message-bubble a {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-bubble a {
   color: #2563eb;
 }
 
-.fm-world .world-hud-island-feed .chat-message-row--self .chat-message-bubble > div:first-child > :first-child {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-row--self .chat-message-bubble > div:first-child > :first-child {
   color: #2563eb;
 }
 
-.fm-world .world-hud-island-feed .chat-system-bubble {
+.fm-world .world-hud-island .world-hud-island-feed .chat-system-bubble {
   margin: 1px 0;
   border: 0;
   border-radius: 8px;
@@ -16444,23 +16499,38 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   font: 500 12px/18px var(--font-sans);
 }
 
-.fm-world .world-hud-island-feed #fullChatMessages > :is(.rounded-lg, .fm-blankslate) {
+.fm-world .world-hud-island .world-hud-island-feed #fullChatMessages > :is(.rounded-lg, .fm-blankslate) {
+  display: block;
   margin: 0;
   border: 0;
   background: none;
-  padding: 4px 6px;
+  padding: 2px 6px;
+  overflow: hidden;
   color: #9ca3af;
-  font-size: 12.5px;
+  font: 400 12.5px/20px var(--font-sans);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.fm-world .world-hud-island-feed #fullChatMessages > .fm-blankslate svg {
+.fm-world .world-hud-island[data-expanded="true"] .world-hud-island-feed #fullChatMessages > :is(.rounded-lg, .fm-blankslate) {
+  white-space: normal;
+}
+
+.fm-world .world-hud-island .world-hud-island-feed #fullChatMessages > .fm-blankslate svg {
   display: none;
 }
 
-.fm-world .world-hud-island-feed #fullChatMessages > .fm-blankslate :is(.fm-blankslate-title, .fm-blankslate-desc) {
+.fm-world .world-hud-island .world-hud-island-feed #fullChatMessages > .fm-blankslate :is(.fm-blankslate-title, .fm-blankslate-desc) {
   display: inline;
   margin: 0 4px 0 0;
+  color: inherit;
   font: inherit;
+}
+
+.fm-world .world-hud-island .world-hud-island-feed #fullChatMessages > .fm-blankslate .fm-blankslate-title {
+  color: #6b7280;
+  font-weight: 600;
 }
 
 .fm-world .world-hud-island[data-expanded="false"] .world-hud-island-feed :is(.chat-message-bubble, .chat-system-bubble) {
@@ -16500,7 +16570,7 @@ forkmesh-world[data-world-perf-layout="on"] > .fm-world {
   }
 }
 
-.fm-world .world-hud-island-feed .chat-message-actions button {
+.fm-world .world-hud-island .world-hud-island-feed .chat-message-actions button {
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   background: #ffffff;
@@ -17431,6 +17501,10 @@ forkmesh-world[data-world-island-expanded="true"] .fm-world .world-touch-control
 
   .fm-world .world-hud-island .world-avatar-actions {
     justify-content: space-between;
+  }
+
+  .fm-world .world-hud-island-grip {
+    display: none;
   }
 
   .fm-world .world-hud-mode button {
