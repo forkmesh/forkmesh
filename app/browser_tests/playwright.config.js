@@ -10,7 +10,11 @@ module.exports = defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: process.env.CI
-    ? [["line"], ["json", { outputFile: "test-results/results.json" }]]
+    ? [
+        ["line"],
+        ["json", { outputFile: "test-results/results.json" }],
+        ...(process.env.GITHUB_ACTIONS ? [["github"]] : []),
+      ]
     : [["list"]],
   timeout: 30_000,
   expect: { timeout: 8_000 },

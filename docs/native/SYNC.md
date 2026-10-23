@@ -131,27 +131,27 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S056 | 2026-10-16 | Theme | ui | The app icon is the white cube on the dark gradient tile, filling the launcher shape | baseline | synced | 750c8fbee2 |
 | S057 | 2026-10-16 | Shell | feature | The You hub has a Pocket mode row that locks the screen to Glasses Alert, pings and walking | baseline | synced | e738e2d21f |
 | S058 | 2026-10-16 | Genie | feature | The You hub has a Suggestion mode switch for the Genie's suggestions | baseline | synced | 598418db68 |
-| S059 | 2026-10-20 | CRM | feature | In the CRM, each email shows its opens, clicks, read time, scroll depth, slide reach and the reader's mail app | f949c51083 c1869c71bb dc6e17fc09 | pending |  |
+| S059 | 2026-10-20 | CRM | feature | In the CRM, each email shows its opens, clicks, read time, scroll depth, slide reach and the reader's mail app | f949c51083 c1869c71bb dc6e17fc09 | synced | f2e754f726 |
 | S060 | 2026-10-20 | Runners | feature | The Runners screen lists runner accounts and their sign-in state | 3222755e03 | synced | 0b14ef1da7 |
-| S061 | 2026-10-20 | Usage | ui | Usage re-reads every account on Refresh and shows the clock time each limit resets | e0d7e0d7e0 | pending |  |
+| S061 | 2026-10-20 | Usage | ui | Usage re-reads every account on Refresh and shows the clock time each limit resets | e0d7e0d7e0 | synced | c0ee86dab1 |
 | S062 | 2026-10-19 | Account | feature | You can keep a copy of the app's data in a folder you pick, with projects kept as project/data folders | 0f47d42761 cf611dc5c4 c7c7c20118 ee9e61002f | synced | 0f47d42761 |
-| S063 | 2026-10-19 | DJ Studio | feature | DJ Studio's AUTO DJ plays a related song people liked on the next deck, originals first, and a shake loads a new pick | c29dedba06 4258be9411 f03ffa723f e41a94a7e9 | pending |  |
+| S063 | 2026-10-19 | DJ Studio | feature | DJ Studio's AUTO DJ plays a related song people liked on the next deck, originals first, and a shake loads a new pick | c29dedba06 4258be9411 f03ffa723f e41a94a7e9 | synced | d3896918c7 |
 | S064 | 2026-10-19 | Feed | feature | The Feed package has native screens and is called just Feed | 9ac8f02944 | synced | 9ac8f02944 |
-| S065 | 2026-10-19 | Home | ui | Home keeps its size while loading, shows a spinner on each loading icon, and Refresh reloads everything | 931f5bb99f | pending |  |
-| S066 | 2026-10-19 | Genie | feature | Auto-send can ask the paired desktop's Claude Code or Codex to write the email | 9445548507 | pending |  |
-| S067 | 2026-10-19 | NEXUS | feature | NEXUS has a link in the You hub's Workspace group and detects the scan range from the phone's IP address | f9db4247cf ded23e8d5a | pending |  |
-| S068 | 2026-10-20 | Projects | feature | New project loads the checked instance's logo and can quick-add from the ForkMesh directory | 73d80cbfb6 | pending |  |
+| S065 | 2026-10-19 | Home | ui | Home keeps its size while loading, shows a spinner on each loading icon, and Refresh reloads everything | 931f5bb99f | synced | 099513c76f |
+| S066 | 2026-10-19 | Genie | feature | Auto-send can ask the paired desktop's Claude Code or Codex to write the email | 9445548507 | synced | c70a2988cf |
+| S067 | 2026-10-19 | NEXUS | feature | NEXUS has a link in the You hub's Workspace group and detects the scan range from the phone's IP address | f9db4247cf ded23e8d5a | synced | 62f90e0718 |
+| S068 | 2026-10-20 | Projects | feature | New project loads the checked instance's logo and can quick-add from the ForkMesh directory | 73d80cbfb6 | synced | 999a723041 |
 | S069 | 2026-10-19 | Router | fix | Router network sharing creates a missing share config so a new share shows up | 3330f9588b be89626f7f | synced | be89626f7f |
 | S070 | 2026-10-20 | Chat | feature | Usernames and @mentions in chat, issues, pull requests and discussions open that person's ForkMesh profile when tapped | 079280627a | synced | 079280627a |
 | S071 | 2026-10-21 | Kit | fix | Every text field strips hidden Unicode (zero-width, bidi override, tag and smuggling characters) as you type or paste; passwords stay exact | 1c703806a7 | synced | 1c703806a7 |
 | S072 | 2026-10-21 | Projects | fix | Switching projects no longer shows another project's chat channels, private rooms or direct messages | 2b6c130a28 | n/a | Android rebuilds its chat services per project (ProjectLifecycle.close, Features.install), so it never had this leak |
 | S073 | 2026-10-21 | Projects | fix | Adding an instance that another project already uses opens that project instead of creating a second one | 4beeb217c2 | synced | 68c7fcc9e7 |
-| S074 | 2026-10-21 | Agents | fix | The first action on an agent's page is no longer cut off at the left of the top bar. | d070b14226 | pending |  |
+| S074 | 2026-10-21 | Agents | fix | The first action on an agent's page is no longer cut off at the left of the top bar. | d070b14226 | synced | df87f5816b |
 | S075 | 2026-10-21 | Agents | feature | Scrolling up in an agent's transcript keeps your place while it works, and an arrow above the composer takes you back to the latest output. | 74c29b740e | synced | 74c29b740e |
 | S076 | 2026-10-20 | Notifications | fix | Notification links to a pull request open it at its new /pull/<number> address. | 8d87f5e467 | synced | 8d87f5e467 |
 | S077 | 2026-10-21 | Notifications | feature | Pings say when someone reacted to your comment, with a reaction icon. | 8b43090ad3 | synced | 8b43090ad3 |
-| S078 | 2026-10-21 | Pings | ui | Ping banners lead with who acted and where, with what they wrote straight under it, instead of a generic event label | 26a6431321 | pending |  |
-| S079 | 2026-10-21 | Agents | feature | Every agent page pins the last thing you wrote to the agent above its transcript; pull the card down to flip back through earlier prompts. | cd58bc31c2 | pending |  |
+| S078 | 2026-10-21 | Pings | ui | Ping banners lead with who acted and where, with what they wrote straight under it, instead of a generic event label | 26a6431321 | synced | 30aff95785 |
+| S079 | 2026-10-21 | Agents | feature | Every agent page pins the last thing you wrote to the agent above its transcript; pull the card down to flip back through earlier prompts. | cd58bc31c2 | synced | 9a886bb05c |
 | S080 | 2026-10-21 | Code | feature | Mirror import accepts gitea.com repositories alongside GitHub, GitLab and Codeberg. | c8852efb65 | synced | c8852efb65 |
 | S081 | 2026-10-21 | Settings | ui | What's new shows the same notes as forkmesh.com/changelog, with each entry's title and summary. | 43557597fd | synced | 43557597fd |
 | S082 | 2026-10-21 | Chat | fix | A call now rings the other phone even when it is not on that chat or the app is in the background | 320fe7221a | synced | 320fe7221a |
@@ -165,7 +165,7 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S090 | 2026-10-21 | Calls | ui | Call buttons move to two rows when one row does not fit the screen. | 478fbe6a9c | pending |  |
 | S091 | 2026-10-21 | Calls | feature | Drag your own video in a call to any corner and it stays there for the next call. | 478fbe6a9c | pending |  |
 | S092 | 2026-10-21 | Inbox | feature | Review and merge-conflict pings on your own pull requests have their own icon, label, settings switch and open the pull request | ff273c2c19 | synced | ff273c2c19 |
-| S093 | 2026-10-22 | Shell | feature | With Status Page installed, tiny status dots sit in the thin strip above the Dynamic Island on every screen. | 360acccbd4 | pending |  |
+| S093 | 2026-10-22 | Shell | feature | With Status Page installed, tiny status dots sit in the thin strip above the Dynamic Island on every screen. | 360acccbd4 | synced | 099513c76f |
 | S094 | 2026-10-21 | Chat | fix | The phone leaves private and hidden channels out of its relay hello and does not adopt channels it has hidden, so private channel names stay out of other projects and devices | fe664f0c09 | synced | 3d7fccfeed |
 | S095 | 2026-10-21 | Chat | fix | Chat stays snappy: a quick inactive step (Control Center, an alert) does not reconnect direct message rooms or rerun the chat refresh, and chat screens redraw less | fe664f0c09 | pending |  |
 | S096 | 2026-10-22 | Chat | fix | Frames addressed to one person (DM edits, reactions, typing, deletes, invites) are sealed to that person only, and private-channel frames for channels the phone is not in are dropped | 3d7fccfeed | synced | 3d7fccfeed |
@@ -173,16 +173,16 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S098 | 2026-10-22 | Chat | feature | Chat relay hardening: DMs and private channels only through the server, signed device keys, sealed person frames, verified account names, server-kept blocks and webhook rooms marked server-visible | 440e84220c | synced | 440e84220c |
 | S099 | 2026-10-22 | Chat | fix | #mesh carries no account name, uses a random beacon id and says anyone nearby can read it; less identity in shared rooms | 440e84220c | synced | 440e84220c |
 | S100 | 2026-10-22 | Chat | ui | Link previews in shared rooms load on tap and never reach private addresses | 440e84220c | n/a | Android has no link previews |
-| S101 | 2026-10-22 | Settings | feature | Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete. | 306a20abda | pending |  |
-| S102 | 2026-10-22 | Agents | fix | The pinned last prompt no longer leaves an empty box under it, and swiping it left and right moves through your earlier and later prompts. | 6f57eaf518 | pending |  |
+| S101 | 2026-10-22 | Settings | feature | Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete. | 306a20abda | synced | be58a0a3cd |
+| S102 | 2026-10-22 | Agents | fix | The pinned last prompt no longer leaves an empty box under it, and swiping it left and right moves through your earlier and later prompts. | 6f57eaf518 | synced | 9a886bb05c |
 | S103 | 2026-10-22 | Calls | feature | Calls show a small live quality pill with signal bars, a voice waveform and the delay; tap it for live network and video charts. | 6740cdc214 | synced | 6740cdc214 |
-| S104 | 2026-10-22 | DJ Studio | feature | DJ Studio decks have a Repeat button that plays the song on that deck over and over until it is turned off. | c191462a0a | pending |  |
-| S105 | 2026-10-22 | Home | ui | On Home, the number on each icon sits beside the icon instead of covering the name of the icon above, and the update dot is smaller. | 35c4317e51 | pending |  |
-| S106 | 2026-10-22 | Agents | ui | The terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom. | ae5cba204b | pending |  |
+| S104 | 2026-10-22 | DJ Studio | feature | DJ Studio decks have a Repeat button that plays the song on that deck over and over until it is turned off. | c191462a0a | synced | d3896918c7 |
+| S105 | 2026-10-22 | Home | ui | On Home, the number on each icon sits beside the icon instead of covering the name of the icon above, and the update dot is smaller. | 35c4317e51 | synced | 099513c76f |
+| S106 | 2026-10-22 | Agents | ui | The terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom. | ae5cba204b | synced | 9877d060b1 |
 | S107 | 2026-10-22 | Code | fix | Merge all with AI on a pull request list now reaches the desktop's copy of the repository instead of saying the desktop does not have it. | c17892ba63 | synced | c17892ba63 |
-| S108 | 2026-10-22 | Steps | fix | A walk shows in the Dynamic Island and on the Lock Screen once you have been walking with the app open, and stays when you lock the phone mid-walk. | 88396d68c9 | pending |  |
-| S109 | 2026-10-22 | DJ Studio | fix | DJ Studio's Repeat now really loops the song and jumps straight from where the sound ends back to where it starts, skipping silence at both ends. | ab3a63d995 | pending |  |
-| S110 | 2026-10-22 | Settings | feature | Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked. | 180d647034 | pending |  |
+| S108 | 2026-10-22 | Steps | fix | A walk shows in the Dynamic Island and on the Lock Screen once you have been walking with the app open, and stays when you lock the phone mid-walk. | 88396d68c9 | synced | a02639ecbd |
+| S109 | 2026-10-22 | DJ Studio | fix | DJ Studio's Repeat now really loops the song and jumps straight from where the sound ends back to where it starts, skipping silence at both ends. | ab3a63d995 | synced | d3896918c7 |
+| S110 | 2026-10-22 | Settings | feature | Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked. | 180d647034 | synced | 2ca5862405 |
 | S111 | 2026-10-22 | Chat | fix | Face filters follow your head with less lag and your lips move with your speech. | d62d4aabc9 | synced | d62d4aabc9 |
-| S112 | 2026-10-22 | Agents | ui | Agents Eagle rows drop the left agent dot and show an image tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots. | 40906210d3 | pending |  |
+| S112 | 2026-10-22 | Agents | ui | Agents Eagle rows drop the left agent dot and show an image tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots. | 40906210d3 | synced | 0416f062e3 |
 <!-- ledger:end -->

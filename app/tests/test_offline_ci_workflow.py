@@ -416,6 +416,17 @@ def test_go_suite_retries_only_tests_that_failed_on_a_timeout():
     assert runner.go_timeout_failures("FAIL\tforkmesh.com/mirror-node [build failed]\nFAIL") is None
     assert runner.go_timeout_failures("FAIL\tforkmesh.com/mirror-node\t0.100s\nFAIL") is None
 
+    call = "\n".join([
+        "--- FAIL: TestThreePeopleHoldACallThroughImpairedLinks (4.55s)",
+        "    call_test.go:58: p1 heard only 7 of 150 audio frames from p0",
+        "    call_test.go:63: p2 received 0 video frames",
+        "FAIL",
+        "FAIL\tforkmesh.com/mirror-node/rtc/fmmserver\t69.024s",
+    ])
+    assert runner.go_timeout_failures(call) == {
+        "forkmesh.com/mirror-node/rtc/fmmserver": ["TestThreePeopleHoldACallThroughImpairedLinks"]}
+    assert runner.go_timeout_failures(call + "\n" + window) is None
+
     many = "\n".join(
         [f"--- FAIL: TestAgent{n} (30.00s)\n    agents_test.go:1: context deadline exceeded" for n in range(4)]
         + ["FAIL", "FAIL\tforkmesh.com/mirror-node\t180.000s"])

@@ -124,6 +124,30 @@ class GenieAutoSendTest {
         assertEq(mapOf("contactId" to sam, "subject" to "Hello Sam", "text" to "A note from the phone.", "model" to "Phone model"), transport.requests[1].third)
     }
 
+    fun testWithoutAnyWriterThePauseSaysWhatIsMissing() {
+        val unavailable = ApiJsonResult(503, mapOf("error" to "ai_unavailable", "prompt" to "Write to Sam."))
+        val alone = GenieCrm(PackagesClient(FakeTransport(mutableListOf(unavailable)))).autoSend(pick, emptyList())
+        assertEq(GenieAutoSendOutcome.Pause(GenieAutoSend.NO_WRITER), alone)
+        val failing = GenieOutreachWriter("Desktop", 5.0) { "Sorry, I can't." }
+        val tried = GenieCrm(PackagesClient(FakeTransport(mutableListOf(unavailable)))).autoSend(pick, listOf(failing))
+        assertEq(GenieAutoSendOutcome.Pause(GenieAutoSend.UNWRITTEN), tried)
+    }
+
+    fun testTheDesktopWriterAsksTheDesktopsAgentWithTheWholePrompt() {
+        val asked = mutableListOf<Triple<String, Map<String, Any?>, Long>>()
+        val writer = GenieDesktopWriter.make("Studio") { method, params, timeout ->
+            asked.add(Triple(method, params, timeout))
+            mapOf("text" to "Subject: Hi\n\nBody", "agent" to "claude-code")
+        }
+        assertEq("Claude Code or Codex on Studio", writer.name)
+        assertEq(300.0, writer.timeoutSeconds)
+        assertEq("Subject: Hi\n\nBody", writer.run(listOf(GenieMessage.system("Be brief."), GenieMessage.user("Write to Sam."))))
+        assertEq("agents.write", asked.single().first)
+        assertEq(mapOf<String, Any?>("prompt" to "Be brief.\n\nWrite to Sam."), asked.single().second)
+        assertEq(300_000L, asked.single().third)
+        assertEq("Claude Code or Codex on your desktop", GenieDesktopWriter.name(" "))
+    }
+
     fun testAServerWrittenEmailGoesFromWritingStraightToSent() {
         val transport = FakeTransport(mutableListOf(sent))
         val stages = mutableListOf<GenieAutoSendStage>()

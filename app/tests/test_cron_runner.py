@@ -402,6 +402,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("usage-budget")
         if minute % 10 == 4:
             phases.append("discord-bugs")
+        if minute % 5 == 1:
+            phases.append("github-actions")
         if minute % 5 == 2:
             phases.append("snapshot-catalog")
         if minute % 5 == 4:
