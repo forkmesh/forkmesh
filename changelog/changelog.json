@@ -10,7 +10,9 @@
     {
      "title": "Projects",
      "items": [
-      "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar."
+      "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.",
+      "Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.",
+      "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change."
      ]
     },
     {
