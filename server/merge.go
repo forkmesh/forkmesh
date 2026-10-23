@@ -167,13 +167,29 @@ type PullMutationExecutor struct {
 	Identity      *Identity
 	Now           func() time.Time
 	DaemonBaseURL string // loopback control API; empty disables the wake-up
+	Progress      io.Writer
+	lastPhase     string
+}
+
+const pullProgressPrefix = "forkmesh-progress "
+
+func (e *PullMutationExecutor) phase(name string) {
+	if e.Progress == nil || name == e.lastPhase {
+		return
+	}
+	e.lastPhase = name
+	line, err := json.Marshal(map[string]any{"phase": name, "at": e.now().UnixMilli()})
+	if err != nil {
+		return
+	}
+	_, _ = e.Progress.Write(append([]byte(pullProgressPrefix), append(line, '\n')...))
 }
 
 // RunPullMutationExecutor reads one request from input and writes one JSON
 // result to output. Invalid requests return an error (non-zero exit); policy
 // outcomes such as a merge conflict are ordinary JSON results.
 func RunPullMutationExecutor(input io.Reader, output io.Writer, cfg Config, gateway GatewayConfig, identity *Identity) error {
-	executor := &PullMutationExecutor{Config: cfg, Gateway: gateway, Identity: identity}
+	executor := &PullMutationExecutor{Config: cfg, Gateway: gateway, Identity: identity, Progress: os.Stderr}
 	result, err := executor.Handle(input)
 	if err != nil {
 		return err
@@ -992,6 +1008,7 @@ func (e *PullMutationExecutor) execute(ctx context.Context, dir, gitDir string, 
 	if isBranchProfile(request.profile) {
 		return e.executeBranch(ctx, dir, gitDir, request)
 	}
+	e.phase("fetching")
 	currentPulls, err := e.refValue(ctx, gitDir, "refs/heads/"+pullMetadataBranch)
 	if err != nil {
 		return nil, err
@@ -1017,11 +1034,13 @@ func (e *PullMutationExecutor) execute(ctx context.Context, dir, gitDir string, 
 }
 
 func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir string, request pullMutationRequest, meta *pullMetadata) (*pullJobRecord, error) {
+	e.phase("verifying")
 	if !request.OverrideReview && !e.reviewGateSatisfied(ctx, gitDir, request, meta) {
 		return e.storeRecord(dir, request, e.failure(request, "review_required"))
 	}
 	// The owner's review waiver does not reach required checks: the policy on
 	// the base branch is the owner's lever, and a check is a machine verdict.
+	e.phase("checking")
 	if !e.requiredChecksSatisfied(ctx, gitDir, request, meta) {
 		return e.storeRecord(dir, request, e.failure(request, "checks_required"))
 	}
@@ -1055,6 +1074,7 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 		if currentHead != request.ExpectedHeadOid {
 			return e.storeRecord(dir, request, e.failure(request, "stale_head"))
 		}
+		e.phase("testing")
 		merged, clean, err := e.mergeTreeCommit(ctx, gitDir, request.ExpectedBaseOid, request.ExpectedHeadOid,
 			fmt.Sprintf("Merge pull request #%d", request.number))
 		if err != nil {
@@ -1081,6 +1101,7 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 			return e.storeRecord(dir, request, e.failure(request, "stale_head"))
 		}
 		if !synced {
+			e.phase("testing")
 			mbox, patch := e.pullPayloads(ctx, gitDir, request)
 			if len(bytes.TrimSpace(mbox)) == 0 && len(bytes.TrimSpace(patch)) == 0 {
 				return e.storeRecord(dir, request, e.failure(request, "unsupported_pull"))
@@ -1102,6 +1123,7 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 		if head.head == "" {
 			return e.storeRecord(dir, request, e.failure(request, "merge_conflict"))
 		}
+		e.phase("testing")
 		merged, clean, err := e.mergeTreeCommit(ctx, gitDir, request.ExpectedBaseOid, head.head,
 			fmt.Sprintf("Merge pull request #%d", request.number))
 		if err != nil {
@@ -1116,6 +1138,7 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 		replacements["mergeHead"] = head.head
 		order = append(order, "mergeBase", "mergeHead")
 	}
+	e.phase("committing")
 	replacements["mergedAt"] = strconv.FormatInt(e.now().UnixMilli(), 10)
 	order = append(order, "mergedAt")
 	if emails := coAuthorEmails(messages); emails != "" {
@@ -1166,6 +1189,7 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 }
 
 func (e *PullMutationExecutor) executeUpdate(ctx context.Context, dir, gitDir string, request pullMutationRequest, meta *pullMetadata) (*pullJobRecord, error) {
+	e.phase("verifying")
 	if !meta.derived {
 		return e.storeRecord(dir, request, e.failure(request, "unsupported_pull"))
 	}
@@ -1185,6 +1209,7 @@ func (e *PullMutationExecutor) executeUpdate(ctx context.Context, dir, gitDir st
 	}
 	// First parent stays the head branch's own history, exactly as a local
 	// "git merge <base>" on the checked-out head branch would record it.
+	e.phase("testing")
 	headAfter, clean, err := e.mergeTreeCommit(ctx, gitDir, request.ExpectedHeadOid, request.ExpectedBaseOid,
 		fmt.Sprintf("Merge branch '%s' into %s", meta.base, head))
 	if err != nil {
@@ -1193,6 +1218,7 @@ func (e *PullMutationExecutor) executeUpdate(ctx context.Context, dir, gitDir st
 	if !clean {
 		return e.storeRecord(dir, request, e.failure(request, "merge_conflict"))
 	}
+	e.phase("committing")
 	completed := e.completedRefs(request)
 	transaction := []string{
 		"verify refs/heads/" + meta.base + " " + request.ExpectedBaseOid,
@@ -1207,6 +1233,7 @@ func (e *PullMutationExecutor) executeUpdate(ctx context.Context, dir, gitDir st
 // compare-and-swap is reported as stale metadata so the owner reloads and
 // reviews the moved refs instead of the mirror guessing.
 func (e *PullMutationExecutor) commitTransaction(ctx context.Context, dir, gitDir string, request pullMutationRequest, lines []string, after []string) (*pullJobRecord, error) {
+	e.phase("pushing")
 	script := "start\n" + strings.Join(lines, "\n") + "\nprepare\ncommit\n"
 	_, code, err := e.gitWithInput(ctx, gitDir, []byte(script), nil, "update-ref", "--stdin")
 	if err != nil {
@@ -1228,6 +1255,7 @@ func (e *PullMutationExecutor) commitTransaction(ctx context.Context, dir, gitDi
 	if err != nil {
 		return nil, err
 	}
+	e.phase("publishing")
 	e.refreshGatewayGeneration(ctx, gitDir)
 	return record, nil
 }
@@ -1484,6 +1512,7 @@ func (e *PullMutationExecutor) Handle(input io.Reader) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.lastPhase = ""
 	record, err := e.execute(ctx, dir, repo.GitDir, request)
 	unlock()
 	if err != nil {

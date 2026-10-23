@@ -52255,6 +52255,45 @@ def _https_mirror_merge_body(raw, pull_number, mutation="merge"):
     }
 
 
+HTTPS_MIRROR_MERGE_PROGRESS_PHASES = (
+    "claimed", "fetching", "verifying", "checking", "testing",
+    "committing", "hooks", "pushing", "publishing",
+)
+
+
+def _https_mirror_merge_progress(value):
+    if not isinstance(value, dict):
+        return None
+    phases = HTTPS_MIRROR_MERGE_PROGRESS_PHASES
+    limit = 2 ** 53
+
+    def stamp(item):
+        return (
+            item if isinstance(item, int) and not isinstance(item, bool)
+            and 0 < item < limit else 0)
+
+    steps = []
+    for step in (value.get("steps") if isinstance(
+            value.get("steps"), list) else [])[:len(phases) * 2]:
+        if (
+            isinstance(step, dict)
+            and step.get("phase") in phases
+            and stamp(step.get("at"))
+        ):
+            steps.append({"phase": step["phase"], "at": step["at"]})
+    phase = value.get("phase")
+    started = stamp(value.get("startedAt"))
+    updated = stamp(value.get("updatedAt"))
+    if phase not in phases or not started or not updated or not steps:
+        return None
+    return {
+        "phase": phase,
+        "startedAt": started,
+        "updatedAt": updated,
+        "steps": steps,
+    }
+
+
 def _https_mirror_merge_result(value, request, mutation="merge"):
     """Return a bounded node result or None; no origin data is projected."""
     profile = HTTPS_MIRROR_PULL_MUTATIONS[mutation]
@@ -52267,11 +52306,15 @@ def _https_mirror_merge_result(value, request, mutation="merge"):
     if status == "processing":
         if value.get("ok") is not True:
             return None
-        return {
+        output = {
             "ok": True,
             "status": "processing",
             "requestId": request_id,
         }
+        progress = _https_mirror_merge_progress(value.get("progress"))
+        if progress:
+            output["progress"] = progress
+        return output
     if status == "failed":
         error = str(value.get("error") or "")
         if error not in profile["failures"]:

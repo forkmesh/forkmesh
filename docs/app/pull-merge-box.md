@@ -106,6 +106,40 @@ mode, so none is offered.
 - A visitor or the author of a branch-backed pull sees the commands to merge
   the base locally and push.
 
+## Live progress
+
+After *Merge pull request* or *Update branch* the box shows what the mirror is
+doing instead of one static line: a spinner, the current step ("Verifying the
+reviewed commits…", "Merging into main…", "Publishing…"), the time since the
+click, a step list with a tick and the mirror-reported duration for each
+finished step, and the mirror's name. A merge ends with "Merged as `abc1234`"
+linking to the merge commit (an update with "New head"); a failure marks the
+step that refused (from the error when the last poll had not seen it yet),
+keeps the reason and *Merge again*, which resumes the same request id when the
+answer was "not yet". A failure no mirror ever held keeps the plain line.
+Phases come from the executor ([merge-executor.md, "Progress"](../server/merge-executor.md#progress)).
+
+Before a mirror holds the job the step is "Waiting for an online mirror…";
+after 8 seconds it becomes "Waiting for an online mirror to pick this up (no
+mirror has accepted it yet)" with what to expect: it keeps retrying while the
+page is open, a retry can never apply it twice, and on a single-server
+instance the node may be restarting. When the mirror that took the job stops
+answering, the page names it and says only that mirror may finish it.
+
+Updates come from the request the page was already repeating with the same
+request id (`postRepoPullMutation`), not a new endpoint or socket: the
+repository dashboard has no realtime channel for pull requests (the only
+WebSocket is the notes editor's), and the job lives on one mirror the relay
+proxies to. While a job is in flight the page asks after 1, 2, then every 3
+seconds, starting again at 1 second on each new phase; it stops on a terminal
+answer, waits while the tab is hidden (hidden time does not count against the
+150-second budget), and asks nothing when no merge or update is in flight. A
+poll changes only the step line's text, so a screen reader announces each new
+step once (`role="status"`, `aria-live="polite"` on that line only; the
+elapsed clock is `aria-hidden`). A one-second ticker updates the clock and
+stops itself when no clock is on the page. With `prefers-reduced-motion` the
+spinner is a still ring with a dot.
+
 ## "The pull-request metadata changed"
 
 Every merge and update pins three object ids: the base tip, the head, and

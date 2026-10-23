@@ -4323,6 +4323,44 @@ async def _pull_mutation_node(env, context, candidates, operation):
         len(candidates), rejected)
 
 
+PULL_MUTATION_PROGRESS_MESSAGES = {
+    "queued": "Waiting for an online mirror to take this job.",
+    "claimed": "A mirror took the job.",
+    "fetching": "Reading the base and head commits.",
+    "verifying": "Verifying the reviewed commits.",
+    "checking": "Checking branch protection and required checks.",
+    "testing": "Test-merging to check for conflicts.",
+    "committing": "Creating the merge commit.",
+    "hooks": "Running pre-merge hooks.",
+    "pushing": "Moving the branch to the new commit.",
+    "publishing": "Publishing to the mirrors and the catalog.",
+}
+
+
+def _pull_mutation_progress(progress, node, state):
+    progress = dict(progress or {})
+    phase = str(progress.get("phase") or ("claimed" if node else "queued"))
+    progress.update({
+        "state": state,
+        "phase": phase,
+        "message": PULL_MUTATION_PROGRESS_MESSAGES.get(phase, ""),
+        "node": node,
+    })
+    progress.setdefault("steps", [])
+    return progress
+
+
+def _pull_mutation_stored_progress(row):
+    if not row or row.get("status") != "requested":
+        return {}
+    try:
+        stored = json.loads(str(row.get("result") or ""))
+    except Exception:
+        return {}
+    return stored.get("progress") if isinstance(stored, dict) and isinstance(
+        stored.get("progress"), dict) else {}
+
+
 async def repository_pull_merge_handler(
         env, request, owner, repo, pull_number, mutation="merge"):
     """Authorize, pin, dispatch, and durably reconcile one pull mutation job.
@@ -4538,7 +4576,10 @@ async def repository_pull_merge_handler(
         # The node this job was dispatched to has dropped out of the healthy
         # set for now. Only it may answer for the job, so the browser waits.
         return json_response(
-            {"error": "merge_node_unavailable", "reason": "job_node_offline"},
+            {"error": "merge_node_unavailable", "reason": "job_node_offline",
+             "progress": _pull_mutation_progress(
+                 _pull_mutation_stored_progress(row), selected_node,
+                 "waiting")},
             status=503, cache_control="no-store",
             extra_headers=EXPECTED_DEGRADED_HEADERS)
     upstream_status, result = await _https_mirror_merge_proxy(
@@ -4556,6 +4597,21 @@ async def repository_pull_merge_handler(
                 env, actor, profile["action"], "repository", target,
                 "requested", {"pullNumber": int(pull_number),
                               "overrideReview": override_review})
+        progress = result.get("progress")
+        if progress and progress != _pull_mutation_stored_progress(row):
+            try:
+                await d1_run(
+                    env,
+                    """UPDATE repo_merge_jobs SET result=?,updated_at=?
+                         WHERE request_id=? AND status='requested'""",
+                    json.dumps({"progress": progress}, sort_keys=True,
+                               separators=(",", ":")),
+                    int(Date.now()), node_request["requestId"],
+                )
+            except Exception:
+                pass
+        result = dict(result, progress=_pull_mutation_progress(
+            progress, selected_node, "processing"))
         return _https_mirror_merge_response(result, mutation)
     terminal = (
         "succeeded" if result["status"] == profile["terminal"] else "failed")

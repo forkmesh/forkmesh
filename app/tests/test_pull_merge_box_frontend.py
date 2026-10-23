@@ -59,6 +59,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"]/g, (c) => ({ "
 const repoLinkUrl = () => "/alice/widgets";
 const repoRecordUrl = (repo, kind, number, section) => `/alice/widgets/pull/${number}${section === "conversation" ? "" : `/${section}`}`;
 const repoApiBase = () => "/api/repo/alice/widgets";
+const repoCommitUrl = (repo, hash) => `/alice/widgets/commits/${hash}`;
 const repoLiveUrl = (repo, action, params) => `/api/repo/alice/widgets/${action}?${new URLSearchParams(params)}`;
 const blobText = (blob) => String(blob?.content || "");
 const parseFrontMatter = (text) => {
@@ -505,3 +506,237 @@ def test_tab_strips_snap_back_from_any_vertical_offset():
     DASHBOARD_JS = (ROOT / "app/public/dashboard/js/05-repo-list-explorer.js").read_text(encoding="utf-8")
     assert 'strip.matches("[data-repo-tabs], [data-repo-record-tabs]")' in DASHBOARD_JS
     assert "strip.scrollTop = 0;" in DASHBOARD_JS
+
+
+PROGRESS_FETCH = r"""
+const delays = [];
+window.setTimeout = (resolve, delay) => { delays.push(delay); resolve(); };
+const seen = [];
+function progressReply(body, phase, steps) {
+  const at = (index) => 1000 + index * 400;
+  return {
+    ok: false, status: 202,
+    json: async () => ({
+      ok: true, status: "processing", requestId: body.requestId,
+      progress: {
+        state: "processing", phase, message: "", node: "mirror9",
+        startedAt: at(0), updatedAt: at(steps.length - 1),
+        steps: steps.map((step, index) => ({ phase: step, at: at(index) })),
+      },
+    }),
+  };
+}
+"""
+
+
+@needs_node
+def test_merge_progress_follows_the_mirror_and_backs_off_one_two_three_seconds():
+    out = _run(PROGRESS_FETCH + r"""
+      const repo = { owner: "alice", name: "widgets" };
+      const parsed = detail();
+      world.record = pullMd();
+      world.readiness = readiness();
+      world.conversation = [approval];
+      world.tips = ["%s"];
+      const script = [
+        (body) => ({ ok: false, status: 503, json: async () => ({ error: "merge_node_unavailable", reason: "no_healthy_mirror" }) }),
+        (body) => progressReply(body, "claimed", ["claimed"]),
+        (body) => progressReply(body, "fetching", ["claimed", "fetching"]),
+        (body) => progressReply(body, "fetching", ["claimed", "fetching"]),
+        (body) => progressReply(body, "fetching", ["claimed", "fetching"]),
+        (body) => progressReply(body, "verifying", ["claimed", "fetching", "verifying"]),
+        null,
+      ];
+      const original = globalThis.fetch;
+      globalThis.fetch = async (url, init) => {
+        const body = JSON.parse(init.body);
+        const model = repoPullMergeModel(repo, 7, parsed).footer.progress;
+        if (model) seen.push({ headline: model.headline, state: model.state, current: model.steps.find((step) => step.state === "current")?.phase || "", node: model.node });
+        const next = script.shift();
+        return next ? next(body) : original(url, init);
+      };
+      await handleRepoPullMerge(repo);
+      const done = repoPullMergeModel(repo, 7, parsed);
+      console.log(JSON.stringify({ delays, seen, merge: parsed.pullMerge, done: done.footer.progress, html: renderRepoPullMutationProgress(done.footer.progress) }));
+    """ % TIP_A)
+    # One retry wait for the unclaimed job, then 1s/2s/3s per phase, reset on
+    # every new phase; nothing waits after the terminal answer.
+    assert out["delays"] == [1000, 1000, 1000, 2000, 3000, 1000]
+    headlines = [item["headline"] for item in out["seen"]]
+    assert headlines[0] == "Handing this to an online mirror…"
+    assert headlines[1] == "Waiting for an online mirror…"
+    assert headlines[2] == "mirror9 picked this up…"
+    assert "Reading the base and head commits…" in headlines
+    assert headlines[-1] == "Verifying the reviewed commits…"
+    assert out["seen"][-1]["current"] == "verifying"
+    assert out["seen"][-1]["node"] == "mirror9"
+    assert out["merge"]["state"] == "merged"
+    assert out["merge"]["commit"] == "8" * 40
+    done = out["done"]
+    assert done["state"] == "done"
+    assert done["headline"] == "Merged into main"
+    assert {step["state"] for step in done["steps"]} == {"done"}
+    assert done["commit"] == {"oid": "8" * 40, "label": "Merged as", "href": "/alice/widgets/commits/" + "8" * 40}
+    fetching = next(step for step in done["steps"] if step["phase"] == "fetching")
+    assert fetching["ms"] == 400
+    assert "Merged as <a" in out["html"] and "<code>8888888</code>" in out["html"]
+    assert "data-repo-pull-merge-elapsed" not in out["html"]
+
+
+@needs_node
+def test_waiting_for_a_mirror_says_so_with_the_elapsed_time_and_what_to_do():
+    out = _run(r"""
+      const repo = { owner: "alice", name: "widgets" };
+      const now = 1_000_000;
+      const request = { requestId: "dashboard_0001" };
+      const model = (job) => repoPullMutationProgressModel(repo, "merge", { state: "processing", request, startedAt: now - 20000, ...job }, "main", "bob/leaderboard", now);
+      const fresh = model({ queued: true, queuedSince: now - 3000 });
+      const late = model({ queued: true, queuedSince: now - 20000 });
+      const offline = model({ queued: false, offline: true, progress: { phase: "testing", node: "mirror9", steps: [{ phase: "claimed", at: 1 }, { phase: "testing", at: 5 }] } });
+      const update = repoPullMutationProgressModel(repo, "update", { state: "processing", request, startedAt: now, queued: false, progress: { phase: "pushing", node: "mirror9", steps: [] } }, "main", "bob/leaderboard", now);
+      console.log(JSON.stringify({ fresh, late, offline, update, html: renderRepoPullMutationProgress(late) }));
+    """)
+    assert out["fresh"]["state"] == "waiting"
+    assert out["fresh"]["headline"] == "Waiting for an online mirror…"
+    assert out["fresh"]["lateText"] == "Waiting for an online mirror to pick this up (no mirror has accepted it yet)."
+    assert out["late"]["headline"] == out["fresh"]["lateText"]
+    assert "single-server instance the node may be restarting" in out["late"]["detail"]
+    assert "retrying automatically" in out["late"]["detail"]
+    assert out["offline"]["headline"] == "Waiting for mirror9 to answer again…"
+    assert [step["state"] for step in out["offline"]["steps"]][:6] == ["done", "done", "done", "done", "done", "current"]
+    assert out["update"]["headline"] == "Updating bob/leaderboard…"
+    assert "checking" not in [step["phase"] for step in out["update"]["steps"]]
+    html = out["html"]
+    assert 'data-repo-pull-merge-now role="status" aria-live="polite"' in html
+    assert 'data-repo-pull-merge-elapsed data-since="980000" aria-hidden="true"' in html
+    assert 'class="fm-merge-spinner" aria-hidden="true"' in html
+    assert 'data-late-text="Waiting for an online mirror to pick this up (no mirror has accepted it yet)."' in html
+
+
+@needs_node
+def test_a_failed_merge_marks_the_refused_step_and_keeps_merge_again():
+    out = _run(r"""
+      const repo = { owner: "alice", name: "widgets" };
+      const parsed = detail({ pullMerge: {
+        state: "failed", error: "merge_conflict", resumable: false, request: { requestId: "dashboard_0001" },
+        message: "The exact reviewed commits do not apply cleanly to the base branch.",
+        progress: { phase: "fetching", node: "mirror9", steps: [{ phase: "claimed", at: 1 }, { phase: "fetching", at: 2 }] },
+      } });
+      const model = repoPullMergeModel(repo, 7, parsed);
+      const quiet = repoPullMergeModel(repo, 7, detail({ pullMerge: { state: "failed", message: "No online mirror could take this merge in the last few minutes. Try again shortly." } }));
+      console.log(JSON.stringify({ progress: model.footer.progress, retry: model.retry, canMerge: model.canMerge, html: renderRepoPullMergeBox(repo, 7, parsed), quiet: quiet.footer }));
+    """)
+    progress = out["progress"]
+    assert progress["state"] == "failed"
+    assert progress["headline"].startswith("The exact reviewed commits do not apply cleanly")
+    states = {step["phase"]: step["state"] for step in progress["steps"]}
+    assert states["testing"] == "failed"
+    assert states["fetching"] == "done" and states["checking"] == "done"
+    assert states["committing"] == "todo"
+    assert out["retry"] is True and out["canMerge"] is True
+    assert "Merge again" in out["html"]
+    assert 'data-state="failed"' in out["html"]
+    # A failure no mirror ever held has no steps to show: the plain line stays.
+    assert "progress" not in out["quiet"]
+    assert out["quiet"]["tone"] == "bad"
+
+
+@needs_node
+def test_polling_pauses_while_the_tab_is_hidden_and_stops_on_a_terminal_answer():
+    out = _run(r"""
+      let listener = null;
+      globalThis.document = {
+        visibilityState: "hidden",
+        querySelector: () => null,
+        addEventListener: (name, fn) => { if (name === "visibilitychange") listener = fn; },
+        removeEventListener: (name, fn) => { if (listener === fn) listener = null; },
+      };
+      let calls = 0;
+      globalThis.fetch = async (url, init) => {
+        calls += 1;
+        const body = JSON.parse(init.body);
+        if (calls === 1) return { ok: false, status: 202, json: async () => ({ ok: true, status: "processing", requestId: body.requestId }) };
+        return { ok: false, status: 409, json: async () => ({ ok: false, status: "failed", error: "merge_conflict", requestId: body.requestId }) };
+      };
+      const pending = postRepoPullMutation("/x", { requestId: "dashboard_0001" });
+      for (let i = 0; i < 20; i += 1) await Promise.resolve();
+      const whileHidden = calls;
+      const waiting = Boolean(listener);
+      globalThis.document.visibilityState = "visible";
+      listener();
+      const result = await pending;
+      for (let i = 0; i < 20; i += 1) await Promise.resolve();
+      console.log(JSON.stringify({ whileHidden, waiting, calls, error: result.payload.error, listenerLeft: Boolean(listener) }));
+    """)
+    assert out["whileHidden"] == 1
+    assert out["waiting"] is True
+    assert out["calls"] == 2
+    assert out["error"] == "merge_conflict"
+    assert out["listenerLeft"] is False
+
+
+@needs_node
+def test_nothing_polls_or_ticks_when_no_merge_is_in_flight():
+    out = _run(r"""
+      const repo = { owner: "alice", name: "widgets" };
+      let intervals = 0;
+      window.setInterval = () => { intervals += 1; return 1; };
+      let fetches = 0;
+      globalThis.fetch = async () => { fetches += 1; throw new Error("no fetch expected"); };
+      const parsed = detail();
+      const model = repoPullMergeModel(repo, 7, parsed);
+      const html = renderRepoPullMergeBox(repo, 7, parsed);
+      updateRepoPullMergePanel(repo, 7, parsed);
+      startRepoPullMutationTicker();
+      console.log(JSON.stringify({ progress: model.footer.progress || null, html, intervals, fetches }));
+    """)
+    assert out["progress"] is None
+    assert "data-repo-pull-merge-progress" not in out["html"]
+    assert 'data-repo-pull-merge-panel role="status" aria-live="polite"' in out["html"]
+    assert out["intervals"] == 0
+    assert out["fetches"] == 0
+
+
+@needs_node
+def test_update_branch_shows_the_same_progress_and_the_new_head():
+    out = _run(PROGRESS_FETCH + r"""
+      const repo = { owner: "alice", name: "widgets" };
+      const parsed = detail({ pullReadiness: readiness({ behind: 4 }) });
+      world.record = pullMd();
+      world.readiness = readiness({ behind: 4 });
+      world.conversation = [approval];
+      world.tips = ["%s"];
+      world.replies = [["updated"]];
+      const script = [(body) => progressReply(body, "pushing", ["claimed", "fetching", "verifying", "testing", "committing", "pushing"]), null];
+      const original = globalThis.fetch;
+      globalThis.fetch = async (url, init) => {
+        const row = repoPullMergeModel(repo, 7, parsed).rows.find((item) => item.id === "branch");
+        if (row.progress) seen.push(row.progress.headline);
+        const next = script.shift();
+        return next ? next(JSON.parse(init.body)) : original(url, init);
+      };
+      await handleRepoPullUpdate(repo);
+      const row = repoPullMergeModel(repo, 7, parsed).rows.find((item) => item.id === "branch");
+      console.log(JSON.stringify({ seen, delays, progress: row.progress, html: renderRepoPullMergeBox(repo, 7, parsed) }));
+    """ % TIP_A)
+    assert out["seen"] == ["Handing this to an online mirror…", "Updating bob/leaderboard…"]
+    assert out["delays"] == [1000]
+    assert out["progress"]["state"] == "done"
+    assert out["progress"]["commit"]["label"] == "New head"
+    assert out["progress"]["commit"]["oid"] == "c" * 40
+    assert 'data-repo-pull-merge-progress="update"' in out["html"]
+
+
+def test_progress_respects_reduced_motion_and_reads_as_one_live_line():
+    assert "@keyframes fm-merge-spin" in SHELL
+    reduced = SHELL[SHELL.index(".fm-merge-spinner {"):]
+    reduced = reduced[reduced.index("@media (prefers-reduced-motion: reduce)"):]
+    assert ".fm-merge-spinner { animation: none;" in reduced[:400]
+    render = _function("renderRepoPullMergeBox")
+    assert '${footer.progress ? "" : \'role="status" aria-live="polite" aria-atomic="true" \'}' in render
+    patch = _function("patchRepoPullMutationProgress")
+    assert "if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;" in patch
+    poll = _function("postRepoPullMutation")
+    assert "started += await waitForRepoPullMutationVisible();" in poll
+    assert "PULL_MUTATION_POLL_MS[Math.min(polls, PULL_MUTATION_POLL_MS.length - 1)]" in poll
+    assert "const PULL_MUTATION_POLL_MS = [1000, 2000, 3000];" in CONTENT

@@ -7739,12 +7739,34 @@
     "merge_queue_full",
   ]);
   const PULL_MUTATION_WAIT_MS = 150000;
+  const PULL_MUTATION_POLL_MS = [1000, 2000, 3000];
+
+  function repoPullMutationHidden() {
+    return globalThis.document?.visibilityState === "hidden";
+  }
+
+  function waitForRepoPullMutationVisible() {
+    if (!repoPullMutationHidden() || typeof document.addEventListener !== "function") {
+      return Promise.resolve(0);
+    }
+    const hiddenAt = Date.now();
+    return new Promise((resolve) => {
+      const onChange = () => {
+        if (repoPullMutationHidden()) return;
+        document.removeEventListener("visibilitychange", onChange);
+        resolve(Date.now() - hiddenAt);
+      };
+      document.addEventListener("visibilitychange", onChange);
+    });
+  }
 
   // Submits one exact-OID pull mutation and follows it to an answer. Resolves
   // to the last response; `waiting` means the time budget ran out first.
   async function postRepoPullMutation(endpoint, request, onWait) {
-    const started = Date.now();
+    let started = Date.now();
     let backoff = 1000;
+    let polls = 0;
+    let phase = "";
     for (;;) {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -7768,12 +7790,32 @@
       if (Date.now() - started >= PULL_MUTATION_WAIT_MS) {
         return { response, payload, waiting: true };
       }
-      onWait?.(processing);
-      await new Promise((resolve) => window.setTimeout(
-        resolve, processing ? 750 : backoff,
-      ));
+      const nextPhase = processing ? String(payload?.progress?.phase || "claimed") : "";
+      if (nextPhase !== phase) {
+        phase = nextPhase;
+        polls = 0;
+      }
+      onWait?.(processing, payload);
+      const delay = processing
+        ? PULL_MUTATION_POLL_MS[Math.min(polls, PULL_MUTATION_POLL_MS.length - 1)]
+        : backoff;
+      polls += 1;
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+      started += await waitForRepoPullMutationVisible();
       if (!processing) backoff = Math.min(backoff * 2, 8000);
     }
+  }
+
+  function repoPullMutationWaitState(current, accepted, payload) {
+    const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : null;
+    const offline = !accepted && payload?.reason === "job_node_offline";
+    return {
+      ...current,
+      queued: !accepted && !offline,
+      queuedSince: !accepted && !offline ? current.queuedSince || Date.now() : 0,
+      offline,
+      progress: progress || (accepted || offline ? current.progress || null : null),
+    };
   }
 
   const PULL_MERGE_REPIN_ERRORS = new Set(["stale_pull_metadata", "stale_base"]);
@@ -8034,6 +8076,8 @@
       branchRow.title = `Up to date with ${baseBranch}`;
       branchRow.detail = `This branch already contains ${baseBranch} and merges cleanly.`;
     }
+    const updateProgress = repoPullMutationProgressModel(repo, "update", update, baseBranch, headBranch);
+    if (updateProgress) branchRow.progress = updateProgress;
     if (update.state === "updated") {
       branchRow.note = { tone: "good", text: "The branch was updated. Checks re-run on the new head." };
     } else if (update.state === "current") {
@@ -8071,6 +8115,8 @@
     const merged = merge.state === "merged" || status === "merged";
     const busy = merge.state === "processing";
     const footer = { tone: "muted", text: "", method: "merge" };
+    const mergeProgress = repoPullMutationProgressModel(repo, "merge", merge, baseBranch, headBranch);
+    if (mergeProgress) footer.progress = mergeProgress;
     if (status !== "open" && !merged) {
       footer.tone = "muted";
       footer.text = "This pull request is closed.";
@@ -8129,6 +8175,220 @@
     };
   }
 
+  const PULL_MUTATION_STEPS = {
+    merge: ["queued", "claimed", "fetching", "verifying", "checking", "testing", "committing", "pushing", "publishing"],
+    update: ["queued", "claimed", "fetching", "verifying", "testing", "committing", "pushing", "publishing"],
+  };
+  const PULL_MUTATION_WAITING_NOTICE_MS = 8000;
+  const PULL_MUTATION_FAILED_PHASE = {
+    stale_pull_metadata: "fetching",
+    stale_base: "fetching",
+    stale_head: "verifying",
+    review_required: "verifying",
+    checks_required: "checking",
+    rules_required: "checking",
+    merge_conflict: "testing",
+    already_current: "verifying",
+  };
+
+  function pullMutationStepText(kind, phase, names) {
+    const merge = kind === "merge";
+    const texts = {
+      queued: ["Wait for an online mirror", "Waiting for an online mirror…"],
+      claimed: [names.node ? `Picked up by ${names.node}` : "Picked up by a mirror", names.node ? `${names.node} picked this up…` : "A mirror picked this up…"],
+      fetching: ["Fetch base and head", "Reading the base and head commits…"],
+      verifying: merge
+        ? ["Verify the reviewed commits", "Verifying the reviewed commits…"]
+        : ["Verify the branch tips", "Verifying the branch tips…"],
+      checking: ["Branch protection and required checks", "Checking branch protection and required checks…"],
+      testing: ["Test merge (conflict check)", "Test-merging to check for conflicts…"],
+      committing: merge
+        ? ["Create the merge commit", "Creating the merge commit…"]
+        : [`Merge ${names.base} into the branch`, `Merging ${names.base} into ${names.head}…`],
+      hooks: ["Pre-merge hooks", "Running pre-merge hooks…"],
+      pushing: merge
+        ? [`Merge into ${names.base}`, `Merging into ${names.base}…`]
+        : [`Update ${names.head}`, `Updating ${names.head}…`],
+      publishing: ["Publish to mirrors and the catalog", "Publishing…"],
+    };
+    const [label, now] = texts[phase] || [phase, "Working…"];
+    return { label, now };
+  }
+
+  function formatRepoPullElapsed(ms) {
+    const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  }
+
+  function formatRepoPullStepTime(ms) {
+    if (!(ms >= 0)) return "";
+    return ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : formatRepoPullElapsed(ms);
+  }
+
+  function repoPullMutationProgressModel(repo, kind, job, baseBranch, headBranch, now = Date.now()) {
+    const terminal = kind === "merge" ? "merged" : "updated";
+    const running = job?.state === "processing" && Boolean(job.request);
+    const ended = job?.state === terminal || (job?.state === "failed" && job.progress);
+    if (!running && !ended) return null;
+    const progress = job.progress && typeof job.progress === "object" ? job.progress : {};
+    const node = String(progress.node || "").slice(0, 64);
+    const names = { base: baseBranch, head: headBranch, node };
+    const order = PULL_MUTATION_STEPS[kind];
+    const reported = Array.isArray(progress.steps) ? progress.steps : [];
+    const at = {};
+    reported.forEach((step) => {
+      if (order.includes(step?.phase) && Number.isFinite(step.at) && !(step.phase in at)) at[step.phase] = step.at;
+    });
+    let phase = order.includes(progress.phase) ? progress.phase : "";
+    if (!phase) phase = running && job.queued !== false ? "queued" : "claimed";
+    const failedAt = PULL_MUTATION_FAILED_PHASE[job.error];
+    if (job.state === "failed" && order.includes(failedAt) && order.indexOf(failedAt) > order.indexOf(phase)) phase = failedAt;
+    if (job.state === terminal) phase = "";
+    const index = phase ? order.indexOf(phase) : order.length;
+    const failed = job.state === "failed";
+    const steps = order.map((step, position) => {
+      const later = order.slice(position + 1).find((next) => next in at);
+      return {
+        phase: step,
+        label: pullMutationStepText(kind, step, names).label,
+        state: position < index ? "done" : position === index ? (failed ? "failed" : "current") : "todo",
+        ms: step in at && later ? at[later] - at[step] : null,
+      };
+    });
+    const since = Number(job.startedAt) || now;
+    const model = { kind, node, steps, since, state: "running", headline: "", detail: "", lateAfter: 0, lateText: "", commit: null };
+    if (job.state === terminal) {
+      model.state = "done";
+      model.headline = kind === "merge" ? `Merged into ${baseBranch}` : `Updated ${headBranch} with ${baseBranch}`;
+      if (kind === "merge") model.detail = "The merged state is pinned as current and every mirror is syncing it.";
+      const oid = immutableGitCommit(job.commit);
+      if (oid) model.commit = { oid, label: kind === "merge" ? "Merged as" : "New head", href: repoCommitUrl(repo, oid) };
+      return model;
+    }
+    if (failed) {
+      model.state = "failed";
+      model.headline = job.message || "The mirror could not finish this.";
+      return model;
+    }
+    if (job.offline) {
+      model.state = "waiting";
+      model.headline = node
+        ? `Waiting for ${node} to answer again…`
+        : "Waiting for the mirror that took this to answer again…";
+      model.detail = "Only the mirror that took this job may finish it, so nothing can happen twice. It is asked again automatically while this page is open; on a single-server instance the node may be restarting.";
+      return model;
+    }
+    if (phase === "queued" && job.queued !== true) {
+      model.headline = "Handing this to an online mirror…";
+      return model;
+    }
+    if (phase === "queued") {
+      model.state = "waiting";
+      model.headline = "Waiting for an online mirror…";
+      model.lateAfter = Math.max(0, (Number(job.queuedSince) || since) + PULL_MUTATION_WAITING_NOTICE_MS - since);
+      model.lateText = "Waiting for an online mirror to pick this up (no mirror has accepted it yet).";
+      model.detail = "This keeps retrying automatically while the page is open, and a retry can never apply it twice. On a single-server instance the node may be restarting; it picks this up as soon as it is back.";
+      if (now - (Number(job.queuedSince) || since) >= PULL_MUTATION_WAITING_NOTICE_MS) model.headline = model.lateText;
+      return model;
+    }
+    model.headline = pullMutationStepText(kind, phase, names).now;
+    return model;
+  }
+
+  function renderRepoPullMutationProgress(model) {
+    if (!model) return "";
+    const icon = { done: "check", failed: "x", current: "", todo: "" };
+    const steps = model.steps.map((step) => `
+          <li class="fm-merge-step" data-step="${escapeHtml(step.phase)}" data-state="${escapeHtml(step.state)}">
+            <span class="fm-merge-step-mark" aria-hidden="true">${icon[step.state] ? `<i data-lucide="${icon[step.state]}"></i>` : ""}</span>
+            <span class="fm-merge-step-label">${escapeHtml(step.label)}<span class="sr-only">${step.state === "done" ? " (done)" : step.state === "current" ? " (in progress)" : step.state === "failed" ? " (failed)" : ""}</span></span>
+            ${step.ms !== null ? `<span class="fm-merge-step-time">${escapeHtml(formatRepoPullStepTime(step.ms))}</span>` : ""}
+          </li>`).join("");
+    const live = model.state === "running" || model.state === "waiting";
+    const elapsed = live
+      ? `<span class="fm-merge-progress-elapsed" data-repo-pull-merge-elapsed data-since="${escapeHtml(String(model.since))}" aria-hidden="true">${escapeHtml(formatRepoPullElapsed(Date.now() - model.since))}</span>`
+      : "";
+    const late = model.lateText
+      ? ` data-late-after="${escapeHtml(String(model.lateAfter))}" data-late-since="${escapeHtml(String(model.since))}" data-late-text="${escapeHtml(model.lateText)}"`
+      : "";
+    const mark = model.state === "done"
+      ? '<span class="fm-merge-progress-mark" data-state="done" aria-hidden="true"><i data-lucide="check"></i></span>'
+      : model.state === "failed"
+        ? '<span class="fm-merge-progress-mark" data-state="failed" aria-hidden="true"><i data-lucide="x"></i></span>'
+        : '<span class="fm-merge-spinner" aria-hidden="true"></span>';
+    const commit = model.commit
+      ? `<p class="fm-merge-progress-result">${escapeHtml(model.commit.label)} <a href="${escapeHtml(model.commit.href)}" data-dashboard-link><code>${escapeHtml(model.commit.oid.slice(0, 7))}</code></a></p>`
+      : "";
+    return `
+      <div class="fm-merge-progress" data-repo-pull-merge-progress="${escapeHtml(model.kind)}" data-state="${escapeHtml(model.state)}">
+        <div class="fm-merge-progress-head">
+          ${mark}
+          <p class="fm-merge-progress-now" data-repo-pull-merge-now role="status" aria-live="polite"${late}>${escapeHtml(model.headline)}</p>
+          ${elapsed}
+        </div>
+        <div data-repo-pull-merge-progress-body>
+          ${model.detail ? `<p class="fm-merge-progress-detail">${escapeHtml(model.detail)}</p>` : ""}
+          ${commit}
+          <ol class="fm-merge-steps" aria-label="Steps">${steps}</ol>
+          ${model.node ? `<p class="fm-merge-progress-node">Mirror <code>${escapeHtml(model.node)}</code></p>` : ""}
+        </div>
+      </div>`;
+  }
+
+  function patchRepoPullMutationProgress(repo, number, parsed, kind) {
+    const slot = document.querySelector("[data-repo-pull-merge-slot]");
+    const block = slot?.querySelector?.(`[data-repo-pull-merge-progress="${kind}"]`);
+    const model = block ? repoPullMergeModel(repo, number, parsed) : null;
+    const progress = kind === "merge"
+      ? model?.footer.progress
+      : model?.rows.find((row) => row.id === "branch")?.progress;
+    if (!block || !progress) {
+      updateRepoPullMergePanel(repo, number, parsed);
+      return;
+    }
+    const scratch = document.createElement("div");
+    scratch.innerHTML = renderRepoPullMutationProgress(progress);
+    const fresh = scratch.firstElementChild;
+    const now = block.querySelector("[data-repo-pull-merge-now]");
+    const freshNow = fresh.querySelector("[data-repo-pull-merge-now]");
+    if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
+    ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
+      if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
+      else now.removeAttribute(name);
+    });
+    block.dataset.state = fresh.dataset.state;
+    block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
+    window.lucide?.createIcons();
+    startRepoPullMutationTicker();
+  }
+
+  let repoPullMutationTicker = 0;
+
+  function tickRepoPullMutationProgress() {
+    const clocks = document.querySelectorAll("[data-repo-pull-merge-elapsed]");
+    if (!clocks.length) {
+      window.clearInterval(repoPullMutationTicker);
+      repoPullMutationTicker = 0;
+      return;
+    }
+    const now = Date.now();
+    clocks.forEach((clock) => {
+      const text = formatRepoPullElapsed(now - Number(clock.dataset.since || now));
+      if (clock.textContent !== text) clock.textContent = text;
+    });
+    document.querySelectorAll("[data-late-text]").forEach((line) => {
+      const due = Number(line.dataset.lateSince || now) + Number(line.dataset.lateAfter || 0);
+      if (now >= due && line.textContent !== line.dataset.lateText) line.textContent = line.dataset.lateText;
+    });
+  }
+
+  function startRepoPullMutationTicker() {
+    if (repoPullMutationTicker || typeof window.setInterval !== "function") return;
+    if (!document.querySelector?.("[data-repo-pull-merge-elapsed]")) return;
+    repoPullMutationTicker = window.setInterval(tickRepoPullMutationProgress, 1000);
+  }
+
   const PULL_MERGE_ROW_ICONS = {
     good: "check-circle-2",
     warn: "alert-circle",
@@ -8180,7 +8440,7 @@
             <p class="fm-merge-row-title">${escapeHtml(row.title)}</p>
             ${meta}
             <p class="fm-merge-row-detail">${escapeHtml(row.detail)}</p>
-            ${conflicts}${checkList}${note}
+            ${conflicts}${checkList}${row.progress ? renderRepoPullMutationProgress(row.progress) : ""}${note}
           </div>
           ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
         </div>`;
@@ -8210,8 +8470,8 @@
       <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
         ${rows}
         ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
-          <p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>
+        <div data-repo-pull-merge-panel ${footer.progress ? "" : 'role="status" aria-live="polite" aria-atomic="true" '}aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
+          ${footer.progress ? renderRepoPullMutationProgress(footer.progress) : `<p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>`}
           ${changes}
           ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
         </div>
@@ -8306,6 +8566,7 @@
       restored.setSelectionRange(focused.start, focused.end);
     }
     window.lucide?.createIcons();
+    startRepoPullMutationTicker();
   }
 
   const PULL_QUICK_REPLY_PATH = ".forkmesh/review-replies.json";
@@ -8824,11 +9085,10 @@
     const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/merge`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request, (accepted) => {
+      result = await postRepoPullMutation(endpoint, request, (accepted, payload) => {
         if (parsed.pullMerge?.request?.requestId !== request.requestId) return;
-        if (Boolean(parsed.pullMerge.queued) === !accepted) return;
-        parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };
-        updateRepoPullMergePanel(repo, number, parsed);
+        parsed.pullMerge = repoPullMutationWaitState(parsed.pullMerge, accepted, payload);
+        patchRepoPullMutationProgress(repo, number, parsed, "merge");
       });
     } catch (_) {
       return {
@@ -8856,7 +9116,7 @@
       && immutableGitCommit(payload.head) === request.expectedHeadOid
       && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
     ) {
-      return { state: "merged", request };
+      return { state: "merged", request, commit: immutableGitCommit(payload.baseAfter) };
     }
     const error = String(payload?.error || "");
     return {
@@ -8882,7 +9142,8 @@
     const previous = parsed.pullMerge || {};
     if (previous.state === "processing") return;
     let request = previous.resumable === true ? previous.request : null;
-    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request };
+    const startedAt = Date.now();
+    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request, startedAt };
     updateRepoPullMergePanel(repo, number, parsed);
     if (!request) {
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
@@ -8901,9 +9162,10 @@
     }
     let outcome = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      parsed.pullMerge = { state: "processing", phase: "", request };
+      parsed.pullMerge = { state: "processing", phase: "", request, startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
       outcome = await sendRepoPullMerge(repo, number, parsed, request);
+      outcome = { ...outcome, progress: parsed.pullMerge?.progress || null, startedAt };
       if (
         attempt > 0
         || outcome.state !== "failed"
@@ -8912,7 +9174,7 @@
       ) {
         break;
       }
-      parsed.pullMerge = { state: "processing", phase: "repinning" };
+      parsed.pullMerge = { state: "processing", phase: "repinning", startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
       if (!pullDetailIsCurrent(repo, number)) return;
@@ -8960,11 +9222,11 @@
     };
   }
 
-  async function sendRepoPullUpdate(repo, request) {
+  async function sendRepoPullUpdate(repo, request, onWait) {
     const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/update`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request);
+      result = await postRepoPullMutation(endpoint, request, onWait);
     } catch (_) {
       return {
         state: "failed",
@@ -8992,7 +9254,7 @@
       && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
       && immutableGitCommit(payload.headAfter)
     ) {
-      return { state: "updated", request };
+      return { state: "updated", request, commit: immutableGitCommit(payload.headAfter) };
     }
     const error = String(payload?.error || "");
     return {
@@ -9013,7 +9275,8 @@
     const previous = parsed.pullUpdate || {};
     if (previous.state === "processing") return;
     let request = previous.resumable === true ? previous.request : null;
-    parsed.pullUpdate = { state: "processing", request };
+    const startedAt = Date.now();
+    parsed.pullUpdate = { state: "processing", request, startedAt };
     updateRepoPullMergePanel(repo, number, parsed);
     if (!request) {
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
@@ -9031,9 +9294,14 @@
     }
     let outcome = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      parsed.pullUpdate = { state: "processing", request };
+      parsed.pullUpdate = { state: "processing", request, startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
-      outcome = await sendRepoPullUpdate(repo, request);
+      outcome = await sendRepoPullUpdate(repo, request, (accepted, payload) => {
+        if (parsed.pullUpdate?.request?.requestId !== request.requestId) return;
+        parsed.pullUpdate = repoPullMutationWaitState(parsed.pullUpdate, accepted, payload);
+        patchRepoPullMutationProgress(repo, number, parsed, "update");
+      });
+      outcome = { ...outcome, progress: parsed.pullUpdate?.progress || null, startedAt };
       if (
         attempt > 0
         || outcome.state !== "failed"

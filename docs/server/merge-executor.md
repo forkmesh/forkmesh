@@ -60,6 +60,40 @@ can merge while the source desktop is offline. Code: `server/merge.go`,
    out even when the digest is not admitted, and it reaches every core
    (`docs/CORE_PUSH.md`, "Every core is woken at once").
 
+## Progress
+
+During `execute` the executor writes one line per phase change to stderr:
+`forkmesh-progress {"phase":"<phase>","at":<ms>}`. Phases, in order:
+`fetching` (read the ledger, base and head tips), `verifying` (review gate,
+or the branch tips for an update), `checking` (required checks and pull
+rules; merges only), `testing` (`merge-tree` conflict check, and replaying a
+patch-backed head), `committing` (ledger record or update commit), `pushing`
+(the `update-ref` transaction) and `publishing` (gateway generation and daemon
+wake). Nothing else goes on those lines: no paths, branch names or object ids.
+There is no `hooks` phase today because Git runs with hooks off; the name is
+reserved in the vocabulary so a node that adds one needs no relay change.
+
+The gateway runs `execute` through `ExternalMergeExecutor.stream`, which reads
+stderr on its own pipe as the helper runs (at most 64 lines of 256 bytes;
+unknown phases and other output are dropped) and records `claimed` when the
+job thread starts and `publishing` while it reloads and registers. Each
+`202 processing` answer carries `progress: {phase, startedAt, updatedAt,
+steps: [{phase, at}]}` for that request id. An executor object without
+`stream` (an older wrapper, the tests' fakes) still runs through `call` and
+reports only `claimed` and `publishing`.
+
+The relay (`_https_mirror_merge_result`) keeps only known phases and integer
+times (at most 18 steps), and `repository_pull_merge_handler` writes the
+latest record onto the in-flight `repo_merge_jobs` row's `result` column,
+`{"progress": ...}`, only when it changed and only while the row is
+`requested`. Every other reader of that column filters on a terminal status,
+and the terminal `UPDATE` replaces the record with the receipt, so no
+migration is needed. The browser gets `progress` with `state`, `node` (the
+selected mirror) and a fixed `message` on each 202; when that mirror drops out
+of the healthy set the `merge_node_unavailable` / `job_node_offline` answer
+carries the last stored record with `state: "waiting"`. All of this is behind
+the same owner check as the merge itself.
+
 ## Files
 
 - `mirror-gateway/pull-jobs/<sha256(requestId)>.json`: idempotency results,
