@@ -2470,3 +2470,18 @@ edit or delete as somebody else. Nothing here talks to older builds.
   a leading "owner/repo" the way `_notification_digest_title` does. The
   project suffix for several signed-in projects still follows the body.
   `PingLeadTest` covers it.
+- **New project: instance logo and the ForkMesh directory (S068).** Once
+  "Check instance" passes, `AddProjectDialog` fetches the instance's logo at
+  once and shows it as the project image (a spinner sits in the logo box while
+  it loads); the user can still change or remove it. The candidates are
+  `InstanceDirectory.logoCandidates` (core `account/projects`): the `logo` from
+  `/api/instance`, the instance's logo in the ForkMesh directory, then the two
+  favicons, left out for a branded instance. A picked logo is never replaced;
+  one taken from the instance goes when the host is edited. Under the form,
+  "Instances on ForkMesh" lists ForkMesh plus every `listed` https entry of
+  `GET https://app.forkmesh.com/api/start/instances` (directory logos only in
+  the `/api/start/instances/<32 hex>/logo?v=<n>` shape); Add fills the
+  instance in, checks it, loads its logo and creates the project in one tap,
+  and a project that already exists shows "Added". An unreadable directory
+  lists only ForkMesh. The dialog's content now scrolls. `InstanceDirectoryTest`
+  ports the iOS cases.
