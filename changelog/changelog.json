@@ -42,7 +42,8 @@
     {
      "title": "Desktop",
      "items": [
-      "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed."
+      "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.",
+      "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings."
      ]
     }
    ]

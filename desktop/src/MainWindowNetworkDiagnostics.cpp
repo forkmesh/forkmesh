@@ -26,6 +26,7 @@
 #include "RewardPoolSigner.h"
 #include "TerminalWidget.h"
 #include "WorldSpeechBridge.h"
+#include "FontSizing.h"
 
 #include <QBrush>
 #include <QCheckBox>
@@ -346,7 +347,7 @@ QWidget *MainWindow::buildFirewallSection()
     auto *title = new QLabel(QStringLiteral("Firewall"));
     title->setObjectName("sectionTitle");
     QFont titleFont = title->font();
-    titleFont.setPointSizeF(titleFont.pointSizeF() + 4);
+    titleFont = forkmesh::resizedFont(titleFont, 4);
     titleFont.setBold(true);
     title->setFont(titleFont);
     outer->addWidget(title);
@@ -1162,7 +1163,7 @@ QWidget *MainWindow::buildNetworkDiagnosticsSection()
     auto *title = new QLabel(QStringLiteral("Network"));
     title->setObjectName("sectionTitle");
     QFont titleFont = title->font();
-    titleFont.setPointSizeF(titleFont.pointSizeF() + 4);
+    titleFont = forkmesh::resizedFont(titleFont, 4);
     titleFont.setBold(true);
     title->setFont(titleFont);
     header->addWidget(title);

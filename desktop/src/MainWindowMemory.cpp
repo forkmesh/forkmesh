@@ -16,6 +16,7 @@
 #include "MemoryUsageChart.h"
 #include "ProcessMemory.h"
 #include "SystemStats.h"
+#include "FontSizing.h"
 
 #include <QApplication>
 #include <QButtonGroup>
@@ -529,7 +530,7 @@ QWidget *MainWindow::buildMemorySection()
         layout->addWidget(name);
         auto *value = new QLabel(QStringLiteral("—"));
         QFont big = value->font();
-        big.setPointSizeF(big.pointSizeF() * 1.6);
+        big = forkmesh::scaledFont(big, 1.6);
         big.setBold(true);
         value->setFont(big);
         layout->addWidget(value);
