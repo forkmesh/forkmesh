@@ -40,7 +40,7 @@ def scene_function(name):
 
 METHODS = "\n".join([
     block(APP, "  async fetchMeshRootJSON(", "\n  async postJSON("),
-    block(APP, "  placeWorldMesh() {", "\n  applyWorldMeshArrival() {"),
+    block(APP, "  placeTerritoryNeighbour() {", "\n  applyWorldMeshArrival() {"),
     block(APP, "  syncWorldMeshPosition(", "\n  openNeighbourDoor("),
     block(APP, "  fetchJSONAt(", "\n  async requestWorldVisa("),
     block(APP, "  meshPeerPlayers() {", "\n  celebrateRecentInstance("),
@@ -365,6 +365,57 @@ own_page.placeWorldMesh();
 const seen = own_page.meshPlaced.find((world) => world.id === "forkmesh");
 out.fromBlt = { shape: seen.shape, dx: seen.dx, dz: seen.dz, petals: worldMeshReplacedPetals() };
 
+const ownShift = forkmeshShiftAround(territoryPetalTile(1));
+const ownPage = view("__BLT__", home.x, home.z);
+ownPage.territory = { petal: 1, slot: 0 };
+ownPage.disabledWorldElements = ["forkbot"];
+Object.assign(ownPage.world, {
+  away: false,
+  calls: [],
+  territoryForkmeshShift: () => ({
+    ...ownShift, townX: home.x + ownShift.x, townZ: home.z + ownShift.z,
+  }),
+  territoryOwnerAt(x, z) {
+    if (this.away) return "";
+    return forkmeshTilesAround(territoryPetalTile(1))
+      .some((tile) => hexRoadContains(x, z, tile, 5)) ? "forkmesh" : "";
+  },
+  leaveOwnTerritory(saved) {
+    this.calls.push(["leave", saved]);
+    this.away = true;
+    return true;
+  },
+  enterOwnTerritory() {
+    this.calls.push(["enter", this.away]);
+    this.away = false;
+    return true;
+  },
+});
+ownPage.placeWorldMesh();
+const ownState = (v) => ({
+  root: v.meshRoot?.id || "",
+  at: { x: v.lastMovement.x, z: v.lastMovement.z },
+  away: v.world.away,
+  calls: [...v.world.calls],
+  office: v.officeOwner,
+  notices: [...v.notices],
+  reloads: v.reloads,
+  links: links(v),
+  placed: v.meshPlaced.map((world) => [world.id, world.dx, world.dz]),
+  shift: v.meshHomeShift(),
+});
+out.ownStart = ownState(ownPage);
+walk(ownPage, home.x + ownShift.x * 0.47, home.z + ownShift.z * 0.47);
+out.ownRoad = ownState(ownPage);
+walk(ownPage, home.x + ownShift.x * 0.6, home.z + ownShift.z * 0.6);
+await flush();
+out.ownInForkmesh = ownState(ownPage);
+walk(ownPage, home.x - ownShift.x * 0.47, home.z - ownShift.z * 0.47);
+out.ownForkmeshRoad = ownState(ownPage);
+walk(ownPage, home.x - ownShift.x * 0.7, home.z - ownShift.z * 0.7);
+await flush();
+out.ownBack = ownState(ownPage);
+
 out.routes = [
   "/api/accounts/users?view=world", "/api/world/inactive", "/api/repositories",
   "/api/repo/acme/app/size-map", "/api/repository-imports", "/api/world/context",
@@ -576,3 +627,43 @@ def test_neighbour_town_reads_are_federated_for_reading_only():
         "https://git.owaspblt.org", preflight=True, read_only=True)
     assert preflight["access-control-allow-methods"] == "GET, OPTIONS"
 
+
+
+def test_an_instance_page_starts_in_its_own_hexagon_with_forkmesh_next_door(walk):
+    start = walk["ownStart"]
+    assert start["root"] == ""
+    assert start["calls"] == [["enter", False]]
+    assert start["office"] == HUB
+    assert start["placed"] == [[HUB, pytest.approx(-PETAL1[0]), pytest.approx(-PETAL1[1])]]
+    assert start["shift"] is None
+    assert walk["ownRoad"]["root"] == ""
+
+
+def test_an_instance_page_steps_into_forkmesh_without_leaving_the_page(walk):
+    inside = walk["ownInForkmesh"]
+    assert inside["root"] == HUB
+    assert inside["away"] is True
+    assert inside["calls"][-1] == ["leave", ["forkbot"]]
+    assert close(inside["at"]["x"], 0.4 * PETAL1[0])
+    assert close(inside["at"]["z"], -45 + 0.4 * PETAL1[1])
+    assert inside["notices"][-1] == "Entering ForkMesh · world.forkmesh.com"
+    assert inside["office"] == HUB
+    assert inside["reloads"] == 1
+    assert [BLT, pytest.approx(PETAL1[0]), pytest.approx(PETAL1[1])] in inside["placed"]
+    assert inside["shift"]["dx"] == pytest.approx(PETAL1[0])
+    assert [HUB, "visit"] in inside["links"]
+    assert walk["ownForkmeshRoad"]["root"] == HUB
+
+
+def test_an_instance_page_walks_back_into_its_own_hexagon(walk):
+    back = walk["ownBack"]
+    assert back["root"] == ""
+    assert back["away"] is False
+    assert back["calls"][-1] == ["enter", True]
+    assert close(back["at"]["x"], -0.3 * PETAL1[0])
+    assert close(back["at"]["z"], -45 - 0.3 * PETAL1[1])
+    assert back["notices"][-1] == "Back in OWASP BLT"
+    assert back["office"] == HUB
+    assert back["reloads"] == 2
+    assert back["shift"] is None
+    assert [HUB, "visit"] not in back["links"]

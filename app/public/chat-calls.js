@@ -175,11 +175,13 @@ export function createChatCalls({
         mic: call === current ? outgoingTrack("audio") : null,
         peers: call === current ? current.remoteStream?.getAudioTracks?.() || [] : [],
       }),
+      face: () => (call === current && current.faceId ? current.stage?.stats || null : null),
     });
     const widget = mountCallQualityWidget(qualityHost, meter, {
       documentRef,
       storage,
       video: () => call === current && current.media === "video",
+      sending: () => call === current && !current.cameraOff,
     });
     quality = { call: current, pc, meter, widget };
   }

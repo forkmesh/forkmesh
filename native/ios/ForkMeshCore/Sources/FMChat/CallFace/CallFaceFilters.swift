@@ -85,3 +85,107 @@ public final class CallFaceAnchorSmoother {
         return CallFaceAnchors(eyeL: eyeL, eyeR: eyeR, mouth: lips, open: CallFaceGeometry.clampValue(opened, 0, 1), yaw: yaw)
     }
 }
+
+public final class CallFaceGroupFilter {
+    public let minCutoff: Double
+    public let beta: Double
+    public let derivativeCutoff: Double
+    public private(set) var values: [Double]?
+    public private(set) var speed = 0.0
+    public private(set) var time = 0.0
+
+    public init(minCutoff: Double = 1.2, beta: Double = 0.6, derivativeCutoff: Double = 1) {
+        self.minCutoff = minCutoff
+        self.beta = beta
+        self.derivativeCutoff = derivativeCutoff
+    }
+
+    public func reset() {
+        values = nil
+        speed = 0
+    }
+
+    public func filter(_ input: [Double], time now: Double, scale: Double = 1) -> [Double] {
+        guard var current = values, current.count == input.count, now > time else {
+            values = input
+            time = now
+            return input
+        }
+        let elapsed = (now - time) / 1000
+        time = now
+        func smoothing(_ cutoff: Double) -> Double {
+            let tau = 1 / (2 * Double.pi * cutoff)
+            return 1 / (1 + tau / elapsed)
+        }
+        var fastest = 0.0
+        for i in input.indices { fastest = max(fastest, abs(input[i] - current[i]) / elapsed) }
+        speed += smoothing(derivativeCutoff) * (fastest / CallFaceJS.or(scale, 1) - speed)
+        let k = smoothing(minCutoff + beta * speed)
+        for i in input.indices { current[i] += k * (input[i] - current[i]) }
+        values = current
+        return current
+    }
+}
+
+public struct CallFaceSmoothGroup: Sendable {
+    public let points: [Int]
+    public let minCutoff: Double
+    public let beta: Double
+    public let derivativeCutoff: Double
+}
+
+public final class CallFaceLandmarkSmoother {
+    public static let head = (minCutoff: 3.0, beta: 5.0, derivativeCutoff: 4.0)
+    public static let groups = [
+        CallFaceSmoothGroup(points: CallFaceGeometry.jaw, minCutoff: 1.2, beta: 2, derivativeCutoff: 2),
+        CallFaceSmoothGroup(points: Array(17..<27), minCutoff: 2, beta: 3, derivativeCutoff: 3),
+        CallFaceSmoothGroup(points: Array(27..<36), minCutoff: 1.5, beta: 2, derivativeCutoff: 2),
+        CallFaceSmoothGroup(points: Array(36..<48), minCutoff: 2.5, beta: 4, derivativeCutoff: 3),
+        CallFaceSmoothGroup(points: Array(48..<68), minCutoff: 2.5, beta: 6, derivativeCutoff: 4),
+    ]
+
+    private let eyes: CallFaceGroupFilter
+    private let filters: [(points: [Int], filter: CallFaceGroupFilter)]
+
+    public init() {
+        let head = CallFaceLandmarkSmoother.head
+        eyes = CallFaceGroupFilter(minCutoff: head.minCutoff, beta: head.beta, derivativeCutoff: head.derivativeCutoff)
+        filters = CallFaceLandmarkSmoother.groups.map { group in
+            (group.points, CallFaceGroupFilter(minCutoff: group.minCutoff, beta: group.beta, derivativeCutoff: group.derivativeCutoff))
+        }
+    }
+
+    public func reset() {
+        eyes.reset()
+        for entry in filters { entry.filter.reset() }
+    }
+
+    public func smooth(_ points: [CallFacePoint], time: Double) -> [CallFacePoint] {
+        guard points.count >= CallFaceGeometry.landmarkCount else { return points }
+        let raw = CallFaceGeometry.faceFrame(points)
+        let eye = eyes.filter([raw.left.x, raw.left.y, raw.right.x, raw.right.y], time: time, scale: raw.span)
+        let steady = CallFaceGeometry.faceFrame(left: CallFacePoint(eye[0], eye[1]), right: CallFacePoint(eye[2], eye[3]))
+        var out = points
+        for (indices, filter) in filters {
+            var flat: [Double] = []
+            for i in indices {
+                let local = CallFaceGeometry.toFrame(raw, points[i])
+                flat.append(local.x / raw.span)
+                flat.append(local.y / raw.span)
+                if let z = points[i].z { flat.append(z / raw.span) }
+            }
+            let smooth = filter.filter(flat, time: time)
+            var at = 0
+            for i in indices {
+                var point = CallFaceGeometry.fromFrame(steady, smooth[at] * steady.span, smooth[at + 1] * steady.span)
+                at += 2
+                if points[i].z != nil {
+                    point.z = smooth[at] * steady.span
+                    at += 1
+                }
+                out[i] = point
+            }
+        }
+        return out
+    }
+}

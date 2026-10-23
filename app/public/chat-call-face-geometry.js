@@ -1052,3 +1052,94 @@ export function createPointSmoother(count, minCutoff = 1.2, beta = 0.6) {
     },
   };
 }
+
+export const SMOOTH_HEAD = Object.freeze([3, 5, 4]);
+export const SMOOTH_GROUPS = Object.freeze([
+  Object.freeze({ points: JAW, minCutoff: 1.2, beta: 2, derivativeCutoff: 2 }),
+  Object.freeze({ points: range(17, 27), minCutoff: 2, beta: 3, derivativeCutoff: 3 }),
+  Object.freeze({ points: NOSE, minCutoff: 1.5, beta: 2, derivativeCutoff: 2 }),
+  Object.freeze({ points: range(36, 48), minCutoff: 2.5, beta: 4, derivativeCutoff: 3 }),
+  Object.freeze({ points: range(48, 68), minCutoff: 2.5, beta: 6, derivativeCutoff: 4 }),
+]);
+
+export class GroupFilter {
+  constructor(minCutoff = 1.2, beta = 0.6, derivativeCutoff = 1) {
+    this.minCutoff = minCutoff;
+    this.beta = beta;
+    this.derivativeCutoff = derivativeCutoff;
+    this.values = null;
+    this.speed = 0;
+    this.time = 0;
+  }
+
+  reset() {
+    this.values = null;
+    this.speed = 0;
+  }
+
+  filter(values, time, scale = 1) {
+    if (this.values === null || this.values.length !== values.length || !(time > this.time)) {
+      this.values = values.slice();
+      this.time = time;
+      return values.slice();
+    }
+    const elapsed = (time - this.time) / 1000;
+    this.time = time;
+    const smoothing = (cutoff) => {
+      const tau = 1 / (2 * Math.PI * cutoff);
+      return 1 / (1 + tau / elapsed);
+    };
+    let fastest = 0;
+    for (let i = 0; i < values.length; i += 1) fastest = Math.max(fastest, Math.abs(values[i] - this.values[i]) / elapsed);
+    this.speed += smoothing(this.derivativeCutoff) * (fastest / (scale || 1) - this.speed);
+    const k = smoothing(this.minCutoff + this.beta * this.speed);
+    for (let i = 0; i < values.length; i += 1) this.values[i] += k * (values[i] - this.values[i]);
+    return this.values.slice();
+  }
+}
+
+function frameFromEyes(left, right) {
+  const dx = right[0] - left[0];
+  const dy = right[1] - left[1];
+  const span = Math.hypot(dx, dy) || 1;
+  const ux = [dx / span, dy / span];
+  return { mid: [(left[0] + right[0]) / 2, (left[1] + right[1]) / 2], span, ux, uy: [-ux[1], ux[0]] };
+}
+
+export function createLandmarkSmoother(head = SMOOTH_HEAD, groups = SMOOTH_GROUPS) {
+  const eyes = new GroupFilter(...head);
+  const filters = groups.map((group) => ({ points: group.points, filter: new GroupFilter(group.minCutoff, group.beta, group.derivativeCutoff) }));
+  return {
+    reset() {
+      eyes.reset();
+      for (const entry of filters) entry.filter.reset();
+    },
+    smooth(points, time) {
+      if (!points || points.length < LANDMARK_COUNT) return points;
+      const raw = faceFrame(points);
+      const [lx, ly, rx, ry] = eyes.filter([raw.left[0], raw.left[1], raw.right[0], raw.right[1]], time, raw.span);
+      const steady = frameFromEyes([lx, ly], [rx, ry]);
+      const out = points.map((point) => point.slice(0, 3));
+      for (const { points: indices, filter } of filters) {
+        const flat = [];
+        for (const i of indices) {
+          const [a, b] = toFrame(raw, points[i]);
+          flat.push(a / raw.span, b / raw.span);
+          if (points[i].length > 2) flat.push(points[i][2] / raw.span);
+        }
+        const smooth = filter.filter(flat, time);
+        let at = 0;
+        for (const i of indices) {
+          const point = fromFrame(steady, smooth[at] * steady.span, smooth[at + 1] * steady.span);
+          at += 2;
+          if (points[i].length > 2) {
+            point.push(smooth[at] * steady.span);
+            at += 1;
+          }
+          out[i] = point;
+        }
+      }
+      return out;
+    },
+  };
+}

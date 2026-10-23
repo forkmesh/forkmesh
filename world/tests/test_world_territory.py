@@ -383,7 +383,7 @@ def test_the_world_wires_the_territory():
             "        await this.instanceInfo(),\n"
             "        await this.worldMeshDirectory(),\n      );") in APP
     assert "await this.placeTerritoryMesh();" in APP
-    assert "{ ...hub, dx: shift.x, dz: shift.z, x: shift.townX, z: shift.townZ }," \
+    assert "[{ ...hub, dx: shift.x, dz: shift.z, x: shift.townX, z: shift.townZ }]" \
         in APP
     assert "territoryForkmeshShift: fns.territoryForkmeshShift," in CORE
     assert "TERRITORY_NEIGHBOUR_ELEMENTS.forEach((id) => {" in TERRITORY
@@ -403,7 +403,7 @@ def test_the_world_wires_the_territory():
     assert "fns.checkTerritoryCrossing?.(previousHorizontalPosition);" in WALK
     assert '"territory-link"' in POINTER and '"territory-bug"' in POINTER
     assert "fns.setForkmeshCrossings?.(" not in NETWORK
-    assert "if (!this.world || this.destroyed || this.territory) return;" in APP
+    assert "if (this.territory && !this.meshRoot) {\n      this.placeTerritoryNeighbour();" in APP
     assert "territoryWalkActive()" not in OFFICE
     assert 'part.userData.interactive = "instance-hexagon";' not in TERRITORY
 
@@ -464,14 +464,14 @@ def test_the_bug_badges_fall_back_and_stay_sharp():
     assert "camera.quaternion" in bugs
 
 
-def test_forkmesh_beside_us_is_live_and_walkable_without_a_reload():
+def test_forkmesh_beside_us_is_live_and_entered_without_a_reload():
     assert "walkTiles: [TERRITORY_CENTER, ...neighbours.tiles]," in TERRITORY
     assert "crossings: []," in TERRITORY
     assert 'if (hexRoadContains(x, z, tile, WORLD_ROAD_WIDTH / 2)) return "forkmesh";' \
         in TERRITORY
-    assert "this.meshLinks.update(x, z, this.world?.territoryOwnerAt?.(x, z) || \"\");" \
-        in APP
-    assert "this.setOfficeOwner(hub);" in APP
+    assert "if (owner && this.enterMeshWorld(owner)) return;" in APP
+    assert "this.meshLinks.update(x, z, owner);" in APP
+    assert "this.setOfficeOwner(hub || null);" in APP
     assert "forkmeshViewURL" not in APP
     assert '"territory-forkmesh"' not in POINTER
     assert 'if (ctx.officeSceneMode !== "town") return false;' in OFFICE

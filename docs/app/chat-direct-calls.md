@@ -145,7 +145,7 @@ not copied: it is end-to-end encrypted to the original two participants.
   adds Opus in-band FEC, no DTX and a 96 kbps average to the SDP sent to the
   other side, so each side's encoder sends full-band, loss-resilient voice.
   The Face Changer and Voice Changer pages share these constraints through
-  `call-studio.js`. The face stage still draws at 24 fps and at most 960 px
+  `call-studio.js`. The face stage draws at up to 30 fps and at most 960 px
   on the long side, so a filtered picture is limited by that, not by the
   camera.
 - **Layout** (2026-10-21). Your own video in the call panel (`#chat-call-local`) can be
@@ -201,6 +201,37 @@ not copied: it is end-to-end encrypted to the original two participants.
     samples taken since the last event, `live` is false during the preview
     (microphone only) and true once connected. The apps draw the widget
     natively (`native/ios/docs/FMChat.md`, `docs/native/ANDROID.md`).
+  - **Diagnostics** (2026-10-22). A small round button sits right of the
+    pill (`.fm-q-bar` holds both). It stays grey while the call is fine and
+    its dot turns red (`--danger`) when `diagnoseCall` finds a problem in
+    the last 8 samples (at least 3 needed): latency (median round trip
+    300 ms or more, severe at 500), loss (mean 3 %, severe at 8),
+    jitter (median 60 ms), video out limited by bandwidth or by CPU in most
+    samples, video out under 15 fps (severe under 7.5), the other side's
+    video under 15 fps or 360p while it still arrives at 100 kb/s or more
+    (so a camera turned off over there is not a problem), and the face
+    filter taking over 34 ms a frame (severe over 50). The camera checks
+    are skipped while your camera is off, because browsers send black
+    frames at about 1 fps then. The face numbers come from the face stage's
+    `stats` (frames, total frame time, quality level), which the meter
+    turns into per-second `faceFps`, `faceMs` and `faceLevel` on each
+    sample when it is given `face: () => stage.stats`.
+  - **The panel.** Pressing the button lists each problem with what was
+    measured, why it matters and the fixes in order, then a prompt to paste
+    into an AI assistant (Copy prompt) and a field for the assistant's
+    answer. Nothing is sent anywhere: the report stays on the device.
+  - **Self-improving prompt.** `fm.call.diagnostics` in `localStorage` keeps
+    the last 20 reports, a worked/failed count per fix and the last 8
+    lessons. When the panel opens with a problem, its first fix is taken as
+    the one being tried; if that problem then clears during the call, the
+    fix counts as worked, and if the call ends with it still there, as
+    failed. `rankFixes` orders fixes by worked × 2 − failed, so fixes that
+    work on this device move up and ones that did not move down. The prompt
+    (`diagnosticsPrompt`, numbered v1, v2, ... by the reports behind it)
+    gives the measurements, the device, each problem with how often it was
+    seen before, what worked and what did not, and the saved lessons, and
+    asks the assistant to end with a `LESSON:` line. Pasting that line into
+    the field saves it, so the next prompt starts from it.
 
 ### Mobile apps
 
@@ -328,15 +359,45 @@ bundled; nothing is fetched from a third party at runtime.
 ### Head swap
 
 The chosen face replaces the outgoing video track with a canvas track
-(`captureStream`, 24 fps) through `replaceTrack`. Per frame: landmarks
-(Apple Vision on iOS, the face mesh elsewhere) smoothed with a One Euro
-filter; a person matte refined with a guided filter; a hair matte around the
+(`captureStream`, 30 fps) through `replaceTrack`. Per frame: landmarks
+(Apple Vision on iOS, the face mesh elsewhere) smoothed by the landmark
+smoother (below); a person matte refined with a guided filter; a hair matte around the
 head; a 2.5D warp of the whole stand-in head with a depth buffer so near
 surfaces win when turning; removal of the caller's head and hair outside the
 stand-in, filled from an estimate of the room; per-frame skin and hair colour
 matching; eyelid, gaze and tongue transfer. Stand-in assets
 (`app/public/assets/call-faces/<id>.jpg` and `<id>-matte.png`) are built by
 `app/tools/build_call_face_assets.py`.
+
+**Faster faces (2026-10-22).** Faces lagged behind the caller and the lips
+looked mushy while talking. Two causes:
+
+- The stage drew on a fixed 24 fps timer, out of step with a 30 fps camera,
+  so a frame waited up to 42 ms before it was even looked at, and the
+  timer's beat against the camera made motion judder. The stage now runs
+  from `requestVideoFrameCallback` on its hidden camera `<video>`, so each
+  camera frame is processed as soon as it is decoded, and captures at 30 fps.
+  The 30 fps timer stays as a fallback: it only processes a frame when no
+  camera frame arrived for three frame times (browsers without the callback,
+  or a throttled tab), so a camera that slows to 15 fps in the dark is not
+  processed twice.
+- All 68 points went through their own One Euro filter in image pixels
+  (1.5 Hz minimum cutoff, the speed estimate itself filtered at 1 Hz), so
+  a moving head trailed by about 100 ms, the lips lagged speech, and each
+  lip point sped up at its own rate, which bent the lip shape mid-word.
+  `createLandmarkSmoother` (in `chat-call-face-geometry.js`) splits the
+  head from its expression. The two eye centres go through one
+  `GroupFilter` (`SMOOTH_HEAD`: 3 Hz, beta 5, speed filtered at 4 Hz), and
+  that steady frame carries the head. Every point is also expressed in the
+  raw eye frame (in eye spans) and filtered per group (`SMOOTH_GROUPS`:
+  jaw, brows, nose, eyes, lips). A `GroupFilter` applies one smoothing
+  factor to all its coordinates, driven by the group's fastest point, so
+  the lips (2.5 Hz, beta 6, speed at 4 Hz) open and close as one shape and
+  follow speech within about a frame. A still face stays as steady as
+  before. On a synthetic talking head with tracker noise
+  (`app/tests/test_call_face_smoothing.py`), lip error while talking fell
+  from 1.55 to 0.67 px and head-follow error from 5.7 to 1.9 px, with rest
+  jitter still about a third of the input noise.
 
 **Face depth and pose.** Landmarks may carry depth: a region point is
 `[x, y, z]` with `z` in the image's pixel units, larger = nearer. The face
@@ -484,7 +545,7 @@ classes.
 
 | JS | Native |
 |---|---|
-| `chat-call-face-geometry.js`, all of it | `CallFacePoint` (`x`, `y`, optional `z`), `CallFaceGeometry` (template, `canonicalShape`, `fitTemplate`, `headLayout`, `headModel`, `buildHeadMesh`, Delaunay, `solvePose` with and without depth, `liveHead`, `vertexDepths`, `landmarksFromRegions`, `resamplePolyline`...), `CallFaceOneEuroFilter`, `CallFacePointSmoother` |
+| `chat-call-face-geometry.js`, all of it | `CallFacePoint` (`x`, `y`, optional `z`), `CallFaceGeometry` (template, `canonicalShape`, `fitTemplate`, `headLayout`, `headModel`, `buildHeadMesh`, Delaunay, `solvePose` with and without depth, `liveHead`, `vertexDepths`, `landmarksFromRegions`, `resamplePolyline`...), `CallFaceOneEuroFilter`, `CallFacePointSmoother`, `CallFaceGroupFilter`, `CallFaceLandmarkSmoother` (`head`, `groups`) |
 | `chat-call-faces.js` data and pure parts | `CallFaces` (`all` with points and head rings, `template`, `facePoints`, `head(face)` → layout, model and mesh, cached for the built-in faces, `choices`, `pupils`, `located` = `hostResult`, `outputSize`, hold and fade constants), `CallFaceAnchorSmoother` |
 | `chat-call-face-expression.js` | `CallFaceExpression` (`eyeBox`, `tongueWindow`, `sampleBox`, `skinReference`, `measureEye`, `measureTongue`, `eyeOpenness`, `pairClosure`, `closeLids`, `probeCrop`), `CallFaceBlinkTracker`, `CallFaceExpressionProbe` |
 | `chat-call-face-mesh.js` pure parts | `CallFaceMesh` (`regions`, `blazeAnchors`, `decodeDetections`, `roiFromDetection`, `roiFromMesh`, `meshPoints`, `sigmoid`, `meshRegions`, `meshToLandmarks`), `CallFaceLetterbox`, `CallFaceRoi` |
@@ -515,7 +576,7 @@ in the middle of the maths, so the native API splits them:
 
 **Per frame (what the renderer calls).** Once per face:
 `head = CallFaces.head(face)` and `eyes = CallFaceWarp.photoEyes(head.layout, photoSize: 512)`.
-Keep one `CallFacePointSmoother(count: 68, minCutoff: 1.5, beta: 1.5)`, one
+Keep one `CallFaceLandmarkSmoother()`, one
 `CallFaceExpressionProbe` and one `CallOutfitSmoother`, and reset them when no
 face has been seen for `CallFaces.holdMs`. Then, for each frame:
 
@@ -523,7 +584,7 @@ face has been seen for `CallFaces.holdMs`. Then, for each frame:
    `[String: [[Double]]]` (the format `CallFaceLandmarks` already returns), in
    the pixels of the analysed image, and `scale` is that image's size over the
    output frame. This gives 68 points in frame pixels, plus pupils.
-2. `points = smoother.smooth(located.points, time: ms, scale: CallFaceGeometry.faceFrame(located.points).span)`.
+2. `points = smoother.smooth(located.points, time: ms)`.
 3. `reading = probe.measure(...)` as above. Keep the previous reading when it
    returns nil.
 4. `drawn = CallFaceExpression.closeLids(points, reading?.close)`.
@@ -1227,7 +1288,7 @@ call.
 
 ```js
 const stage = createFaceStage({ cameraStream, faceId, backgroundId, backgroundImage, outfitId });
-stage.track;                      // MediaStreamTrack, 24 fps canvas capture
+stage.track;                      // MediaStreamTrack, 30 fps canvas capture
 stage.setFace(id);                // "" for the caller's own face
 stage.setBackground(id, image);   // ids from CALL_BACKGROUNDS; image = data URL for "custom"
 stage.setOutfit(id);              // ids from CALL_OUTFITS; "" for your own clothes

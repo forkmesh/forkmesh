@@ -99,7 +99,7 @@ public final class CallFaceStage {
     public private(set) var dressed = 0.0
     public private(set) var live: [CallFacePoint]?
     public private(set) var expression: CallFaceExpressionReading?
-    private let smoother = CallFacePointSmoother(count: CallFaceGeometry.landmarkCount, minCutoff: 1.5, beta: 1.5)
+    private let smoother = CallFaceLandmarkSmoother()
     private let probe = CallFaceExpressionProbe()
     private let outfitSmoother = CallOutfitSmoother()
     private var seenAt = -Double.infinity
@@ -155,7 +155,7 @@ public final class CallFaceStage {
         switch input {
         case let .found(raw, pupils, sample, seen):
             fresh = true
-            let smoothed = smoother.smooth(raw, time: seen, scale: CallFaceGeometry.faceFrame(raw).span)
+            let smoothed = smoother.smooth(raw, time: seen)
             points = smoothed
             live = smoothed
             seenAt = time
