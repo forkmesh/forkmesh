@@ -1422,25 +1422,47 @@ void checkFooterOverlayGeometry(MainWindow &window)
     }
 
     // The composer is a movable panel (adhoc #1536): dragging its top strip
-    // takes it off the footer anchor and onto the workspace, the corner grip
-    // resizes it, the button pops it out into a window of its own, and
+    // takes it off the footer anchor and onto the workspace, any edge or
+    // corner resizes it, the button pops it out into a window of its own, and
     // double-clicking the strip snaps everything back.
     auto *promptHandle =
         window.findChild<QWidget *>(QStringLiteral("promptDragHandle"));
-    auto *promptGrip =
-        window.findChild<QWidget *>(QStringLiteral("promptResizeGrip"));
+    QWidget *promptGrip = nullptr;
+    QWidget *promptLeftEdge = nullptr;
+    const QList<QWidget *> promptEdges =
+        window.findChildren<QWidget *>(QStringLiteral("promptResizeEdge"));
+    for (QWidget *edge : promptEdges) {
+        const auto edges = Qt::Edges::fromInt(edge->property("promptResizeEdges").toInt());
+        if (edges == (Qt::TopEdge | Qt::RightEdge))
+            promptGrip = edge;
+        else if (edges == Qt::Edges(Qt::LeftEdge))
+            promptLeftEdge = edge;
+    }
     auto *promptClear =
         window.findChild<QPushButton *>(QStringLiteral("promptClearButton"));
     auto *promptDetach =
         window.findChild<QPushButton *>(QStringLiteral("promptDetachButton"));
     auto *promptText =
         window.findChild<QPlainTextEdit *>(QStringLiteral("issueQuickAdd"));
-    check(promptClear && promptText && promptGrip && promptDetach &&
-              promptClear->parentWidget() == promptGrip->parentWidget() &&
-              promptGrip->geometry().left() > promptDetach->geometry().right() &&
-              promptGrip->geometry().left() > promptClear->geometry().right(),
-          QStringLiteral("the prompt resize grip sits at the right end of the "
-                         "floating button bar"));
+    check(!window.findChild<QWidget *>(QStringLiteral("promptResizeGrip")) &&
+              promptEdges.size() == 8 && promptGrip && promptLeftEdge &&
+              promptWrapper &&
+              promptGrip->parentWidget() == promptWrapper->parentWidget() &&
+              promptGrip->geometry().right() == promptWrapper->geometry().right() &&
+              promptGrip->geometry().top() == promptWrapper->geometry().top() &&
+              promptLeftEdge->geometry().left() == promptWrapper->geometry().left() &&
+              promptLeftEdge->height() > promptWrapper->height() / 2,
+          QStringLiteral("the prompt has no resize grip: every edge and corner "
+                         "is a resize handle"));
+    check(promptClear && promptDetach && promptGrip &&
+              !promptGrip->geometry().intersects(QRect(
+                  promptDetach->mapTo(promptGrip->parentWidget(), QPoint()),
+                  promptDetach->size())) &&
+              !promptGrip->geometry().intersects(QRect(
+                  promptClear->mapTo(promptGrip->parentWidget(), QPoint()),
+                  promptClear->size())),
+          QStringLiteral("the top-right resize corner leaves the floating "
+                         "buttons clickable"));
     check(!window.findChild<QWidget *>(QStringLiteral("promptDragPill")) &&
               promptHandle && promptWrapper &&
               promptHandle->parentWidget() == promptWrapper &&
@@ -1544,7 +1566,25 @@ void checkFooterOverlayGeometry(MainWindow &window)
         QApplication::processEvents();
         check(prompt->width() > dragged.width() &&
                   prompt->height() > dragged.height(),
-              QStringLiteral("the corner grip resizes the floating prompt"));
+              QStringLiteral("the top-right corner resizes the floating prompt"));
+
+        if (promptLeftEdge) {
+            const QRect before(prompt->mapToGlobal(QPoint()), prompt->size());
+            const QPoint edgeAt = promptLeftEdge->mapToGlobal(
+                QPoint(promptLeftEdge->width() / 2, promptLeftEdge->height() / 2));
+            sendMouse(promptLeftEdge, QEvent::MouseButtonPress, edgeAt);
+            sendMouse(promptLeftEdge, QEvent::MouseMove, edgeAt + QPoint(-50, 30));
+            sendMouse(promptLeftEdge, QEvent::MouseButtonRelease,
+                      edgeAt + QPoint(-50, 30));
+            QApplication::processEvents();
+            const QRect after(prompt->mapToGlobal(QPoint()), prompt->size());
+            check(after.width() == before.width() + 50 &&
+                      after.left() == before.left() - 50 &&
+                      after.right() == before.right() &&
+                      after.height() == before.height(),
+                  QStringLiteral("dragging the prompt's left edge widens it to "
+                                 "the left only"));
+        }
 
         // The text area itself has to absorb the extra height, not just leave
         // blank space above the toolbar (adhoc #1625).
