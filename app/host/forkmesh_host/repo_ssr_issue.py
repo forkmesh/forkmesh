@@ -1584,7 +1584,7 @@ def guest_comment_box(path):
             '</div>' % esc(urllib.parse.quote(path, safe="")))
 
 
-def member_comment_box(number):
+def member_comment_box(number, issue_open=True):
     def tool(fmt, name, label):
         return ('<button type="button" data-repo-issue-comment-format="%s" aria-label="%s" '
                 'title="%s" class="inline-flex h-7 w-7 items-center justify-center rounded-md '
@@ -1594,6 +1594,12 @@ def member_comment_box(number):
            "aria-selected:-mb-px aria-selected:bg-background aria-selected:font-medium "
            "aria-selected:text-foreground")
     separator = '<span aria-hidden="true" class="mx-1 h-4 w-px bg-border"></span>'
+    assign = (
+        '<button type="button" data-repo-issue-claim="claim" data-repo-issue-assign-button '
+        'title="Assign this issue to yourself" class="inline-flex h-8 items-center gap-2 '
+        'rounded-md border border-border bg-secondary px-3 text-[14px] font-medium '
+        'text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50">%sAssign'
+        '</button>' % icon("user-plus", "h-4 w-4", "text-muted-foreground")) if issue_open else ""
     return (
         '\n      <div class="grid min-w-0 gap-4 border-t-2 border-border pt-4 '
         'sm:grid-cols-[40px_minmax(0,1fr)]">\n        <span class="hidden sm:block">'
@@ -1630,7 +1636,7 @@ def member_comment_box(number):
         '<span data-repo-issue-comment-hint '
         'class="text-[11px] text-muted-foreground">Sent to the maintainer\'s inbox for review.'
         '</span></span>\n            </div>\n          </div>\n          <div class="flex flex-wrap '
-        'items-center justify-end gap-2">\n            \n            <button type="submit" '
+        'items-center justify-end gap-2">\n            %s\n            <button type="submit" '
         'data-repo-issue-comment-submit data-repo-issue-comment-action="comment" '
         'class="inline-flex h-8 items-center gap-2 rounded-md bg-cta px-3 text-[14px] '
         'font-medium text-cta-foreground transition-colors hover:bg-cta/90 '
@@ -1645,7 +1651,7 @@ def member_comment_box(number):
             tool("list", "list", "Add a bulleted list"),
             tool("tasks", "list-checks", "Add a task list"),
             tool("mention", "at-sign", "Mention someone"), MD_BODY_CLASS,
-            icon("shield-check", "h-3.5 w-3.5")))
+            icon("shield-check", "h-3.5 w-3.5"), assign))
 
 
 AI_PROMPT_DEFAULT = ("Fix {url}: read the issue, make the change with tests, and open a pull "
@@ -1886,9 +1892,9 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
 
     if viewer == "both":
         comment_box = _viewer(guest_comment_box(path), "guest") \
-            + _viewer(member_comment_box(number), "member")
+            + _viewer(member_comment_box(number, not closed), "member")
     elif viewer == "member":
-        comment_box = member_comment_box(number)
+        comment_box = member_comment_box(number, not closed)
     else:
         comment_box = guest_comment_box(path)
     sub_issues = sub_issues_html(ctx, number, child_rows, viewer if viewer == "both"
