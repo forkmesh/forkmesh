@@ -1634,21 +1634,36 @@ def test_world_ticket_and_inactive_routes_keep_auth_out_of_the_socket():
         assert "expires_at" in source
 
 
-def test_world_system_capacity_is_bounded_content_free_and_identifier_safe():
-    calls = {"list": [], "count": []}
+def _capacity_harness(fail_batch):
+    calls = {"list": [], "batch": [], "count": []}
+    counts = {
+        "accounts": 37,
+        "one_row": 1,
+        "empty_table": 0,
+        "too_large": 9_007_199_254_740_992,
+    }
 
     async def d1_all(_env, sql, *args):
-        calls["list"].append((sql, args))
+        if "sqlite_master" in sql:
+            calls["list"].append((sql, args))
+            return [
+                {"name": "accounts"},
+                {"name": "one_row"},
+                {"name": "empty_table"},
+                {"name": "sqlite_sequence"},
+                {"name": "_cf_KV"},
+                {"name": 'bad" UNION SELECT secret FROM accounts--'},
+                {"name": "space padded "},
+                {"name": "too_large"},
+                {"name": "dropped_during_migration"},
+            ]
+        assert args == ()
+        calls["batch"].append(sql)
+        if fail_batch:
+            raise RuntimeError("no such table")
         return [
-            {"name": "accounts"},
-            {"name": "one_row"},
-            {"name": "empty_table"},
-            {"name": "sqlite_sequence"},
-            {"name": "_cf_KV"},
-            {"name": 'bad" UNION SELECT secret FROM accounts--'},
-            {"name": "space padded "},
-            {"name": "too_large"},
-            {"name": "dropped_during_migration"},
+            {"name": table, "row_count": count}
+            for table, count in counts.items()
         ]
 
     async def d1_first(_env, sql, *args):
@@ -1657,14 +1672,7 @@ def test_world_system_capacity_is_bounded_content_free_and_identifier_safe():
         table = sql.split('"')[1]
         if table == "dropped_during_migration":
             raise RuntimeError("no such table")
-        return {
-            "row_count": {
-                "accounts": 37,
-                "one_row": 1,
-                "empty_table": 0,
-                "too_large": 9_007_199_254_740_992,
-            }[table]
-        }
+        return {"row_count": counts[table]}
 
     namespace = {
         "d1_all": d1_all,
@@ -1675,6 +1683,11 @@ def test_world_system_capacity_is_bounded_content_free_and_identifier_safe():
     module = ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[]))
     exec(compile(module, str(ENTRY), "exec"), namespace)
     result = asyncio.run(namespace["_world_system_capacity"](object()))
+    return result, calls
+
+
+def test_world_system_capacity_is_bounded_content_free_and_identifier_safe():
+    result, calls = _capacity_harness(fail_batch=False)
 
     # Empty and single-row tables are part of the inventory; only an
     # unrepresentable count, an unsafe name, or a vanished table is skipped.
@@ -1689,6 +1702,23 @@ def test_world_system_capacity_is_bounded_content_free_and_identifier_safe():
     assert "sqlite_master" in list_sql
     assert "ORDER BY name LIMIT ?" in list_sql
     assert list_args == (256,)
+    # Every safe table is counted in one statement, not one per table.
+    assert calls["batch"] == [" UNION ALL ".join(
+        "SELECT COUNT(*) AS row_count, '%s' AS name FROM \"%s\"" % (t, t)
+        for t in ("accounts", "one_row", "empty_table", "too_large",
+                  "dropped_during_migration"))]
+    assert calls["count"] == []
+
+
+def test_world_system_capacity_counts_one_table_at_a_time_after_a_batch_fails():
+    result, calls = _capacity_harness(fail_batch=True)
+
+    assert result == [
+        {"name": "accounts", "rowCount": 37},
+        {"name": "one_row", "rowCount": 1},
+        {"name": "empty_table", "rowCount": 0},
+    ]
+    assert len(calls["batch"]) == 1
     assert calls["count"] == [
         'SELECT COUNT(*) AS row_count FROM "accounts"',
         'SELECT COUNT(*) AS row_count FROM "one_row"',
