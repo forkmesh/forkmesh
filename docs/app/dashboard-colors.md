@@ -50,6 +50,16 @@ the shell after `apply_theme` has filled the markers (the raw `shell.html`
 only holds the markers), and that each one has a dark and a light value in
 `theme.json`.
 
+## Text on solid `primary`
+
+White text on the dark-theme blue (`#4493f8`) reaches only 3.1:1, below the
+4.5:1 text minimum in
+`www/docs/engineering/daily-interface-budgets.json`, and the daily-interface
+browser check failed on it. In the dark theme, `primary-foreground` is now the
+page background (`1 4 9`), which gives 6.6:1 and keeps the blue unchanged for
+links, focus and selection. The light theme keeps white text on `#0969da`
+(5.2:1).
+
 ## Header search focus
 
 The header search box (`data-global-search-shell` in

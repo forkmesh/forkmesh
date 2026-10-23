@@ -65,7 +65,9 @@
       "Stepping into a neighbouring World's hexagon is seamless: its hexagon is built ahead of time, people stay visible on both sides while you cross, and the World no longer blanks out or stalls after a while on slower devices.",
       "Road edges now join continuously around the outer bike loop.",
       "Riding the coaster in first person, your view now tilts, banks and turns upside down with your seat, and a look to the side stays put through the loops.",
-      "Walking out of an instance's World, such as OWASP BLT, onto the ForkMesh land next door now puts you in the ForkMesh World, with its people and town, without leaving the page or signing out."
+      "Walking out of an instance's World, such as OWASP BLT, onto the ForkMesh land next door now puts you in the ForkMesh World, with its people and town, without leaving the page or signing out.",
+      "Leaderboard Island's boards now stand on one ring, and each board refreshes only when you step onto the small glowing half-circle in front of it.",
+      "Move any World HUD button, such as Capture, Sound or an emote, between the top, left, right and bottom rails by dragging it or with the keyboard; it resizes to fit its new rail and the layout is remembered on this device."
      ]
     },
     {
@@ -83,7 +85,8 @@
       "Link previews in shared rooms load only when you tap them, and private network addresses are never fetched.",
       "On the iPhone Home screen, the number on each icon now sits beside the icon, so it no longer covers the name of the icon above it.",
       "Merge all with AI on a repository's pull requests now reaches your desktop's copy instead of saying the desktop does not have that repository.",
-      "A walk now shows in the Dynamic Island and on the Lock Screen as soon as you've been walking with ForkMesh open, and stays there when you lock the phone mid-walk."
+      "A walk now shows in the Dynamic Island and on the Lock Screen as soon as you've been walking with ForkMesh open, and stays there when you lock the phone mid-walk.",
+      "The Agents list's Eagle view drops the agent circle on the left; each row's image tile now shows lines added and removed as a green and red border, the file count and a status dot in a small pill, and blinking dots for the agent's background tasks."
      ]
     },
     {
@@ -101,7 +104,8 @@
       "A run waiting for your approval now says why it is held, such as a first-time contributor's pull request, instead of only saying the workflow has no changes.",
       "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back.",
       "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has.",
-      "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room and chat posts to it."
+      "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room.",
+      "The prompt composer keeps its add button, files tasks from the model menu, and has a send to: button that posts the prompt to the chat channel you have open, such as #general; with the Chat page open, Enter sends there."
      ]
     },
     {
@@ -119,7 +123,8 @@
     {
      "title": "Other improvements",
      "items": [
-      "forkmesh.com/features lists every feature again, with a count for each section and a mark on every feature that is a Market plugin."
+      "forkmesh.com/features lists every feature again, with a count for each section and a mark on every feature that is a Market plugin.",
+      "In the dark theme, text on blue buttons is now easier to read, the repository filter shows a focus outline, and the phone menu button is easier to tap."
      ]
     }
    ]

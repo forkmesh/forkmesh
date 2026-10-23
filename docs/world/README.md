@@ -490,6 +490,41 @@ above the software keyboard (`--world-chat-covered-bottom`).
   from `ORG_AGENT_MODEL_ALIASES`; choices persist in
   `forkmesh.world.agentComposer.v1`.
 
+### HUD rails
+
+The HUD buttons sit in four rails, each marked `data-world-dock`: `top` (the
+launcher row, `[data-world-top-actions]`), `right` (a group inside the right
+rail, Share view by default), `bottom` (the avatar action toolbar in the HUD
+island) and `left` (`.world-dock-left`, empty and hidden by default). Every
+movable button carries `data-world-tool="<id>"`; the avatar badge is the
+launcher and stays put.
+
+- **Arrange mode** starts from Settings > View > "Arrange buttons", or by
+  pressing and holding any button for `WORLD_HUD_LONG_PRESS_MS`. It keeps the
+  launcher rails open, outlines the four rails and shows a panel with Reset
+  and Done. Clicks on buttons are swallowed while arranging.
+- **Dragging** uses pointer events on `window`, so mouse, pen and touch work
+  alike (buttons get `touch-action: none` while arranging). The button joins
+  the rail nearest the pointer and the slot by button centres
+  (`dragHudTool`).
+- **Keyboard:** arrow keys move the focused button one slot within its rail;
+  Shift with an arrow sends it to that edge's rail; Escape or Done leaves.
+  Each move is announced in `[data-world-dock-status]`.
+- **Buttons move, they are not re-rendered** (`placeHudTool`), so the
+  delegated `closest("[data-world-…]")` handlers and the emote buttons' own
+  listeners keep working anywhere.
+- **Resizing to the rail:** a button away from its home rail drops its home
+  class (`world-top-link`, `world-share-view-button`) for `.world-dock-tool`,
+  which takes the rail's size: 40px squares at the top and sides (42px in the
+  phone layout), 30px flat icons in the bottom bar, labels visually hidden.
+  The top rail still hides them until the launcher opens; the left rail is
+  always visible.
+- **Persistence:** per device in `forkmesh.world.hudLayout.v1` as
+  `{top, left, right, bottom}` id lists. The default layout is read from the
+  markup before the saved one is applied; "Reset to default" restores it and
+  removes the key. Unknown ids are skipped, so a button that is not rendered
+  (Upgrade for supporting members) is harmless.
+
 ### Restore everything and start fresh
 
 Settings > Debug > "Restore everything and start fresh"
@@ -588,6 +623,46 @@ flat side facing the town path.
   version, commit and deploy age from the `forkmesh-world-version`,
   `forkmesh-world-built` and `forkmesh-world-deploy` metas (falling back to
   `/api/version`).
+
+### Board ring
+
+Leaderboard Island's boards stand on one ring
+(`scene/districts/billboard-circles.js`, sized by `BILLBOARD_RING` in
+`scene/layout.js`). It replaced three separate circles (hub, social,
+leaderboards), which read as three plazas and fetched everything on a circle
+as soon as you walked onto it.
+
+- **Layout.** Boards are grouped by section (`sections`: hub, social,
+  leaderboards; a placement's `circle` option names the section, so existing
+  packages keep working) and then by `order`. Each board gets the arc it
+  needs, the spare arc is shared evenly, and an `entryGap` is left open
+  towards the causeway. `minRadius` (38) already fits every board, X and
+  Reddit banners included, so the ring is sized once and does not regrow as
+  boards are placed at boot.
+- **Refresh pads.** Every board with a `feed` has a small semicircle in front
+  of it (`padRadius` 2.2). A board fetches only when you step onto its own
+  pad: `updateBillboardPads()` runs with the other proximity checks at
+  12.5 Hz, rejects anyone outside the pad band with one distance test, and
+  reports `onBillboardNearby({ feed, refetch })` / `onBillboardAway({ feed })`
+  to the shell. Leaving needs `padExit` more distance than entering, so
+  standing on the edge cannot flap the request. Each board has its own
+  cooldown (`cooldownMs`, 60 s; the QA board 5 s), so walking along the
+  leaderboard cards refreshes each card once rather than the whole family.
+  The shell's `startBillboardWatch(feed)` maps a feed to its loader; the QA
+  deck polls only while you stand on its pad, and the Mastodon and social
+  banner countdowns refetch only while you stand on their pads.
+- **Spinners.** Only the board whose pad started a request spins. Feeds that
+  share one request (all leaderboard cards read `/api/leaderboards`) still
+  repaint together from that one snapshot, but only the approached card
+  shows the spinner. A request started elsewhere (a QA action, copying a
+  referral link) spins every board of that feed.
+- **Draw cost.** The ring is one textured apron (a unit circle scaled to the
+  ring), one rim, and one `InstancedMesh` holding every pad, so all pads are a
+  single draw call and the active pad is lit by its instance colour (`muted`
+  idle, `accent` underfoot). The rim and pads are flat decals with
+  `polygonOffset`, so they never z-fight the apron. Geometry comes from the
+  resource authority (the pad is a cached half-disc, laid flat by its
+  instance rotation).
 
 ### Members Circle
 

@@ -292,7 +292,7 @@
         --dashboard-popover-rgb: 22 27 34;
         --dashboard-popover-foreground-rgb: 240 246 252;
         --dashboard-primary-rgb: 68 147 248;
-        --dashboard-primary-foreground-rgb: 255 255 255;
+        --dashboard-primary-foreground-rgb: 1 4 9;
         --dashboard-cta-rgb: 35 134 54;
         --dashboard-cta-foreground-rgb: 255 255 255;
         --dashboard-success-rgb: 63 185 80;
@@ -3510,6 +3510,10 @@
       @media (pointer: coarse) {
         :where(button, [role="button"], [role="option"], input, select) {
           min-height: 44px;
+        }
+
+        [data-mobile-menu-toggle] {
+          min-width: 44px;
         }
 
         /* Diff viewer on touch screens (issue #722). Every line number is a
