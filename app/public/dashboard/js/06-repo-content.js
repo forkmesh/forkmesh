@@ -18091,6 +18091,8 @@ Your reply
   const USER_ACTIVITY_CARD_SYNC_MS = 60 * 1000;
   const USER_ACTIVITY_LIGHT = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"];
   const USER_ACTIVITY_DARK = ["#2d333b", "#0e4429", "#006d32", "#26a641", "#39d353"];
+  const USER_ACTIVITY_HALLOWEEN_LIGHT = ["#ebedf0", "#ffee4a", "#ffc501", "#fe9600", "#03001c"];
+  const USER_ACTIVITY_HALLOWEEN_DARK = ["#2d333b", "#631c03", "#bd561d", "#fa7a18", "#fddf68"];
   const userActivity = {
     started: false,
     lastWheelMs: 0,
@@ -18317,7 +18319,10 @@ Your reply
     const kinds = userActivityOtherKinds();
     const summary = userActivitySummary(counts);
     const nowSlot = userActivitySlot();
-    const ramp = readDashboardTheme() === "light" ? USER_ACTIVITY_LIGHT : USER_ACTIVITY_DARK;
+    const light = readDashboardTheme() === "light";
+    const ramp = seasonActive("halloween")
+      ? (light ? USER_ACTIVITY_HALLOWEEN_LIGHT : USER_ACTIVITY_HALLOWEEN_DARK)
+      : (light ? USER_ACTIVITY_LIGHT : USER_ACTIVITY_DARK);
     const cells = [];
     for (let row = 0; row < USER_ACTIVITY_ROWS; row += 1) {
       for (let hour = 0; hour < 24; hour += 1) {
