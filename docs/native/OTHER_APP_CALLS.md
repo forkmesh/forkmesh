@@ -19,6 +19,19 @@ the mesh stay quiet during our own call as well, which is what a call needs. `Ot
 call list each time, and listeners registered with `onChange` hear the start
 and end.
 
+Since 2026-10-23 every ForkMesh call counts, not only the CallKit ones: our
+outgoing calls (and calls in the China region, where CallKit is off) never
+appear in `CXCallObserver`, so during them sounds and dictation could switch
+or deactivate the shared session and the other person heard silence.
+`DirectCallAudio` calls `OtherAppCall.shared.setOwnCall` while the call engine
+has a phase or a group call runs; `inProgress` and `onChange` include it.
+Because it is our own session the call needs, code that changes the session
+without checking `inProgress` (speech, voice messages, view-once voice,
+dictation, the DJ studio, the alarms' stop) skips its category change during
+our call and deactivates only through `OtherAppCall.deactivateSession()`,
+which does nothing then (`OtherAppCall.ownCall`). Details in
+`native/ios/docs/FMChat.md`, "Audio session during a call".
+
 While a call is up:
 
 - **Interface sounds** (`FmCuePlayer.activateSession`, `sessionReady`), Genie

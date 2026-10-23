@@ -13,6 +13,8 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
     private(set) var current: NativeCallPeer?
     private(set) var route: DirectCallRoute?
     private(set) var remoteVideo: RTCVideoTrack?
+    private(set) var remoteVideoActive = false
+    private(set) var remoteVideoSeen = false
     private(set) var localVideo: RTCVideoTrack?
     let quality = CallQualityMonitor()
     private let micMeter = NativeMicMeter()
@@ -37,6 +39,8 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
         peer.quality = quality
         route = nil
         remoteVideo = nil
+        remoteVideoActive = false
+        remoteVideoSeen = false
         localVideo = peer.videoTrack
         peer.onRoute = { [weak self, weak peer] (found: DirectCallRoute?) in
             guard let self, let peer, self.current === peer else { return }
@@ -46,6 +50,11 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
             guard let self, let peer, self.current === peer else { return }
             self.remoteVideo = track
         }
+        peer.onRemoteVideoActive = { [weak self, weak peer] (on: Bool) in
+            guard let self, let peer, self.current === peer else { return }
+            self.remoteVideoActive = on
+            if on { self.remoteVideoSeen = true }
+        }
         let previous = peer.onClosed
         peer.onClosed = { [weak self, weak peer] in
             previous?()
@@ -53,6 +62,8 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
             self.current = nil
             self.route = nil
             self.remoteVideo = nil
+            self.remoteVideoActive = false
+            self.remoteVideoSeen = false
             self.localVideo = nil
             self.quality.reset()
         }
@@ -78,8 +89,17 @@ final class NativeCallPeerFactory: DirectCallPeerMaking {
         return true
     }
 
+    func pauseMeter() {
+        micMeter.stop(deactivate: false)
+    }
+
+    func resumeMeter() {
+        guard current == nil, !micMeter.running else { return }
+        _ = micMeter.start(into: quality)
+    }
+
     func endPreview() {
-        micMeter.stop(deactivate: current == nil && !NativeGroupCall.shared.active)
+        micMeter.stop(deactivate: current == nil && !NativeGroupCall.shared.active && !OtherAppCall.ownCall)
         preview?.1.stop()
         preview = nil
         previewAudio = nil
@@ -132,15 +152,31 @@ struct NativeCallSurface: View {
     var body: some View {
         ZStack {
             if media == .video {
-                NativeVideoView(track: factory.remoteVideo)
-                    .ignoresSafeArea()
-                if let local = factory.localVideo {
-                    DraggableCallPreview {
-                        NativeVideoView(track: local, mirrored: true)
+                if factory.remoteVideoActive || factory.remoteVideoSeen {
+                    NativeVideoView(track: factory.remoteVideo)
+                        .opacity(factory.remoteVideoActive ? 1 : 0)
+                        .ignoresSafeArea()
+                    if let local = factory.localVideo {
+                        DraggableCallPreview {
+                            NativeVideoView(track: local, mirrored: true)
+                        }
                     }
+                } else if let local = factory.localVideo {
+                    NativeVideoView(track: local, mirrored: true)
+                        .ignoresSafeArea()
+                        .accessibilityLabel("Your video")
                 }
             }
         }
+    }
+}
+
+struct NativeMiniVideo: View {
+    let factory: NativeCallPeerFactory
+
+    var body: some View {
+        NativeVideoView(track: factory.remoteVideo)
+            .opacity(factory.remoteVideoActive ? 1 : 0)
     }
 }
 #endif

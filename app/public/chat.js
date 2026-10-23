@@ -2578,7 +2578,7 @@ function startAccountEventChannel() {
   }
   accountEvents = createAccountEventChannel({
     sessionToken: () => userSession()?.sessionToken || "",
-    onTopic: (topic) => {
+    onTopic: (topic, frame) => {
       // A new message in a conversation this browser is not sitting in, or a
       // conversation/channel that appeared because somebody else invited or
       // messaged us. Both lists used to be re-read every 30s to find these.
@@ -2589,6 +2589,8 @@ function startAccountEventChannel() {
       } else if (topic === "chat-read") {
         refreshReadMarks();
         refreshDirectMessages({ preserve: true, selectSaved: false });
+      } else if (topic === "calls") {
+        openRingingConversation(frame);
       }
     },
     // One catch-up per RE-connect: a DM that arrived while the channel was
@@ -2606,6 +2608,19 @@ function startAccountEventChannel() {
     },
   });
   accountEvents.start();
+}
+
+function openRingingConversation(frame) {
+  const key = String(frame?.conversation || "");
+  if (!isDirectMessageKey(key) || activeChannel === key || !callsSupported() || chatCalls.active()) return;
+  const open = () => {
+    if (directMessageForKey(key) && activeChannel !== key && !chatCalls.active()) setActiveChannel(key);
+  };
+  if (directMessageForKey(key)) {
+    open();
+    return;
+  }
+  Promise.resolve(refreshDirectMessages({ preserve: true, selectSaved: false })).then(open, () => {});
 }
 
 function newestMessageTs(channel) {

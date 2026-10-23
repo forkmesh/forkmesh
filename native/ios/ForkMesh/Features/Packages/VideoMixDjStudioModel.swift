@@ -511,7 +511,7 @@ final class DjStudioModel {
     }
 
     private func claimAudio() {
-        guard !audioClaimed else { return }
+        guard !audioClaimed, !OtherAppCall.ownCall else { return }
         audioClaimed = true
         let session = AVAudioSession.sharedInstance()
         previousCategory = session.category
