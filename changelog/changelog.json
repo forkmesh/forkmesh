@@ -8,6 +8,12 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Agents",
+     "items": [
+      "The composer hides its character count until a prompt nears the limit, then shows it in orange and red."
+     ]
+    },
+    {
      "title": "Android",
      "items": [
       "On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts.",
