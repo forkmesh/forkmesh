@@ -66,7 +66,7 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 [PARITY.md](PARITY.md) section 1.1; Android-specific decisions are in
 [ANDROID.md](ANDROID.md).
 
-<!-- triaged-through: 0efc715361 -->
+<!-- triaged-through: 71442a1a67 -->
 
 ## Ledger
 
@@ -184,4 +184,9 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S109 | 2026-10-22 | DJ Studio | fix | DJ Studio's Repeat now really loops the song and jumps straight from where the sound ends back to where it starts, skipping silence at both ends. | ab3a63d995 | pending |  |
 | S110 | 2026-10-22 | Settings | feature | Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked. | 180d647034 | pending |  |
 | S111 | 2026-10-22 | Chat | fix | Face filters follow your head with less lag and your lips move with your speech. | d62d4aabc9 | synced | d62d4aabc9 |
+| S112 | 2026-10-20 | Calls | feature | When a caller hangs up before you answer, the chat shows a missed-call line. | 4606848384 | synced | 4606848384 |
+| S113 | 2026-10-20 | Chat | feature | Stick a sticker on a message from Add sticker, next to Add reaction. | 8d354cdada | synced | 8d354cdada |
+| S114 | 2026-10-21 | Calls | fix | In China the app rings calls itself instead of through the system call screen. | 6303bbe848 | n/a | CallKit and PushKit are iOS-only; Android always rings through its own call notification |
+| S115 | 2026-10-21 | Calls | feature | On a link too weak for video, a group call shows a live moving picture of the person, mouth included, instead of a frozen tile. | c368c4b198 | pending |  |
+| S116 | 2026-10-21 | Calls | feature | Group calls run on ForkMesh's own media engine, with a code everyone in the call can compare to check it is end-to-end encrypted. | 1c03f8c728 | pending |  |
 <!-- ledger:end -->
