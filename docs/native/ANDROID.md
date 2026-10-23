@@ -2374,3 +2374,25 @@ edit or delete as somebody else. Nothing here talks to older builds.
   `MainActivity` paints with; the readable switch still applies. A project
   without an instance or an instance on the default look clears the colours,
   a failed read keeps them, and turning the switch off drops them.
+- **Home loading (S065, S105).** Home has no loading bar any more. While a
+  count is read, a small spinner (`ShellHomeCountSpinner`) sits where the
+  count pill goes: the repository section icons and Code while the current
+  repository's counts load, Tasks while the task board loads, and RSS Reader
+  while it refreshes (`ShellBadges.pending`); an unread badge still wins, and
+  TalkBack reads "Loading". The current repository's counts are saved per
+  repository (`shell/repoCounts/<owner>/<repo>`, `ShellRepoCounts.encode`)
+  and shown at once, then read again once a session. **Refresh everything**
+  in the Home background, section and tile menus re-reads the tasks, bug
+  reports, the repository counts and pulls, the organisation packages, the
+  account packages and status checks, the inbox and the RSS feeds
+  (`ShellBadges.refreshEverything`). The tile grid was already fitted to the
+  measured height in the first frame, and the organisation packages were
+  already saved per project, so nothing else resized on load. The count pill
+  now hangs from the glyph's top-right corner and rises at most 2 dp above
+  the icon box (`ShellHomeMetrics.anchorRise`), so it no longer covers the
+  name of the icon above, and it draws over the update dot, which is 6 dp.
+- **Status dots on every screen (S093).** Android has no Dynamic Island
+  strip, so while Status Page is installed `StatusPageFeature.TopStrip`
+  draws the same service dots (5 dp, troubled ones blinking) in a 7 dp strip
+  just under the status bar, over every tab and pushed page. It is drawn over
+  the content without taking layout height and does not take touches.
