@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-23",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Android",
+     "items": [
+      "On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-22",
    "version": "",
    "title": "",

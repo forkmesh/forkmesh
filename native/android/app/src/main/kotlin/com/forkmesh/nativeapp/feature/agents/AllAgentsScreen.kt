@@ -80,6 +80,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.control.PromptDeck
 
 internal val agentsNotice = FmStatus()
 
@@ -507,6 +509,11 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                         AgentBranchDiff.open(navigator, Repository(row.repoOwner, row.repoName), row.branchName, row.baseBranch, row.title)
                     }
                 }
+                AgentPromptDeck(
+                    remember(blocks) { PromptDeck.of(blocks) },
+                    Modifier.padding(horizontal = FmSpace.x3).padding(bottom = 4.dp),
+                    tag = "agent-run-prompt-deck",
+                )
                 val list = rememberLazyListState()
                 FmPullToRefreshBox(
                     isRefreshing = refreshing,

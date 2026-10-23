@@ -2339,3 +2339,18 @@ edit or delete as somebody else. Nothing here talks to older builds.
   end, so a page with many actions scrolls them instead of drawing the first
   one under the Back button. The unified agent page's action row does the
   same: its buttons scroll inside the width left after the badges.
+- **Pinned last prompt (S079, S102).** `AgentPromptDeck`
+  (`A/feature/agents/AgentPromptDeck.kt`) pins what you last wrote above the
+  transcript of the unified agent page, the desktop session page, the queued
+  session page and the phone's own agent. `PromptDeck` (`C/control`, tested
+  as on iOS) holds the prompts newest first: `Prompt` blocks and steers from
+  you (`Steer.fromYou`), a queued run's user turns, or `AgentUserMessage`
+  events. The card is one line (tap for up to eight), with `3/5` when there is
+  more than one; up to two edges peek out below it, drawn with
+  `matchParentSize` behind the card so they never stretch past it (the empty
+  box of S102). Swipe right for an earlier prompt and left for a later one;
+  the card follows the finger, tilts 0.04° per dp and resists past either
+  end. Long press offers Copy prompt and Back to the latest. A new prompt
+  drops in on top and returns the deck to it. TalkBack reads it as one item
+  with Earlier prompt and Later prompt actions; reduced motion fades between
+  cards without the tilt.
