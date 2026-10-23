@@ -10,6 +10,7 @@
     {
      "title": "Agents",
      "items": [
+      "The composer hides its character count until a prompt nears the limit, then shows it in orange and red.",
       "Special agents are now workflows: each run shows its steps and saves its output on the Workflows page, the page can build special agents, shortcut runs and desktop cleanups step by step, and any workflow can be pinned as a button to the top, left, right or bottom of the window."
      ]
     },
@@ -140,7 +141,8 @@
       "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back.",
       "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has.",
       "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room.",
-      "The prompt composer keeps its add button, files tasks from the model menu, and has a send to: button that posts the prompt to the chat channel you have open, such as #general; with the Chat page open, Enter sends there."
+      "The prompt composer keeps its add button, files tasks from the model menu, and has a send to: button that posts the prompt to the chat channel you have open, such as #general; with the Chat page open, Enter sends there.",
+      "Pick a theme straight from the view menu at the top right, try the new Halloween theme, and drag the timers clock to the left, middle or right of the top bar."
      ]
     },
     {
