@@ -230,7 +230,6 @@ struct TelemetryEarSparks: View {
     static let groupGap: CGFloat = 3
 
     @State private var telemetry: AppTelemetry?
-    @State private var vitals: DesktopVitals?
     let width: CGFloat
     let height: CGFloat
 
@@ -238,21 +237,20 @@ struct TelemetryEarSparks: View {
         self.width = width
         self.height = height
         _telemetry = State(initialValue: Services.get(AppTelemetry.self))
-        _vitals = State(initialValue: DesktopRemoteFeature.vitals)
     }
 
     var body: some View {
         if let telemetry = telemetry {
             TelemetrySparks(
-                telemetry: telemetry, vitals: vitals,
+                telemetry: telemetry, vitals: nil,
                 chartWidth: TelemetrySparks.fitted(
-                    width: width, count: TelemetrySparks.chartCount(vitals),
+                    width: width, count: TelemetrySparks.chartCount(nil),
                     spacing: TelemetryEarSparks.spacing, groupGap: TelemetryEarSparks.groupGap,
                     widest: TelemetryStrip.chartWidth),
                 height: height, spacing: TelemetryEarSparks.spacing, groupGap: TelemetryEarSparks.groupGap)
                 .fixedSize()
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(TelemetrySparks.summary(telemetry, vitals)))
+                .accessibilityLabel(Text(TelemetrySparks.summary(telemetry, nil)))
                 .accessibilityIdentifier("top-ear-telemetry")
         }
     }

@@ -11601,7 +11601,8 @@ private:
     bool m_logOverlayExpanded = false;
     bool m_promptOverlayCollapsed = false;
     QWidget *m_promptDragHandle = nullptr;
-    QWidget *m_promptResizeGrip = nullptr;
+    QList<QWidget *> m_promptResizeEdges;
+    Qt::Edges m_promptResizeActiveEdges;
     QPushButton *m_promptDetachButton = nullptr;
     QPushButton *m_promptResetButton = nullptr;
     QPushButton *m_promptClearButton = nullptr; // empties the prompt text area

@@ -13,18 +13,26 @@ public struct FleetLight: Equatable, Sendable, Identifiable {
     public var name: String
     public var healthy: Bool
     public var reason: String
+    public var resources: NodeResources?
 
-    public init(id: String, kind: FleetLightKind, name: String, healthy: Bool, reason: String = "") {
+    public init(
+        id: String, kind: FleetLightKind, name: String, healthy: Bool, reason: String = "",
+        resources: NodeResources? = nil
+    ) {
         self.id = id
         self.kind = kind
         self.name = name
         self.healthy = healthy
         self.reason = reason
+        self.resources = resources
     }
 
     public var label: String {
         switch kind {
-        case .core: return "Core node \(name), \(healthy ? "operational" : "has an issue")"
+        case .core:
+            let state: String = "Core node \(name), \(healthy ? "operational" : "has an issue")"
+            guard let resources else { return state }
+            return "\(state), \(resources.label)"
         case .runner: return "Runner \(name), \(healthy ? "signed in" : "not signed in or not responding")"
         }
     }
@@ -149,7 +157,9 @@ extension StatusSystem {
         }
         let name: String = String(id.dropFirst(prefix.count))
         if name.isEmpty { return nil }
-        return FleetLight(id: id, kind: kind, name: name, healthy: state == .operational, reason: reason)
+        return FleetLight(
+            id: id, kind: kind, name: name, healthy: state == .operational, reason: reason,
+            resources: kind == .core ? resources : nil)
     }
 
     public var statusLight: StatusLight? {

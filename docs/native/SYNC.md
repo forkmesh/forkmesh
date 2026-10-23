@@ -191,5 +191,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S116 | 2026-10-23 | Agents | ui | The green and red churn ring around an agent's tile in the agent list turns while the agent is working and stops still when it is done. | d8dffb957e | pending |  |
 | S117 | 2026-10-23 | Market | feature | Each Feed post has a share button to view it on the website or copy its public link. | 98e35b20f3 | synced | 6a733017ec |
 | S118 | 2026-10-23 | Agents | feature | When a merge is blocked by uncommitted edits on the desktop, a Set aside and merge button saves them on a wip/ branch, merges, and puts them back. | 07bb2e29c5 | pending |  |
-| S119 | 2026-10-23 | Chat | fix | When several new devices join a private chat at once, one banner asks to approve or block all of them instead of one banner per device. | a0c1f528fa | pending |  |
+| S119 | 2026-10-23 | Settings | ui | With Diagnostics on, the core node and desktop lights show tiny CPU, memory and disk bars, sit further from the corner, and the desktop charts left the top right. | a345e3890b | pending |  |
+| S120 | 2026-10-23 | Chat | fix | When several new devices join a private chat at once, one banner asks to approve or block all of them instead of one banner per device. | a0c1f528fa | pending |  |
 <!-- ledger:end -->

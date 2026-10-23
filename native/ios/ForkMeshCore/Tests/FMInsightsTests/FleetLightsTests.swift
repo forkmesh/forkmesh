@@ -27,6 +27,24 @@ final class FleetLightsTests: XCTestCase {
         XCTAssertEqual(lights[0].reason, "n2 has not written a cluster heartbeat")
     }
 
+    func testCoreLightsCarryTheirCpuMemoryAndDisk() {
+        let lights = StatusReport(json: object("""
+        {"systems":[
+         {"id":"core:n1","status":"operational","resources":{"cpu":12.5,"memory":81,"disk":140}},
+         {"id":"core:n2","status":"operational","resources":{"cpu":null,"memory":-1}},
+         {"id":"core:n3","status":"operational"},
+         {"id":"runner:r1","status":"operational","resources":{"cpu":50}}],
+         "current":{}}
+        """)).fleetLights
+        XCTAssertEqual(lights[0].resources, NodeResources(cpu: 12.5, memory: 81, disk: 100))
+        XCTAssertEqual(lights[0].resources?.values, [12.5, 81, 100])
+        XCTAssertEqual(lights[0].label, "Core node n1, operational, CPU 13%, memory 81%, disk 100%")
+        XCTAssertNil(lights[1].resources)
+        XCTAssertNil(lights[2].resources)
+        XCTAssertNil(lights[3].resources)
+        XCTAssertEqual(NodeResources(cpu: nil, memory: 40, disk: nil).label, "CPU unknown, memory 40%, disk unknown")
+    }
+
     func testStatusLightsAreTheSystemsWithoutNodes() {
         let report = StatusReport(json: object("""
         {"systems":[

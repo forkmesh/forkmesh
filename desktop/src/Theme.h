@@ -1079,10 +1079,6 @@ QPushButton#memberDeleteButton:hover {
 #promptWrapper:focus-within { border-color: #39d353; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptResizeGrip {
-    background-color: rgba(139,148,158,0.5); border: none; border-radius: 2px;
-}
-#promptResizeGrip:hover { background-color: rgba(57,211,83,0.65); }
 QPushButton#promptDetachButton, QPushButton#promptResetButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
@@ -1894,10 +1890,6 @@ QProgressBar#shortcutRunProgress::chunk { border-radius: 2px; background-color: 
 #promptWrapper:focus-within { border-color: #39d353; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptResizeGrip {
-    background-color: rgba(139,148,158,0.5); border: none; border-radius: 2px;
-}
-#promptResizeGrip:hover { background-color: rgba(57,211,83,0.65); }
 QPushButton#promptDetachButton, QPushButton#promptResetButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
@@ -3305,10 +3297,6 @@ QPushButton#memberDeleteButton:hover {
 #promptWrapper:focus-within { border-color: #1a7f37; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptResizeGrip {
-    background-color: rgba(87,96,106,0.5); border: none; border-radius: 2px;
-}
-#promptResizeGrip:hover { background-color: rgba(26,127,55,0.65); }
 QPushButton#promptDetachButton, QPushButton#promptResetButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
@@ -4106,10 +4094,6 @@ QProgressBar#shortcutRunProgress::chunk { border-radius: 2px; background-color: 
 #promptWrapper:focus-within { border-color: #1a7f37; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptResizeGrip {
-    background-color: rgba(87,96,106,0.5); border: none; border-radius: 2px;
-}
-#promptResizeGrip:hover { background-color: rgba(26,127,55,0.65); }
 QPushButton#promptDetachButton, QPushButton#promptResetButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;

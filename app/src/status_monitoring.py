@@ -1227,6 +1227,49 @@ async def _status_core_health(env, now):
     return _status_core_verdicts(core_rows, vote_rows, ids_rows, now)
 
 
+def _status_core_resource_pct(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != value or value < 0:
+        return None
+    return round(min(100.0, float(value)), 1)
+
+
+def _status_core_resources_from_rows(rows, now):
+    resources = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        core_name = _status_core_name(row.get("node_id"))
+        if not core_name:
+            continue
+        if int(row.get("ms") or 0) < int(now) - STATUS_CORE_METRICS_FRESH_MS:
+            continue
+        try:
+            data = json.loads(str(row.get("data") or ""))
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        reading = {
+            name: _status_core_resource_pct(data.get(key))
+            for name, key in (
+                ("cpu", "cpuPct"), ("memory", "memPct"), ("disk", "diskPct"))
+        }
+        if any(value is not None for value in reading.values()):
+            resources[core_name] = reading
+    return resources
+
+
+async def _status_core_resources(env, now):
+    rows = await d1_all(
+        env,
+        "SELECT node_id,ms,data FROM host_metrics WHERE ms>=? LIMIT ?",
+        int(now) - STATUS_CORE_METRICS_FRESH_MS, STATUS_CORE_MAX,
+    )
+    return _status_core_resources_from_rows(rows, now)
+
+
 async def _status_runner_rows(env):
     rows = await d1_all(
         env,
@@ -2928,6 +2971,10 @@ async def status_history(env, view="full"):
     except Exception:
         active_cores = set()
     try:
+        core_resources = await _status_core_resources(env, now)
+    except Exception:
+        core_resources = {}
+    try:
         active_runners = {
             row["name"] for row in await _status_runner_rows(env)}
     except Exception:
@@ -3165,7 +3212,7 @@ async def status_history(env, view="full"):
                 "polled for agent jobs within the last three minutes and "
                 "none of its provider logins has expired. A runner that is "
                 "scaled down and revoked leaves this list.")
-        systems.append({
+        system = {
             "id": system_id, "label": label, "status": status,
             "checkDescription": check_description,
             "checks": [
@@ -3184,7 +3231,12 @@ async def status_history(env, view="full"):
             "nextCheck": _status_next_check(
                 system_id, status != "operational",
                 upcoming_slots, previous_slots),
-        })
+        }
+        if system_id.startswith(STATUS_CORE_PREFIX):
+            resources = core_resources.get(system_id[len(STATUS_CORE_PREFIX):])
+            if resources:
+                system["resources"] = resources
+        systems.append(system)
 
     # Current-state snapshot (issue #356): the headline health metrics rendered
     # at the top of the page — flagship repository directly reachable, the
