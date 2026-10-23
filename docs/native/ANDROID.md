@@ -2354,3 +2354,12 @@ edit or delete as somebody else. Nothing here talks to older builds.
   drops in on top and returns the deck to it. TalkBack reads it as one item
   with Earlier prompt and Later prompt actions; reduced motion fades between
   cards without the tilt.
+- **Terminal keys and scrollback (S106).** `AgentTerminalPane` (every phone
+  terminal: desktop, runner, host and sign-in) puts its keys in two rows of
+  equal-width keys (`TerminalKeyBar`: Esc, Tab, Ctrl, ^C, ⌫, Paste; ←, ↑, ↓,
+  →, Enter at double width), so none hides behind a sideways scroll. Ctrl is a
+  one-shot modifier: it focuses the input, and the next typed letter is sent
+  as its control byte (`terminalChordTyped`, `terminalControlBytes`) or the
+  next arrow as `ESC [1;5` + letter (`terminalKeyBytes(control = true)`). The
+  grid follows new output only while it is scrolled to the bottom; scrolled
+  up, it stays put and shows a round jump-to-newest button.
