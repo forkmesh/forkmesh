@@ -127,7 +127,8 @@ def test_forkmesh_com_keeps_every_feature():
 
 def test_white_label_instances_switch_forkmesh_features_off():
     branded = env(INSTANCE_NAME="Acme Code")
-    assert instance_features.enabled_ids(branded) == set()
+    assert instance_features.enabled_ids(branded) == set(
+        instance_features.DEFAULT_ON)
     assert instance_features.blocked(branded, "/api/hackathon/join") == "hackathon"
     assert instance_features.blocked(branded, "/world") == "world"
     assert instance_features.blocked(branded, "/api/orgs/acme/discord/oauth") == "discord"
@@ -137,7 +138,8 @@ def test_white_label_instances_switch_forkmesh_features_off():
     assert instance_features.blocked(branded, "/api/accounts/login") == ""
     assert instance_features.blocked(branded, "/acme/forkmesh") == ""
     chosen = env(INSTANCE_NAME="Acme Code", INSTANCE_PLUGINS="world, hackathon, bogus")
-    assert instance_features.enabled_ids(chosen) == {"world", "hackathon"}
+    assert instance_features.enabled_ids(chosen) == {
+        "world", "hackathon"} | instance_features.DEFAULT_ON
     assert instance_features.blocked(chosen, "/world") == ""
     everything = env(INSTANCE_NAME="Acme Code", INSTANCE_PLUGINS="all")
     assert instance_features.blocked(everything, "/api/ads") == ""
@@ -319,7 +321,8 @@ def test_blog_genie_and_status_are_plugins_that_start_off_on_an_instance():
     assert instance_features.blocked(chosen, "/status") == ""
     assert instance_features.blocked(chosen, "/rss.xml") == ""
     assert {item["id"] for item in instance_features.describe(chosen)
-            if item["enabled"]} == {"status", "blog", "genie"}
+            if item["enabled"]} == {"status", "blog", "genie"} | \
+        instance_features.DEFAULT_ON
     assert instance_features.blocked(env(), "/status") == ""
     assert instance_features.blocked(env(), "/rss.xml") == ""
 

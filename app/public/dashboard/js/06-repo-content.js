@@ -9070,6 +9070,11 @@
     const container = root?.querySelector?.("[data-repo-federated-replies]");
     // Private repositories have no ActivityPub actor; never ask about them.
     if (!container || !repo || repo.isPrivate || !number) return;
+    await instanceInfo();
+    if (instancePluginOff("fediverse-ui")) {
+      container.closest("[data-repo-federated-thread]")?.remove();
+      return;
+    }
     const apiKind = kind === "issues" ? "issue" : kind === "pulls" ? "pull" : "discussion";
     container.innerHTML = '<p class="px-4 py-4 text-sm text-muted-foreground">Loading remote ActivityPub replies…</p>';
     try {
@@ -9444,7 +9449,7 @@
               </section>
               ${isPulls ? `<div data-repo-pull-rules-slot class="sm:ml-14">${renderRepoPullRules(parsed.pullRules)}</div>` : ""}
               ${isPulls ? `<div data-repo-pull-merge-slot class="min-w-0 sm:ml-14">${renderRepoPullMergeBox(repo, number, parsed)}</div>` : ""}
-              ${repo.isPrivate ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
+              ${repo.isPrivate || instancePluginOff("fediverse-ui") ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
                 <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[14px] text-muted-foreground">
                   <i data-lucide="radio" class="h-4 w-4"></i><span class="font-semibold text-foreground">Fediverse thread</span><span class="text-[12px]">· remote provenance, separate from signed history</span><i data-lucide="chevron-down" class="ml-auto h-4 w-4 transition-transform group-open:rotate-180"></i>
                 </summary>
@@ -9906,7 +9911,7 @@ Report
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
           </p>
-          ${closed ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
+          ${closed || instancePluginOff("issue-ai-prompt") ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
         <div data-repo-record-layout class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -9916,7 +9921,7 @@ Report
               <div data-repo-issue-timeline data-empty="${timeline ? "false" : "true"}" class="grid gap-2">${timeline}</div>
               ${renderIssueCommentForm(number)}
             </section>
-            ${repo.isPrivate ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
+            ${repo.isPrivate || instancePluginOff("fediverse-ui") ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
               <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[14px] text-muted-foreground">
                 <i data-lucide="radio" class="h-4 w-4"></i><span class="font-semibold text-foreground">Fediverse thread</span><span class="text-[12px]">· remote provenance, separate from signed history</span><i data-lucide="chevron-down" class="ml-auto h-4 w-4 transition-transform group-open:rotate-180"></i>
               </summary>
@@ -9981,7 +9986,7 @@ Report
               ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
               : `${bar("w-20", "h-8 rounded-full")}${bar("w-24")}`}
           </p>
-          ${item && !closed ? renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "") : ""}
+          ${item && !closed && !instancePluginOff("issue-ai-prompt") ? renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "") : ""}
         </header>
         <div class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
