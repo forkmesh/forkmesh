@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-24",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Desktop",
+     "items": [
+      "In the new desktop design, Control, Network, Repos, Git, Files, Memory, Tasks, Chat, Settings, Users, Pings, Ledger, Analytics, Market, Stats, Health, Calendar, Specials and Calories are restyled to match, with a board view for tasks, a node detail panel, a places column in Files, repository cards, a Market grid, wallet QR codes in Ledger, a relay switcher in the sidebar and a table in Settings for choosing where each app shows up."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-23",
    "version": "",
    "title": "",
