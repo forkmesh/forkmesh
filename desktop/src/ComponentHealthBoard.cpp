@@ -6,6 +6,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QToolTip>
+#include <QVariantMap>
 
 namespace {
 
@@ -35,11 +36,127 @@ QString compactCount(int value)
     return QString::number(value);
 }
 
+struct NextLook {
+    bool on = false;
+    QColor surface;
+    QColor hover;
+    QColor border;
+    QColor fg;
+    QColor muted;
+    QColor subtle;
+    QColor success;
+    QColor warning;
+    QColor danger;
+};
+
+NextLook nextLook(const QWidget *widget)
+{
+    NextLook look;
+    const QVariantMap map = widget->property("nextColors").toMap();
+    if (map.isEmpty())
+        return look;
+    const auto pick = [&map](const char *key) {
+        return map.value(QLatin1String(key)).value<QColor>();
+    };
+    look.on = true;
+    look.surface = pick("surface");
+    look.hover = pick("surfaceRaised");
+    look.border = pick("border");
+    look.fg = pick("fg");
+    look.muted = pick("fgMuted");
+    look.subtle = pick("fgSubtle");
+    look.success = pick("success");
+    look.warning = pick("warning");
+    look.danger = pick("danger");
+    return look;
+}
+
+constexpr int kNextCardWidth = 176;
+constexpr int kNextCardHeight = 92;
+constexpr int kNextGap = 10;
+constexpr int kNextPadding = 24;
+constexpr int kNextRadius = 12;
+constexpr int kNextInset = 12;
+
+QFont pixelFont(const QFont &base, int px, QFont::Weight weight = QFont::Normal)
+{
+    QFont font = base;
+    font.setPixelSize(px);
+    font.setWeight(weight);
+    return font;
+}
+
 QString compactMs(int ms)
 {
     if (ms >= 1000)
         return QStringLiteral("%1s").arg(ms / 1000.0, 0, 'f', 1);
     return QStringLiteral("%1ms").arg(ms);
+}
+
+void paintNextCard(QPainter &painter, const QFont &base, const HealthCard &card,
+                   const QRect &rect, bool hovered, const QColor &status,
+                   const NextLook &look)
+{
+    const QRectF outline = QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5);
+    QColor edge = look.border;
+    if (card.health < 80) {
+        edge = status;
+        edge.setAlpha(hovered ? 150 : 90);
+    }
+    painter.setPen(QPen(edge, 1));
+    painter.setBrush(hovered ? look.hover : look.surface);
+    painter.drawRoundedRect(outline, kNextRadius, kNextRadius);
+
+    const QRect inner = rect.adjusted(kNextInset, kNextInset, -kNextInset, -kNextInset);
+    const QFont titleFont = pixelFont(base, 14, QFont::Medium);
+    const QFontMetrics titleMetrics(titleFont);
+    painter.setFont(titleFont);
+    painter.setPen(look.fg);
+    const QRect titleRect(inner.left(), inner.top(), inner.width(), titleMetrics.height());
+    painter.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter,
+                     titleMetrics.elidedText(card.title, Qt::ElideLeft, titleRect.width()));
+
+    const QFont smallFont = pixelFont(base, 12);
+    const QFontMetrics smallMetrics(smallFont);
+    const int line = smallMetrics.height();
+    painter.setFont(smallFont);
+    painter.setPen(look.muted);
+    const QRect subtitleRect(inner.left(), titleRect.bottom() + 2, inner.width(), line);
+    painter.drawText(subtitleRect, Qt::AlignLeft | Qt::AlignVCenter,
+                     smallMetrics.elidedText(card.subtitle, Qt::ElideRight,
+                                             subtitleRect.width()));
+
+    const QFont scoreFont = pixelFont(base, 18, QFont::DemiBold);
+    const QFontMetrics scoreMetrics(scoreFont);
+    const QString score = QString::number(card.health);
+    const int scoreWidth = scoreMetrics.horizontalAdvance(score);
+    painter.setFont(scoreFont);
+    painter.setPen(status);
+    painter.drawText(QRect(inner.right() - scoreWidth - 1, inner.bottom() - scoreMetrics.height() + 1,
+                           scoreWidth + 2, scoreMetrics.height()),
+                     Qt::AlignRight | Qt::AlignBottom, score);
+
+    QStringList flags;
+    if (card.stallMs > 0)
+        flags << compactMs(card.stallMs) + QStringLiteral(" stall");
+    if (card.findings > 0)
+        flags << QStringLiteral("%1 flag%2")
+                     .arg(card.findings)
+                     .arg(card.findings == 1 ? QString() : QStringLiteral("s"));
+    const int factsWidth = inner.width() - scoreWidth - 8;
+    painter.setFont(smallFont);
+    painter.setPen(look.subtle);
+    const QRect flagRect(inner.left(), inner.bottom() - line + 1, factsWidth, line);
+    const QRect locRect(inner.left(), flagRect.top() - line, factsWidth, line);
+    painter.drawText(locRect, Qt::AlignLeft | Qt::AlignVCenter,
+                     smallMetrics.elidedText(
+                         QStringLiteral("%1 lines").arg(compactCount(card.loc)),
+                         Qt::ElideRight, locRect.width()));
+    painter.drawText(flagRect, Qt::AlignLeft | Qt::AlignVCenter,
+                     flags.isEmpty()
+                         ? QStringLiteral("No flags")
+                         : smallMetrics.elidedText(flags.join(QString::fromUtf8(" \xC2\xB7 ")),
+                                                   Qt::ElideRight, flagRect.width()));
 }
 
 } // namespace
@@ -71,6 +188,9 @@ void ComponentHealthBoard::setFilter(const QString &text)
 
 QColor ComponentHealthBoard::healthColor(int health) const
 {
+    const NextLook look = nextLook(this);
+    if (look.on)
+        return health >= 80 ? look.success : health >= 55 ? look.warning : look.danger;
     // Three bands, and the number is always printed beside the colour so the
     // colour never carries the meaning on its own.
     if (health >= 80)
@@ -83,8 +203,14 @@ QColor ComponentHealthBoard::healthColor(int health) const
 void ComponentHealthBoard::relayout(int width)
 {
     m_visible.clear();
-    const int usable = qMax(kCardWidth, width - 2 * kGap);
-    const int columns = qMax(1, (usable + kGap) / (kCardWidth + kGap));
+    const bool next = nextLook(this).on;
+    const int gap = next ? kNextGap : kGap;
+    const int padding = next ? kNextPadding : kGap;
+    const int minWidth = next ? kNextCardWidth : kCardWidth;
+    const int cardHeight = next ? kNextCardHeight : kCardHeight;
+    const int usable = qMax(minWidth, width - 2 * padding);
+    const int columns = qMax(1, (usable + gap) / (minWidth + gap));
+    const int cardWidth = next ? (usable - (columns - 1) * gap) / columns : kCardWidth;
     int shown = 0;
     for (int i = 0; i < m_cards.size(); ++i) {
         const HealthCard &card = m_cards.at(i);
@@ -95,13 +221,15 @@ void ComponentHealthBoard::relayout(int width)
             continue;
         const int row = shown / columns;
         const int column = shown % columns;
-        m_visible.append({i, QRect(kGap + column * (kCardWidth + kGap),
-                                   kGap + row * (kCardHeight + kGap),
-                                   kCardWidth, kCardHeight)});
+        m_visible.append({i, QRect(padding + column * (cardWidth + gap),
+                                   padding + row * (cardHeight + gap),
+                                   cardWidth, cardHeight)});
         ++shown;
     }
     const int rows = (shown + columns - 1) / columns;
-    m_contentHeight = rows > 0 ? kGap + rows * (kCardHeight + kGap) : kGap;
+    m_contentHeight = next ? (rows > 0 ? 2 * padding + rows * cardHeight + (rows - 1) * gap
+                                       : 2 * padding)
+                           : (rows > 0 ? kGap + rows * (kCardHeight + kGap) : kGap);
     // The scroll area owns our width (widgetResizable) and scrolls on our
     // minimum height. Only set it when it changes, so a resize cannot bounce
     // between two layouts.
@@ -121,7 +249,13 @@ void ComponentHealthBoard::paintEvent(QPaintEvent *event)
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::TextAntialiasing, true);
     if (m_visible.isEmpty()) {
-        painter.setPen(palette().color(QPalette::Disabled, QPalette::Text));
+        const NextLook look = nextLook(this);
+        if (look.on) {
+            painter.setFont(pixelFont(font(), 14, QFont::Medium));
+            painter.setPen(look.fg);
+        } else {
+            painter.setPen(palette().color(QPalette::Disabled, QPalette::Text));
+        }
         painter.drawText(rect(), Qt::AlignCenter,
                          m_cards.isEmpty()
                              ? QStringLiteral("No scan yet")
@@ -140,6 +274,12 @@ void ComponentHealthBoard::paintCard(QPainter &painter, const Placed &placed,
                                      bool hovered) const
 {
     const HealthCard &card = m_cards.at(placed.index);
+    const NextLook look = nextLook(this);
+    if (look.on) {
+        paintNextCard(painter, font(), card, placed.rect, hovered, healthColor(card.health),
+                      look);
+        return;
+    }
     const QPalette colors = palette();
     const QColor status = healthColor(card.health);
     const QRectF outline = QRectF(placed.rect).adjusted(0.5, 0.5, -0.5, -0.5);
@@ -265,6 +405,11 @@ void ComponentHealthBoard::leaveEvent(QEvent *event)
 
 bool ComponentHealthBoard::event(QEvent *event)
 {
+    if (event->type() == QEvent::DynamicPropertyChange &&
+        static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName() == "nextColors") {
+        relayout(width());
+        update();
+    }
     if (event->type() == QEvent::ToolTip) {
         auto *help = static_cast<QHelpEvent *>(event);
         const int hit = cardAt(help->pos());
