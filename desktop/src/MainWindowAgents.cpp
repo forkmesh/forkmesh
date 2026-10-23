@@ -1673,6 +1673,8 @@ QWidget *MainWindow::buildAgentListToolBar()
             return false;
         },
         m_agentUsageButton));
+    attachAgentUsageHoverCard(m_agentUsageButton,
+                              [this] { return m_agentUsageProvider; });
 
     m_agentQueueButton = railActionButton(QStringLiteral("workflow"),
                                           QStringLiteral("0/0"), QString());

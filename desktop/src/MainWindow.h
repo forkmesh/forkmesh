@@ -3639,6 +3639,13 @@ public:
     {
         return m_navTokenUsage ? m_navTokenUsage->toolTip() : QString();
     }
+    QWidget *testShowAgentUsageHoverCard(bool codex)
+    {
+        showAgentUsageHoverCard(codex ? m_navCodexUsage : m_navTokenUsage,
+                                codex ? QStringLiteral("codex")
+                                      : QStringLiteral("claude-code"));
+        return m_agentUsageHoverCard;
+    }
     void testShowAgentAccountMenu(const QString &provider)
     {
         showAgentAccountMenu(provider, QPoint(20, 20));
@@ -7036,6 +7043,12 @@ private:
     QWidget *buildAgentUsagePage(QWidget *parent);
     void fillAgentUsagePage(QWidget *page);
     void scheduleAgentUsagePagesRefresh();
+    void attachAgentUsageHoverCard(QWidget *anchor,
+                                   std::function<QString()> provider);
+    void showAgentUsageHoverCard(QWidget *anchor, const QString &provider);
+    void hideAgentUsageHoverCard();
+    void fillAgentUsageHoverCard();
+    QPointer<QWidget> m_agentUsageHoverCard;
     QList<QPointer<QWidget>> m_agentUsagePages;
     QPointer<QWidget> m_agentUsageSectionPage;
     QTimer *m_agentUsagePagesTimer = nullptr;

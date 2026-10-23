@@ -12661,6 +12661,53 @@ void checkCommandApprovalWithoutGitWait(MainWindow &window)
               .arg(approval));
 }
 
+void checkAgentUsageHoverCard(MainWindow &window)
+{
+    const bool codexDefault =
+        QSettings().value(forkmesh::ui::kDefaultAgentProviderSetting).toString() ==
+        QStringLiteral("codex");
+    QWidget *hoverCard = nullptr;
+    const auto cardHas = [&hoverCard](const QString &name) {
+        return hoverCard && hoverCard->findChild<QWidget *>(name) != nullptr;
+    };
+    const auto cardTitle = [&hoverCard] {
+        QLabel *title = hoverCard ? hoverCard->findChild<QLabel *>(
+                                        QStringLiteral("agentUsageHoverTitle"))
+                                  : nullptr;
+        return title ? title->text() : QString();
+    };
+    hoverCard = window.testShowAgentUsageHoverCard(false);
+    QApplication::processEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    check(hoverCard && hoverCard->isVisible() &&
+              cardTitle().startsWith(QStringLiteral("Claude Code")) &&
+              cardHas(QStringLiteral("agentUsageHoverMeter_5_hour")) &&
+              cardHas(QStringLiteral("agentUsageHoverMeter_weekly")) &&
+              cardHas(QStringLiteral("agentUsageHoverTerminal")) &&
+              cardHas(QStringLiteral("agentUsageHoverSystemTerminal")) &&
+              cardHas(QStringLiteral("agentUsageHoverEdit")) &&
+              cardHas(QStringLiteral("agentUsageHoverLogin")) &&
+              cardHas(QStringLiteral("agentUsageHoverAddAccount")) &&
+              cardHas(QStringLiteral("agentUsageHoverRunnerAccounts")) &&
+              cardHas(QStringLiteral("agentUsageHoverOpenPage")) &&
+              cardHas(QStringLiteral("agentUsageHoverMakeDefault")) == codexDefault,
+          QString("hovering the Claude usage chart shows the active account's "
+                  "usage meters with the Usage page's controls (title=%1)")
+              .arg(cardTitle()));
+    hoverCard = window.testShowAgentUsageHoverCard(true);
+    QApplication::processEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    check(hoverCard && hoverCard->isVisible() &&
+              cardTitle().startsWith(QStringLiteral("Codex")) &&
+              cardHas(QStringLiteral("agentUsageHoverMeter_weekly")) &&
+              cardHas(QStringLiteral("agentUsageHoverMakeDefault")) == !codexDefault,
+          QString("hovering the Codex usage chart refills the card for Codex "
+                  "(title=%1)")
+              .arg(cardTitle()));
+    if (hoverCard)
+        hoverCard->hide();
+}
+
 void checkHighMemoryPanelDoesNotActivate(MainWindow &window)
 {
     const QString passive = window.testHighMemoryPanelActivation(false);
@@ -14411,6 +14458,8 @@ else:
         app.arguments().contains(QStringLiteral("--command-approval-only"));
     const bool highMemoryPanelOnly =
         app.arguments().contains(QStringLiteral("--high-memory-panel-only"));
+    const bool usageHoverOnly =
+        app.arguments().contains(QStringLiteral("--usage-hover-only"));
     const bool repoLazyOnly =
         app.arguments().contains(QStringLiteral("--repo-lazy-only"));
     const bool teammatesOnly =
@@ -18443,6 +18492,15 @@ else:
 
     if (highMemoryPanelOnly) {
         checkHighMemoryPanelDoesNotActivate(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (usageHoverOnly) {
+        window.resize(1440, 900);
+        window.show();
+        QApplication::processEvents();
+        checkAgentUsageHoverCard(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -27358,6 +27416,8 @@ else:
                       "the menus' terminals, account controls and default "
                       "provider switch (providers=%1)")
                   .arg(usageProviders.join(QLatin1Char(','))));
+
+        checkAgentUsageHoverCard(window);
 
         if (savedDefaultProvider.isValid())
             QSettings().setValue(forkmesh::ui::kDefaultAgentProviderSetting,

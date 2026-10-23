@@ -83,7 +83,8 @@
      "title": "Desktop",
      "items": [
       "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes.",
-      "An Actions run that stops because the computer is low on disk space now says to run Free disk space first, and its ping is filed as a disk problem."
+      "An Actions run that stops because the computer is low on disk space now says to run Free disk space first, and its ping is filed as a disk problem.",
+      "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has."
      ]
     },
     {
