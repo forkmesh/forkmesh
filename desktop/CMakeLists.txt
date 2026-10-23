@@ -723,6 +723,8 @@ set(FORKMESH_APP_SOURCES
     src/TrayMode.cpp
     src/BackgroundMode.h
     src/BackgroundMode.cpp
+    src/DesktopLauncherIcon.h
+    src/DesktopLauncherIcon.cpp
     src/BackgroundSettings.h
     src/BackgroundSettings.cpp
     src/BackgroundRunnerBadge.h
@@ -2179,6 +2181,19 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-binary-size-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-binary-size-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-launcher-icon-tests
+        tests/test_desktop_launcher_icon.cpp
+        src/DesktopLauncherIcon.h
+        src/DesktopLauncherIcon.cpp
+    )
+    target_include_directories(forkmesh-launcher-icon-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-launcher-icon-tests PRIVATE Qt6::Gui)
+    if(APPLE)
+        set_target_properties(forkmesh-launcher-icon-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3992,6 +4007,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-announcer-tests COMMAND forkmesh-announcer-tests)
     add_test(NAME forkmesh-code-health-tests COMMAND forkmesh-code-health-tests)
     add_test(NAME forkmesh-binary-size-tests COMMAND forkmesh-binary-size-tests)
+    add_test(NAME forkmesh-launcher-icon-tests COMMAND forkmesh-launcher-icon-tests)
     add_test(NAME forkmesh-component-health-board-tests
         COMMAND forkmesh-component-health-board-tests)
     add_test(NAME forkmesh-home-board-tests

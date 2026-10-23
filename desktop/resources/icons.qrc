@@ -138,6 +138,7 @@
     </qresource>
     <qresource prefix="/app">
         <file alias="forkmesh.png">icons/forkmesh.png</file>
+        <file alias="forkmesh.svg">icons/forkmesh.svg</file>
         <file alias="membership/patreon-supporter.png">../../www/public/assets/membership/patreon-supporter.png</file>
         <file alias="membership/patreon-pro.png">../../www/public/assets/membership/patreon-pro.png</file>
         <file alias="membership/patreon-builder.png">../../www/public/assets/membership/patreon-builder.png</file>
