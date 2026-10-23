@@ -47663,7 +47663,7 @@ Your reply
   async function refreshCatalogOnNewForks() {
     if (state.pinnedForkCountsChecked) return;
     state.pinnedForkCountsChecked = true;
-    const groups = sidebarPinnedGroups(mergeGroupsByPublicAddress(groupRepositories(state.repositories || [])), () => []);
+    const groups = sidebarPinnedGroups(nestRepositoryForks(homeRepositoryEntries(), () => 0), () => []);
     for (const group of groups) {
       const repo = group.entry.repo;
       if (!repo || repo.isPrivate) continue;
