@@ -8753,6 +8753,7 @@
         author: result?.event?.author || "",
         body,
       });
+      if (item.state === "approved") repoPullQuickReplyThanks(number);
     } catch (error) {
       if (String(error?.message || "") === "quick_reply_sent") {
         parsed.pullQuickReplyUi = { ...(parsed.pullQuickReplyUi || {}), sent: markSent(), sending: "", editing: "", draft: undefined, hint: { tone: "", text: "You already sent that reply on this commit." } };
@@ -8761,6 +8762,14 @@
       }
       if (pullDetailIsCurrent(repo, number)) updateRepoPullMergePanel(repo, number, parsed);
     }
+  }
+
+  function repoPullQuickReplyThanks(number) {
+    const subject = commentReactionSubject("pulls", number);
+    const bar = subject
+      ? document.querySelector(`[data-comment-reactions="${CSS.escape(subject)}"][data-comment-id="body"]`)
+      : null;
+    if (bar) sayCommentThanks(bar);
   }
 
   const repoPullQuickReplyPress = { timer: 0, id: "", fired: false, x: 0, y: 0 };
