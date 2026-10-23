@@ -66,7 +66,10 @@ FUNCTIONS = {
         "pullClosingIssueNumbers", "pullOwnIssueNumbers", "issueDevelopmentPullStates",
         "issueLinkedPullNumbers", "developmentPulls", "developmentRow", "renderIssueDevelopment",
         "issueAiPromptText", "renderIssueAiPrompt", "issueSubscriptionNote", "issueViewKey",
-        "issueViewsLabel", "issueViewsHtml"),
+        "issueAiPromptText", "renderIssueAiPrompt", "issueAssignmentHours", "issueAssignmentTimes",
+        "issueAssigneeHasPull", "issueDeadlineDuration", "issueAssignmentDeadline",
+        "renderIssueAssignmentDeadline", "issueAssigneeDeadlineHtml", "issueSubscriptionNote",
+        "issueViewKey", "issueViewsLabel", "issueViewsHtml"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE"),
@@ -76,7 +79,8 @@ CONSTANTS = {
         "COMMENT_REACTIONS", "COMMENT_REACTION_KINDS", "COMMENT_REACTION_STICKERS",
         "COMMENT_REACTION_CUSTOM_RE", "MD_GIPHY_GIF",
         "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
-        "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT"),
+        "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT",
+        "ISSUE_ASSIGNMENT_HOURS_MAX", "ISSUE_ASSIGNMENT_WARN_FRACTION"),
 }
 
 

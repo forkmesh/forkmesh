@@ -78,6 +78,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [app/profile-links.md](app/profile-links.md): usernames and @mentions link to the person's profile on the web, desktop, server pages, world and phones.
 - [app/diff-viewer.md](app/diff-viewer.md): the full-screen web diff viewer for pull requests, branch comparisons and commits.
 - [app/issue-views.md](app/issue-views.md): the per-issue view count on issue pages and the issue list, deduplicated per viewer and day, with automated clients not counted.
+- [app/issue-assignment-deadline.md](app/issue-assignment-deadline.md): the optional assignee deadline bar on issues, set with `assignmentHours` in `.forkmesh/issues.json`.
 - [app/ai-disclosure.md](app/ai-disclosure.md): the "AI model(s) used" field on pull requests (optionally required per repository) and the copyable AI prompt on open issues.
 - [app/pull-review-prompt.md](app/pull-review-prompt.md): the copyable "Review with your agent" prompt on open pull requests, its security-minded default and `.forkmesh/pulls.json` `reviewPromptTemplate`.
 - [PERF_PAGES.md](PERF_PAGES.md): page performance techniques.
