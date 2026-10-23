@@ -3692,6 +3692,23 @@ QWidget *MainWindow::buildNetworkLogDock()
         // selection stand in.
         const int onScreen = quickAddFollowUpAgentSessionId();
         const int target = onScreen >= 0 ? onScreen : m_selectedAgentSessionId;
+        if (isExternalSession(target) && !isCloudSession(target) &&
+            m_externalSurfaced.contains(target)) {
+            if (typed.isEmpty())
+                return;
+            if (!m_quickAddImages.isEmpty()) {
+                flashMessage(QStringLiteral("A Claude Code session started outside "
+                                            "ForkMesh cannot open files attached here "
+                                            "\xE2\x80\x94 remove the attachments and "
+                                            "send the text on its own."),
+                             true);
+                return;
+            }
+            recordQuickAddHistory(typed);
+            m_issueQuickAdd->clear();
+            sendPromptToExternalClaudeSession(target, typed);
+            return;
+        }
         if (target < 0) {
             logSystem(QString::fromUtf8(
                 "No agent open above to send that to \xE2\x80\x94 open one first."));

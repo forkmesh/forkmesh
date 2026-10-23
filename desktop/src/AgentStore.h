@@ -129,6 +129,12 @@ struct AgentSession {
     // can still tell that the finished local run and the website's row are one
     // run and show it once. Empty for a run started on this desktop.
     QString webSessionId;
+    QString claudeImportId;
+    QString claudeImportPath;
+    QString claudeImportCwd;
+    qint64 claudeImportBytes = 0;
+    bool claudeImported() const { return !claudeImportId.isEmpty(); }
+    bool claudeImportMirroring() const { return claudeImported() && claudeImportBytes >= 0; }
     int prNumber = 0;
     QString status = AgentStatus::Queued;
     bool held = false;

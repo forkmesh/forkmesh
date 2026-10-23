@@ -500,6 +500,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentDetail.cpp
     src/MainWindowAgentLaunch.cpp
     src/MainWindowAgentCliSession.cpp
+    src/MainWindowClaudeImport.cpp
     src/MainWindowAgentEvents.cpp
     src/MainWindowAgentTranscript.cpp
     src/MainWindowAgentLanding.cpp
@@ -1131,6 +1132,8 @@ set(FORKMESH_APP_SOURCES
     src/ClaudeTranscriptTools.cpp
     src/ClaudeSessionScan.h
     src/ClaudeSessionScan.cpp
+    src/ClaudeSessionImport.h
+    src/ClaudeSessionImport.cpp
     src/MachineAgentScan.h
     src/MachineAgentScan.cpp
     src/AgentLogText.h
@@ -3482,6 +3485,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_claude_session_scan.cpp
         src/ClaudeSessionScan.h
         src/ClaudeSessionScan.cpp
+        src/ClaudeSessionImport.h
+        src/ClaudeSessionImport.cpp
     )
     target_link_libraries(forkmesh-claude-session-scan-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-claude-session-scan-tests PRIVATE src)

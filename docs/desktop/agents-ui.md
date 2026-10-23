@@ -127,6 +127,68 @@ Invariants:
 - Durable per-row state (folders, unread) is keyed by `agentReadKey()`: the
   local id, `cloud:<relay id>` or `claude:<uuid>`.
 
+### Importing Claude Code sessions (2026-10-22)
+
+**Import** (pinned at the left of the list's action bar,
+`showClaudeSessionImportDialog` in `MainWindowClaudeImport.cpp`) lists every
+Claude Code and Claude Desktop session that ran in the open repository, of any
+age, and turns the ones picked into ordinary stored agents.
+
+- **Where sessions come from.** `ClaudeSessionScan::listAll` reads
+  `<config>/projects/<key>/*.jsonl` under `~/.claude` and the desktop's own
+  `CLAUDE_CONFIG_DIR`, where `<key>` is the cwd with every non-alphanumeric
+  character turned into `-` (`projectKey`). Only folders whose key starts with
+  the repository's are opened unless **Every folder** is ticked. A session
+  copied into two project folders is listed once, from the folder matching its
+  cwd. Sessions with no prompt and no title are left out. ForkMesh's own
+  account folders (`data/agents/accounts`) are not read: those are its agents.
+- **Names.** In order: Claude Desktop's title
+  (`<Claude config>/claude-code-sessions/<account>/<org>/local_*.json`, keyed by
+  `cliSessionId`; `~/.config/Claude` on Linux), the last `custom-title`
+  (`/rename`), the last `ai-title`, then the first typed prompt cut to one line
+  of 80 characters. External rows use the same names, so headless sessions no
+  longer all read "Claude Code session".
+- **Rows that are not offered.** Headless sessions (an `sdk-*` entrypoint:
+  `claude -p`, the SDK, ForkMesh's own agents and special agents) and sessions
+  in the agent worktree root (hundreds of ForkMesh runs on a busy machine) are
+  left out unless **Headless runs** is ticked. One whose worktree belongs to
+  an agent still in the list is never shown. A session already
+  imported says so; importing it again refreshes its name.
+- **The agent.** `createImportedClaudeAgent` stores a Claude Code session with
+  status Success, the session's name as title, its first prompt, model, first
+  and last timestamps, and `claudeImport` (`id`, `path`, `cwd`, `bytes`) in
+  `meta.json`. A cwd inside the agent worktree root on a branch adopts that
+  worktree (`worktreeName`, `branchName`); anything else is a no-worktree
+  session that runs in the original cwd when it is inside the repository, else
+  in the checkout.
+- **Transcript.** `ClaudeSessionImport::convertLines` turns typed prompts into
+  `_local_user`, keeps assistant turns and tool results with the session id
+  stamped on them, drops sidechains, meta lines and command echoes, and clips a
+  tool result to 16 KB. The readable log gets both sides, so a later switch to
+  Codex hands over the conversation.
+- **Mirroring.** While `claudeImport.bytes` is 0 or more, every 3 s tick
+  (`syncImportedClaudeSessions`) appends whatever the `.jsonl` gained since
+  that offset and refreshes the name, so turns taken in Claude Desktop keep
+  arriving. An imported session is never also shown as an external row.
+- **Continuing it.** The first follow-up resumes the Claude session id found
+  in the transcript. `startCliTranscript` sets `bytes` to -1 (mirroring stops),
+  `launchCliRuntime` copies the `.jsonl` to where the run's account looks for
+  it (`<account config>/projects/<key of the workdir>/<id>.jsonl`,
+  `ClaudeSessionImport::stage`; nothing is copied when that is the same file)
+  and adds `--fork-session`, so the run gets its own session id and never
+  writes into Claude's copy. If the resume still fails, the fallback prompt
+  carries the last 48 KB of the imported log.
+- **Typing into an External Claude Code row.** The composer used to refuse a
+  row it did not start ("No agent open above"). Now
+  `sendPromptToExternalClaudeSession` sends a live session the message
+  through its cross-session inbox, the same path phones use, with
+  `ClaudePeerMessaging::desktopSteerLead()` and sender name
+  `ForkMesh (desktop)`; `steerText` strips either lead for display. A session
+  that refuses or would hold the message without a terminal, or has no
+  socket, offers to continue it as a ForkMesh agent instead. A row that is no
+  longer live is imported and the message continues it. Attachments are
+  refused for these rows.
+
 ### List views, sort and filters
 
 - The list's toolbar (`agentsActionBar`) is an `OverflowActionRow` too
@@ -170,7 +232,8 @@ receive them in `agents.list`, and a change rings `agents.changed`.
   rewrite folder state and the list is rebuilt from `AgentFolders::layout()`.
 - Automatic filing (`AgentFolders::findOrCreate`): special agent sessions go
   in **Special Agents**, live external Claude Code rows in **External Claude
-  Code**. A row already in a folder, or dragged out, is left alone.
+  Code**, imported Claude Code sessions in **Imported Claude Code**. A row
+  already in a folder, or dragged out, is left alone.
 - A header's right-click menu has **Start all in folder** and **Stop all in
   folder** (`startAgentFolderSessions`, `stopAgentFolderSessions`). They act on
   the folder's share of the toolbar's Start all / Stop all population
