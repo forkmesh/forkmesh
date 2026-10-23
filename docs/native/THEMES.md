@@ -98,6 +98,28 @@ The custom accent is one colour for both modes; the rule above derives its
 light and dark variants. Shuffle picks a random surface family and a custom
 accent at a random hue (HSL 75% saturation, 50% lightness) with the switch on.
 
+## Matching the instance (iOS)
+
+**Match the instance's theme** (`appearance/matchInstanceTheme`, off by
+default) makes the app wear the colours the instance's admin picked. While it
+is on, the app reads `themeColors` from `GET <instance>/api/instance` (or
+`theme.dark`/`theme.light` from a server that predates it) on launch, on
+returning to the foreground and on a project switch, maps the dashboard
+tokens onto the 13 app tokens and keeps them in
+`appearance/instanceThemeColors` (the `appearance/themeColors` shape):
+`background`→`bgBase`, `card`→`bgRaised`, `popover` (else `muted`)→`bgOverlay`,
+`muted` (else `secondary`)→`bgElevated`, `border`, `foreground`→`textPrimary`,
+`muted-foreground` mixed 35% toward `foreground` (else
+`secondary-foreground`)→`textSecondary`, `muted-foreground`→`textTertiary`,
+`primary`→`accent`, `primary-foreground`→`onAccent`, `success`,
+`destructive`→`danger`, `attention`→`warning`. Missing tokens fall back to the
+ForkMesh look; the readable switch still applies. An instance with the default
+look, or a project without an instance, clears them and the phone's own theme
+shows; a failed fetch keeps the last colours. Turning the switch off drops
+them. `AppTheme.instance(themeColors:)` and `SettingsService.effectiveTheme`
+(`ForkMeshCore/Sources/FMAccount/InstanceTheme.swift`) hold the rule; the
+fetch runs from `ThemedAppView` in `App/ForkMeshApp.swift`.
+
 ## Where it lives
 
 | | iOS | Android |

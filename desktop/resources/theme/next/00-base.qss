@@ -42,8 +42,6 @@ QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {
 QTextEdit, QPlainTextEdit, QTextBrowser {
     selection-background-color: @selection; selection-color: @fg;
 }
-QCheckBox#promptVibeCheck::indicator:checked,
-QCheckBox#promptWorktreeCheck::indicator:checked,
 QCheckBox#quickAddAgentCheck::indicator:checked,
 QCheckBox#quickAddCreateIssueCheck::indicator:checked,
 QCheckBox#slashToggle::indicator:checked { image: none; }

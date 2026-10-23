@@ -734,6 +734,8 @@ set(FORKMESH_APP_SOURCES
     src/Theme.h
     src/DesignTokens.h
     src/DesignTokens.cpp
+    src/InstanceTheme.cpp
+    src/OverflowActionRow.cpp
     src/UiKit.h
     src/UiKit.cpp
     src/MessageBoxClicks.h

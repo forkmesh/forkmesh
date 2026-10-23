@@ -71,28 +71,105 @@ using namespace forkmesh::ui;
 namespace {
 constexpr qint64 kBackgroundTaskShowAfterMs = forkmesh::kBackgroundShowAfterMs;
 
-class ToggleLabel : public QLabel
+class ChatPreviewLabel : public QLabel
 {
 public:
-    explicit ToggleLabel(QAbstractButton *target) : m_target(target) {}
+    struct Line {
+        QString who;
+        QString text;
+        bool mine = false;
+    };
+
+    ChatPreviewLabel()
+    {
+        setObjectName(QStringLiteral("promptChatPreview"));
+        QFont small = font();
+        small.setPixelSize(11);
+        setFont(small);
+        setContentsMargins(10, 2, 10, 3);
+        setTextFormat(Qt::RichText);
+        setWordWrap(false);
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        setCursor(Qt::PointingHandCursor);
+        setToolTip(QStringLiteral("The latest messages in the conversation the "
+                                  "chat button sends to. Click to open it."));
+    }
+
+    void setLines(const QList<Line> &lines)
+    {
+        m_lines = lines;
+        rebuild();
+    }
+
+    bool hasLines() const { return !m_lines.isEmpty(); }
+    QList<Line> lines() const { return m_lines; }
+    std::function<void()> onClicked;
+
+    QSize sizeHint() const override
+    {
+        const int rows = qMax(1, int(m_lines.size()));
+        const QMargins margins = contentsMargins();
+        return QSize(QLabel::sizeHint().width(),
+                     rows * QFontMetrics(font()).lineSpacing() + margins.top() +
+                         margins.bottom() + 6);
+    }
 
 protected:
-    void mousePressEvent(QMouseEvent *event) override
+    void resizeEvent(QResizeEvent *event) override
     {
-        if (event->button() == Qt::LeftButton && m_target && m_target->isEnabled()) {
-            m_target->toggle();
+        QLabel::resizeEvent(event);
+        rebuild();
+    }
+
+    void changeEvent(QEvent *event) override
+    {
+        QLabel::changeEvent(event);
+        if (event->type() == QEvent::FontChange ||
+            event->type() == QEvent::StyleChange ||
+            event->type() == QEvent::PaletteChange)
+            rebuild();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && onClicked) {
+            onClicked();
             event->accept();
             return;
         }
-        QLabel::mousePressEvent(event);
+        QLabel::mouseReleaseEvent(event);
     }
 
 private:
-    QPointer<QAbstractButton> m_target;
+    void rebuild()
+    {
+        const QFontMetrics metrics(font());
+        const int width = qMax(40, contentsRect().width() - 4);
+        QFont bold = font();
+        bold.setWeight(QFont::DemiBold);
+        const QFontMetrics boldMetrics(bold);
+        QStringList rows;
+        const QString accent = Theme::hex(Theme::Role::AccentFg);
+        const QString strong = Theme::hex(Theme::Role::FgSecondary);
+        for (const Line &line : std::as_const(m_lines)) {
+            const QString who = line.who + QStringLiteral(": ");
+            const int room = qMax(10, width - boldMetrics.horizontalAdvance(who));
+            rows << QStringLiteral("<span style='font-weight:600;color:%1'>%2</span>%3")
+                        .arg(line.mine ? strong : accent, who.toHtmlEscaped(),
+                             metrics.elidedText(line.text, Qt::ElideRight, room)
+                                 .toHtmlEscaped());
+        }
+        const QString html = rows.join(QStringLiteral("<br>"));
+        if (text() != html)
+            setText(html);
+    }
+
+    QList<Line> m_lines;
 };
 
 constexpr int kComposerIconPx = 16;
 constexpr int kComposerControlPx = 28;
+constexpr int kComposerActionWidth = 66;
 
 QIcon composerMonoIcon(const QString &name)
 {
@@ -2068,6 +2145,7 @@ void MainWindow::loadActiveServerIntoEdits()
         m_serverUrlEdit->setText(serverHostDisplay(active.url)); // show host only
     if (m_roomNameEdit)
         m_roomNameEdit->setText(active.room);
+    QTimer::singleShot(0, this, [this] { refreshInstanceTheme(); });
 }
 
 void MainWindow::persistEditsToActiveServer()
@@ -2521,6 +2599,7 @@ QWidget *MainWindow::buildChatPage()
     lowerLayout->setContentsMargins(0, 0, 0, 0);
     lowerLayout->setSpacing(0);
     lowerLayout->addWidget(railScroll);
+    lowerLayout->addWidget(forkmesh::ui::NextAccess::railResizeHandle(*this));
     lowerLayout->addWidget(shell, 1);
     lowerLayout->addWidget(buildPackageRail());
     lowerLayout->addWidget(buildTeammateRail());
@@ -3443,9 +3522,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddSendButton = new QPushButton(QStringLiteral("new"));
     m_quickAddSendButton->setObjectName("quickAddSendIcon");
     m_quickAddSendButton->setCursor(Qt::PointingHandCursor);
-    if (!next)
-        setOcticon(m_quickAddSendButton, "paper-airplane", 17);
-    m_quickAddSendButton->setFixedWidth(next ? 56 : 58);
+    m_quickAddSendButton->setProperty("composerGlyph", QStringLiteral("plus"));
+    tintComposerActionButton(m_quickAddSendButton);
+    m_quickAddSendButton->setFixedWidth(kComposerActionWidth);
     m_quickAddSendButton->setMinimumHeight(28);
     m_quickAddSendButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     connect(m_quickAddSendButton, &QPushButton::clicked, this,
@@ -3454,9 +3533,10 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddSendToAgentButton = new QPushButton(QStringLiteral("add"));
     m_quickAddSendToAgentButton->setObjectName("quickAddSendIcon");
     m_quickAddSendToAgentButton->setCursor(Qt::PointingHandCursor);
-    if (!next)
-        setOcticon(m_quickAddSendToAgentButton, "paper-airplane", 17, -45.0);
-    m_quickAddSendToAgentButton->setFixedWidth(next ? 56 : 58);
+    m_quickAddSendToAgentButton->setProperty("composerGlyph",
+                                             QStringLiteral("paper-airplane"));
+    tintComposerActionButton(m_quickAddSendToAgentButton);
+    m_quickAddSendToAgentButton->setFixedWidth(kComposerActionWidth);
     m_quickAddSendToAgentButton->setMinimumHeight(28);
     m_quickAddSendToAgentButton->setSizePolicy(QSizePolicy::Fixed,
                                                QSizePolicy::Fixed);
@@ -3520,9 +3600,9 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_quickAddGenieButton = new QPushButton(QStringLiteral("task"));
     m_quickAddGenieButton->setObjectName("quickAddGenieButton");
     m_quickAddGenieButton->setCursor(Qt::PointingHandCursor);
-    if (!next)
-        setOcticon(m_quickAddGenieButton, "list-unordered", 15);
-    m_quickAddGenieButton->setFixedWidth(next ? 56 : 58);
+    m_quickAddGenieButton->setProperty("composerGlyph", QStringLiteral("checklist"));
+    tintComposerActionButton(m_quickAddGenieButton);
+    m_quickAddGenieButton->setFixedWidth(kComposerActionWidth);
     m_quickAddGenieButton->setMinimumHeight(next ? kComposerControlPx : 24);
     m_quickAddGenieButton->setSizePolicy(QSizePolicy::Fixed,
                                          QSizePolicy::Fixed);
@@ -3659,37 +3739,28 @@ QWidget *MainWindow::buildNetworkLogDock()
         m_issueQuickAdd->textCursor().removeSelectedText();
         m_issueQuickAdd->setFocus();
     });
-    promptHandleRow->addWidget(m_promptClearButton, 0);
 
-    // Beside it: whether a prompt's agent gets its own branch and worktree.
-    // Ticked by default and on every launch; untick it for a run that works
-    // straight in the repository's checkout (a question, a local chore). It
-    // re-ticks as soon as that prompt is sent (quickAddIssue).
-    m_promptWorktreeCheck = new QCheckBox;
+    m_promptWorktreeCheck = new QPushButton;
     m_promptWorktreeCheck->setObjectName(QStringLiteral("promptWorktreeCheck"));
     m_promptWorktreeCheck->setCursor(Qt::PointingHandCursor);
-    m_promptWorktreeCheck->setFixedSize(16, 16);
+    m_promptWorktreeCheck->setFixedSize(handleButtonPx, handleButtonPx);
+    m_promptWorktreeCheck->setCheckable(true);
     m_promptWorktreeCheck->setChecked(true);
-    auto *worktreeIcon = new ToggleLabel(m_promptWorktreeCheck);
-    worktreeIcon->setObjectName(QStringLiteral("promptWorktreeIcon"));
-    worktreeIcon->setCursor(Qt::PointingHandCursor);
-    setLabelOcticon(worktreeIcon, QStringLiteral("git-branch"), next ? 14 : 12);
-    const auto updateWorktreeTip = [check = m_promptWorktreeCheck, worktreeIcon](bool on) {
-        const QString tip =
-            on ? QStringLiteral("New agent runs get their own branch and "
-                                "worktree. Untick to work directly in the "
+    m_promptWorktreeCheck->setAccessibleName(QStringLiteral("Own branch and worktree"));
+    setComposerIconTone(m_promptWorktreeCheck);
+    setOcticon(m_promptWorktreeCheck, "git-branch", next ? 14 : 12);
+    const auto updateWorktreeTip = [button = m_promptWorktreeCheck](bool on) {
+        button->setToolTip(
+            on ? QStringLiteral("Connected: new agent runs get their own branch "
+                                "and worktree. Click to work directly in the "
                                 "repository's checkout.")
                : QStringLiteral("The next agent run works directly in the "
                                 "repository's checkout, with no branch or "
                                 "worktree (Claude Code and Codex only). This "
-                                "re-ticks once that prompt is sent.");
-        check->setToolTip(tip);
-        worktreeIcon->setToolTip(tip);
+                                "turns back on once that prompt is sent."));
     };
     updateWorktreeTip(true);
-    connect(m_promptWorktreeCheck, &QCheckBox::toggled, this, updateWorktreeTip);
-    promptHandleRow->addWidget(m_promptWorktreeCheck, 0);
-    promptHandleRow->addWidget(worktreeIcon, 0);
+    connect(m_promptWorktreeCheck, &QPushButton::toggled, this, updateWorktreeTip);
 
     m_promptCloudButton = new QPushButton;
     m_promptCloudButton->setObjectName(QStringLiteral("promptCloudButton"));
@@ -3699,6 +3770,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_promptCloudButton->setChecked(
         QSettings().value(QStringLiteral("agents/composerRunInCloud"), false)
             .toBool());
+    m_promptCloudButton->setAccessibleName(QStringLiteral("Run in the cloud"));
     setComposerIconTone(m_promptCloudButton);
     setOcticon(m_promptCloudButton, "cloud", next ? 14 : 12);
     const auto updateCloudTip = [button = m_promptCloudButton](bool on) {
@@ -3717,16 +3789,19 @@ QWidget *MainWindow::buildNetworkLogDock()
                 QSettings().setValue(QStringLiteral("agents/composerRunInCloud"),
                                      on);
             });
-    promptHandleRow->addWidget(m_promptCloudButton, 0);
 
-    m_promptVibeCheck = new QCheckBox(QStringLiteral("vibe"));
+    m_promptVibeCheck = new QPushButton;
     m_promptVibeCheck->setObjectName(QStringLiteral("promptVibeCheck"));
     m_promptVibeCheck->setCursor(Qt::PointingHandCursor);
-    m_promptVibeCheck->setFixedHeight(16);
+    m_promptVibeCheck->setFixedSize(handleButtonPx, handleButtonPx);
+    m_promptVibeCheck->setCheckable(true);
     m_promptVibeCheck->setChecked(
         QSettings().value(QStringLiteral("agents/composerVibe"), false).toBool());
-    const auto updateVibeTip = [check = m_promptVibeCheck](bool on) {
-        check->setToolTip(
+    m_promptVibeCheck->setAccessibleName(QStringLiteral("Vibe"));
+    setComposerIconTone(m_promptVibeCheck);
+    setOcticon(m_promptVibeCheck, "sparkle", next ? 14 : 12);
+    const auto updateVibeTip = [button = m_promptVibeCheck](bool on) {
+        button->setToolTip(
             on ? QStringLiteral("Vibe is on: when a new agent run finishes "
                                 "cleanly, its branch is merged into the default "
                                 "branch, its session, branch and worktree are "
@@ -3738,11 +3813,10 @@ QWidget *MainWindow::buildNetworkLogDock()
                                 "default branch."));
     };
     updateVibeTip(m_promptVibeCheck->isChecked());
-    connect(m_promptVibeCheck, &QCheckBox::toggled, this, [updateVibeTip](bool on) {
+    connect(m_promptVibeCheck, &QPushButton::toggled, this, [updateVibeTip](bool on) {
         updateVibeTip(on);
         QSettings().setValue(QStringLiteral("agents/composerVibe"), on);
     });
-    promptHandleRow->addWidget(m_promptVibeCheck, 0);
     promptHandleRow->addStretch(1);
 
     auto *promptDragPill = new QFrame;
@@ -3753,6 +3827,11 @@ QWidget *MainWindow::buildNetworkLogDock()
     promptHandleRow->addStretch(1);
 
     promptHandleRow->addWidget(m_quickAddCharCount, 0);
+    promptHandleRow->addWidget(m_promptWorktreeCheck, 0);
+    promptHandleRow->addWidget(m_promptCloudButton, 0);
+    promptHandleRow->addWidget(m_promptVibeCheck, 0);
+    promptHandleRow->addSpacing(6);
+    promptHandleRow->addWidget(m_promptClearButton, 0);
 
     m_promptResetButton = new QPushButton;
     m_promptResetButton->setObjectName(QStringLiteral("promptResetButton"));
@@ -3789,6 +3868,15 @@ QWidget *MainWindow::buildNetworkLogDock()
     auto *promptLeftCol = new QVBoxLayout;
     promptLeftCol->setContentsMargins(0, 0, 0, 0);
     promptLeftCol->setSpacing(0);
+    auto *chatPreview = new ChatPreviewLabel;
+    chatPreview->onClicked = [this] {
+        const int sessionId = m_promptChatSessionId;
+        if (sessionId >= 0 && findAgentSession(sessionId))
+            showAgentSession(sessionId);
+    };
+    chatPreview->hide();
+    m_promptChatPreview = chatPreview;
+    promptLeftCol->addWidget(chatPreview, 0);
     promptLeftCol->addWidget(quickAddInputHost, 1);
     promptLeftCol->addWidget(bottomBarScroll, 0);
     promptLayout->addLayout(promptLeftCol, 1);
@@ -3942,6 +4030,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     dockRow->addWidget(promptOverlayHost, 1, Qt::AlignRight | Qt::AlignBottom);
 
     m_promptAnchoredHeight = promptWrapper->sizeHint().height();
+    promptWrapper->setProperty("baseAnchoredHeight", m_promptAnchoredHeight);
     dock->setFixedHeight(m_promptAnchoredHeight + 8);
     dock->setAttribute(Qt::WA_StyledBackground, false);
     setLogOverlayExpanded(false);
@@ -6528,8 +6617,147 @@ void MainWindow::refreshCloudflareAiModels()
     });
 }
 
+void forkmesh::ui::tintComposerActionButton(QPushButton *button)
+{
+    if (!button)
+        return;
+    const QString name = button->property("composerGlyph").toString();
+    if (name.isEmpty())
+        return;
+    const bool target = button->property("enterTarget").toBool();
+    const bool next = Theme::isNext();
+    const QColor color =
+        next ? Theme::color(target ? Theme::Role::OnAccent : Theme::Role::FgSecondary)
+             : Theme::remapColor(QColor(QString::fromLatin1(Theme::iconColorForButton(
+                   button->objectName(), currentThemeIsDark()))));
+    const int px = next ? 13 : 14;
+    button->setIcon(QIcon(tintedOcticonPixmap(name, color, px)));
+    button->setIconSize(QSize(px, px));
+}
+
+int MainWindow::promptChatTargetSessionId() const
+{
+    const int onScreen = quickAddFollowUpAgentSessionId();
+    const int target = onScreen >= 0 ? onScreen : m_selectedAgentSessionId;
+    if (target < 0)
+        return -1;
+    for (const AgentSession &session : m_agentSessions)
+        if (session.id == target)
+            return target;
+    return -1;
+}
+
+void MainWindow::schedulePromptChatPreview()
+{
+    if (!m_promptChatPreview)
+        return;
+    if (!m_promptChatPreviewTimer) {
+        m_promptChatPreviewTimer = new QTimer(this);
+        m_promptChatPreviewTimer->setSingleShot(true);
+        m_promptChatPreviewTimer->setInterval(250);
+        connect(m_promptChatPreviewTimer, &QTimer::timeout, this,
+                &MainWindow::refreshPromptChatPreview);
+    }
+    if (!m_promptChatPreviewTimer->isActive())
+        m_promptChatPreviewTimer->start();
+}
+
+void MainWindow::refreshPromptChatPreview()
+{
+    auto *preview = static_cast<ChatPreviewLabel *>(m_promptChatPreview);
+    if (!preview)
+        return;
+    const int sessionId = promptChatTargetSessionId();
+    const AgentSession *session = findAgentSession(sessionId);
+    QList<ChatPreviewLabel::Line> lines;
+    if (session) {
+        QString agent = agentModelShortLabel(session->model);
+        if (agent.isEmpty())
+            agent = QStringLiteral("Agent");
+        const auto lastParagraph = [](const QString &text) {
+            const QStringList parts =
+                text.trimmed().split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+            for (auto it = parts.crbegin(); it != parts.crend(); ++it) {
+                const QString line = it->simplified();
+                if (!line.isEmpty() && line != QLatin1String("```"))
+                    return line;
+            }
+            return QString();
+        };
+        const QList<QJsonObject> events = m_streamEvents.value(sessionId);
+        for (int index = events.size() - 1; index >= 0 && lines.size() < 3; --index) {
+            const QJsonObject &event = events.at(index);
+            const QString type = event.value(QStringLiteral("type")).toString();
+            QString text;
+            bool mine = false;
+            if (type == QLatin1String("_local_user")) {
+                text = event.value(QStringLiteral("text")).toString();
+                mine = true;
+            } else if (type == QLatin1String("_codex_agent_complete")) {
+                text = event.value(QStringLiteral("text")).toString();
+            } else if (type == QLatin1String("assistant") || type == QLatin1String("user")) {
+                const QJsonValue content = event.value(QStringLiteral("message"))
+                                               .toObject()
+                                               .value(QStringLiteral("content"));
+                if (content.isString()) {
+                    text = content.toString();
+                } else {
+                    for (const QJsonValue &block : content.toArray()) {
+                        const QJsonObject part = block.toObject();
+                        if (part.value(QStringLiteral("type")).toString() ==
+                            QLatin1String("text"))
+                            text += part.value(QStringLiteral("text")).toString() +
+                                    QLatin1Char('\n');
+                    }
+                }
+                mine = type == QLatin1String("user");
+            }
+            text = lastParagraph(text);
+            if (text.isEmpty())
+                continue;
+            lines.prepend({mine ? QStringLiteral("You") : agent, text, mine});
+        }
+        if (lines.isEmpty()) {
+            const QString reply = lastParagraph(m_lastAssistantText.value(sessionId));
+            const QString asked = lastParagraph(session->prompt);
+            if (!asked.isEmpty())
+                lines.append({QStringLiteral("You"), asked, true});
+            if (!reply.isEmpty())
+                lines.append({agent, reply, false});
+        }
+    }
+    m_promptChatSessionId = lines.isEmpty() ? -1 : sessionId;
+    const bool wasShown = !preview->isHidden();
+    preview->setLines(lines);
+    preview->setVisible(!lines.isEmpty());
+    if (m_quickAddSendToAgentButton) {
+        const bool chat = !lines.isEmpty();
+        const QString label = chat ? QStringLiteral("chat") : QStringLiteral("add");
+        const QString glyph =
+            chat ? QStringLiteral("comment") : QStringLiteral("paper-airplane");
+        if (m_quickAddSendToAgentButton->text() != label)
+            m_quickAddSendToAgentButton->setText(label);
+        m_quickAddSendToAgentButton->setAccessibleName(
+            chat ? QStringLiteral("Send to chat") : QStringLiteral("Add to agent"));
+        if (m_quickAddSendToAgentButton->property("composerGlyph").toString() != glyph) {
+            m_quickAddSendToAgentButton->setProperty("composerGlyph", glyph);
+            tintComposerActionButton(m_quickAddSendToAgentButton);
+        }
+    }
+    if (wasShown == !preview->isHidden() || !m_promptWrapper)
+        return;
+    const int base = m_promptWrapper->property("baseAnchoredHeight").toInt();
+    if (base > 0)
+        m_promptAnchoredHeight =
+            base + (preview->isHidden() ? 0 : preview->sizeHint().height());
+    positionGlobalFooterOverlays();
+}
+
 void MainWindow::refreshComposerIcons()
 {
+    for (QPushButton *button :
+         {m_quickAddSendButton, m_quickAddSendToAgentButton, m_quickAddGenieButton})
+        tintComposerActionButton(button);
     if (m_quickAddModeSelector) {
         for (int row = 0; row < m_quickAddModeSelector->count() && row < 4; ++row)
             m_quickAddModeSelector->setItemIcon(row, composerModeIcon(7 + row));

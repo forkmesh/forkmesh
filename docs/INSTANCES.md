@@ -325,6 +325,11 @@ upload CSS.
   is accepted by the launch API and `PUT /api/instance/theme`, not by the
   installer's settings file, which takes a theme name or a
   `{dark, light}` colour object.
+- **Apps:** `GET /api/instance` also returns `themeColors`
+  (`instance_theme.colours`): the named theme's colours for each mode with the
+  stored overrides on top, `{}` for the default theme. The desktop and the
+  phone apps read it for their "Match the instance's theme" setting, so they
+  never need the catalogue or the stylesheet.
 - **Rendering:** `/instance-theme.css` writes the theme's colour tokens, then
   its stylesheet, then any overrides. `/instance-theme.css?preset=<id>`
   renders a ready theme without saving it, for the settings preview; an

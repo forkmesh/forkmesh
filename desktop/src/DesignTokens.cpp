@@ -117,6 +117,13 @@ const char kEdgeSheet[] = "96-edge-indicators.qss";
 
 Design g_design = Design::Classic;
 bool g_dark = true;
+QMap<QString, QString> g_overrideDark;
+QMap<QString, QString> g_overrideLight;
+
+const QMap<QString, QString> &overrides(bool dark)
+{
+    return dark ? g_overrideDark : g_overrideLight;
+}
 
 const RoleValues &values(Role role)
 {
@@ -212,9 +219,59 @@ QString roleName(Role role)
     return QString::fromLatin1(values(role).name);
 }
 
+void setRoleOverrides(const QMap<QString, QString> &dark,
+                      const QMap<QString, QString> &light)
+{
+    const auto clean = [](const QMap<QString, QString> &source) {
+        QMap<QString, QString> result;
+        for (int index = 0; index < kRoleCount; ++index) {
+            const QString name = QString::fromLatin1(kRoles[index].name);
+            const QColor value(source.value(name));
+            if (value.isValid())
+                result.insert(name, value.name(QColor::HexRgb));
+        }
+        return result;
+    };
+    g_overrideDark = clean(dark);
+    g_overrideLight = clean(light);
+}
+
+bool hasRoleOverrides()
+{
+    return !g_overrideDark.isEmpty() || !g_overrideLight.isEmpty();
+}
+
+QMap<QString, QString> overridePalette(Design design, bool dark)
+{
+    QMap<QString, QString> palette;
+    const QMap<QString, QString> &chosen = overrides(dark);
+    if (chosen.isEmpty())
+        return palette;
+    for (int index = 0; index < kRoleCount; ++index) {
+        const RoleValues &entry = kRoles[index];
+        const QString wanted = chosen.value(QString::fromLatin1(entry.name));
+        if (wanted.isEmpty())
+            continue;
+        const QString base = QString::fromLatin1(
+            design == Design::Next ? (dark ? entry.nextDark : entry.nextLight)
+                                   : (dark ? entry.classicDark : entry.classicLight));
+        if (!palette.contains(base))
+            palette.insert(base, wanted);
+        const QString classic =
+            QString::fromLatin1(dark ? entry.classicDark : entry.classicLight);
+        if (!palette.contains(classic))
+            palette.insert(classic, wanted);
+    }
+    return palette;
+}
+
 QString hex(Role role, Design design, bool dark)
 {
     const RoleValues &entry = values(role);
+    const QString overridden =
+        overrides(dark).value(QString::fromLatin1(entry.name));
+    if (!overridden.isEmpty())
+        return overridden;
     if (design == Design::Next)
         return QString::fromLatin1(dark ? entry.nextDark : entry.nextLight);
     return QString::fromLatin1(dark ? entry.classicDark : entry.classicLight);
@@ -389,6 +446,17 @@ QMap<QString, QString> nextPalette(bool dark)
             palette.insert(QString::fromLatin1(entry.from),
                            QString::fromLatin1(entry.to));
     }
+    const QMap<QString, QString> instance = overridePalette(Design::Next, dark);
+    if (instance.isEmpty())
+        return palette;
+    for (auto it = palette.begin(); it != palette.end(); ++it) {
+        const QString wanted = instance.value(it.value());
+        if (!wanted.isEmpty())
+            it.value() = wanted;
+    }
+    for (auto it = instance.constBegin(); it != instance.constEnd(); ++it)
+        if (!palette.contains(it.key()))
+            palette.insert(it.key(), it.value());
     return palette;
 }
 

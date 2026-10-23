@@ -896,8 +896,10 @@ void MainWindow::applyRailCaptionPreference()
              std::as_const(m_railGroupSeparators))
             if (separator)
                 separator->followRailCaptionPreference();
-        if (m_railSortButton)
+        if (m_railSortButton) {
             m_railSortButton->setFixedWidth(railColumnWidth());
+            refreshRailSortButton();
+        }
         if (QWidget *content = m_appNavigationRailLayout->parentWidget())
             content->setMinimumWidth(railColumnWidth());
     }
@@ -2380,11 +2382,6 @@ QPushButton *MainWindow::buildRailSortButton()
     button->setFocusPolicy(Qt::NoFocus);
     button->setFlat(true);
     button->setFixedSize(railColumnWidth(), kRailSortButtonHeight);
-    button->setStyleSheet(QStringLiteral(
-        "QPushButton#railSortButton { border: none; padding: 0; margin: 0;"
-        " background: transparent; min-height: 0; }"
-        "QPushButton#railSortButton:hover { background: rgba(127, 127, 127, 40);"
-        " border-radius: 3px; }"));
     setOcticon(button, QStringLiteral("sort-desc"), 12);
     m_railSortButton = button;
     refreshRailSortButton();
@@ -2409,6 +2406,23 @@ void MainWindow::refreshRailSortButton()
             .arg(summary));
     m_railSortButton->setProperty("railSortMode", RailGroups::sortModeKey(mode));
     m_railSortButton->setProperty("railGrouped", railGrouped());
+    const bool expanded = forkmesh::ui::railExpanded();
+    const QString label = expanded ? summary : QString();
+    if (m_railSortButton->text() != label)
+        m_railSortButton->setText(label);
+    m_railSortButton->setFixedHeight(expanded ? 22 : kRailSortButtonHeight);
+    const QString sheet =
+        QStringLiteral(
+            "QPushButton#railSortButton { border: none; padding: 0 0 0 %1px; margin: 0;"
+            " background: transparent; min-height: 0; text-align: %2; color: %3;"
+            " font-size: 11px; }"
+            "QPushButton#railSortButton:hover { background: rgba(127, 127, 127, 40);"
+            " border-radius: 3px; color: %4; }")
+            .arg(expanded ? 12 : 0)
+            .arg(expanded ? QStringLiteral("left") : QStringLiteral("center"))
+            .arg(Theme::hex(Theme::Role::FgMuted), Theme::hex(Theme::Role::Fg));
+    if (m_railSortButton->styleSheet() != sheet)
+        m_railSortButton->setStyleSheet(sheet);
 }
 
 QMenu *MainWindow::buildRailSortMenu(QWidget *parent)

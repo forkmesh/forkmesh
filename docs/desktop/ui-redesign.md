@@ -165,6 +165,25 @@ descenders.
 - **Expanded sidebar** (`ui/railExpanded`): labelled rows; folders open the same
   pop-out as before. Toggled by the top-bar button, Settings, or the palette (no
   window shortcut, to keep `^B` for the built-in terminal).
+  Its width is adjustable: drag the thin handle on its right edge
+  (`railResizeHandle`, `NextAccess::railResizeHandle`/`setRailWidth`) between
+  160 and 380 px; double-click resets it to 196. The width is
+  `railExpandedItemWidth()`, saved in `ui/railExpandedWidth` when the drag
+  ends. The handle shows only while the sidebar is expanded.
+- **Match the instance's theme** (Settings → General → Appearance,
+  `ui/matchInstanceTheme`, off): the app wears the colours the connected
+  instance's admin picked (Settings → Instance theme on the web). The desktop
+  reads `themeColors` from `GET /api/instance` (falling back to `theme.dark` /
+  `theme.light`) when the setting is turned on, at launch and when the active
+  instance changes (`refreshInstanceTheme`), maps the dashboard tokens onto its
+  colour roles (`forkmesh::instancetheme::roleColors`: background → `bg`,
+  card → `surface`, primary → `accent`, link → `accentFg`, muted-foreground →
+  `fgMuted` and so on, with hover, subtle and selection shades blended from
+  them) and keeps the result in `ui/instanceThemeColors`, so the next launch
+  starts in those colours offline. `Theme::setRoleOverrides` makes
+  `Theme::hex` return them, `nextPalette` and `overridePalette` recolour the
+  base stylesheet, so both interfaces follow. A Market skin wins over the
+  instance theme. An instance on the default theme clears the overrides.
 - **Welcome and sign-in card**: an overlay on the shell, never a gate
   (`onboarding/welcomeSignInSeenV1`). The sign-in panel is modal over the window.
   Account notices route through `NextAccess::accountNotice`.

@@ -59,6 +59,7 @@ struct AppRootView: View {
 /// Only the appearance choices rebuild the theme; watching the whole settings
 /// service would redraw every route on each keystroke in a Settings field.
 struct ThemedAppView: View {
+    @Environment(\.scenePhase) var scenePhase
     let services: AppServices
 
     private var forcedDark: Bool? {
@@ -69,15 +70,35 @@ struct ThemedAppView: View {
         }
     }
 
+    private var instanceThemeOrigin: String? {
+        let settings: SettingsService = services.settings
+        guard settings.matchesInstanceTheme, scenePhase == .active else { return nil }
+        return settings.relays.active.httpOrigin
+    }
+
+    private func refreshInstanceTheme(_ origin: String?) async {
+        guard let origin else { return }
+        let settings: SettingsService = services.settings
+        if origin.isEmpty {
+            settings.setInstanceThemeColors("")
+            return
+        }
+        guard let colors = await InstanceTheme.fetch(http: services.http, origin: origin) else { return }
+        if settings.matchesInstanceTheme, settings.relays.active.httpOrigin == origin {
+            settings.setInstanceThemeColors(colors)
+        }
+    }
+
     var body: some View {
         let settings: SettingsService = services.settings
-        ForkMeshTheme(theme: settings.theme, wallpaper: !settings.backgroundImage.isEmpty, dark: forcedDark) {
+        ForkMeshTheme(theme: settings.effectiveTheme, wallpaper: !settings.backgroundImage.isEmpty, dark: forcedDark) {
             AppHomeView(auth: services.auth)
                 .signInPresenter(services.signIn)
                 .background { FmWallpaperBackdrop(name: settings.backgroundImage, dim: settings.backgroundDim) }
                 .background { CaptureHoldAnchor().accessibilityHidden(true) }
         }
         .preferredColorScheme(forcedDark.map { (dark: Bool) -> ColorScheme in dark ? .dark : .light })
+        .task(id: instanceThemeOrigin) { await refreshInstanceTheme(instanceThemeOrigin) }
     }
 }
 
