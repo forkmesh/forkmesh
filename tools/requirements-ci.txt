@@ -1,4 +1,7 @@
 # Pinned Python test dependencies for continuous integration.
 # Kept in one file so actions/setup-python can hash it for the pip download
 # cache and so the pin only has to be raised in a single place.
+cffi==2.1.1
+cryptography==50.0.1
+pycparser==3.0
 pytest==9.1.1
