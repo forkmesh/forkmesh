@@ -56,6 +56,37 @@ branch.
   branch-backed pull lands as a merge commit, and a patch-backed pull is
   replayed onto the newest base. It is shown as a warning, not a blocker.
 
+## Merge status button and compact header
+
+An open pull request shows a merge status button beside the copy-link button
+in its header (`renderRepoPullMergeStatus`, styles `.fm-merge-status`), so a
+reviewer sees whether it can merge without scrolling to the box. It reads the
+same `repoPullMergeModel` (`repoPullMergeStatus`) and is re-rendered by
+`updateRepoPullMergePanel` whenever the box is:
+
+- red when any row blocks the merge (changes requested, failing checks,
+  conflicts, unmet rules) or the footer is an error;
+- orange when the merge is waiting on something (review required, checks
+  running or incomplete, mergeability unknown), or a merge is in progress;
+- green when nothing is in the way. Being behind the base does not change the
+  colour, since it does not block a clean merge.
+
+The label names the first problem, a `+N` counter counts the others, and the
+tooltip lists every row title. Clicking it opens the Conversation section and
+scrolls to the merge box (`showRepoPullMergeBox`). Merged and closed pulls show
+no button: the state pill already says it.
+
+While a pull request is open the repository's own title row (name, Public,
+Fork, Star) is hidden by a `:has()` rule in `shell.html`, because the pull's
+title is the page heading and those repository actions stay a click away on
+the Code tab. The new-pull composer and batch view keep the row.
+
+The Reviewers sidebar is compact, the way GitHub draws it: one line for the
+review gate (shield icon, approval and blocking counts as icons), then one
+line per reviewer with a state icon (check approved, file-diff changes
+requested, speech bubble commented) and a history icon when the review is on
+an older commit. The words live in each icon's tooltip and label.
+
 ## Update branch
 
 A branch-backed pull (`derive: branch`, its head is a branch of this
