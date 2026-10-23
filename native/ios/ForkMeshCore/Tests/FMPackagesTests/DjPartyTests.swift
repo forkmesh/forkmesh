@@ -149,4 +149,33 @@ final class DjPartyTests: XCTestCase {
         XCTAssertEqual(DjEnd.judge(position: 245, duration: 245, doubtedSince: nil, intended: true, at: 0), .ended)
         XCTAssertEqual(DjEnd.judge(position: 1, duration: 0, doubtedSince: nil, intended: true, at: 0), .ended)
     }
+
+    func testRepeatSkipsTheSilenceAtTheFrontAndBackOfASong() {
+        let quiet = DjWaveBar(level: 0.04, hue: 0)
+        let loud = DjWaveBar(level: 0.8, hue: 0)
+        let bars = Array(repeating: quiet, count: 30) + Array(repeating: loud, count: 1900) + Array(repeating: quiet, count: 70)
+        let span = DjRepeat.span(bars, duration: 100)
+        XCTAssertEqual(span?.start ?? -1, 1.5, accuracy: 0.001)
+        XCTAssertEqual(span?.end ?? -1, 96.5, accuracy: 0.001)
+        let flat = DjRepeat.span(Array(repeating: quiet, count: 2000), duration: 100)
+        XCTAssertEqual(flat, DjRepeatSpan(start: 0, end: 99.75))
+        XCTAssertEqual(DjRepeat.span([], duration: 100), DjRepeatSpan(start: 0, end: 99.75))
+        let blip = DjRepeat.span(Array(repeating: quiet, count: 1000) + [loud] + Array(repeating: quiet, count: 999), duration: 100)
+        XCTAssertEqual(blip, DjRepeatSpan(start: 0, end: 99.75))
+        let toTheEnd = DjRepeat.span(Array(repeating: loud, count: 2000), duration: 100)
+        XCTAssertEqual(toTheEnd, DjRepeatSpan(start: 0, end: 99.75))
+        XCTAssertNil(DjRepeat.span(bars, duration: 0))
+        XCTAssertNil(DjRepeat.span(bars, duration: .nan))
+    }
+
+    func testRepeatWrapsWhenTheSoundEndsAndAimsJustBeforeIt() {
+        let span = DjRepeatSpan(start: 1.5, end: 96.5)
+        XCTAssertEqual(DjRepeat.step(position: 50, span: span, rate: 1), .wait)
+        XCTAssertEqual(DjRepeat.step(position: 96.5, span: span, rate: 1), .wrap)
+        XCTAssertEqual(DjRepeat.step(position: 98, span: span, rate: 1), .wrap)
+        guard case let .after(seconds) = DjRepeat.step(position: 96.2, span: span, rate: 1.5) else { return XCTFail("expected a timed wrap") }
+        XCTAssertEqual(seconds, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(DjRepeat.step(position: 96.2, span: span, rate: 0.4), .wait)
+        XCTAssertEqual(DjRepeat.step(position: 98, span: span, rate: 0), .wait)
+    }
 }
