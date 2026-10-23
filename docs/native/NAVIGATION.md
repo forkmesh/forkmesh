@@ -395,7 +395,11 @@ ring) also sit in the thin strip of status bar above the Dynamic Island, so
 the checks stay visible on every page. The strip is the top safe-area inset
 minus the island's 48 pt (11 pt on a 59 pt inset, 14 pt on 62 pt); it shows
 only when that inset is at least 54 pt, which leaves out notched iPhones,
-landscape and iPad, where there is no room above a cut-out. The row ignores
+landscape and iPad, where there is no room above a cut-out. The inset is
+measured in screen space (the overlay's global top plus its own top inset,
+as `ShellHome` does) and the row is offset back to the screen's top edge, so
+the dots stay pinned above the island even when the overlay's frame does not
+reach into the status bar and reports a zero inset. The row ignores
 touches, since a tap that high belongs to the status bar's scroll-to-top, and
 a troubled dot blinks like the footer's.
 

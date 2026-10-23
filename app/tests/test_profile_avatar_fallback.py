@@ -176,4 +176,3 @@ state.repositories = [
 console.log(JSON.stringify(profileAvatarRosterRepos("exampleuser").map((r) => `${r.owner}/${r.name}`)));
 """.replace("console.log(JSON.stringify(", "console.log(JSON.stringify(") )
     assert out[:2] == ["exampleuser/project", "example/project"]
-

@@ -1079,9 +1079,6 @@ QPushButton#memberDeleteButton:hover {
 #promptWrapper:focus-within { border-color: #39d353; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptDragPill {
-    background-color: rgba(139,148,158,0.55); border: none; border-radius: 1px;
-}
 #promptResizeGrip {
     background-color: rgba(139,148,158,0.5); border: none; border-radius: 2px;
 }
@@ -1897,9 +1894,6 @@ QProgressBar#shortcutRunProgress::chunk { border-radius: 2px; background-color: 
 #promptWrapper:focus-within { border-color: #39d353; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptDragPill {
-    background-color: rgba(139,148,158,0.55); border: none; border-radius: 1px;
-}
 #promptResizeGrip {
     background-color: rgba(139,148,158,0.5); border: none; border-radius: 2px;
 }
@@ -3311,9 +3305,6 @@ QPushButton#memberDeleteButton:hover {
 #promptWrapper:focus-within { border-color: #1a7f37; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptDragPill {
-    background-color: rgba(87,96,106,0.55); border: none; border-radius: 1px;
-}
 #promptResizeGrip {
     background-color: rgba(87,96,106,0.5); border: none; border-radius: 2px;
 }
@@ -4115,9 +4106,6 @@ QProgressBar#shortcutRunProgress::chunk { border-radius: 2px; background-color: 
 #promptWrapper:focus-within { border-color: #1a7f37; }
 
 #promptDragHandle { background: transparent; border: none; }
-#promptDragPill {
-    background-color: rgba(87,96,106,0.55); border: none; border-radius: 1px;
-}
 #promptResizeGrip {
     background-color: rgba(87,96,106,0.5); border: none; border-radius: 2px;
 }
