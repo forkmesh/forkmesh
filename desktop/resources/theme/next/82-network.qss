@@ -1,0 +1,194 @@
+#networkTabs > QTabBar::tab {
+    background: transparent; color: @fgMuted; border: none;
+    border-bottom: 2px solid transparent; border-radius: 0px;
+    padding: 0px 10px; margin: 0px 2px 0px 0px; min-height: 34px;
+    font-size: 13px; font-weight: 500;
+}
+#networkTabs > QTabBar::tab:hover { background: transparent; color: @fg; }
+#networkTabs > QTabBar::tab:selected {
+    background: transparent; color: @fg; border-bottom: 2px solid @accentFg;
+}
+#networkTabs > QTabBar::tab:disabled { color: @fgSubtle; }
+
+QLabel#mutedLabel[networkRole="summary"] {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+QPushButton#repoAction[networkRole="ghost"] {
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: @fgSecondary; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 13px; font-weight: 500;
+}
+QPushButton#repoAction[networkRole="ghost"]:hover { background-color: @surfaceRaised; color: @fg; }
+QPushButton#repoAction[networkRole="ghost"]:pressed { background-color: @surfaceActive; }
+QPushButton#networkAddNodeButton {
+    background-color: @fg; color: @bg; border: none; border-radius: 8px;
+    padding: 0px 12px 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 13px; font-weight: 500;
+}
+QPushButton#networkAddNodeButton:hover { background-color: @fgSecondary; }
+QPushButton#networkAddNodeButton:pressed { background-color: @fgMuted; }
+
+QFrame[networkRole="statTile"] {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QFrame[networkRole="statTile"] QLabel { background: transparent; border: none; }
+QLabel#networkStatLabel { color: @fgMuted; font-size: 12px; }
+QLabel#networkStatValue { color: @fg; font-size: 22px; font-weight: 600; }
+QLabel#networkStatHint { color: @fgSubtle; font-size: 12px; }
+
+QWidget#mirrorNodesSection {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QWidget#mirrorNodesSection QLabel { background: transparent; border: none; }
+QWidget#mirrorNodesSection QLabel#sectionLabel { color: @fgMuted; font-size: 13px; font-weight: 400; }
+QWidget#mirrorNodesSection QLabel#statusLine { color: @fgSubtle; font-size: 12px; }
+QWidget#mirrorNodesSection QComboBox#mirrorNodesRepoCombo {
+    min-height: 28px; max-height: 30px; font-size: 13px;
+}
+QPushButton[networkRole="outline"] {
+    background-color: @surface; border: 1px solid @borderStrong; border-radius: 8px;
+    color: @fg; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+QPushButton[networkRole="outline"]:hover { background-color: @surfaceRaised; }
+QPushButton[networkRole="outline"]:pressed { background-color: @surfaceActive; }
+QPushButton[networkRole="outline"]:disabled { color: @fgSubtle; border-color: @border; }
+
+QFrame#networkNodesToolbar {
+    background-color: @surface; border: 1px solid @border;
+    border-top-left-radius: 12px; border-top-right-radius: 12px;
+    border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;
+}
+QFrame#networkNodesToolbar QLineEdit#networkNodesFilter {
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    min-height: 28px; max-height: 28px; padding: 0px 6px; font-size: 13px; color: @fg;
+}
+QFrame#networkNodesToolbar QLineEdit#networkNodesFilter:hover { background-color: @surfaceRaised; }
+QFrame#networkNodesToolbar QLineEdit#networkNodesFilter:focus {
+    background-color: @surfaceRaised; border-color: @accent;
+}
+QTableWidget#issueTable[nodesDirectory="true"] {
+    background-color: @bg; border: 1px solid @border; border-top: none;
+    border-top-left-radius: 0px; border-top-right-radius: 0px;
+    border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
+}
+QTableWidget#issueTable[nodesDirectory="true"]::item,
+QTableWidget#issueTable[nodesDirectory="true"]::item:hover {
+    background: transparent; border: none;
+}
+QLabel#mutedLabel[networkRole="footnote"] { color: @fgSubtle; font-size: 12px; }
+
+QFrame#networkNodePanel {
+    background-color: @bg; border: 1px solid @border; border-radius: 12px;
+}
+QWidget#networkNodePanelHead {
+    background: transparent; border: none; border-bottom: 1px solid @border;
+}
+QFrame#networkNodePanel QLabel#networkNodePanelIcon {
+    background-color: @surfaceRaised; border: 1px solid @border; border-radius: 12px;
+}
+QLabel#networkNodePanelName { color: @fg; }
+QLabel#networkNodePanelSub { color: @fgMuted; font-size: 12px; }
+QToolButton#networkNodePanelClose, QToolButton#networkNodePanelMore {
+    background: transparent; border: none; border-radius: 6px;
+}
+QToolButton#networkNodePanelClose:hover, QToolButton#networkNodePanelMore:hover {
+    background-color: @surfaceRaised;
+}
+QToolButton#networkNodePanelMore::menu-indicator { image: none; width: 0px; }
+QScrollArea#networkNodePanelScroll { background: transparent; border: none; }
+QScrollArea#networkNodePanelScroll > QWidget#qt_scrollarea_viewport,
+QWidget#networkNodePanelBody, QWidget#networkNodePanelMeters,
+QWidget#networkNodePanelMeter { background: transparent; }
+QFrame#networkNodePanel QLabel#networkNodePanelNotice {
+    background-color: @warningSubtle; border: 1px solid @border; border-radius: 12px;
+    padding: 10px 12px; color: @fg; font-size: 13px;
+}
+QFrame#networkNodePanelTile {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+}
+QLabel#networkNodePanelTileKey { color: @fgSubtle; font-size: 11px; }
+QLabel#networkNodePanelTileValue { color: @fg; font-size: 13px; font-weight: 500; }
+QLabel#networkNodePanelMeterName { color: @fg; font-size: 13px; }
+QLabel#networkNodePanelMeterValue { color: @fgMuted; font-size: 13px; }
+QLabel#networkNodePanelHeading { color: @fgSubtle; }
+QFrame#networkNodePanelList {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QWidget#networkNodePanelRow { background: transparent; border-radius: 6px; }
+QLabel#networkNodePanelRowKey { color: @fgMuted; font-size: 13px; }
+QLabel#networkNodePanelRowValue { color: @fg; }
+QWidget#networkNodePanelFooter {
+    background: transparent; border: none; border-top: 1px solid @border;
+}
+QWidget#networkNodePanelFooter QPushButton {
+    background-color: @surface; border: 1px solid @borderStrong; border-radius: 8px;
+    color: @fg; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+QWidget#networkNodePanelFooter QPushButton:hover { background-color: @surfaceRaised; }
+QWidget#networkNodePanelFooter QPushButton:pressed { background-color: @surfaceActive; }
+
+#networkTabs QTableWidget#issueTable[networkGrid="true"] {
+    background-color: @bg; border: 1px solid @border; border-radius: 12px;
+}
+
+#nodeProfileContent #profileNextUserCard,
+#nodeProfileContent #profileNextMachineCard,
+#nodeProfileContent #profileNextDetails {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#nodeProfileContent #profileNextUserCard QLabel#profileName,
+#nodeProfileContent #profileNextUserCard QLabel#statusLine,
+#nodeProfileContent #profileNextUserCard QLabel#profileNextMeta,
+#nodeProfileContent #profileNextMachineCard QLabel#profileNextMachineName,
+#nodeProfileContent #profileNextMachineCard QLabel#profileNextMachineSpec,
+#nodeProfileContent #profileNextDetails QLabel#profileNextDetailKey,
+#nodeProfileContent #profileNextDetails QLabel#profileNextDetailValue {
+    background: transparent; border: none;
+}
+#nodeProfileContent #profileNextUserCard QLabel#profileName {
+    color: @fg; font-size: 15px; font-weight: 600;
+}
+#nodeProfileContent #profileNextUserCard QLabel#statusLine { color: @fgMuted; font-size: 13px; }
+#nodeProfileContent #profileNextUserCard QLabel#profileNextMeta { color: @fgMuted; font-size: 13px; }
+#nodeProfileContent #profileNextUserCard QPushButton[profileNext="true"] {
+    background-color: @surface; border: 1px solid @borderStrong; border-radius: 8px;
+    color: @fg; padding: 0px 12px; min-height: 28px; max-height: 30px;
+    font-size: 13px; font-weight: 500;
+}
+#nodeProfileContent #profileNextUserCard QPushButton[profileNext="true"]:hover {
+    background-color: @surfaceRaised;
+}
+#nodeProfileContent #profileNextUserCard QPushButton[profileNext="true"]:pressed {
+    background-color: @surfaceActive;
+}
+#nodeProfileContent QPushButton#primaryButton[profileNextLink="true"] {
+    background: transparent; border: none; color: @accentFg; padding: 0px;
+    font-size: 13px; font-weight: 400; min-height: 22px;
+}
+#nodeProfileContent QPushButton#primaryButton[profileNextLink="true"]:hover {
+    background: transparent; color: @accentHover;
+}
+#nodeProfileContent #profileNextMachineHead {
+    background: transparent; border: none; border-bottom: 1px solid @border;
+}
+#nodeProfileContent #profileNextMachineCard QLabel#profileNextMachineName { color: @fg; font-size: 14px; }
+#nodeProfileContent #profileNextMachineCard QLabel#profileNextMachineSpec { color: @fgMuted; font-size: 13px; }
+#nodeProfileContent #profileNextMachineCard QLabel#statTile,
+#settingsSectionsContent #nodeProfileContent #profileNextMachineCard QLabel#statTile {
+    background: transparent; border: none; border-right: 1px solid @border;
+    border-radius: 0px; padding: 14px 20px;
+}
+#nodeProfileContent #profileNextMachineCard QLabel#statTile[profileNextLast="true"],
+#settingsSectionsContent #nodeProfileContent #profileNextMachineCard QLabel#statTile[profileNextLast="true"] {
+    border-right: none;
+}
+#nodeProfileContent #profileNextDetails QWidget#profileNextDetailRow {
+    background: transparent; border: none; border-bottom: 1px solid @border;
+}
+#nodeProfileContent #profileNextDetails QWidget#profileNextDetailRow[profileNextLast="true"] {
+    border-bottom: none;
+}
+#nodeProfileContent #profileNextDetails QLabel#profileNextDetailKey { color: @fgMuted; font-size: 13px; }
+#nodeProfileContent #profileNextDetails QLabel#profileNextDetailValue { color: @fg; }

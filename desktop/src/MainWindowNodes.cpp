@@ -33,6 +33,13 @@
 #include <QDialogButtonBox>
 #include <QElapsedTimer>
 #include <QInputDialog>
+#include <QLineEdit>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QScrollArea>
+#include <QStyledItemDelegate>
+#include <QToolButton>
 #include <QUrlQuery>
 
 #include <algorithm>
@@ -115,14 +122,960 @@ bool isProtectedMeshNode(const QString &node)
     return key.isEmpty() || key == QLatin1String("forkmesh") ||
            key == QLatin1String("forkmesh-mainnode");
 }
+
+QString nextNodeDash()
+{
+    return QString::fromUtf8("\xE2\x80\x94");
+}
+
+QString nextNodeCellText(const QTableWidget *table, int row, int column)
+{
+    const QTableWidgetItem *item = table->item(row, column);
+    if (!item)
+        return QString();
+    const QString text = item->text().trimmed();
+    return text == nextNodeDash() ? QString() : text;
+}
+
+struct NextNodeName {
+    QString name;
+    bool self = false;
+    bool source = false;
+    bool child = false;
+};
+
+NextNodeName nextSplitNodeName(QString text)
+{
+    NextNodeName out;
+    const QString childPrefix = QString::fromUtf8("    \xE2\x94\x94 ");
+    if (text.startsWith(childPrefix)) {
+        out.child = true;
+        text = text.mid(childPrefix.size());
+    }
+    const QString star = QString::fromUtf8("  \xE2\x98\x85 source of truth");
+    if (text.contains(star)) {
+        out.source = true;
+        text.remove(star);
+    }
+    for (const QString &mark :
+         {QStringLiteral("  (this machine)"), QStringLiteral("  (you)")}) {
+        if (text.contains(mark)) {
+            out.self = true;
+            text.remove(mark);
+        }
+    }
+    out.name = text.trimmed();
+    return out;
+}
+
+bool nextNodeRowIsChild(const QTableWidget *table, int row)
+{
+    const QTableWidgetItem *name = table->item(row, kNodeColName);
+    return name && name->data(kNodeGroupChildRole).toBool();
+}
+
+QString nextNodeRowKey(const QTableWidget *table, int row)
+{
+    for (int r = row; r >= 0; --r) {
+        const QTableWidgetItem *name = table->item(r, kNodeColName);
+        if (!name)
+            return QString();
+        if (name->data(kNodeGroupChildRole).toBool())
+            continue;
+        return name->data(Qt::UserRole + 5).toString() + QLatin1Char('|') +
+               name->data(Qt::UserRole).toString().trimmed().toLower();
+    }
+    return QString();
+}
+
+int nextNodeRowForKey(const QTableWidget *table, const QString &key)
+{
+    if (key.isEmpty())
+        return -1;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        if (!nextNodeRowIsChild(table, row) && nextNodeRowKey(table, row) == key)
+            return row;
+    }
+    return -1;
+}
+
+bool nextNodeOnline(const QModelIndex &index)
+{
+    const QModelIndex name = index.siblingAtColumn(kNodeColName);
+    if (name.data(kNodeGroupChildRole).toBool())
+        return name.data(kMirrorNodeOnlineRole).toBool();
+    return index.siblingAtColumn(kNodeColStatus)
+        .data()
+        .toString()
+        .startsWith(QLatin1String("Online"));
+}
+
+QColor nextNodeDotColor(const QModelIndex &index)
+{
+    const int light = index.siblingAtColumn(kNodeColName).data(kNodeLightRole).toInt();
+    if (light == 2)
+        return Theme::color(Theme::Role::Danger);
+    if (light == 1)
+        return Theme::color(Theme::Role::Warning);
+    return nextNodeOnline(index) ? Theme::color(Theme::Role::Success)
+                                 : Theme::color(Theme::Role::FgSubtle);
+}
+
+QString nextNodeRoleIcon(const QString &roleKey)
+{
+    if (roleKey == QLatin1String("core"))
+        return QStringLiteral("server");
+    if (roleKey == QLatin1String("runner"))
+        return QStringLiteral("terminal");
+    if (roleKey == QLatin1String("mirror"))
+        return QStringLiteral("sync");
+    if (roleKey == QLatin1String("relay"))
+        return QStringLiteral("broadcast");
+    return QStringLiteral("device-desktop");
+}
+
+QFont nextNodeFont(const QFont &base, int px, bool mono, QFont::Weight weight)
+{
+    QFont font = base;
+    if (mono)
+        font.setFamily(Theme::monoFontFamily());
+    font.setPixelSize(px);
+    font.setWeight(weight);
+    return font;
+}
+
+struct NextNodeBadge {
+    QString text;
+    bool soft = false;
+};
+
+class NextNodeCellDelegate : public QStyledItemDelegate
+{
+public:
+    enum Kind { Name, Muted, Mono };
+
+    NextNodeCellDelegate(Kind kind, QObject *parent)
+        : QStyledItemDelegate(parent), m_kind(kind)
+    {
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        const QRect cell = option.rect.adjusted(kPad, 0, -kPad, 0);
+        if (m_kind == Name)
+            paintName(painter, cell, option, index);
+        else
+            paintText(painter, cell, option, index);
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        const QSize base = QStyledItemDelegate::sizeHint(option, index);
+        if (m_kind != Name) {
+            const QFontMetrics metrics(textFont(option));
+            return QSize(metrics.horizontalAdvance(displayText(index)) + 2 * kPad + 4,
+                         base.height());
+        }
+        const NextNodeName split = nextSplitNodeName(index.data().toString());
+        const QFontMetrics metrics(nameFont(option, index));
+        int width = 2 * kPad + kDot + kGap + metrics.horizontalAdvance(split.name) + 4;
+        if (split.child)
+            width += kIndent;
+        const QFontMetrics badgeMetrics(badgeFont(option));
+        for (const NextNodeBadge &badge : badges(index, split))
+            width += kGap + badgeMetrics.horizontalAdvance(badge.text) + 10;
+        return QSize(width, base.height());
+    }
+
+private:
+    static constexpr int kPad = 10;
+    static constexpr int kDot = 6;
+    static constexpr int kGap = 8;
+    static constexpr int kIndent = 18;
+
+    QFont textFont(const QStyleOptionViewItem &option) const
+    {
+        return m_kind == Mono ? nextNodeFont(option.font, 12, true, QFont::Normal)
+                              : nextNodeFont(option.font, 13, false, QFont::Normal);
+    }
+
+    static QFont nameFont(const QStyleOptionViewItem &option, const QModelIndex &index)
+    {
+        const QFont itemFont = index.data(Qt::FontRole).value<QFont>();
+        const bool strong = index.data(Qt::FontRole).isValid() && itemFont.bold();
+        return nextNodeFont(option.font, 12, true,
+                            strong ? QFont::Medium : QFont::Normal);
+    }
+
+    static QFont badgeFont(const QStyleOptionViewItem &option)
+    {
+        return nextNodeFont(option.font, 10, false, QFont::Medium);
+    }
+
+    static QString displayText(const QModelIndex &index)
+    {
+        QString text = index.data().toString();
+        text.replace(QStringLiteral(" (serving)"), QString::fromUtf8(" \xC2\xB7 serving"));
+        return text;
+    }
+
+    static QList<NextNodeBadge> badges(const QModelIndex &index, const NextNodeName &split)
+    {
+        QList<NextNodeBadge> out;
+        if (split.self)
+            out.append({QStringLiteral("You"), true});
+        if (split.source)
+            out.append({QStringLiteral("Source of truth"), false});
+        const QModelIndex name = index.siblingAtColumn(kNodeColName);
+        if (name.data(Qt::UserRole + 5).toString() == QLatin1String("relay") &&
+            index.siblingAtColumn(kNodeColScope).data().toString() ==
+                QLatin1String("active"))
+            out.append({QStringLiteral("Active relay"), false});
+        return out;
+    }
+
+    void paintText(QPainter *painter, const QRect &cell,
+                   const QStyleOptionViewItem &option, const QModelIndex &index) const
+    {
+        const QVariant foreground = index.data(Qt::ForegroundRole);
+        QColor color = Theme::color(Theme::Role::FgMuted);
+        if (foreground.isValid())
+            color = foreground.value<QBrush>().color();
+        const QFont font = textFont(option);
+        painter->setFont(font);
+        painter->setPen(color);
+        const QVariant alignment = index.data(Qt::TextAlignmentRole);
+        Qt::Alignment align = alignment.isValid()
+                                  ? Qt::Alignment(alignment.toInt())
+                                  : Qt::Alignment(Qt::AlignLeft | Qt::AlignVCenter);
+        align = (align & Qt::AlignHorizontal_Mask) | Qt::AlignVCenter;
+        const QString text =
+            QFontMetrics(font).elidedText(displayText(index), Qt::ElideRight, cell.width());
+        painter->drawText(cell, int(align), text);
+    }
+
+    void paintName(QPainter *painter, QRect cell, const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const
+    {
+        const NextNodeName split = nextSplitNodeName(index.data().toString());
+        const QFont font = nameFont(option, index);
+        const QFontMetrics metrics(font);
+        if (split.child) {
+            painter->setFont(font);
+            painter->setPen(Theme::color(Theme::Role::FgSubtle));
+            painter->drawText(QRect(cell.left(), cell.top(), kIndent, cell.height()),
+                              Qt::AlignLeft | Qt::AlignVCenter,
+                              QString::fromUtf8("\xE2\x94\x94"));
+            cell.setLeft(cell.left() + kIndent);
+        }
+        const int centerY = cell.center().y();
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(nextNodeDotColor(index));
+        painter->drawEllipse(QRectF(cell.left(), centerY - kDot / 2.0 + 0.5, kDot, kDot));
+        cell.setLeft(cell.left() + kDot + kGap);
+
+        const QList<NextNodeBadge> list = badges(index, split);
+        const QFont small = badgeFont(option);
+        const QFontMetrics smallMetrics(small);
+        int badgesWidth = 0;
+        for (const NextNodeBadge &badge : list)
+            badgesWidth += kGap + smallMetrics.horizontalAdvance(badge.text) + 10;
+        const int nameRoom = qMax(0, cell.width() - badgesWidth);
+        const QString name = metrics.elidedText(split.name, Qt::ElideRight, nameRoom);
+        painter->setFont(font);
+        painter->setPen(split.child ? Theme::color(Theme::Role::FgMuted)
+                                    : Theme::color(Theme::Role::Fg));
+        painter->drawText(QRect(cell.left(), cell.top(), nameRoom, cell.height()),
+                          Qt::AlignLeft | Qt::AlignVCenter, name);
+        int x = cell.left() + metrics.horizontalAdvance(name);
+        painter->setFont(small);
+        for (const NextNodeBadge &badge : list) {
+            x += kGap;
+            const int width = smallMetrics.horizontalAdvance(badge.text) + 10;
+            if (x + width > cell.right() + 1)
+                break;
+            const QRectF pill(x, centerY - 8 + 0.5, width, 16);
+            if (badge.soft) {
+                painter->setPen(Qt::NoPen);
+                painter->setBrush(Theme::color(Theme::Role::AccentSubtle));
+                painter->drawRoundedRect(pill, 4, 4);
+                painter->setPen(Theme::color(Theme::Role::AccentFg));
+            } else {
+                painter->setPen(QPen(Theme::color(Theme::Role::BorderStrong), 1));
+                painter->setBrush(Qt::NoBrush);
+                painter->drawRoundedRect(pill.adjusted(0.5, 0.5, -0.5, -0.5), 4, 4);
+                painter->setPen(Theme::color(Theme::Role::FgMuted));
+            }
+            painter->drawText(pill, Qt::AlignCenter, badge.text);
+            x += width;
+        }
+    }
+
+    Kind m_kind;
+};
+
+class NextNodesTableChrome : public QObject
+{
+public:
+    explicit NextNodesTableChrome(QTableWidget *table) : QObject(table), m_table(table)
+    {
+        table->viewport()->setMouseTracking(true);
+        table->viewport()->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched != m_table->viewport())
+            return false;
+        switch (event->type()) {
+        case QEvent::MouseMove:
+            setHovered(m_table->rowAt(
+                static_cast<QMouseEvent *>(event)->position().toPoint().y()));
+            break;
+        case QEvent::Leave:
+            setHovered(-1);
+            break;
+        case QEvent::Paint:
+            paintBands();
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+
+private:
+    void setHovered(int row)
+    {
+        if (row == m_hovered)
+            return;
+        const int before = m_hovered;
+        m_hovered = row;
+        updateRow(before);
+        updateRow(row);
+    }
+
+    void updateRow(int row)
+    {
+        if (row < 0 || row >= m_table->rowCount())
+            return;
+        m_table->viewport()->update(QRect(0, m_table->rowViewportPosition(row),
+                                          m_table->viewport()->width(),
+                                          m_table->rowHeight(row)));
+    }
+
+    void paintBands()
+    {
+        const int rows = m_table->rowCount();
+        if (rows == 0)
+            return;
+        QWidget *viewport = m_table->viewport();
+        int first = m_table->rowAt(0);
+        int last = m_table->rowAt(viewport->height() - 1);
+        if (first < 0)
+            first = 0;
+        if (last < 0)
+            last = rows - 1;
+        const QString key = m_table->property("nextPanelKey").toString();
+        const QString hoveredKey =
+            m_hovered >= 0 ? nextNodeRowKey(m_table, m_hovered) : QString();
+        QPainter painter(viewport);
+        const int width = viewport->width();
+        const QColor hairline = Theme::color(Theme::Role::Border);
+        for (int row = first; row <= last; ++row) {
+            if (m_table->isRowHidden(row))
+                continue;
+            const int top = m_table->rowViewportPosition(row);
+            const int height = m_table->rowHeight(row);
+            const QString rowKey = nextNodeRowKey(m_table, row);
+            if (!key.isEmpty() && rowKey == key)
+                painter.fillRect(0, top, width, height,
+                                 Theme::color(Theme::Role::SurfaceActive));
+            else if (!hoveredKey.isEmpty() && rowKey == hoveredKey)
+                painter.fillRect(0, top, width, height,
+                                 Theme::color(Theme::Role::SurfaceRaised));
+            painter.fillRect(0, top + height - 1, width, 1, hairline);
+        }
+    }
+
+    QTableWidget *m_table = nullptr;
+    int m_hovered = -1;
+};
+
+class NextNodeMeter : public QWidget
+{
+public:
+    explicit NextNodeMeter(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setFixedHeight(6);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+
+    void setValue(int value)
+    {
+        if (m_value == value)
+            return;
+        m_value = value;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(Qt::NoPen);
+        const QRectF track(rect());
+        const qreal radius = track.height() / 2.0;
+        painter.setBrush(Theme::color(Theme::Role::SurfaceActive));
+        painter.drawRoundedRect(track, radius, radius);
+        if (m_value <= 0)
+            return;
+        QRectF fill = track;
+        fill.setWidth(track.width() * qMin(100, m_value) / 100.0);
+        painter.setBrush(m_value > 80 ? Theme::color(Theme::Role::Fg, 180)
+                                      : Theme::color(Theme::Role::Accent));
+        painter.drawRoundedRect(fill, radius, radius);
+    }
+
+private:
+    int m_value = -1;
+};
+
+QFrame *nextStatTile(const QString &objectName, const QString &label, QWidget *parent)
+{
+    auto *tile = new QFrame(parent);
+    tile->setObjectName(objectName);
+    tile->setProperty("networkRole", QStringLiteral("statTile"));
+    tile->setAttribute(Qt::WA_StyledBackground, true);
+    tile->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    tile->setMinimumWidth(120);
+    auto *layout = new QVBoxLayout(tile);
+    layout->setContentsMargins(16, 12, 16, 12);
+    layout->setSpacing(4);
+    auto *caption = new QLabel(label, tile);
+    caption->setObjectName(QStringLiteral("networkStatLabel"));
+    auto *value = new QLabel(nextNodeDash(), tile);
+    value->setObjectName(QStringLiteral("networkStatValue"));
+    value->setTextFormat(Qt::PlainText);
+    auto *hint = new QLabel(tile);
+    hint->setObjectName(QStringLiteral("networkStatHint"));
+    hint->setTextFormat(Qt::PlainText);
+    for (QLabel *text : {caption, value, hint}) {
+        text->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        layout->addWidget(text);
+    }
+    return tile;
+}
+
+void nextSetStatTile(QWidget *scope, const QString &objectName, const QString &value,
+                     const QString &hint)
+{
+    auto *tile = scope ? scope->findChild<QFrame *>(objectName) : nullptr;
+    if (!tile)
+        return;
+    if (auto *label = tile->findChild<QLabel *>(QStringLiteral("networkStatValue")))
+        label->setText(value.isEmpty() ? nextNodeDash() : value);
+    if (auto *label = tile->findChild<QLabel *>(QStringLiteral("networkStatHint")))
+        label->setText(hint);
+}
+
+void nextComposeNetworkSummary(QLabel *label)
+{
+    if (!label)
+        return;
+    QStringList parts;
+    for (const char *key : {"nextNodesPart", "nextDiagPart"}) {
+        const QString part = label->property(key).toString();
+        if (!part.isEmpty())
+            parts.append(part);
+    }
+    label->setText(parts.join(QString::fromUtf8(" \xC2\xB7 ")));
+}
+
+QString nextPlural(int count, const QString &one, const QString &many)
+{
+    return QStringLiteral("%1 %2").arg(count).arg(count == 1 ? one : many);
+}
+
+void nextRefreshNodeStats(QTableWidget *table, QLabel *summary)
+{
+    QWidget *scope = table->parentWidget();
+    int total = 0;
+    int online = 0;
+    QMap<QString, int> offlineByRole;
+    QList<double> latencies;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        if (nextNodeRowIsChild(table, row))
+            continue;
+        ++total;
+        if (nextNodeCellText(table, row, kNodeColStatus).startsWith(QLatin1String("Online")))
+            ++online;
+        else
+            ++offlineByRole[nextNodeCellText(table, row, kNodeColRole).toLower()];
+        const QTableWidgetItem *latency = table->item(row, kNodeColLatency);
+        bool ok = false;
+        const double ms = latency ? latency->data(kTableSortRole).toDouble(&ok) : -1.0;
+        if (ok && ms >= 0 && latency->text().endsWith(QLatin1String(" ms")))
+            latencies.append(ms);
+    }
+
+    QString onlineHint;
+    const int offline = total - online;
+    if (total == 0)
+        onlineHint = QStringLiteral("No nodes known yet");
+    else if (offline == 0)
+        onlineHint = QStringLiteral("All online");
+    else if (offlineByRole.size() == 1 && !offlineByRole.firstKey().isEmpty())
+        onlineHint = QStringLiteral("%1 %2 offline").arg(offline).arg(offlineByRole.firstKey());
+    else
+        onlineHint = QStringLiteral("%1 offline").arg(offline);
+    nextSetStatTile(scope, QStringLiteral("networkStatOnline"),
+                    total > 0 ? QStringLiteral("%1 / %2").arg(online).arg(total)
+                              : QString(),
+                    onlineHint);
+
+    QString median;
+    if (!latencies.isEmpty()) {
+        std::sort(latencies.begin(), latencies.end());
+        const int mid = int(latencies.size()) / 2;
+        const double value = latencies.size() % 2
+                                 ? latencies.at(mid)
+                                 : (latencies.at(mid - 1) + latencies.at(mid)) / 2.0;
+        median = QStringLiteral("%1 ms").arg(qRound(value));
+    }
+    nextSetStatTile(scope, QStringLiteral("networkStatLatency"), median,
+                    latencies.isEmpty()
+                        ? QStringLiteral("No node measured yet")
+                        : nextPlural(int(latencies.size()), QStringLiteral("node measured"),
+                                     QStringLiteral("nodes measured")));
+
+    const QVariant served = table->property("nextReposServed");
+    const int servingNodes = table->property("nextReposNodes").toInt();
+    nextSetStatTile(scope, QStringLiteral("networkStatRepos"),
+                    served.isValid() ? QString::number(served.toInt()) : QString(),
+                    servingNodes > 0
+                        ? QStringLiteral("across %1")
+                              .arg(nextPlural(servingNodes, QStringLiteral("node"),
+                                              QStringLiteral("nodes")))
+                        : QStringLiteral("No mirrors reported"));
+
+    if (summary) {
+        summary->setProperty("nextNodesPart",
+                             total > 0 ? QStringLiteral("%1 of %2 nodes online")
+                                             .arg(online)
+                                             .arg(total)
+                                       : QString());
+        nextComposeNetworkSummary(summary);
+    }
+}
+
+void nextApplyNodeTextFilter(QTableWidget *table)
+{
+    const QString needle = table->property("nextNodeFilter").toString();
+    if (needle.isEmpty())
+        return;
+    bool headShown = false;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        if (nextNodeRowIsChild(table, row)) {
+            if (!headShown)
+                table->setRowHidden(row, true);
+            continue;
+        }
+        headShown = false;
+        if (table->isRowHidden(row))
+            continue;
+        for (int column : {int(kNodeColName), int(kNodeColRole), int(kNodeColOwner),
+                           int(kNodeColStatus), int(kNodeColRegion),
+                           int(kNodeColPlatform), int(kNodeColEndpoint)}) {
+            const QTableWidgetItem *item = table->item(row, column);
+            if (item && item->text().contains(needle, Qt::CaseInsensitive)) {
+                headShown = true;
+                break;
+            }
+        }
+        if (!headShown)
+            table->setRowHidden(row, true);
+    }
+}
+
+QLabel *nextPanelLabel(const QString &objectName, QWidget *parent)
+{
+    auto *label = new QLabel(parent);
+    label->setObjectName(objectName);
+    label->setTextFormat(Qt::PlainText);
+    return label;
+}
+
+QFrame *nextBuildNodePanel(QWidget *parent)
+{
+    auto *panel = new QFrame(parent);
+    panel->setObjectName(QStringLiteral("networkNodePanel"));
+    panel->setAttribute(Qt::WA_StyledBackground, true);
+    panel->setFixedWidth(320);
+    panel->hide();
+    auto *layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    auto *head = new QWidget(panel);
+    head->setObjectName(QStringLiteral("networkNodePanelHead"));
+    head->setAttribute(Qt::WA_StyledBackground, true);
+    auto *headRow = new QHBoxLayout(head);
+    headRow->setContentsMargins(16, 14, 10, 14);
+    headRow->setSpacing(12);
+    auto *icon = nextPanelLabel(QStringLiteral("networkNodePanelIcon"), head);
+    icon->setFixedSize(40, 40);
+    icon->setAlignment(Qt::AlignCenter);
+    headRow->addWidget(icon, 0, Qt::AlignVCenter);
+    auto *titles = new QVBoxLayout;
+    titles->setContentsMargins(0, 0, 0, 0);
+    titles->setSpacing(2);
+    auto *nameRow = new QHBoxLayout;
+    nameRow->setContentsMargins(0, 0, 0, 0);
+    nameRow->setSpacing(8);
+    auto *name = nextPanelLabel(QStringLiteral("networkNodePanelName"), head);
+    name->setFont(nextNodeFont(name->font(), 13, true, QFont::Medium));
+    name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    nameRow->addWidget(name, 1);
+    auto *you = new kit::Badge(QStringLiteral("This node"), kit::Tone::Accent, false, head);
+    you->hide();
+    nameRow->addWidget(you, 0, Qt::AlignVCenter);
+    titles->addLayout(nameRow);
+    auto *sub = nextPanelLabel(QStringLiteral("networkNodePanelSub"), head);
+    sub->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    titles->addWidget(sub);
+    headRow->addLayout(titles, 1);
+    auto *close = new QToolButton(head);
+    close->setObjectName(QStringLiteral("networkNodePanelClose"));
+    close->setAutoRaise(true);
+    close->setCursor(Qt::PointingHandCursor);
+    close->setToolTip(QStringLiteral("Close"));
+    close->setAccessibleName(QStringLiteral("Close node details"));
+    close->setIcon(QIcon(kit::tintedIcon(QStringLiteral("x"),
+                                         Theme::color(Theme::Role::FgMuted), 16,
+                                         panel->devicePixelRatioF())));
+    close->setIconSize(QSize(16, 16));
+    close->setFixedSize(28, 28);
+    headRow->addWidget(close, 0, Qt::AlignVCenter);
+    layout->addWidget(head);
+
+    auto *scroll = new QScrollArea(panel);
+    scroll->setObjectName(QStringLiteral("networkNodePanelScroll"));
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->viewport()->setAutoFillBackground(false);
+    auto *body = new QWidget;
+    body->setObjectName(QStringLiteral("networkNodePanelBody"));
+    body->setAutoFillBackground(false);
+    auto *bodyLayout = new QVBoxLayout(body);
+    bodyLayout->setContentsMargins(16, 16, 16, 16);
+    bodyLayout->setSpacing(18);
+
+    auto *notice = nextPanelLabel(QStringLiteral("networkNodePanelNotice"), body);
+    notice->setWordWrap(true);
+    notice->hide();
+    bodyLayout->addWidget(notice);
+
+    auto *tiles = new QHBoxLayout;
+    tiles->setContentsMargins(0, 0, 0, 0);
+    tiles->setSpacing(8);
+    const QList<QPair<QString, QString>> tileKeys{
+        {QStringLiteral("latency"), QStringLiteral("Latency")},
+        {QStringLiteral("synced"), QStringLiteral("Synced")},
+        {QStringLiteral("version"), QStringLiteral("Version")}};
+    for (const auto &[key, caption] : tileKeys) {
+        auto *tile = new QFrame(body);
+        tile->setObjectName(QStringLiteral("networkNodePanelTile"));
+        tile->setProperty("tile", key);
+        tile->setAttribute(Qt::WA_StyledBackground, true);
+        auto *tileLayout = new QVBoxLayout(tile);
+        tileLayout->setContentsMargins(6, 8, 6, 8);
+        tileLayout->setSpacing(2);
+        auto *tileKey = nextPanelLabel(QStringLiteral("networkNodePanelTileKey"), tile);
+        tileKey->setText(caption);
+        auto *tileValue = nextPanelLabel(QStringLiteral("networkNodePanelTileValue"), tile);
+        for (QLabel *text : {tileKey, tileValue}) {
+            text->setAlignment(Qt::AlignCenter);
+            text->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+            tileLayout->addWidget(text);
+        }
+        tiles->addWidget(tile, 1);
+    }
+    bodyLayout->addLayout(tiles);
+
+    auto *meters = new QWidget(body);
+    meters->setObjectName(QStringLiteral("networkNodePanelMeters"));
+    auto *metersLayout = new QVBoxLayout(meters);
+    metersLayout->setContentsMargins(0, 0, 0, 0);
+    metersLayout->setSpacing(12);
+    const QList<QPair<QString, QString>> meterKeys{
+        {QStringLiteral("cpu"), QStringLiteral("CPU")},
+        {QStringLiteral("ram"), QStringLiteral("Memory")},
+        {QStringLiteral("disk"), QStringLiteral("Disk")}};
+    const QHash<QString, QString> meterIcons{{QStringLiteral("cpu"), QStringLiteral("graph")},
+                                             {QStringLiteral("ram"), QStringLiteral("server")},
+                                             {QStringLiteral("disk"),
+                                              QStringLiteral("file-directory")}};
+    for (const auto &[key, caption] : meterKeys) {
+        auto *meter = new QWidget(meters);
+        meter->setObjectName(QStringLiteral("networkNodePanelMeter"));
+        meter->setProperty("meter", key);
+        auto *meterLayout = new QVBoxLayout(meter);
+        meterLayout->setContentsMargins(0, 0, 0, 0);
+        meterLayout->setSpacing(6);
+        auto *line = new QHBoxLayout;
+        line->setContentsMargins(0, 0, 0, 0);
+        line->setSpacing(8);
+        auto *glyph = new QLabel(meter);
+        glyph->setPixmap(kit::tintedIcon(meterIcons.value(key),
+                                         Theme::color(Theme::Role::FgMuted), 14,
+                                         panel->devicePixelRatioF()));
+        line->addWidget(glyph);
+        auto *meterName = nextPanelLabel(QStringLiteral("networkNodePanelMeterName"), meter);
+        meterName->setText(caption);
+        line->addWidget(meterName, 1);
+        line->addWidget(nextPanelLabel(QStringLiteral("networkNodePanelMeterValue"), meter));
+        meterLayout->addLayout(line);
+        auto *bar = new NextNodeMeter(meter);
+        bar->setObjectName(QStringLiteral("networkNodePanelBar"));
+        meterLayout->addWidget(bar);
+        metersLayout->addWidget(meter);
+    }
+    bodyLayout->addWidget(meters);
+
+    auto *heading = nextPanelLabel(QStringLiteral("networkNodePanelHeading"), body);
+    heading->setText(QStringLiteral("DETAILS"));
+    {
+        QFont font = nextNodeFont(heading->font(), 11, false, QFont::Medium);
+        font.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+        heading->setFont(font);
+    }
+    auto *list = new QFrame(body);
+    list->setObjectName(QStringLiteral("networkNodePanelList"));
+    list->setAttribute(Qt::WA_StyledBackground, true);
+    auto *listLayout = new QVBoxLayout(list);
+    listLayout->setContentsMargins(6, 6, 6, 6);
+    listLayout->setSpacing(0);
+    auto *details = new QVBoxLayout;
+    details->setContentsMargins(0, 0, 0, 0);
+    details->setSpacing(8);
+    details->addWidget(heading);
+    details->addWidget(list);
+    bodyLayout->addLayout(details);
+    bodyLayout->addStretch(1);
+    scroll->setWidget(body);
+    layout->addWidget(scroll, 1);
+
+    auto *footer = new QWidget(panel);
+    footer->setObjectName(QStringLiteral("networkNodePanelFooter"));
+    footer->setAttribute(Qt::WA_StyledBackground, true);
+    auto *footerRow = new QHBoxLayout(footer);
+    footerRow->setContentsMargins(12, 12, 12, 12);
+    footerRow->setSpacing(6);
+    auto *profile = new QPushButton(QStringLiteral("Profile"), footer);
+    profile->setObjectName(QStringLiteral("networkNodePanelProfile"));
+    profile->setToolTip(QStringLiteral("Open this node's profile"));
+    profile->setIcon(QIcon(kit::tintedIcon(QStringLiteral("person"),
+                                           Theme::color(Theme::Role::FgMuted), 14,
+                                           panel->devicePixelRatioF())));
+    auto *action = new QPushButton(footer);
+    action->setObjectName(QStringLiteral("networkNodePanelAction"));
+    for (QPushButton *button : {profile, action}) {
+        button->setCursor(Qt::PointingHandCursor);
+        button->setIconSize(QSize(14, 14));
+        footerRow->addWidget(button, 1);
+    }
+    auto *more = new QToolButton(footer);
+    more->setObjectName(QStringLiteral("networkNodePanelMore"));
+    more->setAutoRaise(true);
+    more->setCursor(Qt::PointingHandCursor);
+    more->setToolTip(QStringLiteral("More actions"));
+    more->setAccessibleName(QStringLiteral("More node actions"));
+    more->setPopupMode(QToolButton::InstantPopup);
+    more->setIcon(QIcon(kit::tintedIcon(QStringLiteral("kebab-horizontal"),
+                                        Theme::color(Theme::Role::FgMuted), 16,
+                                        panel->devicePixelRatioF())));
+    more->setIconSize(QSize(16, 16));
+    more->setFixedSize(28, 28);
+    more->setMenu(new QMenu(more));
+    footerRow->addWidget(more);
+    layout->addWidget(footer);
+    return panel;
+}
+
+void nextFillNodePanel(QTableWidget *table, QFrame *panel)
+{
+    const QString key = table->property("nextPanelKey").toString();
+    const int row = nextNodeRowForKey(table, key);
+    if (row < 0) {
+        if (!key.isEmpty())
+            table->setProperty("nextPanelKey", QString());
+        panel->hide();
+        table->viewport()->update();
+        return;
+    }
+    panel->setProperty("nextPanelRow", row);
+    const QTableWidgetItem *nameItem = table->item(row, kNodeColName);
+    const NextNodeName split = nextSplitNodeName(nameItem ? nameItem->text() : QString());
+    const QTableWidgetItem *roleItem = table->item(row, kNodeColRole);
+    const QString roleKey = roleItem ? roleItem->data(Qt::UserRole).toString() : QString();
+    const qreal ratio = panel->devicePixelRatioF();
+
+    if (auto *icon = panel->findChild<QLabel *>(QStringLiteral("networkNodePanelIcon")))
+        icon->setPixmap(kit::tintedIcon(nextNodeRoleIcon(roleKey),
+                                        Theme::color(Theme::Role::FgMuted), 16, ratio));
+    if (auto *name = panel->findChild<QLabel *>(QStringLiteral("networkNodePanelName"))) {
+        name->setText(split.name);
+        name->setToolTip(split.name);
+    }
+    if (auto *you = panel->findChild<QLabel *>(QStringLiteral("badge")))
+        you->setVisible(split.self);
+    QStringList subParts;
+    const QString role = nextNodeCellText(table, row, kNodeColRole);
+    if (!role.isEmpty())
+        subParts.append(role);
+    QString place = nextNodeCellText(table, row, kNodeColRegion);
+    if (place.isEmpty())
+        place = nextNodeCellText(table, row, kNodeColPlatform);
+    if (!place.isEmpty())
+        subParts.append(place);
+    if (auto *sub = panel->findChild<QLabel *>(QStringLiteral("networkNodePanelSub")))
+        sub->setText(subParts.join(QString::fromUtf8(" \xC2\xB7 ")));
+
+    const QString status = nextNodeCellText(table, row, kNodeColStatus);
+    if (auto *notice = panel->findChild<QLabel *>(QStringLiteral("networkNodePanelNotice"))) {
+        const bool offline = !status.isEmpty() && !status.startsWith(QLatin1String("Online"));
+        const QTableWidgetItem *statusItem = table->item(row, kNodeColStatus);
+        const QString tip = statusItem ? statusItem->toolTip().trimmed() : QString();
+        notice->setText(tip.isEmpty() ? status : status + QLatin1Char('\n') + tip);
+        notice->setVisible(offline);
+    }
+
+    const QHash<QString, QString> tileValues{
+        {QStringLiteral("latency"), nextNodeCellText(table, row, kNodeColLatency)},
+        {QStringLiteral("synced"), nextNodeCellText(table, row, kNodeColSynced)},
+        {QStringLiteral("version"), nextNodeCellText(table, row, kNodeColVersion)}};
+    for (QFrame *tile : panel->findChildren<QFrame *>(QStringLiteral("networkNodePanelTile"))) {
+        const QString value = tileValues.value(tile->property("tile").toString());
+        if (auto *label = tile->findChild<QLabel *>(QStringLiteral("networkNodePanelTileValue"))) {
+            label->setText(value.isEmpty() ? nextNodeDash() : value);
+            label->setToolTip(value);
+        }
+    }
+
+    const QHash<QString, int> meterColumns{{QStringLiteral("cpu"), kNodeColCpu},
+                                           {QStringLiteral("ram"), kNodeColRam},
+                                           {QStringLiteral("disk"), kNodeColDisk}};
+    bool anyMeter = false;
+    for (QWidget *meter : panel->findChildren<QWidget *>(QStringLiteral("networkNodePanelMeter"))) {
+        const QTableWidgetItem *item =
+            table->item(row, meterColumns.value(meter->property("meter").toString()));
+        const QVariant data = item ? item->data(kProgressBarRole) : QVariant();
+        const int value = data.isValid() ? data.toInt() : -1;
+        anyMeter |= value >= 0;
+        if (auto *label = meter->findChild<QLabel *>(QStringLiteral("networkNodePanelMeterValue")))
+            label->setText(value >= 0 ? QStringLiteral("%1%").arg(value) : nextNodeDash());
+        if (QWidget *bar = meter->findChild<QWidget *>(QStringLiteral("networkNodePanelBar")))
+            static_cast<NextNodeMeter *>(bar)->setValue(value);
+        meter->setToolTip(item ? item->toolTip() : QString());
+    }
+    if (auto *meters = panel->findChild<QWidget *>(QStringLiteral("networkNodePanelMeters")))
+        meters->setVisible(anyMeter);
+
+    if (auto *list = panel->findChild<QFrame *>(QStringLiteral("networkNodePanelList"))) {
+        QLayout *listLayout = list->layout();
+        while (QLayoutItem *old = listLayout->takeAt(0)) {
+            if (QWidget *widget = old->widget())
+                widget->deleteLater();
+            delete old;
+        }
+        const QList<QPair<QString, int>> fields{
+            {QStringLiteral("Status"), kNodeColStatus},
+            {QStringLiteral("Activity"), kNodeColActivity},
+            {QStringLiteral("Owner"), kNodeColOwner},
+            {QStringLiteral("Platform"), kNodeColPlatform},
+            {QStringLiteral("Revision"), kNodeColRevision},
+            {QStringLiteral("Endpoint"), kNodeColEndpoint},
+            {QStringLiteral("Health"), kNodeColHealth},
+            {QStringLiteral("Node id"), kNodeColId}};
+        int shown = 0;
+        for (const auto &[caption, column] : fields) {
+            const QString value = nextNodeCellText(table, row, column);
+            if (value.isEmpty())
+                continue;
+            const QTableWidgetItem *item = table->item(row, column);
+            auto *line = new QWidget(list);
+            line->setObjectName(QStringLiteral("networkNodePanelRow"));
+            auto *lineLayout = new QHBoxLayout(line);
+            lineLayout->setContentsMargins(8, 0, 8, 0);
+            lineLayout->setSpacing(12);
+            line->setFixedHeight(32);
+            auto *keyLabel = nextPanelLabel(QStringLiteral("networkNodePanelRowKey"), line);
+            keyLabel->setText(caption);
+            lineLayout->addWidget(keyLabel);
+            auto *valueLabel = nextPanelLabel(QStringLiteral("networkNodePanelRowValue"), line);
+            const bool mono = column == kNodeColRevision || column == kNodeColId ||
+                              column == kNodeColEndpoint;
+            valueLabel->setFont(nextNodeFont(valueLabel->font(), mono ? 12 : 13, mono,
+                                             QFont::Normal));
+            valueLabel->setText(QFontMetrics(valueLabel->font())
+                                    .elidedText(value.simplified(), Qt::ElideRight, 180));
+            valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            const QString tip = item ? item->toolTip().trimmed() : QString();
+            valueLabel->setToolTip(tip.isEmpty() ? value : tip);
+            lineLayout->addWidget(valueLabel, 1);
+            listLayout->addWidget(line);
+            ++shown;
+        }
+        list->setVisible(shown > 0);
+        if (auto *heading = panel->findChild<QLabel *>(QStringLiteral("networkNodePanelHeading")))
+            heading->setVisible(shown > 0);
+    }
+
+    if (auto *profile = panel->findChild<QPushButton *>(QStringLiteral("networkNodePanelProfile")))
+        profile->setVisible(nameItem &&
+                            !nameItem->data(kMirrorNodeIdRole).toString().isEmpty());
+    const QTableWidgetItem *actionItem = table->item(row, kNodeColActions);
+    if (auto *action = panel->findChild<QPushButton *>(QStringLiteral("networkNodePanelAction"))) {
+        const bool linked = actionItem &&
+                            !actionItem->data(Qt::UserRole + 3).toString().isEmpty() &&
+                            !actionItem->text().isEmpty();
+        action->setVisible(linked);
+        if (linked) {
+            action->setText(actionItem->text());
+            action->setToolTip(actionItem->toolTip());
+            const bool relay =
+                actionItem->data(Qt::UserRole + 3).toString() == QLatin1String("relay");
+            action->setIcon(QIcon(kit::tintedIcon(relay ? QStringLiteral("link")
+                                                        : QStringLiteral("terminal"),
+                                                  Theme::color(Theme::Role::FgMuted), 14,
+                                                  ratio)));
+        }
+    }
+    if (auto *more = panel->findChild<QToolButton *>(QStringLiteral("networkNodePanelMore"))) {
+        auto *button = qobject_cast<QPushButton *>(table->cellWidget(row, kNodeColActions));
+        more->setVisible(button && !button->isHidden());
+    }
+    panel->show();
+    table->viewport()->update();
+}
 } // namespace
 
 QWidget *MainWindow::buildNodesSection()
 {
+    const bool next = Theme::isNext();
     auto *page = new QWidget;
     auto *outer = new QVBoxLayout(page);
-    outer->setContentsMargins(0, 4, 0, 0);
-    outer->setSpacing(6);
+    outer->setContentsMargins(0, next ? 16 : 4, 0, 0);
+    outer->setSpacing(next ? 16 : 6);
 
     auto *subtitle = new QLabel(QString::fromUtf8(
         "Every node on the network with its role: core servers, runners, "
@@ -148,15 +1101,20 @@ QWidget *MainWindow::buildNodesSection()
     subtitle->setObjectName("mutedLabel");
     subtitle->setWordWrap(true);
     outer->addWidget(subtitle);
+    if (next)
+        subtitle->hide();
 
-    auto *controls = new QHBoxLayout;
-    controls->setContentsMargins(0, 0, 0, 0);
+    QHBoxLayout *controls = next ? nullptr : new QHBoxLayout;
+    if (controls)
+        controls->setContentsMargins(0, 0, 0, 0);
     m_nodesStatus = new QLabel;
     m_nodesStatus->setObjectName("mutedLabel");
-    controls->addWidget(m_nodesStatus, 1);
+    if (controls)
+        controls->addWidget(m_nodesStatus, 1);
     auto *roleLabel = new QLabel(QStringLiteral("Role"));
     roleLabel->setObjectName("mutedLabel");
-    controls->addWidget(roleLabel);
+    if (controls)
+        controls->addWidget(roleLabel);
     m_nodesRoleFilter = new QComboBox;
     m_nodesRoleFilter->setObjectName(QStringLiteral("nodesRoleFilter"));
     m_nodesRoleFilter->setToolTip(QStringLiteral(
@@ -177,7 +1135,8 @@ QWidget *MainWindow::buildNodesSection()
                 refreshNodesTable();
                 applyNodeRoleFilter();
             });
-    controls->addWidget(m_nodesRoleFilter);
+    if (controls)
+        controls->addWidget(m_nodesRoleFilter);
     auto *updateAll =
         new QPushButton(QStringLiteral("Update all from this binary"));
     updateAll->setObjectName(QStringLiteral("nodesUpdateAllBinaryButton"));
@@ -191,9 +1150,14 @@ QWidget *MainWindow::buildNodesSection()
         QTimer::singleShot(0, this,
                            &MainWindow::runHostInstallAllFromBinary);
     });
-    controls->addWidget(updateAll);
-    outer->addLayout(controls);
-    outer->addWidget(buildMirrorNodesSection());
+    QWidget *mirrorSection = nullptr;
+    if (controls) {
+        controls->addWidget(updateAll);
+        outer->addLayout(controls);
+        outer->addWidget(buildMirrorNodesSection());
+    } else {
+        mirrorSection = buildMirrorNodesSection();
+    }
 
     m_nodesTable = new QTableWidget(0, kNodeColCount);
     installColumnHeaderMenu(m_nodesTable, true);
@@ -276,8 +1240,9 @@ QWidget *MainWindow::buildNodesSection()
                   "every node directory column needs a header icon");
     for (const NodeHeaderIcon &h : kNodeHeaderIcons) {
         auto *headerItem = new QTableWidgetItem;
-        headerItem->setIcon(
-            themedOcticon(QLatin1String(h.icon), Theme::remapColor(QColor("#8b949e")), 14));
+        if (!next)
+            headerItem->setIcon(themedOcticon(QLatin1String(h.icon),
+                                              Theme::remapColor(QColor("#8b949e")), 14));
         headerItem->setText(QString::fromUtf8(h.text));
         headerItem->setToolTip(QString::fromUtf8(h.label));
         if (h.column == kNodeColRole)
@@ -287,10 +1252,13 @@ QWidget *MainWindow::buildNodesSection()
     // Captions ride alongside the icons across 32 columns; the theme's global
     // 14px would push the header far past the width of the panel. An inline
     // stylesheet is the only thing that beats the theme's QSS font size.
-    m_nodesTable->horizontalHeader()->setStyleSheet(Theme::remapSheet(
-        "QHeaderView::section { font-size: 10px; padding: 2px 3px; }"));
+    m_nodesTable->horizontalHeader()->setStyleSheet(
+        next ? QStringLiteral("QHeaderView::section { font-size: 12px; font-weight: 400;"
+                              " padding: 0px 10px; min-height: 34px; }")
+             : Theme::remapSheet(
+                   "QHeaderView::section { font-size: 10px; padding: 2px 3px; }"));
     m_nodesTable->horizontalHeader()->setMinimumSectionSize(22);
-    m_nodesTable->verticalHeader()->setDefaultSectionSize(26);
+    m_nodesTable->verticalHeader()->setDefaultSectionSize(next ? 44 : 26);
     m_nodesTable->setWordWrap(false);
     m_nodesTable->verticalHeader()->setVisible(false);
     m_nodesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -320,6 +1288,22 @@ QWidget *MainWindow::buildNodesSection()
         m_nodesTable->setItemDelegateForColumn(col, resourceBars);
     m_nodesTable->setItemDelegateForColumn(
         kNodeColSynced, new MirrorSyncDelegate(m_nodesTable));
+    if (next) {
+        m_nodesTable->setItemDelegateForColumn(
+            kNodeColName,
+            new NextNodeCellDelegate(NextNodeCellDelegate::Name, m_nodesTable));
+        auto *muted = new NextNodeCellDelegate(NextNodeCellDelegate::Muted, m_nodesTable);
+        for (int col : {kNodeColRole, kNodeColScope, kNodeColStatus, kNodeColActivity,
+                        kNodeColOwner, kNodeColLatency, kNodeColRegion})
+            m_nodesTable->setItemDelegateForColumn(col, muted);
+        auto *mono = new NextNodeCellDelegate(NextNodeCellDelegate::Mono, m_nodesTable);
+        for (int col : {kNodeColVersion, kNodeColRevision})
+            m_nodesTable->setItemDelegateForColumn(col, mono);
+        new NextNodesTableChrome(m_nodesTable);
+        QHeaderView *header = m_nodesTable->horizontalHeader();
+        header->moveSection(header->visualIndex(kNodeColLatency),
+                            header->visualIndex(kNodeColStatus) + 1);
+    }
     auto *pacmanTick = new QTimer(m_nodesTable);
     pacmanTick->setInterval(1000);
     connect(pacmanTick, &QTimer::timeout, m_nodesTable, [this] {
@@ -362,7 +1346,153 @@ QWidget *MainWindow::buildNodesSection()
             [this](int row, int) { activateNodeDirectoryRow(row); });
     connect(m_nodesTable->horizontalHeader(),
             &QHeaderView::sortIndicatorChanged, this, &MainWindow::sortNodesTable);
-    outer->addWidget(m_nodesTable, 1);
+    if (next) {
+        auto *body = new QHBoxLayout;
+        body->setContentsMargins(0, 0, 0, 0);
+        body->setSpacing(16);
+        auto *column = new QVBoxLayout;
+        column->setContentsMargins(0, 0, 0, 0);
+        column->setSpacing(16);
+
+        auto *stats = new QHBoxLayout;
+        stats->setContentsMargins(0, 0, 0, 0);
+        stats->setSpacing(12);
+        const QList<QPair<QString, QString>> tiles{
+            {QStringLiteral("networkStatOnline"), QStringLiteral("Nodes online")},
+            {QStringLiteral("networkStatLatency"), QStringLiteral("Median latency")},
+            {QStringLiteral("networkStatTraffic"), QStringLiteral("Relay traffic")},
+            {QStringLiteral("networkStatRepos"), QStringLiteral("Repositories served")}};
+        for (const auto &[name, caption] : tiles)
+            stats->addWidget(nextStatTile(name, caption, page), 1);
+        column->addLayout(stats);
+
+        updateAll->setProperty("networkRole", QStringLiteral("outline"));
+        column->addWidget(mirrorSection);
+        if (auto *mirrorRow = mirrorSection->findChild<QHBoxLayout *>(
+                QStringLiteral("mirrorNodesHeaderRow")))
+            mirrorRow->addWidget(updateAll);
+        else
+            column->addWidget(updateAll, 0, Qt::AlignRight);
+
+        auto *toolbar = new QFrame(page);
+        toolbar->setObjectName(QStringLiteral("networkNodesToolbar"));
+        toolbar->setAttribute(Qt::WA_StyledBackground, true);
+        auto *toolbarRow = new QHBoxLayout(toolbar);
+        toolbarRow->setContentsMargins(8, 6, 8, 6);
+        toolbarRow->setSpacing(8);
+        const QHash<QString, QString> segmentLabels{
+            {QString(), QStringLiteral("All")},
+            {QStringLiteral("core"), QStringLiteral("Core")},
+            {QStringLiteral("runner"), QStringLiteral("Runners")},
+            {QStringLiteral("mirror"), QStringLiteral("Mirrors")},
+            {QStringLiteral("desktop"), QStringLiteral("Desktop nodes")},
+            {QStringLiteral("relay"), QStringLiteral("Relays")}};
+        QStringList labels;
+        for (int i = 0; i < m_nodesRoleFilter->count(); ++i) {
+            const QString key = m_nodesRoleFilter->itemData(i).toString();
+            labels.append(segmentLabels.value(key, m_nodesRoleFilter->itemText(i)));
+        }
+        auto *segments = new kit::SegmentedControl(labels, toolbar);
+        segments->setToolTip(m_nodesRoleFilter->toolTip());
+        segments->setCurrentIndex(m_nodesRoleFilter->currentIndex());
+        segments->onChanged([this](int index) {
+            if (m_nodesRoleFilter && index >= 0 &&
+                index != m_nodesRoleFilter->currentIndex())
+                m_nodesRoleFilter->setCurrentIndex(index);
+        });
+        connect(m_nodesRoleFilter, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                segments, [segments](int index) {
+                    if (segments->currentIndex() != index)
+                        segments->setCurrentIndex(index);
+                });
+        toolbarRow->addWidget(segments);
+        toolbarRow->addWidget(roleLabel);
+        toolbarRow->addWidget(m_nodesRoleFilter);
+        roleLabel->hide();
+        m_nodesRoleFilter->hide();
+        toolbarRow->addStretch(1);
+        auto *filter = new QLineEdit(toolbar);
+        filter->setObjectName(QStringLiteral("networkNodesFilter"));
+        filter->setPlaceholderText(QStringLiteral("Filter nodes"));
+        filter->setToolTip(QStringLiteral(
+            "Show only nodes whose name, role, owner, status, region, platform or "
+            "endpoint contains this text"));
+        filter->setClearButtonEnabled(true);
+        filter->setFixedWidth(224);
+        filter->addAction(QIcon(kit::tintedIcon(QStringLiteral("search"),
+                                                Theme::color(Theme::Role::FgSubtle), 14,
+                                                page->devicePixelRatioF())),
+                          QLineEdit::LeadingPosition);
+        connect(filter, &QLineEdit::textChanged, this, [this](const QString &text) {
+            m_nodesTable->setProperty("nextNodeFilter", text.trimmed());
+            applyNodeRoleFilter();
+            refreshNodesStatusLine();
+            m_nodesTable->viewport()->update();
+        });
+        toolbarRow->addWidget(filter);
+        toolbarRow->addWidget(
+            makeInlineHelpButton(QStringLiteral("About nodes"), subtitle->text()));
+
+        auto *tableStack = new QVBoxLayout;
+        tableStack->setContentsMargins(0, 0, 0, 0);
+        tableStack->setSpacing(0);
+        tableStack->addWidget(toolbar);
+        tableStack->addWidget(m_nodesTable, 1);
+        column->addLayout(tableStack, 1);
+        m_nodesStatus->setProperty("networkRole", QStringLiteral("footnote"));
+        column->addWidget(m_nodesStatus);
+        body->addLayout(column, 1);
+
+        QFrame *panel = nextBuildNodePanel(page);
+        body->addWidget(panel);
+        outer->addLayout(body, 1);
+
+        connect(m_nodesTable, &QTableWidget::cellClicked, panel,
+                [this, panel](int row, int) {
+                    m_nodesTable->setProperty("nextPanelKey",
+                                              nextNodeRowKey(m_nodesTable, row));
+                    nextFillNodePanel(m_nodesTable, panel);
+                });
+        if (auto *close = panel->findChild<QToolButton *>(
+                QStringLiteral("networkNodePanelClose")))
+            connect(close, &QToolButton::clicked, panel, [this, panel] {
+                m_nodesTable->setProperty("nextPanelKey", QString());
+                nextFillNodePanel(m_nodesTable, panel);
+            });
+        if (auto *profile = panel->findChild<QPushButton *>(
+                QStringLiteral("networkNodePanelProfile")))
+            connect(profile, &QPushButton::clicked, panel, [this, panel] {
+                const QTableWidgetItem *name = m_nodesTable->item(
+                    panel->property("nextPanelRow").toInt(), kNodeColName);
+                const QString nodeId =
+                    name ? name->data(kMirrorNodeIdRole).toString() : QString();
+                if (!nodeId.isEmpty())
+                    showNodeProfile(nodeId, name->data(Qt::UserRole).toString());
+            });
+        if (auto *action = panel->findChild<QPushButton *>(
+                QStringLiteral("networkNodePanelAction")))
+            connect(action, &QPushButton::clicked, panel, [this, panel] {
+                activateNodeDirectoryRow(panel->property("nextPanelRow").toInt());
+            });
+        if (auto *more = panel->findChild<QToolButton *>(
+                QStringLiteral("networkNodePanelMore"))) {
+            QMenu *menu = more->menu();
+            menu->setToolTipsVisible(true);
+            connect(menu, &QMenu::aboutToShow, panel, [this, panel, menu] {
+                menu->clear();
+                auto *button = qobject_cast<QPushButton *>(m_nodesTable->cellWidget(
+                    panel->property("nextPanelRow").toInt(), kNodeColActions));
+                if (!button)
+                    return;
+                QAction *remove = menu->addAction(button->icon(), button->text());
+                remove->setToolTip(button->toolTip());
+                remove->setEnabled(button->isEnabled());
+                connect(remove, &QAction::triggered, button, &QPushButton::click);
+            });
+        }
+    } else {
+        outer->addWidget(m_nodesTable, 1);
+    }
 
     refreshChatUserDirectory();
     fetchRelayOnlineNodes();
@@ -612,6 +1742,19 @@ void MainWindow::refreshNodesTable()
     refreshNodeDotMatrix();
     if (!m_nodesTable)
         return;
+    if (Theme::isNext()) {
+        QSet<QString> served;
+        int servingNodes = 0;
+        for (const MemberInfo &info : std::as_const(visibleRoster)) {
+            if (info.mirrors.isEmpty())
+                continue;
+            ++servingNodes;
+            for (const QString &repo : info.mirrors)
+                served.insert(repo.trimmed().toLower());
+        }
+        m_nodesTable->setProperty("nextReposServed", int(served.size()));
+        m_nodesTable->setProperty("nextReposNodes", servingNodes);
+    }
     if (!m_nodesTable->isVisible()) {
         m_nodesTableStale = true;
         return;
@@ -926,6 +2069,12 @@ void MainWindow::sortNodesTable()
     }
     refreshNodeActionButtons();
     applyNodeRoleFilter();
+    if (Theme::isNext()) {
+        nextRefreshNodeStats(m_nodesTable, m_networkDiagnosticsStatus);
+        if (QWidget *scope = m_nodesTable->parentWidget())
+            if (auto *panel = scope->findChild<QFrame *>(QStringLiteral("networkNodePanel")))
+                nextFillNodePanel(m_nodesTable, panel);
+    }
 }
 
 void MainWindow::refreshNodesStatusLine()
@@ -1301,6 +2450,8 @@ void MainWindow::applyNodeRoleFilter()
             table->setRowHidden(row, headHidden);
         }
     }
+    if (m_nodesTable && Theme::isNext())
+        nextApplyNodeTextFilter(m_nodesTable);
 }
 
 // Merge the roster, the chat directory's linked nodes and the relay's serving
@@ -2403,6 +3554,56 @@ static QString withSoftBreaks(const QString &text, int chunkSize = 4)
     return out;
 }
 
+static void fillProfileNextDetails(QFrame *list,
+                                   const QList<QPair<QString, QString>> &rows,
+                                   bool online)
+{
+    QLayout *layout = list->layout();
+    while (QLayoutItem *old = layout->takeAt(0)) {
+        if (QWidget *widget = old->widget())
+            widget->deleteLater();
+        delete old;
+    }
+    for (int index = 0; index < rows.size(); ++index) {
+        const QString &key = rows.at(index).first;
+        const QString &value = rows.at(index).second;
+        auto *row = new QWidget(list);
+        row->setObjectName(QStringLiteral("profileNextDetailRow"));
+        row->setAttribute(Qt::WA_StyledBackground, true);
+        row->setProperty("profileNextLast", index + 1 == rows.size());
+        row->setMinimumHeight(44);
+        auto *line = new QHBoxLayout(row);
+        line->setContentsMargins(20, 0, 20, 0);
+        line->setSpacing(8);
+        auto *keyLabel = new QLabel(key, row);
+        keyLabel->setObjectName(QStringLiteral("profileNextDetailKey"));
+        keyLabel->setTextFormat(Qt::PlainText);
+        keyLabel->setFixedWidth(180);
+        line->addWidget(keyLabel);
+        if (key == QLatin1String("Status")) {
+            auto *dot = new QLabel(row);
+            dot->setFixedSize(6, 6);
+            dot->setStyleSheet(QStringLiteral("background-color: %1; border-radius: 3px;")
+                                   .arg(Theme::hex(online ? Theme::Role::Success
+                                                          : Theme::Role::FgSubtle)));
+            line->addWidget(dot, 0, Qt::AlignVCenter);
+        }
+        auto *valueLabel = new QLabel(value, row);
+        valueLabel->setObjectName(QStringLiteral("profileNextDetailValue"));
+        valueLabel->setTextFormat(Qt::PlainText);
+        valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        if (key == QLatin1String("Version") || key == QLatin1String("Key")) {
+            QFont mono = valueLabel->font();
+            mono.setFamily(Theme::monoFontFamily());
+            mono.setPixelSize(13);
+            valueLabel->setFont(mono);
+        }
+        line->addWidget(valueLabel, 1);
+        layout->addWidget(row);
+    }
+    list->setVisible(!rows.isEmpty());
+}
+
 QWidget *MainWindow::buildNodeProfileSection()
 {
     auto *page = new QWidget;
@@ -2847,23 +4048,137 @@ QWidget *MainWindow::buildNodeProfilePanel()
     solanaLayout->addWidget(m_profileEligibility);
     solanaLayout->addWidget(m_profileVerifyButton, 0, Qt::AlignLeft);
 
+    const bool next = Theme::isNext();
     auto *leftColumn = new QVBoxLayout;
     leftColumn->setContentsMargins(0, 0, 0, 0);
     leftColumn->setSpacing(6);
-    leftColumn->addWidget(m_profileAvatar, 0, Qt::AlignHCenter);
-    leftColumn->addWidget(m_profileName);
-    leftColumn->addWidget(m_profileGetPaidButton, 0, Qt::AlignHCenter);
-    leftColumn->addWidget(m_profileOnlineSection);
-    leftColumn->addWidget(m_profileStatus);
-    leftColumn->addWidget(m_profileNote);
-    leftColumn->addWidget(m_profileMessageButton, 0, Qt::AlignHCenter);
-    leftColumn->addWidget(m_profileTakeOwnershipButton, 0, Qt::AlignHCenter);
-    leftColumn->addWidget(m_profileStatGrid);
-    leftColumn->addWidget(detailsLabel);
-    leftColumn->addWidget(m_profileDetails);
-    leftColumn->addWidget(m_profileMirrorsLabel);
-    leftColumn->addWidget(m_profileMirrors);
-    leftColumn->addStretch();
+    QFrame *nextUserCard = nullptr;
+    QLabel *nextMachineHeading = nullptr;
+    QFrame *nextMachineCard = nullptr;
+    QFrame *nextDetails = nullptr;
+    if (next) {
+        titleLabel->setText(QStringLiteral("USER PROFILE"));
+        selfLabel->hide();
+        m_profileAvatar->setFixedSize(64, 64);
+        m_profileName->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        m_profileName->setWordWrap(false);
+        m_profileStatus->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        m_profileNote->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        for (QPushButton *button : std::as_const(m_profileActionButtons)) {
+            button->setFixedHeight(30);
+            button->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+            button->setProperty("profileNext", true);
+        }
+        for (QPushButton *button : {m_profileMessageButton, m_profileTakeOwnershipButton})
+            button->setProperty("profileNext", true);
+        selfLayout->setAlignment(m_profileActionGrid, Qt::AlignLeft);
+
+        nextUserCard = new QFrame;
+        nextUserCard->setObjectName(QStringLiteral("profileNextUserCard"));
+        nextUserCard->setAttribute(Qt::WA_StyledBackground, true);
+        auto *userRow = new QHBoxLayout(nextUserCard);
+        userRow->setContentsMargins(20, 16, 20, 16);
+        userRow->setSpacing(20);
+        userRow->addWidget(m_profileAvatar, 0, Qt::AlignTop);
+        auto *userColumn = new QVBoxLayout;
+        userColumn->setContentsMargins(0, 0, 0, 0);
+        userColumn->setSpacing(4);
+        auto *nameRow = new QHBoxLayout;
+        nameRow->setContentsMargins(0, 0, 0, 0);
+        nameRow->setSpacing(8);
+        nameRow->addWidget(m_profileName);
+        auto *youBadge = new kit::Badge(QStringLiteral("you"), kit::Tone::Accent);
+        youBadge->setProperty("profileNextYou", true);
+        youBadge->hide();
+        nameRow->addWidget(youBadge, 0, Qt::AlignVCenter);
+        nameRow->addStretch(1);
+        userColumn->addLayout(nameRow);
+        auto *metaRow = new QHBoxLayout;
+        metaRow->setContentsMargins(0, 0, 0, 0);
+        metaRow->setSpacing(6);
+        metaRow->addWidget(m_profileStatus);
+        auto *meta = new QLabel;
+        meta->setObjectName(QStringLiteral("profileNextMeta"));
+        meta->setTextFormat(Qt::PlainText);
+        metaRow->addWidget(meta, 1);
+        userColumn->addLayout(metaRow);
+        userColumn->addWidget(m_profileNote);
+        userColumn->addSpacing(8);
+        auto *actionsRow = new QHBoxLayout;
+        actionsRow->setContentsMargins(0, 0, 0, 0);
+        actionsRow->setSpacing(6);
+        actionsRow->addWidget(m_profileSelfActions);
+        actionsRow->addWidget(m_profileMessageButton);
+        actionsRow->addWidget(m_profileTakeOwnershipButton);
+        actionsRow->addStretch(1);
+        userColumn->addLayout(actionsRow);
+        userRow->addLayout(userColumn, 1);
+
+        nextMachineHeading = makeProfileSection(QStringLiteral("THIS MACHINE"));
+        nextMachineHeading->setProperty("profileNextMachine", true);
+        nextMachineCard = new QFrame;
+        nextMachineCard->setObjectName(QStringLiteral("profileNextMachineCard"));
+        nextMachineCard->setAttribute(Qt::WA_StyledBackground, true);
+        auto *machineLayout = new QVBoxLayout(nextMachineCard);
+        machineLayout->setContentsMargins(0, 0, 0, 0);
+        machineLayout->setSpacing(0);
+        auto *machineHead = new QWidget;
+        machineHead->setObjectName(QStringLiteral("profileNextMachineHead"));
+        machineHead->setAttribute(Qt::WA_StyledBackground, true);
+        auto *machineHeadRow = new QHBoxLayout(machineHead);
+        machineHeadRow->setContentsMargins(20, 12, 20, 12);
+        machineHeadRow->setSpacing(12);
+        auto *machineTitles = new QVBoxLayout;
+        machineTitles->setContentsMargins(0, 0, 0, 0);
+        machineTitles->setSpacing(2);
+        for (const QString &name : {QStringLiteral("profileNextMachineName"),
+                                    QStringLiteral("profileNextMachineSpec")}) {
+            auto *text = new QLabel;
+            text->setObjectName(name);
+            text->setTextFormat(Qt::PlainText);
+            machineTitles->addWidget(text);
+        }
+        machineHeadRow->addLayout(machineTitles, 1);
+        machineHeadRow->addWidget(
+            new kit::Badge(QStringLiteral("This device"), kit::Tone::Neutral, true), 0,
+            Qt::AlignVCenter);
+        machineLayout->addWidget(machineHead);
+        tileRow->setSpacing(0);
+        for (QLabel *tile : {m_profileTileRepos, m_profileTileMirrored, m_profileTileOnline,
+                             m_profileTileChats})
+            tile->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        m_profileTileChats->setProperty("profileNextLast", true);
+        machineLayout->addWidget(m_profileStatGrid);
+
+        nextDetails = new QFrame;
+        nextDetails->setObjectName(QStringLiteral("profileNextDetails"));
+        nextDetails->setAttribute(Qt::WA_StyledBackground, true);
+        auto *detailsLayout = new QVBoxLayout(nextDetails);
+        detailsLayout->setContentsMargins(0, 0, 0, 0);
+        detailsLayout->setSpacing(0);
+        m_profileDetails->hide();
+        m_profileDetails->setProperty("profileNextHidden", true);
+        m_profileGetPaidButton->setProperty("profileNextLink", true);
+
+        leftColumn->addWidget(m_profileMirrorsLabel);
+        leftColumn->addWidget(m_profileMirrors);
+        leftColumn->addStretch();
+    } else {
+        leftColumn->addWidget(m_profileAvatar, 0, Qt::AlignHCenter);
+        leftColumn->addWidget(m_profileName);
+        leftColumn->addWidget(m_profileGetPaidButton, 0, Qt::AlignHCenter);
+        leftColumn->addWidget(m_profileOnlineSection);
+        leftColumn->addWidget(m_profileStatus);
+        leftColumn->addWidget(m_profileNote);
+        leftColumn->addWidget(m_profileMessageButton, 0, Qt::AlignHCenter);
+        leftColumn->addWidget(m_profileTakeOwnershipButton, 0, Qt::AlignHCenter);
+        leftColumn->addWidget(m_profileStatGrid);
+        leftColumn->addWidget(detailsLabel);
+        leftColumn->addWidget(m_profileDetails);
+        leftColumn->addWidget(m_profileMirrorsLabel);
+        leftColumn->addWidget(m_profileMirrors);
+        leftColumn->addStretch();
+    }
 
     auto *rightColumn = new QVBoxLayout;
     rightColumn->setContentsMargins(0, 0, 0, 0);
@@ -2895,7 +4210,23 @@ QWidget *MainWindow::buildNodeProfilePanel()
     layout->setContentsMargins(24, 20, 24, 20);
     layout->setSpacing(6);
     layout->addLayout(topRow);
-    layout->addWidget(m_profileSelfActions); // "THIS NODE" actions pinned up top
+    if (next) {
+        layout->setSpacing(8);
+        layout->addWidget(nextUserCard);
+        layout->addWidget(m_profileGetPaidButton, 0, Qt::AlignLeft);
+        layout->addSpacing(12);
+        layout->addWidget(nextMachineHeading);
+        layout->addWidget(nextMachineCard);
+        layout->addSpacing(12);
+        layout->addWidget(m_profileOnlineSection);
+        layout->addSpacing(12);
+        layout->addWidget(detailsLabel);
+        layout->addWidget(nextDetails);
+        layout->addWidget(m_profileDetails);
+        layout->addSpacing(12);
+    } else {
+        layout->addWidget(m_profileSelfActions); // "THIS NODE" actions pinned up top
+    }
     layout->addLayout(columnsRow);
 
     scroll->setWidget(content);
@@ -2945,7 +4276,9 @@ void MainWindow::layoutProfileActions(bool inSettings)
         return;
     if (m_profileSettingsButton)
         m_profileSettingsButton->setVisible(!inSettings);
-    const int columns = inSettings ? 3 : int(m_profileActionButtons.size());
+    const bool next = Theme::isNext();
+    const int columns =
+        inSettings && !next ? 3 : int(m_profileActionButtons.size());
     for (QPushButton *button : std::as_const(m_profileActionButtons))
         m_profileActionGrid->removeWidget(button);
     int slot = 0;
@@ -2956,7 +4289,10 @@ void MainWindow::layoutProfileActions(bool inSettings)
         ++slot;
     }
     for (int column = 0; column < m_profileActionGrid->columnCount(); ++column)
-        m_profileActionGrid->setColumnStretch(column, column < columns ? 1 : 0);
+        m_profileActionGrid->setColumnStretch(column,
+                                              next ? 0 : (column < columns ? 1 : 0));
+    if (next)
+        m_profileActionGrid->setColumnStretch(columns, 1);
 }
 
 void MainWindow::syncSettingsProfileTab()
@@ -3029,8 +4365,50 @@ void MainWindow::showNodeProfile(const QString &nodeId, const QString &nodeName,
 
     const QString crown =
         (info.self && m_isAdmin) ? QString::fromUtf8(" \xF0\x9F\x91\x91") : QString();
+    const bool nextProfile = Theme::isNext();
     m_profileName->setText(info.name.toHtmlEscaped() +
-                           (info.self ? " (you)" : QString()) + crown);
+                           (info.self && !nextProfile ? " (you)" : QString()) + crown);
+    if (nextProfile) {
+        for (QLabel *badge : m_nodeProfilePanel->findChildren<QLabel *>(QStringLiteral("badge")))
+            if (badge->property("profileNextYou").toBool())
+                badge->setVisible(info.self);
+        QStringList meta;
+        if (info.self)
+            meta << QStringLiteral("This machine");
+        else if (!info.ownerUser.trimmed().isEmpty())
+            meta << QStringLiteral("Owned by %1").arg(info.ownerUser.trimmed());
+        if (!info.platform.trimmed().isEmpty())
+            meta << info.platform.trimmed();
+        if (!info.version.trimmed().isEmpty())
+            meta << QStringLiteral("v%1").arg(info.version.trimmed());
+        if (auto *label = m_nodeProfilePanel->findChild<QLabel *>(
+                QStringLiteral("profileNextMeta")))
+            label->setText(meta.isEmpty()
+                               ? QString()
+                               : QString::fromUtf8("\xC2\xB7 ") +
+                                     meta.join(QString::fromUtf8(" \xC2\xB7 ")));
+        if (auto *card = m_nodeProfilePanel->findChild<QFrame *>(
+                QStringLiteral("profileNextMachineCard")))
+            card->setVisible(info.self);
+        for (QLabel *heading :
+             m_nodeProfilePanel->findChildren<QLabel *>(QStringLiteral("sectionLabel")))
+            if (heading->property("profileNextMachine").toBool())
+                heading->setVisible(info.self);
+        if (auto *label = m_nodeProfilePanel->findChild<QLabel *>(
+                QStringLiteral("profileNextMachineName")))
+            label->setText(info.name);
+        QStringList spec;
+        if (!info.platform.trimmed().isEmpty())
+            spec << info.platform.trimmed();
+        if (!info.version.trimmed().isEmpty())
+            spec << QStringLiteral("ForkMesh v%1").arg(info.version.trimmed());
+        if (info.self && m_connectedAtMs > 0)
+            spec << QStringLiteral("online %1").arg(formatDuration(
+                        QDateTime::currentMSecsSinceEpoch() - m_connectedAtMs));
+        if (auto *label = m_nodeProfilePanel->findChild<QLabel *>(
+                QStringLiteral("profileNextMachineSpec")))
+            label->setText(spec.join(QString::fromUtf8(" \xC2\xB7 ")));
+    }
     const bool online = info.self ? (m_backend != nullptr) : info.online;
     m_profileStatus->setText(
         QString::fromUtf8("<span style='color:%1'>\xE2\x97\x8F</span> %2")
@@ -3057,7 +4435,17 @@ void MainWindow::showNodeProfile(const QString &nodeId, const QString &nodeName,
             if (repo.publishToNetwork)
                 ++onlineRepos;
         }
-        auto tile = [](QLabel *label, int n, const QString &caption) {
+        auto tile = [nextProfile](QLabel *label, int n, const QString &caption) {
+            if (nextProfile) {
+                label->setText(
+                    QStringLiteral("<span style='font-size:11px;color:%1'>%2</span>"
+                                   "<br><span style='font-size:20px;font-weight:600;"
+                                   "color:%3'>%4</span>")
+                        .arg(Theme::hex(Theme::Role::FgSubtle), caption,
+                             Theme::hex(Theme::Role::Fg))
+                        .arg(n));
+                return;
+            }
             label->setText(
                 QStringLiteral(
                     "<span style='font-size:18px;font-weight:700'>%1</span>"
@@ -3081,13 +4469,20 @@ void MainWindow::showNodeProfile(const QString &nodeId, const QString &nodeName,
             .arg(key, value);
     };
     QStringList rows;
+    QList<QPair<QString, QString>> plainRows;
     rows << detailRow(QStringLiteral("Status"),
                       online ? QStringLiteral("Online") : QStringLiteral("Offline"));
-    if (!info.platform.isEmpty())
+    plainRows.append({QStringLiteral("Status"),
+                      online ? QStringLiteral("Online") : QStringLiteral("Offline")});
+    if (!info.platform.isEmpty()) {
         rows << detailRow(QStringLiteral("Platform"), info.platform.toHtmlEscaped());
-    if (!info.version.isEmpty())
+        plainRows.append({QStringLiteral("Platform"), info.platform});
+    }
+    if (!info.version.isEmpty()) {
         rows << detailRow(QStringLiteral("Version"),
                           QStringLiteral("v%1").arg(info.version.toHtmlEscaped()));
+        plainRows.append({QStringLiteral("Version"), QStringLiteral("v%1").arg(info.version)});
+    }
     if (info.self) {
         const qint64 sessionMs =
             m_connectedAtMs > 0
@@ -3098,13 +4493,23 @@ void MainWindow::showNodeProfile(const QString &nodeId, const QString &nodeName,
                           formatDuration(m_totalConnectionMs + sessionMs));
         rows << detailRow(QStringLiteral("Channels"),
                           QString::number(m_channels.size()));
+        plainRows.append({QStringLiteral("Uptime"), formatDuration(sessionMs)});
+        plainRows.append({QStringLiteral("Total uptime"),
+                          formatDuration(m_totalConnectionMs + sessionMs)});
+        plainRows.append({QStringLiteral("Channels"), QString::number(m_channels.size())});
     }
     const QString shortKey =
         nodeKey.size() > 16
             ? nodeKey.left(8) + QString::fromUtf8("\xE2\x80\xA6") + nodeKey.right(6)
             : nodeKey;
-    if (!shortKey.isEmpty())
+    if (!shortKey.isEmpty()) {
         rows << detailRow(QStringLiteral("Key"), shortKey.toHtmlEscaped());
+        plainRows.append({QStringLiteral("Key"), shortKey});
+    }
+    if (nextProfile)
+        if (auto *list = m_nodeProfilePanel->findChild<QFrame *>(
+                QStringLiteral("profileNextDetails")))
+            fillProfileNextDetails(list, plainRows, online);
     m_profileDetails->setText(
         QStringLiteral("<table cellspacing='0' cellpadding='0'>%1</table>")
             .arg(rows.join(QString())));
