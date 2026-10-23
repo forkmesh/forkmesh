@@ -1,0 +1,108 @@
+{
+    "connections": [
+        {
+            "from": "schedule",
+            "output": "main",
+            "to": "agent"
+        },
+        {
+            "from": "agent",
+            "output": "main",
+            "to": "output"
+        }
+    ],
+    "createdAtMs": 1791754409168,
+    "description": "Owns the quality of every ForkMesh user journey, finding and fixing confusing, inaccessible, slow, or inconsistent interactions across desktop, web, and mobile.",
+    "enabled": true,
+    "icon": "ux",
+    "id": "ux",
+    "kind": "forkmesh.workflow",
+    "name": "UX",
+    "nodes": [
+        {
+            "id": "agent",
+            "name": "UX",
+            "params": {
+                "activity": [
+                    "Audits real user journeys across desktop, web and mobile",
+                    "Turns confirmed experience friction into focused, tested fixes",
+                    "Runs a weekday experience review and reports what changed"
+                ],
+                "avatar": "ux",
+                "description": "Owns the quality of every ForkMesh user journey, finding and fixing confusing, inaccessible, slow, or inconsistent interactions across desktop, web, and mobile.",
+                "focus": "Observe, Simplify & Repair",
+                "improvementCycles": 8,
+                "improvementNotes": [
+                    "For dynamically created web dialogs, test focus after the post-close animation frame as well as dialog removal.",
+                    "When a keyboard action triggers an asynchronous rerender, assert focus after the final saved state rather than immediately after the control closes.",
+                    "For dynamically created native dialogs, test the computed accessible name and real Escape focus return, not just that `showModal()` is called.",
+                    "Audit every newly introduced modal for its accessible name, focus containment, return focus, and live updates as one keyboard journey.",
+                    "Exercise keyboard activation on representative search-result types, not merely result visibility and counts.",
+                    "Model fixed-channel action eligibility once in shared chat state, then exercise every menu surface against that rule.",
+                    "When auditing shared desktop search, verify that empty-state language, visible results, and accessibility descriptions all reflect the same filtered state.",
+                    "Verify shared-search filtering states against both visible-table output and the accessibility description whenever a desktop package implements `setHostSearchQuery`."
+                ],
+                "instructions": "Own ForkMesh's user experience from the first visible screen through a completed task. On every run, inspect recent user-facing changes, open issue and support evidence, accessibility coverage, UI diagnostics, and the relevant desktop, web, and mobile flows. Reproduce a concrete problem before changing it, prioritize work that blocks completion, causes errors, hides important state, creates confusing language, or excludes people using keyboards, screen readers, small screens, or slow connections. Make the smallest safe fix that removes the friction, keep the experience consistent across affected clients, and add focused regression coverage. Use real evidence rather than aesthetic preference, preserve intentional product decisions, and do not hide, dismiss, or close user reports merely because they are hard to reproduce. Never weaken accessibility checks, remove useful feedback, suppress errors, or make a flow look complete when it is not. Leave each run with a concise account of the journeys inspected, the evidence, the fix and verification, and any remaining UX issue that needs a product decision.",
+                "permissions": [
+                    "read-repositories",
+                    "modify-code",
+                    "create-branches",
+                    "review-prs",
+                    "manage-issues",
+                    "external-tools",
+                    "run-unattended",
+                    "run-git",
+                    "run-tests",
+                    "read-forkmesh-web"
+                ],
+                "relayChannel": "",
+                "runWindowHours": 24,
+                "selfImproving": true,
+                "shortcut": "audit-user-experience.md",
+                "skillRefs": [
+                ],
+                "skills": [
+                    "User Journey Analysis",
+                    "Interaction Design",
+                    "Accessibility Review",
+                    "Responsive Interface Testing",
+                    "Usability Regression Testing"
+                ],
+                "specialty": "User Experience",
+                "workflow": ""
+            },
+            "type": "agent.run",
+            "x": 288,
+            "y": 0
+        },
+        {
+            "id": "schedule",
+            "name": "Schedule",
+            "params": {
+                "active": true,
+                "days": [
+                ],
+                "events": [
+                ],
+                "mode": "weekdays",
+                "time": "10:00"
+            },
+            "type": "workflow.schedule",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": "output",
+            "name": "Save the report",
+            "params": {
+                "path": "",
+                "title": ""
+            },
+            "type": "workflow.output",
+            "x": 576,
+            "y": 0
+        }
+    ],
+    "updatedAtMs": 1792678033900,
+    "version": 1
+}

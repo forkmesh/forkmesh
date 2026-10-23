@@ -83,6 +83,7 @@ def _load(*names, extra_globals=None):
         "STATUS_CORE_PREFIX", "STATUS_CORE_MAX",
         "STATUS_CORE_ROSTER_FRESH_MS", "STATUS_CORE_HEARTBEAT_FRESH_MS",
         "STATUS_CORE_VOTE_FRESH_MS", "STATUS_CORE_IDS_FRESH_MS",
+        "STATUS_CORE_METRICS_FRESH_MS",
         "STATUS_CORE_CHECK_STEPS",
         "STATUS_RUNNER_PREFIX", "STATUS_RUNNER_MAX",
         "STATUS_RUNNER_SEEN_FRESH_MS", "STATUS_RUNNER_CHECK_STEPS",
@@ -140,6 +141,8 @@ def _load(*names, extra_globals=None):
         "_status_core_name", "_status_core_rows",
         "_status_core_vote_detail", "_status_core_verdicts",
         "_status_core_health", "_flagship_monitor_duration",
+        "_status_core_resource_pct", "_status_core_resources_from_rows",
+        "_status_core_resources",
         "_status_runner_rows", "_status_runner_verdicts",
         "_status_runner_health",
         "record_status_compaction",
@@ -1528,7 +1531,7 @@ def test_ensure_schema_skips_ddl_when_fingerprint_matches():
 # --- status_history ----------------------------------------------------------
 
 def _history_env(rows, hour_rows=(), minute_rows=(), mirror_rows=(),
-                 core_rows=(), runner_rows=()):
+                 core_rows=(), runner_rows=(), metric_rows=()):
     async def noop(*_a, **_k):
         return None
 
@@ -1553,6 +1556,8 @@ def _history_env(rows, hour_rows=(), minute_rows=(), mirror_rows=(),
                 if int(row.get("heartbeat_ms") or 0) >= _args[0]]
         if "FROM runner_nodes" in sql:
             return list(runner_rows)
+        if "FROM host_metrics" in sql:
+            return list(metric_rows)
         return rows
 
     captured = {}
@@ -1571,9 +1576,10 @@ def _history_env(rows, hour_rows=(), minute_rows=(), mirror_rows=(),
 
 
 def _run_history(rows, hour_rows=(), minute_rows=(), mirror_rows=(),
-                 core_rows=(), runner_rows=()):
+                 core_rows=(), runner_rows=(), metric_rows=()):
     extra, captured = _history_env(
-        rows, hour_rows, minute_rows, mirror_rows, core_rows, runner_rows)
+        rows, hour_rows, minute_rows, mirror_rows, core_rows, runner_rows,
+        metric_rows)
     g = _load("status_history", extra_globals=extra)
     asyncio.run(g["status_history"](object()))
     return captured
@@ -5027,6 +5033,28 @@ def test_recorded_core_appears_as_a_full_status_system():
         "Intrusion detector"]
     assert "pinged every five minutes" in system["checkDescription"]
     assert all(s["id"] != "core:n8" for s in out["systems"])
+
+
+def test_core_status_carries_fresh_cpu_memory_and_disk():
+    now = _Clock.value
+    metric_rows = [
+        {"node_id": "n2", "ms": now - 30_000, "data": json.dumps(
+            {"cpuPct": 12.34, "memPct": 81, "diskPct": 140, "load1": 0.2})},
+        {"node_id": "n4", "ms": now - 30_000, "data": json.dumps(
+            {"cpuPct": None, "memPct": "x", "diskPct": -1})},
+        {"node_id": "n5", "ms": now - 10 * MINUTE_MS, "data": json.dumps(
+            {"cpuPct": 50, "memPct": 50, "diskPct": 50})},
+        {"node_id": "N/A", "ms": now, "data": "{}"},
+    ]
+    out = _run_history(
+        [], core_rows=[_core_row(name) for name in ("n2", "n4", "n5")],
+        metric_rows=metric_rows)
+    by_id = {s["id"]: s for s in out["systems"]}
+    assert by_id["core:n2"]["resources"] == {
+        "cpu": 12.3, "memory": 81.0, "disk": 100.0}
+    assert "resources" not in by_id["core:n4"]
+    assert "resources" not in by_id["core:n5"]
+    assert "resources" not in by_id["website"]
 
 
 def test_new_fleet_node_uptime_starts_at_its_first_sample():

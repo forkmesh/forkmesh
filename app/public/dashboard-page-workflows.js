@@ -1339,6 +1339,7 @@
       shortcut: "Blocks are joined in connection order into the script or prompt, separated by a blank line.",
       skill: "Instruction blocks are joined in connection order, separated by a blank line.",
       agent: "Triggers on the left start the agent; the playbook, skill files, native workflow and relay channel on the right are what it uses. Only steps connected to the agent are saved.",
+      workflow: "The desktop runs these steps in connection order: special agents, shortcuts, desktop steps and Save output. Each step gets the output of the steps before it, and every run keeps a Markdown output file on the desktop.",
     };
     return `<h2>${escapeHtml(kind.label || "File")}: ${escapeHtml(current.path)}</h2>
       <p class="wf-help">${escapeHtml(kind.description || "")}</p>

@@ -3295,6 +3295,15 @@ void MainWindow::syncNativePackagePages()
             host.specialAgents = nullptr;
             host.specialAgentAction = nullptr;
         }
+        if (permissionIds.contains(QStringLiteral("desktop.workflows.run"))) {
+            host.repositoryWorkflows = [this] { return nativePackageRepositoryWorkflows(); };
+            host.repositoryWorkflowAction =
+                [this](const QString &repo, const QString &workflowId, const QString &action,
+                       const QJsonObject &payload, forkmesh::market::NativePackageReplyHandler done) {
+                    runNativePackageRepositoryWorkflowAction(repo, workflowId, action, payload,
+                                                             std::move(done));
+                };
+        }
         host.accountName = [this] {
             return AccountCapability::normalizedAccount(m_accountName);
         };

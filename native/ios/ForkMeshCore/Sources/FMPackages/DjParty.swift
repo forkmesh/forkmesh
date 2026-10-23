@@ -321,6 +321,14 @@ public enum DjAutomix {
         return .mix(from: live, to: other, seconds: max(2, min(DjStudio.automixSeconds, remaining)))
     }
 
+    public static func playNow(a: DjAutomixDeck, b: DjAutomixDeck, crossfader: Double) -> DjDeckSide? {
+        guard !a.playing, !b.playing else { return nil }
+        let favoured: DjDeckSide = crossfader <= 0 ? .a : .b
+        let decks: [DjDeckSide: DjAutomixDeck] = [.a: a, .b: b]
+        let open = decks[favoured]?.loaded == true && decks[favoured.other]?.loaded == false
+        return abs(crossfader) < 0.5 && open ? favoured.other : favoured
+    }
+
     public static func next(_ library: [DjPlayedSong], loaded: Set<String>, playing: Set<String>, seed: UInt64) -> DjPlayedSong? {
         var pool = library.filter { !loaded.contains($0.id) && !playing.contains($0.id) }
         if pool.isEmpty { pool = library.filter { !playing.contains($0.id) } }

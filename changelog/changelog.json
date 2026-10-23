@@ -10,7 +10,8 @@
     {
      "title": "Market",
      "items": [
-      "Feed posts have a Copy link button and a link to the post's public page on the website, which anyone can open without signing in."
+      "Feed posts have a Copy link button and a link to the post's public page on the website, which anyone can open without signing in.",
+      "On iPhone, Video Mix DJ Studio lets you hold a queued song for a menu that removes it, drags a queued song onto a deck as soon as you move your finger, and plays a song you add right away when nothing is playing."
      ]
     },
     {
@@ -35,7 +36,8 @@
       "The composer hides its character count until a prompt nears the limit, then shows it in orange and red.",
       "Claude Code agents on the desktop now take their name from their Claude Code session and follow its renames, ask for tool permissions, plan approval and MCP input in the transcript or a small window instead of refusing the call, list their running sub-sessions with a Stop button, and can be renamed from the agent list.",
       "On the phone, the green and red ring around an agent's picture in the agent list turns while the agent is working and stops when it is done.",
-      "When a merge from your phone is blocked by uncommitted edits on your desktop, Set aside and merge saves them to a wip/ branch, merges, and puts them back."
+      "When a merge from your phone is blocked by uncommitted edits on your desktop, Set aside and merge saves them to a wip/ branch, merges, and puts them back.",
+      "Special agents are now workflows: each run shows its steps and saves its output on the Workflows page, the page can build special agents, shortcut runs and desktop cleanups step by step, and any workflow can be pinned as a button to the top, left, right or bottom of the window."
      ]
     },
     {
@@ -50,7 +52,8 @@
      "title": "iPhone",
      "items": [
       "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock.",
-      "With Diagnostics on, your desktop and node lights now sit just above the clock with a little more room, and the diagnostic charts sit above the battery, each filled in under its line."
+      "With Diagnostics on, your desktop and node lights now sit just above the clock with a little more room, and the diagnostic charts sit above the battery, each filled in under its line.",
+      "With Diagnostics on, each core node light and your desktop light now carry three tiny CPU, memory and disk bars in green, orange or red, the lights sit a little further from the screen's corner, and the desktop charts have left the top right."
      ]
     },
     {
@@ -80,6 +83,7 @@
       "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings.",
       "In the desktop's new design, alerts and confirmations are laid out evenly: the heading and message are centred with the same padding on every side, and the buttons sit centred below them at one width.",
       "Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies.",
+      "On desktop, you can now resize the prompt by dragging any of its edges or corners; the small resize grip in its top-right corner is gone.",
       "Right-click any item in the left rail or a repository tab and choose to hide it: it leaves the rail but stays on Home, where right-clicking its icon puts it back."
      ]
     },

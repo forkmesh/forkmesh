@@ -147,6 +147,12 @@ Everything is in `desktop/`.
   (`addHomeTileRailActions`). The left rail's background menu has a "Hidden
   from the rail" list to show one or all again. Moving the button to another
   bar, dropping it on the rail, or "Reset button placement" also shows it again.
+- **Pinned workflows.** Workflows (special agents among them) can be pinned to
+  four strips around the window: the top bar beside the activity indicators,
+  under the left rail, at the right edge and in the status bar
+  (`ui/workflowPins`, `src/MainWindowRepoWorkflows.cpp`;
+  [../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
+  A strip with no pins is hidden.
 - **Popped-out pages.** Dragging a rail icon out of the window, or "Open in new
   window", moves the section's current page into its own top-level window. A
   placeholder keeps the page's index in the section stack, because the rail's

@@ -501,7 +501,7 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 
 - The three toggles are icon buttons in the composer's floating button bar
   (`FloatingPromptBar`, `promptDragHandle`), before the clear (×), reset and
-  pop-out buttons, with the resize grip at its right end. An "on" toggle gets a
+  pop-out buttons. An "on" toggle gets a
   thin accent border, so the branch icon (on by default) reads as connected.
   They were a checkbox, a checkbox-plus-icon pair and a "vibe" checkbox on the
   left until 2026-10-22, which crowded the grip and hid what was on.
@@ -510,10 +510,22 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   transparent to the composer's surface, so a chat line running under the
   buttons fades out instead of colliding with them. With no chat to show, a
   band of the bar's height (`promptTopSpacer`) keeps it off the prompt text.
-  The fade and the gaps between buttons still drag the composer; the grip in
-  the top-right corner resizes it with the bottom-left corner fixed. Until
+  The fade and the gaps between buttons still drag the composer. Until
   2026-10-22 the bar was a full-width strip with a centre drag pill and the
   grip on the left.
+- **Resizing**: every edge and corner of the composer is a resize handle
+  (`PromptResizeEdge`, `promptResizeEdge`, eight invisible bands 5 px thick
+  with 10 px corners, children of `promptOverlayHost` laid over
+  `promptWrapper`). The cursor shows the direction; dragging moves only the
+  grabbed edges (`resizedPromptRect`), keeps the 280×120 minimum and stops at
+  the window's edges. A docked composer lifts off the footer on the first
+  resize, as it does on a drag; a popped-out composer asks the window system
+  to resize from that edge (`startSystemResize`). The bands hide with the
+  button bar, so the centred Agents-page composer and the collapsed avatar
+  cannot be resized. The bar keeps a 10 px right margin so the top-right
+  corner never covers its buttons. Until 2026-10-23 a small grip at the right
+  end of the bar was the only handle and always resized from the top-right
+  corner.
 - **Chat preview** (`ChatPreviewLabel`, `promptChatPreview`): up to three
   one-line rows over the prompt with the latest messages of the conversation
   the composer sends to, each with the sender's small round avatar
@@ -1053,16 +1065,19 @@ A free Market package hosted in the desktop, not part of the core app; see
 
 ## Special agents (formerly Brains, Team and Teammates)
 
-Rail **Special Agents**. A special agent is a named role definition owned by
-the repository in `.forkmesh/teammates/*.json` (`src/TeammateStore.*`,
-`src/MainWindowTeammates.cpp`). It runs on demand, on a cron cadence, on
+Rail **Special Agents**. A special agent is a workflow owned by the
+repository in `.forkmesh/workflows/<id>.json` whose Special agent step holds
+the role (`src/TeammateStore.*` reads it through `src/RepoWorkflow.*`;
+`src/MainWindowTeammates.cpp`). Older `.forkmesh/teammates/*.json` files still
+load and move on their next save. It runs on demand, on a cron cadence, on
 events or continually with a decision gate (see
 [www/docs/qt-client.md](../../www/docs/qt-client.md)); error-log and crash
-repair are special agent tasks ([diagnostics.md](diagnostics.md)). Its
-session is an ordinary agent session.
+repair are special agent tasks ([diagnostics.md](diagnostics.md)). Every run
+is a workflow run with its own record and output file
+([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
 
 Only user-visible text says "special agent". Stored and wire names keep
-"teammate": `.forkmesh/teammates/`, `Teammate*` classes, `teammates/*`
+"teammate": legacy `.forkmesh/teammates/`, `Teammate*` classes, `teammates/*`
 settings, the `teammates.` local-control family, the `#team` room and `team`
 sender id, `teammate-*.png` portraits. Pausing all automatic runs sets
 `schedule.active` to `false` and keeps the cadence.
@@ -1099,9 +1114,14 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
 
 ### Sessions
 
-- Each special agent works in its own session: `ownTeammateSession` returns
-  `lastSessionId` only for that agent's own run, and `teammateWithRuntime`
-  keeps runtime fields across saves.
+- A run is a workflow run: `runTeammate` starts the agent's workflow
+  (`runTeammateWorkflow`) and its Special agent step starts a fresh session
+  through `startTeammateSession`, filed in the **Workflows** agent folder.
+  A mention or a direct prompt to an agent with a conversation continues that
+  session instead, as chat, without a workflow run.
+  `ownTeammateSession` still names the newest session the agent started, so
+  steering, Stop and the face's status work as before, and
+  `teammateWithRuntime` keeps runtime fields across saves.
 - Mentions go through `deliverTeammateMessage` (steer while working, else
   continue). **Run team**, **Generate briefing** and `@all` use one session
   per member.
@@ -1150,6 +1170,9 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
   startup sign-in resolves and every 15 minutes. The channel reminder
   (`ui/packageRailReminder`) files one `channel_reminder` ping for the worst
   square after an hour without change.
+- **Pins.** The rail menu's **Open in Workflows** and **Pin to rail** put the
+  agent's workflow on the Workflows page or on the top, left, right or bottom
+  rail ([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
 - **Phones** show the same faces, moods and status in an adaptive tile grid
   ([../native/DESKTOP_AGENTS.md](../native/DESKTOP_AGENTS.md)).
 

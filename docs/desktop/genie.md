@@ -11,7 +11,7 @@ tips-only variant ([../www/genie-spider.md](../www/genie-spider.md)).
 | Part | File | Tests |
 | --- | --- | --- |
 | Watch list, health, CRM and Marketing digests, shipped changes, README check, coach and suggestions, lessons, said-log, agent briefing | `desktop/src/GenieVitals.{h,cpp}` | `forkmesh-genie-vitals-tests` |
-| The Genie special agent | `.forkmesh/teammates/genie.json` | `app/tests/test_genie_spider_special_agent.py` |
+| The Genie special agent | `.forkmesh/workflows/genie.json` | `app/tests/test_genie_spider_special_agent.py` |
 | QPainter spider, dances and effects (`GenieMagic`, `paintMagic`) | `desktop/src/GenieSpiderPainter.{h,cpp}` | none |
 | Crawling widget, tip bubble, coach panel, desktop stage, silk and effects layers | `desktop/src/GenieSpiderWidget.{h,cpp}` | none |
 | Landmark scan, keep-clear spot, interaction plans and bag | `desktop/src/GenieLandmarks.{h,cpp}` | `forkmesh-genie-landmarks-tests` (offscreen) |
@@ -110,7 +110,7 @@ button.
 ## Replying to the spider: the Genie special agent
 
 Each tip bubble has **Reply** and the menu has **Reply to the spider…**. Both
-open the Genie special agent's page (`.forkmesh/teammates/genie.json`) with the
+open the Genie special agent's page (`.forkmesh/workflows/genie.json`) with the
 tip quoted in the composer. The agent is on-demand, read-only plus external
 tools, and sets `"lowCostModel": true` (see [agents-ui.md](agents-ui.md)). Each
 run's prompt carries `genieAgentBriefing`: health, recent tips, closed stages,
