@@ -52,6 +52,18 @@ function(forkmesh_package_modules_partition)
             endforeach()
         endforeach()
     endif()
+    set(_app_include_dirs "")
+    foreach(_id IN LISTS FORKMESH_CORE_LINKED_PLUGINS)
+        forkmesh_package_variable_id(_variable "${_id}")
+        list(APPEND _app_include_dirs ${FORKMESH_PACKAGE_${_variable}_INCLUDE_DIRS})
+    endforeach()
+    foreach(_id IN LISTS FORKMESH_PLUGIN_MODULE_CANDIDATES)
+        forkmesh_package_variable_id(_variable "${_id}")
+        if(DEFINED FORKMESH_PACKAGE_${_variable}_SOURCES)
+            set_source_files_properties(${FORKMESH_PACKAGE_${_variable}_SOURCES} PROPERTIES
+                INCLUDE_DIRECTORIES "${FORKMESH_PACKAGE_${_variable}_INCLUDE_DIRS}")
+        endif()
+    endforeach()
     set(_app_sources ${FORKMESH_APP_SOURCES})
     set(_app_headers ${FORKMESH_MARKETPLACE_MOC_HEADERS})
     if(_module_sources)
@@ -63,6 +75,7 @@ function(forkmesh_package_modules_partition)
     set(FORKMESH_BUILT_PACKAGE_MODULES "${_modules}" PARENT_SCOPE)
     set(FORKMESH_APP_EXECUTABLE_SOURCES "${_app_sources}" PARENT_SCOPE)
     set(FORKMESH_APP_MARKETPLACE_MOC_HEADERS "${_app_headers}" PARENT_SCOPE)
+    set(FORKMESH_APP_MARKETPLACE_INCLUDE_DIRS "${_app_include_dirs}" PARENT_SCOPE)
 endfunction()
 
 function(forkmesh_package_module_abi out)
@@ -138,7 +151,7 @@ extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_packa
             AUTOMOC OFF
             JOB_POOL_COMPILE forkmesh_heavy)
         target_include_directories(${_target} PRIVATE
-            "$<TARGET_PROPERTY:forkmesh,INCLUDE_DIRECTORIES>")
+            "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_compile_definitions(${_target} PRIVATE
             "$<TARGET_PROPERTY:forkmesh,COMPILE_DEFINITIONS>")
         target_compile_options(${_target} PRIVATE
