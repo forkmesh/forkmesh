@@ -8,6 +8,7 @@
 #include "MainWindow.h"
 #include "ProcessReaper.h"
 #include "MainWindowInternal.h"
+#include "InstanceTheme.h"
 #include "AgentAccessEditor.h"
 #include "ClaudeTranscriptView.h"
 #include "ForkMeshPackageRegistry.h"
@@ -1040,6 +1041,57 @@ void MainWindow::adoptInstanceLogo(const QString &serverUrl)
         url.setPath(faviconAssetPath());
         candidates.append(url);
         saveInstanceLogo(dir, candidates);
+    });
+}
+
+void MainWindow::applyInstanceThemeChoice(bool enabled)
+{
+    forkmesh::instancetheme::setMatchEnabled(enabled);
+    if (m_matchInstanceThemeCheck && m_matchInstanceThemeCheck->isChecked() != enabled) {
+        const QSignalBlocker blocker(m_matchInstanceThemeCheck);
+        m_matchInstanceThemeCheck->setChecked(enabled);
+    }
+    m_instanceThemeOrigin.clear();
+    applyTheme(m_packageRegistry.get());
+    if (enabled)
+        refreshInstanceTheme();
+}
+
+void MainWindow::refreshInstanceTheme()
+{
+    if (!forkmesh::instancetheme::matchEnabled() || !m_networkAccess ||
+        m_offlineMode || m_activeServer < 0 || m_activeServer >= m_servers.size())
+        return;
+    QUrl api = faviconUrl(m_servers.at(m_activeServer).url);
+    if (api.isEmpty())
+        return;
+    api.setPath(QStringLiteral("/api/instance"));
+    const QString origin = api.toString(QUrl::RemovePath);
+    if (origin == m_instanceThemeOrigin)
+        return;
+    m_instanceThemeOrigin = origin;
+    QNetworkRequest request(api);
+    request.setRawHeader("Accept", "application/json");
+    QNetworkReply *reply = m_networkAccess->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, origin] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (m_instanceThemeOrigin == origin)
+                m_instanceThemeOrigin.clear();
+            return;
+        }
+        const QJsonObject document =
+            QJsonDocument::fromJson(reply->readAll()).object();
+        if (!document.value(QStringLiteral("ok")).toBool() ||
+            !forkmesh::instancetheme::matchEnabled() ||
+            m_instanceThemeOrigin != origin)
+            return;
+        const forkmesh::instancetheme::Colors colors =
+            forkmesh::instancetheme::fromInstanceDocument(document);
+        if (colors == forkmesh::instancetheme::stored())
+            return;
+        forkmesh::instancetheme::store(colors);
+        applyTheme(m_packageRegistry.get());
     });
 }
 

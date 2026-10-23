@@ -120,6 +120,7 @@ namespace forkmesh::ui { class ChannelGroupTree; }
 namespace forkmesh::ui { class OnboardingTour; }
 namespace forkmesh::ui { class WindowBackdrop; }
 namespace forkmesh::ui { class WindowFade; }
+namespace forkmesh::ui { class OverflowActionRow; }
 namespace forkmesh::ui { class QtRuntimeDiagnostics; }
 namespace forkmesh::ui::kit { class InlineNotice; }
 namespace forkmesh { struct SystemPressureSnapshot; }
@@ -2910,6 +2911,16 @@ public:
     void testCycleAppViewMode() { cycleAppViewMode(); }
     QPushButton *testViewModeButton() const { return m_viewModeButton; }
     QWidget *testAppNavigationRail() const { return m_appNavigationRail; }
+    void testRefreshPromptChatPreview() { refreshPromptChatPreview(); }
+    QLabel *testPromptChatPreview() const { return m_promptChatPreview; }
+    forkmesh::ui::OverflowActionRow *testAgentHeaderActions() const
+    {
+        return m_agentHeaderActions;
+    }
+    forkmesh::ui::OverflowActionRow *testAgentListActions() const
+    {
+        return m_agentListActions;
+    }
     QWidget *testAppStatusArea() const { return m_appStatusArea; }
     QWidget *testWorkspaceTerminalDock() const { return m_workspaceTerminalDock; }
     QSplitter *testAgentWorkspaceSplit() const { return m_agentWorkspaceSplit; }
@@ -2966,6 +2977,11 @@ public:
         noteAgentActivity(sessionId, bytes);
     }
     int testAgentDotCount() const;
+    void testSetTopBarIndicatorHidden(const QString &key, bool hidden)
+    {
+        setTopBarIndicatorHidden(key, hidden);
+    }
+    bool testTopBarIndicatorShown(const QString &key) const;
     void testSetAgentSessionStatus(int sessionId, const QString &status);
     QString testAgentSessionStatus(int sessionId) const
     {
@@ -3638,6 +3654,13 @@ public:
     QString testClaudeUsageToolTip() const
     {
         return m_navTokenUsage ? m_navTokenUsage->toolTip() : QString();
+    }
+    QWidget *testShowAgentUsageHoverCard(bool codex)
+    {
+        showAgentUsageHoverCard(codex ? m_navCodexUsage : m_navTokenUsage,
+                                codex ? QStringLiteral("codex")
+                                      : QStringLiteral("claude-code"));
+        return m_agentUsageHoverCard;
     }
     void testShowAgentAccountMenu(const QString &provider)
     {
@@ -6817,6 +6840,10 @@ private:
     bool moveAgentSessionsToFolder(const QList<int> &sessionIds,
                                    const QString &folderId);
     void selectAgentFolderSessions(const QString &folderId);
+    QList<int> agentFolderSessionIds(const QString &folderId,
+                                     const QList<int> &candidates) const;
+    void startAgentFolderSessions(const QString &folderId);
+    void stopAgentFolderSessions(const QString &folderId);
     void dropAgentSessions(const QList<int> &sessionIds, int targetSessionId,
                            const QString &folderId, bool after);
     void dropAgentFolder(const QString &folderId, const QString &targetFolderId,
@@ -7036,6 +7063,12 @@ private:
     QWidget *buildAgentUsagePage(QWidget *parent);
     void fillAgentUsagePage(QWidget *page);
     void scheduleAgentUsagePagesRefresh();
+    void attachAgentUsageHoverCard(QWidget *anchor,
+                                   std::function<QString()> provider);
+    void showAgentUsageHoverCard(QWidget *anchor, const QString &provider);
+    void hideAgentUsageHoverCard();
+    void fillAgentUsageHoverCard();
+    QPointer<QWidget> m_agentUsageHoverCard;
     QList<QPointer<QWidget>> m_agentUsagePages;
     QPointer<QWidget> m_agentUsageSectionPage;
     QTimer *m_agentUsagePagesTimer = nullptr;
@@ -7123,6 +7156,7 @@ private:
     bool parkRunningAgentSession(int sessionId);
     QList<int> stoppableAgentSessionIds() const;
     void stopAllRunningAgents();
+    void stopAgentSessions(const QList<int> &ids);
     bool stopAgentSessionById(int sessionId);
     int stopRepositoryAgentsForGuardrailChange(const QString &owner,
                                                 const QString &name);
@@ -7135,6 +7169,7 @@ private:
     static constexpr qint64 kAgentSilentStaleMs = 90'000;
     QList<int> startableAgentSessionIds() const;
     void startAllStoppedAgents();
+    void startAgentSessions(const QList<int> &ids);
     // The hover control on an agent row: AgentRunToggleNone/Start/Stop.
     int agentRunToggleMode(const AgentSession &session) const;
     void toggleAgentSessionRun(int sessionId);
@@ -7172,6 +7207,11 @@ private:
     void onAgentNeedsAttention(int sessionId, const QString &message);
     void updateAgentActionState();
     void updateQuickAddEnterTarget();
+    void refreshPromptChatPreview();
+    void schedulePromptChatPreview();
+    int promptChatTargetSessionId() const;
+    void refreshInstanceTheme();
+    void applyInstanceThemeChoice(bool enabled);
     bool quickAddShouldFollowUpAgent() const;
     int quickAddFollowUpAgentSessionId() const;
     // The real agent behind the PR open in its detail pane, plus its head
@@ -11241,6 +11281,10 @@ private:
     QWidget *m_chromeDotDivider = nullptr;
     void refreshNodeDotMatrix();
     void updateChromeDotDivider();
+    QSet<QString> m_hiddenTopBarIndicators;
+    bool topBarIndicatorHidden(const QString &key) const;
+    void setTopBarIndicatorHidden(const QString &key, bool hidden);
+    void showTopBarIndicatorMenu(const QPoint &globalPos);
     ActionRunStrip *m_actionRunStrip = nullptr;
     QWidget *m_chromeActionDivider = nullptr;
     QString m_agentDotTooltipKey;
@@ -11417,9 +11461,17 @@ private:
     QPushButton *m_promptClearButton = nullptr; // empties the prompt text area
     // Ticked (default): a prompt's agent gets its own branch and worktree.
     // Unticked: the run works directly in the repository's checkout.
-    QCheckBox *m_promptWorktreeCheck = nullptr;
+    QPushButton *m_promptWorktreeCheck = nullptr;
     QPushButton *m_promptCloudButton = nullptr;
-    QCheckBox *m_promptVibeCheck = nullptr;
+    QPushButton *m_promptVibeCheck = nullptr;
+    QLabel *m_promptChatPreview = nullptr;
+    QTimer *m_promptChatPreviewTimer = nullptr;
+    int m_promptChatSessionId = -1;
+    forkmesh::ui::OverflowActionRow *m_agentHeaderActions = nullptr;
+    forkmesh::ui::OverflowActionRow *m_agentListActions = nullptr;
+    forkmesh::ui::OverflowActionRow *m_agentRecycleActions = nullptr;
+    QCheckBox *m_matchInstanceThemeCheck = nullptr;
+    QString m_instanceThemeOrigin;
     int m_promptAnchoredHeight = 0;
     bool m_positioningFooterOverlays = false;
     QWidget *m_promptDetachWindow = nullptr;

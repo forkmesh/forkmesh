@@ -150,7 +150,7 @@
 
   function activityNameHtml(name, extra = "") {
     const text = String(name || "").trim() || "unknown";
-    return `<span data-repo-insights-contributor="${escapeHtml(text)}" class="min-w-0 truncate ${extra || "font-medium text-foreground"}">${platformAccount(text) ? escapeHtml(platformName()) : userNameHtml(text)}</span>`;
+    return `<span data-repo-insights-contributor="${escapeHtml(text)}" class="min-w-0 truncate">${issuePersonNameHtml(text, extra || "font-medium text-foreground", { git: true })}</span>`;
   }
 
   function activityAvatarHtml(person) {
@@ -586,9 +586,6 @@
     if (!root) return;
     activityHydrateMedals(root);
     dropBrokenContributorAvatars(root);
-    root.querySelectorAll("section").forEach((section) => {
-      void linkRepoInsightsContributors(section);
-    });
     window.lucide?.createIcons();
   }
 
@@ -683,7 +680,6 @@
     const total = Number(data.stats?.contributorCount) || 0;
     main.innerHTML = activityHeaderHtml("Contributors", total ? `${escapeHtml(activityPlural(total, "contributor"))} to ${escapeHtml(repoSelectedBranch(repo) || "this branch")}` : "Everyone who has committed to this branch", "")
       + `<div data-repo-insights-body class="min-w-0">${renderRepoInsights(repo, data.commits, data.stats, data.unavailable, data.traffic)}</div>`;
-    void linkRepoInsightsContributors(main);
     hydrateRepoActivityGraphs(main);
     dropBrokenContributorAvatars(main);
     window.lucide?.createIcons();

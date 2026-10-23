@@ -99,6 +99,7 @@ const relativeTimeLabel = () => "1 day ago";
 const platformAccount = () => false;
 const platformName = () => "Platform";
 const userNameHtml = (name) => escapeHtml(name);
+const issuePersonNameHtml = (name, classes) => `<span class="${classes}">${escapeHtml(name)}</span>`;
 const repoContributorAvatar = (person) => `<span data-avatar="${escapeHtml(person.name)}"></span>`;
 let location = { search: "" };
 """

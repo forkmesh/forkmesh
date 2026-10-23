@@ -1,3 +1,4 @@
+#include "InstanceTheme.h"
 #include "ForkMeshVersion.h"
 #include "ActionStore.h"
 #include "HiddenTerms.h"
@@ -1396,6 +1397,10 @@ void MainWindow::applyTheme(forkmesh::market::PackageRegistry *registry)
         settings.setValue(kThemeSetting, preference);
     }
 
+    if (marketTheme)
+        forkmesh::instancetheme::apply({});
+    else
+        forkmesh::instancetheme::applyStored();
     bool dark = true;
     QMap<QString, QString> palette;
     QString overlay;
@@ -1419,6 +1424,8 @@ void MainWindow::applyTheme(forkmesh::market::PackageRegistry *registry)
     Theme::setActiveDesign(design, dark);
     if (design == Theme::Design::Next)
         palette = Theme::nextPalette(dark);
+    else if (!marketTheme)
+        palette = Theme::overridePalette(design, dark);
     Theme::setActivePalette(palette);
     invalidateThemeIsDarkCache(); // the only place the answer can have moved
     qApp->setPalette(Theme::paletteForDesign(design, dark));

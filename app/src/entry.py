@@ -1214,7 +1214,8 @@ _URL_EXPORT_NAMES = (
     "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
-    "REPO_VIEWS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
+    "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
+    "REPO_FORK_COUNTS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
     "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
@@ -13975,7 +13976,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "4a97a7c9f133e3faf47c1d4b57a01f652fb5a550daf61b386207e3f0e1f16246"
+    "c841261a4d250195503c8582103050794b077a64668e7d1060abe2c94466bceb"
 )
 
 
@@ -16682,6 +16683,7 @@ core_push_tag_moves_handler = _core_push.export("tag_moves_handler")
 core_push_grant_tag_move = _core_push.export("grant_tag_move")
 core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
+core_push_pulls_synchronized = _core_push.export("pulls_synchronized")
 _recent_pushes = _LazyModule("recent_pushes")
 recent_push_remember = _recent_pushes.export("remember")
 recent_push_forget = _recent_pushes.export("forget_branches")
@@ -17403,7 +17405,11 @@ async def repo_about_handler(env, request, owner, repo):
         return json_response({"error": "not_authorized"}, status=403)
     if not await _owner_pubkey(env, owner) and not (
             await _branch_protection.settings_only(env, data, owner, repo)):
-        return json_response({"error": "account_required"}, status=403)
+        linked = await d1_first(
+            env, "SELECT 1 AS linked FROM org_repos WHERE node_owner=? AND repo=? "
+            "LIMIT 1", owner, repo)
+        if not linked:
+            return json_response({"error": "account_required"}, status=403)
 
     # Absent = unchanged, so a settings-only save (Qt fediverse switches)
     # never blanks the description.
@@ -19328,6 +19334,8 @@ _REPO_SCOPED_TABLES = (
     ("repo_state_history", "key_bi"),
     ("repo_views", "repo_bi"),
     ("repo_view_totals", "repo_bi"),
+    ("issue_views", "repo_bi"),
+    ("issue_view_totals", "repo_bi"),
     ("repo_terms_flags", "repo_bi"),
     ("repo_webhooks", "repo_bi"),
     ("repo_webhook_seeds", "repo_bi"),
@@ -36756,7 +36764,8 @@ def _repo_view_totals(row):
     }
 
 
-async def _repo_viewer_key(env, request, data, repo_key):
+async def _repo_viewer_key(env, request, data, repo_key,
+                           scope="repo-view-v1"):
     try:
         account_bi, account_rec = await _account_session_record(
             env, request, data)
@@ -36776,7 +36785,7 @@ async def _repo_viewer_key(env, request, data, repo_key):
         subject = "visitor\n%s\n%s" % (
             address, world_visitor_metrics.generalized_user_agent(agent))
     digest = await blind_index(
-        env, "repo-view-v1\n%s\n%s" % (repo_key, subject))
+        env, "%s\n%s\n%s" % (scope, repo_key, subject))
     return str(digest or "")[:64]
 
 
@@ -36889,6 +36898,137 @@ async def repo_views_lookup_handler(env, request):
             key = by_bi.get(str(row.get("repo_bi") or ""))
             if key:
                 views[key] = _repo_view_totals(row)
+    return json_response(
+        {"ok": True, "views": views},
+        cache_control="no-store, max-age=0")
+
+
+ISSUE_VIEW_LOOKUP_LIMIT = 100
+ISSUE_VIEW_AUTOMATED_AGENTS = (
+    "bot", "crawler", "spider", "preview", "curl/", "wget/", "python-",
+    "go-http-client", "scanner", "headless",
+)
+
+
+def _issue_view_automated(request):
+    try:
+        agent = str(request.headers.get("user-agent") or "").lower()[:512]
+    except Exception:
+        return True
+    if not agent:
+        return True
+    return any(marker in agent for marker in ISSUE_VIEW_AUTOMATED_AGENTS)
+
+
+async def _record_issue_view(env, repo_bi, number, viewer_key):
+    now = int(Date.now())
+    seen = await d1_first(
+        env,
+        "SELECT counted_at FROM issue_views "
+        "WHERE repo_bi=? AND number=? AND viewer_key=?",
+        repo_bi, number, viewer_key)
+    first = not seen
+    counted = first or (
+        now - int((seen or {}).get("counted_at") or 0)
+        >= REPO_VIEW_WINDOW_MS)
+    await d1_run(
+        env,
+        "INSERT INTO issue_views "
+        "(repo_bi,number,viewer_key,first_at,last_at,counted_at,hits) "
+        "VALUES (?,?,?,?,?,?,1) "
+        "ON CONFLICT(repo_bi,number,viewer_key) DO UPDATE SET "
+        "last_at=excluded.last_at,hits=issue_views.hits+1,"
+        "counted_at=MAX(issue_views.counted_at,excluded.counted_at)",
+        repo_bi, number, viewer_key, now, now, now if counted else 0)
+    if counted:
+        await d1_run(
+            env,
+            "INSERT INTO issue_view_totals "
+            "(repo_bi,number,views,viewers,last_viewed_at) "
+            "VALUES (?,?,1,?,?) "
+            "ON CONFLICT(repo_bi,number) DO UPDATE SET "
+            "views=issue_view_totals.views+1,"
+            "viewers=issue_view_totals.viewers+excluded.viewers,"
+            "last_viewed_at=MAX(issue_view_totals.last_viewed_at,"
+            "excluded.last_viewed_at)",
+            repo_bi, number, 1 if first else 0, now)
+    return counted
+
+
+async def issue_view_handler(env, request, owner, repo, number):
+    await ensure_schema(env)
+    method = method_name(request)
+    if method not in ("GET", "POST"):
+        return json_response({"error": "method_not_allowed"}, status=405)
+    number = int(number or 0)
+    if number <= 0:
+        return json_response({"error": "not_found"}, status=404)
+    if await _repo_is_private(env, owner, repo):
+        return json_response({"error": "not_found"}, status=404)
+    public_owner = await _public_repo_owner(
+        env, request, owner, repo, REPO_ISSUE_VIEW_RE)
+    repo_key = (public_owner + "/" + repo).lower()
+    repo_bi = await blind_index(env, repo_key)
+    counted = False
+    if method == "POST" and not _issue_view_automated(request):
+        try:
+            data = await bounded_json_request(request)
+        except Exception:
+            data = {}
+        viewer_key = await _repo_viewer_key(
+            env, request, data, "%s#%d" % (repo_key, number),
+            "issue-view-v1")
+        if viewer_key:
+            counted = await _record_issue_view(
+                env, repo_bi, number, viewer_key)
+    row = await d1_first(
+        env,
+        "SELECT views,viewers,last_viewed_at FROM issue_view_totals "
+        "WHERE repo_bi=? AND number=?",
+        repo_bi, number)
+    return json_response(
+        {"ok": True, "counted": counted, "number": number,
+         **_repo_view_totals(row)},
+        cache_control="no-store, max-age=0")
+
+
+def _issue_view_numbers(values):
+    numbers = []
+    for value in values if isinstance(values, list) else []:
+        for part in str(value or "").split(","):
+            part = part.strip()
+            if not part.isdigit() or len(part) > 9:
+                continue
+            number = int(part)
+            if number > 0 and number not in numbers:
+                numbers.append(number)
+            if len(numbers) >= ISSUE_VIEW_LOOKUP_LIMIT:
+                return numbers
+    return numbers
+
+
+async def issue_views_lookup_handler(env, request, owner, repo):
+    await ensure_schema(env)
+    if method_name(request) != "GET":
+        return json_response({"error": "method_not_allowed"}, status=405)
+    if await _repo_is_private(env, owner, repo):
+        return json_response({"error": "not_found"}, status=404)
+    public_owner = await _public_repo_owner(
+        env, request, owner, repo, REPO_ISSUE_VIEWS_RE)
+    repo_bi = await blind_index(env, (public_owner + "/" + repo).lower())
+    numbers = _issue_view_numbers(
+        parse_qs(urlparse(str(request.url)).query).get("numbers"))
+    views = {}
+    for start in range(0, len(numbers), REPO_VIEW_LOOKUP_CHUNK):
+        chunk = numbers[start:start + REPO_VIEW_LOOKUP_CHUNK]
+        rows = await d1_all(
+            env,
+            "SELECT number,views,viewers,last_viewed_at "
+            "FROM issue_view_totals WHERE repo_bi=? AND number IN (%s)"
+            % ",".join("?" * len(chunk)),
+            repo_bi, *chunk)
+        for row in rows or []:
+            views[str(int(row.get("number") or 0))] = _repo_view_totals(row)
     return json_response(
         {"ok": True, "views": views},
         cache_control="no-store, max-age=0")
@@ -41239,6 +41379,38 @@ async def _drain_collaboration_inbox_on_mirror(
     return count
 
 
+async def _pull_inbox_synchronized(env, request, repo_bi, claimant_bi):
+    ids = _drain_ids_from_request(request)
+    if not ids or not claimant_bi:
+        return []
+    try:
+        rows = await d1_all(
+            env,
+            "SELECT data FROM pull_inbox WHERE repo_bi=? AND id IN (%s) "
+            "AND claimed_by_bi=?" % ",".join("?" for _ in ids),
+            repo_bi, *ids, claimant_bi)
+    except Exception:
+        return []
+    items = []
+    for row in rows or []:
+        try:
+            item = await decrypt_row(env, row.get("data"))
+        except Exception:
+            continue
+        if isinstance(item, dict) and item.get("source") == "synchronize":
+            items.append(item)
+    return items[:20]
+
+
+async def _pulls_synchronized_after_intake(env, owner, repo, items):
+    if not items:
+        return
+    try:
+        await core_push_pulls_synchronized(env, owner, repo, items)
+    except Exception:
+        pass
+
+
 async def _release_inbox_claim(env, table, repo_bi, claimant_bi):
     """Drop this node's lease on the rows it read but did not ack.
 
@@ -42480,6 +42652,8 @@ async def pulls_handler(env, request, owner, repo):
             ) if signing_key else ""
             if not claimant_bi:
                 return json_response({"error": "unauthorized"}, status=401)
+            synced = await _pull_inbox_synchronized(
+                env, request, repo_bi, claimant_bi)
             drained = await _drain_collaboration_inbox_on_mirror(
                 env, request, "pull_inbox", repo_bi, claimant_bi,
                 mirror_node)
@@ -42487,6 +42661,7 @@ async def pulls_handler(env, request, owner, repo):
                 await _record_mirror_attested_state(
                     env, request, owner, repo, mirror_node)
                 await _wake_mirrors_after_intake(env, owner, repo)
+                await _pulls_synchronized_after_intake(env, owner, repo, synced)
             return json_response({
                 "ok": True,
                 "drained": drained,
@@ -42500,10 +42675,14 @@ async def pulls_handler(env, request, owner, repo):
         ) if signing_key else ""
         if not claimant_bi:
             return json_response({"error": "unauthorized"}, status=401)
+        synced = await _pull_inbox_synchronized(
+            env, request, repo_bi, claimant_bi)
         drained = await _drain_collaboration_inbox_on_mirror(
             env, request, "pull_inbox", repo_bi, claimant_bi, "source")
         await _release_inbox_claim(
             env, "pull_inbox", repo_bi, claimant_bi)
+        if drained:
+            await _pulls_synchronized_after_intake(env, owner, repo, synced)
         return json_response({"ok": True, "drained": drained})
 
     return json_response({"error": "method_not_allowed"}, status=405)
@@ -51000,7 +51179,7 @@ def _https_mirror_request_query(url, operation, release_sha=""):
     elif operation in ("compare", "merge-preview"):
         keys = ("base", "head")
         if operation == "compare":
-            keys += ("cherry", "limit")
+            keys += ("cherry", "limit", "counts")
         if operation == "merge-preview":
             keys += ("rules", "pull", "orgRules")
         for key in keys:
@@ -53458,13 +53637,17 @@ def _ref_updates_from(upstream):
         except (TypeError, ValueError):
             commits = 0
         update = {"ref": ref, "old": old, "new": new, "commits": commits}
+        pulls = item.get("pulls")
+        if ref.startswith("refs/heads/") and isinstance(pulls, list):
+            numbers = sorted({
+                int(number) for number in pulls[:10]
+                if isinstance(number, int) and not isinstance(number, bool)
+                and 0 < number < 10 ** 9})
+            if numbers:
+                update["pulls"] = numbers
         if item.get("forced") is True and ref.startswith("refs/heads/"):
             update["forced"] = True
-            pulls = item.get("pulls")
-            update["pulls"] = sorted({
-                int(number) for number in (
-                    pulls if isinstance(pulls, list) else [])[:10]
-                if isinstance(number, int) and 0 < number < 10 ** 9})
+            update.setdefault("pulls", [])
             kept = clean_string(item.get("kept", ""), 300)
             if re.fullmatch(r"refs/forkmesh/history(?:-tips)?/[^\x00-\x20]+",
                             kept):

@@ -976,7 +976,9 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
     if not model.get("issue") or not model.get("issueJson"):
         return None
     origin = repo_ssr_issue.public_site_origin(origin)
-    key = ("dashboard", bool(short), origin, repo_views.reactions_digest(reactions))
+    off = repo_ssr_issue.plugins_off()
+    key = ("dashboard", bool(short), origin, repo_views.reactions_digest(reactions),
+           tuple(sorted(off)))
     now = time.time()
     kept = bundle.rendered.get(key)
     if kept and now - kept[0] < ISSUE_RENDER_SECONDS:
@@ -994,7 +996,7 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
         issue, ctx, owner, "%s/issues/%d" % (link, bundle.number),
         index=repo_ssr_issue.index_rows(model.get("index")), now=now, repo=repo,
         prompt=repo_ssr_issue.prompt_template(model.get("settings")),
-        reactions=reactions)
+        reactions=reactions, off=off)
     if len(bundle.rendered) >= repo_views.RENDERED_PER_BUNDLE:
         bundle.rendered.clear()
     bundle.rendered[key] = (now, article)
@@ -1462,8 +1464,10 @@ def _about_rail(about, readme_href, info=None, values=None, base="", raw=""):
     size = ('<span class="block h-4 w-4"></span>' + mono % html.escape(
         repo_ssr_about.format_size(values["size"])) + _icon(
             "chevron-right", "h-3 w-3", "text-muted-foreground")) if values.get("size") else dash
-    rows = site + "".join(ABOUT_ROW % (label, value) for label, value in (
-        ("Watchers", watchers + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),
+    from . import repo_ssr_issue
+    watching = () if "fediverse-ui" in repo_ssr_issue.plugins_off() else (
+        ("Watchers", watchers + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),)
+    rows = site + "".join(ABOUT_ROW % (label, value) for label, value in watching + (
         ("Mirrors", dash), ("Files", files), ("Size", size)))
     drawn = _languages_html(values.get("languages") or [])
     if drawn:
@@ -1510,6 +1514,7 @@ def _about_rail(about, readme_href, info=None, values=None, base="", raw=""):
 
 
 def render_view(data, short=False, about=None):
+    from . import repo_ssr_issue
     owner, repo = data["owner"], data["repo"]
     base = "/%s/%s" % (urllib.parse.quote(owner), urllib.parse.quote(repo))
     if short:
@@ -1541,15 +1546,16 @@ def render_view(data, short=False, about=None):
         'sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center"><div class="flex '
         'min-w-0 items-center gap-2"><span class="flex h-6 w-6 shrink-0 items-center '
         'justify-center rounded-full border border-border/30 bg-primary/10 font-mono '
-        'text-[10px] font-semibold text-muted-foreground">%s</span><span class="min-w-0 '
-        'truncate text-foreground font-medium">%s</span><span class="min-w-0 truncate '
+        'text-[10px] font-semibold text-muted-foreground">%s</span>%s<span class="min-w-0 truncate '
         'text-muted-foreground">%s</span></div><span class="font-mono '
         'text-muted-foreground">%s</span><span class="font-mono text-muted-foreground">'
         '%s</span><a href="%s/commits" class="inline-flex items-center gap-1 font-medium '
         'text-foreground transition-colors hover:text-accent">%s<span>History</span>'
         '<span class="inline-block w-10 rounded-full bg-background px-1.5 py-0.5 font-mono text-[10px]">&nbsp;</span></a>'
         '</div>' % (
-            html.escape((author[:1] or "F").upper()), html.escape(author),
+            html.escape((author[:1] or "F").upper()),
+            repo_ssr_issue.person_name_html(
+                author, "min-w-0 truncate text-foreground font-medium", git=True),
             html.escape(str(latest.get("subject") or latest.get("message")
                             or "published latest mirror metadata")),
             html.escape(str(latest.get("hash") or data.get("commit") or "")[:7]

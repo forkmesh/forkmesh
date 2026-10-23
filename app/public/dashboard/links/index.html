@@ -732,6 +732,7 @@
 
       [data-repo-github-header] [role="tablist"],
       [data-repo-record-tabs] {
+        overflow-y: hidden;
         overscroll-behavior-x: contain;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
@@ -1940,6 +1941,64 @@
         height: 14px;
         flex: 0 0 auto;
         color: var(--muted-foreground);
+      }
+
+      .dashboard-nav-repo-group {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .dashboard-nav-repo-forks {
+        display: grid;
+        gap: 1px;
+        min-width: 0;
+        margin-left: 15px;
+        padding-left: 8px;
+        border-left: 1px solid var(--border);
+      }
+
+      .dashboard-nav-repo-fork,
+      .dashboard-nav-repo-forks-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        padding: 2px 6px;
+        border-radius: 6px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+        line-height: 18px;
+        text-align: left;
+        text-decoration: none;
+      }
+
+      .dashboard-nav-repo-fork:hover,
+      .dashboard-nav-repo-fork:focus-visible,
+      .dashboard-nav-repo-forks-toggle:hover,
+      .dashboard-nav-repo-forks-toggle:focus-visible {
+        background: rgb(var(--dashboard-subtle-rgb));
+        color: rgb(var(--dashboard-foreground-rgb));
+      }
+
+      .dashboard-nav-repo-fork-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: rgb(var(--dashboard-foreground-rgb));
+      }
+
+      .dashboard-nav-repo-fork-counts {
+        flex: 0 0 auto;
+        font-family: "ForkMesh Dashboard Mono", ui-monospace, monospace;
+        font-size: 10px;
+        color: var(--muted-foreground);
+      }
+
+      .dashboard-nav-repo-fork-counts.hidden {
+        display: none;
       }
 
       .dashboard-nav-repo-empty {
@@ -3870,7 +3929,7 @@
               <a href="/status" data-status-entry><span class="dashboard-nav-icon"><i data-lucide="activity"></i></span>Status</a>
               <a data-nav="ledger" data-nav-link href="/ledger" data-plugin-entry="ledger"><span class="dashboard-nav-icon"><i data-lucide="receipt"></i></span>Financial ledger</a>
             </div>
-            <div role="group" aria-labelledby="sidebarGroupCompany" class="dashboard-nav-group">
+            <div role="group" aria-labelledby="sidebarGroupCompany" class="dashboard-nav-group" data-instance-plugin="website">
               <span id="sidebarGroupCompany" class="dashboard-nav-title">Company</span>
               <a href="/about"><span class="dashboard-nav-icon"><i data-lucide="info"></i></span>About</a>
               <a href="/careers"><span class="dashboard-nav-icon"><i data-lucide="users"></i></span>Careers</a>

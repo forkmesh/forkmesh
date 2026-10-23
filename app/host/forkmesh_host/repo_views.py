@@ -219,6 +219,50 @@ def _stamp(row):
     return value * 1000 if 0 < value < 10_000_000_000 else value
 
 
+def review_policy(reviews, pull_author=""):
+    """06-repo-content.js pullReviewPolicy over the listing's
+    [[reviewer, state], ...]: each reviewer's latest review counts, the
+    pull author's never does."""
+    author = str(pull_author or "").strip()
+    latest = {}
+    for entry in reviews if isinstance(reviews, list) else []:
+        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            continue
+        key = str(entry[0] or "").strip()
+        if not key or key == author:
+            continue
+        if entry[1] in ("approved", "changes_requested"):
+            latest[key] = entry[1]
+        else:
+            latest.pop(key, None)
+    approvals = sum(1 for value in latest.values() if value == "approved")
+    blockers = sum(1 for value in latest.values()
+                   if value == "changes_requested")
+    return {"approvals": approvals, "blockers": blockers,
+            "ready": approvals >= 1 and blockers == 0}
+
+
+def review_state(reviews, pull_author, status, draft=False):
+    """06-repo-content.js pullListReviewState."""
+    if not isinstance(reviews, list):
+        return None
+    policy = review_policy(reviews, pull_author)
+    is_open = str(status or "open").lower() == "open" and not draft
+    if policy["blockers"]:
+        return {"state": "changes_requested", "approvals": policy["approvals"],
+                "blockers": policy["blockers"]}
+    if policy["ready"]:
+        return {"state": "approved", "approvals": policy["approvals"],
+                "blockers": 0}
+    return ({"state": "review_required", "approvals": 0, "blockers": 0}
+            if is_open else None)
+
+
+def _is_draft(values):
+    return str(values.get("draft") or "").strip().lower() in (
+        "true", "yes", "1")
+
+
 async def plan_pulls(reader, branch):
     """loadRepoRecordsFromMirror for .forkmesh/pulls."""
     root = asyncio.ensure_future(_root(reader, branch))
@@ -237,6 +281,8 @@ async def plan_pulls(reader, branch):
         branch_only = [(name, str(refs[name]).strip()) for name in refs
                        if NUMBERED.match(name) and name not in names
                        and is_commit(refs[name])]
+        reviews = tree.get("pullReviews") if isinstance(
+            tree.get("pullReviews"), dict) else None
         paths = ["%s/%s/pull.md" % (PULLS_DIR, e["name"]) for e in listed]
         blobs, extra = await asyncio.gather(
             _blobs(reader, paths, commit),
@@ -247,8 +293,14 @@ async def plan_pulls(reader, branch):
             number = int(entry["name"])
             blob = blobs.get("%s/%d/pull.md" % (PULLS_DIR, number))
             if blob:
-                rows.append(_record_row(number, *parse_front_matter(
-                    blob_text(blob)), "pulls"))
+                values, body = parse_front_matter(blob_text(blob))
+                row = _record_row(number, values, body, "pulls")
+                if reviews is not None:
+                    row["review"] = review_state(
+                        reviews.get(str(number)) or [],
+                        values.get("author", ""), row["state"],
+                        _is_draft(values))
+                rows.append(row)
         for (name, _ref), blob in zip(branch_only, extra):
             if blob:
                 rows.append(_record_row(int(name), *parse_front_matter(
@@ -516,6 +568,14 @@ async def plan_pull(reader, branch, number):
     async def patch():
         if not is_open:
             return ""
+        synced = str(values.get("syncedHeadOid") or "").strip().lower()
+        onto = str(values.get("headBaseOid") or "").strip().lower()
+        if (is_commit(synced) and is_commit(onto)
+                and synced == str(values.get("headOid") or "").strip().lower()):
+            data = await reader.get("compare", [("base", onto),
+                                                ("head", synced)])
+            if data and str(data.get("patch") or "").strip():
+                return str(data.get("patch") or "")
         data = await reader.get("blob", [
             ("path", "%s/%d/changes.patch" % (PULLS_DIR, number)),
             ("ref", commit)], negative=True)
@@ -833,6 +893,7 @@ VIEW_STYLE = """<style>
 .fm-ssr-tabs a.on{color:rgb(var(--dashboard-foreground-rgb));border-bottom-color:#f78166;font-weight:600}
 .fm-ssr-item{padding:8px 16px;border-top:1px solid rgb(var(--dashboard-border-rgb))}.fm-ssr-item:first-child{border-top:0}
 .fm-ssr-item>a{font-weight:600;color:rgb(var(--dashboard-foreground-rgb));font-size:15px}.fm-ssr-item .m{color:rgb(var(--dashboard-muted-foreground-rgb));font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fm-ssr-item .m.fm-ssr-m-chip{display:flex;flex-wrap:wrap;align-items:center;column-gap:4px;white-space:normal}
 .fm-ssr-pill{display:inline-block;border-radius:2em;padding:2px 10px;font-size:12px;font-weight:600;color:#fff;background:#238636;margin-right:8px;vertical-align:middle}.fm-ssr-pill.closed{background:#8957e5}.fm-ssr-pill.merged{background:#8957e5}
 .fm-ssr-label{display:inline-block;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:2em;padding:0 7px;font-size:11px;margin-left:6px;color:rgb(var(--dashboard-muted-foreground-rgb))}
 .fm-ssr-h1{font-size:26px;font-weight:400;margin:0 0 8px;overflow-wrap:anywhere}.fm-ssr-h1 span{color:rgb(var(--dashboard-muted-foreground-rgb))}
@@ -958,6 +1019,52 @@ def _frame(bundle, active, inner, link=None):
         '</div>' % (title, tabs, inner))
 
 
+REVIEW_CHIPS = {
+    "approved": ("check", "Approved", "border-success/40 text-success"),
+    "changes_requested": ("file-diff", "Changes requested",
+                          "border-destructive/40 text-destructive"),
+    "review_required": ("eye", "Review required",
+                        "border-border text-muted-foreground"),
+}
+REVIEW_ICONS = {
+    "check": '<path d="M20 6 9 17l-5-5"></path>',
+    "file-diff": (
+        '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z">'
+        '</path><path d="M9 10h6"></path><path d="M12 13V7"></path>'
+        '<path d="M9 17h6"></path>'),
+    "eye": (
+        '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 '
+        '1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path>'
+        '<circle cx="12" cy="12" r="3"></circle>'),
+}
+
+
+def _review_chip(review):
+    """06-repo-content.js pullListReviewChipHtml, with the icon drawn."""
+    chip = REVIEW_CHIPS.get((review or {}).get("state"))
+    if not chip:
+        return ""
+    name, label, tone = chip
+
+    def count(n):
+        return "%s reviewer%s" % ("{:,}".format(n), "" if n == 1 else "s")
+    if review["state"] == "approved":
+        title = "Approved by " + count(review.get("approvals") or 0)
+    elif review["state"] == "changes_requested":
+        title = "Changes requested by " + count(review.get("blockers") or 0)
+    else:
+        title = "Needs an approval from someone other than the author"
+    return ('<span data-repo-pull-review="%s" title="%s" class="inline-flex '
+            'shrink-0 items-center gap-1 rounded-full border px-1.5 '
+            'text-[11px] font-medium leading-4 %s"><svg xmlns="http://'
+            'www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" '
+            'fill="none" stroke="currentColor" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round" class="lucide '
+            'lucide-%s h-3 w-3">%s</svg>%s</span>' % (
+                review["state"], _esc(title), tone, name, REVIEW_ICONS[name],
+                label))
+
+
 def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
     base = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
                                urllib.parse.quote(bundle.repo))
@@ -983,19 +1090,21 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
         when = _date(row.get("ts"))
         if when:
             meta += " &middot; " + when
-        if row.get("base") and row.get("head"):
-            meta += " &middot; %s &larr; %s" % (_esc(row["base"]),
-                                                  _esc(row["head"]))
         if row.get("category"):
             meta += " &middot; " + _esc(row["category"])
+        chip = _review_chip(row.get("review"))
+        if chip:
+            # The chip wraps under the line on a phone, as the dashboard's does.
+            meta = '<span>%s</span>%s' % (meta, chip)
         labels = "".join('<span class="fm-ssr-label">%s</span>' % _esc(x)
                          for x in row.get("labels") or [])
         items.append(
             '<div class="fm-ssr-item" data-ssr-record="%s"%s><a href="%s/%s/%d">'
-            '%s</a>%s<div class="m">%s</div></div>' % (
+            '%s</a>%s<div class="m%s">%s</div></div>' % (
                 kind, " data-ssr-usable" if index == 0 else "", _esc(base),
                 "pull" if kind == "pulls" else kind, number,
-                _esc(row.get("title")), labels, meta))
+                _esc(row.get("title")), labels,
+                " fm-ssr-m-chip" if chip else "", meta))
     if not items:
         items.append('<div class="fm-ssr-item" data-ssr-usable>No open %s.'
                      '</div>' % {"pulls": "pull requests"}.get(kind, kind))

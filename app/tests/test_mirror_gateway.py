@@ -1340,6 +1340,57 @@ def test_pull_listing_advertises_branch_only_pulls_the_badge_counts(tmp_path):
     assert "status: open" in record["content"]
 
 
+
+def test_pull_listing_carries_each_pulls_reviews_in_file_order(tmp_path):
+    # The web pull list shows each pull's review state. The listing carries
+    # every committed review's (reviewer, state) so the list reads no per-pull
+    # folder; the dashboard applies the merge box's latest-review rule.
+    bare, _commit = make_bare_repository(tmp_path)
+    source = tmp_path / "source"
+    run(["git", "switch", "forkmesh/pulls"], source)
+    folder = source / ".forkmesh" / "pulls" / "43"
+    folder.mkdir(parents=True)
+    (folder / "pull.md").write_text(
+        "---\nnumber: 43\nstatus: open\nauthor: bob-key\n---\n",
+        encoding="utf-8")
+    review = "---\ntype: review\nauthor: %s\nstate: %s\nsig: s\n---\n\nstate: approved\n"
+    (folder / "0001-review.md").write_text(
+        review % ("carol-key", "changes_requested"), encoding="utf-8")
+    (folder / "0002-comment.md").write_text(
+        "---\ntype: comment\nauthor: dave-key\n---\n\nHi\n", encoding="utf-8")
+    (folder / "0003-review.md").write_text(
+        review % ("carol-key", "approved"), encoding="utf-8")
+    (folder / "0004-review.md").write_text(
+        "---\ntype: review\nauthor: \nstate: approved\n---\n", encoding="utf-8")
+    run(["git", "add", ".forkmesh/pulls/43"], source)
+    run(["git", "commit", "-m", "pull #43 reviews"], source)
+    run(["git", "push", "origin", "forkmesh/pulls"], source)
+    ledger = run(["git", "rev-parse", "HEAD"], source)
+
+    config = gateway.load_config(write_config(tmp_path, bare))
+    app = gateway.GatewayApplication(
+        config,
+        verifier=AcceptVerifier(),
+        health_signer=HealthSigner(),
+        materializer=FakeArchiveMaterializer(bare),
+        clock_ms=lambda: NOW,
+        log=lambda _record: None,
+    )
+    try:
+        listing = decode_json(dispatch(
+            app, "tree", {"path": ".forkmesh/pulls", "ref": ledger},
+            request_id="pull_listing_reviews_01"))
+        folder_listing = decode_json(dispatch(
+            app, "tree", {"path": ".forkmesh/pulls/43", "ref": ledger},
+            request_id="pull_listing_reviews_02"))
+    finally:
+        app.close()
+
+    assert listing["pullReviews"]["43"] == [
+        ["carol-key", "changes_requested"], ["carol-key", "approved"]]
+    assert set(listing["pullReviews"]) == {"43"}
+    assert "pullReviews" not in folder_listing
+
 def _commit_at(source, when, message):
     env = dict(os.environ, GIT_AUTHOR_DATE="@%d +0000" % when,
                GIT_COMMITTER_DATE="@%d +0000" % when)
@@ -4210,3 +4261,20 @@ def test_a_cut_text_blob_stays_text_at_a_character_boundary():
         prefix.decode("utf-8")
     broken = b"ok\xff\xfeok"
     assert gateway._utf8_prefix(broken) == broken
+
+
+def test_sizes_lists_every_issue_folder_but_still_folds_code(application, monkeypatch):
+    app, _commit, _release_hash, _logs = application
+    repository = app.repositories[("alice", "project")]
+    blobs = [(100 + n, f".forkmesh/issues/open/{n}/issue-{n}.json") for n in range(1, 121)]
+    blobs += [(10, f"vendor/pkg{n}.js") for n in range(60)]
+    monkeypatch.setattr(repository, "_all_blobs", lambda _commit: blobs)
+    payload = repository.sizes({})
+    forkmesh = next(item for item in payload["children"] if item["name"] == ".forkmesh")
+    open_dir = forkmesh["children"][0]["children"][0]
+    assert open_dir["name"] == "open"
+    assert len(open_dir["children"]) == 120
+    assert all(item["type"] == "directory" and item["children"][0]["type"] == "file"
+               for item in open_dir["children"])
+    vendor = next(item for item in payload["children"] if item["name"] == "vendor")
+    assert len(vendor["children"]) == 41 and vendor["children"][-1]["type"] == "summary"

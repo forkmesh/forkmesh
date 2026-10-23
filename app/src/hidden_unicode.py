@@ -160,13 +160,15 @@ _RAW_KEY_PARTS = (
     "sealed",
 )
 _RAW_KEYS = frozenset(("sig", "nonce", "salt", "otp", "pin", "mac", "hmac", "totp"))
+_EXACT_CONTENT_KEYS = frozenset(("patch", "commits", "suggestionpatch", "anchorlines"))
 
 
 def raw_key(key: Any) -> bool:
     if not isinstance(key, str):
         return False
     folded = key.lower().replace("_", "").replace("-", "")
-    return folded in _RAW_KEYS or any(part in folded for part in _RAW_KEY_PARTS)
+    return (folded in _RAW_KEYS or folded in _EXACT_CONTENT_KEYS
+            or any(part in folded for part in _RAW_KEY_PARTS))
 
 
 def clean_value(value: Any, *, depth: int = 0) -> Any:

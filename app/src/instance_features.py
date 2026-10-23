@@ -72,9 +72,20 @@ FEATURES = (
      ("/start", "/api/start"), ()),
     ("website", "ForkMesh website pages",
      "forkmesh.com's own pages: about, careers, press, pricing, features, "
-     "the ecosystem, leaderboards, the blog and the changelog.",
+     "the ecosystem, leaderboards and the blog.",
      ("/about", "/careers", "/press", "/pricing", "/features", "/ecosystem",
-      "/leaderboards", "/blog", "/changelog", "/market"), ()),
+      "/leaderboards", "/blog", "/market"), ()),
+    ("issue-ai-prompt", "Issue AI prompt",
+     "The copyable \"Fix <issue>: read the issue, make the change\u2026\" "
+     "prompt under an open issue's title.",
+     (), ()),
+    ("fediverse-ui", "Fediverse panels",
+     "The Fediverse thread under issues, pull requests and discussions, and "
+     "the Watch on the fediverse menu of a repository.",
+     (), (r"^/api/repo/[^/]+/[^/]+/fedi-comments$",)),
+    ("changelog", "Changelog",
+     "Platform changelog: what changed in each platform version.",
+     ("/changelog",), ()),
 )
 OFFSITE_HOSTS = ("forkmesh.com", "www.forkmesh.com", "app.forkmesh.com",
                  "world.forkmesh.com", "www.patreon.com")
@@ -105,7 +116,16 @@ INSTANCE_NOTES = {
     "genie": "The spider at the bottom of each page that offers tips.",
     "developer-docs": "Shows the docs/ folder of this instance's read-only "
                       "forkmesh mirror in the dashboard.",
+    "issue-ai-prompt": "Offers readers a prompt to paste into a coding agent "
+                       "on each open issue.",
+    "fediverse-ui": "Shows replies from the fediverse beside a thread and "
+                    "how to follow a repository from Mastodon. Off, the "
+                    "replies endpoint answers 404 too.",
+    "changelog": "The changelog of the platform version this instance runs, "
+                 "at /changelog. On unless turned off.",
 }
+DEFAULT_ON = frozenset({"changelog", "issue-ai-prompt", "fediverse-ui"})
+OPT_IN = frozenset()
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)
@@ -128,12 +148,13 @@ def branded(env):
 
 PLATFORM = "ForkMesh"
 _RENAME_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)")
-_REMEMBERED = {"name": "", "origin": ""}
+_REMEMBERED = {"name": "", "origin": "", "env": None}
 
 
 def remember_instance(env):
     if not branded(env):
         return
+    _REMEMBERED["env"] = env
     origin = (_setting(env, "PUBLIC_BASE_URL") or _setting(env, "APP_ORIGIN")).rstrip("/")
     _REMEMBERED["name"] = display_name(env)
     _REMEMBERED["origin"] = origin if origin.startswith("https://") else ""
@@ -172,12 +193,20 @@ def installed_ids(env):
     if raw == "all":
         return set(IDS)
     chosen = {item.strip() for item in raw.split(",")}
-    return {item for item in chosen if _ID_RE.fullmatch(item) and item in IDS}
+    refused = {item[1:] for item in chosen if item.startswith("-")}
+    return {item for item in chosen if _ID_RE.fullmatch(item) and item in IDS} \
+        | (DEFAULT_ON - refused)
+
+
+def core_ids(env):
+    raw = _setting(env, "FORKMESH_CORE_PLUGINS").lower()
+    chosen = {item.strip() for item in raw.split(",")}
+    return (set(IDS) - OPT_IN) | {item for item in chosen if item in OPT_IN}
 
 
 def enabled_ids(env):
     if not branded(env):
-        return set(IDS)
+        return core_ids(env)
     if _cache["loaded"] and _cache["value"] is not None:
         return set(_cache["value"])
     return installed_ids(env)
@@ -190,13 +219,19 @@ def parse(doc):
         return None
     if not isinstance(data, dict) or not isinstance(data.get("enabled"), list):
         return None
+    refused = data.get("disabled")
+    refused = {item for item in refused if isinstance(item, str)} \
+        if isinstance(refused, list) else set()
     return {item for item in data["enabled"]
-            if isinstance(item, str) and item in IDS}
+            if isinstance(item, str) and item in IDS} | (DEFAULT_ON - refused)
 
 
 def dump(ids):
-    return json.dumps({"enabled": sorted(set(ids) & set(IDS))},
-                      separators=(",", ":"))
+    chosen = set(ids) & set(IDS)
+    doc = {"enabled": sorted(chosen)}
+    if DEFAULT_ON - chosen:
+        doc["disabled"] = sorted(DEFAULT_ON - chosen)
+    return json.dumps(doc, separators=(",", ":"))
 
 
 def choose(current, chosen):
@@ -252,6 +287,13 @@ def blocked(env, path):
     return feature if feature and feature not in enabled_ids(env) else ""
 
 
+def switched_off(env=None):
+    env = _REMEMBERED["env"] if env is None else env
+    if env is None or not branded(env):
+        return frozenset()
+    return frozenset(set(IDS) - enabled_ids(env))
+
+
 def describe(env):
     on = enabled_ids(env)
     return [{
@@ -296,7 +338,11 @@ def rename_error_body(env, body):
 
 
 CHROME = ":is(header, nav, aside, footer)"
-PLUGIN_ELEMENTS = {"genie": ".fm-genie, .fm-genie-bubble, .fm-genie-fx, genie-spider"}
+PLUGIN_ELEMENTS = {
+    "genie": ".fm-genie, .fm-genie-bubble, .fm-genie-fx, genie-spider",
+    "issue-ai-prompt": "[data-repo-issue-ai-prompt]",
+    "fediverse-ui": "[data-repo-federated-thread], [data-repo-watch-wrap]",
+}
 OFFSITE_PAGES = {"/world": "https://world.forkmesh.com"}
 
 
@@ -308,7 +354,7 @@ def chrome_css(env):
     on = enabled_ids(env)
     rules = [":root{--instance-plugins:ready}"]
     for feature in FEATURES:
-        if feature[0] in on:
+        if feature[0] in on or not branded(env):
             continue
         selectors = ['[data-instance-plugin~=%s]' % _css_string(feature[0])]
         items = []

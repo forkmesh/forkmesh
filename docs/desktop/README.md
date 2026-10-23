@@ -111,6 +111,12 @@ Everything is in `desktop/`.
   project picker's menu rather than in the top bar. When no account is signed
   in, the account row is the "Log in / Sign up" entry; the top bar has no
   separate sign-in button.
+- **Top bar indicators.** Right-clicking the top bar (its empty space or the
+  Agents, Nodes and Actions grids) opens a "Show in top bar" menu with a check
+  for each grid. Unchecking one hides it even when it has something to show;
+  checking it again brings it back. The menu belongs to the bar rather than
+  to the grids so a hidden grid can still be restored. The hidden keys
+  (`agents`, `nodes`, `actions`) are stored in `ui/hiddenTopBarIndicators`.
 - **Main window.** One `MainWindow` class with a left rail of sections
   (indices are `k*SectionIndex` constants in `MainWindow.h`). Most sections are
   built lazily on first open. Settings is one scrolling page whose sections

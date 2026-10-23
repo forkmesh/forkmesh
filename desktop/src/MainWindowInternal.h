@@ -232,7 +232,19 @@ public:
         setFixedHeight(42);
     }
 
+    std::function<void(const QPoint &)> onContextMenu;
+
 protected:
+    void contextMenuEvent(QContextMenuEvent *event) override
+    {
+        if (onContextMenu) {
+            onContextMenu(event->globalPos());
+            event->accept();
+            return;
+        }
+        QWidget::contextMenuEvent(event);
+    }
+
     void mousePressEvent(QMouseEvent *event) override
     {
         if (event->button() == Qt::LeftButton) {
@@ -1222,6 +1234,7 @@ public:
         });
     }
 
+    QString stats() const { return m_stats; }
     void setStats(const QString &stats)
     {
         if (m_stats == stats)
@@ -3737,6 +3750,8 @@ const QString kShowRebuildButtonSetting = QStringLiteral("ui/showRebuildButton")
 // Drop the caption under each left-rail icon, leaving an icon-only rail that is
 // both narrower and shorter per item (forkmesh::ui::railCaptionsHidden()).
 const QString kHideRailCaptionsSetting = QStringLiteral("ui/hideRailCaptions");
+const QString kHiddenTopBarIndicatorsSetting =
+    QStringLiteral("ui/hiddenTopBarIndicators");
 const QString kShowTeammateRailSetting = QStringLiteral("ui/showTeammateRail");
 const QString kShowPackageRailSetting = QStringLiteral("ui/showPackageRail");
 const QString kPackageRailReminderSetting = QStringLiteral("ui/packageRailReminder");
@@ -8054,6 +8069,8 @@ void applyStoredOcticon(QPushButton *button);
 void setOcticon(QPushButton *button, const QString &name, int size = 16,
                        qreal rotationDeg = 0.0);
 
+void tintComposerActionButton(QPushButton *button);
+
 void applyStoredLabelOcticon(QLabel *label);
 
 void setLabelOcticon(QLabel *label, const QString &name, int size = 12);
@@ -9794,7 +9811,7 @@ public:
 
     void followRailCaptionPreference()
     {
-        const QSize wanted(railExpanded() ? kRailExpandedItemWidth
+        const QSize wanted(railExpanded() ? railExpandedItemWidth()
                                           : railCompactItemWidth(),
                            captionShown() ? 14 : 7);
         if (size() != wanted)

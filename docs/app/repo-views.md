@@ -23,6 +23,61 @@ purged with the repository and rekeyed by the rekey tool
 - `GET /api/repo/<owner>/<repo>/view` → `{views, viewers, lastViewedAt}`
 - `POST /api/repo/<owner>/<repo>/view` → totals plus `counted`
 - `POST /api/repo-views` `{"repos": [...]}` (up to 200) → `{views: {...}}`
+- `POST /api/repo-fork-counts` `{"forks": [...]}` (up to 24) → `{counts: {...}}`
+  (see [Forks in Top repositories](#forks-in-top-repositories))
+
+## Forks in Top repositories
+
+Both "Top repositories" lists, the Home rail (`homeRepositoryGroup`) and the
+sidebar (`sidebarRepositoryGroup`), nest forks under their parent with
+`nestRepositoryForks` in `05-repo-list-explorer.js`. A row is a fork when
+`repoForkParent` reads a `forkedFrom` from its catalog row; its parent is the
+listed row that `repoMatchesKey` matches, or the listed row that
+`findRepository` resolves the parent key to. A fork of a fork goes under the
+top listed ancestor, and a fork whose parent is not listed stays an ordinary
+top-level row. Forks do not use up the list's top-level slots.
+
+The parent row stays as it was. Its forks sit below it, indented behind a thin
+left border as the tree guide line. Each one is a compact single line: the
+owner name (or `owner/name` when the fork was renamed, since the name is no
+longer implied), the ahead/behind badge, and on Home its view count. Forks are
+ordered by views, most first. Past three forks a "+N more forks" button expands
+the rest inline. It sits outside the row links (rows are `<a>`, so a button
+inside one would nest an interactive element), and the expanded set lives in
+`state.repositoryForksExpanded` for the session.
+
+### Ahead/behind badge
+
+After a list renders, `hydrateRepositoryForkCounts` collects the
+`data-repo-fork-counts` keys of public forks it has not asked about yet and
+sends them in one `POST /api/repo-fork-counts {"forks": [...]}` (up to 24 per
+request). The answer is cached in `state.repositoryForkCounts` and reused by
+both lists and by later renders. The badge reads `↑3 ↓12` with the title "3
+commits ahead, 12 behind <parent>". It stays hidden when the count is unknown
+(a private fork or parent, no answer, or a fork whose gateway does not serve
+the parent) and when it is 0/0.
+
+`app/src/fork_counts.py` answers that request. For each fork it requires a
+public catalog row for the fork, reads the parent from that row's
+`forkedFrom` (never from the request), and requires the parent to be public
+too. Organization addresses resolve through `_org_repo_node`. It then reads
+the parent's and the fork's default-branch tips from their `branches`
+operations (edge-cacheable reads, each parent read once per request) and asks
+the fork's gateway for
+`compare?base=<parent tip>&head=<fork tip>&cherry=<parent>&counts=1`.
+Results are cached per worker by (fork, parent, both tips), so a moved branch
+gives a fresh count. The response is `{ok, counts: {"<fork>": {ahead, behind,
+parent, branch}}}`; unknown forks are left out.
+
+`counts=1` is a mode of the gateway's upstream comparison (`cherry`): with
+the parent's objects as an alternate it runs
+`git rev-list --left-right --count <base>...<head>` and returns only
+`{ok, baseOid, headOid, ahead, behind}`. It takes commit ids for base and
+head, and it refuses `limit`, any value other than `1`, and an upstream the
+gateway does not serve. The Worker forwards `counts` for `compare` in
+`_https_mirror_request_query` and `edge_routing.masked_target_url`. The catalog
+already carries the default branch and its commit, but those are only as
+fresh as the last catalog publish, so the counts read live tips instead.
 
 ## Profile repository list and popular cards
 
@@ -261,7 +316,8 @@ reduced motion).
   roster's picture for a row whose `login`, `github` or `gitlab` matches the
   name case-insensitively (`avatar` when it points into
   `.forkmesh/contributors/`, else `<slug>.png`), then the initials. A name
-  links to `/@<name>` when the forge account exists, else to the roster
+  links to `/@<name>` when the forge account is linkable (a taken, public
+  user or node account; [profile-links.md](profile-links.md)), else to the roster
   `profile` (plain `https:` only, new tab), else not at all. Bots (`…[bot]`
   and the names `repoContributorIsBot` already treats as bots, such as
   `<org>-actions`) get the lucide `bot` mark and no link. Faces have fixed
@@ -271,6 +327,13 @@ reduced motion).
   beside the name on phones, where the column is hidden. The roster is read
   once per repository and branch (`repoContributorRosterCached`), shared with
   the About rail. Tests: `app/tests/test_issue_timeline_people.py`.
+- **Code map No wrap** (`layoutPrefs`, `fitCode` in `app/public/assets/codemap/codemap.js`):
+  by default a file's lines flow into newspaper columns, each cut at the
+  file's 97th-percentile line length (at most 110 characters). The toolbar's
+  "No wrap" toggle lays the file out as one column, one row per line, sized to
+  the tile height (no wider than 80 characters of text), and clips each line at
+  the tile's edge instead (`code.clip`). The choice is kept in `localStorage`
+  (`forkmesh-codemap-wrap`).
 - **Code map text vs binary** (`createLoader` in `app/public/assets/codemap/codemap.js`,
   glue `openRepoCodeMap`): a file is drawn as a binary card only when the host
   answered it as base64 (not UTF-8) or its text holds a NUL byte. A path the
@@ -282,7 +345,7 @@ reduced motion).
   text file stays text.
 - **HTML entities in markdown** (`MD_ESCAPED_ENTITY` in `renderMarkdownInline`):
   text is escaped first, so `&rlm;` used to show as the literal "&rlm;" (the
-  net4people/bbs README marks its Persian and Arabic headings with `&rlm;` and
+  example/forum README marks its Persian and Arabic headings with `&rlm;` and
   `&zwnj;`). After code spans are parked, a well-formed named or numeric
   entity is restored, as GitHub renders it; an entity only ever yields text,
   `&lt;script&gt;` stays visible text, and code spans keep the literal.
@@ -354,6 +417,34 @@ reduced motion).
   category. There are no vote or reply counts because the list reads only
   `discussion.md`. New discussion (and the empty list's Start a discussion)
   opens the web composer; see [web-discussions.md](web-discussions.md).
+
+## Reconnecting after a mirror outage
+
+Pull request, issue and discussion lists and records, projects, the code tree, commits,
+branches and releases share one helper in `06-repo-content.js`
+(`handleRepoReadFailure`, `finishRepoRead`). A read that fails with 503
+`mirror_unavailable` (or 503 without a code), 502, 504 or a network error
+shows "Reconnecting to the repository host…" and is retried after 2, 4, 8, 16
+and then every 30 s. After two minutes the page says "The repository host is
+not answering right now." with a Retry button. A 404 is the repository's
+answer: a record page says the record was not found and names its file; other
+errors say the view could not be loaded. The earlier text ("unavailable until
+a reachable mirror host serves …") read as permanent, and on a single-server
+instance it appeared after every deploy while the gateway restarted.
+
+Each view's last rendered HTML is kept in `sessionStorage`
+(`forkmesh.repoView.v1|<node>|<owner/repo>|<view>`, at most 24 views of
+400 000 characters, oldest dropped first, every access in `try`) and is shown
+under a "Reconnecting…" note while the host is away, so the reader keeps the
+list or pull request they had. The key includes the signed-in node name, and
+sign-out clears every `forkmesh.` key in `sessionStorage`. A read answered
+with `X-ForkMesh-Stale: 1` (the host's stale cache, `docs/host/README.md`) is
+rendered with an "Updating…" note and read again on the same schedule.
+
+A retry runs only while the address and the container are the ones it was
+armed for; `navigateHistory` and the repository page's `popstate` handler
+cancel every pending retry, and a loader that is retrying does not repaint its
+loading state over the kept view.
 
 ## Issue page first view
 

@@ -224,6 +224,8 @@ BI_COLUMNS = {
     "issue_bounty": ("bounty_bi",),
     "issue_inbox": ("repo_bi", "claimed_by_bi", "mirrored_by_bi"),
     "issue_seq": ("repo_bi",),
+    "issue_view_totals": ("repo_bi",),
+    "issue_views": ("repo_bi",),
     "ledger_backfill_sources": ("subject_repo_bi",),
     "link_codes": ("code_bi",),
     "login_attempts": ("id_bi",),
@@ -418,6 +420,7 @@ TOKEN_COLUMNS = {
     "attribution_ip_hourly": ("ip_hash",),      # "attribution-ip-v1:<day>:<ip>"
     "note_views": ("viewer_key",),              # "note-view-v1\n<note>\n<ip>\n<ua>"
     "blog_post_view_seen": ("viewer_key",),     # "blog-post-unique-v1:..."
+    "issue_views": ("viewer_key",),
     "repo_views": ("viewer_key",),              # "repo-view-v1\n<owner/repo>\n<account|visitor>..."
     "sensitive_audit_log": ("target_token",),   # "audit:<type>:<target>"
     "world_manual_blocks": ("subject_token",),  # "world-manual-{ip,agent}-v1:<day>:..."

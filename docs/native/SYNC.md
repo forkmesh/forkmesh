@@ -181,4 +181,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S106 | 2026-10-22 | Agents | ui | The terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom. | ae5cba204b | pending |  |
 | S107 | 2026-10-22 | Code | fix | Merge all with AI on a pull request list now reaches the desktop's copy of the repository instead of saying the desktop does not have it. | c17892ba63 | synced | c17892ba63 |
 | S108 | 2026-10-22 | Steps | fix | A walk shows in the Dynamic Island and on the Lock Screen once you have been walking with the app open, and stays when you lock the phone mid-walk. | 88396d68c9 | pending |  |
+| S109 | 2026-10-22 | DJ Studio | fix | DJ Studio's Repeat now really loops the song and jumps straight from where the sound ends back to where it starts, skipping silence at both ends. | ab3a63d995 | pending |  |
+| S110 | 2026-10-22 | Settings | feature | Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked. | 180d647034 | pending |  |
 <!-- ledger:end -->

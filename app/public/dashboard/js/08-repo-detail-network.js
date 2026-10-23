@@ -503,7 +503,7 @@
             <div data-repo-about-actions aria-label="Repository details" class="-mx-2 mt-3 grid">
               <a data-repo-about-website href="#" target="_blank" rel="noopener noreferrer" class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Website</span><span data-repo-about-website-label class="dashboard-accent-link min-w-0 truncate text-right"></span></a>
               <a href="${escapeHtml(`${repoLinkUrl(repo)}/releases`)}" data-repo-about-release data-dashboard-releases-button data-plugin-entry="releases" class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Release</span><span data-repo-about-release-body class="min-w-0 truncate text-right text-muted-foreground"></span></a>
-              <div data-repo-watch-wrap class="relative min-w-0">
+              ${instancePluginOff("fediverse-ui") ? "" : `<div data-repo-watch-wrap class="relative min-w-0">
                 <button type="button" data-repo-action-watch aria-label="Watch repository" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Watchers</span><span class="inline-flex items-center gap-1 justify-self-end text-foreground"><span data-repo-watch-count class="font-mono">–</span><i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i></span></button>
                 <div data-repo-watch-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-64 max-w-[calc(100vw-2rem)] p-3 text-left">
                   <p class="text-xs font-semibold text-foreground">Watch on the fediverse</p>
@@ -517,7 +517,7 @@
                   <div data-repo-watch-list class="mt-2 hidden max-h-44 overflow-auto rounded-md border border-border bg-secondary/40 p-2"></div>
                   <a data-repo-mastodon-link href="${escapeHtml(mastodonUrl)}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link mt-2 inline-flex items-center gap-1.5 text-[11px] hover:underline"><i data-lucide="external-link" class="h-3.5 w-3.5 shrink-0"></i>View on Mastodon</a>
                 </div>
-              </div>
+              </div>`}
               <a href="${escapeHtml(`${repoLinkUrl(repo)}/mirrors`)}" data-dashboard-repo-tab="mirrors" aria-label="Show repository mirror status" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Mirrors</span><span data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors" class="min-w-0 truncate text-right font-mono text-foreground">${tabCountLabel(mirrorsCount)}</span></a>
               <div data-repo-about-files class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs"><span class="shrink-0 text-muted-foreground">Files</span><span data-repo-about-files-count class="min-w-0 truncate text-right font-mono text-foreground">–</span></div>
               <div data-repo-about-sizemap>
@@ -1273,7 +1273,7 @@
           <span class="relative mt-0.5 shrink-0">${avatar}</span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
-              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
+              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
               <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
               ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
             </div>
@@ -1295,6 +1295,12 @@
     const body = String(repoPublicText(item?.body) || "").replace(/\s+/g, " ").trim();
     if (actor) return { actor, head: actor, where, text: body || title };
     return { actor: "", head: title, where, text: body || `${platformName()} update` };
+  }
+
+  function notificationLeadHeadHtml(lead) {
+    return lead.actor
+      ? issuePersonNameHtml(lead.actor, "font-semibold text-foreground", { inLink: true })
+      : `<span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>`;
   }
 
   function renderNotificationDetail(item) {
@@ -1521,7 +1527,7 @@
                 <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
               </span>
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-[11px]"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
                 <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
               </span>
             </span>
@@ -4448,6 +4454,12 @@
     state.homeRepositoriesExpanded = !state.homeRepositoriesExpanded;
     renderHomeRepositories();
   });
+  document.addEventListener("click", (event) => {
+    const toggle = event.target?.closest?.("[data-repo-forks-toggle]");
+    if (!toggleRepositoryForks(toggle)) return;
+    if (toggle.closest("[data-home-top-repositories]")) renderHomeRepositories();
+    if (toggle.closest("[data-sidebar-repo-list]")) renderSidebarRepositories(state.session);
+  });
   $("[data-profile-repo-search]")?.addEventListener("input", () => {
     renderProfileRepositories();
   });
@@ -4738,6 +4750,7 @@
     }
     if (page !== "repo") return;
     window.addEventListener("popstate", () => {
+      stopRepoReconnects();
       const requested = requestedRepoKey();
       const repo = requested ? findRepository(requested) : null;
       if (!repo) {
