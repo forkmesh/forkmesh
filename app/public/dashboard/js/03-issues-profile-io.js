@@ -2671,6 +2671,7 @@
         image.alt = "";
       }
       image.classList.toggle("hidden", !avatarPng);
+      image.hidden = !avatarPng;
     }
     if (initialEl) {
       initialEl.textContent = initial;
@@ -2679,6 +2680,102 @@
       container.textContent = initial;
     }
     container.classList.toggle("font-mono", !avatarPng);
+    const handle = profileAvatarHandle(session);
+    if (container.dataset.profileAvatarFor !== handle || container.dataset.profileAvatarState === "image") {
+      delete container.dataset.profileAvatarState;
+      delete container.dataset.profileAvatarTried;
+    }
+    if (avatarPng || !handle || !image) {
+      delete container.dataset.profileAvatarFor;
+      return;
+    }
+    container.dataset.profileAvatarFor = handle;
+    hydrateProfileAvatar(container);
+  }
+
+  const PROFILE_AVATAR_ROSTER_REPOS = 4;
+
+  function profileAvatarHandle(session) {
+    const handle = String(session?.nodeName || "").trim().replace(/^@/, "").toLowerCase();
+    return session?.kind !== "organization" && validNodeName(handle) ? handle : "";
+  }
+
+  function profileAvatarRosterRepos(handle) {
+    const seen = new Set();
+    const own = [];
+    const others = [];
+    (Array.isArray(state.repositories) ? state.repositories : []).forEach((repo) => {
+      if (!repo?.name || repo.isPrivate) return;
+      const key = repositoryViewKey(repo);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const owners = [repo.owner, repoPublicOwner(repo)].map((value) => String(value || "").toLowerCase());
+      (owners.includes(handle) ? own : others).push(repo);
+    });
+    const parents = [];
+    own.forEach((repo) => {
+      const parentKey = repoForkParent(repo)?.key;
+      const parent = parentKey ? findRepository(parentKey) : null;
+      if (!parent || parent.isPrivate || parents.includes(parent)) return;
+      parents.push(parent);
+    });
+    const ordered = [];
+    own.concat(parents, others).forEach((repo) => {
+      if (!ordered.includes(repo)) ordered.push(repo);
+    });
+    return ordered.slice(0, PROFILE_AVATAR_ROSTER_REPOS);
+  }
+
+  async function profileAvatarPicture(handle, repos) {
+    const account = await issueActorAccount(handle);
+    if (account?.png) return `data:image/png;base64,${account.png}`;
+    if (typeof repoPeopleRosterMatch !== "function") return "";
+    for (const repo of repos) {
+      const person = await repoPeopleRosterMatch(repo, handle).catch(() => null);
+      if (person?.avatarUrl) return person.avatarUrl;
+    }
+    return "";
+  }
+
+  function showProfileAvatarPicture(container, src) {
+    const image = container.querySelector("img");
+    const initialEl = container.querySelector("[data-avatar-initial]");
+    if (!image || !src) return;
+    image.addEventListener("error", () => {
+      image.removeAttribute("src");
+      image.classList.add("hidden");
+      image.hidden = true;
+      initialEl?.classList.remove("hidden");
+      container.dataset.profileAvatarState = "initial";
+    }, { once: true });
+    image.referrerPolicy = "no-referrer";
+    image.src = src;
+    image.alt = `${container.dataset.profileAvatarFor} profile picture`;
+    image.classList.remove("hidden");
+    image.hidden = false;
+    initialEl?.classList.add("hidden");
+    container.classList.remove("font-mono");
+  }
+
+  function hydrateProfileAvatar(container) {
+    const handle = container?.dataset?.profileAvatarFor;
+    if (!handle) return;
+    const repos = profileAvatarRosterRepos(handle);
+    const tried = repos.map((repo) => repositoryViewKey(repo)).join(",");
+    const known = container.dataset.profileAvatarState;
+    if (known === "image" || known === "loading"
+      || (known === "initial" && container.dataset.profileAvatarTried === tried)) return;
+    container.dataset.profileAvatarState = "loading";
+    container.dataset.profileAvatarTried = tried;
+    void profileAvatarPicture(handle, repos).then((src) => {
+      if (container.dataset.profileAvatarFor !== handle) return;
+      container.dataset.profileAvatarState = src ? "image" : "initial";
+      if (src) showProfileAvatarPicture(container, src);
+    });
+  }
+
+  function hydrateProfileAvatars() {
+    document.querySelectorAll("[data-profile-avatar-for]").forEach(hydrateProfileAvatar);
   }
 
   async function refreshPublicProfile(session = state.session, options = {}) {

@@ -111,6 +111,12 @@ Everything is in `desktop/`.
   project picker's menu rather than in the top bar. When no account is signed
   in, the account row is the "Log in / Sign up" entry; the top bar has no
   separate sign-in button.
+- **Top bar indicators.** Right-clicking the top bar (its empty space or the
+  Agents, Nodes and Actions grids) opens a "Show in top bar" menu with a check
+  for each grid. Unchecking one hides it even when it has something to show;
+  checking it again brings it back. The menu belongs to the bar rather than
+  to the grids so a hidden grid can still be restored. The hidden keys
+  (`agents`, `nodes`, `actions`) are stored in `ui/hiddenTopBarIndicators`.
 - **Main window.** One `MainWindow` class with a left rail of sections
   (indices are `k*SectionIndex` constants in `MainWindow.h`). Most sections are
   built lazily on first open. Settings is one scrolling page whose sections
@@ -465,6 +471,20 @@ new pull requests filed five pings ("2 new pull requests", "3 new pull
 requests" and three single ones). `applyRemotePull` now reports through
 `opened` whether it wrote a pull request, `PullsInboxOutcome::opened` counts
 those, and only they ping and name the author and title.
+
+### Pull list shows whether a pull's code is on this machine
+
+Some open pull requests have no local branch holding their code, so Fix,
+Resolve and agent checkouts cannot start from them. The branch-state worker
+(`MainWindow::refreshPullBranchState`) now looks for the code under the same
+names `localPullAgentBranch` uses (`pullLocalBranchCandidates`: the signed head
+first for a branch-backed pull, `pr/<n>` first for a stored patch) and records
+the one it found in `PullBranchState::codeBranch`. Ahead/behind and the
+worktree mark are measured on that branch, so a relay pull held as `pr/<n>` is
+no longer shown as unmeasured. When no candidate exists the row paints a faded
+`cloud` icon in place of the branch icon and the hover text says "Code not on
+this machine"; otherwise it names the branch. Closed and merged pulls are not
+measured and keep the plain branch icon.
 
 ## Change process
 

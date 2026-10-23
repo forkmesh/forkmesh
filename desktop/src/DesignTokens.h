@@ -51,6 +51,11 @@ bool isNext();
 bool edgeIndicators();
 void setActiveDesign(Design design, bool dark);
 
+void setRoleOverrides(const QMap<QString, QString> &dark,
+                      const QMap<QString, QString> &light);
+bool hasRoleOverrides();
+QMap<QString, QString> overridePalette(Design design, bool dark);
+
 QString roleName(Role role);
 QString hex(Role role);
 QString hex(Role role, Design design, bool dark);

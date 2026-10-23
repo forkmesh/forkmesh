@@ -37,7 +37,8 @@ FUNCTIONS = {
         "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issueActorAvatarHtml",
         "parseFlexibleDate", "formatDate", "formatTimeAgo", "formatCount", "loadingHtml",
         "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
-        "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs"),
+        "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs",
+        "repositoryViewKey"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
         "markdownVideoButtonHtml",
@@ -64,7 +65,11 @@ FUNCTIONS = {
         "issueDateInputValue", "mdMentionHtml", "issueCardAuthorHtml", "developmentProse",
         "pullClosingIssueNumbers", "pullOwnIssueNumbers", "issueDevelopmentPullStates",
         "issueLinkedPullNumbers", "developmentPulls", "developmentRow", "renderIssueDevelopment",
-        "issueAiPromptText", "renderIssueAiPrompt", "issueSubscriptionNote"),
+        "issueAiPromptText", "renderIssueAiPrompt", "issueSubscriptionNote", "issueViewKey",
+        "issueAiPromptText", "renderIssueAiPrompt", "issueAssignmentHours", "issueAssignmentTimes",
+        "issueAssigneeHasPull", "issueDeadlineDuration", "issueAssignmentDeadline",
+        "renderIssueAssignmentDeadline", "issueAssigneeDeadlineHtml", "issueSubscriptionNote",
+        "issueViewKey", "issueViewsLabel", "issueViewsHtml"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE"),
@@ -74,7 +79,8 @@ CONSTANTS = {
         "COMMENT_REACTIONS", "COMMENT_REACTION_KINDS", "COMMENT_REACTION_STICKERS",
         "COMMENT_REACTION_CUSTOM_RE", "MD_GIPHY_GIF",
         "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
-        "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT"),
+        "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT",
+        "ISSUE_ASSIGNMENT_HOURS_MAX", "ISSUE_ASSIGNMENT_WARN_FRACTION"),
 }
 
 
@@ -108,8 +114,11 @@ const state = { session: VIEWER === "member" ? { nodeName: "me" } : null,
   commentReactions: %(reactions)s };
 let countFormatter = null;
 function watchIssueActorAvatars() {}
+const PLUGINS_OFF = %(off)s;
+function instancePluginOff(id) { return PLUGINS_OFF.includes(id); }
 function platformName() { return "Acme Code"; }
 function publicSiteOrigin() { return %(origin)s; }
+function repoPublicOwner(value) { return value.owner; }
 function publicProfileUrl(name, suffix = "") {
   return `/@${encodeURIComponent(String(name || "").trim().toLowerCase())}${suffix}`;
 }
@@ -142,12 +151,13 @@ process.stdout.write(renderRepoIssueDetail(repo, input.number, parsed));
 
 
 def js_render(issue, number, index=(), viewer="guest", origin="", template="",
-              reactions=None):
+              reactions=None, off=()):
     code = "\n".join(
         [_const(SOURCES[name], const) for name, consts in CONSTANTS.items() for const in consts]
         + [_function(SOURCES[name], fn) for name, fns in FUNCTIONS.items() for fn in fns])
     script = HARNESS % {
         "now": NOW_MS, "viewer": json.dumps(viewer), "link": LINK_BASE, "api": API_BASE,
+        "off": json.dumps(sorted(off)),
         "origin": json.dumps(origin),
         "reactions": json.dumps({"issue:%d" % number: {"reactions": reactions}}
                                 if reactions is not None else {}),
@@ -162,13 +172,13 @@ def js_render(issue, number, index=(), viewer="guest", origin="", template="",
 
 
 def py_render(issue, number, index=(), viewer="guest", origin="", template="",
-              reactions=None):
+              reactions=None, off=()):
     ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, "main", origin=origin)
     rows = [repo_ssr_issue.parse_issue(json.dumps(row), 0) for row in index]
     return repo_ssr_issue.render_issue(
         repo_ssr_issue.parse_issue(json.dumps(issue), number), ctx, OWNER, PAGE_PATH,
         index=rows, now=NOW_MS / 1000, viewer=viewer, repo=NAME, prompt=template,
-        reactions=reactions)
+        reactions=reactions, off=frozenset(off))
 
 
 ICON_RE = re.compile(r'<svg xmlns="http://www.w3.org/2000/svg"[^>]*class="lucide lucide-'
@@ -599,3 +609,25 @@ def test_every_comment_card_gets_a_bar_even_without_reactions():
     html = py_render(issue27(), 27, index_rows(), viewer="both", reactions={})
     assert html.count('data-reaction-add aria-label="Add reaction"') == 3
     assert 'data-comment-id="c3"' not in html
+
+
+@needs_node
+@pytest.mark.parametrize("off", [("issue-ai-prompt",), ("fediverse-ui",),
+                                 ("issue-ai-prompt", "fediverse-ui")])
+def test_instance_switches_drop_the_prompt_and_the_fediverse_thread_on_both_sides(off):
+    issue = issue27()
+    expected = normalize(js_render(issue, 27, index_rows(), "member", off=off))
+    got = normalize(py_render(issue, 27, index_rows(), "member", off=off))
+    assert got == expected
+    assert ("data-repo-issue-ai-prompt" in got) is ("issue-ai-prompt" not in off)
+    assert ("data-repo-federated-thread" in got) is ("fediverse-ui" not in off)
+
+
+def test_the_server_reads_the_switches_from_the_instance_plugins(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    monkeypatch.setitem(sys.modules, "instance_features", SimpleNamespace(
+        switched_off=lambda: frozenset({"fediverse-ui"})))
+    assert repo_ssr_issue.plugins_off() == {"fediverse-ui"}
+    monkeypatch.delitem(sys.modules, "instance_features")
+    assert repo_ssr_issue.plugins_off() == frozenset()

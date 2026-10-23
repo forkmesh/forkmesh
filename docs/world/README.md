@@ -874,6 +874,16 @@ them without changing page.
   a ballistic jump, corkscrew and helix; the track is resampled into typed
   arrays and drawn as LOD chunks with one shared material; the train is one
   `InstancedMesh`. Presence frames carry `COASTER_RIDING_ACTIVITY`.
+  In first person, `placeCoasterEye()` puts the eye `FIRST_PERSON_EYE_HEIGHT`
+  along the seat's up axis and takes the seat's whole orientation, so the view
+  pitches, banks and inverts with the car instead of staying level on world up.
+  Drags while riding are kept as `ride.lookYaw` (seat-relative yaw, reset to
+  forward when first person is switched on) and `firstPersonPitch` is applied
+  in the seat frame, so a glance to the side holds through loops where
+  `followHeading()` stops tracking the world heading. `seatRider()`
+  re-orthogonalises the track's interpolated up against its tangent so the
+  seat quaternion is a clean rotation. Test:
+  `test_the_first_person_eye_turns_over_with_the_seat_and_keeps_a_glance`.
 - **Bikes** follow the road graph (`districts/roads.js`); tapping left or
   right before a junction picks a branch, holding leaves the road, and riding
   onto a road along it rejoins. Tests: `world/tests/test_world_bike_junctions.py`.

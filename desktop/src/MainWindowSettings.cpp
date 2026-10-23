@@ -1,4 +1,5 @@
 
+#include "InstanceTheme.h"
 #include "AwsSettingsPanel.h"
 #include "BackgroundSettings.h"
 #include "HiddenTerms.h"
@@ -2379,6 +2380,16 @@ void MainWindow::buildSettingsAppearanceParts(SettingsSectionParts &parts)
                 forkmesh::ui::NextAccess::setRailExpanded(*this, expanded);
             });
 
+    m_matchInstanceThemeCheck = new QCheckBox("Match the instance's theme");
+    m_matchInstanceThemeCheck->setObjectName(QStringLiteral("matchInstanceThemeCheck"));
+    m_matchInstanceThemeCheck->setChecked(forkmesh::instancetheme::matchEnabled());
+    m_matchInstanceThemeCheck->setToolTip(
+        "Wear the colours of the ForkMesh instance this project is connected "
+        "to, as its admin chose them in Settings -> Instance theme. Off by "
+        "default.");
+    connect(m_matchInstanceThemeCheck, &QCheckBox::toggled, this,
+            [this](bool enabled) { applyInstanceThemeChoice(enabled); });
+
     auto *edgeIndicatorCheck =
         new QCheckBox("Colored left edge on alerts and cards");
     edgeIndicatorCheck->setObjectName(QStringLiteral("edgeIndicatorCheck"));
@@ -3752,6 +3763,7 @@ QWidget *MainWindow::buildSettingsGeneralTab(const SettingsSectionParts &parts)
     appearanceGroup->addWidget(parts.schemeTiles);
     appearanceGroup->addWidget(m_themeCombo, 0, Qt::AlignLeft);
     appearanceGroup->addLayout(parts.designRow);
+    appearanceGroup->addWidget(m_matchInstanceThemeCheck);
     appearanceGroup->addLayout(parts.windowOpacityRow);
     appearanceGroup->addLayout(parts.backdropRow);
     appearanceGroup->addLayout(parts.backdropStrengthRow);

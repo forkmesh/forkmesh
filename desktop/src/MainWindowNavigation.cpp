@@ -157,6 +157,7 @@ QWidget *MainWindow::buildBreadcrumb()
         showAgentAccountMenu(QStringLiteral("claude-code"), position);
     };
     tokenUsage->onChanged = [this] { refreshAgentToolbarAccountButtons(); };
+    attachAgentUsageHoverCard(tokenUsage, [] { return kClaudeCodeProvider; });
     {
         QSettings settings;
         auto restore = [&](bool weekly, const QString &key) {
@@ -198,6 +199,7 @@ QWidget *MainWindow::buildBreadcrumb()
     codexUsage->onContextMenu = [this](const QPoint &position) {
         showAgentAccountMenu(QStringLiteral("codex"), position);
     };
+    attachAgentUsageHoverCard(codexUsage, [] { return kCodexProvider; });
     codexUsage->onChanged = [this] { refreshAgentToolbarAccountButtons(); };
     refreshCodexUsageRemaining();
     QTimer::singleShot(0, this, &MainWindow::restoreUsageLimitReminders);
@@ -377,6 +379,11 @@ QWidget *MainWindow::buildBreadcrumb()
     connect(m_agentsNavButton, &QPushButton::clicked, this,
             &MainWindow::openAgentsOverview);
 
+    {
+        const QStringList hidden =
+            QSettings().value(kHiddenTopBarIndicatorsSetting).toStringList();
+        m_hiddenTopBarIndicators = QSet<QString>(hidden.cbegin(), hidden.cend());
+    }
     m_agentDotMatrix = new AgentDotMatrix;
     m_agentDotMatrix->onDotClicked = [this](int sessionId) {
         if (sessionId > 0)
@@ -689,6 +696,9 @@ QWidget *MainWindow::buildBreadcrumb()
     layout->setSpacing(0);
 
     auto *chrome = new WindowChromeBar;
+    chrome->onContextMenu = [this](const QPoint &globalPos) {
+        showTopBarIndicatorMenu(globalPos);
+    };
     auto *chromeRow = new QHBoxLayout(chrome);
     chromeRow->setContentsMargins(0, 0, 8, 0);
     chromeRow->setSpacing(8);
@@ -896,8 +906,10 @@ void MainWindow::applyRailCaptionPreference()
              std::as_const(m_railGroupSeparators))
             if (separator)
                 separator->followRailCaptionPreference();
-        if (m_railSortButton)
+        if (m_railSortButton) {
             m_railSortButton->setFixedWidth(railColumnWidth());
+            refreshRailSortButton();
+        }
         if (QWidget *content = m_appNavigationRailLayout->parentWidget())
             content->setMinimumWidth(railColumnWidth());
     }
@@ -2380,11 +2392,6 @@ QPushButton *MainWindow::buildRailSortButton()
     button->setFocusPolicy(Qt::NoFocus);
     button->setFlat(true);
     button->setFixedSize(railColumnWidth(), kRailSortButtonHeight);
-    button->setStyleSheet(QStringLiteral(
-        "QPushButton#railSortButton { border: none; padding: 0; margin: 0;"
-        " background: transparent; min-height: 0; }"
-        "QPushButton#railSortButton:hover { background: rgba(127, 127, 127, 40);"
-        " border-radius: 3px; }"));
     setOcticon(button, QStringLiteral("sort-desc"), 12);
     m_railSortButton = button;
     refreshRailSortButton();
@@ -2409,6 +2416,23 @@ void MainWindow::refreshRailSortButton()
             .arg(summary));
     m_railSortButton->setProperty("railSortMode", RailGroups::sortModeKey(mode));
     m_railSortButton->setProperty("railGrouped", railGrouped());
+    const bool expanded = forkmesh::ui::railExpanded();
+    const QString label = expanded ? summary : QString();
+    if (m_railSortButton->text() != label)
+        m_railSortButton->setText(label);
+    m_railSortButton->setFixedHeight(expanded ? 22 : kRailSortButtonHeight);
+    const QString sheet =
+        QStringLiteral(
+            "QPushButton#railSortButton { border: none; padding: 0 0 0 %1px; margin: 0;"
+            " background: transparent; min-height: 0; text-align: %2; color: %3;"
+            " font-size: 11px; }"
+            "QPushButton#railSortButton:hover { background: rgba(127, 127, 127, 40);"
+            " border-radius: 3px; color: %4; }")
+            .arg(expanded ? 12 : 0)
+            .arg(expanded ? QStringLiteral("left") : QStringLiteral("center"))
+            .arg(Theme::hex(Theme::Role::FgMuted), Theme::hex(Theme::Role::Fg));
+    if (m_railSortButton->styleSheet() != sheet)
+        m_railSortButton->setStyleSheet(sheet);
 }
 
 QMenu *MainWindow::buildRailSortMenu(QWidget *parent)
@@ -3824,7 +3848,8 @@ void MainWindow::refreshNodeDotMatrix()
         }
     }
     m_nodeDotMatrix->setDots(dots);
-    m_nodeDotMatrix->setVisible(!dots.isEmpty());
+    m_nodeDotMatrix->setVisible(!dots.isEmpty() &&
+                                !topBarIndicatorHidden(QStringLiteral("nodes")));
     updateChromeDotDivider();
     if (dots.isEmpty())
         return;
@@ -3854,6 +3879,68 @@ void MainWindow::updateChromeDotDivider()
     if (m_chromeActionDivider)
         m_chromeActionDivider->setVisible((agents || nodes) && actions);
 }
+
+bool MainWindow::topBarIndicatorHidden(const QString &key) const
+{
+    return m_hiddenTopBarIndicators.contains(key);
+}
+
+void MainWindow::setTopBarIndicatorHidden(const QString &key, bool hidden)
+{
+    if (topBarIndicatorHidden(key) == hidden)
+        return;
+    if (hidden)
+        m_hiddenTopBarIndicators.insert(key);
+    else
+        m_hiddenTopBarIndicators.remove(key);
+    QStringList saved(m_hiddenTopBarIndicators.cbegin(),
+                      m_hiddenTopBarIndicators.cend());
+    saved.sort();
+    QSettings settings;
+    if (saved.isEmpty())
+        settings.remove(kHiddenTopBarIndicatorsSetting);
+    else
+        settings.setValue(kHiddenTopBarIndicatorsSetting, saved);
+    refreshAgentDotMatrix();
+    refreshNodeDotMatrix();
+    refreshActionRunStrip();
+}
+
+void MainWindow::showTopBarIndicatorMenu(const QPoint &globalPos)
+{
+    auto *menu = new QMenu(this);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->addSection(QStringLiteral("Show in top bar"));
+    const QList<QPair<QString, QString>> indicators = {
+        {QStringLiteral("agents"), QStringLiteral("Agents")},
+        {QStringLiteral("nodes"), QStringLiteral("Nodes")},
+        {QStringLiteral("actions"), QStringLiteral("Actions")},
+    };
+    for (const auto &indicator : indicators) {
+        QAction *action = menu->addAction(indicator.second);
+        action->setCheckable(true);
+        action->setChecked(!topBarIndicatorHidden(indicator.first));
+        connect(action, &QAction::toggled, this,
+                [this, key = indicator.first](bool shown) {
+                    setTopBarIndicatorHidden(key, !shown);
+                });
+    }
+    menu->popup(globalPos);
+}
+
+#ifdef FORKMESH_WINDOW_TESTS
+bool MainWindow::testTopBarIndicatorShown(const QString &key) const
+{
+    const QWidget *widget = nullptr;
+    if (key == QLatin1String("agents"))
+        widget = m_agentDotMatrix;
+    else if (key == QLatin1String("nodes"))
+        widget = m_nodeDotMatrix;
+    else if (key == QLatin1String("actions"))
+        widget = m_actionRunStrip;
+    return widget && !widget->isHidden();
+}
+#endif
 
 void MainWindow::setNodeDotRepoStates(
     const QHash<QString, NodeDotRepoState> &states)

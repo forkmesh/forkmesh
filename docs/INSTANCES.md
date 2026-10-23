@@ -325,6 +325,11 @@ upload CSS.
   is accepted by the launch API and `PUT /api/instance/theme`, not by the
   installer's settings file, which takes a theme name or a
   `{dark, light}` colour object.
+- **Apps:** `GET /api/instance` also returns `themeColors`
+  (`instance_theme.colours`): the named theme's colours for each mode with the
+  stored overrides on top, `{}` for the default theme. The desktop and the
+  phone apps read it for their "Match the instance's theme" setting, so they
+  never need the catalogue or the stylesheet.
 - **Rendering:** `/instance-theme.css` writes the theme's colour tokens, then
   its stylesheet, then any overrides. `/instance-theme.css?preset=<id>`
   renders a ready theme without saving it, for the settings preview; an
@@ -828,7 +833,8 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   See [Named themes](#named-themes) for whole-look themes such as BLT.
 - **Plugins** (`app/src/instance_features.py`): ForkMesh-company features
   (world, hackathon, ads, rewards, blog, status, developer docs, website
-  pages and others) are off on an instance unless turned on. A disabled
+  pages and others) are off on an instance unless turned on; the platform
+  changelog is on unless turned off. A disabled
   plugin's routes answer 404 before any other route; tagged UI
   (`data-instance-plugin`) is hidden. See [Plugins](#plugins) below.
 - **Market packages:** every account on an instance has the
@@ -877,6 +883,9 @@ reinstall or restart.
 | `guestbook` | The agent guestbook in the instance's chat. |
 | `genie` | The tip spider at the bottom of each page. |
 | `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
+| `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" box under an open issue's title, which readers copy into a coding agent. On by default. |
+| `fediverse-ui` | The Fediverse thread panel under issues, pull requests and discussions, and the repository's Watchers row with its "Watch on the fediverse" menu. Off also answers 404 to `GET /api/repo/<o>/<r>/fedi-comments`. On by default. |
+| `changelog` | The platform changelog at `/changelog`: what changed in the platform version the instance runs. On by default. |
 
 Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
 `discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
@@ -888,6 +897,29 @@ services" with the reason (`FORKMESH_ONLY`) and offers no switch;
 `note`. An operator who really wants one can still name it in
 `INSTANCE_PLUGINS`; a saved choice keeps it as it is.
 
+- **On by default.** `changelog`, `issue-ai-prompt` and `fediverse-ui` are
+  in `DEFAULT_ON`: each stays on until an admin switches it off, including
+  on an instance that saved its choice before the plugin existed.
+- **The changelog on an instance.** `/changelog` was part of `website`
+  until 2026-10-21, so instances answered 404 and hid the sidebar's
+  Resources → Changelog link. The page is the static
+  `www/public/changelog.html`, rendered from `changelog/changelog.json` at
+  the commit the instance runs ([changelog.md](changelog.md)), so it needs
+  nothing from forkmesh.com. `build_site_assets.stage_app` copies it into
+  `app/dist` (`BACKEND_ASSETS`, like `blog.html`); with `WWW_ORIGIN` set to
+  the instance's own origin, `external_site_delivery` answers `local` and
+  `_serve_site_document` serves that copy. forkmesh.com's app origin still
+  308s `/changelog` to forkmesh.com. The brand pass renames the platform
+  word on it as on every other page.
+- **The Company group.** About, Careers and Press are `website` pages, so
+  their links were already hidden on an instance, but the sidebar kept the
+  "Company" title over an empty group. The group (`sidebarGroupCompany` in
+  `app/public/dashboard/partials/sidebar.html`, and the Company group of the
+  site header menu in `www/public/site-header.js`) now carries
+  `data-instance-plugin="website"`, so `chrome_css` hides the whole group,
+  title included, from the first paint while `website` is off. forkmesh.com
+  serves neither `instance-theme.css` nor `instance-brand.js`, so it keeps
+  the group.
 - **Where the choice lives.** Saving writes the `instance_settings` row
   `plugins` (`{"enabled": [...]}`), CSRF-checked and audited as
   `admin.console_save_plugins` with the plugins turned on and off. Until the
@@ -895,6 +927,33 @@ services" with the reason (`FORKMESH_ONLY`) and offers no switch;
   once the row exists it wins. The installer never writes the row and
   `--update` only rewrites `INSTANCE_PLUGINS`, so an update keeps the
   admin's choice.
+- **Plugins that start on (`DEFAULT_ON`).** `issue-ai-prompt` and
+  `fediverse-ui` were always shown before they became switches, and
+  `changelog` is available without ForkMesh services, so they stay on unless
+  an admin turns them off. A saved row from before them lists only
+  `enabled`; `parse` adds every `DEFAULT_ON` plugin the row does not name in
+  its `disabled` list, so an upgrade keeps both on. Saving writes the
+  `DEFAULT_ON` plugins left off as `disabled`
+  (`{"enabled": [...], "disabled": ["fediverse-ui"]}`). The install setting
+  follows the same rule: `INSTANCE_PLUGINS` does not need to name them, and
+  `-fediverse-ui` in it turns one off. A future plugin that changes something
+  instances already show joins `DEFAULT_ON` the same way, so no update ever
+  removes it silently.
+- **Opt-in plugins (`OPT_IN`).** forkmesh.com itself (an unbranded core)
+  normally runs every plugin. A plugin in `OPT_IN` changes how pages look or
+  behave enough that it should be a choice everywhere: it starts off on
+  instances like any other plugin, and on a core it is on only when
+  `FORKMESH_CORE_PLUGINS` (a comma list in the core's environment) names it.
+- **Not only hidden.** The dashboard asks `instancePluginOff(id)`
+  (`02-helpers.js`, from the `/api/instance` the page already fetched) and
+  leaves the prompt, the Fediverse thread and the watch menu out of its
+  markup; `loadFederatedReplies` never calls `fedi-comments` while
+  `fediverse-ui` is off. The server-rendered issue page and About rail ask
+  `repo_ssr_issue.plugins_off()`, which reads
+  `instance_features.switched_off()` for the env the runtime last remembered
+  (`remember_instance`), and the issue render cache is keyed by it. Until the
+  dashboard has the instance document, `chrome_css` (`PLUGIN_ELEMENTS`)
+  hides the same elements, so nothing flashes in.
 - **How it applies.** Every request on an instance passes
   `Default._instance_plugins_load` before the plugin gate. It reads the row
   at most every 30 seconds (`CACHE_MS`) into a process cache that

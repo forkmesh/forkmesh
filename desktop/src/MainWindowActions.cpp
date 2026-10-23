@@ -4344,7 +4344,8 @@ void MainWindow::refreshActionRunStrip()
                      .arg(label, actionStatusText(run.status), run.name);
     }
     m_actionRunStrip->setCells(cells, badges);
-    m_actionRunStrip->setVisible(!cells.isEmpty());
+    m_actionRunStrip->setVisible(
+        !cells.isEmpty() && !topBarIndicatorHidden(QStringLiteral("actions")));
     updateChromeDotDivider();
     if (cells.isEmpty()) {
         m_actionRunStripTooltipKey.clear();

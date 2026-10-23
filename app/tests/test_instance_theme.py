@@ -96,7 +96,9 @@ def test_brand_tool_links_the_theme_stylesheet_once_after_the_page_styles(tmp_pa
 def test_routes_serve_the_theme_only_on_a_branded_instance():
     route = APP_RUNTIME.split("    async def _route(self, request, url):", 1)[1]
     head = route.split("delegated = self._world_ingress_redirect", 1)[0]
-    assert '"theme": await self._instance_theme()' in head
+    assert 'theme = await self._instance_theme()' in head
+    assert '"theme": theme,' in head
+    assert '"themeColors": instance_theme.colours(theme),' in head
     assert 'url.path == "/instance-theme.css" and instance_branded(self.env)' in head
     assert 'url.path == "/api/instance/theme" and instance_branded(self.env)' in head
     reader = APP_RUNTIME.split("    async def _instance_theme(self):", 1)[1]
@@ -144,6 +146,18 @@ def test_a_ready_theme_is_stored_by_name_and_rendered_with_its_stylesheet():
     assert instance_theme.preview_css("blt") == instance_theme.css({"preset": "blt"})
     assert instance_theme.preview_css("default") == ""
     assert instance_theme.preview_css("nope") is None
+
+
+def test_resolved_colours_give_apps_the_whole_theme_with_overrides_on_top():
+    assert instance_theme.colours({}) == {}
+    blt = instance_theme.THEMES["blt"]["colors"]
+    resolved = instance_theme.colours({"preset": "blt", "dark": {"primary": "#aa0000"}})
+    assert resolved["light"] == blt["light"]
+    assert resolved["dark"]["primary"] == "#aa0000"
+    assert resolved["dark"]["background"] == blt["dark"]["background"]
+    custom = instance_theme.colours(instance_theme.clean("crimson"))
+    assert custom["dark"]["primary"] == "#ef4444"
+    assert set(custom) == {"dark", "light"}
 
 
 @pytest.mark.parametrize("value", ["soon", "nope", {"preset": "nope"}, {"preset": "soon"}])

@@ -1016,6 +1016,8 @@ void MainWindow::updateQuickAddEnterTarget()
         }
         if (m_issueQuickAdd)
             m_issueQuickAdd->setPlaceholderText(prompt.placeholder);
+        for (QPushButton *button : {m_quickAddSendToAgentButton, m_quickAddSendButton})
+            tintComposerActionButton(button);
         return;
     }
     const int target = quickAddFollowUpAgentSessionId();
@@ -1073,7 +1075,10 @@ void MainWindow::updateQuickAddEnterTarget()
     apply(m_quickAddSendButton, !toAgent, newPromptTooltip);
     if (m_quickAddSendButton)
         m_quickAddSendButton->setAccessibleName(newPromptTooltip);
+    for (QPushButton *button : {m_quickAddSendToAgentButton, m_quickAddSendButton})
+        tintComposerActionButton(button);
     updateQuickAddTargetAgentLabel();
+    schedulePromptChatPreview();
 }
 
 void MainWindow::updateQuickAddTargetAgentLabel()

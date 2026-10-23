@@ -3,6 +3,9 @@
 #include "../src/MainWindow.h"
 #include "../src/MainWindowInternal.h"
 #include "../src/MainWindowNextAccess.h"
+#include "../src/InstanceTheme.h"
+#include "../src/OverflowActionRow.h"
+#include "../src/WorkspaceLayout.h"
 #include "../src/OfficeChannelMirror.h"
 #include "../src/WindowFrameControl.h"
 #include "../src/SourceTreeWatch.h"
@@ -39,6 +42,7 @@
 #include "ForkMeshVersion.h"
 
 #include <chrono>
+#include <numeric>
 #include <filesystem>
 
 #include <QAction>
@@ -10231,6 +10235,294 @@ void checkStatsPage(MainWindow &window)
 
 // The agent detail's Code button: the session's live diff with its busiest
 // files as chips, Viewed marks that a later edit takes back, and Raw leaving it.
+void checkWorkspaceDesign(MainWindow &window)
+{
+    using forkmesh::ui::NextAccess;
+    using forkmesh::ui::OverflowActionRow;
+    const QString shots = qEnvironmentVariable("FORKMESH_WORKSPACE_SHOT");
+    const auto settle = [](int passes = 6) {
+        for (int pass = 0; pass < passes; ++pass) {
+            QApplication::processEvents();
+            QThread::msleep(20);
+        }
+        QApplication::processEvents();
+    };
+    const auto shoot = [&window, &shots, &settle](const QString &name) {
+        if (shots.isEmpty())
+            return;
+        settle();
+        QDir().mkpath(shots);
+        window.grab().save(QDir(shots).filePath(name + QStringLiteral(".png")));
+    };
+
+    QSettings settings;
+    settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+    settings.setValue(QStringLiteral("app/theme"), QStringLiteral("dark"));
+    MainWindow::applyTheme();
+    NextAccess::setRailExpanded(window, true);
+
+    QTemporaryDir tree;
+    const bool repoReady = initGitRepo(tree);
+    check(repoReady, QStringLiteral("workspace design fixture repository written"));
+    if (!repoReady)
+        return;
+    window.testEnableSessionStartBypass(true);
+    window.testSetSetupInputs(QStringLiteral("qa-tester"), QString());
+    window.testStartSession();
+    window.resize(1440, 900);
+    window.show();
+    const int repositoryIndex = window.testAddLocalRepository(
+        QStringLiteral("forkmesh"), QStringLiteral("workspace-probe"), tree.path());
+    check(repositoryIndex >= 0 && window.testOpenRepository(repositoryIndex),
+          QStringLiteral("the workspace design fixture repository opens"));
+    window.testOpenAgentsOverview();
+    settle();
+
+    AgentSession session;
+    session.id = 9311;
+    session.owner = QStringLiteral("forkmesh");
+    session.name = QStringLiteral("workspace-probe");
+    session.issueTitle = QStringLiteral("tidy the workspace header");
+    session.prompt = QStringLiteral("tidy the workspace header");
+    session.provider = QStringLiteral("claude-code");
+    session.model = QStringLiteral("claude-opus-5-5");
+    session.branchName = QStringLiteral("agent/workspace-probe");
+    session.status = AgentStatus::Running;
+    session.createdAtMs = QDateTime::currentMSecsSinceEpoch();
+    window.testAddAgentSession(session);
+    window.testSetStreamWorktree(session.id, tree.path());
+    const auto assistant = [](const QString &text) {
+        return QJsonObject{
+            {QStringLiteral("type"), QStringLiteral("assistant")},
+            {QStringLiteral("message"),
+             QJsonObject{{QStringLiteral("content"),
+                          QJsonArray{QJsonObject{{QStringLiteral("type"),
+                                                  QStringLiteral("text")},
+                                                 {QStringLiteral("text"), text}}}}}}};
+    };
+    window.testSetAgentTranscriptEvents(
+        session.id,
+        {QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
+                     {QStringLiteral("text"), QStringLiteral("tidy the workspace header")}},
+         assistant(QStringLiteral("Looking at the header row now.")),
+         assistant(QStringLiteral("I moved the rarely used actions into a menu.")),
+         QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_user")},
+                     {QStringLiteral("text"), QStringLiteral("now the composer, please")}}});
+    forkmesh::ui::setWorkspaceLayoutClassic(true);
+    NextAccess::syncWorkspace(window);
+    window.testShowAgentSession(session.id);
+    settle();
+    window.testRefreshPromptChatPreview();
+    settle();
+
+    OverflowActionRow *header = window.testAgentHeaderActions();
+    check(header != nullptr, QStringLiteral("the agent header keeps its actions in one row"));
+    if (header) {
+        const QList<QWidget *> shown = header->inlineWidgets();
+        const QList<QWidget *> spilled = header->overflowWidgets();
+        int ranked = 0;
+        for (QWidget *widget : shown)
+            if (widget->objectName() != QLatin1String("agentSyncLabel"))
+                ++ranked;
+        check(ranked <= 5,
+              QStringLiteral("the agent header shows at most five actions (%1)").arg(ranked));
+        check(!spilled.isEmpty() && header->moreButton() &&
+                  header->moreButton()->isVisibleTo(&window),
+              QStringLiteral("the rest of the agent actions sit behind a More button "
+                             "(%1 in the menu)")
+                  .arg(spilled.size()));
+        QMenu menu;
+        header->fillMenu(&menu);
+        QStringList entries;
+        for (QAction *action : menu.actions())
+            if (!action->isSeparator())
+                entries << action->text();
+        check(entries.size() == spilled.size(),
+              QStringLiteral("the More menu lists every hidden action (%1)")
+                  .arg(entries.join(QStringLiteral(", "))));
+        bool overlap = false;
+        for (int a = 0; a < shown.size(); ++a)
+            for (int b = a + 1; b < shown.size(); ++b)
+                overlap = overlap ||
+                          shown.at(a)->geometry().intersects(shown.at(b)->geometry());
+        check(!overlap, QStringLiteral("the agent header's buttons never overlap"));
+        const int usesBefore = header->usesOf(window.findChild<QPushButton *>(
+            QStringLiteral("agentListenButton")));
+        if (auto *listen =
+                window.findChild<QPushButton *>(QStringLiteral("agentListenButton"))) {
+            qputenv("FORKMESH_SONIFY_BACKEND", "silent");
+            listen->click();
+            listen->click();
+            qunsetenv("FORKMESH_SONIFY_BACKEND");
+        }
+        check(header->usesOf(window.findChild<QPushButton *>(
+                  QStringLiteral("agentListenButton"))) == usesBefore + 2,
+              QStringLiteral("each use of an action is counted, so the most used "
+                             "ones stay in the row"));
+    }
+
+    auto *wrapper = window.findChild<QFrame *>(QStringLiteral("promptWrapper"));
+    auto *worktree = window.findChild<QPushButton *>(QStringLiteral("promptWorktreeCheck"));
+    auto *cloud = window.findChild<QPushButton *>(QStringLiteral("promptCloudButton"));
+    auto *vibe = window.findChild<QPushButton *>(QStringLiteral("promptVibeCheck"));
+    auto *clear = window.findChild<QPushButton *>(QStringLiteral("promptClearButton"));
+    const auto xIn = [wrapper](QWidget *widget) {
+        return widget && wrapper ? widget->mapTo(wrapper, QPoint()).x() : -1;
+    };
+    check(wrapper && worktree && cloud && vibe && clear &&
+              xIn(worktree) > wrapper->width() / 2 && xIn(worktree) < xIn(cloud) &&
+              xIn(cloud) < xIn(vibe) && xIn(vibe) < xIn(clear),
+          QStringLiteral("the composer's branch, cloud, vibe and clear icons sit on "
+                         "the right (%1 %2 %3 %4 of %5)")
+              .arg(xIn(worktree))
+              .arg(xIn(cloud))
+              .arg(xIn(vibe))
+              .arg(xIn(clear))
+              .arg(wrapper ? wrapper->width() : -1));
+    check(worktree && worktree->isCheckable() && worktree->isChecked() &&
+              worktree->text().isEmpty() && vibe && vibe->isCheckable() &&
+              vibe->text().isEmpty() && !vibe->icon().isNull(),
+          QStringLiteral("branch and vibe are icon toggles, with the branch on"));
+
+    QLabel *preview = window.testPromptChatPreview();
+    check(preview && preview->isVisibleTo(&window) &&
+              preview->text().contains(QStringLiteral("now the composer")) &&
+              preview->text().contains(QStringLiteral("rarely used actions")) &&
+              preview->text().count(QStringLiteral("<br>")) == 2,
+          QStringLiteral("three compact lines of the latest chat sit over the prompt "
+                         "(%1)")
+              .arg(preview ? preview->text().left(200) : QStringLiteral("none")));
+    QPushButton *chat = nullptr;
+    for (QPushButton *button :
+         window.findChildren<QPushButton *>(QStringLiteral("quickAddSendIcon")))
+        if (button->text() == QLatin1String("chat"))
+            chat = button;
+    check(chat && !chat->icon().isNull() && chat->isVisibleTo(&window),
+          QStringLiteral("with a recent chat the add button reads chat, with an icon"));
+    if (chat && wrapper) {
+        const QRect inWindow(chat->mapTo(&window, QPoint()), chat->size());
+        const QRect wrapperInWindow(wrapper->mapTo(&window, QPoint()), wrapper->size());
+        QWidget *dock = wrapper->parentWidget() ? wrapper->parentWidget()->parentWidget()
+                                                : nullptr;
+        const QRect dockInWindow =
+            dock ? QRect(dock->mapTo(&window, QPoint()), dock->size()) : QRect();
+        check(window.rect().contains(inWindow) && wrapperInWindow.contains(inWindow) &&
+                  (!dock || dockInWindow.contains(wrapperInWindow)),
+              QStringLiteral("the chat button and the composer are on screen, not cut "
+                             "off on the right (button %1..%2, composer %3..%4, "
+                             "strip %5..%6)")
+                  .arg(inWindow.left())
+                  .arg(inWindow.right())
+                  .arg(wrapperInWindow.left())
+                  .arg(wrapperInWindow.right())
+                  .arg(dockInWindow.left())
+                  .arg(dockInWindow.right()));
+    }
+    for (const char *name : {"quickAddGenieButton"}) {
+        auto *button = window.findChild<QPushButton *>(QLatin1String(name));
+        check(button && !button->icon().isNull(),
+              QStringLiteral("the task button carries an icon"));
+    }
+    shoot(QStringLiteral("agents-wide"));
+
+    if (QSplitter *split = window.testAgentWorkspaceSplit()) {
+        const QList<int> sizes = split->sizes();
+        const int total = std::accumulate(sizes.cbegin(), sizes.cend(), 0);
+        split->setSizes({300, qMax(200, total - 300), 0});
+        settle();
+    }
+    if (OverflowActionRow *list = window.testAgentListActions()) {
+        const QList<QWidget *> shown = list->inlineWidgets();
+        bool inside = true;
+        bool overlap = false;
+        for (int a = 0; a < shown.size(); ++a) {
+            inside = inside && list->rect().contains(shown.at(a)->geometry());
+            for (int b = a + 1; b < shown.size(); ++b)
+                overlap = overlap ||
+                          shown.at(a)->geometry().intersects(shown.at(b)->geometry());
+        }
+        check(inside && !overlap && list->moreButton() &&
+                  list->moreButton()->isVisibleTo(&window),
+              QStringLiteral("a narrow agent list keeps its toolbar tidy: %1 buttons "
+                             "inline, the rest under More (inside=%2 overlap=%3 "
+                             "width=%4)")
+                  .arg(shown.size())
+                  .arg(inside)
+                  .arg(overlap)
+                  .arg(list->width()));
+    } else {
+        check(false, QStringLiteral("the agent list toolbar is an overflow row"));
+    }
+    shoot(QStringLiteral("agents-narrow-list"));
+
+    forkmesh::ui::setWorkspaceLayoutClassic(false);
+    NextAccess::syncWorkspace(window);
+    if (QSplitter *split = window.testAgentWorkspaceSplit())
+        split->setSizes({300, 1000, 0});
+    settle(12);
+    window.testRefreshPromptChatPreview();
+    NextAccess::syncWorkspace(window);
+    settle();
+    auto *centredSend = window.findChild<QPushButton *>(QStringLiteral("workspaceSend"));
+    check(centredSend && centredSend->isVisibleTo(&window) &&
+              centredSend->text() == QStringLiteral("Chat"),
+          QStringLiteral("the new layout's send button reads Chat when it replies "
+                         "to the open agent (%1)")
+              .arg(centredSend ? centredSend->text() : QStringLiteral("none")));
+    shoot(QStringLiteral("agents-new-layout"));
+    forkmesh::ui::setWorkspaceLayoutClassic(true);
+    NextAccess::syncWorkspace(window);
+    settle();
+
+    QWidget *rail = window.testAppNavigationRail();
+    NextAccess::setRailWidth(window, 280, false);
+    settle();
+    check(rail && rail->width() >= 280,
+          QStringLiteral("the expanded sidebar can be widened (%1)")
+              .arg(rail ? rail->width() : -1));
+    auto *handle = window.findChild<QWidget *>(QStringLiteral("railResizeHandle"));
+    check(handle && handle->isVisibleTo(&window),
+          QStringLiteral("the expanded sidebar has a resize handle"));
+    shoot(QStringLiteral("rail-wide"));
+    NextAccess::setRailWidth(window, forkmesh::ui::kRailExpandedItemWidth, false);
+    settle();
+
+    const QColor accentBefore = Theme::color(Theme::Role::Accent);
+    forkmesh::instancetheme::Colors colors = forkmesh::instancetheme::fromInstanceDocument(
+        QJsonDocument::fromJson(R"({"ok":true,"theme":{"preset":"blt"},"themeColors":{
+            "dark":{"background":"#141414","foreground":"#f4f4f5","card":"#1c1c1e",
+                    "muted":"#232326","border":"#2e2e33","muted-foreground":"#a1a1aa",
+                    "primary":"#dc2626","primary-foreground":"#ffffff","link":"#f87171"},
+            "light":{"background":"#ffffff","foreground":"#111827","primary":"#dc2626"}}})")
+            .object());
+    check(colors.dark.value(QStringLiteral("accent")) == QStringLiteral("#dc2626") &&
+              colors.dark.value(QStringLiteral("bg")) == QStringLiteral("#141414") &&
+              colors.light.value(QStringLiteral("bg")) == QStringLiteral("#ffffff"),
+          QStringLiteral("an instance theme maps onto the desktop's colour roles"));
+    forkmesh::instancetheme::store(colors);
+    forkmesh::instancetheme::setMatchEnabled(true);
+    MainWindow::applyTheme();
+    settle();
+    check(Theme::color(Theme::Role::Accent) == QColor(QStringLiteral("#dc2626")) &&
+              Theme::color(Theme::Role::Bg) == QColor(QStringLiteral("#141414")) &&
+              qApp->styleSheet().contains(QStringLiteral("#dc2626")),
+          QStringLiteral("matching the instance theme recolours the app"));
+    shoot(QStringLiteral("instance-theme"));
+    forkmesh::instancetheme::setMatchEnabled(false);
+    MainWindow::applyTheme();
+    settle();
+    check(Theme::color(Theme::Role::Accent) == accentBefore,
+          QStringLiteral("turning the match off puts the app's own colours back"));
+    forkmesh::instancetheme::store({});
+
+    NextAccess::setRailExpanded(window, false);
+    settings.remove(QStringLiteral("app/design"));
+    settings.remove(QStringLiteral("app/theme"));
+    MainWindow::applyTheme();
+    settle();
+    shoot(QStringLiteral("agents-classic"));
+}
+
 void checkAgentCodeView(MainWindow &window)
 {
     QTemporaryDir tree;
@@ -10280,13 +10572,17 @@ void checkAgentCodeView(MainWindow &window)
     auto *codeButton = window.findChild<QPushButton *>(QStringLiteral("agentCodeButton"));
     auto *rawButton =
         window.findChild<QPushButton *>(QStringLiteral("agentOutputModeButton"));
-    check(codeButton && rawButton && codeButton->isVisibleTo(&window) &&
+    forkmesh::ui::OverflowActionRow *headerRow = window.testAgentHeaderActions();
+    check(codeButton && rawButton && headerRow && codeButton->isVisibleTo(&window) &&
               rawButton->isVisibleTo(&window) &&
               codeButton->text() == QStringLiteral("Code") &&
-              codeButton->parentWidget() == rawButton->parentWidget() &&
-              codeButton->y() == rawButton->y() && codeButton->x() > rawButton->x() &&
-              codeButton->x() - rawButton->geometry().right() <= 16,
-          QStringLiteral("a Code button sits right beside Raw (raw x=%1 code x=%2)")
+              codeButton->parentWidget() == headerRow &&
+              rawButton->parentWidget() == headerRow &&
+              headerRow->isInline(codeButton) &&
+              (headerRow->isInline(rawButton) ||
+               headerRow->overflowWidgets().contains(rawButton)),
+          QStringLiteral("Code sits in the agent header, Raw beside it or under More "
+                         "(raw x=%1 code x=%2)")
               .arg(rawButton ? rawButton->x() : -1)
               .arg(codeButton ? codeButton->x() : -1));
     if (!codeButton || !rawButton)
@@ -10300,7 +10596,8 @@ void checkAgentCodeView(MainWindow &window)
     check(listenButton && listenButton->isVisibleTo(&window) &&
               listenButton->parentWidget() == rawButton->parentWidget() &&
               listenButton->text() == QStringLiteral("Listen"),
-          QStringLiteral("a Listen button sits in the agent detail button row"));
+          QStringLiteral("a Listen button sits in the agent detail button row "
+                         "or its More menu"));
     if (listenButton) {
         qputenv("FORKMESH_SONIFY_BACKEND", "silent");
         listenButton->click();
@@ -10755,17 +11052,18 @@ void checkAgentToolEfficiency(MainWindow &window)
     auto *backButton =
         window.findChild<QPushButton *>(QStringLiteral("agentEfficiencyBack"));
     QWidget *actionBar = window.findChild<QWidget *>(QStringLiteral("agentsActionBar"));
-    const int deleteIndex = actionBar && actionBar->layout() && deleteSelected
-                                ? actionBar->layout()->indexOf(deleteSelected)
-                                : -1;
-    const int efficiencyIndex = actionBar && actionBar->layout() && efficiencyButton
-                                    ? actionBar->layout()->indexOf(efficiencyButton)
-                                    : -2;
+    const QList<QWidget *> barOrder =
+        actionBar ? actionBar->findChildren<QWidget *>(QString(),
+                                                       Qt::FindDirectChildrenOnly)
+                  : QList<QWidget *>();
+    const int deleteIndex = deleteSelected ? int(barOrder.indexOf(deleteSelected)) : -1;
+    const int efficiencyIndex =
+        efficiencyButton ? int(barOrder.indexOf(efficiencyButton)) : -2;
     const bool watchInActionBar =
         window.findChild<QPushButton *>(QStringLiteral("agentVisualButton")) != nullptr;
     check(stack && stack->count() == 4 && stack->currentIndex() == 0 &&
               !window.findChild<QTabBar *>(QStringLiteral("agentPageTabs")) &&
-              efficiencyButton && efficiencyButton->isVisibleTo(&window) &&
+              efficiencyButton && efficiencyButton->isVisibleTo(actionBar) &&
               efficiencyButton->text() == QStringLiteral("Tool efficiency") &&
               deleteIndex >= 0 && efficiencyIndex == deleteIndex + 1 &&
               !watchInActionBar && backButton,
@@ -11081,9 +11379,8 @@ void checkAgentToolEfficiency(MainWindow &window)
         window.findChild<QPushButton *>(QStringLiteral("agentGuardrailsButton"));
     auto *guardrailsBack =
         window.findChild<QPushButton *>(QStringLiteral("agentGuardrailsBack"));
-    const int guardrailsIndex = actionBar && actionBar->layout() && guardrailsButton
-                                    ? actionBar->layout()->indexOf(guardrailsButton)
-                                    : -3;
+    const int guardrailsIndex =
+        guardrailsButton ? int(barOrder.indexOf(guardrailsButton)) : -3;
     check(guardrailsButton && guardrailsButton->isVisibleTo(&window) &&
               guardrailsButton->text() == QStringLiteral("Guardrails") &&
               guardrailsIndex == efficiencyIndex + 1 && guardrailsBack,
@@ -11171,9 +11468,8 @@ void checkAgentToolEfficiency(MainWindow &window)
 
     auto *modelsButton =
         window.findChild<QPushButton *>(QStringLiteral("agentModelsButton"));
-    const int modelsIndex = actionBar && actionBar->layout() && modelsButton
-                                ? actionBar->layout()->indexOf(modelsButton)
-                                : -4;
+    const int modelsIndex =
+        modelsButton ? int(barOrder.indexOf(modelsButton)) : -4;
     check(modelsButton && modelsButton->isVisibleTo(&window) &&
               modelsButton->text() == QStringLiteral("Models") &&
               modelsIndex == guardrailsIndex + 1,
@@ -11970,6 +12266,52 @@ void checkAgentFolders(MainWindow &window)
           QStringLiteral("right-clicking a folder offers its management actions "
                          "(menu=%1)")
               .arg(folderMenu.join(QStringLiteral(" | "))));
+    check(folderMenu.contains(
+              QStringLiteral("agentFolderStartAllAction(disabled)")) &&
+              folderMenu.contains(
+                  QStringLiteral("agentFolderStopAllAction(disabled)")),
+          QStringLiteral("a folder of finished agents has nothing to start or "
+                         "stop (menu=%1)")
+              .arg(folderMenu.join(QStringLiteral(" | "))));
+    {
+        const AgentSession restoreLoose = window.testAgentSession(ids.at(1));
+        const AgentSession restoreFiled = window.testAgentSession(ids.at(2));
+        AgentSession running = window.testAgentSession(ids.at(2));
+        running.status = AgentStatus::Running;
+        window.testAddAgentSession(running);
+        AgentSession loose = window.testAgentSession(ids.at(1));
+        loose.status = AgentStatus::Running;
+        window.testAddAgentSession(loose);
+        window.testRefreshAgentTable();
+        QApplication::processEvents();
+        const QStringList runningMenu = window.testAgentFolderMenuActions(release);
+        check(runningMenu.contains(QStringLiteral("agentFolderStopAllAction")) &&
+                  runningMenu.contains(
+                      QStringLiteral("agentFolderStartAllAction(disabled)")),
+              QStringLiteral("a folder with a running agent offers Stop all "
+                             "(menu=%1)")
+                  .arg(runningMenu.join(QStringLiteral(" | "))));
+        check(window.testTriggerAgentFolderMenuAction(
+                  release, QStringLiteral("agentFolderStopAllAction")),
+              QStringLiteral("stop all in the Release folder"));
+        QApplication::processEvents();
+        check(window.testAgentSession(ids.at(2)).status == AgentStatus::Stopped &&
+                  window.testAgentSession(ids.at(1)).status ==
+                      AgentStatus::Running,
+              QStringLiteral("Stop all in folder stops only that folder's "
+                             "agents"));
+        const QStringList stoppedMenu = window.testAgentFolderMenuActions(release);
+        check(stoppedMenu.contains(QStringLiteral("agentFolderStartAllAction")) &&
+                  stoppedMenu.contains(
+                      QStringLiteral("agentFolderStopAllAction(disabled)")),
+              QStringLiteral("a folder with a stopped agent offers Start all "
+                             "(menu=%1)")
+                  .arg(stoppedMenu.join(QStringLiteral(" | "))));
+        window.testAddAgentSession(restoreLoose);
+        window.testAddAgentSession(restoreFiled);
+        window.testRefreshAgentTable();
+        QApplication::processEvents();
+    }
     check(window.testTriggerAgentFolderMenuAction(
               release, QStringLiteral("agentFolderMoveTopAction")) &&
               window.testAgentListLayout().first() ==
@@ -12659,6 +13001,53 @@ void checkCommandApprovalWithoutGitWait(MainWindow &window)
                   "(git waited = %1, approval = %2)")
               .arg(gitWaited)
               .arg(approval));
+}
+
+void checkAgentUsageHoverCard(MainWindow &window)
+{
+    const bool codexDefault =
+        QSettings().value(forkmesh::ui::kDefaultAgentProviderSetting).toString() ==
+        QStringLiteral("codex");
+    QWidget *hoverCard = nullptr;
+    const auto cardHas = [&hoverCard](const QString &name) {
+        return hoverCard && hoverCard->findChild<QWidget *>(name) != nullptr;
+    };
+    const auto cardTitle = [&hoverCard] {
+        QLabel *title = hoverCard ? hoverCard->findChild<QLabel *>(
+                                        QStringLiteral("agentUsageHoverTitle"))
+                                  : nullptr;
+        return title ? title->text() : QString();
+    };
+    hoverCard = window.testShowAgentUsageHoverCard(false);
+    QApplication::processEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    check(hoverCard && hoverCard->isVisible() &&
+              cardTitle().startsWith(QStringLiteral("Claude Code")) &&
+              cardHas(QStringLiteral("agentUsageHoverMeter_5_hour")) &&
+              cardHas(QStringLiteral("agentUsageHoverMeter_weekly")) &&
+              cardHas(QStringLiteral("agentUsageHoverTerminal")) &&
+              cardHas(QStringLiteral("agentUsageHoverSystemTerminal")) &&
+              cardHas(QStringLiteral("agentUsageHoverEdit")) &&
+              cardHas(QStringLiteral("agentUsageHoverLogin")) &&
+              cardHas(QStringLiteral("agentUsageHoverAddAccount")) &&
+              cardHas(QStringLiteral("agentUsageHoverRunnerAccounts")) &&
+              cardHas(QStringLiteral("agentUsageHoverOpenPage")) &&
+              cardHas(QStringLiteral("agentUsageHoverMakeDefault")) == codexDefault,
+          QString("hovering the Claude usage chart shows the active account's "
+                  "usage meters with the Usage page's controls (title=%1)")
+              .arg(cardTitle()));
+    hoverCard = window.testShowAgentUsageHoverCard(true);
+    QApplication::processEvents();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    check(hoverCard && hoverCard->isVisible() &&
+              cardTitle().startsWith(QStringLiteral("Codex")) &&
+              cardHas(QStringLiteral("agentUsageHoverMeter_weekly")) &&
+              cardHas(QStringLiteral("agentUsageHoverMakeDefault")) == !codexDefault,
+          QString("hovering the Codex usage chart refills the card for Codex "
+                  "(title=%1)")
+              .arg(cardTitle()));
+    if (hoverCard)
+        hoverCard->hide();
 }
 
 void checkHighMemoryPanelDoesNotActivate(MainWindow &window)
@@ -14411,6 +14800,8 @@ else:
         app.arguments().contains(QStringLiteral("--command-approval-only"));
     const bool highMemoryPanelOnly =
         app.arguments().contains(QStringLiteral("--high-memory-panel-only"));
+    const bool usageHoverOnly =
+        app.arguments().contains(QStringLiteral("--usage-hover-only"));
     const bool repoLazyOnly =
         app.arguments().contains(QStringLiteral("--repo-lazy-only"));
     const bool teammatesOnly =
@@ -14439,6 +14830,8 @@ else:
         app.arguments().contains(QStringLiteral("--project-settings-only"));
     const bool agentCodeOnly =
         app.arguments().contains(QStringLiteral("--agent-code-only"));
+    const bool workspaceDesignOnly =
+        app.arguments().contains(QStringLiteral("--workspace-design-only"));
 
     if (offThreadTeardownOnly) {
         struct SyntheticFrame {
@@ -15093,6 +15486,12 @@ else:
 
     if (projectSettingsOnly) {
         checkProjectSettingsPage(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (workspaceDesignOnly) {
+        checkWorkspaceDesign(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -18443,6 +18842,15 @@ else:
 
     if (highMemoryPanelOnly) {
         checkHighMemoryPanelDoesNotActivate(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (usageHoverOnly) {
+        window.resize(1440, 900);
+        window.show();
+        QApplication::processEvents();
+        checkAgentUsageHoverCard(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -27359,6 +27767,8 @@ else:
                       "provider switch (providers=%1)")
                   .arg(usageProviders.join(QLatin1Char(','))));
 
+        checkAgentUsageHoverCard(window);
+
         if (savedDefaultProvider.isValid())
             QSettings().setValue(forkmesh::ui::kDefaultAgentProviderSetting,
                                  savedDefaultProvider);
@@ -28577,6 +28987,36 @@ else:
 
         for (int id = 133901; id < 133978; ++id)
             window.testRemoveAgentSession(id);
+    }
+
+    {
+        AgentSession session;
+        session.id = 133979;
+        session.owner = QStringLiteral("me");
+        session.name = QStringLiteral("r");
+        session.prompt = QStringLiteral("Top bar hide fixture");
+        session.status = AgentStatus::Running;
+        window.testAddAgentSession(session);
+        window.testRefreshAgentDotMatrix();
+        check(window.testTopBarIndicatorShown(QStringLiteral("agents")),
+              QStringLiteral("the agent matrix shows in the top bar by default"));
+        window.testSetTopBarIndicatorHidden(QStringLiteral("agents"), true);
+        check(!window.testTopBarIndicatorShown(QStringLiteral("agents")) &&
+                  QSettings().value(forkmesh::ui::kHiddenTopBarIndicatorsSetting)
+                      .toStringList()
+                      .contains(QStringLiteral("agents")),
+              QStringLiteral("hiding Agents from the top bar menu removes the "
+                             "matrix and remembers the choice"));
+        window.testRefreshAgentDotMatrix();
+        check(!window.testTopBarIndicatorShown(QStringLiteral("agents")),
+              QStringLiteral("a hidden agent matrix stays hidden when sessions "
+                             "change"));
+        window.testSetTopBarIndicatorHidden(QStringLiteral("agents"), false);
+        check(window.testTopBarIndicatorShown(QStringLiteral("agents")) &&
+                  !QSettings().contains(
+                      forkmesh::ui::kHiddenTopBarIndicatorsSetting),
+              QStringLiteral("showing Agents again brings the matrix back"));
+        window.testRemoveAgentSession(session.id);
     }
 
     // A terminal error result is terminal for the transport too. Keeping the
@@ -37849,6 +38289,26 @@ else:
               QStringLiteral("set up a pull whose head is one commit ahead, one "
                              "behind, and checked out in a dirty worktree: %1")
                   .arg(pullBranchError));
+        const QString awayPatch = QStringLiteral(
+            "diff --git a/only-on-author.txt b/only-on-author.txt\n"
+            "--- a/only-on-author.txt\n"
+            "+++ b/only-on-author.txt\n"
+            "@@ -1 +1 @@\n"
+            "-text only the author's machine has\n"
+            "+changed on the author's machine\n");
+        const int codeAwayPr =
+            branchStatePr > 0
+                ? pullBranchStore.createPull(
+                      QStringLiteral("Code on another machine"),
+                      QStringLiteral("its patch does not apply here"),
+                      QStringLiteral("main"),
+                      QStringLiteral("feature/code-elsewhere"), awayPatch,
+                      QString(), /*branchBacked=*/false, &pullBranchError)
+                : 0;
+        const bool codeAwayReady = codeAwayPr > 0;
+        check(codeAwayReady,
+              QStringLiteral("set up a pull whose patch cannot be replayed here: %1")
+                  .arg(pullBranchError));
         if (branchStatePr > 0) {
             const int branchStateIdx = window.testAddLocalRepository(
                 "me", "branchstate", pullBranchRepo.path());
@@ -37886,10 +38346,30 @@ else:
                       branchTip.contains(QStringLiteral("Worktree: ") +
                                          reportedWorktree) &&
                       branchTip.contains(
-                          QStringLiteral("1 uncommitted change in that worktree")),
+                          QStringLiteral("1 uncommitted change in that worktree")) &&
+                      branchTip.contains(QStringLiteral("Code on this machine: ") +
+                                         headBranch),
                   QStringLiteral("hovering the row spells the branch state out "
                                  "(%1)")
                       .arg(branchTip));
+            if (codeAwayReady) {
+                QString awayTip;
+                QElapsedTimer awayWait;
+                awayWait.start();
+                while (awayWait.elapsed() < 10000) {
+                    awayTip = window.testPullListRowTooltip(codeAwayPr);
+                    if (awayTip.contains(QStringLiteral("Code not on this machine")))
+                        break;
+                    QApplication::processEvents(QEventLoop::AllEvents, 10);
+                    QThread::msleep(1);
+                }
+                check(awayTip.contains(QStringLiteral("Code not on this machine")) &&
+                          !branchTip.contains(
+                              QStringLiteral("Code not on this machine")),
+                      QStringLiteral("a pull whose code no local branch holds is "
+                                     "marked as not on this machine (%1)")
+                          .arg(awayTip));
+            }
         }
         // Both temporary directories go with this scope, so the linked
         // checkout needs no explicit `worktree remove` to clean up after.

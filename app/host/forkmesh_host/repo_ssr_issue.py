@@ -5,6 +5,7 @@ import datetime
 import html
 import json
 import re
+import sys
 import time
 import urllib.parse
 
@@ -204,10 +205,13 @@ def name_html(name):
     return '<span class="font-semibold text-foreground">%s</span>' % esc(name)
 
 
-def person_name_html(name, classes="font-semibold text-foreground"):
+def person_name_html(name, classes="font-semibold text-foreground", git=False):
     label = str(name or "").strip() or "unknown"
     if actor_is_bot(label):
-        return '<span class="%s">%s</span>' % (classes, esc(label))
+        account = "" if bot_avatar_kind(label) in ("actions", "node", "runner") \
+            else person_handle(label)
+        return '<span%s class="%s">%s</span>' % (
+            ' data-issue-bot-account="%s"' % esc(account) if account else "", classes, esc(label))
     forge = forge_identity(label)
     if forge:
         return ('<a %s class="%s hover:text-[var(--dashboard-link)] hover:underline">@%s</a>' % (
@@ -215,10 +219,11 @@ def person_name_html(name, classes="font-semibold text-foreground"):
     handle = person_handle(label)
     if not handle:
         return '<span class="%s">%s</span>' % (classes, user_name_html(label))
-    href = profile_href(handle)
-    return ('<a%s data-issue-person="%s" class="%s hover:text-[var(--dashboard-link)] '
+    href = "" if git else profile_href(handle)
+    return ('<a%s data-issue-person="%s"%s class="%s hover:text-[var(--dashboard-link)] '
             'hover:underline">%s</a>' % (' href="%s"' % esc(href) if href else "",
-                                         esc(handle), classes, user_name_html(label)))
+                                         esc(handle), ' data-issue-person-git=""' if git else "",
+                                         classes, user_name_html(label)))
 
 
 def card_author_html(name, author="", agent=False):
@@ -286,6 +291,8 @@ ICONS = {
         '<circle cx="8" cy="8" r="6"></circle><path d="M18.09 10.37A6 6 0 1 1 10.34 18"></path><path d="M7 6h1v4"></path><path d="m16.71 13.88.7.71-2.82 2.82"></path>'),
     'copy': (
         '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>'),
+    'eye': (
+        '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle>'),
     'flag': (
         '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" x2="4" y1="22" y2="15"></line>'),
     'gauge': (
@@ -1698,8 +1705,22 @@ def ai_prompt_html(ctx, number, title, repo, template=""):
             icon("copy", "copy-icon h-3.5 w-3.5"), icon("check", "copy-check h-3.5 w-3.5")))
 
 
+def plugins_off():
+    features = sys.modules.get("instance_features")
+    try:
+        return frozenset(features.switched_off()) if features is not None else frozenset()
+    except Exception:
+        return frozenset()
+def issue_views_html(number):
+    return ('<span data-repo-issue-views-separator aria-hidden="true" hidden>·</span>'
+            '<span data-repo-issue-views="%s" title="Views by people, counted once a day per '
+            'viewer" class="inline-flex items-center gap-1" hidden>%s'
+            '<span data-repo-issue-views-label></span></span>' % (
+                esc(number), icon("eye", "h-4 w-4")))
+
+
 def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
-                 repo="", prompt="", reactions=None):
+                 repo="", prompt="", reactions=None, off=frozenset()):
     now = time.time() if now is None else now
     number = issue["number"]
     title = issue["title"] or "Issue #%d" % number
@@ -1902,19 +1923,12 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
         '            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 '
         'rounded-full %s px-3 font-medium text-white">%s%s</span>\n            <span>%s %s'
         '</span>\n            <span aria-hidden="true">·</span>\n            <span>%s %s</span>\n'
-        '          </p>\n          %s\n        </header>\n        <div data-repo-record-layout class="mt-6 '
+        '            %s\n          </p>\n          %s\n        </header>\n        <div data-repo-record-layout class="mt-6 '
         'grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">\n          <div class="grid min-w-0 '
         'gap-4 self-start">\n            <section data-repo-record-conversation class="grid '
         'min-w-0 gap-4">\n              %s\n              %s\n              <div '
         'data-repo-issue-timeline data-empty="%s" class="grid gap-2">%s</div>\n              %s\n'
-        '            </section>\n            <details data-repo-federated-thread class="group '
-        'rounded-md border border-border sm:ml-14">\n              <summary class="flex '
-        'cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[14px] '
-        'text-muted-foreground">\n                %s<span class="font-semibold text-foreground">'
-        'Fediverse thread</span><span class="text-[12px]">· remote provenance, separate from '
-        'signed history</span>%s\n              </summary>\n              <div '
-        'data-repo-federated-replies class="border-t border-border"></div>\n            '
-        '</details>\n          </div>\n          <aside data-repo-record-sidebar class="min-w-0 '
+        '            </section>\n            %s\n          </div>\n          <aside data-repo-record-sidebar class="min-w-0 '
         'self-start">\n            \n            <p data-repo-issue-metadata-hint role="status" '
         'aria-live="polite" class="mb-2 text-[11px] text-muted-foreground empty:hidden"></p>\n'
         '            %s\n            %s\n            %s\n            %s\n            %s\n'
@@ -1928,11 +1942,13 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
             icon("link", "copy-icon h-4 w-4"), icon("check", "copy-check h-4 w-4"),
             parents_html(ctx, parents), pill_class, icon(pill_icon, "h-4 w-4"), state_label,
             format_count(comments), "comment" if comments == 1 else "comments",
-            format_count(len(people)), plural,
-            "" if closed else ai_prompt_html(ctx, number, title, repo, prompt),
+            format_count(len(people)), plural, issue_views_html(number),
+            "" if closed or "issue-ai-prompt" in off
+            else ai_prompt_html(ctx, number, title, repo, prompt),
             opening, sub_issues, "false" if timeline else "true", timeline, comment_box,
-            icon("radio", "h-4 w-4"), icon("chevron-down",
-                 "ml-auto h-4 w-4 transition-transform group-open:rotate-180"),
+            "" if "fediverse-ui" in off else FEDERATED_THREAD % (
+                icon("radio", "h-4 w-4"), icon(
+                    "chevron-down", "ml-auto h-4 w-4 transition-transform group-open:rotate-180")),
             section("Assignees", assignee_value, "assignees"), section("Agent", agent_value),
             section("Labels", label_value, "labels"), section("Type", "Issue"),
             section("Fields", fields_value, "fields"),
@@ -1940,6 +1956,16 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
             section("Development", development, "development", development_button),
             section("Notifications", notifications),
             section("%s %s" % (format_count(len(people)), plural), people_value)))
+
+
+FEDERATED_THREAD = (
+    '<details data-repo-federated-thread class="group rounded-md border border-border '
+    'sm:ml-14">\n              <summary class="flex cursor-pointer list-none items-center '
+    'gap-2 px-4 py-2.5 text-[14px] text-muted-foreground">\n                %s<span '
+    'class="font-semibold text-foreground">Fediverse thread</span><span class="text-[12px]">'
+    '· remote provenance, separate from signed history</span>%s\n              </summary>\n'
+    '              <div data-repo-federated-replies class="border-t border-border"></div>\n'
+    '            </details>')
 
 
 def index_row(summary):

@@ -839,7 +839,7 @@ def test_home_show_more_repositories_link_is_hidden_for_small_accounts():
         'const showMore = $("[data-home-repos-show-more]");',
         '"hidden", matches.length <= HOME_SHOW_MORE_MIN_REPOSITORIES);',
         "state.homeRepositoriesExpanded",
-        "matches.slice(0, HOME_TOP_REPOSITORY_LIMIT)",
+        "groups.slice(0, HOME_TOP_REPOSITORY_LIMIT)",
         '$("[data-home-repos-show-more]")?.addEventListener("click", () => {',
     ):
         assert marker in dashboard_js
