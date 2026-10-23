@@ -7,6 +7,11 @@ filters. Access rules and DM delivery are in
 
 ## Direct messages on the dashboard
 
+The dashboard chat page is gone: `/dashboard/chat` redirects to `/chat`, which
+lists direct messages in its own rail ([web-chat-layout.md](web-chat-layout.md)).
+The strip below stays in `dashboard-chat.js` but only runs where the old page's
+channel header exists.
+
 `mountDirectMessageStrip` (in `dashboard-chat.js`) inserts a strip of DM chips
 under the channel header. Each chip links to `/chat?dm=<name>` with its unread
 badge; the `+` chip links to `/chat?dm=`, which opens the new-DM picker. The

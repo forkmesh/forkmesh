@@ -15,7 +15,7 @@
     }
   });
 
-  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions"];
+  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions", "ai-review"];
 
   function normalizeSettingsSection(section) {
     return SETTINGS_SECTIONS.includes(section) ? section : "public-profile";
@@ -2806,10 +2806,6 @@
     }
     if (section === "network") {
       headerContext.textContent = "Network";
-      return;
-    }
-    if (section === "chat") {
-      headerContext.textContent = "Chat";
       return;
     }
     if (section === "explore" && state.selectedRepo) {

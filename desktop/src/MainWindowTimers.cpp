@@ -16,8 +16,10 @@
 #include "MainWindowInternal.h"
 #include "TimersFeature.h"
 
+#include <QActionGroup>
 #include <QApplication>
 #include <QDateTime>
+#include <QMouseEvent>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QJsonDocument>
@@ -47,6 +49,78 @@ constexpr qint64 kFiveMinutesMs = 5 * 60 * 1000;
 // when it opens, but a phone buzzing about it an hour later is noise. Matches
 // TIMER_PING_MAX_AGE_MS in app/src/timer_pings.py, which refuses older ones.
 constexpr qint64 kTimerPingMaxAgeMs = 15 * 60 * 1000;
+
+const QString kTimersClockPlacementSetting =
+    QStringLiteral("ui/timersClockPlacement");
+const QString kTimersClockLeft = QStringLiteral("left");
+const QString kTimersClockCenter = QStringLiteral("center");
+const QString kTimersClockRight = QStringLiteral("right");
+
+class TimersClockDragFilter : public QObject
+{
+public:
+    TimersClockDragFilter(QPushButton *button,
+                          std::function<void(const QPoint &)> onDrop)
+        : QObject(button), m_button(button), m_onDrop(std::move(onDrop))
+    {
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched != m_button)
+            return false;
+        switch (event->type()) {
+        case QEvent::MouseButtonPress: {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() == Qt::LeftButton) {
+                m_pressGlobal = mouse->globalPosition().toPoint();
+                m_pressed = true;
+                m_dragging = false;
+            }
+            break;
+        }
+        case QEvent::MouseMove: {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (!m_pressed || !(mouse->buttons() & Qt::LeftButton))
+                break;
+            if (!m_dragging &&
+                (mouse->globalPosition().toPoint() - m_pressGlobal)
+                        .manhattanLength() >= QApplication::startDragDistance()) {
+                m_dragging = true;
+                m_button->setDown(false);
+                QApplication::setOverrideCursor(Qt::ClosedHandCursor);
+            }
+            if (m_dragging)
+                return true;
+            break;
+        }
+        case QEvent::MouseButtonRelease: {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() != Qt::LeftButton)
+                break;
+            m_pressed = false;
+            if (!m_dragging)
+                break;
+            m_dragging = false;
+            QApplication::restoreOverrideCursor();
+            m_button->setDown(false);
+            m_onDrop(mouse->globalPosition().toPoint());
+            return true;
+        }
+        default:
+            break;
+        }
+        return false;
+    }
+
+private:
+    QPushButton *m_button;
+    std::function<void(const QPoint &)> m_onDrop;
+    QPoint m_pressGlobal;
+    bool m_pressed = false;
+    bool m_dragging = false;
+};
 
 QString chipLabel(const QString &label)
 {
@@ -80,13 +154,17 @@ QWidget *MainWindow::createTimersNavStrip()
     m_timersClockButton->setAccessibleName(
         QStringLiteral("Clock - add a timer, countdown or alarm"));
     m_timersClockButton->setToolTip(QString::fromUtf8(
-        "Timers, countdowns and alarms \xE2\x80\x94 click to add one"));
+        "Timers, countdowns and alarms \xE2\x80\x94 click to add one, drag "
+        "to move it along the top bar"));
     forkmesh::ui::setOcticon(m_timersClockButton, QStringLiteral("clock"), 14);
     connect(m_timersClockButton, &QPushButton::clicked, this,
             &MainWindow::showTimersClockMenu);
     // Right-click offers the same package menu as a rail button: settings,
     // export and remove.
     attachPackageRailMenu(m_timersClockButton, QStringLiteral("builtin:timers"));
+    m_timersClockButton->installEventFilter(new TimersClockDragFilter(
+        m_timersClockButton,
+        [this](const QPoint &globalPos) { dropTimersClock(globalPos); }));
     m_timersChipRow->addWidget(m_timersClockButton);
 
     // One shared tick for the whole strip: chips only ever show whole seconds,
@@ -100,6 +178,88 @@ QWidget *MainWindow::createTimersNavStrip()
 
     m_timersNavStrip->hide();
     return m_timersNavStrip;
+}
+
+void MainWindow::installTimersClockSlots(QWidget *chrome, QBoxLayout *left,
+                                         QBoxLayout *center, QBoxLayout *right,
+                                         QWidget *rightBefore)
+{
+    m_timersChromeBar = chrome;
+    m_timersClockSlots.clear();
+    m_timersClockSlots.insert(kTimersClockLeft, {left, nullptr});
+    m_timersClockSlots.insert(kTimersClockCenter, {center, nullptr});
+    m_timersClockSlots.insert(kTimersClockRight, {right, rightBefore});
+    setTimersClockPlacement(timersClockPlacement());
+}
+
+QString MainWindow::timersClockPlacement() const
+{
+    const QString stored =
+        QSettings().value(kTimersClockPlacementSetting).toString();
+    if (stored == kTimersClockCenter || stored == kTimersClockRight)
+        return stored;
+    return kTimersClockLeft;
+}
+
+void MainWindow::setTimersClockPlacement(const QString &placement)
+{
+    const QString key = placement == kTimersClockCenter ||
+                                placement == kTimersClockRight
+                            ? placement
+                            : kTimersClockLeft;
+    if (key == kTimersClockLeft)
+        QSettings().remove(kTimersClockPlacementSetting);
+    else
+        QSettings().setValue(kTimersClockPlacementSetting, key);
+    const TimersClockSlot target = m_timersClockSlots.value(key);
+    if (!m_timersNavStrip || !target.row ||
+        target.row->indexOf(m_timersNavStrip) >= 0)
+        return;
+    const bool hidden = m_timersNavStrip->isHidden();
+    for (auto it = m_timersClockSlots.constBegin();
+         it != m_timersClockSlots.constEnd(); ++it) {
+        if (it.value().row)
+            it.value().row->removeWidget(m_timersNavStrip);
+    }
+    const int index = target.before ? target.row->indexOf(target.before) : -1;
+    target.row->insertWidget(index, m_timersNavStrip, 0, Qt::AlignVCenter);
+    m_timersNavStrip->setVisible(!hidden);
+}
+
+void MainWindow::dropTimersClock(const QPoint &globalPos)
+{
+    if (!m_timersChromeBar)
+        return;
+    const int width = qMax(1, m_timersChromeBar->width());
+    const int x = m_timersChromeBar->mapFromGlobal(globalPos).x();
+    setTimersClockPlacement(x < width / 3       ? kTimersClockLeft
+                            : x > width * 2 / 3 ? kTimersClockRight
+                                                : kTimersClockCenter);
+}
+
+void MainWindow::addTimersClockPlacementActions(QMenu *menu)
+{
+    if (!menu || !m_timersFeature)
+        return;
+    menu->addSection(QStringLiteral("Clock position"));
+    auto *group = new QActionGroup(menu);
+    group->setExclusive(true);
+    const QString current = timersClockPlacement();
+    const QList<QPair<QString, QString>> placements = {
+        {kTimersClockLeft, QStringLiteral("Left, beside the indicators")},
+        {kTimersClockCenter, QStringLiteral("Middle, beside search")},
+        {kTimersClockRight, QStringLiteral("Right, beside the window buttons")},
+    };
+    for (const auto &placement : placements) {
+        const QString key = placement.first;
+        QAction *action = menu->addAction(placement.second);
+        action->setObjectName(QStringLiteral("timersClockPlacement-%1").arg(key));
+        action->setCheckable(true);
+        action->setChecked(key == current);
+        action->setActionGroup(group);
+        connect(action, &QAction::triggered, this,
+                [this, key] { setTimersClockPlacement(key); });
+    }
 }
 
 void MainWindow::attachTimersPackage()
@@ -455,6 +615,8 @@ void MainWindow::showTimersClockMenu()
             QStringLiteral("Clear %1 finished").arg(finished));
     }
 
+    addTimersClockPlacementActions(&menu);
+
     QAction *chosen = menu.exec(m_timersClockButton->mapToGlobal(
         QPoint(0, m_timersClockButton->height())));
     if (!chosen || !m_timersFeature)
@@ -502,6 +664,8 @@ void MainWindow::showTimersClockMenu()
             addTimer(typed, TimerKind::Alarm);
         return;
     }
+    if (chosen->actionGroup())
+        return;
     const QString request = chosen->data().toString();
     if (!request.isEmpty())
         addTimer(request, TimerKind::Countdown);
@@ -583,6 +747,27 @@ bool MainWindow::testAddTimer(const QString &request, const QString &kind)
     if (!kind.isEmpty() && !TimersFeature::kindFromName(kind, &parsedKind))
         return false;
     return addTimer(request, parsedKind);
+}
+
+QString MainWindow::testTimersClockSlot() const
+{
+    if (!m_timersNavStrip)
+        return {};
+    for (auto it = m_timersClockSlots.constBegin();
+         it != m_timersClockSlots.constEnd(); ++it) {
+        if (it.value().row && it.value().row->indexOf(m_timersNavStrip) >= 0)
+            return it.key();
+    }
+    return {};
+}
+
+void MainWindow::testDropTimersClock(qreal fraction)
+{
+    if (!m_timersChromeBar)
+        return;
+    dropTimersClock(m_timersChromeBar->mapToGlobal(
+        QPoint(qRound(m_timersChromeBar->width() * fraction),
+               m_timersChromeBar->height() / 2)));
 }
 
 QStringList MainWindow::testTimerChipTexts() const

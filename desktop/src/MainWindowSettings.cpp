@@ -175,6 +175,28 @@ QString suggestedAppCommandText(const QString &program, const QStringList &argum
 
 } // namespace
 
+QList<QPair<QString, QString>> MainWindow::appThemeChoices() const
+{
+    QList<QPair<QString, QString>> choices = {
+        {QStringLiteral("Follow system"), QStringLiteral("system")},
+        {QStringLiteral("Dark"), QStringLiteral("dark")},
+        {QStringLiteral("Light"), QStringLiteral("light")},
+        {QStringLiteral("Halloween"), kHalloweenTheme},
+    };
+    if (m_packageRegistry && m_packageRegistry->isReady()) {
+        for (const forkmesh::market::PackageManifest &package :
+             m_packageRegistry->packages()) {
+            if (package.type != QLatin1String("theme") ||
+                !m_packageRegistry->isInstalled(package.id)) {
+                continue;
+            }
+            choices.append({QStringLiteral("%1 (Market)").arg(package.name),
+                            kMarketplaceThemePrefix + package.id});
+        }
+    }
+    return choices;
+}
+
 void MainWindow::populateAppThemeCombo(QComboBox *combo) const
 {
     if (!combo)
@@ -183,21 +205,8 @@ void MainWindow::populateAppThemeCombo(QComboBox *combo) const
     const QString selected =
         QSettings().value(kThemeSetting, QStringLiteral("system")).toString();
     combo->clear();
-    combo->addItem(QStringLiteral("Follow system"), QStringLiteral("system"));
-    combo->addItem(QStringLiteral("Dark"), QStringLiteral("dark"));
-    combo->addItem(QStringLiteral("Light"), QStringLiteral("light"));
-    if (m_packageRegistry && m_packageRegistry->isReady()) {
-        for (const forkmesh::market::PackageManifest &package :
-             m_packageRegistry->packages()) {
-            if (package.type != QLatin1String("theme") ||
-                !m_packageRegistry->isInstalled(package.id)) {
-                continue;
-            }
-            combo->addItem(
-                QStringLiteral("%1 (Market)").arg(package.name),
-                kMarketplaceThemePrefix + package.id);
-        }
-    }
+    for (const auto &choice : appThemeChoices())
+        combo->addItem(choice.first, choice.second);
     const int index = combo->findData(selected);
     combo->setCurrentIndex(index < 0 ? 0 : index);
 }
@@ -8353,8 +8362,20 @@ void MainWindow::setLogTextFilter(const QString &text)
     refreshLogTimelineChart();
 }
 
+void MainWindow::syncDebugActivityLightCategories()
+{
+    if (!m_logActivityLights)
+        return;
+    QSet<QString> hidden;
+    for (const QString &badge : forkmesh::ui::LogActivityLights::badges())
+        if (!logCategoryRecording(badge))
+            hidden.insert(badge);
+    m_logActivityLights->setHiddenCategories(hidden);
+}
+
 void MainWindow::rebuildLogFilterButtons()
 {
+    syncDebugActivityLightCategories();
     if (!m_logFilterRow)
         return;
     QLayoutItem *item = nullptr;

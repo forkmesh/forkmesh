@@ -14,7 +14,6 @@
     "docs": initDocsPage,
     "apps": initAppsPage,
     "apps-build": initAppsBuildPage,
-    "chat": initChatPage,
     "tasks": initTasksPage,
     "calendar": initCalendarPage,
     "notes": initNotesPage,
@@ -214,6 +213,7 @@
       initCommentGifs();
       initCommentTips();
       void initReactionSettings();
+      void initAiReviewSettings();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

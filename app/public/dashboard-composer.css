@@ -89,15 +89,11 @@
   background: var(--fmc-accent);
 }
 
-body[data-page="chat"] .fmc-pill {
-  bottom: var(--fmc-pill-lift, calc(176px + env(safe-area-inset-bottom, 0px)));
-}
-
 body:has(> .fmc-root) {
   --fmc-page-clearance: calc(80px + env(safe-area-inset-bottom, 0px));
 }
 
-body:has(> .fmc-root) #content > .view:not([data-view="chat"], [data-view="home"]) {
+body:has(> .fmc-root) #content > .view:not([data-view="home"]) {
   padding-bottom: var(--fmc-page-clearance);
 }
 
@@ -113,10 +109,6 @@ body:has(> .fmc-root) [data-home-right-rail] {
   body:has(> .fmc-root) [data-home-content-column] {
     padding-bottom: var(--fmc-page-clearance);
   }
-}
-
-body[data-page="chat"]:has(> .fmc-root) #fullChatMessages {
-  padding-bottom: var(--fmc-page-clearance);
 }
 
 .fmc-panel {
@@ -260,6 +252,10 @@ body[data-page="chat"]:has(> .fmc-root) #fullChatMessages {
 
 .fmc-count[data-tone="low"] {
   color: var(--fmc-warn);
+}
+
+.fmc-count[data-tone="near"] {
+  color: var(--fmc-danger);
 }
 
 .fmc-count[data-tone="over"] {

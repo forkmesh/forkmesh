@@ -1,5 +1,7 @@
 #include "StatsDashboard.h"
 
+#include "FontSizing.h"
+
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QDateTime>
@@ -72,16 +74,7 @@ QString trendText(double percent)
     return arrow + QStringLiteral(" %1%").arg(magnitude, 0, 'f', magnitude < 10 ? 1 : 0);
 }
 
-// The global stylesheet sizes widget fonts in pixels, which leaves
-// pointSizeF() at -1: scale whichever unit the font actually carries.
-QFont resizedFont(QFont font, qreal deltaPoints)
-{
-    if (font.pixelSize() > 0)
-        font.setPixelSize(qMax(9, qRound(font.pixelSize() + deltaPoints * 4.0 / 3.0)));
-    else if (font.pointSizeF() > 0)
-        font.setPointSizeF(qMax(7.0, font.pointSizeF() + deltaPoints));
-    return font;
-}
+using forkmesh::resizedFont;
 
 int clampSpan(int span)
 {

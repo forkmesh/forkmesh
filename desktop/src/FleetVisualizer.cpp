@@ -1,4 +1,5 @@
 #include "FleetVisualizer.h"
+#include "FontSizing.h"
 
 #include <QDateTime>
 #include <QFontMetricsF>
@@ -552,7 +553,7 @@ void FleetVisualizer::paintEvent(QPaintEvent *)
                                                  -kMargin);
     if (m_nodes.isEmpty() && m_totalStatements == 0) {
         QFont big = font();
-        big.setPointSizeF(big.pointSizeF() * 1.3);
+        big = forkmesh::scaledFont(big, 1.3);
         big.setBold(true);
         p.setFont(big);
         p.setPen(ink(200));
@@ -597,7 +598,7 @@ void FleetVisualizer::paintHeader(QPainter &p, const QRectF &area)
 {
     const bool isDark = dark();
     QFont title = font();
-    title.setPointSizeF(title.pointSizeF() * 1.25);
+    title = forkmesh::scaledFont(title, 1.25);
     title.setBold(true);
     p.setFont(title);
     p.setPen(ink());
@@ -670,7 +671,7 @@ void FleetVisualizer::paintHeader(QPainter &p, const QRectF &area)
                           1.0, 1.0);
     }
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.85);
+    small = forkmesh::scaledFont(small, 0.85);
     p.setFont(small);
     p.setPen(ink(140));
     p.drawText(QRectF(spark.left(), spark.bottom() + 2, spark.width(), 16),
@@ -692,7 +693,7 @@ void FleetVisualizer::paintStream(QPainter &p, const QRectF &area)
     p.setBrush(ink(isDark ? 12 : 8));
     p.drawRoundedRect(area, 10, 10);
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.85);
+    small = forkmesh::scaledFont(small, 0.85);
     p.setFont(small);
     p.setPen(ink(140));
     p.drawText(area.adjusted(12, 8, -12, 0), Qt::AlignLeft | Qt::AlignTop,
@@ -1005,7 +1006,7 @@ void FleetVisualizer::paintNodeCard(QPainter &p, const QRectF &card,
     QFont bold = font();
     bold.setBold(true);
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.85);
+    small = forkmesh::scaledFont(small, 0.85);
     const QFontMetricsF metrics(font());
     const QFontMetricsF smallMetrics(small);
     const QRectF inner = card.adjusted(12, 10, -12, -10);

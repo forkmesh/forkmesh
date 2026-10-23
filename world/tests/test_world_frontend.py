@@ -39,9 +39,6 @@ SCENE = world_scene_source()
 CSS = (WORLD / "world.css").read_text(encoding="utf-8")
 DASHBOARD_CHAT = (PUBLIC / "dashboard-chat.js").read_text(encoding="utf-8")
 DASHBOARD = (PUBLIC / "dashboard.js").read_text(encoding="utf-8")
-DASHBOARD_CHAT_VIEW = (
-    PUBLIC / "dashboard" / "partials" / "views" / "chat.html"
-).read_text(encoding="utf-8")
 QT_CHAT = "".join(
     (ROOT.parent / "desktop" / "src" / name).read_text(encoding="utf-8")
     for name in MAIN_WINDOW_CHAT_SOURCES
@@ -1002,6 +999,7 @@ def test_chat_opens_through_the_spatial_forkmesh_office_and_terminal():
     assert '!event.target.closest("[data-world-right-rail]")' in bind_ui
     assert "this.setWorldRightRailExpanded(false)" in bind_ui
     assert 'a[href^=\'/dashboard/chat\']' in APP
+    assert 'window.open("/chat", "_blank"' in APP
     assert 'href="/dashboard/chat" target="_blank"' not in APP
     for media_feature in (
         "Shared listening room",
@@ -1029,25 +1027,6 @@ def test_mobile_world_chat_composer_stays_above_safe_area_and_terminal_bars():
     ]
     assert "this.openChatTerminal();" in open_chat
     assert ".world-hud-island-feed" in CSS
-    assert "var(--forkmesh-chat-viewport-height, 100dvh)" in DASHBOARD_CHAT_VIEW
-    assert "const layoutHeight = window.innerHeight" in DASHBOARD_CHAT_VIEW
-    assert "window.frameElement?.getBoundingClientRect?.().height" in (
-        DASHBOARD_CHAT_VIEW
-    )
-    assert "Math.min(...candidates)" in DASHBOARD_CHAT_VIEW
-    composer = DASHBOARD_CHAT_VIEW[
-        DASHBOARD_CHAT_VIEW.index(
-            'html[data-world-embed="1"] [data-dashboard-chat-composer]'
-        ):
-        DASHBOARD_CHAT_VIEW.index(
-            "@media (max-width: 767px)", DASHBOARD_CHAT_VIEW.index(
-                'html[data-world-embed="1"] [data-dashboard-chat-composer]'
-            )
-        )
-    ]
-    assert "position: absolute" in composer
-    assert "bottom: 0" in composer
-    assert "env(safe-area-inset-bottom, 0px)" in composer
     assert "Playback remains individual and opt-in" in APP
     assert 'this.fetchJSON("/api/world/media/spaces"' in APP
     assert "termsConfirmed: true" in APP

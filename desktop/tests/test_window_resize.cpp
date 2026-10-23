@@ -931,6 +931,57 @@ void checkFooterOverlayGeometry(MainWindow &window)
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QApplication::processEvents();
 
+        QStringList debugTileNames = activityTileNames;
+        debugTileNames += qtTileNames;
+        bool tilesQuadrantSized = true;
+        for (const QString &name : debugTileNames) {
+            QWidget *tile = window.findChild<QWidget *>(name);
+            tilesQuadrantSized = tilesQuadrantSized && tile &&
+                                 tile->size() ==
+                                     QSize(forkmesh::ui::kResourceSparklineCompactSide,
+                                           forkmesh::ui::kResourceSparklineCompactSide) &&
+                                 tile->parentWidget() &&
+                                 tile->parentWidget()->objectName() ==
+                                     QStringLiteral("debugTileQuad");
+        }
+        check(tilesQuadrantSized,
+              QStringLiteral("every debug chart is one quadrant of a 2x2 block, "
+                             "the size of the resource chart's own quadrants"));
+
+        auto *loopTile = window.findChild<QWidget *>(
+            QStringLiteral("qtDiagnosticLoopTile"));
+        if (loopTile) {
+            const QPoint at(loopTile->width() / 2, loopTile->height() / 2);
+            QHelpEvent hover(QEvent::ToolTip, at, loopTile->mapToGlobal(at));
+            QApplication::sendEvent(loopTile, &hover);
+        }
+        auto *hoverCard = window.findChild<QWidget *>(
+            QStringLiteral("sparklineHoverCard"));
+        check(hoverCard && hoverCard->isVisible() && hoverCard->height() > 80 &&
+                  !QToolTip::isVisible(),
+              QStringLiteral("hovering a debug chart opens the live detail card "
+                             "instead of a plain tooltip"));
+        if (hoverCard)
+            hoverCard->hide();
+
+        const int shownBefore = lights->visibleLightCount();
+        window.testSetLogCategoryEnabled(QStringLiteral("BOUNTY"), false);
+        const int shownMuted = lights->visibleLightCount();
+        const int mutedWidth = lights->width();
+        window.testSetLogCategoryEnabled(QStringLiteral("BOUNTY"), true);
+        window.testSetLoggingEnabled(false);
+        const int shownLoggingOff = lights->visibleLightCount();
+        window.testSetLoggingEnabled(true);
+        check(shownBefore == expectedLogCategories &&
+                  shownMuted == expectedLogCategories - 1 &&
+                  mutedWidth < lights->width() && shownLoggingOff == 0 &&
+                  lights->visibleLightCount() == expectedLogCategories,
+              QStringLiteral("the debug bar shows a log icon only for the "
+                             "categories being recorded (%1 / %2 / %3)")
+                  .arg(shownBefore)
+                  .arg(shownMuted)
+                  .arg(shownLoggingOff));
+
         version->click();
         QApplication::processEvents();
         const bool detailedStopped = !window.testQtDiagnosticsDetailed();
@@ -15268,7 +15319,8 @@ else:
         const auto hover = [&chart](const QPoint &position, const QString &expected) {
             QHelpEvent event(QEvent::ToolTip, position, chart.mapToGlobal(position));
             QApplication::sendEvent(&chart, &event);
-            return QToolTip::text() == expected;
+            return forkmesh::ui::SparklineHoverCard::detailShownFor(&chart)
+                .startsWith(expected);
         };
         check(hover(QPoint(8, 8), QStringLiteral("CPU details")) &&
                   hover(QPoint(25, 8), QStringLiteral("Memory details")) &&
@@ -19935,6 +19987,39 @@ else:
               .arg(removedStyle)
               .arg(removedChoice));
 
+    const int halloweenChoice =
+        appThemeCombo ? appThemeCombo->findData(QStringLiteral("halloween")) : -1;
+    if (halloweenChoice >= 0)
+        appThemeCombo->setCurrentIndex(halloweenChoice);
+    QApplication::processEvents();
+    const QString halloweenBg = Theme::hex(Theme::Role::Bg);
+    const QString halloweenAccent = Theme::hex(Theme::Role::Accent);
+    const QString halloweenWindow =
+        qApp->palette().color(QPalette::Window).name(QColor::HexRgb);
+    const bool halloweenDark = forkmesh::ui::currentThemeIsDark();
+    const QString halloweenPreference =
+        QSettings().value(QStringLiteral("app/theme")).toString();
+    check(halloweenChoice >= 0 &&
+              halloweenPreference == QStringLiteral("halloween") &&
+              halloweenDark && halloweenBg == QLatin1String("#120b10") &&
+              halloweenAccent == QLatin1String("#f97316") &&
+              halloweenWindow != QLatin1String("#0d1117") &&
+              halloweenWindow != QLatin1String("#09090b"),
+          QStringLiteral("choosing Halloween recolours the app in pumpkin "
+                         "orange on a near-black purple (choice=%1 "
+                         "preference=%2 dark=%3 bg=%4 accent=%5 window=%6)")
+              .arg(halloweenChoice)
+              .arg(halloweenPreference)
+              .arg(halloweenDark)
+              .arg(halloweenBg, halloweenAccent, halloweenWindow));
+    const int systemChoice =
+        appThemeCombo ? appThemeCombo->findData(QStringLiteral("system")) : -1;
+    if (systemChoice >= 0)
+        appThemeCombo->setCurrentIndex(systemChoice);
+    QApplication::processEvents();
+    check(Theme::hex(Theme::Role::Accent) != QLatin1String("#f97316"),
+          QStringLiteral("leaving Halloween drops its colours"));
+
     QPushButton *removeCapture = nullptr;
     const QList<QPushButton *> initialPackageActions =
         allMarketActions(QStringLiteral("marketPackageAction-capture"));
@@ -20214,6 +20299,31 @@ else:
               window.testTimerChipTexts().isEmpty(),
           QStringLiteral("installing Timers puts a little clock in the window's "
                          "top bar"));
+
+    const QString clockSlotBefore = window.testTimersClockSlot();
+    window.testDropTimersClock(0.9);
+    QApplication::processEvents();
+    const QString clockSlotRight = window.testTimersClockSlot();
+    const QString storedRight =
+        QSettings().value(QStringLiteral("ui/timersClockPlacement")).toString();
+    window.testDropTimersClock(0.5);
+    QApplication::processEvents();
+    const QString clockSlotCenter = window.testTimersClockSlot();
+    window.testDropTimersClock(0.1);
+    QApplication::processEvents();
+    const QString clockSlotLeft = window.testTimersClockSlot();
+    check(clockSlotBefore == QStringLiteral("left") &&
+              clockSlotRight == QStringLiteral("right") &&
+              storedRight == QStringLiteral("right") &&
+              clockSlotCenter == QStringLiteral("center") &&
+              clockSlotLeft == QStringLiteral("left") && timersStrip &&
+              !timersStrip->isHidden() &&
+              !QSettings().contains(QStringLiteral("ui/timersClockPlacement")),
+          QStringLiteral("dragging the clock moves it to the left, middle or "
+                         "right of the top bar and remembers the spot "
+                         "(slots=%1/%2/%3/%4 stored=%5)")
+              .arg(clockSlotBefore, clockSlotRight, clockSlotCenter,
+                   clockSlotLeft, storedRight));
 
     const bool timerEntriesAdded =
         window.testAddTimer(QStringLiteral("25m standup")) &&
