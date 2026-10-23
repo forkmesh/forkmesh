@@ -1,6 +1,7 @@
 #include "InstanceFeedFeature.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QDateTime>
 #include <QJsonArray>
 #include <QLabel>
@@ -85,6 +86,7 @@ int main(int argc, char **argv)
     bool installed = true;
     forkmesh::market::NativePackageHost host;
     host.packageId = QStringLiteral("instance-feed");
+    host.publicPageUrl = [](const QString &path) { return QStringLiteral("https://forkmesh.com") + path; };
     host.request = [&](const QByteArray &method, const QString &path, const QJsonObject &body,
                        forkmesh::market::NativePackageReplyHandler done) {
         calls.append({method, path});
@@ -131,6 +133,19 @@ int main(int argc, char **argv)
         boostBanner = boostBanner || label->text().contains(QStringLiteral("Grace</a> boosted"));
     check(boostBanner, "boosts name the booster");
     check(buttonStartingWith(page, QStringLiteral("★ Favourited")) != nullptr, "favourited posts show it");
+    QPushButton *website = buttonStartingWith(page, QStringLiteral("View on website"));
+    check(website && website->toolTip() == QStringLiteral("https://forkmesh.com/feed?post=") + QString(32, QLatin1Char('a')),
+          "each post links to its public page");
+    QPushButton *copy = buttonStartingWith(page, QStringLiteral("Copy link"));
+    check(copy != nullptr, "each post has a Copy link button");
+    if (copy) {
+        copy->click();
+        check(QGuiApplication::clipboard()->text() == QStringLiteral("https://forkmesh.com/feed?post=") + QString(32, QLatin1Char('a')) &&
+                  copy->text() == QLatin1String("Copied"),
+              "Copy link puts the public link on the clipboard");
+    }
+    check(InstanceFeedFeature(forkmesh::market::NativePackageHost{}).publicPostUrl(QString(32, QLatin1Char('a'))).isEmpty(),
+          "a host without public pages shows no link");
 
     auto *editor = page.findChild<QPlainTextEdit *>();
     QPushButton *postButton = buttonStartingWith(page, QStringLiteral("Post"));
