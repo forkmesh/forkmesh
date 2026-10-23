@@ -30541,6 +30541,7 @@ Your reply
     const milestones = tally("milestone");
     const section = (title, rows) => rows.length ? `<h3 class="px-2 pb-1 pt-3 text-[12px] font-semibold text-muted-foreground">${title}</h3>${rows.join("")}` : "";
     return `<div data-repo-collection-views-inner>
+      ${renderCollectionViewsHeader()}
       <div class="grid gap-0.5">
         ${ISSUE_VIEWS.map((view) => row(`data-repo-issue-view="${view.id}"`, current?.id === view.id,
           `<i data-lucide="${view.icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, view.label, viewCount(view))).join("")}
@@ -30554,8 +30555,7 @@ Your reply
         ${section("Milestones", milestones.map(([milestone, count]) => row(`data-repo-issue-milestone-view="${escapeHtml(milestone)}"`,
           String(filters.milestone || "").toLowerCase() === milestone.toLowerCase(),
           `<i data-lucide="milestone" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, milestone, count)))}
-      </div>
-      ${renderCollectionViewsFooter()}</div>`;
+      </div></div>`;
   }
 
   function issueLabelSwatch(label) {
@@ -30567,9 +30567,9 @@ Your reply
     return `<svg aria-hidden="true" viewBox="0 0 32 32" class="h-4 w-4 shrink-0 overflow-visible"><g>${wiggle}<path d="M16 7.5V4.2c0-.9.6-1.6 1.5-1.8l1.3-.3" stroke="#4d7c0f" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M16 8c-2-1.8-6.5-1.6-9.5.8C3.2 11.4 2 15.2 2.6 19c.8 5 4.6 9 9.4 9 1.5 0 2.9-.4 4-1.1 1.1.7 2.5 1.1 4 1.1 4.8 0 8.6-4 9.4-9 .6-3.8-.6-7.6-3.9-10.2C22.5 6.4 18 6.2 16 8Z" fill="#f97316"/><path d="M16 8.5c-1.2 2.5-1.6 6.5-1 10.5.4 3 1 5.8 1 7.9M10.5 8.6c-2.4 2.6-3.3 6.8-2.8 11 .3 2.8 1.3 5.4 2.6 7M21.5 8.6c2.4 2.6 3.3 6.8 2.8 11-.3 2.8-1.3 5.4-2.6 7" stroke="#c2410c" stroke-width="1" fill="none" opacity=".55"/><path d="M7.5 14.5l3.4-2.6 1.8 3.9zM24.5 14.5l-3.4-2.6-1.8 3.9z" fill="#422006"/><path d="M8.5 20.5l2 1.6 1.8-1.4 1.9 1.6 1.8-1.4 1.9 1.6 1.8-1.4 1.9 1.6 1.9-1.6c-.6 2.6-3.6 4.3-7.4 4.3s-6.9-1.9-7.6-4.9z" fill="#422006"/></g></svg>`;
   }
 
-  function renderCollectionViewsFooter() {
-    return `<div class="mt-auto grid gap-0.5 pt-6">
-        <button type="button" data-repo-issue-views-toggle class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="panel-left-close" class="h-4 w-4 text-muted-foreground"></i>Collapse sidebar</button>
+  function renderCollectionViewsHeader() {
+    return `<div class="mb-1 flex justify-end">
+        <button type="button" data-repo-issue-views-toggle aria-label="Collapse sidebar" title="Collapse sidebar" class="h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"><i data-lucide="panel-left-close" class="h-4 w-4"></i></button>
       </div>`;
   }
 
@@ -31877,6 +31877,7 @@ Your reply
         String(filters.base || "").toLowerCase() === base.toLowerCase(),
         `<i data-lucide="git-branch" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, base, count));
     return `<div data-repo-collection-views-inner>
+      ${renderCollectionViewsHeader()}
       <div class="grid gap-0.5">
         ${PULL_VIEWS.map((view) => row(`data-repo-pull-view="${view.id}"`, current?.id === view.id,
           `<i data-lucide="${view.icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, view.label, viewCount(view))).join("")}
@@ -31885,8 +31886,7 @@ Your reply
       <div class="grid gap-0.5">
         <a${state.selectedRepo ? ` href="${escapeHtml(`${repoLinkUrl(state.selectedRepo)}/branches`)}"` : ""} data-dashboard-repo-tab="branches" class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="git-branch" class="h-4 w-4 text-muted-foreground"></i>Branches</a>
         ${baseRows.length ? `<h3 class="px-2 pb-1 pt-3 text-[12px] font-semibold text-muted-foreground">Base branches</h3>${baseRows.join("")}` : ""}
-      </div>
-      ${renderCollectionViewsFooter()}</div>`;
+      </div></div>`;
   }
 
   function renderPullListHeader(loadedItems) {
@@ -44207,17 +44207,33 @@ Your reply
       </label>`;
   }
 
-  function issueContributionTipStorageKey(repo) {
-    return `forkmesh.issue-contribution-tip.v1:${repoKey(repo)}`;
+  function contributionTipKeys(kind, repo) {
+    const name = String(repo?.name || "").trim();
+    const owners = [repo?.owner, ...repoLogicalOwners(repo).map((value) => value.owner)]
+      .map((owner) => String(owner || "").trim())
+      .filter(Boolean);
+    return [...new Set(owners)].map((owner) => `forkmesh.${kind}-contribution-tip.v1:${owner}/${name}`);
+  }
+
+  function contributionTipDismissed(kind, repo) {
+    try {
+      return contributionTipKeys(kind, repo).some((key) => localStorage.getItem(key) === "1");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function dismissContributionTip(kind, repo) {
+    try {
+      contributionTipKeys(kind, repo).forEach((key) => localStorage.setItem(key, "1"));
+    } catch (_) {}
   }
 
   function issueContributionTipDismissed(repo) {
     try {
-      return localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1"
-        || localStorage.getItem(issueContributionTipStorageKey(repo)) === "1";
-    } catch (_) {
-      return false;
-    }
+      if (localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1") return true;
+    } catch (_) {}
+    return contributionTipDismissed("issue", repo);
   }
 
   function renderIssueContributionTip(repo) {
@@ -44343,11 +44359,7 @@ Your reply
   }
 
   function pullContributionTipDismissed(repo) {
-    try {
-      return localStorage.getItem(`forkmesh.pull-contribution-tip.v1:${repoKey(repo)}`) === "1";
-    } catch (_) {
-      return false;
-    }
+    return contributionTipDismissed("pull", repo);
   }
 
   const PULL_BATCH_FILE = ".forkmesh/pull-batch.json";
@@ -47638,6 +47650,32 @@ Your reply
     storeRepositoryCatalog(data.repositories);
     renderRepositories(data.repositories, state.session);
     recordInterfaceMetric("browse", startedAt, "remote");
+    if (!fresh) void refreshCatalogOnNewForks();
+  }
+
+  async function refreshCatalogOnNewForks() {
+    if (state.pinnedForkCountsChecked) return;
+    state.pinnedForkCountsChecked = true;
+    const groups = sidebarPinnedGroups(mergeGroupsByPublicAddress(groupRepositories(state.repositories || [])), () => []);
+    for (const group of groups) {
+      const repo = group.entry.repo;
+      if (!repo || repo.isPrivate) continue;
+      try {
+        const response = await fetch(`${repoApiBase(repo)}/forks`, { headers: { accept: "application/json" } });
+        const data = response.ok ? await response.json() : null;
+        const live = Number(data?.count) || 0;
+        const seenKey = `forkmesh.pinned-fork-count.v1:${repoKey(repo)}`;
+        let seen = 0;
+        try {
+          seen = Number(sessionStorage.getItem(seenKey)) || 0;
+          sessionStorage.setItem(seenKey, String(live));
+        } catch (_) {}
+        if (live > group.forks.length && live > seen) {
+          await loadRepositories({ fresh: true });
+          return;
+        }
+      } catch (_) {}
+    }
   }
 
   // Boot/shared-chrome loads take the cached path (browser + edge cache honor
@@ -49066,14 +49104,12 @@ Your reply
         "[data-repo-issue-contribution-dismiss]",
       );
       if (contributionDismissButton && state.selectedRepo) {
-        const scope = contributionDismissButton.dataset.repoIssueContributionDismiss;
-        try {
-          const key = scope === "all"
-            ? "forkmesh.issue-contribution-tip.v1:all"
-            : issueContributionTipStorageKey(state.selectedRepo);
-          localStorage.setItem(key, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
+        if (contributionDismissButton.dataset.repoIssueContributionDismiss === "all") {
+          try {
+            localStorage.setItem("forkmesh.issue-contribution-tip.v1:all", "1");
+          } catch (_) {}
+        } else {
+          dismissContributionTip("issue", state.selectedRepo);
         }
         contributionDismissButton.closest("[data-repo-issue-contribution-tip]")?.remove();
         return;
@@ -49192,11 +49228,7 @@ Your reply
 
       const pullTipDismiss = event.target.closest("[data-repo-pull-contribution-dismiss]");
       if (pullTipDismiss && state.selectedRepo) {
-        try {
-          localStorage.setItem(`forkmesh.pull-contribution-tip.v1:${repoKey(state.selectedRepo)}`, "1");
-        } catch (_) {
-          /* storage unavailable: still dismiss this rendered tip */
-        }
+        dismissContributionTip("pull", state.selectedRepo);
         pullTipDismiss.closest("[data-repo-pull-contribution-tip]")?.remove();
         return;
       }

@@ -46,6 +46,16 @@ the rest inline. It sits outside the row links (rows are `<a>`, so a button
 inside one would nest an interactive element), and the expanded set lives in
 `state.repositoryForksExpanded` for the session.
 
+**New forks.** Both lists are built from the public catalog snapshot, which
+the cron rebuilds every few minutes and browsers cache until it expires, so a
+new fork could take several minutes to appear. After the background catalog
+refresh, `refreshCatalogOnNewForks` (`08-repo-detail-network.js`) asks
+`/api/repo/<owner>/<repo>/forks` for each pinned repository, once per page.
+When the live count is higher than the forks nested under it, it reloads the
+catalog live (`loadRepositories({fresh: true})`). It remembers the count it
+acted on in `sessionStorage` (`forkmesh.pinned-fork-count.v1:<repo>`), so a
+fork the catalog never lists does not cost a live catalog read on every page.
+
 ### Ahead/behind badge
 
 After a list renders, `hydrateRepositoryForkCounts` collects the
@@ -111,6 +121,26 @@ row, an empty `pinned` list, or a list where nothing matches, the lists keep
 their usual order (six sidebar rows, eight Home rows). Outside an instance
 `instanceInfo` answers nothing, so the lists never change there.
 `/api/instance` is cached for 60 seconds, so a new row shows within a minute.
+
+## Contribution tips
+
+The "Want to contribute" tip on Issues and the "First time contributing" tip on
+Pull requests remember a dismissal in `localStorage`. A repository can load
+under its storage owner (the catalog row, `drew/Widgets`) or its organization
+(`acme/Widgets`), depending on the route and listing that opened it, so a key
+built from `repo.owner` alone missed a dismissal made under the other name.
+`contributionTipKeys` lists one key per name the repository has (`repo.owner`
+and each of `repoLogicalOwners`). Dismissing writes all of them, and the tip
+stays hidden if any of them is set. "Dismiss for all repositories" on Issues
+is still the single `forkmesh.issue-contribution-tip.v1:all` key.
+
+## Views sidebar
+
+The Issues and Pull requests views sidebar collapses from a `panel-left-close`
+icon at its top right (`renderCollectionViewsHeader`), not from a full-width
+"Collapse sidebar" row at its bottom. When it is collapsed, the
+`panel-left-open` icon beside the page title brings it back. Both are
+`data-repo-issue-views-toggle` buttons and share one handler.
 
 ## Profile repository list and popular cards
 

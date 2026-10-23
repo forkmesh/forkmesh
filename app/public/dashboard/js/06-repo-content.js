@@ -12219,6 +12219,7 @@ Your reply
     const milestones = tally("milestone");
     const section = (title, rows) => rows.length ? `<h3 class="px-2 pb-1 pt-3 text-[12px] font-semibold text-muted-foreground">${title}</h3>${rows.join("")}` : "";
     return `<div data-repo-collection-views-inner>
+      ${renderCollectionViewsHeader()}
       <div class="grid gap-0.5">
         ${ISSUE_VIEWS.map((view) => row(`data-repo-issue-view="${view.id}"`, current?.id === view.id,
           `<i data-lucide="${view.icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, view.label, viewCount(view))).join("")}
@@ -12232,8 +12233,7 @@ Your reply
         ${section("Milestones", milestones.map(([milestone, count]) => row(`data-repo-issue-milestone-view="${escapeHtml(milestone)}"`,
           String(filters.milestone || "").toLowerCase() === milestone.toLowerCase(),
           `<i data-lucide="milestone" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, milestone, count)))}
-      </div>
-      ${renderCollectionViewsFooter()}</div>`;
+      </div></div>`;
   }
 
   function issueLabelSwatch(label) {
@@ -12245,9 +12245,9 @@ Your reply
     return `<svg aria-hidden="true" viewBox="0 0 32 32" class="h-4 w-4 shrink-0 overflow-visible"><g>${wiggle}<path d="M16 7.5V4.2c0-.9.6-1.6 1.5-1.8l1.3-.3" stroke="#4d7c0f" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M16 8c-2-1.8-6.5-1.6-9.5.8C3.2 11.4 2 15.2 2.6 19c.8 5 4.6 9 9.4 9 1.5 0 2.9-.4 4-1.1 1.1.7 2.5 1.1 4 1.1 4.8 0 8.6-4 9.4-9 .6-3.8-.6-7.6-3.9-10.2C22.5 6.4 18 6.2 16 8Z" fill="#f97316"/><path d="M16 8.5c-1.2 2.5-1.6 6.5-1 10.5.4 3 1 5.8 1 7.9M10.5 8.6c-2.4 2.6-3.3 6.8-2.8 11 .3 2.8 1.3 5.4 2.6 7M21.5 8.6c2.4 2.6 3.3 6.8 2.8 11-.3 2.8-1.3 5.4-2.6 7" stroke="#c2410c" stroke-width="1" fill="none" opacity=".55"/><path d="M7.5 14.5l3.4-2.6 1.8 3.9zM24.5 14.5l-3.4-2.6-1.8 3.9z" fill="#422006"/><path d="M8.5 20.5l2 1.6 1.8-1.4 1.9 1.6 1.8-1.4 1.9 1.6 1.8-1.4 1.9 1.6 1.9-1.6c-.6 2.6-3.6 4.3-7.4 4.3s-6.9-1.9-7.6-4.9z" fill="#422006"/></g></svg>`;
   }
 
-  function renderCollectionViewsFooter() {
-    return `<div class="mt-auto grid gap-0.5 pt-6">
-        <button type="button" data-repo-issue-views-toggle class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="panel-left-close" class="h-4 w-4 text-muted-foreground"></i>Collapse sidebar</button>
+  function renderCollectionViewsHeader() {
+    return `<div class="mb-1 flex justify-end">
+        <button type="button" data-repo-issue-views-toggle aria-label="Collapse sidebar" title="Collapse sidebar" class="h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"><i data-lucide="panel-left-close" class="h-4 w-4"></i></button>
       </div>`;
   }
 
@@ -13555,6 +13555,7 @@ Your reply
         String(filters.base || "").toLowerCase() === base.toLowerCase(),
         `<i data-lucide="git-branch" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, base, count));
     return `<div data-repo-collection-views-inner>
+      ${renderCollectionViewsHeader()}
       <div class="grid gap-0.5">
         ${PULL_VIEWS.map((view) => row(`data-repo-pull-view="${view.id}"`, current?.id === view.id,
           `<i data-lucide="${view.icon}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, view.label, viewCount(view))).join("")}
@@ -13563,8 +13564,7 @@ Your reply
       <div class="grid gap-0.5">
         <a${state.selectedRepo ? ` href="${escapeHtml(`${repoLinkUrl(state.selectedRepo)}/branches`)}"` : ""} data-dashboard-repo-tab="branches" class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="git-branch" class="h-4 w-4 text-muted-foreground"></i>Branches</a>
         ${baseRows.length ? `<h3 class="px-2 pb-1 pt-3 text-[12px] font-semibold text-muted-foreground">Base branches</h3>${baseRows.join("")}` : ""}
-      </div>
-      ${renderCollectionViewsFooter()}</div>`;
+      </div></div>`;
   }
 
   function renderPullListHeader(loadedItems) {

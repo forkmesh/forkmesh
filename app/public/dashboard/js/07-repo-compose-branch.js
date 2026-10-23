@@ -4863,17 +4863,33 @@
       </label>`;
   }
 
-  function issueContributionTipStorageKey(repo) {
-    return `forkmesh.issue-contribution-tip.v1:${repoKey(repo)}`;
+  function contributionTipKeys(kind, repo) {
+    const name = String(repo?.name || "").trim();
+    const owners = [repo?.owner, ...repoLogicalOwners(repo).map((value) => value.owner)]
+      .map((owner) => String(owner || "").trim())
+      .filter(Boolean);
+    return [...new Set(owners)].map((owner) => `forkmesh.${kind}-contribution-tip.v1:${owner}/${name}`);
+  }
+
+  function contributionTipDismissed(kind, repo) {
+    try {
+      return contributionTipKeys(kind, repo).some((key) => localStorage.getItem(key) === "1");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function dismissContributionTip(kind, repo) {
+    try {
+      contributionTipKeys(kind, repo).forEach((key) => localStorage.setItem(key, "1"));
+    } catch (_) {}
   }
 
   function issueContributionTipDismissed(repo) {
     try {
-      return localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1"
-        || localStorage.getItem(issueContributionTipStorageKey(repo)) === "1";
-    } catch (_) {
-      return false;
-    }
+      if (localStorage.getItem("forkmesh.issue-contribution-tip.v1:all") === "1") return true;
+    } catch (_) {}
+    return contributionTipDismissed("issue", repo);
   }
 
   function renderIssueContributionTip(repo) {
@@ -4999,9 +5015,5 @@
   }
 
   function pullContributionTipDismissed(repo) {
-    try {
-      return localStorage.getItem(`forkmesh.pull-contribution-tip.v1:${repoKey(repo)}`) === "1";
-    } catch (_) {
-      return false;
-    }
+    return contributionTipDismissed("pull", repo);
   }

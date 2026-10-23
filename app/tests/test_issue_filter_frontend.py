@@ -999,7 +999,19 @@ def test_label_filter_lives_in_the_address_bar():
 
 def test_hacktoberfest_label_gets_a_pumpkin_that_respects_reduced_motion():
     start = DASHBOARD_JS.index("function issueLabelSwatch(label)")
-    body = DASHBOARD_JS[start:DASHBOARD_JS.index("function renderCollectionViewsFooter()", start)]
+    body = DASHBOARD_JS[start:DASHBOARD_JS.index("function renderCollectionViewsHeader()", start)]
     assert "hacktoberfest" in body and "<animateTransform" in body
     assert "prefers-reduced-motion: reduce" in body
     assert "issueLabelSwatch(label), label, count" in DASHBOARD_JS
+
+
+def test_views_sidebar_collapses_from_an_icon_at_its_top():
+    for name in ("function renderIssueViewsNav()", "function renderPullViewsNav()"):
+        start = DASHBOARD_JS.index(name)
+        body = DASHBOARD_JS[start:DASHBOARD_JS.index("\n  }\n", start)]
+        assert body.index("renderCollectionViewsHeader()") < body.index("data-repo-collection-views-inner") + 80
+    assert "renderCollectionViewsFooter" not in DASHBOARD_JS
+    header = DASHBOARD_JS[DASHBOARD_JS.index("function renderCollectionViewsHeader()"):]
+    header = header[:header.index("\n  }\n")]
+    assert 'data-repo-issue-views-toggle aria-label="Collapse sidebar"' in header
+    assert 'data-lucide="panel-left-close"' in header
