@@ -167,19 +167,105 @@ being advertised. To restore, an operator runs
 clone that has it).
 
 **Reporting.** The `X-ForkMesh-Ref-Updates` entry of a forced update carries
-`forced: true`, `kept` (the history ref) and `pulls`: the open pull requests on
-that core whose `pull.md` names the branch as `head` (`open_pulls_for_head`,
-at most 10). `record_accepted_push` audits `git.force_push` and queues one
-`force-push` event per pull in `pull_inbox` (`type, id, author, authorName,
-ts, ref, before, after, body`, `sig: ""` like other relay-recorded events,
-e.g. ForkBot's), at most 10 per push (`FORCE_PUSH_EVENTS_MAX`); the node writes it into the pull ledger like any other
-event, and `pullEventMarkdown` keeps `ref`, `before` and `after`. The web
-timeline shows "force-pushed `<b>` from `<old7>` to `<new7>`" with a compare
-link, and reviews submitted before it show "on an older commit". There is no
-"dismiss stale reviews" rule, so approvals still count; signed check
-attestations are bound to the exact commit, so they no longer apply to the new
-head, and Actions run as on any push (`_queue_pushed_actions`). Pull requests
-opened from a fork's branch are not found yet (the pull lives in the parent).
+`forced: true` and `kept` (the history ref), and `record_accepted_push` audits
+`git.force_push`. The open pull requests of the branch are reported for every
+branch push, forced or not (see [pull requests follow their
+branch](#pull-requests-follow-their-branch)). Older ledgers keep `force-push`
+events from before that change; the timeline still renders them.
+
+### Pull requests follow their branch
+
+A pull request opened from a branch of the same repository (a writer's
+`feature` or a contributor's `pr/<account>/<topic>`) follows that branch the
+way GitHub does: a push to the branch updates the pull request.
+
+**Why not re-sign the pull.** The author's signature (`verify_pull_event`)
+covers title, base, head name, `changes.patch` and `commits.mbox`, never a
+commit id. `headOid` and `headBaseOid` are the node's own record of the commit
+the signed series replays to (`recordPullHead`), unsigned like `status`. So a
+push leaves the signed creation diff alone and records the new head next to
+it, which keeps every old signature valid.
+
+**Detection.** For every accepted push that moves an existing branch (not the
+default branch, not `forkmesh/`, not a new branch), the gateway lists the open
+pull requests whose `pull.md` names that branch as `head`
+(`open_pulls_for_head`, at most 8 branches per push and 10 pulls per branch)
+and puts them in the update's `pulls`. `head` values of the form
+`<copy>:<branch>` (patch-backed pulls from another copy) never match, so those
+still update only by resubmitting.
+
+**Who may move a pull.** Only a push the platform accepted (HTTPS gateway,
+contributor push, core push): the gateway already checked that the pusher may
+write that ref (owner, organization writer, or a contributor inside
+`pr/<account>/`). `may_synchronize` checks again that a contributor push only
+moves `pr/<pusher>/` branches, and an anonymous push moves nothing.
+
+**The event.** `record_accepted_push` queues one `synchronize` event per pull
+in `pull_inbox` (`type, id, author, authorName, ts, ref, before, after,
+commits, forced, body`, `sig: ""` like force-push and ForkBot events), with
+`source: "synchronize"`. The id is `synchronize-<n>-<after[:16]>`, so the same
+(pull, head) is recorded once however often it is queued.
+
+**Applying it (node).** `materializePullInbox` checks the event before it
+writes anything (`pullSynchronizeTarget`): the pull is open, `head` is a plain
+branch of this repository that equals the event's `ref`, `after` is a commit
+the repository has and the branch still contains (an older event for a commit
+a later force push dropped is skipped), and the pull is not already at
+`after`. It then writes the event file and, for a patch-backed record, sets
+`headOid: <after>`, `headBaseOid: <merge-base of after and the base branch>`
+and `syncedHeadOid: <after>` in `pull.md` (`applyPullSynchronize`) and moves
+`refs/pr/<n>/head`. `derive: branch` records already follow their branch, so
+only the timeline event is written. `ensurePullHeadRefs` publishes `headOid`,
+so the sweep keeps the synced head instead of reverting it.
+
+**Readers.** `syncedHeadOid` equal to `headOid` means "the head is a real
+branch commit, not a replay of the signed series":
+
+- the web reads Files changed and Commits from `compare(headBaseOid, head)`
+  (`loadRepoPullSyncedPatch`, `loadRepoPullCommits`); the host's first paint
+  (`repo_views.plan_pull`) does the same;
+- the merge trial, checks and merge box use `headOid` as before;
+- the merge executor merges that commit instead of replaying the series
+  (`syncedPullHead`; an unresolvable synced head fails with `stale_head`);
+- anything else that reads `headOid` or `refs/pr/<n>/head` follows too.
+
+**Re-queued work.** When the node acknowledges the inbox rows, the relay looks
+at the acknowledged `synchronize` rows (`_pull_inbox_synchronized`) and calls
+`core_push.pulls_synchronized`, which hands the moved branches to the pull
+hooks a build has (`pull_attention_moved`, `ai_review_note_push`,
+`pull_actions_sync_repo`, each optional). Waiting for the acknowledgement
+matters: before it, `pull.md` still names the old head.
+
+**Timeline.** "`<pusher>` pushed N commits to `<branch>` `<after7>`" or
+"force-pushed `<branch>` from `<before7>` to `<after7>`", each with a compare
+link; reviews submitted before the newest push show "on an older commit".
+There is no "dismiss stale reviews" rule, so approvals still count.
+
+**Repair.** Pulls whose branch moved before this existed (or while the node was
+old) are moved with the host CLI, dry run first:
+
+```sh
+cd /opt/forkmesh-instance/src/app/host && /opt/forkmesh-instance/venv/bin/python \
+  -m forkmesh_host pull-resync --owner <storage-owner> --name <repo> \
+  [--number <n>] --dry-run --env-file /etc/forkmesh-instance/app.env \
+  --db sqlite:/var/lib/forkmesh-instance/app.db \
+  --data-dir /var/lib/forkmesh-instance/data
+```
+
+It reads the hosted repository as `forkmesh-node`, lists every open pull with
+an action (`sync` or `skip` and why) and, without `--dry-run`, queues the same
+`synchronize` events as a push (author `--actor`, default `--owner`), then
+asks the local node to drain its inboxes now (`POST /v1/control/sync` on the
+loopback `listen` address from `--node-config`). That wake is needed because
+`notify_repo_host` reaches the node through the Durable Object host of the
+process that calls it: on a self-hosted instance that host lives inside the
+serving app, so a doorbell rung from a CLI process reaches no socket and the
+row would wait for the node's next catch-up (a reconnect or a push). A pull is
+moved only when its head branch exists, contains the pull's base, and holds a
+commit whose subject matches one in the signed `commits.mbox`; `--number`
+names a pull explicitly and skips the subject match. The node applies the
+events with the checks above, so a dry run is safe and a real run is
+idempotent.
 
 **Replicas.** Cores converge by fetching (`reconcileUpstreamRefs`), which never
 rewinds a branch and lets the newer commit win a divergence. So the app

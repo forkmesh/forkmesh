@@ -1805,11 +1805,25 @@ EOF
 }
 
 daemon_digest() {
-  local gateway=""
-  if [ -s "$DAEMON_CONFIG" ]; then
-    gateway="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("gatewayConfig") or "")' "$DAEMON_CONFIG" 2>/dev/null || true)"
-  fi
-  files_digest "$DAEMON" "$DAEMON_CONFIG" "$DAEMON_UNIT" ${gateway:+"$gateway"}
+  {
+    cat "$DAEMON" "$DAEMON_UNIT" "$DAEMON_TOOLS"/*.py 2>/dev/null || true
+    [ -s "$DAEMON_CONFIG" ] && python3 - "$DAEMON_CONFIG" <<'PY' 2>/dev/null || true
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+cfg.pop("version", None)
+print(json.dumps(cfg, sort_keys=True))
+gateway = cfg.get("gatewayConfig")
+if gateway:
+    doc = json.load(open(gateway))
+    dashboard = doc.get("dashboard") if isinstance(doc.get("dashboard"), dict) else {}
+    print(json.dumps([
+        doc.get("routerPublicKey"), doc.get("publicOrigin"), dashboard.get("canonicalOrigin"),
+        sorted([str(entry.get(key) or "") for key in ("owner", "name", "gitDir")]
+               for entry in doc.get("repositories") or []
+               if isinstance(entry, dict) and entry.get("name") == "forkmesh"),
+    ]))
+PY
+  } | sha256sum | cut -c1-64
 }
 
 # An SSH relay added by tools/install_ssh_relay.sh keeps its gateway and

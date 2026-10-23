@@ -11,7 +11,8 @@
      "title": "Market",
      "items": [
       "Every Market package has its own page on forkmesh.com, with its details, README, ratings and an install button, and its share link now opens that page.",
-      "Video Mix DJ Studio can repeat a deck, so one song plays over and over until you turn it off."
+      "Video Mix DJ Studio can repeat a deck, so one song plays over and over until you turn it off.",
+      "On iPhone, Video Mix DJ Studio's Repeat now really loops the song, and starts it again as soon as the sound ends, skipping the silence at both ends for a tight loop."
      ]
     },
     {

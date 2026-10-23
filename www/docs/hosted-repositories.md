@@ -45,7 +45,8 @@ and a contributor keeps at most 32 branches there. You may force-push your own
 amend; use `git push --force-with-lease`, and if it is refused because the
 branch moved on the server, run `git pull --rebase` first. The previous tip is
 kept, and the pull request shows "force-pushed from … to …" with a compare
-link.
+link. Ordinary pushes to the branch update the pull request too ("pushed N
+commits").
 Contributors cannot delete branches, even their own: when the limit is
 reached, a maintainer deletes merged ones. Only new objects are sent, so a
 large repository costs no more than the change.
