@@ -27,6 +27,7 @@ const APP_SUBRESOURCES = new Set([
   "/dashboard-composer.js",
   "/dashboard-plugin-host.js",
   "/user-status.js",
+  "/username-autocomplete.js",
   "/qr.js",
 ]);
 

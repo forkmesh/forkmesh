@@ -2304,7 +2304,7 @@
           <p class="text-[11px] leading-5 text-muted-foreground">Accounts that can read this private repository and take part in its issues, pull requests and discussions.</p>
           <ul data-repo-collaborators class="grid gap-1 text-xs"><li class="text-muted-foreground">Loading…</li></ul>
           <form data-repo-collaborator-form class="flex flex-wrap items-center gap-2">
-            <input data-repo-collaborator-name required maxlength="63" autocomplete="off" spellcheck="false" placeholder="username" aria-label="Collaborator username" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-accent" />
+            <input data-repo-collaborator-name data-username-autocomplete="single" required maxlength="63" autocomplete="off" spellcheck="false" placeholder="Type a username" aria-label="Collaborator username" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-accent" />
             <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="user-plus" class="h-3.5 w-3.5"></i>Add</button>
           </form>
           <span data-repo-collaborator-status role="status" class="text-[11px] text-muted-foreground"></span>
@@ -2343,6 +2343,8 @@
   function renderRepoCollaboratorList(names) {
     const list = $("[data-repo-collaborators]");
     if (!list) return;
+    const field = $("[data-repo-collaborator-name]");
+    if (field) field.dataset.usernameExclude = names.join(",");
     list.innerHTML = names.length
       ? names.map((name) => `<li class="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5"><span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}<span class="truncate font-medium text-foreground">${escapeHtml(name)}</span></span><button type="button" data-repo-collaborator-remove="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-destructive hover:bg-secondary"><i data-lucide="x" class="h-3 w-3"></i>Remove</button></li>`).join("")
       : '<li class="text-muted-foreground">Nobody else can read this repository yet.</li>';

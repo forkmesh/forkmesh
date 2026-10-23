@@ -24931,7 +24931,7 @@
     return people;
   }
 
-  function buildMentionCandidates(involved, rosterRows, self = "") {
+  function buildMentionCandidates(involved, rosterRows, self = "", accounts = []) {
     const seen = new Set([String(self || "").toLowerCase()].filter(Boolean));
     const byLogin = new Map();
     (Array.isArray(rosterRows) ? rosterRows : []).forEach((row) => {
@@ -24958,6 +24958,7 @@
         const login = [row?.login, row?.github].find((value) => MENTION_LOGIN_RE.test(String(value || "")));
         add(login, row, 1);
       });
+    (Array.isArray(accounts) ? accounts : []).forEach((login) => add(login, byLogin.get(String(login).toLowerCase()), 2));
     return out;
   }
 
@@ -25002,12 +25003,17 @@
     return mentionUi.rosterRows || [];
   }
 
-  function mentionCandidatesFor(input) {
+  function mentionCandidatesFor(input, query = "") {
     const detail = state.repoRecordDetail;
     const onRecord = input.dataset.mentionInput === "record" && detail?.repo && state.selectedRepo
       && repositoryViewKey(detail.repo) === repositoryViewKey(state.selectedRepo);
+    const accounts = window.ForkMeshUsernames?.lookup(query, () => {
+      if (document.activeElement === input && mentionQueryAt(input.value, input.selectionEnd)?.query === query) {
+        refreshMentionList(input);
+      }
+    }) || [];
     return buildMentionCandidates(onRecord ? mentionRecordPeople(detail) : [], mentionRosterRows(),
-      state.session?.nodeName || "");
+      state.session?.nodeName || "", accounts);
   }
 
   function mentionAvatarHtml(candidate) {
@@ -25117,7 +25123,7 @@
       if (mentionUi.input === input) closeMentionList();
       return;
     }
-    const matches = rankMentionCandidates(mentionCandidatesFor(input), found.query);
+    const matches = rankMentionCandidates(mentionCandidatesFor(input, found.query), found.query);
     if (!matches.length) {
       if (mentionUi.input === input) closeMentionList();
       return;
@@ -41642,7 +41648,7 @@ Your reply
           <p class="text-[11px] leading-5 text-muted-foreground">Accounts that can read this private repository and take part in its issues, pull requests and discussions.</p>
           <ul data-repo-collaborators class="grid gap-1 text-xs"><li class="text-muted-foreground">Loading…</li></ul>
           <form data-repo-collaborator-form class="flex flex-wrap items-center gap-2">
-            <input data-repo-collaborator-name required maxlength="63" autocomplete="off" spellcheck="false" placeholder="username" aria-label="Collaborator username" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-accent" />
+            <input data-repo-collaborator-name data-username-autocomplete="single" required maxlength="63" autocomplete="off" spellcheck="false" placeholder="Type a username" aria-label="Collaborator username" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-accent" />
             <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="user-plus" class="h-3.5 w-3.5"></i>Add</button>
           </form>
           <span data-repo-collaborator-status role="status" class="text-[11px] text-muted-foreground"></span>
@@ -41681,6 +41687,8 @@ Your reply
   function renderRepoCollaboratorList(names) {
     const list = $("[data-repo-collaborators]");
     if (!list) return;
+    const field = $("[data-repo-collaborator-name]");
+    if (field) field.dataset.usernameExclude = names.join(",");
     list.innerHTML = names.length
       ? names.map((name) => `<li class="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5"><span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}<span class="truncate font-medium text-foreground">${escapeHtml(name)}</span></span><button type="button" data-repo-collaborator-remove="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-destructive hover:bg-secondary"><i data-lucide="x" class="h-3 w-3"></i>Remove</button></li>`).join("")
       : '<li class="text-muted-foreground">Nobody else can read this repository yet.</li>';
@@ -45683,9 +45691,9 @@ Your reply
       ? `<div data-security-credit-banner class="flex flex-wrap items-center gap-3 rounded-md border border-primary px-4 py-3 text-[14px]"><i data-lucide="award" class="h-4 w-4 text-primary"></i><span class="min-w-0 flex-1">You are credited as <strong>${escapeHtml(securityCreditLabel(credit.type))}</strong> on this advisory. Accepted credits appear on your profile and in the security researchers ranking.</span>${button("credit-decision", "Accept credit", "bg-primary text-primary-foreground hover:bg-primary/90", " data-decision=\"accept\"")}${button("credit-decision", "Decline", "", " data-decision=\"decline\"")}</div>` : "";
     const affected = (advisory.affected || []).map((entry) => `<li class="py-1"><span class="font-semibold">${escapeHtml(entry.package || entry.path || "Repository")}</span>${entry.ecosystem ? ` <span class="text-muted-foreground">(${escapeHtml(entry.ecosystem)})</span>` : ""}${entry.path && entry.package ? ` <span class="font-mono text-[12px] text-muted-foreground">${escapeHtml(entry.path)}</span>` : ""}<div class="text-[12px] text-muted-foreground">Affected: ${escapeHtml(entry.vulnerable || "all versions")} · Patched: ${escapeHtml(entry.patched || "none yet")}</div></li>`).join("");
     const credits = (detail.credits || []).map((item) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(item.user, item.user, "h-5 w-5")}${issuePersonNameHtml(item.user, "font-semibold")}<span class="text-[12px] text-muted-foreground">${escapeHtml(securityCreditLabel(item.type))}${member && item.state !== "accepted" ? ` · ${escapeHtml(item.state)}` : ""}</span>${perms.manage ? `<button type="button" data-security-action="credit-remove" data-user="${escapeHtml(item.user)}" aria-label="Remove credit" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
-    const creditForm = perms.manage ? `<form data-security-inline="credit" class="mt-2 grid gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" /><select name="type" class="${securityFieldClass()}">${SECURITY_CREDIT_TYPES.map(([key, label]) => `<option value="${key}">${label}</option>`).join("")}</select>${button("credit-add", "Add credit")}</form>` : "";
+    const creditForm = perms.manage ? `<form data-security-inline="credit" class="mt-2 grid gap-1.5"><input name="user" data-username-autocomplete="single" placeholder="Type a username" aria-label="Username to credit" class="${securityFieldClass()}" /><select name="type" class="${securityFieldClass()}">${SECURITY_CREDIT_TYPES.map(([key, label]) => `<option value="${key}">${label}</option>`).join("")}</select>${button("credit-add", "Add credit")}</form>` : "";
     const collaborators = (advisory.collaborators || []).map((name) => `<li class="flex items-center gap-2 py-0.5">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "")}${perms.manage ? `<button type="button" data-security-action="collaborator-remove" data-user="${escapeHtml(name)}" aria-label="Remove collaborator" class="ml-auto text-muted-foreground hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>` : ""}</li>`).join("");
-    const collaboratorForm = perms.manage ? `<form data-security-inline="collaborator" class="mt-2 flex gap-1.5"><input name="user" placeholder="username" class="${securityFieldClass()}" />${button("collaborator-add", "Add")}</form>` : "";
+    const collaboratorForm = perms.manage ? `<form data-security-inline="collaborator" class="mt-2 flex gap-1.5"><input name="user" data-username-autocomplete="single" data-username-exclude="${escapeHtml((advisory.collaborators || []).join(","))}" placeholder="Type a username" aria-label="Collaborator username" class="${securityFieldClass()}" />${button("collaborator-add", "Add")}</form>` : "";
     const fixLinks = [
       fix.branch ? `<a class="font-mono text-primary hover:underline" href="${escapeHtml(repoLinkUrl(repo, "tree", "") + "?branch=" + encodeURIComponent(fix.branch))}">${escapeHtml(fix.branch)}</a>` : "",
       fix.pull ? `<a class="text-primary hover:underline" href="${escapeHtml(repoRecordUrl(repo, "pulls", fix.pull))}">#${escapeHtml(String(fix.pull))}</a>` : "",
