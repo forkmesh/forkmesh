@@ -185,6 +185,18 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         // sending an unsafe resume request to an incompatible runtime.
         resumeId.clear();
     }
+    QString directWorkdir = repoPath;
+    if (session.directCheckout && session.claudeImported()) {
+        const QString repoRoot = QDir(repoPath).absolutePath();
+        const QString cwd = QDir(session.claudeImportCwd).absolutePath();
+        if (cwd.startsWith(repoRoot + QLatin1Char('/')) && QFileInfo(cwd).isDir())
+            directWorkdir = cwd;
+    }
+    QString claudeImportPath;
+    if (!codex && session.claudeImported() && resumeId == session.claudeImportId) {
+        claudeImportPath = session.claudeImportPath;
+        session.claudeImportBytes = -1;
+    }
     QList<QJsonObject> events = m_streamEvents.value(sid);
     QString handoffAccount;
     if (resuming && resumeId.isEmpty()) {
@@ -345,6 +357,20 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
                            : QStringLiteral("Claude Code session"),
                      originalTaskPrompt,
                      steer.isEmpty() ? continueWhereLeftOffPrompt() : steer);
+    }
+    if (!claudeImportPath.isEmpty() && m_agentStore) {
+        QString saved = m_agentStore->readLog(session).trimmed();
+        constexpr int kMaxImportedTranscriptChars = 48 * 1024;
+        if (saved.size() > kMaxImportedTranscriptChars)
+            saved = QStringLiteral("[Earlier transcript omitted]\n") +
+                    saved.right(kMaxImportedTranscriptChars);
+        resumeFallbackPrompt =
+            QStringLiteral(
+                "This conversation was started in Claude Code outside ForkMesh and "
+                "could not be resumed natively. Its saved transcript is below; carry "
+                "on from where it left off.\n---\n%1\n---\n\nLatest user "
+                "instruction:\n%2")
+                .arg(saved, steer.isEmpty() ? continueWhereLeftOffPrompt() : steer);
     }
     m_streamSessionInfo[sid] = session;
     m_agentCliTasks.remove(sid);
@@ -542,6 +568,10 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
     plan.sessionStrength = sessionStrength;
     plan.runAccountEnv = runAccountEnv;
     plan.guardrails = guardrails;
+    plan.claudeImportPath = claudeImportPath;
+    plan.claudeConfigDir = runAccount.configDir.isEmpty()
+                               ? agentAccountDefaultConfigDir(QStringLiteral("claude-code"))
+                               : runAccount.configDir;
     auto launch = [this, plan](const QString &workdir) {
         launchCliRuntime(plan, workdir);
     };
@@ -560,8 +590,8 @@ void MainWindow::startCliTranscript(AgentSession &session, const Issue &issue,
         }
         // Tracked like a worktree so the run's cwd reads as ForkMesh's own;
         // cleanupStreamWorktree() refuses to delete a primary checkout.
-        m_streamWorktree[sid] = repoPath;
-        launch(repoPath);
+        m_streamWorktree[sid] = directWorkdir;
+        launch(directWorkdir);
         return;
     }
     startCliTranscriptWorktree(sid, repoPath, worktreeName, issueNumber,
@@ -1048,10 +1078,22 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
                                 "on branch %1 in %2\n")
                      .arg(branchName, workdir));
     auto begin = [this, sid, live, workdir, env, prompt, autoMode, resumeId,
-                  resumeFallbackPrompt, sessionMode,
-                  sessionStrength, guardrails](const QString &chosenModel) {
+                  resumeFallbackPrompt, sessionMode, sessionStrength, guardrails,
+                  importPath = plan.claudeImportPath,
+                  configDir = plan.claudeConfigDir](const QString &chosenModel) {
         if (m_streamSessions.value(sid) != live)
             return;
+        if (!importPath.isEmpty() && !resumeId.isEmpty()) {
+            QString why;
+            if (!ClaudeSessionImport::stage(importPath, configDir, workdir, resumeId, &why))
+                applyTranscriptEvent(
+                    sid, QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_notice")},
+                                     {QStringLiteral("level"), QStringLiteral("warning")},
+                                     {QStringLiteral("text"),
+                                      QStringLiteral("Could not hand the Claude Code "
+                                                     "conversation to this run: %1.")
+                                          .arg(why)}});
+        }
         const QString effort = sessionStrength;
         if (AgentSession *as = findAgentSession(sid)) {
             as->model = chosenModel;
@@ -1109,6 +1151,8 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         runtimeLaunch.memoryLimitMb = jailMb;
         runtimeLaunch.resumeFallbackPrompt = resumeFallbackPrompt;
         runtimeLaunch.options = agentRunLaunchOptions(sid, false);
+        if (!importPath.isEmpty())
+            runtimeLaunch.options.insert(QStringLiteral("forkSession"), true);
         noteAgentRunToolConfig(sid, runtimeLaunch.options);
         const QStringList gateEnv = agentNetworkGateEnv(sid);
         QString claudeSettings;
@@ -1932,6 +1976,13 @@ void MainWindow::scanExternalClaudeSessions()
                 return;
             if (QSettings().value(kExcludeExternalClaudeSetting, true).toBool())
                 return;
+            const QHash<QString, int> imported = importedClaudeSessionAgents();
+            if (!imported.isEmpty())
+                sessions.erase(std::remove_if(sessions.begin(), sessions.end(),
+                                              [&imported](const ExternalClaudeSession &s) {
+                                                  return imported.contains(s.uuid);
+                                              }),
+                               sessions.end());
             m_externalClaude = std::move(sessions);
             for (const ExternalClaudeSession &ext :
                  std::as_const(m_externalClaude)) {
@@ -2206,6 +2257,7 @@ void MainWindow::onExternalClaudeTick()
 {
     if (!m_agentStore)
         return;
+    syncImportedClaudeSessions();
     if (QSettings().value(kExcludeExternalClaudeSetting, true).toBool()) {
         if (m_externalClaudeScanInFlight) {
             ++m_externalClaudeScanGeneration;

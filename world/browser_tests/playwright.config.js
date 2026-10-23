@@ -9,7 +9,9 @@ module.exports = defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: process.env.CI ? [["line"]] : [["list"]],
+  reporter: process.env.CI
+    ? [["line"], ...(process.env.GITHUB_ACTIONS ? [["github"]] : [])]
+    : [["list"]],
   timeout: 30_000,
   expect: { timeout: 8_000 },
   use: {

@@ -131,6 +131,7 @@ private:
     bool m_launchedBypassing = false;
     quint64 m_controlRequestSeq = 0;
     QString m_resumeSessionId;
+    bool m_forkSession = false;
     QString m_model;
     QString m_effort;
     QString m_fallbackModels;

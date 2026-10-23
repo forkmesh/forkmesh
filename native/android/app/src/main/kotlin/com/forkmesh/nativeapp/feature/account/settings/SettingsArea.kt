@@ -70,6 +70,7 @@ object SettingsArea {
             AppearanceStore.hapticsEnabled = DeviceSettings.hapticsEnabled(store)
             homeHidesBar.value = DeviceSettings.homeHidesBarIcons(store)
         }
+        AccountSyncSetup.install(app)
         NavigationFeature.register(Route.Kind.Settings, OWNER) { route -> screenFor(SettingsCatalog.section((route as? Route.Settings)?.section)) }
         NavigationFeature.register(Route.Kind.Profile, OWNER) { route -> AccountProfileScreen((route as Route.Profile).name) }
         val auth = Services.get<AuthService>()

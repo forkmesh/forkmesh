@@ -72,6 +72,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.remember
+import com.forkmesh.nativeapp.control.AgentTranscriptFormat
+import com.forkmesh.nativeapp.control.PromptDeck
 
 internal fun openPull(navigator: Navigator, repo: Repository, number: Int) {
     if (number <= 0) return
@@ -162,29 +165,37 @@ internal class AgentSessionDetailScreen(
                 }, color = Fm.colors.textPrimary)
             },
         ) {
-            FmPullToRefreshBox(
-                isRefreshing = refreshing,
-                onRefresh = {
-                    refreshing = true
-                    scope.launch {
-                        try {
-                            load()
-                        } finally {
-                            refreshing = false
+            Column(Modifier.fillMaxSize()) {
+                val said = transcript?.takeUnless { it.sealedForOtherDevice }?.transcript.orEmpty()
+                AgentPromptDeck(
+                    remember(said) { PromptDeck.of(AgentTranscriptFormat.blocks(said)) },
+                    Modifier.padding(horizontal = FmSpace.x5, vertical = FmSpace.x1),
+                    tag = "agent-session-prompt-deck",
+                )
+                FmPullToRefreshBox(
+                    isRefreshing = refreshing,
+                    onRefresh = {
+                        refreshing = true
+                        scope.launch {
+                            try {
+                                load()
+                            } finally {
+                                refreshing = false
+                            }
                         }
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(FmSpace.x5),
-                    verticalArrangement = Arrangement.spacedBy(FmSpace.x3),
+                    },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                 ) {
-                    if (status.message != null) item { FmInlineStatus(status) }
-                    item { SummaryCard(navigator) }
-                    item { DesktopSessionOpsCard(navigator, session, repo) }
-                    item { TranscriptCard() }
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(FmSpace.x5),
+                        verticalArrangement = Arrangement.spacedBy(FmSpace.x3),
+                    ) {
+                        if (status.message != null) item { FmInlineStatus(status) }
+                        item { SummaryCard(navigator) }
+                        item { DesktopSessionOpsCard(navigator, session, repo) }
+                        item { TranscriptCard() }
+                    }
                 }
             }
         }
@@ -498,6 +509,11 @@ internal class LaunchedAgentSessionScreen(
             },
         ) {
             Column(Modifier.fillMaxSize()) {
+                AgentPromptDeck(
+                    remember(session.history) { PromptDeck.said(session.history.filter { it.isTask }.map { it.text }) },
+                    Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x1),
+                    tag = "session-prompt-deck",
+                )
                 FmPullToRefreshBox(
                     isRefreshing = refreshing,
                     onRefresh = {
