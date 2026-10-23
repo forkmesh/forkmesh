@@ -2452,3 +2452,12 @@ edit or delete as somebody else. Nothing here talks to older builds.
   Reading card (Opens, Clicks, Read for, Scrolled or Reached, Mail app) with
   the note on which mail apps report it, shown whenever that line is not
   empty. `CrmReadingReportTest` ports the iOS tests.
+- **Genie auto-send asks the desktop (S066).** `GenieFeature.outreachWriters`
+  ends with `desktopWriter()`: when a desktop is paired it sends the whole
+  prompt to `agents.write` over `AgentsFeature.hub` (LAN or relay, 300 s,
+  `GenieOutreach.DESKTOP_TIMEOUT`) and the desktop's default agent, Claude Code
+  or Codex, writes the email (`GenieDesktopWriter`). Android has no on-device
+  model, so the order is the saved agent API key, then the desktop. With no
+  writer at all and a server without a model, auto-send pauses with
+  `GenieAutoSend.NO_WRITER`, which says what to set up; with writers that all
+  failed it says `UNWRITTEN`.

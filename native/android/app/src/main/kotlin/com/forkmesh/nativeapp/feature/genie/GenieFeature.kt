@@ -21,6 +21,7 @@ import com.forkmesh.nativeapp.feature.agents.AgentsFeature
 import com.forkmesh.nativeapp.feature.inbox.InboxFeature
 import com.forkmesh.nativeapp.feature.market.MarketFeature
 import com.forkmesh.nativeapp.genie.GenieCrm
+import com.forkmesh.nativeapp.genie.GenieDesktopWriter
 import com.forkmesh.nativeapp.genie.GenieOutreach
 import com.forkmesh.nativeapp.genie.GenieOutreachPick
 import com.forkmesh.nativeapp.genie.GenieOutreachWriter
@@ -76,7 +77,13 @@ object GenieFeature {
         }
     }
 
-    fun outreachWriters(): List<GenieOutreachWriter> = listOfNotNull(cloudWriter())
+    fun outreachWriters(): List<GenieOutreachWriter> = listOfNotNull(cloudWriter(), desktopWriter())
+
+    fun desktopWriter(): GenieOutreachWriter? {
+        val hub = runCatching { AgentsFeature.hub }.getOrNull() ?: return null
+        val desktop = hub.desktop ?: return null
+        return GenieDesktopWriter.make(desktop.name) { method, params, timeoutMs -> hub.request(method, params, timeoutMs) }
+    }
 
     fun ping(title: String, message: String) {
         runCatching { InboxFeature.recordLocalFailure("genie", title, message) }
