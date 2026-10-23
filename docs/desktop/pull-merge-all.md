@@ -16,10 +16,12 @@ where this node has a working checkout.
 2. After the operator confirms, a worker finds the local branch for each one.
    This is the same lookup **Fix** uses (`localPullAgentBranch`). A pull request
    that arrived as a signed patch gets its `pr/<n>` branch built from the patch
-   first (`PullStore::ensurePullHeadRef`). A pull request is left out, with a
-   reason in the notice and the agent log, when its code is not on this node,
-   its branch or base name fails `safeRefName`, or its base is not a local
-   branch.
+   first (`PullStore::ensurePullHeadRef`). Pull requests still without a
+   branch are then looked up in the cloud ([Pulling branches from the
+   cloud](#pulling-branches-from-the-cloud)). A pull request is left out, with
+   a reason in the notice and the agent log, when its code is on neither this
+   node nor the cloud, its branch or base name fails `safeRefName`, or its
+   base is not a local branch.
 3. One agent starts through `startAdHocAgentForRepo` with
    `directCheckout = true` and mode `Auto`. It runs in the repository's own
    checkout with no agent branch, no worktree and no permission prompts, so its
@@ -33,6 +35,35 @@ where this node has a working checkout.
    is for.
 5. When the run finishes successfully, `notifyAgentDone` calls
    `finishPullMergeAllRun`, and ForkMesh cleans up (next section).
+
+## Pulling branches from the cloud
+
+The timed checkout sync (`refreshCore` in `UpstreamCheckoutSync.cpp`) copies
+the cloud's branches into `refs/remotes/origin/*` and
+`refs/remotes/forkmesh-mesh/*`, but Merge all used to look only at local
+branches and the replayed patch. A pull request another node had already
+published as `pr/<n>` was skipped as "its code is not on this node" until the
+next sync happened to make the local branch.
+
+Now the worker, before its loop, asks `origin` once with `git ls-remote` for
+`refs/heads/pr/<n>` of every open pull request without a local branch, and
+fetches only the ones the cloud has (`fetchServedPullBranches`). For each
+pull request that local replay cannot build, it creates `pr/<n>` at the
+cloud's commit, or failing that at `refs/remotes/origin/pr/<n>` or
+`refs/remotes/forkmesh-mesh/pr/<n>` (`adoptTrackedPullBranch`). The branch is
+only ever created (`update-ref` with an all-zero old value), never moved, so
+a local `pr/<n>` always wins. Local replay still runs first, because a
+patch pull's numbered branch follows its current signed patch, which a
+branch published earlier may not.
+
+Some pull requests have no commit anywhere: a signed patch with no
+`headBaseOid` that no longer applies to the base (a stacked series whose
+earlier parts changed, or a patch from a remote fork). Fetching cannot help
+there. The skip reason now says so (`pullmergeall::missingCodeReason`): "its
+signed patch does not apply to `main` and no node has published its branch;
+the author needs to rebase it". A branch pull says which branch is missing.
+`materializePullRef` returns without an error in that case, which is why the
+old message only ever said the code was not here.
 
 ## Why ForkMesh cleans up, not the agent
 

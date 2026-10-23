@@ -95,7 +95,7 @@ the plan. Steps:
 | 12 | health | node and external health checks |
 | 13 | dns | undrain after probes |
 | 14 | register | confirm DNS release and the node account |
-| 15 | commit | commit `deploy/fleet.toml` on `fleet/add-core-nN` without touching HEAD |
+| 15 | commit | commit `deploy/fleet.toml` on `fleet/add-core-nN`, then merge it into `main` |
 
 - **rqlite role:** keep an odd number of voters; with three voters a fourth
   core joins as a non-voter (`rqlite_voter = false`).
@@ -108,8 +108,8 @@ the plan. Steps:
   `repos` registers the account first (idempotent) and nudges a sync.
 - **Snapshots:** only keyless builder images are accepted; cloning a live
   core would copy its keys and Raft state.
-- **Merge** with `git merge --autostash --no-ff fleet/add-core-nN` (the working
-  tree already holds the same file).
+- **Merge:** the commit step merges the branch into `main` itself (see
+  [Landing the fleet change on main](#landing-the-fleet-change-on-main)).
 
 ## Removing a core node
 
@@ -118,19 +118,51 @@ the plan. Steps:
 three healthy voters), promote a non-voter if voters would drop below three
 or become even, hand over leadership, drain from DNS, stop services, leave
 rqlite and delete its membership row, remove the fleet block, re-render
-peers, deregister DNS names, commit on `fleet/remove-core-nN`, and optionally
-destroy the instance.
+peers, deregister DNS names, commit on `fleet/remove-core-nN` and merge it into
+`main`, and optionally destroy the instance.
 
 Only the destroy step talks to a cloud provider. Other steps identify the
 node over SSH by its pinned host key and recorded WireGuard public key. State
 is in `config/fleet/remove-core/nN.json`; runs resume.
+
+### Landing the fleet change on main
+
+Autodeploy, roll and backups read `deploy/fleet.toml` on `main`, and every
+deploy first asks each core listed there for `/api/version`. A fleet change
+left on its branch breaks every deploy: on 2026-10-23 n2 was removed and n5
+added, neither branch was merged, and each deploy from 03:21 on (run 7110 and
+the runs before it) failed with "n2 did not answer /api/version (HTTP 0)".
+
+So the commit step of `add-core` and `remove-core` lands the change itself
+(`land_on_main` in `tools/next_add_core.py`):
+
+1. `git merge-tree --write-tree main <commit>` first; a conflict is refused
+   and nothing is touched.
+2. Where `main` is checked out (normally `~/projects/forkmesh/src`), it runs
+   `git merge --no-ff` there. A changed file holding exactly the merge result
+   (the tool's own edit of `deploy/fleet.toml`) is set back to `main`'s copy
+   first and rewritten if the merge fails. Any other unsaved or staged change
+   to that file refuses the merge. Unrelated unsaved work stays as it is, and
+   no stash is used.
+3. When no checkout holds `main`, it writes the merge commit with plumbing and
+   moves `refs/heads/main` by compare-and-swap.
+
+The merge in the source checkout is published like any other commit
+([source-publisher.md](../tools/source-publisher.md)), and that push starts
+the next deploy. A refused merge does not fail the run (the core is already
+added or removed): the run records `merge_error` and prints the
+`git -C <main checkout> merge --no-ff <branch>` to run. Until then, gate 1
+names the pending branch: autodeploy lists `fleet/add-core-nN` branches whose
+core is not in `main`'s file and `fleet/remove-core-nN` branches whose core
+still is (`unmerged_fleet_branches` in `tools/next_autodeploy.py`).
 
 ## Replacing a core node
 
 `python3 tools/next_fleet.py add-core --replace nOLD [--region R] [--plan P] --execute`
 (the desktop's **Replace…** on a core row in Network, Hosts) adds a new core
 and then takes `nOLD` out in the same run, so the fleet never drops below
-three cores and there is one branch to merge.
+three cores and there is one fleet commit, which lands on `main` like any
+add or remove.
 
 - The add steps run as usual. A `remove` step before `commit` then runs
   `remove-core nOLD`: it promotes the new core to a voter if needed, drains,
@@ -148,7 +180,8 @@ three cores and there is one branch to merge.
 - `add-core-options --replace nOLD --json` gives the step list and estimate;
   `add-core-status --json` includes `replaces` and `step_list`.
 
-The manual route still works: `add-core`, merge, `remove-core <old>`, merge.
+The manual route still works: `add-core`, then `remove-core <old>`; each
+lands its own commit on `main`.
 The legacy `replace-core nOLD --new nNEW` is the older, partly manual path.
 
 ## Node addresses
@@ -288,6 +321,8 @@ python3 tools/next_deploy.py all --execute
 ## Traps
 
 - `fmnext-ids` takes `--config` before the subcommand.
+- A fleet branch that is not merged into `main` makes every deploy fail on
+  gate 1 ([Landing the fleet change on main](#landing-the-fleet-change-on-main)).
 - Operator units must not use `PrivateTmp`.
 - rqlite's default snapshot WAL size makes small databases snapshot every few
   minutes and rewrite the whole file; `[rqlite] snap_wal_size` (and optional

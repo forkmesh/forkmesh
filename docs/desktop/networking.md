@@ -206,7 +206,10 @@ the plan, then runs `add-core --execute` and shows a step list parsed from
 `systemd-run --user` unit logging to `logs/fleet/add-core/<stamp>.log`;
 `AddCoreNodeController` (owned by the main window) re-attaches via
 `logs/fleet/add-core/current.json` after the dialog or desktop closes.
-`rememberHost` refuses fleet names and addresses. Test:
+`rememberHost` refuses fleet names and addresses. After a successful run the
+headline says whether the fleet commit landed on `main` (the result event's
+`merged`), or gives the reason it did not and asks for the merge
+(`fleetLandingText`, shared with Remove core node). Test:
 `forkmesh-add-core-node-tests`.
 
 ### AWS credentials

@@ -225,11 +225,11 @@ QString confirmationText(const AddCoreOptions &options, const QString &region,
                                 "is kept until you delete it with Remove…;")
                      .arg(options.replaces, name, cloud);
         lines << QStringLiteral("• commit deploy/fleet.toml with %1 added and %2 removed "
-                                "to fleet/add-core-%1 for you to merge (nothing is pushed).")
+                                "to fleet/add-core-%1 and merge it into main.")
                      .arg(name, options.replaces);
     } else {
-        lines << QStringLiteral("• commit deploy/fleet.toml to fleet/add-core-%1 for you "
-                                "to merge (nothing is pushed).")
+        lines << QStringLiteral("• commit deploy/fleet.toml to fleet/add-core-%1 and merge "
+                                "it into main.")
                      .arg(name);
     }
     lines << QString();
@@ -466,6 +466,8 @@ bool AddCoreRun::handleEvent(const QString &line)
             m_summary = event.value(QStringLiteral("summary")).toString();
             m_branch = event.value(QStringLiteral("branch")).toString();
             m_commit = event.value(QStringLiteral("commit")).toString();
+            m_merged = event.value(QStringLiteral("merged")).toString();
+            m_mergeError = event.value(QStringLiteral("merge_error")).toString();
         } else {
             m_state = State::Failed;
             m_failedStep = event.value(QStringLiteral("step")).toString();
@@ -510,6 +512,8 @@ bool AddCoreRun::loadStatus(const QByteArray &json)
     m_branch = object.value(QStringLiteral("branch")).toString();
     m_commit = object.value(QStringLiteral("commit")).toString();
     m_replaces = object.value(QStringLiteral("replaces")).toString();
+    m_merged = object.value(QStringLiteral("merged")).toString();
+    m_mergeError = object.value(QStringLiteral("merge_error")).toString();
     const QList<AddCoreStep> listed =
         stepsFromArray(object.value(QStringLiteral("step_list")).toArray());
     if (!listed.isEmpty())
@@ -588,6 +592,21 @@ QString AddCoreRun::headline() const
         return QStringLiteral("%1 %2…").arg(m_verb, name);
     }
     return {};
+}
+
+QString fleetLandingText(const AddCoreRun &run, const QString &effect)
+{
+    if (run.state() != AddCoreRun::State::Succeeded || run.commit().isEmpty())
+        return {};
+    if (!run.merged().isEmpty())
+        return QStringLiteral("%1 (%2) is merged into main (%3), so autodeploy and roll %4.")
+            .arg(run.branch(), run.commit().left(12), run.merged().left(12), effect);
+    QString text = QStringLiteral("%1 (%2) is not on main yet; merge it so autodeploy and "
+                                  "roll %3.")
+                       .arg(run.branch(), run.commit().left(12), effect);
+    if (!run.mergeError().isEmpty())
+        text += QStringLiteral(" (%1)").arg(run.mergeError());
+    return text;
 }
 
 } // namespace forkmesh::fleet

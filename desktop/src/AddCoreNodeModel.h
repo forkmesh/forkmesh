@@ -105,6 +105,8 @@ public:
     QStringList notes() const { return m_notes; }
     QString branch() const { return m_branch; }
     QString replaces() const { return m_replaces; }
+    QString merged() const { return m_merged; }
+    QString mergeError() const { return m_mergeError; }
     QString commit() const { return m_commit; }
     int doneCount() const;
     int remainingEstimateSeconds() const;
@@ -129,8 +131,12 @@ private:
     QStringList m_notes;
     QString m_branch;
     QString m_replaces;
+    QString m_merged;
+    QString m_mergeError;
     QString m_commit;
     bool m_resultSeen = false;
 };
+
+QString fleetLandingText(const AddCoreRun &run, const QString &effect);
 
 } // namespace forkmesh::fleet

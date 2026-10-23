@@ -754,36 +754,93 @@ def repo(tmp_path, monkeypatch):
     return path
 
 
-def test_commit_goes_to_a_branch_and_leaves_head_and_the_checkout_alone(tmp_path, repo):
+def commit_job(tmp_path, repo):
     instances = seed_config()
     instances["fmnext-core-4"] = {"id": N4_ID, "ip": N4_IP, "ipv6": N4_V6}
     common.save_json(config() / "fleet-instances.json", instances)
     fleet_path = repo / "deploy" / "fleet.toml"
     fleet_path.write_text(next_fleet.upsert_core_block(fleet_text(), "n4", n4_block()))
     job, out = make_job(tmp_path, fleet_path=fleet_path, ip=N4_IP)
+    return job, out, fleet_path
+
+
+def test_commit_goes_to_a_branch_and_merges_it_into_the_checked_out_main(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    edited = fleet_path.read_text()
     head = git(repo, "rev-parse", "HEAD")
     backend = next_add_core.FleetBackend(repo=repo)
     backend.step_commit(job)
     commit = job.state.get("commit")
-    assert git(repo, "rev-parse", "HEAD") == head
     assert git(repo, "rev-parse", "fleet/add-core-n4") == commit
     assert git(repo, "rev-parse", commit + "^") == head
-    assert git(repo, "show", commit + ":deploy/fleet.toml") + "\n" == fleet_path.read_text()
+    assert git(repo, "show", commit + ":deploy/fleet.toml") + "\n" == edited
     assert git(repo, "diff", "--name-only", head, commit) == "deploy/fleet.toml"
-    assert git(repo, "status", "--porcelain") == "M deploy/fleet.toml"
-    assert git(repo, "diff", "--cached", "--name-only") == ""
-    assert "merge --autostash --no-ff fleet/add-core-n4" in out.getvalue()
-    backend.step_commit(job)
-    assert git(repo, "rev-parse", "fleet/add-core-n4") == commit
-    plain = subprocess.run(["git", "merge", "--no-ff", "-m", "merge", "fleet/add-core-n4"],
-                           cwd=repo, capture_output=True, text=True)
-    assert plain.returncode != 0 and git(repo, "rev-parse", "HEAD") == head
-    merged = subprocess.run(["git", "merge", "--autostash", "--no-ff", "-m", "merge",
-                             "fleet/add-core-n4"], cwd=repo, capture_output=True, text=True)
-    assert merged.returncode == 0, merged.stderr
+    assert git(repo, "rev-parse", "HEAD^1") == head
+    assert git(repo, "rev-parse", "HEAD^2") == commit
+    assert job.state.get("merged") == git(repo, "rev-parse", "main")
     assert git(repo, "status", "--porcelain") == ""
     assert git(repo, "stash", "list") == ""
-    assert git(repo, "rev-parse", "HEAD^2") == commit
+    assert fleet_path.read_text() == edited
+    assert "merged into main" in out.getvalue()
+    merged = job.state.get("merged")
+    backend.step_commit(job)
+    assert git(repo, "rev-parse", "fleet/add-core-n4") == commit
+    assert git(repo, "rev-parse", "main") == merged
+    assert "already on main" in out.getvalue()
+
+
+def test_commit_leaves_other_changes_to_the_fleet_file_and_prints_the_merge(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    (repo / "README").write_text("unsaved\n")
+    fleet_path.write_text(fleet_path.read_text() + "# operator note\n")
+    edited = fleet_path.read_text()
+    head = git(repo, "rev-parse", "HEAD")
+    next_add_core.FleetBackend(repo=repo).step_commit(job)
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "rev-parse", "fleet/add-core-n4") == job.state.get("commit")
+    assert fleet_path.read_text() == edited
+    assert (repo / "README").read_text() == "unsaved\n"
+    assert job.state.get("merged") == "" and "uncommitted" in job.state.get("merge_error")
+    assert "NOT on main" in out.getvalue()
+    assert "git -C %s merge --no-ff fleet/add-core-n4" % repo in out.getvalue()
+
+
+def test_commit_keeps_unrelated_unsaved_work_in_the_main_checkout(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    (repo / "README").write_text("unsaved\n")
+    next_add_core.FleetBackend(repo=repo).step_commit(job)
+    assert git(repo, "rev-parse", "HEAD^2") == job.state.get("commit")
+    assert git(repo, "status", "--porcelain") == "M README"
+    assert (repo / "README").read_text() == "unsaved\n"
+
+
+def test_commit_moves_main_by_ref_when_no_checkout_holds_it(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    git(repo, "checkout", "-q", "--detach")
+    head = git(repo, "rev-parse", "HEAD")
+    fleet_path.write_text(fleet_text())
+    next_add_core.FleetBackend(repo=repo).step_commit(job)
+    commit = job.state.get("commit")
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "rev-parse", "main^1") == head
+    assert git(repo, "rev-parse", "main^2") == commit
+    assert job.state.get("merged") == git(repo, "rev-parse", "main")
+
+
+def test_commit_does_not_merge_a_conflict(tmp_path, repo):
+    job, out, fleet_path = commit_job(tmp_path, repo)
+    edited = fleet_path.read_text()
+    fleet_path.write_text(edited.replace("10.77.0.4", "10.77.0.44"))
+    git(repo, "commit", "-qam", "main moves")
+    head = git(repo, "rev-parse", "HEAD")
+    base = git(repo, "rev-parse", "HEAD^")
+    branch = next_add_core.Git(repo)
+    commit, _ = branch.commit_file("fleet/add-core-n4", base, "deploy/fleet.toml",
+                                   edited, "add n4")
+    with pytest.raises(GuardError):
+        branch.merge_into_main(commit, "m")
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "status", "--porcelain") == ""
 
 
 def test_commit_refuses_other_branches(repo):
@@ -874,6 +931,7 @@ def test_replace_removes_the_old_core_after_the_new_one_serves(tmp_path):
     assert start["replaces"] == "n2" and [s["id"] for s in start["steps"]] == list(REPLACE_STEPS)
     assert events(out)[-1]["summary"] == ("n4 is serving, in DNS; n2 is out of the fleet, "
                                           "its instance kept")
+    assert events(out)[-1]["merged"] == "" and events(out)[-1]["merge_error"] == ""
 
 
 def test_a_failed_removal_keeps_the_new_core_serving_and_resumes(tmp_path):
@@ -910,8 +968,12 @@ def test_replace_commit_adds_the_new_core_and_retires_the_old_one(tmp_path, repo
     head = git(repo, "rev-parse", "HEAD")
     next_add_core.FleetBackend(repo=repo).step_commit(job)
     commit = job.state.get("commit")
-    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "rev-parse", commit + "^") == head
+    assert git(repo, "rev-parse", "HEAD^2") == commit
+    assert job.state.get("merged") == git(repo, "rev-parse", "main")
+    assert git(repo, "status", "--porcelain") == ""
     text = git(repo, "show", commit + ":deploy/fleet.toml") + "\n"
+    assert git(repo, "show", "main:deploy/fleet.toml") + "\n" == text
     assert 'name = "n2"' not in text and 'name = "n4"' in text
     assert 'retired_cores = ["n2"]' in text
     block = text[text.index('name = "n4"'):]

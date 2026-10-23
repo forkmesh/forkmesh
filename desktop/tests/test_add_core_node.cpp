@@ -300,6 +300,30 @@ void testStatusLoading()
           "a replacement's status brings its own step list");
 }
 
+void testFleetLandingText()
+{
+    AddCoreRun landed;
+    landed.consume(QStringLiteral(
+        "FMNEXT-ADD-CORE {\"event\": \"start\", \"name\": \"n5\", \"steps\": []}\n"
+        "FMNEXT-ADD-CORE {\"event\": \"result\", \"status\": \"ok\", \"name\": \"n5\", "
+        "\"branch\": \"fleet/add-core-n5\", \"commit\": \"0123456789abcdef\", "
+        "\"merged\": \"fedcba9876543210\", \"merge_error\": \"\"}\n"));
+    check(fleetLandingText(landed, QStringLiteral("include it")) ==
+              QLatin1String("fleet/add-core-n5 (0123456789ab) is merged into main "
+                            "(fedcba987654), so autodeploy and roll include it."),
+          "landed fleet change named");
+    AddCoreRun refused;
+    refused.consume(QStringLiteral(
+        "FMNEXT-ADD-CORE {\"event\": \"result\", \"status\": \"ok\", \"name\": \"n5\", "
+        "\"branch\": \"fleet/add-core-n5\", \"commit\": \"0123456789abcdef\", "
+        "\"merged\": \"\", \"merge_error\": \"deploy/fleet.toml is staged\"}\n"));
+    const QString text = fleetLandingText(refused, QStringLiteral("include it"));
+    check(text.contains(QLatin1String("not on main yet")) &&
+              text.contains(QLatin1String("deploy/fleet.toml is staged")),
+          "refused merge asks for one and gives the reason");
+    check(fleetLandingText(AddCoreRun(), QStringLiteral("x")).isEmpty(), "no run, no landing text");
+}
+
 struct FakeTool {
     QTemporaryDir dir;
     QString script;
@@ -725,6 +749,7 @@ int main(int argc, char **argv)
     testArgumentsAndHostGuard();
     testRunParsing();
     testStatusLoading();
+    testFleetLandingText();
     testDialogFlow(screenshots);
     testReplaceFlow(screenshots);
     testRunSurvivesClosingTheDialog(screenshots);
