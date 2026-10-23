@@ -47,7 +47,8 @@ READ_GUARD_READERS = {
     "table-inventory": (
         "World infrastructure table row counts",
         6 * _HOUR_MS, 24 * _HOUR_MS,
-        ('SELECT COUNT(*) AS row_count FROM "',)),
+        ('SELECT COUNT(*) AS row_count, \'',
+         'SELECT COUNT(*) AS row_count FROM "')),
     "admin-table-counts": (
         "Admin console navigation row counts",
         30 * _MINUTE_MS, 24 * _HOUR_MS,
@@ -193,8 +194,10 @@ async def shared_read(env, name, loader, variant="", fallback=_NO_FALLBACK,
     ttl = conserve_ms if state["conserving"] else normal_ms
     key = _cache_key(name, variant)
     local = _READ_GUARD_LOCAL.get(key)
+    process_cache = getattr(env, "HOST_BACKGROUND", None) is not None
     if (local is not None
-            and 0 <= now - local[0] < READ_GUARD_LOCAL_TTL_MS
+            and (process_cache
+                 or 0 <= now - local[0] < READ_GUARD_LOCAL_TTL_MS)
             and 0 <= now - local[1] < ttl):
         return local[2]
     payload = await _cached_payload(key)
