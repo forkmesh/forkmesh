@@ -2626,6 +2626,8 @@ export async function createWorldScene({
     prepareTerritoryVisit: fns.prepareTerritoryVisit,
     enterTerritoryVisit: fns.enterTerritoryVisit,
     leaveTerritoryVisit: fns.leaveTerritoryVisit,
+    leaveOwnTerritory: fns.leaveOwnTerritory,
+    enterOwnTerritory: fns.enterOwnTerritory,
     updateTerritoryVisitBugs: fns.updateTerritoryVisitBugs,
     travelToRegion,
     visitNeighborhoodHome,

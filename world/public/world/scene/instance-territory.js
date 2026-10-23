@@ -929,9 +929,12 @@ export function functions({
   let sweeping = false;
   let hiddenByVisit = [];
   const visitBuilds = new Map();
+  let away = false;
+  let awayParts = [];
+  let shownForForkmesh = [];
 
   function showForkmeshWorld(now = performance.now()) {
-    if (!current || !shift || now - sweptAt < 1000) return;
+    if (away || !current || !shift || now - sweptAt < 1000) return;
     sweptAt = now;
     let moved = false;
     TERRITORY_NEIGHBOUR_ELEMENTS.forEach((id) => {
@@ -1096,8 +1099,51 @@ export function functions({
     return true;
   }
 
+  function leaveOwnTerritory(saved = []) {
+    if (!territory || !built || away) return false;
+    away = true;
+    returnForkmeshWorld();
+    awayParts = [];
+    built.root.traverse((part) => {
+      const index = ctx.interactive.indexOf(part);
+      if (index < 0) return;
+      ctx.interactive.splice(index, 1);
+      awayParts.push(part);
+    });
+    built.root.visible = false;
+    built.root.userData.groundStandby = true;
+    const kept = new Set(Array.isArray(saved) ? saved : []);
+    shownForForkmesh = TERRITORY_HIDDEN_ELEMENTS.filter((id) =>
+      !kept.has(id) && !fns.worldElementEnabled(id) && fns.setWorldElementEnabled(id, true));
+    setTerritoryTiles(null);
+    footprints = [];
+    ctx.groundSurfaces = null;
+    return true;
+  }
+
+  function enterOwnTerritory() {
+    if (!territory || !built) return false;
+    if (away) {
+      away = false;
+      built.root.visible = true;
+      built.root.userData.groundStandby = false;
+      awayParts.forEach((part) => {
+        if (!ctx.interactive.includes(part)) ctx.interactive.push(part);
+      });
+      awayParts = [];
+      shownForForkmesh.forEach((id) => fns.setWorldElementEnabled(id, false));
+      shownForForkmesh = [];
+      setTerritoryTiles(built.walkTiles);
+      footprints = built.footprints;
+      showForkmeshWorld();
+      ctx.groundSurfaces = null;
+    }
+    ctx.desertPlots?.userData?.replacePetals?.(territory.petal >= 0 ? [territory.petal] : []);
+    return true;
+  }
+
   function territoryOwnerAt(x, z) {
-    if (!built) return "";
+    if (!built || away) return "";
     for (const tile of built.forkmeshTiles) {
       if (hexRoadContains(x, z, tile, WORLD_ROAD_WIDTH / 2)) return "forkmesh";
     }
@@ -1205,6 +1251,8 @@ export function functions({
     prepareTerritoryVisit,
     enterTerritoryVisit,
     leaveTerritoryVisit,
+    leaveOwnTerritory,
+    enterOwnTerritory,
     territoryVisitId: () => visiting?.id || "",
     territoryOwnerAt,
     territoryForkmeshShift: () => (shift

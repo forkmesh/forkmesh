@@ -177,8 +177,10 @@ public enum CallFaceGeometry {
     }
 
     public static func faceFrame(_ points: [CallFacePoint]) -> CallFaceFrame {
-        let left = centroid(points, leftEye)
-        let right = centroid(points, rightEye)
+        faceFrame(left: centroid(points, leftEye), right: centroid(points, rightEye))
+    }
+
+    static func faceFrame(left: CallFacePoint, right: CallFacePoint) -> CallFaceFrame {
         let dx = right.x - left.x
         let dy = right.y - left.y
         let span = CallFaceJS.or(CallFaceJS.hypot(dx, dy), 1)

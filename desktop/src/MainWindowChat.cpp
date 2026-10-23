@@ -78,7 +78,13 @@ public:
         QString who;
         QString text;
         bool mine = false;
+        QPixmap avatar;
     };
+
+    static constexpr int kAvatarPx = 16;
+    static constexpr int kRowGap = 4;
+    static constexpr int kTopPad = 4;
+    static constexpr int kBottomPad = 5;
 
     ChatPreviewLabel()
     {
@@ -86,7 +92,7 @@ public:
         QFont small = font();
         small.setPixelSize(11);
         setFont(small);
-        setContentsMargins(10, 2, 10, 3);
+        setContentsMargins(10, kTopPad, 10, kBottomPad);
         setTextFormat(Qt::RichText);
         setWordWrap(false);
         setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
@@ -99,35 +105,72 @@ public:
     {
         m_lines = lines;
         rebuild();
+        updateGeometry();
+        update();
     }
 
     bool hasLines() const { return !m_lines.isEmpty(); }
     QList<Line> lines() const { return m_lines; }
     std::function<void()> onClicked;
 
+    int rowHeight() const
+    {
+        return qMax(kAvatarPx, QFontMetrics(font()).height());
+    }
+
     QSize sizeHint() const override
     {
         const int rows = qMax(1, int(m_lines.size()));
         const QMargins margins = contentsMargins();
         return QSize(QLabel::sizeHint().width(),
-                     rows * QFontMetrics(font()).lineSpacing() + margins.top() +
-                         margins.bottom() + 6);
+                     rows * rowHeight() + (rows - 1) * kRowGap + margins.top() +
+                         margins.bottom());
     }
+
+    QSize minimumSizeHint() const override { return QSize(0, sizeHint().height()); }
 
 protected:
-    void resizeEvent(QResizeEvent *event) override
+    void paintEvent(QPaintEvent *event) override
     {
-        QLabel::resizeEvent(event);
-        rebuild();
-    }
-
-    void changeEvent(QEvent *event) override
-    {
-        QLabel::changeEvent(event);
-        if (event->type() == QEvent::FontChange ||
-            event->type() == QEvent::StyleChange ||
-            event->type() == QEvent::PaletteChange)
-            rebuild();
+        QFrame::paintEvent(event);
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        const QRect area = contentsRect();
+        const QFontMetrics metrics(font());
+        QFont bold = font();
+        bold.setWeight(QFont::DemiBold);
+        const QFontMetrics boldMetrics(bold);
+        const QColor accent = Theme::color(Theme::Role::AccentFg);
+        const QColor strong = Theme::color(Theme::Role::FgSecondary);
+        const QColor body = palette().color(QPalette::WindowText);
+        const int rowH = rowHeight();
+        int y = area.top();
+        for (const Line &line : std::as_const(m_lines)) {
+            int x = area.left();
+            const QRect face(x, y + (rowH - kAvatarPx) / 2, kAvatarPx, kAvatarPx);
+            if (!line.avatar.isNull()) {
+                painter.drawPixmap(face, line.avatar);
+            } else {
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(line.mine ? strong : accent);
+                painter.drawEllipse(face);
+            }
+            x += kAvatarPx + 6;
+            const QString who = line.who + QStringLiteral(": ");
+            const QRect row(x, y, qMax(0, area.right() - x + 1), rowH);
+            painter.setFont(bold);
+            painter.setPen(line.mine ? strong : accent);
+            painter.drawText(row, Qt::AlignLeft | Qt::AlignVCenter, who);
+            const int textX = x + boldMetrics.horizontalAdvance(who);
+            const int room = qMax(10, area.right() - textX + 1);
+            painter.setFont(font());
+            painter.setPen(body);
+            painter.drawText(QRect(textX, y, room, rowH),
+                             Qt::AlignLeft | Qt::AlignVCenter,
+                             metrics.elidedText(line.text, Qt::ElideRight, room));
+            y += rowH + kRowGap;
+        }
     }
 
     void mouseReleaseEvent(QMouseEvent *event) override
@@ -143,28 +186,107 @@ protected:
 private:
     void rebuild()
     {
-        const QFontMetrics metrics(font());
-        const int width = qMax(40, contentsRect().width() - 4);
-        QFont bold = font();
-        bold.setWeight(QFont::DemiBold);
-        const QFontMetrics boldMetrics(bold);
         QStringList rows;
-        const QString accent = Theme::hex(Theme::Role::AccentFg);
-        const QString strong = Theme::hex(Theme::Role::FgSecondary);
-        for (const Line &line : std::as_const(m_lines)) {
-            const QString who = line.who + QStringLiteral(": ");
-            const int room = qMax(10, width - boldMetrics.horizontalAdvance(who));
-            rows << QStringLiteral("<span style='font-weight:600;color:%1'>%2</span>%3")
-                        .arg(line.mine ? strong : accent, who.toHtmlEscaped(),
-                             metrics.elidedText(line.text, Qt::ElideRight, room)
-                                 .toHtmlEscaped());
-        }
+        for (const Line &line : std::as_const(m_lines))
+            rows << (line.who + QStringLiteral(": ")).toHtmlEscaped() +
+                        line.text.toHtmlEscaped();
         const QString html = rows.join(QStringLiteral("<br>"));
         if (text() != html)
             setText(html);
     }
 
     QList<Line> m_lines;
+};
+
+class FloatingPromptBar : public QWidget
+{
+public:
+    static constexpr int kFadePx = 36;
+
+    FloatingPromptBar(QWidget *host, QWidget *spacer, QWidget *preview, int radius)
+        : QWidget(host), m_spacer(spacer), m_preview(preview), m_radius(radius)
+    {
+        host->installEventFilter(this);
+        if (preview)
+            preview->installEventFilter(this);
+    }
+
+    void place()
+    {
+        QWidget *host = parentWidget();
+        if (!host)
+            return;
+        const int width = qMin(qMax(0, host->width() - 2), sizeHint().width());
+        setGeometry(host->width() - 1 - width, 1, width, height());
+        raise();
+        syncSpacer();
+    }
+
+    void setVisible(bool visible) override
+    {
+        QWidget::setVisible(visible);
+        syncSpacer();
+    }
+
+protected:
+    bool event(QEvent *event) override
+    {
+        const bool handled = QWidget::event(event);
+        if (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Show)
+            place();
+        return handled;
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        const QEvent::Type type = event->type();
+        if (watched == parentWidget()) {
+            if (type == QEvent::Resize || type == QEvent::Show)
+                place();
+        } else if (watched == m_preview) {
+            if (type == QEvent::Show || type == QEvent::Hide ||
+                type == QEvent::ShowToParent || type == QEvent::HideToParent)
+                syncSpacer();
+        }
+        return false;
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QColor surface = Theme::nextOr(
+            Theme::Role::Surface,
+            Theme::activeDark() ? QColor(QStringLiteral("#0d1117"))
+                                : QColor(QStringLiteral("#ffffff")));
+        QColor clear = surface;
+        clear.setAlpha(0);
+        QLinearGradient fade(0, 0, kFadePx, 0);
+        fade.setColorAt(0.0, clear);
+        fade.setColorAt(1.0, surface);
+        const qreal w = width();
+        const qreal h = height();
+        const qreal r = qMin<qreal>(m_radius, h);
+        QPainterPath shape;
+        shape.moveTo(0, 0);
+        shape.lineTo(w - r, 0);
+        shape.arcTo(QRectF(w - 2 * r, 0, 2 * r, 2 * r), 90, -90);
+        shape.lineTo(w, h);
+        shape.lineTo(0, h);
+        shape.closeSubpath();
+        painter.fillPath(shape, fade);
+    }
+
+private:
+    void syncSpacer()
+    {
+        if (m_spacer)
+            m_spacer->setVisible(!isHidden() && (!m_preview || m_preview->isHidden()));
+    }
+
+    QPointer<QWidget> m_spacer;
+    QPointer<QWidget> m_preview;
+    int m_radius = 0;
 };
 
 constexpr int kComposerIconPx = 16;
@@ -3544,6 +3666,8 @@ QWidget *MainWindow::buildNetworkLogDock()
         if (!m_issueQuickAdd)
             return;
         const QString typed = m_issueQuickAdd->toPlainText().trimmed();
+        if (sendPromptToChatRoom(typed))
+            return;
         // A cloud run open above takes the message through the relay. Its node
         // cannot read a file on this disk, so attachments stay in the composer.
         if (const int cloud = quickAddCloudFollowUpSessionId()) {
@@ -3696,27 +3820,44 @@ QWidget *MainWindow::buildNetworkLogDock()
     auto *promptWrapper = new QFrame;
     m_promptWrapper = promptWrapper;
     promptWrapper->setObjectName("promptWrapper");
-    auto *promptHandle = new QWidget;
+    auto *chatPreview = new ChatPreviewLabel;
+    chatPreview->onClicked = [this] {
+        if (!promptChatRoom().isEmpty())
+            return;
+        const int sessionId = m_promptChatSessionId;
+        if (sessionId >= 0 && findAgentSession(sessionId))
+            showAgentSession(sessionId);
+    };
+    chatPreview->hide();
+    m_promptChatPreview = chatPreview;
+    constexpr int kPromptBarPx = 24;
+    auto *promptTopSpacer = new QWidget;
+    promptTopSpacer->setObjectName(QStringLiteral("promptTopSpacer"));
+    promptTopSpacer->setFixedHeight(kPromptBarPx);
+    promptTopSpacer->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto *promptHandle =
+        new FloatingPromptBar(promptWrapper, promptTopSpacer, chatPreview,
+                              next ? 11 : 5);
     m_promptDragHandle = promptHandle;
     promptHandle->setObjectName(QStringLiteral("promptDragHandle"));
-    promptHandle->setFixedHeight(next ? 24 : 16);
+    promptHandle->setFixedHeight(kPromptBarPx);
     promptHandle->setCursor(Qt::OpenHandCursor);
     promptHandle->setToolTip(
         QStringLiteral("Drag to move the prompt; double-click to snap it back "
                        "to the corner"));
     promptHandle->installEventFilter(this);
     auto *promptHandleRow = new QHBoxLayout(promptHandle);
-    promptHandleRow->setContentsMargins(next ? 8 : 4, 2, next ? 8 : 4, 2);
+    promptHandleRow->setContentsMargins(FloatingPromptBar::kFadePx, 2,
+                                        next ? 6 : 3, 2);
     promptHandleRow->setSpacing(4);
     const int handleButtonPx = next ? 20 : 16;
 
     m_promptResizeGrip = new QFrame;
     m_promptResizeGrip->setObjectName(QStringLiteral("promptResizeGrip"));
     m_promptResizeGrip->setFixedSize(12, 12);
-    m_promptResizeGrip->setCursor(Qt::SizeFDiagCursor);
+    m_promptResizeGrip->setCursor(Qt::SizeBDiagCursor);
     m_promptResizeGrip->setToolTip(QStringLiteral("Drag to resize the prompt"));
     m_promptResizeGrip->installEventFilter(this);
-    promptHandleRow->addWidget(m_promptResizeGrip, 0);
 
     // Right of the resize grip: wipe a half-typed prompt in one click (adhoc
     // #1634). Same 16px footprint and its own object name as the reset/pop-out
@@ -3817,15 +3958,6 @@ QWidget *MainWindow::buildNetworkLogDock()
         updateVibeTip(on);
         QSettings().setValue(QStringLiteral("agents/composerVibe"), on);
     });
-    promptHandleRow->addStretch(1);
-
-    auto *promptDragPill = new QFrame;
-    promptDragPill->setObjectName(QStringLiteral("promptDragPill"));
-    promptDragPill->setFixedSize(36, 3);
-    promptDragPill->setAttribute(Qt::WA_TransparentForMouseEvents);
-    promptHandleRow->addWidget(promptDragPill, 0, Qt::AlignVCenter);
-    promptHandleRow->addStretch(1);
-
     promptHandleRow->addWidget(m_quickAddCharCount, 0);
     promptHandleRow->addWidget(m_promptWorktreeCheck, 0);
     promptHandleRow->addWidget(m_promptCloudButton, 0);
@@ -3856,11 +3988,13 @@ QWidget *MainWindow::buildNetworkLogDock()
     connect(m_promptDetachButton, &QPushButton::clicked, this,
             [this] { setPromptOverlayDetached(!m_promptOverlayDetached); });
     promptHandleRow->addWidget(m_promptDetachButton, 0);
+    promptHandleRow->addSpacing(2);
+    promptHandleRow->addWidget(m_promptResizeGrip, 0, Qt::AlignTop);
 
     auto *promptStack = new QVBoxLayout(promptWrapper);
     promptStack->setContentsMargins(0, 0, 0, 0);
     promptStack->setSpacing(0);
-    promptStack->addWidget(promptHandle, 0);
+    promptStack->addWidget(promptTopSpacer, 0);
     auto *promptLayout = new QHBoxLayout;
     promptLayout->setContentsMargins(0, 0, 0, 0);
     promptLayout->setSpacing(0);
@@ -3868,19 +4002,12 @@ QWidget *MainWindow::buildNetworkLogDock()
     auto *promptLeftCol = new QVBoxLayout;
     promptLeftCol->setContentsMargins(0, 0, 0, 0);
     promptLeftCol->setSpacing(0);
-    auto *chatPreview = new ChatPreviewLabel;
-    chatPreview->onClicked = [this] {
-        const int sessionId = m_promptChatSessionId;
-        if (sessionId >= 0 && findAgentSession(sessionId))
-            showAgentSession(sessionId);
-    };
-    chatPreview->hide();
-    m_promptChatPreview = chatPreview;
     promptLeftCol->addWidget(chatPreview, 0);
     promptLeftCol->addWidget(quickAddInputHost, 1);
     promptLeftCol->addWidget(bottomBarScroll, 0);
     promptLayout->addLayout(promptLeftCol, 1);
     promptLayout->addLayout(sendColumn, 0);
+    promptHandle->raise();
 
     promptWrapper->setMinimumWidth(0);
     promptWrapper->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -4295,7 +4422,7 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
             m_promptPlacementStartRect = m_promptDetachWindow->geometry();
             if (onGrip) {
                 QWindow *handle = m_promptDetachWindow->windowHandle();
-                if (handle && handle->startSystemResize(Qt::TopEdge | Qt::LeftEdge))
+                if (handle && handle->startSystemResize(Qt::TopEdge | Qt::RightEdge))
                     return true;
                 m_promptDetachResizing = true;
                 m_promptResizeGrip->grabMouse();
@@ -4344,11 +4471,10 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
             if (!m_promptDetachWindow)
                 return true;
             const QRect start = m_promptPlacementStartRect;
-            const QSize size(qMax(kPromptMinWidth, start.width() - delta.x()),
+            const QSize size(qMax(kPromptMinWidth, start.width() + delta.x()),
                              qMax(kPromptMinHeight, start.height() - delta.y()));
             m_promptDetachWindow->setGeometry(
-                QRect(start.bottomRight() -
-                          QPoint(size.width() - 1, size.height() - 1),
+                QRect(QPoint(start.left(), start.bottom() - size.height() + 1),
                       size));
             return true;
         }
@@ -4379,15 +4505,15 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
             }
             m_promptOverlayPos = wanted.topLeft();
         } else {
-            const QSize size(m_promptPlacementStartRect.width() - delta.x(),
+            const QSize size(m_promptPlacementStartRect.width() + delta.x(),
                              m_promptPlacementStartRect.height() - delta.y());
             m_promptOverlaySize =
                 QSize(qMax(kPromptMinWidth, size.width()),
                       qMax(kPromptMinHeight, size.height()));
             m_promptOverlayPos =
-                m_promptPlacementStartRect.bottomRight() -
-                QPoint(m_promptOverlaySize.width() - 1,
-                       m_promptOverlaySize.height() - 1);
+                QPoint(m_promptPlacementStartRect.left(),
+                       m_promptPlacementStartRect.bottom() -
+                           m_promptOverlaySize.height() + 1);
         }
         positionGlobalFooterOverlays();
         m_promptOverlayHost->raise();
@@ -6635,6 +6761,45 @@ void forkmesh::ui::tintComposerActionButton(QPushButton *button)
     button->setIconSize(QSize(px, px));
 }
 
+QString MainWindow::promptChatRoom() const
+{
+    if (!m_sectionStack || m_sectionStack->currentIndex() != 2 || !m_messageInput)
+        return QString();
+    return m_currentConversation;
+}
+
+bool MainWindow::sendPromptToChatRoom(const QString &text)
+{
+    const QString room = promptChatRoom();
+    if (room.isEmpty())
+        return false;
+    if (!m_quickAddImages.isEmpty()) {
+        flashMessage(QStringLiteral("Attach files to a chat room from the room's own "
+                                    "message box."),
+                     true);
+        return true;
+    }
+    if (m_messageInput->isReadOnly() || !m_messageInput->isEnabled()) {
+        flashMessage(QStringLiteral("You cannot post in %1.")
+                         .arg(chatConversationLabel(room)),
+                     true);
+        return true;
+    }
+    if (text.isEmpty())
+        return true;
+    const QString draft = m_messageInput->text();
+    m_messageInput->setText(text);
+    sendCurrentMessage();
+    const bool sent = m_messageInput->text().isEmpty();
+    m_messageInput->setText(draft);
+    if (sent) {
+        recordQuickAddHistory(text);
+        m_issueQuickAdd->clear();
+    }
+    schedulePromptChatPreview();
+    return true;
+}
+
 int MainWindow::promptChatTargetSessionId() const
 {
     const int onScreen = quickAddFollowUpAgentSessionId();
@@ -6667,13 +6832,43 @@ void MainWindow::refreshPromptChatPreview()
     auto *preview = static_cast<ChatPreviewLabel *>(m_promptChatPreview);
     if (!preview)
         return;
-    const int sessionId = promptChatTargetSessionId();
+    const int avatarPx = ChatPreviewLabel::kAvatarPx;
+    QPixmap ownFace = roundedAvatar(effectiveUserAvatar(), avatarPx, 0.5);
+    if (ownFace.isNull())
+        ownFace = chatActorAvatar(QString(), chatDisplayName(), avatarPx);
+    const QString room = promptChatRoom();
+    const int sessionId = room.isEmpty() ? promptChatTargetSessionId() : -1;
     const AgentSession *session = findAgentSession(sessionId);
     QList<ChatPreviewLabel::Line> lines;
-    if (session) {
+    if (!room.isEmpty()) {
+        const QList<ChatMessage> history = m_history.value(room);
+        for (int index = history.size() - 1; index >= 0 && lines.size() < 3;
+             --index) {
+            const ChatMessage &message = history.at(index);
+            if (message.deleted || !message.threadRootId.isEmpty())
+                continue;
+            QString text = message.text.simplified();
+            if (text.isEmpty() && message.hasFile())
+                text = message.fileName;
+            if (text.isEmpty())
+                continue;
+            const QString who = message.self ? QStringLiteral("You")
+                                : message.senderName.trimmed().isEmpty()
+                                    ? message.senderId
+                                    : message.senderName.trimmed();
+            lines.prepend({who, text, message.self,
+                           message.self ? ownFace
+                                        : chatActorAvatar(message.senderId,
+                                                          message.senderName,
+                                                          avatarPx)});
+        }
+    } else if (session) {
         QString agent = agentModelShortLabel(session->model);
         if (agent.isEmpty())
             agent = QStringLiteral("Agent");
+        const QPixmap agentFace =
+            agentModelIcon(session->provider, session->model)
+                .pixmap(QSize(avatarPx, avatarPx), iconDevicePixelRatio());
         const auto lastParagraph = [](const QString &text) {
             const QStringList parts =
                 text.trimmed().split(QLatin1Char('\n'), Qt::SkipEmptyParts);
@@ -6715,41 +6910,51 @@ void MainWindow::refreshPromptChatPreview()
             text = lastParagraph(text);
             if (text.isEmpty())
                 continue;
-            lines.prepend({mine ? QStringLiteral("You") : agent, text, mine});
+            lines.prepend({mine ? QStringLiteral("You") : agent, text, mine,
+                           mine ? ownFace : agentFace});
         }
         if (lines.isEmpty()) {
             const QString reply = lastParagraph(m_lastAssistantText.value(sessionId));
             const QString asked = lastParagraph(session->prompt);
             if (!asked.isEmpty())
-                lines.append({QStringLiteral("You"), asked, true});
+                lines.append({QStringLiteral("You"), asked, true, ownFace});
             if (!reply.isEmpty())
-                lines.append({agent, reply, false});
+                lines.append({agent, reply, false, agentFace});
         }
     }
-    m_promptChatSessionId = lines.isEmpty() ? -1 : sessionId;
+    m_promptChatSessionId = lines.isEmpty() || !room.isEmpty() ? -1 : sessionId;
     const bool wasShown = !preview->isHidden();
     preview->setLines(lines);
     preview->setVisible(!lines.isEmpty());
     if (m_quickAddSendToAgentButton) {
-        const bool chat = !lines.isEmpty();
+        const bool chat = !lines.isEmpty() || !room.isEmpty();
         const QString label = chat ? QStringLiteral("chat") : QStringLiteral("add");
         const QString glyph =
             chat ? QStringLiteral("comment") : QStringLiteral("paper-airplane");
         if (m_quickAddSendToAgentButton->text() != label)
             m_quickAddSendToAgentButton->setText(label);
         m_quickAddSendToAgentButton->setAccessibleName(
-            chat ? QStringLiteral("Send to chat") : QStringLiteral("Add to agent"));
+            !room.isEmpty() ? QStringLiteral("Send to %1").arg(chatConversationLabel(room))
+            : chat          ? QStringLiteral("Send to chat")
+                            : QStringLiteral("Add to agent"));
         if (m_quickAddSendToAgentButton->property("composerGlyph").toString() != glyph) {
             m_quickAddSendToAgentButton->setProperty("composerGlyph", glyph);
             tintComposerActionButton(m_quickAddSendToAgentButton);
         }
     }
-    if (wasShown == !preview->isHidden() || !m_promptWrapper)
+    if (!m_promptWrapper)
         return;
     const int base = m_promptWrapper->property("baseAnchoredHeight").toInt();
+    const QWidget *spacer =
+        m_promptWrapper->findChild<QWidget *>(QStringLiteral("promptTopSpacer"));
+    const int spacerHeight = spacer ? spacer->minimumHeight() : 0;
+    const int anchored =
+        base + (preview->isHidden() ? 0 : preview->sizeHint().height() - spacerHeight);
+    if (wasShown == !preview->isHidden() &&
+        (base <= 0 || anchored == m_promptAnchoredHeight))
+        return;
     if (base > 0)
-        m_promptAnchoredHeight =
-            base + (preview->isHidden() ? 0 : preview->sizeHint().height());
+        m_promptAnchoredHeight = anchored;
     positionGlobalFooterOverlays();
 }
 

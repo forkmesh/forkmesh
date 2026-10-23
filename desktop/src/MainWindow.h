@@ -7210,6 +7210,8 @@ private:
     void refreshPromptChatPreview();
     void schedulePromptChatPreview();
     int promptChatTargetSessionId() const;
+    QString promptChatRoom() const;
+    bool sendPromptToChatRoom(const QString &text);
     void refreshInstanceTheme();
     void applyInstanceThemeChoice(bool enabled);
     bool quickAddShouldFollowUpAgent() const;

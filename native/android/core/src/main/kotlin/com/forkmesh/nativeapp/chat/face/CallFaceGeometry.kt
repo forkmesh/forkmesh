@@ -171,9 +171,9 @@ object CallFaceGeometry {
         return CallFacePoint(x / indices.size, y / indices.size)
     }
 
-    fun faceFrame(points: List<CallFacePoint>): CallFaceFrame {
-        val left = centroid(points, leftEye)
-        val right = centroid(points, rightEye)
+    fun faceFrame(points: List<CallFacePoint>): CallFaceFrame = faceFrame(centroid(points, leftEye), centroid(points, rightEye))
+
+    internal fun faceFrame(left: CallFacePoint, right: CallFacePoint): CallFaceFrame {
         val dx = right.x - left.x
         val dy = right.y - left.y
         val span = CallFaceJS.or(CallFaceJS.hypot(dx, dy), 1.0)
