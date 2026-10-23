@@ -1,6 +1,7 @@
 #include "DesktopProcessView.h"
 
 #include "FleetVisualizer.h"
+#include "FontSizing.h"
 
 #include <QDateTime>
 #include <QFontMetricsF>
@@ -280,7 +281,7 @@ void DesktopProcessView::paintEvent(QPaintEvent *)
 void DesktopProcessView::paintHeader(QPainter &p, const QRectF &area)
 {
     QFont title = font();
-    title.setPointSizeF(title.pointSizeF() * 1.25);
+    title = forkmesh::scaledFont(title, 1.25);
     title.setBold(true);
     p.setFont(title);
     p.setPen(ink());
@@ -336,7 +337,7 @@ void DesktopProcessView::paintGauges(QPainter &p, const QRectF &area)
     const corelogs::NodeVitals &v = m_snapshot.vitals;
     const QFontMetricsF metrics(font());
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.85);
+    small = forkmesh::scaledFont(small, 0.85);
     const QFontMetricsF smallMetrics(small);
     const int gauges = 5;
     const qreal width = (area.width() - (gauges - 1) * kGap) / gauges;
@@ -469,7 +470,7 @@ void DesktopProcessView::paintShares(QPainter &p, const QRectF &area)
 {
     const bool isDark = dark();
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.85);
+    small = forkmesh::scaledFont(small, 0.85);
     const QFontMetricsF smallMetrics(small);
     QHash<QString, double> cpu;
     QHash<QString, double> memory;
@@ -551,7 +552,7 @@ void DesktopProcessView::paintTable(QPainter &p, const QRectF &area)
     QFont bold = font();
     bold.setBold(true);
     QFont small = font();
-    small.setPointSizeF(small.pointSizeF() * 0.9);
+    small = forkmesh::scaledFont(small, 0.9);
     const QFontMetricsF metrics(font());
     const QFontMetricsF smallMetrics(small);
     p.setFont(bold);

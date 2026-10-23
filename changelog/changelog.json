@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-23",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Desktop",
+     "items": [
+      "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-22",
    "version": "",
    "title": "",

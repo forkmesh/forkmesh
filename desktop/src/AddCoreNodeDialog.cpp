@@ -3,6 +3,7 @@
 #include "Theme.h"
 
 #include "FleetAutoscaleModel.h"
+#include "FontSizing.h"
 
 #include <QColor>
 #include <QComboBox>
@@ -413,7 +414,7 @@ QWidget *AddCoreNodeDialog::buildChoosePage()
     auto *title = new QLabel(QStringLiteral("Add a core node to the ForkMesh fleet"));
     QFont font = title->font();
     font.setBold(true);
-    font.setPointSizeF(font.pointSizeF() * 1.2);
+    font = forkmesh::scaledFont(font, 1.2);
     title->setFont(font);
     layout->addWidget(title);
     m_chooseIntro = mutedLabel(QStringLiteral("Loading the fleet and the plan list…"));
@@ -495,7 +496,7 @@ QWidget *AddCoreNodeDialog::buildConfirmPage()
     auto *title = new QLabel(QStringLiteral("Confirm"));
     QFont font = title->font();
     font.setBold(true);
-    font.setPointSizeF(font.pointSizeF() * 1.2);
+    font = forkmesh::scaledFont(font, 1.2);
     title->setFont(font);
     layout->addWidget(title);
     m_confirmText = new QLabel;
