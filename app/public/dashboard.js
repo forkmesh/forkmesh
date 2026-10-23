@@ -26574,6 +26574,9 @@
         detail,
       };
     }
+    if (!model.authorized) {
+      return { tone: "muted", icon: "clock", label: "Waiting for a maintainer to merge", detail: [model.footer.text] };
+    }
     return { tone: "good", icon: "check-circle-2", label: "Ready to merge", detail: [model.footer.text] };
   }
 
@@ -37525,7 +37528,7 @@ Your reply
       branchFacts.branch ? orgAgentOpsButton("diff", "git-compare-arrows", diffOpen ? "Transcript" : "Diff", { title: diffOpen ? "Back to the transcript" : "Show this agent's changes against its base" }) : "",
       branchFacts.active && canManage ? orgAgentOpsButton("stop", "square", "Stop", { tone: "danger" }) : "",
       branchFacts.canContinue && canManage ? orgAgentOpsButton("continue", "play", "Continue", { title: "Resume this agent where it left off" }) : "",
-      branchFacts.canMerge && canManage ? orgAgentOpsButton("merge", "git-merge", branchFacts.merging ? "Finish merge" : "Merge & clean up", { tone: "primary", title: branchFacts.merging ? "A core is publishing this merge; wait for the same merge to finish" : `Merge the branch into its base on ${platformName()}, then remove the branch` }) : "",
+      branchFacts.canMerge && canManage && state.agentsView.canMergeBranches !== false ? orgAgentOpsButton("merge", "git-merge", branchFacts.merging ? "Finish merge" : "Merge & clean up", { tone: "primary", title: branchFacts.merging ? "A core is publishing this merge; wait for the same merge to finish" : `Merge the branch into its base on ${platformName()}, then remove the branch` }) : "",
       branchFacts.canMerge && canManage && !branchFacts.merging && branchFacts.branch ? orgAgentOpsButton("update", "git-pull-request-arrow", `Update from ${branchFacts.base || repoDefaultBranch(repo)}`, { title: `Merge ${branchFacts.base || repoDefaultBranch(repo)} into ${branchFacts.branch} on ${platformName()}` }) : "",
       branchFacts.canCleanup && canManage ? orgAgentOpsButton("cleanup", "eraser", "Clean up", { title: "Remove the merged branch" }) : "",
       prNumber > 0 && canLink ? `<a data-org-agent-pull href="${escapeHtml(repoRecordUrl(repo, "pulls", prNumber))}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary" title="Open pull request #${prNumber}"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>PR #${prNumber}</a>` : "",
@@ -38252,6 +38255,8 @@ Your reply
         state.agentsView.canViewSessions = canViewAgentSessions;
         state.agentsView.canDeleteSessions =
           payload?.canDeleteAgentSessions === true;
+        state.agentsView.canMergeBranches =
+          payload?.canMergeAgentBranches === true;
         const accessReason = String(
           payload?.accessReason || payload?.message || "",
         ).trim();

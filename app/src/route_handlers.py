@@ -2341,6 +2341,7 @@ async def org_agent_bots_handler(
                 sessions.append(_org_agent_hide_private_runner(
                     _org_agent_session_projection(row, record), row, record,
                     context["actor"]))
+        import agent_branches
         targets = await _org_agent_session_targets(env, context)
         return json_response({
             "ok": True,
@@ -2353,6 +2354,7 @@ async def org_agent_bots_handler(
             "canQueueAgent": True,
             "canViewAgentSessions": True,
             "canDeleteAgentSessions": True,
+            "canMergeAgentBranches": agent_branches.merge_allowed(context),
             "accessBasis": context["accessBasis"],
             "accessReason": (
                 "Owner access to agent-capable repository nodes."

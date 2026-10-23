@@ -28,7 +28,10 @@ The Approve and Always run buttons stay in the pull's Checks section
 The footer says whether the pull can merge, why not, and holds the controls.
 Only someone who may merge (the repository's owner, or for an organization's
 repository an owner of the organization) sees the merge controls; everyone
-else sees the same rows and who can merge.
+else sees the same rows and who can merge. The status button in the pull's
+header (`repoPullMergeStatus`) said a green "Ready to merge" to everyone, and
+contributors read it as permission to merge their own pull request; anyone
+who may not merge now sees "Waiting for a maintainer to merge" instead.
 
 *Re-run failed* is shown only to someone who may merge and only when the
 Actions read named its executor node: `actions/control` refuses a request
