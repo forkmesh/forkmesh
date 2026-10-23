@@ -55,6 +55,7 @@ FRAGMENTS = (
     "09-links.js",
     "09-microjobs.js",
     "09-notes.js",
+    "09-pings.js",
     "09-plugin-menu.js",
     "09-reaction-settings.js",
     "09-recent-pushes.js",
@@ -288,8 +289,8 @@ def _core_stub(chunk, exports):
 # ``marker`` is an element of the partial that tells it is already there;
 # ``after`` is where it goes (after that element), else the end of <body>.
 DEFERRED_MARKUP = {
-    # Profile, about, pings, provider sign-in and feedback dialogs.
-    "dialogs": {"partial": "modals", "marker": "#notificationModal",
+    # Profile, about, provider sign-in and feedback dialogs.
+    "dialogs": {"partial": "modals", "marker": "#profileModalTitle",
                 "after": None},
     # The header's "Start an agent" popover, positioned under its toggle.
     "agent": {"partial": "agent-modal", "marker": "#agentModal",
