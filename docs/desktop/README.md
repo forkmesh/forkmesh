@@ -466,6 +466,20 @@ requests" and three single ones). `applyRemotePull` now reports through
 `opened` whether it wrote a pull request, `PullsInboxOutcome::opened` counts
 those, and only they ping and name the author and title.
 
+### Pull list shows whether a pull's code is on this machine
+
+Some open pull requests have no local branch holding their code, so Fix,
+Resolve and agent checkouts cannot start from them. The branch-state worker
+(`MainWindow::refreshPullBranchState`) now looks for the code under the same
+names `localPullAgentBranch` uses (`pullLocalBranchCandidates`: the signed head
+first for a branch-backed pull, `pr/<n>` first for a stored patch) and records
+the one it found in `PullBranchState::codeBranch`. Ahead/behind and the
+worktree mark are measured on that branch, so a relay pull held as `pr/<n>` is
+no longer shown as unmeasured. When no candidate exists the row paints a faded
+`cloud` icon in place of the branch icon and the hover text says "Code not on
+this machine"; otherwise it names the branch. Closed and merged pulls are not
+measured and keep the plain branch icon.
+
 ## Change process
 
 - Source files hold code only; the reason for a change goes in the matching
