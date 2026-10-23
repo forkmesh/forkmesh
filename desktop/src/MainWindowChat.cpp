@@ -289,6 +289,85 @@ private:
     int m_radius = 0;
 };
 
+class PromptResizeEdge : public QWidget
+{
+public:
+    static constexpr int kBandPx = 5;
+    static constexpr int kCornerPx = 10;
+
+    PromptResizeEdge(QWidget *host, QWidget *panel, QWidget *bar, Qt::Edges edges)
+        : QWidget(host), m_panel(panel), m_bar(bar), m_edges(edges)
+    {
+        setObjectName(QStringLiteral("promptResizeEdge"));
+        setProperty("promptResizeEdges", edges.toInt());
+        setCursor(cursorFor(edges));
+        panel->installEventFilter(this);
+        if (bar)
+            bar->installEventFilter(this);
+        place();
+    }
+
+    Qt::Edges edges() const { return m_edges; }
+
+    void place()
+    {
+        if (!m_panel)
+            return;
+        const QRect r = m_panel->geometry();
+        const bool horizontal = m_edges & (Qt::LeftEdge | Qt::RightEdge);
+        const bool vertical = m_edges & (Qt::TopEdge | Qt::BottomEdge);
+        const int w = vertical ? (horizontal ? kCornerPx : r.width() - 2 * kCornerPx)
+                               : kBandPx;
+        const int h = horizontal ? (vertical ? kCornerPx : r.height() - 2 * kCornerPx)
+                                 : kBandPx;
+        const int x = m_edges & Qt::LeftEdge    ? r.left()
+                      : m_edges & Qt::RightEdge ? r.right() - w + 1
+                                                : r.left() + kCornerPx;
+        const int y = m_edges & Qt::TopEdge      ? r.top()
+                      : m_edges & Qt::BottomEdge ? r.bottom() - h + 1
+                                                 : r.top() + kCornerPx;
+        setGeometry(x, y, qMax(0, w), qMax(0, h));
+        setVisible(!m_panel->isHidden() && (!m_bar || !m_bar->isHidden()));
+        raise();
+    }
+
+protected:
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        switch (event->type()) {
+        case QEvent::Resize:
+        case QEvent::Move:
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::ShowToParent:
+        case QEvent::HideToParent:
+            place();
+            break;
+        default:
+            break;
+        }
+        return false;
+    }
+
+private:
+    static Qt::CursorShape cursorFor(Qt::Edges edges)
+    {
+        if (edges == (Qt::TopEdge | Qt::LeftEdge) ||
+            edges == (Qt::BottomEdge | Qt::RightEdge))
+            return Qt::SizeFDiagCursor;
+        if (edges == (Qt::TopEdge | Qt::RightEdge) ||
+            edges == (Qt::BottomEdge | Qt::LeftEdge))
+            return Qt::SizeBDiagCursor;
+        if (edges & (Qt::LeftEdge | Qt::RightEdge))
+            return Qt::SizeHorCursor;
+        return Qt::SizeVerCursor;
+    }
+
+    QPointer<QWidget> m_panel;
+    QPointer<QWidget> m_bar;
+    Qt::Edges m_edges;
+};
+
 constexpr int kComposerIconPx = 16;
 constexpr int kComposerControlPx = 28;
 constexpr int kComposerActionWidth = 66;
@@ -3862,18 +3941,11 @@ QWidget *MainWindow::buildNetworkLogDock()
     promptHandle->installEventFilter(this);
     auto *promptHandleRow = new QHBoxLayout(promptHandle);
     promptHandleRow->setContentsMargins(FloatingPromptBar::kFadePx, 2,
-                                        next ? 6 : 3, 2);
+                                        PromptResizeEdge::kCornerPx, 2);
     promptHandleRow->setSpacing(4);
     const int handleButtonPx = next ? 20 : 16;
 
-    m_promptResizeGrip = new QFrame;
-    m_promptResizeGrip->setObjectName(QStringLiteral("promptResizeGrip"));
-    m_promptResizeGrip->setFixedSize(12, 12);
-    m_promptResizeGrip->setCursor(Qt::SizeBDiagCursor);
-    m_promptResizeGrip->setToolTip(QStringLiteral("Drag to resize the prompt"));
-    m_promptResizeGrip->installEventFilter(this);
-
-    // Right of the resize grip: wipe a half-typed prompt in one click (adhoc
+    // Wipe a half-typed prompt in one click (adhoc
     // #1634). Same 16px footprint and its own object name as the reset/pop-out
     // pair at the other end of the strip, so it reads as one family of tiny
     // controls rather than a button borrowed from the toolbar below.
@@ -4002,8 +4074,6 @@ QWidget *MainWindow::buildNetworkLogDock()
     connect(m_promptDetachButton, &QPushButton::clicked, this,
             [this] { setPromptOverlayDetached(!m_promptOverlayDetached); });
     promptHandleRow->addWidget(m_promptDetachButton, 0);
-    promptHandleRow->addSpacing(2);
-    promptHandleRow->addWidget(m_promptResizeGrip, 0, Qt::AlignTop);
 
     auto *promptStack = new QVBoxLayout(promptWrapper);
     promptStack->setContentsMargins(0, 0, 0, 0);
@@ -4040,6 +4110,16 @@ QWidget *MainWindow::buildNetworkLogDock()
     m_userAvatarNavButton->setToolTip(
         QStringLiteral("Collapse the prompt overlay (Settings remains in the rail)"));
     m_userAvatarNavButton->raise();
+    for (const Qt::Edges edges :
+         {Qt::Edges(Qt::TopEdge), Qt::Edges(Qt::BottomEdge),
+          Qt::Edges(Qt::LeftEdge), Qt::Edges(Qt::RightEdge),
+          Qt::TopEdge | Qt::LeftEdge, Qt::TopEdge | Qt::RightEdge,
+          Qt::BottomEdge | Qt::LeftEdge, Qt::BottomEdge | Qt::RightEdge}) {
+        auto *edge = new PromptResizeEdge(promptOverlayHost, promptWrapper,
+                                          promptHandle, edges);
+        edge->installEventFilter(this);
+        m_promptResizeEdges.append(edge);
+    }
 
     m_footerUpdateLog = new QTextEdit;
     m_footerUpdateLog->setObjectName("footerUpdateLog");
@@ -4223,6 +4303,20 @@ const char kPromptDetachedSetting[] = "prompt/detached";
 const char kPromptDetachGeometrySetting[] = "prompt/detachGeometry";
 constexpr int kPromptMinWidth = 280;
 constexpr int kPromptMinHeight = 120;
+
+QRect resizedPromptRect(const QRect &start, Qt::Edges edges, const QPoint &delta)
+{
+    QRect rect = start;
+    if (edges & Qt::LeftEdge)
+        rect.setLeft(qMin(start.left() + delta.x(), start.right() + 1 - kPromptMinWidth));
+    if (edges & Qt::RightEdge)
+        rect.setRight(qMax(start.right() + delta.x(), start.left() + kPromptMinWidth - 1));
+    if (edges & Qt::TopEdge)
+        rect.setTop(qMin(start.top() + delta.y(), start.bottom() + 1 - kPromptMinHeight));
+    if (edges & Qt::BottomEdge)
+        rect.setBottom(qMax(start.bottom() + delta.y(), start.top() + kPromptMinHeight - 1));
+    return rect;
+}
 } // namespace
 
 void MainWindow::clampPromptOverlayIntoHost()
@@ -4412,8 +4506,9 @@ void MainWindow::loadPromptOverlayPlacement()
 bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
 {
     const bool onHandle = object == m_promptDragHandle;
-    const bool onGrip = object == m_promptResizeGrip;
-    if (!onHandle && !onGrip)
+    auto *edgeWidget = qobject_cast<QWidget *>(object);
+    const bool onEdge = edgeWidget && m_promptResizeEdges.contains(edgeWidget);
+    if (!onHandle && !onEdge)
         return false;
     if (!m_promptOverlayHost || !m_globalOverlayHost)
         return false;
@@ -4434,12 +4529,14 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
                 return false;
             m_promptPlacementGrab = mouse->globalPosition().toPoint();
             m_promptPlacementStartRect = m_promptDetachWindow->geometry();
-            if (onGrip) {
+            if (onEdge) {
+                m_promptResizeActiveEdges =
+                    Qt::Edges::fromInt(edgeWidget->property("promptResizeEdges").toInt());
                 QWindow *handle = m_promptDetachWindow->windowHandle();
-                if (handle && handle->startSystemResize(Qt::TopEdge | Qt::RightEdge))
+                if (handle && handle->startSystemResize(m_promptResizeActiveEdges))
                     return true;
                 m_promptDetachResizing = true;
-                m_promptResizeGrip->grabMouse();
+                edgeWidget->grabMouse();
                 return true;
             }
             m_promptDetachDragging = true;
@@ -4468,10 +4565,13 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
         m_promptPlacementStartRect =
             QRect(m_promptOverlayPos, m_promptOverlayHost->size());
         m_promptPlacementDragging = onHandle;
-        m_promptPlacementResizing = onGrip;
+        m_promptPlacementResizing = onEdge;
+        if (onEdge)
+            m_promptResizeActiveEdges =
+                Qt::Edges::fromInt(edgeWidget->property("promptResizeEdges").toInt());
         if (onHandle)
             m_promptDragHandle->setCursor(Qt::ClosedHandCursor);
-        (onHandle ? m_promptDragHandle : m_promptResizeGrip)->grabMouse();
+        (onHandle ? m_promptDragHandle : edgeWidget)->grabMouse();
         return true;
     }
     case QEvent::MouseMove: {
@@ -4484,12 +4584,8 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
         if (m_promptDetachResizing) {
             if (!m_promptDetachWindow)
                 return true;
-            const QRect start = m_promptPlacementStartRect;
-            const QSize size(qMax(kPromptMinWidth, start.width() + delta.x()),
-                             qMax(kPromptMinHeight, start.height() - delta.y()));
-            m_promptDetachWindow->setGeometry(
-                QRect(QPoint(start.left(), start.bottom() - size.height() + 1),
-                      size));
+            m_promptDetachWindow->setGeometry(resizedPromptRect(
+                m_promptPlacementStartRect, m_promptResizeActiveEdges, delta));
             return true;
         }
         if (m_promptDetachDragging) {
@@ -4519,15 +4615,12 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
             }
             m_promptOverlayPos = wanted.topLeft();
         } else {
-            const QSize size(m_promptPlacementStartRect.width() + delta.x(),
-                             m_promptPlacementStartRect.height() - delta.y());
-            m_promptOverlaySize =
-                QSize(qMax(kPromptMinWidth, size.width()),
-                      qMax(kPromptMinHeight, size.height()));
-            m_promptOverlayPos =
-                QPoint(m_promptPlacementStartRect.left(),
-                       m_promptPlacementStartRect.bottom() -
-                           m_promptOverlaySize.height() + 1);
+            const QRect rect =
+                resizedPromptRect(m_promptPlacementStartRect,
+                                  m_promptResizeActiveEdges, delta)
+                    .intersected(QRect(QPoint(), m_globalOverlayHost->size()));
+            m_promptOverlaySize = rect.size();
+            m_promptOverlayPos = rect.topLeft();
         }
         positionGlobalFooterOverlays();
         m_promptOverlayHost->raise();
@@ -4537,7 +4630,7 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
         if (!m_promptPlacementDragging && !m_promptPlacementResizing &&
             !m_promptDetachDragging && !m_promptDetachResizing)
             return false;
-        (onHandle ? m_promptDragHandle : m_promptResizeGrip)->releaseMouse();
+        (onHandle ? m_promptDragHandle : edgeWidget)->releaseMouse();
         if (m_promptDetachResizing) {
             m_promptDetachResizing = false;
             savePromptOverlayPlacement();
