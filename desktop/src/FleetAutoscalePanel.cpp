@@ -1,6 +1,7 @@
 #include "FleetAutoscalePanel.h"
 
 #include "CoreNodeLogs.h"
+#include "FontSizing.h"
 
 #include <QCheckBox>
 #include <QDateTime>
@@ -68,7 +69,7 @@ FleetAutoscalePanel::FleetAutoscalePanel(QWidget *parent) : QFrame(parent)
     auto *title = new QLabel(QStringLiteral("Fleet autoscaling"));
     QFont titleFont = title->font();
     titleFont.setBold(true);
-    titleFont.setPointSizeF(titleFont.pointSizeF() + 1);
+    titleFont = forkmesh::resizedFont(titleFont, 1);
     title->setFont(titleFont);
     titleRow->addWidget(title);
     titleRow->addStretch(1);

@@ -931,6 +931,57 @@ void checkFooterOverlayGeometry(MainWindow &window)
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QApplication::processEvents();
 
+        QStringList debugTileNames = activityTileNames;
+        debugTileNames += qtTileNames;
+        bool tilesQuadrantSized = true;
+        for (const QString &name : debugTileNames) {
+            QWidget *tile = window.findChild<QWidget *>(name);
+            tilesQuadrantSized = tilesQuadrantSized && tile &&
+                                 tile->size() ==
+                                     QSize(forkmesh::ui::kResourceSparklineCompactSide,
+                                           forkmesh::ui::kResourceSparklineCompactSide) &&
+                                 tile->parentWidget() &&
+                                 tile->parentWidget()->objectName() ==
+                                     QStringLiteral("debugTileQuad");
+        }
+        check(tilesQuadrantSized,
+              QStringLiteral("every debug chart is one quadrant of a 2x2 block, "
+                             "the size of the resource chart's own quadrants"));
+
+        auto *loopTile = window.findChild<QWidget *>(
+            QStringLiteral("qtDiagnosticLoopTile"));
+        if (loopTile) {
+            const QPoint at(loopTile->width() / 2, loopTile->height() / 2);
+            QHelpEvent hover(QEvent::ToolTip, at, loopTile->mapToGlobal(at));
+            QApplication::sendEvent(loopTile, &hover);
+        }
+        auto *hoverCard = window.findChild<QWidget *>(
+            QStringLiteral("sparklineHoverCard"));
+        check(hoverCard && hoverCard->isVisible() && hoverCard->height() > 80 &&
+                  !QToolTip::isVisible(),
+              QStringLiteral("hovering a debug chart opens the live detail card "
+                             "instead of a plain tooltip"));
+        if (hoverCard)
+            hoverCard->hide();
+
+        const int shownBefore = lights->visibleLightCount();
+        window.testSetLogCategoryEnabled(QStringLiteral("BOUNTY"), false);
+        const int shownMuted = lights->visibleLightCount();
+        const int mutedWidth = lights->width();
+        window.testSetLogCategoryEnabled(QStringLiteral("BOUNTY"), true);
+        window.testSetLoggingEnabled(false);
+        const int shownLoggingOff = lights->visibleLightCount();
+        window.testSetLoggingEnabled(true);
+        check(shownBefore == expectedLogCategories &&
+                  shownMuted == expectedLogCategories - 1 &&
+                  mutedWidth < lights->width() && shownLoggingOff == 0 &&
+                  lights->visibleLightCount() == expectedLogCategories,
+              QStringLiteral("the debug bar shows a log icon only for the "
+                             "categories being recorded (%1 / %2 / %3)")
+                  .arg(shownBefore)
+                  .arg(shownMuted)
+                  .arg(shownLoggingOff));
+
         version->click();
         QApplication::processEvents();
         const bool detailedStopped = !window.testQtDiagnosticsDetailed();
@@ -15355,7 +15406,8 @@ else:
         const auto hover = [&chart](const QPoint &position, const QString &expected) {
             QHelpEvent event(QEvent::ToolTip, position, chart.mapToGlobal(position));
             QApplication::sendEvent(&chart, &event);
-            return QToolTip::text() == expected;
+            return forkmesh::ui::SparklineHoverCard::detailShownFor(&chart)
+                .startsWith(expected);
         };
         check(hover(QPoint(8, 8), QStringLiteral("CPU details")) &&
                   hover(QPoint(25, 8), QStringLiteral("Memory details")) &&

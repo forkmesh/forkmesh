@@ -3696,6 +3696,12 @@ def test_git_transport_redirects_to_a_proven_direct_mirror_before_proxying():
         "https://git-a.invalid/forkmesh/forkmesh.git/info/refs")
     assert answer.headers["X-ForkMesh-Transport"] == "direct-mirror"
     assert attempts == []
+    # Git rebases the remote onto the redirect, so upload-pack never returns
+    # to the relay and no clone pin is written for it.
+    source = _function_source("_https_mirror_proxy")
+    direct = source[source.index("if direct_target:"):
+                    source.index("status=307")]
+    assert "_https_mirror_route_advance" not in direct
 
 
 def test_a_signed_push_reaches_the_one_node_that_accepts_receive_pack():

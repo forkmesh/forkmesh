@@ -1575,7 +1575,332 @@ private:
     QPointer<QAbstractButton> m_actionButton;
 };
 
+struct SparklineHoverContent {
+    QString title;
+    QString value;
+    QString unit;
+    QVector<double> history;
+    double max = 100.0;
+    int maxPoints = 60;
+    QColor color;
+    QString detail;
+};
+
+class SparklineHoverCard : public QWidget
+{
+public:
+    using Source = std::function<SparklineHoverContent()>;
+
+    static void showFor(QWidget *anchor, Source source)
+    {
+        if (!anchor || !anchor->window())
+            return;
+        SparklineHoverCard *card = cardFor(anchor->window());
+        card->m_anchor = anchor;
+        card->m_source = std::move(source);
+        card->refresh();
+        card->m_timer.start();
+    }
+
+    static void hideFor(QWidget *anchor)
+    {
+        if (!anchor || !anchor->window())
+            return;
+        auto *card = existingCard(anchor->window());
+        if (card && card->m_anchor == anchor)
+            card->dismiss();
+    }
+
+    static bool isShownInWindow(const QWidget *anchor)
+    {
+        if (!anchor || !anchor->window())
+            return false;
+        auto *card = existingCard(anchor->window());
+        return card && card->isVisible();
+    }
+
+    static bool isShownFor(const QWidget *anchor)
+    {
+        if (!anchor || !anchor->window())
+            return false;
+        auto *card = existingCard(anchor->window());
+        return card && card->isVisible() && card->m_anchor == anchor;
+    }
+
+    static QString detailShownFor(const QWidget *anchor)
+    {
+        if (!isShownFor(anchor))
+            return QString();
+        return existingCard(anchor->window())->m_content.detail;
+    }
+
+    static QString formatNumber(double value)
+    {
+        const bool fractional = qAbs(value) < 10.0 &&
+                                !qFuzzyCompare(value + 1.0, std::round(value) + 1.0);
+        return QString::number(value, 'f', fractional ? 1 : 0);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const bool dark = currentThemeIsDark();
+        const QColor surface =
+            Theme::remapColor(QColor(dark ? "#161b22" : "#ffffff"));
+        const QColor border =
+            Theme::remapColor(QColor(dark ? "#30363d" : "#d0d7de"));
+        const QColor ink = Theme::remapColor(QColor(dark ? "#e6edf3" : "#1f2328"));
+        const QColor muted =
+            Theme::remapColor(QColor(dark ? "#8b949e" : "#656d76"));
+        p.fillRect(rect(), surface);
+        p.setPen(QPen(border, 1));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5));
+
+        const Layout layout = measure();
+        QFont titleFont = font();
+        titleFont.setPixelSize(12);
+        titleFont.setBold(true);
+        p.setFont(titleFont);
+        p.setPen(ink);
+        p.drawText(layout.title, Qt::AlignLeft | Qt::AlignVCenter,
+                   QFontMetrics(titleFont).elidedText(
+                       m_content.title, Qt::ElideRight,
+                       layout.title.width() - layout.valueWidth - 8));
+        p.drawText(layout.title, Qt::AlignRight | Qt::AlignVCenter,
+                   m_content.value);
+
+        QFont smallFont = font();
+        smallFont.setPixelSize(10);
+        p.setFont(smallFont);
+        if (!layout.chart.isEmpty())
+            paintChart(p, layout.chart, border, muted, smallFont);
+
+        if (!layout.stats.isEmpty()) {
+            p.setPen(muted);
+            p.drawText(layout.stats, Qt::AlignLeft | Qt::AlignVCenter,
+                       statsLine());
+        }
+        if (!layout.detail.isEmpty()) {
+            QFont detailFont = font();
+            detailFont.setPixelSize(11);
+            p.setFont(detailFont);
+            p.setPen(ink);
+            p.drawText(layout.detail, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                       m_content.detail);
+        }
+    }
+
+private:
+    static constexpr int kWidth = 280;
+    static constexpr int kPadding = 10;
+    static constexpr int kChartHeight = 72;
+
+    struct Layout {
+        QRect title;
+        QRect chart;
+        QRect stats;
+        QRect detail;
+        int valueWidth = 0;
+        int height = 0;
+    };
+
+    explicit SparklineHoverCard(QWidget *window)
+        : QWidget(window, Qt::ToolTip | Qt::FramelessWindowHint)
+    {
+        setObjectName(QStringLiteral("sparklineHoverCard"));
+        setAttribute(Qt::WA_ShowWithoutActivating);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        m_timer.setInterval(250);
+        QObject::connect(&m_timer, &QTimer::timeout, this, [this] {
+            if (!anchorHovered()) {
+                dismiss();
+                return;
+            }
+            refresh();
+        });
+    }
+
+    static SparklineHoverCard *cardFor(QWidget *window)
+    {
+        SparklineHoverCard *card = existingCard(window);
+        return card ? card : new SparklineHoverCard(window);
+    }
+
+    static SparklineHoverCard *existingCard(const QWidget *window)
+    {
+        return dynamic_cast<SparklineHoverCard *>(window->findChild<QWidget *>(
+            QStringLiteral("sparklineHoverCard"), Qt::FindDirectChildrenOnly));
+    }
+
+    bool anchorHovered() const
+    {
+        if (!m_anchor || !m_anchor->isVisible())
+            return false;
+        const QRect global(m_anchor->mapToGlobal(QPoint(0, 0)), m_anchor->size());
+        return global.adjusted(-2, -2, 2, 2).contains(QCursor::pos());
+    }
+
+    void dismiss()
+    {
+        m_timer.stop();
+        m_anchor = nullptr;
+        m_source = nullptr;
+        hide();
+    }
+
+    void refresh()
+    {
+        if (!m_source || !m_anchor)
+            return;
+        m_content = m_source();
+        const Layout layout = measure();
+        resize(kWidth, layout.height);
+        place();
+        if (!isVisible())
+            show();
+        raise();
+        update();
+    }
+
+    void place()
+    {
+        const QPoint anchorTop = m_anchor->mapToGlobal(QPoint(0, 0));
+        QScreen *screen = m_anchor->screen();
+        const QRect bounds = screen ? screen->availableGeometry()
+                                    : QRect(anchorTop - QPoint(2000, 2000),
+                                            QSize(4000, 4000));
+        int x = anchorTop.x() + m_anchor->width() / 2 - width() / 2;
+        int y = anchorTop.y() - height() - 6;
+        if (y < bounds.top())
+            y = anchorTop.y() + m_anchor->height() + 6;
+        x = qBound(bounds.left() + 4, x, qMax(bounds.left() + 4,
+                                              bounds.right() - width() - 4));
+        y = qMin(y, qMax(bounds.top(), bounds.bottom() - height() - 4));
+        move(x, y);
+    }
+
+    Layout measure() const
+    {
+        Layout layout;
+        const int inner = kWidth - kPadding * 2;
+        int y = kPadding;
+        QFont titleFont = font();
+        titleFont.setPixelSize(12);
+        titleFont.setBold(true);
+        const QFontMetrics titleMetrics(titleFont);
+        layout.valueWidth = titleMetrics.horizontalAdvance(m_content.value);
+        layout.title = QRect(kPadding, y, inner, titleMetrics.height());
+        y += layout.title.height() + 6;
+        QFont smallFont = font();
+        smallFont.setPixelSize(10);
+        const int smallHeight = QFontMetrics(smallFont).height();
+        if (m_content.history.size() >= 2) {
+            layout.chart = QRect(kPadding, y, inner, kChartHeight + smallHeight + 2);
+            y += layout.chart.height() + 4;
+            layout.stats = QRect(kPadding, y, inner, smallHeight);
+            y += smallHeight + 6;
+        }
+        if (!m_content.detail.isEmpty()) {
+            QFont detailFont = font();
+            detailFont.setPixelSize(11);
+            const QRect needed = QFontMetrics(detailFont).boundingRect(
+                QRect(0, 0, inner, 2000), Qt::AlignLeft | Qt::TextWordWrap,
+                m_content.detail);
+            layout.detail = QRect(kPadding, y, inner, needed.height());
+            y += needed.height() + 4;
+        }
+        layout.height = y + kPadding - 4;
+        return layout;
+    }
+
+    QString statsLine() const
+    {
+        const QVector<double> &h = m_content.history;
+        double low = h.first();
+        double high = h.first();
+        double sum = 0.0;
+        for (double v : h) {
+            low = qMin(low, v);
+            high = qMax(high, v);
+            sum += v;
+        }
+        const QString unit = m_content.unit;
+        return QString::fromUtf8("now %1%5 \xC2\xB7 avg %2%5 \xC2\xB7 min %3%5 "
+                                 "\xC2\xB7 peak %4%5")
+            .arg(formatNumber(h.last()), formatNumber(sum / h.size()),
+                 formatNumber(low), formatNumber(high), unit);
+    }
+
+    void paintChart(QPainter &p, const QRect &frame, const QColor &grid,
+                    const QColor &muted, const QFont &axisFont) const
+    {
+        const int axisHeight = QFontMetrics(axisFont).height();
+        const QRectF area(frame.left(), frame.top(), frame.width(),
+                          frame.height() - axisHeight - 2);
+        QPen gridPen(grid, 1);
+        p.setPen(gridPen);
+        p.drawLine(QPointF(area.left(), area.bottom()),
+                   QPointF(area.right(), area.bottom()));
+        gridPen.setStyle(Qt::DotLine);
+        p.setPen(gridPen);
+        p.drawLine(QPointF(area.left(), area.top() + area.height() / 2),
+                   QPointF(area.right(), area.top() + area.height() / 2));
+        p.drawLine(QPointF(area.left(), area.top()),
+                   QPointF(area.right(), area.top()));
+
+        const QVector<double> &h = m_content.history;
+        const double maxValue = m_content.max > 0 ? m_content.max : 1.0;
+        const int points = qMax(2, m_content.maxPoints);
+        const double step = area.width() / double(points - 1);
+        const int n = h.size();
+        QPolygonF curve;
+        for (int i = 0; i < n; ++i) {
+            const double x = area.right() - (n - 1 - i) * step;
+            const double norm = qBound(0.0, h.at(i) / maxValue, 1.0);
+            curve << QPointF(x, area.bottom() - norm * (area.height() - 2));
+        }
+        QColor line = m_content.color.isValid() ? m_content.color : QColor("#58a6ff");
+        QPolygonF fill = curve;
+        fill << QPointF(curve.last().x(), area.bottom())
+             << QPointF(curve.first().x(), area.bottom());
+        QColor under = line;
+        under.setAlpha(60);
+        p.setPen(Qt::NoPen);
+        p.setBrush(under);
+        p.drawPolygon(fill);
+        QPen pen(line, 2);
+        pen.setJoinStyle(Qt::RoundJoin);
+        pen.setCapStyle(Qt::RoundCap);
+        p.setPen(pen);
+        p.setBrush(Qt::NoBrush);
+        p.drawPolyline(curve);
+        p.setPen(Qt::NoPen);
+        p.setBrush(line);
+        p.drawEllipse(curve.last(), 3, 3);
+
+        p.setFont(axisFont);
+        p.setPen(muted);
+        p.drawText(QRectF(area.left() + 2, area.top() + 1, area.width() - 4,
+                          axisHeight),
+                   Qt::AlignLeft | Qt::AlignTop,
+                   formatNumber(maxValue) + m_content.unit);
+        const QRectF axis(area.left(), area.bottom() + 2, area.width(), axisHeight);
+        p.drawText(axis, Qt::AlignLeft | Qt::AlignVCenter,
+                   QStringLiteral("%1 s ago").arg(points - 1));
+        p.drawText(axis, Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("now"));
+    }
+
+    QPointer<QWidget> m_anchor;
+    Source m_source;
+    SparklineHoverContent m_content;
+    QTimer m_timer;
+};
+
 constexpr int kResourceSparklineSide = 34;
+constexpr int kResourceSparklineCompactSide = 19;
 
 class ResourceSparkline : public QWidget
 {
@@ -1626,9 +1951,52 @@ public:
         update();
     }
 
+    void setUnit(const QString &unit) { m_unit = unit; }
+
+    void setHoverCardEnabled(bool enabled) { m_hoverCard = enabled; }
+
+    bool isCompact() const { return width() < 28; }
+
+    SparklineHoverContent hoverContent() const
+    {
+        SparklineHoverContent content;
+        content.title = accessibleName().isEmpty() ? m_label : accessibleName();
+        content.value = m_loading ? QStringLiteral("…") : m_value;
+        content.unit = m_unit;
+        content.history = m_history;
+        content.max = m_max;
+        content.maxPoints = m_maxPoints;
+        content.color = seriesColor(
+            m_history.isEmpty() ? 0.0 : m_history.last() / m_max * 100.0);
+        content.detail = toolTip();
+        return content;
+    }
+
     std::function<void()> onClicked; // invoked on a left-click
 
 protected:
+    bool event(QEvent *e) override
+    {
+        if (m_hoverCard && e->type() == QEvent::ToolTip) {
+            SparklineHoverCard::showFor(this, [this] { return hoverContent(); });
+            return true;
+        }
+        return QWidget::event(e);
+    }
+
+    void enterEvent(QEnterEvent *e) override
+    {
+        if (m_hoverCard && SparklineHoverCard::isShownInWindow(this))
+            SparklineHoverCard::showFor(this, [this] { return hoverContent(); });
+        QWidget::enterEvent(e);
+    }
+
+    void hideEvent(QHideEvent *e) override
+    {
+        SparklineHoverCard::hideFor(this);
+        QWidget::hideEvent(e);
+    }
+
     void mousePressEvent(QMouseEvent *e) override
     {
         if (e->button() == Qt::LeftButton && onClicked)
@@ -1641,9 +2009,10 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
 
+        const bool compact = isCompact();
         const QRectF box = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
         QPainterPath cardPath;
-        cardPath.addRoundedRect(box, 4, 4);
+        cardPath.addRoundedRect(box, compact ? 2 : 4, compact ? 2 : 4);
         QColor card = palette().color(QPalette::WindowText);
         card.setAlpha(28);
         p.setPen(Qt::NoPen);
@@ -1655,13 +2024,19 @@ protected:
             placeholder.setAlpha(42);
             p.setPen(Qt::NoPen);
             p.setBrush(placeholder);
+            if (compact) {
+                p.drawRoundedRect(box.adjusted(4, 7, -4, -7), 1, 1);
+                return;
+            }
             p.drawRoundedRect(box.adjusted(7, 9, -7, -16), 2, 2);
             p.drawRoundedRect(box.adjusted(10, 21, -10, -7), 2, 2);
             return;
         }
 
-        const QRectF area = box.adjusted(1.5, 1.5, -1.5, -1.5);
-        if (area.height() >= 2 && m_history.size() >= 2) {
+        const qreal inset = compact ? 1.0 : 1.5;
+        const QRectF area = box.adjusted(inset, inset, -inset, -inset);
+        const bool charted = area.height() >= 2 && m_history.size() >= 2;
+        if (charted) {
             p.save();
             p.setClipPath(cardPath);
             const QColor line = seriesColor(m_history.last() / m_max * 100.0);
@@ -1682,11 +2057,25 @@ protected:
             p.setPen(Qt::NoPen);
             p.drawPolygon(fill);
             QPen pen(line);
-            pen.setWidthF(1.2);
+            pen.setWidthF(compact ? 1.0 : 1.2);
             p.setPen(pen);
             p.setBrush(Qt::NoBrush);
             p.drawPolyline(curve);
             p.restore();
+        }
+
+        if (compact) {
+            if (charted)
+                return;
+            QFont tiny = font();
+            tiny.setPixelSize(6);
+            tiny.setBold(true);
+            p.setFont(tiny);
+            QColor lab = palette().color(QPalette::WindowText);
+            lab.setAlpha(170);
+            p.setPen(lab);
+            p.drawText(box, Qt::AlignCenter, m_label);
+            return;
         }
 
         QFont f = font();
@@ -1741,6 +2130,8 @@ private:
 
     QString m_label;
     QString m_value;
+    QString m_unit;
+    bool m_hoverCard = false;
     double m_max = 100.0;
     QVector<double> m_history;
     int m_maxPoints = 60;
@@ -1790,20 +2181,55 @@ public:
         m_samples[resource].onClicked = std::move(handler);
     }
 
+    SparklineHoverContent hoverContent(int resource) const
+    {
+        static const char *const titles[ResourceCount] = {
+            "CPU used by this app", "Host memory", "Swap", "Drive space"};
+        SparklineHoverContent content;
+        if (resource < 0 || resource >= ResourceCount)
+            return content;
+        const Sample &sample = m_samples[resource];
+        content.title = QString::fromLatin1(titles[resource]);
+        content.unit = QStringLiteral("%");
+        content.history = sample.history;
+        content.max = sample.max;
+        content.maxPoints = m_maxPoints;
+        const double pct = sample.history.isEmpty()
+                               ? 0.0
+                               : sample.history.last() / sample.max * 100.0;
+        content.value = sample.history.isEmpty()
+                            ? QStringLiteral("…")
+                            : SparklineHoverCard::formatNumber(pct) +
+                                  QStringLiteral("%");
+        content.color = gaugeColor(pct);
+        content.detail = sample.toolTip;
+        if (sample.onClicked)
+            content.detail += QStringLiteral("\nClick for details");
+        return content;
+    }
+
 protected:
     bool event(QEvent *event) override
     {
         if (event->type() == QEvent::ToolTip) {
             const auto *helpEvent = static_cast<QHelpEvent *>(event);
-            const int resource = resourceAt(helpEvent->pos());
-            if (resource >= 0 && !m_samples[resource].toolTip.isEmpty())
-                QToolTip::showText(helpEvent->globalPos(),
-                                   m_samples[resource].toolTip, this);
-            else
-                QToolTip::hideText();
+            showHoverCard(resourceAt(helpEvent->pos()));
             return true;
         }
         return QWidget::event(event);
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        if (SparklineHoverCard::isShownInWindow(this))
+            showHoverCard(resourceAt(event->position().toPoint()));
+        QWidget::enterEvent(event);
+    }
+
+    void hideEvent(QHideEvent *event) override
+    {
+        SparklineHoverCard::hideFor(this);
+        QWidget::hideEvent(event);
     }
 
     void mousePressEvent(QMouseEvent *event) override
@@ -1821,13 +2247,9 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override
     {
         const int resource = resourceAt(event->pos());
-        if (resource != m_hoveredResource && QToolTip::isVisible()) {
-            if (resource >= 0 && !m_samples[resource].toolTip.isEmpty())
-                QToolTip::showText(mapToGlobal(event->pos()),
-                                   m_samples[resource].toolTip, this);
-            else
-                QToolTip::hideText();
-        }
+        if (resource != m_hoveredResource && resource >= 0 &&
+            SparklineHoverCard::isShownFor(this))
+            showHoverCard(resource);
         m_hoveredResource = resource;
         QWidget::mouseMoveEvent(event);
     }
@@ -1853,6 +2275,15 @@ private:
         QString toolTip;
         std::function<void()> onClicked;
     };
+
+    void showHoverCard(int resource)
+    {
+        if (resource < 0)
+            return;
+        m_hoveredResource = resource;
+        SparklineHoverCard::showFor(
+            this, [this, resource] { return hoverContent(resource); });
+    }
 
     static QColor gaugeColor(double pct)
     {
@@ -6144,6 +6575,17 @@ public:
     }
 
     int lightCount() const { return categoryCount(); }
+    int visibleLightCount() const { return displayLanes().size(); }
+
+    void setHiddenCategories(const QSet<QString> &hidden)
+    {
+        if (m_presentation != Debug || hidden == m_hiddenCategories)
+            return;
+        m_hiddenCategories = hidden;
+        updateDebugSize();
+        updateGeometry();
+        update();
+    }
 
     static bool registerCategory(const QString &badge, const QString &accent,
                                  const QString &icon)
@@ -6251,7 +6693,7 @@ public:
 protected:
     void paintEvent(QPaintEvent *) override
     {
-        const QVector<int> lanes = sortedCategoryLanes();
+        const QVector<int> lanes = displayLanes();
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         const bool dark = currentThemeIsDark();
@@ -6267,7 +6709,7 @@ protected:
 
         const QColor unseen = Theme::remapColor(QColor(dark ? "#6e7681" : "#8c959f"));
         const QColor blinkOff = Theme::remapColor(QColor(dark ? "#30363d" : "#d0d7de"));
-        for (int i = 0; i < categoryCount(); ++i) {
+        for (int i = 0; i < lanes.size(); ++i) {
             const int lane = lanes.at(i);
             const Category &category = categories().at(lane);
             const quint64 laneCount = m_counts.value(category.badge);
@@ -6327,18 +6769,19 @@ protected:
                 const QColor color =
                     checking && !m_websiteBlinkOn ? blinkOff : verdict;
                 painter.setBrush(color);
-                painter.drawEllipse(dotRect);
-                if (m_presentation == Debug) {
-                    paintWebsiteCountdown(painter, i, verdict, dark);
-                    QFont labelFont = painter.font();
-                    labelFont.setPixelSize(7);
-                    labelFont.setBold(false);
-                    painter.setFont(labelFont);
-                    painter.setPen(unseen);
-                    painter.drawText(websiteStatusLabelRect(i),
-                                     Qt::AlignHCenter | Qt::AlignVCenter,
-                                     debugWebsiteLabel(m_websiteStatuses.at(i)));
-                    painter.setPen(Qt::NoPen);
+                if (m_presentation == Debug &&
+                    i + 1 < m_websiteStatuses.size()) {
+                    QPainterPath dot;
+                    dot.addEllipse(QRectF(dotRect));
+                    QPainterPath cover;
+                    cover.addEllipse(QRectF(websiteStatusRect(i + 1))
+                                         .adjusted(-kDebugWebsiteRing,
+                                                   -kDebugWebsiteRing,
+                                                   kDebugWebsiteRing,
+                                                   kDebugWebsiteRing));
+                    painter.drawPath(dot.subtracted(cover));
+                } else {
+                    painter.drawEllipse(dotRect);
                 }
             }
         }
@@ -6394,6 +6837,11 @@ protected:
                 }
                 if (websiteChecking(website))
                     tip += QStringLiteral("\nChecking now…");
+                else if (m_presentation == Debug &&
+                         websiteCountdownFraction(website) > 0.0)
+                    tip += QStringLiteral("\nNext check in %1 s")
+                               .arg(qCeil(websiteCountdownFraction(website) *
+                                          kWebsiteCheckIntervalMs / 1000.0));
                 if (onWebsiteClicked)
                     tip += QStringLiteral(
                         "\nClick to check again now and open the related "
@@ -6522,10 +6970,9 @@ private:
     static constexpr int kDebugHeight = 40;
     static constexpr int kDebugPadding = 4;
     static constexpr int kDebugCategorySlot = 25;
-    static constexpr int kDebugWebsiteSlot = 36;
-    static constexpr int kDebugWebsiteDot = 14;
-    static constexpr int kDebugWebsiteRing = 21;
-    static constexpr int kDebugWebsiteTop = 4;
+    static constexpr int kDebugWebsiteDot = 12;
+    static constexpr int kDebugWebsiteStep = 8;
+    static constexpr int kDebugWebsiteRing = 2;
     static constexpr int kWebsiteCheckIntervalMs = 60000;
     static constexpr int kWebsiteCheckBlinkTailMs = 900;
 
@@ -6565,14 +7012,15 @@ private:
 
     int debugCategoryWidth() const
     {
-        return kDebugPadding * 2 + categoryCount() * kDebugCategorySlot;
+        return kDebugPadding * 2 + displayLanes().size() * kDebugCategorySlot;
     }
 
     int debugWebsiteWidth() const
     {
         return m_websiteStatuses.isEmpty()
                    ? 0
-                   : 8 + m_websiteStatuses.size() * kDebugWebsiteSlot;
+                   : 8 + (m_websiteStatuses.size() - 1) * kDebugWebsiteStep +
+                         kDebugWebsiteDot + 4;
     }
 
     void updateDebugSize()
@@ -6657,8 +7105,22 @@ private:
         const int displayIndex = categoryDisplayIndexAt(point);
         if (displayIndex < 0)
             return -1;
-        const QVector<int> lanes = sortedCategoryLanes();
+        const QVector<int> lanes = displayLanes();
         return lanes.value(displayIndex, -1);
+    }
+
+    QVector<int> displayLanes() const
+    {
+        QVector<int> lanes = sortedCategoryLanes();
+        if (m_presentation != Debug || m_hiddenCategories.isEmpty())
+            return lanes;
+        lanes.erase(std::remove_if(lanes.begin(), lanes.end(),
+                                   [this](int lane) {
+                                       return m_hiddenCategories.contains(
+                                           categories().at(lane).badge);
+                                   }),
+                    lanes.end());
+        return lanes;
     }
 
     int categoryDisplayIndexAt(const QPoint &point) const
@@ -6677,7 +7139,7 @@ private:
             if (point.x() < kDebugPadding || point.x() >= debugCategoryWidth())
                 return -1;
             const int index = (point.x() - kDebugPadding) / kDebugCategorySlot;
-            return index >= 0 && index < categoryCount() ? index : -1;
+            return index >= 0 && index < displayLanes().size() ? index : -1;
         }
         if (point.x() < 0 || point.x() >= categoryAreaWidth())
             return -1;
@@ -6713,30 +7175,15 @@ private:
             return QRect(x, y, 6, 6);
         }
         if (m_presentation == Debug) {
-            const int x = websiteSeparatorX() +
-                          index * kDebugWebsiteSlot +
-                          (kDebugWebsiteSlot - kDebugWebsiteDot) / 2;
-            return QRect(x, kDebugWebsiteTop, kDebugWebsiteDot,
-                         kDebugWebsiteDot);
+            const int x = websiteSeparatorX() + 6 + index * kDebugWebsiteStep;
+            return QRect(x, (kDebugHeight - kDebugWebsiteDot) / 2,
+                         kDebugWebsiteDot, kDebugWebsiteDot);
         }
         const int col = index / 2;
         const int row = index % 2;
         const int x = websiteSeparatorX() + 8 + col * 7;
         const int y = 8 + row * 10;
         return QRect(x, y, 5, 5);
-    }
-
-    QRect websiteStatusLabelRect(int index) const
-    {
-        const int x = websiteSeparatorX() + index * kDebugWebsiteSlot;
-        return QRect(x, 27, kDebugWebsiteSlot, 12);
-    }
-
-    QRect websiteCountdownRect(int index) const
-    {
-        const QRect dot = websiteStatusRect(index);
-        const int grow = (kDebugWebsiteRing - dot.width()) / 2;
-        return dot.adjusted(-grow, -grow, grow, grow);
     }
 
     qreal websiteCountdownFraction(int index) const
@@ -6749,23 +7196,6 @@ private:
         if (elapsed < 0 || elapsed >= kWebsiteCheckIntervalMs)
             return 0.0;
         return 1.0 - qreal(elapsed) / qreal(kWebsiteCheckIntervalMs);
-    }
-
-    void paintWebsiteCountdown(QPainter &painter, int index,
-                               const QColor &verdict, bool dark) const
-    {
-        const QRectF ring(websiteCountdownRect(index));
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(Theme::remapColor(QColor(dark ? "#30363d" : "#d0d7de")), 2));
-        painter.drawEllipse(ring);
-        const qreal remaining = websiteCountdownFraction(index);
-        if (remaining > 0.0) {
-            painter.setPen(QPen(verdict, 2, Qt::SolidLine, Qt::FlatCap));
-            painter.drawArc(ring, 90 * 16,
-                            -qRound(remaining * 360.0) * 16);
-        }
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(Qt::NoBrush);
     }
 
     bool websiteChecking(int index) const
@@ -6823,8 +7253,7 @@ private:
     void updateWebsiteAnimation()
     {
         const bool blinking = anyWebsiteChecking();
-        if (m_websiteStatuses.isEmpty() || !isVisible() ||
-            (m_presentation != Debug && !blinking)) {
+        if (m_websiteStatuses.isEmpty() || !isVisible() || !blinking) {
             if (m_websiteAnimation)
                 m_websiteAnimation->stop();
             return;
@@ -6844,41 +7273,12 @@ private:
             m_websiteAnimation->start();
     }
 
-    static QString debugWebsiteLabel(const WebsiteStatus &status)
-    {
-        static const QHash<QString, QString> labels = {
-            {QStringLiteral("website"), QStringLiteral("Web")},
-            {QStringLiteral("status_page"), QStringLiteral("Status page")},
-            {QStringLiteral("api"), QStringLiteral("API")},
-            {QStringLiteral("errors"), QStringLiteral("Errors")},
-            {QStringLiteral("database"), QStringLiteral("DB")},
-            {QStringLiteral("email"), QStringLiteral("Email")},
-            {QStringLiteral("flagship_repository"), QStringLiteral("Repo")},
-            {QStringLiteral("installer"), QStringLiteral("Installer")},
-            {QStringLiteral("git_hosting"), QStringLiteral("Git host")},
-            {QStringLiteral("realtime"), QStringLiteral("Realtime")},
-            {QStringLiteral("durable_objects"), QStringLiteral("Durables")},
-            {QStringLiteral("desktop_website"), QStringLiteral("Web here")},
-            {QStringLiteral("desktop_status_page"), QStringLiteral("Status here")},
-            {QStringLiteral("world_mobile"), QStringLiteral("Mobile")},
-            {QStringLiteral("release_linux"), QStringLiteral("Linux")},
-            {QStringLiteral("release_android"), QStringLiteral("Android")},
-            {QStringLiteral("release_windows"), QStringLiteral("Windows")},
-            {QStringLiteral("release_macos"), QStringLiteral("macOS")},
-        };
-        const auto known = labels.constFind(status.id);
-        if (known != labels.cend())
-            return known.value();
-        return status.label.section(QLatin1Char(' '), 0, 1).left(12);
-    }
-
     int websiteStatusAt(const QPoint &point) const
     {
-        for (int i = 0; i < m_websiteStatuses.size(); ++i) {
-            const QRect hit = m_presentation == Debug
-                                  ? websiteCountdownRect(i)
-                                  : websiteStatusRect(i);
-            if (hit.adjusted(-2, -2, 2, 2).contains(point))
+        for (int i = m_websiteStatuses.size() - 1; i >= 0; --i) {
+            const int grow = m_presentation == Debug ? 4 : 2;
+            if (websiteStatusRect(i).adjusted(-grow, -grow, grow, grow)
+                    .contains(point))
                 return i;
         }
         return -1;
@@ -6924,6 +7324,7 @@ private:
     QHash<QString, qint64> m_websiteCheckedAt;
     QHash<QString, qint64> m_websiteBlinkUntil;
     QSet<QString> m_websiteChecking;
+    QSet<QString> m_hiddenCategories;
     QTimer *m_websiteAnimation = nullptr;
     bool m_websiteBlinkOn = true;
 };

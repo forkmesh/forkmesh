@@ -49,13 +49,15 @@ function normalizePullReviewTemplate(value) { return typeof value === "string" ?
 %s
 """ % (
         _function(HELPERS, "escapeHtml"),
-        _function(ISSUES_IO, "webIssueClaimApplied"),
+        _function(ISSUES_IO, "webIssueClaimApplied") + "\n"
+        + _function(ISSUES_IO, "webIssueAssigneesWithClaims"),
         _constants(CONTENT, "ISSUE_ASSIGNMENT_") + "\n" + _constants(CONTENT, "ISSUE_AI_PROMPT_MAX"),
         "\n".join(_function(CONTENT, name) for name in (
             "issueAssignmentHours", "issueAssignmentTimes", "issueAssigneeHasPull",
             "issueDeadlineDuration", "issueAssignmentDeadline",
             "renderIssueAssignmentDeadline", "issueAssigneeDeadlineHtml",
-            "repoCollabSettingsFromBlobs")),
+            "issueAssignmentLimit", "issueAssignmentsWithoutPull",
+            "issueAssignmentLimitMessage", "repoCollabSettingsFromBlobs")),
     ) + body
     result = subprocess.run(["node", "--input-type=module"], input=script,
                             text=True, capture_output=True)

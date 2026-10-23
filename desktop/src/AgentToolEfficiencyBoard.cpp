@@ -2,6 +2,7 @@
 
 #include "AgentToolPolicy.h"
 #include "DesignTokens.h"
+#include "FontSizing.h"
 
 #include <QDateTime>
 #include <QFontMetrics>
@@ -32,17 +33,7 @@ constexpr int kImprovementRowHeight = 44;
 constexpr int kImprovementRowGap = 6;
 constexpr int kMaxImprovementRows = 5;
 
-// The global stylesheet sizes widget fonts in pixels, which leaves
-// pointSizeF() at -1: scale whichever unit the font actually carries, or a
-// "+5pt" value font collapses to an unreadable 4pt.
-QFont resizedFont(QFont font, qreal deltaPoints)
-{
-    if (font.pixelSize() > 0)
-        font.setPixelSize(qMax(9, qRound(font.pixelSize() + deltaPoints * 4.0 / 3.0)));
-    else if (font.pointSizeF() > 0)
-        font.setPointSizeF(qMax(7.0, font.pointSizeF() + deltaPoints));
-    return font;
-}
+using forkmesh::resizedFont;
 
 QString plural(qint64 count, const char *singular, const char *pluralForm)
 {
