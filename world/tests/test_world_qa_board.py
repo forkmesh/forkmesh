@@ -376,11 +376,11 @@ def test_shared_qa_deck_refreshes_while_the_visitor_stands_at_the_board():
     # A fifteen-second cadence is only affordable because it is scoped to a
     # visitor actually standing at the board — it must start on approach and
     # be cleared on departure, never run for the life of the page.
-    assert "object: worldQaBoard," in SCENE
-    assert "onEnter: (refetch) => onQaBoardNearby({ refetch })," in SCENE
-    assert "onExit: () => onQaBoardAway()," in SCENE
-    assert "onQaBoardNearby: ({ refetch } = {}) =>" in WORLD
-    assert "onQaBoardAway: () => this.stopQaDeckWatch()," in WORLD
+    assert 'placeBillboardOnIsland(worldQaBoard, {\n    circle: "hub",\n    feed: "qa-board",' in SCENE
+    assert "onBillboardNearby({ feed: record.feed, refetch });" in SCENE
+    assert "onBillboardAway({ feed: record.feed });" in SCENE
+    assert 'if (feed === "qa-board") {\n      this.startQaDeckWatch({ refetch });' in WORLD
+    assert 'if (feed === "qa-board") this.stopQaDeckWatch();' in WORLD
     watch = WORLD[
         WORLD.index("  startQaDeckWatch("):
         WORLD.index("  stopQaDeckWatch() {") + 120
