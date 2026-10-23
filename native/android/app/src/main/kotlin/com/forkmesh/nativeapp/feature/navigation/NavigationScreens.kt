@@ -1057,6 +1057,7 @@ object ShellHomeMetrics {
     val box = 39.dp
     val tileHeight = 66.dp
     val gap = 5.dp
+    val anchorRise = 2.dp
     const val ACROSS = 5
 }
 
@@ -1073,10 +1074,13 @@ internal fun ShellHomeTile(
     heat: Double = 0.0,
     tileHeight: Dp = ShellHomeMetrics.tileHeight,
     updated: Boolean = false,
+    loading: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val c = Fm.colors
+    val unreadBadge = badge > 0 && !running
+    val spinning = loading && !unreadBadge
     val lit = selected || running
     val accent = lit || iconStyle == ShellHomeIconStyle.accent
     val top = if (accent) c.accent else c.textPrimary
@@ -1095,7 +1099,8 @@ internal fun ShellHomeTile(
                 role = Role.Button
                 contentDescription = listOfNotNull(
                     title,
-                    if (badge > 0) "$badge ${if (running) "running" else "new"}" else null,
+                    if (spinning) "Loading" else null,
+                    if (badge > 0 && !spinning) "$badge ${if (running) "running" else "new"}" else null,
                     if (desktopOffline) "desktop offline" else null,
                 ).joinToString(", ")
             },
@@ -1155,23 +1160,26 @@ internal fun ShellHomeTile(
                     outlined = iconStyle != ShellHomeIconStyle.filled,
                 )
             }
-            if (badge > 0) {
-                ShellHomeCountMark(
-                    if (badge > 9999) "${badge / 1000}k" else "%,d".format(badge),
-                    unread = !running,
-                    modifier = Modifier.align(Alignment.TopStart).offset(
-                        x = if (tiled) box - minOf(12.dp, box * 0.28f) else box - inset - iconSize * 0.3f,
-                        y = (if (tiled) minOf(10.dp, box * 0.22f) else inset + 6.dp) - 21.dp,
-                    ),
-                )
-            }
             if (desktopOffline) {
                 val d = if (tiled) corner * 0.3f else inset
                 DesktopOfflineDot(Modifier.align(Alignment.TopStart).offset(x = d - 5.dp, y = box - d - 5.dp))
             }
             if (updated) {
                 val d = if (tiled) corner * 0.3f else inset
-                ShellHomeUpdateDot(Modifier.align(Alignment.TopStart).offset(x = box - d - 5.5.dp, y = box - d - 5.5.dp))
+                ShellHomeUpdateDot(Modifier.align(Alignment.TopStart).offset(x = box - d - 4.5.dp, y = box - d - 4.5.dp))
+            }
+            val anchor = Modifier.align(Alignment.TopStart).offset(
+                x = box - if (tiled) minOf(12.dp, box * 0.28f) else inset + iconSize * 0.12f,
+                y = -ShellHomeMetrics.anchorRise,
+            )
+            if (spinning) {
+                ShellHomeCountSpinner(anchor)
+            } else if (badge > 0) {
+                ShellHomeCountMark(
+                    if (badge > 9999) "${badge / 1000}k" else "%,d".format(badge),
+                    unread = !running,
+                    modifier = anchor,
+                )
             }
         }
         Spacer(Modifier.height(ShellHomeMetrics.gap))
@@ -1192,13 +1200,29 @@ internal fun ShellHomeTile(
 }
 
 @Composable
+fun ShellHomeCountSpinner(modifier: Modifier = Modifier) {
+    val c = Fm.colors
+    Box(
+        modifier
+            .background(c.bgBase, CircleShape)
+            .padding(1.5.dp)
+            .size(19.dp)
+            .background(if (c.dark) c.bgElevated else c.bgRaised, CircleShape)
+            .border(0.5.dp, c.count.copy(alpha = 0.3f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(Modifier.size(11.dp), color = c.count, strokeWidth = 1.5.dp)
+    }
+}
+
+@Composable
 fun ShellHomeUpdateDot(modifier: Modifier = Modifier) {
     val c = Fm.colors
     Box(
         modifier
             .background(c.bgBase, CircleShape)
             .padding(1.5.dp)
-            .size(8.dp)
+            .size(6.dp)
             .background(c.accent, CircleShape),
     )
 }

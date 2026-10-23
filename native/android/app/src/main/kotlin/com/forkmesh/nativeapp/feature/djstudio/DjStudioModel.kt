@@ -18,6 +18,8 @@ import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.djstudio.DjAutomix
 import com.forkmesh.nativeapp.djstudio.DjAutomixDeck
 import com.forkmesh.nativeapp.djstudio.DjAutomixStep
+import com.forkmesh.nativeapp.djstudio.DjRepeat
+import com.forkmesh.nativeapp.djstudio.DjRepeatStep
 import com.forkmesh.nativeapp.djstudio.DjBpm
 import com.forkmesh.nativeapp.djstudio.DjCrate
 import com.forkmesh.nativeapp.djstudio.DjDeckSide
@@ -95,6 +97,7 @@ class DjDeck internal constructor(val side: DjDeckSide, internal val voice: DjVo
     var bend by mutableDoubleStateOf(0.0)
     var bpm by mutableDoubleStateOf(0.0)
     var loop by mutableStateOf(false)
+    var repeats by mutableStateOf(false)
     var scratching by mutableStateOf(false)
     var brake by mutableDoubleStateOf(0.0)
     var sample by mutableStateOf<DjSampleStep>(DjSampleStep.Idle)
@@ -113,6 +116,7 @@ class DjDeck internal constructor(val side: DjDeckSide, internal val voice: DjVo
     internal var decoder: DjDecoder? = null
     internal var pcmFile: File? = null
     internal var brakeJob: Job? = null
+    internal var repeatJob: Job? = null
     internal var brakeStart = 0L
     internal var loadId = 0L
 
@@ -145,6 +149,8 @@ class DjStudioModel internal constructor(
     val sections = mutableStateListOf<DjSection?>().apply { repeat(DjStudio.SECTION_COUNT) { add(null) } }
     var automixing by mutableStateOf(false)
     var automixOn by mutableStateOf(false)
+    var autoDjOn by mutableStateOf(false)
+    var autoDjFinding by mutableStateOf(false)
     var onScreen by mutableStateOf(false)
     var notice by mutableStateOf<String?>(null)
     var sheet by mutableStateOf<DjSheet?>(null)
@@ -188,7 +194,13 @@ class DjStudioModel internal constructor(
     internal var applyingRemote = false
     internal val motion = DjMotionFeed(context)
     internal var onLeave: (() -> Unit)? = null
-    private val unplayable = mutableSetOf<String>()
+    internal val unplayable = mutableSetOf<String>()
+    internal var autoDjJob: Job? = null
+    internal var autoDjSeed = ""
+    internal var autoDjChoices = listOf<com.forkmesh.nativeapp.djstudio.DjAutoDjCandidate>()
+    internal var autoDjPlayed = listOf<String>()
+    internal var autoDjOwnsAutomix = false
+    internal var autoDjRefresh = false
     private var sectionCursor = 0
     private var searchInstances = listOf<String>()
     private var automixLoop: Job? = null
@@ -201,6 +213,7 @@ class DjStudioModel internal constructor(
     private var tickJob: Job? = null
     private var savedAt = 0L
     private var resumeAutomix = false
+    private var resumeAutoDj = false
     private var active = false
     private var pcmCounter = 0L
     private var lastPlaying = false
@@ -218,8 +231,10 @@ class DjStudioModel internal constructor(
         crate = DjCrate.decode(prefs?.getString(DjCrate.STORAGE_KEY))
         shareMotion = prefs?.getBool(MOTION_KEY) ?: true
         resumeAutomix = saved.automix
+        resumeAutoDj = saved.autoDj
         for (deck in listOf(a, b)) {
             val stored = saved[deck.side]
+            deck.repeats = stored.repeats
             deck.cue = stored.cue
             deck.level = stored.level
             deck.rate = stored.rate
@@ -252,9 +267,12 @@ class DjStudioModel internal constructor(
     fun resumePlayback() {
         for (deck in listOf(a, b)) if (deck.keepsPlaying && deck.loaded && !deck.playing) play(deck)
         val automix = resumeAutomix
+        val autoDj = resumeAutoDj
         resumeAutomix = false
+        resumeAutoDj = false
         if (!anyPlaying) return
         if (automix && !automixOn) setAutomix(true)
+        if (autoDj && automixOn) setAutoDj(true, refresh = false)
         if (!prefs?.getString(JAM_KEY).isNullOrEmpty()) resumeJam()
     }
 
@@ -320,6 +338,7 @@ class DjStudioModel internal constructor(
             deck.bend = 0.0
             deck.bpm = 0.0
             deck.loop = false
+            deck.repeats = false
             deck.sample = DjSampleStep.Idle
             deck.showsRemaining = false
             deck.tapTempo = DjTapTempo()
@@ -372,6 +391,8 @@ class DjStudioModel internal constructor(
 
     private fun unload(deck: DjDeck) {
         deck.job?.cancel()
+        deck.repeatJob?.cancel()
+        deck.repeatJob = null
         deck.download?.stop()
         deck.decoder?.stop()
         deck.download = null
@@ -593,6 +614,7 @@ class DjStudioModel internal constructor(
         val now = SystemClock.elapsedRealtime()
         for (deck in listOf(a, b)) {
             val voice = deck.voice
+            if (deck.playing && voice.ended && replay(deck)) continue
             if (deck.playing && voice.ended) {
                 voice.ended = false
                 deck.playing = false
@@ -602,6 +624,7 @@ class DjStudioModel internal constructor(
                 notifyPlayback()
             }
             if (deck.loop && deck.playing && voice.position >= deck.cue + DjStudio.LOOP_SECONDS) voice.seek(deck.cue)
+            aimRepeat(deck)
         }
         if (anyPlaying && now - savedAt > 5000) save(true)
         if (anyPlaying != lastPlaying) notifyPlayback()
@@ -650,11 +673,56 @@ class DjStudioModel internal constructor(
         if (!deck.playing) play(deck)
     }
 
-    private fun rewind(deck: DjDeck) {
+    private fun rewind(deck: DjDeck, to: Double = 0.0) {
+        deck.repeatJob?.cancel()
+        deck.repeatJob = null
         deck.counted = false
-        deck.voice.seek(0.0)
-        deck.stoppedAt = 0.0
+        deck.voice.seek(to)
+        deck.stoppedAt = to
         share(deck.side)
+    }
+
+    private fun replay(deck: DjDeck): Boolean {
+        if (!deck.repeats || !deck.keepsPlaying || !deck.loaded || deck.failed || deck.scratching) return false
+        sectionJobs[deck.side]?.cancel()
+        rewind(deck, DjRepeat.span(deck.waveform, deck.duration)?.start ?: 0.0)
+        play(deck)
+        return true
+    }
+
+    private fun aimRepeat(deck: DjDeck) {
+        if (deck.repeatJob?.isActive == true) return
+        if (!deck.repeats || deck.loop || !deck.playing || !deck.keepsPlaying || deck.scratching || deck.failed || deck.voice.pcm == null) return
+        val span = DjRepeat.span(deck.waveform, deck.duration) ?: return
+        when (val step = DjRepeat.step(deck.position(), span, deck.effectiveRate)) {
+            DjRepeatStep.Wait -> Unit
+            DjRepeatStep.Wrap -> wrap(deck, span.start)
+            is DjRepeatStep.After -> {
+                val id = deck.videoId
+                deck.repeatJob = scope.launch {
+                    delay((step.seconds * 1000).toLong())
+                    deck.repeatJob = null
+                    if (deck.videoId == id && deck.repeats && deck.playing && !deck.scratching) wrap(deck, span.start)
+                }
+            }
+        }
+    }
+
+    private fun wrap(deck: DjDeck, start: Double) {
+        sectionJobs[deck.side]?.cancel()
+        rewind(deck, start)
+        count(deck)
+    }
+
+    fun toggleRepeat(side: DjDeckSide) {
+        val deck = deck(side)
+        deck.repeats = !deck.repeats
+        if (!deck.repeats) {
+            deck.repeatJob?.cancel()
+            deck.repeatJob = null
+        }
+        show(if (deck.repeats) "Deck ${side.label} repeats its song." else "Deck ${side.label} repeat off.")
+        save()
     }
 
     fun play(deck: DjDeck) {
@@ -897,11 +965,12 @@ class DjStudioModel internal constructor(
     }
 
     fun automix() {
+        val autoDj = autoDjOn
         setAutomix(!automixOn)
         val focus = crate.label(crate.focus) + if (crate.shuffle) ", shuffled" else " in order"
         show(
             when {
-                !automixOn -> "AUTOMIX off."
+                !automixOn -> if (autoDj) "AUTOMIX and AUTO DJ off." else "AUTOMIX off."
                 crate.focus != DjFocus.Everything -> if (shownQueue.isEmpty()) "AUTOMIX on: playing $focus." else "AUTOMIX on: the queue, then $focus."
                 shownQueue.isNotEmpty() -> "AUTOMIX on: the queue plays one song after another."
                 library.isEmpty() && crate.tracks.isEmpty() -> "AUTOMIX on: queue songs and they play one after another."
@@ -916,6 +985,7 @@ class DjStudioModel internal constructor(
         if (!on) {
             automixJob?.cancel()
             automixing = false
+            stopAutoDj()
         }
         automixOn = on
         if (!on) return
@@ -929,14 +999,18 @@ class DjStudioModel internal constructor(
 
     fun holdAutomix() {
         if (!automixOn || anyPlaying) return
+        val autoDj = autoDjOn
         setAutomix(false)
-        show("AUTOMIX off.")
+        show(if (autoDj) "AUTOMIX and AUTO DJ off." else "AUTOMIX off.")
     }
 
     private fun automixStep() {
         if (!automixOn || automixing || a.scratching || b.scratching) return
         val favoured = if (crossfader <= 0) DjDeckSide.A else DjDeckSide.B
-        val queued = shownQueue.isNotEmpty() || crate.pool(library, unplayable).isNotEmpty()
+        if (autoDjOn) primeAutoDj()
+        val picked = autoDjOn && autoDjNext() != null
+        val pooled = !(autoDjOn && autoDjFinding) && crate.pool(library, unplayable).isNotEmpty()
+        val queued = shownQueue.isNotEmpty() || picked || pooled
         when (val step = DjAutomix.step(snapshot(a), snapshot(b), favoured, queued)) {
             DjAutomixStep.Wait -> Unit
             is DjAutomixStep.Preload -> preload(step.side)
@@ -954,7 +1028,15 @@ class DjStudioModel internal constructor(
             playFromQueue(item, side)
             return true
         }
-        val song = replay() ?: return false
+        if (autoDjOn) {
+            val pick = takeAutoDj()
+            if (pick != null) {
+                load(side, pick.id, pick.title, pick.author)
+                show("AUTO DJ: ${pick.title} is up next.")
+                return true
+            }
+        }
+        val song = replayed() ?: return false
         load(side, song.id, song.title, song.author)
         return true
     }
@@ -968,7 +1050,7 @@ class DjStudioModel internal constructor(
             return
         }
         val incoming = deck(live.side.other)
-        if (!incoming.playing && !snapshot(incoming).fresh && !preload(incoming.side)) {
+        if (!incoming.playing && (autoDjOn && incoming.counted || !snapshot(incoming).fresh) && !preload(incoming.side) && !snapshot(incoming).fresh) {
             show("Queue a song to shake into it.")
             return
         }
@@ -1058,7 +1140,7 @@ class DjStudioModel internal constructor(
         }
     }
 
-    private fun replay(): DjPlayedSong? {
+    private fun replayed(): DjPlayedSong? {
         val decks = listOf(a, b).filter { it.loaded }
         var picked: DjPlayedSong? = null
         updateCrate(saving = crate.focus != DjFocus.Everything) {
@@ -1113,7 +1195,7 @@ class DjStudioModel internal constructor(
     }
 
     private fun snapshot(deck: DjDeck): DjAutomixDeck =
-        DjAutomixDeck(deck.loaded && !deck.failed, deck.playing, deck.position(), deck.duration, deck.effectiveRate)
+        DjAutomixDeck(deck.loaded && !deck.failed, deck.playing, deck.position(), deck.duration, deck.effectiveRate, deck.repeats)
 
     fun mixNow() {
         if (automixing) {
@@ -1280,7 +1362,10 @@ class DjStudioModel internal constructor(
             }.getOrNull()
         }
 
-    private suspend fun invidious(address: (String) -> String?, parse: (String) -> List<DjSearchResult>): List<DjSearchResult>? = withContext(Dispatchers.IO) {
+    private suspend fun invidious(address: (String) -> String?, parse: (String) -> List<DjSearchResult>): List<DjSearchResult>? =
+        invidiousData(address)?.let { parse(it.first) }
+
+    internal suspend fun invidiousData(address: (String) -> String?): Pair<String, String>? = withContext(Dispatchers.IO) {
         if (searchInstances.isEmpty()) {
             searchInstances = runCatching {
                 val response = HttpClient.Request.get("https://api.invidious.io/instances.json?sort_by=health").timeouts(6_000, 8_000).send()
@@ -1292,7 +1377,7 @@ class DjStudioModel internal constructor(
             val response = runCatching { HttpClient.Request.get(url).timeouts(6_000, 8_000).send() }.getOrNull()
             if (response != null && response.ok) {
                 searchInstances = listOf(instance) + searchInstances.filter { it != instance }
-                return@withContext parse(response.text())
+                return@withContext response.text() to instance
             }
         }
         searchInstances = emptyList()
@@ -1334,14 +1419,14 @@ class DjStudioModel internal constructor(
         savedAt = SystemClock.elapsedRealtime()
         var saved = DjSaved(
             crossfader = crossfader, samplerLevel = samplerLevel, sections = sections.toList(), history = history,
-            queue = queue, automix = automixOn, library = library,
+            queue = queue, automix = automixOn, library = library, autoDj = autoDjOn,
         )
         for (deck in listOf(a, b)) {
             saved = saved.with(
                 deck.side,
                 DjSavedDeck(
                     deck.videoId, deck.title, deck.author, deck.cue, deck.level, deck.rate, deck.bpm, deck.loop,
-                    deck.position(), deck.keepsPlaying && deck.loaded,
+                    deck.position(), deck.keepsPlaying && deck.loaded, deck.repeats,
                 ),
             )
         }

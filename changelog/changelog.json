@@ -2,6 +2,34 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-23",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Android",
+     "items": [
+      "On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts.",
+      "On Android, the terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom.",
+      "On Android, Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked.",
+      "On Android, Home shows a spinner on each icon whose count is loading instead of a loading bar, keeps the repository counts from last time, and its long-press menu has Refresh everything.",
+      "On Android Home, the number on each icon sits beside the icon instead of covering the name of the icon above, and the update dot is smaller.",
+      "On Android, with Status Page installed, tiny status dots sit in a thin strip under the status bar on every screen.",
+      "On Android, Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete.",
+      "On Android, DJ Studio's AUTO DJ plays a related song people liked on the next deck, originals first, and a shake loads a new pick.",
+      "On Android, DJ Studio decks have a Repeat button that loops the song tightly, jumping from where the sound ends back to where it starts.",
+      "On Android, the CRM shows each email's opens, clicks, read time, scroll depth, slide reach and the reader's mail app.",
+      "On Android, Genie auto-send can ask the paired desktop's Claude Code or Codex to write the email.",
+      "On Android, ping notifications lead with who acted and where, with what they wrote straight under it.",
+      "On Android, New project loads the checked instance's logo and can quick-add an instance from the ForkMesh directory.",
+      "On Android, a walk shows as a live notification with its time, steps and distance, on the lock screen too, and stays when you lock the phone mid-walk.",
+      "On Android, Agents Eagle rows drop the left agent dot and show a tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-22",
    "version": "",
    "title": "",
@@ -92,7 +120,8 @@
     {
      "title": "Android",
      "items": [
-      "Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting."
+      "Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting.",
+      "On Android, the first action on an agent's page is no longer cut off when the page has more actions than fit."
      ]
     },
     {

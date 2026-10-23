@@ -339,6 +339,7 @@ data class DjAutomixDeck(
     val position: Double = 0.0,
     val duration: Double = 0.0,
     val rate: Double = 1.0,
+    val repeats: Boolean = false,
 ) {
     val remaining: Double?
         get() {
@@ -364,7 +365,7 @@ object DjAutomix {
         val other = live.other
         val incoming = decks[other] ?: return DjAutomixStep.Wait
         val outgoing = decks[live] ?: return DjAutomixStep.Wait
-        if (incoming.playing) return DjAutomixStep.Wait
+        if (incoming.playing || outgoing.repeats) return DjAutomixStep.Wait
         if (!incoming.fresh) return if (queued) DjAutomixStep.Preload(other) else DjAutomixStep.Wait
         val remaining = outgoing.remaining ?: return DjAutomixStep.Wait
         if (remaining > DjStudio.AUTOMIX_SECONDS + LEAD) return DjAutomixStep.Wait

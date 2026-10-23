@@ -1,8 +1,5 @@
 package com.forkmesh.nativeapp.feature.account.settings
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -253,74 +250,6 @@ class McpConnectorScreen : Screen() {
                     }),
                     showChevron = false,
                 )
-            }
-        }
-    }
-}
-
-class AccountDataScreen : Screen() {
-    override val title: String get() = "Data"
-
-    private val model: AccountDataModel? by lazy { SettingsArea.endpoints?.let(::AccountDataModel) }
-    private var revision by mutableIntStateOf(0)
-
-    @Composable
-    override fun Content(navigator: Navigator) {
-        val context = LocalContext.current
-        val scope = rememberCoroutineScope()
-        val exportStatus = rememberFmStatus()
-        val cacheStatus = rememberFmStatus()
-        val model = model
-        revision
-        val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
-            val file = model?.exportFile
-            if (uri == null || file == null) return@rememberLauncherForActivityResult
-            scope.launch {
-                val ok = withContext(Dispatchers.IO) {
-                    runCatching { context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(file.json.toByteArray()) } != null }.getOrDefault(false)
-                }
-                model.clearExport()
-                exportStatus.report(if (ok) "Export saved." else "Could not save the export.", !ok)
-                revision++
-            }
-        }
-        SettingsPage("Data", navigator) {
-            item {
-                SettingsCard("Data folder") {
-                    SettingsNote(DataFolderFeature.summary())
-                    FmTextButton(onClick = { navigator.push(DataFolderScreen()) }) { Text("Set up the data folder") }
-                }
-            }
-            if (model == null) {
-                item { SettingsNote("Sign in to export your account data.") }
-                return@SettingsPage
-            }
-            item {
-                SettingsCard("Export your account") {
-                    SettingsNote("A JSON file with your profile, devices, keys and settings. Passwords, one-time codes and private keys are never included.")
-                    FmTextButton(onClick = {
-                        exportStatus.clear()
-                        scope.launch {
-                            val file = withContext(Dispatchers.IO) { model.prepareExport(SettingsArea.account) }
-                            revision++
-                            if (file != null) save.launch(file.fileName)
-                        }
-                    }, enabled = !model.busy) { Text(if (model.busy) "Preparing…" else "Export") }
-                    if (model.error.isNotEmpty()) SettingsNote(model.error, Fm.colors.danger)
-                    FmInlineStatus(exportStatus)
-                }
-            }
-            item {
-                SettingsCard("On this phone") {
-                    SettingsNote("Cached repository pages, pictures and search results are rebuilt as you browse.")
-                    FmTextButton(onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) { runCatching { context.cacheDir.listFiles()?.forEach { it.deleteRecursively() } } }
-                            cacheStatus.show("Cache cleared.")
-                        }
-                    }) { Text("Clear the cache") }
-                    FmInlineStatus(cacheStatus)
-                }
             }
         }
     }
