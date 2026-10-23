@@ -69,7 +69,11 @@ heavy next to the rest of the dashboard.
   a cap (`fitInput()`).
 - **Header** (`.fmc-title`): a slim row above the box with clear, the
   pull-request dot, cloud, the drag grip, the character count, refresh,
-  expand and collapse at 24px with 14px icons.
+  expand and collapse at 24px with 14px icons. The character count stays
+  hidden until the prompt has used 80 percent of the 8000-character limit
+  (the theme's `attention` threshold): it shows amber with 1600 or fewer
+  characters left, red with 400 or fewer, and bold red once over the limit.
+  A count that is always on screen is noise for the usual short prompt.
 - **Toolbar**: left, 28px ghost icon buttons (attach, dictate, `/`) and chip
   triggers for repository (a native select, so `selectOption` and the OS
   picker keep working) and permission mode; right, the context gauge (hidden
