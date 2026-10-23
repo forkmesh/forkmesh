@@ -1763,6 +1763,17 @@ public:
     // such buttons; empty means every destination is reachable.
     QStringList testNavButtonsMissingFromRail() const;
     QStringList testRailOrderKeys() const;
+    void testSetRailItemHidden(const QString &key, bool hidden)
+    {
+        setRailItemHidden(key, hidden);
+    }
+    void testHideButtonKeepOnHome(QWidget *button) { hideButtonKeepOnHome(button); }
+    QStringList testRailHiddenKeys() const { return railHiddenKeys(); }
+    QWidget *testRailWidgetForKey(const QString &key) const
+    {
+        return railWidgetForKey(key);
+    }
+    QStringList testHomeTileMenuActions(const QString &key);
     void testApplyRailOrder() { applyRailOrder(); }
     void testRecordRailClick(const QString &key) { recordRailClick(key); }
     QString testCreateRailFolder(const QString &name);
@@ -4297,6 +4308,7 @@ private:
     installedPackageForEntrypoint(const QString &entrypoint) const;
     void addPackageUninstallAction(QMenu *menu, const QString &id);
     void addHomeTilePackageActions(QMenu *menu, const QString &key);
+    void addHomeTileRailActions(QMenu *menu, const QString &key);
     QWidget *railWidgetForKey(const QString &key) const;
     void addPackageFeedbackActions(QMenu *menu, const QString &id);
     QMenu *buildPackageActionsMenu(const QString &id, QWidget *parent);
@@ -7545,6 +7557,15 @@ private:
     void recordRailClick(const QString &key);
     RailFolders::State &railFolderState();
     bool isInRail(QWidget *widget) const;
+    QStringList railHiddenKeys() const;
+    bool storeRailItemHidden(const QString &key, bool hidden);
+    void setRailItemHidden(const QString &key, bool hidden);
+    void hideButtonKeepOnHome(QWidget *button);
+    void showAllHiddenRailItems();
+    void addRailHiddenItemsMenu(QMenu *menu);
+    QWidget *railHiddenHolder();
+    void parkHiddenRailItem(QWidget *widget);
+    QList<QWidget *> railItemWidgets() const;
     void saveRailFolderState();
     void hookRailWidget(QWidget *widget);
     bool handleRailEvent(QObject *watched, QEvent *event);
@@ -11003,6 +11024,7 @@ private:
     RailFolders::State m_railFolderState;
     bool m_railFolderStateLoaded = false;
     QHash<QString, QPointer<RailFolderWidget>> m_railFolderWidgets;
+    QPointer<QWidget> m_railHiddenHolder;
     RailGroups::State m_railGroupState;
     bool m_railGroupStateLoaded = false;
     QHash<QString, QPointer<RailGroupSeparator>> m_railGroupSeparators;

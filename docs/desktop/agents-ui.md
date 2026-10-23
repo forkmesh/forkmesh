@@ -755,7 +755,12 @@ every section button, and the Agents button unchecks through
 `updateRepoActivityRail`. It sits in the Work group, follows the `agents`
 package (`syncPackageSurfaces`, desktop-offline dot), and the Code button is
 inserted above it. A saved rail order from before the button existed places
-it just above Agents (`applyRailOrder`).
+it just above Agents (`applyRailOrder`). It ranks a quarter step before
+Agents, not half a step: icons missing from the saved order rank half a step
+after their saved neighbour, so at half a step Sessions tied with them and,
+coming earlier in the default order, pushed itself between an icon and its
+default neighbour (a saved order of Files then Agents put Sessions between
+Files and Stats).
 
 **Layout.**
 
