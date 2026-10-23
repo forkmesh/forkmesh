@@ -111,6 +111,12 @@ Everything is in `desktop/`.
   project picker's menu rather than in the top bar. When no account is signed
   in, the account row is the "Log in / Sign up" entry; the top bar has no
   separate sign-in button.
+- **Top bar indicators.** Right-clicking the top bar (its empty space or the
+  Agents, Nodes and Actions grids) opens a "Show in top bar" menu with a check
+  for each grid. Unchecking one hides it even when it has something to show;
+  checking it again brings it back. The menu belongs to the bar rather than
+  to the grids so a hidden grid can still be restored. The hidden keys
+  (`agents`, `nodes`, `actions`) are stored in `ui/hiddenTopBarIndicators`.
 - **Main window.** One `MainWindow` class with a left rail of sections
   (indices are `k*SectionIndex` constants in `MainWindow.h`). Most sections are
   built lazily on first open. Settings is one scrolling page whose sections
@@ -441,6 +447,18 @@ inside its workflow loop, so a held pull request in a repository with two pull
 request workflows ("CI tests", "Desktop client CI tests") filed two identical
 rows. The held runs are now collected and `notifyHeldActionRuns` files one row
 naming every held workflow, linked to the first held run.
+
+The Actions page's approval pane says why a run is held. It used to show only
+the diff of the workflow file against the last approved copy, so a held pull
+request whose workflow was unchanged read "No changes from the approved
+workflow" above an Approve button, with no hint of what needed approving.
+`MainWindow::showRun` now opens the banner with the reason: the pull request
+number and author for a first-time contributor, a workflow that is new or
+changed, or repository files that changed since the last approval (and whether
+automatic approval is off). When the workflow is unchanged, the diff pane
+points at the pull request's code (or the commit) as the thing to review. The
+button reads "Approve && run" in source: a single `&` is a Qt mnemonic and
+showed as "Approve_run".
 
 ### New pull request pings count new pull requests only
 

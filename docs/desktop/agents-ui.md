@@ -164,6 +164,13 @@ receive them in `agents.list`, and a change rings `agents.changed`.
 - Automatic filing (`AgentFolders::findOrCreate`): special agent sessions go
   in **Special Agents**, live external Claude Code rows in **External Claude
   Code**. A row already in a folder, or dragged out, is left alone.
+- A header's right-click menu has **Start all in folder** and **Stop all in
+  folder** (`startAgentFolderSessions`, `stopAgentFolderSessions`). They act on
+  the folder's share of the toolbar's Start all / Stop all population
+  (`startableAgentSessionIds`, `stoppableAgentSessionIds`), so merged and
+  externally started rows are never touched, and each is disabled when the
+  folder has nothing to start or stop. Stopping a folder takes only its own
+  sessions off the queue.
 
 ### Unread dot
 

@@ -4344,7 +4344,8 @@ void MainWindow::refreshActionRunStrip()
                      .arg(label, actionStatusText(run.status), run.name);
     }
     m_actionRunStrip->setCells(cells, badges);
-    m_actionRunStrip->setVisible(!cells.isEmpty());
+    m_actionRunStrip->setVisible(
+        !cells.isEmpty() && !topBarIndicatorHidden(QStringLiteral("actions")));
     updateChromeDotDivider();
     if (cells.isEmpty()) {
         m_actionRunStripTooltipKey.clear();
@@ -8117,7 +8118,42 @@ void MainWindow::showRun(int runId)
         // file the run has not opened yet would only be noise there.
         m_actionRunLogPath->setVisible(!pending && !logFile.isEmpty());
     }
+    const QString prior =
+        pending ? ActionStore::lastApprovedContent(run->repoKey(), run->workflowPath)
+                : QString();
+    const bool workflowUnchanged =
+        !prior.isEmpty() && prior == run->workflowContent;
+    const bool heldForContributor =
+        run->firstTimePullAuthor && run->pullNumber > 0;
     if (pending && m_actionApprovalBanner) {
+        QString reason;
+        if (heldForContributor) {
+            reason = QStringLiteral(
+                         "Held for your review: pull request #%1 is from %2, "
+                         "who has no merged work in this repository yet, so "
+                         "their code runs on this node only after you approve it.")
+                         .arg(run->pullNumber)
+                         .arg(run->pullAuthor.isEmpty()
+                                  ? QStringLiteral("a first-time contributor")
+                                  : run->pullAuthor);
+        } else if (prior.isEmpty()) {
+            reason = QStringLiteral("This workflow has never been approved here.");
+        } else if (!workflowUnchanged) {
+            reason = QStringLiteral(
+                "This workflow changed since it was last approved.");
+        } else {
+            const int repoIndex = repoIndexFor(run->owner, run->name);
+            const bool autoApprove =
+                repoIndex >= 0 && m_repositories.at(repoIndex).actionsAutoApprove;
+            reason = autoApprove
+                         ? QStringLiteral(
+                               "The workflow is unchanged, but the repository's "
+                               "files changed since the last approval.")
+                         : QStringLiteral(
+                               "The workflow is unchanged, but the repository's "
+                               "files changed since the last approval and "
+                               "automatic approval is off for this repository.");
+        }
         const ActionWorkflow workflow =
             ActionFile::parse(run->workflowPath, run->workflowContent);
         QStringList graph;
@@ -8131,6 +8167,7 @@ void MainWindow::showRun(int runId)
         }
         m_actionApprovalBanner->setText(
             QStringLiteral(
+                "%6\n\n"
                 "Review the complete execution graph before approving. "
                 "Approval covers this exact repository state and is invalidated "
                 "by any tracked-file change.\n\n"
@@ -8140,7 +8177,7 @@ void MainWindow::showRun(int runId)
                 "Secrets are exposed only after this bound approval.")
                 .arg(run->commit, run->repositoryTree,
                      run->executionDigest, run->workflowPath,
-                     graph.join(QLatin1Char('\n'))));
+                     graph.join(QLatin1Char('\n')), reason));
     }
     if (m_actionApprovalBanner)
         m_actionApprovalBanner->setVisible(pending);
@@ -8156,8 +8193,6 @@ void MainWindow::showRun(int runId)
         updateDiffSplitButton(m_actionSplitButton);
     }
     if (pending && m_actionDiff) {
-        const QString prior =
-            ActionStore::lastApprovedContent(run->repoKey(), run->workflowPath);
         const QString patch =
             unifiedWorkflowDiff(prior, run->workflowContent, run->workflowPath);
         QList<DiffFileEntry> files;
@@ -8167,9 +8202,19 @@ void MainWindow::showRun(int runId)
                        ? QStringLiteral(
                              "<p style='color:#8b949e'>This workflow has never "
                              "been approved.</p>")
+                   : heldForContributor
+                       ? QStringLiteral(
+                             "<p style='color:#8b949e'>The workflow is "
+                             "unchanged from the approved one. What needs "
+                             "review is the code in pull request #%1: read its "
+                             "changes in the pull request before approving, "
+                             "because this workflow runs it.</p>")
+                             .arg(run->pullNumber)
                        : QStringLiteral(
-                             "<p style='color:#8b949e'>No changes from the "
-                             "approved workflow.</p>");
+                             "<p style='color:#8b949e'>The workflow is "
+                             "unchanged from the approved one. What is new is "
+                             "the repository's files at commit %1.</p>")
+                             .arg(run->commit.left(8).toHtmlEscaped());
         setDiffHtml(m_actionDiff, html);
     } else if (m_actionLog) {
         m_actionLog->setPlaceholderText(actionRunLogPlaceholder(*run));
@@ -9168,7 +9213,7 @@ QWidget *MainWindow::buildRepoActionsTab()
     m_actionDiff->hide();
     registerDiffView(m_actionDiff);
 
-    m_actionApproveButton = new QPushButton("Approve & run");
+    m_actionApproveButton = new QPushButton("Approve && run");
     m_actionApproveButton->setObjectName("primaryButton");
     m_actionApproveButton->setCursor(Qt::PointingHandCursor);
     m_actionRejectButton = new QPushButton("Reject");

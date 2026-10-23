@@ -808,7 +808,7 @@ async def finish(task, response):
                                         reactions=reactions)
         if rendered is None:
             rendered = inject_view(page, data, view.section, reactions,
-                                   reader=view.reader) \
+                                   reader=view.reader, origin=view.origin) \
                 if view else inject(page, data)
         if rendered is None:
             return _js.Response(body, response.status, "", response.headers)
@@ -1060,7 +1060,7 @@ def inject_view_reads(page, owner, repo, view, number):
 
 
 def inject_view(page, bundle, section="", reactions=None, link=None,
-                reader=False):
+                reader=False, origin=""):
     """A pull request, issue or discussion page with its first view
     (repo_views.render) and the address of its read bundle, which a small
     head script starts fetching at once; the dashboard takes its reads from
@@ -1069,7 +1069,7 @@ def inject_view(page, bundle, section="", reactions=None, link=None,
             or CHARSET not in page:
         return None
     from . import repo_views
-    view = repo_views.render(bundle, section, reactions, link, reader)
+    view = repo_views.render(bundle, section, reactions, link, reader, origin)
     if view is None:
         return None
     meta = {"base": ("/api/repo/%s/%s" % (

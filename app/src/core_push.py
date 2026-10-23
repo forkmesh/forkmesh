@@ -19,6 +19,8 @@ TAG_REF_RE = re.compile(r"^refs/tags/[A-Za-z0-9._/-]{1,180}$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]{1,200}$")
 FORCE_PUSH_EVENT = "force-push"
 FORCE_PUSH_EVENTS_MAX = 10
+SYNCHRONIZE_EVENT = "synchronize"
+PULL_SYNC_SOURCE = "synchronize"
 
 
 def _bind_runtime(runtime):
@@ -299,47 +301,168 @@ def force_push_event(update, number, account, now_ms):
     }
 
 
+def synchronize_event_id(number, after):
+    return "synchronize-%d-%s" % (int(number), str(after or "")[:16])
+
+
+def synchronize_event(update, number, account, now_ms, body=""):
+    ref = str(update.get("ref") or "")
+    old = str(update.get("old") or "")
+    new = str(update.get("new") or "")
+    branch = ref[len("refs/heads/"):]
+    try:
+        commits = max(0, int(update.get("commits") or 0))
+    except (TypeError, ValueError):
+        commits = 0
+    forced = bool(update.get("forced"))
+    if not body:
+        body = ("force-pushed `%s` from `%s` to `%s`" % (
+            branch, old[:7], new[:7]) if forced else
+            "pushed %d commit%s to `%s`" % (
+                commits, "" if commits == 1 else "s", branch))
+    event = {
+        "type": SYNCHRONIZE_EVENT,
+        "id": synchronize_event_id(number, new),
+        "author": account,
+        "authorName": account,
+        "ts": int(now_ms) // 1000,
+        "ref": ref,
+        "before": old,
+        "after": new,
+        "commits": commits,
+        "body": body,
+        "sig": "",
+    }
+    if forced:
+        event["forced"] = "true"
+    return event
+
+
+def may_synchronize(update, account, contributor=False):
+    ref = str((update or {}).get("ref") or "")
+    if (
+        not account
+        or not ref.startswith("refs/heads/")
+        or ref.startswith("refs/heads/forkmesh/")
+        or not OID_RE.fullmatch(str(update.get("old") or ""))
+        or not OID_RE.fullmatch(str(update.get("new") or ""))
+        or _zero(update["old"]) or _zero(update["new"])
+    ):
+        return False
+    if contributor:
+        return ref.startswith("refs/heads/pr/%s/" % account)
+    return True
+
+
+def update_pulls(update):
+    return sorted({
+        number for number in (update or {}).get("pulls") or []
+        if isinstance(number, int) and not isinstance(number, bool)
+        and 0 < number < 10 ** 9})[:10]
+
+
+async def queue_pull_synchronize(env, owner, repo, account, items):
+    target = owner + "/" + repo
+    repo_bi = await blind_index(env, target)
+    submitter_bi = await blind_index(env, account)
+    now = int(Date.now())
+    queued = 0
+    for number, update, body in items:
+        item = {
+            "number": int(number),
+            "event": synchronize_event(update, number, account, now, body),
+            "submitter": account,
+            "submittedAt": now,
+            "source": PULL_SYNC_SOURCE,
+            "head": str(update.get("ref") or "")[len("refs/heads/"):],
+            "owner": owner,
+            "repo": repo,
+        }
+        await d1_run(
+            env,
+            "INSERT INTO pull_inbox (repo_bi, data, submitter_bi) "
+            "VALUES (?,?,?)",
+            repo_bi, await encrypt_row(env, item), submitter_bi)
+        queued += 1
+    if queued:
+        await notify_repo_host(env, owner, repo, "pulls")
+        await notify_repo_mirrors(env, owner, repo, "pulls")
+    return queued
+
+
+async def _record_pull_synchronize(env, owner, repo, account, updates,
+                                   contributor=False):
+    items = []
+    seen = set()
+    for update in updates:
+        if not may_synchronize(update, account, contributor):
+            continue
+        for number in update_pulls(update):
+            key = (number, update["new"])
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append((number, update, ""))
+    if not items:
+        return 0
+    return await queue_pull_synchronize(env, owner, repo, account, items)
+
+
 async def _record_forced_updates(env, owner, repo, account, node, updates):
     target = owner + "/" + repo
-    queued = 0
+    audited = 0
     for update in updates:
         if not update.get("forced") or not OID_RE.fullmatch(
                 str(update.get("old") or "")):
             continue
-        pulls = [number for number in update.get("pulls") or []
-                 if isinstance(number, int) and number > 0][:10]
         details = {"ref": update["ref"], "old": update["old"],
-                   "new": update["new"], "node": node, "pulls": pulls}
+                   "new": update["new"], "node": node,
+                   "pulls": update_pulls(update)}
         if update.get("kept"):
             details["kept"] = update["kept"]
         await _audit_sensitive_action(
             env, account, "git.force_push", "repository", target, "success",
             details)
-        if not pulls:
-            continue
-        repo_bi = await blind_index(env, target)
-        submitter_bi = await blind_index(env, account)
-        now = int(Date.now())
-        for number in pulls:
-            if queued >= FORCE_PUSH_EVENTS_MAX:
-                break
-            item = {
-                "number": number,
-                "event": force_push_event(update, number, account, now),
-                "submitter": account,
-                "submittedAt": now,
-                "source": "force-push",
-            }
-            await d1_run(
-                env,
-                "INSERT INTO pull_inbox (repo_bi, data, submitter_bi) "
-                "VALUES (?,?,?)",
-                repo_bi, await encrypt_row(env, item), submitter_bi)
-            queued += 1
-    if queued:
-        await notify_repo_host(env, owner, repo, "pulls")
-        await notify_repo_mirrors(env, owner, repo, "pulls")
-    return queued
+        audited += 1
+    return audited
+
+
+async def pulls_synchronized(env, owner, repo, items):
+    items = [item for item in items or [] if isinstance(item, dict)]
+    for item in items:
+        if item.get("owner") and item.get("repo"):
+            owner, repo = str(item["owner"]), str(item["repo"])
+            break
+    heads = []
+    for item in items:
+        branch = str((item or {}).get("head") or "")
+        after = str(((item or {}).get("event") or {}).get("after") or "")
+        if branch and OID_RE.fullmatch(after) and branch not in [
+                head["branch"] for head in heads]:
+            heads.append({"branch": branch, "after": after})
+    if not heads:
+        return 0
+    updates = [{"ref": "refs/heads/" + head["branch"], "old": "",
+                "new": head["after"]} for head in heads[:20]]
+    moved = globals().get("pull_attention_moved")
+    if moved is not None:
+        try:
+            await moved(env, owner, repo, [head["branch"] for head in heads])
+        except Exception:
+            pass
+    note_ai_review = globals().get("ai_review_note_push")
+    if note_ai_review is not None:
+        try:
+            await note_ai_review(env, owner, repo, updates)
+        except Exception:
+            pass
+    sync_checks = globals().get("pull_actions_sync_repo")
+    if sync_checks is not None:
+        try:
+            await sync_checks(env, owner, repo, force=True)
+        except Exception:
+            pass
+    return len(heads)
 
 
 async def record_accepted_push(env, owner, repo, endpoint, account, report,
@@ -380,6 +503,12 @@ async def record_accepted_push(env, owner, repo, endpoint, account, report,
         try:
             await _record_forced_updates(
                 env, owner, repo, account, node, updates)
+        except Exception:
+            pass
+    if account and any(update.get("pulls") for update in updates):
+        try:
+            await _record_pull_synchronize(
+                env, owner, repo, account, updates, contributor)
         except Exception:
             pass
     if account and updates:

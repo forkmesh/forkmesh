@@ -107,6 +107,22 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   learned `history?path=` but the fast path did not, every folder's History
   tab on an instance showed the whole repository's commits, because the fast
   path answered first and dropped `path`.
+- **Stale answers during a gateway restart.** The fast path keeps the last
+  200 of each non-pinned `tree`, `blob`, `blobs`, `history`, `commit`,
+  `branches` and `stats` read (`StaleCache`: 256 entries, 16 MB, 1 MB per
+  answer, 15 minutes). When the gateway fails, the read still falls through to
+  the Worker first; only when the Worker then answers 502, 503 or 504 does the
+  host send the kept answer instead, as a 200 with `X-ForkMesh-Stale: 1` and
+  `no-store` (`stale_answer`/`send_stale`, called from `HostASGI` after the
+  Worker). The dashboard shows "Updating…" over such a page and reads it again
+  (`docs/app/repo-views.md`). Only the gateway's `/v1/public/...` route fills
+  the cache, so private repositories and private-view reads (`viewer`/`sig`)
+  never enter it; a later 404 from the gateway drops the entry, and the
+  15-minute limit bounds how long a repository made private could still be
+  answered from it during an outage. Commit-pinned reads stay in the existing
+  `ImmutableCache`. This exists because every instance deploy restarted the
+  gateway and a single-server instance showed pull request pages as unavailable for
+  about 40 s (`docs/server/gateways.md`).
 - **Egress.** Every subrequest refuses private, loopback, metadata, CGNAT and
   mesh addresses at connect time, re-checks redirects, and fails over across
   resolved addresses. Without `FORKMESH_SERVES_PRODUCTION=1`,

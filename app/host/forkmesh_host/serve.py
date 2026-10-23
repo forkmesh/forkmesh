@@ -212,6 +212,8 @@ def main(argv=None):
     instance_bootstrap.add_parser(sub, common)
     from . import instance_repo
     instance_repo.add_parser(sub, common)
+    from . import pull_resync
+    pull_resync.add_parser(sub, common)
 
     args = parser.parse_args(argv)
     return args.func(args)

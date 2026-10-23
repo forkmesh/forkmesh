@@ -232,7 +232,19 @@ public:
         setFixedHeight(42);
     }
 
+    std::function<void(const QPoint &)> onContextMenu;
+
 protected:
+    void contextMenuEvent(QContextMenuEvent *event) override
+    {
+        if (onContextMenu) {
+            onContextMenu(event->globalPos());
+            event->accept();
+            return;
+        }
+        QWidget::contextMenuEvent(event);
+    }
+
     void mousePressEvent(QMouseEvent *event) override
     {
         if (event->button() == Qt::LeftButton) {
@@ -3738,6 +3750,8 @@ const QString kShowRebuildButtonSetting = QStringLiteral("ui/showRebuildButton")
 // Drop the caption under each left-rail icon, leaving an icon-only rail that is
 // both narrower and shorter per item (forkmesh::ui::railCaptionsHidden()).
 const QString kHideRailCaptionsSetting = QStringLiteral("ui/hideRailCaptions");
+const QString kHiddenTopBarIndicatorsSetting =
+    QStringLiteral("ui/hiddenTopBarIndicators");
 const QString kShowTeammateRailSetting = QStringLiteral("ui/showTeammateRail");
 const QString kShowPackageRailSetting = QStringLiteral("ui/showPackageRail");
 const QString kPackageRailReminderSetting = QStringLiteral("ui/packageRailReminder");

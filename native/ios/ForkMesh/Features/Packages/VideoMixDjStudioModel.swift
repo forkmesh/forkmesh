@@ -81,6 +81,7 @@ final class DjDeck {
     @ObservationIgnored var brakeStart: CFTimeInterval = 0
     @ObservationIgnored var spin = DjSpin()
     @ObservationIgnored var coastTask: Task<Void, Never>?
+    @ObservationIgnored var repeatTask: Task<Void, Never>?
     @ObservationIgnored let player: DjDeckPlayer
 
     init(side: DjDeckSide, host: DjPlayerHost) {
@@ -662,6 +663,8 @@ final class DjStudioModel {
                 deck.time = deck.cue
                 deck.tickDate = now
                 deck.settle(now)
+            } else {
+                aimRepeat(deck, at: now)
             }
             if deck.playing, now - savedAt > 5 { save(now: true) }
         case let .state(state):
@@ -711,11 +714,34 @@ final class DjStudioModel {
 
     private func replay(_ deck: DjDeck) -> Bool {
         guard deck.repeats, deck.keepsPlaying, deck.loaded, !deck.failed, !deck.scratching else { return false }
-        DjDiagnostics.mark("Deck \(deck.side.label) repeats")
+        DjDiagnostics.mark("Deck \(deck.side.label) repeats after its end")
         sectionTasks[deck.side]?.cancel()
-        rewind(deck)
+        rewind(deck, to: DjRepeat.span(deck.waveform, duration: deck.duration)?.start ?? 0)
         play(deck)
         return true
+    }
+
+    private func aimRepeat(_ deck: DjDeck, at now: CFTimeInterval) {
+        deck.repeatTask?.cancel()
+        deck.repeatTask = nil
+        guard deck.repeats, !deck.loop, deck.playing, deck.keepsPlaying, deck.advancing, !deck.scratching, !deck.failed, now >= deck.settleUntil,
+              let span = DjRepeat.span(deck.waveform, duration: deck.duration) else { return }
+        switch DjRepeat.step(position: deck.position(at: now), span: span, rate: deck.effectiveRate) {
+        case .wait:
+            return
+        case .wrap:
+            DjDiagnostics.mark("Deck \(deck.side.label) repeats from \(String(format: "%.1f", span.start)) s at \(String(format: "%.1f", deck.position(at: now))) s")
+            sectionTasks[deck.side]?.cancel()
+            rewind(deck, to: span.start)
+            count(deck)
+        case let .after(seconds):
+            let id = deck.videoId
+            deck.repeatTask = Task { [weak self, weak deck] in
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled, let self, let deck, deck.videoId == id else { return }
+                self.aimRepeat(deck, at: CACurrentMediaTime())
+            }
+        }
     }
 
     private func believes(_ state: Int, _ deck: DjDeck, reported: Double) -> Bool {
@@ -802,10 +828,12 @@ final class DjStudioModel {
         if !deck.playing { play(deck) }
     }
 
-    private func rewind(_ deck: DjDeck) {
+    private func rewind(_ deck: DjDeck, to start: Double = 0) {
+        deck.repeatTask?.cancel()
+        deck.repeatTask = nil
         deck.counted = false
-        deck.player.seek(0)
-        deck.time = 0
+        deck.player.seek(start)
+        deck.time = start
         deck.tickDate = CACurrentMediaTime()
         deck.settle()
         share(deck.side)

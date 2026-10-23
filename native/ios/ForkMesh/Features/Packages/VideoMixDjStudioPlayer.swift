@@ -240,14 +240,14 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}.s{position:absolute;top:0;bottom:0;width:50%}#sa{left:0}#sb{right:0}.s>*{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
         </head><body><div class="s" id="sa"><div id="a"></div></div><div class="s" id="sb"><div id="b"></div></div><script>
         var K=["a","b"],D={},n=0,B=0,M=0,L=0;
-        K.forEach(function(k){D[k]={p:null,ready:false,meta:"",id:"",routed:false,mirror:false,voice:null,w:{rate:1,volume:100,muted:false,gain:1,scratch:null,at:0,on:0,from:0,gen:0}}});
+        K.forEach(function(k){D[k]={p:null,ready:false,meta:"",id:"",routed:false,mirror:false,voice:null,w:{rate:1,volume:100,muted:false,gain:1,scratch:null,at:0,on:0,from:0,gen:0,seek:0}}});
         function post(m){try{webkit.messageHandlers.deck.postMessage(m)}catch(e){}}
         function onYouTubeIframeAPIReady(){post({type:"api"})}
         function frame(k){try{var f=D[k].p&&D[k].p.getIframe&&D[k].p.getIframe();return f&&f.contentWindow}catch(e){return null}}
         function heard(d){return!!d.voice&&Date.now()-d.voice.at<1500}
-        function push(k){var f=frame(k),x=D[k].w;if(f)f.postMessage({fmdj:1,rate:x.rate,gain:x.gain,scratch:x.scratch,at:x.at,bg:B,away:L,on:x.on,from:x.from,gen:x.gen},"*")}
+        function push(k){var f=frame(k),x=D[k].w;if(f)f.postMessage({fmdj:1,rate:x.rate,gain:x.gain,scratch:x.scratch,at:x.at,bg:B,away:L,on:x.on,from:x.from,gen:x.gen,seek:x.seek},"*")}
         function fmCall(k,name){var d=D[k];if(!d.p||!d.ready||typeof d.p[name]!=="function")return;var a=[].slice.call(arguments,2);
-        if(name==="playVideo")d.w.on=1;else if(name==="pauseVideo"||name==="stopVideo")d.w.on=0;else if(name==="seekTo")d.w.from=+a[0]||0;
+        if(name==="playVideo")d.w.on=1;else if(name==="pauseVideo"||name==="stopVideo")d.w.on=0;else if(name==="seekTo"){d.w.from=+a[0]||0;d.w.seek++}
         push(k);d.p[name].apply(d.p,a);setTimeout(function(){tick(k)},60)}
         function fmStop(k){D[k].w.scratch=null;fmCall(k,"stopVideo")}
         function fmRate(k,r){D[k].w.rate=r;push(k)}
@@ -282,7 +282,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         (function(){
         if(window.top===window||!/(^|\\.)youtube(-nocookie)?\\.com$/.test(location.hostname))return;
         var mse=/[?&]fmmse=1(&|$)/.test(location.search);
-        var w={rate:1,gain:1,scratch:null,at:0,bg:0,away:0,on:0,from:0},ctx=null,amp=null,live=null,last=null,spare=null,stale="",tries=0,waking=0,moved=0,beat=0,queued=0;
+        var w={rate:1,gain:1,scratch:null,at:0,bg:0,away:0,on:0,from:0,seek:0},ctx=null,amp=null,live=null,last=null,spare=null,stale="",tries=0,waking=0,moved=0,beat=0,queued=0;
         var P=HTMLMediaElement.prototype,md=Object.getOwnPropertyDescriptor(P,"muted"),H=new WeakMap(),T=new WeakMap(),A=new WeakMap(),decoys=[];
         function own(v){return!!v&&v.tagName==="VIDEO"&&decoys.indexOf(v)<0}
         function want(v){var h=H.get(v);return h?h.want:md.get.call(v)}
@@ -367,7 +367,8 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         document.addEventListener("seeking",function(e){var v=e.target;if(!own(v))return;var o=v.fmOurs;v.fmOurs=null;if(o!=null&&Math.abs(v.currentTime-o)<0.05)return;
         var a=voice(v,false);if(!a||a===v)return;if(Math.abs(a.currentTime-v.currentTime)>(a.paused?0.02:0.25))try{a.currentTime=v.currentTime}catch(x){}},true);
         ["loadstart","emptied","loadedmetadata","resize","play","playing","pause","ended","ratechange"].forEach(function(t){document.addEventListener(t,function(e){if(!own(e.target))return;if(t==="loadstart"||t==="emptied")stale="";if(t==="loadstart"||t==="emptied"||t==="loadedmetadata"||t==="resize")seal(e.target);if(t==="ratechange"||t==="playing"||t==="loadedmetadata")apply();soon()},true)});
-        addEventListener("message",function(e){var m=e.data;if(e.source!==parent||!m||typeof m!=="object"||m.fmdj!==1)return;var was=w.bg;if(w.gen!=null&&m.gen!==w.gen){var v=video(),a=v&&A.get(v);stale=v?v.currentSrc||v.src||"":"";drop();if(a){quiet(a);A.delete(v)}}w=m;if(w.bg&&!was)rescue();apply();sync()});
+        addEventListener("message",function(e){var m=e.data;if(e.source!==parent||!m||typeof m!=="object"||m.fmdj!==1)return;var was=w.bg;if(w.gen!=null&&m.gen!==w.gen){var v=video(),a=v&&A.get(v);stale=v?v.currentSrc||v.src||"":"";drop();if(a){quiet(a);A.delete(v)}}
+        else if(m.seek!==w.seek){var u=video(),r=u&&voice(u,false);if(r&&r!==u&&r.ended)try{r.currentTime=+m.from||0}catch(x){}}w=m;if(w.bg&&!was)rescue();apply();sync()});
         setInterval(function(){beat++;if(w.on||beat%4===0)sync()},250);
         parent.postMessage({fmdjFrame:"hello"},"*");
         })();

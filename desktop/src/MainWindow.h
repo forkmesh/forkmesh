@@ -2966,6 +2966,11 @@ public:
         noteAgentActivity(sessionId, bytes);
     }
     int testAgentDotCount() const;
+    void testSetTopBarIndicatorHidden(const QString &key, bool hidden)
+    {
+        setTopBarIndicatorHidden(key, hidden);
+    }
+    bool testTopBarIndicatorShown(const QString &key) const;
     void testSetAgentSessionStatus(int sessionId, const QString &status);
     QString testAgentSessionStatus(int sessionId) const
     {
@@ -6824,6 +6829,10 @@ private:
     bool moveAgentSessionsToFolder(const QList<int> &sessionIds,
                                    const QString &folderId);
     void selectAgentFolderSessions(const QString &folderId);
+    QList<int> agentFolderSessionIds(const QString &folderId,
+                                     const QList<int> &candidates) const;
+    void startAgentFolderSessions(const QString &folderId);
+    void stopAgentFolderSessions(const QString &folderId);
     void dropAgentSessions(const QList<int> &sessionIds, int targetSessionId,
                            const QString &folderId, bool after);
     void dropAgentFolder(const QString &folderId, const QString &targetFolderId,
@@ -7136,6 +7145,7 @@ private:
     bool parkRunningAgentSession(int sessionId);
     QList<int> stoppableAgentSessionIds() const;
     void stopAllRunningAgents();
+    void stopAgentSessions(const QList<int> &ids);
     bool stopAgentSessionById(int sessionId);
     int stopRepositoryAgentsForGuardrailChange(const QString &owner,
                                                 const QString &name);
@@ -7148,6 +7158,7 @@ private:
     static constexpr qint64 kAgentSilentStaleMs = 90'000;
     QList<int> startableAgentSessionIds() const;
     void startAllStoppedAgents();
+    void startAgentSessions(const QList<int> &ids);
     // The hover control on an agent row: AgentRunToggleNone/Start/Stop.
     int agentRunToggleMode(const AgentSession &session) const;
     void toggleAgentSessionRun(int sessionId);
@@ -11254,6 +11265,10 @@ private:
     QWidget *m_chromeDotDivider = nullptr;
     void refreshNodeDotMatrix();
     void updateChromeDotDivider();
+    QSet<QString> m_hiddenTopBarIndicators;
+    bool topBarIndicatorHidden(const QString &key) const;
+    void setTopBarIndicatorHidden(const QString &key, bool hidden);
+    void showTopBarIndicatorMenu(const QPoint &globalPos);
     ActionRunStrip *m_actionRunStrip = nullptr;
     QWidget *m_chromeActionDivider = nullptr;
     QString m_agentDotTooltipKey;
