@@ -490,6 +490,41 @@ above the software keyboard (`--world-chat-covered-bottom`).
   from `ORG_AGENT_MODEL_ALIASES`; choices persist in
   `forkmesh.world.agentComposer.v1`.
 
+### HUD rails
+
+The HUD buttons sit in four rails, each marked `data-world-dock`: `top` (the
+launcher row, `[data-world-top-actions]`), `right` (a group inside the right
+rail, Share view by default), `bottom` (the avatar action toolbar in the HUD
+island) and `left` (`.world-dock-left`, empty and hidden by default). Every
+movable button carries `data-world-tool="<id>"`; the avatar badge is the
+launcher and stays put.
+
+- **Arrange mode** starts from Settings > View > "Arrange buttons", or by
+  pressing and holding any button for `WORLD_HUD_LONG_PRESS_MS`. It keeps the
+  launcher rails open, outlines the four rails and shows a panel with Reset
+  and Done. Clicks on buttons are swallowed while arranging.
+- **Dragging** uses pointer events on `window`, so mouse, pen and touch work
+  alike (buttons get `touch-action: none` while arranging). The button joins
+  the rail nearest the pointer and the slot by button centres
+  (`dragHudTool`).
+- **Keyboard:** arrow keys move the focused button one slot within its rail;
+  Shift with an arrow sends it to that edge's rail; Escape or Done leaves.
+  Each move is announced in `[data-world-dock-status]`.
+- **Buttons move, they are not re-rendered** (`placeHudTool`), so the
+  delegated `closest("[data-world-…]")` handlers and the emote buttons' own
+  listeners keep working anywhere.
+- **Resizing to the rail:** a button away from its home rail drops its home
+  class (`world-top-link`, `world-share-view-button`) for `.world-dock-tool`,
+  which takes the rail's size: 40px squares at the top and sides (42px in the
+  phone layout), 30px flat icons in the bottom bar, labels visually hidden.
+  The top rail still hides them until the launcher opens; the left rail is
+  always visible.
+- **Persistence:** per device in `forkmesh.world.hudLayout.v1` as
+  `{top, left, right, bottom}` id lists. The default layout is read from the
+  markup before the saved one is applied; "Reset to default" restores it and
+  removes the key. Unknown ids are skipped, so a button that is not rendered
+  (Upgrade for supporting members) is harmless.
+
 ### Restore everything and start fresh
 
 Settings > Debug > "Restore everything and start fresh"

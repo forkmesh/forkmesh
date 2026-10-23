@@ -729,6 +729,31 @@ const DETAIL_WIDTH_STEP = 48;
 const SETTINGS_WIDTH_KEY = "forkmesh.world.settingsWidth.v1";
 const SETTINGS_WIDTH_MIN = 360;
 const REFRESH_POSITION_KEY = "forkmesh.world.refresh-position.v1";
+const WORLD_HUD_LAYOUT_KEY = "forkmesh.world.hudLayout.v1";
+const WORLD_HUD_DOCKS = Object.freeze(["top", "left", "right", "bottom"]);
+const WORLD_HUD_DOCK_NAMES = Object.freeze({
+  top: "top edge",
+  left: "left edge",
+  right: "right edge",
+  bottom: "bottom bar",
+});
+const WORLD_HUD_DOCK_KEYS = Object.freeze({
+  ArrowUp: "top",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowDown: "bottom",
+});
+const WORLD_HUD_DOCK_STEPS = Object.freeze({
+  ArrowUp: -1,
+  ArrowLeft: -1,
+  ArrowRight: 1,
+  ArrowDown: 1,
+});
+const WORLD_HUD_TOOL_CLASSES = Object.freeze([
+  "world-top-link",
+  "world-share-view-button",
+]);
+const WORLD_HUD_LONG_PRESS_MS = 550;
 // Start just outside the open Members Circle for a readable first view.
 const FRESH_ARRIVAL_CAMPFIRE_PREVIEW = Object.freeze({
   x: 0,
@@ -5486,12 +5511,13 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             ${worldBrandNavMarkup()}
           </div>
 
-          <nav class="world-top-actions" data-world-top-actions aria-label="World tools">
+          <nav class="world-top-actions" data-world-dock="top" data-world-top-actions aria-label="World tools">
             ${
               identity.accountStatus === "Supporting member"
                 ? ""
                 : `<a
               class="world-top-link world-upgrade-link"
+              data-world-tool="upgrade"
               href="${escapeHTML(PATREON_URL)}"
               target="_blank"
               rel="noreferrer"
@@ -5504,6 +5530,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <button
               class="world-top-link"
               type="button"
+              data-world-tool="summon"
               data-world-agent-summon
               aria-label="Summon desktop agents into a status grid"
               title="Summon desktop agents into a status grid"
@@ -5513,6 +5540,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <button
               class="world-top-link"
               type="button"
+              data-world-tool="camera"
               data-world-camera-toggle
               aria-pressed="false"
               aria-label="Enter first-person view"
@@ -5523,6 +5551,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <button
               class="world-top-link"
               type="button"
+              data-world-tool="sound"
               data-world-sound-toggle
               aria-pressed="false"
               aria-label="Enable World sounds"
@@ -5533,6 +5562,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <button
               class="world-top-link"
               type="button"
+              data-world-tool="capture"
               data-world-screenshot
               aria-label="Capture and annotate a screenshot"
               title="Capture and annotate a screenshot"
@@ -5546,6 +5576,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <button
               class="world-top-link"
               type="button"
+              data-world-tool="notes"
               data-world-notes-open
               aria-label="Open world notes"
               title="Open Notes"
@@ -5554,6 +5585,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             </button>
             <a
               class="world-top-link world-dashboard-link"
+              data-world-tool="dashboard"
               href="/dashboard"
               target="_blank"
               rel="noopener noreferrer"
@@ -5588,6 +5620,17 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           </nav>
         </header>
 
+        <nav class="world-dock world-dock-left" data-world-dock="left" aria-label="World tools on the left edge"></nav>
+        <section class="world-dock-arrange" data-world-dock-arrange aria-labelledby="world-dock-arrange-title" hidden>
+          <strong id="world-dock-arrange-title">Arrange buttons</strong>
+          <p id="world-dock-arrange-hint">Drag a button to any edge. With the keyboard, arrow keys reorder it and Shift with an arrow moves it to that edge.</p>
+          <p class="world-visually-hidden" data-world-dock-status role="status" aria-live="polite"></p>
+          <div>
+            <button type="button" data-world-dock-reset>Reset to default</button>
+            <button type="button" data-world-dock-done>Done</button>
+          </div>
+        </section>
+
         <nav class="world-status-actions" aria-label="Who is online">
           <div class="world-online-menu" data-world-online-menu data-open="false">
             <button
@@ -5621,15 +5664,18 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           <section class="world-map" data-world-map>
             <ul class="world-map-list">${mapItems}</ul>
           </section>
-          <button
-            class="world-share-view-button"
-            type="button"
-            data-world-share-current
-            title="Share a link to this exact location and camera view"
-          >
-            <span aria-hidden="true">${worldIconSvg("link")}</span>
-            <span>Share view</span>
-          </button>
+          <div class="world-dock world-dock-right" data-world-dock="right" role="group" aria-label="World tools on the right edge">
+            <button
+              class="world-share-view-button"
+              type="button"
+              data-world-tool="share"
+              data-world-share-current
+              title="Share a link to this exact location and camera view"
+            >
+              <span aria-hidden="true">${worldIconSvg("link")}</span>
+              <span>Share view</span>
+            </button>
+          </div>
           <section class="world-saved-views" data-world-saved-views data-expanded="true" aria-label="Five most recent saved World views">
             <button
               class="world-remember-view"
@@ -5768,17 +5814,17 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           aria-label="Avatar actions and World chat"
         >
           <div class="world-hud-island-bar">
-            <div class="world-avatar-actions" data-world-avatar-actions data-dashboard-chat-emotes role="toolbar" aria-label="Avatar actions">
-              <button type="button" data-dashboard-chat-emote="wave" title="Wave" aria-label="Wave">${worldIconSvg("hand")}</button>
-              <button type="button" data-dashboard-chat-emote="jump" title="Jump" aria-label="Jump">${worldIconSvg("jump")}</button>
-              <button type="button" data-dashboard-chat-emote="superjump" title="Super jump over buildings" aria-label="Super jump">${worldIconSvg("superjump")}</button>
-              <button type="button" data-dashboard-chat-emote="spin" title="Spin" aria-label="Spin">${worldIconSvg("spin")}</button>
-              <button type="button" data-dashboard-chat-emote="backflip" title="Backflip" aria-label="Backflip">${worldIconSvg("backflip")}</button>
-              <button type="button" data-dashboard-chat-emote="dance" title="Dance" aria-label="Dance">${worldIconSvg("dance")}</button>
-              <button type="button" data-dashboard-chat-emote="float" title="Float" aria-label="Float">${worldIconSvg("float")}</button>
-              <button type="button" data-dashboard-chat-emote="wobble" title="Wobble" aria-label="Wobble">${worldIconSvg("wobble")}</button>
-              <button type="button" data-dashboard-chat-emote="sparkle" title="Sparkle" aria-label="Sparkle">${worldIconSvg("sparkle")}</button>
-              <button type="button" data-world-jetpack-toggle title="Put on jetpack" aria-label="Put on jetpack" aria-pressed="false">${worldIconSvg("rocket")}</button>
+            <div class="world-avatar-actions" data-world-dock="bottom" data-world-avatar-actions data-dashboard-chat-emotes role="toolbar" aria-label="Avatar actions">
+              <button type="button" data-world-tool="emote-wave" data-dashboard-chat-emote="wave" title="Wave" aria-label="Wave">${worldIconSvg("hand")}</button>
+              <button type="button" data-world-tool="emote-jump" data-dashboard-chat-emote="jump" title="Jump" aria-label="Jump">${worldIconSvg("jump")}</button>
+              <button type="button" data-world-tool="emote-superjump" data-dashboard-chat-emote="superjump" title="Super jump over buildings" aria-label="Super jump">${worldIconSvg("superjump")}</button>
+              <button type="button" data-world-tool="emote-spin" data-dashboard-chat-emote="spin" title="Spin" aria-label="Spin">${worldIconSvg("spin")}</button>
+              <button type="button" data-world-tool="emote-backflip" data-dashboard-chat-emote="backflip" title="Backflip" aria-label="Backflip">${worldIconSvg("backflip")}</button>
+              <button type="button" data-world-tool="emote-dance" data-dashboard-chat-emote="dance" title="Dance" aria-label="Dance">${worldIconSvg("dance")}</button>
+              <button type="button" data-world-tool="emote-float" data-dashboard-chat-emote="float" title="Float" aria-label="Float">${worldIconSvg("float")}</button>
+              <button type="button" data-world-tool="emote-wobble" data-dashboard-chat-emote="wobble" title="Wobble" aria-label="Wobble">${worldIconSvg("wobble")}</button>
+              <button type="button" data-world-tool="emote-sparkle" data-dashboard-chat-emote="sparkle" title="Sparkle" aria-label="Sparkle">${worldIconSvg("sparkle")}</button>
+              <button type="button" data-world-tool="jetpack" data-world-jetpack-toggle title="Put on jetpack" aria-label="Put on jetpack" aria-pressed="false">${worldIconSvg("rocket")}</button>
             </div>
             <button class="world-hud-island-open-chat" type="button" data-world-island-full-chat title="Open channels and direct messages" aria-label="Open channels and direct messages in a new tab">${worldIconSvg("external")}</button>
             <button
@@ -6540,6 +6586,15 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
               <small>Scales how fast your avatar walks and runs. 120% is now the default pace.</small>
             </label>
             <p class="world-setting-note">Keyboard movement now eases into a higher speed while held; touch remains proportional for precise positioning.</p>
+          </fieldset>
+
+          <fieldset class="world-setting-group">
+            <legend>HUD buttons · this device</legend>
+            <div class="world-session-actions">
+              <button type="button" data-world-dock-arrange-open>Arrange buttons</button>
+              <button type="button" data-world-dock-reset>Reset to default</button>
+            </div>
+            <small>Move any button between the top, left, right and bottom edges. You can also press and hold a button to start.</small>
           </fieldset>
 
           <fieldset class="world-setting-group">
@@ -13394,6 +13449,7 @@ class ForkMeshWorld extends HTMLElement {
     const rightRail = this.$("[data-world-right-rail]");
     const hudHoverTargets = [topActions, rightRail].filter(Boolean);
     const openHud = () => this.setWorldRightRailExpanded(true);
+    this.bindHudDocks();
     if (hoverCapable) {
       hudHoverTargets.forEach((target) => {
         target.addEventListener("pointerenter", openHud);
@@ -14994,11 +15050,236 @@ class ForkMeshWorld extends HTMLElement {
     const hud = this.$("[data-world-hud]");
     const avatarLauncher = this.$("[data-world-shirt-badge]");
     if (!rail) return false;
-    const active = expanded === true;
+    const active = expanded === true || this.hudArranging === true;
     rail.dataset.expanded = String(active);
     if (hud) hud.dataset.hudExpanded = String(active);
     if (avatarLauncher) avatarLauncher.setAttribute("aria-expanded", String(active));
     return active;
+  }
+
+  hudDock(name) {
+    return this.$(`[data-world-dock="${name}"]`);
+  }
+
+  hudTools(dock) {
+    return dock ? [...dock.querySelectorAll(":scope > [data-world-tool]")] : [];
+  }
+
+  hudDockLayout() {
+    return Object.fromEntries(
+      WORLD_HUD_DOCKS.map((name) => [
+        name,
+        this.hudTools(this.hudDock(name)).map((tool) => tool.dataset.worldTool),
+      ]),
+    );
+  }
+
+  placeHudTool(tool, name, index = Infinity) {
+    const dock = this.hudDock(name);
+    if (!dock || !tool) return;
+    const tools = this.hudTools(dock);
+    const others = tools.filter((item) => item !== tool);
+    const at = Math.max(0, Math.min(index, others.length));
+    if (tools[at] !== tool) {
+      if (others[at]) others[at].before(tool);
+      else if (others.length) others.at(-1).after(tool);
+      else dock.prepend(tool);
+    }
+    const away = tool.dataset.worldToolHome !== name;
+    const native = tool.dataset.worldToolClass;
+    if (native) tool.classList.toggle(native, !away);
+    tool.classList.toggle("world-dock-tool", away);
+  }
+
+  applyHudLayout(layout) {
+    for (const name of WORLD_HUD_DOCKS) {
+      for (const id of Array.isArray(layout?.[name]) ? layout[name] : []) {
+        const tool = this.$(`[data-world-tool="${CSS.escape(String(id))}"]`);
+        if (tool) this.placeHudTool(tool, name);
+      }
+    }
+    this.syncHudDocks();
+  }
+
+  syncHudDocks() {
+    for (const name of WORLD_HUD_DOCKS) {
+      const dock = this.hudDock(name);
+      if (dock) dock.dataset.empty = String(!this.hudTools(dock).length);
+    }
+  }
+
+  saveHudLayout(tool) {
+    writeJSON(localStorage, WORLD_HUD_LAYOUT_KEY, this.hudDockLayout());
+    this.syncHudDocks();
+    const dock = tool?.parentElement;
+    const status = this.$("[data-world-dock-status]");
+    if (!status || !dock?.dataset.worldDock) return;
+    const tools = this.hudTools(dock);
+    const label = tool.getAttribute("aria-label") || tool.textContent.trim();
+    status.textContent = `${label}: ${WORLD_HUD_DOCK_NAMES[dock.dataset.worldDock]}, ${tools.indexOf(tool) + 1} of ${tools.length}.`;
+  }
+
+  resetHudLayout() {
+    try {
+      localStorage.removeItem(WORLD_HUD_LAYOUT_KEY);
+    } catch (_) {}
+    this.applyHudLayout(this.hudDefaultLayout);
+    const status = this.$("[data-world-dock-status]");
+    if (status) status.textContent = "Buttons are back in their default places.";
+  }
+
+  setHudArranging(active, focusTool = null) {
+    const hud = this.$("[data-world-hud]");
+    const panel = this.$("[data-world-dock-arrange]");
+    if (!hud || !panel) return;
+    this.hudArranging = active === true;
+    hud.dataset.worldArranging = String(this.hudArranging);
+    panel.hidden = !this.hudArranging;
+    this.$$("[data-world-tool]").forEach((tool) => {
+      if (this.hudArranging) {
+        tool.setAttribute("aria-describedby", "world-dock-arrange-hint");
+      } else {
+        tool.removeAttribute("aria-describedby");
+      }
+    });
+    if (this.hudArranging) this.toggleSettings(false);
+    this.setWorldRightRailExpanded(this.hudArranging);
+    if (this.hudArranging) {
+      (focusTool || this.$("[data-world-tool]"))?.focus({ preventScroll: true });
+    }
+  }
+
+  dragHudTool(tool, x, y) {
+    let best = null;
+    for (const name of WORLD_HUD_DOCKS) {
+      const dock = this.hudDock(name);
+      const box = dock?.getBoundingClientRect();
+      if (!box || (!box.width && !box.height)) continue;
+      const distance = Math.hypot(
+        Math.max(box.left - x, 0, x - box.right),
+        Math.max(box.top - y, 0, y - box.bottom),
+      );
+      if (!best || distance < best.distance) best = { name, dock, distance };
+    }
+    if (!best) return;
+    const vertical = best.name === "left" || best.name === "right";
+    const index = this.hudTools(best.dock)
+      .filter((item) => item !== tool)
+      .findIndex((item) => {
+        const box = item.getBoundingClientRect();
+        return vertical
+          ? y < box.top + box.height / 2
+          : x < box.left + box.width / 2;
+      });
+    this.placeHudTool(tool, best.name, index < 0 ? Infinity : index);
+  }
+
+  bindHudDocks() {
+    const hud = this.$("[data-world-hud]");
+    if (!hud) return;
+    for (const name of WORLD_HUD_DOCKS) {
+      this.hudTools(this.hudDock(name)).forEach((tool) => {
+        tool.dataset.worldToolHome = name;
+        tool.dataset.worldToolClass =
+          WORLD_HUD_TOOL_CLASSES.find((item) => tool.classList.contains(item)) || "";
+      });
+    }
+    this.hudDefaultLayout = this.hudDockLayout();
+    this.applyHudLayout(readJSON(localStorage, WORLD_HUD_LAYOUT_KEY, null));
+    let press = null;
+    const finish = (event) => {
+      if (!press || (event && event.pointerId !== press.id)) return;
+      const { tool, dragging, timer } = press;
+      press = null;
+      window.clearTimeout(timer);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      delete tool.dataset.dragging;
+      if (dragging) {
+        this.saveHudLayout(tool);
+        tool.focus({ preventScroll: true });
+      }
+    };
+    const move = (event) => {
+      if (!press || event.pointerId !== press.id) return;
+      const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
+      if (!this.hudArranging) {
+        if (moved > 8) finish();
+        return;
+      }
+      if (!press.dragging && moved < 4) return;
+      event.preventDefault();
+      press.dragging = true;
+      press.tool.dataset.dragging = "true";
+      this.dragHudTool(press.tool, event.clientX, event.clientY);
+    };
+    hud.addEventListener("pointerdown", (event) => {
+      const tool = event.target.closest("[data-world-tool]");
+      if (!tool || event.button > 0) return;
+      finish();
+      press = { tool, id: event.pointerId, x: event.clientX, y: event.clientY };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+      if (this.hudArranging) {
+        event.preventDefault();
+        return;
+      }
+      press.timer = window.setTimeout(() => {
+        if (press?.tool === tool) this.setHudArranging(true, tool);
+      }, WORLD_HUD_LONG_PRESS_MS);
+    });
+    hud.addEventListener(
+      "click",
+      (event) => {
+        if (!this.hudArranging || !event.target.closest("[data-world-tool]")) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      },
+      true,
+    );
+    hud.addEventListener("contextmenu", (event) => {
+      if (event.target.closest("[data-world-tool]") && (press || this.hudArranging)) {
+        event.preventDefault();
+      }
+    });
+    hud.addEventListener("keydown", (event) => {
+      if (!this.hudArranging) return;
+      const tool = event.target.closest?.("[data-world-tool]");
+      const step = WORLD_HUD_DOCK_STEPS[event.key];
+      if (event.key === "Escape") {
+        this.setHudArranging(false);
+      } else if (tool && step) {
+        const dock = tool.parentElement;
+        if (event.shiftKey) {
+          this.placeHudTool(tool, WORLD_HUD_DOCK_KEYS[event.key]);
+        } else {
+          this.placeHudTool(
+            tool,
+            dock.dataset.worldDock,
+            this.hudTools(dock).indexOf(tool) + step,
+          );
+        }
+        tool.focus({ preventScroll: true });
+        this.saveHudLayout(tool);
+      } else {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    this.$("[data-world-dock-arrange-open]")?.addEventListener("click", () =>
+      this.setHudArranging(true),
+    );
+    this.$("[data-world-dock-done]")?.addEventListener("click", () =>
+      this.setHudArranging(false),
+    );
+    this.$$("[data-world-dock-reset]").forEach((button) =>
+      button.addEventListener("click", () => this.resetHudLayout()),
+    );
   }
 
   savedViewsStorageKey() {
