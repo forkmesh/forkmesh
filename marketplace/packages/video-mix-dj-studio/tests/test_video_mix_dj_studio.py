@@ -187,3 +187,16 @@ def test_each_deck_can_repeat_its_song_and_auto_dj_leaves_it_alone():
     assert "if (playerState === 0 && deck.repeat) {" in PAGE
     assert 'command(deck, "seekTo", [0, true]);\n        command(deck, "playVideo");' in PAGE
     assert "if (!deck?.id || deck.repeat) return;" in PAGE
+
+
+def test_ios_repeat_wraps_between_the_songs_silences_before_youtube_ends():
+    packages = IOS / "ForkMesh" / "Features" / "Packages"
+    model = (packages / "VideoMixDjStudioModel.swift").read_text(encoding="utf-8")
+    player = (packages / "VideoMixDjStudioPlayer.swift").read_text(encoding="utf-8")
+    frame = swift_literal(player, "frameScript")
+    host = swift_literal(player, "html")
+    assert "} else {\n                aimRepeat(deck, at: now)\n            }" in model
+    assert "rewind(deck, to: span.start)" in model
+    assert "rewind(deck, to: DjRepeat.span(deck.waveform, duration: deck.duration)?.start ?? 0)" in model
+    assert 'else if(name==="seekTo"){d.w.from=+a[0]||0;d.w.seek++}' in host
+    assert "else if(m.seek!==w.seek){" in frame
