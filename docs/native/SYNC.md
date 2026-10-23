@@ -204,4 +204,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S129 | 2026-10-23 | Chat | feature | The pre-call check can record a 10-second microphone test and play it back before you call. | 407a9d2c6f | pending |  |
 | S130 | 2026-10-23 | Chat | fix | App sounds, speech and dictation no longer cut off your microphone during a call, and call audio comes back after an interruption. | 407a9d2c6f | pending |  |
 | S131 | 2026-10-23 | Chat | fix | Answering a call works even when the permission prompt stays open, and says why when the call can no longer be answered. | 407a9d2c6f | pending |  |
+| S132 | 2026-10-23 | Chat | fix | Video calls switch to the other person's picture as soon as it arrives and play through the loudspeaker. | a53238311c | pending |  |
+| S133 | 2026-10-23 | Chat | fix | The pre-call microphone test records your voice and plays it back on the speaker, even with the phone on silent. | a53238311c | pending |  |
 <!-- ledger:end -->
