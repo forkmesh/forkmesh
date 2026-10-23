@@ -37,7 +37,8 @@ FUNCTIONS = {
         "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issueActorAvatarHtml",
         "parseFlexibleDate", "formatDate", "formatTimeAgo", "formatCount", "loadingHtml",
         "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
-        "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs"),
+        "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs",
+        "repositoryViewKey"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
         "markdownVideoButtonHtml",
@@ -65,6 +66,8 @@ FUNCTIONS = {
         "pullClosingIssueNumbers", "pullOwnIssueNumbers", "issueDevelopmentPullStates",
         "issueLinkedPullNumbers", "developmentPulls", "developmentRow", "renderIssueDevelopment",
         "issueAiPromptText", "renderIssueAiPrompt", "issueSubscriptionNote"),
+        "issueAiPromptText", "renderIssueAiPrompt", "issueSubscriptionNote", "issueViewKey",
+        "issueViewsLabel", "issueViewsHtml"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE"),
@@ -112,6 +115,7 @@ const PLUGINS_OFF = %(off)s;
 function instancePluginOff(id) { return PLUGINS_OFF.includes(id); }
 function platformName() { return "Acme Code"; }
 function publicSiteOrigin() { return %(origin)s; }
+function repoPublicOwner(value) { return value.owner; }
 function publicProfileUrl(name, suffix = "") {
   return `/@${encodeURIComponent(String(name || "").trim().toLowerCase())}${suffix}`;
 }

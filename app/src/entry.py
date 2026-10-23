@@ -1214,7 +1214,8 @@ _URL_EXPORT_NAMES = (
     "REPO_PROVIDER_MIRROR_RE", "REPO_ARCHIVE_SYNC_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_REACTIONS_RE", "REPO_VIEW_RE",
-    "REPO_VIEWS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
+    "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
+    "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
     "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
@@ -13975,7 +13976,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "4a97a7c9f133e3faf47c1d4b57a01f652fb5a550daf61b386207e3f0e1f16246"
+    "c841261a4d250195503c8582103050794b077a64668e7d1060abe2c94466bceb"
 )
 
 
@@ -19333,6 +19334,8 @@ _REPO_SCOPED_TABLES = (
     ("repo_state_history", "key_bi"),
     ("repo_views", "repo_bi"),
     ("repo_view_totals", "repo_bi"),
+    ("issue_views", "repo_bi"),
+    ("issue_view_totals", "repo_bi"),
     ("repo_terms_flags", "repo_bi"),
     ("repo_webhooks", "repo_bi"),
     ("repo_webhook_seeds", "repo_bi"),
@@ -36761,7 +36764,8 @@ def _repo_view_totals(row):
     }
 
 
-async def _repo_viewer_key(env, request, data, repo_key):
+async def _repo_viewer_key(env, request, data, repo_key,
+                           scope="repo-view-v1"):
     try:
         account_bi, account_rec = await _account_session_record(
             env, request, data)
@@ -36781,7 +36785,7 @@ async def _repo_viewer_key(env, request, data, repo_key):
         subject = "visitor\n%s\n%s" % (
             address, world_visitor_metrics.generalized_user_agent(agent))
     digest = await blind_index(
-        env, "repo-view-v1\n%s\n%s" % (repo_key, subject))
+        env, "%s\n%s\n%s" % (scope, repo_key, subject))
     return str(digest or "")[:64]
 
 
@@ -36894,6 +36898,137 @@ async def repo_views_lookup_handler(env, request):
             key = by_bi.get(str(row.get("repo_bi") or ""))
             if key:
                 views[key] = _repo_view_totals(row)
+    return json_response(
+        {"ok": True, "views": views},
+        cache_control="no-store, max-age=0")
+
+
+ISSUE_VIEW_LOOKUP_LIMIT = 100
+ISSUE_VIEW_AUTOMATED_AGENTS = (
+    "bot", "crawler", "spider", "preview", "curl/", "wget/", "python-",
+    "go-http-client", "scanner", "headless",
+)
+
+
+def _issue_view_automated(request):
+    try:
+        agent = str(request.headers.get("user-agent") or "").lower()[:512]
+    except Exception:
+        return True
+    if not agent:
+        return True
+    return any(marker in agent for marker in ISSUE_VIEW_AUTOMATED_AGENTS)
+
+
+async def _record_issue_view(env, repo_bi, number, viewer_key):
+    now = int(Date.now())
+    seen = await d1_first(
+        env,
+        "SELECT counted_at FROM issue_views "
+        "WHERE repo_bi=? AND number=? AND viewer_key=?",
+        repo_bi, number, viewer_key)
+    first = not seen
+    counted = first or (
+        now - int((seen or {}).get("counted_at") or 0)
+        >= REPO_VIEW_WINDOW_MS)
+    await d1_run(
+        env,
+        "INSERT INTO issue_views "
+        "(repo_bi,number,viewer_key,first_at,last_at,counted_at,hits) "
+        "VALUES (?,?,?,?,?,?,1) "
+        "ON CONFLICT(repo_bi,number,viewer_key) DO UPDATE SET "
+        "last_at=excluded.last_at,hits=issue_views.hits+1,"
+        "counted_at=MAX(issue_views.counted_at,excluded.counted_at)",
+        repo_bi, number, viewer_key, now, now, now if counted else 0)
+    if counted:
+        await d1_run(
+            env,
+            "INSERT INTO issue_view_totals "
+            "(repo_bi,number,views,viewers,last_viewed_at) "
+            "VALUES (?,?,1,?,?) "
+            "ON CONFLICT(repo_bi,number) DO UPDATE SET "
+            "views=issue_view_totals.views+1,"
+            "viewers=issue_view_totals.viewers+excluded.viewers,"
+            "last_viewed_at=MAX(issue_view_totals.last_viewed_at,"
+            "excluded.last_viewed_at)",
+            repo_bi, number, 1 if first else 0, now)
+    return counted
+
+
+async def issue_view_handler(env, request, owner, repo, number):
+    await ensure_schema(env)
+    method = method_name(request)
+    if method not in ("GET", "POST"):
+        return json_response({"error": "method_not_allowed"}, status=405)
+    number = int(number or 0)
+    if number <= 0:
+        return json_response({"error": "not_found"}, status=404)
+    if await _repo_is_private(env, owner, repo):
+        return json_response({"error": "not_found"}, status=404)
+    public_owner = await _public_repo_owner(
+        env, request, owner, repo, REPO_ISSUE_VIEW_RE)
+    repo_key = (public_owner + "/" + repo).lower()
+    repo_bi = await blind_index(env, repo_key)
+    counted = False
+    if method == "POST" and not _issue_view_automated(request):
+        try:
+            data = await bounded_json_request(request)
+        except Exception:
+            data = {}
+        viewer_key = await _repo_viewer_key(
+            env, request, data, "%s#%d" % (repo_key, number),
+            "issue-view-v1")
+        if viewer_key:
+            counted = await _record_issue_view(
+                env, repo_bi, number, viewer_key)
+    row = await d1_first(
+        env,
+        "SELECT views,viewers,last_viewed_at FROM issue_view_totals "
+        "WHERE repo_bi=? AND number=?",
+        repo_bi, number)
+    return json_response(
+        {"ok": True, "counted": counted, "number": number,
+         **_repo_view_totals(row)},
+        cache_control="no-store, max-age=0")
+
+
+def _issue_view_numbers(values):
+    numbers = []
+    for value in values if isinstance(values, list) else []:
+        for part in str(value or "").split(","):
+            part = part.strip()
+            if not part.isdigit() or len(part) > 9:
+                continue
+            number = int(part)
+            if number > 0 and number not in numbers:
+                numbers.append(number)
+            if len(numbers) >= ISSUE_VIEW_LOOKUP_LIMIT:
+                return numbers
+    return numbers
+
+
+async def issue_views_lookup_handler(env, request, owner, repo):
+    await ensure_schema(env)
+    if method_name(request) != "GET":
+        return json_response({"error": "method_not_allowed"}, status=405)
+    if await _repo_is_private(env, owner, repo):
+        return json_response({"error": "not_found"}, status=404)
+    public_owner = await _public_repo_owner(
+        env, request, owner, repo, REPO_ISSUE_VIEWS_RE)
+    repo_bi = await blind_index(env, (public_owner + "/" + repo).lower())
+    numbers = _issue_view_numbers(
+        parse_qs(urlparse(str(request.url)).query).get("numbers"))
+    views = {}
+    for start in range(0, len(numbers), REPO_VIEW_LOOKUP_CHUNK):
+        chunk = numbers[start:start + REPO_VIEW_LOOKUP_CHUNK]
+        rows = await d1_all(
+            env,
+            "SELECT number,views,viewers,last_viewed_at "
+            "FROM issue_view_totals WHERE repo_bi=? AND number IN (%s)"
+            % ",".join("?" * len(chunk)),
+            repo_bi, *chunk)
+        for row in rows or []:
+            views[str(int(row.get("number") or 0))] = _repo_view_totals(row)
     return json_response(
         {"ok": True, "views": views},
         cache_control="no-store, max-age=0")
