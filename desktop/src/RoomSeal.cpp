@@ -13,8 +13,10 @@
 #include <QMessageAuthenticationCode>
 #include <QMap>
 #include <QMutex>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QThreadPool>
 #include <QTimer>
 
 #include <openssl/core_names.h>
@@ -86,9 +88,17 @@ QString settingKey(const char *prefix, const QString &name)
     return QLatin1String(prefix) + b64u(name.toUtf8());
 }
 
+using Produce = std::function<QVariant()>;
+using Snapshot = std::function<Produce()>;
+
+struct PendingWrite {
+    const ChatDevice *owner = nullptr;
+    Snapshot snapshot;
+};
+
 struct PendingWrites {
     QMutex mutex;
-    QHash<QString, QVariant> values;
+    QHash<QString, PendingWrite> values;
     bool scheduled = false;
     bool quitHooked = false;
 };
@@ -97,6 +107,32 @@ PendingWrites &pendingWrites()
 {
     static PendingWrites pending;
     return pending;
+}
+
+struct Waiter {
+    quint64 ticket = 0;
+    std::function<void()> callback;
+};
+
+struct StateWriter {
+    QMutex mutex;
+    QHash<QString, quint64> inflight;
+    std::atomic<quint64> queued{0};
+    std::atomic<quint64> written{0};
+    QList<Waiter> waiters;
+    QObject *notifier = nullptr;
+    QThreadPool *pool = nullptr;
+};
+
+StateWriter &stateWriter()
+{
+    static StateWriter *writer = [] {
+        auto *made = new StateWriter;
+        made->pool = new QThreadPool;
+        made->pool->setMaxThreadCount(1);
+        return made;
+    }();
+    return *writer;
 }
 
 bool storedStateKey(const QString &key)
@@ -226,9 +262,80 @@ void storeValues(const QHash<QString, QVariant> &values)
     }
 }
 
+void runDueWaiters()
+{
+    StateWriter &writer = stateWriter();
+    const quint64 done = writer.written.load();
+    QList<std::function<void()>> due;
+    for (qsizetype i = 0; i < writer.waiters.size();) {
+        if (writer.waiters.at(i).ticket <= done)
+            due.append(writer.waiters.takeAt(i).callback);
+        else
+            ++i;
+    }
+    for (const std::function<void()> &callback : std::as_const(due))
+        callback();
+}
+
+void drainWrites();
+
+void hookShutdown(QCoreApplication *app)
+{
+    PendingWrites &pending = pendingWrites();
+    {
+        const QMutexLocker lock(&pending.mutex);
+        if (pending.quitHooked)
+            return;
+        pending.quitHooked = true;
+    }
+    StateWriter &writer = stateWriter();
+    writer.notifier = new QObject;
+    writer.notifier->moveToThread(app->thread());
+    QObject::connect(app, &QCoreApplication::aboutToQuit, writer.notifier, &drainWrites);
+    qAddPostRoutine(&drainWrites);
+}
+
+quint64 enqueueWrites(QHash<QString, Produce> values)
+{
+    StateWriter &writer = stateWriter();
+    const quint64 seq = writer.queued.fetch_add(1) + 1;
+    {
+        const QMutexLocker lock(&writer.mutex);
+        for (auto it = values.cbegin(); it != values.cend(); ++it)
+            writer.inflight.insert(it.key(), seq);
+    }
+    QCoreApplication *app = QCoreApplication::instance();
+    if (app)
+        hookShutdown(app);
+    auto task = [values = std::move(values), seq] {
+        QHash<QString, QVariant> produced;
+        for (auto it = values.cbegin(); it != values.cend(); ++it)
+            produced.insert(it.key(), it.value()());
+        storeValues(produced);
+        StateWriter &state = stateWriter();
+        {
+            const QMutexLocker lock(&state.mutex);
+            for (auto it = produced.cbegin(); it != produced.cend(); ++it)
+                if (state.inflight.value(it.key()) == seq)
+                    state.inflight.remove(it.key());
+            state.written.store(seq);
+        }
+        if (state.notifier)
+            QMetaObject::invokeMethod(state.notifier, &runDueWaiters,
+                                      Qt::QueuedConnection);
+    };
+    if (!app) {
+        writer.pool->waitForDone();
+        task();
+        return seq;
+    }
+    writer.pool->start(std::move(task));
+    return seq;
+}
+
 void flushPendingWrites()
 {
-    QHash<QString, QVariant> values;
+    QHash<QString, PendingWrite> values;
     {
         PendingWrites &pending = pendingWrites();
         const QMutexLocker lock(&pending.mutex);
@@ -237,63 +344,84 @@ void flushPendingWrites()
     }
     if (values.isEmpty())
         return;
-    storeValues(values);
+    QHash<QString, Produce> produce;
+    for (auto it = values.cbegin(); it != values.cend(); ++it)
+        produce.insert(it.key(), it->snapshot());
+    enqueueWrites(std::move(produce));
 }
 
-void writeNow(const QString &key, const QVariant &value)
+void drainWrites()
 {
-    {
-        PendingWrites &pending = pendingWrites();
-        const QMutexLocker lock(&pending.mutex);
-        pending.values.remove(key);
-    }
-    storeValues({{key, value}});
+    flushPendingWrites();
+    stateWriter().pool->waitForDone();
 }
 
-void writeLater(const QString &key, const QVariant &value)
+void dropPending(const QString &key)
+{
+    PendingWrites &pending = pendingWrites();
+    const QMutexLocker lock(&pending.mutex);
+    pending.values.remove(key);
+}
+
+void dropPendingFor(const ChatDevice *owner)
+{
+    PendingWrites &pending = pendingWrites();
+    const QMutexLocker lock(&pending.mutex);
+    for (auto it = pending.values.begin(); it != pending.values.end();) {
+        if (it->owner == owner)
+            it = pending.values.erase(it);
+        else
+            ++it;
+    }
+}
+
+quint64 writeNow(const QString &key, const QVariant &value)
+{
+    dropPending(key);
+    if (storedStateKey(key))
+        return enqueueWrites({{key, [value] { return value; }}});
+    storeValues({{key, value}});
+    return 0;
+}
+
+void writeLater(const QString &key, const ChatDevice *owner, Snapshot snapshot)
 {
     QCoreApplication *app = QCoreApplication::instance();
     if (!app) {
-        writeNow(key, value);
+        dropPending(key);
+        enqueueWrites({{key, snapshot()}});
         return;
     }
+    hookShutdown(app);
     PendingWrites &pending = pendingWrites();
     bool schedule = false;
     {
         const QMutexLocker lock(&pending.mutex);
-        pending.values.insert(key, value);
+        pending.values.insert(key, PendingWrite{owner, std::move(snapshot)});
         schedule = !pending.scheduled;
         pending.scheduled = true;
     }
-    if (!schedule)
-        return;
-    QMetaObject::invokeMethod(
-        app,
-        [app] {
-            PendingWrites &state = pendingWrites();
-            bool hook = false;
-            {
-                const QMutexLocker lock(&state.mutex);
-                hook = !state.quitHooked;
-                state.quitHooked = true;
-            }
-            if (hook)
-                QObject::connect(app, &QCoreApplication::aboutToQuit, app,
-                                 &flushPendingWrites);
-            QTimer::singleShot(kWriteDelayMs, app, &flushPendingWrites);
-        },
-        Qt::QueuedConnection);
+    if (schedule)
+        QTimer::singleShot(kWriteDelayMs, stateWriter().notifier, &flushPendingWrites);
 }
 
-QVariant readSetting(const QString &key)
+bool hasOutstandingWrite(const QString &key)
 {
     {
         PendingWrites &pending = pendingWrites();
         const QMutexLocker lock(&pending.mutex);
-        const auto it = pending.values.constFind(key);
-        if (it != pending.values.cend())
-            return it.value();
+        if (pending.values.contains(key))
+            return true;
     }
+    StateWriter &writer = stateWriter();
+    const QMutexLocker lock(&writer.mutex);
+    return writer.inflight.contains(key);
+}
+
+QVariant readSetting(const QString &key)
+{
+    if (hasOutstandingWrite(key))
+        drainWrites();
     if (storedStateKey(key)) {
         if (const QString path = storedStateKeyPath(key); !path.isEmpty()) {
             QByteArray data;
@@ -305,6 +433,23 @@ QVariant readSetting(const QString &key)
             return state->value(key);
     }
     return QSettings().value(key);
+}
+
+QJsonObject ratchetsJson(const QHash<QString, RatchetPeer> &ratchets)
+{
+    QJsonObject peers;
+    for (auto it = ratchets.constBegin(); it != ratchets.constEnd(); ++it) {
+        QJsonArray sessions;
+        for (const RatchetSession &session : it->sessions)
+            sessions.append(forkmesh::chatv4::sessionJson(session));
+        peers.insert(it.key(),
+                     QJsonObject{{QStringLiteral("current"),
+                                  it->current.isEmpty() ? QJsonValue(QJsonValue::Null)
+                                                        : QJsonValue(it->current)},
+                                 {QStringLiteral("sessions"), sessions}});
+    }
+    return {{QStringLiteral("v"), forkmesh::chatv4::kVersion},
+            {QStringLiteral("peers"), peers}};
 }
 
 const char *const kStoredStateFamilies[] = {
@@ -1112,6 +1257,9 @@ ChatDevice::ChatDevice(bool persistent)
 
 ChatDevice::~ChatDevice()
 {
+    if (m_persistent && QCoreApplication::instance())
+        drainWrites();
+    dropPendingFor(this);
     wipe(m_seed);
     for (Prekey &prekey : m_prekeys) {
         wipe(prekey.xPriv);
@@ -1164,7 +1312,7 @@ static bool moveStoredStateToFiles(QSettings &state)
 
 bool migrateStoredState()
 {
-    flushPendingWrites();
+    drainWrites();
     std::unique_ptr<QSettings> state = openStoredState();
     if (!state)
         return false;
@@ -1212,6 +1360,7 @@ void clearStoredState()
         const QMutexLocker lock(&pending.mutex);
         pending.values.clear();
     }
+    stateWriter().pool->waitForDone();
     QSettings().remove(QStringLiteral("chat/e2ee"));
     if (std::unique_ptr<QSettings> state = openStoredState())
         state->remove(QStringLiteral("chat/e2ee"));
@@ -1448,31 +1597,45 @@ void ChatDevice::saveScope(const QString &scope, bool immediately)
 {
     if (!m_persistent)
         return;
-    const Scope &state = m_scopes[scope];
-    QJsonArray records;
-    for (const TrustRecord &record : state.records)
-        records.append(recordJson(record));
-    QJsonObject held;
-    for (auto it = state.held.constBegin(); it != state.held.constEnd(); ++it) {
-        if (it.value().isEmpty())
-            continue;
-        QJsonArray frames;
-        for (const QJsonObject &frame : it.value())
-            frames.append(frame);
-        held.insert(it.key(), frames);
+    persist(settingKey("chat/e2ee/trustV3/", scope),
+            [this, scope] {
+                const Scope state = m_scopes.value(scope);
+                return Produce([state] {
+                    QJsonArray records;
+                    for (const TrustRecord &record : state.records)
+                        records.append(recordJson(record));
+                    QJsonObject held;
+                    for (auto it = state.held.constBegin(); it != state.held.constEnd();
+                         ++it) {
+                        if (it.value().isEmpty())
+                            continue;
+                        QJsonArray frames;
+                        for (const QJsonObject &frame : it.value())
+                            frames.append(frame);
+                        held.insert(it.key(), frames);
+                    }
+                    const QJsonObject root{
+                        {QStringLiteral("policy"), state.policy == Policy::Strict
+                                                       ? QStringLiteral("strict")
+                                                       : QStringLiteral("open")},
+                        {QStringLiteral("records"), records},
+                        {QStringLiteral("held"), held},
+                        {QStringLiteral("safety"), state.safety}};
+                    return QVariant(QJsonDocument(root).toJson(QJsonDocument::Compact));
+                });
+            },
+            immediately);
+}
+
+void ChatDevice::persist(const QString &key, std::function<Produce()> snapshot,
+                         bool immediately)
+{
+    if (!immediately) {
+        writeLater(key, this, std::move(snapshot));
+        return;
     }
-    const QJsonObject root{
-        {QStringLiteral("policy"),
-         state.policy == Policy::Strict ? QStringLiteral("strict") : QStringLiteral("open")},
-        {QStringLiteral("records"), records},
-        {QStringLiteral("held"), held},
-        {QStringLiteral("safety"), state.safety}};
-    const QString key = settingKey("chat/e2ee/trustV3/", scope);
-    const QByteArray value = QJsonDocument(root).toJson(QJsonDocument::Compact);
-    if (immediately)
-        writeNow(key, value);
-    else
-        writeLater(key, value);
+    dropPending(key);
+    m_ticket = enqueueWrites({{key, snapshot()}});
 }
 
 Policy ChatDevice::policy(const QString &scope)
@@ -1751,20 +1914,26 @@ void ChatDevice::saveSeen(const QString &room)
 {
     if (!m_persistent)
         return;
-    const Room &state = m_rooms[room];
-    QJsonObject root;
-    for (auto it = state.seen.constBegin(); it != state.seen.constEnd(); ++it) {
-        QList<qint64> counters = it->set.values();
-        std::sort(counters.begin(), counters.end());
-        QJsonArray set;
-        for (const qint64 counter : std::as_const(counters))
-            set.append(double(counter));
-        root.insert(it.key(), QJsonObject{{QStringLiteral("max"), double(it->max)},
-                                          {QStringLiteral("at"), double(it->at)},
-                                          {QStringLiteral("set"), set}});
-    }
-    writeLater(settingKey("chat/e2ee/seenV3/", room),
-               QJsonDocument(root).toJson(QJsonDocument::Compact));
+    persist(settingKey("chat/e2ee/seenV3/", room),
+            [this, room] {
+                const QHash<QString, Seen> seen = m_rooms.value(room).seen;
+                return Produce([seen] {
+                    QJsonObject root;
+                    for (auto it = seen.constBegin(); it != seen.constEnd(); ++it) {
+                        QList<qint64> counters = it->set.values();
+                        std::sort(counters.begin(), counters.end());
+                        QJsonArray set;
+                        for (const qint64 counter : std::as_const(counters))
+                            set.append(double(counter));
+                        root.insert(it.key(),
+                                    QJsonObject{{QStringLiteral("max"), double(it->max)},
+                                                {QStringLiteral("at"), double(it->at)},
+                                                {QStringLiteral("set"), set}});
+                    }
+                    return QVariant(QJsonDocument(root).toJson(QJsonDocument::Compact));
+                });
+            },
+            false);
 }
 
 bool ChatDevice::isReplay(const QString &room, const QString &kid, qint64 ctr)
@@ -1900,13 +2069,17 @@ void ChatDevice::saveRatchets(const QString &room, bool immediately)
 {
     if (!m_persistent)
         return;
-    const QString key = settingKey("chat/e2ee/ratchetV4/", room);
-    const QByteArray value =
-        QJsonDocument(exportRatchets(room)).toJson(QJsonDocument::Compact);
-    if (immediately)
-        writeNow(key, value);
-    else
-        writeLater(key, value);
+    persist(settingKey("chat/e2ee/ratchetV4/", room),
+            [this, room] {
+                Room &state = roomState(room);
+                loadRatchets(room, state);
+                const QHash<QString, RatchetPeer> ratchets = state.ratchets;
+                return Produce([ratchets] {
+                    return QVariant(QJsonDocument(ratchetsJson(ratchets))
+                                        .toJson(QJsonDocument::Compact));
+                });
+            },
+            immediately);
 }
 
 void ChatDevice::resetRatchet(const QString &room, const QString &kid)
@@ -1932,19 +2105,7 @@ QJsonObject ChatDevice::exportRatchets(const QString &room)
 {
     Room &state = roomState(room);
     loadRatchets(room, state);
-    QJsonObject peers;
-    for (auto it = state.ratchets.constBegin(); it != state.ratchets.constEnd(); ++it) {
-        QJsonArray sessions;
-        for (const RatchetSession &session : it->sessions)
-            sessions.append(forkmesh::chatv4::sessionJson(session));
-        peers.insert(it.key(),
-                     QJsonObject{{QStringLiteral("current"),
-                                  it->current.isEmpty() ? QJsonValue(QJsonValue::Null)
-                                                        : QJsonValue(it->current)},
-                                 {QStringLiteral("sessions"), sessions}});
-    }
-    return {{QStringLiteral("v"), forkmesh::chatv4::kVersion},
-            {QStringLiteral("peers"), peers}};
+    return ratchetsJson(state.ratchets);
 }
 
 void ChatDevice::importRatchets(const QString &room, const QJsonObject &stored)
@@ -2025,7 +2186,85 @@ void ChatDevice::notify(Event event, const QString &scope, const QString &kid)
 
 void ChatDevice::flush()
 {
-    flushPendingWrites();
+    drainWrites();
+}
+
+bool ChatDevice::isWritten(quint64 ticket)
+{
+    return ticket <= stateWriter().written.load();
+}
+
+void ChatDevice::whenWritten(quint64 ticket, QObject *context,
+                             std::function<void()> callback)
+{
+    const QPointer<QObject> guard(context);
+    const bool guarded = context != nullptr;
+    std::function<void()> run = [guard, guarded, callback = std::move(callback)] {
+        if (!guarded || guard)
+            callback();
+    };
+    StateWriter &writer = stateWriter();
+    if (!writer.notifier) {
+        run();
+        return;
+    }
+    if (isWritten(ticket)) {
+        QMetaObject::invokeMethod(writer.notifier, std::move(run), Qt::QueuedConnection);
+        return;
+    }
+    writer.waiters.append(Waiter{ticket, std::move(run)});
+}
+
+void ChatDevice::waitForWrites()
+{
+    stateWriter().pool->waitForDone();
+}
+
+bool SendGate::send(quint64 ticket, const void *tag, std::function<bool()> write)
+{
+    if (m_entries.isEmpty() && ChatDevice::isWritten(ticket))
+        return write();
+    m_entries.append(Entry{ticket, tag, std::move(write)});
+    arm();
+    return true;
+}
+
+void SendGate::arm()
+{
+    if (m_waiting || m_entries.isEmpty())
+        return;
+    m_waiting = true;
+    ChatDevice::whenWritten(m_entries.first().ticket, m_owner, [this] {
+        m_waiting = false;
+        release();
+    });
+}
+
+void SendGate::release()
+{
+    while (!m_entries.isEmpty() && ChatDevice::isWritten(m_entries.first().ticket)) {
+        const Entry entry = m_entries.takeFirst();
+        entry.write();
+    }
+    arm();
+}
+
+void SendGate::releaseAll()
+{
+    if (m_entries.isEmpty())
+        return;
+    ChatDevice::waitForWrites();
+    release();
+}
+
+void SendGate::drop(const void *tag)
+{
+    m_entries.removeIf([tag](const Entry &entry) { return entry.tag == tag; });
+}
+
+void SendGate::clear()
+{
+    m_entries.clear();
 }
 
 } // namespace forkmesh::chatv3

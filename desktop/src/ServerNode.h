@@ -199,6 +199,8 @@ private:
     void sendTextFrame(const QByteArray &payload, const QString &type = QString(),
                        const QString &scope = QString(),
                        const QString &peer = QString());
+    void writeTextFrame(const QByteArray &payload, const QString &type,
+                        const QString &scope, const QString &peer);
     void sendControlFrame(int opcode, const QByteArray &payload = QByteArray());
     void handleServerFrame(const QJsonObject &plain, const QJsonObject &envelope);
     void sendEncrypted(const QJsonObject &plain, bool showActivity = false,
@@ -294,6 +296,7 @@ private:
     QString m_rosterStorageKey;
     RoomCrypto m_crypto;
     RoomSeal m_seal;
+    forkmesh::chatv3::SendGate m_sendGate{this};
     int m_deviceToken = 0;
     QString m_chatAccount;
     QStringList m_directParticipants;

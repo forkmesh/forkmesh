@@ -1474,7 +1474,8 @@ QWidget *MainWindow::buildAgentsTab()
     m_agentPageStack = new QStackedWidget;
     m_agentPageStack->setObjectName(QStringLiteral("agentPageStack"));
     m_agentPageStack->addWidget(splitter);
-    m_agentPageStack->addWidget(buildAgentEfficiencyPage());
+    m_agentEfficiencyPlaceholder = new QWidget;
+    m_agentPageStack->addWidget(m_agentEfficiencyPlaceholder);
     m_agentPageStack->addWidget(buildAgentGuardrailPage());
     m_agentPageStack->addWidget(buildAgentModelsPage());
 

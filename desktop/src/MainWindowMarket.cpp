@@ -3022,6 +3022,7 @@ void MainWindow::syncPackageSurfaces()
             : nullptr;
     const QList<std::pair<QWidget *, bool>> gated = {
         {m_agentsNavButton, on(QStringLiteral("agents"))},
+        {m_sessionsNavButton, on(QStringLiteral("agents"))},
         {m_railCodeButton, on(QStringLiteral("code"))},
         {m_railGitButton, on(QStringLiteral("commits"))},
         {m_chatButton, on(QStringLiteral("chat"))},
@@ -3514,6 +3515,7 @@ void MainWindow::syncDesktopOfflineDots(bool offline)
                 forkmesh::market::PackageRegistry::reliesOnDesktop(id));
     };
     mark(m_agentsNavButton, QStringLiteral("agents"));
+    mark(m_sessionsNavButton, QStringLiteral("agents"));
     mark(m_teamNavButton, QStringLiteral("special-agents"));
     for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
         mark(page.navigation.data(), page.id);
@@ -3800,10 +3802,18 @@ void MainWindow::syncNativePackagePageSearch()
                                             : nullptr;
     const QString query = m_globalSearch ? m_globalSearch->text().trimmed()
                                          : QString();
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
-        if (page.widget)
-            page.widget->setHostSearchQuery(
-                current == page.widget ? query : QString());
+    for (NativePackagePage &page : m_nativePackagePages) {
+        if (!page.widget)
+            continue;
+        const bool shown = current == page.widget;
+        const QString wanted = shown ? query : QString();
+        const bool sent = page.hostSearchTarget.data() ==
+                          static_cast<QWidget *>(page.widget.data());
+        if (sent ? page.hostSearchQuery == wanted : !shown && wanted.isEmpty())
+            continue;
+        page.hostSearchTarget = page.widget.data();
+        page.hostSearchQuery = wanted;
+        page.widget->setHostSearchQuery(wanted);
     }
 }
 
