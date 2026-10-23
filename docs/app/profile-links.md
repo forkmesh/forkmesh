@@ -103,7 +103,11 @@ light pull, issue and discussion views; the page frame's owner link goes to
 dashboard's `git` option: an `<a data-issue-person data-issue-person-git>`
 with no `href`, which the dashboard's hydration links once the account is
 confirmed. The code page's last-commit summary uses it for the Git author. A
-bot name carries `data-issue-bot-account` as it does in the dashboard.
+bot name carries `data-issue-bot-account` as it does in the dashboard. Names ending in
+`-actions` or `[bot]` never get one, by the same name test as the dashboard
+(there is no bot-kind lookup on either side; the first version called a missing
+`bot_avatar_kind` and every issue page raised `NameError`, caught by the deploy
+test gate on 2026-10-22).
 
 `app/src/hackathon_runtime.py` (`_profile_html`) links the invite page's
 inviter, "Built by" members, squad cards, the squad heading and challenge

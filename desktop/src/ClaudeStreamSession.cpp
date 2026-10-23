@@ -107,6 +107,7 @@ void ClaudeStreamSession::startRuntime(const AgentRuntimeLaunch &launch)
                            ? AgentToolPolicy::claudeAvailableTools(allowedFamilies,
                                                                    disabledFamilies)
                            : QStringList();
+    m_forkSession = launch.options.value(QStringLiteral("forkSession")).toBool();
     m_extraSettings = launch.options.value(QStringLiteral("claudeSettings")).toString();
     if (m_extraSettings.contains(QLatin1Char('\'')))
         m_extraSettings.clear(); // would break out of the quoted argument
@@ -225,8 +226,11 @@ void ClaudeStreamSession::launch()
         cmd += QStringLiteral(" --settings '%1'").arg(m_extraSettings);
     if (!m_fallbackModels.trimmed().isEmpty())
         cmd += QStringLiteral(" --fallback-model '%1'").arg(m_fallbackModels.trimmed());
-    if (!m_resumeSessionId.isEmpty())
+    if (!m_resumeSessionId.isEmpty()) {
         cmd += QStringLiteral(" --resume '%1'").arg(m_resumeSessionId);
+        if (m_forkSession)
+            cmd += QStringLiteral(" --fork-session");
+    }
     cmd = AgentJail::wrapCommand(cmd, m_memoryLimitMb);
     cmd = forkmesh::agentresources::wrapShellCommand(cmd);
     const forkmesh::agentguard::LaunchCommand guarded =

@@ -259,7 +259,7 @@ Icons are `fgMuted`: a button opts in with the `nextIconRole` property, which
 28 px high with 16 px icons on a 4 px grid; the drag strip uses 20 px buttons
 with 14 px icons. The send column drops its icons for text labels: the button
 Enter triggers (`enterTarget`) is the accent primary, the other is a raised
-secondary, and "task" is a ghost. Object names, layout positions, settings
+secondary, and "send to: #channel" is a ghost. Object names, layout positions, settings
 keys, tooltips and Classic are unchanged.
 
 ## Must not break
@@ -317,7 +317,7 @@ unchanged.
   test programs; some charts and badges; rich-text colours.
 - Widgets styled once at build time do not follow a live design switch until
   rebuilt; the prompt composer's Next sizes and its icon-less send, add and
-  task buttons are one such case. Its baked mode, effort and model icons do
+  send-to buttons are one such case. Its baked mode, effort and model icons do
   follow a dark/light switch (`refreshComposerIcons` from
   `refreshThemedIcons`).
 - Overlay coverage for remaining object names and Market package pages; text

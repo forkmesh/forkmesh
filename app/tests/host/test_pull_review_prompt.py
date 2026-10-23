@@ -396,7 +396,8 @@ def test_the_dashboard_reads_the_same_template_from_the_settings():
     texts = [json.dumps({"reviewPromptTemplate": "A\r\n\u202eB {url}"}), "[]", "nope",
              json.dumps({"reviewPromptTemplate": 5}),
              json.dumps({"reviewPromptTemplate": "x", "pad": "y" * 17000})]
-    script = (JS_PRELUDE + _function("blobText") + _function("repoCollabSettingsFromBlobs")
+    script = (JS_PRELUDE + _function("blobText") + _const("ISSUE_ASSIGNMENT_HOURS_MAX")
+              + _function("issueAssignmentHours") + _function("repoCollabSettingsFromBlobs")
               + "\nconst texts = %s;\nprocess.stdout.write(JSON.stringify(texts.map((t) => "
               "repoCollabSettingsFromBlobs({'.forkmesh/pulls.json': {content: t}})"
               ".reviewPromptTemplate)));" % json.dumps(texts))

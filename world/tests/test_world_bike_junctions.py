@@ -65,7 +65,7 @@ def test_road_graph_is_derived_from_the_drawn_hex_tiles():
     assert graph["nodes"] == 24
     assert graph["directed"] == 60
     assert sorted(graph["degrees"]) == [2] * 12 + [3] * 12
-    assert graph["junctionDegrees"] == [3] * 6
+    assert graph["junctionDegrees"] == [3] * 12
     assert graph["edgesConnect"]
     assert graph["everyEdgeContinues"]
 

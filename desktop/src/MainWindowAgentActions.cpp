@@ -1021,7 +1021,8 @@ void MainWindow::updateQuickAddEnterTarget()
         return;
     }
     const int target = quickAddFollowUpAgentSessionId();
-    const bool toAgent = target >= 0 && m_quickAddSendToAgentButton;
+    const bool room = !promptChatRoom().isEmpty();
+    const bool toAgent = target >= 0 && !room && m_quickAddSendToAgentButton;
     QString pullBranch;
     const AgentSession *pullAgent = quickAddPullDetailAgent(&pullBranch);
     const bool targetingPullAgent = pullAgent && pullAgent->id == target &&
@@ -1072,7 +1073,8 @@ void MainWindow::updateQuickAddEnterTarget()
                            .arg(target))
               : QStringLiteral(
                     "Send to the agent open above, as a follow-up message"));
-    apply(m_quickAddSendButton, !toAgent, newPromptTooltip);
+    apply(m_quickAddSendButton, !toAgent && !room, newPromptTooltip);
+    refreshQuickAddSendToChannelButton();
     if (m_quickAddSendButton)
         m_quickAddSendButton->setAccessibleName(newPromptTooltip);
     for (QPushButton *button : {m_quickAddSendToAgentButton, m_quickAddSendButton})
@@ -1097,6 +1099,11 @@ void MainWindow::updateQuickAddTargetAgentLabel()
                 ? QStringLiteral("enter follow-up for the cloud agent")
                 : QStringLiteral("enter follow-up for the cloud agent on %1")
                       .arg(node));
+        return;
+    }
+    if (const QString room = promptChatRoom(); !room.isEmpty()) {
+        m_issueQuickAdd->setPlaceholderText(
+            QStringLiteral("Message %1").arg(chatConversationLabel(room).left(120)));
         return;
     }
     const int target = quickAddFollowUpAgentSessionId();

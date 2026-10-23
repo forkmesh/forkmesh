@@ -32,54 +32,24 @@ export const REPOSITORY_CONNECTION_MAX_X = 103;
 export const LEADERBOARD_ISLAND_CENTER_X = -130;
 export const LEADERBOARD_CONNECTION_MIN_X = -103;
 export const LEADERBOARD_CONNECTION_MAX_X = -78;
-// The island's boards used to share one 43-unit perimeter, which mixed public
-// rankings, social feeds, and operational boards into a single ring nobody
-// could read as a group. Each family now stands on a smaller circle of its
-// own, and the district apron grew to carry all three.
 export const LEADERBOARD_DISTRICT_GROUND_RADIUS = 56;
-export const BILLBOARD_CIRCLE_SPECS = Object.freeze({
-  // Nearest the causeway: the boards that are neither a ranking nor a feed.
-  hub: Object.freeze({
-    id: "hub",
-    label: "World boards circle",
-    x: 28,
-    z: 0,
-    minRing: 13,
-    groundMargin: 5,
-    // Three discs cut from one apron colour read as a single plaza from the
-    // air, so each circle carries its own tint and an accent rim.
-    color: "#8f96a8",
-    accent: "#77d9ff",
-  }),
-  social: Object.freeze({
-    id: "social",
-    label: "Social circle",
-    x: -14,
-    z: -28,
-    minRing: 11,
-    groundMargin: 5,
-    color: "#9a8ba6",
-    accent: "#b39bf0",
-  }),
-  leaderboards: Object.freeze({
-    id: "leaderboards",
-    label: "Leaderboard circle",
-    x: -14,
-    z: 28,
-    minRing: 11,
-    groundMargin: 5,
-    color: "#86a094",
-    accent: "#9ef7c6",
-  }),
+export const BILLBOARD_RING = Object.freeze({
+  minRadius: 38,
+  groundMargin: 5,
+  entryGap: 12,
+  gap: 3,
+  rimWidth: 0.35,
+  color: "#8f96a8",
+  accent: "#77d9ff",
+  muted: "#2f6d84",
+  sections: Object.freeze(["hub", "social", "leaderboards"]),
+  padRadius: 2.2,
+  padExit: 0.9,
+  padGap: 0.25,
+  cooldownMs: 60_000,
 });
-// Width of the accent band drawn around each circle's rim.
-export const BILLBOARD_CIRCLE_RIM_WIDTH = 0.7;
-// Boards sit on their circle's apron, which is itself lifted clear of the
-// district ground so the two concrete discs cannot z-fight.
 export const BILLBOARD_CIRCLE_GROUND_Y = 0.05;
 export const BILLBOARD_CIRCLE_SURFACE_Y = BILLBOARD_CIRCLE_GROUND_Y + 0.07;
-// Tangential clearance between neighbouring boards on a circle.
-export const BILLBOARD_CIRCLE_GAP = 3;
 export const MEMBER_ISLAND_CENTER_Z = 130;
 // Carry the south promenade beneath the Members Circle instead of stopping at
 // its edge. The slightly raised dirt disk hides the final stretch, so visitors
@@ -254,15 +224,17 @@ export const WORLD_HEX_TILES = Object.freeze([
   ...DESERT_HEXES,
 ]);
 export const WORLD_ROAD_JUNCTIONS = Object.freeze(
-  [0, 1, 2, 3, 4, 5].map((corner) => {
-    const angle = Math.PI / 6 + (corner * Math.PI) / 3;
-    const reach = (WORLD_BIKE_LANE_APOTHEM * 2) / Math.sqrt(3);
-    return Object.freeze({
-      x: WORLD_BIKE_LANE_CENTER_X + Math.cos(angle) * reach,
-      z: CONTINUOUS_CITY_CENTER_Z + Math.sin(angle) * reach,
-      angle,
-    });
-  }),
+  [1, 2].flatMap((loop) =>
+    [0, 1, 2, 3, 4, 5].map((corner) => {
+      const angle = Math.PI / 6 + (corner * Math.PI) / 3;
+      const reach = ((WORLD_BIKE_LANE_APOTHEM * 2) / Math.sqrt(3)) * loop;
+      return Object.freeze({
+        x: WORLD_BIKE_LANE_CENTER_X + Math.cos(angle) * reach,
+        z: CONTINUOUS_CITY_CENTER_Z + Math.sin(angle) * reach,
+        angle,
+      });
+    }),
+  ),
 );
 export const DESERT_PLOT_APOTHEM = 88;
 const DESERT_PLOT_TANGENT_OFFSET = 104;

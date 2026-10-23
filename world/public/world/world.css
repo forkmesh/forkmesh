@@ -21717,3 +21717,193 @@ dialog[data-chat-thread-dialog] [data-chat-thread-send]:active {
   cursor: pointer;
   font-size: 16px;
 }
+
+.fm-world .world-dock-left {
+  position: absolute;
+  z-index: 45;
+  top: 50%;
+  left: var(--safe-left);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transform: translateY(-50%);
+}
+
+.fm-world .world-dock-left[data-empty="true"] {
+  display: none;
+}
+
+.fm-world .world-dock-right {
+  display: contents;
+}
+
+.fm-world .world-dock-tool {
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 40px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  place-items: center;
+  justify-self: end;
+  border: 1px solid #e4e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0;
+  color: #374151;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.fm-world .world-dock-tool:is(:hover, :focus-visible) {
+  border-color: #c9ced6;
+  background: #f9fafb;
+  color: #111827;
+}
+
+.fm-world .world-dock-tool[aria-pressed="true"] {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.fm-world .world-dock-tool > :not(:first-child) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.fm-world .world-dock-tool svg {
+  width: 18px;
+  height: 18px;
+}
+
+.fm-world .world-hud[data-hud-expanded="false"] .world-top-actions > .world-dock-tool {
+  display: none;
+}
+
+.fm-world .world-hud-island .world-avatar-actions > .world-dock-tool {
+  flex: 0 0 30px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #4b5563;
+  box-shadow: none;
+}
+
+.fm-world .world-hud-island .world-avatar-actions > .world-dock-tool:is(:hover, :focus-visible) {
+  background: var(--island-accent-soft);
+  color: #111827;
+}
+
+.fm-world .world-hud-island .world-avatar-actions > .world-dock-tool svg {
+  width: 16px;
+  height: 16px;
+}
+
+.fm-world .world-hud[data-world-arranging="true"] [data-world-dock] {
+  outline: 2px dashed #93c5fd;
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+.fm-world .world-hud[data-world-arranging="true"] .world-dock-right {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  min-height: 44px;
+}
+
+.fm-world .world-hud[data-world-arranging="true"] .world-dock-left {
+  display: flex;
+  min-width: 44px;
+  min-height: 132px;
+}
+
+.fm-world .world-hud[data-world-arranging="true"] [data-world-tool] {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.fm-world .world-hud[data-world-arranging="true"] [data-world-tool][data-dragging="true"] {
+  cursor: grabbing;
+  box-shadow: 0 0 0 2px #3b82f6;
+}
+
+.fm-world .world-dock-arrange {
+  position: absolute;
+  z-index: 70;
+  bottom: calc(var(--world-hud-island-clearance) + 12px);
+  left: 50%;
+  display: grid;
+  gap: 8px;
+  width: min(340px, calc(100vw - 32px));
+  border: 1px solid #e4e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px 14px;
+  color: #374151;
+  font: 400 13px/1.4 var(--font-sans);
+  box-shadow: var(--shadow-md);
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.fm-world .world-dock-arrange[hidden] {
+  display: none;
+}
+
+.fm-world .world-dock-arrange strong {
+  color: #111827;
+  font-weight: 600;
+}
+
+.fm-world .world-dock-arrange p {
+  margin: 0;
+}
+
+.fm-world .world-dock-arrange div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.fm-world .world-dock-arrange button {
+  min-height: 32px;
+  border: 1px solid #e4e7eb;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0 12px;
+  color: #374151;
+  font: 600 13px/1 var(--font-sans);
+  cursor: pointer;
+}
+
+.fm-world .world-dock-arrange [data-world-dock-done] {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+@media (max-width: 720px),
+  (pointer: coarse) and (max-height: 520px) and (orientation: landscape),
+  (hover: none) and (max-height: 520px) and (orientation: landscape) {
+  .fm-world .world-hud .world-top-actions > .world-dock-tool {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    min-height: 42px;
+  }
+}
