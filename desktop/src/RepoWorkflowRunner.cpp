@@ -48,6 +48,8 @@ QString Runner::start(const Workflow &workflow, const QString &repo, int repoInd
         return refuse(QStringLiteral("%1 is turned off. Turn it on to run it.").arg(workflow.name));
     const QString runKey = key(repo, workflow.id);
     if (m_active.contains(runKey))
+        tick();
+    if (m_active.contains(runKey))
         return refuse(QStringLiteral("%1 is already running.").arg(workflow.name));
     Active active;
     active.workflow = workflow;

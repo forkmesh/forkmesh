@@ -895,7 +895,8 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
 - A run is a workflow run: `runTeammate` starts the agent's workflow
   (`runTeammateWorkflow`) and its Special agent step starts a fresh session
   through `startTeammateSession`, filed in the **Workflows** agent folder.
-  Only a mention or a direct prompt continues the previous conversation.
+  A mention or a direct prompt to an agent with a conversation continues that
+  session instead, as chat, without a workflow run.
   `ownTeammateSession` still names the newest session the agent started, so
   steering, Stop and the face's status work as before, and
   `teammateWithRuntime` keeps runtime fields across saves.

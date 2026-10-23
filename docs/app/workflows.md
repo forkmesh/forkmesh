@@ -359,8 +359,9 @@ schedules, events, monitors, mentions, Run team) starts the agent's workflow
 `startTeammateSession`, so the permission grant, `--disallowedTools`, the
 external-call gate, the run mode clamp and the guardrails are unchanged; the
 session is the step's runtime, filed in the **Workflows** agent folder. A run
-starts a fresh session: only a mention or a direct prompt continues the
-agent's previous conversation. Shared "Run all in one session" runs are still
+starts a fresh session. A mention or a direct prompt to an agent that already
+has a conversation is chat, not a run: it continues that session
+(`startTeammateSession`) without a workflow run. Shared "Run all in one session" runs are still
 one shared session. Schedules of workflows without an agent step are checked
 on the same 60 s tick (`checkRepoWorkflowSchedules`) across every local
 repository, and their event triggers fire from `triggerTeammatesForEvent`.

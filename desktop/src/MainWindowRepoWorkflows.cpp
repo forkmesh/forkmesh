@@ -242,6 +242,11 @@ int MainWindow::runTeammateWorkflow(const Config &teammate, const QString &trigg
         repoIndex = activeTeammateRepoIndex();
     if (repoIndex < 0)
         return 0;
+    if (taskType == forkmesh::teammates::kTaskTypeMentions || trigger == QLatin1String("Direct prompt")) {
+        const Config live = teammateWithRuntime(teammate, repoIndex);
+        if (ownTeammateSession(live))
+            return startTeammateSession(live, trigger, taskType, repoIndex, assignment, switchToTab);
+    }
     rw::Workflow workflow;
     if (!findRepoWorkflow(repoIndex, teammate.id, &workflow) || !workflow.isSpecialAgent())
         workflow = rw::fromTeammate(teammate);
