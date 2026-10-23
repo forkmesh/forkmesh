@@ -1282,6 +1282,7 @@ void MainWindow::refreshTeammateRail()
         delete item;
     }
 
+    m_teammateRailLayout->setSpacing(Theme::isNext() ? 2 : 8);
     auto *title = new QLabel(Theme::isNext() ? QStringLiteral("TEAM")
                                              : QStringLiteral("Specials"));
     title->setObjectName(QStringLiteral("teammateRailTitle"));
@@ -1300,7 +1301,8 @@ void MainWindow::refreshTeammateRail()
     auto *create = new QPushButton;
     create->setObjectName(QStringLiteral("teammateRailCreateButton"));
     create->setCursor(Qt::PointingHandCursor);
-    create->setFixedSize(kTeammateRailFace, kTeammateRailFace);
+    create->setFixedSize(Theme::isNext() ? kTeammateRailNextChip : kTeammateRailFace,
+                         Theme::isNext() ? kTeammateRailNextChip : kTeammateRailFace);
     create->setAccessibleName(QStringLiteral("Create needed special agent"));
     create->setProperty("working", creatorSession > 0);
     if (creatorSession > 0) {
@@ -1331,10 +1333,11 @@ void MainWindow::refreshTeammateRail()
                                          : QStringLiteral("Needed"));
     createCaption->setObjectName(QStringLiteral("teammateRailLastRun"));
     createCaption->setAlignment(Qt::AlignHCenter);
+    createCaption->setVisible(!Theme::isNext());
     auto *createHost = new QWidget;
     createHost->setObjectName(QStringLiteral("teammateRailCreate"));
     auto *createLayout = new QVBoxLayout(createHost);
-    createLayout->setContentsMargins(0, 0, 0, 0);
+    createLayout->setContentsMargins(0, Theme::isNext() ? 4 : 0, 0, 0);
     createLayout->setSpacing(2);
     createLayout->addWidget(create, 0, Qt::AlignHCenter);
     createLayout->addWidget(createCaption, 0, Qt::AlignHCenter);

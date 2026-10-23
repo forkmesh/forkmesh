@@ -1,5 +1,6 @@
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
+#include "SettingsSectionsView.h"
 
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -14,8 +15,16 @@
 #include <QComboBox>
 #include <QLocale>
 #include <QMouseEvent>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPolygonF>
+#include <QTableWidget>
+#include <QWidgetAction>
+
+#include <functional>
 
 namespace forkmesh::ui {
 
@@ -26,8 +35,10 @@ const char kRailWidthSetting[] = "ui/railExpandedWidth";
 const char kRailToggleName[] = "railToggleButton";
 const char kRailHandleName[] = "railResizeHandle";
 constexpr int kRailMockupWidth = 232;
-constexpr int kRowIconLeft = 16;
-constexpr int kRowLabelLeft = 42;
+constexpr int kNextRowHeight = 32;
+constexpr int kRowInset = 10;
+constexpr int kRowIconLeft = 18;
+constexpr int kRowLabelLeft = 44;
 constexpr int kRowRightPad = 18;
 constexpr int kRowPillHeight = 16;
 constexpr int kTileIconPx = 16;
@@ -302,7 +313,7 @@ QSize railButtonSizeHook(const QWidget *button, const RailButtonPaintState &stat
 {
     if (!railButtonRowLayout(button, state.captionAlwaysVisible))
         return QSize();
-    return QSize(railExpandedItemWidth(), kRailRowHeight);
+    return QSize(railExpandedItemWidth(), kNextRowHeight);
 }
 
 bool paintRailButtonHook(QWidget *button, QPainter &painter,
@@ -327,7 +338,7 @@ bool paintRailButtonHook(QWidget *button, QPainter &painter,
     const int width = button->width();
     const int height = button->height();
 
-    const QRectF body = row ? QRectF(8, 1, width - 16, height - 2)
+    const QRectF body = row ? QRectF(kRowInset, 0.5, width - 2 * kRowInset, height - 1)
                             : QRectF(3, 2, width - 6, height - 4);
     paintBody(painter, body, accentAction, checked, hovered);
 
@@ -501,7 +512,7 @@ QSize tabButtonSizeHook(const QWidget *button, const TabButtonPaintState &state)
 {
     if (!state.inRail || !railExpanded() || inFolderBody(button))
         return QSize();
-    return QSize(railExpandedItemWidth(), kRailRowHeight);
+    return QSize(railExpandedItemWidth(), kNextRowHeight);
 }
 
 bool paintTabButtonHook(QWidget *button, QPainter &painter,
@@ -531,8 +542,9 @@ bool paintTabButtonHook(QWidget *button, QPainter &painter,
     const QString text = push ? push->text() : QString();
 
     if (row) {
-        paintBody(painter, QRectF(4, 1, width - 8, height - 2), false,
-                  tab && checked, hovered);
+        paintBody(painter,
+                  QRectF(kRowInset, 0.5, width - 2 * kRowInset, height - 1),
+                  false, tab && checked, hovered);
     } else if (action) {
         if (hovered)
             paintBody(painter, QRectF(0.5, 0.5, width - 1, height - 1), false,
@@ -584,16 +596,16 @@ bool paintTabButtonHook(QWidget *button, QPainter &painter,
             right -= w + 4;
         }
         if (state.badge > 0) {
-            const QString count = formatCount(state.badge);
-            const int w = pillWidth(pillFont, count, kRowPillHeight);
-            paintPill(painter, QRectF(right - w, pillTop, w, kRowPillHeight),
-                      count,
-                      Theme::color(checked ? Theme::Role::BorderStrong
-                                           : Theme::Role::SurfaceActive),
-                      Theme::color(Theme::Role::FgSecondary), pillFont);
-            right -= w + 4;
+            const QFont countFont = sizedFont(button, 11, QFont::Normal);
+            const QString count = QLocale().toString(state.badge);
+            const int w = QFontMetrics(countFont).horizontalAdvance(count);
+            painter.setFont(countFont);
+            painter.setPen(Theme::color(Theme::Role::FgSubtle));
+            painter.drawText(QRectF(right - w, 0, w, height),
+                             Qt::AlignVCenter | Qt::AlignRight, count);
+            right -= w + 6;
         }
-        const QFont labelFont = sizedFont(button, 13, QFont::Medium);
+        const QFont labelFont = sizedFont(button, 13, QFont::Normal);
         painter.setFont(labelFont);
         painter.setPen(captionColor);
         const int labelWidth = qMax(0, int(right) - kRowLabelLeft - 4);
@@ -912,7 +924,7 @@ QPushButton *sidebarIdentityButton(const char *name, QLabel **glyph,
     auto *button = new QPushButton;
     button->setObjectName(QLatin1String(name));
     button->setCursor(Qt::PointingHandCursor);
-    button->setFixedHeight(44);
+    button->setFixedHeight(40);
     auto *row = new QHBoxLayout(button);
     row->setContentsMargins(6, 0, 8, 0);
     row->setSpacing(10);
@@ -938,6 +950,126 @@ QString elided(const QLabel *label, const QString &text, int width)
                                                   qMax(20, width));
 }
 
+QPixmap chevronsUpDownPixmap(const QColor &color, int px)
+{
+    const qreal ratio = qApp ? qApp->devicePixelRatio() : 1.0;
+    QPixmap pixmap(QSize(px, px) * ratio);
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(color, 1.4);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    const qreal s = px / 24.0;
+    painter.drawPolyline(QPolygonF({QPointF(7 * s, 15 * s), QPointF(12 * s, 20 * s),
+                                    QPointF(17 * s, 15 * s)}));
+    painter.drawPolyline(QPolygonF({QPointF(7 * s, 9 * s), QPointF(12 * s, 4 * s),
+                                    QPointF(17 * s, 9 * s)}));
+    return pixmap;
+}
+
+QPixmap letterTilePixmap(const QString &name, int px)
+{
+    const qreal ratio = qApp ? qApp->devicePixelRatio() : 1.0;
+    QPixmap pixmap(QSize(px, px) * ratio);
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Theme::color(Theme::Role::SurfaceActive));
+    painter.drawRoundedRect(QRectF(0, 0, px, px), 6, 6);
+    QString letter;
+    for (const QChar ch : name)
+        if (ch.isLetterOrNumber()) {
+            letter = ch.toUpper();
+            break;
+        }
+    if (letter.isEmpty())
+        letter = QStringLiteral("?");
+    QFont font = painter.font();
+    font.setPixelSize(qMax(8, px / 2));
+    font.setWeight(QFont::DemiBold);
+    painter.setFont(font);
+    painter.setPen(Theme::color(Theme::Role::Fg));
+    painter.drawText(QRectF(0, 0, px, px), Qt::AlignCenter, letter);
+    return pixmap;
+}
+
+QPixmap chromeGlyph(const QString &name, int px)
+{
+    if (name == QLatin1String("chevrons-up-down"))
+        return chevronsUpDownPixmap(Theme::color(Theme::Role::FgSubtle), px);
+    return tintedOcticonPixmap(name, Theme::color(Theme::Role::FgSubtle), px);
+}
+
+void addWorkspaceMenuHeading(QMenu &menu, const QString &text)
+{
+    auto *label = new QLabel(text.toUpper(), &menu);
+    label->setObjectName(QStringLiteral("workspaceMenuHeading"));
+    label->setTextFormat(Qt::PlainText);
+    auto *action = new QWidgetAction(&menu);
+    action->setDefaultWidget(label);
+    action->setEnabled(false);
+    menu.addAction(action);
+}
+
+void addWorkspaceMenuRow(QMenu &menu, const QPixmap &icon, const QString &title,
+                         const QString &hint, bool current, const QString &tip,
+                         std::function<void()> *chosen, std::function<void()> run)
+{
+    auto *row = new QPushButton(&menu);
+    row->setObjectName(QStringLiteral("workspaceMenuRow"));
+    row->setCursor(Qt::PointingHandCursor);
+    row->setFlat(true);
+    row->setFocusPolicy(Qt::TabFocus);
+    row->setToolTip(tip);
+    row->setAccessibleName(hint.isEmpty() ? title : title + QStringLiteral(", ") + hint);
+    row->setFixedHeight(hint.isEmpty() ? 32 : 46);
+    row->setMinimumWidth(248);
+    auto *line = new QHBoxLayout(row);
+    line->setContentsMargins(8, 0, 8, 0);
+    line->setSpacing(10);
+    auto *glyph = new QLabel(row);
+    glyph->setObjectName(QStringLiteral("workspaceMenuRowIcon"));
+    glyph->setPixmap(icon);
+    glyph->setFixedSize(20, 20);
+    glyph->setAlignment(Qt::AlignCenter);
+    line->addWidget(glyph, 0, Qt::AlignVCenter);
+    auto *texts = new QVBoxLayout;
+    texts->setContentsMargins(0, 0, 0, 0);
+    texts->setSpacing(1);
+    auto *name = new QLabel(title, row);
+    name->setObjectName(QStringLiteral("workspaceMenuRowTitle"));
+    name->setTextFormat(Qt::PlainText);
+    texts->addWidget(name);
+    if (!hint.isEmpty()) {
+        auto *detail = new QLabel(hint, row);
+        detail->setObjectName(QStringLiteral("workspaceMenuRowHint"));
+        detail->setTextFormat(Qt::PlainText);
+        texts->addWidget(detail);
+    }
+    line->addLayout(texts, 1);
+    if (current) {
+        auto *check = new QLabel(row);
+        check->setObjectName(QStringLiteral("workspaceMenuRowCheck"));
+        check->setPixmap(tintedOcticonPixmap(QStringLiteral("check"),
+                                             Theme::color(Theme::Role::AccentFg), 16));
+        line->addWidget(check, 0, Qt::AlignVCenter);
+    }
+    for (QLabel *label : row->findChildren<QLabel *>())
+        label->setAttribute(Qt::WA_TransparentForMouseEvents);
+    QObject::connect(row, &QPushButton::clicked, &menu, [&menu, chosen, run] {
+        *chosen = run;
+        menu.close();
+    });
+    auto *action = new QWidgetAction(&menu);
+    action->setDefaultWidget(row);
+    menu.addAction(action);
+}
+
 }
 
 QWidget *NextAccess::buildSidebarHeader(MainWindow &window)
@@ -951,16 +1083,105 @@ QWidget *NextAccess::buildSidebarHeader(MainWindow &window)
     QLabel *title = nullptr;
     QLabel *subtitle = nullptr;
     QPushButton *workspace = sidebarIdentityButton(
-        "sidebarWorkspace", &glyph, &title, &subtitle, QStringLiteral("chevron-down"));
-    workspace->setToolTip(QStringLiteral("Account, instances and nodes"));
+        "sidebarWorkspace", &glyph, &title, &subtitle,
+        QStringLiteral("chevrons-up-down"));
+    workspace->setToolTip(QStringLiteral("Switch relay or organization"));
     layout->addWidget(workspace);
-    QObject::connect(workspace, &QPushButton::clicked, &window,
-                     [&window, workspace] {
-                         window.setProperty(
-                             "accountMenuAt",
-                             workspace->mapToGlobal(QPoint(0, workspace->height() + 4)));
-                         window.showUserAccountMenu();
-                     });
+    QObject::connect(workspace, &QPushButton::clicked, &window, [&window, workspace] {
+        QMenu menu(&window);
+        menu.setObjectName(QStringLiteral("workspaceMenu"));
+        std::function<void()> chosen;
+        const bool pending = window.projectInstancePending();
+        addWorkspaceMenuHeading(menu, QStringLiteral("Relay"));
+        const QPixmap relayIcon = tintedOcticonPixmap(
+            QStringLiteral("broadcast"), Theme::color(Theme::Role::FgMuted), 16);
+        for (int i = 0; i < window.m_servers.size(); ++i) {
+            const ServerConfig &server = window.m_servers.at(i);
+            const QString host = serverHost(server.url);
+            const QString name = server.name.trimmed().isEmpty() ? host
+                                                                 : server.name.trimmed();
+            QStringList hint;
+            if (!host.isEmpty() && host != name)
+                hint << host;
+            const auto sample = window.m_relayHostLatency.value(host.trimmed().toLower());
+            if (sample.stampMs > 0)
+                hint << (sample.ms < 0 ? QStringLiteral("no answer")
+                                       : QStringLiteral("%1 ms").arg(sample.ms));
+            std::function<void()> run;
+            if (pending)
+                run = [&window] { window.promptChooseProjectInstance(); };
+            else
+                run = [&window, i] { window.switchToServer(i); };
+            addWorkspaceMenuRow(menu, relayIcon, name,
+                                hint.join(QString::fromUtf8(" \xC2\xB7 ")),
+                                !pending && i == window.m_activeServer,
+                                host.isEmpty() ? server.url : host, &chosen, run);
+        }
+        addWorkspaceMenuRow(
+            menu,
+            tintedOcticonPixmap(QStringLiteral("plus"), Theme::color(Theme::Role::FgMuted), 16),
+            QStringLiteral("Add a relay") + QString::fromUtf8("\xE2\x80\xA6"), QString(), false,
+            QStringLiteral("Connect this desktop to another relay instance"), &chosen,
+            [&window] { window.promptAddServer(); });
+        const int orgTab = window.m_organizationsSettingsTabIndex;
+        const bool orgsShown = orgTab >= 0 && window.m_settingsSections &&
+                               !window.m_settingsSections->isSectionHidden(orgTab);
+        if (orgsShown) {
+            const auto openOrganizations = [&window, orgTab](const QString &org) {
+                if (!org.isEmpty())
+                    window.m_organizationPendingSelection = org;
+                window.showSection(1);
+                if (window.m_settingsSections)
+                    window.m_settingsSections->setCurrentIndex(orgTab);
+                if (org.isEmpty()) {
+                    if (window.m_organizationNewName)
+                        window.m_organizationNewName->setFocus(Qt::OtherFocusReason);
+                    return;
+                }
+                if (!window.m_organizationsTable)
+                    return;
+                for (int row = 0; row < window.m_organizationsTable->rowCount(); ++row) {
+                    const QTableWidgetItem *cell = window.m_organizationsTable->item(row, 0);
+                    if (cell && cell->text() == org) {
+                        window.m_organizationsTable->selectRow(row);
+                        window.m_organizationPendingSelection.clear();
+                        break;
+                    }
+                }
+            };
+            QStringList names;
+            if (window.m_organizationsKnown)
+                for (const QJsonValue &value : std::as_const(window.m_organizations)) {
+                    const QString org = value.toObject()
+                                            .value(QStringLiteral("name"))
+                                            .toString()
+                                            .trimmed();
+                    if (!org.isEmpty() && !names.contains(org))
+                        names << org;
+                }
+            menu.addSeparator();
+            if (!names.isEmpty()) {
+                addWorkspaceMenuHeading(menu, QStringLiteral("Organization"));
+                for (const QString &org : std::as_const(names))
+                    addWorkspaceMenuRow(menu, letterTilePixmap(org, 20), org, QString(),
+                                        false,
+                                        QStringLiteral("Open %1 in Settings, Organizations")
+                                            .arg(org),
+                                        &chosen,
+                                        [openOrganizations, org] { openOrganizations(org); });
+                menu.addSeparator();
+            }
+            addWorkspaceMenuRow(
+                menu,
+                tintedOcticonPixmap(QStringLiteral("plus"), Theme::color(Theme::Role::FgMuted), 16),
+                QStringLiteral("New organization"), QString(), false,
+                QStringLiteral("Create an organization in Settings, Organizations"), &chosen,
+                [openOrganizations] { openOrganizations(QString()); });
+        }
+        menu.exec(workspace->mapToGlobal(QPoint(0, workspace->height() + 4)));
+        if (chosen)
+            chosen();
+    });
 
     auto *fresh = new QPushButton;
     fresh->setObjectName(QStringLiteral("sidebarNewSession"));
@@ -1112,9 +1333,8 @@ void NextAccess::refreshSidebarChrome(MainWindow &window)
             chevron->setVisible(expanded);
             if (chevron->property("themeKey").toString() != Theme::hex(Theme::Role::FgSubtle)) {
                 chevron->setProperty("themeKey", Theme::hex(Theme::Role::FgSubtle));
-                chevron->setPixmap(tintedOcticonPixmap(
-                    chevron->property("glyph").toString(),
-                    Theme::color(Theme::Role::FgSubtle), 12));
+                chevron->setPixmap(
+                    chromeGlyph(chevron->property("glyph").toString(), 14));
             }
         }
     }
@@ -1373,13 +1593,57 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
     Q_UNUSED(windowButtons);
 #endif
 
+    QList<QLabel *> searchKeys;
+    if (QLineEdit *search = window.m_globalSearch) {
+        search->setMaximumWidth(440);
+        search->setFixedHeight(28);
+        auto *keys = new QHBoxLayout(search);
+        keys->setContentsMargins(0, 0, 6, 0);
+        keys->setSpacing(2);
+        keys->addStretch(1);
+#ifdef Q_OS_MACOS
+        const QStringList keyNames = {QString::fromUtf8("\xE2\x8C\x98"), QStringLiteral("K")};
+#else
+        const QStringList keyNames = {QStringLiteral("Ctrl"), QStringLiteral("K")};
+#endif
+        for (const QString &name : keyNames) {
+            auto *key = new QLabel(name, search);
+            key->setObjectName(QStringLiteral("topSearchKbd"));
+            key->setTextFormat(Qt::PlainText);
+            key->setAlignment(Qt::AlignCenter);
+            key->setAttribute(Qt::WA_TransparentForMouseEvents);
+            keys->addWidget(key, 0, Qt::AlignVCenter);
+            searchKeys << key;
+        }
+        const auto syncKeys = [search, searchKeys] {
+            const bool shown = Theme::isNext() && search->text().isEmpty();
+            for (QLabel *key : searchKeys)
+                key->setVisible(shown);
+            const QMargins margins(0, 0, shown ? 44 : 0, 0);
+            if (search->textMargins() != margins)
+                search->setTextMargins(margins);
+        };
+        QObject::connect(search, &QLineEdit::textChanged, search,
+                         [syncKeys](const QString &) { syncKeys(); });
+        syncKeys();
+    }
+
     auto *cluster = new QWidget;
     cluster->setObjectName(QStringLiteral("topRightCluster"));
     auto *clusterRow = new QHBoxLayout(cluster);
     clusterRow->setContentsMargins(0, 0, 0, 0);
     clusterRow->setSpacing(4);
+    auto *agents = new QPushButton;
+    agents->setObjectName(QStringLiteral("topAgentsButton"));
+    agents->setProperty("topStatusButton", true);
+    agents->setCursor(Qt::PointingHandCursor);
+    agents->setFocusPolicy(Qt::NoFocus);
+    agents->setFixedHeight(28);
+    agents->hide();
+    clusterRow->addWidget(agents);
     auto *nodes = new QPushButton;
     nodes->setObjectName(QStringLiteral("topNodesButton"));
+    nodes->setProperty("topStatusButton", true);
     nodes->setCursor(Qt::PointingHandCursor);
     nodes->setFocusPolicy(Qt::NoFocus);
     nodes->setFixedHeight(28);
@@ -1397,6 +1661,10 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
     QObject::connect(nodes, &QPushButton::clicked, &window, [&window] {
         if (window.m_networkNavButton)
             window.m_networkNavButton->click();
+    });
+    QObject::connect(agents, &QPushButton::clicked, &window, [&window] {
+        if (window.m_agentsNavButton)
+            window.m_agentsNavButton->click();
     });
     QObject::connect(bell, &QPushButton::clicked, &window,
                      [&window, bell] { showPingsPopover(window, bell); });
@@ -1417,7 +1685,7 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
         window.setTeammateRailEnabled(!window.teammateRailEnabled());
     });
 
-    const auto refresh = [&window, title, nodes, bell, theme, team] {
+    const auto refresh = [&window, title, agents, nodes, bell, theme, team, searchKeys] {
         QString page;
         if (window.m_navGroup)
             if (auto *checked = dynamic_cast<ActivityRailButton *>(
@@ -1432,6 +1700,25 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
         nodes->setIcon(QIcon(topDotPixmap(Theme::color(
             online > 0 ? Theme::Role::Success : Theme::Role::FgSubtle))));
         nodes->setIconSize(QSize(6, 6));
+        nodes->setToolTip(QString::fromUtf8("%1 node%2 online \xC2\xB7 open Network")
+                              .arg(online)
+                              .arg(online == 1 ? "" : "s"));
+        int running = 0;
+        for (const AgentSession &session : std::as_const(window.m_agentSessions))
+            if (!session.merged && session.status == AgentStatus::Running)
+                ++running;
+        agents->setVisible(running > 0);
+        if (running > 0) {
+            agents->setText(QStringLiteral("%1 agent%2").arg(running).arg(running == 1 ? "" : "s"));
+            agents->setIcon(QIcon(topDotPixmap(Theme::color(Theme::Role::Accent))));
+            agents->setIconSize(QSize(6, 6));
+            agents->setToolTip(QString::fromUtf8("%1 agent%2 running \xC2\xB7 open Agents")
+                                   .arg(running)
+                                   .arg(running == 1 ? "" : "s"));
+        }
+        if (window.m_globalSearch)
+            for (QLabel *key : searchKeys)
+                key->setVisible(Theme::isNext() && window.m_globalSearch->text().isEmpty());
         int pings = 0;
         if (auto *rail = dynamic_cast<ActivityRailButton *>(window.m_notificationButton))
             pings = rail->badgeCount();
