@@ -35,6 +35,7 @@
       "The composer hides its character count until a prompt nears the limit, then shows it in orange and red.",
       "Claude Code agents on the desktop now take their name from their Claude Code session and follow its renames, ask for tool permissions, plan approval and MCP input in the transcript or a small window instead of refusing the call, list their running sub-sessions with a Stop button, and can be renamed from the agent list.",
       "On the phone, the green and red ring around an agent's picture in the agent list turns while the agent is working and stops when it is done.",
+      "When a merge from your phone is blocked by uncommitted edits on your desktop, Set aside and merge saves them to a wip/ branch, merges, and puts them back.",
       "Special agents are now workflows: each run shows its steps and saves its output on the Workflows page, the page can build special agents, shortcut runs and desktop cleanups step by step, and any workflow can be pinned as a button to the top, left, right or bottom of the window."
      ]
     },
@@ -78,6 +79,7 @@
      "items": [
       "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.",
       "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings.",
+      "In the desktop's new design, alerts and confirmations are laid out evenly: the heading and message are centred with the same padding on every side, and the buttons sit centred below them at one width.",
       "Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies."
      ]
     },

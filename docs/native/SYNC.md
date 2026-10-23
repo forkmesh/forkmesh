@@ -190,4 +190,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S115 | 2026-10-23 | Settings | ui | With Diagnostics on, the desktop and node lights sit above the clock with more room and the diagnostic charts sit filled above the battery. | 0eff45f617 | pending |  |
 | S116 | 2026-10-23 | Agents | ui | The green and red churn ring around an agent's tile in the agent list turns while the agent is working and stops still when it is done. | d8dffb957e | pending |  |
 | S117 | 2026-10-23 | Market | feature | Each Feed post has a share button to view it on the website or copy its public link. | 98e35b20f3 | synced | 6a733017ec |
+| S118 | 2026-10-23 | Agents | feature | When a merge is blocked by uncommitted edits on the desktop, a Set aside and merge button saves them on a wip/ branch, merges, and puts them back. | 07bb2e29c5 | pending |  |
 <!-- ledger:end -->

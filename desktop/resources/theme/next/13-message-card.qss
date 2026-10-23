@@ -16,7 +16,7 @@ QMessageBox[nextMessageCard="true"] QTextEdit {
     background-color: @bgSubtle; border: 1px solid @border; border-radius: 8px;
     color: @fgSecondary; font-size: 12px;
 }
-QMessageBox[nextMessageCard="true"] QDialogButtonBox { margin-top: 12px; min-width: 340px; }
+QMessageBox[nextMessageCard="true"] QDialogButtonBox { min-width: 340px; }
 QMessageBox[nextMessageCard="true"] QPushButton {
     min-height: 30px; min-width: 64px; padding: 0px 14px; border-radius: 8px;
 }

@@ -8144,7 +8144,8 @@ private:
                                const QString &worktreePath = QString(),
                                bool cleanUp = false,
                                std::function<void(bool)> done = {},
-                               bool unattended = false);
+                               bool unattended = false,
+                               bool setAside = false);
     struct WorktreeMergeFlow {
         QString dir;
         QString branch;
@@ -8152,6 +8153,7 @@ private:
         QString worktreePath;
         bool cleanUp = false;
         bool unattended = false;
+        bool setAside = false;
         QString owner;
         QString name;
         QString localPath;
@@ -8171,6 +8173,8 @@ private:
         bool merged = false;
         bool hasConflicts = false;
         bool branchInBase = false;
+        bool canSetAside = false;
+        QString setAsideNote;
         QString mergeError;
         QString mergeCommit;
         QStringList logs;
@@ -8193,6 +8197,8 @@ private:
     bool m_worktreeMergeRunning = false;
     QString m_worktreeMergeAwaiting;
     bool m_worktreeMergeConflicted = false;
+    bool m_worktreeMergeCanSetAside = false;
+    QString m_worktreeMergeSetAsideNote;
     struct QueuedWorktreeMerge {
         QString dir;
         QString owner;
@@ -8201,6 +8207,7 @@ private:
         QString worktreePath;
         bool cleanUp = false;
         bool unattended = false;
+        bool setAside = false;
         std::function<void(bool)> done;
     };
     QList<QueuedWorktreeMerge> m_queuedWorktreeMerges;

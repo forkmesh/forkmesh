@@ -9,6 +9,7 @@
 #include "FlowLayout.h"
 #include "HeaderWrapLayout.h"
 #include "KebabHeaderView.h"
+#include "MergeSetAside.h"
 #include "PrivateMirrorRuntime.h"
 #include "RepoStatsStore.h"
 #include "UiSounds.h"
@@ -2855,7 +2856,8 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
                                        const QString &worktreePathArg,
                                        bool cleanUp,
                                        std::function<void(bool)> callerDone,
-                                       bool unattended)
+                                       bool unattended,
+                                       bool setAside)
 {
     const QString branch = branchArg;
     const QString worktreePath = worktreePathArg;
@@ -2887,6 +2889,7 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
         queued.worktreePath = worktreePath;
         queued.cleanUp = cleanUp;
         queued.unattended = unattended;
+        queued.setAside = setAside;
         queued.done = std::move(callerDone);
         if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
             queued.owner = m_repositories.at(m_repoDetailIndex).owner;
@@ -2900,12 +2903,16 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
     }
     m_worktreeMergeRunning = true;
     m_worktreeMergeConflicted = false;
+    m_worktreeMergeCanSetAside = false;
+    m_worktreeMergeSetAsideNote.clear();
     std::function<void(bool)> done = [this, callerDone](bool ok) {
         m_worktreeMergeRunning = false;
         m_worktreeMergeAwaiting.clear();
         if (callerDone)
             callerDone(ok);
         m_worktreeMergeConflicted = false;
+        m_worktreeMergeCanSetAside = false;
+        m_worktreeMergeSetAsideNote.clear();
         QTimer::singleShot(0, this, [this] { runNextQueuedWorktreeMerge(); });
     };
     const auto refuse = [&done] { done(false); };
@@ -3099,6 +3106,7 @@ void MainWindow::mergeWorktreeIntoMain(const QString &branchArg,
     flow.worktreePath = worktreePath;
     flow.cleanUp = cleanUp;
     flow.unattended = unattended;
+    flow.setAside = setAside;
     if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
         const RepositoryRecord &repo = m_repositories.at(m_repoDetailIndex);
         flow.owner = repo.owner;
@@ -3149,7 +3157,7 @@ void MainWindow::runNextQueuedWorktreeMerge()
         }
     }
     mergeWorktreeIntoMain(next.branch, next.worktreePath, next.cleanUp,
-                          std::move(next.done), next.unattended);
+                          std::move(next.done), next.unattended, next.setAside);
 }
 
 void MainWindow::awaitDesktopDuringMerge(const QString &what)
@@ -3280,6 +3288,39 @@ MainWindow::prepareWorktreeMerge(const WorktreeMergeFlow &flow)
         }
         QString why;
         QStringList listed = dirt.changed;
+        const bool overlapOnly = dirt.read && touchedRead && head == base
+                                 && dirt.staged.isEmpty() && !overlap.isEmpty();
+        if (overlapOnly && flow.setAside) {
+            const forkmesh::mergesetaside::Git git = forkmesh::mergesetaside::processGit(dir);
+            const forkmesh::mergesetaside::Aside aside = forkmesh::mergesetaside::setAside(
+                git, base, branch, overlap, QDateTime::currentDateTime());
+            if (!aside.ok) {
+                step.message =
+                    QStringLiteral("Couldn't set aside the uncommitted changes to %1 in %2, so "
+                                   "%3 was not merged: %4%5")
+                        .arg(describeDirtyPaths(overlap), QDir::toNativeSeparators(dir), branch,
+                             aside.error,
+                             aside.backupBranch.isEmpty()
+                                 ? QString()
+                                 : QStringLiteral(". A copy is on branch %1.").arg(aside.backupBranch));
+                step.noticeKind = forkmesh::kLocalOperationNoticeKind;
+                return step;
+            }
+            WorktreeMergeFlow inner = flow;
+            inner.setAside = false;
+            WorktreeMergeStep next = prepareWorktreeMerge(inner);
+            const forkmesh::mergesetaside::PutBack back = forkmesh::mergesetaside::putBack(git, aside);
+            next.setAsideNote = forkmesh::mergesetaside::putBackNote(aside, back);
+            QStringList logs = step.logs;
+            logs << QStringLiteral("Git: saved the uncommitted work in %1 on branch %2 and set "
+                                   "aside %3 to merge %4.")
+                        .arg(QDir::toNativeSeparators(dir), aside.backupBranch,
+                             describeDirtyPaths(overlap), branch);
+            logs << next.logs;
+            logs << QStringLiteral("Git: ") + next.setAsideNote;
+            next.logs = logs;
+            return next;
+        }
         if (!dirt.read || !touchedRead) {
             why = QStringLiteral("and Git couldn't tell which files this merge touches");
         } else if (head != base) {
@@ -3302,6 +3343,10 @@ MainWindow::prepareWorktreeMerge(const WorktreeMergeFlow &flow)
                          describeDirtyPaths(listed));
             step.noticeKind = forkmesh::kLocalOperationNoticeKind;
             step.error = false;
+            step.canSetAside =
+                overlapOnly
+                && forkmesh::mergesetaside::canSetAside(
+                    forkmesh::mergesetaside::processGit(dir), overlap);
             return step;
         }
         step.logs << QStringLiteral("Git: merging %1 into %2 around %3 uncommitted "
@@ -3458,7 +3503,13 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
     const QString &base = flow.base;
     const QString &dir = flow.dir;
     const bool here = repoGitDir() == dir;
+    if (!step.setAsideNote.isEmpty()) {
+        m_worktreeMergeSetAsideNote = step.setAsideNote;
+        const PingThreadScope pingThread(this, mergePingThread(dir, branch));
+        noticeForRepo(here, step.setAsideNote, false, forkmesh::kLocalOperationNoticeKind);
+    }
     if (step.kind == WorktreeMergeStep::Refused) {
+        m_worktreeMergeCanSetAside = step.canSetAside;
         {
             const PingThreadScope pingThread(this, mergePingThread(dir, branch));
             noticeForRepo(here, step.message, step.error, step.noticeKind);

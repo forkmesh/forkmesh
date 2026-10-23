@@ -37,6 +37,7 @@ struct AgentDiffScreen: View {
                 MergeLandedScreen(
                     title: "Merged \(branch) and cleaned up.",
                     subtitle: merge.mergeStats.map { $0.base.isEmpty ? "" : "\(branch) is part of \($0.base) now." } ?? "",
+                    notice: merge.setAsideNote,
                     stats: merge.mergeStats
                 ) {
                     if let onLeave { onLeave() } else { dismiss() }
@@ -72,12 +73,16 @@ struct AgentDiffScreen: View {
     }
 
     private func startMerge() {
+        startMerge(setAside: false)
+    }
+
+    private func startMerge(setAside: Bool) {
         let merge: MergeCleanupModel = self.merge
         guard !merge.busy, merge.mergedBranch == nil else { return }
         Task {
-            if await merge.mergeNow() {
+            if await merge.mergeNow(setAside: setAside) {
                 FmHaptics.commit()
-                onMerged(MergeOutcome(branch: merge.mergedBranch ?? "", stats: merge.mergeStats).message())
+                onMerged(merge.outcome.message())
             } else if !merge.errorText.isEmpty {
                 FmHaptics.failure()
             }
@@ -100,7 +105,9 @@ struct AgentDiffScreen: View {
 
     @ViewBuilder private var mergeFailure: some View {
         if !merge.busy && !merge.errorText.isEmpty {
-            MergeFailureNote(errorText: merge.errorText, fix: fix, onFix: fixConflicts)
+            MergeFailureNote(
+                errorText: merge.errorText, fix: fix, onFix: fixConflicts,
+                onSetAside: merge.canSetAside ? { startMerge(setAside: true) } : nil)
                 .padding(FmSpace.x3)
                 .shellGlass(RoundedRectangle(cornerRadius: FmRadius.md, style: .continuous))
                 .padding(.horizontal, FmSpace.x3)
