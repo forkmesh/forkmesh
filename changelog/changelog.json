@@ -84,7 +84,8 @@
       "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings.",
       "In the desktop's new design, alerts and confirmations are laid out evenly: the heading and message are centred with the same padding on every side, and the buttons sit centred below them at one width.",
       "Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies.",
-      "On desktop, you can now resize the prompt by dragging any of its edges or corners; the small resize grip in its top-right corner is gone."
+      "On desktop, you can now resize the prompt by dragging any of its edges or corners; the small resize grip in its top-right corner is gone.",
+      "Right-click any item in the left rail or a repository tab and choose to hide it: it leaves the rail but stays on Home, where right-clicking its icon puts it back."
      ]
     },
     {

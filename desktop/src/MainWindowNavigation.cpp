@@ -1773,6 +1773,9 @@ void MainWindow::applyRailOrder()
         else
             current.append(widget);
     }
+    if (m_railHiddenHolder)
+        current += m_railHiddenHolder->findChildren<QWidget *>(
+            QString(), Qt::FindDirectChildrenOnly);
 
     QList<QPair<QString, QWidget *>> order;
     for (const auto &[key, widget] : std::as_const(canonical)) {
@@ -1820,7 +1823,7 @@ void MainWindow::applyRailOrder()
                 at < 0 && savedAgents >= 0 &&
                 entry.first == QLatin1String("sessions");
             ranked.append({at >= 0          ? double(at)
-                           : sessionsUnsaved ? savedAgents - 0.5
+                           : sessionsUnsaved ? savedAgents - 0.25
                                              : previous + 0.5,
                            entry});
         }
@@ -1854,6 +1857,18 @@ void MainWindow::applyRailOrder()
                              return railRankLess(sortMode, ranks.value(a.second),
                                                  ranks.value(b.second));
                          });
+    }
+
+    const QStringList hiddenKeys = railHiddenKeys();
+    QList<QWidget *> hidden;
+    for (auto it = order.begin(); it != order.end();) {
+        if (!it->first.isEmpty() && it->first != QLatin1String("home") &&
+            hiddenKeys.contains(it->first)) {
+            hidden.append(it->second);
+            it = order.erase(it);
+        } else {
+            ++it;
+        }
     }
 
     const RailFolders::State &folders = railFolderState();
@@ -2000,6 +2015,8 @@ void MainWindow::applyRailOrder()
     for (auto it = m_railFolderWidgets.cbegin(); it != m_railFolderWidgets.cend();
          ++it)
         it.value()->setMembers(members.value(it.key()));
+    for (QWidget *widget : std::as_const(hidden))
+        parkHiddenRailItem(widget);
     m_appNavigationRailLayout->addStretch();
     for (const QPointer<RailFolderWidget> &folder : std::as_const(stale)) {
         if (!folder)
@@ -2015,6 +2032,8 @@ bool MainWindow::isInRail(QWidget *widget) const
     if (!widget || !m_appNavigationRailLayout)
         return false;
     if (m_appNavigationRailLayout->indexOf(widget) >= 0)
+        return true;
+    if (m_railHiddenHolder && widget->parentWidget() == m_railHiddenHolder)
         return true;
     for (const QPointer<RailFolderWidget> &folder :
          std::as_const(m_railFolderWidgets))
@@ -2105,6 +2124,7 @@ bool MainWindow::handleRailEvent(QObject *watched, QEvent *event)
             QMenu *sort = buildRailSortMenu(menu);
             sort->setTitle(QStringLiteral("Sort the left rail"));
             menu->addMenu(sort);
+            addRailHiddenItemsMenu(menu);
             menu->popup(static_cast<QContextMenuEvent *>(event)->globalPos());
             return true;
         }
@@ -2238,12 +2258,155 @@ void MainWindow::showRailItemMenu(QWidget *widget, const QPoint &globalPos)
                 moveRailItemToFolder(key, QString());
             });
         addRailGroupActions(menu, key);
+        if (key != QLatin1String("home")) {
+            menu->addSeparator();
+            QAction *hide = menu->addAction(
+                QStringLiteral("Hide from left rail (keep on Home)"), this,
+                [this, key] {
+                    QTimer::singleShot(0, this,
+                                       [this, key] { setRailItemHidden(key, true); });
+                });
+            hide->setObjectName(QStringLiteral("railHideAction"));
+        }
     }
     if (menu->isEmpty()) {
         menu->deleteLater();
         return;
     }
     menu->popup(globalPos);
+}
+
+QStringList MainWindow::railHiddenKeys() const
+{
+    return QSettings().value(kRailHiddenSetting).toStringList();
+}
+
+bool MainWindow::storeRailItemHidden(const QString &key, bool hidden)
+{
+    if (key.isEmpty() || key == QLatin1String("home"))
+        return false;
+    QStringList keys = railHiddenKeys();
+    if (keys.contains(key) == hidden)
+        return false;
+    if (hidden)
+        keys.append(key);
+    else
+        keys.removeAll(key);
+    QSettings settings;
+    if (keys.isEmpty())
+        settings.remove(kRailHiddenSetting);
+    else
+        settings.setValue(kRailHiddenSetting, keys);
+    return true;
+}
+
+void MainWindow::setRailItemHidden(const QString &key, bool hidden)
+{
+    if (!storeRailItemHidden(key, hidden))
+        return;
+    applyRailOrder();
+    applyRailCaptionPreference();
+    refreshHomeGridPage();
+    if (hidden)
+        flashMessage(QStringLiteral(
+            "Hidden from the rail. It stays on Home; right-click its tile there "
+            "to put it back."));
+}
+
+void MainWindow::hideButtonKeepOnHome(QWidget *button)
+{
+    if (!button)
+        return;
+    if (isInRail(button)) {
+        setRailItemHidden(button->property("forkmeshRailKey").toString(), true);
+        return;
+    }
+    const QString key = button->property("forkmeshButtonKey").toString();
+    if (!storeRailItemHidden(key, true))
+        return;
+    moveButtonToPanel(key, kButtonPanelRail);
+    refreshHomeGridPage();
+    flashMessage(QStringLiteral(
+        "Hidden from the bar. It stays on Home; right-click its tile there to "
+        "put it in the left rail."));
+}
+
+void MainWindow::showAllHiddenRailItems()
+{
+    if (!QSettings().contains(kRailHiddenSetting))
+        return;
+    QSettings().remove(kRailHiddenSetting);
+    applyRailOrder();
+    applyRailCaptionPreference();
+    refreshHomeGridPage();
+}
+
+void MainWindow::addRailHiddenItemsMenu(QMenu *menu)
+{
+    if (!menu)
+        return;
+    QList<QPair<QString, QString>> items;
+    for (const QString &key : railHiddenKeys()) {
+        QWidget *widget = railWidgetForKey(key);
+        if (widget && isInRail(widget) && !railItemName(widget).isEmpty())
+            items.append({key, railItemName(widget)});
+    }
+    if (items.isEmpty())
+        return;
+    menu->addSeparator();
+    QMenu *shown = menu->addMenu(QStringLiteral("Hidden from the rail"));
+    shown->setObjectName(QStringLiteral("railHiddenMenu"));
+    for (const auto &[key, name] : std::as_const(items))
+        shown->addAction(QStringLiteral("Show %1").arg(name), this, [this, key] {
+            QTimer::singleShot(0, this,
+                               [this, key] { setRailItemHidden(key, false); });
+        });
+    if (items.size() > 1) {
+        shown->addSeparator();
+        shown->addAction(QStringLiteral("Show all"), this, [this] {
+            QTimer::singleShot(0, this, [this] { showAllHiddenRailItems(); });
+        });
+    }
+}
+
+QWidget *MainWindow::railHiddenHolder()
+{
+    if (!m_railHiddenHolder) {
+        m_railHiddenHolder = new QWidget(this);
+        m_railHiddenHolder->setObjectName(QStringLiteral("railHiddenItems"));
+        m_railHiddenHolder->hide();
+    }
+    return m_railHiddenHolder;
+}
+
+void MainWindow::parkHiddenRailItem(QWidget *widget)
+{
+    QWidget *holder = railHiddenHolder();
+    if (!widget || widget->parentWidget() == holder)
+        return;
+    const bool explicitlyHidden =
+        widget->isHidden() && widget->testAttribute(Qt::WA_WState_ExplicitShowHide);
+    widget->setParent(holder);
+    if (!explicitlyHidden)
+        widget->show();
+}
+
+QList<QWidget *> MainWindow::railItemWidgets() const
+{
+    QList<QWidget *> widgets;
+    if (m_appNavigationRailLayout) {
+        for (int i = 0; i < m_appNavigationRailLayout->count(); ++i) {
+            QWidget *widget = m_appNavigationRailLayout->itemAt(i)->widget();
+            if (auto *folder = dynamic_cast<RailFolderWidget *>(widget))
+                widgets += folder->members();
+            else if (widget && !dynamic_cast<RailGroupSeparator *>(widget))
+                widgets.append(widget);
+        }
+    }
+    if (m_railHiddenHolder)
+        widgets += m_railHiddenHolder->findChildren<QWidget *>(
+            QString(), Qt::FindDirectChildrenOnly);
+    return widgets;
 }
 
 void MainWindow::showRailFolderMenu(RailFolderWidget *folder,
@@ -3121,6 +3284,8 @@ void MainWindow::moveButtonToPanel(const QString &key, const QString &panel)
     }
     if (home.isEmpty())
         return;
+    if (panel != kButtonPanelRail)
+        storeRailItemHidden(key, false);
     QSettings settings;
     QVariantMap placement = settings.value(kButtonPlacementSetting).toMap();
     if (panel == home)
@@ -3140,6 +3305,7 @@ void MainWindow::resetButtonPlacement()
 {
     QSettings().remove(kButtonPlacementSetting);
     QSettings().remove(kRailOrderSetting);
+    QSettings().remove(kRailHiddenSetting);
     applyRailOrder();
     applyRailCaptionPreference();
     updateRepoActivityRail();
@@ -3189,6 +3355,20 @@ void MainWindow::addButtonPlacementActions(QMenu *menu, QWidget *button)
         QTimer::singleShot(0, this,
                            [this, key, panel] { moveButtonToPanel(key, panel); });
     });
+    if (!inRail) {
+        const bool onCodeBar =
+            m_repoCodeBarLayout && m_repoCodeBarLayout->indexOf(button) >= 0;
+        QPointer<QWidget> guarded(button);
+        QAction *hide = menu->addAction(
+            onCodeBar ? QStringLiteral("Hide from Code toolbar (keep on Home)")
+                      : QStringLiteral("Hide from repository tab bar (keep on Home)"),
+            this, [this, guarded] {
+                QTimer::singleShot(0, this, [this, guarded] {
+                    hideButtonKeepOnHome(guarded);
+                });
+            });
+        hide->setObjectName(QStringLiteral("railHideAction"));
+    }
     if (!QSettings().value(kButtonPlacementSetting).toMap().isEmpty() ||
         QSettings().contains(kRailOrderSetting)) {
         QAction *reset = menu->addAction(QStringLiteral("Reset button placement"));
