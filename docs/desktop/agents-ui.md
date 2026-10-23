@@ -382,7 +382,7 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 
 - The three toggles are icon buttons in the composer's floating button bar
   (`FloatingPromptBar`, `promptDragHandle`), before the clear (×), reset and
-  pop-out buttons, with the resize grip at its right end. An "on" toggle gets a
+  pop-out buttons. An "on" toggle gets a
   thin accent border, so the branch icon (on by default) reads as connected.
   They were a checkbox, a checkbox-plus-icon pair and a "vibe" checkbox on the
   left until 2026-10-22, which crowded the grip and hid what was on.
@@ -391,10 +391,22 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   transparent to the composer's surface, so a chat line running under the
   buttons fades out instead of colliding with them. With no chat to show, a
   band of the bar's height (`promptTopSpacer`) keeps it off the prompt text.
-  The fade and the gaps between buttons still drag the composer; the grip in
-  the top-right corner resizes it with the bottom-left corner fixed. Until
+  The fade and the gaps between buttons still drag the composer. Until
   2026-10-22 the bar was a full-width strip with a centre drag pill and the
   grip on the left.
+- **Resizing**: every edge and corner of the composer is a resize handle
+  (`PromptResizeEdge`, `promptResizeEdge`, eight invisible bands 5 px thick
+  with 10 px corners, children of `promptOverlayHost` laid over
+  `promptWrapper`). The cursor shows the direction; dragging moves only the
+  grabbed edges (`resizedPromptRect`), keeps the 280×120 minimum and stops at
+  the window's edges. A docked composer lifts off the footer on the first
+  resize, as it does on a drag; a popped-out composer asks the window system
+  to resize from that edge (`startSystemResize`). The bands hide with the
+  button bar, so the centred Agents-page composer and the collapsed avatar
+  cannot be resized. The bar keeps a 10 px right margin so the top-right
+  corner never covers its buttons. Until 2026-10-23 a small grip at the right
+  end of the bar was the only handle and always resized from the top-right
+  corner.
 - **Chat preview** (`ChatPreviewLabel`, `promptChatPreview`): up to three
   one-line rows over the prompt with the latest messages of the conversation
   the composer sends to, each with the sender's small round avatar
