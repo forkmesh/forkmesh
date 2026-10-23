@@ -91,6 +91,26 @@ in `GO_LOAD_SENSITIVE_TESTS` (`tools/run_critical_tests.py`), so the existing
 retry-once rule for timeouts (docs/server/README.md) covers it too. A second
 failure still fails the step.
 
+## Python packages on the CI runner
+
+GitHub runners install only `tools/requirements-ci.txt`, while the local
+machine and the ForkMesh Actions runner have more packages preinstalled. So a
+test that imports a third-party package passes locally and fails only on
+GitHub. On 2026-10-23 the `service-role-contract` gate failed every run: its
+`independent_gateway` fixture loads `app/tests/test_mirror_dashboard.py`,
+which signs health reports with `cryptography`'s Ed25519 keys. The file now
+pins `cryptography` and its `cffi` and `pycparser` dependencies at the
+versions `app/host/requirements.txt` uses; raise them in both files together.
+To reproduce a CI run, create a fresh venv, install only
+`tools/requirements-ci.txt`, and run
+`python tools/quality_gate.py run --profile core` with it.
+
+The same runs also failed `terminology-contract`: the 2026-10-22 /features
+update described one-to-one calls as "peer to peer", a discouraged term on
+primary surfaces (`www/docs/terminology.json`). The card now says "device to
+device", which is still accurate because one-to-one calls skip the media server
+(`docs/server/rtc.md`).
+
 ## Why World browser E2E never passed
 
 The workflow had failed all 91 of its GitHub runs, at the "Enforce daily
