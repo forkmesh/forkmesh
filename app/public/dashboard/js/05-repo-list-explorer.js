@@ -924,6 +924,198 @@
     hydrateNativeRepositoryLogos(list);
   }
 
+  const REPOSITORY_FORKS_SHOWN = 3;
+  const REPOSITORY_FORK_COUNTS_BATCH = 24;
+
+  function repositoryEntryLabel(entry) {
+    return String(entry?.label || entry?.key || (entry?.repo ? repoDisplayName(entry.repo) : "") || "");
+  }
+
+  function repositoryForkParentEntry(entry, entries) {
+    const parent = repoForkParent(entry?.repo);
+    if (!parent) return null;
+    const direct = entries.find((candidate) =>
+      candidate !== entry && repoMatchesKey(candidate.repo, parent.key));
+    if (direct) return direct;
+    const origin = findRepository(parent.key);
+    return origin
+      ? entries.find((candidate) => candidate !== entry && candidate.repo === origin) || null
+      : null;
+  }
+
+  function repositoryForkRoot(entry, entries) {
+    const seen = new Set([entry]);
+    let root = repositoryForkParentEntry(entry, entries);
+    while (root && !seen.has(root)) {
+      seen.add(root);
+      const above = repositoryForkParentEntry(root, entries);
+      if (!above || seen.has(above)) return root;
+      root = above;
+    }
+    return null;
+  }
+
+  function nestRepositoryForks(entries, viewsOf) {
+    const list = Array.isArray(entries) ? entries : [];
+    const roots = new Map(list.map((entry) => [entry, repositoryForkRoot(entry, list)]));
+    const groups = new Map();
+    list.forEach((entry) => {
+      if (!roots.get(entry)) groups.set(entry, { entry, forks: [] });
+    });
+    list.forEach((entry, index) => {
+      const group = groups.get(roots.get(entry));
+      if (group) group.forks.push({ entry, index });
+    });
+    const views = typeof viewsOf === "function" ? viewsOf : () => 0;
+    return [...groups.values()].map((group) => ({
+      entry: group.entry,
+      forks: group.forks
+        .sort((a, b) => (Number(views(b.entry)) || 0) - (Number(views(a.entry)) || 0) || a.index - b.index)
+        .map((item) => item.entry),
+    }));
+  }
+
+  function repositoryForkOwnerLabel(entry, parentEntry) {
+    const repo = entry.repo || {};
+    const label = repoLabelParts(repositoryEntryLabel(entry));
+    const owner = shownAccountName(label.owner || repoPublicOwner(repo) || repo.owner || "");
+    const name = String(label.name || repo.name || "");
+    const parentName = String(repoLabelParts(repositoryEntryLabel(parentEntry)).name || parentEntry?.repo?.name || "");
+    return name && name.toLowerCase() !== parentName.toLowerCase() ? `${owner}/${name}` : owner;
+  }
+
+  function repositoryForksKey(listName, parentEntry) {
+    return `${listName}:${repositoryEntryLabel(parentEntry).toLowerCase()}`;
+  }
+
+  function repositoryForksExpanded(listName, parentEntry) {
+    return state.repositoryForksExpanded?.has(repositoryForksKey(listName, parentEntry)) === true;
+  }
+
+  function toggleRepositoryForks(button) {
+    const key = String(button?.dataset?.repoForksToggle || "");
+    if (!key) return false;
+    if (!state.repositoryForksExpanded) state.repositoryForksExpanded = new Set();
+    if (state.repositoryForksExpanded.has(key)) state.repositoryForksExpanded.delete(key);
+    else state.repositoryForksExpanded.add(key);
+    return true;
+  }
+
+  function repositoryShownForks(listName, group) {
+    const expanded = repositoryForksExpanded(listName, group.entry);
+    const hidden = Math.max(0, group.forks.length - REPOSITORY_FORKS_SHOWN);
+    return { shown: expanded ? group.forks : group.forks.slice(0, REPOSITORY_FORKS_SHOWN), hidden, expanded };
+  }
+
+  function repositoryForksToggleHtml(listName, group, className) {
+    const { hidden, expanded } = repositoryShownForks(listName, group);
+    if (!hidden) return "";
+    const label = expanded ? "Show fewer forks" : `+${formatCount(hidden)} more ${hidden === 1 ? "fork" : "forks"}`;
+    return `<button type="button" data-repo-forks-toggle="${escapeHtml(repositoryForksKey(listName, group.entry))}" aria-expanded="${expanded ? "true" : "false"}" class="${className}">${escapeHtml(label)}</button>`;
+  }
+
+  function repositoryForkCountsHtml(entry, parentEntry, className) {
+    if (entry?.repo?.isPrivate || parentEntry?.repo?.isPrivate) return "";
+    const key = repositoryViewKey(entry.repo);
+    if (!isRepoKey(key)) return "";
+    return `<span data-repo-fork-counts="${escapeHtml(key)}" data-repo-fork-parent="${escapeHtml(repositoryEntryLabel(parentEntry))}" class="hidden ${className}"></span>`;
+  }
+
+  function repositoryForkCountsTitle(counts, parent) {
+    const ahead = Number(counts?.ahead) || 0;
+    const behind = Number(counts?.behind) || 0;
+    return `${formatCount(ahead)} ${ahead === 1 ? "commit" : "commits"} ahead, ${formatCount(behind)} behind ${parent}`;
+  }
+
+  function applyRepositoryForkCounts(root) {
+    const scope = root || document;
+    const nodes = scope?.querySelectorAll ? [...scope.querySelectorAll("[data-repo-fork-counts]")] : [];
+    for (const node of nodes) {
+      const counts = state.repositoryForkCounts?.get(node.getAttribute("data-repo-fork-counts"));
+      const ahead = Number(counts?.ahead) || 0;
+      const behind = Number(counts?.behind) || 0;
+      if (!counts || (!ahead && !behind)) {
+        node.textContent = "";
+        node.removeAttribute("title");
+        node.classList.add("hidden");
+        continue;
+      }
+      const parent = node.getAttribute("data-repo-fork-parent") || String(counts.parent || "");
+      node.textContent = `↑${formatCount(ahead)} ↓${formatCount(behind)}`;
+      node.setAttribute("title", repositoryForkCountsTitle(counts, parent));
+      node.classList.remove("hidden");
+    }
+    return nodes;
+  }
+
+  function repositoryForkCountsValue(value) {
+    const ahead = Number(value?.ahead);
+    const behind = Number(value?.behind);
+    return Number.isInteger(ahead) && Number.isInteger(behind) && ahead >= 0 && behind >= 0
+      ? { ahead, behind, parent: String(value.parent || "") }
+      : null;
+  }
+
+  async function hydrateRepositoryForkCounts(root) {
+    const nodes = applyRepositoryForkCounts(root);
+    if (!state.repositoryForkCounts) state.repositoryForkCounts = new Map();
+    if (!state.repositoryForkCountsAsked) state.repositoryForkCountsAsked = new Set();
+    const wanted = [...new Set(nodes.map((node) => node.getAttribute("data-repo-fork-counts")))]
+      .filter((key) => isRepoKey(key) && !state.repositoryForkCountsAsked.has(key));
+    if (!wanted.length) return;
+    wanted.forEach((key) => state.repositoryForkCountsAsked.add(key));
+    for (let start = 0; start < wanted.length; start += REPOSITORY_FORK_COUNTS_BATCH) {
+      const batch = wanted.slice(start, start + REPOSITORY_FORK_COUNTS_BATCH);
+      try {
+        const response = await fetch("/api/repo-fork-counts", {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ forks: batch }),
+        });
+        const data = response.ok ? await response.json() : null;
+        const counts = data?.counts && typeof data.counts === "object" ? data.counts : {};
+        batch.forEach((key) => {
+          const found = repositoryForkCountsValue(counts[key]);
+          if (found) state.repositoryForkCounts.set(key, found);
+        });
+      } catch (_) {}
+    }
+    applyRepositoryForkCounts(document);
+  }
+
+  function sidebarRepositoryRow(entry) {
+    const repo = entry.repo;
+    const live = repoIsLive(repo);
+    const label = repoLabelParts(entry.key);
+    return `
+        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
+          <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
+          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${escapeHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
+          ${repositoryTermsBadge(repo, true)}
+          ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
+          <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
+        </a>`;
+  }
+
+  function sidebarRepositoryForkRow(entry, parentEntry) {
+    return `<a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo-fork" data-sidebar-repo="${escapeHtml(entry.key)}" data-sidebar-repo-fork title="${escapeHtml(entry.key)}">
+            <span class="dashboard-nav-repo-fork-name">${escapeHtml(repositoryForkOwnerLabel(entry, parentEntry))}</span>
+            ${repositoryForkCountsHtml(entry, parentEntry, "dashboard-nav-repo-fork-counts")}
+          </a>`;
+  }
+
+  function sidebarRepositoryGroup(group) {
+    if (!group.forks.length) return sidebarRepositoryRow(group.entry);
+    const { shown } = repositoryShownForks("sidebar", group);
+    return `<div class="dashboard-nav-repo-group" data-sidebar-repo-group>
+          ${sidebarRepositoryRow(group.entry)}
+          <div class="dashboard-nav-repo-forks" data-sidebar-repo-forks>
+            ${shown.map((fork) => sidebarRepositoryForkRow(fork, group.entry)).join("")}
+            ${repositoryForksToggleHtml("sidebar", group, "dashboard-nav-repo-forks-toggle")}
+          </div>
+        </div>`;
+  }
+
   function renderSidebarRepositories(session) {
     const list = $("[data-sidebar-repo-list]");
     const count = $("[data-sidebar-repo-count]");
@@ -960,20 +1152,12 @@
       list.innerHTML = '<div class="dashboard-nav-repo-empty">No mirrored repositories yet.</div>';
       return;
     }
-    list.innerHTML = entries.slice(0, 6).map((entry) => {
-      const repo = entry.repo;
-      const live = repoIsLive(repo);
-      const label = repoLabelParts(entry.key);
-      return `
-        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
-          <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
-          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${escapeHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
-          ${repositoryTermsBadge(repo, true)}
-          ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
-          <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
-        </a>`;
-    }).join("");
+    list.innerHTML = nestRepositoryForks(entries, (entry) => homeRepositoryViewTotals(entry.repo)?.views)
+      .slice(0, 6)
+      .map(sidebarRepositoryGroup)
+      .join("");
     window.lucide?.createIcons();
+    hydrateRepositoryForkCounts(list);
   }
 
   const HOME_TOP_REPOSITORY_LIMIT = 8;
@@ -1067,6 +1251,28 @@
     </a>`;
   }
 
+  function homeRepositoryForkRow(entry, parentEntry) {
+    const views = Number(homeRepositoryViewTotals(entry.repo)?.views) || 0;
+    const label = entry.label || repoDisplayName(entry.repo);
+    return `<a href="${escapeHtml(entry.href)}" data-home-repo-fork class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground" title="${escapeHtml(label)}">
+        <span class="min-w-0 flex-1 truncate text-foreground">${escapeHtml(repositoryForkOwnerLabel(entry, parentEntry))}</span>
+        ${repositoryForkCountsHtml(entry, parentEntry, "shrink-0 font-mono text-[10px] text-muted-foreground")}
+        ${views ? `<span data-home-repo-views class="inline-flex shrink-0 items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))}</span>` : ""}
+      </a>`;
+  }
+
+  function homeRepositoryGroup(group) {
+    if (!group.forks.length) return homeRepositoryRow(group.entry);
+    const { shown } = repositoryShownForks("home", group);
+    return `<div data-home-repo-group class="grid min-w-0">
+      ${homeRepositoryRow(group.entry)}
+      <div data-home-repo-forks class="ml-5 grid min-w-0 gap-0.5 border-l border-border pl-2">
+        ${shown.map((fork) => homeRepositoryForkRow(fork, group.entry)).join("")}
+        ${repositoryForksToggleHtml("home", group, "px-2 py-1 text-left text-xs font-medium text-muted-foreground hover:text-accent")}
+      </div>
+    </div>`;
+  }
+
   function renderHomeRepositories() {
     const container = $("[data-home-top-repositories]");
     if (!container) return;
@@ -1080,9 +1286,10 @@
     if (!searchable && search?.value) search.value = "";
     const query = (search?.value || "").trim().toLowerCase();
     const matches = all.filter((entry) => repositoryMatchesPageFilter(entry.repo, query));
+    const groups = nestRepositoryForks(matches, (entry) => homeRepositoryViewTotals(entry.repo)?.views);
     const entries = state.homeRepositoriesExpanded
-      ? matches
-      : matches.slice(0, HOME_TOP_REPOSITORY_LIMIT);
+      ? groups
+      : groups.slice(0, HOME_TOP_REPOSITORY_LIMIT);
     const showMore = $("[data-home-repos-show-more]");
     if (showMore) {
       showMore.classList.toggle(
@@ -1093,12 +1300,13 @@
     }
     if (!entries.length && !query && state.repositoriesLoading) return;
     container.innerHTML = entries.length
-      ? entries.map(homeRepositoryRow).join("")
+      ? entries.map(homeRepositoryGroup).join("")
       : `<div class="px-2 py-3 text-sm text-muted-foreground">${query
         ? emptyListHtml("No repositories match this filter.", query)
         : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab, Codeberg or Gitea, or create one</a>.'}</div>`;
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
+    hydrateRepositoryForkCounts(container);
   }
 
   const HOME_FEED_CARD_LIMIT = 8;

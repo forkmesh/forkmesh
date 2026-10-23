@@ -4448,6 +4448,12 @@
     state.homeRepositoriesExpanded = !state.homeRepositoriesExpanded;
     renderHomeRepositories();
   });
+  document.addEventListener("click", (event) => {
+    const toggle = event.target?.closest?.("[data-repo-forks-toggle]");
+    if (!toggleRepositoryForks(toggle)) return;
+    if (toggle.closest("[data-home-top-repositories]")) renderHomeRepositories();
+    if (toggle.closest("[data-sidebar-repo-list]")) renderSidebarRepositories(state.session);
+  });
   $("[data-profile-repo-search]")?.addEventListener("input", () => {
     renderProfileRepositories();
   });

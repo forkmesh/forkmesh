@@ -3871,6 +3871,10 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await issue_views_lookup_handler(
                 self.env, request, owner, repo)
+        if REPO_FORK_COUNTS_RE.match(url.path):
+            import fork_counts
+            fork_counts._bind_runtime(globals())
+            return await fork_counts.handler(self.env, request)
 
         star_match = REPO_STAR_RE.match(url.path)
         if star_match:
