@@ -1436,3 +1436,18 @@ def test_caddy_settings_reach_the_cores_through_the_automatic_roll():
                  "deploy/core/templates/caddy-dropin.conf"):
         assert auto.roll_path(path), path
     assert {"files", "start"} <= set(next_fleet.ROLL_STEPS)
+
+
+def test_version_probe_brackets_an_ipv6_route(monkeypatch):
+    monkeypatch.setattr(auto.common, "route_address", lambda ip: "2001:db8::10")
+    seen = []
+
+    def run(command, **kwargs):
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 0, '{"rev":"abc"}\n200', "")
+    code, body = auto.curl("app.forkmesh.com", "198.51.100.10", "/api/version", run=run,
+                           route=True)
+    assert code == 200 and "app.forkmesh.com:443:[2001:db8::10]" in seen[0]
+    seen.clear()
+    auto.curl("app.forkmesh.com", "198.51.100.10", "/api/version", run=run)
+    assert "app.forkmesh.com:443:198.51.100.10" in seen[0]
