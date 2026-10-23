@@ -376,8 +376,16 @@ QWidget *MainWindow::buildBreadcrumb()
     m_agentsNavButton->setCursor(Qt::PointingHandCursor);
     m_agentsNavButton->setToolTip(QStringLiteral("Agents"));
     setOcticon(m_agentsNavButton, "smart-toy", 16);
-    connect(m_agentsNavButton, &QPushButton::clicked, this,
-            &MainWindow::openAgentsOverview);
+    connect(m_agentsNavButton, &QPushButton::clicked, this, [this] {
+        openAgentsOverview();
+        if (m_repoDetailIndex >= 0 && m_repoDetailStack)
+            return;
+        m_agentsNavButton->setChecked(false);
+        showSection(kNetworkReposSectionIndex);
+        showPageNotice(QStringLiteral("Agents work inside a repository. Clone "
+                                      "or add one to start an agent."),
+                       false);
+    });
 
     m_sessionsNavButton = new ActivityRailButton(QStringLiteral("history"),
                                                  QStringLiteral("Sessions"));

@@ -4191,6 +4191,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_issue_directory_avatars.py")
         add_test(
+            NAME forkmesh-agents-rail-fallback
+            COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_agents_rail_fallback.py")
+        add_test(
             NAME forkmesh-qstring-unicode-literals
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_qstring_unicode_literals.py")
