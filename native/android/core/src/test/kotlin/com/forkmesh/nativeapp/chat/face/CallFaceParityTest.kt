@@ -462,7 +462,7 @@ class CallFaceParityTest {
         val frames = p.list(p.at(sequence, "frames"))
         val outputs = p.list(p.at(sequence, "outputs"))
         val probe = CallFaceExpressionProbe()
-        val pointSmoother = CallFacePointSmoother(68, 1.5, 1.5)
+        val pointSmoother = CallFaceLandmarkSmoother()
         val anchorSmoother = CallFaceAnchorSmoother()
         val outfitSmoother = CallOutfitSmoother()
         val template = CallFaces.template
@@ -477,7 +477,7 @@ class CallFaceParityTest {
             val stored = p.at(out, "found")
             if (stored == null) expect(found.points == null, "frame $k found") else p.point(s, stored, found.points!![30], "$k.found")
             if (p.at(out, "pupils") == null) expect(found.pupils == null, "frame $k pupils") else p.points(s, p.at(out, "pupils"), found.pupils!!, "$k.pupils")
-            val points = found.points?.let { pointSmoother.smooth(it, time, CallFaceGeometry.faceFrame(it).span) }
+            val points = found.points?.let { pointSmoother.smooth(it, time) }
             if (points == null) expect(p.at(out, "points") == null, "frame $k points") else p.points(s, p.at(out, "points"), points, "$k.points")
             if (points != null) live = points
             if (points != null) {

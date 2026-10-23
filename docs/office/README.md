@@ -192,7 +192,9 @@ Counter package through same-origin `api.calories`.
   it for a minute of network and video charts. It is the call widget from
   `app/public/call-quality-meter.js` (see `docs/app/chat-direct-calls.md`,
   "Live quality widget"), bundled like the chat modules, reading every mesh
-  peer connection.
+  peer connection. A round button next to the pill turns red when the call has a
+  problem; pressing it explains the problem, the fixes and an AI prompt that
+  learns from earlier calls on this device ("Diagnostics" in the same page).
 
 ## Status lines
 
@@ -377,7 +379,9 @@ adds `app/public/chat-frame-auth.js` (frame authentication, node-owner checks,
 bot "via" labels and the guest-name hash), about 1 KB gzip, so the budget is
 148 KB. The live quality widget (2026-10-22, `app/public/call-quality-meter.js`)
 adds about 5.5 KB gzip, taking the bundle to about 150 KB, so the budget is
-152 KB.
+152 KB. Its diagnostics button, panel and self-improving prompt (2026-10-22)
+add about 5 KB gzip, taking the bundle to about 155 KB, so the budget is
+156 KB.
 
 ## Operations
 

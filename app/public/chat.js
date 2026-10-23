@@ -6353,9 +6353,11 @@ function syncGroupCallQuality(active) {
       mic: current() ? (active.outgoing?.stream || active.local)?.getAudioTracks?.()[0] || null : null,
       peers: current() ? [...active.tiles.values()].flatMap((tile) => tile.stream?.getAudioTracks?.() || []) : [],
     }),
+    face: () => (current() && active.outgoing?.stage?.face?.() ? active.outgoing.stage.stats || null : null),
   });
   const widget = mountCallQualityWidget(host, meter, {
     video: () => current() && active.media === "video",
+    sending: () => current() && !active.cameraOff,
     peerLabel: "Others",
   });
   groupCallQuality = { call: active, meter, widget };

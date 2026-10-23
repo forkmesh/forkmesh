@@ -64,6 +64,9 @@ function emptySample(at) {
     limit: "",
     micLevel: null,
     peerLevel: null,
+    faceFps: null,
+    faceMs: null,
+    faceLevel: null,
   };
 }
 
@@ -383,6 +386,7 @@ export function createLevelTap(track, context) {
 export function createCallQualityMeter({
   readStats = null,
   tracks = () => ({ mic: null, peers: [] }),
+  face = () => null,
   scope = globalThis,
   levelMs = QUALITY_LEVEL_MS,
   statsMs = QUALITY_STATS_MS,
@@ -399,6 +403,7 @@ export function createCallQualityMeter({
   let drained = 0;
   let reading = false;
   let stopped = false;
+  let faceBefore = null;
 
   function audioContext() {
     if (context || !AudioContextImpl) return context;
@@ -460,6 +465,25 @@ export function createCallQualityMeter({
     emit();
   }
 
+  function measureFace(sample) {
+    let stats = null;
+    try {
+      stats = face();
+    } catch (_) {}
+    const frames = finite(stats?.frames);
+    const spent = finite(stats?.frameMs);
+    if (frames === null || spent === null) {
+      faceBefore = null;
+      return;
+    }
+    const before = faceBefore;
+    faceBefore = { at: sample.at, frames, spent };
+    if (!before || frames <= before.frames || sample.at <= before.at || spent < before.spent) return;
+    sample.faceFps = ((frames - before.frames) * 1000) / (sample.at - before.at);
+    sample.faceMs = (spent - before.spent) / (frames - before.frames);
+    sample.faceLevel = finite(stats.level);
+  }
+
   async function tickStats() {
     if (stopped) return;
     present = syncTaps();
@@ -468,6 +492,7 @@ export function createCallQualityMeter({
     try {
       const sample = await readStats();
       if (stopped || !sample) return;
+      measureFace(sample);
       latest = sample;
       samples.push(sample);
       if (samples.length > statsSamples) samples.splice(0, samples.length - statsSamples);
@@ -512,6 +537,251 @@ export function createCallQualityMeter({
     },
   };
   return api;
+}
+
+export const DIAG_KEY = "fm.call.diagnostics";
+export const DIAG_WINDOW = 8;
+export const DIAG_MIN_SAMPLES = 3;
+export const DIAG_REPORTS = 20;
+export const DIAG_NOTES = 8;
+export const DIAG_NOTE_CHARS = 280;
+export const VIDEO_MIN_FPS = 15;
+export const VIDEO_MIN_HEIGHT = 360;
+export const VIDEO_MIN_KBPS = 100;
+export const FACE_SLOW_MS = 34;
+export const FACE_BAD_MS = 50;
+
+const DIAG_FIXES = Object.freeze({
+  wired: "Use a wired connection, or move closer to the Wi-Fi router.",
+  traffic: "Pause downloads, uploads, cloud backups and video streaming on this network.",
+  vpn: "Turn off a VPN or proxy for the call.",
+  relay: "If the call says Relayed, this network blocks direct connections: try another network, or allow UDP on this one.",
+  band: "Use 5 GHz Wi-Fi instead of 2.4 GHz, away from microwaves and Bluetooth speakers.",
+  router: "Restart the Wi-Fi router.",
+  camera: "Turn your camera off for a minute so your voice gets the whole connection.",
+  tabs: "Close other tabs and apps, especially other calls, games and screen recorders.",
+  filters: "Turn off the face, background or outfit filter.",
+  power: "Plug the device in and turn off battery saver.",
+  hardware: "Turn on hardware acceleration in the browser's settings and restart the browser.",
+  light: "Add light in front of you: cameras lower their frame rate in the dark.",
+  cameraApps: "Close other apps that use the camera.",
+  theirSide: "Ask them to press their diagnostics button: poor incoming video is usually their connection or device.",
+  background: "Choose None or Blur as the background instead of a picture.",
+  faceOff: "Turn the face off when the call needs to be smooth.",
+});
+
+const DIAG_ISSUES = Object.freeze({
+  latency: { title: "High latency", area: "network", cause: "Sound and video take a long time to arrive, so you talk over each other.", fixes: ["wired", "traffic", "vpn", "relay"] },
+  loss: { title: "Packet loss", area: "network", cause: "Parts of the call are lost on the way, so voice drops out and video freezes or blurs.", fixes: ["wired", "band", "traffic", "router"] },
+  jitter: { title: "Unsteady connection", area: "network", cause: "Packets arrive unevenly, so the call buffers more and voice can sound choppy.", fixes: ["traffic", "wired", "band", "vpn"] },
+  bandwidth: { title: "Upload too slow for your video", area: "encoder", cause: "The browser is lowering your video quality because the upload cannot keep up.", fixes: ["traffic", "wired", "camera", "filters"] },
+  cpu: { title: "Device too busy", area: "encoder", cause: "The browser is lowering your video quality because the processor cannot encode it in time.", fixes: ["tabs", "filters", "power", "hardware"] },
+  sendFps: { title: "Your video is choppy", area: "camera", cause: "Your video leaves this device at a low frame rate.", fixes: ["light", "cameraApps", "filters", "power"] },
+  receive: { title: "Their video is poor", area: "network", cause: "The other side's video arrives small or at a low frame rate.", fixes: ["theirSide", "traffic", "wired"] },
+  face: { title: "Face filter is slow", area: "face filter", cause: "The face filter needs too long for each frame, so your face lags behind you.", fixes: ["tabs", "power", "hardware", "background", "faceOff"] },
+});
+
+function median(values) {
+  if (!values.length) return null;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const middle = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function mean(values) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+export function diagnoseCall(samples, { video = false, sending = true, window = DIAG_WINDOW } = {}) {
+  const last = (samples || []).slice(-window).filter(Boolean);
+  const pick = (key) => last.map((sample) => sample[key]).filter((value) => value !== null && value !== undefined && Number.isFinite(value));
+  const need = Math.min(DIAG_MIN_SAMPLES, window);
+  const metrics = {
+    samples: last.length,
+    rttMs: median(pick("rttMs")),
+    lossPct: mean(pick("lossPct")),
+    jitterMs: median(pick("jitterMs")),
+    sendKbps: median(pick("sendKbps")),
+    recvKbps: median(pick("recvKbps")),
+    outFps: median(pick("outFps")),
+    outHeight: median(pick("outHeight")),
+    inFps: median(pick("inFps")),
+    inHeight: median(pick("inHeight")),
+    faceMs: median(pick("faceMs")),
+    faceFps: median(pick("faceFps")),
+    faceLevel: last.length ? last[last.length - 1].faceLevel ?? null : null,
+  };
+  const issues = [];
+  const add = (id, severity, detail) => {
+    const issue = DIAG_ISSUES[id];
+    issues.push({ id, severity, title: issue.title, area: issue.area, cause: issue.cause, detail, fixes: issue.fixes.map((fix) => ({ id: fix, text: DIAG_FIXES[fix] })) });
+  };
+  const round = (value) => Math.round(value);
+  if (pick("rttMs").length >= need && metrics.rttMs >= QUALITY_RTT_STEPS[1]) {
+    add("latency", metrics.rttMs >= QUALITY_RTT_STEPS[2] ? "bad" : "warn", `Round trip ${round(metrics.rttMs)} ms; under ${QUALITY_RTT_STEPS[0]} ms feels natural.`);
+  }
+  if (pick("lossPct").length >= need && metrics.lossPct >= QUALITY_LOSS_STEPS[1]) {
+    add("loss", metrics.lossPct >= QUALITY_LOSS_STEPS[2] ? "bad" : "warn", `${metrics.lossPct.toFixed(1)}% of packets lost; under ${QUALITY_LOSS_STEPS[0]}% is fine.`);
+  }
+  if (pick("jitterMs").length >= need && metrics.jitterMs >= QUALITY_JITTER_STEPS[1]) {
+    add("jitter", metrics.jitterMs >= QUALITY_JITTER_STEPS[2] ? "bad" : "warn", `${round(metrics.jitterMs)} ms jitter; under ${QUALITY_JITTER_STEPS[0]} ms is fine.`);
+  }
+  if (video && sending && last.length >= need) {
+    const limited = (reason) => last.filter((sample) => sample.limit === reason).length * 2 > last.length;
+    const out = describeVideo({ ...last[last.length - 1], limit: "", outFps: metrics.outFps, sendKbps: metrics.sendKbps }, "out") || "reduced";
+    if (limited("bandwidth")) add("bandwidth", "warn", `Video out is ${out}, limited by bandwidth.`);
+    if (limited("cpu")) add("cpu", "warn", `Video out is ${out}, limited by CPU.`);
+    if (pick("outFps").length >= need && metrics.outFps < VIDEO_MIN_FPS) {
+      add("sendFps", metrics.outFps < VIDEO_MIN_FPS / 2 ? "bad" : "warn", `Your video leaves at ${round(metrics.outFps)} fps; ${VIDEO_MIN_FPS} or more looks smooth.`);
+    }
+  }
+  if (video && pick("recvKbps").length >= need && metrics.recvKbps >= VIDEO_MIN_KBPS) {
+    const slow = pick("inFps").length >= need && metrics.inFps < VIDEO_MIN_FPS;
+    const small = pick("inHeight").length >= need && metrics.inHeight < VIDEO_MIN_HEIGHT;
+    if (slow || small) {
+      const parts = [];
+      if (small) parts.push(`${round(metrics.inHeight)}p`);
+      if (slow) parts.push(`${round(metrics.inFps)} fps`);
+      add("receive", "warn", `Their video arrives at ${parts.join(", ")}.`);
+    }
+  }
+  if (pick("faceMs").length >= need && metrics.faceMs > FACE_SLOW_MS) {
+    const fps = metrics.faceFps === null ? "" : ` and draws ${round(metrics.faceFps)} frames a second`;
+    add("face", metrics.faceMs > FACE_BAD_MS ? "bad" : "warn", `The face filter takes ${round(metrics.faceMs)} ms a frame${fps}; under ${FACE_SLOW_MS} ms keeps up with the camera.`);
+  }
+  issues.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "bad" ? -1 : 1));
+  const severity = issues.some((issue) => issue.severity === "bad") ? "bad" : issues.length ? "warn" : last.length >= need ? "ok" : "unknown";
+  return { at: last.length ? last[last.length - 1].at : null, severity, issues, metrics };
+}
+
+export function emptyDiagnosticsMemory() {
+  return { reports: [], fixes: {}, notes: [] };
+}
+
+export function loadDiagnosticsMemory(storage) {
+  try {
+    const raw = JSON.parse(storage?.getItem(DIAG_KEY) || "null");
+    if (!raw || typeof raw !== "object") return emptyDiagnosticsMemory();
+    return {
+      reports: Array.isArray(raw.reports) ? raw.reports.slice(-DIAG_REPORTS) : [],
+      fixes: raw.fixes && typeof raw.fixes === "object" ? raw.fixes : {},
+      notes: Array.isArray(raw.notes) ? raw.notes.filter((note) => typeof note === "string").slice(-DIAG_NOTES) : [],
+    };
+  } catch (_) {
+    return emptyDiagnosticsMemory();
+  }
+}
+
+export function saveDiagnosticsMemory(storage, memory) {
+  try {
+    storage?.setItem(DIAG_KEY, JSON.stringify(memory));
+  } catch (_) {}
+}
+
+function fixRecord(memory, issueId, fixId) {
+  const record = memory.fixes[issueId + ":" + fixId];
+  return { worked: Number(record?.worked) || 0, failed: Number(record?.failed) || 0 };
+}
+
+export function rankFixes(issue, memory) {
+  const score = (fix) => {
+    const record = fixRecord(memory, issue.id, fix.id);
+    return record.worked * 2 - record.failed;
+  };
+  return issue.fixes
+    .map((fix, index) => ({ ...fix, ...fixRecord(memory, issue.id, fix.id), index }))
+    .sort((a, b) => score(b) - score(a) || a.index - b.index)
+    .map(({ index, ...fix }) => fix);
+}
+
+export function recordFixOutcome(memory, issueId, fixId, worked) {
+  const key = issueId + ":" + fixId;
+  const record = fixRecord(memory, issueId, fixId);
+  if (worked) record.worked += 1;
+  else record.failed += 1;
+  memory.fixes[key] = record;
+  return memory;
+}
+
+export function rememberReport(memory, diagnosis) {
+  const metrics = {};
+  for (const [key, value] of Object.entries(diagnosis.metrics || {})) {
+    if (value !== null && value !== undefined && key !== "samples") metrics[key] = Number(Number(value).toFixed(1));
+  }
+  memory.reports.push({ at: diagnosis.at ?? Date.now(), issues: diagnosis.issues.map((issue) => issue.id), metrics });
+  if (memory.reports.length > DIAG_REPORTS) memory.reports.splice(0, memory.reports.length - DIAG_REPORTS);
+  return memory;
+}
+
+export function rememberNote(memory, text) {
+  const note = String(text || "").replace(/^\s*lesson\s*:\s*/i, "").replace(/\s+/g, " ").trim().slice(0, DIAG_NOTE_CHARS);
+  if (!note) return false;
+  memory.notes = memory.notes.filter((entry) => entry !== note);
+  memory.notes.push(note);
+  if (memory.notes.length > DIAG_NOTES) memory.notes.splice(0, memory.notes.length - DIAG_NOTES);
+  return true;
+}
+
+export function describeDiagnosticsMetrics(metrics) {
+  const lines = [];
+  const value = (number, digits = 0) => Number(number).toFixed(digits);
+  if (metrics.rttMs !== null) lines.push(`Network: ${value(metrics.rttMs)} ms round trip` + (metrics.lossPct !== null ? `, ${value(metrics.lossPct, 1)}% loss` : "") + (metrics.jitterMs !== null ? `, ${value(metrics.jitterMs)} ms jitter` : ""));
+  if (metrics.outFps !== null || metrics.sendKbps !== null) lines.push(`Video out: ` + [metrics.outHeight !== null ? value(metrics.outHeight) + "p" : "", metrics.outFps !== null ? value(metrics.outFps) + " fps" : "", formatKbps(metrics.sendKbps)].filter(Boolean).join(", "));
+  if (metrics.inFps !== null || metrics.recvKbps !== null) lines.push(`Video in: ` + [metrics.inHeight !== null ? value(metrics.inHeight) + "p" : "", metrics.inFps !== null ? value(metrics.inFps) + " fps" : "", formatKbps(metrics.recvKbps)].filter(Boolean).join(", "));
+  if (metrics.faceMs !== null) lines.push(`Face filter: ${value(metrics.faceMs)} ms a frame` + (metrics.faceFps !== null ? `, ${value(metrics.faceFps)} fps` : "") + (metrics.faceLevel !== null ? `, quality step ${metrics.faceLevel}` : ""));
+  return lines;
+}
+
+export function diagnosticsPrompt(diagnosis, memory, environment = {}) {
+  const earlier = memory.reports.filter((report) => report.at !== diagnosis.at);
+  const lines = [];
+  lines.push(`Prompt v${earlier.length + 1} · learned from ${earlier.length} earlier report${earlier.length === 1 ? "" : "s"} on this device.`);
+  lines.push("");
+  lines.push("You are helping me fix the quality of a ForkMesh call (WebRTC in the browser, with an optional on-device face filter). Measurements from the last few seconds of my call:");
+  for (const line of describeDiagnosticsMetrics(diagnosis.metrics)) lines.push("- " + line);
+  const device = [environment.userAgent, environment.cores ? environment.cores + " CPU cores" : "", environment.memory ? environment.memory + " GB memory" : "", environment.connection].filter(Boolean);
+  if (device.length) lines.push("- Device: " + device.join("; "));
+  lines.push("");
+  if (!diagnosis.issues.length) {
+    lines.push("No problem was detected automatically. If the call still feels wrong to me, help me find out why.");
+  } else {
+    lines.push("Problems detected:");
+    diagnosis.issues.forEach((issue, i) => {
+      const seen = earlier.filter((report) => report.issues.includes(issue.id)).length;
+      lines.push(`${i + 1}. ${issue.title} (${issue.severity === "bad" ? "severe" : "noticeable"}, ${issue.area}). ${issue.detail}`);
+      if (seen) lines.push(`   Seen in ${seen} of ${earlier.length} earlier reports on this device.`);
+      const ranked = rankFixes(issue, memory);
+      const worked = ranked.filter((fix) => fix.worked > 0);
+      const failed = ranked.filter((fix) => fix.failed > 0 && fix.worked === 0);
+      if (worked.length) lines.push("   Worked here before: " + worked.map((fix) => `${fix.text} (${fix.worked}×)`).join(" "));
+      if (failed.length) lines.push("   Tried here without clearing it: " + failed.map((fix) => `${fix.text} (${fix.failed}×)`).join(" "));
+      lines.push("   Suggested order: " + ranked.map((fix) => fix.text).join(" "));
+    });
+  }
+  if (memory.notes.length) {
+    lines.push("");
+    lines.push("Lessons saved from earlier calls on this device (newest last):");
+    for (const note of memory.notes) lines.push("- " + note);
+  }
+  lines.push("");
+  lines.push("Please:");
+  lines.push("1. Say in one or two sentences what most likely causes this, using the numbers above.");
+  lines.push("2. Give me the steps to fix it, most likely first. Start from what worked here before, and skip what was tried without clearing it unless something has changed.");
+  lines.push("3. If it looks like a ForkMesh bug rather than my network or device, say which part (network, camera, encoder or face filter) and what to look for in chrome://webrtc-internals.");
+  lines.push('4. End with one line that starts with "LESSON:" saying what to try first next time on this device. I will save it so the next version of this prompt starts from it.');
+  return lines.join("\n");
+}
+
+export function diagnosticsEnvironment(scope = globalThis) {
+  const navigatorRef = scope.navigator || {};
+  const connection = navigatorRef.connection;
+  const link = connection ? [connection.effectiveType, connection.downlink ? connection.downlink + " Mb/s down" : "", connection.rtt ? connection.rtt + " ms link" : ""].filter(Boolean).join(", ") : "";
+  return {
+    userAgent: String(navigatorRef.userAgent || ""),
+    cores: Number(navigatorRef.hardwareConcurrency) || 0,
+    memory: Number(navigatorRef.deviceMemory) || 0,
+    connection: link,
+  };
 }
 
 function canvasFor(documentRef, width, height, name) {
@@ -610,7 +880,9 @@ export function mountCallQualityWidget(host, meter, {
   documentRef = globalThis.document,
   storage = globalThis.localStorage,
   video = () => false,
+  sending = () => true,
   peerLabel = "Them",
+  scope = globalThis,
 } = {}) {
   if (!host || !meter || !documentRef) return null;
   const root = documentRef.createElement("div");
@@ -652,8 +924,65 @@ export function mountCallQualityWidget(host, meter, {
   row("network", "Network", 120);
   row("video", "Video in", 120);
   row("send", "Video out", 120);
-  root.append(pill, panel);
+  const bar = documentRef.createElement("span");
+  bar.className = "fm-q-bar";
+  const diag = documentRef.createElement("button");
+  diag.type = "button";
+  diag.className = "fm-q-diag";
+  diag.dataset.state = "unknown";
+  diag.setAttribute("aria-expanded", "false");
+  const dot = documentRef.createElement("span");
+  dot.className = "fm-q-dot";
+  dot.setAttribute("aria-hidden", "true");
+  diag.append(dot);
+  bar.append(pill, diag);
+  const diagPanel = documentRef.createElement("div");
+  diagPanel.className = "fm-q-panel fm-q-diag-panel";
+  diagPanel.hidden = true;
+  const diagHeading = documentRef.createElement("div");
+  diagHeading.className = "fm-q-heading";
+  const issueList = documentRef.createElement("ol");
+  issueList.className = "fm-q-issues";
+  const promptLabel = documentRef.createElement("label");
+  promptLabel.className = "fm-q-label";
+  const promptBox = documentRef.createElement("textarea");
+  promptBox.className = "fm-q-prompt";
+  promptBox.readOnly = true;
+  promptBox.rows = 6;
+  promptBox.id = "fm-q-prompt-" + Math.random().toString(36).slice(2, 8);
+  promptLabel.htmlFor = promptBox.id;
+  const copy = documentRef.createElement("button");
+  copy.type = "button";
+  copy.className = "fm-q-action";
+  copy.textContent = "Copy prompt";
+  const noteInput = documentRef.createElement("input");
+  noteInput.type = "text";
+  noteInput.className = "fm-q-note-input";
+  noteInput.maxLength = DIAG_NOTE_CHARS + 16;
+  noteInput.placeholder = "Paste the LESSON line from the answer";
+  noteInput.setAttribute("aria-label", "Lesson from the answer");
+  const saveNote = documentRef.createElement("button");
+  saveNote.type = "button";
+  saveNote.className = "fm-q-action";
+  saveNote.textContent = "Save lesson";
+  const diagStatus = documentRef.createElement("span");
+  diagStatus.className = "fm-q-status";
+  diagStatus.setAttribute("role", "status");
+  const actions = documentRef.createElement("div");
+  actions.className = "fm-q-actions";
+  actions.append(copy, diagStatus);
+  const note = documentRef.createElement("div");
+  note.className = "fm-q-actions";
+  note.append(noteInput, saveNote);
+  diagPanel.append(diagHeading, issueList, promptLabel, promptBox, actions, note);
+  root.append(bar, panel, diagPanel);
   host.append(root);
+
+  let memory = loadDiagnosticsMemory(storage);
+  let diagnosis = diagnoseCall([]);
+  let diagnosedFor = null;
+  let diagOpen = false;
+  const pending = new Map();
 
   let open = false;
   try {
@@ -674,7 +1003,87 @@ export function mountCallQualityWidget(host, meter, {
     render();
   }
 
+  function refreshDiagnosis() {
+    diag.hidden = !meter.hasStats;
+    if (!meter.hasStats || meter.latest === diagnosedFor) return;
+    diagnosedFor = meter.latest;
+    diagnosis = diagnoseCall(meter.samples, { video: video(), sending: sending() });
+    diag.dataset.state = diagnosis.severity;
+    const count = diagnosis.issues.length;
+    const summary = count
+      ? `${count} problem${count === 1 ? "" : "s"} found: ${diagnosis.issues.map((issue) => issue.title.toLowerCase()).join(", ")}`
+      : diagnosis.severity === "ok" ? "No problems found" : "Checking the call";
+    diag.title = summary + (diagOpen ? ". Hide diagnostics" : ". Show diagnostics and how to fix them");
+    diag.setAttribute("aria-label", "Call diagnostics: " + summary);
+    if (diagnosis.severity === "unknown" || !pending.size) return;
+    const present = new Set(diagnosis.issues.map((issue) => issue.id));
+    let learned = false;
+    for (const [issueId, fixId] of pending) {
+      if (present.has(issueId)) continue;
+      recordFixOutcome(memory, issueId, fixId, true);
+      pending.delete(issueId);
+      learned = true;
+    }
+    if (learned) saveDiagnosticsMemory(storage, memory);
+  }
+
+  function renderDiagnostics() {
+    const count = diagnosis.issues.length;
+    diagHeading.textContent = count
+      ? `${count} problem${count === 1 ? "" : "s"} found`
+      : diagnosis.severity === "ok" ? "No problems found" : "Not enough measurements yet";
+    const items = diagnosis.issues.map((issue) => {
+      const item = documentRef.createElement("li");
+      item.className = "fm-q-issue";
+      item.dataset.severity = issue.severity;
+      const title = documentRef.createElement("strong");
+      title.textContent = issue.title;
+      const detail = documentRef.createElement("p");
+      detail.textContent = issue.detail + " " + issue.cause;
+      const fixes = documentRef.createElement("ol");
+      fixes.className = "fm-q-fixes";
+      for (const fix of rankFixes(issue, memory)) {
+        const step = documentRef.createElement("li");
+        step.textContent = fix.text + (fix.worked ? " (worked here before)" : fix.failed ? " (tried here before)" : "");
+        fixes.append(step);
+      }
+      item.append(title, detail, fixes);
+      return item;
+    });
+    if (!count) {
+      const item = documentRef.createElement("li");
+      item.className = "fm-q-issue";
+      item.dataset.severity = "ok";
+      const detail = documentRef.createElement("p");
+      detail.textContent = describeDiagnosticsMetrics(diagnosis.metrics).join(". ") || "Measurements start once the call connects.";
+      item.append(detail);
+      items.push(item);
+    }
+    issueList.replaceChildren(...items);
+    const earlier = memory.reports.filter((report) => report.at !== diagnosis.at).length;
+    promptLabel.textContent = `Prompt for an AI assistant · v${earlier + 1}, learned from ${earlier} earlier report${earlier === 1 ? "" : "s"}`;
+    promptBox.value = diagnosticsPrompt(diagnosis, memory, diagnosticsEnvironment(scope));
+  }
+
+  function setDiagOpen(value) {
+    diagOpen = Boolean(value);
+    diagPanel.hidden = !diagOpen;
+    diag.setAttribute("aria-expanded", diagOpen ? "true" : "false");
+    root.dataset.diagnostics = diagOpen ? "true" : "false";
+    if (!diagOpen) return;
+    memory = loadDiagnosticsMemory(storage);
+    diagnosis = diagnoseCall(meter.samples, { video: video(), sending: sending() });
+    if (diagnosis.at !== null && memory.reports.at(-1)?.at !== diagnosis.at) rememberReport(memory, diagnosis);
+    for (const issue of diagnosis.issues) {
+      if (!pending.has(issue.id)) pending.set(issue.id, rankFixes(issue, memory)[0].id);
+    }
+    saveDiagnosticsMemory(storage, memory);
+    diagStatus.textContent = "";
+    renderDiagnostics();
+  }
+
   function render() {
+    refreshDiagnosis();
     if (Date.now() - colorsAt > 1000) {
       colors = readColors(root);
       colorsAt = Date.now();
@@ -725,6 +1134,33 @@ export function mountCallQualityWidget(host, meter, {
   }
 
   pill.addEventListener("click", () => setOpen(!open));
+  diag.addEventListener("click", () => setDiagOpen(!diagOpen));
+  copy.addEventListener("click", () => {
+    const done = (text) => {
+      diagStatus.textContent = text;
+    };
+    const write = scope.navigator?.clipboard?.writeText?.(promptBox.value);
+    if (write?.then) {
+      write.then(() => done("Copied. Paste it into your AI assistant."), () => {
+        promptBox.select?.();
+        done("Select the prompt and copy it.");
+      });
+    } else {
+      promptBox.select?.();
+      done("Select the prompt and copy it.");
+    }
+  });
+  saveNote.addEventListener("click", () => {
+    memory = loadDiagnosticsMemory(storage);
+    if (!rememberNote(memory, noteInput.value)) {
+      diagStatus.textContent = "Paste the LESSON line first.";
+      return;
+    }
+    saveDiagnosticsMemory(storage, memory);
+    noteInput.value = "";
+    renderDiagnostics();
+    diagStatus.textContent = "Saved. The next prompt starts from it.";
+  });
   const unsubscribe = meter.subscribe(() => render());
   setOpen(open);
 
@@ -732,8 +1168,16 @@ export function mountCallQualityWidget(host, meter, {
     element: root,
     render,
     setOpen,
+    setDiagnosticsOpen: setDiagOpen,
+    diagnosis: () => diagnosis,
     destroy() {
       unsubscribe();
+      if (pending.size) {
+        memory = loadDiagnosticsMemory(storage);
+        for (const [issueId, fixId] of pending) recordFixOutcome(memory, issueId, fixId, false);
+        pending.clear();
+        saveDiagnosticsMemory(storage, memory);
+      }
       root.remove();
     },
   };
