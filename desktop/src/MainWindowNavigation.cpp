@@ -720,10 +720,6 @@ QWidget *MainWindow::buildBreadcrumb()
     identityBalanceRow->addWidget(m_nodeDotMatrix);
     identityBalanceRow->addWidget(m_chromeActionDivider, 0, Qt::AlignVCenter);
     identityBalanceRow->addWidget(m_actionRunStrip);
-    // The Timers package's clock and its chips, beside the agent/node/action
-    // indicators the top bar already carries. Hidden unless it is installed.
-    if (m_timersNavStrip)
-        identityBalanceRow->addWidget(m_timersNavStrip, 0, Qt::AlignVCenter);
     chromeRow->addLayout(identityBalanceRow);
     chromeRow->addStretch();
 
@@ -775,10 +771,13 @@ QWidget *MainWindow::buildBreadcrumb()
     }), 0, Qt::AlignVCenter);
     // The view switcher sits just before the window controls, so it stays in
     // the top-right corner whichever view hides the rail or the status strip.
-    chromeRow->addWidget(buildViewModeButton());
+    QPushButton *viewModeButton = buildViewModeButton();
+    chromeRow->addWidget(viewModeButton);
     chromeRow->addWidget(minimizeButton);
     chromeRow->addWidget(maximizeButton);
     chromeRow->addWidget(closeButton);
+    installTimersClockSlots(chrome, identityBalanceRow, searchClusterRow,
+                            chromeRow, viewModeButton);
     chrome->setMinimumWidth(0);
     chrome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     auto *chromeScroll = new QScrollArea;
@@ -3925,6 +3924,7 @@ void MainWindow::showTopBarIndicatorMenu(const QPoint &globalPos)
                     setTopBarIndicatorHidden(key, !shown);
                 });
     }
+    addTimersClockPlacementActions(menu);
     menu->popup(globalPos);
 }
 

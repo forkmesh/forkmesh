@@ -126,6 +126,35 @@ void MainWindow::showViewModeMenu()
         });
     }
 
+    menu.addSeparator();
+    QAction *themeHeader = menu.addAction(QStringLiteral("Theme"));
+    themeHeader->setEnabled(false);
+    auto *themeGroup = new QActionGroup(&menu);
+    themeGroup->setExclusive(true);
+    const QString currentTheme =
+        QSettings().value(kThemeSetting, QStringLiteral("system")).toString();
+    for (const auto &choice : appThemeChoices()) {
+        QAction *entry = menu.addAction(choice.first);
+        entry->setObjectName(QStringLiteral("viewMenuTheme-%1").arg(choice.second));
+        entry->setCheckable(true);
+        entry->setChecked(choice.second == currentTheme);
+        entry->setActionGroup(themeGroup);
+        connect(entry, &QAction::triggered, this, [this, value = choice.second] {
+            if (QSettings().value(kThemeSetting, QStringLiteral("system"))
+                    .toString() == value)
+                return;
+            if (m_themeCombo) {
+                const int index = m_themeCombo->findData(value);
+                if (index >= 0 && index != m_themeCombo->currentIndex()) {
+                    m_themeCombo->setCurrentIndex(index);
+                    return;
+                }
+            }
+            QSettings().setValue(kThemeSetting, value);
+            applyTheme(m_packageRegistry.get());
+        });
+    }
+
     if (Theme::isNext()) {
         menu.addSeparator();
         QAction *layoutHeader = menu.addAction(QStringLiteral("Agents layout"));

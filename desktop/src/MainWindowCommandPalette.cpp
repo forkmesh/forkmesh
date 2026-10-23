@@ -835,6 +835,8 @@ void NextAccess::showCommandPalette(MainWindow &window, bool refresh)
                   kThemeSetting, QStringLiteral("dark"));
     appendSetting(QStringLiteral("Theme: light"), QStringLiteral("sun"),
                   kThemeSetting, QStringLiteral("light"));
+    appendSetting(QStringLiteral("Theme: Halloween"), QStringLiteral("moon"),
+                  kThemeSetting, kHalloweenTheme);
     appendSetting(QStringLiteral("Interface: Classic"),
                   QStringLiteral("history"), designKey,
                   Theme::designSettingValue(Theme::Design::Classic));
