@@ -183,7 +183,7 @@
         --dashboard-popover-rgb: 22 27 34;
         --dashboard-popover-foreground-rgb: 240 246 252;
         --dashboard-primary-rgb: 68 147 248;
-        --dashboard-primary-foreground-rgb: 255 255 255;
+        --dashboard-primary-foreground-rgb: 1 4 9;
         --dashboard-cta-rgb: 35 134 54;
         --dashboard-cta-foreground-rgb: 255 255 255;
         --dashboard-success-rgb: 63 185 80;
@@ -3403,6 +3403,10 @@
           min-height: 44px;
         }
 
+        [data-mobile-menu-toggle] {
+          min-width: 44px;
+        }
+
         /* Diff viewer on touch screens (issue #722). Every line number is a
            button, so the tap-target floor above stretched each diff row to
            44px: the diff read double-spaced and every file block's height
@@ -3999,7 +4003,7 @@
                       type="text"
                       placeholder="Filter repositories..."
                       aria-label="Filter repositories"
-                      class="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground/20 transition"
+                      class="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-md text-foreground placeholder:text-muted-foreground transition"
                     />
                   </div>
                   <div data-repo-view-toggle class="shrink-0 flex items-center rounded-md border border-border overflow-hidden">
