@@ -18,7 +18,8 @@
       "On Android, with Status Page installed, tiny status dots sit in a thin strip under the status bar on every screen.",
       "On Android, Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete.",
       "On Android, DJ Studio's AUTO DJ plays a related song people liked on the next deck, originals first, and a shake loads a new pick.",
-      "On Android, DJ Studio decks have a Repeat button that loops the song tightly, jumping from where the sound ends back to where it starts."
+      "On Android, DJ Studio decks have a Repeat button that loops the song tightly, jumping from where the sound ends back to where it starts.",
+      "On Android, the CRM shows each email's opens, clicks, read time, scroll depth, slide reach and the reader's mail app."
      ]
     }
    ]

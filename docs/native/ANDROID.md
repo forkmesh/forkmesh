@@ -2441,3 +2441,14 @@ edit or delete as somebody else. Nothing here talks to older builds.
   waveform's quiet head and tail (`DjRepeat.span`, `step`: the studio tick
   wraps at the end or schedules the wrap when it is under 0.6 s away), and a
   decoder end on a repeating deck restarts from that point too.
+- **CRM email reading report (S059).** `CrmActivity` decodes the CRM worker's
+  `automated`, `opens`, `clicks`, `readSeconds`, `scrollDepth` (capped at
+  100), `slideCount`, `slideReached` (capped at the slide count), `slideTitle`,
+  `mailClient` and `readingReported`; counts are read as longs and clamped to
+  0..Int.MAX_VALUE so a hostile payload cannot overflow. `engagementLine`
+  ("2 opens · read 4 min+ · reached slide 9/14 · Market · iPhone · Apple
+  Mail", or "Gmail doesn't report read time") sits under each sent email in
+  the contact's activity list (`CrmEmailRowView`), and `CrmEmailScreen` adds a
+  Reading card (Opens, Clicks, Read for, Scrolled or Reached, Mail app) with
+  the note on which mail apps report it, shown whenever that line is not
+  empty. `CrmReadingReportTest` ports the iOS tests.
