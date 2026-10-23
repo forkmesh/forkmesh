@@ -98,7 +98,7 @@ public:
         setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
         setCursor(Qt::PointingHandCursor);
         setToolTip(QStringLiteral("The latest messages in the conversation the "
-                                  "chat button sends to. Click to open it."));
+                                  "add button sends to. Click to open it."));
     }
 
     void setLines(const QList<Line> &lines)
@@ -3666,8 +3666,6 @@ QWidget *MainWindow::buildNetworkLogDock()
         if (!m_issueQuickAdd)
             return;
         const QString typed = m_issueQuickAdd->toPlainText().trimmed();
-        if (sendPromptToChatRoom(typed))
-            return;
         // A cloud run open above takes the message through the relay. Its node
         // cannot read a file on this disk, so attachments stay in the composer.
         if (const int cloud = quickAddCloudFollowUpSessionId()) {
@@ -3721,20 +3719,19 @@ QWidget *MainWindow::buildNetworkLogDock()
         sendPromptToAgentSession(target, prompt);
     });
 
-    m_quickAddGenieButton = new QPushButton(QStringLiteral("task"));
-    m_quickAddGenieButton->setObjectName("quickAddGenieButton");
-    m_quickAddGenieButton->setCursor(Qt::PointingHandCursor);
-    m_quickAddGenieButton->setProperty("composerGlyph", QStringLiteral("checklist"));
-    tintComposerActionButton(m_quickAddGenieButton);
-    m_quickAddGenieButton->setFixedWidth(kComposerActionWidth);
-    m_quickAddGenieButton->setMinimumHeight(next ? kComposerControlPx : 24);
-    m_quickAddGenieButton->setSizePolicy(QSizePolicy::Fixed,
-                                         QSizePolicy::Fixed);
-    m_quickAddGenieButton->setToolTip(
-        QString::fromUtf8("Task \xE2\x80\x94 add this prompt to the organization's "
-                          "general task list."));
-    connect(m_quickAddGenieButton, &QPushButton::clicked, this,
-            &MainWindow::createQuickAddOrganizationTask);
+    m_quickAddSendToChannelButton = new QPushButton;
+    m_quickAddSendToChannelButton->setObjectName("quickAddGenieButton");
+    m_quickAddSendToChannelButton->setCursor(Qt::PointingHandCursor);
+    m_quickAddSendToChannelButton->setProperty("composerGlyph",
+                                               QStringLiteral("comment"));
+    tintComposerActionButton(m_quickAddSendToChannelButton);
+    m_quickAddSendToChannelButton->setMinimumWidth(kComposerActionWidth);
+    m_quickAddSendToChannelButton->setMinimumHeight(next ? kComposerControlPx : 24);
+    m_quickAddSendToChannelButton->setSizePolicy(QSizePolicy::Fixed,
+                                                 QSizePolicy::Fixed);
+    connect(m_quickAddSendToChannelButton, &QPushButton::clicked, this,
+            &MainWindow::sendQuickAddToChannel);
+    refreshQuickAddSendToChannelButton();
 
     m_issueQuickAdd->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
@@ -3742,7 +3739,7 @@ QWidget *MainWindow::buildNetworkLogDock()
     sendColumn->setContentsMargins(next ? 4 : 0, 0, next ? 8 : 0, next ? 4 : 0);
     sendColumn->setSpacing(next ? 4 : 2);
     sendColumn->addStretch(1);
-    sendColumn->addWidget(m_quickAddGenieButton, 0);
+    sendColumn->addWidget(m_quickAddSendToChannelButton, 0, Qt::AlignRight);
     sendColumn->addWidget(m_quickAddSendToAgentButton, 0);
     sendColumn->addWidget(m_quickAddSendButton, 0);
     updateQuickAddEnterTarget();
@@ -3768,7 +3765,7 @@ QWidget *MainWindow::buildNetworkLogDock()
         }
         m_quickAddSlashButton->setFixedWidth(kComposerControlPx);
         for (QPushButton *button : {m_quickAddSendButton, m_quickAddSendToAgentButton,
-                                    m_quickAddGenieButton})
+                                    m_quickAddSendToChannelButton})
             button->setFixedHeight(kComposerControlPx);
         m_quickAddAgentModelSelector->setIconSize(QSize(0, 0));
         m_quickAddAgentModelSelector->view()->setIconSize(
@@ -6768,38 +6765,6 @@ QString MainWindow::promptChatRoom() const
     return m_currentConversation;
 }
 
-bool MainWindow::sendPromptToChatRoom(const QString &text)
-{
-    const QString room = promptChatRoom();
-    if (room.isEmpty())
-        return false;
-    if (!m_quickAddImages.isEmpty()) {
-        flashMessage(QStringLiteral("Attach files to a chat room from the room's own "
-                                    "message box."),
-                     true);
-        return true;
-    }
-    if (m_messageInput->isReadOnly() || !m_messageInput->isEnabled()) {
-        flashMessage(QStringLiteral("You cannot post in %1.")
-                         .arg(chatConversationLabel(room)),
-                     true);
-        return true;
-    }
-    if (text.isEmpty())
-        return true;
-    const QString draft = m_messageInput->text();
-    m_messageInput->setText(text);
-    sendCurrentMessage();
-    const bool sent = m_messageInput->text().isEmpty();
-    m_messageInput->setText(draft);
-    if (sent) {
-        recordQuickAddHistory(text);
-        m_issueQuickAdd->clear();
-    }
-    schedulePromptChatPreview();
-    return true;
-}
-
 int MainWindow::promptChatTargetSessionId() const
 {
     const int onScreen = quickAddFollowUpAgentSessionId();
@@ -6926,22 +6891,6 @@ void MainWindow::refreshPromptChatPreview()
     const bool wasShown = !preview->isHidden();
     preview->setLines(lines);
     preview->setVisible(!lines.isEmpty());
-    if (m_quickAddSendToAgentButton) {
-        const bool chat = !lines.isEmpty() || !room.isEmpty();
-        const QString label = chat ? QStringLiteral("chat") : QStringLiteral("add");
-        const QString glyph =
-            chat ? QStringLiteral("comment") : QStringLiteral("paper-airplane");
-        if (m_quickAddSendToAgentButton->text() != label)
-            m_quickAddSendToAgentButton->setText(label);
-        m_quickAddSendToAgentButton->setAccessibleName(
-            !room.isEmpty() ? QStringLiteral("Send to %1").arg(chatConversationLabel(room))
-            : chat          ? QStringLiteral("Send to chat")
-                            : QStringLiteral("Add to agent"));
-        if (m_quickAddSendToAgentButton->property("composerGlyph").toString() != glyph) {
-            m_quickAddSendToAgentButton->setProperty("composerGlyph", glyph);
-            tintComposerActionButton(m_quickAddSendToAgentButton);
-        }
-    }
     if (!m_promptWrapper)
         return;
     const int base = m_promptWrapper->property("baseAnchoredHeight").toInt();
@@ -6958,10 +6907,77 @@ void MainWindow::refreshPromptChatPreview()
     positionGlobalFooterOverlays();
 }
 
+void MainWindow::refreshQuickAddSendToChannelButton()
+{
+    QPushButton *button = m_quickAddSendToChannelButton;
+    if (!button)
+        return;
+    const QString channel = m_currentConversation.isEmpty()
+                                ? QString()
+                                : chatConversationLabel(m_currentConversation);
+    const QString shown = button->fontMetrics().elidedText(
+        channel.isEmpty() ? QString::fromUtf8("\xE2\x80\x94") : channel,
+        Qt::ElideRight, 120);
+    const QString label = QStringLiteral("send to: %1").arg(shown);
+    if (button->text() != label)
+        button->setText(label);
+    button->setEnabled(!channel.isEmpty());
+    button->setToolTip(
+        channel.isEmpty()
+            ? QStringLiteral("Open a chat channel to send this prompt to it.")
+            : QStringLiteral("Send this prompt to %1 as a chat message%2")
+                  .arg(channel, promptChatRoom().isEmpty()
+                                    ? QStringLiteral(".")
+                                    : QStringLiteral(" (Enter)")));
+    button->setAccessibleName(channel.isEmpty()
+                                  ? QStringLiteral("Send to chat")
+                                  : QStringLiteral("Send to %1").arg(channel));
+}
+
+void MainWindow::sendQuickAddToChannel()
+{
+    if (!m_issueQuickAdd)
+        return;
+    const QString text = m_issueQuickAdd->toPlainText().trimmed();
+    if (text.isEmpty()) {
+        flashMessage(QStringLiteral("Type a message first."), true, QString(),
+                     forkmesh::kLocalOperationNoticeKind);
+        m_issueQuickAdd->setFocus();
+        return;
+    }
+    if (!m_quickAddImages.isEmpty()) {
+        flashMessage(QString::fromUtf8(
+                         "Chat channels cannot take files attached here \xE2\x80\x94 "
+                         "remove the attachments and send the text on its own."),
+                     true);
+        return;
+    }
+    const QString conversation = m_currentConversation;
+    if (conversation.isEmpty()) {
+        flashMessage(QStringLiteral("Open a chat channel first."), true);
+        return;
+    }
+    if (m_messageInput &&
+        (m_messageInput->isReadOnly() || !m_messageInput->isEnabled())) {
+        flashMessage(QStringLiteral("You cannot post in %1.")
+                         .arg(chatConversationLabel(conversation)),
+                     true);
+        return;
+    }
+    if (!sendChatText(conversation, text))
+        return;
+    recordQuickAddHistory(text);
+    m_issueQuickAdd->clear();
+    schedulePromptChatPreview();
+    flashMessage(QStringLiteral("Sent to %1.").arg(chatConversationLabel(conversation)),
+                 false, QString(), forkmesh::kLocalOperationNoticeKind);
+}
+
 void MainWindow::refreshComposerIcons()
 {
     for (QPushButton *button :
-         {m_quickAddSendButton, m_quickAddSendToAgentButton, m_quickAddGenieButton})
+         {m_quickAddSendButton, m_quickAddSendToAgentButton,
+          m_quickAddSendToChannelButton})
         tintComposerActionButton(button);
     if (m_quickAddModeSelector) {
         for (int row = 0; row < m_quickAddModeSelector->count() && row < 4; ++row)
@@ -7333,7 +7349,8 @@ void MainWindow::fillAgentModelSelector(QComboBox *selector,
                   QStringLiteral("Task · assign"), kTaskPromptProvider,
                   QString(),
                   QStringLiteral("Create an organization task and assign it to "
-                                 "the member picked beside this menu"));
+                                 "the member picked beside this menu, or leave "
+                                 "it unassigned to add it to General"));
     }
     const QString chosenIdentity = topBarUserName().trimmed();
     QHash<QString, QString> providerIdentities;
