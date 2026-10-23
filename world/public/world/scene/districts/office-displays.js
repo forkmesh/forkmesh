@@ -47,40 +47,6 @@ export function functions({
   let loungeTaskHandle = 0;
 
 
-  function updateBoardProximity() {
-    for (const board of ctx.proximityBoards) {
-      if (ctx.officeSceneMode !== board.mode) {
-        // Leaving the scene the board lives in counts as walking away, so a
-        // visitor who ducks into the office does not leave a town poll running.
-        if (board.near) {
-          board.near = false;
-          board.onExit();
-        }
-        continue;
-      }
-      const position = board.object.getWorldPosition(
-        ctx.proximityBoardWorldPosition,
-      );
-      const distance = Math.hypot(
-        ctx.player.position.x - position.x,
-        ctx.player.position.z - position.z,
-      );
-      if (!board.near && distance <= board.enter) {
-        board.near = true;
-        // The cooldown gates the immediate refetch, not the approach itself:
-        // a board that polls while you stand at it must still start its timer
-        // on every arrival, even when its contents are too fresh to refetch.
-        const now = Date.now();
-        const stale = now - board.lastEnterAt >= board.cooldownMs;
-        if (stale) board.lastEnterAt = now;
-        board.onEnter(stale);
-      } else if (board.near && distance >= board.exit) {
-        board.near = false;
-        board.onExit();
-      }
-    }
-  }
-
   function updateQaBoard(snapshot = {}) {
     ctx.qaBoardSnapshot = {
       ...snapshot,
@@ -540,7 +506,6 @@ export function functions({
   }
 
   return {
-    updateBoardProximity,
     updateQaBoard,
     showQaSwipeCues,
     resetQaCardTransform,
@@ -558,7 +523,6 @@ export function functions({
 export async function build({
   THREE,
   animated,
-  billboardCircle,
   compactRenderer,
   ctx,
   interactive,
@@ -566,56 +530,8 @@ export async function build({
   officeClockInTexture,
   officeFloorAccent,
   officeInterior,
-  onLeaderboardCircleAway,
-  onLeaderboardCircleNearby,
-  onQaBoardAway,
-  onQaBoardNearby,
-  onSocialCircleAway,
-  onSocialCircleNearby,
   sceneSlice,
-  worldQaBoard,
 }) {
-  // Boards whose contents only matter to someone standing at them. Each entry
-  // reports its own approach and departure so the owner can fetch on arrival
-  // and stop polling on the way out, instead of holding a permanent request
-  // cadence for a board nobody is looking at. The exit radius is deliberately
-  // wider than the entry radius so pacing the boundary cannot thrash the
-  // fetch, and cooldownMs bounds how often a re-approach may refetch.
-  const proximityBoards = [
-    {
-      object: worldQaBoard,
-      mode: "town",
-      enter: 18,
-      exit: 23,
-      cooldownMs: 5_000,
-      onEnter: (refetch) => onQaBoardNearby({ refetch }),
-      onExit: () => onQaBoardAway(),
-    },
-    // The leaderboard and social circles each own one request family. Nothing
-    // in them is fetched until a visitor steps onto the circle, and the
-    // approach radius is the circle itself plus the depth of the boards
-    // standing on it, so the fetch starts exactly when the faces become
-    // readable.
-    {
-      object: billboardCircle("leaderboards").group,
-      mode: "town",
-      enter: billboardCircle("leaderboards").radius + 6,
-      exit: billboardCircle("leaderboards").radius + 14,
-      cooldownMs: 60_000,
-      onEnter: (refetch) => onLeaderboardCircleNearby({ refetch }),
-      onExit: () => onLeaderboardCircleAway(),
-    },
-    {
-      object: billboardCircle("social").group,
-      mode: "town",
-      enter: billboardCircle("social").radius + 6,
-      exit: billboardCircle("social").radius + 14,
-      cooldownMs: 60_000,
-      onEnter: (refetch) => onSocialCircleNearby({ refetch }),
-      onExit: () => onSocialCircleAway(),
-    },
-  ].map((board) => ({ ...board, near: false, lastEnterAt: 0 }));
-
   // Shared, bounded attendance leaderboard on the left lobby wall.
   // Authenticated punches are server-timestamped and ranked by each member's
   // longest completed or currently active Office stay.
@@ -1290,7 +1206,6 @@ export async function build({
   });
   officeElevatorCar.add(elevatorPanel);
   return {
-    proximityBoards,
     officeAttendanceBoard,
     officeClockInBoard,
     reflectionTarget,

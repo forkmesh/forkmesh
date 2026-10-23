@@ -208,7 +208,7 @@ def name_html(name):
 def person_name_html(name, classes="font-semibold text-foreground", git=False):
     label = str(name or "").strip() or "unknown"
     if actor_is_bot(label):
-        account = "" if bot_avatar_kind(label) in ("actions", "node", "runner") \
+        account = "" if re.search(r"(?:-actions|\[bot\])$", label, re.I) \
             else person_handle(label)
         return '<span%s class="%s">%s</span>' % (
             ' data-issue-bot-account="%s"' % esc(account) if account else "", classes, esc(label))

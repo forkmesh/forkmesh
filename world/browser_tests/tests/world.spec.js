@@ -12446,3 +12446,81 @@ test("World logo opens a dashboard switcher instead of silently reloading", asyn
   await trigger.click();
   await expect(trigger).toBeFocused();
 });
+
+test("HUD buttons move between the four edges by drag, keyboard and reset", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await prepareWorldPage(page, "hud-docks");
+  await waitForWorld(page);
+  await expandWorldRightRail(page);
+  const capture = page.locator("[data-world-screenshot]");
+  const box = await capture.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await expect(page.locator("[data-world-hud]")).toHaveAttribute(
+    "data-world-arranging",
+    "true",
+  );
+  await expect(page.locator("[data-world-dock-arrange]")).toBeVisible();
+  await page.mouse.move(120, 400, { steps: 8 });
+  await page.mouse.move(30, 400, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.locator('[data-world-dock="left"] > [data-world-screenshot]')).toHaveCount(1);
+  await expect(capture).toHaveClass(/world-dock-tool/);
+  await expect(capture).not.toHaveClass(/world-top-link/);
+
+  const sound = page.locator("[data-world-sound-toggle]");
+  const soundBox = await sound.boundingBox();
+  await page.mouse.move(soundBox.x + 20, soundBox.y + 20);
+  await page.mouse.down();
+  const wave = await page.locator('[data-dashboard-chat-emote="wave"]').boundingBox();
+  await page.mouse.move(wave.x + 2, wave.y + 15, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator('[data-world-dock="bottom"] > [data-world-tool]').first()).toHaveAttribute(
+    "data-world-tool",
+    "sound",
+  );
+
+  const jump = page.locator('[data-dashboard-chat-emote="jump"]');
+  await jump.focus();
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect(page.locator('[data-world-dock="top"] > [data-dashboard-chat-emote="jump"]')).toHaveCount(1);
+  await expect(jump).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  const topOrder = await page.locator('[data-world-dock="top"] > [data-world-tool]').evaluateAll(
+    (tools) => tools.map((tool) => tool.dataset.worldTool),
+  );
+  expect(topOrder.at(-2)).toBe("emote-jump");
+  const saved = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("forkmesh.world.hudLayout.v1")),
+  );
+  expect(saved.left).toEqual(["capture"]);
+  expect(saved.bottom[0]).toBe("sound");
+  expect(saved.top).toContain("emote-jump");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-world-hud]")).toHaveAttribute(
+    "data-world-arranging",
+    "false",
+  );
+
+  await page.reload();
+  await waitForWorldReady(page);
+  await expect(page.locator('[data-world-dock="left"] > [data-world-screenshot]')).toHaveCount(1);
+  await expect(page.locator('[data-world-dock="left"] > [data-world-screenshot]')).toBeVisible();
+  await page.locator("[data-world-screenshot]").click();
+  await expect(page.locator(".world-shot-overlay")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+
+  await page.locator("[data-world-hud]").evaluate((hud) => hud.closest("forkmesh-world").setHudArranging(true));
+  await page.locator("[data-world-dock-arrange] [data-world-dock-reset]").click();
+  await expect(page.locator('[data-world-dock="top"] > [data-world-screenshot]')).toHaveCount(1);
+  await expect(page.locator("[data-world-screenshot]")).toHaveClass(/world-top-link/);
+  await expect(page.locator('[data-world-dock="bottom"] > [data-world-tool]').first()).toHaveAttribute(
+    "data-world-tool",
+    "emote-wave",
+  );
+  await expect(page.locator('[data-world-dock="left"]')).toHaveAttribute("data-empty", "true");
+  expect(await page.evaluate(() => localStorage.getItem("forkmesh.world.hudLayout.v1"))).toBeNull();
+});
