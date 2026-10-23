@@ -262,6 +262,10 @@ body[data-page="chat"]:has(> .fmc-root) #fullChatMessages {
   color: var(--fmc-warn);
 }
 
+.fmc-count[data-tone="near"] {
+  color: var(--fmc-danger);
+}
+
 .fmc-count[data-tone="over"] {
   color: var(--fmc-danger);
   font-weight: 600;

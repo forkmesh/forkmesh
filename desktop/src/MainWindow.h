@@ -2266,6 +2266,8 @@ public:
     // without waiting for it.
     bool testAddTimer(const QString &request, const QString &kind = QString());
     QStringList testTimerChipTexts() const;
+    QString testTimersClockSlot() const;
+    void testDropTimersClock(qreal fraction);
     bool testTimerCommand(const QString &labelPrefix, const QString &command);
     void testAdvanceTimers(qint64 milliseconds);
     // The URL and JSON body sendTimerPing() would POST for an expiry, or an
@@ -4332,6 +4334,7 @@ private:
     void refreshPackageMarketScores();
     void reportPackageInstallCounts(bool throttled = false);
     QString packageStatsRunId() const;
+    QList<QPair<QString, QString>> appThemeChoices() const;
     void populateAppThemeCombo(QComboBox *combo) const;
     void refreshAppThemeChoice();
     void openLedger();
@@ -4345,6 +4348,13 @@ private:
     void detachTimersPackage();
     void refreshTimersNavStrip();
     void showTimersClockMenu();
+    void installTimersClockSlots(QWidget *chrome, QBoxLayout *left,
+                                 QBoxLayout *center, QBoxLayout *right,
+                                 QWidget *rightBefore);
+    QString timersClockPlacement() const;
+    void setTimersClockPlacement(const QString &placement);
+    void dropTimersClock(const QPoint &globalPos);
+    void addTimersClockPlacementActions(QMenu *menu);
     void showTimerChipMenu(const QString &id, const QPoint &globalPos);
     bool addTimer(const QString &request, forkmesh::timers::TimerKind kind);
     // A countdown named `label` that runs out at `resetAtMs` (epoch ms), for
@@ -10984,6 +10994,12 @@ private:
     QWidget *m_timersNavStrip = nullptr;
     QHBoxLayout *m_timersChipRow = nullptr;
     QPushButton *m_timersClockButton = nullptr;
+    QPointer<QWidget> m_timersChromeBar;
+    struct TimersClockSlot {
+        QBoxLayout *row = nullptr;
+        QPointer<QWidget> before;
+    };
+    QHash<QString, TimersClockSlot> m_timersClockSlots;
     QTimer *m_timersTick = nullptr;
     // Only the timer strip reads this; window tests move it to watch a
     // countdown run out without waiting for it.
