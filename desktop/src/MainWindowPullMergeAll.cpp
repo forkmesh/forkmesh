@@ -38,6 +38,69 @@ struct PullMergeAllCleanup
     QString error;
 };
 
+bool createPullBranchAt(const QString &workTree, int number, const QString &sha)
+{
+    const QString branch = QStringLiteral("pr/%1").arg(number);
+    if (sha.isEmpty() ||
+        !runGitCapture(workTree, {QStringLiteral("cat-file"), QStringLiteral("-e"),
+                                  sha + QStringLiteral("^{commit}")},
+                       nullptr, nullptr))
+        return false;
+    runGitCapture(workTree,
+                  {QStringLiteral("update-ref"), QStringLiteral("refs/heads/") + branch,
+                   sha, QString(sha.size(), QLatin1Char('0'))},
+                  nullptr, nullptr);
+    return repoHasLocalBranch(workTree, branch);
+}
+
+QString adoptTrackedPullBranch(const QString &workTree, int number)
+{
+    for (const QString &ref : pullmergeall::trackedPullBranchRefs(number)) {
+        QByteArray out;
+        if (!runGitCapture(workTree,
+                           {QStringLiteral("rev-parse"), QStringLiteral("-q"),
+                            QStringLiteral("--verify"), ref + QStringLiteral("^{commit}")},
+                           &out, nullptr))
+            continue;
+        if (createPullBranchAt(workTree, number, QString::fromUtf8(out).trimmed()))
+            return QStringLiteral("pr/%1").arg(number);
+    }
+    return QString();
+}
+
+QHash<int, QString> fetchServedPullBranches(const QString &workTree,
+                                            const QList<int> &numbers)
+{
+    QByteArray remote;
+    if (numbers.isEmpty() ||
+        !runGitCapture(workTree, {QStringLiteral("remote"), QStringLiteral("get-url"),
+                                  QStringLiteral("origin")},
+                       &remote, nullptr) ||
+        remote.trimmed().isEmpty())
+        return {};
+    QByteArray listing;
+    if (!runGitCapture(workTree,
+                       QStringList{QStringLiteral("ls-remote"), QStringLiteral("origin")} +
+                           pullmergeall::servedPullBranchRefs(numbers),
+                       &listing, nullptr))
+        return {};
+    const QHash<int, QString> tips = pullmergeall::servedPullBranchTips(listing, numbers);
+    if (tips.isEmpty())
+        return {};
+    QStringList refs;
+    for (auto it = tips.cbegin(); it != tips.cend(); ++it)
+        refs << QStringLiteral("refs/heads/pr/%1").arg(it.key());
+    refs.sort();
+    runGitCapture(workTree,
+                  QStringList{QStringLiteral("fetch"), QStringLiteral("--no-tags"),
+                              QStringLiteral("--quiet"),
+                              QStringLiteral("--no-write-fetch-head"),
+                              QStringLiteral("origin")} +
+                      refs,
+                  nullptr, nullptr);
+    return tips;
+}
+
 QString pullNumberList(const QList<int> &numbers)
 {
     QStringList labels;
@@ -193,6 +256,12 @@ void MainWindow::startPullMergeAll(
     runOffThread<PullMergeAllPrepared>(
         [store, workTree, open] {
             PullMergeAllPrepared out;
+            QList<int> absent;
+            for (const PullRequest &pr : open)
+                if (localPullAgentBranch(workTree, pr).isEmpty())
+                    absent << pr.number;
+            const QHash<int, QString> served =
+                fetchServedPullBranches(workTree, absent);
             for (const PullRequest &pr : open) {
                 QString branch = localPullAgentBranch(workTree, pr);
                 QString error;
@@ -200,13 +269,19 @@ void MainWindow::startPullMergeAll(
                     store.ensurePullHeadRef(pr, &error);
                     branch = localPullAgentBranch(workTree, pr);
                 }
+                if (branch.isEmpty() && served.contains(pr.number) &&
+                    createPullBranchAt(workTree, pr.number, served.value(pr.number)))
+                    branch = QStringLiteral("pr/%1").arg(pr.number);
+                if (branch.isEmpty())
+                    branch = adoptTrackedPullBranch(workTree, pr.number);
                 const QString base = pr.base.trimmed().isEmpty()
                                          ? QStringLiteral("main")
                                          : pr.base.trimmed();
                 QString reason;
                 if (branch.isEmpty())
                     reason = error.trimmed().isEmpty()
-                                 ? QStringLiteral("its code is not on this node")
+                                 ? pullmergeall::missingCodeReason(
+                                       pr.branchBacked, pr.head, base)
                                  : error.trimmed();
                 else if (!pullmergeall::safeRefName(branch))
                     reason = QStringLiteral("its branch name is unsafe");
