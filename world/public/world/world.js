@@ -730,6 +730,9 @@ const SETTINGS_WIDTH_KEY = "forkmesh.world.settingsWidth.v1";
 const SETTINGS_WIDTH_MIN = 360;
 const REFRESH_POSITION_KEY = "forkmesh.world.refresh-position.v1";
 const WORLD_HUD_LAYOUT_KEY = "forkmesh.world.hudLayout.v1";
+const WORLD_HUD_ISLAND_OFFSET_KEY = "forkmesh.world.hudIslandOffset.v1";
+const WORLD_HUD_ISLAND_MARGIN = 8;
+const WORLD_HUD_ISLAND_STEP = 24;
 const WORLD_HUD_DOCKS = Object.freeze(["top", "left", "right", "bottom"]);
 const WORLD_HUD_DOCK_NAMES = Object.freeze({
   top: "top edge",
@@ -2055,6 +2058,8 @@ const WORLD_UI_ICON_PATHS = Object.freeze({
     '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>',
   close: '<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>',
   up: '<path d="m18 15-6-6-6 6"></path>',
+  grip:
+    '<circle cx="9" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="18" r="1"></circle>',
   down: '<path d="m6 9 6 6 6-6"></path>',
   reload:
     '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path>',
@@ -5814,6 +5819,7 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
           aria-label="Avatar actions and World chat"
         >
           <div class="world-hud-island-bar">
+            <button class="world-hud-island-grip" type="button" data-world-island-grip title="Drag to move · double-click to put back" aria-label="Move chat box. Arrow keys move it, Home puts it back.">${worldIconSvg("grip")}</button>
             <div class="world-avatar-actions" data-world-dock="bottom" data-world-avatar-actions data-dashboard-chat-emotes role="toolbar" aria-label="Avatar actions">
               <button type="button" data-world-tool="emote-wave" data-dashboard-chat-emote="wave" title="Wave" aria-label="Wave">${worldIconSvg("hand")}</button>
               <button type="button" data-world-tool="emote-jump" data-dashboard-chat-emote="jump" title="Jump" aria-label="Jump">${worldIconSvg("jump")}</button>
@@ -14809,6 +14815,150 @@ class ForkMeshWorld extends HTMLElement {
     list.hidden = false;
   }
 
+  hudIslandOffsetLimits(island) {
+    const bounds = (island.offsetParent || this).getBoundingClientRect();
+    const rect = island.getBoundingClientRect();
+    const applied = this.hudIslandAppliedOffset || { x: 0, y: 0 };
+    const left = rect.left - applied.x;
+    const top = rect.top - applied.y;
+    return {
+      minX: bounds.left + WORLD_HUD_ISLAND_MARGIN - left,
+      maxX: bounds.right - WORLD_HUD_ISLAND_MARGIN - rect.width - left,
+      minY: bounds.top + WORLD_HUD_ISLAND_MARGIN - top,
+      maxY: bounds.bottom - WORLD_HUD_ISLAND_MARGIN - rect.height - top,
+      middle: bounds.top + bounds.height / 2 - top - rect.height / 2,
+    };
+  }
+
+  hudIslandMovable() {
+    const grip = this.$("[data-world-island-grip]");
+    return Boolean(grip && grip.getClientRects().length);
+  }
+
+  applyHudIslandOffset(wanted = this.hudIslandOffset) {
+    const island = this.$("[data-world-hud-island]");
+    if (!island) return { x: 0, y: 0 };
+    const movable = this.hudIslandMovable();
+    const target = (movable && wanted) || { x: 0, y: 0 };
+    const limits = this.hudIslandOffsetLimits(island);
+    const clamp = (value, min, max) =>
+      Math.round(Math.min(Math.max(Number(value) || 0, min), Math.max(min, max)));
+    const x = clamp(target.x, limits.minX, limits.maxX);
+    const y = clamp(target.y, limits.minY, limits.maxY);
+    const applied = this.hudIslandAppliedOffset || { x: 0, y: 0 };
+    if (applied.x !== x || applied.y !== y) {
+      this.hudIslandAppliedOffset = { x, y };
+      island.style.setProperty("--world-hud-island-x", `${x}px`);
+      island.style.setProperty("--world-hud-island-y", `${y}px`);
+    }
+    const placement = y < limits.middle ? "top" : "bottom";
+    if (island.dataset.placement !== placement) {
+      island.dataset.placement = placement;
+    }
+    return { x, y };
+  }
+
+  setHudIslandOffset(offset, persist = true) {
+    const next = this.applyHudIslandOffset(offset || { x: 0, y: 0 });
+    this.hudIslandOffset = next.x || next.y ? next : null;
+    if (!persist) return;
+    try {
+      if (this.hudIslandOffset) {
+        writeJSON(localStorage, WORLD_HUD_ISLAND_OFFSET_KEY, this.hudIslandOffset);
+      } else {
+        localStorage.removeItem(WORLD_HUD_ISLAND_OFFSET_KEY);
+      }
+    } catch (_) {}
+  }
+
+  bindHudIslandDrag(island) {
+    const grip = this.$("[data-world-island-grip]");
+    const bar = island.querySelector(".world-hud-island-bar");
+    if (!grip) return;
+    let stored = null;
+    try {
+      stored = readJSON(localStorage, WORLD_HUD_ISLAND_OFFSET_KEY, null);
+    } catch (_) {}
+    if (Number.isFinite(stored?.x) && Number.isFinite(stored?.y)) {
+      this.hudIslandOffset = { x: stored.x, y: stored.y };
+      window.requestAnimationFrame(() => {
+        if (!this.destroyed && this.hudIslandOffset) this.applyHudIslandOffset();
+      });
+    }
+    const bounds = island.offsetParent || island.parentElement;
+    if (bounds && "ResizeObserver" in window) {
+      this.hudIslandBoundsObserver = new ResizeObserver(() => {
+        if (this.hudIslandOffset) this.applyHudIslandOffset();
+      });
+      this.hudIslandBoundsObserver.observe(bounds);
+    }
+    let pointerId = null;
+    let start = null;
+    island.addEventListener("pointerdown", (event) => {
+      if (pointerId !== null || event.button > 0) return;
+      if (!this.hudIslandMovable()) return;
+      const handle =
+        event.target.closest("[data-world-island-grip]") ||
+        (event.target === island || event.target === bar ? event.target : null);
+      if (!handle) return;
+      event.preventDefault();
+      event.stopPropagation();
+      pointerId = event.pointerId;
+      const applied = this.hudIslandAppliedOffset || { x: 0, y: 0 };
+      start = { x: event.clientX - applied.x, y: event.clientY - applied.y };
+      island.dataset.dragging = "true";
+      island.setPointerCapture?.(pointerId);
+    });
+    island.addEventListener("pointermove", (event) => {
+      if (event.pointerId !== pointerId) return;
+      event.preventDefault();
+      this.setHudIslandOffset(
+        { x: event.clientX - start.x, y: event.clientY - start.y },
+        false,
+      );
+    });
+    const stop = (event) => {
+      if (event.pointerId !== pointerId) return;
+      pointerId = null;
+      delete island.dataset.dragging;
+      try {
+        island.releasePointerCapture?.(event.pointerId);
+      } catch (_) {}
+      this.setHudIslandOffset(this.hudIslandAppliedOffset);
+    };
+    island.addEventListener("pointerup", stop);
+    island.addEventListener("pointercancel", stop);
+    island.addEventListener("lostpointercapture", stop);
+    island.addEventListener("dblclick", (event) => {
+      if (
+        event.target.closest("[data-world-island-grip]") ||
+        event.target === island ||
+        event.target === bar
+      ) {
+        this.setHudIslandOffset(null);
+      }
+    });
+    grip.addEventListener("keydown", (event) => {
+      const applied = this.hudIslandAppliedOffset || { x: 0, y: 0 };
+      const moves = {
+        ArrowLeft: [-WORLD_HUD_ISLAND_STEP, 0],
+        ArrowRight: [WORLD_HUD_ISLAND_STEP, 0],
+        ArrowUp: [0, -WORLD_HUD_ISLAND_STEP],
+        ArrowDown: [0, WORLD_HUD_ISLAND_STEP],
+      };
+      if (event.key === "Home") {
+        this.setHudIslandOffset(null);
+      } else if (moves[event.key]) {
+        const [dx, dy] = moves[event.key];
+        this.setHudIslandOffset({ x: applied.x + dx, y: applied.y + dy });
+      } else {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  }
+
   setHudIslandExpanded(expanded) {
     const island = this.$("[data-world-hud-island]");
     const toggle = this.$("[data-world-island-toggle]");
@@ -14866,6 +15016,7 @@ class ForkMeshWorld extends HTMLElement {
           entries[0]?.borderBoxSize?.[0]?.blockSize ??
             island.getBoundingClientRect().height,
         );
+        if (this.hudIslandOffset) this.applyHudIslandOffset();
         if (height === lastHeight || island.dataset.expanded === "true") {
           return;
         }
@@ -14874,6 +15025,7 @@ class ForkMeshWorld extends HTMLElement {
       });
       this.hudIslandResizeObserver.observe(island);
     }
+    this.bindHudIslandDrag(island);
     this.$("[data-world-composer-modes]")?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-world-composer-mode]");
       if (button) this.setComposerMode(button.dataset.worldComposerMode);
@@ -34685,6 +34837,7 @@ class ForkMeshWorld extends HTMLElement {
     window.removeEventListener("keydown", this.handlePublicInputActivity);
     window.removeEventListener("keydown", this.handleQuickChatEscape);
     this.hudIslandResizeObserver?.disconnect();
+    this.hudIslandBoundsObserver?.disconnect();
     this.stopAgentRunWatch();
     window.removeEventListener("message", this.handleWorldChatMessage);
     window.removeEventListener("message", this.handleEmbedHostMessage);

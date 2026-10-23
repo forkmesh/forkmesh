@@ -502,6 +502,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentCliSession.cpp
     src/MainWindowClaudeImport.cpp
     src/MainWindowAgentEvents.cpp
+    src/MainWindowAgentClaudeControl.cpp
     src/MainWindowAgentTranscript.cpp
     src/MainWindowAgentLanding.cpp
     src/MainWindowAgentCloud.cpp
@@ -1120,6 +1121,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentRuntimeRegistry.cpp
     src/ClaudeStreamSession.h
     src/ClaudeStreamSession.cpp
+    src/ClaudeControlProtocol.h
+    src/ClaudeControlProtocol.cpp
     src/CodexAppServerSession.h
     src/CodexAppServerSession.cpp
     src/CodexRateLimitsProbe.h
@@ -1128,6 +1131,8 @@ set(FORKMESH_APP_SOURCES
     src/Tooltips.h
     src/ClaudeTranscriptView.h
     src/ClaudeTranscriptView.cpp
+    src/ClaudeElicitationDialog.h
+    src/ClaudeElicitationDialog.cpp
     src/PromptDeckBar.h
     src/PromptDeckBar.cpp
     src/ClaudeTranscriptTools.h
@@ -1309,6 +1314,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/ClaudeIdeBridge.h
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
+    src/ClaudeElicitationDialog.h
     src/ClaudeTranscriptView.h
     src/PromptDeckBar.h
     src/CodexRateLimitsProbe.h
@@ -1418,6 +1424,7 @@ set_source_files_properties(
     src/ClaudeIdeBridge.h
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
+    src/ClaudeElicitationDialog.h
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
     src/PromptDeckBar.h
@@ -2623,6 +2630,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeRegistry.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2749,6 +2758,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -3729,6 +3740,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
         src/CodexTranscriptStyle.h
@@ -4555,6 +4568,21 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-agent-cli-tasks-tests
         COMMAND forkmesh-agent-cli-tasks-tests)
+
+    qt_add_executable(forkmesh-claude-control-tests
+        tests/test_claude_control_protocol.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
+    )
+    target_include_directories(forkmesh-claude-control-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-claude-control-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-claude-control-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-claude-control-tests
+        COMMAND forkmesh-claude-control-tests)
 
     qt_add_executable(forkmesh-desktop-power-alert-tests
         tests/test_desktop_power_alert.cpp

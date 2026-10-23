@@ -32,20 +32,23 @@
     {
      "title": "Agents",
      "items": [
-      "The composer hides its character count until a prompt nears the limit, then shows it in orange and red."
+      "The composer hides its character count until a prompt nears the limit, then shows it in orange and red.",
+      "Claude Code agents on the desktop now take their name from their Claude Code session and follow its renames, ask for tool permissions, plan approval and MCP input in the transcript or a small window instead of refusing the call, list their running sub-sessions with a Stop button, and can be renamed from the agent list."
      ]
     },
     {
      "title": "World",
      "items": [
       "Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve.",
-      "Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside."
+      "Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside.",
+      "You can drag the chat box anywhere in the World by the grip at its left edge (double-click it to put it back), and the last two messages now fit in it without being cut off."
      ]
     },
     {
      "title": "iPhone",
      "items": [
-      "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock."
+      "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock.",
+      "With Diagnostics on, your desktop and node lights now sit just above the clock with a little more room, and the diagnostic charts sit above the battery, each filled in under its line."
      ]
     },
     {
@@ -72,7 +75,8 @@
      "title": "Desktop",
      "items": [
       "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.",
-      "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings."
+      "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings.",
+      "Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies."
      ]
     },
     {

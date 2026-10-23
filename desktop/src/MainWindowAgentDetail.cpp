@@ -682,6 +682,7 @@ void MainWindow::applyAgentMetaHtml(const QString &html)
 void MainWindow::showAgentSession(int sessionId)
 {
     m_selectedAgentSessionId = sessionId;
+    refreshAgentSubSessions();
     if (m_agentTable && m_agentTable->isVisible() && isActiveWindow()) {
         clearTeammateDoneUnseen(sessionId);
         markAgentSessionRead(sessionId);

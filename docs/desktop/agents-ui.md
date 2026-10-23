@@ -189,6 +189,89 @@ age, and turns the ones picked into ordinary stored agents.
   longer live is imported and the message continues it. Attachments are
   refused for these rows.
 
+### Claude Code session control (2026-10-23)
+
+A Claude Code run on the desktop is a full stream-json host of its Claude Code
+session, the way an IDE or Claude's desktop app hosts one.
+`launchCliRuntime` sets the launch option `hostControl`, and
+`ClaudeStreamSession` then:
+
+- adds `--permission-prompt-tool stdio` and writes an `initialize` control
+  request before the task. It declares the dialog kinds the desktop renders
+  (`refusal_fallback_prompt`, `fable_overage_consent_prompt`,
+  `auto_mode_server_fallback`), asks for sub-session progress summaries
+  (`agentProgressSummaries`) and declares a per-task stop control
+  (`perTaskStopAffordance`). An issue run, or a run you named yourself, passes
+  its title as `title`, so Claude Code keeps that name;
+- keeps every control request it has not answered under a card id
+  (`claude-approval-<request>` for tool approvals, `claude-input-<request>` for
+  dialogs and MCP input, the tool use id for `AskUserQuestion`) and answers it
+  when the card is answered;
+- refuses a request nobody renders (`hook_callback`, `mcp_message`, ...) with
+  an error at once, so the CLI never waits on it, and never answers a dialog
+  kind it did not declare (the CLI's rule: answering one would count as the
+  user dismissing it). Neither marks the session Waiting;
+- drops a pending prompt when the CLI withdraws it (`control_cancel_request`);
+  the card then reads "Claude Code withdrew this question";
+- routes the answers to its own requests (`generate_session_title`,
+  `rename_session`, `stop_task`) to callbacks and keeps them out of the
+  transcript.
+
+The mapping from requests to cards and from answers to responses is pure code
+in `ClaudeControlProtocol.{h,cpp}`; `MainWindowAgentClaudeControl.cpp` puts it
+on screen. Shapes were checked against Claude Code 2.1.309.
+
+**Names.** On the first `system/init` of each process the desktop sends
+`generate_session_title` with the prompt (`persist: true`), so the run is named
+by its own Claude Code session and the name is saved in the session's
+transcript; a resumed session gets its saved name back instead of a new one.
+`system/session_title_changed` (a `/rename`, a rename on claude.ai, or the echo
+of ours) renames the run at any time; a repeated name changes nothing.
+`titledBy` records `Claude Code session` or `Claude Code rename`. The run is
+renamed only when its title came from its prompt or from an earlier namer:
+issue runs keep the issue title and a caller's name (a PR review, a conflict
+fix) stays. The one-shot `claude -p --model haiku` namer
+(`requestAgentTitle`) no longer runs for Claude Code, so the two never race;
+a queued or held Claude run shows its prompt title until it starts. Settings >
+Agents > "Agent titles" turns Claude's naming off too.
+
+**Rename.** The agent list's context menu has **Rename…**. The new name is
+saved with `titledBy` `You` (no namer overrides it) and sent to a running
+session with `rename_session` (`source: host`, the CLI's session id); a session
+renamed while stopped gets the name on its next start.
+
+**Prompts.** Each prompt is a question card in the transcript
+(`ClaudeTranscriptView::addAskUserQuestion`; its heading comes from the card's
+`title`, and question and option text are plain text):
+
+| Request | Card | Answers |
+| --- | --- | --- |
+| `can_use_tool` | "Claude Code asks to use *tool*": the command, file, URL or query, a path outside the working folders, and why it asks | **Allow once**; **Allow and remember** (only with `permission_suggestions`, described in words, sent back as `updatedPermissions`); **Deny**; typed text denies and is sent to Claude as what to do instead |
+| `can_use_tool` for `ExitPlanMode` | "Claude Code finished planning" | **Approve and accept edits** / **Approve and ask before edits** (a `setMode` to `acceptEdits` / `default`; the session's mode label follows), **Keep planning**; typed text is plan feedback |
+| `can_use_tool` for `AskUserQuestion` | the transcript's own card for the tool call | sent as `updatedInput.answers`, one per question, instead of a late tool result |
+| `request_user_dialog` | "Claude Code needs a decision" with the dialog's own choices | `{behavior: completed, result}`; typed text on the refusal dialog edits the prompt and is sent as the next turn |
+
+An MCP `elicitation` opens a small window (`ClaudeElicitationDialog`): a form
+built from `requested_schema` (choices for `enum`/`oneOf`, a check box for
+booleans, password echo for `format: password`, required fields marked `*`),
+or for URL mode the link with **Open link** (http and https only) and
+**Done**. **Send** checks required fields and number types; **Decline** and
+**Cancel** answer `decline` and `cancel`, and so does closing the window.
+
+In Ask, Edit and Plan modes the CLI now really asks. Before, a headless run
+without a prompt tool refused every call that needed approval. The external-call
+gate's PreToolUse hook still runs first and still only denies.
+
+**Sub-sessions.** Claude Code's subagents, background shells and workflows
+are the run's sub-sessions. `agentclitasks::Ledger` keeps each open task's
+description, subagent type, nesting (`parent_task_id`, `spawn_depth`), last
+progress summary (`task_progress.summary`, else its changed description), last
+tool, tokens and tool calls. A strip above the transcript
+(`agentSubSessionStrip`) lists them, nested under the sub-session that started
+them, with **Stop** (`stop_task`) while the session is live. A finished
+sub-session leaves the strip; its Agent card in the transcript keeps the
+report.
+
 ### List views, sort and filters
 
 - The list's toolbar (`agentsActionBar`) is an `OverflowActionRow` too
@@ -952,6 +1035,7 @@ Build the test targets with `cmake -S desktop -B desktop/build
 | --- | --- |
 | Window behaviour | `forkmesh-window-tests` with `--workspace-snapshots-only`, `--agent-list-view-only`, `--agent-folders-only`, `--agent-task-link-only`, `--command-approval-only`, `--agent-code-only`; `tests/test_window_resize.cpp` |
 | Transcript tools | `forkmesh-claude-transcript-tools-tests` |
+| Claude Code session control | `forkmesh-claude-control-tests`, `forkmesh-agent-cli-tasks-tests`, `runHostControlProtocolTest` in `forkmesh-agent-transport-tests` (a scripted `claude` on stdio) |
 | List | `forkmesh-agent-folders-tests`, `forkmesh-agent-ticker-tests` |
 | Cloud | `forkmesh-agent-cloud-stream-tests`, `tests/test_agent_cloud_sessions.cpp`, `tests/test_upstream_checkout_sync.cpp`, `tests/validate_cloud_agent_stream_contract.py`, `tests/validate_cloud_agent_watch_contract.py` |
 | Accounts | `tests/test_claude_account_routing.cpp`, `tests/test_runner_login.cpp` |
