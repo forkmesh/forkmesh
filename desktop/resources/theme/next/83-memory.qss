@@ -1,0 +1,87 @@
+#memorySection { background-color: @bg; }
+#memorySection QLabel#pageTitle {
+    color: @fg; font-size: 15px; font-weight: 600; background: transparent;
+}
+#memorySection QLabel#mutedLabel[memoryRole="summary"] {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#memorySection QFrame[memoryRule="true"] { background-color: @border; border: none; }
+
+#memorySection QLineEdit {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; padding: 0px 8px 0px 2px;
+    min-height: 30px; max-height: 30px;
+}
+#memorySection QLineEdit:hover { border-color: @borderStrong; }
+#memorySection QLineEdit:focus { border-color: @accent; background-color: @surfaceRaised; }
+#memorySection QComboBox {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; font-size: 13px; padding: 0px 8px 0px 10px;
+    min-height: 30px; max-height: 30px;
+}
+#memorySection QComboBox:hover { border-color: @borderStrong; }
+#memorySection QComboBox:on, #memorySection QComboBox:focus { border-color: @accent; }
+
+#memorySection QPushButton#ghostButton {
+    background-color: transparent; border: 1px solid transparent; border-radius: 8px;
+    color: @fgSecondary; font-size: 13px; font-weight: 500;
+    padding: 0px 10px; min-height: 30px; max-height: 30px;
+}
+#memorySection QPushButton#ghostButton:hover { background-color: @surfaceRaised; color: @fg; }
+#memorySection QPushButton#ghostButton:pressed { background-color: @surfaceActive; }
+#memorySection QPushButton#ghostButton:checked { background-color: @surfaceActive; color: @fg; }
+
+#memorySection QFrame#statsTile {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#memorySection QFrame#statsTile QLabel { background: transparent; }
+#memorySection QFrame#statsTile QLabel[memoryRole="tileName"] {
+    color: @fgMuted; font-size: 12px;
+}
+#memorySection QFrame#statsTile QLabel[memoryRole="tileValue"] {
+    color: @fg; font-size: 22px; font-weight: 600;
+}
+#memorySection QFrame#statsTile QLabel[memoryRole="tileNote"] {
+    color: @fgSubtle; font-size: 12px;
+}
+
+#memorySection QTabWidget::pane { border: none; border-top: 1px solid @border; top: -1px; }
+#memorySection QTabWidget QTabBar { font-size: 13px; font-weight: 500; }
+#memorySection QTabWidget QTabBar::tab {
+    background: transparent; color: @fgMuted;
+    border: none; border-bottom: 2px solid transparent;
+    padding: 9px 10px 8px 10px; margin: 0px 4px 0px 0px;
+}
+#memorySection QTabWidget QTabBar::tab:hover { color: @fg; }
+#memorySection QTabWidget QTabBar::tab:selected {
+    color: @fg; border-bottom: 2px solid @accentFg;
+}
+
+#memorySection QTreeWidget {
+    background-color: @bg; border: 1px solid @border; border-radius: 12px;
+    margin-top: 16px; padding: 0px; outline: none;
+    font-size: 13px; color: @fgSecondary;
+    selection-background-color: @accentSubtle; selection-color: @fg;
+}
+#memorySection QTreeWidget QHeaderView { background: transparent; }
+#memorySection QTreeWidget QHeaderView::section {
+    background-color: transparent; color: @fgSubtle; border: none;
+    border-bottom: 1px solid @border; padding: 0px 16px; min-height: 36px;
+    font-size: 12px; font-weight: 400;
+}
+#memorySection QTreeWidget::item {
+    min-height: 40px; padding: 0px 8px; border: none; border-bottom: 1px solid @border;
+}
+#memorySection QTreeWidget::item:hover { background-color: @surfaceRaised; color: @fg; }
+#memorySection QTreeWidget::item:selected,
+#memorySection QTreeWidget::item:selected:hover {
+    background-color: @accentSubtle; color: @fg;
+}
+#memorySection QTreeWidget::branch {
+    background: transparent; border-image: none; border: none;
+    border-bottom: 1px solid @border;
+}
+#memorySection QTreeWidget::branch:hover { background-color: @surfaceRaised; }
+#memorySection QTreeWidget::branch:selected { background-color: @accentSubtle; }
+#memorySection QTreeWidget::branch:has-children:closed { image: url(@chevronRightIcon); }
+#memorySection QTreeWidget::branch:has-children:open { image: url(@chevronIcon); }
