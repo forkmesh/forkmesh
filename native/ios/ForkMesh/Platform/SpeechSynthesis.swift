@@ -118,6 +118,7 @@ final class AppleSpeechEngine: NSObject, SpeechEngine, AVSpeechSynthesizerDelega
     private func activateSession() {
         Self.talking = true
         PromptDictation.yieldOverhearing()
+        guard !OtherAppCall.ownCall else { return }
         let session: AVAudioSession = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .spokenAudio, options: OtherAppCall.duckingOptions)
         try? session.setActive(true)
@@ -125,7 +126,7 @@ final class AppleSpeechEngine: NSObject, SpeechEngine, AVSpeechSynthesizerDelega
 
     private func deactivateSession() {
         guard !PromptDictation.isListening else { return }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        OtherAppCall.deactivateSession()
     }
 
     private func ended(_ utterance: ObjectIdentifier) {

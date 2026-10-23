@@ -43,7 +43,7 @@ final class DesktopAlarm {
         player?.stop()
         player = nil
         if !PromptDictation.isListening {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            OtherAppCall.deactivateSession()
         }
     }
 
@@ -54,7 +54,7 @@ final class DesktopAlarm {
         player = nil
         ringing = nil
         if !PromptDictation.isListening {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            OtherAppCall.deactivateSession()
         }
     }
 

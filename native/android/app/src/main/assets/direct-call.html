@@ -11,6 +11,9 @@ html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}
 body.audio video,body.camera-off #local{opacity:0}
 body.preview #remote{opacity:0}
 body.preview #local{inset:0;right:auto;bottom:auto;width:100%;height:100%;max-width:none;aspect-ratio:auto;border-radius:0}
+body.staged.waiting #remote,body.staged.remote-off #remote{opacity:0}
+body.staged.waiting #local{inset:0;right:auto;bottom:auto;width:100%;height:100%;max-width:none;aspect-ratio:auto;border-radius:0}
+body.staged.mini #local{opacity:0}
 </style>
 </head>
 <body class="audio">
@@ -8968,6 +8971,7 @@ function mountCallQualityWidget(host, meter, {
   sending = () => true,
   peerLabel = "Them",
   scope = globalThis,
+  visible = () => !documentRef?.hidden,
 } = {}) {
   if (!host || !meter || !documentRef) return null;
   const root = documentRef.createElement("div");
@@ -9016,10 +9020,16 @@ function mountCallQualityWidget(host, meter, {
   diag.className = "fm-q-diag";
   diag.dataset.state = "unknown";
   diag.setAttribute("aria-expanded", "false");
+  diag.title = "Show diagnostics and how to fix them";
+  diag.setAttribute("aria-label", "Call diagnostics");
   const dot = documentRef.createElement("span");
   dot.className = "fm-q-dot";
   dot.setAttribute("aria-hidden", "true");
-  diag.append(dot);
+  const diagText = documentRef.createElement("span");
+  diagText.className = "fm-q-diag-text";
+  diagText.setAttribute("aria-hidden", "true");
+  diagText.textContent = "Diagnose";
+  diag.append(dot, diagText);
   bar.append(pill, diag);
   const diagPanel = documentRef.createElement("div");
   diagPanel.className = "fm-q-panel fm-q-diag-panel";
@@ -9075,6 +9085,14 @@ function mountCallQualityWidget(host, meter, {
   } catch (_) {}
   let colors = readColors(root);
   let colorsAt = Date.now();
+  let drawnFor;
+  const written = new Map();
+
+  function put(key, value, apply) {
+    if (written.get(key) === value) return;
+    written.set(key, value);
+    apply(value);
+  }
 
   function setOpen(value) {
     open = Boolean(value);
@@ -9085,11 +9103,12 @@ function mountCallQualityWidget(host, meter, {
       storage?.setItem(QUALITY_OPEN_KEY, open ? "1" : "0");
     } catch (_) {}
     colors = readColors(root);
+    drawnFor = undefined;
     render();
   }
 
   function refreshDiagnosis() {
-    diag.hidden = !meter.hasStats;
+    if (diag.hidden !== !meter.hasStats) diag.hidden = !meter.hasStats;
     if (!meter.hasStats || meter.latest === diagnosedFor) return;
     diagnosedFor = meter.latest;
     diagnosis = diagnoseCall(meter.samples, { video: video(), sending: sending() });
@@ -9169,6 +9188,7 @@ function mountCallQualityWidget(host, meter, {
 
   function render() {
     refreshDiagnosis();
+    if (!visible()) return;
     if (Date.now() - colorsAt > 1000) {
       colors = readColors(root);
       colorsAt = Date.now();
@@ -9176,29 +9196,41 @@ function mountCallQualityWidget(host, meter, {
     const latest = meter.latest;
     const grade = meter.hasStats ? gradeCallQuality(latest) : "unknown";
     const count = meter.hasStats ? qualityBars(latest) : 0;
-    root.dataset.grade = grade;
-    root.dataset.stats = meter.hasStats ? "true" : "false";
-    [...bars.children].forEach((bar, i) => bar.classList.toggle("is-on", i < count));
+    put("grade", grade, (value) => { root.dataset.grade = value; });
+    put("stats", meter.hasStats ? "true" : "false", (value) => { root.dataset.stats = value; });
+    put("bars", count, (value) => [...bars.children].forEach((bar, i) => bar.classList.toggle("is-on", i < value)));
     const network = meter.hasStats ? describeNetwork(latest) : "";
-    pillText.textContent = meter.hasStats && latest?.rttMs !== null && latest?.rttMs !== undefined
+    const rtt = meter.hasStats && latest?.rttMs !== null && latest?.rttMs !== undefined
       ? Math.round(latest.rttMs) + " ms"
       : "";
-    pillText.hidden = !pillText.textContent;
-    bars.hidden = !meter.hasStats;
+    put("rtt", rtt, (value) => {
+      pillText.textContent = value;
+      pillText.hidden = !value;
+    });
+    put("barsHidden", !meter.hasStats, (value) => { bars.hidden = value; });
     const summary = meter.hasStats ? qualityGradeLabel(grade) + (network && latest ? " · " + network : "") : "Microphone level";
-    pill.title = summary + (open ? ". Hide live charts" : ". Show live charts");
-    pill.setAttribute("aria-label", "Call quality: " + summary);
+    put("summary", summary + (open ? "|open" : ""), () => {
+      pill.title = summary + (open ? ". Hide live charts" : ". Show live charts");
+      pill.setAttribute("aria-label", "Call quality: " + summary);
+    });
     drawVoiceWave(wave, meter.levels, colors, 20);
     if (!open) return;
-    heading.textContent = meter.hasStats ? qualityGradeLabel(grade) : "Microphone";
+    put("heading", meter.hasStats ? qualityGradeLabel(grade) : "Microphone", (value) => { heading.textContent = value; });
     drawVoiceWave(rows.voice.chart, meter.levels, colors);
     const hasPeer = meter.levels.some((entry) => entry.peer !== null && entry.peer !== undefined);
-    rows.voice.value.textContent = hasPeer ? "You ▲ · " + peerLabel + " ▼" : "You";
-    rows.voice.chart.setAttribute("aria-label", "Voice levels over the last five seconds");
-    rows.network.line.hidden = !meter.hasStats;
-    rows.video.line.hidden = !meter.hasStats || !video();
-    rows.send.line.hidden = !meter.hasStats || !video();
-    if (!meter.hasStats) return;
+    put("voice", hasPeer ? "You ▲ · " + peerLabel + " ▼" : "You", (value) => {
+      rows.voice.value.textContent = value;
+      rows.voice.value.title = value;
+      rows.voice.chart.setAttribute("aria-label", "Voice levels over the last five seconds");
+    });
+    const showVideo = meter.hasStats && video();
+    put("rows", String(meter.hasStats) + showVideo, () => {
+      rows.network.line.hidden = !meter.hasStats;
+      rows.video.line.hidden = !showVideo;
+      rows.send.line.hidden = !showVideo;
+    });
+    if (!meter.hasStats || drawnFor === latest) return;
+    drawnFor = latest;
     const samples = meter.samples;
     const marks = samples.map((sample) => {
       if (sample.lossPct === null || sample.lossPct < QUALITY_LOSS_STEPS[0]) return "";
@@ -9298,8 +9330,12 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
   const AUDIO_CONSTRAINTS = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, sampleRate: 48000 };
   const VIDEO_CONSTRAINTS = { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
   const VIDEO_MAX_BITRATE = 2500000;
-  const AUDIO_MAX_BITRATE = 96000;
+  const AUDIO_MAX_BITRATE = 128000;
   const ROUTE_CHECK_MS = 4000;
+  const WATCH_MS = 1000;
+  const STALL_MS = 4000;
+  const VIDEO_ON_FRAMES = 2;
+  const MIC_TRIES = 3;
   const remote = document.getElementById("remote");
   const local = document.getElementById("local");
   let pc = null;
@@ -9332,6 +9368,13 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
   let quality = null;
   let qualityTimer = null;
   const QUALITY_POST_MS = 1000;
+  let resilient = false;
+  let staged = false;
+  let muted = false;
+  let liveFor = null;
+  let watch = null;
+  let remoteVideo = null;
+  let micRecovering = null;
 
   const post = (message) => {
     const text = JSON.stringify(message);
@@ -9619,8 +9662,8 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
         encoding.maxBitrate = kind === "video" ? VIDEO_MAX_BITRATE : AUDIO_MAX_BITRATE;
         if (kind === "video") encoding.maxFramerate = 30;
         if (full) {
-          encoding.priority = "high";
-          encoding.networkPriority = "high";
+          encoding.priority = kind === "video" ? "medium" : "high";
+          encoding.networkPriority = kind === "video" ? "medium" : "high";
         }
       }
       if (full && kind === "video") params.degradationPreference = "balanced";
@@ -9636,7 +9679,7 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
     await tuneSender(audioSender, "audio");
     await tuneSender(videoSender, "video");
   };
-  const OPUS_FMTP = [["useinbandfec", "1"], ["usedtx", "0"], ["stereo", "0"], ["maxplaybackrate", "48000"], ["maxaveragebitrate", String(AUDIO_MAX_BITRATE)]];
+  const OPUS_FMTP = [["useinbandfec", "1"], ["usedtx", "0"], ["stereo", "0"], ["maxplaybackrate", "48000"], ["maxaveragebitrate", String(AUDIO_MAX_BITRATE)], ["sprop-maxcapturerate", "48000"]];
   const tuneSdp = (description) => {
     if (!description || typeof description.sdp !== "string") return description;
     const lines = description.sdp.split("\r\n");
@@ -9706,6 +9749,139 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
     if (!routeTimer) routeTimer = setInterval(check, ROUTE_CHECK_MS);
     check();
   };
+  const preferRed = (connection) => {
+    const Receiver = window.RTCRtpReceiver;
+    if (!Receiver || typeof Receiver.getCapabilities !== "function") return;
+    const capabilities = Receiver.getCapabilities("audio");
+    const codecs = capabilities && Array.isArray(capabilities.codecs) ? capabilities.codecs : [];
+    const named = (codec, name) => String(codec.mimeType || "").toLowerCase() === "audio/" + name;
+    const red = codecs.filter((codec) => named(codec, "red"));
+    if (!red.length) return;
+    const opus = codecs.filter((codec) => named(codec, "opus"));
+    const rest = codecs.filter((codec) => !named(codec, "red") && !named(codec, "opus"));
+    for (const transceiver of connection.getTransceivers()) {
+      const track = transceiver.sender && transceiver.sender.track;
+      if (!track || track.kind !== "audio" || typeof transceiver.setCodecPreferences !== "function") continue;
+      try {
+        transceiver.setCodecPreferences([...red, ...opus, ...rest]);
+      } catch (_) {}
+    }
+  };
+  const stageClasses = () => {
+    if (!staged) return;
+    const waiting = !remoteVideo || !remoteVideo.seen;
+    document.body.classList.toggle("waiting", waiting && document.body.classList.contains("video"));
+    document.body.classList.toggle("remote-off", !waiting && !remoteVideo.on);
+  };
+  const reportRemoteVideo = (on) => {
+    if (!remoteVideo || remoteVideo.on === on) return;
+    remoteVideo.on = on;
+    if (on) remoteVideo.seen = true;
+    stageClasses();
+    post({ event: "remote-video", on, seen: remoteVideo.seen });
+  };
+  const stopWatch = () => {
+    if (watch) clearInterval(watch.timer);
+    watch = null;
+  };
+  const watchMedia = (connection) => {
+    if (watch && watch.connection === connection) return;
+    stopWatch();
+    const state = { connection, timer: null, packets: -1, grewAt: performance.now(), stalled: false, frames: [] };
+    state.timer = setInterval(() => {
+      if (pc !== connection) {
+        if (watch === state) stopWatch();
+        return;
+      }
+      connection.getStats()
+        .then((report) => {
+          if (watch !== state || pc !== connection) return;
+          let packets = 0;
+          let audio = false;
+          let frames = 0;
+          let video = false;
+          report.forEach((entry) => {
+            if (entry.type !== "inbound-rtp") return;
+            const kind = entry.kind || entry.mediaType;
+            if (kind === "audio") {
+              audio = true;
+              packets += Number(entry.packetsReceived) || 0;
+            } else if (kind === "video") {
+              video = true;
+              frames += Number(entry.framesDecoded) || 0;
+            }
+          });
+          const now = performance.now();
+          if (resilient && audio) {
+            if (packets > state.packets) {
+              state.packets = packets;
+              state.grewAt = now;
+              if (state.stalled) {
+                state.stalled = false;
+                post({ event: "connection", state: "connected" });
+              }
+            } else if (!state.stalled && connection.connectionState === "connected" && now - state.grewAt >= STALL_MS) {
+              state.stalled = true;
+              post({ event: "connection", state: "stalled" });
+            }
+          }
+          if (staged && video) {
+            state.frames.push(frames);
+            if (state.frames.length > 3) state.frames.shift();
+            const grown = frames - state.frames[0];
+            if (frames > 0 && !(remoteVideo && remoteVideo.seen)) reportRemoteVideo(true);
+            else if (state.frames.length >= 3) reportRemoteVideo(grown >= VIDEO_ON_FRAMES);
+          }
+        })
+        .catch(() => {});
+    }, WATCH_MS);
+    watch = state;
+  };
+  const watchMic = () => {
+    const track = tracks("audio")[0];
+    if (!resilient || !track || track.fmWatched) return;
+    track.fmWatched = true;
+    track.addEventListener("ended", () => {
+      if (resilient && stream && tracks("audio")[0] === track) recoverMic(track).catch(() => {});
+    });
+  };
+  const recoverMic = (lost) => {
+    if (micRecovering) return micRecovering;
+    const owner = stream;
+    const run = async () => {
+      let fresh = null;
+      for (let attempt = 0; attempt < MIC_TRIES && !fresh; attempt += 1) {
+        if (attempt) await wait(1000);
+        if (stream !== owner) return;
+        fresh = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS }).catch(() => null);
+      }
+      const track = fresh ? fresh.getAudioTracks()[0] || null : null;
+      if (stream !== owner || !owner) {
+        for (const extra of fresh ? fresh.getTracks() : []) extra.stop();
+        return;
+      }
+      if (!track) {
+        post({ event: "mic", ok: false });
+        return;
+      }
+      if (lost) owner.removeTrack(lost);
+      owner.addTrack(track);
+      track.enabled = !muted;
+      watchMic();
+      if (voiceStage) voiceStage.stop();
+      voiceStage = null;
+      voicePending = null;
+      voiceReported = null;
+      if (voiceWanted) await useVoice(voiceWanted);
+      const out = outgoingAudio();
+      if (audioSender && out && audioSender.track !== out) await audioSender.replaceTrack(out).catch(() => {});
+      post({ event: "mic", ok: true });
+    };
+    micRecovering = run().finally(() => {
+      micRecovering = null;
+    });
+    return micRecovering;
+  };
   const stopQuality = () => {
     if (qualityTimer) clearInterval(qualityTimer);
     qualityTimer = null;
@@ -9764,9 +9940,17 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
       const background = arguments[4];
       const image = arguments[5];
       const faceImage = arguments[6];
+      const options = arguments[7] && typeof arguments[7] === "object" ? arguments[7] : {};
       if (faceImage !== undefined && faceImage !== null) faceImageWanted = String(faceImage);
       dropRecording();
-      document.body.className = media === "video" ? "video" : "audio";
+      resilient = Boolean(options.resilient);
+      staged = Boolean(options.staged);
+      liveFor = null;
+      stopWatch();
+      remoteVideo = staged ? { on: false, seen: false } : null;
+      const mini = document.body.classList.contains("mini");
+      document.body.className = (media === "video" ? "video" : "audio") + (staged ? " staged" : "") + (staged && mini ? " mini" : "");
+      stageClasses();
       const previewed = stream && (media !== "video" || hasVideo()) ? stream : null;
       if (!previewed && stream) {
         stopPushed();
@@ -9778,6 +9962,8 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
       }
       stream = previewed || await openStream(media);
       cameraOff = false;
+      muted = false;
+      watchMic();
       if (media === "video" && face) useFace(String(face));
       if (media === "video" && background) useBackground(String(background), image || "");
       if (voice) useVoice(String(voice));
@@ -9789,12 +9975,18 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
       if (audio) audioSender = pc.addTrack(audio, stream);
       const video = outgoingVideo();
       if (video) videoSender = pc.addTrack(video, stream);
+      preferRed(pc);
       const current = pc;
       pc.onicecandidate = (event) => {
         if (event.candidate) post({ event: "ice", candidate: plain(event.candidate) });
       };
       pc.ontrack = (event) => {
         if (!remoteStream.getTracks().includes(event.track)) remoteStream.addTrack(event.track);
+        if (staged && event.track.kind === "video") {
+          event.track.addEventListener("mute", () => {
+            if (pc === current) reportRemoteVideo(false);
+          });
+        }
         remote.play().catch(() => {});
       };
       pc.onconnectionstatechange = () => {
@@ -9803,9 +9995,16 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
         if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
         if (state === "connected") {
           post({ event: "live" });
-          watchRoute(current);
-          startQuality(current);
+          if (resilient) post({ event: "connection", state });
+          if (!resilient || liveFor !== current) {
+            liveFor = current;
+            watchRoute(current);
+            startQuality(current);
+          }
           tuneSenders().catch(() => {});
+          if (resilient || staged) watchMedia(current);
+        } else if (resilient && (state === "failed" || state === "disconnected")) {
+          post({ event: "connection", state });
         } else if (state === "failed" || state === "closed") post({ event: "closed" });
         else if (state === "disconnected") {
           graceTimer = setTimeout(() => {
@@ -9831,6 +10030,24 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
     async route() {
       return route;
     },
+    async restart() {
+      if (!pc) throw new Error("not_connected");
+      if (typeof pc.restartIce === "function") pc.restartIce();
+      await pc.setLocalDescription(await pc.createOffer({ iceRestart: true }));
+      await tuneSenders();
+      return tuneSdp(plain(pc.localDescription));
+    },
+    async wake() {
+      remote.play().catch(() => {});
+      local.play().catch(() => {});
+      const track = tracks("audio")[0] || null;
+      if (resilient && stream && (!track || track.readyState === "ended")) await recoverMic(track);
+      return true;
+    },
+    async layout(mode) {
+      document.body.classList.toggle("mini", mode === "mini");
+      return true;
+    },
     async accept(answer) {
       await pc.setRemoteDescription(answer);
       return true;
@@ -9840,6 +10057,7 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
       return true;
     },
     async mute(on) {
+      muted = Boolean(on);
       for (const track of tracks("audio")) track.enabled = !on;
       return true;
     },
@@ -9968,6 +10186,12 @@ return { createCallQualityMeter, rtcStatsReader, qualityEvent };
     async close() {
       dropRecording();
       if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
+      stopWatch();
+      resilient = false;
+      staged = false;
+      muted = false;
+      liveFor = null;
+      remoteVideo = null;
       stopRoute();
       stopQuality();
       const closing = pc;

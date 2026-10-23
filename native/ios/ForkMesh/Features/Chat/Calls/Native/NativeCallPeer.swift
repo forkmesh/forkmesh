@@ -12,12 +12,15 @@ enum NativeCallError: Error {
 
 @MainActor
 final class NativeCallPeer: NSObject, DirectCallPeer {
-    static let disconnectGrace: TimeInterval = 8
     static let routeEvery: TimeInterval = 4
+    static let stallAfter: TimeInterval = 4
+    static let videoOnFrames: Double = 2
 
     var onIceCandidate: (@MainActor (JSONObject) -> Void)?
     var onLive: (@MainActor () -> Void)?
     var onClosed: (@MainActor () -> Void)?
+    var onConnection: (@MainActor (DirectCallConnection) -> Void)?
+    var onRemoteVideoActive: (@MainActor (Bool) -> Void)?
     var onRoute: (@MainActor (DirectCallRoute?) -> Void)?
     var onRemoteVideo: (@MainActor (RTCVideoTrack?) -> Void)?
 
@@ -31,9 +34,15 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
     private let probe = NativeQualityProbe()
     private var closed = false
     private var live = false
-    private var grace: Task<Void, Never>?
+    private var packets: Double = -1
+    private var packetsGrewAt = Date()
+    private var stalled = false
+    private var frameLog: [Double] = []
+    private var videoSeen = false
+    private var videoOn = false
     private var routeWatch: Task<Void, Never>?
     private var audioStarted = false
+    private var cameraOff = false
 
     init(media: DirectCallKind, iceServers: [String], audioTrack: RTCAudioTrack? = nil, video: (RTCVideoTrack, NativeCameraPipeline)? = nil) throws {
         let shared = NativeCallMedia.shared
@@ -66,6 +75,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
             videoInit.streamIds = Self.streamIds
             connection.addTransceiver(of: .video, init: videoInit)
         }
+        NativeCallMedia.preferRed(connection)
     }
 
     private static let streamIds = ["forkmesh"]
@@ -73,7 +83,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
     private var delegateRelay: NativePeerDelegate?
 
     func startCapture() async {
-        guard let camera else { return }
+        guard let camera, !cameraOff else { return }
         _ = await camera.start(
             width: CallMediaTuning.videoWidth, height: CallMediaTuning.videoHeight, fps: CallMediaTuning.videoFrameRate)
     }
@@ -99,6 +109,20 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
         try await setRemote(answer, type: .answer)
     }
 
+    func restartOffer() async throws -> JSONObject? {
+        guard !closed else { return nil }
+        connection.restartIce()
+        let created = try await describe { connection, done in
+            connection.offer(for: Self.constraints, completionHandler: done)
+        }
+        return try await adopt(created)
+    }
+
+    func resumeMedia() {
+        guard !closed, live else { return }
+        NativeCallMedia.shared.resumeAudio()
+    }
+
     func add(candidate: JSONObject) async {
         guard !closed, let line = candidate["candidate"]?.text, !line.isEmpty else { return }
         let index = Int32(candidate["sdpMLineIndex"]?.intValue ?? 0)
@@ -114,6 +138,7 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
     }
 
     func setCameraOff(_ off: Bool) {
+        cameraOff = off
         videoTrack?.isEnabled = !off
         if off {
             camera?.stop()
@@ -125,7 +150,6 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
     func close() {
         guard !closed else { return }
         closed = true
-        grace?.cancel()
         routeWatch?.cancel()
         probe.stop()
         camera?.stop()
@@ -185,31 +209,78 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
         guard !closed else { return }
         switch state {
         case .connected:
-            grace?.cancel()
-            grace = nil
             if !live {
                 live = true
                 if !audioStarted {
                     audioStarted = true
                     NativeCallMedia.shared.beginAudio()
                 }
-                NativeCallMedia.capSenders(connection, videoBitrate: CallMediaTuning.videoMaxBitrate)
                 watchRoute()
                 watchQuality()
-                onLive?()
+            } else {
+                onConnection?(.connected)
             }
-        case .failed, .closed:
+            NativeCallMedia.capSenders(connection, videoBitrate: CallMediaTuning.videoMaxBitrate)
+            onLive?()
+        case .closed:
             close()
+        case .failed:
+            onConnection?(.failed)
         case .disconnected:
-            grace?.cancel()
-            grace = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(NativeCallPeer.disconnectGrace * 1_000_000_000))
-                guard let self, !Task.isCancelled, self.connection.connectionState == .disconnected else { return }
-                self.close()
-            }
+            onConnection?(.disconnected)
         default:
             break
         }
+    }
+
+    private func watchMedia(_ reports: [[CallStatsEntry]]) {
+        guard !closed else { return }
+        var received: Double = 0
+        var audio = false
+        var frames: Double = 0
+        var video = false
+        for entries in reports {
+            for entry in entries where entry.type == "inbound-rtp" {
+                if entry.kind == "audio" {
+                    audio = true
+                    received += entry.number("packetsReceived") ?? 0
+                } else if entry.kind == "video" {
+                    video = true
+                    frames += entry.number("framesDecoded") ?? 0
+                }
+            }
+        }
+        let now = Date()
+        if audio {
+            if received > packets {
+                packets = received
+                packetsGrewAt = now
+                if stalled {
+                    stalled = false
+                    onConnection?(.connected)
+                }
+            } else if !stalled, connection.connectionState == .connected,
+                now.timeIntervalSince(packetsGrewAt) >= Self.stallAfter
+            {
+                stalled = true
+                onConnection?(.stalled)
+            }
+        }
+        guard video else { return }
+        frameLog.append(frames)
+        if frameLog.count > 3 { frameLog.removeFirst(frameLog.count - 3) }
+        let on: Bool
+        if frames > 0 && !videoSeen {
+            videoSeen = true
+            on = true
+        } else if frameLog.count >= 3 {
+            on = frames - (frameLog.first ?? frames) >= Self.videoOnFrames
+        } else {
+            return
+        }
+        guard on != videoOn else { return }
+        videoOn = on
+        onRemoteVideoActive?(on)
     }
 
     fileprivate func receiverAdded(_ receiver: RTCRtpReceiver) {
@@ -226,7 +297,9 @@ final class NativeCallPeer: NSObject, DirectCallPeer {
                 guard let self, !self.closed else { return [] }
                 return [self.connection]
             },
-            muted: { [weak self] in !(self?.audioTrack.isEnabled ?? false) })
+            muted: { [weak self] in !(self?.audioTrack.isEnabled ?? false) },
+            levels: { NativeQualityProbe.levelsShown() },
+            full: { [weak self] (reports: [[CallStatsEntry]]) in self?.watchMedia(reports) })
     }
 
     private func watchRoute() {

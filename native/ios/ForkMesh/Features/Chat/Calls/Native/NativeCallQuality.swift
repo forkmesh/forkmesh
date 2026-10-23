@@ -57,33 +57,56 @@ final class NativeMicMeter {
 @MainActor
 final class NativeQualityProbe {
     static let statsEveryTicks = Int((CallQuality.statsEvery / CallQuality.levelEvery).rounded())
+    static let readEvery: Double = 0.2
+    static let fullEveryReads = Int((CallQuality.statsEvery / readEvery).rounded())
+    static var levelsShown: @MainActor () -> Bool = { true }
 
     private var task: Task<Void, Never>?
     private var counters: CallStatsCounters?
 
     func start(
         monitor: CallQualityMonitor, connections: @escaping @MainActor () -> [RTCPeerConnection],
-        muted: @escaping @MainActor () -> Bool
+        muted: @escaping @MainActor () -> Bool, levels: @escaping @MainActor () -> Bool = { true },
+        full: (@MainActor ([[CallStatsEntry]]) -> Void)? = nil
     ) {
         stop()
         task = Task { @MainActor [weak self, weak monitor] in
             var tick = 0
+            var previous: CallVoiceLevel?
             while !Task.isCancelled {
-                let full = tick % NativeQualityProbe.statsEveryTicks == 0
+                let whole = tick % NativeQualityProbe.fullEveryReads == 0
+                let wanted = levels()
+                tick += 1
+                if !whole && !wanted {
+                    previous = nil
+                    try? await Task.sleep(nanoseconds: UInt64(NativeQualityProbe.readEvery * 1_000_000_000))
+                    continue
+                }
                 let list = connections()
-                let reports = await NativeQualityProbe.read(list, full: full)
+                let reports = await NativeQualityProbe.read(list, full: whole)
                 guard !Task.isCancelled, let self, let monitor else { return }
-                monitor.push(level: CallStatsSummary.levels(reports, muted: muted()))
-                if full {
+                if wanted {
+                    let level = CallStatsSummary.levels(reports, muted: muted())
+                    monitor.queue(levels: [NativeQualityProbe.between(previous ?? level, level), level])
+                    previous = level
+                }
+                if whole {
                     let result = CallStatsSummary.summarize(
                         reports, previous: self.counters, at: Date().timeIntervalSince1970)
                     self.counters = list.isEmpty ? nil : result.counters
-                    if !list.isEmpty { monitor.push(sample: result.sample) }
+                    if !list.isEmpty {
+                        monitor.push(sample: result.sample)
+                        full?(reports)
+                    }
                 }
-                tick += 1
-                try? await Task.sleep(nanoseconds: UInt64(CallQuality.levelEvery * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: UInt64(NativeQualityProbe.readEvery * 1_000_000_000))
             }
         }
+    }
+
+    static func between(_ a: CallVoiceLevel, _ b: CallVoiceLevel) -> CallVoiceLevel {
+        guard let x = a.peer, let y = b.peer else { return CallVoiceLevel(mic: (a.mic + b.mic) / 2, peer: b.peer) }
+        return CallVoiceLevel(mic: (a.mic + b.mic) / 2, peer: (x + y) / 2)
     }
 
     func stop() {

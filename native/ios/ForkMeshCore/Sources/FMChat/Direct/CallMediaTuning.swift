@@ -2,7 +2,10 @@ import Foundation
 
 public enum CallMediaTuning {
     public static let videoMaxBitrate = 2_500_000
-    public static let audioMaxBitrate = 96_000
+    public static let audioMaxBitrate = 128_000
+    public static let audioPriority = "high"
+    public static let videoPriority = "medium"
+    public static let audioCodecOrder = ["audio/red", "audio/opus"]
     public static let videoWidth = 1280
     public static let videoHeight = 720
     public static let videoFrameRate = 30
@@ -16,6 +19,7 @@ public enum CallMediaTuning {
         ("stereo", "0"),
         ("maxplaybackrate", "48000"),
         ("maxaveragebitrate", String(audioMaxBitrate)),
+        ("sprop-maxcapturerate", "48000"),
     ]
 
     public static func tune(_ sdp: String) -> String {
@@ -46,6 +50,16 @@ public enum CallMediaTuning {
             lines.insert(line, at: rtpmapIndex + 1)
         }
         return lines.joined(separator: "\r\n")
+    }
+
+    public static func orderedAudioCodecs(_ mimeTypes: [String]) -> [String]? {
+        func rank(_ mimeType: String) -> Int {
+            audioCodecOrder.firstIndex(of: mimeType.lowercased()) ?? audioCodecOrder.count
+        }
+        guard mimeTypes.contains(where: { rank($0) == 0 }) else { return nil }
+        return mimeTypes.enumerated()
+            .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+            .map(\.element)
     }
 
     static func isOpusRtpmap(_ line: String) -> Bool {

@@ -1868,14 +1868,21 @@
 
       <div id="chat-call-panel" class="chat-call-panel" role="dialog" aria-label="Encrypted call" hidden>
         <div class="chat-call-head">
+          <button id="chat-call-minimize" type="button" class="chat-call-back" aria-label="Back to chat. The call keeps going in a small window" hidden>Back to chat</button>
           <strong id="chat-call-peer"></strong>
           <span id="chat-call-state" role="status" aria-live="polite"></span>
           <span id="chat-call-route" class="chat-call-route" hidden></span>
         </div>
-        <div class="chat-call-videos">
+        <div id="chat-call-videos" class="chat-call-videos">
           <video id="chat-call-remote" autoplay playsinline></video>
+          <div id="chat-call-placeholder" class="chat-call-placeholder" hidden>
+            <span id="chat-call-avatar" class="chat-call-avatar" aria-hidden="true"></span>
+            <span id="chat-call-placeholder-text" class="chat-call-placeholder-text"></span>
+          </div>
           <video id="chat-call-local" autoplay muted playsinline hidden></video>
+          <button id="chat-call-sound" type="button" class="chat-call-sound" hidden>Tap to turn on sound</button>
         </div>
+        <p id="chat-call-notice" class="chat-call-notice" hidden></p>
         <p class="chat-call-meta">
           Calls go directly between your devices when the network allows; once
           connected, the line above says whether this call is direct or relayed
@@ -1907,6 +1914,7 @@
           <button id="chat-call-mute" type="button">Mute</button>
           <button id="chat-call-camera" type="button" hidden>Camera off</button>
           <button id="chat-call-hangup" type="button" class="chat-call-hangup">Hang up</button>
+          <button id="chat-call-expand" type="button" class="chat-call-expand" aria-label="Open the call" hidden>Open</button>
         </div>
       </div>
 
