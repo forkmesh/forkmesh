@@ -1,0 +1,97 @@
+QWidget#pingsNextHeader { background-color: @bg; border: none; border-bottom: 1px solid @border; }
+QWidget#pingsNextHeader QLabel { background: transparent; }
+QWidget[pingsNextPage="true"] QLabel#settingsTitle {
+    color: @fg; font-size: 15px; font-weight: 600; background: transparent;
+}
+QLabel#pingsNextSummary { color: @fgMuted; font-size: 12px; }
+QWidget#pingsNextQuiet { background: transparent; }
+QLabel#pingsNextQuietLabel { color: @fgMuted; font-size: 12px; }
+QWidget#pingsNextHeader QPushButton#repoAction,
+QPushButton#pingsNextMore, QPushButton#pingsNextSort {
+    background: transparent; border: none; color: @fgMuted; border-radius: 6px;
+    padding: 0px 8px; min-height: 28px; max-height: 28px; font-size: 12px;
+}
+QWidget#pingsNextHeader QPushButton#repoAction:hover,
+QPushButton#pingsNextMore:hover, QPushButton#pingsNextSort:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+QPushButton#pingsNextMore { padding: 0px; min-width: 28px; max-width: 28px; }
+QPushButton#pingsNextMore::menu-indicator, QPushButton#pingsNextSort::menu-indicator {
+    image: none; width: 0px;
+}
+QPushButton#pingsNextMarkRead {
+    background-color: @surface; border: 1px solid @borderStrong; color: @fg;
+    border-radius: 6px; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+QPushButton#pingsNextMarkRead:hover { background-color: @surfaceRaised; }
+QPushButton#pingsNextMarkRead:disabled { color: @fgSubtle; border-color: @border; }
+
+QFrame#pingsNextFilters {
+    background-color: @bgSubtle; border: 1px solid @border; border-radius: 8px;
+}
+QPushButton#pingsNextFilter {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+    min-height: 28px; max-height: 28px;
+}
+QPushButton#pingsNextFilter:hover { background-color: @surfaceRaised; }
+QPushButton#pingsNextFilter[active="true"] { background-color: @surfaceActive; }
+QLabel#pingsNextFilterLabel { color: @fgMuted; font-size: 13px; background: transparent; }
+QPushButton#pingsNextFilter[active="true"] QLabel#pingsNextFilterLabel {
+    color: @fg; font-weight: 500;
+}
+QLabel#pingsNextFilterCount {
+    color: @accentFg; background-color: @accentSubtle; border-radius: 7px;
+    padding: 0px 5px; font-size: 11px; font-weight: 500;
+    min-height: 14px; max-height: 14px;
+}
+
+QTableWidget#issueTable[pingsNext="true"] {
+    background-color: @bg; border: none; outline: none;
+}
+QWidget[pingsNextPage="true"] QSplitter#issuesSplitter::handle { background-color: @border; }
+
+QScrollArea#issueSidebarScroll[pingsNext="true"] { background-color: @bg; border: none; }
+QWidget#issueSidebar[pingNext="true"] { background-color: @bg; }
+QWidget#issueSidebar[pingNext="true"] QLabel { background: transparent; }
+QWidget#pingsNextDetailColumn, QWidget#pingsNextDetailActions { background: transparent; }
+QWidget#issueSidebar[pingNext="true"] QLabel#issuePageTitle {
+    color: @fg; font-size: 17px; font-weight: 600;
+}
+QLabel#pingsNextDetailMeta { color: @fgMuted; font-size: 12px; }
+QLabel#pingsNextDetailMetaDot { color: @fgSubtle; font-size: 12px; }
+QWidget#issueSidebar[pingNext="true"] QLabel#issueSidebarHeading {
+    color: @fgSubtle; font-size: 11px; font-weight: 500; letter-spacing: 0.6px;
+}
+QWidget#issueSidebar[pingNext="true"] QLabel#mutedLabel { color: @fgMuted; font-size: 12px; }
+QWidget#pingsNextDetailActions QPushButton {
+    min-height: 28px; max-height: 28px; padding: 0px 10px; border-radius: 6px;
+    font-size: 12px; font-weight: 500;
+}
+QWidget#pingsNextDetailActions QPushButton#ghostButton {
+    background-color: @surface; border: 1px solid @borderStrong; color: @fg;
+}
+QWidget#pingsNextDetailActions QPushButton#ghostButton:hover { background-color: @surfaceRaised; }
+QWidget#pingsNextDetailActions QPushButton#issueDangerLink {
+    background: transparent; border: 1px solid transparent; color: @danger;
+}
+QWidget#pingsNextDetailActions QPushButton#issueDangerLink:hover { background-color: @dangerSubtle; }
+QFrame#pingsNextDetailCard {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QFrame#pingsNextDetailCard QLabel { background: transparent; }
+QFrame#pingsNextDetailCard QLabel#statusLine { color: @fg; font-size: 13px; }
+QFrame#pingsNextDetailCard[pingLog="true"] QLabel#statusLine {
+    color: @fgMuted; font-family: "Geist Mono"; font-size: 12px;
+}
+
+QWidget#pingsNextEmptyDetail { background-color: @bg; }
+QWidget#pingsNextEmptyDetail QLabel { background: transparent; }
+QLabel#pingsNextEmptyTitle { color: @fg; font-size: 13px; font-weight: 500; }
+QLabel#pingsNextEmptyBody { color: @fgMuted; font-size: 12px; }
+QPushButton#pingsNextShowAll {
+    background-color: @surface; border: 1px solid @borderStrong; color: @fg;
+    border-radius: 6px; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+QPushButton#pingsNextShowAll:hover { background-color: @surfaceRaised; }
