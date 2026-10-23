@@ -535,6 +535,15 @@ What changed (`repo_ssr.py`, `repo_views.py`):
   to the Worker, so the route reveals nothing new.
 - The first view's pull header has a **Raw diff** link to that address, and
   a diff cut at `MAX_DIFF_FILES` / `MAX_DIFF_LINES` points to it.
+- `GET .../pull/<n>.txt` (long and short addresses alike) answers the whole
+  pull request as `text/plain` from the same bundle: title, author,
+  branches, state, the description, every comment and review (edits and
+  deletions applied by `repo_views.folded_conversation`, line comments with
+  their `path:line`), then the diff. It is the `{textUrl}` of the review
+  prompt ([pull-review-prompt.md](pull-review-prompt.md)), so an assistant
+  reads the discussion and the change in one fetch. A closed or merged pull
+  request answers too, without a diff; a repository the gateway does not
+  serve publicly falls through to the Worker, like `.diff`.
 
 Tests: `app/tests/host/test_repo_views.py`.
 

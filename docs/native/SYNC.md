@@ -185,4 +185,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S110 | 2026-10-22 | Settings | feature | Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked. | 180d647034 | synced | 2ca5862405 |
 | S111 | 2026-10-22 | Chat | fix | Face filters follow your head with less lag and your lips move with your speech. | d62d4aabc9 | synced | d62d4aabc9 |
 | S112 | 2026-10-22 | Agents | ui | Agents Eagle rows drop the left agent dot and show an image tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots. | 40906210d3 | synced | 0416f062e3 |
+| S113 | 2026-10-23 | Settings | fix | With Diagnostics on, the status dots show above the Dynamic Island and the desktop and node lights sit just under the clock. | 977c57037b | pending |  |
 <!-- ledger:end -->

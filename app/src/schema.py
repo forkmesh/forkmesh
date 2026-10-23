@@ -5186,4 +5186,25 @@ SCHEMA_STATEMENTS = [
     "viewers INTEGER NOT NULL DEFAULT 0 CHECK (viewers >= 0), "
     "last_viewed_at INTEGER NOT NULL DEFAULT 0 CHECK (last_viewed_at >= 0), "
     "PRIMARY KEY (repo_bi, number)) WITHOUT ROWID",
+    """CREATE TABLE IF NOT EXISTS pull_ai_reviews (
+        repo_bi TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        reason TEXT NOT NULL DEFAULT '',
+        head TEXT NOT NULL DEFAULT '',
+        reviewed_head TEXT NOT NULL DEFAULT '',
+        head_bi TEXT NOT NULL DEFAULT '',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_at INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY (repo_bi, number))""",
+    "CREATE INDEX IF NOT EXISTS idx_pull_ai_reviews_due "
+    "ON pull_ai_reviews(status, next_at)",
+    "CREATE INDEX IF NOT EXISTS idx_pull_ai_reviews_head "
+    "ON pull_ai_reviews(head_bi) WHERE head_bi <> ''",
+    """CREATE TABLE IF NOT EXISTS ai_review_budget (
+        k TEXT PRIMARY KEY,
+        day TEXT NOT NULL,
+        count INTEGER NOT NULL)""",
 ]

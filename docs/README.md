@@ -65,6 +65,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [MARKETPLACE_RATINGS.md](MARKETPLACE_RATINGS.md): Market ratings and reviews.
 - [attribution.md](attribution.md): acquisition attribution.
 - [app/instance-legal-pages.md](app/instance-legal-pages.md): Terms, Privacy and Security pages on self-hosted instances.
+- [app/ai-review.md](app/ai-review.md): automated AI review of pull requests with Cloudflare Workers AI (instance settings, per-repository opt-in, budgets, privacy, prompt-injection handling).
 - [app/instance-federation.md](app/instance-federation.md): self-hosted instances joining the forkmesh.com directory and the ForkMesh World.
 - [app/security-advisories.md](app/security-advisories.md): private vulnerability reporting, security advisories (OSV export, signed repository ledger) and researcher credits.
 - [app/recent-push-banner.md](app/recent-push-banner.md): the "had recent pushes · Compare & pull request" bar for branches the signed-in account just pushed.
@@ -79,6 +80,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [app/diff-viewer.md](app/diff-viewer.md): the full-screen web diff viewer for pull requests, branch comparisons and commits.
 - [app/issue-views.md](app/issue-views.md): the per-issue view count on issue pages and the issue list, deduplicated per viewer and day, with automated clients not counted.
 - [app/issue-assignment-deadline.md](app/issue-assignment-deadline.md): the optional assignee deadline bar on issues, set with `assignmentHours` in `.forkmesh/issues.json`.
+- [app/issue-assignment-limit.md](app/issue-assignment-limit.md): the issue page's Assign button and the one-open-issue rule for self-assignment (freed by a linked pull request), set with `assignmentLimit` in `.forkmesh/issues.json`.
 - [app/profile-avatar.md](app/profile-avatar.md): how profile and header avatars fall back to the account lookup and contributor rosters, like issue avatars.
 - [app/ai-disclosure.md](app/ai-disclosure.md): the "AI model(s) used" field on pull requests (optionally required per repository) and the copyable AI prompt on open issues.
 - [app/pull-review-prompt.md](app/pull-review-prompt.md): the copyable "Review with your agent" prompt on open pull requests, its security-minded default and `.forkmesh/pulls.json` `reviewPromptTemplate`.
