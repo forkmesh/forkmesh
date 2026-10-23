@@ -29,8 +29,9 @@ def _sidebar_tops(html):
     return re.findall(r'data-sidebar-repo="([^"]+)"(?! data-sidebar-repo-fork)', html)
 
 
-def _render(setting):
-    return run(MORE_REPOSITORIES + "api.state.sidebarSetting = %s;\n" % json.dumps(setting) + """
+def _render(setting, loading=False):
+    return run(MORE_REPOSITORIES + "api.state.repositoriesLoading = %s;\n" % ("true" if loading else "false")
+               + "api.state.sidebarSetting = %s;\n" % json.dumps(setting) + """
 api.renderSidebarRepositories(api.state.session);
 api.renderHomeRepositories();
 out.sidebar = sidebar.innerHTML;
@@ -103,3 +104,13 @@ def test_the_instance_document_carries_a_cleaned_setting(monkeypatch):
     route = RUNTIME.split("    async def _route(self, request, url):", 1)[1]
     assert '"sidebar": await self._instance_sidebar_setting(),' in route
     assert "## Pinned repositories and fork count" in DOCS
+
+
+def test_a_bare_name_pins_the_original_not_a_fork_with_that_name():
+    out = _render({"pinned": ["widget"], "forks": 3})
+    assert _sidebar_tops(out["sidebar"]) == ["alice/widget"]
+
+
+def test_an_unmatched_pin_waits_while_the_catalog_loads():
+    out = _render({"pinned": ["nothing/here"], "forks": 3}, loading=True)
+    assert out["sidebar"] == ""
