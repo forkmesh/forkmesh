@@ -110,21 +110,24 @@ def _short(commit_id):
     return str(commit_id or "")[:12]
 
 
-def _commit_rows(info, now):
+def _commit_line(info, now):
     shell = _admin_shell  # noqa: F821
-    rows = [
-        ("Version", _esc(info.get("version") or "unknown")),
-        ("Commit", '<span class="mono" title="%s">%s</span>' % (
-            _esc(info.get("commit")), _esc(_short(info.get("commit"))))
-         if info.get("commit") else '<span class="muted">unknown</span>'),
-        ("Committed", shell.time_html(info.get("time"), now)),
-        ("Message", _esc(info.get("subject")) or
-         '<span class="muted">unknown</span>'),
-    ]
+    if not info.get("commit"):
+        return '<span class="muted">unknown</span>'
+    parts = ['<span class="mono" title="%s">%s</span>' % (
+        _esc(info["commit"]), _esc(_short(info["commit"])))]
+    if info.get("subject"):
+        parts.append(_esc(info["subject"]))
+    meta = []
+    if info.get("version"):
+        meta.append("v" + _esc(info["version"]))
+    if info.get("time"):
+        meta.append("committed " + shell.time_html(info["time"], now))
     if info.get("builtAt"):
-        rows.append(("Built", shell.time_html(info["builtAt"], now)))
-    return '<dl class="kv">%s</dl>' % "".join(
-        "<dt>%s</dt><dd>%s</dd>" % (label, value) for label, value in rows)
+        meta.append("built " + shell.time_html(info["builtAt"], now))
+    if meta:
+        parts.append('<span class="muted">%s</span>' % " · ".join(meta))
+    return " ".join(parts[:2]) + ("<br>" + parts[2] if len(parts) > 2 else "")
 
 
 def _form(action, label, csrf_field, admin_query, view=VIEW, primary=False,
@@ -175,7 +178,8 @@ def _instance_progress(status, now):
         rows.append(("Started", shell.time_html(status["startedAt"], now)))
     if status["finishedAt"]:
         rows.append(("Finished", shell.time_html(status["finishedAt"], now)))
-    if status["fromCommit"] and status["action"] == "update":
+    if status["fromCommit"] and status["action"] == "update" and (
+            status["toCommit"] or state != "updating"):
         moved = _short(status["fromCommit"])
         if status["toCommit"]:
             moved += " → " + _short(status["toCommit"])
@@ -263,7 +267,23 @@ def _daemon_notice(source):
             _short(source["daemonBuiltCommit"]) or "unknown commit"))
 
 
-async def _auto_update_card(env, csrf_field, admin_query, now):
+def _kv(rows):
+    return '<dl class="kv">%s</dl>' % "".join(
+        "<dt>%s</dt><dd>%s</dd>" % row for row in rows) if rows else ""
+
+
+def _switch(title, on, hint, rows, buttons):
+    shell = _admin_shell  # noqa: F821
+    return (
+        '<div class="auto-switch"><div class="form-row" '
+        'style="justify-content:space-between;align-items:center;gap:8px">'
+        '<h3 style="margin:0;font-size:14px">%s %s</h3>%s</div>'
+        '<p class="hint" style="margin:4px 0 8px">%s</p>%s</div>' % (
+            _esc(title), shell.pill("On" if on else "Off", "ok" if on else ""),
+            buttons, hint, _kv(rows)))
+
+
+async def _auto_update_section(env, csrf_field, admin_query, now):
     shell = _admin_shell  # noqa: F821
     source = server_update.build_source(env)
     try:
@@ -272,41 +292,29 @@ async def _auto_update_card(env, csrf_field, admin_query, now):
         last = await _self_update.last(env)
     except Exception:
         wanted, setting, last = None, {"auto": False}, {}
-    rows = [("Source", '<span class="mono">%s</span>' % _esc(
-        source["source"] or "unknown")),
-        ("Branch", '<span class="mono">%s</span>' % _esc(
-            source["ref"] or "unknown"))]
-    if wanted:
-        rows.append(("Repository", _esc(wanted[0] + "/" + wanted[1])))
+    rows = []
     if last:
         rows.append(("Last merge", "%s: pull request #%d by %s, %s" % (
             shell.time_html(last["at"], now), last["pull"],
             _esc(last["actor"] or "unknown"),
             _esc(OUTCOME_LABELS[last["outcome"]]))))
-    body = '<dl class="kv">%s</dl>' % "".join(
-        "<dt>%s</dt><dd>%s</dd>" % (label, value) for label, value in rows)
-    on = setting["auto"] and bool(wanted)
     if wanted:
-        body += '<div style="margin-top:12px">%s</div>' % _form(
+        target = '<span class="mono">%s</span>' % _esc(
+            "%s/%s %s" % (wanted[0], wanted[1], source["ref"] or "main"))
+        button = _form(
             "save_auto_update",
             "Turn off" if setting["auto"] else "Turn on", csrf_field,
             admin_query, extra='<input type="hidden" name="auto" value="%s">'
             % ("0" if setting["auto"] else "1"))
+        hint = ("Updates after a pull request is merged into %s. Only that "
+                "protected branch counts; pushes and forks never do." % target)
     else:
-        body += ('<p class="hint">Point <span class="mono">sourceUrl</span> '
-                 'in instance.json at a repository on this instance and run '
-                 'one update first.</p>')
-    return shell.card(
-        title="Update when a pull request is merged",
-        description="When a pull request is merged into the branch this "
-        "server is built from, ask for the same update the button above "
-        "starts. Only that repository and branch count; pushes, pull "
-        "request branches and forks never do. The branch must be protected "
-        "(merged only after an owner or admin approves), because whoever "
-        "can merge into it deploys code to this server. Merges that land "
-        "while an update runs are picked up by one more update afterwards.",
-        actions=shell.pill("On" if on else "Off", "ok" if on else ""),
-        body=body)
+        target, button = "", ""
+        hint = ('Point <span class="mono">sourceUrl</span> in instance.json '
+                "at a repository on this instance and run one update first.")
+    on = setting["auto"] and bool(wanted)
+    return _switch("Update when a pull request is merged", on, hint, rows,
+                   button)
 
 
 async def render_update(env, csrf_field, admin_query, now):
@@ -327,28 +335,19 @@ async def render_update(env, csrf_field, admin_query, now):
         status = None
         upstream = {}
     freshness = server_update.freshness(current, upstream)
-    latest_body = (
-        _commit_rows(upstream, now) if upstream.get("commit") else
-        shell.empty("The newest ForkMesh version has not been looked up "
-                    "yet."))
-    checked = ""
+    rows = [("Running", _commit_line(current, now))]
+    if upstream.get("commit") and freshness != "current":
+        rows.append(("Latest", _commit_line(upstream, now)))
     if upstream.get("checkedAt"):
-        checked = "Checked %s." % shell.relative_label(
-            upstream["checkedAt"], now)
+        rows.append(("Checked", shell.time_html(upstream["checkedAt"], now)))
+    elif kind in ("instance", "core"):
+        rows.append(("Checked", '<span class="muted">not yet</span>'))
     check_button = (
         _form("check_update", "Check now", csrf_field, admin_query)
         if kind == "instance" and not busy else "")
-    cards = (
-        '<div class="grid cols-2">'
-        + shell.card(title="This server", description="The ForkMesh build "
-                     "running here.", body=_commit_rows(current, now)
-                     + _daemon_notice(server_update.build_source(env)),
-                     actions=_freshness_pill(freshness))
-        + shell.card(title="Latest available",
-                     description=checked or "The newest commit on the "
-                     "ForkMesh source this server follows.",
-                     body=latest_body, actions=check_button)
-        + "</div>")
+    cards = shell.card(
+        title="Version", actions=_freshness_pill(freshness) + check_button,
+        body=_kv(rows) + _daemon_notice(server_update.build_source(env)))
     if kind == "instance":
         update_body = _instance_progress(status, now)
         if not busy:
@@ -357,12 +356,13 @@ async def render_update(env, csrf_field, admin_query, now):
                 primary=True, confirm="Update and restart now")
         update = shell.card(
             title="Update",
-            description="Pulls the latest ForkMesh from its source, rebuilds "
-            "the app, migrates the database and restarts only what changed. "
-            "Your data, settings and accounts stay. The site may be "
-            "unavailable for a minute while the app restarts.",
+            description="Rebuilds from the source, migrates the database and "
+            "restarts what changed; data and settings stay. The site may be "
+            "down for about a minute.",
             body=update_body)
-        update += await _auto_update_card(env, csrf_field, admin_query, now)
+        update += shell.card(
+            title="Automatic updates",
+            body=await _auto_update_section(env, csrf_field, admin_query, now))
     elif kind == "core":
         button = "" if busy else _form(
             "start_update", "Update ForkMesh", csrf_field, admin_query,
