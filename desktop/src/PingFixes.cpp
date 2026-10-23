@@ -25,7 +25,8 @@ const QList<QPair<Cause, QRegularExpression>> &causePatterns()
              "not on the (local )?network|is it on\\?|host is down|no route to host|"
              "(host|machine|mac|runner|server) (is )?(unreachable|not reachable|offline|asleep)|"
              "is (offline|asleep|powered off)|did not answer|not responding"},
-            {Cause::Disk, "no space left on device|disk quota|disk full"},
+            {Cause::Disk,
+             "no space left on device|disk quota|disk full|not enough free disk space"},
             {Cause::Timeout, "timed? ?out|deadline exceeded|took too long"},
             {Cause::Auth,
              "permission denied|authentication (failed|required)|unauthori[sz]ed|forbidden|"

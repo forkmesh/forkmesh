@@ -11970,6 +11970,52 @@ void checkAgentFolders(MainWindow &window)
           QStringLiteral("right-clicking a folder offers its management actions "
                          "(menu=%1)")
               .arg(folderMenu.join(QStringLiteral(" | "))));
+    check(folderMenu.contains(
+              QStringLiteral("agentFolderStartAllAction(disabled)")) &&
+              folderMenu.contains(
+                  QStringLiteral("agentFolderStopAllAction(disabled)")),
+          QStringLiteral("a folder of finished agents has nothing to start or "
+                         "stop (menu=%1)")
+              .arg(folderMenu.join(QStringLiteral(" | "))));
+    {
+        const AgentSession restoreLoose = window.testAgentSession(ids.at(1));
+        const AgentSession restoreFiled = window.testAgentSession(ids.at(2));
+        AgentSession running = window.testAgentSession(ids.at(2));
+        running.status = AgentStatus::Running;
+        window.testAddAgentSession(running);
+        AgentSession loose = window.testAgentSession(ids.at(1));
+        loose.status = AgentStatus::Running;
+        window.testAddAgentSession(loose);
+        window.testRefreshAgentTable();
+        QApplication::processEvents();
+        const QStringList runningMenu = window.testAgentFolderMenuActions(release);
+        check(runningMenu.contains(QStringLiteral("agentFolderStopAllAction")) &&
+                  runningMenu.contains(
+                      QStringLiteral("agentFolderStartAllAction(disabled)")),
+              QStringLiteral("a folder with a running agent offers Stop all "
+                             "(menu=%1)")
+                  .arg(runningMenu.join(QStringLiteral(" | "))));
+        check(window.testTriggerAgentFolderMenuAction(
+                  release, QStringLiteral("agentFolderStopAllAction")),
+              QStringLiteral("stop all in the Release folder"));
+        QApplication::processEvents();
+        check(window.testAgentSession(ids.at(2)).status == AgentStatus::Stopped &&
+                  window.testAgentSession(ids.at(1)).status ==
+                      AgentStatus::Running,
+              QStringLiteral("Stop all in folder stops only that folder's "
+                             "agents"));
+        const QStringList stoppedMenu = window.testAgentFolderMenuActions(release);
+        check(stoppedMenu.contains(QStringLiteral("agentFolderStartAllAction")) &&
+                  stoppedMenu.contains(
+                      QStringLiteral("agentFolderStopAllAction(disabled)")),
+              QStringLiteral("a folder with a stopped agent offers Start all "
+                             "(menu=%1)")
+                  .arg(stoppedMenu.join(QStringLiteral(" | "))));
+        window.testAddAgentSession(restoreLoose);
+        window.testAddAgentSession(restoreFiled);
+        window.testRefreshAgentTable();
+        QApplication::processEvents();
+    }
     check(window.testTriggerAgentFolderMenuAction(
               release, QStringLiteral("agentFolderMoveTopAction")) &&
               window.testAgentListLayout().first() ==

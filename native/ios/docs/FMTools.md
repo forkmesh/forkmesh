@@ -117,6 +117,14 @@ switches named in `HealthPrefs` (`health.steps.enabled`, `health.water.enabled`,
     Activity (`WalkActivityAttributes`, `ForkMeshWidgets/WalkLiveActivity.swift`), catches up from
     Core Motion history when HealthKit wakes the app, and keeps a live pace (`WalkPace`) that
     drives the top bar's walking chip.
+  - Walk Live Activity start: Core Motion's classifier often lags the pedometer, so the top bar
+    could say "Walking" while the Dynamic Island stayed empty, and a walk confirmed after the app
+    left the screen was never shown until it reopened. The pace now counts as movement too
+    (`WalkDetector.paced`: 30 s of steps starts a walk, a lapse cancels a pending start, a walk in
+    progress is left to Core Motion), and when the app goes inactive while the user is stepping
+    and has been moving for 10 s (`leaveStartAfter`, `begin`) the walk starts there, so locking
+    the phone mid-walk keeps it in the Dynamic Island. ActivityKit accepts a request while the
+    app is inactive, so `showActivity` only skips the background.
   - Heart rate by tapping (`HeartTapModel`): at least 5 taps, a 2.5 s pause restarts, the last 12
     intervals kept, intervals more than 30% off the median dropped, 30–220 bpm accepted; saved to
     Health only (`HKMetadataKeyWasUserEntered`), never sent to the account.

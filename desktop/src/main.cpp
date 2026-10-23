@@ -21,6 +21,7 @@
 #include "PlatformLogFilter.h"
 #include "PublicMirrorRuntime.h"
 #include "QtRuntimeDiagnostics.h"
+#include "SessionBusGuard.h"
 #include "SingleInstance.h"
 #include "TrayMode.h"
 #include "SystemOpenFolder.h"
@@ -767,6 +768,9 @@ int main(int argc, char *argv[])
     forkmesh::logStartupTrace(
         QStringLiteral("DONE  construct QApplication (%1ms)")
             .arg(applicationConstruction.elapsed()));
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    forkmesh::sessionbus::keepRunningWhenBusCloses();
+#endif
     forkmesh::market::modules::install();
     {
         forkmesh::StartupTraceStep applicationSetup(

@@ -509,11 +509,11 @@ def test_mentions_cannot_smuggle_markup():
 
 def test_html_entities_render_like_github_without_becoming_markup():
     html = _render(
-        "### &rlm;انجمن Net4People&zwnj;\n\n"
+        "### &rlm;انجمن Example&zwnj;\n\n"
         "&rlm;BBS یک انجمن &amp; more &#8207;done&#x200C; &lt;script&gt;alert(1)&lt;/script&gt;\n\n"
         "Keep `&rlm;` literal in code and &unknownentity; as text."
     )
-    assert "&amp;rlm;" not in html.split("<code")[0] and "&rlm;انجمن Net4People&zwnj;" in html
+    assert "&amp;rlm;" not in html.split("<code")[0] and "&rlm;انجمن Example&zwnj;" in html
     assert "\u200fdone\u200c" in html and "issues/8207" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html and "<script" not in html
     assert "&amp; more" in html

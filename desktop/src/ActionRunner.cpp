@@ -799,7 +799,9 @@ void ActionRunner::reclaimSandboxSpaceThenCheckout()
                     complete(false,
                              QStringLiteral(
                                  "Not enough free disk space on this node: %1 "
-                                 "available where a run needs %2.")
+                                 "available where a run needs %2. Run the "
+                                 "Free disk space workflow, then run this "
+                                 "again.")
                                  .arg(humanBytes(sweep.freeBytes),
                                       humanBytes(needed)));
                     return;

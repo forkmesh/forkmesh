@@ -52,12 +52,11 @@ Open that link, write a title and a description, and click **Create pull
 request**. The pull request goes to the original repository. Your browser signs
 it, so the maintainer can check it came from your account.
 
-A pull request records your branch as it was when you opened it. After you
-push more commits, open the pull request and click **Update pull request**: it
-sends your branch's current state as a new revision, and the comments and
-reviews stay. If you rewrote your branch (amend or rebase), push it under a new
-name, for example `git push fork my-change-2`, and update the pull request
-from that branch. You never need to force-push.
+A pull request opened from a branch of the same repository follows that
+branch: push more commits (or force-push a rebase) and the pull request shows
+them, with "pushed N commits" in its timeline. A pull request from a fork
+records your branch as it was when you opened it; to update it, open a new pull
+request from the same link.
 
 ## Without a fork
 

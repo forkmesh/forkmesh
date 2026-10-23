@@ -448,6 +448,18 @@ request workflows ("CI tests", "Desktop client CI tests") filed two identical
 rows. The held runs are now collected and `notifyHeldActionRuns` files one row
 naming every held workflow, linked to the first held run.
 
+The Actions page's approval pane says why a run is held. It used to show only
+the diff of the workflow file against the last approved copy, so a held pull
+request whose workflow was unchanged read "No changes from the approved
+workflow" above an Approve button, with no hint of what needed approving.
+`MainWindow::showRun` now opens the banner with the reason: the pull request
+number and author for a first-time contributor, a workflow that is new or
+changed, or repository files that changed since the last approval (and whether
+automatic approval is off). When the workflow is unchanged, the diff pane
+points at the pull request's code (or the commit) as the thing to review. The
+button reads "Approve && run" in source: a single `&` is a Qt mnemonic and
+showed as "Approve_run".
+
 ### New pull request pings count new pull requests only
 
 `applyPullsInboxEntries` counted every inbox entry it accepted. Two kinds of
