@@ -1432,6 +1432,8 @@ marketplace_governance = _LazyModule("marketplace_governance")
 # ordinary issue inbox credited to the reporter's ForkMesh account.
 discord_bugs = _LazyModule("discord_bugs")
 watch_discord_bug_reports = discord_bugs.export("watch_discord_bug_reports")
+github_actions_watch = _LazyModule("github_actions_watch")
+watch_github_actions = github_actions_watch.export("watch_github_actions")
 # In-app bug reports. One bounded, quota-limited write per report from the
 # mobile client's always-available report control; the reports are read back by
 # the separate operator console Worker (monitoring/), never from this origin.
@@ -54372,6 +54374,8 @@ def _cron_due_phases(minute_slot):
     # never competes with the per-minute status work for the phase budget.
     if minute % 10 == 4:
         phases.append("discord-bugs")
+    if minute % 5 == 1:
+        phases.append("github-actions")
     # Slow anonymous projections are independently staggered every five
     # minutes so their catalog scans never need to share one Cron tick.
     slow_residue = minute % PUBLIC_SNAPSHOT_SLOW_CADENCE_MINUTES
@@ -54510,6 +54514,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await record_usage_budget_sample(env)
     if phase == "discord-bugs":
         return await watch_discord_bug_reports(env)
+    if phase == "github-actions":
+        return await watch_github_actions(env)
     if phase == "online-sample":
         return await record_online_sample(env)
     if phase == "world-satellites":

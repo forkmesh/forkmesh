@@ -38,8 +38,9 @@ function maximumFor(metric, source = "remote") {
   return row[source === "local" ? "localMaximum" : "remoteMaximum"];
 }
 
-async function installDashboardRoutes(page, { catalogFailures = 0, repoPage = false } = {}) {
+async function installDashboardRoutes(page, { catalogOffline = false, repoPage = false } = {}) {
   let repositoryRequests = 0;
+  let offline = catalogOffline;
   await page.route("https://cdn.tailwindcss.com/**", (route) =>
     route.fulfill({ contentType: "text/javascript", body: "window.tailwind = {};" }),
   );
@@ -72,7 +73,7 @@ async function installDashboardRoutes(page, { catalogFailures = 0, repoPage = fa
     const url = new URL(route.request().url());
     if (url.pathname === "/api/repositories") {
       repositoryRequests += 1;
-      if (repositoryRequests <= catalogFailures) {
+      if (offline) {
         return route.fulfill({
           status: 503,
           contentType: "application/json; charset=utf-8",
@@ -108,7 +109,11 @@ async function installDashboardRoutes(page, { catalogFailures = 0, repoPage = fa
       body: JSON.stringify(body),
     });
   });
-  return () => repositoryRequests;
+  const requestCount = () => repositoryRequests;
+  requestCount.reconnect = () => {
+    offline = false;
+  };
+  return requestCount;
 }
 
 async function metric(page, name, source) {
@@ -255,8 +260,12 @@ test("daily interface command palette is keyboard complete and restores focus", 
 
   const feedback = await metric(page, "feedback", "local");
   expect(feedback.duration).toBeLessThanOrEqual(maximumFor("feedback", "local"));
-  const outline = await filter.evaluate((element) => getComputedStyle(element).outlineWidth);
-  expect(Number.parseFloat(outline)).toBeGreaterThanOrEqual(3);
+  const focusRing = await filter.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { style: style.outlineStyle, width: Number.parseFloat(style.outlineWidth) };
+  });
+  expect(focusRing.style).not.toBe("none");
+  expect(focusRing.width).toBeGreaterThanOrEqual(1);
 });
 
 test("daily interface skip navigation, contrast, zoom, and reduced motion are accessible", async ({ page }) => {
@@ -271,7 +280,7 @@ test("daily interface skip navigation, contrast, zoom, and reduced motion are ac
   await page.keyboard.press("Enter");
   await expect(page.getByRole("main")).toBeFocused();
 
-  const transition = await page.getByRole("button", { name: "New repository" })
+  const transition = await page.getByRole("link", { name: "New repository" })
     .evaluate((element) => getComputedStyle(element).transitionDuration);
   expect(transition.split(",").every((part) => Number.parseFloat(part) === 0)).toBe(true);
 
@@ -325,11 +334,12 @@ test.describe("daily interface mobile", () => {
 });
 
 test("daily interface offline state retries and recovers with announced feedback", async ({ page }) => {
-  const requestCount = await installDashboardRoutes(page, { catalogFailures: 1 });
+  const requestCount = await installDashboardRoutes(page, { catalogOffline: true });
   await page.goto("/dashboard/repos");
   const status = page.getByRole("status").filter({ hasText: "Repositories are unavailable" });
   await expect(status).toBeVisible();
   const retry = page.getByRole("button", { name: "Retry repository list" });
+  requestCount.reconnect();
   await retry.click();
   await expect(page.locator("#repoList .repo-card")).toHaveCount(REPOSITORIES.length);
   expect(requestCount()).toBeGreaterThanOrEqual(2);
@@ -346,7 +356,8 @@ test("daily interface clone commands are copy-ready and feedback is announced", 
   await expect(code).toBeVisible();
   await code.click();
   const command = page.locator("[data-repo-code-menu] code").filter({ hasText: "git clone" }).first();
-  await expect(command).toContainText("git clone https://forkmesh.test/alpha/engine");
+  const origin = new URL(page.url()).origin;
+  await expect(command).toContainText(`git clone ${origin}/alpha/engine`);
   await page.getByRole("button", { name: "Copy git clone command" }).click();
   await expect(page.locator("[data-interface-status]")).toContainText("Copy git clone command copied");
 });

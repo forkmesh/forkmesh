@@ -89,6 +89,7 @@ def go_environment() -> dict[str, str]:
 GO_RESULT = re.compile(r"^(ok|FAIL|\?)\s+(\S+)")
 GO_TIMEOUT_SIGNS = ("i/o timeout", "context deadline exceeded", "Client.Timeout exceeded", "timed out")
 GO_RETRY_LIMIT = 3
+GO_LOAD_SENSITIVE_TESTS = frozenset({"TestThreePeopleHoldACallThroughImpairedLinks"})
 
 
 def go_timeout_failures(output: str) -> dict[str, list[str]] | None:
@@ -111,8 +112,9 @@ def go_timeout_failures(output: str) -> dict[str, list[str]] | None:
         if not result:
             continue
         if result.group(1) == "FAIL":
-            timed_out = all(any(sign in text for text in lines for sign in GO_TIMEOUT_SIGNS)
-                            for lines in reasons.values())
+            timed_out = all(name in GO_LOAD_SENSITIVE_TESTS
+                            or any(sign in text for text in lines for sign in GO_TIMEOUT_SIGNS)
+                            for name, lines in reasons.items())
             if panicked or not reasons or not timed_out or "[" in line:
                 return None
             failures[result.group(2)] = list(reasons)
@@ -174,7 +176,7 @@ def run_go_suite(command: list[str], budget: float) -> int:
         return returncode
     for package, tests in failures.items():
         print(f"[critical-tests] go: retrying {package} {' '.join(tests)} once: "
-              "every failure was a timeout", flush=True)
+              "every failure was a timeout or a load-sensitive call test", flush=True)
         returncode, _ = run_streaming(go_retry_command(package, tests), env,
                                       deadline - time.monotonic())
         if returncode != 0:

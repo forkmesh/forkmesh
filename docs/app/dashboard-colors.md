@@ -32,6 +32,12 @@ choice is now the right one. The green button colour moved to its own token,
 `cta`, and solid `bg-primary` buttons were moved to `bg-cta`; green status
 uses `success`.
 
+Text on solid `primary` fills uses `primary-foreground`. In dark mode it is
+near-black (`1 4 9`), not white: white on `#4493f8` is only 3.1:1, under the
+4.5:1 text budget that `daily-interface.spec.js` enforces, while near-black
+gives 6.6:1. Light mode keeps white on `#0969da` (5.2:1). Darkening the dark
+`primary` instead would have changed every link, focus ring and selection.
+
 | Role | Token | Used for |
 | --- | --- | --- |
 | Blue | `primary`, `accent`, `ring` | Links, focus, selection, checkboxes, the active or current item |
