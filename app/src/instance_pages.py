@@ -185,6 +185,8 @@ def docs_body(name, origin):
         "rebase or amend. Use <code>git push --force-with-lease</code>; the "
         "previous tip is kept, and an open pull request records the "
         "update.</li>"
+        "<li>A push to the branch of an open pull request updates the pull "
+        "request: its diff, commits and checks follow the new commits.</li>"
         "<li>A push never deletes a branch; delete it on the repository's "
         "Branches page.</li>"
         "<li>New tags can be pushed; an existing tag never moves.</li>"

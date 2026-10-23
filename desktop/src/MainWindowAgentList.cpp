@@ -626,7 +626,8 @@ void MainWindow::refreshAgentDotMatrix()
                              : agentStatusText(session.status)]++;
     }
     m_agentDotMatrix->setDots(dots);
-    m_agentDotMatrix->setVisible(!dots.isEmpty());
+    m_agentDotMatrix->setVisible(
+        !dots.isEmpty() && !topBarIndicatorHidden(QStringLiteral("agents")));
     updateChromeDotDivider();
 
     if (dots.isEmpty()) {

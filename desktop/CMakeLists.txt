@@ -1463,6 +1463,15 @@ if(UNIX AND NOT APPLE)
     # XDG Desktop Portal screenshot path (see ScreenCaptureOverlay).
     target_link_libraries(forkmesh PRIVATE Qt6::DBus)
     target_compile_definitions(forkmesh PRIVATE FORKMESH_HAVE_PORTAL)
+    target_sources(forkmesh PRIVATE src/SessionBusGuard.h src/SessionBusGuard.cpp)
+    set_source_files_properties(src/SessionBusGuard.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(GIO QUIET IMPORTED_TARGET gio-2.0)
+    endif()
+    if(TARGET PkgConfig::GIO)
+        target_link_libraries(forkmesh PRIVATE PkgConfig::GIO)
+        target_compile_definitions(forkmesh PRIVATE FORKMESH_HAVE_GIO)
+    endif()
     # Export symbols so the StallWatchdog's backtrace_symbols() resolves function
     # names (not just addresses) when it samples a frozen UI thread.
     target_link_options(forkmesh PRIVATE -rdynamic)

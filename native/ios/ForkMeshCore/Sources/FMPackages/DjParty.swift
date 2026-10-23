@@ -262,6 +262,47 @@ public enum DjEnd {
     }
 }
 
+public struct DjRepeatSpan: Equatable, Sendable {
+    public let start: Double
+    public let end: Double
+
+    public init(start: Double, end: Double) {
+        self.start = start
+        self.end = end
+    }
+}
+
+public enum DjRepeatStep: Equatable, Sendable {
+    case wait
+    case wrap
+    case after(Double)
+}
+
+public enum DjRepeat {
+    public static let quiet: Double = 0.07
+    public static let tail: Double = 0.25
+    public static let shortest: Double = 2
+    public static let ahead: Double = 0.6
+
+    public static func span(_ bars: [DjWaveBar], duration: Double) -> DjRepeatSpan? {
+        guard duration.isFinite, duration > tail + shortest else { return nil }
+        let whole = DjRepeatSpan(start: 0, end: duration - tail)
+        guard let first = bars.firstIndex(where: { $0.level > quiet }), let last = bars.lastIndex(where: { $0.level > quiet }) else { return whole }
+        let step = duration / Double(bars.count)
+        let start = Double(first) * step
+        let end = min(whole.end, Double(last + 1) * step)
+        guard end - start >= shortest else { return whole }
+        return DjRepeatSpan(start: start, end: end)
+    }
+
+    public static func step(position: Double, span: DjRepeatSpan, rate: Double) -> DjRepeatStep {
+        guard position.isFinite, rate.isFinite, rate > 0.01 else { return .wait }
+        let left = (span.end - position) / rate
+        if left <= 0 { return .wrap }
+        return left < ahead ? .after(left) : .wait
+    }
+}
+
 public enum DjAutomix {
     public static let lead: Double = 2
     public static let audible: Double = 3

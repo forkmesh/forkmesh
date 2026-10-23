@@ -978,3 +978,41 @@ def test_an_update_rewrites_app_env_but_keeps_a_hand_set_admin_path(tmp_path):
     assert "ADMIN_PATH=" not in after
     after, _ = _write_settings(tmp_path, "file", "1", keys)
     assert re.search(r"^ADMIN_PATH=/admin-[a-z0-9]{20}$", after, re.M)
+
+
+def test_an_update_restarts_the_git_node_only_when_its_inputs_change(tmp_path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "mirror_gateway.py").write_text("print('v1')\n")
+    (tmp_path / "daemon").write_text("binary-1")
+    (tmp_path / "unit").write_text("[Service]\n")
+    gateway = tmp_path / "gateway.json"
+    node = tmp_path / "node.json"
+
+    def write(version="abc123", router="key-1", pin="a" * 64, tool="print('v1')\n", binary="binary-1"):
+        gateway.write_text(json.dumps({
+            "routerPublicKey": router, "publicOrigin": "https://code.example.com",
+            "repositories": [{"owner": "forkmesh", "name": "forkmesh", "gitDir": "/srv/f.git",
+                              "integrity": {"expectedRefsSha256": pin}}]}))
+        node.write_text(json.dumps({"version": version, "gatewayConfig": str(gateway), "role": "core"}))
+        (tools / "mirror_gateway.py").write_text(tool)
+        (tmp_path / "daemon").write_text(binary)
+
+    def digest():
+        body = ('DAEMON=%s\nDAEMON_UNIT=%s\nDAEMON_TOOLS=%s\nDAEMON_CONFIG=%s\ndaemon_digest\n'
+                % (tmp_path / "daemon", tmp_path / "unit", tools, node))
+        result = run_functions(tmp_path, ["daemon_digest"], body)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    write()
+    first = digest()
+    assert re.fullmatch(r"[0-9a-f]{64}", first)
+    write(version="def456", pin="b" * 64)
+    assert digest() == first
+    write(router="key-2")
+    assert digest() != first
+    write(tool="print('v2')\n")
+    assert digest() != first
+    write(binary="binary-2")
+    assert digest() != first

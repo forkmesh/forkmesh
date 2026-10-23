@@ -1455,7 +1455,16 @@ void MainWindow::stopAllRunningAgents()
         return;
     }
     m_agentQueue.clear();
+    stopAgentSessions(ids);
+    flashMessage(QStringLiteral("Stopped %1 agent session%2.")
+                     .arg(ids.size())
+                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s")));
+}
+
+void MainWindow::stopAgentSessions(const QList<int> &ids)
+{
     for (const int sessionId : std::as_const(ids)) {
+        m_agentQueue.removeAll(sessionId);
         if (AgentRunner *runner = runnerForSession(sessionId))
             runner->stop();
         stopStreamSession(sessionId, /*refreshUi=*/false);
@@ -1478,9 +1487,6 @@ void MainWindow::stopAllRunningAgents()
     if (m_selectedAgentSessionId > 0)
         showAgentSession(m_selectedAgentSessionId);
     updateAgentActionState();
-    flashMessage(QStringLiteral("Stopped %1 agent session%2.")
-                     .arg(ids.size())
-                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s")));
 }
 
 bool MainWindow::isStoppableAgentSession(int sessionId) const
@@ -1709,6 +1715,14 @@ void MainWindow::startAllStoppedAgents()
         flashMessage(QStringLiteral("No stopped agents to start."));
         return;
     }
+    startAgentSessions(ids);
+    flashMessage(QStringLiteral("Started %1 agent session%2.")
+                     .arg(ids.size())
+                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s")));
+}
+
+void MainWindow::startAgentSessions(const QList<int> &ids)
+{
     for (const int sessionId : std::as_const(ids))
         continueAgentSession(sessionId, /*deferRefresh=*/true);
     scheduleAgentSessionsPush();
@@ -1717,9 +1731,6 @@ void MainWindow::startAllStoppedAgents()
         showAgentSession(m_selectedAgentSessionId);
     processAgentQueue();
     updateAgentActionState();
-    flashMessage(QStringLiteral("Started %1 agent session%2.")
-                     .arg(ids.size())
-                     .arg(ids.size() == 1 ? QString() : QStringLiteral("s")));
 }
 
 QList<int> MainWindow::updatableAgentSessionIds() const

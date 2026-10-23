@@ -103,6 +103,7 @@ func (s *Supervisor) runOne(ctx context.Context, spec ProcessSpec) {
 		go func() { done <- cmd.Wait() }()
 		var err error
 		intentionalRestart := false
+		signalled := false
 		waiting := true
 		for waiting {
 			select {
@@ -112,10 +113,14 @@ func (s *Supervisor) runOne(ctx context.Context, spec ProcessSpec) {
 				log.Printf("reloading %s after configuration change", spec.Name)
 				if signalErr := cmd.Process.Signal(syscall.SIGHUP); signalErr != nil {
 					log.Printf("%s could not reload: %v", spec.Name, signalErr)
+				} else {
+					signalled = true
 				}
 			case <-invalidate:
 				if signalErr := cmd.Process.Signal(syscall.SIGUSR1); signalErr != nil {
 					log.Printf("%s could not invalidate caches: %v", spec.Name, signalErr)
+				} else {
+					signalled = true
 				}
 			case <-restart:
 				intentionalRestart = true
@@ -165,6 +170,10 @@ func (s *Supervisor) runOne(ctx context.Context, spec ProcessSpec) {
 			// Configuration reloads are expected control-plane events. Start the
 			// replacement immediately; the crash backoff below is only for an
 			// unexpectedly failing child.
+			continue
+		}
+		if signalled && diedOfControlSignal(err) {
+			log.Printf("%s exited on a control signal before handling it: %v; restarting now", spec.Name, err)
 			continue
 		}
 		log.Printf("%s exited: %v; retrying in 5s", spec.Name, err)
@@ -237,6 +246,18 @@ func (s *Supervisor) Invalidate(name string) bool {
 	default:
 		return false
 	}
+}
+
+func diedOfControlSignal(err error) bool {
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		return false
+	}
+	status, ok := exitErr.Sys().(syscall.WaitStatus)
+	if !ok || !status.Signaled() {
+		return false
+	}
+	return status.Signal() == syscall.SIGHUP || status.Signal() == syscall.SIGUSR1
 }
 
 func (s *Supervisor) setRunning(name string, value bool) {
