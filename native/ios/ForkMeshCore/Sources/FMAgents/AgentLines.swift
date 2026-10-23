@@ -44,6 +44,7 @@ public struct AgentLine: Identifiable, Equatable, Sendable {
     public var desktopSessionId = 0
     public var desktopUnread: Bool?
     public var unread = false
+    public var backgroundTasks = 0
 
     public var runnerBadge: String { runner.isEmpty ? "" : RunnerAgentText.badge(runner) }
 
@@ -90,6 +91,9 @@ public struct AgentLine: Identifiable, Equatable, Sendable {
         if linesAdded > 0 || linesRemoved > 0 { parts.append("\(max(linesAdded, 0)) added, \(max(linesRemoved, 0)) removed") }
         if conflicted { parts.append("conflict") }
         if prNumber > 0 { parts.append("PR \(prNumber)") }
+        if backgroundTasks > 0 {
+            parts.append(backgroundTasks == 1 ? "1 background task" : "\(backgroundTasks) background tasks")
+        }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }
@@ -458,6 +462,7 @@ public enum AgentLines {
         built.priority = row.priority
         built.readKey = readKey(row)
         built.finishedAtMs = row.finishedAtMs
+        built.backgroundTasks = row.backgroundTasks
         if row.isDesktop && !row.outside && row.localId > 0 {
             built.desktopSessionId = row.localId
             built.desktopUnread = row.unread
@@ -493,6 +498,7 @@ public enum AgentLines {
             built.priority = live?.priority ?? session.priority
             built.readKey = "desktop:\(repo.name.lowercased())#\(session.id)"
             built.finishedAtMs = max(session.finishedAtMs, live?.finishedAtMs ?? 0)
+            built.backgroundTasks = live?.backgroundTasks ?? 0
             if let live, live.localId > 0 {
                 built.desktopSessionId = live.localId
                 built.desktopUnread = live.unread
