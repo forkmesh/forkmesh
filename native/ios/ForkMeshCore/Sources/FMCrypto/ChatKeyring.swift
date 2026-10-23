@@ -173,6 +173,8 @@ struct ChatReplayEntry {
 public final class ChatKeyring: @unchecked Sendable {
     public static let identityStoreKey = "chat/e2ee/ed25519IdentityV3"
     public static let prekeysStoreKey = "chat/e2ee/prekeysV3"
+    public static let counterFloorStoreKey = "chat/e2ee/ctrFloorV3"
+    public static let counterEpochSeconds: Int64 = 1_767_225_600
 
     public let identityKey: [UInt8]
     public let idk: String
@@ -180,6 +182,7 @@ public final class ChatKeyring: @unchecked Sendable {
 
     private let seed: [UInt8]
     private let store: SecureStore?
+    private let counterFloor: Int64
     private let lock = NSLock()
     private var prekeys: [ChatPrekeySecret]
     private var kemSecrets: [String: [UInt8]] = [:]
@@ -196,9 +199,10 @@ public final class ChatKeyring: @unchecked Sendable {
 
     public func callSigningSeed() -> [UInt8] { seed }
 
-    private init(seed: [UInt8], prekeys: [ChatPrekeySecret], store: SecureStore?) throws {
+    private init(seed: [UInt8], prekeys: [ChatPrekeySecret], store: SecureStore?, counterFloor: Int64 = 0) throws {
         guard seed.count == Ed25519.seedBytes else { throw CryptoArgumentError("The chat identity seed must be 32 bytes.") }
         self.seed = seed
+        self.counterFloor = max(counterFloor, 0)
         self.identityKey = try Ed25519.publicKey(seed: seed)
         self.idk = ChatV3.b64u(identityKey)
         self.kid = ChatV3.id16(identityKey)
@@ -212,17 +216,30 @@ public final class ChatKeyring: @unchecked Sendable {
         try ChatKeyring(seed: identitySeed, prekeys: prekeys, store: store)
     }
 
-    public static func load(_ store: SecureStore, create: Bool) throws -> ChatKeyring? {
-        var seed: [UInt8]?
-        if let text = store.read(identityStoreKey),
-            let bytes = B64.decodeOrNil(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+    public static func storedSeed(_ text: String?) -> [UInt8]? {
+        guard let text, let bytes = B64.decodeOrNil(text.trimmingCharacters(in: .whitespacesAndNewlines)),
             bytes.count == Ed25519.seedBytes
-        {
-            seed = Array(bytes)
-        }
+        else { return nil }
+        return Array(bytes)
+    }
+
+    public static func derivedSeed(nodeSeed: [UInt8]) -> [UInt8] {
+        Hkdf.sha256(
+            ikm: nodeSeed, salt: Array("ForkMesh chat identity salt v3".utf8),
+            info: Array("forkmesh-chat-identity-v3".utf8), length: Ed25519.seedBytes)
+    }
+
+    public static func load(_ store: SecureStore, create: Bool, now: Int64 = Date().epochMillis) throws -> ChatKeyring? {
+        var seed = storedSeed(store.read(identityStoreKey))
         if seed == nil {
             guard create else { return nil }
-            let fresh = Ed25519.generateSeed()
+            let fresh: [UInt8]
+            if let nodeSeed = storedSeed(store.read(Identity.seedKey)) {
+                fresh = derivedSeed(nodeSeed: nodeSeed)
+                store.write(counterFloorStoreKey, String(max(now / 1000 - counterEpochSeconds, 0)))
+            } else {
+                fresh = Ed25519.generateSeed()
+            }
             store.write(identityStoreKey, B64.encode(fresh))
             seed = fresh
         }
@@ -230,7 +247,8 @@ public final class ChatKeyring: @unchecked Sendable {
         if let text = store.read(prekeysStoreKey), let list = (try? JSON.parse(text))?.arrayValue {
             loaded = list.compactMap(ChatPrekeySecret.parseStored)
         }
-        return try ChatKeyring(seed: seed ?? [], prekeys: loaded, store: store)
+        let floor = Int64(store.read(counterFloorStoreKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
+        return try ChatKeyring(seed: seed ?? [], prekeys: loaded, store: store, counterFloor: floor)
     }
 
     private final class Entry {
@@ -256,7 +274,7 @@ public final class ChatKeyring: @unchecked Sendable {
         if let entry = registry[id], entry.store === store, !marker.isEmpty, entry.marker == marker {
             return entry.keyring
         }
-        guard let keyring = try load(store, create: true) else {
+        guard let keyring = try load(store, create: true, now: now) else {
             throw CryptoArgumentError("The chat identity could not be created.")
         }
         keyring.rotateIfNeeded(now: now)
@@ -358,7 +376,7 @@ public final class ChatKeyring: @unchecked Sendable {
                 let text = store?.read(ChatKeyring.counterKey(room))?.trimmingCharacters(in: .whitespaces) ?? ""
                 current = Int64(text) ?? 0
             }
-            let next = max(current ?? 0, 0) + 1
+            let next = max(current ?? 0, counterFloor, 0) + 1
             counters[room] = next
             store?.write(ChatKeyring.counterKey(room), String(next))
             return next
