@@ -249,6 +249,9 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   no package panicked or failed to build. The log says
   `retrying … once: every failure was a timeout`. A wrong value, a panic,
   or a timeout that recurs still fails the step.
+  `TestThreePeopleHoldACallThroughImpairedLinks` gets the same one retry
+  for any failure, because its frame counts drop when the process is
+  starved (`GO_LOAD_SENSITIVE_TESTS`, [../engineering/github-actions.md](../engineering/github-actions.md)).
 
 ## Related docs
 

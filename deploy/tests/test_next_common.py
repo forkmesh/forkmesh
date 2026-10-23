@@ -91,3 +91,71 @@ def test_an_upload_that_never_resumes_still_fails(tmp_path):
     ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh", run=run)
     with pytest.raises(common.ToolError, match="lost connection"):
         ssh.put("198.51.100.10", local, "/opt/r/.incoming-x.tar.gz")
+
+
+V4 = "198.51.100.10"
+V6 = "2001:db8::10"
+
+
+def test_route_address_keeps_ipv4_while_it_answers_and_falls_back_to_ipv6():
+    up = {V4}
+    common._route_cache.clear()
+    assert common.route_address(V4, "auto", {V4: V6}, probe=lambda a: a in up) == V4
+    common._route_cache.clear()
+    up = {V6}
+    assert common.route_address(V4, "auto", {V4: V6}, probe=lambda a: a in up) == V6
+    common._route_cache.clear()
+    up = set()
+    assert common.route_address(V4, "auto", {V4: V6}, probe=lambda a: a in up) == V4
+    common._route_cache.clear()
+
+
+def test_route_address_forced_families_and_unknown_nodes():
+    never = lambda address: pytest.fail("forced families never probe")
+    assert common.route_address(V4, "6", {V4: V6}, probe=never) == V6
+    assert common.route_address(V4, "4", {V4: V6}, probe=never) == V4
+    assert common.route_address("203.0.113.9", "6", {V4: V6}, probe=never) == "203.0.113.9"
+    assert common.route_address(V6, "auto", {V4: V6}, probe=never) == V6
+    with pytest.raises(common.GuardError):
+        common.route_address(V4, "5", {V4: V6}, probe=never)
+
+
+def test_ipv6_map_comes_from_fleet_instances(tmp_path):
+    (tmp_path / "fleet-instances.json").write_text(
+        '{"fmnext-core-2": {"ip": "%s", "ipv6": "%s"}, "fmnext-run-1": {"ip": "203.0.113.9"}}'
+        % (V4, V6))
+    assert common.ipv6_by_ipv4(tmp_path / "fleet-instances.json") == {V4: V6}
+
+
+def test_ssh_over_ipv6_keeps_the_ipv4_host_key(tmp_path, monkeypatch):
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "fleet-instances.json").write_text(
+        '{"fmnext-core-2": {"ip": "%s", "ipv6": "%s"}}' % (V4, V6))
+    monkeypatch.setenv("FMNEXT_CONFIG_DIR", str(config))
+    monkeypatch.setenv("FMNEXT_ROUTE_FAMILY", "6")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh", run=run, route=True)
+    ssh.run(V4, "hostname")
+    ssh.put(V4, tmp_path / "key", "/tmp/x")
+    login, upload = calls
+    assert "root@%s" % V6 in login and "HostKeyAlias=%s" % V4 in login
+    assert upload[-1] == "root@[%s]:/tmp/x" % V6 and "HostKeyAlias=%s" % V4 in upload
+    calls.clear()
+    monkeypatch.setenv("FMNEXT_ROUTE_FAMILY", "4")
+    ssh.run(V4, "hostname")
+    assert "root@%s" % V4 in calls[0] and not any("HostKeyAlias" in part for part in calls[0])
+
+
+def test_a_fake_runner_never_routes(tmp_path, monkeypatch):
+    monkeypatch.setenv("FMNEXT_ROUTE_FAMILY", "6")
+    calls = []
+    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh",
+                     run=lambda command, **kwargs: calls.append(command) or
+                     subprocess.CompletedProcess(command, 0, b"", b""))
+    ssh.run(V4, "hostname")
+    assert "root@%s" % V4 in calls[0]

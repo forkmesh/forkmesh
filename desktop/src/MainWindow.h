@@ -79,6 +79,7 @@
 #include "SavedSearchStore.h"
 #include "SecurityAlarmState.h"
 #include "ClaudeSessionScan.h"
+#include "ClaudeSessionImport.h"
 #include "MachineAgentScan.h"
 #include "ClaudePeerMessaging.h"
 #include "TerminalHandoff.h"
@@ -4954,6 +4955,8 @@ private:
                                  const QString &prefillDetails,
                                  std::function<void()> onCreated);
     void createQuickAddOrganizationTask();
+    void sendQuickAddToChannel();
+    void refreshQuickAddSendToChannelButton();
     QStringList organizationTaskMemberNames() const;
     QString organizationTaskActorName() const;
     void refreshQuickAddTaskAssignees();
@@ -7211,7 +7214,6 @@ private:
     void schedulePromptChatPreview();
     int promptChatTargetSessionId() const;
     QString promptChatRoom() const;
-    bool sendPromptToChatRoom(const QString &text);
     void refreshInstanceTheme();
     void applyInstanceThemeChoice(bool enabled);
     bool quickAddShouldFollowUpAgent() const;
@@ -10556,6 +10558,7 @@ private:
     QString privateChannelsSettingsKey() const;
     void ensureTeamRoom();
     void sendCurrentMessage();
+    bool sendChatText(const QString &conversation, const QString &text);
     void maybeAskForkbot(const QString &conversation, const QString &text,
                          const QString &threadRootId = QString());
     void onComposerEdited(const QString &text);
@@ -12490,7 +12493,7 @@ private:
     QComboBox *m_quickAddSpeedSelector = nullptr;
     QCheckBox *m_quickAddCreatePr = nullptr;    // request PR from quick-add agent
     QPushButton *m_quickAddSendToAgentButton = nullptr;
-    QPushButton *m_quickAddGenieButton = nullptr;
+    QPushButton *m_quickAddSendToChannelButton = nullptr;
     QPushButton *m_quickAddSendButton = nullptr;
     QPushButton *m_quickAddImageButton = nullptr;
     QStringList m_quickAddImages;               // image paths queued for next send
@@ -14607,6 +14610,8 @@ private:
         QString sessionStrength;
         QStringList runAccountEnv;
         forkmesh::agentguard::Config guardrails;
+        QString claudeImportPath;
+        QString claudeConfigDir;
     };
     forkmesh::agentguard::Config cliTranscriptGuardrails(
         const AgentSession &session, const QString &repoPath,
@@ -14973,6 +14978,19 @@ private:
     int m_nextExternalTempId = kExternalIdBase;
     bool m_externalClaudeScanInFlight = false;
     quint64 m_externalClaudeScanGeneration = 0;
+    bool m_claudeImportSyncInFlight = false;
+    QSet<QString> m_claudeImportsInFlight;
+    QPushButton *m_agentImportClaudeButton = nullptr;
+    void showClaudeSessionImportDialog();
+    void importClaudeSessions(const QList<ExternalClaudeSession> &sessions,
+                              const QString &followUp = QString());
+    void sendPromptToExternalClaudeSession(int sessionId, const QString &prompt);
+    int createImportedClaudeAgent(const ExternalClaudeSession &ext,
+                                  const ClaudeImportBatch &batch);
+    void appendImportedClaudeEvents(int sessionId, const ClaudeImportBatch &batch,
+                                    const QString &title);
+    void syncImportedClaudeSessions();
+    QHash<QString, int> importedClaudeSessionAgents() const;
     void scanExternalClaudeSessions();
     void applyExternalClaudeScan();
     void onExternalClaudeTick();

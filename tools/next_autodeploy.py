@@ -397,10 +397,11 @@ UNREACHABLE_WAIT_SECONDS = 300
 
 
 def curl(host, ip, path, run=subprocess.run, timeout=10, attempts=CURL_ATTEMPTS,
-         sleep=time.sleep):
+         sleep=time.sleep, route=None):
     if not HOST_RE.match(host) or not IP_RE.match(ip):
         raise GuardError("bad host %r or address %r" % (host, ip))
-    address = common.route_address(ip) if run is subprocess.run else ip
+    routed = (run is subprocess.run) if route is None else route
+    address = common.route_address(ip) if routed else ip
     target = "[%s]" % address if ":" in address else address
     for attempt in range(attempts):
         if attempt:
