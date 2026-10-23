@@ -1,6 +1,7 @@
 
 #include "MainWindow.h"
 #include "MessageBoxClicks.h"
+#include "PageSwitchTrace.h"
 #include "MainWindowInternal.h"
 #include "UiSounds.h"
 #include "LocalControlAgentOps.h"
@@ -2142,6 +2143,11 @@ void MainWindow::switchToAgentsTab(int sessionId)
     const AgentSession *session = findAgentSession(sessionId);
     if (!session)
         return;
+    const forkmesh::PageSwitchScope switchTrace(
+        QStringLiteral("agents session"), [this]() -> QWidget * {
+            return m_repoDetailStack ? m_repoDetailStack->widget(kRepoAgentsTab)
+                                     : nullptr;
+        });
     const AgentSession target = *session;
     clearTeammateDoneUnseen(sessionId);
     showSection(0);

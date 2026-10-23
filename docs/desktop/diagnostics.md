@@ -262,6 +262,35 @@ button fired; now every route adds to the session already working on stalls.
   an agent, whatever the setting says: its stalls are mirror work, and
   agent builds there would make the next stall worse.
 
+### Page switch timing
+
+`src/PageSwitchTrace.h` times each switch of a rail section (`showSection`), a
+repository tab (the tab bar's `idClicked`) and an agent opened on the Agents
+tab (`switchToAgentsTab`, which the Agents rail button also goes through).
+Nested switches count towards the outer one. One line per switch goes to the
+app log and, from a one-thread pool, to `diagnostics/page-switches.log`
+(emptied past 1 MB):
+
+```
+[switch] section 11 | build 84ms | sync 97ms | first paint 112ms | last paint 940ms | paints 12 | nested 0 | settled
+```
+
+- `build`: building a deferred page or repository tab.
+- `sync`: the whole switch call on the GUI thread, build included.
+- `first paint` / `last paint`: the first and last paint of a widget inside
+  the new page, from the click. The last paint is when late data stopped
+  changing the page. Paints of the focused widget (a blinking caret) are
+  ignored.
+- `paints`: paint events inside the page until it settled; a high count
+  means the page redrew as data arrived in pieces.
+- `nested`: switches started inside this one, through a nested event loop.
+- Outcome: `settled` (no paint for 800 ms), `still painting` (cut off at 6 s),
+  `interrupted` (another switch began) or `no page`.
+
+The paint watch is an application event filter installed only between a
+switch and its outcome. It was added on 2026-10-23 to measure the Next
+design's slow tab switches (late pop-in, flicker) before changing them.
+
 ### Reading summed stall frames
 
 The scan also picks up stale return addresses from calls that already

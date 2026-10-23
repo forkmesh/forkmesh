@@ -8,6 +8,7 @@
 #include "GitRefusal.h"
 #include "SettingsSectionsView.h"
 #include "CurrentPageStack.h"
+#include "PageSwitchTrace.h"
 #include "CoveFileEditor.h"
 #include "CoveFileSupport.h"
 #include "FlowLayout.h"
@@ -13123,6 +13124,7 @@ void MainWindow::ensureRepoDetailTabBuilt(int index)
         // Throttled: a directory pulled in the last five minutes is reused.
         refreshChatUserDirectory();
     }
+    forkmesh::PageSwitchTrace::instance().addBuild(buildTimer.elapsed());
     logStartup(QStringLiteral("  repo tab %1 built in %2ms")
                    .arg(index)
                    .arg(buildTimer.elapsed()));
@@ -13415,6 +13417,14 @@ QWidget *MainWindow::buildRepoDetailSection()
     connect(m_repoDetailStack, &QStackedWidget::currentChanged, this,
             [this](int) { scheduleNavRecord(); });
     connect(m_repoDetailTabs, &QButtonGroup::idClicked, this, [this](int id) {
+        const QAbstractButton *tabButton = m_repoDetailTabs->button(id);
+        const forkmesh::PageSwitchScope switchTrace(
+            QStringLiteral("repo tab %1 %2")
+                .arg(id)
+                .arg(tabButton ? tabButton->text().simplified() : QString()),
+            [this, id]() -> QWidget * {
+                return m_repoDetailStack ? m_repoDetailStack->widget(id) : nullptr;
+            });
         ensureRepoDetailTabBuilt(id);
         m_repoDetailStack->setCurrentIndex(id);
         if (m_agentsNavButton)
