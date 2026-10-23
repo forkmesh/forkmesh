@@ -8659,7 +8659,9 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             !(ke->modifiers() & Qt::ShiftModifier)) {
             if (submitQuickAddToPackage())
                 return true;
-            if (quickAddShouldFollowUpAgent() && m_quickAddSendToAgentButton)
+            if (!promptChatRoom().isEmpty() && m_quickAddSendToChannelButton)
+                m_quickAddSendToChannelButton->click();
+            else if (quickAddShouldFollowUpAgent() && m_quickAddSendToAgentButton)
                 m_quickAddSendToAgentButton->click();
             else
                 quickAddIssue();

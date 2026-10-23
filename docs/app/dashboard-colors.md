@@ -32,12 +32,6 @@ choice is now the right one. The green button colour moved to its own token,
 `cta`, and solid `bg-primary` buttons were moved to `bg-cta`; green status
 uses `success`.
 
-Text on solid `primary` fills uses `primary-foreground`. In dark mode it is
-near-black (`1 4 9`), not white: white on `#4493f8` is only 3.1:1, under the
-4.5:1 text budget that `daily-interface.spec.js` enforces, while near-black
-gives 6.6:1. Light mode keeps white on `#0969da` (5.2:1). Darkening the dark
-`primary` instead would have changed every link, focus ring and selection.
-
 | Role | Token | Used for |
 | --- | --- | --- |
 | Blue | `primary`, `accent`, `ring` | Links, focus, selection, checkboxes, the active or current item |
@@ -55,6 +49,16 @@ focus, selection, checkboxes or links.
 the shell after `apply_theme` has filled the markers (the raw `shell.html`
 only holds the markers), and that each one has a dark and a light value in
 `theme.json`.
+
+## Text on solid `primary`
+
+White text on the dark-theme blue (`#4493f8`) reaches only 3.1:1, below the
+4.5:1 text minimum in
+`www/docs/engineering/daily-interface-budgets.json`, and the daily-interface
+browser check failed on it. In the dark theme, `primary-foreground` is now the
+page background (`1 4 9`), which gives 6.6:1 and keeps the blue unchanged for
+links, focus and selection. The light theme keeps white text on `#0969da`
+(5.2:1).
 
 ## Header search focus
 

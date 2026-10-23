@@ -184,4 +184,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S109 | 2026-10-22 | DJ Studio | fix | DJ Studio's Repeat now really loops the song and jumps straight from where the sound ends back to where it starts, skipping silence at both ends. | ab3a63d995 | pending |  |
 | S110 | 2026-10-22 | Settings | feature | Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked. | 180d647034 | pending |  |
 | S111 | 2026-10-22 | Chat | fix | Face filters follow your head with less lag and your lips move with your speech. | d62d4aabc9 | synced | d62d4aabc9 |
+| S112 | 2026-10-22 | Agents | ui | Agents Eagle rows drop the left agent dot and show an image tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots. | 40906210d3 | pending |  |
 <!-- ledger:end -->
