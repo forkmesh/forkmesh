@@ -136,6 +136,8 @@
     homeRepositoryViews: {},
     homeRepositoryViewsSignature: "",
     recordedRepositoryViews: new Set(),
+    recordedIssueViews: new Set(),
+    issueViewTotals: {},
     repoCommitDetail: null,
     repoRecordDetail: null,
     // The branch comparison on the Pull requests tab (/owner/repo/compare/

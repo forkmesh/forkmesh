@@ -13,6 +13,8 @@ class QWidget;
 namespace forkmesh::ui {
 
 constexpr int kRailExpandedItemWidth = 196;
+constexpr int kRailExpandedMinWidth = 160;
+constexpr int kRailExpandedMaxWidth = 380;
 constexpr int kRailRowHeight = 30;
 
 struct RailButtonPaintState {
@@ -52,6 +54,8 @@ struct TabButtonPaintState {
 
 bool railExpanded();
 void setRailExpanded(bool expanded);
+int railExpandedItemWidth();
+void setRailExpandedItemWidth(int width);
 int railCompactItemWidth();
 
 bool railButtonRowLayout(const QWidget *button, bool captionAlwaysVisible);

@@ -136,6 +136,8 @@
     homeRepositoryViews: {},
     homeRepositoryViewsSignature: "",
     recordedRepositoryViews: new Set(),
+    recordedIssueViews: new Set(),
+    issueViewTotals: {},
     repoCommitDetail: null,
     repoRecordDetail: null,
     // The branch comparison on the Pull requests tab (/owner/repo/compare/
@@ -15130,6 +15132,17 @@
     window.setTimeout(() => $("[data-new-repo-cancel]")?.focus(), 0);
   }
 
+  // Tab strips scroll sideways only. CSS hides their vertical overflow (the
+  // tabs sit 1px into the border line), but focus and scrollIntoView can still
+  // move it, so any vertical offset snaps straight back.
+  document.addEventListener("scroll", (event) => {
+    const strip = event.target;
+    if (strip instanceof Element && strip.scrollTop
+        && strip.matches("[data-repo-tabs], [data-repo-record-tabs]")) {
+      strip.scrollTop = 0;
+    }
+  }, { capture: true, passive: true });
+
   function keepRepoActiveTabVisible(strip) {
     if (!strip || strip.scrollWidth <= strip.clientWidth + 1) return;
     const active = strip.querySelector('[role="tab"][aria-selected="true"]');
@@ -20667,6 +20680,12 @@
         fetchMissingRepoBlobs(repo, [recordPath(entry)], { ref: entry.ref })));
       found.forEach((result) => Object.assign(blobs, result));
     }
+    // Review state rides on the listing (pullReviews) for pulls the ledger
+    // indexes; a branch-only pull's reviews are not in it, so it gets none.
+    const pullReviews = config.dir === ".forkmesh/pulls"
+      && tree.pullReviews && typeof tree.pullReviews === "object"
+      ? tree.pullReviews
+      : null;
     const records = dirs.concat(branchOnlyDirs).map((entry) => {
       const number = Number(entry.name);
       const blob = blobs[recordPath(entry)];
@@ -20701,6 +20720,10 @@
         meta: config.meta(values),
         body: parsed.body || "",
         wantsAgent: config.dir === "issues" ? Boolean(values.wantsAgent) : false,
+        review: pullReviews && indexedNames.has(String(entry.name))
+          ? pullListReviewState(pullReviews[String(entry.name)] || [], values.author || "",
+            values.status || values.state || "open", pullListIsDraft(values))
+          : null,
       };
     });
     return records.filter(Boolean).sort((a, b) => {
@@ -20771,6 +20794,45 @@
     return `<i data-lucide="${icon}" class="${extra} h-4 w-4 ${tone}"></i>`;
   }
 
+  // A pull row's review state, from the reviews the .forkmesh/pulls listing
+  // carries (pullReviews: [[reviewer, state], ...] in file order) and the
+  // merge box's own rule (pullReviewPolicy): each reviewer's latest review
+  // counts, the author's own never does. Null when the listing has none to go
+  // on (an older mirror) or nothing applies.
+  function pullListReviewState(reviews, pullAuthor, status, draft = false) {
+    if (!Array.isArray(reviews)) return null;
+    const events = reviews
+      .filter((entry) => Array.isArray(entry) && entry.length >= 2)
+      .map(([author, stateName]) => ({ type: "review", author: String(author || ""), state: String(stateName || "") }));
+    const policy = pullReviewPolicy(events, pullAuthor);
+    const open = String(status || "open").toLowerCase() === "open" && !draft;
+    if (policy.blockers) return { state: "changes_requested", approvals: policy.approvals, blockers: policy.blockers };
+    if (policy.ready) return { state: "approved", approvals: policy.approvals, blockers: 0 };
+    return open ? { state: "review_required", approvals: 0, blockers: 0 } : null;
+  }
+
+  function pullListIsDraft(values) {
+    return ["true", "yes", "1"].includes(String(values?.draft || "").trim().toLowerCase());
+  }
+
+  const PULL_LIST_REVIEW_CHIPS = {
+    approved: ["check", "Approved", "border-success/40 text-success"],
+    changes_requested: ["file-diff", "Changes requested", "border-destructive/40 text-destructive"],
+    review_required: ["eye", "Review required", "border-border text-muted-foreground"],
+  };
+
+  // Mirrored by repo_views._review_chip so the first view draws the same chip.
+  function pullListReviewChipHtml(review) {
+    const chip = PULL_LIST_REVIEW_CHIPS[review?.state];
+    if (!chip) return "";
+    const [iconName, label, tone] = chip;
+    const count = (n) => `${formatCount(n)} reviewer${n === 1 ? "" : "s"}`;
+    const title = review.state === "approved" ? `Approved by ${count(review.approvals)}`
+      : review.state === "changes_requested" ? `Changes requested by ${count(review.blockers)}`
+        : "Needs an approval from someone other than the author";
+    return `<span data-repo-pull-review="${review.state}" title="${escapeHtml(title)}" class="inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 text-[11px] font-medium leading-4 ${tone}"><i data-lucide="${iconName}" class="h-3 w-3"></i>${label}</span>`;
+  }
+
   function renderRepoRecordList(items, config, kind) {
     const totalPages = Math.max(1, Math.ceil(items.length / REPO_COLLECTION_PAGE_SIZE));
     const page = state.repoCollectionPages[kind] || 1;
@@ -20805,6 +20867,7 @@
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
               <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              ${issueRowViewsHtml(state.selectedRepo, item.number)}
               ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
               ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
@@ -20818,11 +20881,11 @@
           <span class="min-w-0">
             <span class="block min-w-0 leading-6">
               <span data-repo-pull-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
-              ${item.base && item.head ? `<span class="ml-1 inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 align-[2px] font-mono text-[11px] leading-[18px] text-muted-foreground"><span class="truncate">${escapeHtml(item.base)}</span><i data-lucide="arrow-left" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.head.slice(item.head.lastIndexOf(":") + 1))}</span></span>` : ""}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
               <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
               ${!["open", "closed", "merged"].includes(String(stateLabel).toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
+              ${pullListReviewChipHtml(item.review)}
             </span>
           </span>
           <span class="flex shrink-0 items-start pt-0.5 text-[12px] text-muted-foreground">
@@ -20858,6 +20921,11 @@
     const pagination = ["issues", "pulls"].includes(kind)
       ? renderRepoCollectionPagination(kind, safePage, totalPages, items.length)
       : "";
+    if (kind === "issues") {
+      const repo = state.selectedRepo;
+      const numbers = pageItems.map((item) => item.number);
+      setTimeout(() => loadIssueListViews(repo, numbers), 0);
+    }
     return rows + unavailableWarning + pagination;
   }
 
@@ -27728,6 +27796,7 @@ Report
             <span>${formatCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}</span>
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
+            ${issueViewsHtml(repo, number)}
           </p>
           ${closed || instancePluginOff("issue-ai-prompt") ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
@@ -28922,6 +28991,7 @@ Report
       }
       loadFederatedReplies(repo, kind, number, container);
       if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
+      if (kind === "issues") recordIssueView(repo, number);
       void refreshRepoRecordDevelopment(repo, kind, number);
       if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
       // Members watch an open pull for agent activity; signed-out visitors
@@ -34578,6 +34648,99 @@ Report
             lastViewedAt: Number(data.lastViewedAt) || 0,
           },
         };
+      })
+      .catch(() => {});
+  }
+
+  function issueViewKey(repo, number) {
+    return `${repositoryViewKey(repo)}#${Number(number) || 0}`;
+  }
+
+  function issueViewTotals(data) {
+    return {
+      views: Number(data?.views) || 0,
+      viewers: Number(data?.viewers) || 0,
+      lastViewedAt: Number(data?.lastViewedAt) || 0,
+    };
+  }
+
+  function issueViewsLabel(totals) {
+    const views = Number(totals?.views) || 0;
+    return `${formatCount(views)} ${views === 1 ? "view" : "views"}`;
+  }
+
+  function issueViewsHtml(repo, number) {
+    if (!repo || repo.isPrivate) return "";
+    const totals = state.issueViewTotals?.[issueViewKey(repo, number)];
+    const shown = Number(totals?.views) > 0;
+    return `<span data-repo-issue-views-separator aria-hidden="true"${shown ? "" : " hidden"}>·</span><span data-repo-issue-views="${escapeHtml(number)}" title="Views by people, counted once a day per viewer" class="inline-flex items-center gap-1"${shown ? "" : " hidden"}><i data-lucide="eye" class="h-4 w-4"></i><span data-repo-issue-views-label>${shown ? escapeHtml(issueViewsLabel(totals)) : ""}</span></span>`;
+  }
+
+  function issueRowViewsHtml(repo, number) {
+    if (!repo || repo.isPrivate || !/^\d+$/.test(String(number))) return "";
+    const totals = state.issueViewTotals?.[issueViewKey(repo, number)];
+    const shown = Number(totals?.views) > 0;
+    return `<span data-repo-issue-row-views="${escapeHtml(number)}" class="inline-flex items-center gap-1 pl-1"${shown ? "" : " hidden"}><i data-lucide="eye" class="h-3 w-3 shrink-0"></i><span data-repo-issue-views-label>${shown ? escapeHtml(issueViewsLabel(totals)) : ""}</span></span>`;
+  }
+
+  function showIssueViews(repo, number, data) {
+    const totals = issueViewTotals(data);
+    state.issueViewTotals = { ...(state.issueViewTotals || {}), [issueViewKey(repo, number)]: totals };
+    const shown = totals.views > 0;
+    const selector = `[data-repo-issue-views="${Number(number)}"], [data-repo-issue-row-views="${Number(number)}"]`;
+    document.querySelectorAll(selector).forEach((node) => {
+      const label = node.querySelector("[data-repo-issue-views-label]");
+      if (label) label.textContent = shown ? issueViewsLabel(totals) : "";
+      node.hidden = !shown;
+      if (node.matches("[data-repo-issue-views]")) {
+        const separator = node.previousElementSibling;
+        if (separator?.matches("[data-repo-issue-views-separator]")) separator.hidden = !shown;
+      }
+    });
+    return totals;
+  }
+
+  function recordIssueView(repo, number) {
+    if (!repo || repo.isPrivate || !(Number(number) > 0)) return;
+    const key = issueViewKey(repo, number);
+    if (state.recordedIssueViews.has(key)) return;
+    state.recordedIssueViews.add(key);
+    const body = state.session?.sessionToken
+      ? { sessionToken: state.session.sessionToken }
+      : {};
+    fetch(`${repoApiBase(repo)}/issues/${Number(number)}/view`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data && data.ok !== false) showIssueViews(repo, number, data);
+      })
+      .catch(() => {});
+  }
+
+  const ISSUE_LIST_VIEWS_MAX = 100;
+  const ISSUE_LIST_VIEWS_FRESH_MS = 60_000;
+  const issueListViewsFetched = new Map();
+
+  function loadIssueListViews(repo, numbers) {
+    if (!repo || repo.isPrivate) return;
+    const wanted = [...new Set((numbers || []).map(Number).filter((n) => n > 0))].slice(0, ISSUE_LIST_VIEWS_MAX);
+    if (!wanted.length) return;
+    const fetchKey = `${repositoryViewKey(repo)}|${wanted.join(",")}`;
+    const now = Date.now();
+    if (now - (issueListViewsFetched.get(fetchKey) || 0) < ISSUE_LIST_VIEWS_FRESH_MS) return;
+    issueListViewsFetched.set(fetchKey, now);
+    fetch(`${repoApiBase(repo)}/issue-views?numbers=${wanted.join(",")}`, {
+      headers: { accept: "application/json" },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const views = data?.views && typeof data.views === "object" ? data.views : {};
+        wanted.forEach((number) => {
+          if (views[String(number)]) showIssueViews(repo, number, views[String(number)]);
+        });
       })
       .catch(() => {});
   }

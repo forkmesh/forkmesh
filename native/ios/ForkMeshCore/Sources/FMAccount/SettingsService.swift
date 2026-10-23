@@ -84,6 +84,8 @@ public final class SettingsService {
     nonisolated public static let surfaceKey = "appearance/surface"
     nonisolated public static let readableColorsKey = "appearance/readableColors"
     nonisolated public static let themeColorsKey = "appearance/themeColors"
+    nonisolated public static let matchInstanceThemeKey = "appearance/matchInstanceTheme"
+    nonisolated public static let instanceThemeColorsKey = "appearance/instanceThemeColors"
     nonisolated public static let backgroundImageKey = "appearance/backgroundImage"
     nonisolated public static let backgroundDimKey = "appearance/backgroundDim"
     nonisolated public static let defaultBackgroundDim: Double = 0.4
@@ -484,6 +486,45 @@ public final class SettingsService {
         let json: String = theme.colorsJSON()
         prefs.set(json.isEmpty ? nil : json, forKey: SettingsService.themeColorsKey)
         notifyListeners()
+    }
+
+    public var matchesInstanceTheme: Bool {
+        track()
+        return prefs.bool(forKey: SettingsService.matchInstanceThemeKey) ?? false
+    }
+
+    public func setMatchesInstanceTheme(_ on: Bool) {
+        if on {
+            prefs.set(true, forKey: SettingsService.matchInstanceThemeKey)
+        } else {
+            prefs.remove(SettingsService.matchInstanceThemeKey)
+            prefs.remove(SettingsService.instanceThemeColorsKey)
+        }
+        notifyListeners()
+    }
+
+    public var instanceThemeColors: String {
+        track()
+        return prefs.string(forKey: SettingsService.instanceThemeColorsKey) ?? ""
+    }
+
+    public func setInstanceThemeColors(_ json: String) {
+        let current: String = prefs.string(forKey: SettingsService.instanceThemeColorsKey) ?? ""
+        if current == json { return }
+        if json.isEmpty {
+            prefs.remove(SettingsService.instanceThemeColorsKey)
+        } else {
+            prefs.set(json, forKey: SettingsService.instanceThemeColorsKey)
+        }
+        notifyListeners()
+    }
+
+    public var effectiveTheme: AppTheme {
+        let theme: AppTheme = self.theme
+        guard matchesInstanceTheme else { return theme }
+        let colors = AppTheme.parseColors(instanceThemeColors)
+        guard !colors.light.isEmpty || !colors.dark.isEmpty else { return theme }
+        return AppTheme(readable: theme.readable, lightColors: colors.light, darkColors: colors.dark)
     }
 
     public var backgroundImage: String {
