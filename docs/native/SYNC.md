@@ -194,4 +194,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S119 | 2026-10-23 | Settings | ui | With Diagnostics on, the core node and desktop lights show tiny CPU, memory and disk bars, sit further from the corner, and the desktop charts left the top right. | a345e3890b | pending |  |
 | S120 | 2026-10-23 | DJ Studio | feature | DJ Studio's queue opens its menu (with Remove from Queue) when a song is held, drags a song onto a deck as soon as the finger moves across the queue, and plays a song added while nothing is playing right away. | fcd3936166 | pending |  |
 | S121 | 2026-10-23 | Chat | fix | When several new devices join a private chat at once, one banner asks to approve or block all of them instead of one banner per device. | a0c1f528fa | pending |  |
+| S122 | 2026-10-23 | Inbox | ui | Each ping in the Inbox shows the logo of the instance it came from, under the ping's icon. | 9d95e08a10 | pending |  |
 <!-- ledger:end -->
