@@ -14205,14 +14205,18 @@ def _log_d1_query(sql, args=(), kind="query"):
 
 
 _D1_WATCH_TABLES_RE = re.compile(
-    r"\b(users|account_sessions|account_devices|repositories|"
-    r"profile_contribution_[a-z_]+)\b", re.IGNORECASE)
+    r"\b(users|nodes|account_sessions|account_devices|repositories|"
+    r"mirror_https_endpoints|profile_contribution_[a-z_]+)\b",
+    re.IGNORECASE)
 _D1_WATCH_WRITE_RE = re.compile(
     r"\b(insert|update|delete|replace)\b", re.IGNORECASE)
 _D1_WATCH_SESSION_TABLES = frozenset(
     ("users", "account_sessions", "account_devices"))
 _D1_WATCH_SESSION_TOUCH = "UPDATE account_sessions SET last_seen_at=?"
-_D1_WATCH_GENERATIONS = {"contributions": 0}
+_D1_WATCH_GENERATIONS = {
+    "contributions": 0, "repositories": 0, "mirror_https_endpoints": 0,
+    "signing_keys": 0}
+_D1_WATCH_NODE_TOUCH = "UPDATE nodes SET last_seen=?"
 
 
 def _d1_write_watch(sql):
@@ -14232,6 +14236,13 @@ def _d1_write_watch(sql):
     if "repositories" in tables or any(
             name.startswith("profile_contribution_") for name in tables):
         _D1_WATCH_GENERATIONS["contributions"] += 1
+    if "repositories" in tables:
+        _D1_WATCH_GENERATIONS["repositories"] += 1
+    if "mirror_https_endpoints" in tables:
+        _D1_WATCH_GENERATIONS["mirror_https_endpoints"] += 1
+    if tables & {"users", "account_devices"} or (
+            "nodes" in tables and not text.startswith(_D1_WATCH_NODE_TOUCH)):
+        _D1_WATCH_GENERATIONS["signing_keys"] += 1
 
 
 def _cron_d1_budget_start():
@@ -14391,6 +14402,27 @@ async def d1_run(env, sql, *args):
     if args:
         stmt = stmt.bind(*d1_bind_args(args))
     return await stmt.run()
+
+
+D1_SNAPSHOT_TTL_MS = 30 * 1000
+D1_SNAPSHOT_MAX = 32
+_D1_SNAPSHOTS = {}
+
+
+async def _d1_snapshot(env, table, sql, *args):
+    now = int(Date.now())
+    generation = _D1_WATCH_GENERATIONS.get(table, 0)
+    key = (sql, args)
+    hit = _D1_SNAPSHOTS.get(key)
+    if (hit is not None and hit[1] == generation
+            and 0 <= now - hit[0] < D1_SNAPSHOT_TTL_MS):
+        return [dict(row) for row in hit[2]]
+    rows = await d1_all(env, sql, *args)
+    if _D1_WATCH_GENERATIONS.get(table, 0) == generation:
+        if key not in _D1_SNAPSHOTS and len(_D1_SNAPSHOTS) >= D1_SNAPSHOT_MAX:
+            _D1_SNAPSHOTS.clear()
+        _D1_SNAPSHOTS[key] = (now, generation, [dict(row) for row in rows])
+    return rows
 
 
 async def d1_run_batch(env, statements):
@@ -18611,21 +18643,27 @@ async def verify_share_view_token(env, viewer, owner, repo, ts, sig):
 # that cannot change between two requests a second apart: crawlers, stale links
 # and polling clients walk /api/repo/<owner>/<repo>/... for names this relay
 # has never held, and every one of those probes paid a blind index plus a D1
-# read before its 404 (adhoc #1642). Only the CLOSED answer is memoized, so a
-# public repository is never served from a cached verdict; publishing clears
-# the entry inline for same-isolate read-your-writes, and the TTL is short
-# enough that a publish from another isolate is visible within one page load.
-# Per-isolate and bounded, mirroring _ORG_ALIAS_MEMO.
+# read before its 404 (adhoc #1642). Publishing clears the entry inline for
+# same-isolate read-your-writes, and the TTL is short enough that a publish
+# from another isolate is visible within one page load. A public verdict is
+# held in _REPO_OPEN_MEMO only under an unchanged catalog_rev and no local
+# repositories write (docs/app/d1.md). Per-isolate and bounded,
+# mirroring _ORG_ALIAS_MEMO.
 _REPO_CLOSED_MEMO = {}
 REPO_CLOSED_MEMO_TTL_MS = 5 * 1000
 REPO_CLOSED_MEMO_MAX = 512
+_REPO_OPEN_MEMO = {}
+REPO_OPEN_MEMO_TTL_MS = 30 * 1000
 
 
 def _forget_repo_closed(owner, repo):
     """Drop a memoized "not publicly served" verdict after a catalog write."""
-    _REPO_CLOSED_MEMO.pop(
-        str(owner or "").strip().lower() + "/"
-        + str(repo or "").strip().lower(), None)
+    key = (str(owner or "").strip().lower() + "/"
+           + str(repo or "").strip().lower())
+    _REPO_CLOSED_MEMO.pop(key, None)
+    open_memo = globals().get("_REPO_OPEN_MEMO")
+    if open_memo is not None:
+        open_memo.pop(key, None)
 
 
 async def _repo_is_private(env, owner, repo):
@@ -18649,6 +18687,23 @@ async def _repo_is_private(env, owner, repo):
                 and now - closed_at
                 < globals().get("REPO_CLOSED_MEMO_TTL_MS", 5000)):
             return True
+    open_memo = globals().get("_REPO_OPEN_MEMO")
+    rev_reader = globals().get("_catalog_rev_current")
+    generations = globals().get("_D1_WATCH_GENERATIONS") or {}
+    open_mark = None
+    if open_memo is not None and callable(rev_reader):
+        now = now or int(Date.now())
+        try:
+            rev = await rev_reader(env, now)
+        except Exception:
+            rev = None
+        if rev is not None:
+            open_mark = (rev, generations.get("repositories", 0))
+            opened = open_memo.get(key)
+            if (opened is not None and opened[1] == open_mark
+                    and 0 <= now - opened[0]
+                    < globals().get("REPO_OPEN_MEMO_TTL_MS", 30000)):
+                return False
 
     async def resolve():
         await ensure_schema(env)
@@ -18693,6 +18748,15 @@ async def _repo_is_private(env, owner, repo):
             memo[key] = now
         else:
             memo.pop(key, None)
+    if open_memo is not None:
+        if closed or open_mark is None or open_mark[1] != generations.get(
+                "repositories", 0):
+            open_memo.pop(key, None)
+        else:
+            if (key not in open_memo and len(open_memo)
+                    >= globals().get("REPO_CLOSED_MEMO_MAX", 512)):
+                open_memo.clear()
+            open_memo[key] = (now, open_mark)
     return closed
 
 
@@ -37345,11 +37409,26 @@ async def _account_signing_pubkeys(env, account_bi, record):
     return keys
 
 
+CLAIMED_SIGNING_KEYS_MEMO_MS = 10 * 1000
+CLAIMED_SIGNING_KEYS_MEMO_MAX = 256
+_CLAIMED_SIGNING_KEYS_MEMO = {}
+
+
 async def _claimed_node_signing_pubkeys(env, node):
     """Return keys allowed to act as one claimed desktop/headless node."""
     node = clean_string(node, MAX_NODE_NAME).strip().lower()
     if not valid_node_name(node):
         return []
+    memo = globals().get("_CLAIMED_SIGNING_KEYS_MEMO")
+    generations = globals().get("_D1_WATCH_GENERATIONS") or {}
+    generation = generations.get("signing_keys", 0)
+    now = int(Date.now()) if memo is not None else 0
+    if memo is not None:
+        hit = memo.get(node)
+        if (hit is not None and hit[1] == generation
+                and 0 <= now - hit[0] < globals().get(
+                    "CLAIMED_SIGNING_KEYS_MEMO_MS", 10000)):
+            return list(hit[2])
     keys = list(await _owner_signing_pubkeys(env, node))
     node_bi = await blind_index(env, node)
     row = await d1_first(
@@ -37360,6 +37439,11 @@ async def _claimed_node_signing_pubkeys(env, node):
     public_key = clean_string((row or {}).get("pubkey", ""), 120).strip()
     if valid_node_pubkey(public_key) and public_key not in keys:
         keys.append(public_key)
+    if memo is not None and generations.get("signing_keys", 0) == generation:
+        if node not in memo and len(memo) >= globals().get(
+                "CLAIMED_SIGNING_KEYS_MEMO_MAX", 256):
+            memo.clear()
+        memo[node] = (now, generation, tuple(keys))
     return keys
 
 
@@ -48278,6 +48362,9 @@ def _https_mirror_public_context_cache_clear():
     after pin admissions that never touched a repository row.
     """
     _HTTPS_MIRROR_PUBLIC_CONTEXT_MEMO.clear()
+    open_memo = globals().get("_REPO_OPEN_MEMO")
+    if isinstance(open_memo, dict):
+        open_memo.clear()
     catalog_memo = globals().get("_PUBLIC_CATALOG_MEMO")
     if isinstance(catalog_memo, dict):
         catalog_memo.update({"ts": 0, "refresh_ts": 0})
@@ -50992,14 +51079,15 @@ def _https_mirror_record_avoided(record, avoided):
 async def _https_mirror_candidates(
         env, context, preferred_region, sticky="", avoid_node="",
         operation=""):
-    rows = await d1_all(
-        env,
-        """SELECT node_name,base_url,mirror_url,public_key,
+    endpoints_sql = """SELECT node_name,base_url,mirror_url,public_key,
                   registration_sig,issued_at,
                   checked_at,latency_ms,region,healthy,integrity,abuse_blocked,
                   forkmesh_refs_sha256,forkmesh_operations_json
-             FROM mirror_https_endpoints""",
-    )
+             FROM mirror_https_endpoints"""
+    snapshot = globals().get("_d1_snapshot")
+    rows = await (
+        snapshot(env, "mirror_https_endpoints", endpoints_sql)
+        if callable(snapshot) else d1_all(env, endpoints_sql))
     rows = [
         row for row in rows or []
         if str(row.get("node_name") or "").lower() in context["nodes"]
@@ -53175,10 +53263,6 @@ async def _https_mirror_proxy(
                 query,
             )
             if direct_target:
-                if operation == "git-info-refs":
-                    if not monitoring:
-                        await _https_mirror_route_advance(
-                            env, context, endpoint["node"], operation)
                 return Response(None, status=307, headers={
                     "Location": direct_target,
                     "Cache-Control": "no-store",

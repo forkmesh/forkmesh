@@ -10,6 +10,7 @@ import re
 
 
 MAX_TABLES = 256
+COUNT_CHUNK = 50
 MAX_DURABLE_OBJECTS = 32
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 TABLE_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
@@ -63,7 +64,7 @@ async def d1_table_inventory(env, d1_all, d1_first):
         "ORDER BY name LIMIT ?",
         MAX_TABLES,
     )
-    capacity = []
+    names = []
     for row in rows or []:
         raw_name = row.get("name") if isinstance(row, dict) else None
         if not isinstance(raw_name, str):
@@ -76,18 +77,42 @@ async def d1_table_inventory(env, d1_all, d1_first):
             or not TABLE_NAME_RE.fullmatch(name)
         ):
             continue
+        names.append(name)
+    counts = {}
+    for start in range(0, len(names), COUNT_CHUNK):
+        chunk = names[start:start + COUNT_CHUNK]
         try:
-            count_row = await d1_first(
-                env,
-                'SELECT COUNT(*) AS row_count FROM "' + name + '"',
-            )
-            row_count = int((count_row or {}).get("row_count", 0) or 0)
+            batch = await d1_all(
+                env, " UNION ALL ".join(_count_term(name) for name in chunk))
+            for count_row in batch or []:
+                counts[str(count_row.get("name") or "")] = count_row.get(
+                    "row_count")
+            continue
         except Exception:
-            # A table can disappear during a rolling migration.
+            pass
+        for name in chunk:
+            try:
+                count_row = await d1_first(
+                    env,
+                    'SELECT COUNT(*) AS row_count FROM "' + name + '"',
+                )
+            except Exception:
+                continue
+            counts[name] = (count_row or {}).get("row_count")
+    capacity = []
+    for name in names:
+        try:
+            row_count = int(counts[name] or 0)
+        except (KeyError, TypeError, ValueError):
             continue
         if 0 <= row_count <= MAX_SAFE_INTEGER:
             capacity.append({"name": name, "rowCount": row_count})
     return capacity
+
+
+def _count_term(name):
+    return "SELECT COUNT(*) AS row_count, '%s' AS name FROM \"%s\"" % (
+        name, name)
 
 
 async def durable_object_inventory(
