@@ -86,7 +86,12 @@ own Usage page with this desktop's Claude Code and Codex accounts and their
 controls, which the Usage package embeds
 ([../desktop/agents-ui.md](../desktop/agents-ui.md)), and for packages
 declaring `desktop.logins.use`, `loginStoreName()`, `saveLogin(login, asker,
-done)` and `findLogins(url, asker, done)` (see **Login store** below).
+done)` and `findLogins(url, asker, done)` (see **Login store** below), and
+for packages declaring `desktop.workflows.run`, `repositoryWorkflows()` and
+`repositoryWorkflowAction(repo, id, action, payload, done)`: the workflows in
+the desktop's repositories (special agents among them), run, edited and
+pinned to a rail on this desktop
+([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
 Every package also gets `openWebPage(path)`, with no permission: it opens a
 same-origin path on the active host in the browser (credentials dropped,
 another origin or a `..` segment refused; `nativePackageWebPageUrl`, used by
@@ -103,8 +108,10 @@ no timers), `navigationBadge()` / `prepareNavigationBadge()`,
 `setHostSearchQuery()`, `searchHits()` / `activateSearchHit()` /
 `prepareSearch()` (answered from memory on the GUI thread), `exportData()`
 (offered on removal), `hostPromptTarget()` / `submitHostPrompt()` (the page
-takes over the footer prompt box while visible), `userDirectoryChanged()`
-and `repositoryChanged()` (the user opened another repository).
+takes over the footer prompt box while visible), `userDirectoryChanged()`,
+`repositoryChanged()` (the user opened another repository) and
+`repositoryWorkflowsChanged()` (a desktop workflow was saved, ran or was
+pinned).
 
 **Login store.** A package can hand a password it was given to the user's
 password manager and ask for it back, without the host knowing which package

@@ -11,14 +11,6 @@
 }
 
 #promptWrapper #promptDragHandle { background: transparent; border: none; }
-#promptWrapper #promptResizeGrip {
-    background: transparent; border: none;
-    border-top: 2px solid @fgSubtle; border-right: 2px solid @fgSubtle;
-    border-top-right-radius: 3px;
-}
-#promptWrapper #promptResizeGrip:hover {
-    background: transparent; border-top-color: @fgSecondary; border-right-color: @fgSecondary;
-}
 #promptWrapper QPushButton#promptClearButton,
 #promptWrapper QPushButton#promptCloudButton,
 #promptWrapper QPushButton#promptWorktreeCheck,

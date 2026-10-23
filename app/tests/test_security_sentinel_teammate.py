@@ -4,10 +4,12 @@ import json
 import re
 from pathlib import Path
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
 FORKMESH = PROJECT / ".forkmesh"
-SENTINEL_CONFIG = FORKMESH / "teammates" / "sentinel.json"
+SENTINEL_CONFIG = FORKMESH / "workflows" / "sentinel.json"
 SHORTCUTS = FORKMESH / "shortcuts"
 SKILLS = FORKMESH / "skills"
 FINDINGS = PROJECT / "docs" / "security" / "findings.md"
@@ -22,10 +24,10 @@ def _load_without_duplicate_keys(path):
             result[key] = value
         return result
 
-    return json.loads(
+    return as_teammate(json.loads(
         path.read_text(encoding="utf-8"),
         object_pairs_hook=unique_object,
-    )
+    ))
 
 
 def _sentinel():

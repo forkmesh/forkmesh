@@ -1670,6 +1670,12 @@ void MainWindow::showTeammateRailMenu(const QString &id, QWidget *anchor)
             [this, id] { setTeammateAvailable(id, true); });
     }
     menu.addSeparator();
+    add(QStringLiteral("teammateRailWorkflow"), QStringLiteral("Open in Workflows"),
+        QStringLiteral("workflow"), [this, repoIndex, id] {
+            openWorkflowInPage(shortcutRepoKey(repoIndex), id);
+        });
+    addWorkflowPinActions(&menu, shortcutRepoKey(repoIndex), id);
+    menu.addSeparator();
     add(QStringLiteral("teammateRailCreate"),
         QStringLiteral("Create needed special agent"), QStringLiteral("plus"),
         [this] { createNeededTeammate(); });
@@ -1904,7 +1910,7 @@ QString MainWindow::buildTeammateCreatorPrompt(int repoIndex) const
                     "Find the special agent this repository needs most and define it.\n"
                     "A ForkMesh special agent is a persistent AI agent with a role, "
                     "instructions, skills and a schedule. It is stored in "
-                    ".forkmesh/teammates and runs on the model its operator "
+                    ".forkmesh/workflows as a workflow and runs on the model its operator "
                     "used most recently.");
     sections << QStringLiteral("Repository\n%1/%2 at %3")
                     .arg(repo.owner, repo.name,

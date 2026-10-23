@@ -1,6 +1,6 @@
 # Sentinel, the security teammate
 
-Sentinel (`.forkmesh/teammates/sentinel.json`) owns security between audits.
+Sentinel (`.forkmesh/workflows/sentinel.json`) owns security between audits.
 Its run playbook is `.forkmesh/shortcuts/review-security.md`, its standing
 rules are the `.forkmesh/skills/security-review.skill` repository skill, and
 the record it keeps is [findings.md](findings.md).
