@@ -28,7 +28,8 @@
       "The web dashboard works again: a merge earlier today had left its script unable to load, which broke repository pages, the Actions tab and pull requests.",
       "A pull request's merge box now lists each check with its state and log, and says when checks are waiting for a maintainer's approval.",
       "Issue and pull request pings now say what happened, such as who approved, closed or assigned which item, and link straight to it; the issue sidebar now tells a repository owner they are receiving notifications, and Unsubscribe really stops them.",
-      "Public repositories can back themselves up to the Internet Archive every day, week or month from repository Settings, using your own archive.org keys."
+      "Public repositories can back themselves up to the Internet Archive every day, week or month from repository Settings, using your own archive.org keys.",
+      "The desktop pull request list marks a pull whose code is not on this computer with a faded cloud icon, and its hover text names the local branch that holds the code when it is."
      ]
     },
     {
