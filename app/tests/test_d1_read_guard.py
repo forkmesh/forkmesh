@@ -503,3 +503,39 @@ def test_without_a_host_the_fallback_reader_still_scans_inline():
                 {"table": "users", "rows": 3}]
     assert calls == [1, 1]
 
+
+
+def test_a_host_process_keeps_its_copy_when_the_cache_evicts_it():
+    runtime = Runtime()
+    guard = runtime.module()
+    env = SimpleNamespace(HOST_BACKGROUND=_HostBackground())
+    calls = []
+    load = _loader(calls, {"u1": 4})
+    assert _run(guard.shared_read(env, "commit-totals", load)) == {"u1": 4}
+    runtime.cache.clear()
+    runtime.clock["now"] += 20 * 60_000
+    assert _run(guard.shared_read(env, "commit-totals", load)) == {"u1": 4}
+    assert calls == [1]
+    runtime.clock["now"] += 11 * 60_000
+    _run(guard.shared_read(env, "commit-totals", load))
+    assert calls == [1, 1]
+
+
+def test_a_worker_isolate_still_rechecks_the_colo_copy():
+    runtime = Runtime()
+    guard = runtime.module()
+    calls = []
+    load = _loader(calls, {"u1": 4})
+    _run(guard.shared_read(object(), "commit-totals", load))
+    runtime.cache.clear()
+    runtime.clock["now"] += 20_000
+    _run(guard.shared_read(object(), "commit-totals", load))
+    assert calls == [1, 1]
+
+
+def test_the_batched_inventory_count_names_its_reader():
+    guard = Runtime().module()
+    assert guard.reader_for_query(
+        "SELECT COUNT(*) AS row_count, 'accounts' AS name FROM \"accounts\" "
+        "UNION ALL SELECT COUNT(*) AS row_count, 'nodes' AS name") == \
+        "table-inventory"
