@@ -2808,10 +2808,6 @@
       headerContext.textContent = "Network";
       return;
     }
-    if (section === "chat") {
-      headerContext.textContent = "Chat";
-      return;
-    }
     if (section === "explore" && state.selectedRepo) {
       headerContext.textContent = repoKey(state.selectedRepo);
       return;

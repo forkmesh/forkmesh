@@ -8,6 +8,12 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Chat",
+     "items": [
+      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."
+     ]
+    },
+    {
      "title": "Projects",
      "items": [
       "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar."

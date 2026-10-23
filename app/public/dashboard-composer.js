@@ -2345,37 +2345,11 @@
     window.addEventListener("popstate", refreshContext);
     window.addEventListener("resize", () => {
       applyViewport();
-      applyPillLift();
       if (isOpen()) applyPlacement();
     });
     window.visualViewport?.addEventListener("resize", applyViewport);
     window.visualViewport?.addEventListener("scroll", applyViewport);
     applyViewport();
-    watchPageDock();
-  }
-
-  function pageDock() {
-    if (document.body.dataset.page !== "chat") return null;
-    return document.querySelector("[data-dashboard-chat-composer]");
-  }
-
-  function watchPageDock() {
-    const dock = pageDock();
-    if (!dock) return;
-    if (typeof ResizeObserver === "function") new ResizeObserver(applyPillLift).observe(dock);
-    applyPillLift();
-  }
-
-  function applyPillLift() {
-    const root = composer.root;
-    if (!root) return;
-    const rect = pageDock()?.getBoundingClientRect();
-    if (!rect || !rect.height) {
-      root.style.removeProperty("--fmc-pill-lift");
-      return;
-    }
-    const lift = Math.max(0, Math.round(window.innerHeight - rect.top)) + 12;
-    root.style.setProperty("--fmc-pill-lift", lift + "px");
   }
 
   function applyViewport() {

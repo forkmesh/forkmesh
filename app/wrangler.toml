@@ -114,8 +114,6 @@ run_worker_first = [
   "!/dashboard/repos/new/",
   "!/dashboard/network",
   "!/dashboard/network/",
-  "!/dashboard/chat",
-  "!/dashboard/chat/",
   "!/dashboard/ads",
   "!/dashboard/ads/",
   "!/dashboard/challenges",

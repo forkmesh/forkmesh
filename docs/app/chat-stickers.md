@@ -4,7 +4,7 @@ Anyone in a conversation can stick a sticker onto a message, the way iMessage
 lets you peel a sticker onto a bubble. Stickers sit tilted over the top-right
 corner of the message; reactions stay as chips under it. Home page:
 [app/README.md](README.md). Clients: the desktop (`desktop/src/StickerCatalog.h`,
-`MessageRow`), the web chat (`app/public/chat.js`), the dashboard chat
+`MessageRow`), the web chat (`app/public/chat.js`), the World chat
 (`app/public/dashboard-chat.js`), iOS (`FMChat`) and Android (`core/chat`).
 
 ## Wire format
@@ -150,7 +150,8 @@ the sticker tests in `ChatExtrasTest` and
 ## Web
 
 `app/public/chat.js` (the `/chat` page) and `app/public/dashboard-chat.js`
-(`/dashboard/chat`, also loaded by World) each hold `STICKER_CATALOG` and a
+(World's chat; `/dashboard/chat` now redirects to `/chat`) each hold
+`STICKER_CATALOG` and a
 `stickers` map (message → slug → placer id → name) next to `reactions`.
 `applyReaction` hands a frame whose `sticker` is in the catalog to
 `applySticker`; an unknown slug falls through to the reaction path with its
@@ -159,21 +160,19 @@ plus `sticker`, so direct messages and sealed rooms carry it unchanged, and
 every place that forgets a message's reactions forgets its stickers too.
 
 `renderStickers` fills a `.chat-stickers` strip appended to the message row
-(`.chat-msg` and `.chat-thread-message` on `/chat`, `.chat-message-row` on the
-dashboard), positioned over the row's top-right corner. Each badge is a button
+(`.chat-msg` and `.chat-thread-message` on `/chat`, `.chat-message-row` in
+World), positioned over the row's top-right corner. Each badge is a button
 whose background and `--chat-sticker-tilt` come from the catalog as inline
 style, so the theme never recolours them; your own placements get a blue ring
 (`is-mine`). The row gets `has-stickers`, which moves the hover action toolbar
 below the strip so it never covers a sticker you want to click. "Add sticker"
-(a sticker icon on `/chat`, a "Sticker" button on the dashboard) sits right
+(a sticker icon on `/chat`, a "Sticker" button in World) sits right
 after "Add reaction" and opens a popover of all eight badges: the shared
-`.chat-sticker-picker` on `/chat`, an in-row picker on the dashboard that takes
+`.chat-sticker-picker` on `/chat`, an in-row picker in World that takes
 the reaction picker's slot so only one is open.
 
-Styles: `app/public/chat.css`, `app/public/dashboard/partials/views/chat.html`
-(rebuild `dashboard/chat/index.html` with `app/tools/build_dashboard_assets.py`)
-and `world/public/world/world.css` (native chat panel; hidden in the HUD
-feed). The dashboard builds no actions or stickers for Discord rows
+Styles: `app/public/chat.css` and `world/public/world/world.css` (native chat
+panel; hidden in the HUD feed). World builds no actions or stickers for Discord rows
 (`record.external`); `/chat` has no Discord conversations. Tests:
 `app/tests/test_chat_stickers_frontend.py` runs both clients' sticker code in
 node against the catalog table above.
