@@ -199,6 +199,7 @@ async def _queue(runtime, jam_id):
             "title": _clean(data.get("title"), 300),
             "author": _clean(data.get("author"), 200),
             "addedBy": str(row.get("added_by") or ""),
+            "addedAt": int(row.get("added_at") or 0),
         })
     return items
 

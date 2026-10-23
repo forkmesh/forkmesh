@@ -12,7 +12,7 @@ final class DjJamTests: XCTestCase {
                 "id": "j1", "title": "Friday", "owner": "alice", "me": "bob", "myStatus": "joined", "now": 10_000,
                 "members": [["name": "alice", "status": "owner"], ["name": "bob", "status": "joined"], ["name": "cara", "status": "invited"], ["status": "x"]],
                 "queue": [
-                    ["id": "q1", "videoId": "dQw4w9WgXcQ", "title": "Song", "author": "Band", "addedBy": "bob"],
+                    ["id": "q1", "videoId": "dQw4w9WgXcQ", "title": "Song", "author": "Band", "addedBy": "bob", "addedAt": 1_792_000_000_000],
                     ["id": "q2", "videoId": "bad"],
                 ],
                 "decks": [
@@ -27,7 +27,8 @@ final class DjJamTests: XCTestCase {
         XCTAssertTrue(jam.joined)
         XCTAssertEqual(jam.members.map(\.name), ["alice", "bob", "cara"])
         XCTAssertEqual(jam.listeners.map(\.name), ["alice", "bob"])
-        XCTAssertEqual(jam.queue, [DjQueueItem(id: "q1", videoId: "dQw4w9WgXcQ", title: "Song", author: "Band", addedBy: "bob")])
+        XCTAssertEqual(jam.queue, [DjQueueItem(id: "q1", videoId: "dQw4w9WgXcQ", title: "Song", author: "Band", addedBy: "bob", addedAt: 1_792_000_000_000)])
+        XCTAssertEqual(jam.queue.first?.addedDate, Date(timeIntervalSince1970: 1_792_000_000))
         XCTAssertEqual(jam[.a].videoId, "9bZkp7q19f0")
         XCTAssertEqual(jam[.a].expectedPosition(serverNow: jam.now), 32.2, accuracy: 1e-9)
         XCTAssertEqual(jam[.b].videoId, "")
@@ -57,6 +58,9 @@ final class DjJamTests: XCTestCase {
     func testQueueItemsDecodeSafely() throws {
         let items = try JSONDecoder().decode([DjQueueEntry].self, from: Data(#"[{"id":"a","videoId":"dQw4w9WgXcQ","title":"Song"},{"videoId":"bad"}]"#.utf8))
         XCTAssertEqual(items.compactMap(\.item).map(\.videoId), ["dQw4w9WgXcQ"])
+        XCTAssertEqual(items.compactMap(\.item).first?.addedAt, 0)
+        let saved = DjQueueItem(id: "b", videoId: "dQw4w9WgXcQ", title: "Song", author: "Band", addedBy: "bob", addedAt: 42)
+        XCTAssertEqual(try JSONDecoder().decode(DjQueueItem.self, from: JSONEncoder().encode(saved)), saved)
     }
 
     func testWaveformFollowsLoudnessAndBrightness() {

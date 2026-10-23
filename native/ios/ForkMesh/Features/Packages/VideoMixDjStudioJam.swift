@@ -32,7 +32,7 @@ extension DjStudioModel {
             show("The queue is full. Play or remove a video first.")
             return
         }
-        queue.append(DjQueueItem(id: UUID().uuidString, videoId: id, title: title, author: author))
+        queue.append(DjQueueItem(id: UUID().uuidString, videoId: id, title: title, author: author, addedAt: Int64(Date().timeIntervalSince1970 * 1000)))
         show(title.isEmpty ? "Added to the queue." : "Queued: \(title)")
         save()
     }
@@ -58,7 +58,8 @@ extension DjStudioModel {
             return
         }
         let room = max(0, DjStudio.queueLimit - queue.count)
-        let added = songs.prefix(room).map { DjQueueItem(id: UUID().uuidString, videoId: $0.id, title: $0.title, author: $0.author) }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let added = songs.prefix(room).map { DjQueueItem(id: UUID().uuidString, videoId: $0.id, title: $0.title, author: $0.author, addedAt: now) }
         queue += added
         show(added.isEmpty ? "The queue is full. Play or remove a video first."
             : added.count < songs.count ? "Queued \(added.count) songs: the queue is full." : added.count == 1 ? "Queued 1 song." : "Queued \(added.count) songs.")

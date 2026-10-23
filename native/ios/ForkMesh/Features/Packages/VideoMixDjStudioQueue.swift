@@ -155,10 +155,10 @@ struct DjQueueThumb: View {
                 Button("Tags and Playlists…") { model.editSong(item.videoId) }
                 Button("Remove from Queue", role: .destructive) { model.removeFromQueue(item) }
             } message: {
-                Text("Or hold the thumbnail and drag it onto a deck.")
+                Text([item.addedLine.map { $0 + "." }, "Or hold the thumbnail and drag it onto a deck."].compactMap { $0 }.joined(separator: "\n"))
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(item.title.isEmpty ? "Queued video" : "Queued: \(item.title)")
+            .accessibilityLabel([item.title.isEmpty ? "Queued video" : "Queued: \(item.title)", model.inJam ? item.addedLine : nil].compactMap { $0 }.joined(separator: ", "))
             .accessibilityAddTraits(.isButton)
             .accessibilityAction(named: "Load on Deck A") { model.playFromQueue(item, on: .a) }
             .accessibilityAction(named: "Load on Deck B") { model.playFromQueue(item, on: .b) }
@@ -186,16 +186,39 @@ struct DjQueueArt: View {
         .overlay(RoundedRectangle(cornerRadius: 4 * u, style: .continuous).strokeBorder(next ? DjTheme.active.opacity(0.8) : DjTheme.edge, lineWidth: next ? 1.5 : 1))
         .overlay(alignment: .bottomLeading) {
             if showsAdder, !item.addedBy.isEmpty {
-                Text(item.addedBy)
-                    .font(.system(size: 8 * u, weight: .semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, 3 * u)
-                    .padding(.vertical, 1 * u)
-                    .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 2 * u))
-                    .foregroundStyle(DjTheme.ink)
-                    .padding(2 * u)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(item.addedBy)
+                        .font(.system(size: 8 * u, weight: .semibold))
+                    if let stamp = item.addedStamp {
+                        Text(stamp)
+                            .font(.system(size: 7 * u, weight: .medium).monospacedDigit())
+                            .opacity(0.8)
+                    }
+                }
+                .lineLimit(1)
+                .padding(.horizontal, 3 * u)
+                .padding(.vertical, 1 * u)
+                .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 2 * u))
+                .foregroundStyle(DjTheme.ink)
+                .padding(2 * u)
             }
         }
+    }
+}
+
+extension DjQueueItem {
+    var addedStamp: String? {
+        guard let date = addedDate else { return nil }
+        if Calendar.current.isDateInToday(date) { return date.formatted(date: .omitted, time: .shortened) }
+        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+    }
+
+    var addedLine: String? {
+        let when = addedDate?.formatted(date: .abbreviated, time: .shortened)
+        if !addedBy.isEmpty, let when { return "Added by \(addedBy) on \(when)" }
+        if !addedBy.isEmpty { return "Added by \(addedBy)" }
+        if let when { return "Added on \(when)" }
+        return nil
     }
 }
 
