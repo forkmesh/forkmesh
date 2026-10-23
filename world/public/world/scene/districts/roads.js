@@ -51,6 +51,34 @@ function hexOutlineRingPositions(tiles, innerApothem, width, positions, indices)
   });
 }
 
+function roadBendPositions(junctions, positions, indices) {
+  const segments = WORLD_ROAD_CORNER_SEGMENTS;
+  const inner = roundedHexagonOutline(
+    CONTINUOUS_CITY_RADIUS,
+    CONTINUOUS_CITY_CORNER_RADIUS,
+    segments,
+  );
+  const outer = roundedHexagonOutline(
+    CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
+    CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
+    segments,
+  );
+  junctions.forEach(({ bend }) => {
+    if (!bend) return;
+    const base = positions.length / 3;
+    const first = bend.vertex * (segments + 1);
+    for (let step = 0; step <= segments; step += 1) {
+      const [ix, iy] = inner[first + step];
+      const [ox, oy] = outer[first + step];
+      positions.push(bend.x + ix, 0, bend.z + iy, bend.x + ox, 0, bend.z + oy);
+    }
+    for (let step = 0; step < segments; step += 1) {
+      const a = base + step * 2;
+      indices.push(a, a + 1, a + 2, a + 2, a + 1, a + 3);
+    }
+  });
+}
+
 function flatRoadGeometry(THREE, positions, indices) {
   for (let index = 0; index < indices.length; index += 3) {
     const a = indices[index] * 3;
@@ -87,10 +115,11 @@ function hexRoadDashCenters() {
   const seen = new Set();
   const dashes = [];
   const clear = WORLD_ROAD_JUNCTION_REACH + dash / 2;
-  const add = (x, z, heading) => {
+  const add = (x, z, heading, through = false) => {
     const key = `${Math.round(x * 4)}:${Math.round(z * 4)}`;
     if (seen.has(key)) return;
     if (
+      !through &&
       WORLD_ROAD_JUNCTIONS.some(
         (junction) => Math.hypot(x - junction.x, z - junction.z) < clear,
       )
@@ -100,6 +129,29 @@ function hexRoadDashCenters() {
     seen.add(key);
     dashes.push([x, z, heading]);
   };
+  const circumradius = (apothem * 2) / Math.sqrt(3);
+  const bendAt = (x, z) =>
+    WORLD_ROAD_JUNCTIONS.some(
+      (junction) =>
+        junction.bend && Math.hypot(x - junction.x, z - junction.z) < 1,
+    );
+  const addArc = (tile, normal, through) => {
+    const cornerAngle = normal + Math.PI / 6;
+    const cornerX = tile.x + Math.cos(cornerAngle) * edge;
+    const cornerZ = tile.z + Math.sin(cornerAngle) * edge;
+    for (let step = 0; step < arcCount; step += 1) {
+      const angle = normal + ((step + 0.5) * Math.PI) / 3 / arcCount;
+      add(
+        cornerX + Math.cos(angle) * corner,
+        cornerZ + Math.sin(angle) * corner,
+        Math.atan2(Math.sin(angle), -Math.cos(angle)),
+        through,
+      );
+    }
+  };
+  WORLD_ROAD_JUNCTIONS.forEach(({ bend }) => {
+    if (bend) addArc(bend, (bend.vertex * Math.PI) / 3, true);
+  });
   WORLD_HEX_TILES.forEach((tile) => {
     for (let side = 0; side < 6; side += 1) {
       const normal = (side * Math.PI) / 3;
@@ -116,16 +168,14 @@ function hexRoadDashCenters() {
           heading,
         );
       }
-      const cornerAngle = normal + Math.PI / 6;
-      const cornerX = tile.x + Math.cos(cornerAngle) * edge;
-      const cornerZ = tile.z + Math.sin(cornerAngle) * edge;
-      for (let step = 0; step < arcCount; step += 1) {
-        const angle = normal + ((step + 0.5) * Math.PI) / 3 / arcCount;
-        add(
-          cornerX + Math.cos(angle) * corner,
-          cornerZ + Math.sin(angle) * corner,
-          Math.atan2(Math.sin(angle), -Math.cos(angle)),
-        );
+      const vertexAngle = normal + Math.PI / 6;
+      if (
+        !bendAt(
+          tile.x + Math.cos(vertexAngle) * circumradius,
+          tile.z + Math.sin(vertexAngle) * circumradius,
+        )
+      ) {
+        addArc(tile, normal, false);
       }
     }
   });
@@ -249,6 +299,20 @@ export function createRoadGraph(
       const hex = incoming.hexes.find((tile) => outgoing.hexes.includes(tile));
       if (hex === undefined) return;
       const turn = roadTurnArc(graph, incoming, outgoing, hex);
+      turn.id = graph.turns.length;
+      graph.turns.push(turn);
+      incoming.turns.push(turn);
+      outgoing.incoming.push(turn);
+    });
+  });
+  graph.edges.forEach((incoming) => {
+    const node = graph.nodes[incoming.to];
+    if (node.out.length !== 3) return;
+    node.out.forEach((outId) => {
+      if (outId === incoming.reverse) return;
+      const outgoing = graph.edges[outId];
+      if (incoming.hexes.some((tile) => outgoing.hexes.includes(tile))) return;
+      const turn = roadTurnArc(graph, incoming, outgoing, outgoing.hexes[0]);
       turn.id = graph.turns.length;
       graph.turns.push(turn);
       incoming.turns.push(turn);
@@ -604,6 +668,7 @@ export function createHexRoadNetwork(THREE) {
     positions,
     indices,
   );
+  roadBendPositions(WORLD_ROAD_JUNCTIONS, positions, indices);
   WORLD_ROAD_JUNCTIONS.forEach((junction) => {
     const base = positions.length / 3;
     for (let arm = 0; arm < 3; arm += 1) {

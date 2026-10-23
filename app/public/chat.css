@@ -3094,6 +3094,42 @@
       }
 
       .chat-person.is-offline .chat-person-name { color: var(--muted); }
+
+      .chat-person-text {
+        display: flex;
+        flex: 0 1 auto;
+        flex-direction: column;
+        min-width: 0;
+        gap: 1px;
+      }
+
+      .chat-person-stats {
+        display: block;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 14px;
+      }
+
+      .chat-person-stats[hidden] { display: none; }
+
+      .chat-person-stats-figures {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 8px;
+        height: 14px;
+        overflow: hidden;
+      }
+
+      .chat-person-stat {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .chat-person-stat svg { flex: none; }
       .chat-person.is-offline .chat-avatar { opacity: 0.55; filter: saturate(0.6); }
 
       .chat-presence-dot {

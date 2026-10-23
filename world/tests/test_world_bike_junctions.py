@@ -98,10 +98,86 @@ def test_turn_arcs_join_the_straights_tangentially():
         out({ worstGap, worstBend, turns: g.turns.length, radius: g.cornerRadius, bike: layout.WORLD_BIKE_LANE_CORNER_RADIUS });
         """
     )
-    assert result["turns"] == 84
+    assert result["turns"] == 96
     assert result["radius"] == result["bike"]
     assert result["worstGap"] < 1e-6
     assert result["worstBend"] < 1e-6
+
+
+
+def test_outer_junctions_curve_one_road_into_the_next():
+    result = run_node(
+        """
+        const g = roads.worldRoadGraph();
+        const outer = layout.WORLD_ROAD_JUNCTIONS.filter((j) => j.bend);
+        const point = {};
+        const rides = outer.map((junction) => {
+          const node = g.nodes.find((n) => Math.hypot(n.x - junction.x, n.z - junction.z) < 1e-6);
+          const through = g.turns.filter((t) => g.edges[t.from].to === node.id &&
+            !g.edges[t.from].hexes.some((hex) => g.edges[t.edge].hexes.includes(hex)));
+          let offRoad = 0;
+          let closest = Infinity;
+          for (const turn of through) {
+            const route = { graph: g, edge: turn.from, next: turn, hex: turn.hex, s: 0, choice: 0 };
+            for (let s = g.straightLength - 40; s < g.pieceLength; s += 0.5) {
+              route.s = s;
+              roads.roadRoutePoint(route, point);
+              if (!movement.desertWalkSurfaceContains(point.x, point.z, 0.5)) offRoad += 1;
+              closest = Math.min(closest, Math.hypot(point.x - junction.x, point.z - junction.z));
+            }
+          }
+          const lane = Math.hypot(junction.bend.x - junction.x, junction.bend.z - junction.z);
+          return { through: through.length, offRoad, closest, lane };
+        });
+        out({ count: outer.length, rides });
+        """
+    )
+    assert result["count"] == 6
+    for ride in result["rides"]:
+        assert ride["through"] == 2
+        assert ride["offRoad"] == 0
+        assert 10 < ride["closest"] < 13
+        assert math.isclose(ride["lane"], 740 / math.sqrt(3), rel_tol=1e-9)
+
+
+def test_outer_junction_dashes_follow_the_through_road():
+    script = f"""
+      import * as THREE from {json.dumps(THREE.as_uri())};
+      import * as roads from {json.dumps(ROADS.as_uri())};
+      import * as layout from {json.dumps(LAYOUT.as_uri())};
+      const dashes = roads.createHexRoadNetwork(THREE).children.find((c) => c.name === "forkmesh-world-bike-center-groove");
+      const matrix = new THREE.Matrix4();
+      const centres = [];
+      for (let i = 0; i < dashes.count; i += 1) {{
+        dashes.getMatrixAt(i, matrix);
+        centres.push([matrix.elements[12], matrix.elements[14]]);
+      }}
+      const corner = layout.WORLD_BIKE_LANE_CORNER_RADIUS;
+      const rows = layout.WORLD_ROAD_JUNCTIONS.filter((j) => j.bend).map((junction) => {{
+        const reach = (corner * 2) / Math.sqrt(3);
+        const toBend = Math.atan2(junction.bend.z - junction.z, junction.bend.x - junction.x);
+        const cx = junction.x + Math.cos(toBend) * reach;
+        const cz = junction.z + Math.sin(toBend) * reach;
+        const near = centres.filter(([x, z]) => Math.hypot(x - junction.x, z - junction.z) < 40);
+        return {{
+          near: near.length,
+          onBend: near.filter(([x, z]) => Math.abs(Math.hypot(x - cx, z - cz) - corner) < 0.01).length,
+        }};
+      }});
+      process.stdout.write(JSON.stringify(rows));
+    """
+    rows = json.loads(
+        subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout
+    )
+    assert len(rows) == 6
+    for row in rows:
+        assert row["onBend"] >= 6
+        assert row["near"] - row["onBend"] <= 4
 
 
 def test_the_default_route_is_the_old_town_loop():

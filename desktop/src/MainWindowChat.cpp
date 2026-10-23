@@ -2929,17 +2929,18 @@ QWidget *MainWindow::buildStatusBar()
         m_resourceChart->setFixedSize(40, 40);
         debugRow->addWidget(m_resourceChart, 0, Qt::AlignVCenter);
     }
-    auto *uptimeTile = new ResourceSparkline(QStringLiteral("UP"), debugContent,
-                                             40, 2);
+    QVector<ResourceSparkline *> debugTiles;
+    auto *uptimeTile = new ResourceSparkline(
+        QStringLiteral("UP"), debugContent, kResourceSparklineCompactSide, 2);
     m_debugUptimeTile = uptimeTile;
     uptimeTile->setObjectName(QStringLiteral("debugUptimeTile"));
     uptimeTile->setAccessibleName(QStringLiteral("ForkMesh session uptime"));
     uptimeTile->setToolTip(
         QStringLiteral("How long this ForkMesh window has been running"));
-    debugRow->addWidget(uptimeTile, 0, Qt::AlignVCenter);
+    debugTiles.append(uptimeTile);
 
-    auto *networkActivityTile =
-        new ResourceSparkline(QStringLiteral("NET"), debugContent, 40, 60);
+    auto *networkActivityTile = new ResourceSparkline(
+        QStringLiteral("NET"), debugContent, kResourceSparklineCompactSide, 60);
     m_debugNetworkActivityTile = networkActivityTile;
     networkActivityTile->setObjectName(
         QStringLiteral("debugNetworkActivityTile"));
@@ -2947,39 +2948,58 @@ QWidget *MainWindow::buildStatusBar()
         QStringLiteral("Live network request activity"));
     networkActivityTile->setToolTip(
         QStringLiteral("Network request attempts per second for this session"));
-    debugRow->addWidget(networkActivityTile, 0, Qt::AlignVCenter);
+    networkActivityTile->setUnit(QStringLiteral("/s"));
+    debugTiles.append(networkActivityTile);
 
-    auto *logActivityTile =
-        new ResourceSparkline(QStringLiteral("LOG"), debugContent, 40, 60);
+    auto *logActivityTile = new ResourceSparkline(
+        QStringLiteral("LOG"), debugContent, kResourceSparklineCompactSide, 60);
     m_debugLogActivityTile = logActivityTile;
     logActivityTile->setObjectName(QStringLiteral("debugLogActivityTile"));
     logActivityTile->setAccessibleName(QStringLiteral("Live log activity"));
     logActivityTile->setToolTip(
         QStringLiteral("Log entries per second for this session"));
-    debugRow->addWidget(logActivityTile, 0, Qt::AlignVCenter);
+    logActivityTile->setUnit(QStringLiteral("/s"));
+    debugTiles.append(logActivityTile);
 
     const struct {
         const char *name;
         const char *label;
         const char *accessible;
+        const char *unit;
         bool healthColors;
     } qtTiles[] = {
-        {"qtDiagnosticLoopTile", "LOOP", "Qt event-loop latency", true},
-        {"qtDiagnosticEventTile", "EVT", "Qt event delivery rate", false},
-        {"qtDiagnosticPaintTile", "PAINT", "Qt paint and layout activity", false},
-        {"qtDiagnosticUiTile", "UI", "Qt widgets and windows", false},
-        {"qtDiagnosticPoolTile", "POOL", "Qt thread pool and timers", true},
+        {"qtDiagnosticLoopTile", "LOOP", "Qt event-loop latency", "ms", true},
+        {"qtDiagnosticEventTile", "EVT", "Qt event delivery rate", "/s", false},
+        {"qtDiagnosticPaintTile", "PAINT", "Qt paint and layout activity", "/s",
+         false},
+        {"qtDiagnosticUiTile", "UI", "Qt widgets and windows", "", false},
+        {"qtDiagnosticPoolTile", "POOL", "Qt thread pool and timers", "", true},
     };
     for (const auto &definition : qtTiles) {
-        auto *tile = new ResourceSparkline(
-            QString::fromLatin1(definition.label), debugContent, 40, 60);
+        auto *tile = new ResourceSparkline(QString::fromLatin1(definition.label),
+                                           debugContent,
+                                           kResourceSparklineCompactSide, 60);
         tile->setObjectName(QString::fromLatin1(definition.name));
         tile->setAccessibleName(QString::fromLatin1(definition.accessible));
         tile->setHealthColorsEnabled(definition.healthColors);
+        tile->setUnit(QString::fromLatin1(definition.unit));
         tile->setToolTip(QStringLiteral("Open Qt runtime diagnostics"));
         tile->onClicked = [this] { showQtDiagnosticsDialog(); };
         m_qtDiagnosticTiles.append(tile);
-        debugRow->addWidget(tile, 0, Qt::AlignVCenter);
+        debugTiles.append(tile);
+    }
+    for (int first = 0; first < debugTiles.size(); first += 4) {
+        auto *quad = new QWidget(debugContent);
+        quad->setObjectName(QStringLiteral("debugTileQuad"));
+        quad->setFixedSize(40, 40);
+        auto *grid = new QGridLayout(quad);
+        grid->setContentsMargins(0, 0, 0, 0);
+        grid->setSpacing(2);
+        for (int i = first; i < qMin(first + 4, int(debugTiles.size())); ++i) {
+            debugTiles.at(i)->setHoverCardEnabled(true);
+            grid->addWidget(debugTiles.at(i), (i - first) / 2, (i - first) % 2);
+        }
+        debugRow->addWidget(quad, 0, Qt::AlignVCenter);
     }
     auto *separator = new QFrame;
     separator->setObjectName(QStringLiteral("debugBarSeparator"));
@@ -4162,6 +4182,7 @@ QWidget *MainWindow::buildNetworkLogDock()
         lights->onStallClicked = [this] { sendStallReportToComposer(); };
         lights->onStallContextMenu = [this] { showDiagnosticsDialog(); };
     }
+    syncDebugActivityLightCategories();
     attachDebugActivityLights();
 
     auto *dockRow = new QHBoxLayout(dock);
