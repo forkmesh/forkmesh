@@ -543,7 +543,8 @@ count toward the safe-mode reboot; visible crashes are kind `crash`.
   ([../app/instance-federation.md](../app/instance-federation.md#world-connectivity)).
   On an instance with its own hexagon (a territory), the World is drawn as
   that one hexagon with the ForkMesh hexagons next door, and walking across
-  its road travels to the ForkMesh World (`checkTerritoryCrossing`); while a
+  its road onto ForkMesh's land travels to the ForkMesh World
+  (`checkTerritoryCrossing`); while a
   territory is active `placeWorldMesh` draws no world-mesh neighbours, so the
   two layouts never overlap. Off a territory the world-mesh flowers below
   replace the old road crossing into an instance hexagon

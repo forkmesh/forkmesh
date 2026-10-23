@@ -1101,14 +1101,15 @@ ForkMesh town's desert petals: the petal the hub publishes for it in
 `/api/world/mesh`, else slot n's petal n + 1 (`territoryPetal`). ForkMesh's
 own World is the same code, so its town, petals, roads, Office tower,
 coaster, beach and other scenery (`TERRITORY_NEIGHBOUR_ELEMENTS`) are moved
-beside the instance hexagon and are walkable and solid, with nothing
-reloading at the border (world federation, [world/federation.md](world/federation.md)).
-Stepping onto ForkMesh's ground moves the walker's presence to ForkMesh's
-relay over a visit socket with a visitor token, so they are `name@<this
-host>` there; the Office runs against ForkMesh's API (`setOfficeOwner`),
-giving visitors its lobby and rooftop. Pieces that would show the
-instance's own data inside ForkMesh's town stay off
-(`TERRITORY_HIDDEN_ELEMENTS`).
+beside the instance hexagon and are walkable and solid (world federation,
+[world/federation.md](world/federation.md)). Stepping onto the road beside
+ForkMesh's ground moves the walker's presence to ForkMesh's relay over a
+visit socket with a visitor token, so they are `name@<this host>` there;
+the Office runs against ForkMesh's API (`setOfficeOwner`). Pieces that
+would show the instance's own data inside ForkMesh's town stay off
+(`TERRITORY_HIDDEN_ELEMENTS`), so the town next door is only a view:
+stepping onto its land travels to the ForkMesh World (Crossing the road,
+below).
 
 **What ForkMesh's World draws.** From a distance forkmesh.com draws the
 instance hexagon from `GET /api/world/neighbour-scene`
@@ -1123,8 +1124,8 @@ hexagon). Their World opens a visit socket to this instance's relay with a
 visa, and they appear here as `name@world.forkmesh.com`.
 
 **Crossing the road.** `checkTerritoryCrossing()` runs after every walking
-step: when the avatar's step enters the land of a neighbouring tile
-(`crossedInto`), the World navigates. On an instance it goes to
+step: when the avatar moves on the land of one of ForkMesh's tiles next
+door (`hexLandContains`), the World navigates. On an instance it goes to
 `<home>?from=<instance domain>&slot=<n>&pos=<x>,<z>`, where `home` is the
 directory's `portal.home` or `https://world.forkmesh.com/world/`. The
 reverse direction (walking from world.forkmesh.com into an instance) is the
@@ -1141,7 +1142,14 @@ removed from the address. Sign-ins do not cross: each World has its own
 accounts and its session cookie is per origin, so the URL carries no token
 and the visitor is told "Visiting from <origin> as a guest" unless they are
 already signed in there. A crossing waits four seconds before it can fire
-again.
+again. A walker who loads the page standing on that land crosses on their
+first step.
+
+Until 2026-10-22 an instance installed no crossings (`crossings` stayed
+empty), so walking from the instance onto ForkMesh's land never left the
+instance: the walker stood in the stand-in town without ForkMesh's members,
+boards or bots, while the opposite walk, from world.forkmesh.com into the
+instance hexagon, switched the page into the instance's World.
 
 **What needs forkmesh.com.** On the instance alone: the hexagon, the
 ForkMesh hexagons next door, crossing into world.forkmesh.com and the

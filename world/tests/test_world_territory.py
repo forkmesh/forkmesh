@@ -464,9 +464,9 @@ def test_the_bug_badges_fall_back_and_stay_sharp():
     assert "camera.quaternion" in bugs
 
 
-def test_forkmesh_beside_us_is_live_and_walkable_without_a_reload():
+def test_forkmesh_beside_us_is_walkable_and_its_land_crosses_over():
     assert "walkTiles: [TERRITORY_CENTER, ...neighbours.tiles]," in TERRITORY
-    assert "crossings: []," in TERRITORY
+    assert "crossings = built.forkmeshTiles.map((tile) => ({" in TERRITORY
     assert 'if (hexRoadContains(x, z, tile, WORLD_ROAD_WIDTH / 2)) return "forkmesh";' \
         in TERRITORY
     assert "this.meshLinks.update(x, z, this.world?.territoryOwnerAt?.(x, z) || \"\");" \

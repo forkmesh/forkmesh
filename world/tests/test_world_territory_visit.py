@@ -161,6 +161,31 @@ runtime.leaveTerritoryVisit();
 out.leftTwice = runtime.leaveTerritoryVisit();
 const instancePage = territoryRuntime.functions({ THREE, ctx, fns, territory, onTerritoryCross() {} });
 out.instancePage = instancePage.enterTerritoryVisit(territory);
+const crossed = [];
+const ownPage = territoryRuntime.functions({
+  THREE, ctx, fns,
+  territory: { ...territory, home: "https://world.forkmesh.com/world/" },
+  onTerritoryCross: (target) => crossed.push(target),
+});
+ownPage.installInstanceTerritory();
+const next = geometry.forkmeshTilesAround(geometry.territoryPetalTile(1)).find((tile) => tile.adjacent);
+const at = (reach) => ({
+  x: geometry.TERRITORY_CENTER.x + next.normalX * reach,
+  z: geometry.TERRITORY_CENTER.z + next.normalZ * reach,
+});
+const step = (from, to) => {
+  ctx.player.position = { ...to, y: 0 };
+  return ownPage.checkTerritoryCrossing(from);
+};
+out.crossing = {
+  inside: step(at(300), at(301)),
+  road: step(at(369), at(370)),
+  standing: step(at(380), at(380)),
+  land: step(at(370), at(380)),
+  again: step(at(380), at(381)),
+  crossed,
+  reach: { x: next.normalX * 380, z: next.normalZ * 380 },
+};
 out.hiddenList = TERRITORY_HIDDEN_ELEMENTS;
 process.stdout.write(JSON.stringify(out));
 """
@@ -258,3 +283,18 @@ def test_coming_back_reuses_the_built_hexagon(result):
 
 def test_an_instance_page_keeps_its_own_territory(result):
     assert result["instancePage"] is False
+
+
+def test_an_instance_page_crosses_into_forkmesh_on_its_land(result):
+    crossing = result["crossing"]
+    assert crossing["inside"] is False
+    assert crossing["road"] is False
+    assert crossing["standing"] is False
+    assert crossing["land"] is True
+    assert crossing["again"] is False
+    [target] = crossing["crossed"]
+    assert target["kind"] == "forkmesh"
+    assert target["url"] == "https://world.forkmesh.com/world/"
+    assert target["slot"] == 0
+    assert target["local"]["x"] == pytest.approx(crossing["reach"]["x"])
+    assert target["local"]["z"] == pytest.approx(crossing["reach"]["z"])

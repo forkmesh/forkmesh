@@ -24,10 +24,10 @@ import {
   TERRITORY_CENTER,
   TERRITORY_WALL_THICKNESS,
   constrainToFootprints,
-  crossedInto,
   footprintDoorDistance,
   footprintWorld,
   forkmeshArrivalSpawn,
+  hexLandContains,
   forkmeshShiftAround,
   territoryPetalTile,
   forkmeshTilesAround,
@@ -895,7 +895,6 @@ export function buildInstanceTerritory({ THREE, territory, interactive, animated
     root,
     walkTiles: [TERRITORY_CENTER, ...neighbours.tiles],
     forkmeshTiles: neighbours.tiles,
-    crossings: [],
     footprints,
     updateBugs: (list) => terrarium?.update(list),
   };
@@ -988,7 +987,12 @@ export function functions({
     ctx.world.add(built.root);
     fns.registerWorldElement("instance-territory", `${territory.name} territory`, "Districts", built.root);
     setTerritoryTiles(built.walkTiles);
-    crossings = built.crossings;
+    crossings = built.forkmeshTiles.map((tile) => ({
+      ...tile,
+      originX: TERRITORY_CENTER.x,
+      originZ: TERRITORY_CENTER.z,
+      target: { kind: "forkmesh", url: territory.home, slot: territory.slot },
+    }));
     footprints = built.footprints;
     shift = forkmeshShiftAround(territory.place);
     showForkmeshWorld();
@@ -1113,7 +1117,9 @@ export function functions({
     if (!crossings.length || !previous) return false;
     const now = performance.now();
     if (crossedAt && now - crossedAt < CROSSING_RESET_MS) return false;
-    const tile = crossedInto(previous, ctx.player.position, crossings);
+    const position = ctx.player.position;
+    if (previous.x === position.x && previous.z === position.z) return false;
+    const tile = crossings.find((item) => hexLandContains(position.x, position.z, item));
     if (!tile) return false;
     crossedAt = now;
     onTerritoryCross({
