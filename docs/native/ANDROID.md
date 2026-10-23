@@ -2518,3 +2518,13 @@ edit or delete as somebody else. Nothing here talks to older builds.
   `UnifiedAgentRow` and `AgentChipFacts`, and the row's spoken summary
   (`AgentLineChips.eagleSummary`) ends with "N background tasks". Repository
   desktop-session rows built from `AgentSession` alone carry no task count.
+- **Usage reset clocks (S061).** Already on Android since c0ee86dab1: Refresh
+  and pull to refresh send `agentops.usage` with `refresh: true`, opening the
+  screen is a plain read, and each meter shows `UsageFormat.resetClock`
+  ("Resets 3:45 PM", "Resets Tue 9:00 AM", "Resets Oct 26, 10:00 AM";
+  `UsageResetClockTest`).
+- **NEXUS in the You hub, scan range from the phone's address (S067).** Already
+  on Android with the NEXUS port (62f90e0718, sync row S046):
+  `HubCatalog.workspace` lists `Route.Nexus`, `/dashboard/nexus` opens it, and
+  the Scan tab fills an empty target from `LocalNetwork.current()` with a
+  "Use this network" row (`NexusTest.testLocalNetworkSuggestion`).
