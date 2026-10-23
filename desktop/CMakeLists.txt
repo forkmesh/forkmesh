@@ -988,6 +988,8 @@ set(FORKMESH_APP_SOURCES
     src/PullReviewModel.cpp
     src/PullMergeAll.h
     src/PullMergeAll.cpp
+    src/MergeSetAside.h
+    src/MergeSetAside.cpp
     src/PullAiReview.h
     src/PullAiReview.cpp
     src/MergeQueue.h
@@ -4635,6 +4637,20 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-pull-merge-all-tests
         COMMAND forkmesh-pull-merge-all-tests)
+    qt_add_executable(forkmesh-merge-set-aside-tests
+        tests/test_merge_set_aside.cpp
+        src/MergeSetAside.h
+        src/MergeSetAside.cpp
+    )
+    target_include_directories(forkmesh-merge-set-aside-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-merge-set-aside-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-merge-set-aside-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-merge-set-aside-tests
+        COMMAND forkmesh-merge-set-aside-tests)
     qt_add_executable(forkmesh-local-control-mergequeue-tests
         tests/test_local_control_mergequeue.cpp
         src/LocalControlMergeQueue.h

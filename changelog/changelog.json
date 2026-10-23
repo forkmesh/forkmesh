@@ -26,7 +26,8 @@
     {
      "title": "Agents",
      "items": [
-      "The composer hides its character count until a prompt nears the limit, then shows it in orange and red."
+      "The composer hides its character count until a prompt nears the limit, then shows it in orange and red.",
+      "When a merge from your phone is blocked by uncommitted edits on your desktop, Set aside and merge saves them to a wip/ branch, merges, and puts them back."
      ]
     },
     {
