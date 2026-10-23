@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QKeySequence>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPropertyAnimation>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -131,6 +132,7 @@ QWidget *MainWindow::buildHomeGridSection()
         [this](const QString &key) { activateHomeGridTile(key); });
     m_homeGridBoard->setTileMenu([this](QMenu *menu, const QString &key) {
         addHomeTilePackageActions(menu, key);
+        addHomeTileRailActions(menu, key);
     });
     m_homeGridBoard->setSavedPages(HomeLayout::fromJson(
         QSettings().value(kHomePagesSetting).toString()));
@@ -231,18 +233,7 @@ bool MainWindow::homeGridOnScreen() const
 
 QVector<HomeGroup> MainWindow::homeGridGroups() const
 {
-    QList<QWidget *> railWidgets;
-    if (m_appNavigationRailLayout) {
-        for (int i = 0; i < m_appNavigationRailLayout->count(); ++i) {
-            QWidget *widget = m_appNavigationRailLayout->itemAt(i)->widget();
-            if (!widget)
-                continue;
-            if (auto *folder = dynamic_cast<RailFolderWidget *>(widget))
-                railWidgets += folder->members();
-            else
-                railWidgets.append(widget);
-        }
-    }
+    const QList<QWidget *> railWidgets = railItemWidgets();
 
     QHash<QString, QVector<HomeTile>> byGroup;
     for (QWidget *widget : std::as_const(railWidgets)) {
@@ -425,21 +416,30 @@ void MainWindow::refreshHomeGridPage()
 
 QWidget *MainWindow::railWidgetForKey(const QString &key) const
 {
-    if (key.isEmpty() || !m_appNavigationRailLayout)
+    if (key.isEmpty())
         return nullptr;
-    QList<QWidget *> railWidgets;
-    for (int i = 0; i < m_appNavigationRailLayout->count(); ++i) {
-        QWidget *widget = m_appNavigationRailLayout->itemAt(i)->widget();
-        if (auto *folder = dynamic_cast<RailFolderWidget *>(widget))
-            railWidgets += folder->members();
-        else if (widget)
-            railWidgets.append(widget);
-    }
-    for (QWidget *widget : std::as_const(railWidgets)) {
+    for (QWidget *widget : railItemWidgets()) {
         if (widget->property("forkmeshRailKey").toString() == key)
             return widget;
     }
     return nullptr;
+}
+
+void MainWindow::addHomeTileRailActions(QMenu *menu, const QString &key)
+{
+    if (!menu || key.isEmpty() || key == QLatin1String("home") ||
+        !railWidgetForKey(key))
+        return;
+    const bool hidden = railHiddenKeys().contains(key);
+    QAction *toggle = menu->addAction(
+        hidden ? QStringLiteral("Show in left rail")
+               : QStringLiteral("Hide from left rail (keep on Home)"),
+        this, [this, key, hidden] {
+            QTimer::singleShot(0, this,
+                               [this, key, hidden] { setRailItemHidden(key, !hidden); });
+        });
+    toggle->setObjectName(hidden ? QStringLiteral("homeShowInRail")
+                                 : QStringLiteral("homeHideFromRail"));
 }
 
 bool MainWindow::activateHomeGridTile(const QString &key)
@@ -465,5 +465,16 @@ QString MainWindow::testHomeGridHeadline() const
 bool MainWindow::testHomeGridSearchShown() const
 {
     return m_homeGridSearch && !m_homeGridSearch->isHidden();
+}
+
+QStringList MainWindow::testHomeTileMenuActions(const QString &key)
+{
+    QStringList names;
+    QMenu menu;
+    addHomeTileRailActions(&menu, key);
+    for (QAction *action : menu.actions())
+        if (!action->isSeparator())
+            names << action->objectName();
+    return names;
 }
 #endif

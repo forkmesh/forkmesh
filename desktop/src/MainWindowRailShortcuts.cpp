@@ -531,6 +531,7 @@ QString MainWindow::dropPageButtonOnRail(QAbstractButton *button, int y)
     QString id = button->property("forkmeshButtonKey").toString();
     QString key;
     if (!id.isEmpty()) {
+        storeRailItemHidden(id, false);
         moveButtonToPanel(id, kButtonPanelRail);
         if (!isInRail(button))
             return QString();

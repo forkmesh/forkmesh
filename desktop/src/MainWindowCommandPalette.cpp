@@ -740,6 +740,12 @@ void NextAccess::showCommandPalette(MainWindow &window, bool refresh)
         for (QWidget *member : members)
             appendButton(pages, member, false);
     }
+    if (QWidget *holder = window.m_railHiddenHolder) {
+        const QList<QWidget *> hiddenItems =
+            holder->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+        for (QWidget *item : hiddenItems)
+            appendButton(pages, item, false);
+    }
 
     const QString repository = QStringLiteral("Repository");
     if (tabRow) {
