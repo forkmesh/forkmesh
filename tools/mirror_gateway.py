@@ -125,6 +125,7 @@ MAX_CHERRY_UPSTREAM_COMMITS = 2000
 MAX_PREVIEW_CONFLICTS = 200
 MAX_TREE_ENTRIES = 500
 MAX_COLLABORATION_TREE_ENTRIES = 50000
+MAX_SIZES_CHILDREN = 40
 MAX_SEARCH_RESULTS = 200
 MAX_SEARCH_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_ANALYSIS_FILES = 320
@@ -1283,6 +1284,7 @@ PUSH_HOOK_REWRITE_ENV = "FORKMESH_PUSH_REWRITE"
 PUSH_HOOK_DEFAULT_ENV = "FORKMESH_PUSH_DEFAULT_REF"
 PUSH_HOOK_DIRECTORY = "push-hooks"
 FORCED_PULLS_MAX = 10
+PULL_SYNC_BRANCHES_MAX = 8
 
 
 def parse_tag_moves(value: Any) -> dict[str, str]:
@@ -7542,7 +7544,6 @@ class GitRepository:
         commit = self.resolve_commit(query.get("ref", ""))
         blobs = self._all_blobs(commit)
         max_depth = 8
-        max_children = 40
         root: dict[str, Any] = {
             "name": "",
             "size": 0,
@@ -7576,7 +7577,7 @@ class GitRepository:
                 "type": "file",
             }
 
-        def serialize(node: dict[str, Any]) -> dict[str, Any]:
+        def serialize(node: dict[str, Any], path: str = "") -> dict[str, Any]:
             result = {
                 "name": node["name"],
                 "size": node["size"],
@@ -7589,8 +7590,19 @@ class GitRepository:
                 node["_children"].values(),
                 key=lambda item: (-item["size"], item["name"]),
             )
+            collaboration = any(
+                path == folder or path.startswith(folder + "/")
+                for folder in COLLABORATION_TREE_ROOTS
+            )
+            max_children = (
+                MAX_COLLABORATION_TREE_ENTRIES if collaboration
+                else MAX_SIZES_CHILDREN
+            )
             shown = children[:max_children]
-            output = [serialize(item) for item in shown]
+            output = [
+                serialize(item, f"{path}/{item['name']}" if path else item["name"])
+                for item in shown
+            ]
             if len(children) > max_children:
                 output.append(
                     {
@@ -12065,6 +12077,7 @@ class GatewayApplication:
         headers = {"Cache-Control": "no-store"}
         if changes:
             updates = []
+            looked_up = 0
             for ref, old, new in changes[:REF_UPDATES_MAX]:
                 update: dict[str, Any] = {"ref": ref, "old": old, "new": new}
                 if ref.startswith("refs/heads/"):
@@ -12073,6 +12086,15 @@ class GatewayApplication:
                     update["forced"] = True
                     if forced[ref]:
                         update["kept"] = forced[ref]
+                if (
+                    ref.startswith("refs/heads/")
+                    and not ref.startswith(REWRITE_EXCLUDED_PREFIXES)
+                    and ref != default_ref
+                    and not _zero_oid(old)
+                    and not _zero_oid(new)
+                    and looked_up < PULL_SYNC_BRANCHES_MAX
+                ):
+                    looked_up += 1
                     pulls = repository.open_pulls_for_head(
                         ref[len("refs/heads/"):])
                     if pulls:
@@ -13973,10 +13995,14 @@ def main(argv: list[str] | None = None) -> int:
         # default action terminates the process, so hold an early request
         # until the live handler is installed below instead of dying.
         original_hup_handler = signal.getsignal(signal.SIGHUP)
+        original_usr1_handler = signal.getsignal(signal.SIGUSR1)
         early_reload = threading.Event()
+        early_invalidation = threading.Event()
         if not args.check:
             signal.signal(
                 signal.SIGHUP, lambda *_arguments: early_reload.set())
+            signal.signal(
+                signal.SIGUSR1, lambda *_arguments: early_invalidation.set())
         application = GatewayApplication(config)
         if args.check:
             summary = {
@@ -13997,7 +14023,6 @@ def main(argv: list[str] | None = None) -> int:
             }
             print(_canonical_json(summary))
             return 0 if summary["ok"] else 1
-        application.prewarm_memory_caches()
         server = MirrorGatewayServer(
             (config.listen_host, config.listen_port), application
         )
@@ -14007,7 +14032,7 @@ def main(argv: list[str] | None = None) -> int:
         # validated application in place, leaving the listener continuously
         # available to visitors.
         previous_hup_handler = original_hup_handler
-        previous_usr1_handler = signal.getsignal(signal.SIGUSR1)
+        previous_usr1_handler = original_usr1_handler
         signal.signal(signal.SIGHUP, lambda *_arguments: server.request_reload())
         if early_reload.is_set():
             server.request_reload()
@@ -14015,6 +14040,8 @@ def main(argv: list[str] | None = None) -> int:
             signal.SIGUSR1,
             lambda *_arguments: server.request_cache_invalidation(),
         )
+        if early_invalidation.is_set():
+            server.request_cache_invalidation()
         try:
             record_gateway_generation(
                 config.config_path, config.generation_sha256)
@@ -14030,6 +14057,7 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 flush=True,
             )
+            server.start_prewarm()
             try:
                 server.serve_forever(poll_interval=0.5)
             except KeyboardInterrupt:
