@@ -1264,7 +1264,7 @@
       const unreadItem = !item.readAt;
       const icon = `<i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="${lead.actor ? "h-2.5 w-2.5" : "h-3.5 w-3.5"}"></i>`;
       const avatar = lead.actor
-        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
+        ? `<span class="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold uppercase text-foreground">${botAvatarKind(lead.actor.replace(/^@/, "")) ? botAvatarSvg(botAvatarKind(lead.actor.replace(/^@/, "")), "h-4 w-4") : escapeHtml(lead.actor.replace(/^@/, "").charAt(0) || "?")}</span>
           <span class="absolute bottom-0 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">${icon}</span>`
         : `<span class="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground">${icon}</span>`;
       return `
@@ -1324,7 +1324,7 @@
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(repoPublicHref(item.href))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+        ${item.href ? `<a href="${escapeHtml(repoPublicHref(homeFeedHref(item)))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
@@ -1648,7 +1648,7 @@
     home: "/dashboard",
     repos: "/dashboard/repos",
     network: "/dashboard/network",
-    chat: "/dashboard/chat",
+    chat: "/chat",
     profile: "/dashboard/settings",
     "profile-overview": "/dashboard/profile",
     "profile-repositories": "/dashboard/profile/repositories",
@@ -1920,10 +1920,6 @@
 
   function initNetworkPage() {
     renderNetwork();
-  }
-
-  function initChatPage() {
-    // dashboard-chat.js self-boots off the #fullChatMessages markup.
   }
 
   function initProfileOverviewPage() {

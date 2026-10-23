@@ -532,7 +532,12 @@ async def _pull_conversation(reader, number, commit):
                        "author": _record_author(values),
                        "ts": values.get("ts") or "", "state":
                        values.get("state", ""), "path": values.get("path", ""),
-                       "body": body})
+                       "body": body, "authorKey": values.get("author", ""),
+                       "authorName": values.get("authorName", ""),
+                       "target": values.get("target", ""),
+                       "line": values.get("line", ""),
+                       "lineStart": values.get("lineStart", ""),
+                       "lineEnd": values.get("lineEnd", "")})
     return events
 
 
@@ -882,10 +887,10 @@ VIEW_PATH_RE = re.compile(
 
 DIFF_PATH_RE = re.compile(
     r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/"
-    r"pulls?/([1-9]\d{0,8})\.(?:diff|patch)$")
+    r"pulls?/([1-9]\d{0,8})\.(diff|patch|txt)$")
 SHORT_DIFF_PATH_RE = re.compile(
     r"^/([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/pulls?/([1-9]\d{0,8})"
-    r"\.(?:diff|patch)$")
+    r"\.(diff|patch|txt)$")
 
 VIEW_STYLE = """<style>
 .fm-ssr-tabs{display:flex;gap:4px;border-bottom:1px solid rgb(var(--dashboard-border-rgb));margin:0 0 16px;overflow:hidden}
@@ -940,16 +945,16 @@ def diff_target(scope):
     from .repo_ssr import RESERVED_OWNERS
     match = DIFF_PATH_RE.match(path)
     if match:
-        owner, repo, number = match.groups()
+        owner, repo, number, ext = match.groups()
         if owner.lower() in RESERVED_OWNERS or repo in (".", "..") \
                 or repo.endswith(".git"):
             return None
-        return owner.lower(), repo, int(number)
+        return owner.lower(), repo, int(number), ext == "txt"
     match = SHORT_DIFF_PATH_RE.match(path)
     if not match or match.group(1).lower() in RESERVED_OWNERS \
             or match.group(1).endswith(".git"):
         return None
-    return None, match.group(1), int(match.group(2))
+    return None, match.group(1), int(match.group(2)), match.group(3) == "txt"
 
 
 def pull_patch(bundle):
@@ -957,6 +962,133 @@ def pull_patch(bundle):
     if not isinstance(pull, dict):
         return ""
     return str(pull.get("patch") or "")
+
+
+EDITABLE_PULL_EVENTS = frozenset({"comment", "review", "line-comment",
+                                  "thread-comment", "thread-reply"})
+
+
+def _timestamp(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return number / 1000 if number > 10_000_000_000 else number
+
+
+def _same_author(change, target):
+    key = str(change.get("authorKey") or "")
+    if key and key == str(target.get("authorKey") or ""):
+        return True
+    name = str(change.get("authorName") or "").strip().lower()
+    return bool(name) and name == str(target.get("authorName") or "").strip().lower()
+
+
+def folded_conversation(events):
+    rows = [e for e in events or [] if isinstance(e, dict)]
+    by_id = {str(e["id"]): e for e in rows if e.get("id")}
+    edits, deleted = {}, set()
+    for event in rows:
+        if event.get("type") not in ("comment-edit", "comment-delete"):
+            continue
+        target_id = str(event.get("target") or "")
+        target = by_id.get(target_id)
+        if not target or target.get("type") not in EDITABLE_PULL_EVENTS \
+                or not _same_author(event, target):
+            continue
+        if event["type"] == "comment-delete":
+            if target.get("type") != "review":
+                deleted.add(target_id)
+        elif target_id not in edits or _timestamp(edits[target_id].get("ts")) \
+                <= _timestamp(event.get("ts")):
+            edits[target_id] = event
+    folded = []
+    for event in rows:
+        event_id = str(event.get("id") or "")
+        if event.get("type") in ("comment-edit", "comment-delete") \
+                or event_id in deleted:
+            continue
+        edit = edits.get(event_id)
+        folded.append(dict(event, body=edit.get("body", "")) if edit else event)
+    return folded
+
+
+def _text_date(value):
+    import datetime
+    number = _timestamp(value)
+    if number <= 0:
+        return str(value or "").strip()
+    try:
+        return datetime.datetime.fromtimestamp(
+            number, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def _text_anchor(event):
+    path = str(event.get("path") or "").strip()
+    if not path:
+        return ""
+    start = str(event.get("lineStart") or event.get("line") or "").strip()
+    end = str(event.get("lineEnd") or "").strip()
+    if start and end and end != start:
+        return "%s:%s-%s" % (path, start, end)
+    return "%s:%s" % (path, start) if start else path
+
+
+def _text_action(event):
+    kind = str(event.get("type") or "comment")
+    state = str(event.get("state") or "").strip().lower()
+    if kind == "review":
+        return {"approved": "approved", "changes_requested": "requested changes",
+                "commented": "reviewed"}.get(state, "reviewed")
+    if kind == "thread-reply":
+        return "replied"
+    if kind in ("thread-state", "suggestion-state"):
+        return "marked the thread %s" % (state.replace("_", " ") or "updated")
+    if kind in ("comment", "line-comment", "thread-comment"):
+        return "commented"
+    return kind.replace("-", " ")
+
+
+def pull_text(bundle):
+    pull = (bundle.model or {}).get("pull") if bundle is not None else None
+    if not isinstance(pull, dict):
+        return ""
+    number = int(pull.get("number") or 0)
+    lines = [
+        "Pull request #%d: %s" % (number, pull.get("title") or ""),
+        "Author: %s" % (pull.get("author") or "unknown"),
+        "Merges %s into %s" % (pull.get("head") or "?", pull.get("base") or "main"),
+        "State: %s" % (pull.get("state") or "open"),
+        "Opened: %s" % _text_date(pull.get("ts")),
+        "",
+        "## Description",
+        "",
+        str(pull.get("body") or "").strip() or "(no description)",
+        "",
+    ]
+    events = []
+    for event in folded_conversation(pull.get("conversation")):
+        body = str(event.get("body") or "").strip()
+        kind = str(event.get("type") or "comment")
+        if kind in ("commit", "agent") or (not body and kind != "review"):
+            continue
+        anchor = _text_anchor(event)
+        when = _text_date(event.get("ts"))
+        heading = "### %s %s%s%s" % (
+            event.get("author") or "unknown", _text_action(event),
+            " on %s" % anchor if anchor else "", ", %s" % when if when else "")
+        events.append(heading + ("\n\n" + body if body else ""))
+    lines.append("## Comments and reviews (%d)" % len(events))
+    lines.append("")
+    lines.append("\n\n".join(events) if events else "No comments yet.")
+    lines.append("")
+    patch = str(pull.get("patch") or "")
+    lines += ["## Diff", ""]
+    lines.append(patch.rstrip("\n") if patch.strip()
+                 else "No diff is available for this pull request.")
+    return "\n".join(lines) + "\n"
 
 
 def _esc(value):
@@ -1211,13 +1343,11 @@ def _review_prompt(bundle, pull, origin, link):
     from . import pull_review_prompt
     if not pull_review_prompt.is_open(pull):
         return ""
-    owner = urllib.parse.quote(bundle.owner, safe="")
-    repo = urllib.parse.quote(bundle.repo, safe="")
     link = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
                                 urllib.parse.quote(bundle.repo))
     values = pull_review_prompt.fields(
-        origin, link, "/api/repo/%s/%s" % (owner, repo), pull["number"], pull,
-        pull.get("patchRef") or "")
+        origin, link, pull["number"], pull,
+        bool(str(pull.get("patch") or "").strip()))
     return pull_review_prompt.render(
         values, pull["number"], pull_review_prompt.template_from_blobs(
             (bundle.model or {}).get("settings")))

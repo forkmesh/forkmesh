@@ -139,6 +139,49 @@ const FORKBOT_MODELS_ENDPOINT = "/api/forkbot/models";
 const FORKBOT_MODEL_KEY = "forkmesh.forkbot.model";
 const FORKBOT_SENDER_ID = "forkbot";
 const FORKBOT_MENTION_RE = /(?:^|[^A-Za-z0-9_-])@?forkbot\b/i;
+const MEMBER_STATS_ENDPOINT = "/api/chat/member-stats";
+const MEMBER_STATS_BATCH = 50;
+const MEMBER_STATS_TTL_MS = 5 * 60 * 1000;
+const MEMBER_STATS_RETRY_MS = 60 * 1000;
+const MEMBER_STATS_DELAY_MS = 120;
+const MEMBER_STATS_AUTOMATED = Object.freeze([
+  FORKBOT_SENDER_ID, "claude", "codex", "agent",
+]);
+const MEMBER_STATS_ICONS = Object.freeze({
+  pulls: [
+    ["circle", { cx: 18, cy: 18, r: 3 }],
+    ["circle", { cx: 6, cy: 6, r: 3 }],
+    ["path", { d: "M13 6h3a2 2 0 0 1 2 2v7" }],
+    ["path", { d: "M6 9v12" }],
+  ],
+  commits: [
+    ["circle", { cx: 12, cy: 12, r: 3 }],
+    ["path", { d: "M3 12h6" }],
+    ["path", { d: "M15 12h6" }],
+  ],
+  issues: [
+    ["circle", { cx: 12, cy: 12, r: 10 }],
+    ["circle", { cx: 12, cy: 12, r: 1 }],
+  ],
+  reviews: [
+    ["path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" }],
+  ],
+  recent: [
+    ["circle", { cx: 12, cy: 12, r: 10 }],
+    ["path", { d: "M12 6v6l4 2" }],
+  ],
+});
+const MEMBER_STATS_LABELS = Object.freeze({
+  pulls: ["pull request opened", "pull requests opened"],
+  commits: ["commit", "commits"],
+  issues: ["issue opened", "issues opened"],
+  reviews: ["review", "reviews"],
+});
+const memberStats = new Map();
+const memberStatsWanted = new Set();
+let memberStatsTimer = 0;
+let memberStatsInflight = false;
+let memberStatsObserver = null;
 // Mainnode base host for the room WebSocket. Defaults to the origin that served
 // this page, so a self-hosted mainnode's own site talks to itself with zero
 // config. A separately-hosted static site can point at a different relay by
@@ -3872,7 +3915,20 @@ function renderPeople() {
       const label = document.createElement("span");
       label.className = "chat-person-name";
       label.textContent = person.name;
-      row.append(label);
+      const text = document.createElement("span");
+      text.className = "chat-person-text";
+      text.append(label);
+      row.append(text);
+      if (hasProfile && !isAutomatedMemberName(person.name)) {
+        const stats = document.createElement("span");
+        stats.className = "chat-person-stats";
+        stats.dataset.memberStats = mentionName(person.name);
+        stats.hidden = true;
+        text.append(stats);
+        const cached = freshMemberStats(stats.dataset.memberStats);
+        if (cached) fillMemberStats(stats, cached.entry);
+        else observeMemberStats(row, stats.dataset.memberStats);
+      }
       const statusSlot = document.createElement("span");
       statusSlot.className = "chat-person-status";
       const personBadge = hasProfile ? userStatusBadge(person.name) : null;
@@ -3918,6 +3974,7 @@ function renderPeople() {
       }
     }
   };
+  memberStatsObserver?.disconnect();
   renderSection("Online", bySection.user.filter(personIsOnline));
   renderSection("Offline", bySection.user.filter((person) => !personIsOnline(person)));
   renderSection("World guests", bySection.guest);
@@ -3927,6 +3984,183 @@ function renderPeople() {
     empty.className = "chat-people-empty";
     empty.textContent = `No one matches “${query}”.`;
     peopleEl.append(empty);
+  }
+}
+
+function isAutomatedMemberName(name) {
+  const key = mentionName(name);
+  return MEMBER_STATS_AUTOMATED.includes(key) ||
+    /(?:^|-)(?:bot|agent|mirror)$/.test(key);
+}
+
+function freshMemberStats(name) {
+  const hit = memberStats.get(name);
+  return hit && hit.expires > Date.now() ? hit : null;
+}
+
+function compactMemberCount(value) {
+  const count = Math.max(0, Number(value) || 0);
+  if (count < 1000) return String(count);
+  if (count < 10000) {
+    return `${(Math.floor(count / 100) / 10).toFixed(1).replace(/\.0$/, "")}k`;
+  }
+  return `${Math.floor(count / 1000)}k`;
+}
+
+function memberStatsAge(day) {
+  const then = Date.parse(`${day}T00:00:00Z`);
+  if (!Number.isFinite(then)) return null;
+  const today = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+  const days = Math.max(0, Math.round((today - then) / 86400000));
+  if (days === 0) return { short: "today", long: "today" };
+  if (days === 1) return { short: "1d", long: "yesterday" };
+  if (days < 30) return { short: `${days}d`, long: `${days} days ago` };
+  const months = Math.max(1, Math.floor(days / 30));
+  return {
+    short: `${months}mo`,
+    long: months === 1 ? "a month ago" : `${months} months ago`,
+  };
+}
+
+function memberStatsIcon(kind) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  for (const [name, value] of Object.entries({
+    width: 11, height: 11, viewBox: "0 0 24 24", fill: "none",
+    stroke: "currentColor", "stroke-width": 2.2, "stroke-linecap": "round",
+    "stroke-linejoin": "round", "aria-hidden": "true",
+  })) svg.setAttribute(name, String(value));
+  for (const [tag, attrs] of MEMBER_STATS_ICONS[kind]) {
+    const shape = document.createElementNS(ns, tag);
+    for (const [name, value] of Object.entries(attrs)) {
+      shape.setAttribute(name, String(value));
+    }
+    svg.append(shape);
+  }
+  return svg;
+}
+
+function memberStatPart(kind, text) {
+  const part = document.createElement("span");
+  part.className = "chat-person-stat";
+  part.dataset.memberStat = kind;
+  part.append(memberStatsIcon(kind), text);
+  return part;
+}
+
+function fillMemberStats(stats, entry) {
+  if (!stats) return;
+  const parts = [];
+  const labels = [];
+  for (const kind of ["pulls", "commits", "issues", "reviews"]) {
+    const count = Math.max(0, Number(entry?.[kind]) || 0);
+    if (!count) continue;
+    parts.push(memberStatPart(kind, compactMemberCount(count)));
+    labels.push(
+      `${count.toLocaleString()} ${MEMBER_STATS_LABELS[kind][count === 1 ? 0 : 1]}`,
+    );
+  }
+  const age = entry?.lastActive ? memberStatsAge(entry.lastActive) : null;
+  if (age) {
+    parts.push(memberStatPart("recent", age.short));
+    const activeDays = Math.max(0, Number(entry.activeDays) || 0);
+    if (activeDays) {
+      labels.push(
+        `active on ${activeDays.toLocaleString()} ${activeDays === 1 ? "day" : "days"}`,
+      );
+    }
+    labels.push(`last contribution ${age.long}`);
+  }
+  if (!parts.length) {
+    stats.hidden = true;
+    stats.replaceChildren();
+    stats.removeAttribute("title");
+    return;
+  }
+  const summary = `Past year, public repositories: ${labels.join(", ")}`;
+  const visible = document.createElement("span");
+  visible.className = "chat-person-stats-figures";
+  visible.setAttribute("aria-hidden", "true");
+  visible.append(...parts);
+  const spoken = document.createElement("span");
+  spoken.className = "chat-visually-hidden";
+  spoken.textContent = summary;
+  stats.replaceChildren(visible, spoken);
+  stats.title = summary;
+  stats.hidden = false;
+}
+
+function applyMemberStats(name) {
+  const hit = freshMemberStats(name);
+  if (!hit || !peopleEl) return;
+  for (const stats of peopleEl.querySelectorAll(".chat-person-stats")) {
+    if (stats.dataset.memberStats === name) fillMemberStats(stats, hit.entry);
+  }
+}
+
+function wantMemberStats(name) {
+  if (!name || freshMemberStats(name)) return;
+  memberStatsWanted.add(name);
+  if (memberStatsTimer) return;
+  memberStatsTimer = window.setTimeout(flushMemberStats, MEMBER_STATS_DELAY_MS);
+}
+
+function observeMemberStats(row, name) {
+  if (!memberStatsObserver && peopleEl && "IntersectionObserver" in window) {
+    memberStatsObserver = new IntersectionObserver((records) => {
+      for (const record of records) {
+        if (!record.isIntersecting) continue;
+        memberStatsObserver.unobserve(record.target);
+        wantMemberStats(record.target.dataset.memberStatsFor);
+      }
+    }, { root: peopleEl, rootMargin: "160px 0px" });
+  }
+  if (!memberStatsObserver) {
+    wantMemberStats(name);
+    return;
+  }
+  row.dataset.memberStatsFor = name;
+  memberStatsObserver.observe(row);
+}
+
+async function flushMemberStats() {
+  memberStatsTimer = 0;
+  if (memberStatsInflight) return;
+  const names = [...memberStatsWanted]
+    .filter((name) => !freshMemberStats(name))
+    .slice(0, MEMBER_STATS_BATCH)
+    .sort();
+  for (const name of names) memberStatsWanted.delete(name);
+  if (!names.length) {
+    memberStatsWanted.clear();
+    return;
+  }
+  memberStatsInflight = true;
+  let entries = null;
+  try {
+    const response = await fetch(
+      `${MEMBER_STATS_ENDPOINT}?names=${encodeURIComponent(names.join(","))}`,
+      { headers: { accept: "application/json" } },
+    );
+    const data = response.ok ? await response.json() : null;
+    if (data && Array.isArray(data.members)) entries = data.members;
+  } catch (_) {}
+  const now = Date.now();
+  const byName = new Map();
+  for (const entry of entries || []) {
+    const key = mentionName(entry?.name);
+    if (key) byName.set(key, entry);
+  }
+  for (const name of names) {
+    memberStats.set(name, {
+      entry: byName.get(name) || null,
+      expires: now + (entries ? MEMBER_STATS_TTL_MS : MEMBER_STATS_RETRY_MS),
+    });
+    applyMemberStats(name);
+  }
+  memberStatsInflight = false;
+  if (memberStatsWanted.size && !memberStatsTimer) {
+    memberStatsTimer = window.setTimeout(flushMemberStats, MEMBER_STATS_DELAY_MS);
   }
 }
 
