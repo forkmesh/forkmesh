@@ -489,6 +489,21 @@ above the software keyboard (`--world-chat-covered-bottom`).
   targetNode}` with the Desktop or Runner target always named. Models come
   from `ORG_AGENT_MODEL_ALIASES`; choices persist in
   `forkmesh.world.agentComposer.v1`.
+- **Moving it:** drag the grip at the left of the toolbar (or the island's
+  empty edge) to put the island anywhere in the World; arrow keys on the grip
+  nudge it 24px, and Home or a double-click puts it back. The offset from the
+  default bottom-centre spot is stored in `forkmesh.world.hudIslandOffset.v1`
+  and applied as `--world-hud-island-x` / `-y` in its transform. Every resize
+  re-clamps it 8px inside the World, so expanding near the top pushes it down
+  instead of off screen, and the saved offset comes back when it collapses.
+  In the top half (`data-placement="top"`) the channel, model and runner menus
+  open downwards. At 600px and below the island is full width, so the grip is
+  hidden and the saved offset is ignored.
+- **Feed fit:** the island's feed rules carry `.world-hud-island` so they beat
+  the roomier `.world-native-chat` message rules (32px avatars, 8px padding)
+  that used to clip a single message out of the two-line collapsed view. Each
+  row is 24px (20px avatar, 20px line), so the 48px collapsed feed shows
+  exactly the last two messages.
 
 ### HUD rails
 
