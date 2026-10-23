@@ -6,11 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from repo_workflows import as_teammate
+
 
 PROJECT = Path(__file__).resolve().parents[2]
 TOOL = PROJECT / "tools" / "reddit_profile.py"
 PROFILE = PROJECT / "tools" / "reddit_profile.json"
-CONFIG = PROJECT / ".forkmesh" / "teammates" / "reddit-agent.json"
+CONFIG = PROJECT / ".forkmesh" / "workflows" / "reddit-agent.json"
 CHARTER = PROJECT / "docs" / "community" / "reddit.md"
 
 
@@ -161,7 +163,7 @@ def test_grant_prefers_a_refresh_token_and_falls_back_to_app_only():
 
 
 def test_reddit_agent_may_update_only_the_profile():
-    instructions = json.loads(CONFIG.read_text(encoding="utf-8"))["instructions"]
+    instructions = as_teammate(json.loads(CONFIG.read_text(encoding="utf-8")))["instructions"]
     charter = CHARTER.read_text(encoding="utf-8")
 
     assert "tools/reddit_profile.py" in instructions

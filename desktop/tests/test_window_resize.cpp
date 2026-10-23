@@ -16362,7 +16362,7 @@ else:
             window.testAddAgentSession(session);
 
         const QString teammateConfigRelative =
-            QStringLiteral(".forkmesh/teammates/quality.json");
+            QStringLiteral(".forkmesh/workflows/quality.json");
         const QString teammateConfigPath =
             QDir(repository.path()).filePath(teammateConfigRelative);
         QFile originalConfigFile(teammateConfigPath);

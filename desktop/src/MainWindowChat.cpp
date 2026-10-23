@@ -2796,15 +2796,25 @@ QWidget *MainWindow::buildChatPage()
     m_appNavigationRail = railScroll;
     applyRailCaptionPreference();
 
+    auto *railColumn = new QWidget;
+    railColumn->setObjectName(QStringLiteral("appNavigationRailColumn"));
+    auto *railColumnLayout = new QVBoxLayout(railColumn);
+    railColumnLayout->setContentsMargins(0, 0, 0, 0);
+    railColumnLayout->setSpacing(0);
+    railColumnLayout->addWidget(railScroll, 1);
+    railColumnLayout->addWidget(buildWorkflowPinStrip(QStringLiteral("left")), 0,
+                                Qt::AlignHCenter);
+
     auto *lower = new QWidget;
     auto *lowerLayout = new QHBoxLayout(lower);
     lowerLayout->setContentsMargins(0, 0, 0, 0);
     lowerLayout->setSpacing(0);
-    lowerLayout->addWidget(railScroll);
+    lowerLayout->addWidget(railColumn);
     lowerLayout->addWidget(forkmesh::ui::NextAccess::railResizeHandle(*this));
     lowerLayout->addWidget(shell, 1);
     lowerLayout->addWidget(buildPackageRail());
     lowerLayout->addWidget(buildTeammateRail());
+    lowerLayout->addWidget(buildWorkflowPinStrip(QStringLiteral("right")));
 
     auto *root = new QVBoxLayout(page);
     root->setContentsMargins(0, 0, 0, 0);
@@ -2966,6 +2976,8 @@ QWidget *MainWindow::buildStatusBar()
     row->addWidget(m_footerWorktreeInfo);
     row->addWidget(m_footerCommitInfo);
     row->addWidget(m_footerGitIdentity);
+    row->addWidget(buildWorkflowPinStrip(QStringLiteral("bottom")), 0,
+                   Qt::AlignVCenter);
     row->addStretch(1);
     row->addWidget(m_statusBackgroundHost);
     row->addStretch(1);

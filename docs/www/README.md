@@ -21,7 +21,7 @@ route, so a deploy from it fails instead of creating a second Worker.
 | `www/public/` | Static site: `index.html`, marketing pages, `blog/`, `docs/` (hand-written pages), `assets/`, `_redirects`, `_headers`. Every HTML page except `docs/git-compatibility/` is rendered from `www/templates/` |
 | `www/templates/`, `app/tools/site_templates.py` | Page templates with inheritance: `base.html`, `layouts/blog-post.html`, `partials/`, one child per page under `pages/`, and their renderer ([templates](templates.md)) |
 | `www/public/genie-spider.js` | The Genie spider on every website page and most App pages ([genie-spider](genie-spider.md)) |
-| `tools/site_crawler.py`, `.forkmesh/teammates/site-crawler.json` | Crawler, the special agent that crawls the live site read-only and reports broken links, SEO, accessibility and header issues ([site-crawler](site-crawler.md)) |
+| `tools/site_crawler.py`, `.forkmesh/workflows/site-crawler.json` | Crawler, the special agent that crawls the live site read-only and reports broken links, SEO, accessibility and header issues ([site-crawler](site-crawler.md)) |
 | `www/public/site-header.js`, `home-header-auth.js`, `api-client.js` | Login state and the shared browser API client ([sessions](../app/auth-sessions.md)) |
 | `www/public/analytics.js`, `analytics-sdk.js` | Consent-gated first-party analytics ([analytics](../app/analytics.md)); the SDK is a generated copy. Conversion points (`data-forkmesh-product-action`) and markup experiments (`data-fm-experiment`) are listed under [conversion tracking](../app/analytics.md#conversion-tracking) |
 | `www/public/homepage-downloads.js` | The downloads card, fed by the signed release manifest |

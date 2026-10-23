@@ -880,7 +880,7 @@ def test_templates_and_catalog_are_public(harness):
     assert harness.call("/api/workflows/templates/nope").status == 404
     catalog = harness.call("/api/workflows/catalog").data
     assert set(catalog["files"]["kinds"]) == {
-        "action", "shortcut", "skill", "agent"}
+        "action", "shortcut", "skill", "agent", "workflow"}
 
 
 def test_convert_export_and_import_url(harness):

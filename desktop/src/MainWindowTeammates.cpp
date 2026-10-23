@@ -3,6 +3,7 @@
 #include "FlowLayout.h"
 #include "HeaderWrapLayout.h"
 #include "SkillUsageChart.h"
+#include "RepoWorkflow.h"
 
 #include <QButtonGroup>
 #include <QFontMetrics>
@@ -31,6 +32,7 @@ using forkmesh::teammates::Store;
 namespace {
 
 const QString kTeammateAgentFolderName = QStringLiteral("Special Agents");
+const QString kWorkflowAgentFolderName = QStringLiteral("Workflows");
 const QString kTeammateFolderBackfillSetting =
     QStringLiteral("teammates/agentFolderBackfilled");
 
@@ -45,7 +47,8 @@ void showTeammateFormRefusal(QWidget *host, const QString &title,
 bool isTeammateConfigPath(const QString &path)
 {
     const QString clean = QDir::fromNativeSeparators(path);
-    return clean.startsWith(QLatin1String(".forkmesh/teammates/")) &&
+    return (clean.startsWith(QLatin1String(".forkmesh/teammates/")) ||
+            clean.startsWith(QLatin1String(".forkmesh/workflows/"))) &&
            clean.endsWith(QLatin1String(".json"), Qt::CaseInsensitive);
 }
 
@@ -77,14 +80,8 @@ bool teammateConfigChangeIsOnlyBookkeeping(const QString &worktree,
         return false;
     }
 
-    QJsonObject before = beforeDocument.object();
-    QJsonObject after = afterDocument.object();
-    for (const QString &field : {QStringLiteral("improvementCycles"),
-                                 QStringLiteral("updatedAtMs")}) {
-        before.remove(field);
-        after.remove(field);
-    }
-    return before == after;
+    return forkmesh::repoworkflows::withoutBookkeeping(beforeDocument.object()) ==
+           forkmesh::repoworkflows::withoutBookkeeping(afterDocument.object());
 }
 
 inline constexpr int kTeammateBoxMinWidth = 160;
@@ -1722,7 +1719,7 @@ QString MainWindow::teammatesDirPath(int repoIndex) const
     const RepositoryRecord &repo = m_repositories.at(repoIndex);
     if (repo.previewOnly || repo.localPath.isEmpty())
         return {};
-    return QDir(repo.localPath).filePath(QStringLiteral(".forkmesh/teammates"));
+    return QDir(repo.localPath).filePath(forkmesh::repoworkflows::kFolder);
 }
 
 QString MainWindow::teammateRepoDigest(int repoIndex) const
@@ -2085,7 +2082,7 @@ QWidget *MainWindow::buildTeamSectionHeader(QWidget *page)
     m_teammatesRepoChooser->setMinimumWidth(220);
     m_teammatesRepoChooser->setToolTip(
         QStringLiteral("Repository these special agents work on. Special agents are stored in "
-                       "its .forkmesh/teammates folder and see its issues, "
+                       "its .forkmesh/workflows folder and see its issues, "
                        "pulls and agents."));
     connect(m_teammatesRepoChooser, &QComboBox::currentIndexChanged, this,
             [this](int row) {
@@ -3816,7 +3813,7 @@ QString MainWindow::buildTeammateSharedPrompt(const QList<Config> &teammates,
                    lane.right(tail);
         }
         const QString path = store.pathFor(teammate.id);
-        prompt += QStringLiteral("\n\n---\n\n# Lane: @%1 · %2 · .forkmesh/teammates/%3\n\n%4")
+        prompt += QStringLiteral("\n\n---\n\n# Lane: @%1 · %2 · .forkmesh/workflows/%3\n\n%4")
                       .arg(forkmesh::teammates::mentionHandle(teammate), teammate.name,
                            path.isEmpty() ? teammate.id + QStringLiteral(".json")
                                           : QFileInfo(path).fileName(),
@@ -6741,7 +6738,7 @@ bool MainWindow::fileTeammateSessionInFolder(const AgentSession &session)
     if (!m_agentFolders.folderOf(repo, member).isEmpty())
         return false;
     const QString folderId =
-        m_agentFolders.findOrCreate(repo, kTeammateAgentFolderName);
+        m_agentFolders.findOrCreate(repo, kWorkflowAgentFolderName);
     if (folderId.isEmpty() || !m_agentFolders.assign(repo, member, folderId))
         return false;
     m_agentFolders.save();
@@ -6864,8 +6861,8 @@ int MainWindow::runTeammate(const QString &id, const QString &trigger,
         runContributorPayoutTeammate(teammate.id, trigger);
         return 0;
     }
-    return startTeammateSession(teammate, trigger, taskType, repoIndex,
-                                assignment, switchToTab);
+    return runTeammateWorkflow(teammate, trigger, taskType, repoIndex,
+                               assignment, switchToTab);
 }
 
 AgentSession *MainWindow::ownTeammateSession(const Config &teammate)
@@ -6917,7 +6914,11 @@ int MainWindow::startTeammateSession(Config teammate, const QString &trigger,
     if (teammate.lastSessionId > 0)
         m_teammateRunGrants.insert(teammate.lastSessionId,
                                    qMakePair(teammate.name, grantedPermissions));
-    if (continueTeammateSession(teammate, trigger, prompt, repoIndex)) {
+    const bool conversation =
+        taskType == forkmesh::teammates::kTaskTypeMentions ||
+        trigger == QLatin1String("Direct prompt");
+    if (conversation &&
+        continueTeammateSession(teammate, trigger, prompt, repoIndex)) {
         recordTeammateShortcutUses(teammate.lastSessionId, {teammate}, repoIndex);
         if (switchToTab) {
             setRepoDetailNotice(
@@ -7069,9 +7070,10 @@ QList<int> MainWindow::runTeammateTeam(
             continue;
         }
         seen.insert(teammate.id);
-        const int sessionId = startTeammateSession(
-            teammate, trigger, forkmesh::teammates::kTaskTypeOnDemand,
-            repoIndex, assignments.value(teammate.id), false);
+        const int sessionId = runTeammateWorkflow(
+            teammateWithRuntime(teammate, repoIndex), trigger,
+            forkmesh::teammates::kTaskTypeOnDemand, repoIndex,
+            assignments.value(teammate.id), false);
         if (sessionId > 0)
             sessions.append(sessionId);
     }
@@ -7514,6 +7516,7 @@ void MainWindow::checkTeammateSchedules()
         if (filed)
             refreshAgentTable();
     }
+    checkRepoWorkflowSchedules();
     const QString directory = teammatesDirPath();
     if (directory.isEmpty())
         return;
@@ -7569,6 +7572,7 @@ void MainWindow::triggerTeammatesForEvent(const QString &eventName,
                                           const QString &chatConversation,
                                           const QString &chatThreadRootId)
 {
+    triggerRepoWorkflowsForEvent(eventName, repoIndex);
     const bool mentionEvent =
         forkmesh::teammates::normalizedTaskType(eventName) ==
         forkmesh::teammates::kTaskTypeMentions;

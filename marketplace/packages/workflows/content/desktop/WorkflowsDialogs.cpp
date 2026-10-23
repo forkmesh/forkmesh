@@ -57,10 +57,11 @@ QString warningsText(const QJsonArray &warnings)
 
 void WorkflowsFeature::newWorkflowDialog()
 {
-    if (m_workflows.size() >= kMaxWorkflows)
-        return setStatus(errorText(QStringLiteral("too_many_workflows"), QString()), true);
     if (m_pages->currentIndex() == 1 && !leaveEditor())
         return;
+    loadLocal();
+    const QJsonArray repositories = m_local.value(QStringLiteral("repositories")).toArray();
+    const bool local = localAvailable() && !repositories.isEmpty();
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("New workflow"));
     dialog.resize(560, 520);
@@ -69,8 +70,33 @@ void WorkflowsFeature::newWorkflowDialog()
     auto *list = new QListWidget;
     list->setAccessibleName(QStringLiteral("Starting point"));
     list->setWordWrap(true);
+    if (local) {
+        auto *heading = new QListWidgetItem(QStringLiteral("On this desktop"));
+        heading->setFlags(Qt::NoItemFlags);
+        list->addItem(heading);
+        const QList<QPair<QString, QString>> starts{
+            {QStringLiteral("local:agent"),
+             QStringLiteral("Special agent\nA schedule, a special agent step with its role, permissions and skills, "
+                            "and its saved report.")},
+            {QStringLiteral("local:shortcut"),
+             QStringLiteral("Run a shortcut\nOne of the repository's shortcuts, run by hand, on a schedule or from a "
+                            "pinned rail button.")},
+            {QStringLiteral("local:blank"),
+             QStringLiteral("Blank desktop workflow\nA Run by hand trigger; add special agents, shortcuts, desktop "
+                            "steps and Save output.")},
+            {QStringLiteral("local:cleanup"),
+             QStringLiteral("Free disk space\nThe six cleanup steps of tools/free_disk_space.py on this desktop.")}};
+        for (const auto &start : starts) {
+            auto *row = new QListWidgetItem(start.second);
+            row->setData(Qt::UserRole, start.first);
+            list->addItem(row);
+        }
+        auto *accountHeading = new QListWidgetItem(QStringLiteral("On your account (runs on ForkMesh)"));
+        accountHeading->setFlags(Qt::NoItemFlags);
+        list->addItem(accountHeading);
+    }
     auto *blank = new QListWidgetItem(QStringLiteral("Blank workflow\nA Manual trigger and nothing else."));
-    blank->setData(Qt::UserRole, QString());
+    blank->setData(Qt::UserRole, QStringLiteral("account:blank"));
     list->addItem(blank);
     auto addTemplates = [list](const QJsonArray &templates) {
         for (const QJsonValue &value : templates) {
@@ -83,8 +109,24 @@ void WorkflowsFeature::newWorkflowDialog()
         }
     };
     addTemplates(m_templates);
-    list->setCurrentRow(0);
+    list->setCurrentRow(local ? 1 : 0);
     layout->addWidget(list, 1);
+    auto *repoRow = new QFormLayout;
+    auto *repoChoice = new QComboBox;
+    repoChoice->setAccessibleName(QStringLiteral("Repository"));
+    for (const QJsonValue &value : repositories)
+        repoChoice->addItem(text(value.toObject(), "title"), text(value.toObject(), "key"));
+    const int forkmesh = repoChoice->findData(QStringLiteral("forkmesh/forkmesh"));
+    if (forkmesh >= 0)
+        repoChoice->setCurrentIndex(forkmesh);
+    repoRow->addRow(QStringLiteral("Repository"), repoChoice);
+    auto *repoBox = new QWidget;
+    repoBox->setLayout(repoRow);
+    repoBox->setVisible(local);
+    layout->addWidget(repoBox);
+    connect(list, &QListWidget::currentItemChanged, &dialog, [repoChoice](QListWidgetItem *item) {
+        repoChoice->setEnabled(item && item->data(Qt::UserRole).toString().startsWith(QLatin1String("local:")));
+    });
     auto *imports = new QHBoxLayout;
     auto *fileButton = new QPushButton(QStringLiteral("Import file…"));
     fileButton->setObjectName(QStringLiteral("ghostButton"));
@@ -104,6 +146,11 @@ void WorkflowsFeature::newWorkflowDialog()
     QString importPath;
     QJsonObject importBody;
     connect(fileButton, &QPushButton::clicked, &dialog, [&] {
+        if (m_workflows.size() >= kMaxWorkflows) {
+            QMessageBox::warning(&dialog, QStringLiteral("Import workflow"),
+                                 errorText(QStringLiteral("too_many_workflows"), QString()));
+            return;
+        }
         const QString file = QFileDialog::getOpenFileName(&dialog, QStringLiteral("Import workflow"), QString(),
                                                           QStringLiteral("Workflow JSON (*.json);;All files (*)"));
         if (file.isEmpty())
@@ -151,7 +198,15 @@ void WorkflowsFeature::newWorkflowDialog()
         return;
     }
     QListWidgetItem *chosen = list->currentItem();
-    const QString key = chosen ? chosen->data(Qt::UserRole).toString() : QString();
+    QString key = chosen ? chosen->data(Qt::UserRole).toString() : QString();
+    if (key.startsWith(QLatin1String("local:"))) {
+        startLocalDraft(key.mid(6), repoChoice->currentData().toString());
+        return;
+    }
+    if (m_workflows.size() >= kMaxWorkflows)
+        return setStatus(errorText(QStringLiteral("too_many_workflows"), QString()), true);
+    if (key == QLatin1String("account:blank"))
+        key.clear();
     if (key.isEmpty()) {
         loadCatalog([this] {
             openDraft(Draft::blank(), true);
@@ -205,7 +260,7 @@ void WorkflowsFeature::addStepDialog()
 {
     if (m_draft.nodes.size() >= kMaxNodes)
         return setStatus(errorText(QStringLiteral("too_many_nodes"), QString()), true);
-    const bool hasTrigger = !m_draft.trigger(m_catalog).isEmpty();
+    const bool hasTrigger = !m_draft.trigger(catalog()).isEmpty();
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Add step"));
     dialog.resize(640, 600);
@@ -223,13 +278,13 @@ void WorkflowsFeature::addStepDialog()
     about->setMinimumHeight(36);
     layout->addWidget(about);
 
-    QStringList types = m_catalog.stepTypes();
-    if (!hasTrigger)
-        types = m_catalog.triggerTypes() + types;
+    QStringList types = catalog().stepTypes();
+    if (!hasTrigger || m_draft.isLocal())
+        types = catalog().triggerTypes() + types;
     QHash<QString, QTreeWidgetItem *> groups;
     for (const QString &type : std::as_const(types)) {
-        QString group = m_catalog.group(type);
-        if (m_catalog.isApp(type))
+        QString group = catalog().group(type);
+        if (catalog().isApp(type))
             group = QStringLiteral("Integrations: ") + group;
         QTreeWidgetItem *parent = groups.value(group);
         if (!parent) {
@@ -237,9 +292,9 @@ void WorkflowsFeature::addStepDialog()
             parent->setFlags(Qt::ItemIsEnabled);
             groups.insert(group, parent);
         }
-        auto *item = new QTreeWidgetItem(parent, {m_catalog.name(type)});
+        auto *item = new QTreeWidgetItem(parent, {catalog().name(type)});
         item->setData(0, Qt::UserRole, type);
-        item->setToolTip(0, m_catalog.description(type));
+        item->setToolTip(0, catalog().description(type));
     }
     tree->expandToDepth(0);
     for (auto it = groups.begin(); it != groups.end(); ++it)
@@ -251,7 +306,7 @@ void WorkflowsFeature::addStepDialog()
     after->addItem(QStringLiteral("Not connected"), QStringList());
     for (const QString &id : m_draft.ordered()) {
         const QJsonObject node = m_draft.node(id);
-        for (const QString &output : m_catalog.outputs(text(node, "type"))) {
+        for (const QString &output : catalog().outputs(text(node, "type"))) {
             const QString label = output == QLatin1String("main")
                                       ? text(node, "name")
                                       : QStringLiteral("%1: %2").arg(text(node, "name"), output);
@@ -280,8 +335,8 @@ void WorkflowsFeature::addStepDialog()
     connect(tree, &QTreeWidget::currentItemChanged, &dialog, [this, buttons, about, after, chosenType] {
         const QString type = chosenType();
         buttons->button(QDialogButtonBox::Ok)->setEnabled(!type.isEmpty());
-        about->setText(type.isEmpty() ? QString() : m_catalog.description(type));
-        after->setEnabled(!type.isEmpty() && !m_catalog.isTrigger(type));
+        about->setText(type.isEmpty() ? QString() : catalog().description(type));
+        after->setEnabled(!type.isEmpty() && !catalog().isTrigger(type));
     });
     connect(tree, &QTreeWidget::itemDoubleClicked, &dialog, [&dialog, chosenType] {
         if (!chosenType().isEmpty())
@@ -315,27 +370,29 @@ void WorkflowsFeature::addStepDialog()
         return;
     const QStringList parent = after->currentData().toStringList();
     QString added;
-    if (m_catalog.isTrigger(type)) {
-        m_draft.setTrigger(m_catalog, type);
-        added = text(m_draft.trigger(m_catalog), "id");
+    if (catalog().isTrigger(type) && m_draft.isLocal()) {
+        added = m_draft.addTrigger(catalog(), type);
+    } else if (catalog().isTrigger(type)) {
+        m_draft.setTrigger(catalog(), type);
+        added = text(m_draft.trigger(catalog()), "id");
     } else if (parent.size() == 2) {
-        added = m_draft.addStep(m_catalog, type, parent.at(0), parent.at(1));
+        added = m_draft.addStep(catalog(), type, parent.at(0), parent.at(1));
     } else {
         const int before = int(m_draft.connections.size());
-        added = m_draft.addStep(m_catalog, type, QString());
+        added = m_draft.addStep(catalog(), type, QString());
         while (m_draft.connections.size() > before)
             m_draft.connections.removeLast();
     }
     setDirty(true);
     renderEditor();
     selectStep(added);
-    if (m_catalog.isApp(type) && !m_catalog.credentialFields(type.mid(4)).isEmpty()) {
+    if (catalog().isApp(type) && !catalog().credentialFields(type.mid(4)).isEmpty()) {
         bool owned = false;
         for (const QJsonValue &value : std::as_const(m_credentials))
             owned = owned || text(value.toObject(), "integration") == type.mid(4);
         if (!owned)
             setStatus(QStringLiteral("%1 needs a credential: press Manage… beside Credential to add one.")
-                          .arg(m_catalog.name(type)));
+                          .arg(catalog().name(type)));
     }
 }
 
@@ -387,13 +444,13 @@ void WorkflowsFeature::credentialsDialog(const QString &integration)
     auto *form = new QFormLayout;
     auto *service = new QComboBox;
     service->setAccessibleName(QStringLiteral("Integration"));
-    QStringList keys = m_catalog.integrationKeys();
+    QStringList keys = catalog().integrationKeys();
     std::sort(keys.begin(), keys.end(), [this](const QString &a, const QString &b) {
-        return m_catalog.name(QStringLiteral("app.") + a).compare(m_catalog.name(QStringLiteral("app.") + b),
+        return catalog().name(QStringLiteral("app.") + a).compare(catalog().name(QStringLiteral("app.") + b),
                                                                     Qt::CaseInsensitive) < 0;
     });
     for (const QString &key : std::as_const(keys))
-        service->addItem(m_catalog.name(QStringLiteral("app.") + key), key);
+        service->addItem(catalog().name(QStringLiteral("app.") + key), key);
     service->setCurrentIndex(std::max(0, service->findData(integration)));
     form->addRow(QStringLiteral("Integration"), service);
     auto *name = new QLineEdit;
@@ -422,8 +479,8 @@ void WorkflowsFeature::credentialsDialog(const QString &integration)
             fields->removeRow(0);
         inputs.clear();
         const QString key = service->currentData().toString();
-        name->setPlaceholderText(m_catalog.name(QStringLiteral("app.") + key) + QStringLiteral(" account"));
-        for (const QJsonValue &value : m_catalog.credentialFields(key)) {
+        name->setPlaceholderText(catalog().name(QStringLiteral("app.") + key) + QStringLiteral(" account"));
+        for (const QJsonValue &value : catalog().credentialFields(key)) {
             const QJsonObject field = value.toObject();
             auto *edit = new QLineEdit;
             edit->setPlaceholderText(text(field, "placeholder"));
@@ -443,7 +500,7 @@ void WorkflowsFeature::credentialsDialog(const QString &integration)
             auto *first = new QTableWidgetItem(text(item, "name"));
             first->setData(Qt::UserRole, text(item, "id"));
             table->setItem(row, 0, first);
-            table->setItem(row, 1, new QTableWidgetItem(m_catalog.name(QStringLiteral("app.") + text(item, "integration"))));
+            table->setItem(row, 1, new QTableWidgetItem(catalog().name(QStringLiteral("app.") + text(item, "integration"))));
             QStringList hints;
             const QJsonObject masked = item.value(QStringLiteral("hint")).toObject();
             for (auto it = masked.begin(); it != masked.end(); ++it)

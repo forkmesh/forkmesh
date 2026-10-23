@@ -55,8 +55,10 @@ or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
   add a top-level `text` with the reply. Adding one is one entry; the tests
   check every operation and pin the count.
 - **Repository files**: the Repository view edits `.forkmesh/*.yml` actions,
-  `.forkmesh/shortcuts/*`, `.forkmesh/skills/*.skill` and
-  `.forkmesh/teammates/<id>.json` special agents on the canvas. Saving renders
+  `.forkmesh/shortcuts/*`, `.forkmesh/skills/*.skill`,
+  `.forkmesh/workflows/<id>.json` desktop workflows (see
+  [Desktop workflows and special agents](#desktop-workflows-and-special-agents))
+  and legacy `.forkmesh/teammates/<id>.json` special agents on the canvas. Saving renders
   on the server (`/api/workflows/files/render`), reports warnings, and commits
   through `POST /api/repo/<owner>/<repo>/file-edit` with the read blob oid (a
   concurrent change is a 409). Packages can ship such files through the
@@ -299,6 +301,92 @@ maps every server error code).
   `/<id>/record` like a browser-driven run.
 - **Search and badge.** The top search box finds workflows by name; the rail
   badge counts workflows whose last run failed.
+
+## Desktop workflows and special agents
+
+A repository keeps workflows the desktop runs in `.forkmesh/workflows/<id>.json`.
+Special agents are such workflows: since 2026-10-22 a special agent is a
+workflow whose first **Special agent** step (`agent.run`) holds everything
+`.forkmesh/teammates/<id>.json` used to (portrait, specialty, focus,
+responsibility, instructions, playbook shortcut, skills and skill files,
+permissions, learning journal, low-cost model, run window, relay and
+Marketing channels, native workflow). The user asked for the special agents
+to become workflows with every quality they had, so the special agent store
+(`desktop/src/TeammateStore.*`) reads these files and every surface that shows
+special agents (the rail faces, home pages, moods, phones, Marketing pages)
+keeps working. Old `.forkmesh/teammates` files still load; saving one writes
+its workflow file and removes the old file, and
+`tools/migrate_teammates_to_workflows.py --remove-legacy` moves a whole
+repository (this repository's 23 agents were moved that way).
+
+| Piece | Where |
+| --- | --- |
+| File model, validation, step catalog, special agent mapping, run records, rail pins | `desktop/src/RepoWorkflow.*` (test `forkmesh-repo-workflow-tests`) |
+| Step-by-step runner (hooks, no window) | `desktop/src/RepoWorkflowRunner.*` |
+| Step executors, schedules, events, host actions, rail pins | `desktop/src/MainWindowRepoWorkflows.cpp` |
+| Web Repository view kind `workflow` and the Python converter | `app/src/repo_workflows.py`, plugged into `workflow_files.py` |
+| Page | the "On this desktop" section of the native Workflows page |
+
+**File.** `{kind: "forkmesh.workflow", version: 1, id, name, description,
+icon, enabled, createdAtMs, updatedAtMs, nodes, connections}`; nodes and
+connections are the account workflows' shape. The id is the file name.
+Limits: 60 steps, 120 connections, no loops, nothing connects into a trigger.
+
+| Step | Type | Does |
+| --- | --- | --- |
+| Run by hand | `workflow.manual` | Every workflow can run by hand; this only marks it (one at most). |
+| Schedule | `workflow.schedule` | The special agent cadences: on demand, continuous, hourly, daily, weekly, weekdays, chosen days, or on repository events (one at most). |
+| Log monitor | `workflow.monitor` | An app-log badge threshold that starts a repair run (16 at most). |
+| Special agent | `agent.run` | Runs an agent with the role, instructions and only the ticked permissions; its reply is the output. |
+| Run shortcut | `workflow.shortcut` | Runs a `.forkmesh/shortcuts` script (`bash`, with `FORKMESH_WORKFLOW_INPUT`, `FORKMESH_WORKFLOW` and `FORKMESH_WORKFLOW_RUN`) or prompt (an agent, Plan unless **may edit files**). **Wait** off starts it and moves on. |
+| Save output | `workflow.output` | Writes the run so far as Markdown; a path also saves it in the repository, never under `.git` or `.forkmesh` and never through a link out of the checkout. |
+| Note | `workflow.note` | Passes its input on. |
+| Desktop steps | `desktop.*` | The six `tools/free_disk_space.py` steps. |
+
+**Runs.** `Runner` walks the steps in connection order, one at a time. A step
+runs when one of the steps before it succeeded (or failed with **Keep going if
+this step fails**) and gets their output: a special agent under "Output of the
+earlier workflow steps", a script in `FORKMESH_WORKFLOW_INPUT`. A failure
+skips the rest. A workflow runs once at a time and never while turned off.
+Each run is kept in `<data>/workflow-runs/<repository digest>/<id>.json` (30
+runs, each step's status, time, agent session, output, error and last log
+lines) and writes `<id>/<run id>.md`, the run's output file; the Caption line
+an agent ends with becomes the run's caption.
+
+**Special agents run as workflow runs.** `runTeammate` (play buttons, phones,
+schedules, events, monitors, mentions, Run team) starts the agent's workflow
+(`runTeammateWorkflow`). The special agent step still starts through
+`startTeammateSession`, so the permission grant, `--disallowedTools`, the
+external-call gate, the run mode clamp and the guardrails are unchanged; the
+session is the step's runtime, filed in the **Workflows** agent folder. A run
+starts a fresh session. A mention or a direct prompt to an agent that already
+has a conversation is chat, not a run: it continues that session
+(`startTeammateSession`) without a workflow run. Shared "Run all in one session" runs are still
+one shared session. Schedules of workflows without an agent step are checked
+on the same 60 s tick (`checkRepoWorkflowSchedules`) across every local
+repository, and their event triggers fire from `triggerTeammatesForEvent`.
+
+**Rails.** A workflow can be pinned to the top bar, under the left rail, at the
+right edge or in the status bar (`ui/workflowPins`, at most 48 pins; one rail
+per workflow). A pin shows the workflow's icon (a special agent's portrait), a
+blue ring while it runs and a red one after a failure; clicking runs it (or
+opens it while it runs), right-click stops it, opens it, its agent's home or
+its last output, or moves it. The special agents rail menu and the page offer
+**Pin to rail** too.
+
+**Page.** The native Workflows page lists these workflows under **On this
+desktop** with their icons, repository, trigger, state, last result and next
+run, with Run/Stop, Edit, Agent home, Pin to rail, schedule and on/off
+buttons; their runs join Recent runs, with the output file and agent session
+one click away. **New workflow** starts a special agent, a shortcut run, a
+blank desktop workflow or Free disk space in a chosen repository. The editor
+adds checkbox, line-list, portrait and shortcut fields. It needs the
+`desktop.workflows.run` permission, which gives the page the host's
+`repositoryWorkflows()` and `repositoryWorkflowAction(repo, id, action,
+payload, done)` (actions `get`, `save`, `run`, `stop`, `delete`, `pin`,
+`unpin`, `setEnabled`, `setSchedule`, `openAgent`, `openSession`,
+`openOutput`, `readOutput`, `openFile`; see
+[../marketplace/README.md](../marketplace/README.md)).
 
 ## Security
 

@@ -53,6 +53,7 @@
 #include "AccountCapability.h"
 #include "AccountSessionCache.h"
 #include "AgentStore.h"
+#include "RepoWorkflowRunner.h"
 #include "TaskWorkItems.h"
 #include "ListViewMode.h"
 #include "AgentCloudSessions.h"
@@ -8949,6 +8950,43 @@ private:
     void runNativePackageSpecialAgentAction(
         const QString &agentId, const QString &action, const QString &text,
         forkmesh::market::NativePackageSpecialAgentActionHandler done);
+    QJsonObject nativePackageRepositoryWorkflows();
+    void runNativePackageRepositoryWorkflowAction(
+        const QString &repo, const QString &workflowId, const QString &action,
+        const QJsonObject &payload, forkmesh::market::NativePackageReplyHandler done);
+    forkmesh::repoworkflows::Runner *repoWorkflowRunner();
+    int repoIndexForKey(const QString &repoKey) const;
+    QString repoWorkflowRunsRoot(int repoIndex) const;
+    QString repoWorkflowRunsFile(int repoIndex, const QString &workflowId) const;
+    bool findRepoWorkflow(int repoIndex, const QString &workflowId,
+                          forkmesh::repoworkflows::Workflow *workflow) const;
+    QString startRepoWorkflow(int repoIndex, const forkmesh::repoworkflows::Workflow &workflow,
+                              const QString &trigger, const QString &taskType,
+                              const QString &assignment, QString *error);
+    int runTeammateWorkflow(const forkmesh::teammates::Config &teammate, const QString &trigger,
+                            const QString &taskType, int repoIndex, const QString &assignment,
+                            bool switchToTab);
+    forkmesh::repoworkflows::StepStart startRepoWorkflowStep(
+        const forkmesh::repoworkflows::StepRequest &request);
+    forkmesh::repoworkflows::StepPoll pollRepoWorkflowStep(const QString &type, int handle,
+                                                           qint64 startedAtMs);
+    void stopRepoWorkflowStep(const QString &type, int handle);
+    void repoWorkflowRunChanged(const forkmesh::repoworkflows::Run &run);
+    QString finishRepoWorkflowRun(const forkmesh::repoworkflows::Run &run, const QString &markdown);
+    void checkRepoWorkflowSchedules();
+    void triggerRepoWorkflowsForEvent(const QString &eventName, int repoIndex);
+    QList<forkmesh::repoworkflows::Pin> workflowPins() const;
+    void saveWorkflowPins(const QList<forkmesh::repoworkflows::Pin> &pins);
+    void pinWorkflowToRail(const QString &repo, const QString &workflowId, const QString &rail);
+    void unpinWorkflowFromRail(const QString &repo, const QString &workflowId);
+    void addWorkflowPinActions(QMenu *menu, const QString &repo, const QString &workflowId);
+    QWidget *buildWorkflowPinStrip(const QString &rail);
+    void refreshWorkflowPins();
+    void showWorkflowPinMenu(const QString &repo, const QString &workflowId, const QPoint &globalPos);
+    QPixmap repoWorkflowIcon(const forkmesh::repoworkflows::Workflow &workflow, int side) const;
+    void notifyRepoWorkflowsChanged();
+    void openWorkflowInPage(const QString &repo, const QString &workflowId);
+    void runPinnedWorkflow(const QString &repo, const QString &workflowId, const QString &rail);
     // Packages the desktop hosts itself (Notes, Tasks, Calendar, Timers, and
     // the launcher-only ones) answer the same box; see MainWindowSearch.cpp.
     struct BuiltinPackageSearchHit {
@@ -13151,6 +13189,23 @@ private:
     QString m_teammateEditorDirectory;
     bool m_teammateEditorOpen = false;
     QTimer *m_teammateScheduleTimer = nullptr;
+    struct RepoWorkflowHandle {
+        QString kind;
+        int id = 0;
+        qint64 startedAtMs = 0;
+        bool seenRunning = false;
+        QPointer<QProcess> process;
+        bool finished = false;
+        bool ok = false;
+        QString output;
+        QString error;
+    };
+    forkmesh::repoworkflows::Runner *m_repoWorkflowRunner = nullptr;
+    QHash<int, RepoWorkflowHandle> m_repoWorkflowHandles;
+    int m_repoWorkflowHandleSerial = 0;
+    bool m_repoWorkflowSwitchToTab = false;
+    QHash<QString, QPointer<QWidget>> m_workflowPinStrips;
+    QTimer *m_repoWorkflowNotifyTimer = nullptr;
     QTableWidget *m_mirrorNodesTable = nullptr;
     QLabel *m_mirrorNodesSummary = nullptr;
     QCheckBox *m_mirrorNodesOnlineOnlyCheck = nullptr;

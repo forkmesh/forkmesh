@@ -1098,7 +1098,7 @@ void MainWindow::replyToGenieSpider(const QString &tip)
     const int repoIndex = genieSpiderTeammateRepo();
     if (repoIndex < 0) {
         flashMessage(QStringLiteral("Replies go to the Genie special agent, and no open repository has one. Add "
-                                    ".forkmesh/teammates/genie.json from the ForkMesh repository to one."),
+                                    ".forkmesh/workflows/genie.json from the ForkMesh repository to one."),
                      true);
         return;
     }
