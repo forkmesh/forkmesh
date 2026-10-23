@@ -354,11 +354,11 @@ async def conversation(env, owner, repo, number, ref):
     return events
 
 
-async def _key_account(env, ctx, key):
+async def _key_account(env, pass_state, key):
     key = str(key or "").strip()
     if not key or not valid_node_pubkey(key):
         return ""
-    names = ctx.setdefault("keys", {})
+    names = pass_state.setdefault("keys", {})
     if key not in names:
         try:
             name = str(await _git_push_account_for_pubkey(env, key) or "")
@@ -369,21 +369,21 @@ async def _key_account(env, ctx, key):
     return names[key]
 
 
-async def _actor(env, ctx, key, name):
-    resolved = await _key_account(env, ctx, key)
+async def _actor(env, pass_state, key, name):
+    resolved = await _key_account(env, pass_state, key)
     if resolved:
         return resolved
     name = str(name or "").strip().lower()
     return name if valid_node_name(name) else ""
 
 
-async def is_maintainer(env, ctx, account):
+async def is_maintainer(env, pass_state, account):
     account = str(account or "").strip().lower()
     if not account:
         return False
-    cache = ctx.setdefault("maintainers", {})
+    cache = pass_state.setdefault("maintainers", {})
     if account not in cache:
-        node, repo = ctx["node"], ctx["repo"]
+        node, repo = pass_state["node"], pass_state["repo"]
         try:
             cache[account] = bool(
                 account == node
@@ -394,28 +394,28 @@ async def is_maintainer(env, ctx, account):
     return cache[account]
 
 
-async def role_of(env, ctx, event, record_key, author):
+async def role_of(env, pass_state, event, record_key, author):
     key = str(event.get("authorKey") or "").strip()
     name = str(event.get("authorName") or "").strip().lower()
     if key == FORKBOT_AUTHOR or name == FORKBOT_AUTHOR:
         return "bot"
     if record_key and key == record_key:
         return "author"
-    actor = await _actor(env, ctx, key, name)
+    actor = await _actor(env, pass_state, key, name)
     if author and actor == author:
         return "author"
-    if actor and await is_maintainer(env, ctx, actor):
+    if actor and await is_maintainer(env, pass_state, actor):
         return "maintainer"
     return "other"
 
 
-async def _head(env, ctx, record):
+async def _head(env, pass_state, record):
     head = str(record.get("head") or "").strip()
     if str(record.get("derive") or "") == "branch" and ":" not in head:
         branch = branch_name(head)
         if not branch:
             return ""
-        tree = await _read(env, ctx["owner"], ctx["repo"], "tree",
+        tree = await _read(env, pass_state["owner"], pass_state["repo"], "tree",
                            {"ref": branch})
         return oid((tree or {}).get("commit"))
     return oid(record.get("headOid"))
@@ -470,14 +470,14 @@ async def _track(env, repo_bi, number, anchor, anchor_at, head, now):
     return row, data
 
 
-def pull_href(ctx, number):
+def pull_href(pass_state, number):
     segment = NOTIFICATION_ITEM_URL_SEGMENTS.get("pull") or "pull"
-    return "%s/%s/%d" % (repo_web_href(ctx["public"], ctx["repo"]), segment,
+    return "%s/%s/%d" % (repo_web_href(pass_state["public"], pass_state["repo"]), segment,
                          int(number))
 
 
-async def _post(env, ctx, events, now):
-    repo_bi = ctx["repo_bi"]
+async def _post(env, pass_state, events, now):
+    repo_bi = pass_state["repo_bi"]
     count = await d1_first(
         env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi)
     if count and int(count.get("c", 0) or 0) + len(events) > \
@@ -497,21 +497,21 @@ async def _post(env, ctx, events, now):
             submitter_bi)
     for notify in (notify_repo_host, notify_repo_mirrors):
         try:
-            await notify(env, ctx["node"], ctx["repo"], "pulls")
+            await notify(env, pass_state["node"], pass_state["repo"], "pulls")
         except Exception:
             pass
     return True
 
 
-async def deletable_head(env, ctx, record, head):
-    if not ctx["features"].get(DELETE_SETTING) or not oid(head):
+async def deletable_head(env, pass_state, record, head):
+    if not pass_state["features"].get(DELETE_SETTING) or not oid(head):
         return ""
     raw = str(record.get("head") or "").strip()
     branch = branch_name(raw)
     if (str(record.get("derive") or "") != "branch" or ":" in raw
             or not branch or branch.startswith("forkmesh/")):
         return ""
-    node, repo = ctx["node"], ctx["repo"]
+    node, repo = pass_state["node"], pass_state["repo"]
     try:
         catalog = await _repo_catalog_record(env, node, repo)
         if isinstance(catalog, dict) and catalog.get("source") == "hosted-web":
@@ -520,12 +520,12 @@ async def deletable_head(env, ctx, record, head):
         if not default or branch == default:
             return ""
         refs, problem = await _branch_protection.push_protection(
-            env, ctx["owner"], repo)
+            env, pass_state["owner"], repo)
         if problem or _branch_protection.branch_is_protected(branch, refs):
             return ""
         rows = await d1_all(
             env, "SELECT data FROM branch_op_inbox WHERE repo_bi=?",
-            ctx["repo_bi"])
+            pass_state["repo_bi"])
     except Exception:
         return ""
     rows = list(rows or [])
@@ -538,26 +538,26 @@ async def deletable_head(env, ctx, record, head):
     return branch
 
 
-async def _delete_branch(env, ctx, branch, head, now):
+async def _delete_branch(env, pass_state, branch, head, now):
     record = {"op": "delete", "branch": branch, "expectedOid": oid(head),
               "requestedBy": FORKBOT_AUTHOR, "queuedAt": now,
               "source": "stale-pull"}
     await d1_run(
         env, "INSERT INTO branch_op_inbox (repo_bi, data, queued_at) "
-        "VALUES (?,?,?)", ctx["repo_bi"], await encrypt_row(env, record), now)
+        "VALUES (?,?,?)", pass_state["repo_bi"], await encrypt_row(env, record), now)
     try:
-        await notify_repo_host(env, ctx["node"], ctx["repo"], "branches")
+        await notify_repo_host(env, pass_state["node"], pass_state["repo"], "branches")
     except Exception:
         pass
 
 
-async def _deliver(env, ctx, number, record, author, data, row, stage, head,
+async def _deliver(env, pass_state, number, record, author, data, row, stage, head,
                    now):
     anchor_at = int(row["anchor_at"])
     closes_at = close_at(anchor_at, stage, now)
     branch = ""
     if stage == CLOSE_STAGE:
-        branch = await deletable_head(env, ctx, record, head)
+        branch = await deletable_head(env, pass_state, record, head)
     title, body = notice(stage, number, author, data.get("maintainer") or "",
                          anchor_at, closes_at, branch)
     base_id = "stale-pull-%d-%d" % (int(number), anchor_at)
@@ -570,17 +570,17 @@ async def _deliver(env, ctx, number, record, author, data, row, stage, head,
             "type": "status", "state": "closed", "id": base_id + "-close",
             "author": FORKBOT_AUTHOR, "authorName": BOT_NAME, "ts": now,
             "body": "", "sig": ""}))
-    if not await _post(env, ctx, events, now):
+    if not await _post(env, pass_state, events, now):
         return False
     if author:
         try:
             await enqueue_notification(
                 env, author, KIND, title, body=body,
-                repo="%s/%s" % (ctx["public"], ctx["repo"]),
-                href=pull_href(ctx, number), actor=FORKBOT_AUTHOR,
+                repo="%s/%s" % (pass_state["public"], pass_state["repo"]),
+                href=pull_href(pass_state, number), actor=FORKBOT_AUTHOR,
                 source="pull",
                 dedupe="pull-stale:%s/%s#%d:%d:%d" % (
-                    ctx["node"], ctx["repo"], int(number), anchor_at, stage),
+                    pass_state["node"], pass_state["repo"], int(number), anchor_at, stage),
                 meta={"number": int(number), "source": "pull",
                       "reason": "stale", "stage": stage,
                       "closesAt": closes_at})
@@ -588,42 +588,42 @@ async def _deliver(env, ctx, number, record, author, data, row, stage, head,
             pass
     if branch:
         try:
-            await _delete_branch(env, ctx, branch, head, now)
+            await _delete_branch(env, pass_state, branch, head, now)
         except Exception:
             pass
     return True
 
 
-async def check(env, ctx, number, record, now):
-    repo_bi = ctx["repo_bi"]
+async def check(env, pass_state, number, record, now):
+    repo_bi = pass_state["repo_bi"]
     if not is_open(record) or is_draft(record):
         await _forget(env, repo_bi, number)
         return "skipped"
     record_key = str(record.get("author") or "").strip()
-    author = await _actor(env, ctx, record_key, record.get("authorName"))
+    author = await _actor(env, pass_state, record_key, record.get("authorName"))
     if not author and not record_key:
         await _forget(env, repo_bi, number)
         return "skipped"
-    if author and await is_maintainer(env, ctx, author):
+    if author and await is_maintainer(env, pass_state, author):
         await _forget(env, repo_bi, number)
         return "maintainer"
-    ref = ctx["refs"].get(number) or ctx["commit"]
+    ref = pass_state["refs"].get(number) or pass_state["commit"]
     if not ref:
         return "unreadable"
-    events = await conversation(env, ctx["owner"], ctx["repo"], number, ref)
+    events = await conversation(env, pass_state["owner"], pass_state["repo"], number, ref)
     if events is None:
         return "unreadable"
     for event in events:
-        event["role"] = await role_of(env, ctx, event, record_key, author)
+        event["role"] = await role_of(env, pass_state, event, record_key, author)
         if event["role"] == "maintainer":
             event["actor"] = await _actor(
-                env, ctx, event.get("authorKey"), event.get("authorName"))
+                env, pass_state, event.get("authorKey"), event.get("authorName"))
     anchor = waiting_anchor(events)
     if anchor is None or not anchor.get("ts"):
         await _forget(env, repo_bi, number)
         return "clear"
-    anchor_at = max(int(anchor["ts"]), int(ctx.get("enabledAt") or 0))
-    head = await _head(env, ctx, record)
+    anchor_at = max(int(anchor["ts"]), int(pass_state.get("enabledAt") or 0))
+    head = await _head(env, pass_state, record)
     row, data = await _track(env, repo_bi, number, anchor, anchor_at, head,
                              now)
     if row is None:
@@ -636,7 +636,7 @@ async def check(env, ctx, number, record, now):
     if not await _swap(env, repo_bi, number, row["version"], row["anchor_at"],
                        stage, now, data, now):
         return "raced"
-    if not await _deliver(env, ctx, number, record, author, data, row, stage,
+    if not await _deliver(env, pass_state, number, record, author, data, row, stage,
                           head, now):
         await _swap(env, repo_bi, number, int(row["version"]) + 1,
                     row["anchor_at"], row["stage"], row["stage_at"], data,
@@ -678,7 +678,7 @@ async def sweep(env, row, now, totals):
     batch = pending[:SCAN_PER_RUN]
     records, stop = await read_records(env, owner, repo, batch, commit,
                                        refs)
-    ctx = {"owner": owner, "repo": repo, "node": data.get("node") or owner,
+    pass_state = {"owner": owner, "repo": repo, "node": data.get("node") or owner,
            "public": data.get("publicOwner") or owner, "repo_bi": repo_bi,
            "features": features, "enabledAt": int(data.get("enabledAt") or 0),
            "commit": commit, "refs": refs}
@@ -691,7 +691,7 @@ async def sweep(env, row, now, totals):
             if checks >= CHECKS_PER_RUN or _cron_budget_exhausted():
                 break
             checks += 1
-            outcome = await check(env, ctx, number, record, now)
+            outcome = await check(env, pass_state, number, record, now)
             totals[outcome] = totals.get(outcome, 0) + 1
         elif record is not None:
             await _forget(env, repo_bi, number)
