@@ -47,6 +47,15 @@ mesh, the relay and node sync. The relay-switch overlay is `RelaySwitchScope { c
 - `ChatPersona`: the name the device speaks as: the Display name or account when signed in,
   else `guestChatName(nodeKey)` ("Guest ####"). `stamp(&frame)` adds `accountKind` and
   `ownerUser` to every frame and mesh beacon.
+- `ChatNodeOwners` / `GuestLineRenames`: a sender's account claim shows only once
+  `/api/chat/node-owner` confirms the node. A "no owner" answer is trusted for `retryAfter` (60 s),
+  not the hour a confirmed account is kept, so a device bound just after it spoke is asked again
+  soon. A `chat` or `thread-reply` line shown as `Guest ####` while it claimed an account is
+  remembered (at most 256 nodes and 256 lines each); `GuestLineRenames` rechecks that node every
+  `retryAfter` up to ten times, and when an answer observer (`addAnswerObserver`) reports the claimed
+  account, `RelayService` and `OfficeChannelService` rename those lines to the sender name the
+  frame carried (and the relay roster row gets the owner), which the chat history save then keeps.
+  An answer naming another account leaves them as guests. Bot "via" lines are not renamed.
 - `RelayProbe`: `check`/`verify` a relay profile, returning status, message, profile, version
   and missing optional features.
 - `RelaySwitchController`: `switchTo(id) async -> RelaySwitchResult` (`ok`, `needsSignIn`,

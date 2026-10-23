@@ -347,6 +347,8 @@ final class OfficeChannelsTests: XCTestCase {
         XCTAssertTrue(verified)
         XCTAssertEqual(service.messages(conversation).suffix(2).map(\.senderName), ["Pat", "forkbot \u{00B7} via pat"])
         XCTAssertEqual(service.messages(conversation).last?.senderId, "forkbot")
+        XCTAssertEqual(service.messages(conversation).first?.senderName, "pat", "the earlier guest line takes the vouched name")
+        XCTAssertEqual(service.messages(conversation)[1].senderName, "forkbot \u{00B7} via \(guest)")
         await service.closeAll()
     }
 

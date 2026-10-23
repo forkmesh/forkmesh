@@ -94,6 +94,19 @@ own, so there is nothing to clean up on first start.
   for an hour (`localStorage` `forkmesh.chat.nodeOwners.v1`, at most 512); a
   failed lookup is retried after a minute and shows the sender as a guest
   meanwhile.
+- An answer that names no account is kept for only that minute too, and is
+  never saved to `localStorage`: a device that posts before its
+  `node-bind` lands (a new phone or browser) would otherwise stay
+  `Guest ####` for an hour (a signed-in person's #general announcement showed
+  as a guest this way on 2026-10-23, while `node-owner` already named their
+  account for that node).
+- `createGuestRelabeler()` remembers the ids of lines shown as a guest whose
+  seal claims an account (`unconfirmedClaim`), history entries included,
+  rechecks that node a minute later (at most ten times), and when the server
+  confirms the claimed account renames those lines (`/chat` rows, thread
+  replies and the people pane, the dashboard chat's rows, side list and thread
+  dialog, the office chat's conversations). A claim the server does not
+  confirm stays a guest.
 - `attributeFrame()` replaces `sender` with the confirmed account, or with
   `Guest <first six characters of the node>`; it sets `accountKind` and
   `verifiedAccount`. A direct-message room uses the bundle `acct`, which the

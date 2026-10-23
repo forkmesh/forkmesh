@@ -494,6 +494,73 @@ final class RelayServiceTests: XCTestCase {
         await h.close()
     }
 
+    func testAGuestLineTakesItsNameOnceTheServerVouchesForTheNode() async throws {
+        let h = try await RelayHarness.start()
+        let clock = FixedClock(epochMillis: 1_790_000_000_000)
+        h.relay.nodeOwners = ChatNodeOwners(lookup: { [weak h] node in h?.accounts[node] ?? "" }, clock: clock)
+        let now = Date().epochMillis
+        try await h.sendProtected(
+            [
+                "type": "chat", "id": "launch-1", "senderId": "new-phone", "sender": "Sam", "ownerUser": "sam",
+                "ts": .int(now), "channel": "#general", "text": "we launched the new feature",
+            ], bind: false)
+        try await h.sendProtected(
+            [
+                "type": "chat", "id": "liar-1", "senderId": "liar", "sender": "Ada", "ownerUser": "ada",
+                "ts": .int(now + 1), "channel": "#general", "text": "I am Ada",
+            ], bind: false)
+        let two = await waitUntil(2) { h.relay.messages("#general").count == 2 }
+        XCTAssertTrue(two)
+        let node = h.node("new-phone")
+        let liar = h.node("liar")
+        XCTAssertEqual(h.relay.messages("#general").map(\.senderName), [guestChatName(node), guestChatName(liar)])
+
+        h.accounts[node] = "sam"
+        h.accounts[liar] = "bob"
+        _ = await h.relay.nodeOwners?.account(for: node)
+        _ = await h.relay.nodeOwners?.account(for: liar)
+        XCTAssertEqual(h.relay.messages("#general").map(\.senderName), [guestChatName(node), guestChatName(liar)],
+            "a no-owner answer is kept for the retry window")
+
+        clock.advance(by: ChatNodeOwners.retryAfter)
+        _ = await h.relay.nodeOwners?.account(for: node)
+        _ = await h.relay.nodeOwners?.account(for: liar)
+        XCTAssertEqual(h.relay.messages("#general").map(\.senderName), ["Sam", guestChatName(liar)])
+        XCTAssertEqual(h.relay.rosterGroups().first { $0.members.contains { $0.id == node } }?.account, "sam")
+        await h.close()
+    }
+
+    func testGuestLinesAreRecheckedWithoutAnotherFrame() async {
+        let clock = FixedClock(epochMillis: 1_790_000_000_000)
+        var bound = ""
+        var calls = 0
+        let owners = ChatNodeOwners(lookup: { node in
+            calls += 1
+            return node == "n1" ? bound : ""
+        }, clock: clock)
+        let renames = GuestLineRenames(sleep: { seconds in
+            clock.advance(by: seconds)
+            await Task.yield()
+        })
+        var confirmed: [GuestLineRenames.Line] = []
+        owners.addAnswerObserver { node, account in confirmed += renames.confirmed(node: node, account: account) }
+        _ = await owners.account(for: "n1")
+        renames.note(["type": "chat", "id": "m1", "sender": "Sam"], node: "n1", claim: "Sam", owners: owners)
+        renames.note(["type": "presence", "id": "p1"], node: "n1", claim: "sam", owners: owners)
+        bound = "sam"
+        let healed = await waitUntil(2) { !confirmed.isEmpty }
+        XCTAssertTrue(healed)
+        XCTAssertEqual(confirmed, [GuestLineRenames.Line(id: "m1", claim: "sam", name: "Sam")])
+        XCTAssertFalse(renames.isPending("n1"))
+        let settled = calls
+        renames.note(["type": "chat", "id": "m2"], node: "n2", claim: "ada", owners: owners)
+        let stopped = await waitUntil(2) { calls >= settled + GuestLineRenames.maxRechecks }
+        XCTAssertTrue(stopped)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(calls, settled + GuestLineRenames.maxRechecks, "rechecks stop after a bounded number of tries")
+        XCTAssertTrue(renames.isPending("n2"))
+    }
+
     func testNodeOwnersAreCachedForAnHour() async {
         let clock = FixedClock(epochMillis: 1_790_000_000_000)
         var calls = 0
@@ -510,9 +577,13 @@ final class RelayServiceTests: XCTestCase {
         let guest = await owners.account(for: "n2")
         XCTAssertEqual(guest, "")
         XCTAssertFalse(owners.isVerified(node: "n2", claim: ""))
+        XCTAssertEqual(owners.cached("n2"), "")
         _ = await owners.account(for: "n1")
         XCTAssertEqual(calls, 2)
-        clock.advance(by: ChatNodeOwners.ttl)
+        clock.advance(by: ChatNodeOwners.retryAfter)
+        XCTAssertNil(owners.cached("n2"), "a no-owner answer is asked again after the retry window")
+        XCTAssertEqual(owners.cached("n1"), "ada")
+        clock.advance(by: ChatNodeOwners.ttl - ChatNodeOwners.retryAfter)
         XCTAssertNil(owners.cached("n1"))
         _ = await owners.account(for: "n1")
         XCTAssertEqual(calls, 3)
