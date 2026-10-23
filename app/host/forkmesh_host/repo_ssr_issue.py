@@ -136,6 +136,44 @@ BOT_NAME_RES = (
     re.compile(r"^[a-z0-9][a-z0-9_-]*-actions$", re.I))
 
 
+BOT_AVATAR_GLYPHS = {
+    'actions': (
+        '<circle cx="12" cy="12" r="3"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"></path><circle cx="12" cy="12" r="6.5"></circle>'),
+    'node': (
+        '<circle cx="6" cy="6" r="2.25"></circle><circle cx="6" cy="18" r="2.25"></circle><circle cx="18" cy="8" r="2.25"></circle><path d="M6 8.25v7.5M18 10.25c0 4-5.5 3.5-10.2 6.4"></path>'),
+    'runner': (
+        '<rect x="3.5" y="4" width="17" height="6.5" rx="1.5"></rect><rect x="3.5" y="13.5" width="17" height="6.5" rx="1.5"></rect><path d="M7.5 7.25h.01M7.5 16.75h.01M11.5 7.25h5M11.5 16.75h5"></path>'),
+    'ai': (
+        '<path d="M11 3.5l1.9 4.6 4.6 1.9-4.6 1.9L11 16.5l-1.9-4.6L4.5 10l4.6-1.9z"></path><path d="M18 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"></path>'),
+    'bot': (
+        '<rect x="4.5" y="8" width="15" height="11" rx="2.5"></rect><path d="M12 8V4.5M9.5 4.5h5M2.5 12.5v3M21.5 12.5v3"></path><circle cx="9.5" cy="13" r="1"></circle><circle cx="14.5" cy="13" r="1"></circle><path d="M9.5 16.25h5"></path>'),
+}
+BOT_AVATAR_RULES = (
+    ("ai", re.compile(r"^(?:ai[\s_-]?review(?:er)?|forkbot|ai[\s_-]?agent)(?:\[bot\])?$", re.I)),
+    ("runner", re.compile(r"(?:^|[\s_-])runner(?:\[bot\])?$", re.I)),
+    ("node", re.compile(r"^forkmesh(?:[\s_-]mirror(?:[\s_-]reconciler)?)?$", re.I)),
+    ("actions", re.compile(r"^github[\s_-]?actions?(?:\[bot\])?$", re.I)),
+    ("actions", re.compile(r"^[a-z0-9][a-z0-9_-]*-actions(?:\[bot\])?$", re.I)),
+    ("actions", re.compile(r"^forkmesh[\s_-](?:actions|deploy)$", re.I)),
+    ("bot", re.compile(r"\[bot\]$", re.I)),
+    ("bot", re.compile(r"^(?:dependabot|renovate)$", re.I)),
+    ("bot", re.compile(r"(?:^|[\s_-])bot$", re.I)),
+)
+
+
+def bot_avatar_kind(name):
+    text = str(name or "").strip()
+    return next((kind for kind, pattern in BOT_AVATAR_RULES if text and pattern.search(text)), "")
+
+
+def bot_avatar_svg(kind, classes="h-4 w-4"):
+    name = kind if kind in BOT_AVATAR_GLYPHS else "bot"
+    return ('<svg data-bot-avatar="%s" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+            'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+            'stroke-linejoin="round" aria-hidden="true" class="%s text-muted-foreground">%s</svg>'
+            % (name, classes, BOT_AVATAR_GLYPHS[name]))
+
+
 def person_handle(name):
     text = re.sub(r"^@", "", str(name or "").strip())
     return text.lower() if ISSUE_PERSON_HANDLE_RE.match(text) and "--" not in text else ""
@@ -165,7 +203,7 @@ def actor_is_bot(name):
     text = str(name or "").strip()
     if not text:
         return False
-    return any(pattern.search(text) for pattern in BOT_NAME_RES) \
+    return bool(bot_avatar_kind(text)) or any(pattern.search(text) for pattern in BOT_NAME_RES) \
         or text.lower() in ("forkmesh actions", "forkmesh deploy")
 
 
@@ -180,11 +218,15 @@ def avatar_html(name, author="", size="h-7 w-7", agent=False, link=True):
     forge = None if bot else forge_identity(label)
     handle = "" if bot or forge else person_handle(label)
     pixels = actor_pixels(size)
-    inner = icon("bot", "h-3.5 w-3.5" if pixels <= 24 else "h-4 w-4" if pixels <= 32
-                 else "h-5 w-5", "text-muted-foreground") if bot else (
+    kind = ("ai" if agent and not bot_avatar_kind(label) else bot_avatar_kind(label) or "bot") \
+        if bot else ""
+    inner = bot_avatar_svg(kind, "h-3.5 w-3.5" if pixels <= 24 else "h-4 w-4" if pixels <= 32
+                           else "h-5 w-5") if bot else (
         '<span class="text-[9px] font-bold text-muted-foreground">%s</span>' % esc(
             ((forge["login"] if forge else label)[:1] or "?").upper()))
-    hydrate = ' data-issue-actor-avatar="%s"' % esc(handle) if handle else ""
+    override = person_handle(label) if bot and not agent else ""
+    hydrate = ' data-issue-actor-avatar="%s"' % esc(handle or override) \
+        if handle or override else ""
     classes = ("relative flex %s shrink-0 items-center justify-center overflow-hidden "
                "rounded-full border border-border bg-secondary" % size)
     title = "%s (bot)" % label if bot else label

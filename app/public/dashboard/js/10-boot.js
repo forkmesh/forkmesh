@@ -210,6 +210,7 @@
       initDashboardUpdateNotice();
       initRecentPushes();
       initCommentReactions();
+      initCommentAnchor();
       initCommentGifs();
       initCommentTips();
       void initReactionSettings();

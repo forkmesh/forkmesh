@@ -32,7 +32,11 @@
     const messageNode = summary.querySelector("[data-repo-commit-message]");
     const hashNode = summary.querySelector("[data-repo-commit-hash]");
     const dateNode = summary.querySelector("[data-repo-commit-date]");
-    if (avatar) avatar.textContent = (author[0] || repo.owner?.[0] || "F").toUpperCase();
+    if (avatar) {
+      const botKind = botAvatarKind(author);
+      if (botKind) avatar.innerHTML = botAvatarSvg(botKind, "h-3.5 w-3.5");
+      else avatar.textContent = (author[0] || repo.owner?.[0] || "F").toUpperCase();
+    }
     if (authorNode) authorNode.textContent = author;
     if (messageNode) messageNode.textContent = subject || "published latest mirror metadata";
     if (hashNode) hashNode.textContent = hash ? hash.slice(0, 7) : "live";
@@ -16009,7 +16013,8 @@ Your reply
     const title = `${name}${email ? ` <${email}>` : ""}` +
       (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
     const classes = "relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground";
-    const initialsHtml = `<span>${escapeHtml(initials)}</span>`;
+    const botKind = platform ? "node" : botAvatarKind(contributor?.name, contributor?.email);
+    const initialsHtml = botKind ? botAvatarSvg(botKind) : `<span>${escapeHtml(initials)}</span>`;
     const picture = repoContributorAvatarUrl(contributor?.avatarUrl);
     if (picture) {
       return `<span title="${escapeHtml(title)}" data-repo-contributor-avatar class="${classes}">${initialsHtml}<img src="${escapeHtml(picture)}" alt="" width="28" height="28" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" /></span>`;

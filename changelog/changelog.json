@@ -12,7 +12,8 @@
      "items": [
       "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.",
       "Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.",
-      "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change."
+      "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.",
+      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows."
      ]
     },
     {
@@ -66,6 +67,14 @@
       "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.",
       "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings.",
       "In the desktop's new design, alerts and confirmations are laid out evenly: the heading and message are centred with the same padding on every side, and the buttons sit centred below them at one width."
+     ]
+    },
+    {
+     "title": "Other improvements",
+     "items": [
+      "Administrators can turn on an automated AI review that posts a first-pass review comment on pull requests, using Cloudflare Workers AI.",
+      "Bots and system accounts such as Actions, runners, the git node and the AI reviewer now have their own avatars.",
+      "A mention or reply notification now opens the exact comment, and Home's repository rows show their fork count."
      ]
     }
    ]

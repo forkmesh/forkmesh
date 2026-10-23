@@ -139,7 +139,9 @@ message holds the pull request.
   author controls (`{title}`, `{author}`, `{base}`, `{head}`) are filled with
   "see the untrusted data" in the system message; only forge-made values
   (`{url}`, `{number}`, `{repo}`, `{host}`, `{cloneUrl}`, `{diffUrl}`,
-  `{filesUrl}`) are inlined.
+  `{filesUrl}`, `{textUrl}`) are inlined. The template's closing "Your
+  reply" steps are written for a person; the system message's fixed headings
+  and its "never approves" rule take precedence for the bot.
 - The model gets no tools, no repository access and no network. Nothing it
   says is executed; its only effect is the text of one comment.
 
