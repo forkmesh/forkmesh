@@ -188,6 +188,7 @@ def generate(
     moc_headers: list[Path] = []
     include_dirs: list[Path] = []
     package_sources: dict[str, list[Path]] = {}
+    package_include_dirs: dict[str, Path] = {}
     package_tests: dict[str, tuple[list[Path], list[str]]] = {}
     module_candidates: list[str] = []
     core_linked: list[str] = []
@@ -233,6 +234,7 @@ def generate(
             moc_headers.extend(package_moc)
             include_dirs.append(include_dir)
             package_sources[manifest["id"]] = package_source_files
+            package_include_dirs[manifest["id"]] = include_dir
             if package_test_sources:
                 package_tests[manifest["id"]] = (
                     package_test_sources,
@@ -288,6 +290,10 @@ def generate(
     for package_id, values in sorted(package_sources.items()):
         variable_id = re.sub(r"[^A-Za-z0-9]", "_", package_id).upper()
         cmake += cmake_set(f"FORKMESH_PACKAGE_{variable_id}_SOURCES", values)
+        cmake += cmake_set(
+            f"FORKMESH_PACKAGE_{variable_id}_INCLUDE_DIRS",
+            [package_include_dirs[package_id]],
+        )
     for package_id, (test_sources, test_libraries) in sorted(package_tests.items()):
         variable_id = re.sub(r"[^A-Za-z0-9]", "_", package_id).upper()
         cmake += cmake_set(
