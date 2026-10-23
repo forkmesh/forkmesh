@@ -11,14 +11,13 @@
 }
 
 #promptWrapper #promptDragHandle { background: transparent; border: none; }
-#promptWrapper #promptDragPill { background-color: @borderStrong; border: none; border-radius: 1px; }
 #promptWrapper #promptResizeGrip {
     background: transparent; border: none;
-    border-top: 2px solid @fgSubtle; border-left: 2px solid @fgSubtle;
-    border-top-left-radius: 3px;
+    border-top: 2px solid @fgSubtle; border-right: 2px solid @fgSubtle;
+    border-top-right-radius: 3px;
 }
 #promptWrapper #promptResizeGrip:hover {
-    background: transparent; border-top-color: @fgSecondary; border-left-color: @fgSecondary;
+    background: transparent; border-top-color: @fgSecondary; border-right-color: @fgSecondary;
 }
 #promptWrapper QPushButton#promptClearButton,
 #promptWrapper QPushButton#promptCloudButton,

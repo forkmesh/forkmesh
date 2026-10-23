@@ -94,7 +94,8 @@
       "An Actions run that stops because the computer is low on disk space now says to run Free disk space first, and its ping is filed as a disk problem.",
       "A run waiting for your approval now says why it is held, such as a first-time contributor's pull request, instead of only saying the workflow has no changes.",
       "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back.",
-      "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has."
+      "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has.",
+      "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room and chat posts to it."
      ]
     },
     {
