@@ -117,8 +117,8 @@ def test_slot_ships_hidden_in_every_composed_document():
         assert html.count(SLOT_MARKER) == 1, page_id
         assert re.search(
             r"<aside %s[^>]*></aside>" % re.escape(SLOT_MARKER), html), page_id
-    # The ads page itself and the chat document never load an ad.
-    assert 'const ADS_SLOT_SKIPPED_PAGES = new Set(["ads", "chat"]);' in ADS_JS
+    # The ads page itself never loads an ad.
+    assert 'const ADS_SLOT_SKIPPED_PAGES = new Set(["ads"]);' in ADS_JS
     assert "ADS_SLOT_SKIPPED_PAGES.has(currentPage())" in function_source("initAdSlot")
 
 

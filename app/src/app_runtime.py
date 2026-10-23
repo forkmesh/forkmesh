@@ -1838,6 +1838,31 @@ class Default:
         return instance_legal.remember(
             instance_legal.parse((row or {}).get("doc") or ""), now)
 
+    async def _instance_sidebar_setting(self):
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                "sidebar")
+            doc = json.loads((row or {}).get("doc") or "{}")
+        except Exception:
+            doc = {}
+        if not isinstance(doc, dict):
+            doc = {}
+        pinned = []
+        values = doc.get("pinned")
+        for value in values if isinstance(values, list) else []:
+            text = str(value or "").strip().lower()
+            if 0 < len(text) <= 161 and text.count("/") <= 1 \
+                    and text not in pinned:
+                pinned.append(text)
+            if len(pinned) >= 10:
+                break
+        try:
+            forks = int(doc.get("forks", 3))
+        except (TypeError, ValueError):
+            forks = 3
+        return {"pinned": pinned, "forks": max(0, min(50, forks))}
+
     async def _instance_legal_route(self, request, url):
         if method_name(request) not in ("GET", "HEAD"):
             return None
@@ -2043,6 +2068,7 @@ class Default:
                 "repoAddresses": await self._repo_addresses_doc(),
                 "directory": await self._instance_directory_links(),
                 "world": await self._instance_world_public(),
+                "sidebar": await self._instance_sidebar_setting(),
             }, cache_control="public, max-age=60")
         if instance_branded(self.env) and url.path.rstrip("/") == \
                 "/api/world/neighbour-scene" and \
@@ -3320,6 +3346,13 @@ class Default:
         # One tool-use turn for the desktop's Workers AI coding agent.
         if url.path in ("/api/ai/agent", "/api/ai/agent/"):
             return await ai_agent_handler(self.env, request)
+
+        ai_review_match = AI_REVIEW_RE.match(url.path)
+        if ai_review_match:
+            return await ai_review_handler(
+                self.env, request, ai_review_match.group(1) or "pull",
+                ai_review_match.group(2) or "", ai_review_match.group(3) or "",
+                ai_review_match.group(4) or "")
 
         # Self-serve plan surface (issue #488): usage meters + trial register.
         plans_match = PLAN_SERVICES_RE.match(url.path)

@@ -52,6 +52,23 @@ DIAGNOSTICS = (ROOT / "src/MainWindowDiagnostics.cpp").read_text(
     encoding="utf-8")
 
 
+UNIT_BLIND_POINT_SIZE = re.compile(
+    r"setPointSizeF\(\s*[\w.()>-]*pointSizeF\(\)\s*([*+/]|\))")
+
+
+def unit_blind_point_sizes() -> list[str]:
+    hits = []
+    for path in sorted((ROOT / "src").glob("*.[ch]*")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines, 1):
+            if not UNIT_BLIND_POINT_SIZE.search(line):
+                continue
+            if number > 1 and "pointSizeF() > 0" in lines[number - 2]:
+                continue
+            hits.append(f"{path.name}:{number}: {line.strip()}")
+    return hits
+
+
 def between(source: str, start: str, end: str) -> str:
     begin = source.index(start)
     finish = source.index(end, begin)
@@ -59,6 +76,9 @@ def between(source: str, start: str, end: str) -> str:
 
 
 def main() -> None:
+    hits = unit_blind_point_sizes()
+    assert not hits, "\n".join(hits)
+
     push_hook = between(
         ACTION,
         "void MainWindow::ensurePushHook(",

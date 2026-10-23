@@ -94,7 +94,8 @@ SESSION_NAMES = [
     "_account_session_lookup_memo", "_account_session_record", "_is_admin",
     "_is_admin_flag",
     "_D1_WATCH_TABLES_RE", "_D1_WATCH_WRITE_RE", "_D1_WATCH_SESSION_TABLES",
-    "_D1_WATCH_SESSION_TOUCH", "_D1_WATCH_GENERATIONS", "_d1_write_watch",
+    "_D1_WATCH_SESSION_TOUCH", "_D1_WATCH_GENERATIONS", "_D1_WATCH_NODE_TOUCH",
+    "_d1_write_watch",
 ]
 
 
@@ -300,6 +301,25 @@ def test_contribution_writes_move_the_view_generation():
     watch("DELETE FROM profile_contribution_days WHERE source_repo_bi=?")
     watch("UPDATE repositories SET is_private=1 WHERE key_bi=?")
     assert generations["contributions"] == 3
+    assert generations["repositories"] == 1
+
+
+def test_endpoint_and_signing_key_writes_move_their_generations():
+    harness = SessionHarness()
+    watch = harness.scope["_d1_write_watch"]
+    generations = harness.scope["_D1_WATCH_GENERATIONS"]
+    watch("SELECT node_name FROM mirror_https_endpoints")
+    watch("SELECT data FROM nodes WHERE node_bi=?")
+    watch("UPDATE runner_nodes SET last_seen=? WHERE id=?")
+    watch("UPDATE nodes SET last_seen=? WHERE node_bi=?")
+    assert generations["mirror_https_endpoints"] == 0
+    assert generations["signing_keys"] == 0
+    watch("UPDATE mirror_https_endpoints SET healthy=0 WHERE node_name=?")
+    assert generations["mirror_https_endpoints"] == 1
+    watch("INSERT INTO nodes (node_bi, user_bi, pubkey) VALUES (?,?,?)")
+    watch("UPDATE account_devices SET revoked_at=? WHERE device_bi=?")
+    watch("DELETE FROM users WHERE user_bi=?")
+    assert generations["signing_keys"] == 3
 
 
 LOOKUP_NAMES = [

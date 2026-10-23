@@ -16,7 +16,7 @@ WORLD_FIRST = tomllib.loads((REPO / "world/wrangler.toml").read_text())["assets"
 @pytest.mark.parametrize("path, expected", [
     ("/", True), ("/api", True), ("/api/v1/x", True), ("/@alice", True),
     ("/%40alice", True), ("/alice/repo", True), ("/alice/repo/tree/main/a", True),
-    ("/dashboard/repos", False), ("/dashboard/chat/", False), ("/dashboard/other", True),
+    ("/dashboard/repos", False), ("/dashboard/chat/", True), ("/dashboard/network/", False), ("/dashboard/other", True),
     ("/dashboard/js/app.js", False), ("/assets/logo.png", False), ("/login/", False),
     ("/favicon/x.ico", False), ("/login.html", True), ("/chat.js", False),
     ("/dashboard-plugins/p/x.js", False), ("/.well-known/webfinger", True),

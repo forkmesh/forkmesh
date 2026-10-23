@@ -10,13 +10,35 @@
     {
      "title": "Projects",
      "items": [
-      "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar."
+      "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.",
+      "Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.",
+      "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.",
+      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows."
+     ]
+    },
+    {
+     "title": "Chat",
+     "items": [
+      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."
      ]
     },
     {
      "title": "Agents",
      "items": [
       "The composer hides its character count until a prompt nears the limit, then shows it in orange and red."
+     ]
+    },
+    {
+     "title": "World",
+     "items": [
+      "Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve.",
+      "Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside."
+     ]
+    },
+    {
+     "title": "iPhone",
+     "items": [
+      "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock."
      ]
     },
     {
@@ -42,7 +64,16 @@
     {
      "title": "Desktop",
      "items": [
-      "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed."
+      "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.",
+      "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings."
+     ]
+    },
+    {
+     "title": "Other improvements",
+     "items": [
+      "Administrators can turn on an automated AI review that posts a first-pass review comment on pull requests, using Cloudflare Workers AI.",
+      "Bots and system accounts such as Actions, runners, the git node and the AI reviewer now have their own avatars.",
+      "A mention or reply notification now opens the exact comment, and Home's repository rows show their fork count."
      ]
     }
    ]
@@ -151,6 +182,7 @@
       "A run waiting for your approval now says why it is held, such as a first-time contributor's pull request, instead of only saying the workflow has no changes.",
       "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back.",
       "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has.",
+      "The desktop debug bar shows log icons only for the log types you record, draws every chart at one small size with a live detail card when you hover it, and overlaps the status dots without captions, as on the phone.",
       "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room.",
       "The prompt composer keeps its add button, files tasks from the model menu, and has a send to: button that posts the prompt to the chat channel you have open, such as #general; with the Chat page open, Enter sends there.",
       "Pick a theme straight from the view menu at the top right, try the new Halloween theme, and drag the timers clock to the left, middle or right of the top bar."
