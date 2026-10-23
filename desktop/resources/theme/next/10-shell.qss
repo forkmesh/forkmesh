@@ -125,7 +125,7 @@ QPushButton#sidebarWorkspace:pressed, QPushButton#sidebarAccount:pressed {
     background-color: @surfaceRaised;
 }
 #sidebarHeader QLabel, #sidebarFooter QLabel { background: transparent; border: none; }
-QLabel#sidebarTitle { color: @fg; font-size: 14px; font-weight: 600; }
+QLabel#sidebarTitle { color: @fg; font-size: 13px; font-weight: 600; }
 #sidebarFooter QLabel#sidebarTitle { font-weight: 500; }
 QLabel#sidebarSubtitle { color: @fgMuted; font-size: 11px; }
 QPushButton#sidebarNewSession {
@@ -134,11 +134,28 @@ QPushButton#sidebarNewSession {
 }
 QPushButton#sidebarNewSession:hover { background-color: @surfaceRaised; }
 QLabel#sidebarNewSessionText { color: @fg; font-size: 13px; font-weight: 500; }
-QLabel#sidebarKbd {
-    color: @fgMuted; font-size: 10px; background-color: @surfaceRaised;
-    border: 1px solid @border; border-radius: 4px; min-width: 14px; padding: 0px 3px;
-    min-height: 16px; max-height: 16px;
+QLabel#sidebarKbd, QLabel#topSearchKbd {
+    color: @fgMuted; font-size: 10px; font-weight: 500; background-color: @surface;
+    border: 1px solid @border; border-radius: 4px; min-width: 12px; padding: 0px 3px;
+    min-height: 18px; max-height: 18px;
 }
+#globalSearch { font-size: 13px; }
+
+QMenu#workspaceMenu { border-radius: 12px; padding: 4px; }
+QMenu#workspaceMenu::separator { height: 1px; background: @border; margin: 4px 0px; }
+QLabel#workspaceMenuHeading {
+    color: @fgSubtle; font-size: 11px; font-weight: 500; letter-spacing: 1px;
+    padding: 6px 8px 4px 8px; background: transparent;
+}
+QPushButton#workspaceMenuRow {
+    background: transparent; border: none; border-radius: 6px; padding: 0px; text-align: left;
+}
+QPushButton#workspaceMenuRow:hover, QPushButton#workspaceMenuRow:focus {
+    background-color: @surfaceActive;
+}
+QPushButton#workspaceMenuRow QLabel { background: transparent; border: none; }
+QLabel#workspaceMenuRowTitle { color: @fg; font-size: 13px; }
+QLabel#workspaceMenuRowHint { color: @fgMuted; font-size: 12px; }
 
 QLabel#topPageTitle {
     color: @fgMuted; font-size: 13px; font-weight: 500; background: transparent;
@@ -148,11 +165,11 @@ QPushButton[topIconButton="true"] {
     background: transparent; border: none; border-radius: 6px; padding: 0px;
 }
 QPushButton[topIconButton="true"]:hover { background-color: @surfaceRaised; }
-QPushButton#topNodesButton {
+QPushButton[topStatusButton="true"] {
     background: transparent; border: none; border-radius: 6px; color: @fgMuted;
     font-size: 12px; padding: 0px 8px; text-align: left;
 }
-QPushButton#topNodesButton:hover { background-color: @surfaceRaised; color: @fg; }
+QPushButton[topStatusButton="true"]:hover { background-color: @surfaceRaised; color: @fg; }
 #topRightCluster { background: transparent; }
 QPushButton[trafficLight="close"], QPushButton[trafficLight="minimize"],
 QPushButton[trafficLight="zoom"] {
