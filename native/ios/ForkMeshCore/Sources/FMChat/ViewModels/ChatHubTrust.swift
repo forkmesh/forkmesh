@@ -55,6 +55,14 @@ extension ChatHub {
         await direct?.blockDevice(conversation, kid: kid)
     }
 
+    public func approveDevices(_ conversation: String, kids: [String]) async {
+        for kid in kids { await approveDevice(conversation, kid: kid) }
+    }
+
+    public func blockDevices(_ conversation: String, kids: [String]) async {
+        for kid in kids { await blockDevice(conversation, kid: kid) }
+    }
+
     public func safetyNumber(_ conversation: String) -> ChatSafetyNumber? {
         guard DirectMessageFrames.isDirect(conversation) else { return nil }
         return direct?.safetyNumber(conversation)
