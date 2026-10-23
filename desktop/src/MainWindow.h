@@ -287,6 +287,7 @@ using forkmesh::ui::RelaySpeedDot;
 class TerminalWidget;
 class ClaudeIdeBridge;
 class ClaudeStreamSession;
+class ClaudeElicitationDialog;
 class CodexAppServerSession;
 class AgentCapabilityBroker;
 class AgentPermissionController;
@@ -15184,6 +15185,25 @@ private:
                            std::function<void(QString)> completion);
     void applyAgentTitle(int sessionId, const QString &provider,
                          const QString &title);
+    void handleClaudeControlEvent(int sessionId, const QJsonObject &event);
+    void requestClaudeSessionTitle(int sessionId);
+    void applyClaudeSessionTitle(int sessionId, const QString &title, bool renamed);
+    bool setAgentSessionTitle(int sessionId, const QString &title,
+                              const QString &titledBy);
+    void renameAgentSessionInteractive(int sessionId);
+    QString claudeInitialSessionTitle(const AgentSession &session) const;
+    void syncClaudePermissionMode(int sessionId);
+    void showClaudeElicitation(int sessionId, const QJsonObject &event);
+    void answerClaudeElicitation(int sessionId, const QString &key,
+                                 const QString &action, const QJsonObject &content);
+    void closeClaudeElicitation(const QString &key);
+    QWidget *buildAgentSubSessionStrip();
+    void refreshAgentSubSessions();
+    void stopAgentSubSession(int sessionId, const QString &taskId);
+    QHash<QString, QPointer<ClaudeElicitationDialog>> m_claudeElicitations;
+    QWidget *m_agentSubSessionStrip = nullptr;
+    QLabel *m_agentSubSessionHeader = nullptr;
+    QWidget *m_agentSubSessionRows = nullptr;
     QString saveNewAgentPromptImage(const QImage &image);
     QPushButton *m_agentStopButton = nullptr;
     QPushButton *m_agentStartButton = nullptr;
