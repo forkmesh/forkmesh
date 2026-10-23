@@ -1,11 +1,3 @@
-"""A signed pull survives the server's hidden-Unicode cleanup byte for byte.
-
-Regression: the Send page signed a pull whose patch added a test asserting
-that U+2028 / U+2029 never appear in a file. bounded_json_request ran every
-parsed value through hidden_unicode.clean_value, which rewrites both to a
-newline, so the relay hashed a different patch and answered bad_signature.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -17,9 +9,6 @@ from test_event_repo_binding import EV, _Signer
 LS, PS = chr(0x2028), chr(0x2029)
 VS16, ZWSP, RLO, ZWJ = chr(0xFE0F), chr(0x200B), chr(0x202E), chr(0x200D)
 TAG_A = chr(0xE0041)
-# What a real patch can carry: raw separators inside a string literal, an
-# emoji with its presentation selector (also after a space), a ZWJ sequence, a
-# non-BMP character, and the invisible characters the policy strips from prose.
 CODE = (
     'assert "' + LS + '" not in CONTENT and "' + PS + '" not in CONTENT\n'
     "label = '✅ done' + ' " + VS16 + "' + '❤" + VS16 + "'\n"
@@ -46,7 +35,6 @@ class _TextRequest:
 
 
 def _signed_pull(signer, repo="forkmesh/forkmesh"):
-    # Same canonical form as the dashboard's signWebPullContent.
     import hashlib
 
     title = "Pull requests: quick review replies"

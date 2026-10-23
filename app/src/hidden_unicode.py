@@ -160,12 +160,6 @@ _RAW_KEY_PARTS = (
     "sealed",
 )
 _RAW_KEYS = frozenset(("sig", "nonce", "salt", "otp", "pin", "mac", "hmac", "totp"))
-# Signed source text: a pull's patch and commit mbox, a review suggestion's
-# patch and the code lines a comment is anchored to. Each is hashed into its
-# author's signature and replayed with git, so it must reach the verifier byte
-# for byte; a U+2028 in a test file rewritten to a newline broke the signature
-# and would corrupt the patch. Hidden characters in code are a review concern,
-# not something the server may silently rewrite.
 _EXACT_CONTENT_KEYS = frozenset(("patch", "commits", "suggestionpatch", "anchorlines"))
 
 
