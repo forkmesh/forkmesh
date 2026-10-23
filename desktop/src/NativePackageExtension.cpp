@@ -201,4 +201,23 @@ QUrl nativePackageWebPageUrl(const QUrl &base, const QString &path)
     return url;
 }
 
+QUrl nativePackagePublicPageUrl(const QUrl &base, const QString &path)
+{
+    QUrl url = nativePackageWebPageUrl(base, path);
+    if (!url.isValid())
+        return {};
+    static const QStringList officialHosts = {
+        QStringLiteral("app.forkmesh.com"),
+        QStringLiteral("forkmesh.com"),
+        QStringLiteral("www.forkmesh.com"),
+        QStringLiteral("world.forkmesh.com"),
+    };
+    if (officialHosts.contains(url.host().toLower())) {
+        url.setScheme(QStringLiteral("https"));
+        url.setHost(QStringLiteral("forkmesh.com"));
+        url.setPort(-1);
+    }
+    return url;
+}
+
 } // namespace forkmesh::market

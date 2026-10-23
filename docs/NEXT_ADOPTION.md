@@ -63,6 +63,11 @@ deploys to the new set of cores. Run state is in
 `config/fleet/add-core/nN.json`, so a re-run resumes at the failed step.
 Details are in [deploy/README.md](deploy/README.md).
 
+To replace a core in one run, use `add-core --replace nOLD --execute` (the
+desktop's **Replace…** on a core row). It adds the new core, then removes
+`nOLD` and commits both changes on `fleet/add-core-nNEW`
+([deploy/README.md](deploy/README.md#replacing-a-core-node)).
+
 To abandon a new core: keep it out of DNS, `rqlite remove` it from a peer,
 `next_fleet.py destroy nN --yes --execute`, delete its `[[nodes]]` block, and
 re-render the peers with `next_fleet.py roll --steps files,start --execute`.

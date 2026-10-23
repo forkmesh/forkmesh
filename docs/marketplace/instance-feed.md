@@ -20,14 +20,15 @@ change so the Market and the rail never show two packages called Feed.
 | --- | --- |
 | `content/worker/instance_feed.py` | Worker API at `/api/instance-feed`, schema, account data hooks. |
 | `content/web/view.html`, `content/web/page.js` | Dashboard page `/dashboard/instance-feed` (page id `instance-feed`). |
+| `content/www/post.html`, `post.js`, `post.css` | Public post page `forkmesh.com/feed?post=<id>` (`www.page` contribution `public-post`). |
 | `content/desktop/InstanceFeedFeature.{h,cpp}` | Native desktop page (`builtin:instance-feed`, `comment` rail icon). |
 | `content/desktop/tests/test_instance_feed_feature.cpp` | Qt test for the desktop page, run against a stub host. |
 | `tests/test_instance_feed.py` | Worker suite, including install and uninstall through `plugin_data`. |
 
 ## API
 
-All routes need a signed-in session; writes also need a same-origin request
-(or a bearer token). An account without the package installed gets
+All routes but `public/<id>` need a signed-in session; writes also need a
+same-origin request (or a bearer token). An account without the package installed gets
 `{"installed": false}` from `GET /api/instance-feed` and `409
 plugin_not_installed` everywhere else.
 
@@ -36,6 +37,7 @@ plugin_not_installed` everywhere else.
 | `GET /api/instance-feed?before=&limit=&author=` | Timeline, newest first, 20 per page (at most 40). Without `author` it shows top-level posts and boosts; with `author` it shows that person's posts, replies and boosts plus a `profile` summary. `next` is the cursor (`<createdAt>-<id>`) for the following page. |
 | `POST /api/instance-feed/posts` | New post: `text` (1–500 characters), optional `spoiler` (content warning, 100) and `replyTo`. |
 | `GET /api/instance-feed/posts/<id>` | Thread: `ancestors`, `post`, `replies` (depth-first, at most 200). A boost id resolves to its original. |
+| `GET /api/instance-feed/public/<id>` | The same thread with no session and no install check, for the public post page. The viewer-only fields (`boosted`, `favourited`, `mine`, `canDelete`) are left out. |
 | `DELETE /api/instance-feed/posts/<id>` | Delete your own post or boost; instance admins may delete any post. Its favourites and boosts go with it; replies stay and show "Replying to a removed post". |
 | `POST`/`DELETE /api/instance-feed/posts/<id>/favourite` | Favourite or unfavourite. |
 | `POST`/`DELETE /api/instance-feed/posts/<id>/boost` | Boost or undo. A boost is a row with `boost_of` set and no text. |
@@ -77,6 +79,33 @@ the mentioned account) a `plugin_activity` ping linking to
 the package installed, at most five per post, never the poster. Each account
 may post 30 times in ten minutes (`429 posting_too_fast`).
 
+## Public links
+
+Every post can be read without signing in at `forkmesh.com/feed?post=<id>`
+(the instance's own origin on a self-hosted install), added at the user's
+request on 2026-10-23 so a post can be shared outside the dashboard. Posts
+were already readable by anyone who signed up and installed the package, so
+the link does not reveal anything new; the install note and the
+`instance.feed.write` permission now say posts are readable by anyone with the
+link. The page is `noindex`, so search engines do not list posts.
+
+On the dashboard each post has a globe link ("View on the website", new tab)
+and a Copy link button, both using that URL. The page gets the site origin
+from `publicSiteOrigin` in the page API (`10-boot.js`), which names
+forkmesh.com when the dashboard runs on app.forkmesh.com. The public page
+shows the thread (ancestors, the post, replies), keeps a content warning
+collapsed behind Show more, links authors and mentions to `/@name`, and has
+Copy link and Reply in Feed (`/dashboard/instance-feed?post=<id>`).
+
+The desktop, iOS and Android pages have the same two actions and the same
+host rule (`app.forkmesh.com`, `forkmesh.com`, `www.` and `world.forkmesh.com`,
+and the retired Next hosts on the phones, become `https://forkmesh.com`; any
+other instance keeps its own origin). The desktop row shows "View on website"
+and "Copy link" buttons, with the URL from the host's `publicPageUrl`. On the
+phones the action row has no room for two more icons, so one share icon opens
+a menu with View on the website and Copy link, and copying shows "Link
+copied".
+
 ## Page
 
 The page keeps its view in the query string (`?post=<id>` for a thread,
@@ -97,7 +126,9 @@ profile), the same compose box (Ctrl+Enter posts) and the same actions, and
 it styles itself with the app stylesheet's existing object names
 (`issueAvatar`, `issueDivider`, `issueComposerSm`, `ghostButton`,
 `primaryButton`). Rich-text links use `fm-author:<name>` and
-`fm-thread:<id>` internally; `https` links open in the browser.
+`fm-thread:<id>` internally; `https` links open in the browser. Each post has
+"View on website" and "Copy link" (it reads "Copied" for a moment); both are
+hidden when the host gives no `publicPageUrl`.
 
 A native page may only call its own API prefix and organization lifecycle
 paths, so it cannot install the package itself. Installing from the desktop
@@ -135,8 +166,9 @@ reply the thread opens, or reloads if it is the current view. Posts show the
 author, `@name`, relative time, "X boosted" and "Replying to @y" headers, a
 collapsed content warning behind Show more, and text from `InstanceFeed.spans`
 with tappable `https` links (browser) and mentions (profile). Actions are
-reply, boost (active in `accent`), favourite (active in `warning`) and, when
-`canDelete`, delete after a confirmation. Older pages load when the end of the
+reply, boost (active in `accent`), favourite (active in `warning`), the share
+icon (View on the website, Copy link; `InstanceFeed.publicUrl` with the
+account's `gitOrigin`) and, when `canDelete`, delete after a confirmation. Older pages load when the end of the
 list comes into view, or from "Load older posts"; pull down or the refresh
 button reloads. An account without the package sees a note with an "Open in
 Market" button to the package's Market page.
@@ -157,8 +189,9 @@ reply mode ("Replying to @name", prefilled mention). Posts show the author,
 `@name`, relative time, "X boosted" and "Replying to @y" lines, a content
 warning collapsed behind Show more, and text from `InstanceFeed.segments` with
 `https` links (browser) and mentions (profile). Actions are reply, boost
-(active in `accent`), favourite (active in `warning`) and, when `canDelete`,
-delete after a confirmation. Tapping a post pushes its thread and tapping an
+(active in `accent`), favourite (active in `warning`), the share menu (View on
+the website, Copy link; `InstanceFeedModel.publicURL`, from the
+`InstanceFeedAPI` origin) and, when `canDelete`, delete after a confirmation. Tapping a post pushes its thread and tapping an
 author pushes their profile (summary header first); each pushed screen has its
 own model. Older pages load when the end of the list appears or from "Load
 older posts"; pull down or the refresh button reloads. A route with a post id

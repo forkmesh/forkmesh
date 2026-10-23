@@ -90,11 +90,11 @@ the plan. Steps:
 | 7 | join | start; rqlite joins over the mesh; the IDS starts last |
 | 8 | services | daemon, calls, files, start; sync every repository from peers |
 | 9 | activate | deploy the served release, unseal |
-| 10 | repos | wait until every repository is present and synced |
+| 10 | repos | provision the core's node account, then wait until every repository is present and synced |
 | 11 | ids | install the log reader, sign the baseline |
 | 12 | health | node and external health checks |
 | 13 | dns | undrain after probes |
-| 14 | register | confirm DNS release; provision the core's node account |
+| 14 | register | confirm DNS release and the node account |
 | 15 | commit | commit `deploy/fleet.toml` on `fleet/add-core-nN`, then merge it into `main` |
 
 - **rqlite role:** keep an odd number of voters; with three voters a fourth
@@ -102,6 +102,10 @@ the plan. Steps:
 - **DNS:** a newly seen core is held out of DNS until an explicit undrain.
 - **Resume:** state in `config/fleet/add-core/nN.json`; every step is
   idempotent; a failure drains the node and keeps the VM for a retry.
+- **Node account before repos:** without its `fmnext-nN` node account the relay
+  answers the new daemon with HTTP 401, so repositories it learns from the
+  catalog never sync. On 2026-10-23 n5 waited 20 minutes for `kaifdemo/demo`.
+  `repos` registers the account first (idempotent) and nudges a sync.
 - **Snapshots:** only keyless builder images are accepted; cloning a live
   core would copy its keys and Raft state.
 - **Merge:** the commit step merges the branch into `main` itself (see
@@ -120,9 +124,6 @@ peers, deregister DNS names, commit on `fleet/remove-core-nN` and merge it into
 Only the destroy step talks to a cloud provider. Other steps identify the
 node over SSH by its pinned host key and recorded WireGuard public key. State
 is in `config/fleet/remove-core/nN.json`; runs resume.
-
-**Replace a core:** `add-core`, `remove-core <old>`, then
-`--destroy-instance` when sure.
 
 ### Landing the fleet change on main
 
@@ -154,6 +155,34 @@ added or removed): the run records `merge_error` and prints the
 names the pending branch: autodeploy lists `fleet/add-core-nN` branches whose
 core is not in `main`'s file and `fleet/remove-core-nN` branches whose core
 still is (`unmerged_fleet_branches` in `tools/next_autodeploy.py`).
+
+## Replacing a core node
+
+`python3 tools/next_fleet.py add-core --replace nOLD [--region R] [--plan P] --execute`
+(the desktop's **Replace…** on a core row in Network, Hosts) adds a new core
+and then takes `nOLD` out in the same run, so the fleet never drops below
+three cores and there is one fleet commit, which lands on `main` like any
+add or remove.
+
+- The add steps run as usual. A `remove` step before `commit` then runs
+  `remove-core nOLD`: it promotes the new core to a voter if needed, drains,
+  stops and removes `nOLD`, and re-renders the peers.
+- If the `remove` step fails, the new core stays serving and in DNS. A re-run
+  (or **Retry**) resumes the removal from its own state file. Failures before
+  `remove` drain the new core, as in a plain add.
+- `commit` writes one commit on `fleet/add-core-nNEW` with the new block (made a
+  voter if it was promoted), without the `nOLD` block, and with `nOLD` in
+  `[hosted] retired_cores`. The removal's own `fleet/remove-core-nOLD` commit is
+  skipped.
+- The old instance is kept. Delete it later with
+  `remove-core nOLD --destroy-instance --execute` (**Remove…** with the instance
+  box ticked), which resumes the finished removal and runs only `destroy`.
+- `add-core-options --replace nOLD --json` gives the step list and estimate;
+  `add-core-status --json` includes `replaces` and `step_list`.
+
+The manual route still works: `add-core`, then `remove-core <old>`; each
+lands its own commit on `main`.
+The legacy `replace-core nOLD --new nNEW` is the older, partly manual path.
 
 ## Node addresses
 

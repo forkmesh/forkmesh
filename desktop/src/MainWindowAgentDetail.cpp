@@ -691,7 +691,6 @@ void MainWindow::showAgentSession(int sessionId)
         m_agentTranscriptRenderSession != sessionId) {
         ++m_agentTranscriptRenderGeneration;
         m_agentTranscriptRenderSession = -1;
-        m_agentTranscriptRenderEvents.clear();
         if (m_agentTranscript)
             m_agentTranscript->setBulkPopulate(false);
     }
@@ -1091,6 +1090,7 @@ void MainWindow::refreshAgentTranscriptTheme(bool dark)
 {
     for (ScrollJumpButtons *jump : findChildren<ScrollJumpButtons *>())
         jump->setTheme(dark);
+    refreshSessionsPageTheme(dark);
 
     if (!m_agentTranscript)
         return;

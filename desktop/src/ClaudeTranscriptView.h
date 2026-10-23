@@ -227,6 +227,8 @@ private:
     void smoothScrollTo(int value);
     void beginBatchBuild();
     void endBatchBuild();
+    void retireRow(QWidget *row);
+    void deleteRetiredRows();
     void releaseHeldFrame();
     void fadeIn(QWidget *card);
     QString accentFor(const QString &toolName) const;
@@ -384,6 +386,8 @@ private:
     bool m_bulkPopulate = false; // see setBulkPopulate()
     bool m_batchBuildFrozen = false; // see beginBatchBuild()
     bool m_batchThawing = false;
+    QList<QPointer<QWidget>> m_retiredRows;
+    bool m_retiredRowsScheduled = false;
     bool m_holdFrame = false;
     bool m_holdRowsAbove = false;
     QLabel *m_heldFrame = nullptr;

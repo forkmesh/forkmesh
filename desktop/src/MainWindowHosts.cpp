@@ -894,8 +894,12 @@ void MainWindow::updateAddCoreNodeButton()
     const bool running =
         m_addCoreNodeController && m_addCoreNodeController->isRunning();
     m_addCoreNodeButton->setVisible((m_isAdmin && operatorDesktop) || running);
-    m_addCoreNodeButton->setText(running ? QStringLiteral("Adding core node\u2026")
-                                         : QStringLiteral("Add core node"));
+    const QString replacing =
+        running ? m_addCoreNodeController->activeReplaceTarget() : QString();
+    m_addCoreNodeButton->setText(
+        !replacing.isEmpty() ? QStringLiteral("Replacing %1\u2026").arg(replacing)
+        : running            ? QStringLiteral("Adding core node\u2026")
+                             : QStringLiteral("Add core node"));
 }
 
 void MainWindow::ensureAddCoreNodeController()
@@ -918,20 +922,47 @@ void MainWindow::ensureAddCoreNodeController()
                 updateAddCoreNodeButton();
                 refreshFleetNodesTable();
             });
+    connect(m_addCoreNodeController,
+            &forkmesh::fleet::AddCoreNodeController::runChanged, this, [this] {
+                const bool running = m_addCoreNodeController->isRunning();
+                if (running != m_addCoreNodeWasRunning) {
+                    m_addCoreNodeWasRunning = running;
+                    refreshFleetNodesTable();
+                }
+            });
     m_addCoreNodeController->reattach();
 }
 
 void MainWindow::openAddCoreNodeDialog()
 {
+    showAddCoreNodeDialog(QString());
+}
+
+void MainWindow::openReplaceCoreNodeDialog(const QString &name)
+{
+    showAddCoreNodeDialog(name);
+}
+
+void MainWindow::showAddCoreNodeDialog(const QString &replace)
+{
     ensureAddCoreNodeController();
-    if (!m_isAdmin && !m_addCoreNodeController->isRunning())
+    const bool running = m_addCoreNodeController->isRunning();
+    if (!m_isAdmin && !running)
         return;
-    if (m_addCoreNodeDialog) {
+    const bool idle =
+        !running && m_addCoreNodeController->run().state() ==
+                        forkmesh::fleet::AddCoreRun::State::Idle;
+    const bool switching = idle && m_addCoreNodeController->replaceTarget() != replace;
+    if (m_addCoreNodeDialog && !switching) {
         m_addCoreNodeDialog->show();
         m_addCoreNodeDialog->raise();
         m_addCoreNodeDialog->activateWindow();
         return;
     }
+    if (m_addCoreNodeDialog)
+        m_addCoreNodeDialog->close();
+    if (idle)
+        m_addCoreNodeController->setReplaceTarget(replace);
     auto *dialog = new forkmesh::fleet::AddCoreNodeDialog(m_addCoreNodeController, this);
     m_addCoreNodeDialog = dialog;
     dialog->show();
@@ -999,6 +1030,9 @@ void MainWindow::refreshFleetNodesTable()
     }
     const bool removing =
         m_removeCoreNodeController && m_removeCoreNodeController->isRunning();
+    const bool adding = m_addCoreNodeController && m_addCoreNodeController->isRunning();
+    const QString replacingName =
+        adding ? m_addCoreNodeController->activeReplaceTarget() : QString();
     m_fleetNodesTable->setRowCount(nodes.size());
     for (int row = 0; row < nodes.size(); ++row) {
         const forkmesh::corelogs::CoreNode &node = nodes.at(row);
@@ -1011,6 +1045,40 @@ void MainWindow::refreshFleetNodesTable()
         m_fleetNodesTable->removeCellWidget(row, 5);
         const bool runningHere =
             removing && m_removeCoreNodeController->runName() == node.name;
+        const bool replacingHere = adding && replacingName == node.name;
+        QWidget *actions = nullptr;
+        QHBoxLayout *actionsRow = nullptr;
+        if (forkmesh::fleet::isRemovableCoreName(node.name) &&
+            (canRemove || runningHere || replacingHere)) {
+            actions = new QWidget;
+            actionsRow = new QHBoxLayout(actions);
+            actionsRow->setContentsMargins(0, 0, 0, 0);
+            actionsRow->setSpacing(4);
+            auto *replaceBtn = new QPushButton(replacingHere ? QStringLiteral("Replacing\u2026")
+                                                             : QStringLiteral("Replace\u2026"));
+            replaceBtn->setObjectName(QStringLiteral("fleetNodeReplaceButton"));
+            replaceBtn->setProperty("buttonSize", "sm");
+            replaceBtn->setCursor(Qt::PointingHandCursor);
+            setOcticon(replaceBtn, QStringLiteral("sync"), 12);
+            const bool otherBusy = (adding && !replacingHere) || removing;
+            replaceBtn->setEnabled(replacingHere || (canRemove && !otherBusy));
+            replaceBtn->setToolTip(
+                replacingHere
+                    ? QStringLiteral("Show the running replacement of %1.").arg(node.name)
+                : otherBusy
+                    ? QStringLiteral("A core is being added or removed; one change at a time.")
+                    : QStringLiteral("Create a new core, join it to the fleet and put it in "
+                                     "DNS, then take %1 out in the same run (its instance "
+                                     "is kept). One fleet.toml branch to merge.")
+                          .arg(node.name));
+            const QString replaceName = node.name;
+            connect(replaceBtn, &QPushButton::clicked, this, [this, replaceName] {
+                QTimer::singleShot(0, this, [this, replaceName] {
+                    openReplaceCoreNodeDialog(replaceName);
+                });
+            });
+            actionsRow->addWidget(replaceBtn);
+        }
         if (forkmesh::fleet::isRemovableCoreName(node.name) && (canRemove || runningHere)) {
             auto *removeBtn = new QPushButton(
                 runningHere ? QStringLiteral("Removing\u2026") : QStringLiteral("Remove\u2026"));
@@ -1020,10 +1088,12 @@ void MainWindow::refreshFleetNodesTable()
             setOcticon(removeBtn, QStringLiteral("trash"), 12);
             const QString blocker =
                 forkmesh::fleet::coreCountBlocker(node.name, coreCount);
-            const bool otherRunning = removing && !runningHere;
+            const bool otherRunning = (removing && !runningHere) || adding;
             removeBtn->setEnabled(runningHere || (blocker.isEmpty() && !otherRunning));
             removeBtn->setToolTip(
                 runningHere ? QStringLiteral("Show the running removal of %1.").arg(node.name)
+                : adding
+                    ? QStringLiteral("A core is being added or replaced; one change at a time.")
                 : otherRunning
                     ? QStringLiteral("Another core is being removed; one removal at a time.")
                 : !blocker.isEmpty()
@@ -1036,8 +1106,10 @@ void MainWindow::refreshFleetNodesTable()
             connect(removeBtn, &QPushButton::clicked, this, [this, name] {
                 QTimer::singleShot(0, this, [this, name] { openRemoveCoreNodeDialog(name); });
             });
-            m_fleetNodesTable->setCellWidget(row, 5, removeBtn);
+            actionsRow->addWidget(removeBtn);
         }
+        if (actions)
+            m_fleetNodesTable->setCellWidget(row, 5, actions);
         if (!core)
             continue;
         if (!m_networkAccess)

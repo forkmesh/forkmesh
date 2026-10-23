@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Community",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "summary": "A Mastodon-style timeline of short posts from the people on this ForkMesh instance, with replies, favourites, boosts, content warnings and profiles.",
   "screenshots": [
     {
@@ -31,6 +31,9 @@
     "worker": "content/worker/instance_feed.py",
     "dashboard-view": "content/web/view.html",
     "dashboard-script": "content/web/page.js",
+    "www-page": "content/www/post.html",
+    "www-script": "content/www/post.js",
+    "www-style": "content/www/post.css",
     "settings": "builtin:package"
   },
   "contributions": [
@@ -44,6 +47,16 @@
         "script": "dashboard-script",
         "navigation": { "label": "Feed", "icon": "messages-square", "order": 47 }
       }
+    },
+    {
+      "id": "public-post",
+      "socket": "www.page",
+      "entrypoint": "www-page",
+      "config": {
+        "route": "/feed",
+        "title": "Feed post",
+        "assets": ["www-script", "www-style"]
+      }
     }
   ],
   "permissions": [
@@ -54,7 +67,7 @@
     },
     {
       "id": "instance.feed.write",
-      "label": "Publish, reply to, favourite, boost and delete your own posts, visible to everyone on this instance who uses the feed",
+      "label": "Publish, reply to, favourite, boost and delete your own posts, readable by this instance and by anyone with the link",
       "risk": "sensitive"
     },
     {

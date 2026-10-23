@@ -147,7 +147,10 @@ for members with IPv6).
   cores or three healthy voters; a non-voter is promoted first. The removed
   core is listed in `[hosted] retired_cores` so repositories its node account
   owns still take pushes ([CORE_PUSH.md](CORE_PUSH.md)).
-- **Replace:** add one, then remove the old one.
+- **Replace:** `next_fleet.py add-core --replace nOLD --execute` or the
+  desktop's **Replace…** on a core row. One run adds the new core, removes the
+  old one (its instance is kept) and commits both on `fleet/add-core-nNEW`
+  ([deploy/README.md](deploy/README.md#replacing-a-core-node)).
 - **IPv6:** drain, `next_fleet.py enable-ipv6 nN --reboot --execute`,
   `fleet-toml --execute`, `next_dns.py ensure --execute`, undrain.
 

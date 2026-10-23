@@ -150,6 +150,23 @@ final class InstanceFeedTests: XCTestCase {
         XCTAssertFalse(InstanceFeed.validAuthor("-ada"))
     }
 
+    func testPublicLinksNameTheWebsite() {
+        XCTAssertEqual(InstanceFeed.publicURL(postId: a, origin: "https://app.forkmesh.com")?.absoluteString,
+                       "https://forkmesh.com/feed?post=" + a)
+        XCTAssertEqual(InstanceFeed.publicURL(postId: a, origin: "https://world.forkmesh.com/")?.absoluteString,
+                       "https://forkmesh.com/feed?post=" + a)
+        XCTAssertEqual(InstanceFeed.publicURL(postId: a, origin: "https://feed.example.org")?.absoluteString,
+                       "https://feed.example.org/feed?post=" + a)
+        XCTAssertEqual(InstanceFeed.publicURL(postId: a, origin: "http://localhost:8787")?.absoluteString,
+                       "http://localhost:8787/feed?post=" + a)
+        XCTAssertEqual(InstanceFeed.publicURL(postId: a, origin: "")?.absoluteString, "https://forkmesh.com/feed?post=" + a)
+        XCTAssertNil(InstanceFeed.publicURL(postId: "nope", origin: "https://app.forkmesh.com"))
+        let model = InstanceFeedModel(api: InstanceFeedAPI(call: FakePackageApi().call, origin: "https://app.forkmesh.com"))
+        XCTAssertEqual(model.publicURL(InstanceFeedPost(post(b))!)?.absoluteString, "https://forkmesh.com/feed?post=" + b)
+        model.linkCopied()
+        XCTAssertEqual(model.notice?.message, "Link copied")
+    }
+
     func testUserFacingNamesSayFeed() {
         XCTAssertEqual(InstanceFeedModel.title, "Feed")
         XCTAssertEqual(InstanceFeedModel.notInstalledTitle, "Install Feed")

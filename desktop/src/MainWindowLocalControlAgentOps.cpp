@@ -916,6 +916,8 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
         const QString branch = session->branchName;
         const QString base = agentMergeBase(*session);
         const QString localPath = m_repositories.at(repoIndex).localPath;
+        const bool setAside = params.value(QStringLiteral("setAside")).toBool();
+        const bool offerSetAside = params.value(QStringLiteral("offerSetAside")).toBool();
         runOffThread<MergeCheck>(
             [localPath, base, branch] {
                 MergeCheck check;
@@ -941,7 +943,8 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
                     check.error = QStringLiteral("conflict_check_unavailable");
                 return check;
             },
-            [this, connectionId, requestId, sessionId, branch, audit](MergeCheck check) {
+            [this, connectionId, requestId, sessionId, branch, audit, setAside,
+             offerSetAside](MergeCheck check) {
                 AgentOpsState *st = agentOpsState(this);
                 st->mergesInFlight.remove(sessionId);
                 if (!m_localControl)
@@ -958,7 +961,9 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
                     return;
                 }
                 const QString path = m_repositories.at(ri).localPath;
-                audit(QStringLiteral("Merging and cleaning up agent %1 (%2)")
+                audit((setAside ? QStringLiteral("Merging and cleaning up agent %1 (%2), "
+                                                 "setting aside overlapping uncommitted changes")
+                                : QStringLiteral("Merging and cleaning up agent %1 (%2)"))
                           .arg(sessionId)
                           .arg(branch));
                 if (!bindRepoDetailToRepo(ri)) {
@@ -972,7 +977,7 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
                     branch, worktreePathForBranch(path, branch, WorktreeLookup::Any),
                     true,
                     [this, connectionId, requestId, sessionId, branch, path,
-                     into = check.into, noticesBefore](bool merged) {
+                     into = check.into, noticesBefore, offerSetAside](bool merged) {
                         if (!m_localControl)
                             return;
                         if (!merged) {
@@ -980,7 +985,9 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
                                 connectionId, requestId,
                                 m_worktreeMergeConflicted
                                     ? QStringLiteral("conflicts")
-                                    : QStringLiteral("merge_failed"),
+                                    : (offerSetAside && m_worktreeMergeCanSetAside
+                                           ? QStringLiteral("checkout_dirty")
+                                           : QStringLiteral("merge_failed")),
                                 m_operationNoticeSerial != noticesBefore
                                     ? m_lastOperationNotice
                                     : QString());
@@ -991,19 +998,21 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
                             [path, into, branch] {
                                 return readLandedMergeStats(path, into, branch);
                             },
-                            [this, connectionId, requestId, sessionId,
-                             branch](agentops::MergeStats stats) {
+                            [this, connectionId, requestId, sessionId, branch,
+                             setAsideNote = m_worktreeMergeSetAsideNote](agentops::MergeStats stats) {
                                 if (!m_localControl)
                                     return;
-                                m_localControl->respond(
-                                    connectionId, requestId,
-                                    {{QStringLiteral("id"), sessionId},
-                                     {QStringLiteral("branch"), branch},
-                                     {QStringLiteral("merged"), true},
-                                     {QStringLiteral("stats"), agentops::mergeStatsJson(stats)}});
+                                QJsonObject reply{
+                                    {QStringLiteral("id"), sessionId},
+                                    {QStringLiteral("branch"), branch},
+                                    {QStringLiteral("merged"), true},
+                                    {QStringLiteral("stats"), agentops::mergeStatsJson(stats)}};
+                                if (!setAsideNote.isEmpty())
+                                    reply.insert(QStringLiteral("setAside"), setAsideNote);
+                                m_localControl->respond(connectionId, requestId, reply);
                             });
                     },
-                    true);
+                    true, setAside);
             });
         return;
     }
