@@ -1732,8 +1732,11 @@ void MainWindow::completeAgentSessionWhenSubprocessesExit(int sessionId)
 void MainWindow::trackAgentCliTask(int sessionId, const QJsonObject &event)
 {
     forkmesh::agentclitasks::Ledger &ledger = m_agentCliTasks[sessionId];
+    const int before = ledger.openBackground();
     const forkmesh::agentclitasks::Change change = ledger.apply(event);
     const bool settled = ledger.openBackground() == 0;
+    if (ledger.openBackground() != before)
+        notifyLocalControlAgentsChanged();
     if (ledger.isEmpty())
         m_agentCliTasks.remove(sessionId);
     if (change != forkmesh::agentclitasks::Change::Closed || !settled ||

@@ -230,8 +230,57 @@ data class CrmActivity(
     val providerUrl: String = "",
     val text: String = "",
     val html: String = "",
+    val automated: Boolean = false,
+    val opens: Int = 0,
+    val clicks: Int = 0,
+    val readSeconds: Int = 0,
+    val scrollDepth: Int = 0,
+    val slideCount: Int = 0,
+    val slideReached: Int = 0,
+    val slideTitle: String = "",
+    val mailClient: String = "",
+    val readingReported: String = "",
 ) {
     val at: Long get() = if (sentAt > 0) sentAt else createdAt
+
+    val readLabel: String
+        get() = when {
+            readSeconds <= 0 -> ""
+            readSeconds >= 60 -> "${readSeconds / 60} min+"
+            else -> "${readSeconds}s+"
+        }
+
+    val scrollLabel: String
+        get() = when {
+            scrollDepth <= 0 -> ""
+            scrollDepth >= 100 -> "to the end"
+            else -> "$scrollDepth%"
+        }
+
+    val reachLabel: String
+        get() {
+            if (slideCount <= 0 || slideReached <= 0) return if (scrollLabel.isEmpty()) "" else "scrolled $scrollLabel"
+            if (slideReached >= slideCount) return "read all $slideCount slides"
+            return "reached slide $slideReached/$slideCount" + if (slideTitle.isEmpty()) "" else " · $slideTitle"
+        }
+
+    val silentClient: Boolean get() = readingReported == "no" && mailClient.isNotEmpty()
+
+    val engagementLine: String
+        get() {
+            val client = when {
+                silentClient && readSeconds == 0 && opens > 0 -> "$mailClient doesn't report read time"
+                readSeconds > 0 || scrollDepth > 0 -> mailClient
+                else -> ""
+            }
+            return listOf(
+                if (opens > 0) "$opens open${if (opens == 1) "" else "s"}" else "",
+                if (clicks > 0) "$clicks click${if (clicks == 1) "" else "s"}" else "",
+                if (readLabel.isEmpty()) "" else "read $readLabel",
+                reachLabel,
+                client,
+            ).filter { it.isNotEmpty() }.joinToString(" · ")
+        }
     val failed: Boolean get() = status in listOf("failed", "reject", "bounce", "soft bounce", "suspension")
     val incoming: Boolean get() = direction == "inbound" || direction == "received"
     val engaged: Boolean get() = status == "open" || status == "click"
@@ -249,7 +298,19 @@ data class CrmActivity(
             json.str("to"), json.str("subject"), json.str("provider"), json.str("direction"), json.str("error"),
             json.long("createdAt"), json.long("sentAt"), json.str("externalId"), json.str("fromEmail"), json.str("fromName"),
             json.str("providerUrl"), json.str("text"), json.str("html"),
+            automated = json.bool("automated"),
+            opens = count(json, "opens"),
+            clicks = count(json, "clicks"),
+            readSeconds = count(json, "readSeconds"),
+            scrollDepth = count(json, "scrollDepth").coerceAtMost(100),
+            slideCount = count(json, "slideCount"),
+            slideReached = minOf(count(json, "slideCount"), count(json, "slideReached")),
+            slideTitle = json.str("slideTitle"),
+            mailClient = json.str("mailClient"),
+            readingReported = json.str("readingReported"),
         )
+
+        private fun count(json: JsonMap, key: String): Int = json.long(key).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
     }
 }
 

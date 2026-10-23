@@ -79,6 +79,7 @@
 #include "SavedSearchStore.h"
 #include "SecurityAlarmState.h"
 #include "ClaudeSessionScan.h"
+#include "ClaudeSessionImport.h"
 #include "MachineAgentScan.h"
 #include "ClaudePeerMessaging.h"
 #include "TerminalHandoff.h"
@@ -2282,6 +2283,8 @@ public:
     // without waiting for it.
     bool testAddTimer(const QString &request, const QString &kind = QString());
     QStringList testTimerChipTexts() const;
+    QString testTimersClockSlot() const;
+    void testDropTimersClock(qreal fraction);
     bool testTimerCommand(const QString &labelPrefix, const QString &command);
     void testAdvanceTimers(qint64 milliseconds);
     // The URL and JSON body sendTimerPing() would POST for an expiry, or an
@@ -4356,6 +4359,7 @@ private:
     void refreshPackageMarketScores();
     void reportPackageInstallCounts(bool throttled = false);
     QString packageStatsRunId() const;
+    QList<QPair<QString, QString>> appThemeChoices() const;
     void populateAppThemeCombo(QComboBox *combo) const;
     void refreshAppThemeChoice();
     void openLedger();
@@ -4369,6 +4373,13 @@ private:
     void detachTimersPackage();
     void refreshTimersNavStrip();
     void showTimersClockMenu();
+    void installTimersClockSlots(QWidget *chrome, QBoxLayout *left,
+                                 QBoxLayout *center, QBoxLayout *right,
+                                 QWidget *rightBefore);
+    QString timersClockPlacement() const;
+    void setTimersClockPlacement(const QString &placement);
+    void dropTimersClock(const QPoint &globalPos);
+    void addTimersClockPlacementActions(QMenu *menu);
     void showTimerChipMenu(const QString &id, const QPoint &globalPos);
     bool addTimer(const QString &request, forkmesh::timers::TimerKind kind);
     // A countdown named `label` that runs out at `resetAtMs` (epoch ms), for
@@ -4984,6 +4995,8 @@ private:
                                  const QString &prefillDetails,
                                  std::function<void()> onCreated);
     void createQuickAddOrganizationTask();
+    void sendQuickAddToChannel();
+    void refreshQuickAddSendToChannelButton();
     QStringList organizationTaskMemberNames() const;
     QString organizationTaskActorName() const;
     void refreshQuickAddTaskAssignees();
@@ -7268,7 +7281,6 @@ private:
     void schedulePromptChatPreview();
     int promptChatTargetSessionId() const;
     QString promptChatRoom() const;
-    bool sendPromptToChatRoom(const QString &text);
     void refreshInstanceTheme();
     void applyInstanceThemeChoice(bool enabled);
     bool quickAddShouldFollowUpAgent() const;
@@ -10628,6 +10640,7 @@ private:
     QString privateChannelsSettingsKey() const;
     void ensureTeamRoom();
     void sendCurrentMessage();
+    bool sendChatText(const QString &conversation, const QString &text);
     void maybeAskForkbot(const QString &conversation, const QString &text,
                          const QString &threadRootId = QString());
     void onComposerEdited(const QString &text);
@@ -11055,6 +11068,12 @@ private:
     QWidget *m_timersNavStrip = nullptr;
     QHBoxLayout *m_timersChipRow = nullptr;
     QPushButton *m_timersClockButton = nullptr;
+    QPointer<QWidget> m_timersChromeBar;
+    struct TimersClockSlot {
+        QBoxLayout *row = nullptr;
+        QPointer<QWidget> before;
+    };
+    QHash<QString, TimersClockSlot> m_timersClockSlots;
     QTimer *m_timersTick = nullptr;
     // Only the timer strip reads this; window tests move it to watch a
     // countdown run out without waiting for it.
@@ -12567,7 +12586,7 @@ private:
     QComboBox *m_quickAddSpeedSelector = nullptr;
     QCheckBox *m_quickAddCreatePr = nullptr;    // request PR from quick-add agent
     QPushButton *m_quickAddSendToAgentButton = nullptr;
-    QPushButton *m_quickAddGenieButton = nullptr;
+    QPushButton *m_quickAddSendToChannelButton = nullptr;
     QPushButton *m_quickAddSendButton = nullptr;
     QPushButton *m_quickAddImageButton = nullptr;
     QStringList m_quickAddImages;               // image paths queued for next send
@@ -14690,6 +14709,8 @@ private:
         QString sessionStrength;
         QStringList runAccountEnv;
         forkmesh::agentguard::Config guardrails;
+        QString claudeImportPath;
+        QString claudeConfigDir;
     };
     forkmesh::agentguard::Config cliTranscriptGuardrails(
         const AgentSession &session, const QString &repoPath,
@@ -15060,6 +15081,19 @@ private:
     int m_nextExternalTempId = kExternalIdBase;
     bool m_externalClaudeScanInFlight = false;
     quint64 m_externalClaudeScanGeneration = 0;
+    bool m_claudeImportSyncInFlight = false;
+    QSet<QString> m_claudeImportsInFlight;
+    QPushButton *m_agentImportClaudeButton = nullptr;
+    void showClaudeSessionImportDialog();
+    void importClaudeSessions(const QList<ExternalClaudeSession> &sessions,
+                              const QString &followUp = QString());
+    void sendPromptToExternalClaudeSession(int sessionId, const QString &prompt);
+    int createImportedClaudeAgent(const ExternalClaudeSession &ext,
+                                  const ClaudeImportBatch &batch);
+    void appendImportedClaudeEvents(int sessionId, const ClaudeImportBatch &batch,
+                                    const QString &title);
+    void syncImportedClaudeSessions();
+    QHash<QString, int> importedClaudeSessionAgents() const;
     void scanExternalClaudeSessions();
     void applyExternalClaudeScan();
     void onExternalClaudeTick();

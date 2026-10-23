@@ -1,5 +1,7 @@
 #include "PullBadgeWidget.h"
 
+#include "FontSizing.h"
+
 #include <QEvent>
 #include <QFontMetrics>
 #include <QHelpEvent>
@@ -151,11 +153,9 @@ void PullBadgeWidget::paintEvent(QPaintEvent *)
 
     QFont titleFont = font();
     titleFont.setBold(true);
-    titleFont.setPointSizeF(font().pointSizeF() + 3);
-    QFont statFont = titleFont;
-    statFont.setPointSizeF(font().pointSizeF() + 2);
-    QFont smallFont = font();
-    smallFont.setPointSizeF(qMax(7.0, font().pointSizeF() - 1.5));
+    const QFont statFont = forkmesh::resizedFont(titleFont, 2);
+    titleFont = forkmesh::resizedFont(titleFont, 3);
+    const QFont smallFont = forkmesh::resizedFont(font(), -1.5);
 
     const QFontMetrics statFm(statFont);
     const QFontMetrics smallFm(smallFont);

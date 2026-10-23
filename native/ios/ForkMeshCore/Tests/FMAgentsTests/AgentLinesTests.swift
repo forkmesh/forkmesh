@@ -148,6 +148,7 @@ final class AgentLinesTests: XCTestCase {
             "id": .int(7), "repositoryOwner": .string("forkmesh"), "repositoryName": .string("forkmesh"),
             "status": .string("running"), "provider": .string("claude-code"), "model": .string("claude-opus-5-5"),
             "branchName": .string("agent/7"), "worktree": .bool(true), "priority": .int(12),
+            "backgroundTasks": .int(2),
             "diffStats": .object([
                 "files": .int(4), "ahead": .int(2), "behind": .int(0), "added": .int(30), "removed": .int(5),
             ]),
@@ -169,7 +170,11 @@ final class AgentLinesTests: XCTestCase {
         XCTAssertEqual(line.linesAdded, 30)
         XCTAssertEqual(line.linesRemoved, 5)
         XCTAssertEqual(line.priority, 12)
+        XCTAssertEqual(line.backgroundTasks, 2)
+        XCTAssertTrue(line.accessibilitySummary.contains("2 background tasks"))
         XCTAssertEqual(line.thumbnail?.cacheKey, "desktop:7:0123456789abcdef0123456789abcdef")
+        let quiet = LocalAgentRow.fromJSON(["id": .int(8), "status": .string("done")])
+        XCTAssertEqual(AgentLines.line(UnifiedAgentRow.fromDesktop(quiet, transport: .lan, desktop: "studio")).backgroundTasks, 0)
     }
 
     func testEagleDialogIsTheLatestFinishedProseTheAgentSaid() {

@@ -86,6 +86,7 @@ data class LocalAgentRow(
     val prompt: String = "",
     val stoppable: Boolean = false,
     val unread: Boolean? = null,
+    val backgroundTasks: Int = 0,
 ) {
     val repoLabel: String get() = if (owner.isEmpty()) name else "$owner/$name"
 
@@ -107,6 +108,7 @@ data class LocalAgentRow(
             prompt = jsonText(json["prompt"]),
             stoppable = json["stoppable"] == true,
             unread = json["unread"] as? Boolean,
+            backgroundTasks = maxOf((json["backgroundTasks"] as? Number)?.toInt() ?: 0, 0),
         )
     }
 }

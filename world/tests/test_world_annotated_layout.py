@@ -67,17 +67,17 @@ def test_repository_ring_has_no_dome_or_shell():
         assert gone not in SCENE
 
 
-def test_billboards_are_split_across_three_aligned_circles():
+def test_billboards_stand_around_one_ring_grouped_by_section():
     assert "function placeBillboardOnIsland(object, options = {})" in SCENE
-    assert "const relayoutBillboardCircle = (circle) =>" in SCENE
-    assert "circle.objects.push(record);" in SCENE
-    assert "Math.cos(angle) * radius" in SCENE
-    assert "Math.sin(angle) * radius" in SCENE
-    assert "const BILLBOARD_CIRCLE_SPECS = Object.freeze({" in SCENE
-    for circle_id in ("hub", "social", "leaderboards"):
-        assert f"forkmesh-${{spec.id}}-billboard-circle" in SCENE
-        assert f"{circle_id}: Object.freeze({{" in SCENE
-    # Each board names the circle it stands on; none of them share one ring.
+    assert "function relayout() {" in SCENE
+    assert "ring.records.push(record);" in SCENE
+    assert "outX * radius," in SCENE
+    assert "outZ * radius," in SCENE
+    assert "const BILLBOARD_RING = Object.freeze({" in SCENE
+    assert "BILLBOARD_CIRCLE_SPECS" not in SCENE
+    assert 'sections: Object.freeze(["hub", "social", "leaderboards"]),' in SCENE
+    assert 'group.name = "forkmesh-billboard-ring";' in SCENE
+    # Each board names the section of the ring it stands in.
     for object_name, circle_id in (
         ("worldBulletin", "hub"),
         ("worldGeneralChatBoard", "hub"),
@@ -88,7 +88,7 @@ def test_billboards_are_split_across_three_aligned_circles():
         placement = SCENE.split(f"placeBillboardOnIsland({object_name}", 1)
         assert len(placement) == 2, object_name
         assert f'circle: "{circle_id}"' in placement[1][:120], object_name
-    # The blog remains host content; X and Reddit declare the same circle in
+    # The blog remains host content; X and Reddit declare the same section in
     # their portable package modules and are placed through the shared host.
     blog = SCENE.split("placeBillboardOnIsland(blogBanner", 1)
     assert len(blog) == 2

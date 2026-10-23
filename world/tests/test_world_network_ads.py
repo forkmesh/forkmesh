@@ -114,7 +114,7 @@ def test_network_is_asked_only_after_the_community_request_resolved_empty():
 
 
 def test_no_network_ad_request_on_the_boot_path():
-    watch = block(APP, "  startSocialCircleWatch({ refetch = true } = {}) {")
+    watch = block(APP, "  startBillboardWatch(feed, { refetch = true } = {}) {")
     assert "void this.loadSocialWorldData();" in watch
     # The only entry points are the proximity-gated social load and the
     # explicit full refresh, which bootstrap never calls.

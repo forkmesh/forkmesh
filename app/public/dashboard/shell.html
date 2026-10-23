@@ -324,6 +324,14 @@
       .fm-flash-neutral > svg, .fm-flash-neutral > i { color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-flash > .fm-flash-icon-accent { color: rgb(var(--dashboard-primary-rgb)); }
 
+      .fm-merge-status { --fm-merge-status-rgb: var(--dashboard-muted-foreground-rgb); border-color: rgb(var(--fm-merge-status-rgb) / .45); background: rgb(var(--fm-merge-status-rgb) / .1); color: rgb(var(--fm-merge-status-rgb)); font-weight: 600; }
+      .fm-merge-status:hover { background: rgb(var(--fm-merge-status-rgb) / .18); }
+      .fm-merge-status svg, .fm-merge-status i { color: currentColor; }
+      .fm-merge-status .fm-counter { color: currentColor; }
+      .fm-merge-status[data-tone="good"] { --fm-merge-status-rgb: var(--dashboard-success-rgb); }
+      .fm-merge-status[data-tone="warn"], .fm-merge-status[data-tone="pending"] { --fm-merge-status-rgb: var(--dashboard-attention-rgb); }
+      .fm-merge-status[data-tone="bad"] { --fm-merge-status-rgb: var(--dashboard-destructive-rgb); }
+      [data-repo-title-row]:has(~ [data-repo-content-grid] [data-dashboard-repo-tab-panel="pulls"]:not(.hidden) > [data-repo-collection-layout="pulls"][data-record-open="true"] [data-repo-record-detail="pulls"]) { display: none; }
       .fm-merge-box { overflow: hidden; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 8px; background: rgb(var(--dashboard-background-rgb)); font-size: 13px; line-height: 1.5; }
       .fm-merge-row { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 10px; row-gap: 8px; padding: 12px 16px; border-bottom: 1px solid rgb(var(--dashboard-border-rgb)); }
       .fm-merge-row-icon { display: flex; padding-top: 2px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
@@ -3341,6 +3349,10 @@
       @media (pointer: coarse) {
         :where(button, [role="button"], [role="option"], input, select) {
           min-height: 44px;
+        }
+
+        [data-mobile-menu-toggle] {
+          min-width: 44px;
         }
 
         /* Diff viewer on touch screens (issue #722). Every line number is a

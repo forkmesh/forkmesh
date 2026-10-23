@@ -1409,10 +1409,14 @@ void MainWindow::applyTheme(forkmesh::market::PackageRegistry *registry)
         settings.setValue(kThemeSetting, preference);
     }
 
-    if (marketTheme)
+    if (marketTheme) {
         forkmesh::instancetheme::apply({});
-    else
+    } else if (preference == kHalloweenTheme) {
+        const QMap<QString, QString> halloween = Theme::halloweenRoleColors();
+        Theme::setRoleOverrides(halloween, halloween);
+    } else {
         forkmesh::instancetheme::applyStored();
+    }
     bool dark = true;
     QMap<QString, QString> palette;
     QString overlay;

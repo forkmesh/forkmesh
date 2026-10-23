@@ -500,6 +500,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentDetail.cpp
     src/MainWindowAgentLaunch.cpp
     src/MainWindowAgentCliSession.cpp
+    src/MainWindowClaudeImport.cpp
     src/MainWindowAgentEvents.cpp
     src/MainWindowAgentTranscript.cpp
     src/MainWindowAgentLanding.cpp
@@ -722,6 +723,8 @@ set(FORKMESH_APP_SOURCES
     src/TrayMode.cpp
     src/BackgroundMode.h
     src/BackgroundMode.cpp
+    src/DesktopLauncherIcon.h
+    src/DesktopLauncherIcon.cpp
     src/BackgroundSettings.h
     src/BackgroundSettings.cpp
     src/BackgroundRunnerBadge.h
@@ -1134,6 +1137,8 @@ set(FORKMESH_APP_SOURCES
     src/ClaudeTranscriptTools.cpp
     src/ClaudeSessionScan.h
     src/ClaudeSessionScan.cpp
+    src/ClaudeSessionImport.h
+    src/ClaudeSessionImport.cpp
     src/MachineAgentScan.h
     src/MachineAgentScan.cpp
     src/AgentLogText.h
@@ -1677,6 +1682,17 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-font-sizing-tests
+        tests/test_font_sizing.cpp
+        src/FontSizing.h
+    )
+    target_link_libraries(forkmesh-font-sizing-tests PRIVATE Qt6::Gui)
+    target_include_directories(forkmesh-font-sizing-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-font-sizing-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-ui-gallery
         tests/ui_gallery.cpp
         src/Theme.h
@@ -2174,6 +2190,19 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-binary-size-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-binary-size-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-launcher-icon-tests
+        tests/test_desktop_launcher_icon.cpp
+        src/DesktopLauncherIcon.h
+        src/DesktopLauncherIcon.cpp
+    )
+    target_include_directories(forkmesh-launcher-icon-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-launcher-icon-tests PRIVATE Qt6::Gui)
+    if(APPLE)
+        set_target_properties(forkmesh-launcher-icon-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3495,6 +3524,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_claude_session_scan.cpp
         src/ClaudeSessionScan.h
         src/ClaudeSessionScan.cpp
+        src/ClaudeSessionImport.h
+        src/ClaudeSessionImport.cpp
     )
     target_link_libraries(forkmesh-claude-session-scan-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-claude-session-scan-tests PRIVATE src)
@@ -3960,6 +3991,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-project-invite-tests)
     add_test(NAME forkmesh-stats-dashboard-tests
              COMMAND forkmesh-stats-dashboard-tests)
+    add_test(NAME forkmesh-font-sizing-tests
+             COMMAND forkmesh-font-sizing-tests)
+    set_tests_properties(forkmesh-font-sizing-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-fleet-visualizer-tests
              COMMAND forkmesh-fleet-visualizer-tests)
     add_test(NAME forkmesh-tests COMMAND forkmesh-tests)
@@ -3977,6 +4012,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-announcer-tests COMMAND forkmesh-announcer-tests)
     add_test(NAME forkmesh-code-health-tests COMMAND forkmesh-code-health-tests)
     add_test(NAME forkmesh-binary-size-tests COMMAND forkmesh-binary-size-tests)
+    add_test(NAME forkmesh-launcher-icon-tests COMMAND forkmesh-launcher-icon-tests)
     add_test(NAME forkmesh-component-health-board-tests
         COMMAND forkmesh-component-health-board-tests)
     add_test(NAME forkmesh-home-board-tests

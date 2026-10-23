@@ -237,7 +237,11 @@ export async function build({
     "qa-board", "QA board", "Boards & kiosks", worldQaBoard,
   );
   await sceneSlice();
-  placeBillboardOnIsland(worldQaBoard, { circle: "hub", feed: "qa-board" });
+  placeBillboardOnIsland(worldQaBoard, {
+    circle: "hub",
+    feed: "qa-board",
+    cooldownMs: 5_000,
+  });
   return {
     worldQaBoard,
     qaBoardFrame,

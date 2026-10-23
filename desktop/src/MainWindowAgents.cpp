@@ -1519,6 +1519,14 @@ QWidget *MainWindow::buildAgentsTab()
 // concurrency control.
 QWidget *MainWindow::buildAgentListToolBar()
 {
+    m_agentImportClaudeButton = railActionButton(
+        QStringLiteral("download"), QStringLiteral("Import"),
+        "Import Claude Code and Claude Desktop sessions from this repository as "
+        "agents, named after the session and with their whole conversation");
+    m_agentImportClaudeButton->setObjectName("agentImportClaudeButton");
+    connect(m_agentImportClaudeButton, &QPushButton::clicked, this,
+            &MainWindow::showClaudeSessionImportDialog);
+
     m_agentDeleteMergedButton = railActionButton(
         QStringLiteral("trash"), QStringLiteral("Del merged"),
         "Delete the worktree, branch and session of every merged agent");
@@ -1836,6 +1844,7 @@ QWidget *MainWindow::buildAgentListToolBar()
         {m_agentDeleteMergedButton, 7, "trash", "Delete merged"},
         {m_agentUsageButton, 4, "terminal", nullptr},
     };
+    agentToolBar->addPinned(m_agentImportClaudeButton);
     for (const auto &action : listActions)
         agentToolBar->addItem(action.widget, action.rank,
                               QString::fromLatin1(action.icon),
@@ -3199,6 +3208,11 @@ void MainWindow::sendPromptToAgentSession(int sessionId, const QString &prompt)
     // A cloud run has no transport here; its follow-up goes to the relay.
     if (isCloudSession(sessionId)) {
         sendCloudAgentFollowUp(sessionId, prompt);
+        return;
+    }
+    if (isExternalSession(sessionId) && m_externalSurfaced.contains(sessionId)) {
+        if (!prompt.isEmpty())
+            sendPromptToExternalClaudeSession(sessionId, prompt);
         return;
     }
     if (prompt.isEmpty() || sessionId < 0)

@@ -129,6 +129,7 @@ object GenieOutreach {
     const val INVESTOR_WORDS = 180
     const val TIMEOUT = 25.0
     const val CLOUD_TIMEOUT = 90.0
+    const val DESKTOP_TIMEOUT = 300.0
     const val TEMPERATURE = 0.4
     val investorFlowIds: Set<String> = setOf("investors", "investment")
     const val PITCH =
@@ -514,4 +515,15 @@ class GenieOutreachLog(private val store: PrefStore?) {
         last = now
         store?.putDouble(LAST_KEY, now)
     }
+}
+
+object GenieDesktopWriter {
+    fun name(desktop: String): String = if (desktop.isBlank()) "Claude Code or Codex on your desktop" else "Claude Code or Codex on ${desktop.trim()}"
+
+    fun make(desktop: String, request: (String, Map<String, Any?>, Long) -> Map<String, Any?>): GenieOutreachWriter =
+        GenieOutreachWriter(name(desktop), GenieOutreach.DESKTOP_TIMEOUT) { messages ->
+            val prompt = messages.joinToString("\n\n") { it.content }
+            val answer = request("agents.write", mapOf("prompt" to prompt), (GenieOutreach.DESKTOP_TIMEOUT * 1000).toLong())
+            (answer["text"] as? String).orEmpty()
+        }
 }

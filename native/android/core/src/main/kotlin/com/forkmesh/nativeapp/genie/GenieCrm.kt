@@ -77,6 +77,7 @@ class GenieCrm(private val client: PackagesClient, private val sender: () -> Str
                     reply = autoEmail(pick.organization, body)
                 }
             }
+            if (writers.isEmpty() && (code == "ai_unavailable" || code == "draft_unusable")) return GenieAutoSendOutcome.Pause(GenieAutoSend.NO_WRITER)
             val outcome = GenieAutoSend.outcome(reply, pick)
             if (outcome is GenieAutoSendOutcome.Sent) stage(GenieAutoSendStage.Sent)
             outcome
