@@ -1398,6 +1398,7 @@ QWidget *MainWindow::buildAgentsTab()
     auto *agentOutputLayout = new QVBoxLayout(agentOutputPage);
     agentOutputLayout->setContentsMargins(0, 8, 0, 0);
     agentOutputLayout->setSpacing(6);
+    agentOutputLayout->addWidget(buildAgentSubSessionStrip());
     agentOutputLayout->addWidget(m_agentCodeSplit, 1);
 
     filesChangedPage->setParent(detailPane);
@@ -3168,6 +3169,7 @@ void MainWindow::answerAgentQuestion(int sessionId, const QString &toolUseId,
                     /*error=*/true);
             }
         }
+        syncClaudePermissionMode(sessionId);
         markAgentSessionRunning(sessionId);
         scheduleAgentSessionsPush();
         return;

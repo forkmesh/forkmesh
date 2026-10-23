@@ -236,7 +236,13 @@ public final class OfficeChannelService {
     @ObservationIgnored private var removedIds: Set<String> = []
     @ObservationIgnored public var onRooms: (@MainActor ([OfficeRoom]) -> Void)?
     @ObservationIgnored public var onChange: (@MainActor () -> Void)?
-    @ObservationIgnored public var nodeOwners: ChatNodeOwners?
+    @ObservationIgnored public var nodeOwners: ChatNodeOwners? {
+        didSet {
+            guard let nodeOwners, nodeOwners !== oldValue else { return }
+            nodeOwners.addAnswerObserver { [weak self] node, account in self?.ownerConfirmed(node, account) }
+        }
+    }
+    @ObservationIgnored let guestLines = GuestLineRenames()
     @ObservationIgnored private var heldForOwner: [String: [(JSONObject, String, Bool, Int?)]] = [:]
 
     public private(set) var rooms: [OfficeRoom] = []
@@ -448,7 +454,32 @@ public final class OfficeChannelService {
             if (out["sender"]?.text ?? "").trimmingCharacters(in: .whitespaces).isEmpty { out["sender"] = .string(claim) }
             return ChatFrameText.asBotLine(out, via: claim)
         }
+        if !claim.isEmpty && ChatFrameText.botName(plain) == nil {
+            guestLines.note(plain, node: senderId, claim: claim, owners: nodeOwners)
+        }
         return ChatFrameText.asBotLine(RelayService.asGuest(plain, senderId: senderId), via: guestChatName(senderId))
+    }
+
+    private func ownerConfirmed(_ node: String, _ account: String) {
+        let lines = guestLines.confirmed(node: node, account: account)
+        if lines.isEmpty { return }
+        let names = Dictionary(lines.map { ($0.id, $0.name) }, uniquingKeysWith: { _, last in last })
+        let guest = guestChatName(node)
+        var changed = false
+        for (conversation, list) in history {
+            var renamed = list
+            var touched = false
+            for index in renamed.indices where renamed[index].senderId == node && renamed[index].senderName == guest {
+                guard let name = names[renamed[index].id] else { continue }
+                renamed[index].senderName = name
+                touched = true
+            }
+            if touched {
+                history[conversation] = renamed
+                changed = true
+            }
+        }
+        if changed { onChange?() }
     }
 
     private func acceptPlain(_ plain: JSONObject, room: OfficeRoom, live: Bool, recipients: Int?) {
@@ -690,6 +721,7 @@ public final class OfficeChannelService {
     public func clear() async {
         generation &+= 1
         heldForOwner = [:]
+        guestLines.clear()
         await closeAll()
         sockets = [:]
         connected = []

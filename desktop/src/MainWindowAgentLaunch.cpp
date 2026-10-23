@@ -987,7 +987,7 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
     if (switchToTab)
         switchToAgentsTab(sessionId);
 
-    if (titleFromPrompt &&
+    if (titleFromPrompt && provider != QLatin1String("claude-code") &&
         QSettings().value(kAgentTitleFromAgentSetting, true).toBool())
         requestAgentTitle(provider, task,
                           [this, sessionId, provider](const QString &agentTitle) {

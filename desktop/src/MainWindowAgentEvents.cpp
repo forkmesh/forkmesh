@@ -827,8 +827,15 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
     // NOT a wait: it's handled below as a successful completion. Only genuine
     // input-required states — a permission prompt here, or an AskUserQuestion
     // multiple-choice handled above — mark the session "Waiting".
-    if (type == QLatin1String("control_request"))
-        notifyAgentWaiting(sessionId, /*needsPermission=*/true);
+    if (type == QLatin1String("control_request")) {
+        const QJsonObject request = ev.value(QStringLiteral("request")).toObject();
+        notifyAgentWaiting(
+            sessionId,
+            request.value(QStringLiteral("subtype")).toString() ==
+                    QLatin1String("can_use_tool") &&
+                request.value(QStringLiteral("tool_name")).toString() !=
+                    QLatin1String("AskUserQuestion"));
+    }
 
     if (type == QLatin1String("system")
         && ev.value(QStringLiteral("subtype")).toString() == QLatin1String("init"))
@@ -1601,6 +1608,15 @@ QMenu *MainWindow::buildAgentListContextMenu(int sessionId, QWidget *parent)
             : blocker);
     connect(toCloud, &QAction::triggered, this,
             [this, sessionId] { moveAgentSessionToCloud(sessionId); });
+    if (!isCloudSession(sessionId) && !isExternalSession(sessionId)) {
+        QAction *rename = menu->addAction(QStringLiteral("Rename\u2026"));
+        rename->setObjectName(QStringLiteral("agentListRenameAction"));
+        rename->setToolTip(QStringLiteral(
+            "Rename this session; a running Claude Code session takes the new "
+            "name too"));
+        connect(rename, &QAction::triggered, this,
+                [this, sessionId] { renameAgentSessionInteractive(sessionId); });
+    }
     addAgentTaskLinkActions(menu, sessionId);
     menu->addSeparator();
     addAgentFolderMenu(menu, sessionId);

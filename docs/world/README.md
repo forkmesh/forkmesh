@@ -489,6 +489,21 @@ above the software keyboard (`--world-chat-covered-bottom`).
   targetNode}` with the Desktop or Runner target always named. Models come
   from `ORG_AGENT_MODEL_ALIASES`; choices persist in
   `forkmesh.world.agentComposer.v1`.
+- **Moving it:** drag the grip at the left of the toolbar (or the island's
+  empty edge) to put the island anywhere in the World; arrow keys on the grip
+  nudge it 24px, and Home or a double-click puts it back. The offset from the
+  default bottom-centre spot is stored in `forkmesh.world.hudIslandOffset.v1`
+  and applied as `--world-hud-island-x` / `-y` in its transform. Every resize
+  re-clamps it 8px inside the World, so expanding near the top pushes it down
+  instead of off screen, and the saved offset comes back when it collapses.
+  In the top half (`data-placement="top"`) the channel, model and runner menus
+  open downwards. At 600px and below the island is full width, so the grip is
+  hidden and the saved offset is ignored.
+- **Feed fit:** the island's feed rules carry `.world-hud-island` so they beat
+  the roomier `.world-native-chat` message rules (32px avatars, 8px padding)
+  that used to clip a single message out of the two-line collapsed view. Each
+  row is 24px (20px avatar, 20px line), so the 48px collapsed feed shows
+  exactly the last two messages.
 
 ### HUD rails
 
@@ -964,6 +979,11 @@ them without changing page.
 - **Bikes** follow the road graph (`districts/roads.js`); tapping left or
   right before a junction picks a branch, holding leaves the road, and riding
   onto a road along it rejoins. Tests: `world/tests/test_world_bike_junctions.py`.
+  On the outer edge of the world (a road with only one drawn hex beside it)
+  the default turn at each junction stays on the outer road (`outerTurn` and
+  `outerIncoming` on each graph edge), so a rider circles the whole edge
+  without steering and only goes back in after a tap toward the inside. Test:
+  `test_riding_the_outer_edge_stays_on_the_outer_road_unless_steered_in`.
   The six outer junctions, where two drawn hexes meet open land, are T
   junctions: each carries a `bend` (the centre of the missing third hex and its
   corner), and the roads along that hex curve into each other around its

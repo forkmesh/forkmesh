@@ -185,4 +185,8 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S110 | 2026-10-22 | Settings | feature | Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked. | 180d647034 | synced | 2ca5862405 |
 | S111 | 2026-10-22 | Chat | fix | Face filters follow your head with less lag and your lips move with your speech. | d62d4aabc9 | synced | d62d4aabc9 |
 | S112 | 2026-10-22 | Agents | ui | Agents Eagle rows drop the left agent dot and show an image tile with a green and red churn border, a file count and status dot pill, and blinking background-task dots. | 40906210d3 | synced | 0416f062e3 |
+| S113 | 2026-10-23 | Settings | fix | With Diagnostics on, the status dots show above the Dynamic Island and the desktop and node lights sit just under the clock. | 977c57037b | pending |  |
+| S114 | 2026-10-23 | Chat | fix | A chat line shown as Guest switches to the sender's account name once the server confirms their device. | 8215287d99 | pending |  |
+| S115 | 2026-10-23 | Settings | ui | With Diagnostics on, the desktop and node lights sit above the clock with more room and the diagnostic charts sit filled above the battery. | 0eff45f617 | pending |  |
+| S116 | 2026-10-23 | Agents | ui | The green and red churn ring around an agent's tile in the agent list turns while the agent is working and stops still when it is done. | d8dffb957e | pending |  |
 <!-- ledger:end -->

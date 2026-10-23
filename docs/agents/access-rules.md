@@ -133,7 +133,7 @@ patterns where recursive deletes run without asking:
 
 | Runtime | Folder lock | External calls and destructive commands | Tool policy |
 | --- | --- | --- | --- |
-| Claude Code (stream-json) | Landlock | PreToolUse hook on Bash, WebFetch, WebSearch whenever any rule needs it | `--disallowedTools`, `--tools` with the allowlist |
+| Claude Code (stream-json) | Landlock | PreToolUse hook on Bash, WebFetch, WebSearch whenever any rule needs it; Claude Code's own approvals (Ask, Edit and Plan modes) arrive over `--permission-prompt-tool stdio` as transcript cards | `--disallowedTools`, `--tools` with the allowlist |
 | Claude Code in the built-in terminal | Landlock | Same hook through `--settings` | `--disallowedTools=`, `--tools=` (the `=` form) |
 | Codex app-server | Landlock on Linux; elsewhere Codex's `workspace-write` sandbox over the same folders | Approval policy `never`; access failures are steered into the turn | `-c` overrides |
 | Legacy script providers (`claude` API, `local-llama`, `cloudflare-ai`) | Landlock | The scripts ask the gate socket before each shell or git tool call, failing closed | `FORKMESH_AGENT_DISABLED_TOOL_FAMILIES`, `FORKMESH_AGENT_ALLOWED_TOOL_FAMILIES` |

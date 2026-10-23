@@ -319,6 +319,15 @@ export function createRoadGraph(
       outgoing.incoming.push(turn);
     });
   });
+  graph.edges.forEach((edge) => {
+    edge.outerTurn = null;
+    edge.outerIncoming = null;
+    if (edge.hexes.length !== 1) return;
+    edge.outerTurn =
+      edge.turns.find((turn) => graph.edges[turn.edge].hexes.length === 1) || null;
+    edge.outerIncoming =
+      edge.incoming.find((turn) => graph.edges[turn.from].hexes.length === 1) || null;
+  });
   return graph;
 }
 
@@ -330,6 +339,7 @@ export function worldRoadGraph() {
 }
 
 export function roadDefaultTurn(edge, hex) {
+  if (edge.outerTurn) return edge.outerTurn;
   const turns = edge.turns;
   for (let index = 0; index < turns.length; index += 1) {
     if (turns[index].hex === hex) return turns[index];
@@ -338,6 +348,7 @@ export function roadDefaultTurn(edge, hex) {
 }
 
 export function roadDefaultIncoming(edge, hex) {
+  if (edge.outerIncoming) return edge.outerIncoming;
   const turns = edge.incoming;
   for (let index = 0; index < turns.length; index += 1) {
     if (turns[index].hex === hex) return turns[index];

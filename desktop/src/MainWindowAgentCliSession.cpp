@@ -802,6 +802,8 @@ void MainWindow::handleCliRuntimeEvent(
         return;
     }
     applyTranscriptEvent(sid, ev);
+    if (m_streamSessions.contains(sid))
+        handleClaudeControlEvent(sid, ev);
 }
 
 bool MainWindow::desktopStopping() const
@@ -1161,6 +1163,12 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
         runtimeLaunch.options = agentRunLaunchOptions(sid, false);
         if (!importPath.isEmpty())
             runtimeLaunch.options.insert(QStringLiteral("forkSession"), true);
+        runtimeLaunch.options.insert(QStringLiteral("hostControl"), true);
+        if (const AgentSession *named = findAgentSession(sid)) {
+            const QString title = claudeInitialSessionTitle(*named);
+            if (!title.isEmpty())
+                runtimeLaunch.options.insert(QStringLiteral("sessionTitle"), title);
+        }
         noteAgentRunToolConfig(sid, runtimeLaunch.options);
         const QStringList gateEnv = agentNetworkGateEnv(sid);
         QString claudeSettings;

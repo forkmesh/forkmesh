@@ -29,6 +29,59 @@ bool safeRefName(const QString &ref)
            !ref.endsWith(QStringLiteral(".lock"));
 }
 
+QStringList trackedPullBranchRefs(int number)
+{
+    if (number <= 0)
+        return {};
+    return {QStringLiteral("refs/remotes/origin/pr/%1").arg(number),
+            QStringLiteral("refs/remotes/forkmesh-mesh/pr/%1").arg(number)};
+}
+
+QStringList servedPullBranchRefs(const QList<int> &numbers)
+{
+    QStringList refs;
+    for (int number : numbers) {
+        const QString ref = QStringLiteral("refs/heads/pr/%1").arg(number);
+        if (number > 0 && !refs.contains(ref))
+            refs << ref;
+    }
+    return refs;
+}
+
+QHash<int, QString> servedPullBranchTips(const QByteArray &lsRemote,
+                                         const QList<int> &numbers)
+{
+    static const QRegularExpression line(
+        QStringLiteral("^([0-9a-f]{40}|[0-9a-f]{64})\\trefs/heads/pr/([1-9][0-9]{0,8})$"));
+    QHash<int, QString> tips;
+    for (const QString &raw : QString::fromUtf8(lsRemote).split(QLatin1Char('\n'))) {
+        const QRegularExpressionMatch match = line.match(raw.trimmed());
+        if (!match.hasMatch())
+            continue;
+        const int number = match.captured(2).toInt();
+        if (numbers.contains(number) && !tips.contains(number))
+            tips.insert(number, match.captured(1));
+    }
+    return tips;
+}
+
+QString missingCodeReason(bool branchBacked, const QString &head,
+                          const QString &base)
+{
+    const QString branch = head.section(QLatin1Char(':'), -1, -1).trimmed();
+    if (branchBacked)
+        return safeRefName(branch)
+                   ? QStringLiteral("its branch `%1` is neither on this node nor in the cloud")
+                         .arg(branch)
+                   : QStringLiteral("its branch is neither on this node nor in the cloud");
+    const QString target = safeRefName(base)
+                               ? QStringLiteral("`%1`").arg(base)
+                               : QStringLiteral("its base");
+    return QStringLiteral("its signed patch does not apply to %1 and no node has "
+                          "published its branch; the author needs to rebase it")
+        .arg(target);
+}
+
 QString runTitle(int count)
 {
     return count == 1 ? QStringLiteral("Merge 1 open pull request with AI")

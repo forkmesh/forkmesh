@@ -34,7 +34,9 @@ uploaded from another device never reached the signed-in owner's own profile.
    calls `hydrateProfileAvatars`, which retries only when the candidate
    repositories have changed.
 
-Organization profiles keep their logo. Tests:
+A bot or system account with no picture gets its built-in glyph
+(`showProfileAvatarBot`, [bot-avatars.md](bot-avatars.md)). Organization
+profiles keep their logo. Tests:
 `app/tests/test_profile_avatar_fallback.py`.
 
 A fork usually carries an older copy of its parent's roster, so the parent of each of the person's own forks is read right after their own repositories (up to `PROFILE_AVATAR_ROSTER_REPOS`, 4, repositories in all).
