@@ -10395,10 +10395,11 @@ void checkWorkspaceDesign(MainWindow &window)
     QPushButton *chat = nullptr;
     for (QPushButton *button :
          window.findChildren<QPushButton *>(QStringLiteral("quickAddSendIcon")))
-        if (button->text() == QLatin1String("chat"))
+        if (button->text() == QLatin1String("add"))
             chat = button;
     check(chat && !chat->icon().isNull() && chat->isVisibleTo(&window),
-          QStringLiteral("with a recent chat the add button reads chat, with an icon"));
+          QStringLiteral("with a recent chat the follow-up button still reads add, "
+                         "with an icon"));
     if (chat && wrapper) {
         const QRect inWindow(chat->mapTo(&window, QPoint()), chat->size());
         const QRect wrapperInWindow(wrapper->mapTo(&window, QPoint()), wrapper->size());
@@ -10408,7 +10409,7 @@ void checkWorkspaceDesign(MainWindow &window)
             dock ? QRect(dock->mapTo(&window, QPoint()), dock->size()) : QRect();
         check(window.rect().contains(inWindow) && wrapperInWindow.contains(inWindow) &&
                   (!dock || dockInWindow.contains(wrapperInWindow)),
-              QStringLiteral("the chat button and the composer are on screen, not cut "
+              QStringLiteral("the add button and the composer are on screen, not cut "
                              "off on the right (button %1..%2, composer %3..%4, "
                              "strip %5..%6)")
                   .arg(inWindow.left())
@@ -10421,7 +10422,7 @@ void checkWorkspaceDesign(MainWindow &window)
     for (const char *name : {"quickAddGenieButton"}) {
         auto *button = window.findChild<QPushButton *>(QLatin1String(name));
         check(button && !button->icon().isNull(),
-              QStringLiteral("the task button carries an icon"));
+              QStringLiteral("the send-to button carries an icon"));
     }
     shoot(QStringLiteral("agents-wide"));
 
@@ -10465,8 +10466,8 @@ void checkWorkspaceDesign(MainWindow &window)
     settle();
     auto *centredSend = window.findChild<QPushButton *>(QStringLiteral("workspaceSend"));
     check(centredSend && centredSend->isVisibleTo(&window) &&
-              centredSend->text() == QStringLiteral("Chat"),
-          QStringLiteral("the new layout's send button reads Chat when it replies "
+              centredSend->text() == QStringLiteral("Add"),
+          QStringLiteral("the new layout's send button reads Add when it replies "
                          "to the open agent (%1)")
               .arg(centredSend ? centredSend->text() : QStringLiteral("none")));
     shoot(QStringLiteral("agents-new-layout"));
@@ -33742,18 +33743,13 @@ else:
                   QStringLiteral("picking a speed persists the effort the next run "
                                  "is launched with"));
         }
-        // The task-list button is the top of the send column, above "add" and
-        // "new". It files the prompt in General instead of starting a genie
-        // agent (adhoc #151). The strip of session dots that used to sit above
-        // the prompt is gone (adhoc #38) — its state lives in the top bar now.
-        auto *genieButton =
+        auto *sendToButton =
             seeded.findChild<QPushButton *>(QStringLiteral("quickAddGenieButton"));
-        check(genieButton && genieButton->isVisible() &&
-                  genieButton->text() == QStringLiteral("task") &&
-                  genieButton->toolTip().contains(QStringLiteral("general task list")) &&
-                  !genieButton->toolTip().contains(QStringLiteral("agent"),
-                                                   Qt::CaseInsensitive),
-              QStringLiteral("the composer task button files a General task"));
+        check(sendToButton && sendToButton->isVisible() &&
+                  sendToButton->text().startsWith(QStringLiteral("send to: ")),
+              QStringLiteral("the top of the send column sends the prompt to the "
+                             "current chat channel (%1)")
+                  .arg(sendToButton ? sendToButton->text() : QStringLiteral("none")));
         auto *repoSizeChart = seeded.findChild<QWidget *>(QStringLiteral("repoSizeChart"));
         auto *repoLinesChart = seeded.findChild<QWidget *>(QStringLiteral("repoLinesChart"));
         auto *repoFilesChart = seeded.findChild<QWidget *>(QStringLiteral("repoFilesChart"));

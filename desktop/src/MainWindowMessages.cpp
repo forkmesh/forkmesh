@@ -3849,6 +3849,7 @@ QPixmap MainWindow::chatListAvatar(const QString &peerId, const QString &name,
 
 void MainWindow::updateChatConversationHeading()
 {
+    refreshQuickAddSendToChannelButton();
     if (!m_channelTitle)
         return;
     refreshChatWorkspaceUser();
@@ -5682,67 +5683,72 @@ void MainWindow::sendCurrentMessage()
             logSystem(QStringLiteral("Chat: the channel topic could not be changed."));
         return;
     }
-    if (isOfficeConversation(m_currentConversation)) {
+    if (sendChatText(m_currentConversation, text))
+        m_messageInput->clear();
+}
+
+bool MainWindow::sendChatText(const QString &conversation, const QString &text)
+{
+    if (text.isEmpty() || conversation.isEmpty())
+        return false;
+    if (isOfficeConversation(conversation)) {
         if (!m_officeChannelMirror ||
-            !m_officeChannelMirror->sendMessage(m_currentConversation, text)) {
+            !m_officeChannelMirror->sendMessage(conversation, text)) {
             logSystem(QStringLiteral("Office chat: %1 is not currently writable.")
-                          .arg(m_currentConversation));
-            return;
+                          .arg(conversation));
+            return false;
         }
         triggerTeammatesForEvent(
             QStringLiteral("mentions"),
             QStringLiteral("Chat message in %1\n%2")
-                .arg(m_currentConversation, text));
-        maybeAskForkbot(m_currentConversation, text);
-        m_messageInput->clear();
-        return;
+                .arg(conversation, text));
+        maybeAskForkbot(conversation, text);
+        return true;
     }
-    if (isLocalMeshConversation(m_currentConversation)) {
+    if (isLocalMeshConversation(conversation)) {
         if (!m_localMesh || m_localMesh->sendChat(text).isEmpty()) {
             logSystem(QStringLiteral("Local mesh: %1 is not open on this "
                                      "network right now.")
-                          .arg(m_currentConversation));
-            return;
+                          .arg(conversation));
+            return false;
         }
         sendTypingState(false);
-        m_messageInput->clear();
-        return;
+        return true;
     }
-    if (isDiscordConversation(m_currentConversation)) {
+    if (isDiscordConversation(conversation)) {
         if (!m_discordClient ||
-            !m_discordClient->sendMessage(m_currentConversation, text)) {
+            !m_discordClient->sendMessage(conversation, text)) {
             logSystem(QStringLiteral("Discord: %1 is not currently writable.")
                           .arg(m_discordClient
                                    ? m_discordClient->displayName(
-                                         m_currentConversation)
-                                   : m_currentConversation));
-            return;
+                                         conversation)
+                                   : conversation));
+            return false;
         }
         triggerTeammatesForEvent(
             QStringLiteral("mentions"),
             QStringLiteral("Chat message in %1\n%2")
-                .arg(m_currentConversation, text));
-        maybeAskForkbot(m_currentConversation, text);
+                .arg(conversation, text));
+        maybeAskForkbot(conversation, text);
         sendTypingState(false);
-        m_messageInput->clear();
-        return;
+        return true;
     }
     if (!m_backend)
-        return;
+        return false;
     sendTypingState(false);
     QString chatThreadRootId;
-    if (isDirectConversation(m_currentConversation)) {
-        m_backend->sendDirect(dmPeerId(m_currentConversation), text);
+    if (isDirectConversation(conversation)) {
+        m_backend->sendDirect(dmPeerId(conversation), text);
     } else {
-        chatThreadRootId = m_backend->sendChat(m_currentConversation, text);
-        maybeAskForkbot(m_currentConversation, text);
+        chatThreadRootId = m_backend->sendChat(conversation, text);
+        maybeAskForkbot(conversation, text);
     }
     triggerTeammatesForEvent(
         QStringLiteral("mentions"),
         QStringLiteral("Chat message in %1\n%2")
-            .arg(m_currentConversation, text), -1,
-        m_currentConversation, chatThreadRootId);
-    m_messageInput->clear();
+            .arg(conversation, text), -1,
+        conversation, chatThreadRootId);
+    return true;
 }
 
 void MainWindow::insertEmojiIntoComposer(const QString &emoji)

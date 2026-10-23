@@ -1387,17 +1387,16 @@ void NextAccess::syncWorkspace(MainWindow &window)
     if (chrome->composerSend) {
         const bool chat =
             window.m_quickAddSendToAgentButton &&
-            window.m_quickAddSendToAgentButton->property("enterTarget").toBool() &&
-            window.m_quickAddSendToAgentButton->text() == QLatin1String("chat");
-        const QString label = chat ? QStringLiteral("Chat") : QString();
+            window.m_quickAddSendToAgentButton->property("enterTarget").toBool();
+        const QString label = chat ? QStringLiteral("Add") : QString();
         if (chrome->composerSend->text() != label) {
             chrome->composerSend->setText(label);
             chrome->composerSend->setFixedSize(chat ? 78 : 34, 34);
             chrome->composerSend->setToolTip(
-                chat ? QStringLiteral("Send to this chat (Enter)")
+                chat ? QStringLiteral("Add to the agent open above (Enter)")
                      : QStringLiteral("Send (Enter)"));
             chrome->composerSend->setAccessibleName(
-                chat ? QStringLiteral("Send to chat") : QStringLiteral("Send"));
+                chat ? QStringLiteral("Add to agent") : QStringLiteral("Send"));
             setFlag(chrome->composerSend, "workspaceChat", chat);
             chrome->composerSend->setIcon(
                 glyph(QStringLiteral("arrow-up"),
@@ -1816,9 +1815,12 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
         addProxy(menu, window.m_quickAddSendButton,
                  QStringLiteral("paper-airplane"),
                  QStringLiteral("Start a new session with this prompt"), true);
-        addProxy(menu, window.m_quickAddGenieButton,
-                 QStringLiteral("list-unordered"),
-                 QStringLiteral("Add this prompt to the task list"), true);
+        addProxy(menu, window.m_quickAddSendToChannelButton,
+                 QStringLiteral("comment"),
+                 window.m_quickAddSendToChannelButton
+                     ? window.m_quickAddSendToChannelButton->accessibleName()
+                     : QString(),
+                 true);
         menu->addSeparator();
         addProxy(menu, window.m_promptClearButton, QStringLiteral("x"),
                  QStringLiteral("Clear the prompt"), true);

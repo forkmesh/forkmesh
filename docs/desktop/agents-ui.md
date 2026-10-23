@@ -334,11 +334,23 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   `updateQuickAddEnterTarget` and on each new event of that session. Showing
   or hiding it adds or removes its height from the docked composer
   (`baseAnchoredHeight`).
-- With a chat to reply to, the follow-up button reads **chat** (comment icon)
-  instead of **add**, so it is clear the text goes to that conversation.
-  **new** (plus), **chat**/**add** (paper airplane) and **task** (checklist)
-  carry small icons in both interfaces (`tintComposerActionButton`; on the
-  accent fill of the Enter target the icon uses the on-accent colour).
+- The follow-up button always reads **add**, chat preview or not (the centred
+  workspace layout's send button reads **Add** when it is the Enter target).
+  For part of 2026-10-22 it read **chat** over a preview; the label went back
+  to **add** because "chat" now means a chat channel (below).
+- The top of the send column is **send to: #channel**
+  (`m_quickAddSendToChannelButton`, object name still `quickAddGenieButton`
+  for the stylesheets): it names the chat conversation open on the Chat page
+  (`m_currentConversation`, labelled by `chatConversationLabel`) and posts the
+  prompt there through `sendChatText`, the same path as the Chat page's own
+  composer (`sendCurrentMessage`). `updateChatConversationHeading` refreshes
+  its label on every conversation switch. Attachments are refused. It replaced
+  the **task** button, which filed the prompt in General: that lives in the
+  agent/model dropdown as **Task · assign**, where leaving the assignee on
+  Unassigned files the task in General.
+- **new** (plus), **add** (paper airplane) and **send to** (comment) carry
+  small icons in both interfaces (`tintComposerActionButton`; on the accent
+  fill of the Enter target the icon uses the on-accent colour).
 
 - The repository comes from `resolveAgentRepositoryIndex` for local and cloud
   runs. Phones expose the same switches through `agents.start`.
