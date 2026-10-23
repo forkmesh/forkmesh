@@ -147,6 +147,28 @@
       ]
     },
     {
+      "id": "internet-archive",
+      "name": "Internet Archive public repository backups",
+      "categories": ["hosting"],
+      "components": ["app-worker"],
+      "necessity": "optional",
+      "hosts": ["archive.org", "s3.us.archive.org"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "The public repository identifier, the ForkMesh worker egress IP, the repository's public Git bundle, and the Internet Archive access key supplied by the repository owner. The owner-provided secret is sent only to the Internet Archive S3 endpoint and is stored encrypted by ForkMesh.",
+      "retention": "The Internet Archive retains uploaded public repository bundles and metadata under the archive account's policy. ForkMesh retains the encrypted sync configuration and recent upload status until the owner disconnects it.",
+      "jurisdiction": "Internet Archive (United States).",
+      "canonicalData": "None. The ForkMesh repository and its mirrors remain canonical; an Internet Archive item is an independently recoverable public backup copy.",
+      "outage": "Owners cannot verify archive credentials or upload a scheduled or requested public backup. Existing archive items and all ForkMesh repository, clone, and collaboration operations remain available.",
+      "recovery": "The next scheduled or requested sync retries after the Internet Archive is reachable; the owner can also download a bundle from a ForkMesh mirror and upload it independently.",
+      "alternative": "Self-host operators can retain Git bundles or mirror clones on their own storage; a public repository can be recovered from any ForkMesh mirror without the Internet Archive.",
+      "evidence": ["app/src/repository_archive_sync.py", "app/tests/test_repository_archive_sync.py"],
+      "drills": [
+        "app/tests/test_repository_archive_sync.py::test_bad_input_and_refused_keys_are_reported",
+        "app/tests/test_repository_archive_sync.py::test_paused_disconnected_or_private_repositories_send_nothing"
+      ]
+    },
+    {
       "id": "github-actions",
       "name": "GitHub Actions hosted runners",
       "categories": ["hosted-runner"],
