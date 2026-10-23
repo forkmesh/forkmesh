@@ -45,6 +45,7 @@ constexpr int kPullBaseBranchRole = Qt::UserRole + 41;
 // setPullConflictBadge() re-compose just that row's tooltip.
 constexpr int kPullTipPrefixRole = Qt::UserRole + 42;
 constexpr int kPullViewedFilesRole = Qt::UserRole + 43;
+constexpr int kPullCodeBranchRole = Qt::UserRole + 44;
 constexpr auto kPendingPullSubmissionsSetting = "pulls/pendingSubmissionsV1";
 constexpr qint64 kPullSubmissionRetryBaseMs = 5LL * 1000;
 constexpr qint64 kPullSubmissionRetryCapMs = 5LL * 60 * 1000;
@@ -307,7 +308,23 @@ struct PullHeadProbe {
     int number = 0;
     QString base;
     QString head;
+    bool branchBacked = false;
 };
+
+QStringList pullLocalBranchCandidates(int number, const QString &head,
+                                      bool branchBacked)
+{
+    const QString signedHead = head.section(QLatin1Char(':'), -1, -1).trimmed();
+    const QString canonical = QStringLiteral("pr/%1").arg(number);
+    QStringList candidates;
+    if (branchBacked)
+        candidates << signedHead << canonical;
+    else
+        candidates << canonical << signedHead;
+    candidates.removeAll(QString());
+    candidates.removeDuplicates();
+    return candidates;
+}
 
 // The hover lines that describe a pull's head branch, composed from the roles
 // the row already carries so the conflict probe can restate them for one row
@@ -351,6 +368,14 @@ QString pullBranchStatusTip(const QTableWidgetItem *item)
             lines << QStringLiteral("That worktree is clean");
     } else if (behind >= 0) {
         lines << QStringLiteral("No worktree has this branch checked out");
+    }
+    const QVariant codeBranch = item->data(kPullCodeBranchRole);
+    if (codeBranch.isValid()) {
+        lines << (codeBranch.toString().isEmpty()
+                      ? QStringLiteral("Code not on this machine: no local "
+                                       "branch holds this pull request")
+                      : QStringLiteral("Code on this machine: %1")
+                            .arg(codeBranch.toString()));
     }
     if (lines.isEmpty())
         return QString();
@@ -435,6 +460,9 @@ public:
         const bool conflicted = index.data(kPullConflictRole).toBool();
         const bool behind = index.data(kPullBehindRole).toInt() > 0;
         const QString worktree = index.data(kPullWorktreeRole).toString();
+        const QVariant codeBranch = index.data(kPullCodeBranchRole);
+        const bool codeMissing =
+            codeBranch.isValid() && codeBranch.toString().isEmpty();
         const QColor accent = Theme::nextOr(
             Theme::Role::Warning, QColor(dark ? "#e3742f" : "#bc4c00"));
         const QColor live = Theme::nextOr(
@@ -452,13 +480,22 @@ public:
         // The branch icon carries the summary the way the agents list's branch
         // button does: amber once the head needs base merged in, blue while a
         // checkout of it is still on disk, muted otherwise.
-        painter->drawPixmap(
-            fileIconLeft, branchIconTop,
-            tintedOcticonPixmap(QStringLiteral("git-branch"),
-                                (conflicted || behind)
-                                    ? accent
-                                    : (worktree.isEmpty() ? muted : live),
-                                kBranchIconSize));
+        if (codeMissing) {
+            painter->save();
+            painter->setOpacity(0.55);
+            painter->drawPixmap(fileIconLeft, branchIconTop,
+                                tintedOcticonPixmap(QStringLiteral("cloud"),
+                                                    muted, kBranchIconSize));
+            painter->restore();
+        } else {
+            painter->drawPixmap(
+                fileIconLeft, branchIconTop,
+                tintedOcticonPixmap(QStringLiteral("git-branch"),
+                                    (conflicted || behind)
+                                        ? accent
+                                        : (worktree.isEmpty() ? muted : live),
+                                    kBranchIconSize));
+        }
         if (index.data(kPullDirtyRole).toInt() > 0) {
             painter->setPen(QPen(Theme::remapColor(QColor(dark ? "#0d1117" : "#ffffff")), 1.5));
             painter->setBrush(QColor(dark ? "#d29922" : "#bf8700"));
@@ -2614,7 +2651,7 @@ void MainWindow::refreshPullBranchState()
             pull.base.isEmpty() || pull.head.isEmpty() ||
             pull.head == pull.base)
             continue;
-        heads.append({pull.number, pull.base, pull.head});
+        heads.append({pull.number, pull.base, pull.head, pull.branchBacked});
     }
     const quint64 gen = ++m_pullBranchStateGen;
     if (workTree.isEmpty() || heads.isEmpty()) {
@@ -2653,7 +2690,6 @@ void MainWindow::refreshPullBranchState()
             QHash<QString, int> dirtyByPath; // several pulls can share a checkout
             for (const PullHeadProbe &entry : heads) {
                 const QString &base = entry.base;
-                const QString &head = entry.head;
                 PullBranchState state;
                 QByteArray counts;
                 // Deliberately still a git spawn. repoHasLocalBranch() answers
@@ -2665,12 +2701,20 @@ void MainWindow::refreshPullBranchState()
                 // Changes row hidden with its "N↑" text already painted. It
                 // reproduced in 2 of 3 offscreen suite runs. Fix that ordering
                 // bug in refreshSourceControlOutgoing() before speeding this up.
-                if (runGitCapture(workTree,
-                                  {QStringLiteral("rev-parse"),
-                                   QStringLiteral("--verify"),
-                                   QStringLiteral("--quiet"),
-                                   QStringLiteral("refs/heads/%1").arg(head)},
-                                  nullptr, nullptr) &&
+                for (const QString &candidate : pullLocalBranchCandidates(
+                         entry.number, entry.head, entry.branchBacked)) {
+                    if (runGitCapture(workTree,
+                                      {QStringLiteral("rev-parse"),
+                                       QStringLiteral("--verify"),
+                                       QStringLiteral("--quiet"),
+                                       QStringLiteral("refs/heads/%1").arg(candidate)},
+                                      nullptr, nullptr)) {
+                        state.codeBranch = candidate;
+                        break;
+                    }
+                }
+                const QString &head = state.codeBranch;
+                if (!head.isEmpty() &&
                     runGitCapture(workTree,
                                   {QStringLiteral("rev-list"),
                                    QStringLiteral("--left-right"),
@@ -2708,8 +2752,7 @@ void MainWindow::refreshPullBranchState()
                         dirtyByPath.insert(path, state.dirty);
                     }
                 }
-                if (state.counted || !state.worktree.isEmpty())
-                    map.insert(entry.number, state);
+                map.insert(entry.number, state);
             }
             return map;
         },
@@ -2862,6 +2905,8 @@ void MainWindow::refreshPullList()
         num->setData(kPullBehindRole, branchState.counted ? branchState.behind : -1);
         num->setData(kPullWorktreeRole, branchState.worktree);
         num->setData(kPullDirtyRole, branchState.dirty);
+        if (m_pullBranchState.contains(pr.number))
+            num->setData(kPullCodeBranchRole, branchState.codeBranch);
         const QString displayStatus = pullDisplayStatus(pr);
         const bool checksRunning = pullHasRunningChecks(
             pr, m_actionRuns, repoOwner, repoName);
@@ -9161,18 +9206,9 @@ QString forkmesh::ui::localPullAgentBranch(const QString &gitDir,
 {
     if (gitDir.trimmed().isEmpty() || pull.number <= 0)
         return QString();
-    const auto resolves = [&gitDir](const QString &branch) {
-        return repoHasLocalBranch(gitDir, branch);
-    };
-    const QString head = pullHeadBranch(pull);
-    const QString canonical = QStringLiteral("pr/%1").arg(pull.number);
-    QStringList candidates;
-    if (pull.branchBacked)
-        candidates << head << canonical;
-    else
-        candidates << canonical << head;
-    for (const QString &candidate : std::as_const(candidates))
-        if (resolves(candidate))
+    for (const QString &candidate : pullLocalBranchCandidates(
+             pull.number, pull.head, pull.branchBacked))
+        if (repoHasLocalBranch(gitDir, candidate))
             return candidate;
     return QString();
 }

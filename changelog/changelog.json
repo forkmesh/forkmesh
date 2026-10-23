@@ -30,7 +30,8 @@
       "The web dashboard works again: a merge earlier today had left its script unable to load, which broke repository pages, the Actions tab and pull requests.",
       "A pull request's merge box now lists each check with its state and log, and says when checks are waiting for a maintainer's approval.",
       "Issue and pull request pings now say what happened, such as who approved, closed or assigned which item, and link straight to it; the issue sidebar now tells a repository owner they are receiving notifications, and Unsubscribe really stops them.",
-      "Public repositories can back themselves up to the Internet Archive every day, week or month from repository Settings, using your own archive.org keys."
+      "Public repositories can back themselves up to the Internet Archive every day, week or month from repository Settings, using your own archive.org keys.",
+      "The desktop pull request list marks a pull whose code is not on this computer with a faded cloud icon, and its hover text names the local branch that holds the code when it is."
      ]
     },
     {
@@ -61,7 +62,8 @@
      "title": "World",
      "items": [
       "Stepping into a neighbouring World's hexagon is seamless: its hexagon is built ahead of time, people stay visible on both sides while you cross, and the World no longer blanks out or stalls after a while on slower devices.",
-      "Riding the coaster in first person, your view now tilts, banks and turns upside down with your seat, and a look to the side stays put through the loops."
+      "Riding the coaster in first person, your view now tilts, banks and turns upside down with your seat, and a look to the side stays put through the loops.",
+      "Walking out of an instance's World, such as OWASP BLT, onto the ForkMesh land next door now puts you in the ForkMesh World, with its people and town, without leaving the page or signing out."
      ]
     },
     {
@@ -103,6 +105,12 @@
      "title": "Server",
      "items": [
       "Self-hosted instances show the platform changelog at /changelog, and their menus no longer show forkmesh.com's Company links."
+     ]
+    },
+    {
+     "title": "Server",
+     "items": [
+      "Security reports sent to forkmesh.com/api/security/report, including from AI agents and scanners that read the code, now alert the maintainers at once and open a private fix task."
      ]
     },
     {
