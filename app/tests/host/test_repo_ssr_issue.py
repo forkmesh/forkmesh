@@ -65,7 +65,6 @@ FUNCTIONS = {
         "issueDateInputValue", "mdMentionHtml", "issueCardAuthorHtml", "developmentProse",
         "pullClosingIssueNumbers", "pullOwnIssueNumbers", "issueDevelopmentPullStates",
         "issueLinkedPullNumbers", "developmentPulls", "developmentRow", "renderIssueDevelopment",
-        "issueAiPromptText", "renderIssueAiPrompt", "issueSubscriptionNote"),
         "issueAiPromptText", "renderIssueAiPrompt", "issueSubscriptionNote", "issueViewKey",
         "issueViewsLabel", "issueViewsHtml"),
 }

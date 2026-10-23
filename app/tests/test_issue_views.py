@@ -21,8 +21,8 @@ SCHEMA = ROOT / "src" / "schema.py"
 RUNTIME = ROOT / "src" / "app_runtime.py"
 CONTENT = ROOT / "public" / "dashboard" / "js" / "06-repo-content.js"
 HELPERS = ROOT / "public" / "dashboard" / "js" / "02-helpers.js"
-MIGRATION = ROOT / "migrations" / "0287_issue_views.sql"
-DOWN = ROOT / "migrations" / "down" / "0287_issue_views.sql"
+MIGRATION = ROOT / "migrations" / "0289_issue_views.sql"
+DOWN = ROOT / "migrations" / "down" / "0289_issue_views.sql"
 DOC = ROOT.parent / "docs" / "app" / "issue-views.md"
 
 FUNCS = {
