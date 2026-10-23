@@ -3352,6 +3352,10 @@ void MainWindow::syncNativePackagePages()
             }
             QDesktopServices::openUrl(url);
         };
+        host.publicPageUrl = [this](const QString &path) {
+            return forkmesh::market::nativePackagePublicPageUrl(catalogApiUrl(), path)
+                .toString(QUrl::FullyEncoded);
+        };
         if (permissionIds.contains(QStringLiteral("desktop.models.usage.read")))
             host.agentUsagePage = [this](QWidget *parent) {
                 return buildAgentUsagePage(parent);

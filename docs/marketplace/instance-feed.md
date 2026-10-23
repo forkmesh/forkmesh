@@ -95,8 +95,16 @@ from `publicSiteOrigin` in the page API (`10-boot.js`), which names
 forkmesh.com when the dashboard runs on app.forkmesh.com. The public page
 shows the thread (ancestors, the post, replies), keeps a content warning
 collapsed behind Show more, links authors and mentions to `/@name`, and has
-Copy link and Reply in Feed (`/dashboard/instance-feed?post=<id>`). The desktop,
-iOS and Android pages do not have these buttons yet.
+Copy link and Reply in Feed (`/dashboard/instance-feed?post=<id>`).
+
+The desktop, iOS and Android pages have the same two actions and the same
+host rule (`app.forkmesh.com`, `forkmesh.com`, `www.` and `world.forkmesh.com`,
+and the retired Next hosts on the phones, become `https://forkmesh.com`; any
+other instance keeps its own origin). The desktop row shows "View on website"
+and "Copy link" buttons, with the URL from the host's `publicPageUrl`. On the
+phones the action row has no room for two more icons, so one share icon opens
+a menu with View on the website and Copy link, and copying shows "Link
+copied".
 
 ## Page
 
@@ -118,7 +126,9 @@ profile), the same compose box (Ctrl+Enter posts) and the same actions, and
 it styles itself with the app stylesheet's existing object names
 (`issueAvatar`, `issueDivider`, `issueComposerSm`, `ghostButton`,
 `primaryButton`). Rich-text links use `fm-author:<name>` and
-`fm-thread:<id>` internally; `https` links open in the browser.
+`fm-thread:<id>` internally; `https` links open in the browser. Each post has
+"View on website" and "Copy link" (it reads "Copied" for a moment); both are
+hidden when the host gives no `publicPageUrl`.
 
 A native page may only call its own API prefix and organization lifecycle
 paths, so it cannot install the package itself. Installing from the desktop
@@ -156,8 +166,9 @@ reply the thread opens, or reloads if it is the current view. Posts show the
 author, `@name`, relative time, "X boosted" and "Replying to @y" headers, a
 collapsed content warning behind Show more, and text from `InstanceFeed.spans`
 with tappable `https` links (browser) and mentions (profile). Actions are
-reply, boost (active in `accent`), favourite (active in `warning`) and, when
-`canDelete`, delete after a confirmation. Older pages load when the end of the
+reply, boost (active in `accent`), favourite (active in `warning`), the share
+icon (View on the website, Copy link; `InstanceFeed.publicUrl` with the
+account's `gitOrigin`) and, when `canDelete`, delete after a confirmation. Older pages load when the end of the
 list comes into view, or from "Load older posts"; pull down or the refresh
 button reloads. An account without the package sees a note with an "Open in
 Market" button to the package's Market page.
@@ -178,8 +189,9 @@ reply mode ("Replying to @name", prefilled mention). Posts show the author,
 `@name`, relative time, "X boosted" and "Replying to @y" lines, a content
 warning collapsed behind Show more, and text from `InstanceFeed.segments` with
 `https` links (browser) and mentions (profile). Actions are reply, boost
-(active in `accent`), favourite (active in `warning`) and, when `canDelete`,
-delete after a confirmation. Tapping a post pushes its thread and tapping an
+(active in `accent`), favourite (active in `warning`), the share menu (View on
+the website, Copy link; `InstanceFeedModel.publicURL`, from the
+`InstanceFeedAPI` origin) and, when `canDelete`, delete after a confirmation. Tapping a post pushes its thread and tapping an
 author pushes their profile (summary header first); each pushed screen has its
 own model. Older pages load when the end of the list appears or from "Load
 older posts"; pull down or the refresh button reloads. A route with a post id

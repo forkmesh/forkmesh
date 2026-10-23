@@ -1,9 +1,11 @@
 #include "InstanceFeedFeature.h"
 
 #include <QDateTime>
+#include <QClipboard>
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QFrame>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QKeySequence>
@@ -20,6 +22,7 @@
 #include <QScrollBar>
 #include <QShortcut>
 #include <QStyle>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QVBoxLayout>
@@ -163,7 +166,8 @@ bool InstanceFeedFeature::exportHasData(const QJsonObject &payload)
 
 InstanceFeedFeature::InstanceFeedFeature(const forkmesh::market::NativePackageHost &host,
                                          QWidget *parent)
-    : forkmesh::market::NativePackageWidget(parent), m_request(host.request)
+    : forkmesh::market::NativePackageWidget(parent), m_request(host.request),
+      m_publicPageUrl(host.publicPageUrl)
 {
     setObjectName(QStringLiteral("instanceFeedSection"));
     auto *outer = new QVBoxLayout(this);
@@ -655,6 +659,20 @@ QWidget *InstanceFeedFeature::postRow(const QJsonObject &post, const QString &bo
     connect(boost, &QPushButton::clicked, this, [this, id, boosted] { toggle(id, QStringLiteral("boost"), boosted); });
     connect(favourite, &QPushButton::clicked, this,
             [this, id, favourited] { toggle(id, QStringLiteral("favourite"), favourited); });
+    const QString publicUrl = publicPostUrl(id);
+    if (!publicUrl.isEmpty()) {
+        auto *website = ghostButton(QStringLiteral("View on website"));
+        website->setToolTip(publicUrl);
+        auto *copy = ghostButton(QStringLiteral("Copy link"));
+        actions->addWidget(website);
+        actions->addWidget(copy);
+        connect(website, &QPushButton::clicked, this, [publicUrl] { QDesktopServices::openUrl(QUrl(publicUrl)); });
+        connect(copy, &QPushButton::clicked, this, [copy, publicUrl] {
+            QGuiApplication::clipboard()->setText(publicUrl);
+            copy->setText(QStringLiteral("Copied"));
+            QTimer::singleShot(1500, copy, [copy] { copy->setText(QStringLiteral("Copy link")); });
+        });
+    }
     if (flag(post, "canDelete")) {
         auto *remove = ghostButton(QStringLiteral("Delete"));
         remove->setStyleSheet(QStringLiteral("color: %1;").arg(dark() ? QStringLiteral("#f85149") : QStringLiteral("#cf222e")));
@@ -665,6 +683,13 @@ QWidget *InstanceFeedFeature::postRow(const QJsonObject &post, const QString &bo
     main->addLayout(stack, 1);
     column->addLayout(main);
     return row;
+}
+
+QString InstanceFeedFeature::publicPostUrl(const QString &postId) const
+{
+    if (!m_publicPageUrl || !validPostId(postId))
+        return {};
+    return m_publicPageUrl(QStringLiteral("/feed?post=") + postId);
 }
 
 void InstanceFeedFeature::openLink(const QString &link)

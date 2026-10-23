@@ -90,7 +90,10 @@ done)` and `findLogins(url, asker, done)` (see **Login store** below).
 Every package also gets `openWebPage(path)`, with no permission: it opens a
 same-origin path on the active host in the browser (credentials dropped,
 another origin or a `..` segment refused; `nativePackageWebPageUrl`, used by
-the [Runners](runners.md) page). `request` waits out the
+the [Runners](runners.md) page), and `publicPageUrl(path)`, the same path as a
+URL to share: `https://forkmesh.com` for the official hosts, the active host
+otherwise (`nativePackagePublicPageUrl`, used by [Feed](instance-feed.md)).
+`request` waits out the
 network manager's host-wide cooldown (after a 5xx or 429 on any `/api/`
 route) and resends GETs up to four times before reporting "the ForkMesh relay
 is restarting or unreachable".
