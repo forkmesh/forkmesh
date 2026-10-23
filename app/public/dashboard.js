@@ -23851,21 +23851,28 @@
     };
   }
 
+  const PULL_REVIEWER_STATE_META = {
+    approved: { icon: "check", tone: "text-success", label: "Approved" },
+    changes_requested: { icon: "file-diff", tone: "text-destructive", label: "Requested changes" },
+    commented: { icon: "message-square", tone: "text-muted-foreground", label: "Commented" },
+  };
+
   function renderPullReviewers(events, pullAuthor = "") {
     const reviewers = pullReviewSummary(events);
     const policy = pullReviewPolicy(events, pullAuthor);
-    const gateTone = policy.ready ? "text-success" : "text-attention";
-    const gate = `<span class="mb-2 flex items-center justify-between gap-2"><strong class="${gateTone}">${policy.ready ? "Review requirement met" : "Independent review required"}</strong><span>${policy.approvals} approved${policy.blockers ? ` · ${policy.blockers} blocking` : ""}</span></span>`;
-    if (!reviewers.length) return `${gate}<span>No reviews yet</span>`;
-    // sidebarSection wraps this in a <p>, so rows must stay phrasing content
-    // (span, not div) or the browser silently closes the paragraph early.
+    const gateLabel = policy.ready ? "Review requirement met" : "Independent review required";
+    const counts = [
+      policy.approvals ? `<span class="inline-flex items-center gap-0.5 text-success" title="${formatCount(policy.approvals)} approved"><i data-lucide="check" class="h-3.5 w-3.5"></i>${formatCount(policy.approvals)}</span>` : "",
+      policy.blockers ? `<span class="inline-flex items-center gap-0.5 text-destructive" title="${formatCount(policy.blockers)} blocking"><i data-lucide="file-diff" class="h-3.5 w-3.5"></i>${formatCount(policy.blockers)}</span>` : "",
+    ].join("");
+    const gate = `<span data-repo-pull-review-gate data-ready="${policy.ready ? "true" : "false"}" title="${gateLabel}" class="flex items-center gap-1.5 ${policy.ready ? "text-success" : "text-attention"}"><i data-lucide="${policy.ready ? "shield-check" : "shield-alert"}" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 flex-1 truncate font-medium">${policy.ready ? "Review met" : "Review required"}</span><span class="inline-flex shrink-0 items-center gap-2 font-medium">${counts}</span></span>`;
+    if (!reviewers.length) return `${gate}<span class="text-muted-foreground">No reviews yet</span>`;
     return gate + reviewers.map((reviewer) => {
-      const tone = reviewer.state === "approved" ? "text-success" : reviewer.state === "changes_requested" ? "text-destructive" : "text-muted-foreground";
-      const label = reviewer.state === "approved" ? "Approved" : reviewer.state === "changes_requested" ? "Requested changes" : "Commented";
+      const meta = PULL_REVIEWER_STATE_META[reviewer.state] || PULL_REVIEWER_STATE_META.commented;
       const older = reviewer.olderCommit
-        ? `<span class="shrink-0 text-[10px] text-muted-foreground" title="New commits were pushed after this review" data-repo-pull-review-older>on an older commit</span>`
+        ? `<span data-repo-pull-review-older title="Reviewed an older commit: new commits were pushed after this review" aria-label="on an older commit" class="inline-flex text-muted-foreground"><i data-lucide="history" class="h-3.5 w-3.5"></i></span>`
         : "";
-      return `<span class="mt-1.5 flex items-center justify-between gap-2 first:mt-0"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}${issuePersonNameHtml(reviewer.authorName, "truncate font-medium text-foreground")}</span><span class="inline-flex shrink-0 items-center gap-1.5">${older}<span class="text-[10px] font-semibold ${tone}">${escapeHtml(label)}</span></span></span>`;
+      return `<span class="flex h-6 items-center justify-between gap-2"><span class="inline-flex min-w-0 items-center gap-1.5">${issueActorAvatarHtml(reviewer.authorName, reviewer.author, "h-5 w-5")}${issuePersonNameHtml(reviewer.authorName, "truncate font-medium text-foreground")}</span><span class="inline-flex shrink-0 items-center gap-1.5">${older}<span data-repo-pull-review-state="${escapeHtml(reviewer.state)}" title="${meta.label}" aria-label="${meta.label}" class="inline-flex ${meta.tone}"><i data-lucide="${meta.icon}" class="h-4 w-4"></i></span></span></span>`;
     }).join("");
   }
 
@@ -24371,9 +24378,10 @@
     const commitPhrase = $("[data-repo-pull-commit-phrase]");
     if (commitPhrase) commitPhrase.innerHTML = pullCommitPhrase(commits.length);
     const reviewers = $("[data-repo-pull-reviewers]");
-    if (reviewers) reviewers.innerHTML = renderPullReviewers(
-      conversation, values.author || "",
-    );
+    if (reviewers) {
+      reviewers.innerHTML = renderPullReviewers(conversation, values.author || "");
+      window.lucide?.createIcons();
+    }
     // Keep committed line threads in step with the activity poll. Do not tear
     // down a composer somebody is actively typing in; its next submit/cancel
     // refreshes the diff from this already-updated conversation state.
@@ -26373,9 +26381,72 @@
       </section>`;
   }
 
+  const PULL_MERGE_STATUS_LABELS = {
+    "review:bad": "Changes requested",
+    "review:warn": "Review required",
+    "checks:bad": "Checks failing",
+    "checks:pending": "Checks running",
+    "checks:warn": "Checks incomplete",
+    "branch:bad": "Merge conflicts",
+    "branch:muted": "Mergeability unknown",
+    "rules:bad": "Rules not met",
+  };
+
+  function repoPullMergeStatus(model) {
+    if (!model.open || model.merged) return null;
+    const blocking = model.rows.filter((row) => PULL_MERGE_STATUS_LABELS[`${row.id}:${row.tone}`]);
+    const failing = blocking.filter((row) => row.tone === "bad");
+    const pending = blocking.filter((row) => row.tone !== "bad");
+    const detail = blocking.map((row) => row.title);
+    if (model.busy) {
+      return { tone: "pending", icon: "loader-circle", label: "Merging…", detail: [model.footer.text] };
+    }
+    if (failing.length || model.footer.tone === "bad") {
+      const first = failing[0];
+      return {
+        tone: "bad",
+        icon: "x-circle",
+        label: first ? PULL_MERGE_STATUS_LABELS[`${first.id}:${first.tone}`] : "Can't merge",
+        count: blocking.length,
+        detail: detail.length ? detail : [model.footer.text],
+      };
+    }
+    if (pending.length) {
+      const first = pending[0];
+      return {
+        tone: "warn",
+        icon: first.tone === "pending" ? "clock" : "alert-circle",
+        label: PULL_MERGE_STATUS_LABELS[`${first.id}:${first.tone}`],
+        count: blocking.length,
+        detail,
+      };
+    }
+    return { tone: "good", icon: "check-circle-2", label: "Ready to merge", detail: [model.footer.text] };
+  }
+
+  function renderRepoPullMergeStatus(repo, number, parsed) {
+    const status = repoPullMergeStatus(repoPullMergeModel(repo, number, parsed));
+    if (!status) return "";
+    const more = status.count > 1 ? `<span class="fm-counter">+${formatCount(status.count - 1)}</span>` : "";
+    const title = `${status.detail.filter(Boolean).join("\n")}\nShow merge details`.trim();
+    return `<button type="button" data-repo-pull-merge-status data-tone="${status.tone}" title="${escapeHtml(title)}" class="fm-btn fm-btn-sm fm-merge-status"><i data-lucide="${status.icon}"${status.tone === "pending" && status.icon === "loader-circle" ? ' class="animate-spin"' : ""}></i><span>${escapeHtml(status.label)}</span>${more}</button>`;
+  }
+
+  function showRepoPullMergeBox(article) {
+    if (!article) return;
+    setRepoRecordSection("conversation", article);
+    const detail = state.repoRecordDetail;
+    if (detail && detail.kind === "pulls" && state.selectedRepo) {
+      navigateHistory(repoRecordUrl(state.selectedRepo, detail.kind, detail.number, "conversation"));
+    }
+    article.querySelector("[data-repo-pull-merge-box]")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   function updateRepoPullMergePanel(repo, number, parsed) {
     const slot = document.querySelector("[data-repo-pull-merge-slot]");
     const banner = document.querySelector("[data-repo-pull-conflict-slot]");
+    const status = document.querySelector("[data-repo-pull-merge-status-slot]");
+    if (status) status.innerHTML = renderRepoPullMergeStatus(repo, number, parsed);
     if (banner) {
       const html = renderRepoPullConflictBanner(repo, number, parsed);
       if (banner.dataset.rendered !== html) {
@@ -26383,7 +26454,10 @@
         banner.dataset.rendered = html;
       }
     }
-    if (!slot) return;
+    if (!slot) {
+      window.lucide?.createIcons();
+      return;
+    }
     const draft = slot.querySelector("[data-repo-pull-quick-reply-draft]");
     const focused = draft && document.activeElement === draft
       ? { start: draft.selectionStart, end: draft.selectionEnd }
@@ -27661,6 +27735,7 @@
           <div class="flex flex-wrap items-start justify-between gap-3">
             <h1 class="min-w-0 flex-1 text-[26px] font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">${escapeHtml(title)} <span class="font-light text-muted-foreground">${recordLabel}</span></h1>
             <div class="flex shrink-0 items-center gap-2 pt-1">
+              ${isPulls ? `<span data-repo-pull-merge-status-slot class="contents">${renderRepoPullMergeStatus(repo, number, parsed)}</span>` : ""}
               <button type="button" data-dashboard-copy="${escapeHtml(recordUrl)}" aria-label="Copy link to this ${escapeHtml(config.itemLabel)}" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
           </div>
@@ -27715,7 +27790,7 @@
               </div>` : ""}
           </div>
           <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start">
-            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-0.5">${renderPullReviewers(pullConversation, values.author || "")}</span>`) : ""}
+            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-1">${renderPullReviewers(pullConversation, values.author || "")}</span>`) : ""}
             ${isPulls ? sidebarSection("Assignees", `<span class="text-muted-foreground">No one assigned</span>`) : sidebarSection("Category", `<span class="inline-flex items-center gap-1.5 font-semibold"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`)}
             ${sidebarSection("Labels", labelValue)}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
@@ -49398,6 +49473,12 @@ Report
       const reviewPromptToggle = event.target.closest("[data-repo-pull-review-prompt-toggle]");
       if (reviewPromptToggle) {
         togglePullReviewPrompt(reviewPromptToggle);
+        return;
+      }
+
+      const mergeStatusButton = event.target.closest("[data-repo-pull-merge-status]");
+      if (mergeStatusButton) {
+        showRepoPullMergeBox(mergeStatusButton.closest("[data-repo-record-detail]"));
         return;
       }
 

@@ -3810,6 +3810,12 @@
         return;
       }
 
+      const mergeStatusButton = event.target.closest("[data-repo-pull-merge-status]");
+      if (mergeStatusButton) {
+        showRepoPullMergeBox(mergeStatusButton.closest("[data-repo-record-detail]"));
+        return;
+      }
+
       // PR detail section tabs are isolated panels, matching the GitHub review
       // surface: only the selected section is visible at a time.
       const recordTabButton = event.target.closest("[data-repo-record-tab]");
