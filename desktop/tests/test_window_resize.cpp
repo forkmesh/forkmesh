@@ -9906,7 +9906,8 @@ void checkButtonPlacement(MainWindow &window)
           QStringLiteral("Pulls starts in the repository tab bar (%1)")
               .arg(tabs.join(QStringLiteral(", "))));
     check(window.testButtonPlacementMenuActions(pulls) ==
-              QStringList{QStringLiteral("Move to left rail")},
+              QStringList{QStringLiteral("Move to left rail"),
+                          QStringLiteral("Hide from repository tab bar (keep on Home)")},
           QStringLiteral("a repository tab offers to move to the left rail"));
 
     window.testMoveButtonToPanel(pulls, QStringLiteral("rail"));
@@ -10053,7 +10054,8 @@ void checkButtonPlacement(MainWindow &window)
           QStringLiteral("the Code toolbar holds Overview through Releases (%1)")
               .arg(codeBar.join(QStringLiteral(", "))));
     check(window.testButtonPlacementMenuActions(branches) ==
-              QStringList{QStringLiteral("Move to left rail")},
+              QStringList{QStringLiteral("Move to left rail"),
+                          QStringLiteral("Hide from Code toolbar (keep on Home)")},
           QStringLiteral("a Code toolbar button offers to move to the left rail"));
 
     window.testMoveButtonToPanel(branches, QStringLiteral("rail"));
@@ -10101,6 +10103,91 @@ void checkButtonPlacement(MainWindow &window)
               !QSettings().contains(placementKey),
           QStringLiteral("resetting puts the Code toolbar back together (%1)")
               .arg(window.testRepoCodeBarKeys().join(QStringLiteral(", "))));
+}
+
+void checkRailHideKeepsOnHome(MainWindow &window)
+{
+    const QString hiddenKey = QStringLiteral("ui/railHidden");
+    const QString placementKey = QStringLiteral("ui/buttonPlacement");
+    const QString notes = QStringLiteral("notes");
+    const QString pulls = QStringLiteral("repoTab:pulls");
+    QSettings().remove(hiddenKey);
+    QSettings().remove(placementKey);
+    window.testBuildRepoDetailSection();
+    window.testApplyRailOrder();
+    QApplication::processEvents();
+    const QStringList rail = window.testRailOrderKeys();
+    const QStringList tabs = window.testRepoTabRowKeys();
+    const auto homeKeys = [&window] {
+        QStringList keys;
+        for (const HomeGroup &group : window.testHomeGridGroups())
+            for (const HomeTile &tile : group.tiles)
+                keys << tile.key;
+        return keys;
+    };
+    QWidget *notesButton = window.testRailWidgetForKey(notes);
+    check(rail.contains(notes) && homeKeys().contains(notes) && notesButton,
+          QStringLiteral("Notes starts in the rail and on Home"));
+
+    window.testSetRailItemHidden(notes, true);
+    QApplication::processEvents();
+    check(!window.testRailOrderKeys().contains(notes) &&
+              QSettings().value(hiddenKey).toStringList() == QStringList{notes},
+          QStringLiteral("hiding Notes takes it out of the rail and saves it (%1)")
+              .arg(window.testRailOrderKeys().join(QStringLiteral(", "))));
+    check(notesButton && !notesButton->isVisible() && !notesButton->isHidden() &&
+              window.testRailWidgetForKey(notes) == notesButton,
+          QStringLiteral("the hidden Notes button is kept off screen"));
+    check(homeKeys().contains(notes),
+          QStringLiteral("a rail item hidden from the rail stays on Home"));
+    window.testApplyRailOrder();
+    check(!window.testRailOrderKeys().contains(notes),
+          QStringLiteral("Notes stays hidden when the rail is rebuilt"));
+    check(window.testHomeTileMenuActions(notes) ==
+                  QStringList{QStringLiteral("homeShowInRail")} &&
+              window.testHomeTileMenuActions(QStringLiteral("chat")) ==
+                  QStringList{QStringLiteral("homeHideFromRail")} &&
+              window.testHomeTileMenuActions(QStringLiteral("home")).isEmpty(),
+          QStringLiteral("a Home tile offers to show or hide its rail item"));
+
+    window.testShowHomeGridSection();
+    const int homeSection = window.testSectionIndex();
+    check(window.testActivateHomeGridTile(notes) &&
+              window.testSectionIndex() != homeSection,
+          QStringLiteral("the Home tile still opens a hidden rail page (%1)")
+              .arg(window.testSectionIndex()));
+
+    window.testSetRailItemHidden(QStringLiteral("home"), true);
+    check(window.testRailOrderKeys().value(0) == QStringLiteral("home") &&
+              window.testRailHiddenKeys() == QStringList{notes},
+          QStringLiteral("Home itself cannot be hidden from the rail"));
+
+    window.testSetRailItemHidden(notes, false);
+    QApplication::processEvents();
+    check(window.testRailOrderKeys() == rail && !QSettings().contains(hiddenKey) &&
+              notesButton && notesButton->isVisible(),
+          QStringLiteral("showing Notes puts it back in its place (%1)")
+              .arg(window.testRailOrderKeys().join(QStringLiteral(", "))));
+
+    window.testHideButtonKeepOnHome(window.testRepoPullsTab());
+    QApplication::processEvents();
+    check(!window.testRepoTabRowKeys().contains(pulls) &&
+              !window.testRailOrderKeys().contains(pulls) &&
+              homeKeys().contains(pulls),
+          QStringLiteral("hiding Pulls from the repository tab bar keeps it on "
+                         "Home (%1)")
+              .arg(homeKeys().join(QStringLiteral(", "))));
+    window.testSetRailItemHidden(pulls, false);
+    check(window.testRailOrderKeys().contains(pulls),
+          QStringLiteral("showing Pulls again puts it in the left rail"));
+
+    window.testSetRailItemHidden(notes, true);
+    window.testResetButtonPlacement();
+    check(window.testRailOrderKeys() == rail &&
+              window.testRepoTabRowKeys() == tabs &&
+              !QSettings().contains(hiddenKey) &&
+              !QSettings().contains(placementKey),
+          QStringLiteral("resetting button placement shows hidden items again"));
 }
 
 void checkRailPageShortcuts(MainWindow &window)
@@ -15548,6 +15635,7 @@ else:
         checkStatsPage(window);
         checkMemoryPage(window);
         checkHomeGridPage(window);
+        checkRailHideKeepsOnHome(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }

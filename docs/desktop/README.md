@@ -129,6 +129,24 @@ Everything is in `desktop/`.
   into the rail as a shortcut. All of this is stored as JSON under `ui/*`
   settings keys (`ui/railOrder`, `ui/railFolders`, `ui/railGroups`,
   `ui/buttonPlacement`, `ui/railShortcuts`), keyed by stable rail keys.
+- **Hiding a rail item, keeping it on Home.** Right-click any rail item (a
+  folder member, shortcut or plugin too, but not Home) and pick "Hide from
+  left rail (keep on Home)"; a repository tab or Code toolbar button offers
+  "Hide from … (keep on Home)", which first moves it to the left rail and then
+  hides it there. Its rail key goes into `ui/railHidden` (a string list).
+  `applyRailOrder` takes hidden items out of the rail and its folders and parks
+  their buttons in `railHiddenItems`, a hidden holder widget, instead of
+  calling `hide()`: a button's own visibility stays what the feature that owns
+  it set, so a package turned off still disappears from Home, and turning a
+  feature on cannot make a hidden item reappear in the rail.
+  `railItemWidgets()` lists the rail, its folders and the holder, so Home, the
+  command palette, `railWidgetForKey` and a Home tile click
+  (`QAbstractButton::click`) still reach the item, and `isInRail` counts it.
+  A Home tile's right-click menu shows "Show in left rail" for a hidden item
+  and "Hide from left rail (keep on Home)" for the rest
+  (`addHomeTileRailActions`). The left rail's background menu has a "Hidden
+  from the rail" list to show one or all again. Moving the button to another
+  bar, dropping it on the rail, or "Reset button placement" also shows it again.
 - **Popped-out pages.** Dragging a rail icon out of the window, or "Open in new
   window", moves the section's current page into its own top-level window. A
   placeholder keeps the page's index in the section stack, because the rail's

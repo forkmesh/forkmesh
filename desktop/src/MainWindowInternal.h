@@ -3777,6 +3777,7 @@ const QString kRailSortModeSetting = QStringLiteral("ui/railSortMode");
 const QString kRailGroupedSetting = QStringLiteral("ui/railGrouped");
 const QString kRailGroupsSetting = QStringLiteral("ui/railGroups");
 const QString kRailOrderSetting = QStringLiteral("ui/railOrder");
+const QString kRailHiddenSetting = QStringLiteral("ui/railHidden");
 const QString kRailItemMimeType =
     QStringLiteral("application/x-forkmesh-rail-item");
 const QString kPoppedOutPageMimeType =
