@@ -593,10 +593,9 @@ void RemoveCoreNodeDialog::refreshRun()
     }
     const bool running = m_controller->isRunning();
     QString headline = run.headline();
-    if (run.state() == AddCoreRun::State::Succeeded && !run.commit().isEmpty())
-        headline += QStringLiteral("\nMerge %1 (%2) into main so autodeploy and roll leave it "
-                                   "out.")
-                        .arg(run.branch(), run.commit().left(12));
+    const QString landing = fleetLandingText(run, QStringLiteral("leave it out"));
+    if (!landing.isEmpty())
+        headline += QLatin1Char('\n') + landing;
     m_headline->setText(headline);
     QString color = QStringLiteral("inherit");
     if (run.state() == AddCoreRun::State::Succeeded)

@@ -152,8 +152,12 @@ sharing one store are pruned once, with the union of their manifests):
 - If the `HEAD` commit is older than `releasePruneMinAge`, nothing is deleted:
   a node whose sync has stalled would otherwise read an old channel list and
   delete blobs that only a newer `HEAD` references.
-- If any referenced blob is missing from the store, nothing is deleted that
-  run: a publish or seed may be in progress.
+- A referenced blob missing from the store is counted (the log's "referenced
+  not in the store") but does not stop the run. Until 2026-10-23 it did, and
+  the store never shrank: n3 lacked 5 blobs that v1.2.2 and v1.2.6 name, and n4
+  lacked all 87 referenced blobs. n2 and n3 reached 12 GB and 98% disk. A blob
+  landing for a publish in progress is still safe, because nothing younger than
+  `releasePruneMinAge` is a candidate.
 - Only `sha256/<aa>/<64 lowercase hex>` directories whose name starts with
   `<aa>` are candidates, and only when the directory and every file in it are
   older than `releasePruneMinAge` (default `168h`, at least `24h`), because
