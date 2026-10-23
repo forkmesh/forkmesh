@@ -166,8 +166,8 @@ def test_untrusted_fields_are_one_short_line():
 # -- markup --------------------------------------------------------------------
 
 def _box(markup):
-    start = markup.index("<section data-repo-pull-review-prompt")
-    return markup[start:markup.index("</section>", start) + len("</section>")]
+    start = markup.index("<div data-repo-pull-review-prompt")
+    return markup[start:markup.index("</div>", start) + len("</div>")]
 
 
 def test_the_box_escapes_every_value():
@@ -225,8 +225,8 @@ def test_the_first_view_of_an_open_pull_has_the_box(monkeypatch):
             "https://git.example.test/forkmesh/forkmesh/pull/4.diff") in box
     assert "Copy diff URL" in box
     # Between the header line and the tabs, on every tab.
-    assert page.index("wants to merge") < page.index(box) < page.rindex('<nav class="fm-ssr-tabs">')
-    assert "data-repo-pull-review-prompt" in repo_views.render(bundle, "files", origin=ORIGIN)
+    assert page.rindex('<nav class="fm-ssr-tabs">') < page.index("opened this pull request") < page.index(box)
+    assert "data-repo-pull-review-prompt" not in repo_views.render(bundle, "files", origin=ORIGIN)
     # Signed-out visitors see it: nothing in it is member-only.
     assert "data-ssr-member" not in box
 
@@ -396,13 +396,15 @@ def test_the_dashboard_reads_the_same_template_from_the_settings():
 
 def test_the_dashboard_shows_the_box_on_open_pulls_only():
     detail = _function("renderRepoRecordDetail")
-    assert ('${isPulls && stateKey === "open" ? renderPullReviewPrompt(pullReviewPromptFields('
-            'repo, number, values, parsed.pullPatch), number, '
-            'parsed.repoCollabSettings?.reviewPromptTemplate || "") : ""}') in detail
-    # In the header, after the merge line and before the section tabs.
-    assert detail.index("renderPullAiModelChip(") < detail.index(
-        "renderPullReviewPrompt(") < detail.index("${recordTabs}")
-    # The settings are read for pulls (signed out too).
+    assert ('${isPulls && stateKey === "open" ? sidebarSection("Review with your agent", '
+            'renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, '
+            'parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "")) '
+            ': ""}') in detail
+    # In the sidebar, after the reviewers, before the assignees.
+    assert detail.index("renderPullReviewers(") < detail.index(
+        "renderPullReviewPrompt(") < detail.index('sidebarSection("Assignees"')
+    # The settings are read for pulls (signed out too), and the raw diff is
+    # the changes.patch the page read.
     load = _function("loadRepoRecordDetail")
     assert 'kind === "discussions" ? null : loadRepoCollabSettings(repo)' in load
 

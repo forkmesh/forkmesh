@@ -132,36 +132,29 @@ def render(values, number, template=""):
     raw = values.get("rawDiffUrl") or ""
     diff_button = (
         '<button type="button" data-dashboard-copy="%s" aria-label="Copy the raw diff URL" '
-        'title="%s" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md '
-        'px-2 font-medium text-foreground hover:bg-secondary">%s%s<span class="copy-icon">Copy '
-        'diff URL</span><span class="copy-check">Copied</span></button>' % (
-            esc(raw), esc(raw), icon("link", "copy-icon h-3.5 w-3.5"),
-            icon("check", "copy-check h-3.5 w-3.5"))) if raw else ""
+        'title="%s" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary">%s%s<span class="copy-icon">Copy diff URL</span>'
+        '<span class="copy-check">Copied</span></button>' % (
+            esc(raw), esc(raw), icon("link", "copy-icon h-3 w-3"),
+            icon("check", "copy-check h-3 w-3"))) if raw else ""
     toggle_button = (
         '<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" '
-        'aria-controls="%s" class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 '
-        'font-medium text-foreground hover:bg-secondary">%s<span '
-        'data-repo-pull-review-prompt-toggle-label>Show all</span></button>' % (
-            box_id, icon("chevron-down", "h-3.5 w-3.5"))) if toggle else ""
+        'aria-controls="%s" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md '
+        'px-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary '
+        'hover:text-foreground">%s<span data-repo-pull-review-prompt-toggle-label>Show all'
+        '</span></button>' % (box_id, icon("chevron-down", "h-3 w-3"))) if toggle else ""
     return (
-        '<section data-repo-pull-review-prompt aria-label="Review with your agent" class="mt-3 '
-        'min-w-0 overflow-hidden rounded-md border border-border '
-        'bg-[rgb(var(--dashboard-subtle-rgb))] text-[12px] text-muted-foreground">\n'
-        '            <div class="flex min-w-0 flex-wrap items-center gap-2 py-1 pl-3 pr-1">\n'
-        '              %s<span class="whitespace-nowrap font-semibold text-foreground">Review '
-        'with your agent</span>\n'
-        '              <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">'
-        '%s%s<button '
-        'type="button" data-dashboard-copy="%s" aria-label="Copy the review prompt for this pull '
-        'request" title="Copy this prompt into your coding agent" class="copy-button inline-flex '
-        'h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground '
-        'hover:bg-secondary">%s%s<span class="copy-icon">Copy prompt</span><span '
-        'class="copy-check">Copied</span></button></span>\n'
-        '            </div>\n'
-        '            <pre id="%s" data-repo-pull-review-prompt-text class="%s '
-        'overflow-hidden whitespace-pre-wrap border-t border-border bg-background px-3 py-2 '
-        'font-mono text-[12px] leading-5 text-foreground [overflow-wrap:anywhere]">%s</pre>\n'
-        '          </section>' % (
-            icon("bot", "h-4 w-4", "shrink-0"), toggle_button, diff_button, text,
-            icon("copy", "copy-icon h-3.5 w-3.5"), icon("check", "copy-check h-3.5 w-3.5"),
-            box_id, "max-h-28" if toggle else "max-h-none", text))
+        '<div data-repo-pull-review-prompt aria-label="Review with your agent" '
+        'class="grid min-w-0 gap-1.5">\n'
+        '            <pre id="%s" data-repo-pull-review-prompt-text class="%s min-w-0 '
+        'overflow-hidden whitespace-pre-wrap rounded-md border border-border '
+        'bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 '
+        'text-muted-foreground [overflow-wrap:anywhere]">%s</pre>\n'
+        '            <span class="flex flex-wrap items-center gap-1"><button type="button" '
+        'data-dashboard-copy="%s" aria-label="Copy the review prompt for this pull request" '
+        'title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary">%s%s<span '
+        'class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>'
+        '%s%s</span>\n'
+        '          </div>' % (
+            box_id, "max-h-28" if toggle else "max-h-none", text, text,
+            icon("copy", "copy-icon h-3 w-3"), icon("check", "copy-check h-3 w-3"),
+            diff_button, toggle_button))

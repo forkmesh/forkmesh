@@ -9585,7 +9585,6 @@
               : `${issuePersonNameHtml(author)} started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
             ${isPulls ? renderPullAiModelChip(values, body, parsed.repoCollabSettings) : ""}
           </div>
-          ${isPulls && stateKey === "open" ? renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "") : ""}
           ${recordTabs}
         </header>
         ${isPulls ? `<div data-repo-pull-conflict-slot class="fm-conflict-slot">${renderRepoPullConflictBanner(repo, number, parsed)}</div>` : ""}
@@ -9627,8 +9626,9 @@
               </div>` : ""}
           </div>
           <aside data-repo-record-sidebar class="${activeSection === "conversation" ? "" : "hidden "}min-w-0 self-start">
-            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-1">${renderPullReviewers(pullConversation, values.author || "")}</span>`) : ""}
+            ${isPulls ? sidebarSection("Reviewers", `<span data-repo-pull-reviewers class="grid gap-0.5">${renderPullReviewers(pullConversation, values.author || "")}</span>`) : ""}
             ${isPulls ? renderPullAiReviewSidebar(repo, number) : ""}
+            ${isPulls && stateKey === "open" ? sidebarSection("Review with your agent", renderPullReviewPrompt(pullReviewPromptFields(repo, number, values, parsed.pullPatch), number, parsed.repoCollabSettings?.reviewPromptTemplate || "")) : ""}
             ${isPulls ? sidebarSection("Assignees", `<span class="text-muted-foreground">No one assigned</span>`) : sidebarSection("Category", `<span class="inline-flex items-center gap-1.5 font-semibold"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`)}
             ${sidebarSection("Labels", labelValue)}
             ${rewardValue ? sidebarSection("Reward", rewardValue) : ""}
@@ -9911,10 +9911,9 @@
 
   function renderIssueAiPrompt(repo, number, title, template = "") {
     const prompt = issueAiPromptText(repo, number, title, template);
-    return `<div data-repo-issue-ai-prompt class="mt-3 flex min-w-0 items-start gap-2 rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1 pl-3 pr-1 text-[12px] text-muted-foreground">
-            <i data-lucide="bot" class="h-4 w-4 shrink-0"></i>
-            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 flex-1 break-words font-mono text-foreground">${escapeHtml(prompt)}</code>
-            <button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>
+    return `<div data-repo-issue-ai-prompt class="grid min-w-0 gap-1.5">
+            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="line-clamp-2 min-w-0 break-words rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground">${escapeHtml(prompt)}</code>
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button></span>
           </div>`;
   }
 
@@ -10004,18 +10003,15 @@ Your reply
     const boxId = `repo-pull-review-prompt-${Number(number)}`;
     const raw = fields.rawDiffUrl || "";
     const diffButton = raw
-      ? `<button type="button" data-dashboard-copy="${escapeHtml(raw)}" aria-label="Copy the raw diff URL" title="${escapeHtml(raw)}" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="link" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy diff URL</span><span class="copy-check">Copied</span></button>`
+      ? `<button type="button" data-dashboard-copy="${escapeHtml(raw)}" aria-label="Copy the raw diff URL" title="${escapeHtml(raw)}" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="link" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy diff URL</span><span class="copy-check">Copied</span></button>`
       : "";
     const toggleButton = toggle
-      ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="chevron-down" class="h-3.5 w-3.5"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
+      ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="chevron-down" class="h-3 w-3"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
       : "";
-    return `<section data-repo-pull-review-prompt aria-label="Review with your agent" class="mt-3 min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] text-[12px] text-muted-foreground">
-            <div class="flex min-w-0 flex-wrap items-center gap-2 py-1 pl-3 pr-1">
-              <i data-lucide="bot" class="h-4 w-4 shrink-0"></i><span class="whitespace-nowrap font-semibold text-foreground">Review with your agent</span>
-              <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">${toggleButton}${diffButton}<button type="button" data-dashboard-copy="${text}" aria-label="Copy the review prompt for this pull request" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button></span>
-            </div>
-            <pre id="${boxId}" data-repo-pull-review-prompt-text class="${toggle ? "max-h-28" : "max-h-none"} overflow-hidden whitespace-pre-wrap border-t border-border bg-background px-3 py-2 font-mono text-[12px] leading-5 text-foreground [overflow-wrap:anywhere]">${text}</pre>
-          </section>`;
+    return `<div data-repo-pull-review-prompt aria-label="Review with your agent" class="grid min-w-0 gap-1.5">
+            <pre id="${boxId}" data-repo-pull-review-prompt-text class="${toggle ? "max-h-28" : "max-h-none"} min-w-0 overflow-hidden whitespace-pre-wrap rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground [overflow-wrap:anywhere]">${text}</pre>
+            <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${text}" aria-label="Copy the review prompt for this pull request" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>${diffButton}${toggleButton}</span>
+          </div>`;
   }
 
   function togglePullReviewPrompt(button) {
@@ -10198,7 +10194,6 @@ Your reply
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
             ${issueViewsHtml(repo, number)}
           </p>
-          ${closed || instancePluginOff("issue-ai-prompt") ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
         <div data-repo-record-layout class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -10220,6 +10215,7 @@ Your reply
             <p data-repo-issue-metadata-hint role="status" aria-live="polite" class="mb-2 text-[11px] text-muted-foreground empty:hidden"></p>
             ${sidebarSection("Assignees", assigneeValue, "assignees")}
             ${sidebarSection("Agent", agentValue)}
+            ${closed || instancePluginOff("issue-ai-prompt") ? "" : sidebarSection("AI prompt", renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || ""))}
             ${sidebarSection("Labels", labelValue, "labels")}
             ${sidebarSection("Type", "Issue")}
             ${sidebarSection("Fields", fieldsValue, "fields")}
@@ -10273,7 +10269,6 @@ Your reply
               ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
               : `${bar("w-20", "h-8 rounded-full")}${bar("w-24")}`}
           </p>
-          ${item && !closed && !instancePluginOff("issue-ai-prompt") ? renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "") : ""}
         </header>
         <div class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -10298,6 +10293,7 @@ Your reply
           <aside class="min-w-0 self-start">
             ${section("Assignees", item ? (assignees.length ? `<div class="grid gap-1.5">${assignees.map((name) => `<span class="inline-flex items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}${issuePersonNameHtml(name, "font-semibold")}</span>`).join("")}</div>` : `<span class="text-muted-foreground">No one assigned</span>`) : bar("w-1/2"))}
             ${section("Agent", bar("w-2/3"))}
+            ${item && !closed && !instancePluginOff("issue-ai-prompt") ? section("AI prompt", renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "")) : ""}
             ${section("Labels", item ? (labels.length ? `<div class="flex flex-wrap gap-1">${labels.map((label) => renderIssueLabelChip(label)).join("")}</div>` : `<span class="text-muted-foreground">No labels</span>`) : bar("w-3/4"))}
             ${section("Fields", item && Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px]">P${Number(item.priority)}</span>` : bar("w-1/2"))}
             ${section("Milestone", item ? (item.milestone ? `<span class="font-semibold">${escapeHtml(item.milestone)}</span>` : `<span class="text-muted-foreground">No milestone</span>`) : bar("w-2/3"))}

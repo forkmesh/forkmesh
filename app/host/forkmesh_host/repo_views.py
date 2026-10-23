@@ -1375,13 +1375,13 @@ def _render(bundle, section="", reactions=None, link=None, reader=False, origin=
         head = ('<h2 class="fm-ssr-h1">%s <span>#%d</span></h2>'
                 '<p class="fm-ssr-sub">%s<b>%s</b> wants to merge into '
                 '<code>%s</code> from <code>%s</code> &middot; %s%s</p>'
-                '%s<nav class="fm-ssr-tabs">%s</nav>' % (
+                '<nav class="fm-ssr-tabs">%s</nav>' % (
                     _esc(pull["title"]), pull["number"], _pill(pull["state"]),
                     _person(pull["author"]), _esc(pull["base"]),
                     _esc(pull["head"]), _date(pull["ts"]),
                     ' &middot; <a href="%s" data-pull-raw-diff>Raw diff</a>'
                     % _esc(raw) if raw else "",
-                    _review_prompt(bundle, pull, origin, link), tabs))
+                    tabs))
         if section == "files":
             body = _diff(patch, raw)
         else:
@@ -1392,7 +1392,8 @@ def _render(bundle, section="", reactions=None, link=None, reader=False, origin=
                         _reaction_bar(subject, "body", reactions)
                         if str(pull.get("body") or "").strip() else "",
                         _events(pull.get("conversation") or [], base,
-                                subject, reactions)))
+                                subject, reactions))) + _review_prompt(
+                                    bundle, pull, origin, link)
             if reader and patch.strip():
                 body += '<h3 class="fm-ssr-title">Files changed</h3>' + _diff(
                     patch, raw, usable=False)
