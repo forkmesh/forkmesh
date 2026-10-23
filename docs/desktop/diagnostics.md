@@ -106,6 +106,22 @@ The desktop has no toasts or floating cards; information is shown inline.
   (`PackageRegistry::statusMonitorShows`). Custom monitors are dots
   `custom:<id>` probed with a 10 s timeout. See
   [marketplace/status-page.md](../marketplace/status-page.md).
+  In the debug bar the dots carry no caption and overlap like the phone's
+  footer dots (`ShellStatusDots`): each later dot cuts a 2 px gap out of the
+  one before it, so the row needs no background colour to draw the ring.
+  Hover a dot for its name, verdict and when it is checked next.
+- The debug bar's log icons show only categories that are being recorded:
+  `syncDebugActivityLightCategories()` hides a muted category (Logs > Log
+  types) and every category while logging is off. It runs from
+  `rebuildLogFilterButtons()`, which every on/off switch already calls.
+- Every chart is the size of one quadrant of the CPU/RAM/swap/disk chart: UP,
+  NET, LOG and LOOP make one 2x2 block, EVT, PAINT, UI and POOL another
+  (`kResourceSparklineCompactSide`). They are too small for captions, so
+  hovering a chart opens `SparklineHoverCard`: its name, the current value, a
+  larger chart of the last minute, now/avg/min/peak, and the tile's diagnostic
+  text. The card re-reads its tile every 250 ms while the pointer stays on it,
+  so it is live, and moving to the next chart swaps it without the tooltip
+  delay. The resource quadrants open the same card.
 - The footer CPU/RAM/stall indicator opens the stall details;
   `src/SystemPressure.*` reads Linux PSI to tell system-wide starvation from an
   app freeze.
