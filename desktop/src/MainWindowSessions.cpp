@@ -1005,7 +1005,7 @@ void MainWindow::refreshSessionsList()
         item->setData(kSessionDotRole, agentStatusIconColor(*session));
         item->setData(kSessionUnreadRole, agentSessionUnread(*session));
         item->setData(kSessionRelaysRole, ui->relayCounts.value(id));
-        item->setToolTip(QStringLiteral("#%1 %2 \xE2\x80\x94 %3")
+        item->setToolTip(QStringLiteral("#%1 %2 \u2014 %3")
                              .arg(id)
                              .arg(sessionsTitle(*session), agentStatusLabel(*session)));
     };
@@ -1212,7 +1212,7 @@ void MainWindow::refreshSessionsRelayStrip()
                 title = title.left(27) + QString::fromUtf8("\xE2\x80\xA6");
         }
         const QString text =
-            QStringLiteral("%1 #%2 %3 \xC2\xB7 %4")
+            QStringLiteral("%1 #%2 %3 \u00B7 %4")
                 .arg(outgoing ? QString::fromUtf8("\xE2\x86\x92")
                               : QString::fromUtf8("\xE2\x86\x90"))
                 .arg(other)
