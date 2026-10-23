@@ -196,4 +196,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S121 | 2026-10-23 | Chat | fix | When several new devices join a private chat at once, one banner asks to approve or block all of them instead of one banner per device. | a0c1f528fa | pending |  |
 | S122 | 2026-10-23 | Inbox | ui | Each ping in the Inbox shows the logo of the instance it came from, under the ping's icon. | 9d95e08a10 | pending |  |
 | S123 | 2026-10-23 | DJ Studio | ui | In a DJ Studio jam, each queued song's thumbnail shows who added it and the date and time, and its menu says both in full. | 6740ef7e4c | pending |  |
+| S124 | 2026-10-23 | Chat | fix | Reinstalling ForkMesh and restoring your identity key from the projects folder keeps your chat key, so safety numbers stay the same and nobody sees you as a new device. | b8b8103211 | pending |  |
 <!-- ledger:end -->
