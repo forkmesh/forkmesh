@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import types
 import shutil
 import subprocess
 import urllib.parse
@@ -530,13 +531,15 @@ def test_a_cut_diff_points_at_the_raw_diff():
 
 
 @pytest.mark.parametrize("path,expected", [
-    ("/ForkMesh/forkmesh/pull/4.diff", ("forkmesh", "forkmesh", 4)),
-    ("/forkmesh/forkmesh/pulls/4.patch", ("forkmesh", "forkmesh", 4)),
-    ("/Garden/pull/12.diff", (None, "Garden", 12)),
-    ("/Garden/pulls/12.patch", (None, "Garden", 12)),
+    ("/ForkMesh/forkmesh/pull/4.diff", ("forkmesh", "forkmesh", 4, False)),
+    ("/forkmesh/forkmesh/pulls/4.patch", ("forkmesh", "forkmesh", 4, False)),
+    ("/forkmesh/forkmesh/pull/4.txt", ("forkmesh", "forkmesh", 4, True)),
+    ("/Garden/pull/12.diff", (None, "Garden", 12, False)),
+    ("/Garden/pulls/12.patch", (None, "Garden", 12, False)),
+    ("/Garden/pull/12.txt", (None, "Garden", 12, True)),
     ("/forkmesh/forkmesh/pull/4", None),
     ("/forkmesh/forkmesh/pull/0.diff", None),
-    ("/forkmesh/forkmesh/pull/4.txt", None),
+    ("/forkmesh/forkmesh/pull/4.html", None),
     ("/api/pull/4.diff", None),
     ("/dashboard/forkmesh/pull/4.diff", None),
 ])
@@ -583,6 +586,55 @@ def test_raw_diff_route_serves_the_pull_patch_as_text():
     response, body, asked = run_fetch(
         http_scope("/forkmesh/forkmesh/pull/4.diff"), FakeFastPath(public=False))
     assert body == "worker" and asked
+
+
+def test_text_route_serves_the_whole_pull_as_plain_text():
+    response, body, asked = run_fetch(http_scope("/forkmesh/forkmesh/pull/4.txt"),
+                                      FakeFastPath())
+    assert int(response.status) == 200 and not asked
+    assert response.headers.get("content-type") == "text/plain; charset=utf-8"
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert body.startswith("Pull request #4: Patch pull\nAuthor: alice\n"
+                           "Merges feature-4 into main\nState: open\n")
+    assert "## Description\n\nBody of pull 4." in body
+    assert "## Comments and reviews (1)\n\n### frank commented, 1970-01-01 00:00 UTC\n\nLooks <b>good</b>" in body
+    assert body.endswith("## Diff\n\n" + FILES[LEDGER][".forkmesh/pulls/4/changes.patch"])
+    response, body, _asked = run_fetch(
+        http_scope("/forkmesh/forkmesh/pull/3.txt"), FakeFastPath())
+    assert int(response.status) == 200
+    assert body.endswith("## Diff\n\nNo diff is available for this pull request.\n")
+    repo_views._public.clear()
+    response, body, asked = run_fetch(
+        http_scope("/forkmesh/forkmesh/pull/4.txt"), FakeFastPath(public=False))
+    assert body == "worker" and asked
+
+
+def test_pull_text_folds_edits_deletes_and_review_states():
+    conversation = [
+        {"type": "comment", "id": "a", "author": "ann", "authorKey": "ka",
+         "ts": "1790000000000", "body": "First draft"},
+        {"type": "comment-edit", "target": "a", "authorKey": "ka", "ts": "1790000001000",
+         "body": "Edited text"},
+        {"type": "comment", "id": "b", "author": "bo", "authorKey": "kb", "body": "Gone"},
+        {"type": "comment-delete", "target": "b", "authorKey": "kb"},
+        {"type": "comment-edit", "target": "a", "authorKey": "kb", "body": "Hijack"},
+        {"type": "review", "id": "r", "author": "cy", "authorKey": "kc",
+         "state": "changes_requested", "body": ""},
+        {"type": "line-comment", "id": "l", "author": "cy", "authorKey": "kc",
+         "path": "x.py", "lineStart": "3", "lineEnd": "5", "body": "Off by one"},
+        {"type": "commit", "id": "m", "author": "ann", "body": "fix things"},
+    ]
+    bundle = types.SimpleNamespace(model={"pull": {"number": 9, "title": "T", "author": "ann", "state": "open",
+                             "base": "main", "head": "f", "body": "", "patch": "",
+                             "conversation": conversation}})
+    text = repo_views.pull_text(bundle)
+    assert "(no description)" in text
+    assert "### ann commented, 2026-09-21 " in text and "Edited text" in text
+    assert "First draft" not in text and "Gone" not in text and "Hijack" not in text
+    assert "### cy requested changes\n" in text
+    assert "### cy commented on x.py:3-5\n\nOff by one" in text
+    assert "fix things" not in text
+    assert "## Comments and reviews (3)" in text
 
 
 SHORT_META = ('<meta name="forkmesh-repo-short" content="forkmesh">'

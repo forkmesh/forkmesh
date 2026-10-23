@@ -40,6 +40,7 @@ FRAGMENTS = (
     "09-ads.js",
     "09-agent-profiles.js",
     "09-agents.js",
+    "09-ai-review.js",
     "09-apps.js",
     "09-bounties.js",
     "09-calendar.js",

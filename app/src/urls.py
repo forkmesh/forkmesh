@@ -432,3 +432,6 @@ REPO_FORK_COUNTS_RE = re.compile(r"^/api/repo-fork-counts/?$")
 REPO_FORKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/forks$")
 REPO_REMOTE_FORKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/remote-forks$")
 REPO_PULL_BATCH_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/pull-batch$")
+AI_REVIEW_RE = re.compile(
+    r"^/api/ai-review/(?:(settings)|pulls/([A-Za-z0-9_-][A-Za-z0-9._-]{0,63})/"
+    r"([A-Za-z0-9_-][A-Za-z0-9._-]{0,99})/([1-9][0-9]{0,8}))$")
