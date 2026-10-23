@@ -72,6 +72,14 @@ interpreter start before `main()` installs the handlers.
   both for an absent path and for a broken object store, so `blob`, `blobs`,
   `tree` and `raw` look the entry up with `ls-tree` on a literal pathspec and
   read the object by id.
+- A comparison past its bounds is a repository answer too (413
+  `comparison_too_large`), not an outage. `compare` and `cherry` turn
+  `MAX_COMPARE_COMMITS`, `MAX_CHERRY_UPSTREAM_COMMITS` and the
+  `MAX_COMPARE_BYTES` output limit (`_run_git` raises `GitOutputLimit`, a
+  `GitError`) into `ComparisonTooLarge`. It used to answer 503
+  `mirror_unavailable`: callers retried a request that can never succeed and
+  the compare page said the mirror was down. The dashboard already words a
+  413.
 - `tree` lists at most `MAX_TREE_ENTRIES` (500) entries of a code folder, with
   `truncated: true` past that. The collaboration folders
   (`COLLABORATION_TREE_ROOTS`: `.forkmesh/issues`, `pulls`, `discussions`,

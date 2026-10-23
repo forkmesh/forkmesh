@@ -691,6 +691,14 @@ class GitError(RuntimeError):
     """Internal Git failure; its message never includes Git stderr or paths."""
 
 
+class GitOutputLimit(GitError):
+    pass
+
+
+class ComparisonTooLarge(GatewayError):
+    pass
+
+
 def _canonical_json(value: Any) -> str:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -3150,7 +3158,7 @@ def _run_git(
     ):
         raise GitError("git operation failed")
     if len(completed.stdout) > max_output:
-        raise GitError("git operation exceeded its output limit")
+        raise GitOutputLimit("git operation exceeded its output limit")
     return completed.stdout
 
 
@@ -3217,7 +3225,7 @@ def _run_git_status(
     if completed.returncode not in allowed_codes:
         raise GitError("git operation failed")
     if len(completed.stdout) > max_output:
-        raise GitError("git operation exceeded its output limit")
+        raise GitOutputLimit("git operation exceeded its output limit")
     return completed.returncode, completed.stdout
 
 
@@ -6240,8 +6248,16 @@ class GitRepository:
         except ValueError as exc:
             raise GitError("repository commit count is invalid") from exc
         if commit_count > MAX_COMPARE_COMMITS:
-            raise GatewayError("repository comparison is too large")
+            raise ComparisonTooLarge("repository comparison is too large")
 
+        try:
+            return self._compare_payload(base, head, merge_base, commit_count)
+        except GitOutputLimit as exc:
+            raise ComparisonTooLarge("repository comparison is too large") from exc
+
+    def _compare_payload(
+        self, base: str, head: str, merge_base: str, commit_count: int
+    ) -> dict[str, Any]:
         patch = _run_git(
             self.git_dir,
             [
@@ -6273,7 +6289,7 @@ class GitRepository:
                 max_output=MAX_COMPARE_BYTES,
             )
         if len(patch) + len(commits) > MAX_COMPARE_BYTES:
-            raise GatewayError("repository comparison is too large")
+            raise ComparisonTooLarge("repository comparison is too large")
         return {
             "ok": True,
             "baseOid": base,
@@ -6339,7 +6355,7 @@ class GitRepository:
         except ValueError as exc:
             raise GitError("repository commit count is invalid") from exc
         if own > MAX_COMPARE_COMMITS:
-            raise GatewayError("repository comparison is too large")
+            raise ComparisonTooLarge("repository comparison is too large")
         upstream_raw = git(
             ["rev-list", "--count",
              f"--max-count={MAX_CHERRY_UPSTREAM_COMMITS + 1}",
@@ -6351,7 +6367,7 @@ class GitRepository:
         except ValueError as exc:
             raise GitError("repository commit count is invalid") from exc
         if upstream > MAX_CHERRY_UPSTREAM_COMMITS:
-            raise GatewayError("upstream comparison is too large")
+            raise ComparisonTooLarge("upstream comparison is too large")
         arguments = ["cherry", values["base"], values["head"]]
         if values["limit"]:
             arguments.append(values["limit"])
@@ -8372,6 +8388,8 @@ GIT_ERROR_TEXT = {
                  "address. Check the owner and repository name.",
     "mirror_unavailable": "This ForkMesh mirror could not read the "
                           "repository just now. Try again in a minute.",
+    "comparison_too_large": "This comparison is larger than a mirror "
+                            "serves at once. Compare a smaller range.",
 }
 
 
@@ -13328,6 +13346,9 @@ class GatewayApplication:
             assert cache_key is not None
             return self._single_flight(
                 cache_key, lambda: json_response(function(query)))
+        except ComparisonTooLarge:
+            response = dispatch_error_response(
+                "comparison_too_large", 413, target)
         except GatewayError:
             response = dispatch_error_response("not_found", 404, target)
         except GitError:
