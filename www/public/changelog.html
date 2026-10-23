@@ -189,6 +189,9 @@
           <h3>Projects</h3>
           <ul>
             <li>Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.</li>
+            <li>Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.</li>
+            <li>The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.</li>
+            <li>Instances can pin the repositories shown in Top repositories and choose how many forks each row shows.</li>
           </ul>
           <h3>Chat</h3>
           <ul>
@@ -202,6 +205,7 @@
           <h3>World</h3>
           <ul>
             <li>Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve.</li>
+            <li>Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside.</li>
           </ul>
           <h3>iPhone</h3>
           <ul>
@@ -229,6 +233,12 @@
           <ul>
             <li>On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.</li>
             <li>Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with "Point size &lt;= 0" font warnings.</li>
+          </ul>
+          <h3>Other improvements</h3>
+          <ul>
+            <li>Administrators can turn on an automated AI review that posts a first-pass review comment on pull requests, using Cloudflare Workers AI.</li>
+            <li>Bots and system accounts such as Actions, runners, the git node and the AI reviewer now have their own avatars.</li>
+            <li>A mention or reply notification now opens the exact comment, and Home's repository rows show their fork count.</li>
           </ul>
         </div>
       </section>

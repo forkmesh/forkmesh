@@ -210,9 +210,11 @@
       initDashboardUpdateNotice();
       initRecentPushes();
       initCommentReactions();
+      initCommentAnchor();
       initCommentGifs();
       initCommentTips();
       void initReactionSettings();
+      void initAiReviewSettings();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();
