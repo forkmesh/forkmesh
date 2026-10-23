@@ -147,6 +147,20 @@ class DjJamTest {
         assertEq(DjAutomixStep.Wait, DjAutomix.step(early, ending, b, true))
     }
 
+    fun testAutomixNeverMixesOutOfARepeatingDeck() {
+        val a = DjDeckSide.A
+        val b = DjDeckSide.B
+        val cued = DjAutomixDeck(true, duration = 200.0)
+        val empty = DjAutomixDeck(false)
+        val repeating = DjAutomixDeck(true, true, 196.0, 200.0, repeats = true)
+        assertEq(DjAutomixStep.Wait, DjAutomix.step(repeating, cued, a, true))
+        assertEq(DjAutomixStep.Wait, DjAutomix.step(repeating, empty, a, true))
+        val idle = DjAutomixDeck(true, duration = 200.0, repeats = true)
+        assertEq(DjAutomixStep.Start(a), DjAutomix.step(idle, empty, a, false))
+        val ending = DjAutomixDeck(true, true, 194.0, 200.0)
+        assertEq(DjAutomixStep.Mix(a, b, 6.0), DjAutomix.step(ending, idle, a, false))
+    }
+
     fun testAutomixReplaysPlayedSongsOnceTheQueueRunsOut() {
         val library = listOf(
             DjPlayedSong.of("aaaaaaaaaaa", "Newest", "", 3, 500.0),

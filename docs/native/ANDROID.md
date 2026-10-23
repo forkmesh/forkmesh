@@ -2420,3 +2420,24 @@ edit or delete as somebody else. Nothing here talks to older builds.
   the inventory by subject, category and table, pages rows 50 at a time,
   removes a row only where the server marks it `deletable`, and deletes one or
   all saved items; the export button downloads `/api/accounts/export`.
+- **DJ Studio (S063, S104, S109).** AUTO DJ is a round sparkle button in the
+  utility row next to AUTOMIX (`DjAutoDjButton`, `DjStudioAutoDj.kt`). While
+  on it turns AUTOMIX on (and off again if it switched it on), reads the
+  playing song's Invidious recommendations (`invidiousData`, falling back to a
+  search for the song), keeps songs only and puts the artist's own, Topic,
+  VEVO, official or remastered uploads first, drops the seed, anything on a
+  deck, played this session or already heard under another upload, checks the
+  like counts of the first six (`/api/v1/videos/<id>?fields=likeCount,viewCount`)
+  and ranks by likes and relatedness (`DjAutoDj`, core, the iOS rules and
+  tests). `preload` takes the next pick before the replay pool, and shake
+  loads a new pick instead of the song just mixed out of. The state is saved
+  with AUTOMIX (`DjSaved.autoDj`, only kept with `automix`). Android had no
+  false end reports to filter (its own decoder knows the length), so iOS's
+  `DjEnd` was not needed. **Repeat** is a lit `repeat` round button by
+  each deck's clock (`DjRepeatButton`) and "Repeat song" in the deck sheet;
+  it is saved with the deck (`DjSavedDeck.repeats`), cleared by Reset All, and
+  AUTOMIX never mixes out of a repeating deck (`DjAutomixDeck.repeats`). The
+  deck wraps from where the sound ends back to where it starts, skipping the
+  waveform's quiet head and tail (`DjRepeat.span`, `step`: the studio tick
+  wraps at the end or schedules the wrap when it is under 0.6 s away), and a
+  decoder end on a repeating deck restarts from that point too.

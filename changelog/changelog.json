@@ -16,7 +16,9 @@
       "On Android, Home shows a spinner on each icon whose count is loading instead of a loading bar, keeps the repository counts from last time, and its long-press menu has Refresh everything.",
       "On Android Home, the number on each icon sits beside the icon instead of covering the name of the icon above, and the update dot is smaller.",
       "On Android, with Status Page installed, tiny status dots sit in a thin strip under the status bar on every screen.",
-      "On Android, Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete."
+      "On Android, Settings > Data saves the home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and lists everything ForkMesh keeps about you with a full download and per-item delete.",
+      "On Android, DJ Studio's AUTO DJ plays a related song people liked on the next deck, originals first, and a shake loads a new pick.",
+      "On Android, DJ Studio decks have a Repeat button that loops the song tightly, jumping from where the sound ends back to where it starts."
      ]
     }
    ]
