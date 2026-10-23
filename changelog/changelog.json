@@ -78,7 +78,8 @@
     {
      "title": "Desktop",
      "items": [
-      "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes."
+      "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes.",
+      "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back."
      ]
     },
     {

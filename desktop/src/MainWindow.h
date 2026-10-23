@@ -2966,6 +2966,11 @@ public:
         noteAgentActivity(sessionId, bytes);
     }
     int testAgentDotCount() const;
+    void testSetTopBarIndicatorHidden(const QString &key, bool hidden)
+    {
+        setTopBarIndicatorHidden(key, hidden);
+    }
+    bool testTopBarIndicatorShown(const QString &key) const;
     void testSetAgentSessionStatus(int sessionId, const QString &status);
     QString testAgentSessionStatus(int sessionId) const
     {
@@ -11241,6 +11246,10 @@ private:
     QWidget *m_chromeDotDivider = nullptr;
     void refreshNodeDotMatrix();
     void updateChromeDotDivider();
+    QSet<QString> m_hiddenTopBarIndicators;
+    bool topBarIndicatorHidden(const QString &key) const;
+    void setTopBarIndicatorHidden(const QString &key, bool hidden);
+    void showTopBarIndicatorMenu(const QPoint &globalPos);
     ActionRunStrip *m_actionRunStrip = nullptr;
     QWidget *m_chromeActionDivider = nullptr;
     QString m_agentDotTooltipKey;

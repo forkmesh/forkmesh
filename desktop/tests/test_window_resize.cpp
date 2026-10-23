@@ -28579,6 +28579,36 @@ else:
             window.testRemoveAgentSession(id);
     }
 
+    {
+        AgentSession session;
+        session.id = 133979;
+        session.owner = QStringLiteral("me");
+        session.name = QStringLiteral("r");
+        session.prompt = QStringLiteral("Top bar hide fixture");
+        session.status = AgentStatus::Running;
+        window.testAddAgentSession(session);
+        window.testRefreshAgentDotMatrix();
+        check(window.testTopBarIndicatorShown(QStringLiteral("agents")),
+              QStringLiteral("the agent matrix shows in the top bar by default"));
+        window.testSetTopBarIndicatorHidden(QStringLiteral("agents"), true);
+        check(!window.testTopBarIndicatorShown(QStringLiteral("agents")) &&
+                  QSettings().value(forkmesh::ui::kHiddenTopBarIndicatorsSetting)
+                      .toStringList()
+                      .contains(QStringLiteral("agents")),
+              QStringLiteral("hiding Agents from the top bar menu removes the "
+                             "matrix and remembers the choice"));
+        window.testRefreshAgentDotMatrix();
+        check(!window.testTopBarIndicatorShown(QStringLiteral("agents")),
+              QStringLiteral("a hidden agent matrix stays hidden when sessions "
+                             "change"));
+        window.testSetTopBarIndicatorHidden(QStringLiteral("agents"), false);
+        check(window.testTopBarIndicatorShown(QStringLiteral("agents")) &&
+                  !QSettings().contains(
+                      forkmesh::ui::kHiddenTopBarIndicatorsSetting),
+              QStringLiteral("showing Agents again brings the matrix back"));
+        window.testRemoveAgentSession(session.id);
+    }
+
     // A terminal error result is terminal for the transport too. Keeping the
     // Claude/Codex process alive after painting the session Failed made it hold
     // resources behind an error row.
