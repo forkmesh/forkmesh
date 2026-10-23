@@ -1650,8 +1650,13 @@ void applyStoredOcticon(QPushButton *button)
         QIcon icon = themedOcticon(name, color, px);
         if (const char *checked = Theme::checkedIconColorForButton(
                 button->objectName(), currentThemeIsDark()))
-            icon.addPixmap(tintedOcticonPixmap(name, QColor(checked), px),
-                           QIcon::Normal, QIcon::On);
+            icon.addPixmap(
+                tintedOcticonPixmap(name,
+                                    hasRole && Theme::isNext()
+                                        ? Theme::color(Theme::Role::AccentFg)
+                                        : Theme::remapColor(QColor(checked)),
+                                    px),
+                QIcon::Normal, QIcon::On);
         button->setIcon(icon);
     }
     button->setIconSize(QSize(px, px));
@@ -1763,7 +1768,7 @@ int railItemWidth()
 
 int railColumnWidth()
 {
-    return railExpanded() ? kRailExpandedItemWidth : railCompactItemWidth();
+    return railExpanded() ? railExpandedItemWidth() : railCompactItemWidth();
 }
 
 int railWidth()

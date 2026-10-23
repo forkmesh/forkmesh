@@ -2019,6 +2019,7 @@ class Default:
                     self.env, "INSTANCE_LOGIN_DEADLINE", "") or 0)
             except (TypeError, ValueError):
                 login_deadline = 0
+            theme = await self._instance_theme()
             return json_response({
                 "ok": True,
                 "name": instance_name(self.env),
@@ -2033,7 +2034,8 @@ class Default:
                                      or "1").strip() != "0" else None),
                 "plugins": instance_features.describe(self.env),
                 "offsiteHosts": list(instance_features.OFFSITE_HOSTS),
-                "theme": await self._instance_theme(),
+                "theme": theme,
+                "themeColors": instance_theme.colours(theme),
                 "themes": instance_theme.catalogue(),
                 "legal": instance_legal.links(
                     await self._instance_legal_setting(),

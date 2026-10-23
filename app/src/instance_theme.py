@@ -210,6 +210,19 @@ def css(theme):
     return "".join(block.rstrip("\n") + "\n" for block in blocks if block)
 
 
+def colours(theme):
+    theme = theme or {}
+    preset = THEMES.get(theme.get("preset") or "") or {}
+    resolved = {}
+    for mode in MODES:
+        merged = dict((preset.get("colors") or {}).get(mode) or {})
+        merged.update(theme.get(mode) or {})
+        if merged:
+            resolved[mode] = {name: merged[name] for name in THEME_TOKENS
+                              if name in merged}
+    return resolved
+
+
 def preview_css(name):
     name = str(name or "").strip().lower()
     if name == DEFAULT_THEME:
