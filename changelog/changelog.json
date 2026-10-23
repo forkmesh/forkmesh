@@ -28,7 +28,8 @@
     {
      "title": "World",
      "items": [
-      "Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve."
+      "Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve.",
+      "Bikes riding around the outer edge of the world now stay on the outer road at each junction, and only head back in when you turn toward the inside."
      ]
     },
     {
