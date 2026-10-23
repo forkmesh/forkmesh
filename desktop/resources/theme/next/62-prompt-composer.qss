@@ -22,37 +22,32 @@
 }
 #promptWrapper QPushButton#promptClearButton,
 #promptWrapper QPushButton#promptCloudButton,
+#promptWrapper QPushButton#promptWorktreeCheck,
+#promptWrapper QPushButton#promptVibeCheck,
 #promptWrapper QPushButton#promptResetButton,
 #promptWrapper QPushButton#promptDetachButton {
-    background: transparent; border: none; border-radius: 4px; padding: 0px;
+    background: transparent; border: 1px solid transparent; border-radius: 5px; padding: 0px;
 }
 #promptWrapper QPushButton#promptClearButton:hover,
 #promptWrapper QPushButton#promptCloudButton:hover,
+#promptWrapper QPushButton#promptWorktreeCheck:hover,
+#promptWrapper QPushButton#promptVibeCheck:hover,
 #promptWrapper QPushButton#promptResetButton:hover,
 #promptWrapper QPushButton#promptDetachButton:hover { background-color: @surfaceRaised; }
 #promptWrapper QPushButton#promptClearButton:pressed,
 #promptWrapper QPushButton#promptCloudButton:pressed,
+#promptWrapper QPushButton#promptWorktreeCheck:pressed,
+#promptWrapper QPushButton#promptVibeCheck:pressed,
 #promptWrapper QPushButton#promptResetButton:pressed,
 #promptWrapper QPushButton#promptDetachButton:pressed { background-color: @surfaceActive; }
-#promptWrapper QPushButton#promptCloudButton:checked { background-color: @accentSubtle; }
-#promptWrapper QLabel#promptWorktreeIcon { background: transparent; }
-#promptWrapper QCheckBox#promptWorktreeCheck { background: transparent; spacing: 0px; padding: 0px; }
-#promptWrapper QCheckBox#promptVibeCheck {
-    background: transparent; spacing: 4px; padding: 0px 0px 0px 4px;
-    font-size: 11px; color: @fgMuted;
+#promptWrapper QPushButton#promptCloudButton:checked,
+#promptWrapper QPushButton#promptWorktreeCheck:checked,
+#promptWrapper QPushButton#promptVibeCheck:checked {
+    background-color: @accentSubtle; border-color: @accent;
 }
-#promptWrapper QCheckBox#promptVibeCheck:hover { color: @fgSecondary; }
-#promptWrapper QCheckBox#promptVibeCheck:checked { color: @fg; }
-#promptWrapper QCheckBox#promptWorktreeCheck::indicator,
-#promptWrapper QCheckBox#promptVibeCheck::indicator {
-    width: 12px; height: 12px; border-radius: 3px;
-    border: 1px solid @fgSubtle; background: transparent; image: none;
-}
-#promptWrapper QCheckBox#promptWorktreeCheck::indicator:hover,
-#promptWrapper QCheckBox#promptVibeCheck::indicator:hover { border-color: @fgMuted; }
-#promptWrapper QCheckBox#promptWorktreeCheck::indicator:checked,
-#promptWrapper QCheckBox#promptVibeCheck::indicator:checked {
-    border-color: @accent; background: @accent; image: url(@checkIcon);
+#promptWrapper QLabel#promptChatPreview {
+    background: transparent; border: none; border-bottom: 1px solid @border;
+    padding: 0px; font-size: 11px; color: @fgMuted;
 }
 
 #promptWrapper #issueQuickAdd {

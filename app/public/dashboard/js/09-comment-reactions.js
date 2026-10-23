@@ -315,7 +315,7 @@
   function renderCommentReactionWho(tally, signedIn) {
     const stack = tally.people.slice(0, COMMENT_REACTION_STACK)
       .map((person) => issueActorAvatarHtml(person.name, "", "h-5 w-5", person.agent, false)).join("");
-    const rows = tally.people.slice(0, COMMENT_REACTION_WHO_SHOWN).map((person) => `<li>${issueActorAvatarHtml(person.name, "", "h-4 w-4", person.agent, false)}<span>${escapeHtml(person.name)}</span>${person.agent ? '<span class="fm-reaction-who-agent">agent</span>' : ""}</li>`).join("");
+    const rows = tally.people.slice(0, COMMENT_REACTION_WHO_SHOWN).map((person) => `<li>${issueActorAvatarHtml(person.name, "", "h-4 w-4", person.agent, false)}<span>${person.agent ? escapeHtml(person.name) : issuePersonNameHtml(person.name, "")}</span>${person.agent ? '<span class="fm-reaction-who-agent">agent</span>' : ""}</li>`).join("");
     const more = tally.count - Math.min(tally.people.length, COMMENT_REACTION_WHO_SHOWN);
     const verb = window.matchMedia?.("(pointer: coarse)").matches ? "Tap" : "Click";
     const hint = signedIn ? (tally.mine ? `${verb} to take yours back` : `${verb} to add yours`) : "Sign in to react";

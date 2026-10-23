@@ -129,6 +129,13 @@ Invariants:
 
 ### List views, sort and filters
 
+- The list's toolbar (`agentsActionBar`) is an `OverflowActionRow` too
+  (`agents/listActionUses`): up to six of Start all, Stop all, Update all,
+  Delete selected, Usage, To desktop, Sort and the rest inline, the queue
+  count always, everything else under **More**. A narrow list pane used to
+  squeeze the fixed-size buttons on top of each other. The recycle-bin strip
+  shows "N deleted" (the full text is its tooltip) and folds Show, Restore
+  all and Delete all the same way.
 - **View** (`setAgentListView`, `agents/listView`; shared with the Tasks page
   through `forkmesh::ui::ListViewMode`, see [tasks-page.md](tasks-page.md)):
   - **Compact**: lead column (avatar, status, age, branch button, churn) and a
@@ -196,6 +203,18 @@ creator from it. Phones can change the limit and queue order
 
 ### Detail pane
 
+- The header's actions live in one `OverflowActionRow` (`agentHeaderActions`,
+  `src/OverflowActionRow.*`): the status pill on the left, then at most five
+  actions, the branch sync label, and a **More** (⋯) button whose menu holds
+  the rest (Listen, Raw, Worktree, Delete, issue and task links, cloud
+  actions...). Which five show is decided by use: every click, from the row or
+  the menu, is counted in `agents/headerActionUses/<name>`, and the most used
+  visible actions win, ties going to a fixed rank (Continue, Stop, Continue
+  here, Merge & clean up, Create PR, PR, Pull main, Code...). When the pane
+  is too narrow even for those, the lowest-ranked ones move into the menu
+  too, so the row never overlaps or runs off the right edge. Hidden actions
+  stay real buttons, parked off-screen, so every existing visibility rule and
+  click handler is unchanged.
 - The title (`WrappedTitleLabel`) wraps up to `kAgentTitleMaxLines` lines.
   `showAgentSession()` reopens a detail pane collapsed to zero width.
 - **Code** opens the live diff right of the transcript (`agentCodeSplit`),
@@ -294,9 +313,32 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 
 | Control | Setting | Effect |
 | --- | --- | --- |
-| Worktree checkbox (`promptWorktreeCheck`) | | Own worktree, or the checkout directly |
+| Branch toggle (`promptWorktreeCheck`, git-branch icon) | | Own worktree, or the checkout directly |
 | **Cloud** (`promptCloudButton`) | `agents/composerRunInCloud` | **new** queues the run on an account agent node (`startQuickAddCloudAgent`, signed `POST /api/repo/<owner>/<repo>/agent-sessions`); Claude Code and Codex, published repositories, no attachments |
-| **Vibe** (`promptVibeCheck`) | `agents/composerVibe` (off) | Stamps `AgentSession::vibe`; a successful worktree run is merged with clean-up (`maybeAutoMergeForSession`) and pushed (`pushCurrentRepoUpstream`). All merge gates apply |
+| **Vibe** (`promptVibeCheck`, sparkle icon) | `agents/composerVibe` (off) | Stamps `AgentSession::vibe`; a successful worktree run is merged with clean-up (`maybeAutoMergeForSession`) and pushed (`pushCurrentRepoUpstream`). All merge gates apply |
+
+- The three toggles are icon buttons at the right end of the composer's top
+  strip, before the clear (×), reset and pop-out buttons; only the resize grip
+  stays on the left. An "on" toggle gets a thin accent border, so the branch
+  icon (on by default) reads as connected. They were a checkbox, a
+  checkbox-plus-icon pair and a "vibe" checkbox on the left until 2026-10-22,
+  which crowded the grip and hid what was on.
+- **Chat preview** (`ChatPreviewLabel`, `promptChatPreview`): up to three
+  one-line rows over the prompt with the latest messages of the conversation
+  the follow-up button sends to (`promptChatTargetSessionId`: the agent open
+  above, else the last selected one). Rows come from the session's stream
+  events (`_local_user`, `assistant` text, `_codex_agent_complete`), last
+  paragraph of each, elided to the width; with no events, the prompt and
+  `m_lastAssistantText`. Clicking it opens that agent.
+  `refreshPromptChatPreview` runs (debounced 250 ms) from
+  `updateQuickAddEnterTarget` and on each new event of that session. Showing
+  or hiding it adds or removes its height from the docked composer
+  (`baseAnchoredHeight`).
+- With a chat to reply to, the follow-up button reads **chat** (comment icon)
+  instead of **add**, so it is clear the text goes to that conversation.
+  **new** (plus), **chat**/**add** (paper airplane) and **task** (checklist)
+  carry small icons in both interfaces (`tintComposerActionButton`; on the
+  accent fill of the Enter target the icon uses the on-accent colour).
 
 - The repository comes from `resolveAgentRepositoryIndex` for local and cloud
   runs. Phones expose the same switches through `agents.start`.
@@ -377,6 +419,24 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   still opens the account and terminal menus below. From 2026-10-18 until
   this change a click opened the web `/dashboard/usage` page; before that it
   opened the menu.
+- **Hover card (2026-10-22).** Hovering the Claude Code or Codex usage chart
+  in the bottom bar, or the agents toolbar's **Usage** button, shows a card
+  (`agentUsageHoverCard`, `MainWindow::attachAgentUsageHoverCard` and
+  `fillAgentUsageHoverCard` in `src/MainWindowAgentUsagePage.cpp`) instead of
+  the plain text tooltip. It holds the active account's usage bars
+  (`TokenUsageMenuRow`, with the 12-hour reset clock and the reset countdown
+  button), the session stats line, and the Usage page's controls for that
+  account: Refresh, Open the Usage page, Open in a terminal, Launch in system
+  terminal, Edit account…, Log in…, Log out…, Add account…, a switch to each
+  other account, Runner accounts… and **Use … for new agents**. The card is a
+  `Qt::ToolTip` window that takes clicks; it opens 350 ms after the pointer
+  enters, stays while the pointer is on the chart or the card, and closes
+  about 360 ms after it leaves both, or on a click on the chart. It refills
+  from `scheduleAgentUsagePagesRefresh` when usage changes, and skips the
+  rebuild when nothing it shows changed, so a click is not lost to a refill.
+  The chart's tooltip text is kept for accessibility and the toolbar button.
+  `forkmesh-window-tests --usage-hover-only` checks both providers' cards
+  (`checkAgentUsageHoverCard`).
 - Both account popups start with **Open the Usage page**
   (`addAgentUsagePageAction`), which opens the in-app page.
 - Usage rows (`TokenUsageMenuRow`) segment the bar per hour or day of the

@@ -1188,7 +1188,7 @@
         <div data-dashboard-commit-row class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 border-t border-border hover:bg-secondary/30 transition-colors">
           <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" class="min-w-0 px-4 py-3 text-left">
             <span class="block truncate text-sm font-medium text-foreground">${escapeHtml(commit.subject || "Commit")}</span>
-            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
+            <span class="mt-1 block truncate text-xs text-muted-foreground">${issuePersonNameHtml(commit.author || "unknown", "", { inLink: true, git: true })} committed ${escapeHtml(commit.date || "")}</span>
           </button>
           <div class="flex items-center justify-end gap-2 px-4 py-3">
             <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" data-dashboard-commit-short-hash class="font-mono text-xs font-semibold text-foreground hover:underline">${escapeHtml(shortHash)}</button>
@@ -1240,7 +1240,7 @@
             <span class="hidden font-mono text-xs text-muted-foreground sm:inline">${escapeHtml(hash.slice(0, 12))}</span>
           </div>
           <p class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            <span><span class="font-semibold text-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")}</span> committed ${escapeHtml(commit.date || "")}</span>
+            <span>${issuePersonNameHtml(commit.author || "unknown", "font-semibold text-foreground", { git: true })} committed ${escapeHtml(commit.date || "")}</span>
             <span class="font-mono">${parents.length ? `parent ${parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ")}` : "root commit"}</span>
             <span class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</span>
           </p>
@@ -2777,65 +2777,6 @@
     return `<div title="${formatCount(total)} commits in the last 32 weeks" aria-label="${formatCount(total)} commits in the last 32 weeks" class="flex h-8 min-w-[12rem] items-end gap-px">${bars}</div>`;
   }
 
-  // Git identities ForkMesh itself writes carry the ForkMesh handle as the git
-  // author NAME: the desktop commits as `user.name = <account>` and the mirror
-  // intake as `user.name = <node>`, so a contributor row resolves to a profile
-  // exactly when its author name is an account that exists. An identity some
-  // other git config produced ("ForkMesh Deploy", a person's full name, an
-  // imported GitHub author) has no account behind it and stays inert text
-  // rather than guessing at a profile that belongs to someone else (#636).
-  const CONTRIBUTOR_HANDLE_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-  // handle -> resolved profile name ("" when the lookup answered "no profile").
-  const contributorProfileNames = new Map();
-
-  async function resolveContributorProfile(author) {
-    const handle = String(author || "").trim().toLowerCase();
-    // Most author names never reach the network: only a name that is already
-    // shaped like a handle can name an account.
-    if (!CONTRIBUTOR_HANDLE_RE.test(handle)) return "";
-    if (contributorProfileNames.has(handle)) return contributorProfileNames.get(handle);
-    let account;
-    try {
-      account = await fetchJson(`/api/accounts/${encodeURIComponent(handle)}`);
-    } catch (_) {
-      return ""; // a failed lookup is not an answer, so it is not remembered
-    }
-    // `exists` alone still covers a name that is merely reserved and a
-    // quarantined account (which answers without a kind), and a private
-    // profile has no public page to send a reader to.
-    const resolved = account?.exists && account.available === false &&
-      !account.profilePrivate &&
-      (account.kind === "user" || account.kind === "node")
-      ? String(account.name || handle).trim().toLowerCase()
-      : "";
-    contributorProfileNames.set(handle, resolved);
-    return resolved;
-  }
-
-  // Contributor rows render as plain text and are upgraded to profile links
-  // afterwards, so the tab never waits on the lookups. Keep profile discovery
-  // bounded even though the table itself shows every contributor returned by
-  // the mirror; names beyond this point remain accurate, inert git identities.
-  async function linkRepoInsightsContributors(container) {
-    const rows = container
-      ? [...container.querySelectorAll("[data-repo-insights-contributor]")]
-          .slice(0, 50)
-      : [];
-    for (const row of rows) {
-      const author = row.getAttribute("data-repo-insights-contributor") || "";
-      const handle = await resolveContributorProfile(author);
-      // The panel is replaced wholesale on every repo/branch switch, so a
-      // detached row belongs to a view the reader already left.
-      if (!handle || !row.isConnected) continue;
-      const link = document.createElement("a");
-      link.className = "dashboard-accent-link hover:underline";
-      link.href = publicProfileUrl(handle);
-      link.title = `${platformName()} profile @${handle}`;
-      link.textContent = author;
-      row.replaceChildren(link);
-    }
-  }
-
   function repoTrafficDayLabel(day) {
     const date = new Date(`${day}T00:00:00Z`);
     if (Number.isNaN(date.getTime())) return String(day || "");
@@ -2912,7 +2853,7 @@
         <div data-repo-insights-contributor-row class="grid min-w-[46rem] grid-cols-[minmax(14rem,1fr)_7rem_6rem_minmax(14rem,1fr)] items-center gap-4 border-t border-border px-4 py-2.5 text-sm hover:bg-secondary/20">
           <div class="flex min-w-0 items-center gap-3">
             ${repoContributorAvatar({ name: item.author, email: item.email, commits: item.commits })}
-            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}</div>
+            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate">${issuePersonNameHtml(item.author, "font-medium text-foreground", { git: true })}</div>
           </div>
           <span class="text-right font-mono text-xs font-semibold text-foreground">${formatCount(item.commits)}</span>
           <span class="text-right font-mono text-xs text-muted-foreground">${share.toFixed(1)}%</span>

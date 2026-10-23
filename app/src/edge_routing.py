@@ -1037,7 +1037,8 @@ def masked_target_url(base_url, owner, repo, operation, query=None):
         quote(operation, safe="-"),
     )
     safe_query = {}
-    for key in ("path", "ref", "base", "head", "cherry", "limit", "service",
+    for key in ("path", "ref", "base", "head", "cherry", "limit", "counts",
+                "service",
                 "sha256", "tagMoves", "protect", "pushPrefix", "rewrite",
                 "period",
                 "person", "view", "related", "q"):

@@ -21,6 +21,8 @@ struct NextAccess {
     static void toggleRailExpanded(MainWindow &window);
     static QWidget *overlayParent(MainWindow &window);
     static QWidget *railToggleButton(MainWindow &window);
+    static QWidget *railResizeHandle(MainWindow &window);
+    static void setRailWidth(MainWindow &window, int width, bool remember);
 
     static void installWelcome(MainWindow &window);
     static bool maybeShowWelcome(MainWindow &window);

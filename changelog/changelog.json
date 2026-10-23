@@ -28,7 +28,8 @@
       "The web dashboard works again: a merge earlier today had left its script unable to load, which broke repository pages, the Actions tab and pull requests.",
       "A pull request's merge box now lists each check with its state and log, and says when checks are waiting for a maintainer's approval.",
       "Issue and pull request pings now say what happened, such as who approved, closed or assigned which item, and link straight to it; the issue sidebar now tells a repository owner they are receiving notifications, and Unsubscribe really stops them.",
-      "Public repositories can back themselves up to the Internet Archive every day, week or month from repository Settings, using your own archive.org keys."
+      "Public repositories can back themselves up to the Internet Archive every day, week or month from repository Settings, using your own archive.org keys.",
+      "The desktop pull request list marks a pull whose code is not on this computer with a faded cloud icon, and its hover text names the local branch that holds the code when it is."
      ]
     },
     {
@@ -48,6 +49,8 @@
      "items": [
       "The pinned last prompt above an agent's transcript no longer leaves an empty box under it on the phone, you can swipe it left and right to go through earlier and later prompts, and the desktop app and the website's agent session pages now pin it too.",
       "Desktop agents can now offer to start a new session for side work, list and message your other agents and runners, send you notifications, click and type in their browser windows, and open small interactive widgets in ForkMesh, like Claude Code's desktop app.",
+      "The agent header shows your five most-used actions with the rest under a More menu, and the agent list's toolbar does the same, so neither overlaps or runs off the edge in a narrow window.",
+      "The prompt box shows the last three lines of the conversation it will reply to, its follow-up button now reads chat, the branch, cloud and vibe switches are icons on the right with an outline when on, and the send buttons have icons.",
       "In the iPhone terminal, every key now fits on screen, a Ctrl key sends any Ctrl combination such as Ctrl+X then Ctrl+S, and scrolling up to read earlier output no longer jumps back to the bottom.",
       "Agents keep running after you log out or switch users: ForkMesh no longer shuts itself down when your desktop session's message bus restarts.",
       "Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once."
@@ -57,6 +60,7 @@
      "title": "World",
      "items": [
       "Stepping into a neighbouring World's hexagon is seamless: its hexagon is built ahead of time, people stay visible on both sides while you cross, and the World no longer blanks out or stalls after a while on slower devices.",
+      "Riding the coaster in first person, your view now tilts, banks and turns upside down with your seat, and a look to the side stays put through the loops.",
       "Walking out of an instance's World, such as OWASP BLT, onto the ForkMesh land next door now takes you into the ForkMesh World."
      ]
     },
@@ -64,7 +68,8 @@
      "title": "Settings",
      "items": [
       "Closing the web status editor now returns keyboard focus to the control that opened it.",
-      "Settings > Data on the iPhone can save your home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and shows everything ForkMesh keeps about you, your organizations and your repositories, with a full download and per-item delete."
+      "Settings > Data on the iPhone can save your home screen layout, news reader subscriptions and app settings to your ForkMesh account, encrypted, and shows everything ForkMesh keeps about you, your organizations and your repositories, with a full download and per-item delete.",
+      "A new Match the instance's theme option in Appearance makes the desktop and iPhone apps wear the colours your instance's admin picked."
      ]
     },
     {
@@ -87,9 +92,23 @@
      "title": "Desktop",
      "items": [
       "A phone pairing request now defaults to Deny, no longer jumps in front of your work, and expires after two minutes.",
+      "Drag the right edge of the expanded sidebar to make it wider or narrower; double-click it to reset.",
       "An Actions run that stops because the computer is low on disk space now says to run Free disk space first, and its ping is filed as a disk problem.",
       "A run waiting for your approval now says why it is held, such as a first-time contributor's pull request, instead of only saying the workflow has no changes.",
-      "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back."
+      "Right-click the desktop's top bar to hide the Agents, Nodes or Actions grids, and right-click it again to bring them back.",
+      "Hovering a usage chart now shows the current account's usage bars with its account, terminal and reset-timer controls, the same ones the Usage page has."
+     ]
+    },
+    {
+     "title": "Server",
+     "items": [
+      "Self-hosted instances show the platform changelog at /changelog, and their menus no longer show forkmesh.com's Company links."
+     ]
+    },
+    {
+     "title": "Server",
+     "items": [
+      "Security reports sent to forkmesh.com/api/security/report, including from AI agents and scanners that read the code, now alert the maintainers at once and open a private fix task."
      ]
     },
     {

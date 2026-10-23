@@ -37,7 +37,8 @@ FUNCTIONS = {
         "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issueActorAvatarHtml",
         "parseFlexibleDate", "formatDate", "formatTimeAgo", "formatCount", "loadingHtml",
         "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
-        "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs"),
+        "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs",
+        "repositoryViewKey"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
         "markdownVideoButtonHtml",
@@ -64,7 +65,11 @@ FUNCTIONS = {
         "issueDateInputValue", "mdMentionHtml", "issueCardAuthorHtml", "developmentProse",
         "pullClosingIssueNumbers", "pullOwnIssueNumbers", "issueDevelopmentPullStates",
         "issueLinkedPullNumbers", "developmentPulls", "developmentRow", "renderIssueDevelopment",
-        "issueAiPromptText", "renderIssueAiPrompt", "issueSubscriptionNote"),
+        "issueAiPromptText", "renderIssueAiPrompt", "issueSubscriptionNote", "issueViewKey",
+        "issueAiPromptText", "renderIssueAiPrompt", "issueAssignmentHours", "issueAssignmentTimes",
+        "issueAssigneeHasPull", "issueDeadlineDuration", "issueAssignmentDeadline",
+        "renderIssueAssignmentDeadline", "issueAssigneeDeadlineHtml", "issueSubscriptionNote",
+        "issueViewKey", "issueViewsLabel", "issueViewsHtml"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE"),
@@ -74,7 +79,8 @@ CONSTANTS = {
         "COMMENT_REACTIONS", "COMMENT_REACTION_KINDS", "COMMENT_REACTION_STICKERS",
         "COMMENT_REACTION_CUSTOM_RE", "MD_GIPHY_GIF",
         "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
-        "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT"),
+        "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT",
+        "ISSUE_ASSIGNMENT_HOURS_MAX", "ISSUE_ASSIGNMENT_WARN_FRACTION"),
 }
 
 
@@ -112,6 +118,7 @@ const PLUGINS_OFF = %(off)s;
 function instancePluginOff(id) { return PLUGINS_OFF.includes(id); }
 function platformName() { return "Acme Code"; }
 function publicSiteOrigin() { return %(origin)s; }
+function repoPublicOwner(value) { return value.owner; }
 function publicProfileUrl(name, suffix = "") {
   return `/@${encodeURIComponent(String(name || "").trim().toLowerCase())}${suffix}`;
 }

@@ -1273,7 +1273,7 @@
           <span class="relative mt-0.5 shrink-0">${avatar}</span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
-              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
+              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
               <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
               ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
             </div>
@@ -1295,6 +1295,12 @@
     const body = String(repoPublicText(item?.body) || "").replace(/\s+/g, " ").trim();
     if (actor) return { actor, head: actor, where, text: body || title };
     return { actor: "", head: title, where, text: body || `${platformName()} update` };
+  }
+
+  function notificationLeadHeadHtml(lead) {
+    return lead.actor
+      ? issuePersonNameHtml(lead.actor, "font-semibold text-foreground", { inLink: true })
+      : `<span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>`;
   }
 
   function renderNotificationDetail(item) {
@@ -1521,7 +1527,7 @@
                 <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
               </span>
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-[11px]"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
                 <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
               </span>
             </span>
@@ -4447,6 +4453,12 @@
   $("[data-home-repos-show-more]")?.addEventListener("click", () => {
     state.homeRepositoriesExpanded = !state.homeRepositoriesExpanded;
     renderHomeRepositories();
+  });
+  document.addEventListener("click", (event) => {
+    const toggle = event.target?.closest?.("[data-repo-forks-toggle]");
+    if (!toggleRepositoryForks(toggle)) return;
+    if (toggle.closest("[data-home-top-repositories]")) renderHomeRepositories();
+    if (toggle.closest("[data-sidebar-repo-list]")) renderSidebarRepositories(state.session);
   });
   $("[data-profile-repo-search]")?.addEventListener("input", () => {
     renderProfileRepositories();

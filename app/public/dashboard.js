@@ -136,6 +136,8 @@
     homeRepositoryViews: {},
     homeRepositoryViewsSignature: "",
     recordedRepositoryViews: new Set(),
+    recordedIssueViews: new Set(),
+    issueViewTotals: {},
     repoCommitDetail: null,
     repoRecordDetail: null,
     // The branch comparison on the Pull requests tab (/owner/repo/compare/
@@ -1223,18 +1225,29 @@
     return `<span title="${escapeHtml(title)}"${bot ? ' data-issue-actor-bot=""' : ""}${hydrate} class="${classes}">${inner}</span>`;
   }
 
-  function issuePersonNameHtml(name, classes = "font-semibold text-foreground") {
+  function issuePersonNameHtml(name, classes = "font-semibold text-foreground", options = {}) {
     const label = String(name || "").trim() || "unknown";
-    if (issueActorIsBot(label)) return `<span class="${classes}">${escapeHtml(label)}</span>`;
+    const git = options?.git === true;
+    const system = typeof platformAccount === "function" && platformAccount(label);
+    const shown = system ? escapeHtml(shownAccountName(label)) : userNameHtml(label);
+    if (system || issueActorIsBot(label)) {
+      const kind = typeof botAvatarKind === "function" ? botAvatarKind(label) : "";
+      const nonAccountBot = ["actions", "node", "runner"].includes(kind)
+        || /(?:-actions|\[bot\])$/i.test(label);
+      const account = system || options?.inLink === true || nonAccountBot ? "" : issuePersonHandle(label);
+      if (account) watchIssueActorAvatars();
+      return `<span${account ? ` data-issue-bot-account="${escapeHtml(account)}"` : ""} class="${classes}">${system ? shown : escapeHtml(label)}</span>`;
+    }
     const forge = forgeIdentity(label);
     if (forge) {
+      if (options?.inLink === true) return `<span class="${classes}">@${escapeHtml(forge.login)}</span>`;
       return `<a ${forgeLinkAttrs(forge)} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">@${escapeHtml(forge.login)}</a>`;
     }
     const handle = issuePersonHandle(label);
-    if (!handle) return `<span class="${classes}">${userNameHtml(label)}</span>`;
+    if (!handle || options?.inLink === true) return `<span class="${classes}">${shown}</span>`;
     watchIssueActorAvatars();
-    const href = issuePersonProfileHref(handle);
-    return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}" class="${classes} hover:text-[var(--dashboard-link)] hover:underline">${userNameHtml(label)}</a>`;
+    const href = git ? "" : issuePersonProfileHref(handle);
+    return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}"${git ? ' data-issue-person-git=""' : ""} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">${shown}</a>`;
   }
 
   const issueActorAccounts = new Map();
@@ -1249,7 +1262,7 @@
 
   function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
-    if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "" });
+    if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "", linkable: false });
     if (!issueActorAccounts.has(key)) {
       issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
         .then((response) => (response.ok ? response.json() : null))
@@ -1257,8 +1270,11 @@
           exists: profile?.exists === true,
           png: profile?.exists === true && profile?.profilePrivate !== true
             ? issueActorPortraitPng(profile.avatarPng) : "",
+          linkable: profile?.exists === true && profile?.available === false
+            && profile?.profilePrivate !== true
+            && (profile?.kind === "user" || profile?.kind === "node"),
         }))
-        .catch(() => ({ exists: false, png: "" }))
+        .catch(() => ({ exists: false, png: "", linkable: false }))
         .then((account) => {
           issueActorAccountsSettled.set(key, account);
           return account;
@@ -1297,9 +1313,14 @@
   }
 
   function hydrateIssuePersonLink(link, found) {
-    if (found.account.exists) {
-      const href = issuePersonProfileHref(link.dataset.issuePerson);
-      if (href) link.setAttribute("href", href);
+    const linkable = found.account.exists && found.account.linkable !== false;
+    const href = linkable ? issuePersonProfileHref(link.dataset.issuePerson) : "";
+    if (href) {
+      link.setAttribute("href", href);
+      return;
+    }
+    if (link.hasAttribute("data-issue-person-git")) {
+      link.removeAttribute("href");
       return;
     }
     const profile = found.roster?.profile || "";
@@ -1329,6 +1350,25 @@
         avatar.dataset.issueActorState = png ? "image" : picture ? "roster" : "initial";
         if (!picture || !avatar.isConnected) return;
         issueActorAvatarImage(avatar, picture);
+      });
+    }
+    const bots = [];
+    if (root.matches?.("[data-issue-bot-account]")) bots.push(root);
+    root.querySelectorAll?.("[data-issue-bot-account]").forEach((bot) => bots.push(bot));
+    for (const bot of bots) {
+      if (bot.dataset.issuePersonState) continue;
+      bot.dataset.issuePersonState = "loading";
+      void issueActorAccount(bot.dataset.issueBotAccount).then((account) => {
+        bot.dataset.issuePersonState = "done";
+        const href = account.exists && account.linkable !== false ? issuePersonProfileHref(bot.dataset.issueBotAccount) : "";
+        if (!href || !bot.isConnected) return;
+        const link = document.createElement("a");
+        link.href = href;
+        link.className = `${bot.className} hover:text-[var(--dashboard-link)] hover:underline`.trim();
+        link.dataset.issuePersonState = "done";
+        link.setAttribute("data-issue-person", bot.dataset.issueBotAccount);
+        link.replaceChildren(...bot.childNodes);
+        bot.replaceWith(link);
       });
     }
     const links = [];
@@ -5601,6 +5641,7 @@
         image.alt = "";
       }
       image.classList.toggle("hidden", !avatarPng);
+      image.hidden = !avatarPng;
     }
     if (initialEl) {
       initialEl.textContent = initial;
@@ -5609,6 +5650,102 @@
       container.textContent = initial;
     }
     container.classList.toggle("font-mono", !avatarPng);
+    const handle = profileAvatarHandle(session);
+    if (container.dataset.profileAvatarFor !== handle || container.dataset.profileAvatarState === "image") {
+      delete container.dataset.profileAvatarState;
+      delete container.dataset.profileAvatarTried;
+    }
+    if (avatarPng || !handle || !image) {
+      delete container.dataset.profileAvatarFor;
+      return;
+    }
+    container.dataset.profileAvatarFor = handle;
+    hydrateProfileAvatar(container);
+  }
+
+  const PROFILE_AVATAR_ROSTER_REPOS = 4;
+
+  function profileAvatarHandle(session) {
+    const handle = String(session?.nodeName || "").trim().replace(/^@/, "").toLowerCase();
+    return session?.kind !== "organization" && validNodeName(handle) ? handle : "";
+  }
+
+  function profileAvatarRosterRepos(handle) {
+    const seen = new Set();
+    const own = [];
+    const others = [];
+    (Array.isArray(state.repositories) ? state.repositories : []).forEach((repo) => {
+      if (!repo?.name || repo.isPrivate) return;
+      const key = repositoryViewKey(repo);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const owners = [repo.owner, repoPublicOwner(repo)].map((value) => String(value || "").toLowerCase());
+      (owners.includes(handle) ? own : others).push(repo);
+    });
+    const parents = [];
+    own.forEach((repo) => {
+      const parentKey = repoForkParent(repo)?.key;
+      const parent = parentKey ? findRepository(parentKey) : null;
+      if (!parent || parent.isPrivate || parents.includes(parent)) return;
+      parents.push(parent);
+    });
+    const ordered = [];
+    own.concat(parents, others).forEach((repo) => {
+      if (!ordered.includes(repo)) ordered.push(repo);
+    });
+    return ordered.slice(0, PROFILE_AVATAR_ROSTER_REPOS);
+  }
+
+  async function profileAvatarPicture(handle, repos) {
+    const account = await issueActorAccount(handle);
+    if (account?.png) return `data:image/png;base64,${account.png}`;
+    if (typeof repoPeopleRosterMatch !== "function") return "";
+    for (const repo of repos) {
+      const person = await repoPeopleRosterMatch(repo, handle).catch(() => null);
+      if (person?.avatarUrl) return person.avatarUrl;
+    }
+    return "";
+  }
+
+  function showProfileAvatarPicture(container, src) {
+    const image = container.querySelector("img");
+    const initialEl = container.querySelector("[data-avatar-initial]");
+    if (!image || !src) return;
+    image.addEventListener("error", () => {
+      image.removeAttribute("src");
+      image.classList.add("hidden");
+      image.hidden = true;
+      initialEl?.classList.remove("hidden");
+      container.dataset.profileAvatarState = "initial";
+    }, { once: true });
+    image.referrerPolicy = "no-referrer";
+    image.src = src;
+    image.alt = `${container.dataset.profileAvatarFor} profile picture`;
+    image.classList.remove("hidden");
+    image.hidden = false;
+    initialEl?.classList.add("hidden");
+    container.classList.remove("font-mono");
+  }
+
+  function hydrateProfileAvatar(container) {
+    const handle = container?.dataset?.profileAvatarFor;
+    if (!handle) return;
+    const repos = profileAvatarRosterRepos(handle);
+    const tried = repos.map((repo) => repositoryViewKey(repo)).join(",");
+    const known = container.dataset.profileAvatarState;
+    if (known === "image" || known === "loading"
+      || (known === "initial" && container.dataset.profileAvatarTried === tried)) return;
+    container.dataset.profileAvatarState = "loading";
+    container.dataset.profileAvatarTried = tried;
+    void profileAvatarPicture(handle, repos).then((src) => {
+      if (container.dataset.profileAvatarFor !== handle) return;
+      container.dataset.profileAvatarState = src ? "image" : "initial";
+      if (src) showProfileAvatarPicture(container, src);
+    });
+  }
+
+  function hydrateProfileAvatars() {
+    document.querySelectorAll("[data-profile-avatar-for]").forEach(hydrateProfileAvatar);
   }
 
   async function refreshPublicProfile(session = state.session, options = {}) {
@@ -13211,7 +13348,7 @@
             <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
               <p class="min-w-0 truncate text-sm font-medium text-foreground" title="${escapeHtml(`${fullLabel}${servedNote}`)}">
-                ${displayOwner ? `<span class="text-muted-foreground">${escapeHtml(displayOwner)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
+                ${displayOwner ? `<span class="text-muted-foreground">${repositoryOwnerNameHtml(displayOwner, false)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
               </p>
               <span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-mono ${statusClass}">
                 ${statusText}
@@ -13426,6 +13563,204 @@
     hydrateNativeRepositoryLogos(list);
   }
 
+  const REPOSITORY_FORKS_SHOWN = 3;
+  const REPOSITORY_FORK_COUNTS_BATCH = 24;
+
+  function repositoryEntryLabel(entry) {
+    return String(entry?.label || entry?.key || (entry?.repo ? repoDisplayName(entry.repo) : "") || "");
+  }
+
+  function repositoryForkParentEntry(entry, entries) {
+    const parent = repoForkParent(entry?.repo);
+    if (!parent) return null;
+    const direct = entries.find((candidate) =>
+      candidate !== entry && repoMatchesKey(candidate.repo, parent.key));
+    if (direct) return direct;
+    const origin = findRepository(parent.key);
+    return origin
+      ? entries.find((candidate) => candidate !== entry && candidate.repo === origin) || null
+      : null;
+  }
+
+  function repositoryForkRoot(entry, entries) {
+    const seen = new Set([entry]);
+    let root = repositoryForkParentEntry(entry, entries);
+    while (root && !seen.has(root)) {
+      seen.add(root);
+      const above = repositoryForkParentEntry(root, entries);
+      if (!above || seen.has(above)) return root;
+      root = above;
+    }
+    return null;
+  }
+
+  function nestRepositoryForks(entries, viewsOf) {
+    const list = Array.isArray(entries) ? entries : [];
+    const roots = new Map(list.map((entry) => [entry, repositoryForkRoot(entry, list)]));
+    const groups = new Map();
+    list.forEach((entry) => {
+      if (!roots.get(entry)) groups.set(entry, { entry, forks: [] });
+    });
+    list.forEach((entry, index) => {
+      const group = groups.get(roots.get(entry));
+      if (group) group.forks.push({ entry, index });
+    });
+    const views = typeof viewsOf === "function" ? viewsOf : () => 0;
+    return [...groups.values()].map((group) => ({
+      entry: group.entry,
+      forks: group.forks
+        .sort((a, b) => (Number(views(b.entry)) || 0) - (Number(views(a.entry)) || 0) || a.index - b.index)
+        .map((item) => item.entry),
+    }));
+  }
+
+  function repositoryOwnerNameHtml(owner, inLink = true) {
+    const text = String(owner || "").trim();
+    return text ? issuePersonNameHtml(text, "", { inLink }) : "";
+  }
+
+  function repositoryForkOwnerHtml(entry, parentEntry) {
+    const repo = entry.repo || {};
+    const label = repoLabelParts(repositoryEntryLabel(entry));
+    const owner = String(label.owner || repoPublicOwner(repo) || repo.owner || "");
+    const name = String(label.name || repo.name || "");
+    const parentName = String(repoLabelParts(repositoryEntryLabel(parentEntry)).name || parentEntry?.repo?.name || "");
+    const renamed = name && name.toLowerCase() !== parentName.toLowerCase();
+    return `${repositoryOwnerNameHtml(owner)}${renamed ? `/${escapeHtml(name)}` : ""}`;
+  }
+
+  function repositoryForksKey(listName, parentEntry) {
+    return `${listName}:${repositoryEntryLabel(parentEntry).toLowerCase()}`;
+  }
+
+  function repositoryForksExpanded(listName, parentEntry) {
+    return state.repositoryForksExpanded?.has(repositoryForksKey(listName, parentEntry)) === true;
+  }
+
+  function toggleRepositoryForks(button) {
+    const key = String(button?.dataset?.repoForksToggle || "");
+    if (!key) return false;
+    if (!state.repositoryForksExpanded) state.repositoryForksExpanded = new Set();
+    if (state.repositoryForksExpanded.has(key)) state.repositoryForksExpanded.delete(key);
+    else state.repositoryForksExpanded.add(key);
+    return true;
+  }
+
+  function repositoryShownForks(listName, group) {
+    const expanded = repositoryForksExpanded(listName, group.entry);
+    const hidden = Math.max(0, group.forks.length - REPOSITORY_FORKS_SHOWN);
+    return { shown: expanded ? group.forks : group.forks.slice(0, REPOSITORY_FORKS_SHOWN), hidden, expanded };
+  }
+
+  function repositoryForksToggleHtml(listName, group, className) {
+    const { hidden, expanded } = repositoryShownForks(listName, group);
+    if (!hidden) return "";
+    const label = expanded ? "Show fewer forks" : `+${formatCount(hidden)} more ${hidden === 1 ? "fork" : "forks"}`;
+    return `<button type="button" data-repo-forks-toggle="${escapeHtml(repositoryForksKey(listName, group.entry))}" aria-expanded="${expanded ? "true" : "false"}" class="${className}">${escapeHtml(label)}</button>`;
+  }
+
+  function repositoryForkCountsHtml(entry, parentEntry, className) {
+    if (entry?.repo?.isPrivate || parentEntry?.repo?.isPrivate) return "";
+    const key = repositoryViewKey(entry.repo);
+    if (!isRepoKey(key)) return "";
+    return `<span data-repo-fork-counts="${escapeHtml(key)}" data-repo-fork-parent="${escapeHtml(repositoryEntryLabel(parentEntry))}" class="hidden ${className}"></span>`;
+  }
+
+  function repositoryForkCountsTitle(counts, parent) {
+    const ahead = Number(counts?.ahead) || 0;
+    const behind = Number(counts?.behind) || 0;
+    return `${formatCount(ahead)} ${ahead === 1 ? "commit" : "commits"} ahead, ${formatCount(behind)} behind ${parent}`;
+  }
+
+  function applyRepositoryForkCounts(root) {
+    const scope = root || document;
+    const nodes = scope?.querySelectorAll ? [...scope.querySelectorAll("[data-repo-fork-counts]")] : [];
+    for (const node of nodes) {
+      const counts = state.repositoryForkCounts?.get(node.getAttribute("data-repo-fork-counts"));
+      const ahead = Number(counts?.ahead) || 0;
+      const behind = Number(counts?.behind) || 0;
+      if (!counts || (!ahead && !behind)) {
+        node.textContent = "";
+        node.removeAttribute("title");
+        node.classList.add("hidden");
+        continue;
+      }
+      const parent = node.getAttribute("data-repo-fork-parent") || String(counts.parent || "");
+      node.textContent = `↑${formatCount(ahead)} ↓${formatCount(behind)}`;
+      node.setAttribute("title", repositoryForkCountsTitle(counts, parent));
+      node.classList.remove("hidden");
+    }
+    return nodes;
+  }
+
+  function repositoryForkCountsValue(value) {
+    const ahead = Number(value?.ahead);
+    const behind = Number(value?.behind);
+    return Number.isInteger(ahead) && Number.isInteger(behind) && ahead >= 0 && behind >= 0
+      ? { ahead, behind, parent: String(value.parent || "") }
+      : null;
+  }
+
+  async function hydrateRepositoryForkCounts(root) {
+    const nodes = applyRepositoryForkCounts(root);
+    if (!state.repositoryForkCounts) state.repositoryForkCounts = new Map();
+    if (!state.repositoryForkCountsAsked) state.repositoryForkCountsAsked = new Set();
+    const wanted = [...new Set(nodes.map((node) => node.getAttribute("data-repo-fork-counts")))]
+      .filter((key) => isRepoKey(key) && !state.repositoryForkCountsAsked.has(key));
+    if (!wanted.length) return;
+    wanted.forEach((key) => state.repositoryForkCountsAsked.add(key));
+    for (let start = 0; start < wanted.length; start += REPOSITORY_FORK_COUNTS_BATCH) {
+      const batch = wanted.slice(start, start + REPOSITORY_FORK_COUNTS_BATCH);
+      try {
+        const response = await fetch("/api/repo-fork-counts", {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ forks: batch }),
+        });
+        const data = response.ok ? await response.json() : null;
+        const counts = data?.counts && typeof data.counts === "object" ? data.counts : {};
+        batch.forEach((key) => {
+          const found = repositoryForkCountsValue(counts[key]);
+          if (found) state.repositoryForkCounts.set(key, found);
+        });
+      } catch (_) {}
+    }
+    applyRepositoryForkCounts(document);
+  }
+
+  function sidebarRepositoryRow(entry) {
+    const repo = entry.repo;
+    const live = repoIsLive(repo);
+    const label = repoLabelParts(entry.key);
+    return `
+        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
+          <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
+          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${repositoryOwnerNameHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
+          ${repositoryTermsBadge(repo, true)}
+          ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
+          <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
+        </a>`;
+  }
+
+  function sidebarRepositoryForkRow(entry, parentEntry) {
+    return `<a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo-fork" data-sidebar-repo="${escapeHtml(entry.key)}" data-sidebar-repo-fork title="${escapeHtml(entry.key)}">
+            <span class="dashboard-nav-repo-fork-name">${repositoryForkOwnerHtml(entry, parentEntry)}</span>
+            ${repositoryForkCountsHtml(entry, parentEntry, "dashboard-nav-repo-fork-counts")}
+          </a>`;
+  }
+
+  function sidebarRepositoryGroup(group) {
+    if (!group.forks.length) return sidebarRepositoryRow(group.entry);
+    const { shown } = repositoryShownForks("sidebar", group);
+    return `<div class="dashboard-nav-repo-group" data-sidebar-repo-group>
+          ${sidebarRepositoryRow(group.entry)}
+          <div class="dashboard-nav-repo-forks" data-sidebar-repo-forks>
+            ${shown.map((fork) => sidebarRepositoryForkRow(fork, group.entry)).join("")}
+            ${repositoryForksToggleHtml("sidebar", group, "dashboard-nav-repo-forks-toggle")}
+          </div>
+        </div>`;
+  }
+
   function renderSidebarRepositories(session) {
     const list = $("[data-sidebar-repo-list]");
     const count = $("[data-sidebar-repo-count]");
@@ -13462,20 +13797,12 @@
       list.innerHTML = '<div class="dashboard-nav-repo-empty">No mirrored repositories yet.</div>';
       return;
     }
-    list.innerHTML = entries.slice(0, 6).map((entry) => {
-      const repo = entry.repo;
-      const live = repoIsLive(repo);
-      const label = repoLabelParts(entry.key);
-      return `
-        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
-          <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
-          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${escapeHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
-          ${repositoryTermsBadge(repo, true)}
-          ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
-          <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
-        </a>`;
-    }).join("");
+    list.innerHTML = nestRepositoryForks(entries, (entry) => homeRepositoryViewTotals(entry.repo)?.views)
+      .slice(0, 6)
+      .map(sidebarRepositoryGroup)
+      .join("");
     window.lucide?.createIcons();
+    hydrateRepositoryForkCounts(list);
   }
 
   const HOME_TOP_REPOSITORY_LIMIT = 8;
@@ -13543,6 +13870,11 @@
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
+  function homeRepositoryLabelHtml(text) {
+    const label = repoLabelParts(text);
+    return label.owner ? `${repositoryOwnerNameHtml(label.owner)}/${escapeHtml(label.name)}` : escapeHtml(label.name);
+  }
+
   function homeRepositoryRow(entry) {
     const repo = entry.repo;
     const live = repoIsLive(repo);
@@ -13557,7 +13889,7 @@
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
       ${logo}
       <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${escapeHtml(entry.label || repoDisplayName(repo))}</span>
+        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${homeRepositoryLabelHtml(entry.label || repoDisplayName(repo))}</span>
         ${description ? `<span data-user-content class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           ${statusHtml}
@@ -13567,6 +13899,28 @@
         </span>
       </span>
     </a>`;
+  }
+
+  function homeRepositoryForkRow(entry, parentEntry) {
+    const views = Number(homeRepositoryViewTotals(entry.repo)?.views) || 0;
+    const label = entry.label || repoDisplayName(entry.repo);
+    return `<a href="${escapeHtml(entry.href)}" data-home-repo-fork class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground" title="${escapeHtml(label)}">
+        <span data-home-repo-fork-owner class="min-w-0 flex-1 truncate text-foreground">${repositoryForkOwnerHtml(entry, parentEntry)}</span>
+        ${repositoryForkCountsHtml(entry, parentEntry, "shrink-0 font-mono text-[10px] text-muted-foreground")}
+        ${views ? `<span data-home-repo-views class="inline-flex shrink-0 items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))}</span>` : ""}
+      </a>`;
+  }
+
+  function homeRepositoryGroup(group) {
+    if (!group.forks.length) return homeRepositoryRow(group.entry);
+    const { shown } = repositoryShownForks("home", group);
+    return `<div data-home-repo-group class="grid min-w-0">
+      ${homeRepositoryRow(group.entry)}
+      <div data-home-repo-forks class="ml-5 grid min-w-0 gap-0.5 border-l border-border pl-2">
+        ${shown.map((fork) => homeRepositoryForkRow(fork, group.entry)).join("")}
+        ${repositoryForksToggleHtml("home", group, "px-2 py-1 text-left text-xs font-medium text-muted-foreground hover:text-accent")}
+      </div>
+    </div>`;
   }
 
   function renderHomeRepositories() {
@@ -13582,9 +13936,10 @@
     if (!searchable && search?.value) search.value = "";
     const query = (search?.value || "").trim().toLowerCase();
     const matches = all.filter((entry) => repositoryMatchesPageFilter(entry.repo, query));
+    const groups = nestRepositoryForks(matches, (entry) => homeRepositoryViewTotals(entry.repo)?.views);
     const entries = state.homeRepositoriesExpanded
-      ? matches
-      : matches.slice(0, HOME_TOP_REPOSITORY_LIMIT);
+      ? groups
+      : groups.slice(0, HOME_TOP_REPOSITORY_LIMIT);
     const showMore = $("[data-home-repos-show-more]");
     if (showMore) {
       showMore.classList.toggle(
@@ -13595,12 +13950,13 @@
     }
     if (!entries.length && !query && state.repositoriesLoading) return;
     container.innerHTML = entries.length
-      ? entries.map(homeRepositoryRow).join("")
+      ? entries.map(homeRepositoryGroup).join("")
       : `<div class="px-2 py-3 text-sm text-muted-foreground">${query
         ? emptyListHtml("No repositories match this filter.", query)
         : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab, Codeberg or Gitea, or create one</a>.'}</div>`;
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
+    hydrateRepositoryForkCounts(container);
   }
 
   const HOME_FEED_CARD_LIMIT = 8;
@@ -13640,7 +13996,7 @@
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
-      userNameHtml(`@${homeFeedActor(item)}`),
+      issuePersonNameHtml(`@${homeFeedActor(item)}`, "", { inLink: Boolean(href) }),
       escapeHtml(notificationTimeLabel(item.ts)),
       item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
     ].filter(Boolean).join(" · ");
@@ -13905,6 +14261,7 @@
 
   function renderProfileRepositories() {
     renderOrganizationRepositories();
+    hydrateProfileAvatars();
     const container = $("[data-profile-repo-list]");
     if (!container) return;
     const query = ($("[data-profile-repo-search]")?.value || "").trim().toLowerCase();
@@ -15129,6 +15486,17 @@
     setNewRepoHandoffOpen(true);
     window.setTimeout(() => $("[data-new-repo-cancel]")?.focus(), 0);
   }
+
+  // Tab strips scroll sideways only. CSS hides their vertical overflow (the
+  // tabs sit 1px into the border line), but focus and scrollIntoView can still
+  // move it, so any vertical offset snaps straight back.
+  document.addEventListener("scroll", (event) => {
+    const strip = event.target;
+    if (strip instanceof Element && strip.scrollTop
+        && strip.matches("[data-repo-tabs], [data-repo-record-tabs]")) {
+      strip.scrollTop = 0;
+    }
+  }, { capture: true, passive: true });
 
   function keepRepoActiveTabVisible(strip) {
     if (!strip || strip.scrollWidth <= strip.clientWidth + 1) return;
@@ -20667,6 +21035,12 @@
         fetchMissingRepoBlobs(repo, [recordPath(entry)], { ref: entry.ref })));
       found.forEach((result) => Object.assign(blobs, result));
     }
+    // Review state rides on the listing (pullReviews) for pulls the ledger
+    // indexes; a branch-only pull's reviews are not in it, so it gets none.
+    const pullReviews = config.dir === ".forkmesh/pulls"
+      && tree.pullReviews && typeof tree.pullReviews === "object"
+      ? tree.pullReviews
+      : null;
     const records = dirs.concat(branchOnlyDirs).map((entry) => {
       const number = Number(entry.name);
       const blob = blobs[recordPath(entry)];
@@ -20701,6 +21075,10 @@
         meta: config.meta(values),
         body: parsed.body || "",
         wantsAgent: config.dir === "issues" ? Boolean(values.wantsAgent) : false,
+        review: pullReviews && indexedNames.has(String(entry.name))
+          ? pullListReviewState(pullReviews[String(entry.name)] || [], values.author || "",
+            values.status || values.state || "open", pullListIsDraft(values))
+          : null,
       };
     });
     return records.filter(Boolean).sort((a, b) => {
@@ -20771,6 +21149,45 @@
     return `<i data-lucide="${icon}" class="${extra} h-4 w-4 ${tone}"></i>`;
   }
 
+  // A pull row's review state, from the reviews the .forkmesh/pulls listing
+  // carries (pullReviews: [[reviewer, state], ...] in file order) and the
+  // merge box's own rule (pullReviewPolicy): each reviewer's latest review
+  // counts, the author's own never does. Null when the listing has none to go
+  // on (an older mirror) or nothing applies.
+  function pullListReviewState(reviews, pullAuthor, status, draft = false) {
+    if (!Array.isArray(reviews)) return null;
+    const events = reviews
+      .filter((entry) => Array.isArray(entry) && entry.length >= 2)
+      .map(([author, stateName]) => ({ type: "review", author: String(author || ""), state: String(stateName || "") }));
+    const policy = pullReviewPolicy(events, pullAuthor);
+    const open = String(status || "open").toLowerCase() === "open" && !draft;
+    if (policy.blockers) return { state: "changes_requested", approvals: policy.approvals, blockers: policy.blockers };
+    if (policy.ready) return { state: "approved", approvals: policy.approvals, blockers: 0 };
+    return open ? { state: "review_required", approvals: 0, blockers: 0 } : null;
+  }
+
+  function pullListIsDraft(values) {
+    return ["true", "yes", "1"].includes(String(values?.draft || "").trim().toLowerCase());
+  }
+
+  const PULL_LIST_REVIEW_CHIPS = {
+    approved: ["check", "Approved", "border-success/40 text-success"],
+    changes_requested: ["file-diff", "Changes requested", "border-destructive/40 text-destructive"],
+    review_required: ["eye", "Review required", "border-border text-muted-foreground"],
+  };
+
+  // Mirrored by repo_views._review_chip so the first view draws the same chip.
+  function pullListReviewChipHtml(review) {
+    const chip = PULL_LIST_REVIEW_CHIPS[review?.state];
+    if (!chip) return "";
+    const [iconName, label, tone] = chip;
+    const count = (n) => `${formatCount(n)} reviewer${n === 1 ? "" : "s"}`;
+    const title = review.state === "approved" ? `Approved by ${count(review.approvals)}`
+      : review.state === "changes_requested" ? `Changes requested by ${count(review.blockers)}`
+        : "Needs an approval from someone other than the author";
+    return `<span data-repo-pull-review="${review.state}" title="${escapeHtml(title)}" class="inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 text-[11px] font-medium leading-4 ${tone}"><i data-lucide="${iconName}" class="h-3 w-3"></i>${label}</span>`;
+  }
+
   function renderRepoRecordList(items, config, kind) {
     const totalPages = Math.max(1, Math.ceil(items.length / REPO_COLLECTION_PAGE_SIZE));
     const page = state.repoCollectionPages[kind] || 1;
@@ -20804,7 +21221,8 @@
               ${issueLabels.map((label) => renderIssueLabelChip(label, `data-repo-issue-label="${escapeHtml(label)}"`).replace('class="issue-label"', 'class="issue-label ml-1 align-[2px]"')).join("")}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              <span>${escapeHtml(numberLabel)} · ${issuePersonNameHtml(item.author, "", { inLink: true })} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              ${issueRowViewsHtml(state.selectedRepo, item.number)}
               ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
               ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
@@ -20818,11 +21236,11 @@
           <span class="min-w-0">
             <span class="block min-w-0 leading-6">
               <span data-repo-pull-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
-              ${item.base && item.head ? `<span class="ml-1 inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 align-[2px] font-mono text-[11px] leading-[18px] text-muted-foreground"><span class="truncate">${escapeHtml(item.base)}</span><i data-lucide="arrow-left" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.head.slice(item.head.lastIndexOf(":") + 1))}</span></span>` : ""}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
+              <span>${escapeHtml(numberLabel)} · ${issuePersonNameHtml(item.author, "", { inLink: true })} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
               ${!["open", "closed", "merged"].includes(String(stateLabel).toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
+              ${pullListReviewChipHtml(item.review)}
             </span>
           </span>
           <span class="flex shrink-0 items-start pt-0.5 text-[12px] text-muted-foreground">
@@ -20858,6 +21276,11 @@
     const pagination = ["issues", "pulls"].includes(kind)
       ? renderRepoCollectionPagination(kind, safePage, totalPages, items.length)
       : "";
+    if (kind === "issues") {
+      const repo = state.selectedRepo;
+      const numbers = pageItems.map((item) => item.number);
+      setTimeout(() => loadIssueListViews(repo, numbers), 0);
+    }
     return rows + unavailableWarning + pagination;
   }
 
@@ -23594,7 +24017,7 @@
     if (!commits.length) {
       return `<div class="px-4 py-3 text-sm text-muted-foreground">No pull-specific commits are available from this mirror yet.</div>`;
     }
-    return commits.map((commit) => `<div class="grid gap-1 px-4 py-3"><span class="text-sm font-medium text-foreground">${escapeHtml(commit.body || "Commit")}</span><span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(String(commit.hash || "").slice(0, 12))} · ${escapeHtml(commit.authorName || "unknown")}</span></div>`).join("");
+    return commits.map((commit) => `<div class="grid gap-1 px-4 py-3"><span class="text-sm font-medium text-foreground">${escapeHtml(commit.body || "Commit")}</span><span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(String(commit.hash || "").slice(0, 12))} · ${issuePersonNameHtml(commit.authorName || "unknown", "", { git: true })}</span></div>`).join("");
   }
 
   function normalizePullHistoryCommit(commit) {
@@ -27366,9 +27789,103 @@
     return {
       aiPromptTemplate: template,
       reviewPromptTemplate: pullsSmall ? normalizePullReviewTemplate(pulls.reviewPromptTemplate) : "",
+      assignmentHours: issueAssignmentHours(issues.assignmentHours),
       requireAiDisclosure: pulls.requireAiDisclosure === true,
       aiPolicy: Boolean(blobs?.["AI_POLICY.md"]),
     };
+  }
+
+  const ISSUE_ASSIGNMENT_HOURS_MAX = 24 * 365;
+  const ISSUE_ASSIGNMENT_WARN_FRACTION = 0.25;
+
+  function issueAssignmentHours(value) {
+    const hours = typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\s*\d+(?:\.\d+)?\s*$/.test(value) ? Number(value) : NaN;
+    return Number.isFinite(hours) && hours > 0 ? Math.min(hours, ISSUE_ASSIGNMENT_HOURS_MAX) : 0;
+  }
+
+  function issueAssignmentTimes(events) {
+    const since = new Map();
+    let current = [];
+    (Array.isArray(events) ? events : []).forEach((event) => {
+      let next;
+      if (event?.type === "assignees") next = (Array.isArray(event.assignees) ? event.assignees : []).map(String);
+      else if (event?.type === "claim") next = webIssueClaimApplied(current, event);
+      else return;
+      const ts = Number(event.ts) || 0;
+      const keys = new Set(next.map((name) => name.trim().toLowerCase()));
+      Array.from(since.keys()).forEach((key) => { if (!keys.has(key)) since.delete(key); });
+      keys.forEach((key) => { if (key && !since.has(key)) since.set(key, ts); });
+      current = next;
+    });
+    return since;
+  }
+
+  function issueAssigneeHasPull(assignee, number, events, pulls) {
+    const name = String(assignee || "").trim().toLowerCase();
+    if (!name || !Array.isArray(pulls)) return false;
+    const linked = new Set(issueLinkedPullNumbers(number, events, pulls));
+    const author = (value) => String(value || "").replace(/\s+\(unverified\)$/i, "").trim().toLowerCase();
+    return pulls.some((pull) => linked.has(Number(pull?.number))
+      && String(pull?.state || "open").toLowerCase() !== "closed"
+      && (author(pull?.author) === name || author(pull?.authorKey) === name));
+  }
+
+  function issueDeadlineDuration(ms) {
+    const minutes = Math.max(1, Math.floor(Math.abs(ms) / 60_000));
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    return hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
+  }
+
+  function issueAssignmentDeadline(assignedAt, hours, now = Date.now()) {
+    const total = Number(hours) * 3_600_000;
+    if (!(Number(assignedAt) > 0) || !(total > 0)) return null;
+    const left = total - Math.max(0, now - Number(assignedAt));
+    const overdue = left < 0;
+    return {
+      fraction: Math.min(1, Math.max(0, 1 - left / total)),
+      left,
+      overdue,
+      warn: overdue || left < total * ISSUE_ASSIGNMENT_WARN_FRACTION,
+      label: overdue ? `overdue by ${issueDeadlineDuration(left)}` : `${issueDeadlineDuration(left)} left`,
+      dueAt: Number(assignedAt) + total,
+    };
+  }
+
+  function renderIssueAssignmentDeadline(deadline) {
+    if (!deadline) return "";
+    const percent = Math.round(deadline.fraction * 100);
+    const stateName = deadline.overdue ? "overdue" : deadline.warn ? "soon" : "on-track";
+    const due = formatRecordDateTime(deadline.dueAt);
+    return `<span data-repo-issue-deadline-state="${stateName}" title="${escapeHtml(`Due ${due.label}`)}" class="flex min-w-0 items-center gap-2 pl-7"><span role="progressbar" aria-label="Assignment time used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" class="block h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-[var(--dashboard-counter)]"><span class="block h-full rounded-full ${deadline.warn ? "bg-attention" : "bg-primary"}" style="width:${percent}%"></span></span><span class="truncate text-[11px] ${deadline.warn ? "text-attention" : "text-muted-foreground"}">${escapeHtml(deadline.label)}</span></span>`;
+  }
+
+  function issueAssigneeDeadlineHtml(issue, assignee, now = Date.now()) {
+    const hours = Number(issue?.settings?.assignmentHours) || 0;
+    if (!hours || issue?.closed) return "";
+    if (issueAssigneeHasPull(assignee, issue.number, issue.events, issue.pulls)) return "";
+    const assignedAt = issueAssignmentTimes(issue.events).get(String(assignee || "").trim().toLowerCase());
+    return renderIssueAssignmentDeadline(issueAssignmentDeadline(assignedAt, hours, now));
+  }
+
+  function renderRepoIssueDeadlines() {
+    const detail = state.repoRecordDetail;
+    if (detail?.kind !== "issues") return;
+    const parsed = detail.parsed || {};
+    const issue = {
+      number: detail.number,
+      closed: String(parsed.values?.status || parsed.values?.state || "open") === "closed",
+      events: parsed.issueEvents,
+      pulls: developmentPulls(parsed),
+      settings: parsed.repoCollabSettings,
+    };
+    document.querySelectorAll("[data-repo-issue-deadline]").forEach((node) => {
+      const html = issueAssigneeDeadlineHtml(issue, node.dataset.repoIssueDeadline);
+      if (node.innerHTML !== html) node.innerHTML = html;
+      node.hidden = !html;
+    });
   }
 
   async function loadRepoCollabSettings(repo) {
@@ -27648,6 +28165,13 @@ Report
         <div class="text-[12px] text-foreground">${value}</div>
       </div>`;
     const issueAssignees = webIssueAssigneesWithClaims(parseFrontMatterList(values.assignees), events);
+    const deadlineIssue = {
+      number,
+      closed,
+      events,
+      pulls: developmentPulls(parsed),
+      settings: parsed.repoCollabSettings,
+    };
     const viewerAccount = String(state.session?.nodeName || "").trim();
     const viewerAssigned = Boolean(viewerAccount) && issueAssignees.some(
       (assignee) => assignee.trim().toLowerCase() === viewerAccount.toLowerCase());
@@ -27656,7 +28180,13 @@ Report
     // clicks route through /login.
     const selfAssignControl = `<button type="button" data-repo-issue-claim="${viewerAssigned ? "release" : "claim"}" class="mt-2 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="${viewerAssigned ? "user-minus" : "user-plus"}" class="h-3.5 w-3.5"></i>${viewerAssigned ? "Unassign yourself" : "Assign yourself"}</button>`;
     const assigneeValue = `${issueAssignees.length
-      ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`).join("")}</div>`
+      ? `<div class="grid gap-1.5">${issueAssignees.map((assignee) => {
+        const row = `<span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(assignee, assignee, "h-5 w-5")}${issuePersonNameHtml(assignee, "truncate font-semibold")}</span>`;
+        const deadline = issueAssigneeDeadlineHtml(deadlineIssue, assignee);
+        return deadline
+          ? `<span class="grid min-w-0 gap-1">${row}<span data-repo-issue-deadline="${escapeHtml(assignee)}">${deadline}</span></span>`
+          : row;
+      }).join("")}</div>`
       : `<span class="text-muted-foreground">No one assigned</span>`}${selfAssignControl}`;
     const latestAgentEvent = events.slice().reverse().find((event) => event?.type === "agent");
     const agentValue = `${latestAgentEvent && Number(latestAgentEvent.agentSessionId) > 0 && latestAgentEvent.agentStatus !== "cleared"
@@ -27728,6 +28258,7 @@ Report
             <span>${formatCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}</span>
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
+            ${issueViewsHtml(repo, number)}
           </p>
           ${closed || instancePluginOff("issue-ai-prompt") ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
@@ -28224,6 +28755,7 @@ Report
     node.innerHTML = detail.kind === "issues"
       ? renderIssueDevelopment(detail.repo, detail.number, detail.parsed?.issueEvents, developmentPulls(detail.parsed))
       : renderPullDevelopment(detail.repo, detail.number, detail.parsed || {});
+    if (detail.kind === "issues") renderRepoIssueDeadlines();
     const hint = node.querySelector("[data-repo-development-hint]");
     if (hint && hintText) {
       hint.textContent = hintText;
@@ -28922,6 +29454,7 @@ Report
       }
       loadFederatedReplies(repo, kind, number, container);
       if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
+      if (kind === "issues") recordIssueView(repo, number);
       void refreshRepoRecordDevelopment(repo, kind, number);
       if (kind === "pulls") void hydrateRepoPullAttention(repo, number, parsed);
       // Members watch an open pull for agent activity; signed-out visitors
@@ -29072,7 +29605,7 @@ Report
       : `<span class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[10px] text-muted-foreground">${escapeHtml(owner.slice(0, 1).toUpperCase())}</span>`;
     const who = profileUrl
       ? `<a href="${escapeHtml(profileUrl)}" class="shrink-0 hover:underline">${escapeHtml(owner)}</a>`
-      : `<span class="shrink-0">${escapeHtml(owner)}</span>`;
+      : issuePersonNameHtml(owner, "shrink-0");
     return `<div class="flex items-center gap-1.5 py-0.5">${portrait}${who}<span class="text-muted-foreground/60">/</span><a href="${escapeHtml(url)}" class="min-w-0 truncate text-foreground hover:underline">${escapeHtml(name)}</a></div>`;
   }
 
@@ -31318,7 +31851,7 @@ Report
           <span aria-hidden="true" class="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-[18px]">${discussionCategoryEmoji(category)}</span>
           <span class="min-w-0">
             <span data-repo-discussion-row-title class="block text-[16px] font-semibold leading-6 text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
-            <span class="block text-[12px] text-muted-foreground">${userNameHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
+            <span class="block text-[12px] text-muted-foreground">${issuePersonNameHtml(item.author, "", { inLink: true })} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
           </span>
           <span class="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground">
             ${issueActorAvatarHtml(item.author, item.authorKey || item.author, "h-5 w-5", false, false)}
@@ -34081,7 +34614,7 @@ Report
   // file text and folded directories arrive through the batched /blobs and
   // /tree reads below, so mirror routing and ref pinning stay in one place.
   // Bump the version when codemap.js changes: /assets/ is long-cached.
-  const REPO_CODEMAP_SCRIPT = "/assets/codemap/codemap.js?v=4";
+  const REPO_CODEMAP_SCRIPT = "/assets/codemap/codemap.js?v=5";
   let repoCodeMapModuleLoader = null;
   function loadRepoCodeMapModule() {
     if (window.ForkMeshCodeMap?.open) return Promise.resolve(true);
@@ -34578,6 +35111,99 @@ Report
             lastViewedAt: Number(data.lastViewedAt) || 0,
           },
         };
+      })
+      .catch(() => {});
+  }
+
+  function issueViewKey(repo, number) {
+    return `${repositoryViewKey(repo)}#${Number(number) || 0}`;
+  }
+
+  function issueViewTotals(data) {
+    return {
+      views: Number(data?.views) || 0,
+      viewers: Number(data?.viewers) || 0,
+      lastViewedAt: Number(data?.lastViewedAt) || 0,
+    };
+  }
+
+  function issueViewsLabel(totals) {
+    const views = Number(totals?.views) || 0;
+    return `${formatCount(views)} ${views === 1 ? "view" : "views"}`;
+  }
+
+  function issueViewsHtml(repo, number) {
+    if (!repo || repo.isPrivate) return "";
+    const totals = state.issueViewTotals?.[issueViewKey(repo, number)];
+    const shown = Number(totals?.views) > 0;
+    return `<span data-repo-issue-views-separator aria-hidden="true"${shown ? "" : " hidden"}>·</span><span data-repo-issue-views="${escapeHtml(number)}" title="Views by people, counted once a day per viewer" class="inline-flex items-center gap-1"${shown ? "" : " hidden"}><i data-lucide="eye" class="h-4 w-4"></i><span data-repo-issue-views-label>${shown ? escapeHtml(issueViewsLabel(totals)) : ""}</span></span>`;
+  }
+
+  function issueRowViewsHtml(repo, number) {
+    if (!repo || repo.isPrivate || !/^\d+$/.test(String(number))) return "";
+    const totals = state.issueViewTotals?.[issueViewKey(repo, number)];
+    const shown = Number(totals?.views) > 0;
+    return `<span data-repo-issue-row-views="${escapeHtml(number)}" class="inline-flex items-center gap-1 pl-1"${shown ? "" : " hidden"}><i data-lucide="eye" class="h-3 w-3 shrink-0"></i><span data-repo-issue-views-label>${shown ? escapeHtml(issueViewsLabel(totals)) : ""}</span></span>`;
+  }
+
+  function showIssueViews(repo, number, data) {
+    const totals = issueViewTotals(data);
+    state.issueViewTotals = { ...(state.issueViewTotals || {}), [issueViewKey(repo, number)]: totals };
+    const shown = totals.views > 0;
+    const selector = `[data-repo-issue-views="${Number(number)}"], [data-repo-issue-row-views="${Number(number)}"]`;
+    document.querySelectorAll(selector).forEach((node) => {
+      const label = node.querySelector("[data-repo-issue-views-label]");
+      if (label) label.textContent = shown ? issueViewsLabel(totals) : "";
+      node.hidden = !shown;
+      if (node.matches("[data-repo-issue-views]")) {
+        const separator = node.previousElementSibling;
+        if (separator?.matches("[data-repo-issue-views-separator]")) separator.hidden = !shown;
+      }
+    });
+    return totals;
+  }
+
+  function recordIssueView(repo, number) {
+    if (!repo || repo.isPrivate || !(Number(number) > 0)) return;
+    const key = issueViewKey(repo, number);
+    if (state.recordedIssueViews.has(key)) return;
+    state.recordedIssueViews.add(key);
+    const body = state.session?.sessionToken
+      ? { sessionToken: state.session.sessionToken }
+      : {};
+    fetch(`${repoApiBase(repo)}/issues/${Number(number)}/view`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data && data.ok !== false) showIssueViews(repo, number, data);
+      })
+      .catch(() => {});
+  }
+
+  const ISSUE_LIST_VIEWS_MAX = 100;
+  const ISSUE_LIST_VIEWS_FRESH_MS = 60_000;
+  const issueListViewsFetched = new Map();
+
+  function loadIssueListViews(repo, numbers) {
+    if (!repo || repo.isPrivate) return;
+    const wanted = [...new Set((numbers || []).map(Number).filter((n) => n > 0))].slice(0, ISSUE_LIST_VIEWS_MAX);
+    if (!wanted.length) return;
+    const fetchKey = `${repositoryViewKey(repo)}|${wanted.join(",")}`;
+    const now = Date.now();
+    if (now - (issueListViewsFetched.get(fetchKey) || 0) < ISSUE_LIST_VIEWS_FRESH_MS) return;
+    issueListViewsFetched.set(fetchKey, now);
+    fetch(`${repoApiBase(repo)}/issue-views?numbers=${wanted.join(",")}`, {
+      headers: { accept: "application/json" },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const views = data?.views && typeof data.views === "object" ? data.views : {};
+        wanted.forEach((number) => {
+          if (views[String(number)]) showIssueViews(repo, number, views[String(number)]);
+        });
       })
       .catch(() => {});
   }
@@ -39644,7 +40270,7 @@ Report
         <div data-dashboard-commit-row class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 border-t border-border hover:bg-secondary/30 transition-colors">
           <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" class="min-w-0 px-4 py-3 text-left">
             <span class="block truncate text-sm font-medium text-foreground">${escapeHtml(commit.subject || "Commit")}</span>
-            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
+            <span class="mt-1 block truncate text-xs text-muted-foreground">${issuePersonNameHtml(commit.author || "unknown", "", { inLink: true, git: true })} committed ${escapeHtml(commit.date || "")}</span>
           </button>
           <div class="flex items-center justify-end gap-2 px-4 py-3">
             <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" data-dashboard-commit-short-hash class="font-mono text-xs font-semibold text-foreground hover:underline">${escapeHtml(shortHash)}</button>
@@ -39696,7 +40322,7 @@ Report
             <span class="hidden font-mono text-xs text-muted-foreground sm:inline">${escapeHtml(hash.slice(0, 12))}</span>
           </div>
           <p class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            <span><span class="font-semibold text-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")}</span> committed ${escapeHtml(commit.date || "")}</span>
+            <span>${issuePersonNameHtml(commit.author || "unknown", "font-semibold text-foreground", { git: true })} committed ${escapeHtml(commit.date || "")}</span>
             <span class="font-mono">${parents.length ? `parent ${parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ")}` : "root commit"}</span>
             <span class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</span>
           </p>
@@ -41233,65 +41859,6 @@ Report
     return `<div title="${formatCount(total)} commits in the last 32 weeks" aria-label="${formatCount(total)} commits in the last 32 weeks" class="flex h-8 min-w-[12rem] items-end gap-px">${bars}</div>`;
   }
 
-  // Git identities ForkMesh itself writes carry the ForkMesh handle as the git
-  // author NAME: the desktop commits as `user.name = <account>` and the mirror
-  // intake as `user.name = <node>`, so a contributor row resolves to a profile
-  // exactly when its author name is an account that exists. An identity some
-  // other git config produced ("ForkMesh Deploy", a person's full name, an
-  // imported GitHub author) has no account behind it and stays inert text
-  // rather than guessing at a profile that belongs to someone else (#636).
-  const CONTRIBUTOR_HANDLE_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-  // handle -> resolved profile name ("" when the lookup answered "no profile").
-  const contributorProfileNames = new Map();
-
-  async function resolveContributorProfile(author) {
-    const handle = String(author || "").trim().toLowerCase();
-    // Most author names never reach the network: only a name that is already
-    // shaped like a handle can name an account.
-    if (!CONTRIBUTOR_HANDLE_RE.test(handle)) return "";
-    if (contributorProfileNames.has(handle)) return contributorProfileNames.get(handle);
-    let account;
-    try {
-      account = await fetchJson(`/api/accounts/${encodeURIComponent(handle)}`);
-    } catch (_) {
-      return ""; // a failed lookup is not an answer, so it is not remembered
-    }
-    // `exists` alone still covers a name that is merely reserved and a
-    // quarantined account (which answers without a kind), and a private
-    // profile has no public page to send a reader to.
-    const resolved = account?.exists && account.available === false &&
-      !account.profilePrivate &&
-      (account.kind === "user" || account.kind === "node")
-      ? String(account.name || handle).trim().toLowerCase()
-      : "";
-    contributorProfileNames.set(handle, resolved);
-    return resolved;
-  }
-
-  // Contributor rows render as plain text and are upgraded to profile links
-  // afterwards, so the tab never waits on the lookups. Keep profile discovery
-  // bounded even though the table itself shows every contributor returned by
-  // the mirror; names beyond this point remain accurate, inert git identities.
-  async function linkRepoInsightsContributors(container) {
-    const rows = container
-      ? [...container.querySelectorAll("[data-repo-insights-contributor]")]
-          .slice(0, 50)
-      : [];
-    for (const row of rows) {
-      const author = row.getAttribute("data-repo-insights-contributor") || "";
-      const handle = await resolveContributorProfile(author);
-      // The panel is replaced wholesale on every repo/branch switch, so a
-      // detached row belongs to a view the reader already left.
-      if (!handle || !row.isConnected) continue;
-      const link = document.createElement("a");
-      link.className = "dashboard-accent-link hover:underline";
-      link.href = publicProfileUrl(handle);
-      link.title = `${platformName()} profile @${handle}`;
-      link.textContent = author;
-      row.replaceChildren(link);
-    }
-  }
-
   function repoTrafficDayLabel(day) {
     const date = new Date(`${day}T00:00:00Z`);
     if (Number.isNaN(date.getTime())) return String(day || "");
@@ -41368,7 +41935,7 @@ Report
         <div data-repo-insights-contributor-row class="grid min-w-[46rem] grid-cols-[minmax(14rem,1fr)_7rem_6rem_minmax(14rem,1fr)] items-center gap-4 border-t border-border px-4 py-2.5 text-sm hover:bg-secondary/20">
           <div class="flex min-w-0 items-center gap-3">
             ${repoContributorAvatar({ name: item.author, email: item.email, commits: item.commits })}
-            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}</div>
+            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate">${issuePersonNameHtml(item.author, "font-medium text-foreground", { git: true })}</div>
           </div>
           <span class="text-right font-mono text-xs font-semibold text-foreground">${formatCount(item.commits)}</span>
           <span class="text-right font-mono text-xs text-muted-foreground">${share.toFixed(1)}%</span>
@@ -46301,7 +46868,7 @@ Report
           <span class="relative mt-0.5 shrink-0">${avatar}</span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
-              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
+              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
               <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
               ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
             </div>
@@ -46323,6 +46890,12 @@ Report
     const body = String(repoPublicText(item?.body) || "").replace(/\s+/g, " ").trim();
     if (actor) return { actor, head: actor, where, text: body || title };
     return { actor: "", head: title, where, text: body || `${platformName()} update` };
+  }
+
+  function notificationLeadHeadHtml(lead) {
+    return lead.actor
+      ? issuePersonNameHtml(lead.actor, "font-semibold text-foreground", { inLink: true })
+      : `<span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>`;
   }
 
   function renderNotificationDetail(item) {
@@ -46549,7 +47122,7 @@ Report
                 <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
               </span>
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-[11px]"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
                 <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
               </span>
             </span>
@@ -49476,6 +50049,12 @@ Report
     state.homeRepositoriesExpanded = !state.homeRepositoriesExpanded;
     renderHomeRepositories();
   });
+  document.addEventListener("click", (event) => {
+    const toggle = event.target?.closest?.("[data-repo-forks-toggle]");
+    if (!toggleRepositoryForks(toggle)) return;
+    if (toggle.closest("[data-home-top-repositories]")) renderHomeRepositories();
+    if (toggle.closest("[data-sidebar-repo-list]")) renderSidebarRepositories(state.session);
+  });
   $("[data-profile-repo-search]")?.addEventListener("input", () => {
     renderProfileRepositories();
   });
@@ -51992,7 +52571,7 @@ Report
   function renderCommentReactionWho(tally, signedIn) {
     const stack = tally.people.slice(0, COMMENT_REACTION_STACK)
       .map((person) => issueActorAvatarHtml(person.name, "", "h-5 w-5", person.agent, false)).join("");
-    const rows = tally.people.slice(0, COMMENT_REACTION_WHO_SHOWN).map((person) => `<li>${issueActorAvatarHtml(person.name, "", "h-4 w-4", person.agent, false)}<span>${escapeHtml(person.name)}</span>${person.agent ? '<span class="fm-reaction-who-agent">agent</span>' : ""}</li>`).join("");
+    const rows = tally.people.slice(0, COMMENT_REACTION_WHO_SHOWN).map((person) => `<li>${issueActorAvatarHtml(person.name, "", "h-4 w-4", person.agent, false)}<span>${person.agent ? escapeHtml(person.name) : issuePersonNameHtml(person.name, "")}</span>${person.agent ? '<span class="fm-reaction-who-agent">agent</span>' : ""}</li>`).join("");
     const more = tally.count - Math.min(tally.people.length, COMMENT_REACTION_WHO_SHOWN);
     const verb = window.matchMedia?.("(pointer: coarse)").matches ? "Tap" : "Click";
     const hint = signedIn ? (tally.mine ? `${verb} to take yours back` : `${verb} to add yours`) : "Sign in to react";
@@ -55231,7 +55810,7 @@ Report
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
     "notes": "/dashboard-page-notes.js?v=c59dced335d6",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "repo-activity": "/dashboard-page-repo-activity.js?v=b3986bf8501f",
+    "repo-activity": "/dashboard-page-repo-activity.js?v=2c7f0ec843a7",
     "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",
     "workflows": "/dashboard-page-workflows.js?v=37375cef53b2",
   };
@@ -55256,7 +55835,6 @@ Report
     hydrateRepoActivityGraphs,
     initSettingsRunners,
     issuePersonNameHtml,
-    linkRepoInsightsContributors,
     loadQrGenerator,
     loadRepoRecordDetail,
     loadRunnerAccountsPicker,
@@ -55266,7 +55844,6 @@ Report
     navigateHistory,
     orgAgentRequest,
     parseFlexibleDate,
-    platformAccount,
     platformName,
     profileBadgeMedal,
     profileBadgeTier,
@@ -55297,7 +55874,6 @@ Report
     state,
     submitWebIssue,
     userDisplayName,
-    userNameHtml,
     userNameKey,
     validNodeName,
     watchIssueActorAvatars,
