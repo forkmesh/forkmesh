@@ -2363,3 +2363,14 @@ edit or delete as somebody else. Nothing here talks to older builds.
   next arrow as `ESC [1;5` + letter (`terminalKeyBytes(control = true)`). The
   grid follows new output only while it is scrolled to the bottom; scrolled
   up, it stays put and shows a round jump-to-newest button.
+- **Match the instance's theme (S110).** Settings, Appearance has the switch
+  (`appearance/matchInstanceTheme`). While it is on, `HomeShell` asks
+  `AppearanceStore.refreshInstanceTheme` for the active project's
+  `GET /api/instance` at launch, on return to the foreground and on a project
+  switch; `InstanceTheme` (`C/settings`, the iOS mapping and tests) maps
+  `themeColors` (or an older server's `theme.dark`/`theme.light`) onto the 13
+  tokens and the result is kept in `appearance/instanceThemeColors`, so the
+  next launch starts in it. `Appearance.effectiveTheme` is what
+  `MainActivity` paints with; the readable switch still applies. A project
+  without an instance or an instance on the default look clears the colours,
+  a failed read keeps them, and turning the switch off drops them.

@@ -11,7 +11,8 @@
      "title": "Android",
      "items": [
       "On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts.",
-      "On Android, the terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom."
+      "On Android, the terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom.",
+      "On Android, Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked."
      ]
     }
    ]
