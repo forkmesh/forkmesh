@@ -20,14 +20,15 @@ change so the Market and the rail never show two packages called Feed.
 | --- | --- |
 | `content/worker/instance_feed.py` | Worker API at `/api/instance-feed`, schema, account data hooks. |
 | `content/web/view.html`, `content/web/page.js` | Dashboard page `/dashboard/instance-feed` (page id `instance-feed`). |
+| `content/www/post.html`, `post.js`, `post.css` | Public post page `forkmesh.com/feed?post=<id>` (`www.page` contribution `public-post`). |
 | `content/desktop/InstanceFeedFeature.{h,cpp}` | Native desktop page (`builtin:instance-feed`, `comment` rail icon). |
 | `content/desktop/tests/test_instance_feed_feature.cpp` | Qt test for the desktop page, run against a stub host. |
 | `tests/test_instance_feed.py` | Worker suite, including install and uninstall through `plugin_data`. |
 
 ## API
 
-All routes need a signed-in session; writes also need a same-origin request
-(or a bearer token). An account without the package installed gets
+All routes but `public/<id>` need a signed-in session; writes also need a
+same-origin request (or a bearer token). An account without the package installed gets
 `{"installed": false}` from `GET /api/instance-feed` and `409
 plugin_not_installed` everywhere else.
 
@@ -36,6 +37,7 @@ plugin_not_installed` everywhere else.
 | `GET /api/instance-feed?before=&limit=&author=` | Timeline, newest first, 20 per page (at most 40). Without `author` it shows top-level posts and boosts; with `author` it shows that person's posts, replies and boosts plus a `profile` summary. `next` is the cursor (`<createdAt>-<id>`) for the following page. |
 | `POST /api/instance-feed/posts` | New post: `text` (1–500 characters), optional `spoiler` (content warning, 100) and `replyTo`. |
 | `GET /api/instance-feed/posts/<id>` | Thread: `ancestors`, `post`, `replies` (depth-first, at most 200). A boost id resolves to its original. |
+| `GET /api/instance-feed/public/<id>` | The same thread with no session and no install check, for the public post page. The viewer-only fields (`boosted`, `favourited`, `mine`, `canDelete`) are left out. |
 | `DELETE /api/instance-feed/posts/<id>` | Delete your own post or boost; instance admins may delete any post. Its favourites and boosts go with it; replies stay and show "Replying to a removed post". |
 | `POST`/`DELETE /api/instance-feed/posts/<id>/favourite` | Favourite or unfavourite. |
 | `POST`/`DELETE /api/instance-feed/posts/<id>/boost` | Boost or undo. A boost is a row with `boost_of` set and no text. |
@@ -76,6 +78,25 @@ the mentioned account) a `plugin_activity` ping linking to
 `/dashboard/instance-feed?post=<id>`. Mentions only notify accounts that have
 the package installed, at most five per post, never the poster. Each account
 may post 30 times in ten minutes (`429 posting_too_fast`).
+
+## Public links
+
+Every post can be read without signing in at `forkmesh.com/feed?post=<id>`
+(the instance's own origin on a self-hosted install), added at the user's
+request on 2026-10-23 so a post can be shared outside the dashboard. Posts
+were already readable by anyone who signed up and installed the package, so
+the link does not reveal anything new; the install note and the
+`instance.feed.write` permission now say posts are readable by anyone with the
+link. The page is `noindex`, so search engines do not list posts.
+
+On the dashboard each post has a globe link ("View on the website", new tab)
+and a Copy link button, both using that URL. The page gets the site origin
+from `publicSiteOrigin` in the page API (`10-boot.js`), which names
+forkmesh.com when the dashboard runs on app.forkmesh.com. The public page
+shows the thread (ancestors, the post, replies), keeps a content warning
+collapsed behind Show more, links authors and mentions to `/@name`, and has
+Copy link and Reply in Feed (`/dashboard/instance-feed?post=<id>`). The desktop,
+iOS and Android pages do not have these buttons yet.
 
 ## Page
 
