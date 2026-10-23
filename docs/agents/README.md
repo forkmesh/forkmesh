@@ -68,6 +68,11 @@ follows a run through every layer. The desktop UI for agents is described in
   machine are rows with ids `<= -1000`, matched by the first `cwd` in their
   transcript; cloud rows use ids `<= -1000000`. Neither is written to the
   store.
+- **Imported Claude Code sessions.** The Agents list's **Import** button turns
+  past Claude Code and Claude Desktop sessions into stored agents named after
+  the session; they mirror new turns until continued in ForkMesh, which resumes
+  them with `--fork-session`. See
+  [../desktop/agents-ui.md](../desktop/agents-ui.md#importing-claude-code-sessions-2026-10-22).
 - **Merge & clean up** deletes only the merged branch's session, its
   worktree, branch and the PR records whose head is that branch. The merge
   runs in the main checkout; it proceeds past unstaged or untracked edits the

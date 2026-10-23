@@ -79,6 +79,7 @@
 #include "SavedSearchStore.h"
 #include "SecurityAlarmState.h"
 #include "ClaudeSessionScan.h"
+#include "ClaudeSessionImport.h"
 #include "MachineAgentScan.h"
 #include "ClaudePeerMessaging.h"
 #include "TerminalHandoff.h"
@@ -14607,6 +14608,8 @@ private:
         QString sessionStrength;
         QStringList runAccountEnv;
         forkmesh::agentguard::Config guardrails;
+        QString claudeImportPath;
+        QString claudeConfigDir;
     };
     forkmesh::agentguard::Config cliTranscriptGuardrails(
         const AgentSession &session, const QString &repoPath,
@@ -14973,6 +14976,19 @@ private:
     int m_nextExternalTempId = kExternalIdBase;
     bool m_externalClaudeScanInFlight = false;
     quint64 m_externalClaudeScanGeneration = 0;
+    bool m_claudeImportSyncInFlight = false;
+    QSet<QString> m_claudeImportsInFlight;
+    QPushButton *m_agentImportClaudeButton = nullptr;
+    void showClaudeSessionImportDialog();
+    void importClaudeSessions(const QList<ExternalClaudeSession> &sessions,
+                              const QString &followUp = QString());
+    void sendPromptToExternalClaudeSession(int sessionId, const QString &prompt);
+    int createImportedClaudeAgent(const ExternalClaudeSession &ext,
+                                  const ClaudeImportBatch &batch);
+    void appendImportedClaudeEvents(int sessionId, const ClaudeImportBatch &batch,
+                                    const QString &title);
+    void syncImportedClaudeSessions();
+    QHash<QString, int> importedClaudeSessionAgents() const;
     void scanExternalClaudeSessions();
     void applyExternalClaudeScan();
     void onExternalClaudeTick();
