@@ -4891,7 +4891,13 @@ void ClaudeTranscriptView::addAskUserQuestion(const QString &id,
     v->setContentsMargins(14, 12, 14, 12);
     v->setSpacing(10);
 
-    auto *heading = new QLabel(QStringLiteral("Agent needs your input"));
+    const QString headingText =
+        input.value(QStringLiteral("title")).toString().simplified().left(160);
+    auto *heading = new QLabel(headingText.isEmpty()
+                                   ? QStringLiteral("Agent needs your input")
+                                   : headingText);
+    heading->setTextFormat(Qt::PlainText);
+    heading->setWordWrap(true);
     heading->setStyleSheet(Theme::remapSheet(QStringLiteral(
         "color:%1;font-weight:700;background:transparent;border:none;").arg(m_p.accent)));
     v->addWidget(heading);
@@ -4941,6 +4947,7 @@ void ClaudeTranscriptView::addAskUserQuestion(const QString &id,
         qv2->setSpacing(6);
 
         auto *qlabel = new QLabel(st.question);
+        qlabel->setTextFormat(Qt::PlainText);
         qlabel->setWordWrap(true);
         qlabel->setStyleSheet(Theme::remapSheet(QStringLiteral(
             "color:%1;font-weight:600;background:transparent;border:none;").arg(m_p.text)));
@@ -4963,6 +4970,7 @@ void ClaudeTranscriptView::addAskUserQuestion(const QString &id,
             st.optionLabels.append(label);
             if (!desc.trimmed().isEmpty()) {
                 auto *d = new QLabel(desc);
+                d->setTextFormat(Qt::PlainText);
                 d->setWordWrap(true);
                 d->setStyleSheet(Theme::remapSheet(QStringLiteral(
                     "color:%1;background:transparent;border:none;"

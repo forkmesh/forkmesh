@@ -51,7 +51,13 @@ public final class RelayService: OwnStatusAnnouncer {
     @ObservationIgnored public var onMessage: (@MainActor (ChatMessage) -> Void)?
     @ObservationIgnored public var isExpired: ChatExpiry?
     @ObservationIgnored public var isReadElsewhere: (@MainActor (ChatMessage) -> Bool)?
-    @ObservationIgnored public var nodeOwners: ChatNodeOwners?
+    @ObservationIgnored public var nodeOwners: ChatNodeOwners? {
+        didSet {
+            guard let nodeOwners, nodeOwners !== oldValue else { return }
+            nodeOwners.addAnswerObserver { [weak self] node, account in self?.ownerConfirmed(node, account) }
+        }
+    }
+    @ObservationIgnored let guestLines: GuestLineRenames
     @ObservationIgnored public var isHiddenChannel: (@MainActor (String) -> Bool)?
     @ObservationIgnored public let listeners = Listeners()
 
@@ -125,6 +131,7 @@ public final class RelayService: OwnStatusAnnouncer {
         self.platform = platform
         self.clock = clock
         self.sleeper = sleep
+        self.guestLines = GuestLineRenames(sleep: sleep)
     }
 
     @discardableResult
@@ -520,6 +527,7 @@ public final class RelayService: OwnStatusAnnouncer {
         heldForOwner.removeAll()
         ownerGeneration += 1
         nodeOwners?.clear()
+        guestLines.clear()
         log.removeAll()
         sharedPassphrase = ""
         sharedPassphraseScope = ""
@@ -948,7 +956,37 @@ public final class RelayService: OwnStatusAnnouncer {
         if !claim.isEmpty && nodeOwners?.isVerified(node: senderId, claim: claim) == true {
             return ChatFrameText.asBotLine(m, via: claim)
         }
+        if !claim.isEmpty && ChatFrameText.botName(m) == nil { guestLines.note(m, node: senderId, claim: claim, owners: nodeOwners) }
         return ChatFrameText.asBotLine(RelayService.asGuest(m, senderId: senderId), via: guestChatName(senderId))
+    }
+
+    private func ownerConfirmed(_ node: String, _ account: String) {
+        let lines = guestLines.confirmed(node: node, account: account)
+        if lines.isEmpty { return }
+        let names = Dictionary(lines.map { ($0.id, $0.name) }, uniquingKeysWith: { _, last in last })
+        let guest = guestChatName(node)
+        var changed = false
+        for (conversation, list) in history {
+            var renamed = list
+            var touched = false
+            for index in renamed.indices where renamed[index].senderId == node && renamed[index].senderName == guest {
+                guard let name = names[renamed[index].id] else { continue }
+                renamed[index].senderName = name
+                touched = true
+            }
+            if touched {
+                history[conversation] = renamed
+                changed = true
+            }
+        }
+        if var peer = peers[node], peer.owner.isEmpty {
+            if peer.name == guest { peer.name = lines.last?.name ?? account }
+            peer.owner = account
+            peers[node] = peer
+            rosterRevision &+= 1
+            changed = true
+        }
+        if changed { notifyListeners() }
     }
 
     nonisolated static func asGuest(_ m: JSONObject, senderId: String) -> JSONObject {

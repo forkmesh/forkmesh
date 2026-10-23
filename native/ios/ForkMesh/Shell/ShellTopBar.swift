@@ -43,6 +43,7 @@ struct ShellTopBarState {
 struct ShellTopBar: View {
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var motion: GenieMotion = GenieMotion.shared
 
     let state: ShellTopBarState
@@ -117,8 +118,10 @@ struct ShellTopBar: View {
     /// header now names the project and holds the account overflow.
     var body: some View {
         ZStack {
-            TelemetryStrip()
-                .padding(.horizontal, 64)
+            if !ShellIslandStatusDots.earsShown(compact: verticalSizeClass == .compact) {
+                TelemetryStrip()
+                    .padding(.horizontal, 64)
+            }
             HStack(spacing: FmSpace.x3) {
                 ShellProjectSlot(onHome: onHome)
                     .genieKeepsClear()
@@ -414,9 +417,9 @@ struct ShellIslandStatusDots: View {
     static let islandInset: CGFloat = 54
     static let islandBottom: CGFloat = 48
     static let islandWidth: CGFloat = 126
-    static let islandHeight: CGFloat = 37
-    static let clockDrop: CGFloat = 7
+    static let clockClear: CGFloat = 12
     static let earHeight: CGFloat = 12
+    static let earMargin: CGFloat = 10
     static let dotSize: CGFloat = 5
 
     let lights: [StatusLight]
@@ -428,6 +431,18 @@ struct ShellIslandStatusDots: View {
 
     static func gap(top: CGFloat) -> CGFloat? {
         top >= islandInset ? top - islandBottom : nil
+    }
+
+    static func earTop(gap: CGFloat) -> CGFloat {
+        max(1, gap - clockClear)
+    }
+
+    static func earWidth(screen: CGFloat) -> CGFloat {
+        max(0, (screen - islandWidth) / 2)
+    }
+
+    static func earsShown(compact: Bool) -> Bool {
+        !compact && gap(top: GenieKeepClear.keyWindow()?.safeAreaInsets.top ?? 0) != nil
     }
 
     static func screenTop(origin: CGFloat, inset: CGFloat) -> CGFloat {
@@ -442,6 +457,7 @@ struct ShellIslandStatusDots: View {
         GeometryReader { (proxy: GeometryProxy) in
             let frame: CGRect = proxy.frame(in: .global)
             let top: CGFloat = ShellIslandStatusDots.screenTop(origin: frame.minY, inset: proxy.safeAreaInsets.top)
+            let earWidth: CGFloat = ShellIslandStatusDots.earWidth(screen: frame.width)
             if let gap = ShellIslandStatusDots.gap(top: top) {
                 ZStack(alignment: .topLeading) {
                     if !lights.isEmpty {
@@ -450,9 +466,15 @@ struct ShellIslandStatusDots: View {
                     }
                     if earShown {
                         ear
-                            .frame(width: max(0, (frame.width - ShellIslandStatusDots.islandWidth) / 2))
-                            .padding(.top, gap + ShellIslandStatusDots.islandHeight / 2 + ShellIslandStatusDots.clockDrop)
+                            .frame(width: earWidth)
+                            .padding(.top, ShellIslandStatusDots.earTop(gap: gap))
                     }
+                    TelemetryEarSparks(
+                        width: max(0, earWidth - ShellIslandStatusDots.earMargin * 2),
+                        height: ShellIslandStatusDots.earHeight)
+                        .frame(width: earWidth)
+                        .padding(.top, ShellIslandStatusDots.earTop(gap: gap))
+                        .frame(width: frame.width, alignment: .topTrailing)
                 }
                 .frame(width: frame.width, alignment: .topLeading)
                 .offset(y: -frame.minY)
@@ -474,7 +496,7 @@ struct ShellIslandStatusDots: View {
     }
 
     private var ear: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 8) {
             if let desktop = desktop {
                 ShellFooterDesktopLight(
                     desktop: desktop, load: desktopLoad, onPressed: {}, glyph: 10, side: ShellIslandStatusDots.earHeight)
@@ -483,7 +505,7 @@ struct ShellIslandStatusDots: View {
                 ShellFooterMacLight(light: buildMac, onPressed: {}, glyph: 10, side: ShellIslandStatusDots.earHeight)
             }
             if !fleet.isEmpty {
-                HStack(spacing: -4) {
+                HStack(spacing: 1) {
                     ForEach(fleet) { (light: FleetLight) in
                         ShellFleetLight(
                             light: light,
