@@ -220,7 +220,20 @@ descenders.
   when it is resized while the alert is open (`fitMessageScrims` on
   `Resize`), and a title moved into the heading is set as plain text unless
   the box is already rich text, so a title containing `<` is never read as
-  markup. Classic is unchanged.
+  markup. A title that only repeats the message (`Saved` over `Saved.`) is
+  not turned into a heading. Classic is unchanged.
+- **Alert layout** is one symmetrical column: 24 px padding on every side, the
+  heading over the body, then any checkbox, then the buttons centred and all
+  as wide as the widest (at least 96 px). Heading, body and checkbox are
+  centred; when either text is a block (a line break, or rich text with
+  paragraphs, breaks, lists, tables or `pre`) all of them are left-aligned
+  instead, because centred lists are hard to read. Qt's own grid keeps an
+  indent column beside the text, and the 340 px button row spans it, so the
+  grid split that width in half and pushed the text into the right half with
+  the buttons on the right edge (issue 2482); `layoutMessageCard` therefore
+  replaces the grid on `Show` with a `QVBoxLayout` holding the grid's widgets
+  in row order, minus the icon. `forkmesh-ui-gallery` snapshots four alerts
+  (`*-alert-*.png`) in each design.
 
 ### Prompt composer
 
