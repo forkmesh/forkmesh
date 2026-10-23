@@ -308,7 +308,7 @@ bool themeIsDark()
     bool dark;
     if (pref == "light")
         dark = false;
-    else if (pref == "dark")
+    else if (pref == "dark" || pref == "halloween")
         dark = true;
     else {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)

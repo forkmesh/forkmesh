@@ -315,7 +315,7 @@ bool resolveThemeIsDark()
     const QString pref = QSettings().value(kThemeSetting, "system").toString();
     if (pref == "light")
         return false;
-    if (pref == "dark")
+    if (pref == "dark" || pref == kHalloweenTheme)
         return true;
     if (pref.startsWith(kMarketplaceThemePrefix))
         return QSettings().value(kThemeBaseDarkSetting, true).toBool();
