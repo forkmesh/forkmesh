@@ -188,4 +188,6 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S113 | 2026-10-23 | Settings | fix | With Diagnostics on, the status dots show above the Dynamic Island and the desktop and node lights sit just under the clock. | 977c57037b | pending |  |
 | S114 | 2026-10-23 | Chat | fix | A chat line shown as Guest switches to the sender's account name once the server confirms their device. | 8215287d99 | pending |  |
 | S115 | 2026-10-23 | Settings | ui | With Diagnostics on, the desktop and node lights sit above the clock with more room and the diagnostic charts sit filled above the battery. | 0eff45f617 | pending |  |
+| S116 | 2026-10-23 | Agents | ui | The green and red churn ring around an agent's tile in the agent list turns while the agent is working and stops still when it is done. | d8dffb957e | pending |  |
+| S117 | 2026-10-23 | Market | feature | Each Feed post has a share button to view it on the website or copy its public link. | 98e35b20f3 | synced | 6a733017ec |
 <!-- ledger:end -->

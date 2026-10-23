@@ -30,6 +30,7 @@
 #include <QItemSelectionModel>
 #include <QNetworkInformation>
 #include <QProcessEnvironment>
+#include <QThreadPool>
 #include <QtConcurrent/QtConcurrentRun>
 
 #ifndef Q_OS_WIN
@@ -159,14 +160,29 @@ void MainWindow::loadCachedAvatars()
     }));
 }
 
-void MainWindow::saveChatHistory()
-{
-    const QString path = chatHistoryPath();
-    if (path.isEmpty())
-        return;
+namespace {
 
+QThreadPool &chatHistoryWriter()
+{
+    static QThreadPool *pool = [] {
+        auto *made = new QThreadPool;
+        made->setMaxThreadCount(1);
+        if (QCoreApplication *app = QCoreApplication::instance())
+            QObject::connect(app, &QCoreApplication::aboutToQuit, app,
+                             [made] { made->waitForDone(); });
+        return made;
+    }();
+    return *pool;
+}
+
+QByteArray chatHistoryBytes(const QHash<QString, QList<ChatMessage>> &history,
+                            const QStringList &openDmPeers,
+                            const QHash<QString, QString> &dmNameMap,
+                            const QHash<QString, int> &unreadCounts,
+                            const QString &current)
+{
     QJsonObject conversations;
-    for (auto it = m_history.constBegin(); it != m_history.constEnd(); ++it) {
+    for (auto it = history.constBegin(); it != history.constEnd(); ++it) {
         QJsonArray arr;
         const QList<ChatMessage> &msgs = it.value();
         const int first = std::max(0, int(msgs.size()) - 1000);
@@ -204,26 +220,44 @@ void MainWindow::saveChatHistory()
     }
 
     QJsonArray openDms;
-    for (const QString &peer : std::as_const(m_openDms))
+    for (const QString &peer : openDmPeers)
         openDms.append(peer);
     QJsonObject dmNames;
-    for (auto it = m_dmNames.constBegin(); it != m_dmNames.constEnd(); ++it)
+    for (auto it = dmNameMap.constBegin(); it != dmNameMap.constEnd(); ++it)
         dmNames.insert(it.key(), it.value());
 
     QJsonObject unreadObj;
-    for (auto it = m_unreadCounts.constBegin(); it != m_unreadCounts.constEnd(); ++it)
+    for (auto it = unreadCounts.constBegin(); it != unreadCounts.constEnd(); ++it)
         unreadObj.insert(it.key(), it.value());
 
-    const QJsonObject root{{"current", m_currentConversation},
+    const QJsonObject root{{"current", current},
                            {"openDms", openDms},
                            {"dmNames", dmNames},
                            {"unread", unreadObj},
                            {"conversations", conversations}};
-    forkmesh::ownerfile::write(path, QJsonDocument(root).toJson(QJsonDocument::Compact));
+    return QJsonDocument(root).toJson(QJsonDocument::Compact);
+}
+
+} // namespace
+
+void MainWindow::saveChatHistory()
+{
+    const QString path = chatHistoryPath();
+    if (path.isEmpty())
+        return;
+    chatHistoryWriter().start(
+        [path, history = m_history, openDms = m_openDms, dmNames = m_dmNames,
+         unread = m_unreadCounts, current = m_currentConversation] {
+            forkmesh::ownerfile::write(
+                path, chatHistoryBytes(history, openDms, dmNames, unread, current));
+        });
+    if (m_closingDown)
+        chatHistoryWriter().waitForDone();
 }
 
 void MainWindow::loadChatHistory()
 {
+    chatHistoryWriter().waitForDone();
     QString path = chatHistoryPath();
     bool migrated = false;
     if (!path.isEmpty() && !QFileInfo::exists(path)) {
@@ -3335,6 +3369,22 @@ void MainWindow::startLocalMesh()
         startLocalControl();
         return;
     }
+    if (m_localMeshKeyState != 2) {
+        if (m_localMeshKeyState == 1)
+            return;
+        m_localMeshKeyState = 1;
+        QThread *warm = QThread::create([room = forkmesh::localmesh::roomName()] {
+            RoomCrypto::warmDefaultKey(room);
+        });
+        connect(warm, &QThread::finished, warm, &QObject::deleteLater);
+        connect(warm, &QThread::finished, this, [this] {
+            m_localMeshKeyState = 2;
+            if (!m_closingDown)
+                startLocalMesh();
+        });
+        warm->start();
+        return;
+    }
     // Deliberately not gated on offline mode, an account, or a sign-in: the
     // mesh is local-only, and offline mode is switched on automatically when
     // the internet drops — which is exactly when this room matters.
@@ -5844,12 +5894,17 @@ void MainWindow::flushFooterLogLines()
 {
     if (m_footerLogFlushTimer)
         m_footerLogFlushTimer->stop();
-    const auto appendLines = [this](QTextEdit *view, const QStringList &lines,
+    const auto appendLines = [this](QTextEdit *view, QStringList lines,
                                     int keep, int slack) {
         QTextDocument *doc = view->document();
         QTextCursor batch(doc);
         batch.beginEditBlock();
-        for (const QString &clean : lines) {
+        if (keep > 0 && lines.size() >= keep) {
+            lines = lines.mid(lines.size() - keep);
+            batch.select(QTextCursor::Document);
+            batch.removeSelectedText();
+        }
+        for (const QString &clean : std::as_const(lines)) {
             view->append(footerLogLineHtml(clean, view));
             if (QTextBlock last = doc->lastBlock(); last.isValid())
                 last.setUserData(new FooterLogLineData(clean));

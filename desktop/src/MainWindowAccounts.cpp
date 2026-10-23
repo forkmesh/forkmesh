@@ -352,14 +352,20 @@ void saveRecentUserInstance(const QString &accountName,
         AccountCapability::normalizedAccount(accountName);
     if (!isValidNodeName(account) || serverUrl.trimmed().isEmpty())
         return;
-    QJsonObject instances = recentUserInstances();
-    instances.insert(account, accountInstanceUrl(serverUrl));
-    QSettings().setValue(
-        kRecentUserInstancesSetting,
-        QJsonDocument(instances).toJson(QJsonDocument::Compact));
-
     const QString instanceUrl = accountInstanceUrl(serverUrl);
+    QJsonObject instances = recentUserInstances();
+    if (instances.value(account).toString() != instanceUrl) {
+        instances.insert(account, instanceUrl);
+        QSettings().setValue(
+            kRecentUserInstancesSetting,
+            QJsonDocument(instances).toJson(QJsonDocument::Compact));
+    }
+
     QList<RecentUserIdentity> identities = recentUserIdentities();
+    if (!identities.isEmpty() && identities.first().account == account &&
+        identities.first().instanceUrl == instanceUrl &&
+        identities.first().instanceId == instanceId.trimmed())
+        return;
     identities.removeIf(
         [&account, &instanceId,
          &instanceUrl](const RecentUserIdentity &candidate) {

@@ -53,7 +53,10 @@ platforms.
 
 The frame timer runs at 60 fps in flight, 24 fps while walking, reacting or
 hovered, lower at rest and when the app is inactive, and stops while hidden or
-minimized. Frames are painted to an image only when a tick changed them; the
+minimized. A tick that finds the window unexposed or minimized, or the
+application hidden or suspended, only re-arms itself at 2 Hz: every repaint of
+the window is a GPU buffer swap that the compositor can hold for seconds
+(2026-10-22 stall logs). Frames are painted to an image only when a tick changed them; the
 head, turban, joints and eye sockets are cached images.
 
 ## Playing with the window and keeping clear

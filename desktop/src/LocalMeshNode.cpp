@@ -724,6 +724,7 @@ void LocalMeshNode::stop()
         // Tell the room before the sockets go, so a device that leaves
         // disappears now instead of on the next sweep.
         sendToAll(makeMessage(QStringLiteral("bye")));
+        m_sendGate.releaseAll();
         for (Link *link : std::as_const(m_links))
             if (link->socket)
                 link->socket->waitForBytesWritten(50);
@@ -745,6 +746,7 @@ void LocalMeshNode::stop()
         m_typingStopTimer->stop();
     const QList<Link *> links = m_links;
     m_links.clear();
+    m_sendGate.clear();
     for (Link *link : links) {
         if (link->socket) {
             link->socket->disconnect(this);
@@ -1499,6 +1501,7 @@ void LocalMeshNode::onLinkReadyRead(QIODevice *socket)
             auto *tcp = qobject_cast<QTcpSocket *>(socket);
             const QByteArray rest = link->buffer;
             m_links.removeOne(link);
+            m_sendGate.drop(link);
             forkmesh::chatv3::wipe(link->ephPriv);
             delete link;
             socket->disconnect(this);
@@ -1855,6 +1858,7 @@ void LocalMeshNode::dropLink(QIODevice *socket, const QString &reason)
             QStringLiteral(": ") +
             (reason.isEmpty() ? QStringLiteral("closed") : reason);
         m_links.removeAt(i);
+        m_sendGate.drop(link);
         const QString peerId = link->peerKid;
         const bool wasOpen = link->stage == Link::Stage::Open;
         const bool bluetooth = link->bluetooth;
@@ -1984,6 +1988,18 @@ bool LocalMeshNode::writeLink(Link &link, const QJsonObject &frame)
         return false;
     const QByteArray plain = QJsonDocument(frame).toJson(QJsonDocument::Compact);
     if (plain.size() + 16 > maxFrameBytes())
+        return false;
+    Link *target = &link;
+    return m_sendGate.send(m_device ? m_device->writeTicket() : 0, target,
+                           [this, target, plain] {
+                               return m_links.contains(target) &&
+                                      writeLinkBytes(*target, plain);
+                           });
+}
+
+bool LocalMeshNode::writeLinkBytes(Link &link, const QByteArray &plain)
+{
+    if (link.stage != Link::Stage::Open || !link.socket || !link.socket->isWritable())
         return false;
     const QByteArray data =
         forkmesh::chatv3::linkSeal(link.sendKey, link.sendCounter, plain);

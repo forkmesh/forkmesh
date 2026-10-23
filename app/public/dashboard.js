@@ -56631,6 +56631,7 @@ Your reply
     session: () => state.session ? { ...state.session } : null,
     escapeHtml,
     relativeTimeLabel,
+    publicSiteOrigin,
     // Bundled first-party packages can keep a mature host implementation while
     // the manifest owns route, navigation, install identity, and presentation.
     // The allowlist prevents a package from invoking arbitrary dashboard code.

@@ -212,7 +212,27 @@ descenders.
   the frameless window itself where the platform refuses `startSystemResize`,
   and `fitToScreen` keeps it on the available screen area. The section stack is
   a `SectionViewport` that reports a small minimum width and scrolls a wider
-  page sideways. Screen changes are handled one event-loop turn later.
+  page sideways. Screen changes are handled one event-loop turn later. The
+  fallback resize stores the newest geometry per mouse move and applies it
+  once per event-loop turn (and on release), so a drag lays the window out
+  once per frame instead of once per move event.
+- **App-wide event filters**: `MainWindow::eventFilter` sees every event of
+  every object, so it returns at once for event types none of its branches
+  handle (timers, meta-calls, paint, layout, polish). A new branch must add
+  its event type to that switch.
+- **Footer overlays**: `positionGlobalFooterOverlays` runs straight away for
+  resizes of the overlay host and the Agents detail pane, but prompt drag and
+  grip moves go through `schedulePositionGlobalFooterOverlays`, one queued
+  pass per event-loop turn; the button release runs a still-queued pass first
+  so the stored size is the dragged one. The pass no longer shows the footer dock
+  before deciding whether it is visible (showing a hidden dock re-ran its whole
+  height-for-width layout on every drag move while the prompt floated) and
+  invalidates the dock row only when its spacer or prompt alignment changed.
+- **Stacks sized to the current page** (`src/CurrentPageStack.h`): hidden
+  pages get an Ignored size policy. The stack used to re-apply every page's
+  policy, with a dynamic-property read per page, on each `LayoutRequest`; it
+  now remembers the pages and policies it set and re-applies only when the
+  current page, the page list or a page's policy has moved.
 - **Density** (`ui/density`: `auto`, `comfortable`, `compact`;
   `FORKMESH_DENSITY`): compact appends `95-compact.qss` and drops font sizes by
   one; auto is compact under 1,500 px available width. Next only.
