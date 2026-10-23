@@ -36,6 +36,10 @@
 #include <QTextEdit>
 #include <QTimer>
 #include <QTimeZone>
+#include <QToolButton>
+#include <QButtonGroup>
+#include <QMouseEvent>
+#include <QScrollBar>
 #include <QUrlQuery>
 #include <QVBoxLayout>
 
@@ -438,9 +442,9 @@ void paintCalendarChip(QPainter *painter, const QRect &rect,
 {
     if (rect.width() < 16 || rect.height() < 8)
         return;
-    painter->setPen(Qt::NoPen);
+    painter->setPen(QPen(Theme::color(Theme::Role::Accent, 64), 1));
     painter->setBrush(Theme::color(Theme::Role::AccentSubtle));
-    painter->drawRoundedRect(rect, 4, 4);
+    painter->drawRoundedRect(QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5), 5, 5);
     const QRect inner = rect.adjusted(6, 0, -6, 0);
     int left = inner.left();
     if (!label.isEmpty()) {
@@ -458,7 +462,7 @@ void paintCalendarChip(QPainter *painter, const QRect &rect,
         return;
     const QFont titleFont = calendarFont(base, 11, QFont::Medium);
     painter->setFont(titleFont);
-    painter->setPen(Theme::color(Theme::Role::Fg));
+    painter->setPen(Theme::color(Theme::Role::AccentFg));
     painter->drawText(QRect(left, inner.top(), room, inner.height()),
                       Qt::AlignLeft | Qt::AlignVCenter,
                       QFontMetrics(titleFont).elidedText(title, Qt::ElideRight,
@@ -519,8 +523,8 @@ public:
             calendarCornerPath(QRectF(cell), topLeft, topRight, bottomRight,
                                bottomLeft),
             Theme::color(hovered ? Theme::Role::SurfaceRaised
-                         : outside ? Theme::Role::BgSubtle
-                                   : Theme::Role::Bg));
+                         : index.column() >= 5 ? Theme::Role::Surface
+                                               : Theme::Role::Bg));
         if (ownGrid) {
             if (!lastColumn) {
                 painter->fillRect(
@@ -632,7 +636,14 @@ public:
         painter->fillRect(
             cell, Theme::color(option.state.testFlag(QStyle::State_MouseOver)
                                    ? Theme::Role::SurfaceRaised
-                                   : Theme::Role::Bg));
+                               : index.column() >= 5 ? Theme::Role::Surface
+                                                     : Theme::Role::Bg));
+        const QDate weekStart = option.widget ? option.widget->property("calendarWeekStart").toDate()
+                                              : QDate();
+        const QTime now = QTime::currentTime();
+        const bool nowCell = weekStart.isValid() &&
+                             weekStart.addDays(index.column()) == QDate::currentDate() &&
+                             index.row() == now.hour();
         if (!index.data(kCalendarIdRole).toString().isEmpty()) {
             QStringList titles =
                 index.data(Qt::DisplayRole).toString().split(QLatin1Char('\n'));
@@ -665,6 +676,14 @@ public:
             paintCalendarChip(painter, chip, QString(), titles.constFirst(),
                               option.font);
         }
+        if (nowCell) {
+            const qreal y = cell.top() + cell.height() * now.minute() / 60.0;
+            painter->fillRect(QRectF(cell.left(), y - 0.5, cell.width(), 1.0),
+                              Theme::color(Theme::Role::Accent));
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(Theme::Role::Accent));
+            painter->drawEllipse(QPointF(cell.left() + 4, y), 3.5, 3.5);
+        }
         if (option.state.testFlag(QStyle::State_Selected)) {
             paintCalendarOutline(
                 painter,
@@ -674,6 +693,258 @@ public:
         painter->restore();
     }
 };
+
+class CalendarWeekHeader : public QHeaderView
+{
+public:
+    explicit CalendarWeekHeader(QWidget *parent)
+        : QHeaderView(Qt::Horizontal, parent)
+    {
+        setSectionsClickable(true);
+    }
+
+protected:
+    QSize sectionSizeFromContents(int logicalIndex) const override
+    {
+        QSize size = QHeaderView::sectionSizeFromContents(logicalIndex);
+        if (Theme::isNext())
+            size.setHeight(56);
+        return size;
+    }
+
+    void paintSection(QPainter *painter, const QRect &rect,
+                      int logicalIndex) const override
+    {
+        const QDate start = parentWidget()
+                                ? parentWidget()->property("calendarWeekStart").toDate()
+                                : QDate();
+        if (!Theme::isNext() || !start.isValid()) {
+            QHeaderView::paintSection(painter, rect, logicalIndex);
+            return;
+        }
+        const QDate date = start.addDays(logicalIndex);
+        const bool today = date == QDate::currentDate();
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        painter->fillRect(rect, Theme::color(logicalIndex >= 5 ? Theme::Role::Surface
+                                                               : Theme::Role::Bg));
+        painter->fillRect(QRect(rect.left(), rect.bottom(), rect.width(), 1),
+                          Theme::color(Theme::Role::Border));
+        if (logicalIndex > 0)
+            painter->fillRect(QRect(rect.left(), rect.top(), 1, rect.height()),
+                              Theme::color(Theme::Role::Border));
+        QFont dayFont = calendarFont(font(), 11, QFont::Medium);
+        dayFont.setCapitalization(QFont::AllUppercase);
+        dayFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+        painter->setFont(dayFont);
+        painter->setPen(Theme::color(today ? Theme::Role::AccentFg : Theme::Role::FgSubtle));
+        painter->drawText(QRect(rect.left(), rect.top() + 7, rect.width(), 14),
+                          Qt::AlignCenter, QLocale().toString(date, QStringLiteral("ddd")));
+        const QRectF badge(rect.center().x() - 13.5, rect.top() + 23, 28, 28);
+        if (today) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(Theme::Role::Accent));
+            painter->drawEllipse(badge);
+        }
+        painter->setFont(calendarFont(font(), 13, QFont::Medium));
+        painter->setPen(Theme::color(today ? Theme::Role::OnAccent : Theme::Role::Fg));
+        painter->drawText(badge, Qt::AlignCenter, QString::number(date.day()));
+        painter->restore();
+    }
+};
+
+class CalendarMiniMonth : public QWidget
+{
+public:
+    explicit CalendarMiniMonth(std::function<void(const QDate &)> pick,
+                               QWidget *parent = nullptr)
+        : QWidget(parent), m_pick(std::move(pick))
+    {
+        setObjectName(QStringLiteral("calendarMiniMonth"));
+        setMouseTracking(true);
+        setFixedHeight(kHeader + 24 + 6 * kCell);
+        setMinimumWidth(7 * 28);
+        const auto stepper = [this](const QString &icon, const QString &tip, int months) {
+            auto *button = new QToolButton(this);
+            button->setObjectName(QStringLiteral("calendarMiniStep"));
+            button->setAutoRaise(true);
+            button->setCursor(Qt::PointingHandCursor);
+            button->setToolTip(tip);
+            button->setAccessibleName(tip);
+            button->setIcon(themedOcticon(icon, Theme::color(Theme::Role::FgMuted), 14));
+            button->setIconSize(QSize(14, 14));
+            button->setFixedSize(24, 24);
+            connect(button, &QToolButton::clicked, this, [this, months] {
+                m_month = m_month.addMonths(months);
+                update();
+            });
+            return button;
+        };
+        m_previous = stepper(QStringLiteral("chevron-left"), QStringLiteral("Previous month"), -1);
+        m_next = stepper(QStringLiteral("chevron-right"), QStringLiteral("Next month"), 1);
+        const QDate today = QDate::currentDate();
+        m_month = QDate(today.year(), today.month(), 1);
+        m_anchor = today;
+    }
+
+    void setRange(const QDate &anchor, const QString &mode)
+    {
+        if (anchor.isValid() && (anchor != m_anchor || mode != m_mode))
+            m_month = QDate(anchor.year(), anchor.month(), 1);
+        m_anchor = anchor;
+        m_mode = mode;
+        update();
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QWidget::resizeEvent(event);
+        m_next->move(width() - 24, 0);
+        m_previous->move(width() - 50, 0);
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setFont(calendarFont(font(), 13, QFont::Medium));
+        painter.setPen(Theme::color(Theme::Role::Fg));
+        painter.drawText(QRect(0, 0, width() - 56, 24), Qt::AlignLeft | Qt::AlignVCenter,
+                         QLocale().toString(m_month, QStringLiteral("MMMM yyyy")));
+        const qreal column = width() / 7.0;
+        painter.setFont(calendarFont(font(), 11, QFont::Medium));
+        painter.setPen(Theme::color(Theme::Role::FgSubtle));
+        for (int day = 0; day < 7; ++day) {
+            painter.drawText(QRectF(day * column, kHeader, column, 24), Qt::AlignCenter,
+                             QLocale().dayName(day + 1, QLocale::NarrowFormat));
+        }
+        const QDate first = m_month.addDays(1 - m_month.dayOfWeek());
+        const QDate today = QDate::currentDate();
+        painter.setFont(calendarFont(font(), 12, QFont::Normal));
+        for (int cell = 0; cell < 42; ++cell) {
+            const QDate date = first.addDays(cell);
+            const QRectF box = dayBox(cell, column);
+            const bool isToday = date == today;
+            const bool other = date.month() != m_month.month();
+            QColor fill;
+            if (isToday)
+                fill = Theme::color(Theme::Role::Accent);
+            else if (inRange(date))
+                fill = Theme::color(Theme::Role::AccentSubtle);
+            else if (cell == m_hover)
+                fill = Theme::color(Theme::Role::SurfaceRaised);
+            if (fill.isValid()) {
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(fill);
+                painter.drawRoundedRect(box, 6, 6);
+            }
+            painter.setPen(Theme::color(isToday ? Theme::Role::OnAccent
+                                        : other ? Theme::Role::FgSubtle
+                                                : Theme::Role::Fg));
+            painter.drawText(box, Qt::AlignCenter, QString::number(date.day()));
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        const int cell = cellAt(event->position());
+        if (cell != m_hover) {
+            m_hover = cell;
+            setCursor(cell >= 0 ? Qt::PointingHandCursor : Qt::ArrowCursor);
+            update();
+        }
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        m_hover = -1;
+        update();
+        QWidget::leaveEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        const int cell = cellAt(event->position());
+        if (cell < 0 || event->button() != Qt::LeftButton)
+            return;
+        const QDate date = m_month.addDays(1 - m_month.dayOfWeek()).addDays(cell);
+        if (m_pick)
+            m_pick(date);
+    }
+
+private:
+    static constexpr int kHeader = 28;
+    static constexpr int kCell = 28;
+
+    QRectF dayBox(int cell, qreal column) const
+    {
+        const qreal side = qMin<qreal>(column, kCell) - 2;
+        const qreal x = (cell % 7) * column + (column - side) / 2;
+        const qreal y = kHeader + 24 + (cell / 7) * kCell + (kCell - side) / 2;
+        return QRectF(x, y, side, side);
+    }
+
+    int cellAt(const QPointF &point) const
+    {
+        const qreal column = width() / 7.0;
+        if (point.y() < kHeader + 24 || column <= 0)
+            return -1;
+        const int row = int((point.y() - kHeader - 24) / kCell);
+        const int col = int(point.x() / column);
+        if (row < 0 || row > 5 || col < 0 || col > 6)
+            return -1;
+        return row * 7 + col;
+    }
+
+    bool inRange(const QDate &date) const
+    {
+        if (!m_anchor.isValid())
+            return false;
+        if (m_mode == QLatin1String("day"))
+            return date == m_anchor;
+        if (m_mode == QLatin1String("week")) {
+            const QDate start = m_anchor.addDays(1 - m_anchor.dayOfWeek());
+            return date >= start && date < start.addDays(7);
+        }
+        if (m_mode == QLatin1String("agenda"))
+            return false;
+        return date.month() == m_anchor.month() && date.year() == m_anchor.year();
+    }
+
+    std::function<void(const QDate &)> m_pick;
+    QToolButton *m_previous = nullptr;
+    QToolButton *m_next = nullptr;
+    QDate m_month;
+    QDate m_anchor;
+    QString m_mode = QStringLiteral("month");
+    int m_hover = -1;
+};
+
+QPointer<CalendarMiniMonth> g_calendarMiniMonth;
+QPointer<QLabel> g_calendarTodayLine;
+
+QString calendarNextRangeLabel(const QDate &anchor, const QString &mode, const QDate &first)
+{
+    const QLocale locale;
+    if (mode == QLatin1String("week")) {
+        const QDate last = first.addDays(6);
+        if (first.month() == last.month())
+            return QStringLiteral("%1 %2 \u2013 %3, %4")
+                .arg(locale.toString(first, QStringLiteral("MMM")))
+                .arg(first.day())
+                .arg(last.day())
+                .arg(last.year());
+        return QStringLiteral("%1 \u2013 %2")
+            .arg(locale.toString(first, QStringLiteral("MMM d")),
+                 locale.toString(last, QStringLiteral("MMM d, yyyy")));
+    }
+    if (mode == QLatin1String("day"))
+        return locale.toString(first, QStringLiteral("ddd, MMM d, yyyy"));
+    if (mode == QLatin1String("agenda"))
+        return QStringLiteral("From %1").arg(locale.toString(first, QStringLiteral("MMM d, yyyy")));
+    return locale.toString(anchor, QStringLiteral("MMMM yyyy"));
+}
 
 bool calendarAgendaStartsDay(const QModelIndex &index, const QStringList &parts)
 {
@@ -870,7 +1141,83 @@ QWidget *MainWindow::buildCalendarSection()
         "Personal events are private; organization calendars are member-only."));
     m_calendarStatus->setObjectName(QStringLiteral("mutedLabel"));
     headingRow->addWidget(m_calendarStatus);
-    outer->addLayout(headingRow);
+    const bool nextLook = Theme::isNext();
+    if (nextLook) {
+        while (QLayoutItem *item = toolbar->takeAt(0))
+            delete item;
+        while (QLayoutItem *item = headingRow->takeAt(0))
+            delete item;
+        delete headingRow;
+        headingRow = nullptr;
+        outer->setContentsMargins(24, 12, 24, 20);
+        outer->setSpacing(14);
+        toolbar->setSpacing(6);
+        auto *titleColumn = new QVBoxLayout;
+        titleColumn->setSpacing(2);
+        titleColumn->addWidget(title);
+        auto *subtitle = new QHBoxLayout;
+        subtitle->setSpacing(6);
+        auto *todayLine = new QLabel;
+        todayLine->setObjectName(QStringLiteral("mutedLabel"));
+        todayLine->setProperty("calendarHeader", QStringLiteral("subtitle"));
+        todayLine->setText(QStringLiteral("Today is %1").arg(
+            QLocale().toString(QDate::currentDate(), QStringLiteral("dddd, MMMM d"))));
+        g_calendarTodayLine = todayLine;
+        m_calendarStatus->setProperty("calendarHeader", QStringLiteral("subtitle"));
+        auto *dot = new QLabel(QStringLiteral("\u00B7"));
+        dot->setObjectName(QStringLiteral("mutedLabel"));
+        dot->setProperty("calendarHeader", QStringLiteral("subtitle"));
+        subtitle->addWidget(todayLine);
+        subtitle->addWidget(dot);
+        subtitle->addWidget(m_calendarStatus);
+        subtitle->addStretch();
+        titleColumn->addLayout(subtitle);
+        toolbar->addLayout(titleColumn, 1);
+        zone->hide();
+        today->setProperty("calendarNav", QStringLiteral("outline"));
+        for (QPushButton *step : {previous, next})
+            step->setProperty("calendarNav", QStringLiteral("ghostStep"));
+        m_calendarHeading->setProperty("calendarHeader", QStringLiteral("range"));
+        m_calendarHeading->setAlignment(Qt::AlignCenter);
+        m_calendarHeading->setMinimumWidth(168);
+        auto *views = new QFrame;
+        views->setObjectName(QStringLiteral("calendarViewTabs"));
+        auto *viewsLayout = new QHBoxLayout(views);
+        viewsLayout->setContentsMargins(2, 2, 2, 2);
+        viewsLayout->setSpacing(2);
+        auto *viewGroup = new QButtonGroup(views);
+        viewGroup->setExclusive(true);
+        for (int index : {2, 1, 0, 3}) {
+            auto *tab = new QToolButton;
+            tab->setObjectName(QStringLiteral("calendarViewTab"));
+            tab->setText(mode->itemText(index));
+            tab->setCheckable(true);
+            tab->setChecked(mode->currentIndex() == index);
+            tab->setCursor(Qt::PointingHandCursor);
+            tab->setToolTip(QStringLiteral("Show the %1 view").arg(mode->itemText(index).toLower()));
+            viewGroup->addButton(tab, index);
+            viewsLayout->addWidget(tab);
+            connect(tab, &QToolButton::clicked, mode, [mode, index] { mode->setCurrentIndex(index); });
+        }
+        connect(mode, &QComboBox::currentIndexChanged, views, [viewGroup](int index) {
+            if (QAbstractButton *tab = viewGroup->button(index))
+                tab->setChecked(true);
+        });
+        mode->hide();
+        add->setProperty("calendarNav", QStringLiteral("create"));
+        setOcticon(add, "plus", 14);
+        toolbar->addWidget(today, 0, Qt::AlignVCenter);
+        toolbar->addWidget(previous, 0, Qt::AlignVCenter);
+        toolbar->addWidget(next, 0, Qt::AlignVCenter);
+        toolbar->addWidget(m_calendarHeading, 0, Qt::AlignVCenter);
+        toolbar->addWidget(views, 0, Qt::AlignVCenter);
+        toolbar->addWidget(mode);
+        toolbar->addSpacing(6);
+        toolbar->addWidget(add, 0, Qt::AlignVCenter);
+        toolbar->addWidget(zone);
+    } else {
+        outer->addLayout(headingRow);
+    }
 
     auto *splitter = new QSplitter(Qt::Horizontal);
     splitter->setChildrenCollapsible(false);
@@ -881,6 +1228,22 @@ QWidget *MainWindow::buildCalendarSection()
     calendarsLabel->setObjectName(QStringLiteral("mutedLabel"));
     calendarsLabel->setProperty("calendarSidebar", QStringLiteral("heading"));
     sideLayout->addWidget(calendarsLabel);
+    CalendarMiniMonth *miniMonth = nullptr;
+    if (nextLook) {
+        miniMonth = new CalendarMiniMonth([this](const QDate &date) {
+            m_calendarAnchor = date;
+            m_calendarAgendaLimit = kCalendarAgendaPage;
+            refreshRepositoryCalendarEvents();
+            renderCalendar();
+        });
+        miniMonth->setRange(m_calendarAnchor, m_calendarMode);
+        g_calendarMiniMonth = miniMonth;
+        sideLayout->setContentsMargins(0, 0, 16, 0);
+        sideLayout->setSpacing(8);
+        sideLayout->insertWidget(0, miniMonth);
+        sideLayout->insertSpacing(1, 8);
+        sidebar->setMinimumWidth(216);
+    }
     m_calendarList = new QListWidget;
     m_calendarList->setObjectName(QStringLiteral("calendarList"));
     m_calendarList->setMinimumWidth(190);
@@ -924,6 +1287,19 @@ QWidget *MainWindow::buildCalendarSection()
         m_calendarWeekTable->setVerticalHeaderItem(
             hour, new QTableWidgetItem(
                       QTime(hour, 0).toString(QStringLiteral("h AP"))));
+    }
+    if (nextLook) {
+        m_calendarWeekTable->setHorizontalHeader(
+            new CalendarWeekHeader(m_calendarWeekTable));
+        m_calendarWeekTable->verticalHeader()->setDefaultSectionSize(48);
+        m_calendarWeekTable->verticalHeader()->setFixedWidth(56);
+        for (int hour = 0; hour < 24; ++hour)
+            m_calendarWeekTable->verticalHeaderItem(hour)->setText(
+                QTime(hour, 0).toString(QStringLiteral("HH:mm")));
+        m_calendarMonthTable->setHorizontalHeaderLabels(
+            {QStringLiteral("MON"), QStringLiteral("TUE"), QStringLiteral("WED"),
+             QStringLiteral("THU"), QStringLiteral("FRI"), QStringLiteral("SAT"),
+             QStringLiteral("SUN")});
     }
     m_calendarWeekTable->horizontalHeader()->setSectionResizeMode(
         QHeaderView::Stretch);
@@ -972,13 +1348,15 @@ QWidget *MainWindow::buildCalendarSection()
         page, {QEvent::Polish, QEvent::StyleChange, QEvent::Show},
         [sideLayout, searchField, calendarList, monthTable, weekTable, dayList,
          agendaList, classicGrid, classicHighlight, classicListWidth,
-         fitMonthRows] {
+         fitMonthRows, miniMonth] {
             const bool nextDesign = Theme::isNext();
             const int listWidth =
                 nextDesign ? QWIDGETSIZE_MAX : classicListWidth;
             if (calendarList->maximumWidth() != listWidth)
                 calendarList->setMaximumWidth(listWidth);
-            const int searchIndex = nextDesign ? 0 : 2;
+            if (miniMonth && miniMonth->isVisibleTo(miniMonth->parentWidget()) != nextDesign)
+                miniMonth->setVisible(nextDesign);
+            const int searchIndex = nextDesign ? (miniMonth ? 2 : 0) : (miniMonth ? 4 : 2);
             if (sideLayout->indexOf(searchField) != searchIndex) {
                 sideLayout->removeWidget(searchField);
                 sideLayout->insertWidget(searchIndex, searchField);
@@ -999,6 +1377,9 @@ QWidget *MainWindow::buildCalendarSection()
             }
             if (!nextDesign)
                 return;
+            if (g_calendarTodayLine)
+                g_calendarTodayLine->setText(QStringLiteral("Today is %1").arg(QLocale().toString(
+                    QDate::currentDate(), QStringLiteral("dddd, MMMM d"))));
             for (QAbstractItemView *view :
                  std::initializer_list<QAbstractItemView *>{
                      calendarList, monthTable, weekTable, dayList, agendaList})
@@ -1405,6 +1786,12 @@ void MainWindow::renderCalendar()
         m_calendarHeading->setText(
             m_calendarAnchor.toString(QStringLiteral("MMMM yyyy")));
     }
+    if (Theme::isNext()) {
+        m_calendarHeading->setText(
+            calendarNextRangeLabel(m_calendarAnchor, m_calendarMode, rangeFirst));
+        if (g_calendarMiniMonth)
+            g_calendarMiniMonth->setRange(m_calendarAnchor, m_calendarMode);
+    }
     const QDateTime start(rangeFirst, QTime(0, 0));
     const QDateTime end(rangeLast, QTime(0, 0));
     // Read both lists in place. Concatenating them into one array first
@@ -1468,6 +1855,16 @@ void MainWindow::renderCalendar()
         for (int day = 0; day < 7; ++day)
             labels << rangeFirst.addDays(day).toString(QStringLiteral("ddd d"));
         m_calendarWeekTable->setHorizontalHeaderLabels(labels);
+        m_calendarWeekTable->setProperty("calendarWeekStart", rangeFirst);
+        if (Theme::isNext() && !m_calendarWeekTable->property("calendarNextScrolled").toBool()) {
+            m_calendarWeekTable->setProperty("calendarNextScrolled", true);
+            QPointer<QTableWidget> weekTable = m_calendarWeekTable;
+            QTimer::singleShot(0, m_calendarWeekTable, [weekTable] {
+                if (weekTable)
+                    weekTable->verticalScrollBar()->setValue(weekTable->rowViewportPosition(8) +
+                                                             weekTable->verticalScrollBar()->value());
+            });
+        }
         // Build each cell's text once. Appending to a QTableWidgetItem per
         // event re-copied the whole cell string for every commit in that hour,
         // and an hour of repository activity is not a handful of entries.
