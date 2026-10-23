@@ -128,11 +128,58 @@ static void checkUnrelatedEvents()
     check(ledger.isEmpty(), "clear forgets every task");
 }
 
+static void checkSubSessionRows()
+{
+    Ledger ledger;
+    QJsonObject parent = started(QStringLiteral("p1"), QStringLiteral("Review auth"), true);
+    parent.insert(QStringLiteral("subagent_type"), QStringLiteral("general-purpose"));
+    parent.insert(QStringLiteral("spawn_depth"), 1);
+    ledger.apply(parent);
+    ledger.apply(started(QStringLiteral("s1"), QStringLiteral("Run lint"), false));
+    QJsonObject child = started(QStringLiteral("c1"), QStringLiteral("Read login.cpp"), true);
+    child.insert(QStringLiteral("parent_task_id"), QStringLiteral("p1"));
+    child.insert(QStringLiteral("spawn_depth"), 2);
+    ledger.apply(child);
+    check(ledger.apply(parent) == Change::None, "a repeated start does not reopen a task");
+    check(ledger.apply(QJsonObject{{QStringLiteral("type"), QStringLiteral("system")},
+                                   {QStringLiteral("subtype"), QStringLiteral("task_progress")},
+                                   {QStringLiteral("task_id"), QStringLiteral("p1")},
+                                   {QStringLiteral("description"), QStringLiteral("Review auth")},
+                                   {QStringLiteral("summary"), QStringLiteral("Reading the token code")},
+                                   {QStringLiteral("last_tool_name"), QStringLiteral("Read")},
+                                   {QStringLiteral("usage"),
+                                    QJsonObject{{QStringLiteral("total_tokens"), 15100},
+                                                {QStringLiteral("tool_uses"), 3},
+                                                {QStringLiteral("duration_ms"), 900}}}}) ==
+              Change::None,
+          "progress changes nothing about what holds the run");
+    const QList<Task> rows = ledger.rows();
+    check(rows.size() == 3, "every open task is a row");
+    check(rows.value(0).id == QLatin1String("p1") && rows.value(1).id == QLatin1String("c1") &&
+              rows.value(2).id == QLatin1String("s1"),
+          "a nested sub-session is listed under the one that started it");
+    check(rows.value(0).depth == 0 && rows.value(1).depth == 1,
+          "a nested sub-session is indented one level");
+    check(rows.value(0).summary == QLatin1String("Reading the token code") &&
+              rows.value(0).tokens == 15100 && rows.value(0).toolUses == 3 &&
+              rows.value(0).lastTool == QLatin1String("Read") &&
+              rows.value(0).subagentType == QLatin1String("general-purpose"),
+          "a row keeps the latest progress of its sub-session");
+    ledger.apply(updated(QStringLiteral("p1"),
+                         QJsonObject{{QStringLiteral("description"), QStringLiteral("Review auth flow")}}));
+    check(ledger.rows().value(0).description == QLatin1String("Review auth flow"),
+          "a renamed sub-session shows its new name");
+    ledger.apply(notification(QStringLiteral("p1"), QStringLiteral("completed")));
+    check(ledger.rows().size() == 2 && ledger.rows().value(0).id == QLatin1String("s1"),
+          "a finished sub-session leaves the list, its child stays");
+}
+
 int main()
 {
     checkBackgroundTasksHoldTheRun();
     checkForegroundTasksDoNotHold();
     checkUnrelatedEvents();
+    checkSubSessionRows();
     if (failures)
         return 1;
     std::cout << "agent cli tasks: all checks passed\n";

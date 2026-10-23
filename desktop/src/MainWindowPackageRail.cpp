@@ -12,6 +12,7 @@
 #include <QScrollArea>
 #include <QSettings>
 #include <QSignalBlocker>
+#include <QTimer>
 
 using namespace forkmesh::ui;
 using forkmesh::market::NativePackageRailStep;
@@ -211,10 +212,8 @@ void MainWindow::preparePackageRails()
 {
     if (!packageRailEnabled())
         return;
-    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
-        if (page.widget)
-            page.widget->prepareRail();
-    }
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        queuePackagePreparation(page.widget, false);
 }
 
 void MainWindow::preparePackagePage(forkmesh::market::NativePackageWidget *widget)
@@ -229,7 +228,45 @@ void MainWindow::preparePackagePage(forkmesh::market::NativePackageWidget *widge
 void MainWindow::preparePackagePages()
 {
     for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
-        preparePackagePage(page.widget);
+        queuePackagePreparation(page.widget, true);
+}
+
+void MainWindow::queuePackagePreparation(
+    forkmesh::market::NativePackageWidget *widget, bool wholePage)
+{
+    if (!widget)
+        return;
+    for (PendingPackagePreparation &pending : m_packagePreparationQueue) {
+        if (pending.widget == widget) {
+            pending.wholePage = pending.wholePage || wholePage;
+            return;
+        }
+    }
+    m_packagePreparationQueue.append({widget, wholePage});
+    if (m_packagePreparationScheduled)
+        return;
+    m_packagePreparationScheduled = true;
+    QTimer::singleShot(0, this, &MainWindow::drainPackagePreparation);
+}
+
+void MainWindow::drainPackagePreparation()
+{
+    m_packagePreparationScheduled = false;
+    while (!m_packagePreparationQueue.isEmpty()) {
+        const PendingPackagePreparation next =
+            m_packagePreparationQueue.takeFirst();
+        if (!next.widget)
+            continue;
+        if (next.wholePage)
+            preparePackagePage(next.widget);
+        else if (packageRailEnabled())
+            next.widget->prepareRail();
+        break;
+    }
+    if (m_packagePreparationQueue.isEmpty() || m_packagePreparationScheduled)
+        return;
+    m_packagePreparationScheduled = true;
+    QTimer::singleShot(0, this, &MainWindow::drainPackagePreparation);
 }
 
 void MainWindow::refreshPackageRail()
