@@ -2330,3 +2330,12 @@ edit or delete as somebody else. Nothing here talks to older builds.
   header and info sheet say "Anyone nearby with ForkMesh open can read
   #mesh." Android has no setting that turns the mesh off, so it still starts
   with chat.
+
+## 36. Sync ledger, third round (2026-10-22)
+
+- **Agent page actions (S074).** `FmNavBar` gives its trailing actions the bar
+  width less 52 dp for the Back button (never under 184 dp,
+  `FmNavActionsRoom`) in a horizontal scroller that starts at the trailing
+  end, so a page with many actions scrolls them instead of drawing the first
+  one under the Back button. The unified agent page's action row does the
+  same: its buttons scroll inside the width left after the badges.

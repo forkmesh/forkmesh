@@ -59,6 +59,9 @@ import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmLinearProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Box
 import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmStatusBadge
 import com.forkmesh.nativeapp.ui.kit.FmTone
@@ -402,23 +405,30 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                 ) {
                     FmStatusBadge(row.badgeLabel, c.textSecondary)
                     AgentChip(if (row.merged) "Merged" else row.statusLabel)
-                    Spacer(Modifier.weight(1f))
-                    val watch = AgentWatchEntry.openControl
-                    if (watch != null) {
-                        FmIconButton("graphic_eq", if (row.isActive) "Watch & listen" else "Replay & listen", onPressed = {
-                            watch(navigator, if (row.isActive) "Watch agent" else "Replay agent", listOf(row))
-                        }, color = c.accent)
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState(Int.MAX_VALUE)),
+                            horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val watch = AgentWatchEntry.openControl
+                            if (watch != null) {
+                                FmIconButton("graphic_eq", if (row.isActive) "Watch & listen" else "Replay & listen", onPressed = {
+                                    watch(navigator, if (row.isActive) "Watch agent" else "Replay agent", listOf(row))
+                                }, color = c.accent)
+                            }
+                            if (RunnerDesktopHandoff.canMove(row, center.hub.desktop != null)) {
+                                FmIconButton("desktop_windows_outlined", "Continue on desktop", onPressed = { if (!busy) moveToDesktop() }, color = c.accent)
+                            }
+                            if (row.isPhoneTerminal) {
+                                FmOutlinedButton("Terminal", onClick = { navigator.push(DesktopTerminalScreen(row.terminal)) }, icon = "terminal")
+                            } else if (row.offersTerminal) {
+                                FmOutlinedButton("Terminal", onClick = if (busy) null else ({ openTerminal() }), icon = "terminal")
+                            }
+                            if (row.canStop) FmOutlinedButton("Stop", onClick = if (busy) null else ({ act(if (row.outside) "Interrupted it." else "Asked it to stop.") { center.stop(row) } }))
+                            if (row.canContinue) FmOutlinedButton("Continue", onClick = if (busy) null else ({ act("Continuing.") { center.continueRun(row) } }))
+                        }
                     }
-                    if (RunnerDesktopHandoff.canMove(row, center.hub.desktop != null)) {
-                        FmIconButton("desktop_windows_outlined", "Continue on desktop", onPressed = { if (!busy) moveToDesktop() }, color = c.accent)
-                    }
-                    if (row.isPhoneTerminal) {
-                        FmOutlinedButton("Terminal", onClick = { navigator.push(DesktopTerminalScreen(row.terminal)) }, icon = "terminal")
-                    } else if (row.offersTerminal) {
-                        FmOutlinedButton("Terminal", onClick = if (busy) null else ({ openTerminal() }), icon = "terminal")
-                    }
-                    if (row.canStop) FmOutlinedButton("Stop", onClick = if (busy) null else ({ act(if (row.outside) "Interrupted it." else "Asked it to stop.") { center.stop(row) } }))
-                    if (row.canContinue) FmOutlinedButton("Continue", onClick = if (busy) null else ({ act("Continuing.") { center.continueRun(row) } }))
                 }
                 if (row.isDesktop && !row.outside && row.localId > 0) {
                     QueuedRunNote(row, Modifier.padding(horizontal = FmSpace.x3).padding(bottom = FmSpace.x2))
