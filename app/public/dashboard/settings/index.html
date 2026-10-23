@@ -4050,6 +4050,11 @@
                         <i data-lucide="palette" class="h-5 w-5"></i>
                         Instance theme
                       </button>
+                      <button data-settings-section-link="instance-sidebar" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                        <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
+                        <i data-lucide="pin" class="h-5 w-5"></i>
+                        Top repositories
+                      </button>
                     </div>
                     <button data-settings-section-link="notifications" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
                       <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
@@ -4968,6 +4973,27 @@
                         </form>
                       </div>
                       <p id="instance-theme-status" data-instance-theme-status role="status" aria-live="polite" class="min-h-4 text-xs text-muted-foreground"></p>
+                    </div>
+                  </section>
+
+                  <section id="settings-instance-sidebar" data-settings-section="instance-sidebar" data-instance-sidebar-panel class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Top repositories</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">What the sidebar and the Home card list under Top repositories, for everyone on this instance. Only an admin can change it.</p>
+                    <div class="mt-5 grid max-w-2xl gap-4">
+                      <p data-instance-sidebar-denied hidden class="fm-flash-neutral rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">Only an admin of this instance can change Top repositories.</p>
+                      <form data-instance-sidebar-form hidden class="grid gap-4 rounded-md border border-border bg-card px-4 py-4">
+                        <label class="grid gap-1 text-xs font-semibold text-foreground">Pinned repositories
+                          <textarea data-instance-sidebar-pinned rows="4" spellcheck="false" autocomplete="off" placeholder="project&#10;acme/tools" aria-describedby="instance-sidebar-pinned-help" class="rounded-md border border-border bg-background px-3 py-2 font-mono text-sm font-normal text-foreground"></textarea>
+                          <span id="instance-sidebar-pinned-help" class="font-normal text-muted-foreground">One per line, <code>name</code> or <code>owner/name</code>, up to <span data-instance-sidebar-pinned-max>10</span>. Only these are listed, in this order; a bare name never matches a fork. Leave it empty for the usual list.</span>
+                        </label>
+                        <label class="grid max-w-[12rem] gap-1 text-xs font-semibold text-foreground">Forks shown per repository
+                          <input data-instance-sidebar-forks type="number" min="0" max="50" step="1" required class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                        </label>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <button type="submit" class="fm-btn fm-btn-cta">Save</button>
+                          <p data-instance-sidebar-status role="status" aria-live="polite" class="text-xs text-muted-foreground"></p>
+                        </div>
+                      </form>
                     </div>
                   </section>
 

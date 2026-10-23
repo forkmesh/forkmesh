@@ -15,7 +15,7 @@
     }
   });
 
-  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions", "ai-review"];
+  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "instance-sidebar", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions", "ai-review"];
 
   function normalizeSettingsSection(section) {
     return SETTINGS_SECTIONS.includes(section) ? section : "public-profile";
@@ -64,6 +64,7 @@
     if (activeSection === "ssh-keys") loadSshKeys();
     if (activeSection === "notifications") loadPingSettings();
     if (activeSection === "agents") initSettingsAgents();
+    if (activeSection === "instance-sidebar") initInstanceSidebarSection();
     if (activeSection === "instance-theme") initInstanceThemeSection();
     else leaveInstanceThemeSection();
     // Session state changes on other devices, so re-entering this tab always
@@ -1026,6 +1027,87 @@
     renderInstanceThemeCards();
     if (!instanceThemeState.themes.length) setInstanceThemeStatus("Could not load the themes. Refresh to try again.", "bad");
     else if (!instanceThemeState.previewing) setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is the current theme.`);
+  }
+
+  const INSTANCE_SIDEBAR_ERRORS = {
+    invalid_pinned: "Use repository names such as widgets or owner/name, one per line.",
+    too_many_pinned: "That is more pinned repositories than the setting holds.",
+    invalid_forks: "Forks shown must be a whole number from 0 to 50.",
+    not_admin: "Only an admin of this instance can change Top repositories.",
+    unauthorized: "Sign in again to change Top repositories.",
+  };
+
+  function setInstanceSidebarStatus(text) {
+    const status = $("[data-instance-sidebar-status]");
+    if (status) status.textContent = text;
+  }
+
+  function instanceSidebarPinnedLines() {
+    return String($("[data-instance-sidebar-pinned]")?.value || "")
+      .split(/[\n,]/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  async function saveInstanceSidebar() {
+    const forks = Number($("[data-instance-sidebar-forks]")?.value);
+    if (!Number.isInteger(forks) || forks < 0 || forks > 50) {
+      setInstanceSidebarStatus(INSTANCE_SIDEBAR_ERRORS.invalid_forks);
+      return;
+    }
+    setInstanceSidebarStatus("Saving…");
+    try {
+      const response = await fetch("/api/instance/sidebar", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ sessionToken: state.session?.sessionToken || "", sidebar: { pinned: instanceSidebarPinnedLines(), forks } }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
+      fillInstanceSidebarForm(data.sidebar);
+      state.sidebarSetting = data.sidebar;
+      try {
+        localStorage.setItem(SIDEBAR_SETTING_STORAGE_KEY, JSON.stringify(data.sidebar));
+      } catch (_) {}
+      renderSidebarRepositories(state.session);
+      renderHomeRepositories();
+      setInstanceSidebarStatus("Saved. Other visitors see it within a minute.");
+    } catch (error) {
+      setInstanceSidebarStatus(INSTANCE_SIDEBAR_ERRORS[error?.message] || "That didn't save. Try again.");
+    }
+  }
+
+  function fillInstanceSidebarForm(sidebar) {
+    const pinned = $("[data-instance-sidebar-pinned]");
+    if (pinned) pinned.value = (Array.isArray(sidebar?.pinned) ? sidebar.pinned : []).join("\n");
+    const forks = $("[data-instance-sidebar-forks]");
+    if (forks) forks.value = String(Number.isInteger(sidebar?.forks) ? sidebar.forks : 3);
+  }
+
+  async function initInstanceSidebarSection() {
+    const form = $("[data-instance-sidebar-form]");
+    if (!form) return;
+    const allowed = state.session?.isAdmin === true && dashboardOnInstance();
+    const denied = $("[data-instance-sidebar-denied]");
+    if (denied) denied.hidden = allowed;
+    form.hidden = !allowed;
+    if (!allowed) return;
+    if (!form.dataset.bound) {
+      form.dataset.bound = "1";
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void saveInstanceSidebar();
+      });
+    }
+    setInstanceSidebarStatus("");
+    try {
+      const data = await fetchJson("/api/instance/sidebar", { fresh: true });
+      fillInstanceSidebarForm(data?.sidebar);
+      const max = $("[data-instance-sidebar-pinned-max]");
+      if (max && data?.limits?.pinned) max.textContent = String(data.limits.pinned);
+    } catch (error) {
+      setInstanceSidebarStatus(INSTANCE_SIDEBAR_ERRORS[error?.message] || "Could not load the setting. Refresh to try again.");
+    }
   }
 
   // ---- Nodes & devices (account_devices registry) ----------------------------
