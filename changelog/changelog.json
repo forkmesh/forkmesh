@@ -8,6 +8,12 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Projects",
+     "items": [
+      "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar."
+     ]
+    },
+    {
      "title": "Agents",
      "items": [
       "The composer hides its character count until a prompt nears the limit, then shows it in orange and red."
