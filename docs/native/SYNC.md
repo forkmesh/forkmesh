@@ -197,4 +197,11 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S122 | 2026-10-23 | Inbox | ui | Each ping in the Inbox shows the logo of the instance it came from, under the ping's icon. | 9d95e08a10 | pending |  |
 | S123 | 2026-10-23 | DJ Studio | ui | In a DJ Studio jam, each queued song's thumbnail shows who added it and the date and time, and its menu says both in full. | 6740ef7e4c | pending |  |
 | S124 | 2026-10-23 | Chat | fix | Reinstalling ForkMesh and restoring your identity key from the projects folder keeps your chat key, so safety numbers stay the same and nobody sees you as a new device. | b8b8103211 | pending |  |
+| S125 | 2026-10-23 | Chat | fix | Calls reconnect by themselves after a network drop or when the other person's audio goes silent, and a call that cannot connect ends after 30 seconds with a clear message. | 407a9d2c6f | pending |  |
+| S126 | 2026-10-23 | Chat | feature | A back button on the call screen returns to the chat while the call continues in a small window you can drag to any edge and tap to reopen. | 407a9d2c6f | pending |  |
+| S127 | 2026-10-23 | Chat | ui | Video calls show your own camera with the other person's picture and name until their video arrives, and their picture again when their camera goes off. | 407a9d2c6f | pending |  |
+| S128 | 2026-10-23 | Chat | feature | The call quality pill has a diagnostics button that turns red on a problem and explains the cause, the fixes and a prompt for an AI assistant. | 407a9d2c6f | pending |  |
+| S129 | 2026-10-23 | Chat | feature | The pre-call check can record a 10-second microphone test and play it back before you call. | 407a9d2c6f | pending |  |
+| S130 | 2026-10-23 | Chat | fix | App sounds, speech and dictation no longer cut off your microphone during a call, and call audio comes back after an interruption. | 407a9d2c6f | pending |  |
+| S131 | 2026-10-23 | Chat | fix | Answering a call works even when the permission prompt stays open, and says why when the call can no longer be answered. | 407a9d2c6f | pending |  |
 <!-- ledger:end -->
