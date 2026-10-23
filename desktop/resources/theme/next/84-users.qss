@@ -1,0 +1,39 @@
+QWidget[usersNextPage="true"] QLabel#sectionTitle {
+    color: @fg; font-size: 15px; font-weight: 600; background: transparent;
+}
+QWidget[usersNextPage="true"] QLabel#mutedLabel {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+QWidget#usersSignupReferralCodePanel {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QWidget#usersSignupReferralCodePanel QLabel { background: transparent; font-size: 13px; }
+QWidget#usersSignupReferralCodePanel QLabel#mutedLabel { color: @fgMuted; font-size: 12px; }
+QLineEdit#usersSignupReferralCode {
+    min-height: 28px; max-height: 28px; border-radius: 8px; padding: 0px 8px;
+}
+
+QTabWidget#usersTabs::pane { border: none; border-top: 1px solid @border; padding-top: 12px; }
+QTabWidget#usersTabs > QTabBar::tab {
+    padding: 8px 2px; margin-right: 18px; font-size: 13px; font-weight: 500;
+}
+QWidget#usersNextToolbar { background: transparent; }
+QLineEdit#usersNextSearch {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    min-height: 28px; max-height: 28px; padding: 0px 8px 0px 2px; font-size: 13px;
+}
+QLineEdit#usersNextSearch:hover { border-color: @borderStrong; }
+QLineEdit#usersNextSearch:focus { border-color: @accent; }
+QComboBox#usersNextRoleFilter {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    min-height: 28px; max-height: 28px; padding: 0px 8px; font-size: 13px;
+}
+QComboBox#usersNextRoleFilter:hover { border-color: @borderStrong; }
+QComboBox#usersNextRoleFilter:focus { border-color: @accent; }
+QLabel#usersNextShown {
+    color: @fgSubtle; font-size: 12px; padding-left: 4px; background: transparent;
+}
+
+QTableWidget#usersTable, QTableWidget#usersQuarantineTable {
+    border-radius: 12px;
+}
