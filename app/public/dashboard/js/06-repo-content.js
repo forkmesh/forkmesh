@@ -14544,7 +14544,7 @@ Your reply
   }
 
   const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
-  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
+  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch", "stalePulls", "stalePullsDeleteBranch"];
 
   function repoFirstViewSeed(repo) {
     let seed = null;

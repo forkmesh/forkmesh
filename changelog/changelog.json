@@ -20,7 +20,8 @@
       "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.",
       "Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.",
       "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.",
-      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows."
+      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows.",
+      "Repositories can turn on Close stale pull requests in Settings: when a maintainer's comment or change request gets no reply, ForkBot reminds the author after 1, 3 and 7 days and closes the pull request after 8."
      ]
     },
     {

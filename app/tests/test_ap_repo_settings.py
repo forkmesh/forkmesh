@@ -340,7 +340,8 @@ def test_about_get_returns_followers_list_and_settings():
     assert fediverse["enabled"] is True
     assert resp["data"]["features"] == {
         "issues": True, "pulls": False, "discussions": True,
-        "actions": True, "protectDefaultBranch": False}
+        "actions": True, "protectDefaultBranch": False,
+        "stalePulls": False, "stalePullsDeleteBranch": False}
     assert resp["data"]["mirrorOf"] == "" and resp["data"]["readOnly"] is False
     assert resp["data"]["externalMirrors"] == [github_mirror]
     # Platform operational-alert state is not exposed from a public repo API.
