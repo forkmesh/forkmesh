@@ -2396,3 +2396,27 @@ edit or delete as somebody else. Nothing here talks to older builds.
   draws the same service dots (5 dp, troubled ones blinking) in a 7 dp strip
   just under the status bar, over every tab and pushed page. It is drawn over
   the content without taking layout height and does not take touches.
+- **Account data (S101).** Settings > Data follows iOS ([account-data.md](../app/account-data.md)).
+  `AccountSyncService` (`C/settings/AccountSync.kt`) saves three items to
+  `/api/accounts/data/store/<key>`: `android.home` (layout: `shell/*` and the
+  Insights layout keys), `android.rss` (the RSS library from
+  `RssLibrary.syncData`, without articles, activity or fetch state) and
+  `android.settings` (every other preference). The keys differ from iOS's
+  `ios.*` because the two apps encode settings differently
+  (`DataFolder.exportSettings` writes typed `forkmesh.android-settings`
+  values), so neither phone overwrites the other's copy. Preferences under
+  `AccountSyncKeys.skippedPrefixes` never leave the phone: project-scoped keys
+  (`p/`), sign-in, identity, owner keys, chat keys and history, server and relay
+  addresses, caches, read state, recents and counters; secrets live in
+  `SecureStore` and are never preferences. A value over 32 KiB is skipped.
+  Saving is off until "Save my settings to ForkMesh" is switched on; then
+  `AccountSyncSetup` saves on every foreground change, only items whose
+  SHA-256 differs from the last copy saved for the account
+  (`accountSync/hash/<account>/<key>`). Restore asks first, writes the
+  preferences directly (Appearance reloads at once, the rest on the next
+  launch) and replaces the RSS subscriptions with `RssLibrary.restoreSync`,
+  which keeps a local feed's id, articles and fetch state when its address
+  matches. `AccountDataBrowser` (`C/settings/AccountDataInventory.kt`) lists
+  the inventory by subject, category and table, pages rows 50 at a time,
+  removes a row only where the server marks it `deletable`, and deletes one or
+  all saved items; the export button downloads `/api/accounts/export`.
