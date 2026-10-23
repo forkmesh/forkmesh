@@ -25,6 +25,7 @@
     <link rel="manifest" href="/favicon/site.webmanifest" />
     <link rel="stylesheet" href="/site-header.css" />
     <script src="/user-status.js?v=${version}" defer></script>
+    <script src="/username-autocomplete.js?v=${version}" defer></script>
     <script src="/site-header.js?v=${version}" defer></script>
     <script>
       (() => {
@@ -1543,7 +1544,7 @@
               <section id="chat-channel-members-section" class="chat-channel-section" aria-labelledby="chat-channel-members-title" hidden>
                 <h3 id="chat-channel-members-title">Members</h3>
                 <form id="chat-channel-invite-form" class="chat-channel-form">
-                  <input id="chat-channel-username" name="username" maxlength="63" placeholder="username" aria-label="Registered username" required />
+                  <input id="chat-channel-username" name="username" maxlength="63" placeholder="Type a username" aria-label="Registered username" data-username-autocomplete="single" required />
                   <button type="submit">Invite</button>
                 </form>
                 <div id="chat-channel-members" aria-live="polite"></div>
@@ -1844,7 +1845,7 @@
               </select>
               <button type="submit">Create</button>
             </form>
-            <input id="chat-channel-initial-members" maxlength="1000" placeholder="Invite people: alice, bob" aria-label="Usernames to invite, separated by commas" />
+            <input id="chat-channel-initial-members" maxlength="1000" placeholder="Invite people: start typing a username" aria-label="Usernames to invite, separated by commas" data-username-autocomplete="list" />
             <p id="chat-channel-audience" class="chat-channel-audience" role="status" aria-live="polite">Only you can see this room until you invite someone. Nobody else, including administrators, is added.</p>
             <p class="chat-attachment-meta">Members, renaming and deletion live in Settings. Incoming webhooks work in public and private channels; their messages are visible to the server.</p>
           </section>

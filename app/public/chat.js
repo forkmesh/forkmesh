@@ -1555,6 +1555,21 @@ function mentionCandidates(partial) {
       lastSeenMs: 0,
     });
   }
+  const accounts = window.ForkMeshUsernames?.lookup(partial, () => {
+    if (input === document.activeElement &&
+        mentionTokenAtCaret()?.partial === partial) {
+      updateMentionSuggest();
+    }
+  }) || [];
+  for (const name of accounts) {
+    if (name === self || byName.has(name)) continue;
+    byName.set(name, {
+      id: "account:" + name,
+      name,
+      kind: "user",
+      lastSeenMs: 0,
+    });
+  }
   if (!byName.has(FORKBOT_SENDER_ID)) {
     byName.set(FORKBOT_SENDER_ID, {
       id: FORKBOT_SENDER_ID, name: "forkbot", kind: "bot", lastSeenMs: Date.now(),
@@ -2750,6 +2765,12 @@ function renderChannelMembers(members) {
   if (!channelMembersEl) return;
   channelMembersEl.textContent = "";
   const list = Array.isArray(members) ? members : [];
+  if (channelUsernameInput) {
+    channelUsernameInput.dataset.usernameExclude = list
+      .map((member) => String(member?.username || "").trim().toLowerCase())
+      .filter(Boolean)
+      .join(",");
+  }
   if (!list.length) {
     const empty = document.createElement("p");
     empty.textContent = "No invited members yet.";
@@ -3004,7 +3025,7 @@ async function acceptPendingInvite() {
 
 function channelInviteeNames() {
   return [...new Set(String(channelInitialMembersInput?.value || "")
-    .split(",")
+    .split(/[\s,]+/)
     .map((value) => value.trim().replace(/^@/, "").toLowerCase())
     .filter(Boolean))];
 }
@@ -3744,6 +3765,7 @@ async function refreshUsersDirectory() {
     }
   }
   directorySeeded = true;
+  window.ForkMeshUsernames?.remember(registeredUsers.keys());
   renderDirectMessagePicker();
   schedulePeopleRender();
   if (input === document.activeElement && mentionTokenAtCaret()) {

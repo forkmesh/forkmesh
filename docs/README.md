@@ -76,6 +76,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [app/comment-gifs.md](app/comment-gifs.md): GIFs and stickers in comment composers (GIPHY proxy, key handling, rendering, reduced motion).
 - [app/comment-tips.md](app/comment-tips.md): wallet-to-wallet Solana Pay tips on comments (requests, read-only verification, limits, settings).
 - [app/branch-protection.md](app/branch-protection.md): protected default branches (merge only an owner- or admin-approved pull request) and the per-repository Actions switch.
+- [app/username-autocomplete.md](app/username-autocomplete.md): the shared username picker on chat channel invites, new channels, repository collaborators and advisory credits, and account search behind every @mention list.
 - [app/profile-links.md](app/profile-links.md): usernames and @mentions link to the person's profile on the web, desktop, server pages, world and phones.
 - [app/diff-viewer.md](app/diff-viewer.md): the full-screen web diff viewer for pull requests, branch comparisons and commits.
 - [app/issue-views.md](app/issue-views.md): the per-issue view count on issue pages and the issue list, deduplicated per viewer and day, with automated clients not counted.

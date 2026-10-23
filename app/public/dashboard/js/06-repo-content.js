@@ -6609,7 +6609,7 @@
     return people;
   }
 
-  function buildMentionCandidates(involved, rosterRows, self = "") {
+  function buildMentionCandidates(involved, rosterRows, self = "", accounts = []) {
     const seen = new Set([String(self || "").toLowerCase()].filter(Boolean));
     const byLogin = new Map();
     (Array.isArray(rosterRows) ? rosterRows : []).forEach((row) => {
@@ -6636,6 +6636,7 @@
         const login = [row?.login, row?.github].find((value) => MENTION_LOGIN_RE.test(String(value || "")));
         add(login, row, 1);
       });
+    (Array.isArray(accounts) ? accounts : []).forEach((login) => add(login, byLogin.get(String(login).toLowerCase()), 2));
     return out;
   }
 
@@ -6680,12 +6681,17 @@
     return mentionUi.rosterRows || [];
   }
 
-  function mentionCandidatesFor(input) {
+  function mentionCandidatesFor(input, query = "") {
     const detail = state.repoRecordDetail;
     const onRecord = input.dataset.mentionInput === "record" && detail?.repo && state.selectedRepo
       && repositoryViewKey(detail.repo) === repositoryViewKey(state.selectedRepo);
+    const accounts = window.ForkMeshUsernames?.lookup(query, () => {
+      if (document.activeElement === input && mentionQueryAt(input.value, input.selectionEnd)?.query === query) {
+        refreshMentionList(input);
+      }
+    }) || [];
     return buildMentionCandidates(onRecord ? mentionRecordPeople(detail) : [], mentionRosterRows(),
-      state.session?.nodeName || "");
+      state.session?.nodeName || "", accounts);
   }
 
   function mentionAvatarHtml(candidate) {
@@ -6795,7 +6801,7 @@
       if (mentionUi.input === input) closeMentionList();
       return;
     }
-    const matches = rankMentionCandidates(mentionCandidatesFor(input), found.query);
+    const matches = rankMentionCandidates(mentionCandidatesFor(input, found.query), found.query);
     if (!matches.length) {
       if (mentionUi.input === input) closeMentionList();
       return;

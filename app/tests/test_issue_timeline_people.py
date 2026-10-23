@@ -310,6 +310,16 @@ console.log(JSON.stringify({
     assert out["avatar"] == "/raw/v.png"
 
 
+def test_account_search_results_follow_the_thread_and_roster():
+    out = _node("""
+const roster = [{ name: "Vance Big", login: "vbig", commits: 9 }];
+const all = buildMentionCandidates([{ login: "valerie", ts: 1 }], roster, "me",
+  ["vbig", "me", "vera-x", "valerie", "bad name", "dependabot"]);
+console.log(JSON.stringify(all.map((c) => [c.login, c.tier, c.name])));
+""")
+    assert out == [["valerie", 0, ""], ["vbig", 1, "Vance Big"], ["vera-x", 2, ""]]
+
+
 def test_mention_keys_move_pick_and_close():
     out = _node("""
 console.log(JSON.stringify([

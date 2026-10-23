@@ -1744,9 +1744,20 @@ function mountForkMeshDashboardChat(options = {}) {
     return Date.now() - (person.lastSeenMs || 0) < MENTION_STALE_MS;
   }
 
-  function mentionCandidates(partial) {
+  function mentionCandidates(partial, inputEl) {
     const self = mentionName(displayName());
     const byName = new Map();
+    const accounts = window.ForkMeshUsernames?.lookup(partial, () => {
+      if (inputEl && inputEl === document.activeElement &&
+          mentionTokenAtCaret(inputEl)?.partial === partial) {
+        showMentionSuggest(inputEl);
+      }
+    }) || [];
+    for (const name of accounts) {
+      if (MENTIONABLE_NAME_RE.test(name)) {
+        byName.set(name, { name, kind: "user", lastSeenMs: 0 });
+      }
+    }
     for (const person of mentionDirectory.values()) byName.set(person.name, person);
     // Room presence wins over the directory entry: it carries a lastSeenMs.
     for (const person of mentionPeople.values()) byName.set(person.name, person);
@@ -2019,7 +2030,7 @@ function mountForkMeshDashboardChat(options = {}) {
       closeMentionSuggest();
       return;
     }
-    const items = mentionCandidates(token.partial);
+    const items = mentionCandidates(token.partial, inputEl);
     if (!items.length) {
       closeMentionSuggest();
       return;

@@ -413,6 +413,7 @@ CACHE_BUSTED_ASSETS = (
     "chat.css",
     # Away + custom status helper (chat page and dashboard).
     "user-status.js",
+    "username-autocomplete.js",
     "dashboard-composer.js",
     "dashboard-composer.css",
     # Per-page dashboard chunks (dashboard_bundle.LAZY_CHUNKS).
