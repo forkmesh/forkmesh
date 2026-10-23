@@ -141,4 +141,42 @@ class WalkDetectorTest {
         assertEq(WalkPace.MAX_CADENCE, pace.cadence)
         expect(pace.running, "fast cadence runs")
     }
+
+    fun testSustainedPaceStartsAWalk() {
+        val detector = WalkDetector()
+        assertEq(null, detector.paced(true, at(0.0)))
+        assertEq(null, detector.paced(true, at(10.0)))
+        assertEq(at(WalkDetector.START_AFTER), detector.nextCheck)
+        assertEq(WalkEvent.Started(t0), detector.paced(true, at(WalkDetector.START_AFTER)))
+        expect(detector.walking, "walking")
+    }
+
+    fun testPaceStopCancelsAPendingStart() {
+        val detector = WalkDetector()
+        detector.observe(sample(WalkMotion.Walking, 0.0), at(0.0))
+        assertEq(null, detector.paced(false, at(15.0)))
+        assertEq(null, detector.nextCheck)
+        assertEq(null, detector.tick(at(600.0)))
+        expect(!detector.walking, "not walking")
+    }
+
+    fun testPaceLeavesAWalkInProgressAlone() {
+        val detector = WalkDetector()
+        detector.observe(sample(WalkMotion.Walking, 0.0), at(60.0))
+        detector.observe(sample(WalkMotion.Still, 300.0), at(300.0))
+        assertEq(null, detector.paced(true, at(310.0)))
+        assertEq(null, detector.paced(false, at(320.0)))
+        assertEq(at(300 + WalkDetector.END_AFTER), detector.nextCheck)
+        assertEq(t0, detector.walkStartedAt)
+    }
+
+    fun testBeginStartsEarlyOnceMovingLongEnough() {
+        val detector = WalkDetector()
+        assertEq(null, detector.begin(at(0.0), WalkDetector.LEAVE_START_AFTER))
+        detector.paced(true, at(0.0))
+        assertEq(null, detector.begin(at(WalkDetector.LEAVE_START_AFTER - 1), WalkDetector.LEAVE_START_AFTER))
+        assertEq(WalkEvent.Started(t0), detector.begin(at(WalkDetector.LEAVE_START_AFTER), WalkDetector.LEAVE_START_AFTER))
+        expect(detector.walking, "walking")
+        assertEq(null, detector.begin(at(600.0), WalkDetector.LEAVE_START_AFTER))
+    }
 }

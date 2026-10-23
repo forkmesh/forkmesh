@@ -2485,3 +2485,20 @@ edit or delete as somebody else. Nothing here talks to older builds.
   and a project that already exists shows "Added". An unreadable directory
   lists only ForkMesh. The dialog's content now scrolls. `InstanceDirectoryTest`
   ports the iOS cases.
+- **A walk as a live notification (S108).** Android's answer to the Dynamic
+  Island and Lock Screen Live Activity is an ongoing notification held by
+  `WalkLiveService`, a foreground service of type `health`
+  (`FOREGROUND_SERVICE_HEALTH`; the runtime permission it needs on Android 14+
+  is the `ACTIVITY_RECOGNITION` that steps already require). It appears as soon
+  as `WalkDetector` starts a walk and shows "Walking · N steps", the distance,
+  today's steps and a running clock from the walk's start
+  (`setUsesChronometer`), on the lock screen too (public visibility). The pace
+  already counted as movement on Android (`WalkActivity.publish` feeds the
+  live cadence to the detector), so the iOS `paced` change only adds
+  `WalkDetector.paced` and `begin` to core for parity. When the app leaves the
+  screen while the user is stepping and has been moving for 10 s
+  (`LEAVE_START_AFTER`), the walk starts there; a walk under way keeps the step
+  counter and the detector running in the background (the accelerometer
+  stops), so locking the phone mid-walk keeps it in the notification until
+  three minutes of stillness end it. Coming back to the app restarts the full
+  pace sensors. `WalkDetectorTest` ports the four new iOS cases.
