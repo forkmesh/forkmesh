@@ -1225,18 +1225,26 @@
     return `<span title="${escapeHtml(title)}"${bot ? ' data-issue-actor-bot=""' : ""}${hydrate} class="${classes}">${inner}</span>`;
   }
 
-  function issuePersonNameHtml(name, classes = "font-semibold text-foreground") {
+  function issuePersonNameHtml(name, classes = "font-semibold text-foreground", options = {}) {
     const label = String(name || "").trim() || "unknown";
-    if (issueActorIsBot(label)) return `<span class="${classes}">${escapeHtml(label)}</span>`;
+    const git = options?.git === true;
+    const system = typeof platformAccount === "function" && platformAccount(label);
+    const shown = system ? escapeHtml(shownAccountName(label)) : userNameHtml(label);
+    if (system || issueActorIsBot(label)) {
+      const account = system || options?.inLink === true || ["actions", "node", "runner"].includes(botAvatarKind(label)) ? "" : issuePersonHandle(label);
+      if (account) watchIssueActorAvatars();
+      return `<span${account ? ` data-issue-bot-account="${escapeHtml(account)}"` : ""} class="${classes}">${system ? shown : escapeHtml(label)}</span>`;
+    }
     const forge = forgeIdentity(label);
     if (forge) {
+      if (options?.inLink === true) return `<span class="${classes}">@${escapeHtml(forge.login)}</span>`;
       return `<a ${forgeLinkAttrs(forge)} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">@${escapeHtml(forge.login)}</a>`;
     }
     const handle = issuePersonHandle(label);
-    if (!handle) return `<span class="${classes}">${userNameHtml(label)}</span>`;
+    if (!handle || options?.inLink === true) return `<span class="${classes}">${shown}</span>`;
     watchIssueActorAvatars();
-    const href = issuePersonProfileHref(handle);
-    return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}" class="${classes} hover:text-[var(--dashboard-link)] hover:underline">${userNameHtml(label)}</a>`;
+    const href = git ? "" : issuePersonProfileHref(handle);
+    return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}"${git ? ' data-issue-person-git=""' : ""} class="${classes} hover:text-[var(--dashboard-link)] hover:underline">${shown}</a>`;
   }
 
   const issueActorAccounts = new Map();
@@ -1251,7 +1259,7 @@
 
   function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
-    if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "" });
+    if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "", linkable: false });
     if (!issueActorAccounts.has(key)) {
       issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
         .then((response) => (response.ok ? response.json() : null))
@@ -1259,8 +1267,11 @@
           exists: profile?.exists === true,
           png: profile?.exists === true && profile?.profilePrivate !== true
             ? issueActorPortraitPng(profile.avatarPng) : "",
+          linkable: profile?.exists === true && profile?.available === false
+            && profile?.profilePrivate !== true
+            && (profile?.kind === "user" || profile?.kind === "node"),
         }))
-        .catch(() => ({ exists: false, png: "" }))
+        .catch(() => ({ exists: false, png: "", linkable: false }))
         .then((account) => {
           issueActorAccountsSettled.set(key, account);
           return account;
@@ -1299,9 +1310,14 @@
   }
 
   function hydrateIssuePersonLink(link, found) {
-    if (found.account.exists) {
-      const href = issuePersonProfileHref(link.dataset.issuePerson);
-      if (href) link.setAttribute("href", href);
+    const linkable = found.account.exists && found.account.linkable !== false;
+    const href = linkable ? issuePersonProfileHref(link.dataset.issuePerson) : "";
+    if (href) {
+      link.setAttribute("href", href);
+      return;
+    }
+    if (link.hasAttribute("data-issue-person-git")) {
+      link.removeAttribute("href");
       return;
     }
     const profile = found.roster?.profile || "";
@@ -1331,6 +1347,25 @@
         avatar.dataset.issueActorState = png ? "image" : picture ? "roster" : "initial";
         if (!picture || !avatar.isConnected) return;
         issueActorAvatarImage(avatar, picture);
+      });
+    }
+    const bots = [];
+    if (root.matches?.("[data-issue-bot-account]")) bots.push(root);
+    root.querySelectorAll?.("[data-issue-bot-account]").forEach((bot) => bots.push(bot));
+    for (const bot of bots) {
+      if (bot.dataset.issuePersonState) continue;
+      bot.dataset.issuePersonState = "loading";
+      void issueActorAccount(bot.dataset.issueBotAccount).then((account) => {
+        bot.dataset.issuePersonState = "done";
+        const href = account.exists && account.linkable !== false ? issuePersonProfileHref(bot.dataset.issueBotAccount) : "";
+        if (!href || !bot.isConnected) return;
+        const link = document.createElement("a");
+        link.href = href;
+        link.className = `${bot.className} hover:text-[var(--dashboard-link)] hover:underline`.trim();
+        link.dataset.issuePersonState = "done";
+        link.setAttribute("data-issue-person", bot.dataset.issueBotAccount);
+        link.replaceChildren(...bot.childNodes);
+        bot.replaceWith(link);
       });
     }
     const links = [];
@@ -13310,7 +13345,7 @@
             <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
               <p class="min-w-0 truncate text-sm font-medium text-foreground" title="${escapeHtml(`${fullLabel}${servedNote}`)}">
-                ${displayOwner ? `<span class="text-muted-foreground">${escapeHtml(displayOwner)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
+                ${displayOwner ? `<span class="text-muted-foreground">${repositoryOwnerNameHtml(displayOwner, false)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
               </p>
               <span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-mono ${statusClass}">
                 ${statusText}
@@ -13576,13 +13611,19 @@
     }));
   }
 
-  function repositoryForkOwnerLabel(entry, parentEntry) {
+  function repositoryOwnerNameHtml(owner, inLink = true) {
+    const text = String(owner || "").trim();
+    return text ? issuePersonNameHtml(text, "", { inLink }) : "";
+  }
+
+  function repositoryForkOwnerHtml(entry, parentEntry) {
     const repo = entry.repo || {};
     const label = repoLabelParts(repositoryEntryLabel(entry));
-    const owner = shownAccountName(label.owner || repoPublicOwner(repo) || repo.owner || "");
+    const owner = String(label.owner || repoPublicOwner(repo) || repo.owner || "");
     const name = String(label.name || repo.name || "");
     const parentName = String(repoLabelParts(repositoryEntryLabel(parentEntry)).name || parentEntry?.repo?.name || "");
-    return name && name.toLowerCase() !== parentName.toLowerCase() ? `${owner}/${name}` : owner;
+    const renamed = name && name.toLowerCase() !== parentName.toLowerCase();
+    return `${repositoryOwnerNameHtml(owner)}${renamed ? `/${escapeHtml(name)}` : ""}`;
   }
 
   function repositoryForksKey(listName, parentEntry) {
@@ -13691,7 +13732,7 @@
     return `
         <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
           <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
-          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${escapeHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
+          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${repositoryOwnerNameHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
           ${repositoryTermsBadge(repo, true)}
           ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
           <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
@@ -13700,7 +13741,7 @@
 
   function sidebarRepositoryForkRow(entry, parentEntry) {
     return `<a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo-fork" data-sidebar-repo="${escapeHtml(entry.key)}" data-sidebar-repo-fork title="${escapeHtml(entry.key)}">
-            <span class="dashboard-nav-repo-fork-name">${escapeHtml(repositoryForkOwnerLabel(entry, parentEntry))}</span>
+            <span class="dashboard-nav-repo-fork-name">${repositoryForkOwnerHtml(entry, parentEntry)}</span>
             ${repositoryForkCountsHtml(entry, parentEntry, "dashboard-nav-repo-fork-counts")}
           </a>`;
   }
@@ -13826,6 +13867,11 @@
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
+  function homeRepositoryLabelHtml(text) {
+    const label = repoLabelParts(text);
+    return label.owner ? `${repositoryOwnerNameHtml(label.owner)}/${escapeHtml(label.name)}` : escapeHtml(label.name);
+  }
+
   function homeRepositoryRow(entry) {
     const repo = entry.repo;
     const live = repoIsLive(repo);
@@ -13840,7 +13886,7 @@
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
       ${logo}
       <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${escapeHtml(entry.label || repoDisplayName(repo))}</span>
+        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${homeRepositoryLabelHtml(entry.label || repoDisplayName(repo))}</span>
         ${description ? `<span data-user-content class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           ${statusHtml}
@@ -13856,7 +13902,7 @@
     const views = Number(homeRepositoryViewTotals(entry.repo)?.views) || 0;
     const label = entry.label || repoDisplayName(entry.repo);
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-fork class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground" title="${escapeHtml(label)}">
-        <span class="min-w-0 flex-1 truncate text-foreground">${escapeHtml(repositoryForkOwnerLabel(entry, parentEntry))}</span>
+        <span data-home-repo-fork-owner class="min-w-0 flex-1 truncate text-foreground">${repositoryForkOwnerHtml(entry, parentEntry)}</span>
         ${repositoryForkCountsHtml(entry, parentEntry, "shrink-0 font-mono text-[10px] text-muted-foreground")}
         ${views ? `<span data-home-repo-views class="inline-flex shrink-0 items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))}</span>` : ""}
       </a>`;
@@ -13947,7 +13993,7 @@
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
-      userNameHtml(`@${homeFeedActor(item)}`),
+      issuePersonNameHtml(`@${homeFeedActor(item)}`, "", { inLink: Boolean(href) }),
       escapeHtml(notificationTimeLabel(item.ts)),
       item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
     ].filter(Boolean).join(" · ");
@@ -21172,7 +21218,7 @@
               ${issueLabels.map((label) => renderIssueLabelChip(label, `data-repo-issue-label="${escapeHtml(label)}"`).replace('class="issue-label"', 'class="issue-label ml-1 align-[2px]"')).join("")}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              <span>${escapeHtml(numberLabel)} · ${issuePersonNameHtml(item.author, "", { inLink: true })} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
               ${issueRowViewsHtml(state.selectedRepo, item.number)}
               ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
               ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
@@ -21189,7 +21235,7 @@
               <span data-repo-pull-row-title class="text-[16px] font-semibold text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
+              <span>${escapeHtml(numberLabel)} · ${issuePersonNameHtml(item.author, "", { inLink: true })} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
               ${!["open", "closed", "merged"].includes(String(stateLabel).toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
               ${pullListReviewChipHtml(item.review)}
             </span>
@@ -23968,7 +24014,7 @@
     if (!commits.length) {
       return `<div class="px-4 py-3 text-sm text-muted-foreground">No pull-specific commits are available from this mirror yet.</div>`;
     }
-    return commits.map((commit) => `<div class="grid gap-1 px-4 py-3"><span class="text-sm font-medium text-foreground">${escapeHtml(commit.body || "Commit")}</span><span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(String(commit.hash || "").slice(0, 12))} · ${escapeHtml(commit.authorName || "unknown")}</span></div>`).join("");
+    return commits.map((commit) => `<div class="grid gap-1 px-4 py-3"><span class="text-sm font-medium text-foreground">${escapeHtml(commit.body || "Commit")}</span><span class="font-mono text-[11px] text-muted-foreground">${escapeHtml(String(commit.hash || "").slice(0, 12))} · ${issuePersonNameHtml(commit.authorName || "unknown", "", { git: true })}</span></div>`).join("");
   }
 
   function normalizePullHistoryCommit(commit) {
@@ -29556,7 +29602,7 @@ Report
       : `<span class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[10px] text-muted-foreground">${escapeHtml(owner.slice(0, 1).toUpperCase())}</span>`;
     const who = profileUrl
       ? `<a href="${escapeHtml(profileUrl)}" class="shrink-0 hover:underline">${escapeHtml(owner)}</a>`
-      : `<span class="shrink-0">${escapeHtml(owner)}</span>`;
+      : issuePersonNameHtml(owner, "shrink-0");
     return `<div class="flex items-center gap-1.5 py-0.5">${portrait}${who}<span class="text-muted-foreground/60">/</span><a href="${escapeHtml(url)}" class="min-w-0 truncate text-foreground hover:underline">${escapeHtml(name)}</a></div>`;
   }
 
@@ -31802,7 +31848,7 @@ Report
           <span aria-hidden="true" class="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-[18px]">${discussionCategoryEmoji(category)}</span>
           <span class="min-w-0">
             <span data-repo-discussion-row-title class="block text-[16px] font-semibold leading-6 text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
-            <span class="block text-[12px] text-muted-foreground">${userNameHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
+            <span class="block text-[12px] text-muted-foreground">${issuePersonNameHtml(item.author, "", { inLink: true })} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
           </span>
           <span class="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground">
             ${issueActorAvatarHtml(item.author, item.authorKey || item.author, "h-5 w-5", false, false)}
@@ -40221,7 +40267,7 @@ Report
         <div data-dashboard-commit-row class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 border-t border-border hover:bg-secondary/30 transition-colors">
           <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" class="min-w-0 px-4 py-3 text-left">
             <span class="block truncate text-sm font-medium text-foreground">${escapeHtml(commit.subject || "Commit")}</span>
-            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
+            <span class="mt-1 block truncate text-xs text-muted-foreground">${issuePersonNameHtml(commit.author || "unknown", "", { inLink: true, git: true })} committed ${escapeHtml(commit.date || "")}</span>
           </button>
           <div class="flex items-center justify-end gap-2 px-4 py-3">
             <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" data-dashboard-commit-short-hash class="font-mono text-xs font-semibold text-foreground hover:underline">${escapeHtml(shortHash)}</button>
@@ -40273,7 +40319,7 @@ Report
             <span class="hidden font-mono text-xs text-muted-foreground sm:inline">${escapeHtml(hash.slice(0, 12))}</span>
           </div>
           <p class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            <span><span class="font-semibold text-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")}</span> committed ${escapeHtml(commit.date || "")}</span>
+            <span>${issuePersonNameHtml(commit.author || "unknown", "font-semibold text-foreground", { git: true })} committed ${escapeHtml(commit.date || "")}</span>
             <span class="font-mono">${parents.length ? `parent ${parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ")}` : "root commit"}</span>
             <span class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</span>
           </p>
@@ -41810,65 +41856,6 @@ Report
     return `<div title="${formatCount(total)} commits in the last 32 weeks" aria-label="${formatCount(total)} commits in the last 32 weeks" class="flex h-8 min-w-[12rem] items-end gap-px">${bars}</div>`;
   }
 
-  // Git identities ForkMesh itself writes carry the ForkMesh handle as the git
-  // author NAME: the desktop commits as `user.name = <account>` and the mirror
-  // intake as `user.name = <node>`, so a contributor row resolves to a profile
-  // exactly when its author name is an account that exists. An identity some
-  // other git config produced ("ForkMesh Deploy", a person's full name, an
-  // imported GitHub author) has no account behind it and stays inert text
-  // rather than guessing at a profile that belongs to someone else (#636).
-  const CONTRIBUTOR_HANDLE_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-  // handle -> resolved profile name ("" when the lookup answered "no profile").
-  const contributorProfileNames = new Map();
-
-  async function resolveContributorProfile(author) {
-    const handle = String(author || "").trim().toLowerCase();
-    // Most author names never reach the network: only a name that is already
-    // shaped like a handle can name an account.
-    if (!CONTRIBUTOR_HANDLE_RE.test(handle)) return "";
-    if (contributorProfileNames.has(handle)) return contributorProfileNames.get(handle);
-    let account;
-    try {
-      account = await fetchJson(`/api/accounts/${encodeURIComponent(handle)}`);
-    } catch (_) {
-      return ""; // a failed lookup is not an answer, so it is not remembered
-    }
-    // `exists` alone still covers a name that is merely reserved and a
-    // quarantined account (which answers without a kind), and a private
-    // profile has no public page to send a reader to.
-    const resolved = account?.exists && account.available === false &&
-      !account.profilePrivate &&
-      (account.kind === "user" || account.kind === "node")
-      ? String(account.name || handle).trim().toLowerCase()
-      : "";
-    contributorProfileNames.set(handle, resolved);
-    return resolved;
-  }
-
-  // Contributor rows render as plain text and are upgraded to profile links
-  // afterwards, so the tab never waits on the lookups. Keep profile discovery
-  // bounded even though the table itself shows every contributor returned by
-  // the mirror; names beyond this point remain accurate, inert git identities.
-  async function linkRepoInsightsContributors(container) {
-    const rows = container
-      ? [...container.querySelectorAll("[data-repo-insights-contributor]")]
-          .slice(0, 50)
-      : [];
-    for (const row of rows) {
-      const author = row.getAttribute("data-repo-insights-contributor") || "";
-      const handle = await resolveContributorProfile(author);
-      // The panel is replaced wholesale on every repo/branch switch, so a
-      // detached row belongs to a view the reader already left.
-      if (!handle || !row.isConnected) continue;
-      const link = document.createElement("a");
-      link.className = "dashboard-accent-link hover:underline";
-      link.href = publicProfileUrl(handle);
-      link.title = `${platformName()} profile @${handle}`;
-      link.textContent = author;
-      row.replaceChildren(link);
-    }
-  }
-
   function repoTrafficDayLabel(day) {
     const date = new Date(`${day}T00:00:00Z`);
     if (Number.isNaN(date.getTime())) return String(day || "");
@@ -41945,7 +41932,7 @@ Report
         <div data-repo-insights-contributor-row class="grid min-w-[46rem] grid-cols-[minmax(14rem,1fr)_7rem_6rem_minmax(14rem,1fr)] items-center gap-4 border-t border-border px-4 py-2.5 text-sm hover:bg-secondary/20">
           <div class="flex min-w-0 items-center gap-3">
             ${repoContributorAvatar({ name: item.author, email: item.email, commits: item.commits })}
-            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}</div>
+            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate">${issuePersonNameHtml(item.author, "font-medium text-foreground", { git: true })}</div>
           </div>
           <span class="text-right font-mono text-xs font-semibold text-foreground">${formatCount(item.commits)}</span>
           <span class="text-right font-mono text-xs text-muted-foreground">${share.toFixed(1)}%</span>
@@ -46878,7 +46865,7 @@ Report
           <span class="relative mt-0.5 shrink-0">${avatar}</span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
-              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
+              <p class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</p>
               <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}</span>
               ${unreadItem ? '<span data-notification-unread-dot class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"></span>' : ""}
             </div>
@@ -46900,6 +46887,12 @@ Report
     const body = String(repoPublicText(item?.body) || "").replace(/\s+/g, " ").trim();
     if (actor) return { actor, head: actor, where, text: body || title };
     return { actor: "", head: title, where, text: body || `${platformName()} update` };
+  }
+
+  function notificationLeadHeadHtml(lead) {
+    return lead.actor
+      ? issuePersonNameHtml(lead.actor, "font-semibold text-foreground", { inLink: true })
+      : `<span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>`;
   }
 
   function renderNotificationDetail(item) {
@@ -47126,7 +47119,7 @@ Report
                 <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-3.5 w-3.5"></i>
               </span>
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-[11px]"><span class="font-semibold text-foreground">${escapeHtml(lead.head)}</span>${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
+                <span class="block truncate text-[11px]">${notificationLeadHeadHtml(lead)}${lead.where ? ` · ${escapeHtml(lead.where)}` : ""}</span>
                 <span class="mt-0.5 block truncate text-xs">${escapeHtml(lead.text)}</span>
               </span>
             </span>
@@ -52575,7 +52568,7 @@ Report
   function renderCommentReactionWho(tally, signedIn) {
     const stack = tally.people.slice(0, COMMENT_REACTION_STACK)
       .map((person) => issueActorAvatarHtml(person.name, "", "h-5 w-5", person.agent, false)).join("");
-    const rows = tally.people.slice(0, COMMENT_REACTION_WHO_SHOWN).map((person) => `<li>${issueActorAvatarHtml(person.name, "", "h-4 w-4", person.agent, false)}<span>${escapeHtml(person.name)}</span>${person.agent ? '<span class="fm-reaction-who-agent">agent</span>' : ""}</li>`).join("");
+    const rows = tally.people.slice(0, COMMENT_REACTION_WHO_SHOWN).map((person) => `<li>${issueActorAvatarHtml(person.name, "", "h-4 w-4", person.agent, false)}<span>${person.agent ? escapeHtml(person.name) : issuePersonNameHtml(person.name, "")}</span>${person.agent ? '<span class="fm-reaction-who-agent">agent</span>' : ""}</li>`).join("");
     const more = tally.count - Math.min(tally.people.length, COMMENT_REACTION_WHO_SHOWN);
     const verb = window.matchMedia?.("(pointer: coarse)").matches ? "Tap" : "Click";
     const hint = signedIn ? (tally.mine ? `${verb} to take yours back` : `${verb} to add yours`) : "Sign in to react";
@@ -55814,7 +55807,7 @@ Report
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
     "notes": "/dashboard-page-notes.js?v=c59dced335d6",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "repo-activity": "/dashboard-page-repo-activity.js?v=b3986bf8501f",
+    "repo-activity": "/dashboard-page-repo-activity.js?v=2c7f0ec843a7",
     "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",
     "workflows": "/dashboard-page-workflows.js?v=37375cef53b2",
   };
@@ -55839,7 +55832,6 @@ Report
     hydrateRepoActivityGraphs,
     initSettingsRunners,
     issuePersonNameHtml,
-    linkRepoInsightsContributors,
     loadQrGenerator,
     loadRepoRecordDetail,
     loadRunnerAccountsPicker,
@@ -55849,7 +55841,6 @@ Report
     navigateHistory,
     orgAgentRequest,
     parseFlexibleDate,
-    platformAccount,
     platformName,
     profileBadgeMedal,
     profileBadgeTier,
@@ -55880,7 +55871,6 @@ Report
     state,
     submitWebIssue,
     userDisplayName,
-    userNameHtml,
     userNameKey,
     validNodeName,
     watchIssueActorAvatars,

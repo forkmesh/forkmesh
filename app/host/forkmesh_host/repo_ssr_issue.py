@@ -205,10 +205,13 @@ def name_html(name):
     return '<span class="font-semibold text-foreground">%s</span>' % esc(name)
 
 
-def person_name_html(name, classes="font-semibold text-foreground"):
+def person_name_html(name, classes="font-semibold text-foreground", git=False):
     label = str(name or "").strip() or "unknown"
     if actor_is_bot(label):
-        return '<span class="%s">%s</span>' % (classes, esc(label))
+        account = "" if bot_avatar_kind(label) in ("actions", "node", "runner") \
+            else person_handle(label)
+        return '<span%s class="%s">%s</span>' % (
+            ' data-issue-bot-account="%s"' % esc(account) if account else "", classes, esc(label))
     forge = forge_identity(label)
     if forge:
         return ('<a %s class="%s hover:text-[var(--dashboard-link)] hover:underline">@%s</a>' % (
@@ -216,10 +219,11 @@ def person_name_html(name, classes="font-semibold text-foreground"):
     handle = person_handle(label)
     if not handle:
         return '<span class="%s">%s</span>' % (classes, user_name_html(label))
-    href = profile_href(handle)
-    return ('<a%s data-issue-person="%s" class="%s hover:text-[var(--dashboard-link)] '
+    href = "" if git else profile_href(handle)
+    return ('<a%s data-issue-person="%s"%s class="%s hover:text-[var(--dashboard-link)] '
             'hover:underline">%s</a>' % (' href="%s"' % esc(href) if href else "",
-                                         esc(handle), classes, user_name_html(label)))
+                                         esc(handle), ' data-issue-person-git=""' if git else "",
+                                         classes, user_name_html(label)))
 
 
 def card_author_html(name, author="", agent=False):

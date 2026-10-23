@@ -11,11 +11,18 @@ This page lists the shared helpers per surface and the rules they all follow.
   `^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$`. The text keeps the casing it was
   written with ([username-casing.md](username-casing.md)); the link target is
   always lowercase.
-- **Which names stay plain.** Bots (`name[bot]`), agents and model names, Git
-  author names (a commit author is a Git identity, not an account), Discord
-  senders and fediverse authors (a display name such as "Alice" would open the
-  wrong ForkMesh account), organizations where the row is about the
-  organization, and anything that is not a valid account name.
+- **Which names stay plain.** Bots (`name[bot]`) and system identities (the
+  instance's own git node, Actions, runners and mirror nodes), agents and
+  model names, Discord senders and fediverse authors (a display name such as
+  "Alice" would open the wrong ForkMesh account), organizations where the row
+  is about the organization, and anything that is not a valid account name. A
+  bot that has its own account page is the exception: it links once the
+  lookup confirms the page.
+- **Git history names.** A commit author is a Git identity, not an account. It
+  links only when the commit-to-account resolution maps it: the author name is
+  itself the name of a public user or node account (the desktop commits as
+  `user.name = <account>`, mirror intake as `user.name = <node>`). Any other
+  identity ("Jane Doe", "ForkMesh Deploy") stays plain text.
 - **Where a mention is not a mention.** Inside code spans and fenced code,
   inside existing links and URLs (`https://x.social/@bob`), in emails
   (`bob@example.com`), and before `.x`, `/x`, `@` or `[bot]`.
@@ -27,16 +34,47 @@ This page lists the shared helpers per surface and the rules they all follow.
 
 `02-helpers.js` and `06-repo-content.js` hold the helpers:
 
-- `issuePersonNameHtml(name, classes)` renders a name as
-  `<a href="/@name" data-issue-person>`. The person hydration
-  (`hydrateIssuePersonLink`) asks `/api/accounts/<name>` whether the account
-  exists; a name that is not an account loses its `href`, or points at the
-  repository roster's profile when the roster knows it. Bots render as plain
-  text. Use it for every standalone name.
+- `issuePersonNameHtml(name, classes, options)` is the one helper every
+  renderer uses for a person's name. It renders
+  `<a href="/@name" data-issue-person>` (with the display casing from
+  `userNameHtml`, and the platform name for the instance's own account). The
+  person hydration (`hydrateIssuePersonLink`) asks `/api/accounts/<name>`
+  through `issueActorAccount`. The link stays only when the account is
+  `linkable`: it exists, the name is taken (`available: false`), the profile is
+  not private, and its kind is `user` or `node`. Otherwise the name loses its
+  `href`, or points at the repository roster's profile when the roster knows
+  it. Options:
+  - `{ git: true }` is for Git history names (commit rows, commit detail, pull
+    commits, Insights). It starts without an `href`, gains `/@name` only when
+    the account is linkable, and never falls back to the roster.
+  - `{ inLink: true }` is for a name inside a row that is already a link or a
+    button. The name renders as plain text (no link, no lookup), so no `<a>`
+    is ever nested.
+  Bots and system identities render as plain spans. A bot whose name is a
+  valid handle (not Actions, a runner or a node) carries
+  `data-issue-bot-account`, and the hydration swaps it for a link when that
+  account is linkable. Use the helper for every standalone name.
 - `mdMentionHtml(login)` is the markdown mention link; `renderMarkdown` uses it
   for every body (issues, pulls, discussions, advisories, notes).
 - `textWithMentionsHtml(text)` escapes plain text and links its mentions; the
   notification detail title and body use it.
+
+The Insights contributor table, the activity views (Pulse lists, the
+committer chart, Leaderboard, podium, first contributions, Contributors and
+Recent commits) all go through `issuePersonNameHtml` with `git: true`. The
+older `linkRepoInsightsContributors` / `resolveContributorProfile` pass, which
+rewrote those rows to links after rendering, is gone. Its rule is now
+`issueActorAccount`'s `linkable`.
+
+Also routed through the helper: commit authors on the commit detail page and
+in a pull request's commit list, the reaction "who" list (agents stay plain),
+the owner in a repository card (`repositoryCard`, a `role="link"` card whose
+handler skips nested links) and in the fork popover when the fork has no
+published profile URL, and the home feed actor when the card has no link of
+its own. Names inside link or button rows go through the helper with
+`inLink` and stay plain: issue, pull and discussion list rows, commit list
+rows, ping rows in the bell menu and the pings window, home feed cards that
+are links, and the owner and fork rows of both Top repositories lists.
 
 Names now linked this way: pull and discussion hero lines, the issue hero,
 issue assignees, pull reviewers, inline review comment authors, the pull
@@ -61,7 +99,11 @@ senders and timeline actors.
 `person_name_html`, `card_author_html` and `mention_html`. `repo_ssr.py`
 (`_inline`, README and other markdown) and `repo_views.py` (`_person`, the
 light pull, issue and discussion views; the page frame's owner link goes to
-`/@owner`) reuse them. The last-commit summary keeps the Git author as text.
+`/@owner`) reuse them. `person_name_html(name, classes, git=True)` mirrors the
+dashboard's `git` option: an `<a data-issue-person data-issue-person-git>`
+with no `href`, which the dashboard's hydration links once the account is
+confirmed. The code page's last-commit summary uses it for the Git author. A
+bot name carries `data-issue-bot-account` as it does in the dashboard.
 
 `app/src/hackathon_runtime.py` (`_profile_html`) links the invite page's
 inviter, "Built by" members, squad cards, the squad heading and challenge

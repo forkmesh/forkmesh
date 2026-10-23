@@ -709,7 +709,7 @@
             <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
               <p class="min-w-0 truncate text-sm font-medium text-foreground" title="${escapeHtml(`${fullLabel}${servedNote}`)}">
-                ${displayOwner ? `<span class="text-muted-foreground">${escapeHtml(displayOwner)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
+                ${displayOwner ? `<span class="text-muted-foreground">${repositoryOwnerNameHtml(displayOwner, false)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
               </p>
               <span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-mono ${statusClass}">
                 ${statusText}
@@ -975,13 +975,19 @@
     }));
   }
 
-  function repositoryForkOwnerLabel(entry, parentEntry) {
+  function repositoryOwnerNameHtml(owner, inLink = true) {
+    const text = String(owner || "").trim();
+    return text ? issuePersonNameHtml(text, "", { inLink }) : "";
+  }
+
+  function repositoryForkOwnerHtml(entry, parentEntry) {
     const repo = entry.repo || {};
     const label = repoLabelParts(repositoryEntryLabel(entry));
-    const owner = shownAccountName(label.owner || repoPublicOwner(repo) || repo.owner || "");
+    const owner = String(label.owner || repoPublicOwner(repo) || repo.owner || "");
     const name = String(label.name || repo.name || "");
     const parentName = String(repoLabelParts(repositoryEntryLabel(parentEntry)).name || parentEntry?.repo?.name || "");
-    return name && name.toLowerCase() !== parentName.toLowerCase() ? `${owner}/${name}` : owner;
+    const renamed = name && name.toLowerCase() !== parentName.toLowerCase();
+    return `${repositoryOwnerNameHtml(owner)}${renamed ? `/${escapeHtml(name)}` : ""}`;
   }
 
   function repositoryForksKey(listName, parentEntry) {
@@ -1090,7 +1096,7 @@
     return `
         <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
           <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
-          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${escapeHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
+          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${repositoryOwnerNameHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
           ${repositoryTermsBadge(repo, true)}
           ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
           <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
@@ -1099,7 +1105,7 @@
 
   function sidebarRepositoryForkRow(entry, parentEntry) {
     return `<a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo-fork" data-sidebar-repo="${escapeHtml(entry.key)}" data-sidebar-repo-fork title="${escapeHtml(entry.key)}">
-            <span class="dashboard-nav-repo-fork-name">${escapeHtml(repositoryForkOwnerLabel(entry, parentEntry))}</span>
+            <span class="dashboard-nav-repo-fork-name">${repositoryForkOwnerHtml(entry, parentEntry)}</span>
             ${repositoryForkCountsHtml(entry, parentEntry, "dashboard-nav-repo-fork-counts")}
           </a>`;
   }
@@ -1225,6 +1231,11 @@
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
+  function homeRepositoryLabelHtml(text) {
+    const label = repoLabelParts(text);
+    return label.owner ? `${repositoryOwnerNameHtml(label.owner)}/${escapeHtml(label.name)}` : escapeHtml(label.name);
+  }
+
   function homeRepositoryRow(entry) {
     const repo = entry.repo;
     const live = repoIsLive(repo);
@@ -1239,7 +1250,7 @@
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
       ${logo}
       <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${escapeHtml(entry.label || repoDisplayName(repo))}</span>
+        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${homeRepositoryLabelHtml(entry.label || repoDisplayName(repo))}</span>
         ${description ? `<span data-user-content class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           ${statusHtml}
@@ -1255,7 +1266,7 @@
     const views = Number(homeRepositoryViewTotals(entry.repo)?.views) || 0;
     const label = entry.label || repoDisplayName(entry.repo);
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-fork class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground" title="${escapeHtml(label)}">
-        <span class="min-w-0 flex-1 truncate text-foreground">${escapeHtml(repositoryForkOwnerLabel(entry, parentEntry))}</span>
+        <span data-home-repo-fork-owner class="min-w-0 flex-1 truncate text-foreground">${repositoryForkOwnerHtml(entry, parentEntry)}</span>
         ${repositoryForkCountsHtml(entry, parentEntry, "shrink-0 font-mono text-[10px] text-muted-foreground")}
         ${views ? `<span data-home-repo-views class="inline-flex shrink-0 items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))}</span>` : ""}
       </a>`;
@@ -1346,7 +1357,7 @@
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
-      userNameHtml(`@${homeFeedActor(item)}`),
+      issuePersonNameHtml(`@${homeFeedActor(item)}`, "", { inLink: Boolean(href) }),
       escapeHtml(notificationTimeLabel(item.ts)),
       item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
     ].filter(Boolean).join(" · ");
