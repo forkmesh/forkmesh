@@ -69,7 +69,15 @@ Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
 - **Per-project isolation.** The original project owns the un-prefixed
   namespace; others use `p/<projectId>/`; sessions live under
   `auth/session/<projectId>`. `Services.get<SecretStore>()` returns the active
-  project's view.
+  project's view. The Inbox's local chat pings (`inbox/local-pings.v1`) live
+  in the project's preferences and are rebuilt on a switch, as on iOS.
+  Removing a project erases its chat history files first
+  (`ChatHistoryStore.eraseAll`, `ProjectsService.eraseProject`), file by
+  file, so the original project, whose files are not under `projects/`,
+  loses its history too (2026-10-22, iOS `ChatHistoryStore.eraseProject`).
+  Every performance report is scrubbed (`DiagnosticsBundle.report`, not
+  only the prompt), and the scrub also hides conversation, channel, room
+  and query names in JSON and `name=value` form.
 - **Node identity** (`C/security/Identity.kt`): the Ed25519 public key
   (base64url, no padding) is the node id. Stored as padded base64 of the
   32-byte seed under `identity/ed25519Seed`. A corrupt value throws rather than
