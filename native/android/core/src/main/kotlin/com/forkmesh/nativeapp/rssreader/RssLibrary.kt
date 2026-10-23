@@ -86,6 +86,75 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
         RssLibraryData(folders.toList(), feeds.toList(), settings, activity.toList(), lastRefresh, filters.toList(), smartFeeds.toList())
 
     @Synchronized
+    fun syncData(): RssLibraryData = RssLibraryData(
+        folders = folders.toList(),
+        feeds = feeds.map { feed ->
+            RssFeed(
+                id = feed.id, url = feed.url, title = feed.title, customTitle = feed.customTitle, folderId = feed.folderId,
+                siteUrl = feed.siteUrl, iconUrl = feed.iconUrl, description = feed.description, previousUrls = feed.previousUrls,
+                addedAt = feed.addedAt, paused = feed.paused, excludeFromToday = feed.excludeFromToday,
+                excludeFromUnread = feed.excludeFromUnread, language = feed.language,
+            )
+        },
+        settings = settings,
+        filters = filters.toList(),
+        smartFeeds = smartFeeds.toList(),
+    )
+
+    @Synchronized
+    fun restoreSync(incoming: RssLibraryData, now: Long): Int {
+        val local = LinkedHashMap<String, RssFeed>()
+        for (feed in feeds) local.putIfAbsent(feed.url, feed)
+        val keptIds = incoming.feeds.map { it.id }.toSet()
+        val keptUrls = incoming.feeds.map { it.url }.toSet()
+        for (feed in feeds.toList()) {
+            if (feed.id !in keptIds && feed.url !in keptUrls) unsubscribe(feed.id, now)
+        }
+        val next = ArrayList<RssFeed>()
+        for (raw in incoming.feeds.take(MAX_FEEDS)) {
+            val mine = local[raw.url]
+            val feed = if (mine != null) {
+                raw.copy(
+                    id = mine.id, etag = mine.etag, lastModified = mine.lastModified, lastCheck = mine.lastCheck,
+                    lastSuccess = mine.lastSuccess, nextCheck = mine.nextCheck, iconFound = mine.iconFound,
+                    iconChecked = mine.iconChecked, errorCount = mine.errorCount, error = mine.error, errorAt = mine.errorAt,
+                    viaHttps = mine.viaHttps,
+                )
+            } else {
+                raw.copy(nextCheck = 0)
+            }
+            if (next.none { it.url == feed.url }) next.add(feed)
+        }
+        val renamed = incoming.feeds.mapNotNull { feed -> local[feed.url]?.let { feed.id to it.id } }.toMap()
+        val restoredIds = next.map { it.id }.toSet()
+        for (id in articles.keys.toList()) {
+            if (id !in restoredIds) {
+                articles.remove(id)
+                removedFeeds.add(id)
+            }
+        }
+        for (feed in next) {
+            if (feed.id !in articles) articles[feed.id] = ArrayList()
+            dirtyFeeds.add(feed.id)
+        }
+        feeds.clear()
+        feeds.addAll(next)
+        folders.clear()
+        folders.addAll(incoming.folders.take(MAX_FOLDERS))
+        settings = incoming.settings
+        filters.clear()
+        filters.addAll(incoming.filters.map { filter -> renamed[filter.feedId]?.let { filter.copy(feedId = it) } ?: filter }.take(MAX_FILTERS))
+        smartFeeds.clear()
+        smartFeeds.addAll(incoming.smartFeeds.take(MAX_SMART_FEEDS))
+        matchers.clear()
+        hiddenCache = null
+        textCache.clear()
+        log("restore", "Restored ${next.size} subscriptions saved on ForkMesh", now)
+        touch()
+        return next.size
+    }
+
+    @Synchronized
     fun takeChanges(): Triple<RssLibraryData?, Map<String, List<RssArticle>>, Set<String>> {
         val meta = if (dirtyMeta) snapshotData() else null
         val changed = dirtyFeeds.filter { it in articles }.associateWith { articles[it].orEmpty().toList() }

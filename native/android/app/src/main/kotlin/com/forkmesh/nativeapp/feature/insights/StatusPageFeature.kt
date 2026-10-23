@@ -63,6 +63,15 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Row
 
 object StatusPageFeature {
     const val STATUS_PAGE = StatusDots.STATUS_PAGE
@@ -230,6 +239,26 @@ object StatusPageFeature {
         if (!on || current.dots.isEmpty()) return
         ShellStatusDots(current, onOpen, modifier)
     }
+
+    @Composable
+    fun TopStrip(modifier: Modifier = Modifier) {
+        val on by installed.collectAsState()
+        val current by row.collectAsState()
+        if (!on || current.dots.isEmpty()) return
+        Row(
+            modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                .padding(top = 1.dp)
+                .height(7.dp)
+                .clearAndSetSemantics { contentDescription = "Status: ${current.description}" }
+                .testTag("top-status-strip"),
+            horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            current.dots.forEach { ShellStatusDot(it, 5.dp) }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -253,7 +282,7 @@ private fun ShellStatusDots(row: StatusDotRow, onOpen: () -> Unit, modifier: Mod
 }
 
 @Composable
-private fun ShellStatusDot(dot: StatusDot) {
+private fun ShellStatusDot(dot: StatusDot, size: androidx.compose.ui.unit.Dp = 7.dp) {
     val color: Color = when (dot.state) {
         ServiceState.Operational -> Fm.colors.success
         ServiceState.Degraded -> Fm.colors.warning
@@ -272,5 +301,5 @@ private fun ShellStatusDot(dot: StatusDot) {
     } else {
         1f
     }
-    Box(Modifier.size(7.dp).alpha(alpha).clip(CircleShape).background(color))
+    Box(Modifier.size(size).alpha(alpha).clip(CircleShape).background(color))
 }
