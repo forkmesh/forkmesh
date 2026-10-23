@@ -197,8 +197,10 @@ def test_motion_is_off_under_reduced_motion():
         assert "animation: %s" % name in loops
         outside = SHELL.replace(loops, "")
         assert "animation: %s" % name not in outside
-    reduced = re.search(r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\n      \}", SHELL, re.S).group(1)
-    assert "animation: none !important" in reduced and ".fm-reaction-thanks" in reduced
+    reduced = [block for block in re.findall(
+        r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\n      \}", SHELL, re.S)
+        if ".fm-reaction-thanks" in block]
+    assert reduced and "animation: none !important" in reduced[0]
     assert "commentReactionMotionOk()" in _function(REACTIONS, "commentReactionAnimate")
     assert "commentReactionMotionOk()" in _function(GIFS, "gifPreviewHtml")
     assert "commentReactionMotionOk()" in _function(GIFS, "commentGifPlaying")
