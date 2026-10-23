@@ -22,6 +22,16 @@ being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
   does not grow. Installed-by-default plugins (agent-watch, analytics, docs)
   are modules too and load at start (about 30 ms and 3 MB together, see
   [Measurements](#measurements)).
+- **Include folders.** A plugin's sources see `desktop/src` and their own
+  `content/desktop` folder only (a source property from the generator's
+  `FORKMESH_PACKAGE_<ID>_INCLUDE_DIRS`); the app target sees `desktop/src` and
+  the core-linked plugins' folders. Until 2026-10-23 the app and every module
+  got all 42 plugin folders on their command lines, so adding or removing any
+  plugin (about once a day that month) changed every compile command and
+  rebuilt the whole app and every plugin, modules on or off. Now it changes
+  none: the configure comparison in [Measurements](#measurements) shows it.
+  No plugin includes another plugin's headers, and the core includes only the
+  core-linked ones; a plugin that needs another's header has to say so here.
 - **Loading.** At start the app reads only the sidecars (from `packages/` beside
   the binary, `../lib/forkmesh/packages`, the install prefix's
   `lib/forkmesh/packages`, and `../PlugIns/forkmesh-packages` on macOS). A
@@ -59,5 +69,17 @@ A/B: "compiled in" is `-DFORKMESH_PACKAGE_MODULES=OFF`, "modules" the default.
 | Resident memory 8 s after start, median of 12 | 178.5 MB | 175.2 MB | −3.3 MB |
 | Window shown (`[startup +Nms]`), median of 12 | 608 ms | 632 ms | within noise at this load |
 | Editing a module package's source | recompiles the file, relinks the app (2.7 s link) | recompiles the file, relinks only its module | no app relink |
+
+Adding or removing a plugin, measured 2026-10-23 by configuring the same
+checkout with the default plugin list and with `crm` left out, then comparing
+the compile commands of every object both builds share (a changed command is a
+recompile under Ninja):
+
+| | App objects recompiled | Plugin objects recompiled |
+| --- | --- | --- |
+| Modules on, before | 411 of 411 | 139 of 139 |
+| Modules on, after | 0 of 411 | 0 of 139 |
+| Modules off (macOS, Windows), before | 492 of 492 | (in the app) |
+| Modules off, after | 0 of 492 | (in the app) |
 
 An earlier list that also modularised the three packages installed by default
