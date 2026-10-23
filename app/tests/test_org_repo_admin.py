@@ -187,14 +187,11 @@ def test_settings_endpoints_use_the_shared_gate():
 
 
 def test_an_organization_repository_about_can_be_saved_from_the_web():
-    # An organization has no node key, so "the owner has a pubkey" cannot be
-    # the gate for its repositories (example/forum: "Sign in as the source
-    # node owner first." for the organization's own owner).
     entry = (SRC / "entry.py").read_text(encoding="utf-8")
     about = entry[entry.index("async def repo_about_handler"):]
     about = about[:about.index("\nasync def ")]
     gate = about[about.index("if not await _owner_pubkey(env, owner)"):]
     gate = gate[:gate.index('return json_response({"error": "account_required"}')]
-    assert "await _org_row(env, owner))[1]" in gate
+    assert "FROM org_repos WHERE node_owner=? AND repo=?" in gate
     assert about.index("_repo_admin_allowed(env, actor, owner, repo)") < \
         about.index("if not await _owner_pubkey(env, owner)")
