@@ -962,10 +962,40 @@ void MainWindow::showUserAccountMenu()
         menu.addAction(QStringLiteral("Sign in on another instance…"));
     QAction *logoutAction = menu.addAction(QStringLiteral("Log out"));
 
-    QAction *chosen = menu.exec(topBarMenuAnchor(m_accountSwitcherButton));
+    QAction *settingsAction = nullptr;
+    QAction *offlineAction = nullptr;
+    if (Theme::isNext()) {
+        QAction *first = menu.actions().value(1);
+        settingsAction = new QAction(QStringLiteral("Settings"), &menu);
+        offlineAction = new QAction(QStringLiteral("Offline mode"), &menu);
+        offlineAction->setCheckable(true);
+        offlineAction->setChecked(m_offlineMode);
+        auto *version = new QAction(
+            QStringLiteral("ForkMesh %1").arg(QCoreApplication::applicationVersion()),
+            &menu);
+        version->setEnabled(false);
+        menu.insertSeparator(first);
+        menu.insertAction(first, settingsAction);
+        menu.insertAction(first, offlineAction);
+        menu.insertAction(first, version);
+    }
+    QPoint anchor = topBarMenuAnchor(m_accountSwitcherButton);
+    if (property("accountMenuAt").isValid())
+        anchor = property("accountMenuAt").toPoint();
+    if (property("accountMenuAbove").isValid())
+        anchor = property("accountMenuAbove").toPoint() -
+                 QPoint(0, menu.sizeHint().height());
+    setProperty("accountMenuAt", QVariant());
+    setProperty("accountMenuAbove", QVariant());
+    QAction *chosen = menu.exec(anchor);
     if (!chosen)
         return;
-    if (awayAction && chosen == awayAction) {
+    if (settingsAction && chosen == settingsAction) {
+        if (m_settingsNavButton)
+            m_settingsNavButton->click();
+    } else if (offlineAction && chosen == offlineAction) {
+        setOfflineMode(!m_offlineMode);
+    } else if (awayAction && chosen == awayAction) {
         const bool away = !(m_ownUserStatusKnown && m_ownUserStatus.away);
         postOwnUserStatus(
             QJsonObject{{QStringLiteral("away"), away}},

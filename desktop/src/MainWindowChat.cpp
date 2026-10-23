@@ -2707,6 +2707,8 @@ QWidget *MainWindow::buildChatPage()
     logStartup(QStringLiteral("  buildChatPage: secondary sections deferred"));
 
     auto *content = new QWidget;
+    content->setObjectName(QStringLiteral("shellContentCard"));
+    content->setAttribute(Qt::WA_StyledBackground, true);
     auto *contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(0);
@@ -2801,9 +2803,13 @@ QWidget *MainWindow::buildChatPage()
     auto *railColumnLayout = new QVBoxLayout(railColumn);
     railColumnLayout->setContentsMargins(0, 0, 0, 0);
     railColumnLayout->setSpacing(0);
+    railColumnLayout->addWidget(
+        forkmesh::ui::NextAccess::buildSidebarHeader(*this));
     railColumnLayout->addWidget(railScroll, 1);
     railColumnLayout->addWidget(buildWorkflowPinStrip(QStringLiteral("left")), 0,
                                 Qt::AlignHCenter);
+    railColumnLayout->addWidget(
+        forkmesh::ui::NextAccess::buildSidebarFooter(*this));
 
     auto *lower = new QWidget;
     auto *lowerLayout = new QHBoxLayout(lower);
@@ -4810,6 +4816,21 @@ void MainWindow::positionGlobalFooterOverlays()
         clampPromptOverlayIntoHost();
         m_promptOverlayHost->show();
         m_promptOverlayHost->raise();
+    }
+    if (m_promptOverlayHost) {
+        const bool homeComposer =
+            Theme::isNext() && !m_promptOverlayDetached && m_sectionStack &&
+            m_sectionStack->currentIndex() == kHomeGridSectionIndex &&
+            m_sectionStack->currentWidget() &&
+            m_sectionStack->currentWidget()->property("homeComposer").toBool();
+        if (homeComposer && !m_promptOverlayHost->isHidden()) {
+            m_promptOverlayHost->setProperty("hiddenForHome", true);
+            m_promptOverlayHost->hide();
+        } else if (!homeComposer &&
+                   m_promptOverlayHost->property("hiddenForHome").toBool()) {
+            m_promptOverlayHost->setProperty("hiddenForHome", false);
+            m_promptOverlayHost->show();
+        }
     }
     // setGeometry() clamps to the dock's pinned height, so the top edge has to
     // be measured against that same clamped value. A floating or detached

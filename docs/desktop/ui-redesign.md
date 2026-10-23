@@ -43,25 +43,25 @@ only for unread); text labels over icon-with-caption.
 
 | Role | Dark | Light | Used for |
 | --- | --- | --- | --- |
-| `bg` | `#09090b` | `#ffffff` | Window, page |
-| `bgSubtle` | `#0c0c0e` | `#fafafa` | Sidebar, chrome bar |
-| `surface` | `#111113` | `#ffffff` | Cards, inputs, menus |
-| `surfaceRaised` | `#18181b` | `#f4f4f5` | Hover row, default button |
-| `surfaceActive` | `#232326` | `#e8e8eb` | Pressed, active sidebar row |
-| `border` | `#232326` | `#e4e4e7` | Hairlines, row dividers |
-| `borderStrong` | `#303036` | `#d4d4d8` | Inputs, buttons, floating layers |
-| `fg` | `#f4f4f5` | `#18181b` | Primary text |
-| `fgSecondary` | `#d4d4d8` | `#3f3f46` | Secondary text |
-| `fgMuted` | `#a1a1aa` | `#6b6b74` | Descriptions, icons |
-| `fgSubtle` | `#71717a` | `#8a8a94` | Placeholder, disabled |
-| `accent` | `#1f6feb` | `#0969da` | Primary button, selection, focus, toggle on |
-| `accentHover`, `accentPressed` | `#388bfd`, `#1158c7` | `#0550ae`, `#0a5cc7` | Button states |
-| `accentFg` | `#58a6ff` | `#0969da` | Links, active tab underline |
-| `accentSubtle` | `#12233b` | `#e6f0fd` | Current-item background |
+| `bg` | `#121214` | `#ffffff` | Window, page |
+| `bgSubtle` | `#171719` | `#f3f3f5` | Sidebar, chrome bar |
+| `surface` | `#1b1b1f` | `#ffffff` | Cards, inputs, menus |
+| `surfaceRaised` | `#222226` | `#f4f4f5` | Hover row, default button |
+| `surfaceActive` | `#2a2a2e` | `#eaeaec` | Pressed, active sidebar row |
+| `border` | `#26262a` | `#e9e9eb` | Hairlines, row dividers |
+| `borderStrong` | `#323237` | `#dcdcdf` | Inputs, buttons, floating layers |
+| `fg` | `#ececef` | `#17171a` | Primary text |
+| `fgSecondary` | `#c8c8ce` | `#3a3a40` | Secondary text |
+| `fgMuted` | `#8d8d97` | `#6c6c75` | Descriptions, icons |
+| `fgSubtle` | `#66666f` | `#9a9aa3` | Placeholder, disabled |
+| `accent` | `#4d7ef7` | `#2f6fed` | Primary button, selection, focus, toggle on |
+| `accentHover`, `accentPressed` | `#6b93fa`, `#3d6be0` | `#2860d6`, `#2254bd` | Button states |
+| `accentFg` | `#7ea4ff` | `#2f6fed` | Links, active tab underline |
+| `accentSubtle` | `#1a2338` | `#eaf1fe` | Current-item background |
 | `onAccent` | `#ffffff` | `#ffffff` | Text on accent, danger and success fills |
-| `success` | `#3fb950` | `#1a7f37` | Status only |
-| `warning` | `#d29922` | `#9a6700` | Status only |
-| `danger` | `#f85149` | `#cf222e` | Status, destructive actions |
+| `success` | `#3fb871` | `#1f9d55` | Status only |
+| `warning` | `#d9a440` | `#b7791f` | Status only |
+| `danger` | `#ef6464` | `#d64545` | Status, destructive actions |
 
 `success`, `warning` and `danger` each have a `Subtle` background. Chat has its
 own tone table (`kChatTones`, `@chat*` in QSS, `Theme::chatColor` in code).
@@ -294,6 +294,223 @@ with 14 px icons. The send column drops its icons for text labels: the button
 Enter triggers (`enterTarget`) is the accent primary, the other is a raised
 secondary, and "send to: #channel" is a ghost. Object names, layout positions, settings
 keys, tooltips and Classic are unchanged.
+
+### Mockup shell (October 2026)
+
+The Next shell follows the desktop mockup (`forkmesh2/desktop-electron`,
+`src/index.css` and `src/components/shell/`). Its translucent "glass" tokens
+are flattened onto the window colour to give opaque roles, so the role table
+above now carries those values.
+
+- **One chrome colour, one content card.** The top bar, sidebar and team rail
+  share `bgSubtle` with no hairlines between them. The section stack sits in
+  `#shellContentCard` (`bg`, 1 px `border`, 12 px corners), inset 8 px from
+  the right and bottom by `refreshShellContentCard`. It is padded 4 px inside
+  so square page corners never cover the rounded edge.
+- **Sidebar header and footer** (`NextAccess::buildSidebarHeader`,
+  `buildSidebarFooter`, refreshed every 2 s by `refreshSidebarChrome`).
+  - The header has the workspace button (logo, instance name, this machine's
+    node name and the online node count), which opens the account menu, and
+    New session (`startNewSessionInSessionsPage`, also Ctrl/⌘+N in Next).
+  - The footer has the account button: initials avatar with an online dot,
+    the handle, then email or Offline. It opens the same account menu above
+    itself; the menu's anchor comes from the `accountMenuAt` /
+    `accountMenuAbove` window properties.
+  - In Next the account menu also lists Settings, Offline mode and the app
+    version.
+  - Rows are 8 px rounded; labels use regular weight; counts are plain
+    `fgSubtle` text (urgent counts keep the red pill).
+- **Top bar** (`NextAccess::installTopBar`).
+  - Back/forward move next to the sidebar toggle, followed by the current page
+    name.
+  - A right-hand cluster holds the online node count (opens Network), the pings
+    bell (a dot when pings are waiting), the dark/light toggle (through
+    `m_themeCombo` like the view menu) and the team-rail toggle
+    (`setTeammateRailEnabled`).
+  - The bell opens `#pingsPopover`: the six newest non-quiet local pings. Rows
+    open like Home's "Needs you", "Mark all read" moves the local seen
+    watermark, and "View all" opens Pings.
+  - On macOS, close, minimise and zoom move to the left as traffic lights
+    (`trafficLight` property).
+  - Every existing chrome control stays.
+- **Team rail.** Next draws each special as a 40 px rounded initials chip
+  (`teammateRailAvatar[nextChip="true"]`) under a "TEAM" heading. The status
+  dot is accent while running, warning when done-unseen or asking for
+  attention, and danger after a failed run. Run, mood, more and payouts stay
+  as hover buttons on the chip's corners. Classic keeps the faces.
+- **Home's prompt replaces the footer prompt on Home.**
+  `positionGlobalFooterOverlays` hides `m_promptOverlayHost` while Next Home
+  (`homeComposer` page property) is current and shows it again on leaving, so
+  there is never a second prompt on screen. A detached prompt window is left
+  alone.
+
+### Home
+
+In Next, Home (`MainWindow::buildHomeGridSection`, `MainWindowHome.cpp`) is a
+centred column instead of a bare icon grid; Classic keeps the old layout. From
+the top:
+
+- **Greeting and summary.** "Good evening, Kaif": the first word of
+  `topBarUserName()`, capitalised, after the time-of-day greeting. The summary
+  counts pings, open tasks and running sessions, then waiting and failed
+  sessions, or says "All quiet".
+- **Composer** (`#homeComposer`). A second face of the footer prompt, not a
+  new launcher. Its pickers read and write the footer composer's own controls:
+  repository → `m_issuesRepoCombo`, agent → `m_quickAddAgentProvider`, mode →
+  `m_quickAddModeSelector`, model → `m_quickAddClaudeModel`, effort →
+  `m_quickAddSpeedSelector`. Changing one on Home therefore changes the footer
+  too, and the settings each control already saves stay the source of truth.
+  "+" and the microphone click the footer's attach and dictation buttons.
+  Dictated text flows back into the Home field.
+  Enter (or the send button) copies the text into `m_issueQuickAdd` and calls
+  `quickAddIssue()`, so cloud runs, worktree, vibe, create-PR, attachments and
+  history behave exactly as in the footer. If the provider is a non-agent one
+  (manual, note, task, ActivityPub), it is first switched to the default agent
+  provider. The one exception is a branch picked on Home that differs from the
+  repository's default: `quickAddIssue()` has no branch input, so Home calls
+  `startAdHocAgentForRepo` with the same arguments plus that base branch. When
+  a session starts, Home opens it on the Sessions page.
+- **Pickers** (`QMenu#homePickerMenu`). Search field, then two-line rows
+  (title and path or vendor), with a check on the current one. The repository
+  picker ends in "Open folder…" (`promptAddRepository`). The branch picker
+  lists `listRepoBranches` with the default branch first. The model picker
+  adds an effort segmented control for Claude Code and Codex.
+- **Suggestions.** Up to four chips built from real state: pings, open pull
+  requests, failed sessions, open tasks, then two general ones. A chip fills
+  the composer; it never sends.
+- **Apps and Needs you.** The tile grid keeps pages, dots, drag to reorder,
+  context menus, pull-down and type-to-search. `HomeBoard::setStyle` paints
+  Next tiles as neutral plates with a hairline edge, a muted glyph and an
+  accent count pill. The colours are passed in as a `HomeBoardStyle` because
+  `HomeBoard.cpp` is also built into `forkmesh-home-board-tests`, which does not
+  link the design tokens. "Needs you" lists the five newest non-quiet local
+  pings (`m_notifications`): a red dot for a warning, accent for unseen
+  (newer than the seen watermark), grey otherwise. A row opens its run or link
+  the way the Pings page does; "All N" opens the Pings page.
+
+Home's widgets are built once, the first time the page is shown, so switching
+design while running keeps the old Home until restart, like the other widgets
+noted under Remaining work.
+
+### Sessions
+
+In Next, the Sessions page (`MainWindowSessions.cpp`, `63-sessions.qss`)
+follows the desktop mockup; Classic keeps the old layout.
+
+- **Sidebar** (264 px).
+  - A search field and a filter button. Its menu holds the "Between sessions
+    only" filter, which toggles the existing, now hidden,
+    `sessionsBetweenFilter`, and a Group by Repository or Status choice kept in
+    memory.
+  - Sessions sit under foldable repository headings, live groups first. A
+    heading's "+" opens new-session mode with that repository picked, when it
+    has a local checkout.
+  - `SessionsNextRowDelegate` paints 32 px rows: status icon, title, age, the
+    relay count and unread dot. On hover a "…" opens the existing context
+    menu. The old repo · branch · model line moved into the tooltip.
+  - Headings use a third sentinel id, so `sessionsHeaderId()` now filters
+    them.
+- **Centre header** (one 48 px row): title with a chevron menu (the same
+  context menu), a monospace branch badge, the status chip, the meta line,
+  ghost Stop, Continue and Open in Agents buttons, and a toggle for a 288 px
+  details panel.
+- **Details panel.** Foldable cards built only from real data:
+  - Environment: machine, worktree path, branch with ahead and behind from
+    `m_agentDiffStats`, agent, mode.
+  - Context: context-window use, tokens, cost.
+  - Changes: +/− lines, files, uncommitted, pull request, conflicts.
+- **Left out on purpose.** The mockup's remote-control switch, token breakdown,
+  file list, Commit and Open PR buttons, task list, and terminal, files and
+  browser buttons: nothing on this page backs them.
+- **Transcript and composer.**
+  - The transcript column is capped at 808 px and centred.
+  - The composer is a centred rounded card with ghost pickers, the open
+    session's mode and model, and a round send button.
+- **New-session mode.** The header is hidden. The composer moves under a
+  centred "Start a new session" heading with three starter cards, which fill
+  the prompt but never send.
+
+### Transcript
+
+In Next the agent transcript (`ClaudeTranscriptView.cpp`) follows the mockup
+on both the Sessions and Agents pages.
+
+- **User turns** are right-aligned `surfaceActive` bubbles: 16 px corners with
+  a small bottom-right one, at most 80% of the column wide, with the time below
+  in `fgSubtle`.
+- **Commands.** Back-to-back shell commands fold into one "Ran N commands
+  (M failed)" row. It opens to a bordered card listing each command with a
+  status dot.
+- **Assistant prose.** Finished prose is 15 px with 165% line height, and
+  inline code shows as mono chips.
+  - The prose is converted once per message through `QTextDocument` and
+    cached, because a markdown `QLabel` cannot take line height or code
+    backgrounds.
+  - Streaming text is converted only when it completes, so the 60 ms flush
+    stays cheap.
+
+### Code
+
+In Next, the repository page (`MainWindowRepoDetail.cpp`, `30-repo.qss`)
+reads like a GitHub repository home; Classic keeps the old layout.
+
+- **Header row** (`#repoNextHeader`): a repo tile, the owner and name, and a
+  pill saying Public, Private, Local only or Preview.
+- **Tabs and actions.** They stay `VerticalIconButton`s with the same object
+  names and placement keys. An event filter, `NextRepoButtonStyler`, paints
+  them as horizontal underline tabs and ghost buttons with neutral count
+  pills, and leaves any button moved to the rail alone. The actions stay in
+  the tab row, because button placement owns that row.
+- **Code toolbar.**
+  - A branch picker that mirrors and opens the status bar's branch menu.
+  - Branches, Tags, Worktrees and Remotes as "count label" stats.
+  - A blue Code button that opens the existing Source menu.
+- **File table.**
+  - The latest-commit card becomes the header of the bordered file table
+    (`NextOverviewCommitHeader`). This leaves the list's columns and object
+    names unchanged.
+  - Rows are 36 px with hairlines and a hover fill, with the age right-aligned
+    beside the commit message.
+- **Right sidebar** (`#repoAboutSidebar`, hidden below 860 px). It shows only
+  data the app already has:
+  - About: description, website, topics, license file, stars, forks and
+    mirrors, with the existing About editor behind the gear.
+  - Releases: the tag count.
+  - Languages: computed on a worker from the tree listing the overview already
+    reads, so no new git call.
+  - Contributors: from the repository's info file.
+- **Left out on purpose.** No "watching" count, latest-release tag or commit
+  total: each would need a new git call.
+
+### CRM
+
+In Next, the CRM page (Market package `crm`,
+`marketplace/packages/crm/content/desktop/`) follows the mockup. The package
+includes `DesignTokens.h`, as Docs does, and `CrmFeature::applyNextStyle`
+sets one `@role` sheet on `crmSection`. Classic is unchanged.
+
+- **Header.**
+  - The title sits over a muted summary line.
+  - The actions are Import and Mail menus, settings and refresh icons, and one
+    inverse "Add contact" button.
+  - The import and mailbox buttons live in a hidden holder. The two menus
+    mirror them each time they open: each item copies its button's text,
+    tooltip, enabled state and visibility, then calls its `click()`. So every
+    existing visibility, enable and permission rule still decides what is
+    offered.
+- **Tabs.** People, Pipelines, History and Extension move into an underline
+  tab row, plus a new Overview tab that returns to the open list.
+- **Notice.** The Zoho Mail status bar becomes a rounded amber notice. Its real
+  steps (Connect, Reconnect, Sync, Guide) stay.
+- **Cards and strip.** List cards, the reach-out and follow-up cards and the
+  pipeline stage strip use role colours: hairline surfaces, a raised selected
+  list, and rounded stage boxes with counts in place of chevrons. Stage and
+  avatar colours stay because they carry data.
+- **Contacts table.** It drops alternating rows and the grid. It is not
+  marked `dataTable`, because that would undo its draggable, resizable
+  columns.
+- **Live switch.** The header layout is built once, so a live design switch
+  shows the new header only after the page is rebuilt.
 
 ## Must not break
 

@@ -742,7 +742,8 @@ QWidget *MainWindow::buildBreadcrumb()
     auto *searchClusterRow = new QHBoxLayout(searchCluster);
     searchClusterRow->setContentsMargins(0, 0, 0, 0);
     searchClusterRow->setSpacing(8);
-    searchClusterRow->addWidget(createNavHistoryButtons());
+    QWidget *historyButtons = createNavHistoryButtons();
+    searchClusterRow->addWidget(historyButtons);
     searchClusterRow->addWidget(createGlobalSearchBox());
     chromeRow->addWidget(searchCluster, 0, Qt::AlignCenter);
     chromeRow->addStretch();
@@ -793,6 +794,9 @@ QWidget *MainWindow::buildBreadcrumb()
     chromeRow->addWidget(closeButton);
     installTimersClockSlots(chrome, identityBalanceRow, searchClusterRow,
                             chromeRow, viewModeButton);
+    forkmesh::ui::NextAccess::installTopBar(
+        *this, chromeRow, historyButtons, viewModeButton,
+        {minimizeButton, maximizeButton, closeButton});
     chrome->setMinimumWidth(0);
     chrome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     auto *chromeScroll = new QScrollArea;
