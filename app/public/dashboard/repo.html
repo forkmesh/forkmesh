@@ -933,15 +933,67 @@
           display: inline-flex;
         }
       }
+      /* Discussions, Actions, Agents, Security, Insights and Settings: the same
+         left rail as Issues, flush against the window edge and sticky while
+         the page scrolls, with the page's content centred beside it. */
+      @media (min-width: 1024px) {
+        [data-repo-content-grid]:has([data-dashboard-repo-tab-panel]:not(.hidden) [data-repo-rail-layout]:not([data-record-open="true"])) {
+          max-width: none;
+          padding: 0;
+        }
+        [data-repo-rail-layout]:not([data-record-open="true"]) {
+          display: grid;
+          grid-template-columns: 16rem minmax(0, 1fr);
+          gap: 0;
+          margin-top: 0;
+          padding: 0;
+          min-height: calc(100dvh - 6.25rem);
+        }
+        [data-repo-rail-layout]:not([data-record-open="true"]) > [data-repo-rail] {
+          display: block;
+          align-self: stretch;
+          margin: 0;
+          padding: 0;
+          border: 0;
+          border-right: 1px solid rgb(var(--dashboard-border-rgb));
+          border-radius: 0;
+        }
+        [data-repo-rail] > [data-repo-rail-inner] {
+          position: sticky;
+          top: 0;
+          max-height: calc(100dvh - 6.25rem);
+          overflow-y: auto;
+          padding: 16px 16px 12px 20px;
+        }
+        [data-repo-rail-layout]:not([data-record-open="true"]) > [data-repo-rail-main] {
+          width: 100%;
+          max-width: 80rem;
+          margin: 0 auto;
+          padding: 24px 32px 32px;
+        }
+      }
+      [data-repo-rail-layout][data-record-open="true"] {
+        grid-template-columns: minmax(0, 1fr) !important;
+      }
+      [data-repo-rail-layout][data-record-open="true"] > [data-repo-rail] {
+        display: none !important;
+      }
+      .fm-rail-title { margin: 0 0 8px; padding: 0 8px; font-size: 16px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-rail-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+      .fm-rail-item { position: relative; display: flex; width: 100%; min-width: 0; align-items: center; gap: 8px; border-radius: 6px; padding: 6px 8px; font-size: 14px; line-height: 20px; color: rgb(var(--dashboard-foreground-rgb)); text-align: left; text-decoration: none; }
+      .fm-rail-item:hover { background: rgb(var(--dashboard-subtle-rgb)); }
+      .fm-rail-item > svg, .fm-rail-item > i { width: 16px; height: 16px; flex: none; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-rail-item > .fm-counter { margin-left: auto; }
+      .fm-rail-item[aria-current="true"], .fm-rail-item[aria-current="page"] { background: rgb(var(--dashboard-subtle-rgb)); font-weight: 600; }
+      .fm-rail-item[aria-current="true"]::before, .fm-rail-item[aria-current="page"]::before {
+        content: ""; position: absolute; left: -8px; top: 6px; bottom: 6px; width: 4px; border-radius: 6px; background: rgb(var(--dashboard-primary-rgb));
+      }
       [data-repo-collection-layout][data-record-open="true"] {
         grid-template-columns: minmax(0, 1fr) !important;
       }
       [data-repo-collection-layout][data-record-open="true"] [data-repo-collection-chrome],
       [data-repo-record-host][data-record-open="true"] [data-repo-collection-chrome] {
         display: none !important;
-      }
-      [data-repo-record-host][data-record-open="true"] [data-repo-discussions-columns] {
-        grid-template-columns: minmax(0, 1fr) !important;
       }
       [data-repo-collection-layout][data-record-open="true"] [data-repo-collection-box],
       [data-repo-record-host][data-record-open="true"] [data-repo-collection-box] {

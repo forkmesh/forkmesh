@@ -2311,7 +2311,7 @@
         </div>` : "";
     if (!visibility && !collaborators) return "";
     return `
-      <div data-repo-settings-access class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+      <div data-repo-settings-access id="settings-access" data-repo-settings-section="Access" class="mt-5 scroll-mt-4 overflow-hidden rounded-lg border border-border bg-background">
         <div class="border-b border-border bg-secondary/50 px-4 py-3">
           <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield" class="h-3.5 w-3.5 text-muted-foreground"></i>Access</span>
         </div>
@@ -4886,13 +4886,15 @@
           <span class="fm-flash-title">Want to contribute to ${escapeHtml(repository)}?</span>
           <p>If you found a bug or have an idea, read the <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="font-medium text-accent hover:underline">contributing guide</a> before opening an issue.</p>
         </div>
-        <details class="fm-flash-actions relative text-left">
-          <summary class="fm-btn fm-btn-sm inline-flex list-none">Dismiss<i data-lucide="chevron-down"></i></summary>
-          <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
-            <button type="button" data-repo-issue-contribution-dismiss="repository" class="fm-menu-item">Dismiss for this repository</button>
-            <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
-          </div>
-        </details>
+        <div class="fm-flash-actions relative inline-flex text-left">
+          <button type="button" data-repo-issue-contribution-dismiss="repository" title="Dismiss for this repository" class="fm-btn fm-btn-sm" style="border-top-right-radius:0;border-bottom-right-radius:0">Dismiss</button>
+          <details class="relative">
+            <summary aria-label="More ways to dismiss" class="fm-btn fm-btn-sm inline-flex list-none" style="margin-left:-1px;padding:0 6px;border-top-left-radius:0;border-bottom-left-radius:0"><i data-lucide="chevron-down"></i></summary>
+            <div class="fm-popover fm-menu absolute right-0 top-full z-20 mt-1 w-56">
+              <button type="button" data-repo-issue-contribution-dismiss="all" class="fm-menu-item">Dismiss for all repositories</button>
+            </div>
+          </details>
+        </div>
       </aside>`;
   }
 

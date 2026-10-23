@@ -13740,31 +13740,33 @@ Your reply
     };
     return `
       <section data-dashboard-repo-tab-panel="discussions" class="hidden">
-        <div data-repo-record-host="discussions" class="mx-auto mt-2 grid w-full min-w-0 max-w-[80rem] gap-6">
-          <div data-repo-collection-chrome class="flex min-w-0 flex-wrap items-center gap-2">
-            <label class="flex h-8 min-w-0 flex-1 basis-72 items-stretch overflow-hidden rounded-md border border-border bg-background focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
-              <span class="inline-flex w-8 shrink-0 items-center justify-center text-muted-foreground"><i data-lucide="search" class="h-4 w-4"></i></span>
-              <span class="relative min-w-0 flex-1 overflow-hidden">
-                <span data-repo-issue-query-highlight aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre pr-3 text-[14px] text-foreground"></span>
-                <input data-repo-filter-query="discussions" type="search" autocomplete="off" spellcheck="false" aria-label="Search all discussions" value="${escapeHtml(`${serializeDiscussionQuery()} `)}" placeholder="Search all discussions" class="relative h-full w-full bg-transparent pr-3 text-[14px] text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-[color-mix(in_srgb,var(--dashboard-link)_35%,transparent)]" />
-              </span>
-            </label>
-            ${select("sort", DISCUSSION_SORTS, "Sort by:")}
-            ${select("status", DISCUSSION_STATUSES, "Filter:")}
-            <button type="button" data-repo-discussion-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</button>
-          </div>
-          <div data-repo-discussions-columns class="grid min-w-0 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
-            <aside data-repo-collection-chrome class="grid min-w-0 content-start gap-4">
+        <div data-repo-record-host="discussions" data-repo-rail-layout class="mt-2 grid w-full min-w-0 gap-6">
+          <aside data-repo-rail data-repo-collection-chrome class="min-w-0">
+            <div data-repo-rail-inner class="grid min-w-0 content-start gap-4">
               <div>
-                <h2 class="mb-2 px-2 text-[16px] font-semibold text-foreground">Categories</h2>
+                <h2 class="fm-rail-title">Categories</h2>
                 <nav data-repo-discussion-categories aria-label="Discussion categories">${renderDiscussionCategoriesNav()}</nav>
               </div>
               <div class="rounded-md border border-border p-4">
-                <h3 class="text-[16px] font-semibold text-foreground">Signed conversations</h3>
+                <h3 class="text-[14px] font-semibold text-foreground">Signed conversations</h3>
                 <p class="mt-2 text-[12px] leading-5 text-muted-foreground">Every discussion and reply is signed by its author, from this website or the apps, and served by the repository's mirrors.</p>
               </div>
               <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="inline-flex items-center gap-2 px-2 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="heart-handshake" class="h-4 w-4"></i>Contributing guide</a>
-            </aside>
+            </div>
+          </aside>
+          <div data-repo-rail-main class="grid min-w-0 content-start gap-4">
+            <div data-repo-collection-chrome class="flex min-w-0 flex-wrap items-center gap-2">
+              <label class="flex h-8 min-w-0 flex-1 basis-72 items-stretch overflow-hidden rounded-md border border-border bg-background focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
+                <span class="inline-flex w-8 shrink-0 items-center justify-center text-muted-foreground"><i data-lucide="search" class="h-4 w-4"></i></span>
+                <span class="relative min-w-0 flex-1 overflow-hidden">
+                  <span data-repo-issue-query-highlight aria-hidden="true" class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre pr-3 text-[14px] text-foreground"></span>
+                  <input data-repo-filter-query="discussions" type="search" autocomplete="off" spellcheck="false" aria-label="Search all discussions" value="${escapeHtml(`${serializeDiscussionQuery()} `)}" placeholder="Search all discussions" class="relative h-full w-full bg-transparent pr-3 text-[14px] text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-[color-mix(in_srgb,var(--dashboard-link)_35%,transparent)]" />
+                </span>
+              </label>
+              ${select("sort", DISCUSSION_SORTS, "Sort by:")}
+              ${select("status", DISCUSSION_STATUSES, "Filter:")}
+              <button type="button" data-repo-discussion-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</button>
+            </div>
             <div class="min-w-0">
               <h2 data-repo-collection-chrome data-repo-discussions-heading class="mb-2 text-[16px] font-semibold text-foreground">Discussions</h2>
               <div data-repo-collection-box class="overflow-clip rounded-md border border-border bg-background">
@@ -17892,6 +17894,40 @@ Your reply
   // Header-search page filter for the Agents tab (adhoc #62). One haystack for
   // both session renderers — they draw the same snapshots, just different
   // fields of them — so a hit is always something visible on the row.
+  // The Agents rail's views: every session, the ones still working, the ones
+  // that finished, and the ones that failed or were stopped.
+  const REPO_AGENT_STATUS_VIEWS = [
+    ["all", "All sessions", "bot"],
+    ["running", "Running", "loader-circle"],
+    ["finished", "Finished", "circle-check"],
+    ["failed", "Failed", "circle-x"],
+  ];
+
+  function repoAgentStatusGroup(agent) {
+    const status = String(agent?.status || "").toLowerCase();
+    if (REPO_AGENT_ACTIVE_STATUSES.has(status)) return "running";
+    if (["failed", "error", "stopped", "cancelled", "canceled"].includes(status)) return "failed";
+    return "finished";
+  }
+
+  function repoAgentsInStatusView(agents) {
+    const view = state.agentsView.statusView || "all";
+    const list = Array.isArray(agents) ? agents : [];
+    return view === "all" ? list : list.filter((agent) => repoAgentStatusGroup(agent) === view);
+  }
+
+  function renderRepoAgentsRail() {
+    const rail = $("[data-repo-agents-views]");
+    if (!rail) return;
+    const agents = Array.isArray(state.agentsView.agents) ? state.agentsView.agents : [];
+    const view = state.agentsView.statusView || "all";
+    rail.innerHTML = REPO_AGENT_STATUS_VIEWS.map(([id, label, icon]) => {
+      const count = id === "all" ? agents.length : agents.filter((agent) => repoAgentStatusGroup(agent) === id).length;
+      return `<li><button type="button" data-repo-agents-view="${id}" class="fm-rail-item"${id === view ? ' aria-current="true"' : ""}><i data-lucide="${icon}"></i><span class="min-w-0 truncate">${escapeHtml(label)}</span><span class="fm-counter">${formatCount(count)}</span></button></li>`;
+    }).join("");
+    window.lucide?.createIcons();
+  }
+
   function repoAgentsMatchingPageFilter(agents) {
     const queries = pageFilterQueries("");
     if (!queries.length) return agents;
@@ -17942,7 +17978,8 @@ Your reply
     if (selectedId != null) state.agentsView.selectedAgentId = null;
     // The "start a new agent" composer now lives in the header robot-button
     // modal (adhoc #62), so this list is just the sessions.
-    const visible = repoAgentsMatchingPageFilter(agents);
+    renderRepoAgentsRail();
+    const visible = repoAgentsMatchingPageFilter(repoAgentsInStatusView(agents));
     container.innerHTML = visible.length
       ? `<div class="divide-y divide-border">${visible.map(renderRepoAgentRow).join("")}</div>`
       : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyListHtml("No agent sessions yet. Start one from the robot button in the header, or from the desktop app.")}</div>`;
@@ -19717,8 +19754,9 @@ Your reply
       window.lucide?.createIcons();
       return;
     }
+    renderRepoAgentsRail();
     const visible = repoAgentsMatchingPageFilter(
-      Array.isArray(state.agentsView.agents) ? state.agentsView.agents : []);
+      repoAgentsInStatusView(state.agentsView.agents));
     // An open session keeps the pane only while its row is one the list would
     // show: a deleted session, or one the header search now excludes, drops the
     // reader back on the start composer rather than stranding them on a page

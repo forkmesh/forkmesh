@@ -1033,6 +1033,7 @@
     invalid_pinned: "Use repository names such as widgets or owner/name, one per line.",
     too_many_pinned: "That is more pinned repositories than the setting holds.",
     invalid_forks: "Forks shown must be a whole number from 0 to 50.",
+    invalid_devto: "A dev.to account name has only letters, digits and underscores.",
     not_admin: "Only an admin of this instance can change Top repositories.",
     unauthorized: "Sign in again to change Top repositories.",
   };
@@ -1060,7 +1061,7 @@
       const response = await fetch("/api/instance/sidebar", {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ sessionToken: state.session?.sessionToken || "", sidebar: { pinned: instanceSidebarPinnedLines(), forks } }),
+        body: JSON.stringify({ sessionToken: state.session?.sessionToken || "", sidebar: { pinned: instanceSidebarPinnedLines(), forks, devto: String($("[data-instance-sidebar-devto]")?.value || "").trim() } }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
@@ -1082,6 +1083,8 @@
     if (pinned) pinned.value = (Array.isArray(sidebar?.pinned) ? sidebar.pinned : []).join("\n");
     const forks = $("[data-instance-sidebar-forks]");
     if (forks) forks.value = String(Number.isInteger(sidebar?.forks) ? sidebar.forks : 3);
+    const devto = $("[data-instance-sidebar-devto]");
+    if (devto) devto.value = String(sidebar?.devto || "");
   }
 
   async function initInstanceSidebarSection() {
