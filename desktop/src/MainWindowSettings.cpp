@@ -8362,8 +8362,20 @@ void MainWindow::setLogTextFilter(const QString &text)
     refreshLogTimelineChart();
 }
 
+void MainWindow::syncDebugActivityLightCategories()
+{
+    if (!m_logActivityLights)
+        return;
+    QSet<QString> hidden;
+    for (const QString &badge : forkmesh::ui::LogActivityLights::badges())
+        if (!logCategoryRecording(badge))
+            hidden.insert(badge);
+    m_logActivityLights->setHiddenCategories(hidden);
+}
+
 void MainWindow::rebuildLogFilterButtons()
 {
+    syncDebugActivityLightCategories();
     if (!m_logFilterRow)
         return;
     QLayoutItem *item = nullptr;

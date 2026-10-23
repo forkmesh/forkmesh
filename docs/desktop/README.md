@@ -537,6 +537,15 @@ measured and keep the plain branch icon.
   `QToolTip::showText`/`hideText`. Do not restyle tips through `QToolTip { }`
   rules: the window paints `QPalette::ToolTipBase`/`ToolTipText` itself.
   `tests/test_tooltips.cpp` covers it.
+- **Widget fonts are sized in pixels.** The global style sheet and the font
+  size setting set `font-size` in `px`, so `font().pointSizeF()` is `-1` and
+  `setPointSizeF(font.pointSizeF() * 1.25)` logs `QFont::setPointSizeF: Point
+  size <= 0 (-1.250000)` and leaves the font unchanged. Size a derived font
+  with `forkmesh::scaledFont`, `forkmesh::resizedFont` or
+  `forkmesh::fontSizedLike` (`src/FontSizing.h`), which keep whichever unit the
+  font carries. `tests/test_font_sizing.cpp` covers the helpers and
+  `tests/validate_error_log_regressions.py` rejects a raw
+  `setPointSizeF(x.pointSizeF() ...)`.
 - **`MainWindowInternal.h` is in the precompiled header.** Editing it, or
   `MainWindow.h`, recompiles every `MainWindow*.cpp`. New helper bodies go in
   `MainWindowInternal1-4.cpp` with only a declaration in the header. New shell
