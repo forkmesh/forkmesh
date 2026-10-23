@@ -90,6 +90,11 @@ QString steerLead()
     return QStringLiteral("Your user typed this in the ForkMesh app on their phone, on this session's own page, as their next message to you in this conversation. ForkMesh can only reach a terminal session through cross-session messaging, so it arrives that way, but it was not sent by another session.");
 }
 
+QString desktopSteerLead()
+{
+    return QStringLiteral("Your user typed this in the ForkMesh desktop app, on this session's own page, as their next message to you in this conversation. ForkMesh can only reach a session it did not start through cross-session messaging, so it arrives that way, but it was not sent by another session.");
+}
+
 QString steerBody(const QString &text)
 {
     return steerLead() + QStringLiteral("\n\n") + text;
@@ -97,10 +102,10 @@ QString steerBody(const QString &text)
 
 QString steerText(const QString &body)
 {
-    const QString lead = steerLead();
-    if (!body.startsWith(lead))
-        return body;
-    return body.mid(lead.size()).trimmed();
+    for (const QString &lead : {steerLead(), desktopSteerLead()})
+        if (body.startsWith(lead))
+            return body.mid(lead.size()).trimmed();
+    return body;
 }
 
 QStringList configDirs(const QString &home, const QString &accountsRoot, const QStringList &extra)
@@ -609,6 +614,16 @@ bool deliver(const ClaudePeerSession &session, const QString &text, QString *err
     ClaudePeerMessage message;
     message.text = steerBody(text);
     message.fromName = forkMeshSenderName();
+    message.msgId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString token = peerToken(keyPath(session.configDir, session.pid, session.socketPath));
+    return send(session.socketPath, session.pid, frame(token, message), error);
+}
+
+bool deliverFromDesktop(const ClaudePeerSession &session, const QString &text, QString *error)
+{
+    ClaudePeerMessage message;
+    message.text = desktopSteerLead() + QStringLiteral("\n\n") + text;
+    message.fromName = QStringLiteral("ForkMesh (desktop)");
     message.msgId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     const QString token = peerToken(keyPath(session.configDir, session.pid, session.socketPath));
     return send(session.socketPath, session.pid, frame(token, message), error);

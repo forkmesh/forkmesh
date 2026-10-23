@@ -4020,6 +4020,7 @@ const QString kOfflineModeAutoSetting =
 const QString kThemeSetting = QStringLiteral("app/theme");
 const QString kThemeBaseDarkSetting = QStringLiteral("app/themeBaseDark");
 const QString kMarketplaceThemePrefix = QStringLiteral("market:");
+const QString kHalloweenTheme = QStringLiteral("halloween");
 const QString kPushAlertSetting = QStringLiteral("actions/pushAlert");
 const QString kPhoneReleasesWithoutPromptSetting =
     QStringLiteral("desktopCommands/releasesWithoutPrompt");

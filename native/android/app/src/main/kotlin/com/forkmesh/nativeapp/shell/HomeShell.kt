@@ -416,7 +416,6 @@ class HomeShell : Screen() {
         val currentRepo by CodeFeature.currentRepo.collectAsState()
         val shellPulls by ShellPullsWatch.state.collectAsState()
         val repoCounts by ShellBadges.repoCounts.collectAsState()
-        val badgesLoading by ShellBadges.loading.collectAsState()
         val foreground by AppLifecycle.foreground.collectAsState()
         val composerRepo = ComposerFeature.quick().repository?.ref
         val codeNew = shellPulls.newBadge(currentRepo)
@@ -427,6 +426,12 @@ class HomeShell : Screen() {
             Services.get<AuthService>()?.refreshAvatar()
         }
         LaunchedEffect(composerRepo) { composerRepo?.let(CodeFeature::follow) }
+        val matchInstance = com.forkmesh.nativeapp.platform.AppearanceStore.appearance.collectAsState().value.matchInstanceTheme
+        val activeProject = Services.get<ProjectsService>()?.active?.collectAsState()?.value
+        val themeOrigin = activeProject?.let { if (it.hasInstance) it.httpOrigin else "" }
+        LaunchedEffect(matchInstance, foreground, themeOrigin) {
+            if (matchInstance && foreground) com.forkmesh.nativeapp.platform.AppearanceStore.refreshInstanceTheme(themeOrigin)
+        }
         LaunchedEffect(currentRepo) {
             ShellBadges.refreshRepoCounts()
             ShellPullsWatch.refresh()
@@ -569,7 +574,6 @@ class HomeShell : Screen() {
                                 homeBadges,
                                 shellScope,
                                 homeRepo,
-                                badgesLoading,
                                 barCandidates,
                             )
                         } else {
@@ -645,7 +649,10 @@ class HomeShell : Screen() {
                             modifier = Modifier.width(80.dp).windowInsetsPadding(WindowInsets.navigationBars),
                         )
                     }
-                    Box(Modifier.weight(1f)) { body() }
+                    Box(Modifier.weight(1f)) {
+                        body()
+                        StatusPageFeature.TopStrip(Modifier.align(Alignment.TopCenter))
+                    }
                 }
             } else {
                 FmBackdropHost(
@@ -667,6 +674,7 @@ class HomeShell : Screen() {
                             .then(if (keyboardUp) Modifier else Modifier.consumeWindowInsets(WindowInsets.navigationBars)),
                     ) {
                         body()
+                        StatusPageFeature.TopStrip(Modifier.align(Alignment.TopCenter))
                     }
                 }
             }
@@ -991,7 +999,6 @@ private fun HomePage(
     badges: Map<Route.Kind, ShellMenuBadge>,
     scope: kotlinx.coroutines.CoroutineScope,
     repoGroup: ShellRepoGroup?,
-    loading: Boolean,
     barCells: List<ShellBarCell>,
 ) {
     Box(Modifier.fillMaxSize()) {
@@ -1004,7 +1011,6 @@ private fun HomePage(
             repoGroup = repoGroup,
             barCells = barCells,
         )
-        ShellLoadingOverlay(loading, Modifier.align(Alignment.TopCenter))
     }
 }
 

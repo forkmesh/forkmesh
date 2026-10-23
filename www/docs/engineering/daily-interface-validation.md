@@ -29,6 +29,24 @@ npm run test:daily-interface
 `app/tests/test_daily_interface_contract.py` keeps the runtime constants,
 workflow and quality-gate registry in sync.
 
+What the check relies on:
+
+- Focus outlines come from the shared `:where(...):focus-visible` rules in
+  `app/public/dashboard/shell.html`: a 3px ring on buttons and links, and a
+  1px primary outline on text fields (`docs/app/dashboard-components.md`).
+  Those rules have no specificity, so Tailwind's `focus:outline-none` replaces
+  them with a transparent outline. The repository filter no longer carries
+  that class, and the check asserts its outline is solid and visible.
+- Text on solid `primary` must reach 4.5:1 in both themes
+  (`docs/app/dashboard-colors.md`).
+- On a coarse pointer every button is at least 44px tall; the header's menu
+  button also gets `min-width: 44px`, because its padding and icon only reach
+  34px.
+- `fetchJson` retries a 5xx twice (400 ms, then 1.5 s) before it gives up, so
+  the offline test fails the catalog three times before the error state shows.
+- Clone commands use the site the page is served from, not the catalog's
+  `cloneUrl`, so the test compares them with the page origin.
+
 ## Release usability gate
 
 Each public release candidate needs a consented usability study covering

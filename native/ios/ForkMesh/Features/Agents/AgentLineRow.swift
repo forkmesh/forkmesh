@@ -103,14 +103,9 @@ struct AgentLineRow: View {
     }
 
     private var eagle: some View {
-        HStack(spacing: 6) {
-            dot()
+        HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .top, spacing: 4) {
-                    title
-                    AgentEagleStats(line: line)
-                        .fixedSize()
-                }
+                title
                 Group {
                     if let eagleFeed {
                         AgentEagleLine(feed: eagleFeed, line: line)
@@ -120,7 +115,10 @@ struct AgentLineRow: View {
                 }
                 .frame(height: 12)
             }
-            ends
+            if let trailing {
+                trailing
+            }
+            AgentEagleTile(line: line, loader: loader)
         }
     }
 
@@ -241,29 +239,153 @@ struct AgentLineChips: View {
     }
 }
 
-struct AgentEagleStats: View {
+struct AgentEagleTile: View {
+    static let side: CGFloat = 32
+    static let ring: CGFloat = 2
+
+    @Environment(\.fmPalette) private var fm
+    let line: AgentLine
+    let loader: AgentAttachmentLoader
+
+    private var radius: CGFloat { min(FmRadius.lg, Self.side / 4) }
+
+    var body: some View {
+        ZStack {
+            picture
+            AgentChurnRing(added: line.linesAdded, removed: line.linesRemoved, radius: radius, width: Self.ring)
+                .allowsHitTesting(false)
+        }
+        .frame(width: Self.side, height: Self.side)
+        .overlay(alignment: .topTrailing) {
+            AgentTilePill(line: line)
+                .padding(3)
+                .allowsHitTesting(false)
+        }
+        .overlay(alignment: .bottomLeading) {
+            if line.backgroundTasks > 0 {
+                AgentTileTasks(count: line.backgroundTasks, active: line.isActive)
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if line.unread {
+                AgentUnreadDot()
+                    .offset(x: -2, y: -2)
+            }
+        }
+    }
+
+    @ViewBuilder private var picture: some View {
+        if let ref = line.thumbnail {
+            AgentLineThumbnail(ref: ref, loader: loader, size: Self.side)
+        } else {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(fm.bgOverlay)
+        }
+    }
+}
+
+struct AgentChurnRing: View {
+    @Environment(\.fmPalette) private var fm
+    let added: Int
+    let removed: Int
+    let radius: CGFloat
+    let width: CGFloat
+
+    private var share: CGFloat? {
+        let plus = max(added, 0)
+        let minus = max(removed, 0)
+        guard plus + minus > 0 else { return nil }
+        return CGFloat(plus) / CGFloat(plus + minus)
+    }
+
+    var body: some View {
+        let edge = RoundedRectangle(cornerRadius: radius, style: .continuous).inset(by: width / 2)
+        ZStack {
+            if let share {
+                edge.trim(from: 0, to: share).stroke(fm.success, style: StrokeStyle(lineWidth: width))
+                edge.trim(from: share, to: 1).stroke(fm.danger, style: StrokeStyle(lineWidth: width))
+            } else {
+                edge.stroke(fm.border, lineWidth: 0.5)
+            }
+        }
+    }
+}
+
+struct AgentTilePill: View {
     @Environment(\.fmPalette) private var fm
     let line: AgentLine
 
-    private var churned: Bool { line.linesAdded > 0 || line.linesRemoved > 0 }
+    private var tint: Color {
+        switch line.status {
+        case .running: return fm.accent
+        case .waiting: return AgentDotsPainter.paused(fm.warning)
+        case .success: return fm.success
+        case .merged: return Color.fmHex("#a371f7") ?? fm.accent
+        case .failed: return fm.danger
+        case .queued, .stopped, .other: return fm.textTertiary
+        }
+    }
 
     var body: some View {
-        if line.filesChanged >= 0 || churned {
-            HStack(alignment: .bottom, spacing: 2) {
-                if line.filesChanged >= 0 {
-                    Text(AgentLines.compactCount(line.filesChanged))
-                        .font(.system(size: 8.5, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(fm.textSecondary)
-                        .lineLimit(1)
-                }
-                if churned {
-                    AgentChurnBars(added: line.linesAdded, removed: line.linesRemoved)
-                        .scaleEffect(0.8, anchor: .bottom)
-                }
+        HStack(spacing: 2) {
+            if line.filesChanged >= 0 {
+                Text(AgentLines.compactCount(line.filesChanged))
+                    .font(.system(size: 7, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Color.white)
+                    .lineLimit(1)
+                    .fixedSize()
             }
-            .frame(height: 10)
-            .padding(.top, 1)
+            Circle()
+                .fill(tint)
+                .frame(width: 5, height: 5)
         }
+        .padding(.horizontal, line.filesChanged >= 0 ? 3 : 2.5)
+        .frame(height: 10)
+        .background(Capsule().fill(Color.black.opacity(0.45)))
+    }
+}
+
+struct AgentTileTasks: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shellTabHidden) private var tabHidden
+    let count: Int
+    let active: Bool
+
+    private static let shown = 3
+    private static let period = 1.4
+
+    private var blinking: Bool { active && !reduceMotion }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: !blinking || tabHidden)) {
+            (context: TimelineViewDefaultContext) in
+            dots.opacity(blinking ? Self.glow(context.date) : 1)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private static func glow(_ date: Date) -> Double {
+        let phase = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
+        return 0.6 + 0.4 * cos(phase * 2 * .pi)
+    }
+
+    private var dots: some View {
+        HStack(spacing: 1.5) {
+            ForEach(0..<min(count, Self.shown), id: \.self) { _ in
+                Circle().fill(Color.white).frame(width: 3.5, height: 3.5)
+            }
+            if count > Self.shown {
+                Text("+\(count - Self.shown)")
+                    .font(.system(size: 6.5, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Color.white)
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, 2.5)
+        .frame(height: 7)
+        .background(Capsule().fill(Color.black.opacity(0.45)))
     }
 }
 
@@ -570,13 +692,14 @@ struct AgentLineThumbnail: View {
     @Environment(\.fmPalette) private var fm
     let ref: AgentAttachmentRef
     let loader: AgentAttachmentLoader
+    var size: CGFloat = 26
     @State private var viewing: AgentAttachmentViewerItem?
 
     var body: some View {
         Button {
             viewing = AgentAttachmentViewerItem(refs: [ref], start: ref.id)
         } label: {
-            AgentAttachmentThumbnail(ref: ref, loader: loader, size: 26)
+            AgentAttachmentThumbnail(ref: ref, loader: loader, size: size)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("Photo \(ref.name). Opens full screen."))

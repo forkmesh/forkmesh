@@ -79,11 +79,20 @@ that fills on hover.
 ## Architecture
 
 **A second design, not a second theme.** `app/design` (`classic` or `next`) is
-independent of `app/theme` (`system`, `dark`, `light`, or a Market theme id).
+independent of `app/theme` (`system`, `dark`, `light`, `halloween`, or a Market
+theme id).
 `MainWindow::applyTheme()` resolves it with `Theme::designFromSettings()`;
 `FORKMESH_DESIGN` overrides it. A Market theme forces Classic because its palette
 keys are Classic's hex values. The window's view menu and Settings → Appearance
-both switch the interface.
+both switch the interface, and both pick the theme: the view menu's Theme
+section lists `MainWindow::appThemeChoices()`, the same list as
+`appThemeCombo`, and goes through that combo when Settings has been built.
+
+**Halloween is a built-in theme, not a Market skin.** `halloween` always uses the
+dark base and installs `Theme::halloweenRoleColors()` (pumpkin-orange accent,
+bone text on near-black purple, slime-green success, candle-yellow warning)
+through `Theme::setRoleOverrides`, the same path an instance theme takes. So it
+works in both interfaces, and it replaces the instance theme while it is on.
 
 **Next is Classic recoloured, plus overlays.** `Theme::nextStyleSheet(dark)`
 takes the Classic sheet, replaces its neutral greys in one pass
@@ -184,6 +193,15 @@ descenders.
   `Theme::hex` return them, `nextPalette` and `overridePalette` recolour the
   base stylesheet, so both interfaces follow. A Market skin wins over the
   instance theme. An instance on the default theme clears the overrides.
+- **Movable top-bar clock** (both designs): the Timers package's clock and its
+  chips sit left beside the agent/node/action indicators, in the middle beside
+  search, or right before the view button. Drag the clock and drop it in the
+  left, middle or right third of the top bar, or pick a spot under "Clock
+  position" in the clock's menu or the top bar's right-click menu. A drag
+  swallows the release, so it never opens the clock menu. The spot is
+  `ui/timersClockPlacement` (`center` or `right`; removed for the default
+  `left`), kept when the package is removed. `installTimersClockSlots` records
+  the three rows; `setTimersClockPlacement` moves the strip between them.
 - **Welcome and sign-in card**: an overlay on the shell, never a gate
   (`onboarding/welcomeSignInSeenV1`). The sign-in panel is modal over the window.
   Account notices route through `NextAccess::accountNotice`.
@@ -241,7 +259,7 @@ Icons are `fgMuted`: a button opts in with the `nextIconRole` property, which
 28 px high with 16 px icons on a 4 px grid; the drag strip uses 20 px buttons
 with 14 px icons. The send column drops its icons for text labels: the button
 Enter triggers (`enterTarget`) is the accent primary, the other is a raised
-secondary, and "task" is a ghost. Object names, layout positions, settings
+secondary, and "send to: #channel" is a ghost. Object names, layout positions, settings
 keys, tooltips and Classic are unchanged.
 
 ## Must not break
@@ -299,7 +317,7 @@ unchanged.
   test programs; some charts and badges; rich-text colours.
 - Widgets styled once at build time do not follow a live design switch until
   rebuilt; the prompt composer's Next sizes and its icon-less send, add and
-  task buttons are one such case. Its baked mode, effort and model icons do
+  send-to buttons are one such case. Its baked mode, effort and model icons do
   follow a dark/light switch (`refreshComposerIcons` from
   `refreshThemedIcons`).
 - Overlay coverage for remaining object names and Market package pages; text

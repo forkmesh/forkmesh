@@ -127,6 +127,68 @@ Invariants:
 - Durable per-row state (folders, unread) is keyed by `agentReadKey()`: the
   local id, `cloud:<relay id>` or `claude:<uuid>`.
 
+### Importing Claude Code sessions (2026-10-22)
+
+**Import** (pinned at the left of the list's action bar,
+`showClaudeSessionImportDialog` in `MainWindowClaudeImport.cpp`) lists every
+Claude Code and Claude Desktop session that ran in the open repository, of any
+age, and turns the ones picked into ordinary stored agents.
+
+- **Where sessions come from.** `ClaudeSessionScan::listAll` reads
+  `<config>/projects/<key>/*.jsonl` under `~/.claude` and the desktop's own
+  `CLAUDE_CONFIG_DIR`, where `<key>` is the cwd with every non-alphanumeric
+  character turned into `-` (`projectKey`). Only folders whose key starts with
+  the repository's are opened unless **Every folder** is ticked. A session
+  copied into two project folders is listed once, from the folder matching its
+  cwd. Sessions with no prompt and no title are left out. ForkMesh's own
+  account folders (`data/agents/accounts`) are not read: those are its agents.
+- **Names.** In order: Claude Desktop's title
+  (`<Claude config>/claude-code-sessions/<account>/<org>/local_*.json`, keyed by
+  `cliSessionId`; `~/.config/Claude` on Linux), the last `custom-title`
+  (`/rename`), the last `ai-title`, then the first typed prompt cut to one line
+  of 80 characters. External rows use the same names, so headless sessions no
+  longer all read "Claude Code session".
+- **Rows that are not offered.** Headless sessions (an `sdk-*` entrypoint:
+  `claude -p`, the SDK, ForkMesh's own agents and special agents) and sessions
+  in the agent worktree root (hundreds of ForkMesh runs on a busy machine) are
+  left out unless **Headless runs** is ticked. One whose worktree belongs to
+  an agent still in the list is never shown. A session already
+  imported says so; importing it again refreshes its name.
+- **The agent.** `createImportedClaudeAgent` stores a Claude Code session with
+  status Success, the session's name as title, its first prompt, model, first
+  and last timestamps, and `claudeImport` (`id`, `path`, `cwd`, `bytes`) in
+  `meta.json`. A cwd inside the agent worktree root on a branch adopts that
+  worktree (`worktreeName`, `branchName`); anything else is a no-worktree
+  session that runs in the original cwd when it is inside the repository, else
+  in the checkout.
+- **Transcript.** `ClaudeSessionImport::convertLines` turns typed prompts into
+  `_local_user`, keeps assistant turns and tool results with the session id
+  stamped on them, drops sidechains, meta lines and command echoes, and clips a
+  tool result to 16 KB. The readable log gets both sides, so a later switch to
+  Codex hands over the conversation.
+- **Mirroring.** While `claudeImport.bytes` is 0 or more, every 3 s tick
+  (`syncImportedClaudeSessions`) appends whatever the `.jsonl` gained since
+  that offset and refreshes the name, so turns taken in Claude Desktop keep
+  arriving. An imported session is never also shown as an external row.
+- **Continuing it.** The first follow-up resumes the Claude session id found
+  in the transcript. `startCliTranscript` sets `bytes` to -1 (mirroring stops),
+  `launchCliRuntime` copies the `.jsonl` to where the run's account looks for
+  it (`<account config>/projects/<key of the workdir>/<id>.jsonl`,
+  `ClaudeSessionImport::stage`; nothing is copied when that is the same file)
+  and adds `--fork-session`, so the run gets its own session id and never
+  writes into Claude's copy. If the resume still fails, the fallback prompt
+  carries the last 48 KB of the imported log.
+- **Typing into an External Claude Code row.** The composer used to refuse a
+  row it did not start ("No agent open above"). Now
+  `sendPromptToExternalClaudeSession` sends a live session the message
+  through its cross-session inbox, the same path phones use, with
+  `ClaudePeerMessaging::desktopSteerLead()` and sender name
+  `ForkMesh (desktop)`; `steerText` strips either lead for display. A session
+  that refuses or would hold the message without a terminal, or has no
+  socket, offers to continue it as a ForkMesh agent instead. A row that is no
+  longer live is imported and the message continues it. Attachments are
+  refused for these rows.
+
 ### List views, sort and filters
 
 - The list's toolbar (`agentsActionBar`) is an `OverflowActionRow` too
@@ -170,7 +232,8 @@ receive them in `agents.list`, and a change rings `agents.changed`.
   rewrite folder state and the list is rebuilt from `AgentFolders::layout()`.
 - Automatic filing (`AgentFolders::findOrCreate`): special agent sessions go
   in **Special Agents**, live external Claude Code rows in **External Claude
-  Code**. A row already in a folder, or dragged out, is left alone.
+  Code**, imported Claude Code sessions in **Imported Claude Code**. A row
+  already in a folder, or dragged out, is left alone.
 - A header's right-click menu has **Start all in folder** and **Stop all in
   folder** (`startAgentFolderSessions`, `stopAgentFolderSessions`). They act on
   the folder's share of the toolbar's Start all / Stop all population
@@ -317,28 +380,62 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 | **Cloud** (`promptCloudButton`) | `agents/composerRunInCloud` | **new** queues the run on an account agent node (`startQuickAddCloudAgent`, signed `POST /api/repo/<owner>/<repo>/agent-sessions`); Claude Code and Codex, published repositories, no attachments |
 | **Vibe** (`promptVibeCheck`, sparkle icon) | `agents/composerVibe` (off) | Stamps `AgentSession::vibe`; a successful worktree run is merged with clean-up (`maybeAutoMergeForSession`) and pushed (`pushCurrentRepoUpstream`). All merge gates apply |
 
-- The three toggles are icon buttons at the right end of the composer's top
-  strip, before the clear (×), reset and pop-out buttons; only the resize grip
-  stays on the left. An "on" toggle gets a thin accent border, so the branch
-  icon (on by default) reads as connected. They were a checkbox, a
-  checkbox-plus-icon pair and a "vibe" checkbox on the left until 2026-10-22,
-  which crowded the grip and hid what was on.
+- The three toggles are icon buttons in the composer's floating button bar
+  (`FloatingPromptBar`, `promptDragHandle`), before the clear (×), reset and
+  pop-out buttons, with the resize grip at its right end. An "on" toggle gets a
+  thin accent border, so the branch icon (on by default) reads as connected.
+  They were a checkbox, a checkbox-plus-icon pair and a "vibe" checkbox on the
+  left until 2026-10-22, which crowded the grip and hid what was on.
+- The bar is not a row of its own: it floats over the composer's top-right
+  corner, so the chat preview starts at the very top. Its left edge fades from
+  transparent to the composer's surface, so a chat line running under the
+  buttons fades out instead of colliding with them. With no chat to show, a
+  band of the bar's height (`promptTopSpacer`) keeps it off the prompt text.
+  The fade and the gaps between buttons still drag the composer; the grip in
+  the top-right corner resizes it with the bottom-left corner fixed. Until
+  2026-10-22 the bar was a full-width strip with a centre drag pill and the
+  grip on the left.
 - **Chat preview** (`ChatPreviewLabel`, `promptChatPreview`): up to three
   one-line rows over the prompt with the latest messages of the conversation
-  the follow-up button sends to (`promptChatTargetSessionId`: the agent open
-  above, else the last selected one). Rows come from the session's stream
-  events (`_local_user`, `assistant` text, `_codex_agent_complete`), last
-  paragraph of each, elided to the width; with no events, the prompt and
-  `m_lastAssistantText`. Clicking it opens that agent.
+  the composer sends to, each with the sender's small round avatar
+  (16 px). With a chat room open on the Chat page (`promptChatRoom`: #general
+  or any other room, channel or direct message), the rows are that room's
+  latest top-level messages (`chatActorAvatar`), and Enter (and the centred
+  layout's send button) post the prompt to the room through **send to**
+  (below). Otherwise the rows follow the agent open above, else
+  the last selected one (`promptChatTargetSessionId`), with the agent's model
+  icon and your avatar. Agent rows come from the session's stream events
+  (`_local_user`, `assistant` text, `_codex_agent_complete`), last paragraph of
+  each, elided to the width; with no events, the prompt and
+  `m_lastAssistantText`. Clicking an agent preview opens that agent.
   `refreshPromptChatPreview` runs (debounced 250 ms) from
-  `updateQuickAddEnterTarget` and on each new event of that session. Showing
-  or hiding it adds or removes its height from the docked composer
-  (`baseAnchoredHeight`).
-- With a chat to reply to, the follow-up button reads **chat** (comment icon)
-  instead of **add**, so it is clear the text goes to that conversation.
-  **new** (plus), **chat**/**add** (paper airplane) and **task** (checklist)
-  carry small icons in both interfaces (`tintComposerActionButton`; on the
-  accent fill of the Enter target the icon uses the on-accent colour).
+  `updateQuickAddEnterTarget`, on each new event of that session and on each
+  new message in the open room. The rows are painted at a fixed pitch (avatar
+  height plus a 4 px gap) and the docked composer's height is recomputed
+  whenever the row count changes (`baseAnchoredHeight`), so the third line is
+  never clipped; before 2026-10-22 the height only followed showing or hiding
+  the preview, which cut a third line in half.
+- The follow-up button always reads **add**, chat preview or not (the centred
+  workspace layout's send button reads **Add** when it is the Enter target).
+  For part of 2026-10-22 it read **chat** over a preview; the label went back
+  to **add** because "chat" now means a chat channel (below).
+- The top of the send column is **send to: #channel**
+  (`m_quickAddSendToChannelButton`, object name still `quickAddGenieButton`
+  for the stylesheets): it names the chat conversation open on the Chat page
+  (`m_currentConversation`, labelled by `chatConversationLabel`) and posts the
+  prompt there through `sendChatText`, the same path as the Chat page's own
+  composer (`sendCurrentMessage`), refusing attachments and a room you cannot
+  post in. `updateChatConversationHeading` and `updateQuickAddEnterTarget`
+  refresh its label. While the Chat page is open (`promptChatRoom`) it takes
+  Enter, and **add** and **new** step aside. For part of 2026-10-22 the
+  follow-up button did this as **chat**, by pasting the text into the room's
+  own message box (`sendPromptToChatRoom`). It replaced
+  the **task** button, which filed the prompt in General: that lives in the
+  agent/model dropdown as **Task · assign**, where leaving the assignee on
+  Unassigned files the task in General.
+- **new** (plus), **add** (paper airplane) and **send to** (comment) carry
+  small icons in both interfaces (`tintComposerActionButton`; on the accent
+  fill of the Enter target the icon uses the on-accent colour).
 
 - The repository comes from `resolveAgentRepositoryIndex` for local and cloud
   runs. Phones expose the same switches through `agents.start`.

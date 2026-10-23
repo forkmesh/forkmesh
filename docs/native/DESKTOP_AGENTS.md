@@ -77,8 +77,8 @@ ten minutes.
   apply. Outside ids are negative.
 - Session rows carry `diffStats` (`files`, `ahead`, `behind`, `added`,
   `removed`, `dirty`, `conflicted`), `worktree`, `attachments` (the first
-  image), `priority` (1..99), `mode`, `unread`, and `held: true` for a paused
-  session. The reply also carries `queue`, `folders` and `defaultMode`.
+  image), `priority` (1..99), `mode`, `unread`, `held: true` for a paused
+  session, and `backgroundTasks` (open backgrounded tasks) when above zero. The reply also carries `queue`, `folders` and `defaultMode`.
 - The `/proc` scan (`tickMachineAgents`, every 2 s) runs while a phone or
   browser is connected; a change rings `agents.changed`. The bell rings as soon
   as something changes, then at most every 300 ms.
@@ -307,18 +307,35 @@ the line under the cursor and restores the cursor, so nothing scrolls.
   Eagle (the default on both). Logic in
   `AgentLines.chips` / `AgentListView` (iOS FMAgents) and `AgentLineChips`
   (Android core).
-- **Row**: agent dot with status, title, short age, a meta line (host glyph,
-  repository, branch, worktree, ahead/behind/conflict, files, churn bars on
-  the desktop's log scale, PR), and a thumbnail of the first image.
+- **Row** (Compact, Zen, Full): agent dot with status, title, short age, a
+  meta line (host glyph, repository, branch, worktree, ahead/behind/conflict,
+  files, churn bars on the desktop's log scale, PR), and a thumbnail of the
+  first image. Eagle rows differ; see below.
 - **Usage bars** (`AgentUsageBars`): one small bar per usage window, coloured by
   state; on iOS they push the native Usage screen. On Android the Usage card
   on Desktop agents opens the native Usage screen when tapped.
 
 ### Eagle view on iOS
 
-Each row shows the title, then tiny host, branch and worktree glyphs, the file
-count with churn bars (`AgentChurnBars`), the short age (`AgentEagleStats`),
-and a dialog ticker in the rest of the line.
+Each row shows the title and a dialog ticker under it, with an image tile
+(`AgentEagleTile`) on the right. Since 2026-10-22 there is no agent dot on the
+left, so the text starts at the row's edge (asked for from a phone screenshot:
+the dot took width and the churn bars were hard to read).
+
+- The tile shows the first image of the session, or a blank tile when there is
+  none. Its border is the churn (`AgentChurnRing`): one continuous 2 pt stroke,
+  green for the share of lines added and red for the share removed, so the
+  larger side is the longer stretch. With no churn the border is a hairline.
+- A small semi-transparent pill on the tile's top right (`AgentTilePill`) holds
+  the file count and a dot coloured by status: blue running, orange waiting,
+  green done, purple merged, red failed, grey queued or stopped.
+- The tile's bottom left shows one dot per open background task
+  (`AgentTileTasks`, up to three, then `+n`), from the desktop row's
+  `backgroundTasks`: the session's open backgrounded tasks
+  (`agentclitasks::Ledger::openBackground`). The desktop rings
+  `agents.changed` when that count changes. The dots blink while the agent is
+  active; Reduce Motion holds them still.
+- The unread dot sits on the tile's top left.
 
 - `AgentEagleStrip` keeps the lane as a train of copies of the latest line
   with 5 pt seams, scrolling left at 80 pt/s after a 0.5 s pause, so the lane is

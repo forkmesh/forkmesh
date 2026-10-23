@@ -77,6 +77,15 @@ fun AppearanceCard(navigator: Navigator) {
             haptics.selection()
             AppearanceStore.setThemeMode(it)
         }
+        Box(Modifier.height(FmSpace.x3))
+        SettingsSwitch(
+            "Match the instance's theme",
+            "Wear the colours this instance's admin picked. Your own accent and surfaces below come back when this is off.",
+            appearance.matchInstanceTheme,
+        ) {
+            haptics.selection()
+            AppearanceStore.setMatchInstanceTheme(it)
+        }
         Box(Modifier.height(FmSpace.x4))
         Text("Accent colour", style = label)
         Box(Modifier.height(FmSpace.x2))

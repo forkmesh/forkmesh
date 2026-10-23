@@ -1435,11 +1435,20 @@ void checkFooterOverlayGeometry(MainWindow &window)
         window.findChild<QPushButton *>(QStringLiteral("promptDetachButton"));
     auto *promptText =
         window.findChild<QPlainTextEdit *>(QStringLiteral("issueQuickAdd"));
-    check(promptClear && promptText && promptGrip &&
+    check(promptClear && promptText && promptGrip && promptDetach &&
               promptClear->parentWidget() == promptGrip->parentWidget() &&
-              promptClear->geometry().left() > promptGrip->geometry().right(),
-          QStringLiteral("the tiny clear button sits immediately right of the "
-                         "prompt resize grip"));
+              promptGrip->geometry().left() > promptDetach->geometry().right() &&
+              promptGrip->geometry().left() > promptClear->geometry().right(),
+          QStringLiteral("the prompt resize grip sits at the right end of the "
+                         "floating button bar"));
+    check(!window.findChild<QWidget *>(QStringLiteral("promptDragPill")) &&
+              promptHandle && promptWrapper &&
+              promptHandle->parentWidget() == promptWrapper &&
+              promptWrapper->layout()->indexOf(promptHandle) < 0 &&
+              promptHandle->geometry().right() >= promptWrapper->width() - 2 &&
+              promptHandle->geometry().top() <= 1,
+          QStringLiteral("the composer has no centre drag bar and its buttons "
+                         "float over the top-right corner"));
     if (promptClear && promptText) {
         promptText->setPlainText(QStringLiteral("a prompt to clear"));
         promptClear->click();
@@ -1530,8 +1539,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
         const QPoint gripAt = promptGrip->mapToGlobal(
             QPoint(promptGrip->width() / 2, promptGrip->height() / 2));
         sendMouse(promptGrip, QEvent::MouseButtonPress, gripAt);
-        sendMouse(promptGrip, QEvent::MouseMove, gripAt + QPoint(-60, -40));
-        sendMouse(promptGrip, QEvent::MouseButtonRelease, gripAt + QPoint(-60, -40));
+        sendMouse(promptGrip, QEvent::MouseMove, gripAt + QPoint(60, -40));
+        sendMouse(promptGrip, QEvent::MouseButtonRelease, gripAt + QPoint(60, -40));
         QApplication::processEvents();
         check(prompt->width() > dragged.width() &&
                   prompt->height() > dragged.height(),
@@ -3086,6 +3095,55 @@ void checkAgentAttentionDoesNotTakeFocus(MainWindow &window)
 
     window.testRemoveAgentSession(waiting.id);
     window.testClearPageNotices();
+    QApplication::processEvents();
+}
+
+void checkPromptPreviewShowsChatRoom(MainWindow &window)
+{
+    const QString room = QStringLiteral("#prompt-preview");
+    const QString current = window.testCurrentConversation();
+    const QString restore =
+        current.isEmpty() ? QStringLiteral("#general") : current;
+    window.testShowChatSection();
+    window.testSwitchConversation(room);
+    window.testDeliverChatMessage(room, QStringLiteral("peer-ana"),
+                                  QStringLiteral("ana"),
+                                  QStringLiteral("morning, room"));
+    window.testDeliverChatMessage(room, QStringLiteral("peer-ben"),
+                                  QStringLiteral("ben"),
+                                  QStringLiteral("standup in five"));
+    window.testRefreshPromptChatPreview();
+    QApplication::processEvents();
+    QLabel *preview = window.testPromptChatPreview();
+    check(preview && !preview->isHidden() &&
+              preview->text().contains(QStringLiteral("ana: morning, room")) &&
+              preview->text().contains(QStringLiteral("ben: standup in five")),
+          QStringLiteral("with a chat room open the composer previews that room "
+                         "(%1)")
+              .arg(preview ? preview->text().left(200) : QStringLiteral("none")));
+    QPushButton *add = nullptr;
+    for (QPushButton *button :
+         window.findChildren<QPushButton *>(QStringLiteral("quickAddSendIcon")))
+        if (button->text() == QLatin1String("add"))
+            add = button;
+    check(add && !add->property("enterTarget").toBool(),
+          QStringLiteral("with a chat room open the follow-up button still reads "
+                         "add and Enter does not pick it"));
+    auto *sendTo = window.findChild<QPushButton *>(QStringLiteral("quickAddGenieButton"));
+    check(sendTo && sendTo->isEnabled() &&
+              sendTo->text().startsWith(QStringLiteral("send to: #prompt")) &&
+              sendTo->toolTip().contains(QStringLiteral("prompt-preview")) &&
+              sendTo->toolTip().contains(QStringLiteral("(Enter)")),
+          QStringLiteral("send to names the open room and takes Enter (%1 | %2)")
+              .arg(sendTo ? sendTo->text() : QStringLiteral("none"),
+                   sendTo ? sendTo->toolTip() : QString()));
+    const QString shots = qEnvironmentVariable("FORKMESH_WORKSPACE_SHOT");
+    if (auto *wrapper = window.findChild<QWidget *>(QStringLiteral("promptWrapper"));
+        wrapper && !shots.isEmpty()) {
+        QDir().mkpath(shots);
+        wrapper->grab().save(QDir(shots).filePath(QStringLiteral("composer-room.png")));
+    }
+    window.testSwitchConversation(restore);
     QApplication::processEvents();
 }
 
@@ -10443,13 +10501,35 @@ void checkWorkspaceDesign(MainWindow &window)
           QStringLiteral("three compact lines of the latest chat sit over the prompt "
                          "(%1)")
               .arg(preview ? preview->text().left(200) : QStringLiteral("none")));
+    if (preview && wrapper) {
+        auto *bar = wrapper->findChild<QWidget *>(QStringLiteral("promptDragHandle"));
+        const QRect previewInWrapper(preview->mapTo(wrapper, QPoint()), preview->size());
+        check(preview->height() >= preview->sizeHint().height() &&
+                  previewInWrapper.top() <= 2 && bar && bar->isVisibleTo(wrapper) &&
+                  bar->geometry().intersects(previewInWrapper) &&
+                  bar->geometry().left() > previewInWrapper.left() + 40,
+              QStringLiteral("the chat starts at the composer's top, every line fits, "
+                             "and the buttons float over its right end (preview %1 of "
+                             "%2 px at y %3)")
+                  .arg(preview->height())
+                  .arg(preview->sizeHint().height())
+                  .arg(previewInWrapper.top()));
+        auto *spacer = wrapper->findChild<QWidget *>(QStringLiteral("promptTopSpacer"));
+        check(spacer && spacer->isHidden(),
+              QStringLiteral("the top band only reserves room while there is no chat"));
+        if (!shots.isEmpty()) {
+            settle();
+            wrapper->grab().save(QDir(shots).filePath(QStringLiteral("composer.png")));
+        }
+    }
     QPushButton *chat = nullptr;
     for (QPushButton *button :
          window.findChildren<QPushButton *>(QStringLiteral("quickAddSendIcon")))
-        if (button->text() == QLatin1String("chat"))
+        if (button->text() == QLatin1String("add"))
             chat = button;
     check(chat && !chat->icon().isNull() && chat->isVisibleTo(&window),
-          QStringLiteral("with a recent chat the add button reads chat, with an icon"));
+          QStringLiteral("with a recent chat the follow-up button still reads add, "
+                         "with an icon"));
     if (chat && wrapper) {
         const QRect inWindow(chat->mapTo(&window, QPoint()), chat->size());
         const QRect wrapperInWindow(wrapper->mapTo(&window, QPoint()), wrapper->size());
@@ -10459,7 +10539,7 @@ void checkWorkspaceDesign(MainWindow &window)
             dock ? QRect(dock->mapTo(&window, QPoint()), dock->size()) : QRect();
         check(window.rect().contains(inWindow) && wrapperInWindow.contains(inWindow) &&
                   (!dock || dockInWindow.contains(wrapperInWindow)),
-              QStringLiteral("the chat button and the composer are on screen, not cut "
+              QStringLiteral("the add button and the composer are on screen, not cut "
                              "off on the right (button %1..%2, composer %3..%4, "
                              "strip %5..%6)")
                   .arg(inWindow.left())
@@ -10472,7 +10552,7 @@ void checkWorkspaceDesign(MainWindow &window)
     for (const char *name : {"quickAddGenieButton"}) {
         auto *button = window.findChild<QPushButton *>(QLatin1String(name));
         check(button && !button->icon().isNull(),
-              QStringLiteral("the task button carries an icon"));
+              QStringLiteral("the send-to button carries an icon"));
     }
     shoot(QStringLiteral("agents-wide"));
 
@@ -10516,8 +10596,8 @@ void checkWorkspaceDesign(MainWindow &window)
     settle();
     auto *centredSend = window.findChild<QPushButton *>(QStringLiteral("workspaceSend"));
     check(centredSend && centredSend->isVisibleTo(&window) &&
-              centredSend->text() == QStringLiteral("Chat"),
-          QStringLiteral("the new layout's send button reads Chat when it replies "
+              centredSend->text() == QStringLiteral("Add"),
+          QStringLiteral("the new layout's send button reads Add when it replies "
                          "to the open agent (%1)")
               .arg(centredSend ? centredSend->text() : QStringLiteral("none")));
     shoot(QStringLiteral("agents-new-layout"));
@@ -15544,6 +15624,7 @@ else:
 
     if (workspaceDesignOnly) {
         checkWorkspaceDesign(window);
+        checkPromptPreviewShowsChatRoom(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -19906,6 +19987,39 @@ else:
               .arg(removedStyle)
               .arg(removedChoice));
 
+    const int halloweenChoice =
+        appThemeCombo ? appThemeCombo->findData(QStringLiteral("halloween")) : -1;
+    if (halloweenChoice >= 0)
+        appThemeCombo->setCurrentIndex(halloweenChoice);
+    QApplication::processEvents();
+    const QString halloweenBg = Theme::hex(Theme::Role::Bg);
+    const QString halloweenAccent = Theme::hex(Theme::Role::Accent);
+    const QString halloweenWindow =
+        qApp->palette().color(QPalette::Window).name(QColor::HexRgb);
+    const bool halloweenDark = forkmesh::ui::currentThemeIsDark();
+    const QString halloweenPreference =
+        QSettings().value(QStringLiteral("app/theme")).toString();
+    check(halloweenChoice >= 0 &&
+              halloweenPreference == QStringLiteral("halloween") &&
+              halloweenDark && halloweenBg == QLatin1String("#120b10") &&
+              halloweenAccent == QLatin1String("#f97316") &&
+              halloweenWindow != QLatin1String("#0d1117") &&
+              halloweenWindow != QLatin1String("#09090b"),
+          QStringLiteral("choosing Halloween recolours the app in pumpkin "
+                         "orange on a near-black purple (choice=%1 "
+                         "preference=%2 dark=%3 bg=%4 accent=%5 window=%6)")
+              .arg(halloweenChoice)
+              .arg(halloweenPreference)
+              .arg(halloweenDark)
+              .arg(halloweenBg, halloweenAccent, halloweenWindow));
+    const int systemChoice =
+        appThemeCombo ? appThemeCombo->findData(QStringLiteral("system")) : -1;
+    if (systemChoice >= 0)
+        appThemeCombo->setCurrentIndex(systemChoice);
+    QApplication::processEvents();
+    check(Theme::hex(Theme::Role::Accent) != QLatin1String("#f97316"),
+          QStringLiteral("leaving Halloween drops its colours"));
+
     QPushButton *removeCapture = nullptr;
     const QList<QPushButton *> initialPackageActions =
         allMarketActions(QStringLiteral("marketPackageAction-capture"));
@@ -20185,6 +20299,31 @@ else:
               window.testTimerChipTexts().isEmpty(),
           QStringLiteral("installing Timers puts a little clock in the window's "
                          "top bar"));
+
+    const QString clockSlotBefore = window.testTimersClockSlot();
+    window.testDropTimersClock(0.9);
+    QApplication::processEvents();
+    const QString clockSlotRight = window.testTimersClockSlot();
+    const QString storedRight =
+        QSettings().value(QStringLiteral("ui/timersClockPlacement")).toString();
+    window.testDropTimersClock(0.5);
+    QApplication::processEvents();
+    const QString clockSlotCenter = window.testTimersClockSlot();
+    window.testDropTimersClock(0.1);
+    QApplication::processEvents();
+    const QString clockSlotLeft = window.testTimersClockSlot();
+    check(clockSlotBefore == QStringLiteral("left") &&
+              clockSlotRight == QStringLiteral("right") &&
+              storedRight == QStringLiteral("right") &&
+              clockSlotCenter == QStringLiteral("center") &&
+              clockSlotLeft == QStringLiteral("left") && timersStrip &&
+              !timersStrip->isHidden() &&
+              !QSettings().contains(QStringLiteral("ui/timersClockPlacement")),
+          QStringLiteral("dragging the clock moves it to the left, middle or "
+                         "right of the top bar and remembers the spot "
+                         "(slots=%1/%2/%3/%4 stored=%5)")
+              .arg(clockSlotBefore, clockSlotRight, clockSlotCenter,
+                   clockSlotLeft, storedRight));
 
     const bool timerEntriesAdded =
         window.testAddTimer(QStringLiteral("25m standup")) &&
@@ -22830,6 +22969,7 @@ else:
     checkChatPingRaisesNoCard(window);
     checkPrivateChatNotFiledAsPing(window);
     checkReplayedBacklogRepaintsOnce(window);
+    checkPromptPreviewShowsChatRoom(window);
     checkLongFeedRendersRecentWindow(window);
     checkCloudLogMonitorAlert(window);
     checkCloudLogMerged(window);
@@ -33794,18 +33934,13 @@ else:
                   QStringLiteral("picking a speed persists the effort the next run "
                                  "is launched with"));
         }
-        // The task-list button is the top of the send column, above "add" and
-        // "new". It files the prompt in General instead of starting a genie
-        // agent (adhoc #151). The strip of session dots that used to sit above
-        // the prompt is gone (adhoc #38) — its state lives in the top bar now.
-        auto *genieButton =
+        auto *sendToButton =
             seeded.findChild<QPushButton *>(QStringLiteral("quickAddGenieButton"));
-        check(genieButton && genieButton->isVisible() &&
-                  genieButton->text() == QStringLiteral("task") &&
-                  genieButton->toolTip().contains(QStringLiteral("general task list")) &&
-                  !genieButton->toolTip().contains(QStringLiteral("agent"),
-                                                   Qt::CaseInsensitive),
-              QStringLiteral("the composer task button files a General task"));
+        check(sendToButton && sendToButton->isVisible() &&
+                  sendToButton->text().startsWith(QStringLiteral("send to: ")),
+              QStringLiteral("the top of the send column sends the prompt to the "
+                             "current chat channel (%1)")
+                  .arg(sendToButton ? sendToButton->text() : QStringLiteral("none")));
         auto *repoSizeChart = seeded.findChild<QWidget *>(QStringLiteral("repoSizeChart"));
         auto *repoLinesChart = seeded.findChild<QWidget *>(QStringLiteral("repoLinesChart"));
         auto *repoFilesChart = seeded.findChild<QWidget *>(QStringLiteral("repoFilesChart"));

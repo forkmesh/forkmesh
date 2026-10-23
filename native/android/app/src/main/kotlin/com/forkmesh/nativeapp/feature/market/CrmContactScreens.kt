@@ -329,6 +329,10 @@ internal fun CrmEmailRowView(email: CrmActivity, who: String?, onTap: () -> Unit
         Column(Modifier.weight(1f)) {
             Text(email.subject.ifEmpty { "(no subject)" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(fontWeight = FontWeight.Medium), color = Fm.colors.textPrimary)
             Text(listOf(who ?: email.to, email.sender, relativeTime(email.at)).filter { it.isNotEmpty() }.joinToString(" · "), maxLines = 1, style = Fm.text.labelSmall, color = Fm.colors.textSecondary)
+            val engagement = if (email.incoming) "" else email.engagementLine
+            if (engagement.isNotEmpty()) {
+                Text(engagement, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.labelSmall.copy(fontWeight = FontWeight.Medium), color = Fm.colors.accent)
+            }
         }
         CrmChip(email.status, tint)
     }
@@ -574,6 +578,30 @@ class CrmEmailScreen(private val model: CrmModel, private val email: CrmActivity
                     }
                 }
                 if (shown.error.isNotEmpty()) Text(shown.error, style = Fm.text.bodySmall, color = Fm.colors.danger)
+                if (!shown.incoming && shown.engagementLine.isNotEmpty()) {
+                    Text("Reading", style = Fm.text.labelMedium, color = Fm.colors.textSecondary)
+                    CrmCard(Modifier.fillMaxWidth()) {
+                        Column {
+                            val read = shown.readLabel.ifEmpty { if (shown.silentClient) "${shown.mailClient} doesn't report it" else "Not reported" }
+                            val slides = shown.slideCount > 0
+                            val reach = if (slides && shown.slideReached > 0) {
+                                "Slide ${shown.slideReached} of ${shown.slideCount}" + if (shown.slideTitle.isEmpty()) "" else " · ${shown.slideTitle}"
+                            } else {
+                                shown.scrollLabel.ifEmpty { "Not reported" }
+                            }
+                            com.forkmesh.nativeapp.ui.kit.FmKeyValueRow("Opens", "${shown.opens}")
+                            com.forkmesh.nativeapp.ui.kit.FmKeyValueRow("Clicks", "${shown.clicks}")
+                            com.forkmesh.nativeapp.ui.kit.FmKeyValueRow("Read for", read)
+                            com.forkmesh.nativeapp.ui.kit.FmKeyValueRow(if (slides) "Reached" else "Scrolled", reach)
+                            if (shown.mailClient.isNotEmpty()) com.forkmesh.nativeapp.ui.kit.FmKeyValueRow("Mail app", shown.mailClient)
+                        }
+                    }
+                    Text(
+                        "Read time and scroll come from mail apps that run CSS animations, such as Apple Mail without Mail Privacy Protection. Gmail and protected inboxes report opens and clicks only.",
+                        style = Fm.text.bodySmall,
+                        color = Fm.colors.textSecondary,
+                    )
+                }
                 when {
                     shown.plainBody.isNotEmpty() -> Text(shown.plainBody, style = Fm.text.bodyMedium, color = Fm.colors.textPrimary)
                     !fetched -> FmCircularProgressIndicator()

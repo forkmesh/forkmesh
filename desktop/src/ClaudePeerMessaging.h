@@ -36,6 +36,7 @@ inline constexpr int kPeerProtocol = 1;
 
 QString forkMeshSenderName();
 QString steerLead();
+QString desktopSteerLead();
 QString steerBody(const QString &text);
 QString steerText(const QString &body);
 QStringList configDirs(const QString &home, const QString &accountsRoot, const QStringList &extra);
@@ -66,5 +67,6 @@ ClaudeInboundPolicy inboundPolicy(const QString &managed, const QString &flag, c
 ClaudeInboundPolicy predictInbound(const ClaudePeerSession &session, const QByteArrayList &argv,
                                    const QString &receiverClass, const QString &managedPath);
 bool deliver(const ClaudePeerSession &session, const QString &text, QString *error);
+bool deliverFromDesktop(const ClaudePeerSession &session, const QString &text, QString *error);
 
 } // namespace ClaudePeerMessaging
