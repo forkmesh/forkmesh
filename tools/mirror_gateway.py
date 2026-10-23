@@ -3845,9 +3845,14 @@ PULSE_SCORE_WEIGHTS = {
     "issuesClosed": 3,
     "reviews": 4,
     "comments": 1,
+    "pullsOpened": 2,
+    "issuesOpened": 1,
 }
 PULSE_COMMITS_PER_DAY = 5
 PULSE_COMMENTS_PER_THREAD = 3
+PULSE_OPENED_PER_DAY = 3
+PULSE_TIE_BREAK = ("merged", "reviews", "issuesClosed", "activeDays",
+                   "commits", "pullsOpened", "issuesOpened", "comments")
 PULSE_LIST_LIMIT = 200
 PULSE_LEADERBOARD_LIMIT = 50
 PULSE_COMMITTERS_LIMIT = 20
@@ -4042,6 +4047,9 @@ def pulse_exclusion_rules(
     raw = (os.environ if environ is None else environ).get(
         PULSE_EXCLUDE_ENV, "")
     rules = [item.strip().casefold() for item in str(raw).split(",")]
+    for name in ("FORKMESH_COMMIT_NAME", "FORKMESH_COMMIT_EMAIL"):
+        rules.append(" ".join(str(environ.get(name, "") if environ is not None
+                                  else os.environ.get(name, "")).split()).casefold())
     if node:
         rules.append(str(node).strip().casefold())
     return tuple(sorted({rule for rule in rules if rule}))[:200]
@@ -4737,17 +4745,13 @@ def _pulse_ranking(
 ) -> list[tuple[int, str, int, dict[str, int]]]:
     ordered = sorted(
         scores.items(),
-        key=lambda item: (-item[1][0], names.get(item[0], item[0]).casefold()),
+        key=lambda item: (
+            -item[1][0],
+            *(-int(item[1][1].get(name, 0)) for name in PULSE_TIE_BREAK),
+            names.get(item[0], item[0]).casefold(), item[0]),
     )
-    ranked: list[tuple[int, str, int, dict[str, int]]] = []
-    previous_score = None
-    rank = 0
-    for position, (key, (score, parts)) in enumerate(ordered, 1):
-        if score != previous_score:
-            rank = position
-            previous_score = score
-        ranked.append((rank, key, score, parts))
-    return ranked
+    return [(position, key, score, parts)
+            for position, (key, (score, parts)) in enumerate(ordered, 1)]
 
 
 def _pulse_empty_parts() -> dict[str, int]:
@@ -4760,8 +4764,11 @@ def _pulse_scores(
     parts: dict[str, dict[str, int]] = {}
     events = ledger["events"]
     threads: Counter[tuple[str, str]] = Counter()
-    fields = {"merged": "merged", "review": "reviews", "closed": "issuesClosed"}
-    for _at, key, kind, thread, _number, _bug in events[
+    opened: Counter[tuple[str, str, int]] = Counter()
+    active: dict[str, set[int]] = {}
+    fields = {"merged": "merged", "review": "reviews", "closed": "issuesClosed",
+              "pull": "pullsOpened", "issue": "issuesOpened"}
+    for at, key, kind, thread, _number, _bug in events[
             bisect.bisect_left(events, (start,)):
             bisect.bisect_left(events, (end,))]:
         field = fields.get(kind, "")
@@ -4769,8 +4776,13 @@ def _pulse_scores(
             threads[(key, thread)] += 1
             if threads[(key, thread)] <= PULSE_COMMENTS_PER_THREAD:
                 field = "comments"
+        elif kind in ("pull", "issue"):
+            opened[(key, kind, at // 86400)] += 1
+            if opened[(key, kind, at // 86400)] > PULSE_OPENED_PER_DAY:
+                field = ""
         if field:
             parts.setdefault(key, _pulse_empty_parts())[field] += 1
+            active.setdefault(key, set()).add(at // 86400)
     for key, times in ledger["commits"].items():
         low = bisect.bisect_left(times, start)
         high = bisect.bisect_left(times, end)
@@ -4778,9 +4790,11 @@ def _pulse_scores(
             days = Counter(at // 86400 for at in times[low:high])
             parts.setdefault(key, _pulse_empty_parts())["commits"] += sum(
                 min(PULSE_COMMITS_PER_DAY, count) for count in days.values())
+            active.setdefault(key, set()).update(days)
     return {
-        key: (sum(PULSE_SCORE_WEIGHTS[name] * value
-                  for name, value in row.items()), row)
+        key: (sum(PULSE_SCORE_WEIGHTS[name] * row[name]
+                  for name in PULSE_SCORE_WEIGHTS),
+              dict(row, activeDays=len(active.get(key, ()))))
         for key, row in parts.items()
         if any(row.values())
     }
@@ -7528,6 +7542,8 @@ class GitRepository:
                 "weights": dict(PULSE_SCORE_WEIGHTS),
                 "commitsPerDay": PULSE_COMMITS_PER_DAY,
                 "commentsPerThread": PULSE_COMMENTS_PER_THREAD,
+                "openedPerDay": PULSE_OPENED_PER_DAY,
+                "tieBreak": list(PULSE_TIE_BREAK),
                 "excludesAutomated": True,
             },
         }
