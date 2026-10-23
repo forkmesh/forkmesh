@@ -8,15 +8,15 @@
    "pitch": "",
    "sections": [
     {
-     "title": "Chat",
-     "items": [
-      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."
-     ]
-    },
-    {
      "title": "Projects",
      "items": [
       "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar."
+     ]
+    },
+    {
+     "title": "Chat",
+     "items": [
+      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."
      ]
     },
     {
@@ -29,6 +29,12 @@
      "title": "World",
      "items": [
       "Where two roads meet open land at the edge of the town's hexagons, the outer road now curves smoothly from one into the next as a three-way junction, and bikes can ride straight through the curve."
+     ]
+    },
+    {
+     "title": "iPhone",
+     "items": [
+      "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock."
      ]
     },
     {
