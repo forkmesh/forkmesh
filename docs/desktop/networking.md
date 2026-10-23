@@ -240,6 +240,19 @@ confirmation. Deleting the cloud instance is an explicit opt-in
 `systemd-run --user` unit that the controller re-attaches to, like add-core.
 Test: `forkmesh-remove-core-node-tests`.
 
+### Replace core node
+
+Each core row also has **Replace…**. It opens the Add core node dialog in
+replace mode (`AddCoreNodeController::setReplaceTarget`): the title names the
+old core, and the options, confirmation and run add `--replace nOLD`. The run
+is one `add-core --replace` unit with an extra `remove` step, so Retry, closing
+the dialog and re-attaching work as they do for an add. While it runs, the
+header button reads "Replacing nOLD…", the old core's row shows
+"Replacing…", and the other Replace and Remove buttons are disabled. Opening
+the dialog from **Add core node** clears the target. The old instance is kept;
+delete it later with **Remove…** and the instance box. Test:
+`forkmesh-add-core-node-tests` (`testReplaceFlow`).
+
 ### Fleet autoscaling panel
 
 Network → Hosts carries **Fleet autoscaling** (`src/FleetAutoscalePanel.{h,cpp}`,

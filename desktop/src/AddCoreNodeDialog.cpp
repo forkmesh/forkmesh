@@ -224,7 +224,7 @@ void AddCoreNodeController::loadOptions()
     if (m_optionsLoading || !isAvailable())
         return;
     m_optionsLoading = true;
-    QProcess *process = spawn(addCoreOptionsArguments(m_script, m_provider), false);
+    QProcess *process = spawn(addCoreOptionsArguments(m_script, m_provider, m_replace), false);
     auto *deadline = new QTimer(process);
     deadline->setSingleShot(true);
     connect(deadline, &QTimer::timeout, process, [process] { process->kill(); });
@@ -318,9 +318,31 @@ void AddCoreNodeController::setProvider(const QString &provider)
     loadOptions();
 }
 
+void AddCoreNodeController::setReplaceTarget(const QString &name)
+{
+    if (isRunning() || name == m_replace)
+        return;
+    m_replace = name;
+    if (m_optionsLoading) {
+        m_reloadOptions = true;
+        return;
+    }
+    loadOptions();
+}
+
+QString AddCoreNodeController::activeReplaceTarget() const
+{
+    if (m_run.state() != AddCoreRun::State::Idle && !m_run.replaces().isEmpty())
+        return m_run.replaces();
+    if (m_run.state() == AddCoreRun::State::Idle && !m_options.unfinishedReplaces.isEmpty())
+        return m_options.unfinishedReplaces;
+    return m_run.state() == AddCoreRun::State::Idle ? m_replace : QString();
+}
+
 void AddCoreNodeController::start(const QString &region, const QString &plan)
 {
-    launch(addCoreArguments(m_script, region, plan, m_options.name, false, m_provider));
+    launch(addCoreArguments(m_script, region, plan, m_options.name, false, m_provider,
+                            m_replace));
 }
 
 void AddCoreNodeController::retry()
@@ -381,7 +403,6 @@ AddCoreNodeDialog::AddCoreNodeDialog(AddCoreNodeController *controller, QWidget 
     : QDialog(parent), m_controller(controller)
 {
     setObjectName(QStringLiteral("addCoreNodeDialog"));
-    setWindowTitle(QStringLiteral("Add core node"));
     setAttribute(Qt::WA_DeleteOnClose);
     setModal(false);
     resize(720, 560);
@@ -398,6 +419,7 @@ AddCoreNodeDialog::AddCoreNodeDialog(AddCoreNodeController *controller, QWidget 
     connect(controller, &AddCoreNodeController::runChanged, this, &AddCoreNodeDialog::refreshRun);
     connect(controller, &AddCoreNodeController::logAppended, this, &AddCoreNodeDialog::appendLog);
     m_log->setPlainText(controller->log());
+    refreshTitle();
     refreshOptions();
     refreshRun();
     const AddCoreRun::State state = controller->run().state();
@@ -410,12 +432,13 @@ QWidget *AddCoreNodeDialog::buildChoosePage()
 {
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
-    auto *title = new QLabel(QStringLiteral("Add a core node to the ForkMesh fleet"));
-    QFont font = title->font();
+    m_chooseTitle = new QLabel(QStringLiteral("Add a core node to the ForkMesh fleet"));
+    m_chooseTitle->setObjectName(QStringLiteral("addCoreTitle"));
+    QFont font = m_chooseTitle->font();
     font.setBold(true);
     font.setPointSizeF(font.pointSizeF() * 1.2);
-    title->setFont(font);
-    layout->addWidget(title);
+    m_chooseTitle->setFont(font);
+    layout->addWidget(m_chooseTitle);
     m_chooseIntro = mutedLabel(QStringLiteral("Loading the fleet and the plan list…"));
     m_chooseIntro->setObjectName(QStringLiteral("addCoreIntro"));
     layout->addWidget(m_chooseIntro);
@@ -461,9 +484,13 @@ QWidget *AddCoreNodeDialog::buildChoosePage()
             return;
         m_confirmText->setText(confirmationText(m_controller->options(), selectedRegion(),
                                                 selectedPlan()));
-        m_create->setText(QStringLiteral("Create and join %1").arg(
-            m_controller->options().name.isEmpty() ? QStringLiteral("the core")
-                                                    : m_controller->options().name));
+        const QString newName = m_controller->options().name.isEmpty()
+                                    ? QStringLiteral("the core")
+                                    : m_controller->options().name;
+        const QString replacing = m_controller->options().replaces;
+        m_create->setText(replacing.isEmpty()
+                              ? QStringLiteral("Create and join %1").arg(newName)
+                              : QStringLiteral("Create %1 and remove %2").arg(newName, replacing));
         showPage(Page::Confirm);
     });
     buttons->addWidget(cancel);
@@ -556,7 +583,8 @@ QWidget *AddCoreNodeDialog::buildProgressPage()
     layout->addWidget(m_log, 3);
     auto *buttons = new QHBoxLayout;
     auto *hint = mutedLabel(QStringLiteral(
-        "Closing this window does not stop the run; reopen it from Add core node."));
+        "Closing this window does not stop the run; reopen it from Add core node or "
+        "the core's Replace… button."));
     buttons->addWidget(hint, 1);
     m_retry = new QPushButton(QStringLiteral("Retry"));
     m_retry->setObjectName(QStringLiteral("addCoreRetry"));
@@ -607,6 +635,18 @@ QString AddCoreNodeDialog::selectedProvider() const
     return m_provider->currentData().toString();
 }
 
+void AddCoreNodeDialog::refreshTitle()
+{
+    const QString replacing = m_controller ? m_controller->activeReplaceTarget() : QString();
+    setWindowTitle(replacing.isEmpty() ? QStringLiteral("Add core node")
+                                       : QStringLiteral("Replace core node %1").arg(replacing));
+    if (m_chooseTitle)
+        m_chooseTitle->setText(
+            replacing.isEmpty()
+                ? QStringLiteral("Add a core node to the ForkMesh fleet")
+                : QStringLiteral("Replace %1 with a new core node").arg(replacing));
+}
+
 void AddCoreNodeDialog::showPage(Page page)
 {
     m_pages->setCurrentIndex(static_cast<int>(page));
@@ -616,6 +656,7 @@ void AddCoreNodeDialog::refreshOptions()
 {
     if (!m_controller)
         return;
+    refreshTitle();
     const AddCoreOptions &options = m_controller->options();
     if (m_controller->optionsLoading() && !options.valid)
         return;
@@ -627,11 +668,16 @@ void AddCoreNodeDialog::refreshOptions()
                                        "starting another core.")
                             .arg(options.unfinishedName, options.unfinishedFailedStep));
     if (options.valid) {
-        m_chooseIntro->setText(
+        QString intro =
             QStringLiteral("The new core will be %1 (fmnext-core-%2), at release %3. Region "
                            "and plan default to the existing cores'.")
                 .arg(options.name, options.name.mid(1),
-                     options.rev.isEmpty() ? QStringLiteral("(unknown)") : options.rev));
+                     options.rev.isEmpty() ? QStringLiteral("(unknown)") : options.rev);
+        if (!options.replaces.isEmpty())
+            intro += QStringLiteral(" Once %1 serves, %2 is taken out of the fleet in the "
+                                    "same run; its instance is kept.")
+                         .arg(options.name, options.replaces);
+        m_chooseIntro->setText(intro);
     }
     m_role->setText(options.voterReason.isEmpty()
                         ? QString()
@@ -707,6 +753,7 @@ void AddCoreNodeDialog::refreshRun()
 {
     if (!m_controller)
         return;
+    refreshTitle();
     const AddCoreRun &run = m_controller->run();
     m_steps->clear();
     for (const AddCoreStep &step : run.steps()) {

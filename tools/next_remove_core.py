@@ -645,6 +645,11 @@ class RemoveBackend:
             job.say("[dry-run] commit %s without the %s block on %s (base %s), not "
                     "pushed" % (FLEET_PATH, job.name, branch, MAIN_REF))
             return
+        if job.state.get("replaced_by"):
+            job.say("%s is committed together with %s by add-core --replace" % (
+                FLEET_PATH, job.state.get("replaced_by")))
+            job.state.set(branch="", commit="")
+            return
         base_text = self.git.show(self.git.rev(MAIN_REF), FLEET_PATH)
         text = next_fleet.retire_core_block(
             next_fleet.remove_core_block(base_text, job.name), job.name)
@@ -1048,7 +1053,8 @@ def main_plan(args, ssh=None, backend=None, out=None):
             "%s is already out of the fleet%s" % (
                 name, "" if record.get("destroyed") else
                 "; tick the instance box to delete it"))
-        job = Job(State(Path(os.devnull), data), common.Runner(execute=False))
+        job = Job(State(Path(os.devnull), data), common.Runner(execute=False),
+                  fleet_file=fleet_file)
     else:
         try:
             planned = backend.plan(fleet_file, name, destroy)
@@ -1058,7 +1064,8 @@ def main_plan(args, ssh=None, backend=None, out=None):
         if planned is not None:
             result.update(planned)
             result["resume"] = False
-            job = Job(State(Path(os.devnull), dict(planned)), common.Runner(execute=False))
+            job = Job(State(Path(os.devnull), dict(planned)), common.Runner(execute=False),
+                      fleet_file=fleet_file)
     if result.get("allowed") is not None and "error" not in result:
         result["description"] = describe(job, backend)
         result["quorum"] = quorum_text(job.state.data)

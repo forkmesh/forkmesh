@@ -60,10 +60,15 @@ const char kFakeTool[] = R"PY(import json, os, sys, time
 here = os.path.dirname(os.path.abspath(__file__))
 state = os.path.join(here, "state.json")
 command = sys.argv[1]
+replaces = sys.argv[sys.argv.index("--replace") + 1] if "--replace" in sys.argv else ""
 if command == "add-core-options":
     aws = os.path.join(here, "options_aws.json")
     chosen = aws if "aws" in sys.argv and os.path.exists(aws) else os.path.join(here, "options.json")
-    print(open(chosen).read().strip())
+    data = json.load(open(chosen))
+    if replaces:
+        data["replaces"] = replaces
+        data["steps"].append({"id": "remove", "title": "Take the replaced core out", "estimate": 520})
+    print(json.dumps(data))
     sys.exit(0)
 if command == "add-core-status":
     print(open(state).read() if os.path.exists(state) else "null")
@@ -71,6 +76,8 @@ if command == "add-core-status":
 with open(os.path.join(here, "args.log"), "a") as log:
     log.write(" ".join(sys.argv[1:]) + "\n")
 steps = json.load(open(os.path.join(here, "options.json")))["steps"]
+if replaces:
+    steps.append({"id": "remove", "title": "Take the replaced core out", "estimate": 520})
 fail_at = open(os.path.join(here, "fail_at")).read().strip() if os.path.exists(os.path.join(here, "fail_at")) else ""
 slow = os.path.exists(os.path.join(here, "slow"))
 resume = "--name" in sys.argv
@@ -78,7 +85,7 @@ def emit(**event):
     line = "FMNEXT-ADD-CORE " + json.dumps(event)
     sys.stdout.write(line[:20]); sys.stdout.flush(); time.sleep(0.02)
     sys.stdout.write(line[20:] + "\n"); sys.stdout.flush()
-emit(event="start", name="n4", execute=True, steps=steps)
+emit(event="start", name="n4", execute=True, steps=steps, replaces=replaces)
 done = {}
 for step in steps:
     if resume and step["id"] != fail_at and step["id"] in ("plan", "vm"):
@@ -146,6 +153,22 @@ void testOptionsParsingAndFormatting()
               unfinished.unfinishedFailedStep == QLatin1String("mesh"),
           "unfinished run parsed");
     check(unfinished.regions == QStringList({"ewr"}), "default region always listed");
+    check(unfinished.replaces.isEmpty() && unfinished.unfinishedReplaces.isEmpty(),
+          "a plain add replaces nothing");
+    const AddCoreOptions replacing = parseAddCoreOptions(
+        R"({"name": "n5", "region": "ewr", "replaces": "n2", "voter_reason": "x",)"
+        R"( "estimate_seconds": 1373, "unfinished": {"name": "n5", "replaces": "n2"}})");
+    check(replacing.replaces == QLatin1String("n2") &&
+              replacing.unfinishedReplaces == QLatin1String("n2"),
+          "replace target parsed");
+    const QString replaceConfirm = confirmationText(replacing, QStringLiteral("ewr"),
+                                                    QStringLiteral("vc2-1c-1gb"));
+    check(replaceConfirm.contains(QLatin1String("then take n2 out of the fleet")) &&
+              replaceConfirm.contains(QLatin1String("instance is kept")) &&
+              replaceConfirm.contains(QLatin1String("with n5 added and n2 removed")),
+          "confirmation describes the removal and the single branch");
+    check(replaceConfirm.contains(QLatin1String("a failure while removing n2 leaves n5 serving")),
+          "confirmation says a failed removal keeps the new core");
 }
 
 void testArgumentsAndHostGuard()
@@ -162,6 +185,18 @@ void testArgumentsAndHostGuard()
                                                 QStringLiteral("n4"), true);
     check(resume == QStringList({"/t/next_fleet.py", "add-core", "--execute", "--name", "n4"}),
           "resume arguments carry only the name");
+    check(addCoreArguments(QStringLiteral("/t/x"), QStringLiteral("ewr"), QString(), QString(),
+                           false, QStringLiteral("vultr"), QStringLiteral("n2")) ==
+              QStringList({"/t/x", "add-core", "--execute", "--region", "ewr", "--replace", "n2"}),
+          "replace arguments");
+    check(addCoreArguments(QStringLiteral("/t/x"), QString(), QString(), QStringLiteral("n5"),
+                           true, QString(), QStringLiteral("n2")) ==
+              QStringList({"/t/x", "add-core", "--execute", "--name", "n5"}),
+          "a resumed replacement keeps its target from the state file");
+    check(addCoreOptionsArguments(QStringLiteral("/t/x"), QStringLiteral("vultr"),
+                                  QStringLiteral("n2")) ==
+              QStringList({"/t/x", "add-core-options", "--json", "--replace", "n2"}),
+          "replace options arguments");
     const QStringList fleet{QStringLiteral("203.0.113.11")};
     check(isFleetInstanceHost(QStringLiteral("fmnext-core-4"), QString(), fleet),
           "fmnext label refused");
@@ -254,6 +289,15 @@ void testStatusLoading()
     finished.loadStatus(R"({"name": "n4", "finished": true, "steps": {"plan": "done", "vm": "done", "mesh": "done", "dns": "done"}})");
     check(finished.state() == AddCoreRun::State::Succeeded && finished.doneCount() == 4,
           "finished status");
+    AddCoreRun replaced;
+    replaced.setDefaultSteps(AddCoreRun::stepsFromJson(QByteArray(kOptions)));
+    replaced.loadStatus(R"({"name": "n5", "replaces": "n2", "failed": {"step": "remove", "error": "quorum"},)"
+                        R"( "steps": {"plan": "done", "remove": "failed"},)"
+                        R"( "step_list": [{"id": "plan", "title": "Plan", "estimate": 2},)"
+                        R"( {"id": "remove", "title": "Take the replaced core out", "estimate": 520}]})");
+    check(replaced.replaces() == QLatin1String("n2") && replaced.steps().size() == 2 &&
+              replaced.steps().at(1).status == AddCoreStep::Status::Failed,
+          "a replacement's status brings its own step list");
 }
 
 struct FakeTool {
@@ -502,6 +546,63 @@ void testDialogFlow(const QString &screenshots)
     QCoreApplication::processEvents();
 }
 
+void testReplaceFlow(const QString &screenshots)
+{
+    FakeTool tool;
+    AddCoreNodeController controller(tool.script);
+    controller.setReplaceTarget(QStringLiteral("n2"));
+    auto *dialog = new AddCoreNodeDialog(&controller);
+    dialog->show();
+    check(waitFor([&] {
+              return controller.options().valid && controller.statusLoaded() &&
+                     controller.options().replaces == QLatin1String("n2");
+          }),
+          "replace: options load with the target");
+    QCoreApplication::processEvents();
+    check(dialog->windowTitle() == QLatin1String("Replace core node n2"), "replace: window title");
+    check(child<QLabel>(dialog, "addCoreTitle")->text() ==
+              QLatin1String("Replace n2 with a new core node"),
+          "replace: page title");
+    check(child<QLabel>(dialog, "addCoreIntro")->text().contains(
+              QLatin1String("n2 is taken out of the fleet in the same run")),
+          "replace: intro names the old core");
+    child<QPushButton>(dialog, "addCoreNext")->click();
+    check(child<QPushButton>(dialog, "addCoreCreate")->text() ==
+              QLatin1String("Create n4 and remove n2"),
+          "replace: create button names both cores");
+    check(child<QLabel>(dialog, "addCoreConfirmText")->text().contains(
+              QLatin1String("then take n2 out of the fleet")),
+          "replace: confirmation");
+    grab(dialog, screenshots, QStringLiteral("replace-core-1-confirm.png"));
+    bool finishedSeen = false;
+    QObject::connect(&controller, &AddCoreNodeController::finished,
+                     [&](bool) { finishedSeen = true; });
+    child<QPushButton>(dialog, "addCoreCreate")->click();
+    check(waitFor([&] { return finishedSeen; }), "replace: run finishes");
+    QCoreApplication::processEvents();
+    check(tool.argsLog().trimmed() ==
+              QLatin1String("add-core --execute --region ewr --plan vc2-1c-1gb --replace n2"),
+          "replace: the tool got the target");
+    check(controller.run().state() == AddCoreRun::State::Succeeded &&
+              controller.run().replaces() == QLatin1String("n2"),
+          "replace: run records the target");
+    check(controller.activeReplaceTarget() == QLatin1String("n2"),
+          "replace: the finished run still names its target");
+    auto *steps = child<QListWidget>(dialog, "addCoreSteps");
+    check(steps && steps->count() == 5 &&
+              steps->item(4)->data(Qt::UserRole).toString() == QLatin1String("remove"),
+          "replace: the removal is a step");
+    grab(dialog, screenshots, QStringLiteral("replace-core-2-success.png"));
+    dialog->close();
+    QCoreApplication::processEvents();
+    controller.clearRun();
+    controller.setReplaceTarget(QString());
+    check(waitFor([&] { return controller.options().valid && controller.options().replaces.isEmpty() &&
+                               !controller.optionsLoading(); }),
+          "replace: clearing the target reloads plain options");
+    check(controller.activeReplaceTarget().isEmpty(), "replace: plain add after clearing");
+}
+
 void testRunSurvivesClosingTheDialog(const QString &screenshots)
 {
     FakeTool tool;
@@ -625,6 +726,7 @@ int main(int argc, char **argv)
     testRunParsing();
     testStatusLoading();
     testDialogFlow(screenshots);
+    testReplaceFlow(screenshots);
     testRunSurvivesClosingTheDialog(screenshots);
     testUnfinishedRunBlocksANewOne();
     testSystemdHelpers();

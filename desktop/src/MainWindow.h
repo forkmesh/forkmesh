@@ -5706,6 +5706,8 @@ private:
     void openAddCoreNodeDialog();
     void ensureRemoveCoreNodeController();
     void openRemoveCoreNodeDialog(const QString &name);
+    void openReplaceCoreNodeDialog(const QString &name);
+    void showAddCoreNodeDialog(const QString &replace);
     void refreshRunners(std::function<void()> then = {});
     void renderRunnersTable();
     void refreshRunnerAttention(bool force = false);
@@ -12010,6 +12012,7 @@ private:
     QPushButton *m_addCoreNodeButton = nullptr;
     forkmesh::fleet::AddCoreNodeController *m_addCoreNodeController = nullptr;
     QPointer<QDialog> m_addCoreNodeDialog;
+    bool m_addCoreNodeWasRunning = false;
     forkmesh::fleet::RemoveCoreNodeController *m_removeCoreNodeController = nullptr;
     QPointer<QDialog> m_removeCoreNodeDialog;
     QTableWidget *m_runnersTable = nullptr;
