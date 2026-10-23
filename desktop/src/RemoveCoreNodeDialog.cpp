@@ -2,6 +2,7 @@
 #include "ProcessReaper.h"
 
 #include "FleetAutoscaleModel.h"
+#include "FontSizing.h"
 
 #include <QCheckBox>
 #include <QColor>
@@ -46,7 +47,7 @@ QLabel *titleLabel(const QString &text)
     auto *label = new QLabel(text);
     QFont font = label->font();
     font.setBold(true);
-    font.setPointSizeF(font.pointSizeF() * 1.2);
+    font = forkmesh::scaledFont(font, 1.2);
     label->setFont(font);
     return label;
 }
