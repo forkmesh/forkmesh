@@ -725,6 +725,8 @@ QWidget *MainWindow::buildBreadcrumb()
     if (m_timersNavStrip)
         identityBalanceRow->addWidget(m_timersNavStrip, 0, Qt::AlignVCenter);
     chromeRow->addLayout(identityBalanceRow);
+    chromeRow->addWidget(buildWorkflowPinStrip(QStringLiteral("top")), 0,
+                         Qt::AlignVCenter);
     chromeRow->addStretch();
 
     auto *searchCluster = new QWidget;

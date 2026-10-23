@@ -13,6 +13,7 @@
 class QCheckBox;
 class QComboBox;
 class QFormLayout;
+class QIcon;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -36,8 +37,34 @@ public:
     QList<forkmesh::market::NativePackageSearchHit> searchHits(const QString &query, int limit) const override;
     void activateSearchHit(const QString &id) override;
     int navigationBadge() const override;
+    void repositoryWorkflowsChanged() override;
 
 private:
+    using LocalAction = std::function<void(const QString &, const QString &, const QString &,
+                                           const QJsonObject &, ReplyHandler)>;
+
+    Catalog &catalog();
+    bool localAvailable() const;
+    QWidget *buildLocalSection();
+    void loadLocal();
+    void renderLocalTable();
+    QJsonObject selectedLocal() const;
+    QJsonObject localSummary(const QString &repo, const QString &id) const;
+    void localAction(const QString &repo, const QString &id, const QString &action, const QJsonObject &payload,
+                     ReplyHandler done);
+    void openLocalWorkflow(const QString &repo, const QString &id);
+    void loadLocalRuns();
+    void runLocal(const QJsonObject &summary, const QString &assignment = QString());
+    void showPinMenu(QPushButton *anchor, const QString &repo, const QString &id);
+    void startLocalDraft(const QString &kind, const QString &repo);
+    QIcon faceIcon(const QString &base64) const;
+    QJsonObject localRunRow(const QJsonObject &run, const QString &repo, const QString &workflowName) const;
+    void showLocalRunDetail(QTableWidget *steps, QLabel *summary, const QJsonObject &run);
+    QJsonArray repositoryShortcuts(const QString &repo) const;
+    QString uniqueLocalId(const QString &repo, const QString &name) const;
+    void renderLocalEditorBar();
+    void rebuildRunFilter();
+
     void request(const QByteArray &method, const QString &path, const QJsonObject &body, ReplyHandler handler);
     void setStatus(const QString &text, bool error = false);
     QString failureText(const QJsonObject &payload, const QString &error) const;
@@ -95,6 +122,28 @@ private:
     std::function<void()> m_searchIndexChanged;
     std::function<void()> m_navigationBadgeChanged;
     std::function<QList<forkmesh::market::NativePackageRepository>()> m_repositories;
+    std::function<QJsonObject()> m_repositoryWorkflows;
+    LocalAction m_repositoryWorkflowAction;
+
+    Catalog m_localCatalog;
+    QJsonObject m_local;
+    QJsonArray m_localWorkflows;
+    QJsonArray m_localRuns;
+    QTableWidget *m_localTable = nullptr;
+    QLabel *m_localEmpty = nullptr;
+    QWidget *m_localSection = nullptr;
+    QPushButton *m_localRunButton = nullptr;
+    QPushButton *m_localEditButton = nullptr;
+    QPushButton *m_localPinButton = nullptr;
+    QPushButton *m_localAgentButton = nullptr;
+    QPushButton *m_localScheduleButton = nullptr;
+    QPushButton *m_localToggleButton = nullptr;
+    QPushButton *m_localDeleteButton = nullptr;
+    QPushButton *m_editorPinButton = nullptr;
+    QPushButton *m_editorAgentButton = nullptr;
+    QComboBox *m_iconCombo = nullptr;
+    QLabel *m_iconLabel = nullptr;
+    QLineEdit *m_description = nullptr;
 
     Catalog m_catalog;
     bool m_catalogLoaded = false;

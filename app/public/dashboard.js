@@ -55812,7 +55812,7 @@ Report
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=2c7f0ec843a7",
     "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",
-    "workflows": "/dashboard-page-workflows.js?v=37375cef53b2",
+    "workflows": "/dashboard-page-workflows.js?v=275c0c09e245",
   };
   const dashboardChunkScope = {
     $,

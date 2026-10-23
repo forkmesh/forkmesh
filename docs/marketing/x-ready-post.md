@@ -6,7 +6,7 @@ an image, for a person to copy or post.
 
 | Piece | Path |
 | --- | --- |
-| Herald definition | `.forkmesh/teammates/herald.json` |
+| Herald definition | `.forkmesh/workflows/herald.json` |
 | Herald playbook | `.forkmesh/shortcuts/keep-an-x-post-ready.md` |
 | Herald portrait | `desktop/resources/agent-ui/icons/teammate-herald.png` (avatar key `herald`), phone faces `teammate_faces/herald.jpg` and `teammate-face-herald.imageset` |
 | Stored ready post, `GET`/`PUT`/`PATCH /ready-post` | `marketplace/packages/marketing/content/worker/marketing.py` ([package README](../../marketplace/packages/marketing/README.md#ready-x-post)) |

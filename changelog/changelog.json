@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-23",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Agents",
+     "items": [
+      "Special agents are now workflows: each run shows its steps and saves its output on the Workflows page, the page can build special agents, shortcut runs and desktop cleanups step by step, and any workflow can be pinned as a button to the top, left, right or bottom of the window."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-22",
    "version": "",
    "title": "",

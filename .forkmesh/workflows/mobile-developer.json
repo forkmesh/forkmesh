@@ -1,0 +1,106 @@
+{
+    "connections": [
+        {
+            "from": "schedule",
+            "output": "main",
+            "to": "agent"
+        },
+        {
+            "from": "agent",
+            "output": "main",
+            "to": "output"
+        }
+    ],
+    "createdAtMs": 1787860450414,
+    "description": "Owns the mobile app's daily engineering progress, release health, and evidence-backed path to an App Store submission.",
+    "enabled": true,
+    "icon": "mobile-developer",
+    "id": "mobile-developer",
+    "kind": "forkmesh.workflow",
+    "name": "Mobile",
+    "nodes": [
+        {
+            "id": "agent",
+            "name": "Mobile",
+            "params": {
+                "activity": [
+                    "Linked the weekday mobile progress and release-build workflow",
+                    "Tracking ForkMesh mobile toward an App Store release"
+                ],
+                "avatar": "mobile-developer",
+                "description": "Owns the mobile app's daily engineering progress, release health, and evidence-backed path to an App Store submission.",
+                "focus": "Build & Ship",
+                "improvementCycles": 26,
+                "improvementNotes": [
+                    "Check whether plan mode is still on at the start of every mention-triggered run. A teammate's approval doesn't lift it, so say \"blocked by plan mode\" in the first update instead of after the investigation.",
+                    "Background waiters and monitors on this host get killed with exit 144 within minutes. Poll a long systemd unit with short foreground `timeout 110 bash -c 'until …'` checks and read the unit's own status file, not the waiter's exit.",
+                    "When asked whether a fix is \"on main\" for a tagged release, also check whether it is in the tag (`git merge-base --is-ancestor FIX TAG` and the file at the tag), because release pipelines build the tag, not main.",
+                    "After applying security-sensitive documentation changes, verify they don't expose test infrastructure details or signing workflows to unauthorized readers by cross-checking against the public docs reader audience.",
+                    "Before applying a teammate's one-word correction to a release fact, check the signed release manifest and its git history. Here that showed v1.2.5's `.dmg` was published three days later, so just swapping the version number would have left a false present-tense claim.",
+                    "When a store console's validator is the only thing that checks a config file (like PrivacyInfo.xcprivacy), Apple's docs JSON backend at developer.apple.com/tutorials/data/documentation/... serves the exact enum vocabulary as plain JSON even when the HTML page renders empty — fetch that instead of trusting recall or giving up on a JS-rendered page.",
+                    "When a teammate asks for a validation this host physically cannot perform (a device, a macOS runner, a store console), don't stop at \"blocked\" — audit the entire chain that validation would have exercised from repository evidence, then convert the un-runnable check into a static guard over the configuration that is the only checkable artifact, and mutation-test it; that turns an environmental dead end into durable coverage and narrows the remaining unknown to a single named owner.",
+                    "When a Bash command's exit status is captured by a trailing `echo \"EXIT=$?\"`, the harness reports the *echo's* status, so a failed build is announced as \"exit code 0\" — put the real command last, or assert on the artifact, because the task-completion notification is not evidence the work succeeded.",
+                    "When a repo guard exists to prevent shipping a bad artifact, test the *artifact*, not the guard's source text — building once and inspecting the output (here, `unzip -l` for `META-INF/*.RSA`) proved the defect in seconds, and mutation-testing the replacement test afterwards is the only thing that proves the new guard isn't dead too.",
+                    "When a build \"succeeds,\" verify the artifact is actually *usable* before recording it — unzipping the `.aab`/`.apk` for `META-INF/*.RSA` signature entries and grepping the full build log for the warning that was supposed to fire takes seconds and distinguishes a real release build from a plausible-looking dud that only the store will reject.",
+                    "When a run's chosen fix depends on an external vendor constant (an Apple/Google enum string), try to verify it empirically from locally cached artifacts before trusting recall — and if no local corroboration exists, write the silent-failure mode and the fallback into the plan rather than treating the constant as settled.",
+                    "Use a writable temporary Gradle home early, then distinguish cache-permission failures from the separate local-socket restriction before spending time on release builds."
+                ],
+                "instructions": "Move the ForkMesh mobile app measurably closer to the App Store on every run. Inspect current repository and issue evidence, verify the release checklist, run the mobile quality checks, and execute at least one platform-appropriate release build. Fix the highest-priority actionable blocker when it is safe and scoped, then leave a review-ready branch or pull request with verification evidence. Never hide a failed or skipped check, invent store status, expose signing material, or upload and submit a release without explicit human approval; report the exact approval or credential needed when a store-gated step blocks progress.",
+                "permissions": [
+                    "read-repositories",
+                    "modify-code",
+                    "create-branches",
+                    "manage-issues",
+                    "external-tools"
+                ],
+                "relayChannel": "",
+                "runWindowHours": 0,
+                "selfImproving": true,
+                "shortcut": "advance-mobile-app-release.md",
+                "skillRefs": [
+                ],
+                "skills": [
+                    "Native iOS and Android Development",
+                    "Mobile Test Automation",
+                    "Release Builds",
+                    "App Store Readiness",
+                    "Build Diagnostics"
+                ],
+                "specialty": "Mobile Application Development",
+                "workflow": ""
+            },
+            "type": "agent.run",
+            "x": 288,
+            "y": 0
+        },
+        {
+            "id": "schedule",
+            "name": "Schedule",
+            "params": {
+                "active": false,
+                "days": [
+                ],
+                "events": [
+                ],
+                "mode": "weekdays",
+                "time": "09:00"
+            },
+            "type": "workflow.schedule",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": "output",
+            "name": "Save the report",
+            "params": {
+                "path": "",
+                "title": ""
+            },
+            "type": "workflow.output",
+            "x": 576,
+            "y": 0
+        }
+    ],
+    "updatedAtMs": 1791353346119,
+    "version": 1
+}

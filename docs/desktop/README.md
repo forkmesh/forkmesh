@@ -129,6 +129,12 @@ Everything is in `desktop/`.
   into the rail as a shortcut. All of this is stored as JSON under `ui/*`
   settings keys (`ui/railOrder`, `ui/railFolders`, `ui/railGroups`,
   `ui/buttonPlacement`, `ui/railShortcuts`), keyed by stable rail keys.
+- **Pinned workflows.** Workflows (special agents among them) can be pinned to
+  four strips around the window: the top bar beside the activity indicators,
+  under the left rail, at the right edge and in the status bar
+  (`ui/workflowPins`, `src/MainWindowRepoWorkflows.cpp`;
+  [../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
+  A strip with no pins is hidden.
 - **Popped-out pages.** Dragging a rail icon out of the window, or "Open in new
   window", moves the section's current page into its own top-level window. A
   placeholder keeps the page's index in the section stack, because the rail's

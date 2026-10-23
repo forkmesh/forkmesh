@@ -92,6 +92,9 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 
 ## Special agents
 
+Each special agent is a workflow in `.forkmesh/workflows/` that the desktop
+runs; see [app/workflows.md](app/workflows.md#desktop-workflows-and-special-agents).
+
 | Agent | Charter |
 | --- | --- |
 | CFO (financial review, payouts) | [finance/cfo.md](finance/cfo.md) |
