@@ -55,10 +55,25 @@ IndexedDB with a non-extractable wrapping key where available):
 
 | Key | Store key | Lifetime |
 | --- | --- | --- |
-| Identity key `IK`: Ed25519 | `chat/e2ee/ed25519IdentityV3` (32-byte seed, `b64`) | Life of the install |
+| Identity key `IK`: Ed25519 | `chat/e2ee/ed25519IdentityV3` (32-byte seed, `b64`) | Life of the install; on iOS, as long as the node key |
 | Signed prekeys `SPK`: X25519 + ML-KEM-768 | `chat/e2ee/prekeysV3` (JSON list) | Rotated every 24 h, deleted at expiry |
 
 - `kid = id16(IK.pub)`: the device's public key id, stable for the install.
+- iOS makes a new `IK` from the node identity seed (`identity/ed25519Seed`)
+  when the store has a node key:
+  `HKDF(ikm = node seed, salt = "ForkMesh chat identity salt v3", info = "forkmesh-chat-identity-v3", length 32)`.
+  A phone that is deleted and reinstalled, then gets its node key back from
+  the projects folder ([DATA_FOLDER.md](../native/DATA_FOLDER.md)), so has the
+  same `IK`, the same `kid` and the same safety numbers; the other person sees
+  no new device and keeps *verified*. A stored `IK` is always kept, so an
+  install from before this change keeps its random key. Restoring a different
+  node key removes the stored `IK` so it is made again from the restored one.
+  Prekeys stay random, so the node key cannot open past messages.
+- Such a derived `IK` also stores `chat/e2ee/ctrFloorV3`: the seconds since
+  2026-01-01 when it was made. A room's counter starts above that floor, so
+  frames from the reinstalled phone are not taken for replays of the old
+  install's counters, which the other devices still remember. A random `IK`
+  has no floor and counts from 1.
 - A prekey is `{id, x, pq, ts, exp}` with `x` the X25519 public key (32 bytes),
   `pq` the ML-KEM-768 encapsulation key (1184 bytes), `id = id16(x || pq)`,
   `ts` its creation time in ms and `exp = ts + 8 days`. The stored private
@@ -242,7 +257,9 @@ in 12 groups. Both people see the same number. The QR code encodes
 `forkmesh-safety:3:<scope>:<b64u(first 32 bytes of h)>`. Scanning the other
 phone's code (or comparing the digits) marks every approved device `verified`.
 Any change to the approved set changes the number, clears `verified`, and
-shows "Your safety number with Alex changed".
+shows "Your safety number with Alex changed". An iPhone reinstalled with its
+node key restored keeps its `IK` (see Device keys), so the number does not
+change.
 
 ## Mesh links v3
 

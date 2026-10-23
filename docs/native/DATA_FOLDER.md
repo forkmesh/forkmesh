@@ -96,6 +96,11 @@ before sign-in, so a fresh install can restore first.
   - Restore writes each seed into `<namespace>identity/ed25519Seed`, applies
     the settings, and copies back, through the index, only files missing
     locally. Index paths with `..` are refused.
+  - On iOS, a restored seed that differs from the install's node key also
+    removes `<namespace>chat/e2ee/ed25519IdentityV3`. The chat key is made
+    again from the restored node key, so it is the old install's chat key and
+    every safety number stays the same
+    ([chat-protocol-v3.md](../app/chat-protocol-v3.md#device-keys)).
   - It then asks for a restart (iOS *Close ForkMesh*, Android *Restart
     ForkMesh*).
 
