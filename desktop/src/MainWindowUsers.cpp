@@ -19,6 +19,7 @@
 #include "RewardPoolSigner.h"
 #include "TerminalWidget.h"
 #include "WorldSpeechBridge.h"
+#include "FontSizing.h"
 
 #include <QFontDatabase>
 #include <QInputDialog>
@@ -279,7 +280,7 @@ QWidget *MainWindow::buildUsersSection()
     auto *title = new QLabel(QStringLiteral("Users"));
     title->setObjectName(QStringLiteral("sectionTitle"));
     QFont titleFont = title->font();
-    titleFont.setPointSizeF(titleFont.pointSizeF() + 4);
+    titleFont = forkmesh::resizedFont(titleFont, 4);
     titleFont.setBold(true);
     title->setFont(titleFont);
     header->addWidget(title);

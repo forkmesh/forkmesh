@@ -165,7 +165,6 @@ DASHBOARD_PAGE_ASSETS = {
     "/dashboard/repos": "dashboard/repos/index.html",
     "/dashboard/repos/new": "dashboard/repos/new/index.html",
     "/dashboard/network": "dashboard/network/index.html",
-    "/dashboard/chat": "dashboard/chat/index.html",
     "/dashboard/ads": "dashboard/ads/index.html",
     "/dashboard/challenges": "dashboard/challenges/index.html",
     "/dashboard/agents": "dashboard/agents/index.html",
@@ -204,7 +203,7 @@ DASHBOARD_SECTION_PATHS = {
     "home": "/dashboard",
     "repos": "/dashboard/repos",
     "network": "/dashboard/network",
-    "chat": "/dashboard/chat",
+    "chat": "/chat",
     "profile": "/dashboard/settings",
     "profile-overview": "/dashboard/profile",
     "profile-repositories": "/dashboard/profile/repositories",
@@ -238,6 +237,8 @@ LEGACY_PAGE_PATHS = {
     "/explore/": "/dashboard/repos",
     "/forgot": "/forgot-password",
     "/forgot/": "/forgot-password",
+    "/dashboard/chat": "/chat",
+    "/dashboard/chat/": "/chat",
 }
 
 PROFILE_NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")

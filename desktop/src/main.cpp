@@ -10,6 +10,7 @@
 #include "ControlNode.h"
 #include "DirectorySizeScan.h"
 #include "DesktopDisplayReadiness.h"
+#include "DesktopLauncherIcon.h"
 #if defined(FORKMESH_HAVE_TERM)
 #include "ForkMeshTerm.h"
 #endif
@@ -1049,6 +1050,7 @@ int main(int argc, char *argv[])
             forkmesh::background::migrateLegacyEngine();
             forkmesh::background::syncLogoutHandOver();
             forkmesh::background::refreshStartUnit();
+            forkmesh::launchericon::refreshInstalled();
         });
     });
     forkmesh::keepawake::holdWhileRunning(window);

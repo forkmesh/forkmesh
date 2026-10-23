@@ -555,6 +555,56 @@
     return chip && chip.closest("[data-comment-reactions]") ? chip : null;
   }
 
+  function commentAnchorId() {
+    const match = /^#comment-(.+)$/.exec(String(location.hash || ""));
+    if (!match) return "";
+    try {
+      return decodeURIComponent(match[1]);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function revealAnchoredComment() {
+    const id = commentAnchorId();
+    if (!id) return;
+    const started = Date.now();
+    let observer = null;
+    const attempt = () => {
+      const marker = document.querySelector(`[data-comment-id="${CSS.escape(id)}"]`);
+      if (!marker) {
+        if (Date.now() - started > 20000) observer?.disconnect();
+        return false;
+      }
+      observer?.disconnect();
+      const target = marker.closest("[data-repo-issue-comment]") || marker.parentElement || marker;
+      [0, 300, 900, 1800].forEach((delay) => setTimeout(() => {
+        if (target.isConnected) target.scrollIntoView({ block: "center" });
+      }, delay));
+      target.style.outline = "2px solid rgb(var(--dashboard-accent-rgb))";
+      target.style.outlineOffset = "2px";
+      target.style.borderRadius = target.style.borderRadius || "8px";
+      setTimeout(() => {
+        target.style.outline = "";
+        target.style.outlineOffset = "";
+      }, 4000);
+      return true;
+    };
+    if (attempt()) return;
+    observer = new MutationObserver(() => { attempt(); });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => observer?.disconnect(), 20000);
+  }
+
+  function initCommentAnchor() {
+    revealAnchoredComment();
+    window.addEventListener("hashchange", revealAnchoredComment);
+    window.addEventListener("popstate", revealAnchoredComment);
+    document.addEventListener("click", (event) => {
+      if (event.target?.closest?.('a[href*="#comment-"]')) setTimeout(revealAnchoredComment, 50);
+    });
+  }
+
   function initCommentReactions() {
     seedCommentReactions();
     document.addEventListener("click", (event) => {
