@@ -933,6 +933,19 @@ default in new projects except the chosen starter pack
     The caller's name comes from `ApiService.directMessagePartner`.
     `CallRinger` cancels it as soon as an invite or call exists or the app is
     in front.
+  - **Notifications turned off** (2026-10-22, iOS `registerForCalls`).
+    Until then `LinkPlan.of` returned `OFF` without the notification
+    permission, so a phone with notifications off kept no background
+    connection and calls never rang it. It now keeps the connection for the
+    enabled projects as a calls-only plan (`LinkPlan.callsOnly`, title
+    "Listening for calls"): no #mesh listening, and `deliver` and
+    `deliverDirectMessage` return at once, so ping and message alerts that
+    could not be shown are not marked delivered. A `calls` event still wakes
+    the call engine of the active project, and `CallRinger` plays the
+    ringtone and vibration, which need no notification permission; the
+    incoming screen shows when the app is opened. Redialling right after a
+    decline rings at once because the relay no longer coalesces `calls`
+    events (`docs/app/chat-direct-calls.md`).
   - **Limits.** A ring needs the background connection to be on and
     connected (it is paused by Doze and network loss; there is no FCM), so a
     force-stopped app does not ring. The ringback tone follows the voice-call
