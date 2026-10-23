@@ -8,6 +8,12 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Chat",
+     "items": [
+      "Chat now lives at one address, /chat: the dashboard's Chat link and old /dashboard/chat links open it, and the people list shows each member's past-year activity under their name."
+     ]
+    },
+    {
      "title": "Projects",
      "items": [
       "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar."
@@ -48,7 +54,8 @@
     {
      "title": "Desktop",
      "items": [
-      "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed."
+      "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.",
+      "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings."
      ]
     }
    ]

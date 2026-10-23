@@ -8867,10 +8867,6 @@
       headerContext.textContent = "Network";
       return;
     }
-    if (section === "chat") {
-      headerContext.textContent = "Chat";
-      return;
-    }
     if (section === "explore" && state.selectedRepo) {
       headerContext.textContent = repoKey(state.selectedRepo);
       return;
@@ -47318,7 +47314,7 @@ Report
     home: "/dashboard",
     repos: "/dashboard/repos",
     network: "/dashboard/network",
-    chat: "/dashboard/chat",
+    chat: "/chat",
     profile: "/dashboard/settings",
     "profile-overview": "/dashboard/profile",
     "profile-repositories": "/dashboard/profile/repositories",
@@ -47590,10 +47586,6 @@ Report
 
   function initNetworkPage() {
     renderNetwork();
-  }
-
-  function initChatPage() {
-    // dashboard-chat.js self-boots off the #fullChatMessages markup.
   }
 
   function initProfileOverviewPage() {
@@ -50528,9 +50520,8 @@ Report
   const ADS_POLICY_DOC_URL = "https://forkmesh.com/docs/operations/ad-network/";
   const ADS_HIDE_KEY = "forkmesh.ads.hiddenUntil";
   const ADS_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
-  // The ads page previews ads already, and the chat document gives its whole
-  // height to the transcript and composer.
-  const ADS_SLOT_SKIPPED_PAGES = new Set(["ads", "chat"]);
+  // The ads page previews ads already.
+  const ADS_SLOT_SKIPPED_PAGES = new Set(["ads"]);
   const ADS_ID_RE = /^[a-f0-9]{32}$/;
   // policy.reportReasons, fixed by the client contract. Hard-coded so the slot
   // never spends a second request on the policy document.
@@ -56036,7 +56027,6 @@ Report
     "docs": initDocsPage,
     "apps": initAppsPage,
     "apps-build": initAppsBuildPage,
-    "chat": initChatPage,
     "tasks": initTasksPage,
     "calendar": initCalendarPage,
     "notes": initNotesPage,

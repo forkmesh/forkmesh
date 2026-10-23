@@ -20820,7 +20820,6 @@ def _apply_browser_security_headers(response, pathname):
     path = str(pathname or "/")
     frameable = (
         path in ("/chat", "/chat.html")
-        or path.startswith("/dashboard/chat")
         or re.fullmatch(r"/[^/]+/[^/]+/(?:issues|pull)/[^/]+", path)
     )
     csp = _BROWSER_CSP.format(
