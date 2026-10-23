@@ -1446,7 +1446,7 @@ set_source_files_properties(
 )
 target_include_directories(forkmesh PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${FORKMESH_MARKETPLACE_INCLUDE_DIRS}
+    ${FORKMESH_APP_MARKETPLACE_INCLUDE_DIRS}
     ${FORKMESH_MOC_DIRS})
 
 target_link_libraries(forkmesh PRIVATE Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent OpenSSL::Crypto)

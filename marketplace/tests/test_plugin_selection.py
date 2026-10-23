@@ -89,3 +89,22 @@ def test_module_plugins_carry_their_own_content():
     assert "packages/crm/content/" not in qrc
     assert "packages/crm/content/" in plugin_qrcs["crm"]
     assert "FORKMESH_PACKAGE_CRM_QRC" in cmake
+
+
+def test_each_plugin_names_only_its_own_include_folder():
+    _, cmake, _, _ = generate_desktop_packages.generate(
+        MARKETPLACE / "catalog.json", "crm", REPOSITORY / "unused")
+    crm = (MARKETPLACE / "packages" / "crm" / "content" / "desktop").resolve().as_posix()
+    assert f'set(FORKMESH_PACKAGE_CRM_INCLUDE_DIRS\n    "{crm}"\n)' in cmake
+    assert "FORKMESH_PACKAGE_LEDGER_INCLUDE_DIRS" in cmake
+
+
+def test_adding_a_plugin_leaves_other_compile_commands_alone():
+    desktop = REPOSITORY / "desktop"
+    app = (desktop / "CMakeLists.txt").read_text(encoding="utf-8")
+    modules = (desktop / "cmake" / "ForkMeshPackageModules.cmake").read_text(encoding="utf-8")
+    start = app.index("target_include_directories(forkmesh PRIVATE")
+    block = app[start:app.index(")", start)]
+    assert "FORKMESH_APP_MARKETPLACE_INCLUDE_DIRS" in block
+    assert "FORKMESH_MARKETPLACE_INCLUDE_DIRS" not in block.replace("FORKMESH_APP_MARKETPLACE", "")
+    assert "TARGET_PROPERTY:forkmesh,INCLUDE_DIRECTORIES" not in modules
