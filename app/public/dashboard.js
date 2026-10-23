@@ -28249,6 +28249,8 @@
   const PULL_REVIEW_FIELD_LIMITS = { title: 200, author: 80, base: 200, head: 200, repo: 120 };
   const PULL_REVIEW_COLLAPSE_LINES = 5;
   const PULL_REVIEW_COLLAPSE_CHARS = 360;
+  const PULL_REVIEW_CHATGPT_URL = "https://chatgpt.com/?q=";
+  const PULL_REVIEW_CHATGPT_MAX = 6000;
   const PULL_REVIEW_INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const PULL_REVIEW_PROMPT_DEFAULT = `Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"
@@ -28318,6 +28320,33 @@ Your reply
       .replace(/^[ \n]+|[ \n]+$/g, "");
   }
 
+  function pullReviewChatGptPrompt(value, url) {
+    const prompt = value.replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "\ufffd");
+    if (encodeURIComponent(prompt).length <= PULL_REVIEW_CHATGPT_MAX) return { text: prompt, shortened: false };
+    const head = `${url}\n\n`;
+    let budget = PULL_REVIEW_CHATGPT_MAX - encodeURIComponent(head).length - encodeURIComponent("\u2026").length;
+    let cut = "";
+    for (const ch of prompt) {
+      budget -= encodeURIComponent(ch).length;
+      if (budget < 0) break;
+      cut += ch;
+    }
+    return { text: `${cut.includes(url) ? "" : head}${cut}\u2026`, shortened: true };
+  }
+
+  function renderPullReviewChatGptLink(prompt, url) {
+    const chat = pullReviewChatGptPrompt(prompt, url);
+    const href = escapeHtml(PULL_REVIEW_CHATGPT_URL + encodeURIComponent(chat.text));
+    const copy = chat.shortened ? ` data-dashboard-copy="${escapeHtml(prompt)}"` : "";
+    const label = chat.shortened
+      ? "Review with ChatGPT: opens ChatGPT with the start of the review prompt and copies the full prompt"
+      : "Review with ChatGPT: opens ChatGPT with the review prompt filled in";
+    const title = chat.shortened
+      ? "The prompt is too long for a link: ChatGPT opens with its start, and the full prompt is copied to paste instead"
+      : "Open ChatGPT in a new tab with this prompt";
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer"${copy} data-repo-pull-review-chatgpt aria-label="${label}" title="${title}" class="inline-flex h-6 w-fit shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="bot" class="h-3 w-3"></i><span>Review with ChatGPT</span></a>`;
+  }
+
   function renderPullReviewPrompt(fields, number, template = "") {
     const prompt = pullReviewPromptText(fields, template);
     const text = escapeHtml(prompt);
@@ -28333,6 +28362,7 @@ Your reply
     return `<div data-repo-pull-review-prompt aria-label="Review with your agent" class="grid min-w-0 gap-1.5">
             <pre id="${boxId}" data-repo-pull-review-prompt-text class="${toggle ? "max-h-28" : "max-h-none"} min-w-0 overflow-hidden whitespace-pre-wrap rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-2 py-1 font-mono text-[11px] leading-4 text-muted-foreground [overflow-wrap:anywhere]">${text}</pre>
             <span class="flex flex-wrap items-center gap-1"><button type="button" data-dashboard-copy="${text}" aria-label="Copy the review prompt for this pull request" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3 w-3"></i><i data-lucide="check" class="copy-check h-3 w-3"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>${diffButton}${toggleButton}</span>
+            ${renderPullReviewChatGptLink(prompt, fields.url)}
           </div>`;
   }
 

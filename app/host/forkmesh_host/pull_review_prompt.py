@@ -23,6 +23,8 @@ INVISIBLE_RE = re.compile(
     r"\u2066-\u2069\ufeff]")
 COLLAPSE_LINES = 5
 COLLAPSE_CHARS = 360
+CHATGPT_URL = "https://chatgpt.com/?q="
+CHATGPT_MAX = 6000          # percent-encoded characters of the prompt
 
 DEFAULT_TEMPLATE = """Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"
@@ -124,6 +126,44 @@ def collapses(prompt):
     return prompt.count("\n") >= COLLAPSE_LINES or len(prompt) > COLLAPSE_CHARS
 
 
+def _uri(text):
+    """encodeURIComponent."""
+    return urllib.parse.quote(text, safe="-_.!~*'()")
+
+
+def chatgpt_prompt(prompt, url):
+    """The prompt for the ChatGPT link and whether it was shortened to fit."""
+    prompt = re.sub(r"[\ud800-\udfff]", "\ufffd", prompt)
+    if len(_uri(prompt)) <= CHATGPT_MAX:
+        return prompt, False
+    head = url + "\n\n"
+    budget = CHATGPT_MAX - len(_uri(head)) - len(_uri("\u2026"))
+    cut = []
+    for ch in prompt:
+        budget -= len(_uri(ch))
+        if budget < 0:
+            break
+        cut.append(ch)
+    cut = "".join(cut)
+    return ("" if url in cut else head) + cut + "\u2026", True
+
+
+def chatgpt_link(prompt, url):
+    text, shortened = chatgpt_prompt(prompt, url)
+    copy = ' data-dashboard-copy="%s"' % esc(prompt) if shortened else ""
+    label = ("Review with ChatGPT: opens ChatGPT with the start of the review prompt and copies "
+             "the full prompt" if shortened else
+             "Review with ChatGPT: opens ChatGPT with the review prompt filled in")
+    title = ("The prompt is too long for a link: ChatGPT opens with its start, and the full "
+             "prompt is copied to paste instead" if shortened else
+             "Open ChatGPT in a new tab with this prompt")
+    return ('<a href="%s" target="_blank" rel="noopener noreferrer"%s data-repo-pull-review-chatgpt '
+            'aria-label="%s" title="%s" class="inline-flex h-6 w-fit shrink-0 items-center gap-1 '
+            'rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground '
+            'hover:bg-secondary">%s<span>Review with ChatGPT</span></a>' % (
+                esc(CHATGPT_URL + _uri(text)), copy, label, title, icon("bot", "h-3 w-3")))
+
+
 def render(values, number, template=""):
     prompt = prompt_text(values, template)
     text = esc(prompt)
@@ -154,7 +194,8 @@ def render(values, number, template=""):
         'title="Copy this prompt into your coding agent" class="copy-button inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] font-medium text-foreground hover:bg-secondary">%s%s<span '
         'class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>'
         '%s%s</span>\n'
+        '            %s\n'
         '          </div>' % (
             box_id, "max-h-28" if toggle else "max-h-none", text, text,
             icon("copy", "copy-icon h-3 w-3"), icon("check", "copy-check h-3 w-3"),
-            diff_button, toggle_button))
+            diff_button, toggle_button, chatgpt_link(prompt, values["url"])))
