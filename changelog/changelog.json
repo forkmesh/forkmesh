@@ -27,6 +27,8 @@
      "title": "Agents",
      "items": [
       "The composer hides its character count until a prompt nears the limit, then shows it in orange and red.",
+      "Claude Code agents on the desktop now take their name from their Claude Code session and follow its renames, ask for tool permissions, plan approval and MCP input in the transcript or a small window instead of refusing the call, list their running sub-sessions with a Stop button, and can be renamed from the agent list.",
+      "On the phone, the green and red ring around an agent's picture in the agent list turns while the agent is working and stops when it is done.",
       "When a merge from your phone is blocked by uncommitted edits on your desktop, Set aside and merge saves them to a wip/ branch, merges, and puts them back."
      ]
     },
@@ -41,7 +43,8 @@
     {
      "title": "iPhone",
      "items": [
-      "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock."
+      "With Diagnostics on, the status dots now really show above the Dynamic Island, and your desktop and node lights sit just under the clock.",
+      "With Diagnostics on, your desktop and node lights now sit just above the clock with a little more room, and the diagnostic charts sit above the battery, each filled in under its line."
      ]
     },
     {
@@ -68,7 +71,8 @@
      "title": "Desktop",
      "items": [
       "On Linux, the app menu and dock show the new ForkMesh icon with its transparent background, even on installs from before the logo changed.",
-      "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings."
+      "Titles and small print in the fleet view, process list, query inspector, core node dialogs and other desktop panels now follow your font size setting, and the desktop log no longer fills with \"Point size <= 0\" font warnings.",
+      "Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies."
      ]
     },
     {
@@ -136,7 +140,8 @@
       "In the iPhone terminal, every key now fits on screen, a Ctrl key sends any Ctrl combination such as Ctrl+X then Ctrl+S, and scrolling up to read earlier output no longer jumps back to the bottom.",
       "Agents keep running after you log out or switch users: ForkMesh no longer shuts itself down when your desktop session's message bus restarts.",
       "Right-click an agent folder in the desktop's Agents list to start or stop every agent in it at once.",
-      "An Import button above the Agents list brings in your Claude Code and Claude Desktop sessions, named as they are in Claude, with their whole conversation, and you can carry on any of them from ForkMesh."
+      "An Import button above the Agents list brings in your Claude Code and Claude Desktop sessions, named as they are in Claude, with their whole conversation, and you can carry on any of them from ForkMesh.",
+      "A new Sessions page, just above Agents in the left rail, lists every agent session with its live transcript and lets you message a session or pass one session's reply to another."
      ]
     },
     {
@@ -188,7 +193,9 @@
       "The desktop debug bar shows log icons only for the log types you record, draws every chart at one small size with a live detail card when you hover it, and overlaps the status dots without captions, as on the phone.",
       "On desktop, the prompt's chat preview now fills the top of the box with small avatars beside each line, its buttons float over the top-right corner with the resize grip at the right end, a third line is no longer cut off, and with #general or another chat room open the preview shows that room.",
       "The prompt composer keeps its add button, files tasks from the model menu, and has a send to: button that posts the prompt to the chat channel you have open, such as #general; with the Chat page open, Enter sends there.",
-      "Pick a theme straight from the view menu at the top right, try the new Halloween theme, and drag the timers clock to the left, middle or right of the top bar."
+      "Pick a theme straight from the view menu at the top right, try the new Halloween theme, and drag the timers clock to the left, middle or right of the top bar.",
+      "New UI stall reports now go to the agent already working on stalls instead of starting another agent.",
+      "Fixed many of the pauses where the desktop window froze for a moment."
      ]
     },
     {

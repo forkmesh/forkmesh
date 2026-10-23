@@ -53,7 +53,7 @@ STEPS = (
     ("fleet", "Take it out of deploy/fleet.toml and fleet-state.json", 2),
     ("peers", "Remaining cores drop its WireGuard peer and firewall allowances", 240),
     ("deregister", "DNS health loop, its own DNS name, mail SPF", 10),
-    ("commit", "Commit deploy/fleet.toml to a branch", 2),
+    ("commit", "Commit deploy/fleet.toml to a branch and merge it into main", 2),
     ("destroy", "Delete the cloud instance (irreversible)", 30),
 )
 
@@ -642,8 +642,8 @@ class RemoveBackend:
         import next_fleet
         branch = BRANCH_PREFIX + job.name
         if not job.execute:
-            job.say("[dry-run] commit %s without the %s block on %s (base %s), not "
-                    "pushed" % (FLEET_PATH, job.name, branch, MAIN_REF))
+            job.say("[dry-run] commit %s without the %s block on %s (base %s) and "
+                    "merge it into main" % (FLEET_PATH, job.name, branch, MAIN_REF))
             return
         base_text = self.git.show(self.git.rev(MAIN_REF), FLEET_PATH)
         text = next_fleet.retire_core_block(
@@ -663,10 +663,9 @@ class RemoveBackend:
                       if promoted else ""))
         commit, created = self.git.commit_file(branch, MAIN_REF, FLEET_PATH, text, message)
         job.state.set(branch=branch, commit=commit)
-        job.say("%s %s on %s: merge it into main so autodeploy and roll leave %s out:\n"
-                "  git -C %s merge --autostash --no-ff %s" % (
-                    "committed" if created else "already committed", commit[:12],
-                    branch, job.name, self.repo, branch))
+        job.say("%s %s on %s" % ("committed" if created else "already committed",
+                                 commit[:12], branch))
+        next_add_core.land_on_main(self.git, job, branch, commit)
 
     def step_destroy(self, job):
         import next_fleet
@@ -793,8 +792,10 @@ class RemoveBackend:
                        "; SPF TXT without its addresses" if self.mail_enabled() else ""),
                     "backups, status, autodeploy and roll read the fleet file"]
         if step == "commit":
-            return ["git: commit %s without %s on %s%s from %s (plumbing: HEAD, index "
-                    "and working tree untouched); print the merge command" % (
+            return ["git: commit %s without %s on %s%s from %s (plumbing), then merge "
+                    "it into main where main is checked out, after a git merge-tree "
+                    "check; refused while that file has other staged or unsaved "
+                    "changes, and then the merge command is printed" % (
                         FLEET_PATH, name, BRANCH_PREFIX, name, MAIN_REF)]
         if step == "destroy":
             return ["%s: delete %s (%s) after checking label, tag, id and address; "
@@ -1048,7 +1049,8 @@ def main_plan(args, ssh=None, backend=None, out=None):
             "%s is already out of the fleet%s" % (
                 name, "" if record.get("destroyed") else
                 "; tick the instance box to delete it"))
-        job = Job(State(Path(os.devnull), data), common.Runner(execute=False))
+        job = Job(State(Path(os.devnull), data), common.Runner(execute=False),
+                  fleet_file=fleet_file)
     else:
         try:
             planned = backend.plan(fleet_file, name, destroy)
@@ -1058,7 +1060,8 @@ def main_plan(args, ssh=None, backend=None, out=None):
         if planned is not None:
             result.update(planned)
             result["resume"] = False
-            job = Job(State(Path(os.devnull), dict(planned)), common.Runner(execute=False))
+            job = Job(State(Path(os.devnull), dict(planned)), common.Runner(execute=False),
+                      fleet_file=fleet_file)
     if result.get("allowed") is not None and "error" not in result:
         result["description"] = describe(job, backend)
         result["quorum"] = quorum_text(job.state.data)

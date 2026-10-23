@@ -502,6 +502,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgentCliSession.cpp
     src/MainWindowClaudeImport.cpp
     src/MainWindowAgentEvents.cpp
+    src/MainWindowAgentClaudeControl.cpp
     src/MainWindowAgentTranscript.cpp
     src/MainWindowAgentLanding.cpp
     src/MainWindowAgentCloud.cpp
@@ -515,6 +516,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowGlobalAgentRules.cpp
     src/MainWindowAgentIntake.cpp
     src/MainWindowAgentHub.cpp
+    src/MainWindowSessions.cpp
     src/MainWindowCommandPermissions.cpp
     src/MainWindowBranches.cpp
     src/MainWindowReleases.cpp
@@ -1067,6 +1069,8 @@ set(FORKMESH_APP_SOURCES
     src/TeammateMood.cpp
     src/TeammateWorkspace.h
     src/TeammateWorkspace.cpp
+    src/StallRepairRouting.h
+    src/StallRepairRouting.cpp
     src/QrCode.h
     src/QrCode.cpp
     src/ReactionCatalog.h
@@ -1122,6 +1126,8 @@ set(FORKMESH_APP_SOURCES
     src/AgentRuntimeRegistry.cpp
     src/ClaudeStreamSession.h
     src/ClaudeStreamSession.cpp
+    src/ClaudeControlProtocol.h
+    src/ClaudeControlProtocol.cpp
     src/CodexAppServerSession.h
     src/CodexAppServerSession.cpp
     src/CodexRateLimitsProbe.h
@@ -1130,6 +1136,8 @@ set(FORKMESH_APP_SOURCES
     src/Tooltips.h
     src/ClaudeTranscriptView.h
     src/ClaudeTranscriptView.cpp
+    src/ClaudeElicitationDialog.h
+    src/ClaudeElicitationDialog.cpp
     src/PromptDeckBar.h
     src/PromptDeckBar.cpp
     src/ClaudeTranscriptTools.h
@@ -1311,6 +1319,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/ClaudeIdeBridge.h
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
+    src/ClaudeElicitationDialog.h
     src/ClaudeTranscriptView.h
     src/PromptDeckBar.h
     src/CodexRateLimitsProbe.h
@@ -1420,6 +1429,7 @@ set_source_files_properties(
     src/ClaudeIdeBridge.h
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
+    src/ClaudeElicitationDialog.h
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
     src/PromptDeckBar.h
@@ -2625,6 +2635,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeRegistry.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2751,6 +2763,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -3139,6 +3153,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_user_activity.cpp
         src/UserActivityLog.h
         src/UserActivityLog.cpp
+        src/BackgroundFileWriter.h
+        src/BackgroundFileWriter.cpp
         src/UserActivityChart.h
         src/UserActivityChart.cpp
         src/SourceCheckout.h
@@ -3238,6 +3254,14 @@ forkmesh_link_opengl(forkmesh-window-tests)
     )
     target_link_libraries(forkmesh-teammate-mood-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-teammate-mood-tests PRIVATE src)
+
+    qt_add_executable(forkmesh-stall-repair-tests
+        tests/test_stall_repair_routing.cpp
+        src/StallRepairRouting.h
+        src/StallRepairRouting.cpp
+    )
+    target_link_libraries(forkmesh-stall-repair-tests PRIVATE Qt6::Core)
+    target_include_directories(forkmesh-stall-repair-tests PRIVATE src)
 
     qt_add_executable(forkmesh-user-avatar-tests
         tests/test_user_avatar_store.cpp
@@ -3731,6 +3755,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
         src/CodexTranscriptStyle.h
@@ -3938,6 +3964,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-teammate-tests
         forkmesh-teammate-workspace-tests
         forkmesh-teammate-mood-tests
+        forkmesh-stall-repair-tests
         forkmesh-ledger-tests
         ${FORKMESH_MARKETPLACE_TEST_TARGETS}
         forkmesh-network-log-tests
@@ -4022,6 +4049,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     set_tests_properties(forkmesh-native-package-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-teammate-tests COMMAND forkmesh-teammate-tests)
+    add_test(NAME forkmesh-stall-repair-tests COMMAND forkmesh-stall-repair-tests)
     add_test(NAME forkmesh-teammate-workspace-tests
              COMMAND forkmesh-teammate-workspace-tests)
     add_test(NAME forkmesh-teammate-mood-tests COMMAND forkmesh-teammate-mood-tests)
@@ -4482,6 +4510,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-e2e forkmesh-teammate-tests
         forkmesh-teammate-workspace-tests
         forkmesh-teammate-mood-tests
+        forkmesh-stall-repair-tests
         forkmesh-issue-mention-tests
         forkmesh-ledger-tests
         forkmesh-prompt-spellcheck-tests
@@ -4557,6 +4586,21 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-agent-cli-tasks-tests
         COMMAND forkmesh-agent-cli-tasks-tests)
+
+    qt_add_executable(forkmesh-claude-control-tests
+        tests/test_claude_control_protocol.cpp
+        src/ClaudeControlProtocol.h
+        src/ClaudeControlProtocol.cpp
+    )
+    target_include_directories(forkmesh-claude-control-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-claude-control-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-claude-control-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-claude-control-tests
+        COMMAND forkmesh-claude-control-tests)
 
     qt_add_executable(forkmesh-desktop-power-alert-tests
         tests/test_desktop_power_alert.cpp

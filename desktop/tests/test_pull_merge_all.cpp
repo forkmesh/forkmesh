@@ -144,6 +144,35 @@ int main(int argc, char **argv)
     check(errorMessage(QStringLiteral("weird")).contains(QStringLiteral("weird")),
           "an unknown code is still named");
 
+    check(trackedPullBranchRefs(7) ==
+              QStringList({QStringLiteral("refs/remotes/origin/pr/7"),
+                           QStringLiteral("refs/remotes/forkmesh-mesh/pr/7")}),
+          "a pull's cloud copies are looked for under both synced namespaces");
+    check(trackedPullBranchRefs(0).isEmpty(), "an unnumbered pull has no cloud copy");
+    check(servedPullBranchRefs({7, 0, 7, 12}) ==
+              QStringList({QStringLiteral("refs/heads/pr/7"),
+                           QStringLiteral("refs/heads/pr/12")}),
+          "the cloud is asked once for each numbered branch");
+    const QString sha(40, QLatin1Char('a'));
+    const QByteArray listing =
+        (sha + QStringLiteral("\trefs/heads/pr/7\n") + QString(40, QLatin1Char('b')) +
+         QStringLiteral("\trefs/heads/pr/9\n") + QStringLiteral("zz\trefs/heads/pr/12\n") +
+         QString(40, QLatin1Char('c')) + QStringLiteral("\trefs/heads/pr/12/../x\n"))
+            .toUtf8();
+    const QHash<int, QString> tips = servedPullBranchTips(listing, {7, 12});
+    check(tips.size() == 1 && tips.value(7) == sha,
+          "only wanted numbers with a real commit id are taken from the cloud listing");
+    check(missingCodeReason(false, QStringLiteral("noname:pr/04-issues"),
+                            QStringLiteral("main"))
+              .contains(QStringLiteral("does not apply to `main`")),
+          "a patch pull that cannot be rebuilt says its patch does not apply");
+    check(missingCodeReason(true, QStringLiteral("fork:topic/x"), QStringLiteral("main"))
+              .contains(QStringLiteral("`topic/x` is neither on this node nor in the cloud")),
+          "a branch pull names the branch that is missing");
+    check(!missingCodeReason(true, QStringLiteral("x`rm`"), QStringLiteral("main"))
+               .contains(QLatin1Char('`') + QStringLiteral("x")),
+          "an unsafe branch name is never quoted back");
+
     if (failures)
         std::cerr << failures << " check(s) failed\n";
     else

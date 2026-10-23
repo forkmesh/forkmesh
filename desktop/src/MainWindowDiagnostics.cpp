@@ -29,6 +29,8 @@
 #include "RepoSecurity.h"
 #include "RewardPoolSigner.h"
 #include "SourceCheckout.h"
+#include "SingleInstance.h"
+#include "StallRepairRouting.h"
 #include "TerminalWidget.h"
 #include "WorldSpeechBridge.h"
 
@@ -645,6 +647,14 @@ void MainWindow::toggleRepositoryRatchet(bool enabled)
 }
 
 namespace {
+bool stallSessionIsActive(const AgentSession *session)
+{
+    return session &&
+           (session->status == AgentStatus::Running ||
+            session->status == AgentStatus::Queued ||
+            session->status == AgentStatus::Waiting);
+}
+
 QString normalizedStallSignature(const QString &blockingCall,
                                  const QString &likelyOrigin,
                                  const QString &backtrace)
@@ -853,6 +863,10 @@ void MainWindow::maybeTriggerStallMonitoringTeammates()
     // turn those service-side diagnostics into coding-agent processes: doing
     // so competes with the mirror seal for RAM/disk and can create a feedback
     // loop where each stall launches more work and makes the next stall worse.
+    if (forkmesh::isBackgroundInstance() ||
+        QGuiApplication::platformName().contains(QStringLiteral("offscreen"),
+                                                 Qt::CaseInsensitive))
+        return;
     if (!QSettings().value(kAutoAgentOnStallSetting, true).toBool())
         return;
 
@@ -862,6 +876,32 @@ void MainWindow::maybeTriggerStallMonitoringTeammates()
 
     const forkmesh::teammates::LoadResult loaded =
         forkmesh::teammates::Store(teammatesDirPath(repoIndex)).load();
+
+    if (const int openSessionId = openStallRepairSessionId(repoIndex);
+        openSessionId > 0) {
+        const AgentSession *open = findAgentSession(openSessionId);
+        const bool working = open && stallSessionIsActive(open);
+        const int waiting = int(stallEntriesNotHandedOff().size());
+        bool due = working && waiting > 0;
+        for (const forkmesh::teammates::Config &teammate : loaded.teammates) {
+            if (due || !teammate.enabled)
+                break;
+            for (const forkmesh::teammates::LogMonitor &monitor :
+                 teammate.logMonitors) {
+                if (forkmesh::teammates::normalizedTaskType(monitor.taskType) ==
+                        forkmesh::teammates::kTaskTypeUiStalls &&
+                    forkmesh::teammates::logMonitorMatches(
+                        monitor, QStringLiteral("STALL"), waiting)) {
+                    due = true;
+                    break;
+                }
+            }
+        }
+        if (due)
+            addStallsToOpenRepairSession(/*immediate=*/false);
+        return;
+    }
+
     QString assignment;
     for (const forkmesh::teammates::Config &teammate : loaded.teammates) {
         if (!teammate.enabled)
@@ -889,27 +929,126 @@ void MainWindow::maybeTriggerStallMonitoringTeammates()
             m_triggeredTeammateLogMonitors.insert(monitorKey);
             if (assignment.isEmpty())
                 assignment = stallFixPrompt();
+            const int handedOffThrough = m_stallCount;
             const int sessionId = runTeammate(
                 teammate.id, trigger, monitor.taskType, repoIndex, assignment,
                 /*switchToTab=*/false);
             if (sessionId > 0) {
+                rememberStallRepairSession(sessionId);
+                m_stallHandedOffThrough =
+                    qMax(m_stallHandedOffThrough, handedOffThrough);
+                m_stallFollowUpLastMs = QDateTime::currentMSecsSinceEpoch();
                 const forkmesh::teammates::AgentChoice taskAgent =
                     forkmesh::teammates::recentAgentChoice();
                 logSystem(QStringLiteral(
                               "%1 observed %2 UI stalls (threshold %3) and "
-                              "started %4 session #%5 to repair them.")
+                              "handed them to %4 session #%5; later stalls "
+                              "are added to that session.")
                               .arg(teammate.name)
                               .arg(m_stallCount)
                               .arg(monitor.threshold)
                               .arg(agentProviderName(taskAgent.provider))
                               .arg(sessionId));
-            } else {
-                // The teammate may already be busy or the provider may be
-                // unavailable. Retry on the next observed stall.
-                m_triggeredTeammateLogMonitors.remove(monitorKey);
+                return;
             }
+            // The teammate may already be busy or the provider may be
+            // unavailable. Retry on the next observed stall.
+            m_triggeredTeammateLogMonitors.remove(monitorKey);
         }
     }
+}
+
+int MainWindow::openStallRepairSessionId(int repoIndex)
+{
+    if (repoIndex < 0 || repoIndex >= m_repositories.size())
+        return 0;
+    const RepositoryRecord &repo = m_repositories.at(repoIndex);
+    QList<forkmesh::stallrepair::Candidate> candidates;
+    candidates.reserve(m_agentSessions.size());
+    for (const AgentSession &session : std::as_const(m_agentSessions)) {
+        forkmesh::stallrepair::Candidate candidate;
+        candidate.id = session.id;
+        candidate.active = stallSessionIsActive(&session);
+        candidate.succeeded = session.status == AgentStatus::Success;
+        candidate.merged = session.merged;
+        candidate.foreign =
+            isCloudSession(session.id) || isExternalSession(session.id);
+        candidate.associationOnly = session.associationOnly;
+        candidate.sameRepository =
+            session.owner == repo.owner && session.name == repo.name;
+        candidate.title = session.issueTitle;
+        candidate.prompt = session.prompt;
+        candidate.createdAtMs = session.createdAtMs;
+        candidates.append(candidate);
+    }
+    return forkmesh::stallrepair::pickSession(
+        candidates, QSettings().value(kStallRepairSessionSetting, 0).toInt());
+}
+
+void MainWindow::rememberStallRepairSession(int sessionId)
+{
+    if (sessionId > 0)
+        QSettings().setValue(kStallRepairSessionSetting, sessionId);
+}
+
+QStringList MainWindow::stallEntriesNotHandedOff() const
+{
+    const int firstSerial = m_stallCount - int(m_stallLog.size()) + 1;
+    QStringList entries;
+    for (int i = 0; i < m_stallLog.size(); ++i) {
+        if (firstSerial + i > m_stallHandedOffThrough)
+            entries.append(m_stallLog.at(i));
+    }
+    return entries;
+}
+
+bool MainWindow::addStallsToOpenRepairSession(bool immediate)
+{
+    if (openStallRepairSessionId(stallReportRepoIndex()) <= 0)
+        return false;
+    if (immediate) {
+        if (m_stallFollowUpTimer)
+            m_stallFollowUpTimer->stop();
+        deliverStallFollowUp();
+        return true;
+    }
+    if (!m_stallFollowUpTimer) {
+        m_stallFollowUpTimer = new QTimer(this);
+        m_stallFollowUpTimer->setSingleShot(true);
+        connect(m_stallFollowUpTimer, &QTimer::timeout, this, [this] {
+            if (forkmesh::isBackgroundInstance() ||
+                !QSettings().value(kAutoAgentOnStallSetting, true).toBool())
+                return;
+            deliverStallFollowUp();
+        });
+    }
+    if (!m_stallFollowUpTimer->isActive()) {
+        const qint64 delayMs = forkmesh::stallrepair::followUpDelayMs(
+            QDateTime::currentMSecsSinceEpoch(), m_stallFollowUpLastMs);
+        m_stallFollowUpTimer->start(int(qBound<qint64>(1000, delayMs,
+                                                       24LL * 60 * 60 * 1000)));
+    }
+    return true;
+}
+
+void MainWindow::deliverStallFollowUp()
+{
+    const QStringList entries = stallEntriesNotHandedOff();
+    if (entries.isEmpty())
+        return;
+    const int sessionId = openStallRepairSessionId(stallReportRepoIndex());
+    if (sessionId <= 0)
+        return;
+    const QString prompt = forkmesh::stallrepair::followUpPrompt(
+        entries, m_stallCount, stallLogLocationsBlock());
+    m_stallHandedOffThrough = m_stallCount;
+    m_stallFollowUpLastMs = QDateTime::currentMSecsSinceEpoch();
+    rememberStallRepairSession(sessionId);
+    sendPromptToAgentSession(sessionId, prompt);
+    logSystem(QStringLiteral("Added %1 new UI stall report(s) to agent session "
+                             "#%2 instead of starting another agent.")
+                  .arg(entries.size())
+                  .arg(sessionId));
 }
 
 // The repository this build came from. Crash and error-log repairs keep their
@@ -932,6 +1071,9 @@ void MainWindow::clearStallLog()
     m_stallCount = 0;
     m_stallLog.clear();
     m_triggeredTeammateLogMonitors.clear();
+    m_stallHandedOffThrough = 0;
+    if (m_stallFollowUpTimer)
+        m_stallFollowUpTimer->stop();
     m_lastStallReportSignature.clear();
     m_lastStallReportMs = 0;
     if (!m_stallLogPath.isEmpty())
@@ -958,6 +1100,17 @@ bool MainWindow::sendStallLogToAgent()
                            "ForkMesh (or add the repo on the Issues tab) and try again."));
         return false;
     }
+    if (const int openSessionId = openStallRepairSessionId(repoIndex);
+        openSessionId > 0) {
+        if (stallEntriesNotHandedOff().isEmpty()) {
+            flashMessage(QStringLiteral("Agent session #%1 already has every "
+                                        "recorded UI stall.")
+                             .arg(openSessionId));
+            return true;
+        }
+        addStallsToOpenRepairSession(/*immediate=*/true);
+        return true;
+    }
     const QString prompt =
         QStringLiteral(
             "ForkMesh's GUI thread stalled %1 time(s) this session — the event loop "
@@ -968,12 +1121,17 @@ bool MainWindow::sendStallLogToAgent()
             .arg(m_stallLog.size())
             .arg(stallLogLocationsBlock())
             .arg(m_stallLog.join(QStringLiteral("\n\n---\n\n")));
-    if (startAdHocAgentForRepo(repoIndex, prompt, defaultAgentProvider(),
-                               /*createPr=*/false) <= 0) {
+    const int handedOffThrough = m_stallCount;
+    const int sessionId = startAdHocAgentForRepo(
+        repoIndex, prompt, defaultAgentProvider(), /*createPr=*/false);
+    if (sessionId <= 0) {
         QMessageBox::warning(this, QStringLiteral("UI stall diagnostics"),
                              QStringLiteral("Could not start an agent for the recorded stalls."));
         return false;
     }
+    rememberStallRepairSession(sessionId);
+    m_stallHandedOffThrough = qMax(m_stallHandedOffThrough, handedOffThrough);
+    m_stallFollowUpLastMs = QDateTime::currentMSecsSinceEpoch();
     logSystem(QStringLiteral("Started an agent to fix the %1 recorded UI stall(s).")
                   .arg(m_stallLog.size()));
     return true;

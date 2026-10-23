@@ -82,7 +82,8 @@ inline const QList<BuiltIn> &builtInGroups()
 {
     static const QList<BuiltIn> groups = {
         {"work", "Work",
-         {QStringLiteral("agents"), QStringLiteral("code"),
+         {QStringLiteral("sessions"), QStringLiteral("agents"),
+          QStringLiteral("code"),
           QStringLiteral("git"), QStringLiteral("repos"),
           QStringLiteral("tasks"), QStringLiteral("notes"),
           QStringLiteral("calendar"), QStringLiteral("files")}},

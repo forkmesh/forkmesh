@@ -326,6 +326,11 @@ the dot took width and the churn bars were hard to read).
   none. Its border is the churn (`AgentChurnRing`): one continuous 2 pt stroke,
   green for the share of lines added and red for the share removed, so the
   larger side is the longer stretch. With no churn the border is a hairline.
+  While the agent is active the ring turns (one lap every 2.4 s, the green and
+  red stretches keep their lengths) so a working agent stands out in the list;
+  when it finishes the ring stops still. Reduce Motion keeps it still, and it
+  pauses while the tab is hidden (asked for from the phone: see at a glance
+  which agents are working).
 - A small semi-transparent pill on the tile's top right (`AgentTilePill`) holds
   the file count and a dot coloured by status: blue running, orange waiting,
   green done, purple merged, red failed, grey queued or stopped.

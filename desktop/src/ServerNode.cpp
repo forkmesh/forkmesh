@@ -769,6 +769,7 @@ void ServerNode::discardCurrentSocket()
 {
     QTcpSocket *socket = m_socket;
     m_socket = nullptr;
+    m_sendGate.clear();
     if (!socket)
         return;
     socket->disconnect(this);
@@ -779,6 +780,7 @@ void ServerNode::discardCurrentSocket()
 void ServerNode::closeCurrentSocket()
 {
     QTcpSocket *socket = m_socket;
+    m_sendGate.clear();
     if (!socket)
         return;
 
@@ -970,6 +972,7 @@ void ServerNode::handleLinkLost()
         m_connectTimeoutTimer->stop();
     const bool wasConnected = m_wsReady;
     m_wsReady = false;
+    m_sendGate.clear();
     m_wsConnectedAtMs = 0;
     m_peers.clear();
     m_lastHelloReplyMs.clear();
@@ -1453,6 +1456,19 @@ void ServerNode::rememberRecipientRef(const QByteArray &frame,
 
 void ServerNode::sendTextFrame(const QByteArray &payload, const QString &type,
                                const QString &scope, const QString &peer)
+{
+    if (!m_wsReady || !m_socket)
+        return;
+    const auto device = m_seal.device();
+    m_sendGate.send(device ? device->writeTicket() : 0, nullptr,
+                    [this, payload, type, scope, peer] {
+                        writeTextFrame(payload, type, scope, peer);
+                        return true;
+                    });
+}
+
+void ServerNode::writeTextFrame(const QByteArray &payload, const QString &type,
+                                const QString &scope, const QString &peer)
 {
     if (!m_wsReady || !m_socket)
         return;
@@ -2594,6 +2610,7 @@ void ServerNode::shutdown()
         m_connectTimeoutTimer->stop();
     QJsonObject bye = makeMessage("bye");
     sendEncrypted(bye, true);
+    m_sendGate.releaseAll();
     const bool wasConnected = m_wsReady;
     closeCurrentSocket();
     m_attemptActive = false;

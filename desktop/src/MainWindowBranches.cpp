@@ -3476,6 +3476,16 @@ MainWindow::mergeBranchIntoBase(const WorktreeMergeFlow &flow,
         if (runGitCapture(dir, {QStringLiteral("rev-parse"), QStringLiteral("HEAD")},
                           &head, nullptr))
             step.mergeCommit = QString::fromUtf8(head).trimmed();
+        if (!flow.localPath.isEmpty()) {
+            PullStore pulls(flow.localPath, flow.mirrorPath, flow.identity,
+                            flow.userName);
+            QString reconcileError;
+            pulls.reconcileMergedPulls(&reconcileError);
+            if (!reconcileError.isEmpty())
+                step.logs << QStringLiteral("PR: merged %1, but could not record "
+                                            "its PR status yet: %2")
+                                 .arg(branch, reconcileError);
+        }
     } else {
         runGitCapture(dir, {"merge", "--abort"}, nullptr, nullptr);
     }
@@ -3587,20 +3597,6 @@ void MainWindow::applyWorktreeMergeStep(const WorktreeMergeFlow &flow,
     const bool landed = merged && !hasConflicts && branchInBase;
     if (landed) {
         danceGenie();
-        // Record the merge while the agent branch still resolves. Cleanup may
-        // delete that branch seconds later, after which reconciliation cannot
-        // prove which commit was merged.
-        if (!flow.localPath.isEmpty()) {
-            PullStore pulls(flow.localPath, flow.mirrorPath, &m_profileIdentity,
-                            m_userName);
-            QString reconcileError;
-            pulls.reconcileMergedPulls(&reconcileError);
-            if (!reconcileError.isEmpty()) {
-                logSystem(QStringLiteral("PR: merged %1, but could not record its "
-                                         "PR status yet: %2")
-                              .arg(branch, reconcileError));
-            }
-        }
         {
             const QList<AgentSession> sessions = m_agentSessions;
             rememberMergedBranch(step.mergeCommit, branch, sessions, flow.owner,
@@ -10515,10 +10511,12 @@ void MainWindow::updateBranchDiffHealth(const QList<DiffFileEntry> &files,
     if (m_branchDiffHealthReport && m_branchDiffHealthReportKey == inputKey &&
         patch == m_branchDiffHealthReportPatch) {
         health = *m_branchDiffHealthReport; // scored on the render worker
-    } else {
+    } else if (!branchDiffRenderNeedsWorker(patch)) {
         if (m_branchDiffHealthReport && patch == m_branchDiffHealthReportPatch)
             appendBranchDiffLog(QStringLiteral("Merge-health inputs changed since "
                                               "the worker scored them; re-scoring"));
+        m_branchDiffHealthScoringKey.clear();
+        m_branchDiffHealthScoringPatch.clear();
         health = diffHealthReport(patch, files, m_branchDiffHealthBehind,
                                   m_branchDiffHealthAhead, m_branchDiffHealthConflict,
                                   m_branchDiffHealthWorktreeConflict,
@@ -10526,6 +10524,50 @@ void MainWindow::updateBranchDiffHealth(const QList<DiffFileEntry> &files,
         m_branchDiffHealthReport = std::make_shared<DiffHealthReport>(health);
         m_branchDiffHealthReportKey = inputKey;
         m_branchDiffHealthReportPatch = patch;
+    } else {
+        const bool alreadyScoring = m_branchDiffHealthScoringKey == inputKey &&
+                                    m_branchDiffHealthScoringPatch == patch;
+        if (m_branchDiffHealthReport && patch == m_branchDiffHealthReportPatch &&
+            !alreadyScoring)
+            appendBranchDiffLog(QStringLiteral("Merge-health inputs changed since "
+                                              "the worker scored them; re-scoring"));
+        if (patch != m_branchDiffHealthPatch) {
+            for (QLabel *label : std::as_const(m_branchDiffHealthLabels))
+                label->setVisible(false);
+            if (m_branchSecretBanner)
+                m_branchSecretBanner->clearFindings();
+        }
+        m_branchDiffHealthPatch = patch;
+        if (alreadyScoring)
+            return;
+        m_branchDiffHealthScoringKey = inputKey;
+        m_branchDiffHealthScoringPatch = patch;
+        const int behind = m_branchDiffHealthBehind;
+        const int ahead = m_branchDiffHealthAhead;
+        const bool conflict = m_branchDiffHealthConflict;
+        const bool worktreeConflict = m_branchDiffHealthWorktreeConflict;
+        const bool conflictPending = m_branchDiffHealthConflictPending;
+        runOffThread<DiffHealthReport>(
+            [patch, files, behind, ahead, conflict, worktreeConflict,
+             conflictPending] {
+                return diffHealthReport(patch, files, behind, ahead, conflict,
+                                        worktreeConflict, conflictPending);
+            },
+            [this, files, patch, inputKey](DiffHealthReport scored) {
+                if (m_branchDiffHealthScoringKey != inputKey ||
+                    m_branchDiffHealthScoringPatch != patch)
+                    return;
+                m_branchDiffHealthScoringKey.clear();
+                m_branchDiffHealthScoringPatch.clear();
+                m_branchDiffHealthReport =
+                    std::make_shared<DiffHealthReport>(std::move(scored));
+                m_branchDiffHealthReportKey = inputKey;
+                m_branchDiffHealthReportPatch = patch;
+                if (m_branchDiffHealthPatch == patch &&
+                    branchDiffHealthInputKey() == inputKey)
+                    updateBranchDiffHealth(files, patch);
+            });
+        return;
     }
     m_branchDiffHealthPatch = patch;
     if (m_branchSecretBanner)
