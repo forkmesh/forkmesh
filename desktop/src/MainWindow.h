@@ -10285,6 +10285,7 @@ private:
     void showLogTypesDialog();
     QVector<LogTimelineSeries> logTimelineSeries() const;
     void rebuildLogFilterButtons(); // (re)build the category chip row
+    void syncDebugActivityLightCategories();
     int logFilterChipCount(const QString &category) const;
     void updateLogFilterChipCounts(); // refresh the counts without rebuilding
     void updateCloudLogFilterChip();
