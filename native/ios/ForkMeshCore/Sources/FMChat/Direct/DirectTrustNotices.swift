@@ -2,8 +2,8 @@ import FMCrypto
 import Foundation
 
 public enum DirectTrustNoticeKind: Equatable, Sendable {
-    case pendingDevice(kid: String)
-    case ownDevice(kid: String)
+    case pendingDevices(kids: [String])
+    case ownDevices(kids: [String])
     case safetyNumberChanged
 }
 
@@ -14,14 +14,14 @@ public struct DirectTrustNotice: Equatable, Sendable, Identifiable {
     public let text: String
     public let timestamp: Date
 
-    public var kid: String? {
+    public var kids: [String] {
         switch kind {
-        case .pendingDevice(let kid), .ownDevice(let kid): return kid
-        case .safetyNumberChanged: return nil
+        case .pendingDevices(let kids), .ownDevices(let kids): return kids
+        case .safetyNumberChanged: return []
         }
     }
 
-    public var asksApproval: Bool { kid != nil }
+    public var asksApproval: Bool { !kids.isEmpty }
 }
 
 public enum DirectSafetyScan: Equatable, Sendable {
@@ -60,6 +60,27 @@ public enum DirectSafetyScan: Equatable, Sendable {
 
 extension DirectTrustText {
     public static let ownDevice = "A new device was added to your account. Approve it if it is yours, otherwise block it."
+
+    public static func ownDevices(_ count: Int) -> String {
+        count == 1
+            ? ownDevice : "\(count) new devices were added to your account. Approve them if they are yours, otherwise block them."
+    }
+
+    public static func pendingDevices(_ name: String, count: Int, own: Bool) -> String {
+        if count == 1 { return pendingDevice(name) }
+        let who = own ? "" : " for \(name)"
+        return "\(count) new devices\(who) want to join this chat. Check the safety number, then approve or block."
+    }
+
+    public static func blockTitle(_ count: Int) -> String {
+        count == 1 ? "Block this device?" : "Block these \(count) devices?"
+    }
+
+    public static func blockNote(_ count: Int) -> String {
+        count == 1
+            ? "Nothing is sent to it and its messages are dropped from now on."
+            : "Nothing is sent to them and their messages are dropped from now on."
+    }
     public static let safetyNumber = "Safety number"
     public static let verified = "Verified"
     public static let notVerified = "Not verified"
@@ -97,13 +118,20 @@ extension ChatDeviceInfo {
 
 public enum DirectTrustNotices {
     public static func pending(conversation: String, devices: [ChatDeviceInfo], name: String) -> [DirectTrustNotice] {
-        devices.filter { $0.state == .pending && !$0.isSelf }.sorted { $0.firstSeen < $1.firstSeen }.map { device in
-            let own = device.isOwnAccount
-            return DirectTrustNotice(
-                id: "trust-\(conversation)-\(device.kid)", conversation: conversation,
-                kind: own ? .ownDevice(kid: device.kid) : .pendingDevice(kid: device.kid),
-                text: own ? DirectTrustText.ownDevice : DirectTrustText.pendingDevice(name), timestamp: device.firstSeen)
-        }
+        let waiting = devices.filter { $0.state == .pending && !$0.isSelf }.sorted { $0.firstSeen < $1.firstSeen }
+        guard let first = waiting.first else { return [] }
+        let kids = waiting.map(\.kid)
+        let ownOnly = waiting.allSatisfy(\.isOwnAccount)
+        let mixed = !ownOnly && waiting.contains(where: \.isOwnAccount)
+        return [
+            DirectTrustNotice(
+                id: "trust-\(conversation)-devices", conversation: conversation,
+                kind: ownOnly ? .ownDevices(kids: kids) : .pendingDevices(kids: kids),
+                text: ownOnly
+                    ? DirectTrustText.ownDevices(kids.count)
+                    : DirectTrustText.pendingDevices(name, count: kids.count, own: mixed),
+                timestamp: first.firstSeen)
+        ]
     }
 
     public static func notices(
