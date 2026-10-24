@@ -955,7 +955,6 @@ void MainWindow::onMessage(const ChatMessage &message)
     refreshChatListPreview(conversation);
 
     if (conversation == m_currentConversation) {
-        schedulePromptChatPreview();
         const bool wasAtBottom = m_stickToBottom;
         // A reply changes its root's summary row, and a message that landed
         // earlier than the one before it changes the order — both need the
@@ -3751,6 +3750,7 @@ void MainWindow::refreshChatListPreview(const QString &conversation)
 {
     if (conversation.isEmpty())
         return;
+    schedulePromptChatPreview();
     const forkmesh::chatlist::Preview preview = chatListPreview(conversation);
     const auto apply = [&preview](auto &&read, auto &&write) {
         if (read(ChannelGroupTree::kPreviewRole).toString() != preview.text)

@@ -1440,8 +1440,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
     }
     auto *promptClear =
         window.findChild<QPushButton *>(QStringLiteral("promptClearButton"));
-    auto *promptDetach =
-        window.findChild<QPushButton *>(QStringLiteral("promptDetachButton"));
+    auto *promptChannel =
+        window.findChild<QPushButton *>(QStringLiteral("promptChannelButton"));
     auto *promptText =
         window.findChild<QPlainTextEdit *>(QStringLiteral("issueQuickAdd"));
     check(!window.findChild<QWidget *>(QStringLiteral("promptResizeGrip")) &&
@@ -1454,10 +1454,15 @@ void checkFooterOverlayGeometry(MainWindow &window)
               promptLeftEdge->height() > promptWrapper->height() / 2,
           QStringLiteral("the prompt has no resize grip: every edge and corner "
                          "is a resize handle"));
-    check(promptClear && promptDetach && promptGrip &&
+    check(!window.findChild<QPushButton *>(QStringLiteral("promptDetachButton")) &&
+              !window.findChild<QPushButton *>(QStringLiteral("promptResetButton")) &&
+              !window.findChild<QLabel *>(QStringLiteral("quickAddCharCount")),
+          QStringLiteral("the prompt strip has no reset, pop-out or characters-left "
+                         "control"));
+    check(promptClear && promptChannel && promptGrip &&
               !promptGrip->geometry().intersects(QRect(
-                  promptDetach->mapTo(promptGrip->parentWidget(), QPoint()),
-                  promptDetach->size())) &&
+                  promptChannel->mapTo(promptGrip->parentWidget(), QPoint()),
+                  promptChannel->size())) &&
               !promptGrip->geometry().intersects(QRect(
                   promptClear->mapTo(promptGrip->parentWidget(), QPoint()),
                   promptClear->size())),
@@ -1532,7 +1537,7 @@ void checkFooterOverlayGeometry(MainWindow &window)
                              "remembers it"));
         promptVibe->click();
     }
-    if (promptHandle && promptGrip && promptDetach && prompt && dock) {
+    if (promptHandle && promptGrip && prompt && dock) {
         const auto sendMouse = [](QWidget *target, QEvent::Type type,
                                   const QPoint &global) {
             QMouseEvent event(type, target->mapFromGlobal(global),
@@ -1606,14 +1611,14 @@ void checkFooterOverlayGeometry(MainWindow &window)
         window.testClearPageNotices();
         QApplication::processEvents();
 
-        promptDetach->click();
+        window.testSetPromptOverlayDetached(true);
         QApplication::processEvents();
         auto *detachWindow =
             window.findChild<QWidget *>(QStringLiteral("promptDetachWindow"));
         check(detachWindow && detachWindow->isWindow() &&
                   prompt->window() == detachWindow &&
                   promptWrapper && promptWrapper->isVisible(),
-              QStringLiteral("the detach button moves the prompt into a window "
+              QStringLiteral("popping the prompt out moves it into a window "
                              "of its own, outside the app's own window"));
         check(detachWindow &&
                   detachWindow->windowFlags().testFlag(Qt::FramelessWindowHint) &&
@@ -1635,29 +1640,21 @@ void checkFooterOverlayGeometry(MainWindow &window)
         window.testClearPageNotices();
         QApplication::processEvents();
 
-        promptDetach->click();
+        window.testSetPromptOverlayDetached(false);
         QApplication::processEvents();
         check(prompt->window() == &window &&
                   (!detachWindow || !detachWindow->isVisible()),
-              QStringLiteral("pressing detach again brings the prompt back "
+              QStringLiteral("docking the prompt again brings it back "
                              "inside the app"));
 
-        // The panel is still floating/resized from the drag+grip gestures above
-        // (adhoc #1625): the explicit reset button is a discoverable alternative
-        // to the handle's double-click gesture and should snap it back the same
-        // way.
-        auto *promptReset =
-            window.findChild<QPushButton *>(QStringLiteral("promptResetButton"));
-        check(promptReset != nullptr,
-              QStringLiteral("the prompt has an explicit reset-placement button"));
-        if (promptReset) {
-            promptReset->click();
+        {
+            window.testResetPromptOverlayPlacement();
             // Checked before the event loop spins: the reset has to land the
             // panel in the corner in the same pass, not leave a frame where it
             // is nowhere on screen (adhoc #85).
             check(prompt->parentWidget() == dock &&
                       prompt->geometry().bottom() == dock->rect().bottom(),
-                  QStringLiteral("the reset button snaps the prompt back to the "
+                  QStringLiteral("resetting snaps the prompt back to the "
                                  "footer anchor"));
             // The strip itself has to stay inside the workspace it overlays.
             // Sized from an empty row's size hint it hangs a whole panel height
@@ -1698,12 +1695,18 @@ void checkFooterOverlayGeometry(MainWindow &window)
                   prompt->window() != &window && prompt->window()->isVisible(),
               QStringLiteral("dragging the prompt out of the window pops it "
                              "into a window of its own"));
-        if (window.testPromptOverlayPlacement() == QStringLiteral("detached"))
-            promptDetach->click();
+        if (window.testPromptOverlayPlacement() == QStringLiteral("detached")) {
+            QMouseEvent dockBack(QEvent::MouseButtonDblClick,
+                                 QPointF(promptHandle->width() / 2.0,
+                                         promptHandle->height() / 2.0),
+                                 QPointF(promptHandle->mapToGlobal(QPoint(0, 0))),
+                                 Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(promptHandle, &dockBack);
+        }
         QApplication::processEvents();
         check(prompt->window() == &window,
               QStringLiteral("a prompt dragged out of the window docks back "
-                             "with the detach button"));
+                             "with a double-click on its strip"));
 
         // Re-float it once more so the handle's own double-click gesture (the
         // longer-standing affordance) is still exercised too.
@@ -1759,10 +1762,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
             window.resize(originalWindowSize);
             QApplication::processEvents();
         }
-        if (promptReset) {
-            promptReset->click();
-            QApplication::processEvents();
-        }
+        window.testResetPromptOverlayPlacement();
+        QApplication::processEvents();
     }
 
     window.testSetLogOverlayExpanded(true);
@@ -3156,11 +3157,69 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
     QApplication::processEvents();
     QLabel *preview = window.testPromptChatPreview();
     check(preview && !preview->isHidden() &&
-              preview->text().contains(QStringLiteral("ana: morning, room")) &&
-              preview->text().contains(QStringLiteral("ben: standup in five")),
-          QStringLiteral("with a chat room open the composer previews that room "
-                         "(%1)")
+              preview->text().contains(QStringLiteral("#prompt-preview ana ")) &&
+              preview->text().contains(QStringLiteral(": morning, room")) &&
+              preview->text().contains(QStringLiteral("#prompt-preview ben now: "
+                                                      "standup in five")) &&
+              preview->text().count(QStringLiteral("<br>")) <= 2,
+          QStringLiteral("the composer previews the latest chats with channel, "
+                         "user and time on one line (%1)")
               .arg(preview ? preview->text().left(200) : QStringLiteral("none")));
+    auto *channelPicker =
+        window.findChild<QPushButton *>(QStringLiteral("promptChannelButton"));
+    check(channelPicker && channelPicker->text().startsWith(QStringLiteral("#prompt")),
+          QStringLiteral("the prompt strip names the chat channel it is in (%1)")
+              .arg(channelPicker ? channelPicker->text() : QStringLiteral("none")));
+    if (channelPicker) {
+        channelPicker->click();
+        QApplication::processEvents();
+        QMenu *channels = nullptr;
+        for (QWidget *top : QApplication::topLevelWidgets())
+            if (auto *menu = qobject_cast<QMenu *>(top);
+                menu && menu->objectName() == QLatin1String("promptChannelMenu") &&
+                menu->isVisible())
+                channels = menu;
+        QAction *row = nullptr;
+        if (channels)
+            for (QAction *action : channels->actions())
+                if (action->data().toString() == room)
+                    row = action;
+        check(row && row->isChecked() &&
+                  QRegularExpression(QString::fromUtf8(
+                                         "^#prompt-preview\\t\\d+ users? \xC2\xB7 2 chats$"))
+                      .match(row->text())
+                      .hasMatch(),
+              QStringLiteral("the channel menu lists each channel on one row with "
+                             "its users and chats (%1)")
+                  .arg(row ? row->text() : QStringLiteral("none")));
+        if (channels)
+            channels->close();
+        QApplication::processEvents();
+    }
+    if (preview && !preview->isHidden()) {
+        auto *handle = window.findChild<QWidget *>(QStringLiteral("promptDragHandle"));
+        const QPoint start = preview->mapToGlobal(QPoint(20, preview->height() / 2));
+        const QPoint end = start + QPoint(-60, -60);
+        QMouseEvent press(QEvent::MouseButtonPress, preview->mapFromGlobal(start),
+                          QPointF(start), Qt::LeftButton, Qt::LeftButton,
+                          Qt::NoModifier);
+        QApplication::sendEvent(preview, &press);
+        QMouseEvent move(QEvent::MouseMove, preview->mapFromGlobal(end), QPointF(end),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(preview, &move);
+        if (handle) {
+            QMouseEvent release(QEvent::MouseButtonRelease, handle->mapFromGlobal(end),
+                                QPointF(end), Qt::LeftButton, Qt::NoButton,
+                                Qt::NoModifier);
+            QApplication::sendEvent(handle, &release);
+        }
+        QApplication::processEvents();
+        check(window.testPromptOverlayPlacement() == QStringLiteral("floating"),
+              QStringLiteral("dragging the chat lines moves the prompt (%1)")
+                  .arg(window.testPromptOverlayPlacement()));
+        window.testResetPromptOverlayPlacement();
+        QApplication::processEvents();
+    }
     QPushButton *add = nullptr;
     for (QPushButton *button :
          window.findChildren<QPushButton *>(QStringLiteral("quickAddSendIcon")))
@@ -3171,7 +3230,7 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
                          "add and Enter does not pick it"));
     auto *sendTo = window.findChild<QPushButton *>(QStringLiteral("quickAddGenieButton"));
     check(sendTo && sendTo->isEnabled() &&
-              sendTo->text().startsWith(QStringLiteral("send to: #prompt")) &&
+              sendTo->text() == QStringLiteral("chat") &&
               sendTo->toolTip().contains(QStringLiteral("prompt-preview")) &&
               sendTo->toolTip().contains(QStringLiteral("(Enter)")),
           QStringLiteral("send to names the open room and takes Enter (%1 | %2)")
@@ -10621,14 +10680,13 @@ void checkWorkspaceDesign(MainWindow &window)
           QStringLiteral("branch and vibe are icon toggles, with the branch on"));
 
     QLabel *preview = window.testPromptChatPreview();
-    check(preview && preview->isVisibleTo(&window) &&
-              preview->text().contains(QStringLiteral("now the composer")) &&
-              preview->text().contains(QStringLiteral("rarely used actions")) &&
-              preview->text().count(QStringLiteral("<br>")) == 2,
-          QStringLiteral("three compact lines of the latest chat sit over the prompt "
-                         "(%1)")
+    check(preview && !preview->text().contains(QStringLiteral("now the composer")) &&
+              !preview->text().contains(QStringLiteral("rarely used actions")) &&
+              preview->text().count(QStringLiteral("<br>")) <= 2,
+          QStringLiteral("the lines over the prompt are the latest chats, never the "
+                         "agent transcript (%1)")
               .arg(preview ? preview->text().left(200) : QStringLiteral("none")));
-    if (preview && wrapper) {
+    if (preview && wrapper && preview->isVisibleTo(&window)) {
         auto *bar = wrapper->findChild<QWidget *>(QStringLiteral("promptDragHandle"));
         const QRect previewInWrapper(preview->mapTo(wrapper, QPoint()), preview->size());
         check(preview->height() >= preview->sizeHint().height() &&
@@ -34228,7 +34286,7 @@ else:
         auto *sendToButton =
             seeded.findChild<QPushButton *>(QStringLiteral("quickAddGenieButton"));
         check(sendToButton && sendToButton->isVisible() &&
-                  sendToButton->text().startsWith(QStringLiteral("send to: ")),
+                  sendToButton->text() == QStringLiteral("chat"),
               QStringLiteral("the top of the send column sends the prompt to the "
                              "current chat channel (%1)")
                   .arg(sendToButton ? sendToButton->text() : QStringLiteral("none")));

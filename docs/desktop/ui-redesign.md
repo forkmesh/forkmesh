@@ -292,7 +292,7 @@ Icons are `fgMuted`: a button opts in with the `nextIconRole` property, which
 28 px high with 16 px icons on a 4 px grid; the drag strip uses 20 px buttons
 with 14 px icons. The send column drops its icons for text labels: the button
 Enter triggers (`enterTarget`) is the accent primary, the other is a raised
-secondary, and "send to: #channel" is a ghost. Object names, layout positions, settings
+secondary, and "chat" (sends to the current channel) is a ghost. Object names, layout positions, settings
 keys, tooltips and Classic are unchanged.
 
 ## Must not break

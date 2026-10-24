@@ -509,8 +509,8 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 | **Vibe** (`promptVibeCheck`, sparkle icon) | `agents/composerVibe` (off) | Stamps `AgentSession::vibe`; a successful worktree run is merged with clean-up (`maybeAutoMergeForSession`) and pushed (`pushCurrentRepoUpstream`). All merge gates apply |
 
 - The three toggles are icon buttons in the composer's floating button bar
-  (`FloatingPromptBar`, `promptDragHandle`), before the clear (×), reset and
-  pop-out buttons. An "on" toggle gets a
+  (`FloatingPromptBar`, `promptDragHandle`), after the channel picker and
+  before the clear (×) button. An "on" toggle gets a
   thin accent border, so the branch icon (on by default) reads as connected.
   They were a checkbox, a checkbox-plus-icon pair and a "vibe" checkbox on the
   left until 2026-10-22, which crowded the grip and hid what was on.
@@ -519,9 +519,25 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   transparent to the composer's surface, so a chat line running under the
   buttons fades out instead of colliding with them. With no chat to show, a
   band of the bar's height (`promptTopSpacer`) keeps it off the prompt text.
-  The fade and the gaps between buttons still drag the composer. Until
-  2026-10-22 the bar was a full-width strip with a centre drag pill and the
-  grip on the left.
+  The fade and the gaps between buttons still drag the composer, and so do
+  the chat lines: a press on them that moves past the drag distance hands
+  off to the bar's drag (`handlePromptPlacementEvent`), while a plain click
+  still opens the line's channel. Until 2026-10-22 the bar was a full-width
+  strip with a centre drag pill and the grip on the left.
+- **Channel picker** (`promptChannelButton`, `m_promptChannelButton`): the
+  bar's first control names the chat channel the composer is in
+  (`m_currentConversation`) with a ▾. Clicking it opens `promptChannelMenu`
+  (`showPromptChannelMenu`): one row per channel (the sidebar's `m_channels`
+  plus `unlistedChatConversations`, direct messages left out unless one is
+  open), each with its user and chat counts after a tab, the current one
+  checked. Picking a row calls `switchConversation`. Users come from the
+  office mirror's member count, else the open room's members button, else
+  the distinct senders in the loaded history plus you; chats are the loaded
+  top-level messages. Until 2026-10-24 this spot showed the characters left
+  of the 16,000 the prompt holds; the limit still applies, uncounted.
+- There is no reset or pop-out button since 2026-10-24: double-clicking the
+  bar snaps the composer back (`resetPromptOverlayPlacement`) and dragging it
+  out of the window still tears it off into its own window.
 - **Resizing**: every edge and corner of the composer is a resize handle
   (`PromptResizeEdge`, `promptResizeEdge`, eight invisible bands 5 px thick
   with 10 px corners, children of `promptOverlayHost` laid over
@@ -536,21 +552,18 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   end of the bar was the only handle and always resized from the top-right
   corner.
 - **Chat preview** (`ChatPreviewLabel`, `promptChatPreview`): up to three
-  one-line rows over the prompt with the latest messages of the conversation
-  the composer sends to, each with the sender's small round avatar
-  (16 px). With a chat room open on the Chat page (`promptChatRoom`: #general
-  or any other room, channel or direct message), the rows are that room's
-  latest top-level messages (`chatActorAvatar`), and Enter (and the centred
-  layout's send button) post the prompt to the room through **send to**
-  (below). Otherwise the rows follow the agent open above, else
-  the last selected one (`promptChatTargetSessionId`), with the agent's model
-  icon and your avatar. Agent rows come from the session's stream events
-  (`_local_user`, `assistant` text, `_codex_agent_complete`), last paragraph of
-  each, elided to the width; with no events, the prompt and
-  `m_lastAssistantText`. Clicking an agent preview opens that agent.
-  `refreshPromptChatPreview` runs (debounced 250 ms) from
-  `updateQuickAddEnterTarget`, on each new event of that session and on each
-  new message in the open room. The rows are painted at a fixed pitch (avatar
+  one-line rows over the prompt with the three latest top-level chat messages
+  across every loaded conversation (`m_history`), newest last. Each row is
+  the sender's small round avatar (16 px, `chatActorAvatar`), then the
+  channel (muted), the user (bold), a compact time (`now`, `5m`, `3h`, `2d`,
+  then the date, muted) and the message, elided to the width. Clicking a row
+  opens its channel on the Chat page. The rows never come from agent
+  sessions: until 2026-10-24 they followed the agent open above when no chat
+  room was open. With a chat room open on the Chat page (`promptChatRoom`),
+  Enter (and the centred layout's send button) post the prompt to the room
+  through **chat** (below). `refreshPromptChatPreview` runs (debounced
+  250 ms) whenever a conversation's sidebar preview changes
+  (`refreshChatListPreview`). The rows are painted at a fixed pitch (avatar
   height plus a 4 px gap) and the docked composer's height is recomputed
   whenever the row count changes (`baseAnchoredHeight`), so the third line is
   never clipped; before 2026-10-22 the height only followed showing or hiding
@@ -559,10 +572,12 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   workspace layout's send button reads **Add** when it is the Enter target).
   For part of 2026-10-22 it read **chat** over a preview; the label went back
   to **add** because "chat" now means a chat channel (below).
-- The top of the send column is **send to: #channel**
+- The top of the send column is **chat**
   (`m_quickAddSendToChannelButton`, object name still `quickAddGenieButton`
-  for the stylesheets): it names the chat conversation open on the Chat page
-  (`m_currentConversation`, labelled by `chatConversationLabel`) and posts the
+  for the stylesheets): it sends to the channel the picker names
+  (`m_currentConversation`, labelled by `chatConversationLabel`; the tooltip
+  and accessible name carry it, the label read **send to: #channel** until
+  2026-10-24) and posts the
   prompt there through `sendChatText`, the same path as the Chat page's own
   composer (`sendCurrentMessage`), refusing attachments and a room you cannot
   post in. `updateChatConversationHeading` and `updateQuickAddEnterTarget`
@@ -573,7 +588,7 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   the **task** button, which filed the prompt in General: that lives in the
   agent/model dropdown as **Task · assign**, where leaving the assignee on
   Unassigned files the task in General.
-- **new** (plus), **add** (paper airplane) and **send to** (comment) carry
+- **new** (plus), **add** (paper airplane) and **chat** (comment) carry
   small icons in both interfaces (`tintComposerActionButton`; on the accent
   fill of the Enter target the icon uses the on-accent colour).
 

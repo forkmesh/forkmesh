@@ -10,7 +10,8 @@
     {
      "title": "Desktop",
      "items": [
-      "In the desktop's live database Visualizer, clicking a table opens that table in the Database tab."
+      "In the desktop's live database Visualizer, clicking a table opens that table in the Database tab.",
+      "The desktop prompt now names the chat channel you are in, with a menu to switch channel that shows each channel's users and chats, its three preview lines show the latest chat messages with channel, name and time, the send-to button reads chat, and the reset and pop-out buttons are gone: drag the prompt, its chat lines or its edges to move and resize it."
      ]
     }
    ]

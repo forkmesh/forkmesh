@@ -1079,7 +1079,7 @@ QPushButton#memberDeleteButton:hover {
 #promptWrapper:focus-within { border-color: #39d353; }
 
 #promptDragHandle { background: transparent; border: none; }
-QPushButton#promptDetachButton, QPushButton#promptResetButton,
+QPushButton#promptChannelButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
@@ -1890,7 +1890,7 @@ QProgressBar#shortcutRunProgress::chunk { border-radius: 2px; background-color: 
 #promptWrapper:focus-within { border-color: #39d353; }
 
 #promptDragHandle { background: transparent; border: none; }
-QPushButton#promptDetachButton, QPushButton#promptResetButton,
+QPushButton#promptChannelButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
@@ -3297,7 +3297,7 @@ QPushButton#memberDeleteButton:hover {
 #promptWrapper:focus-within { border-color: #1a7f37; }
 
 #promptDragHandle { background: transparent; border: none; }
-QPushButton#promptDetachButton, QPushButton#promptResetButton,
+QPushButton#promptChannelButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
@@ -4094,7 +4094,7 @@ QProgressBar#shortcutRunProgress::chunk { border-radius: 2px; background-color: 
 #promptWrapper:focus-within { border-color: #1a7f37; }
 
 #promptDragHandle { background: transparent; border: none; }
-QPushButton#promptDetachButton, QPushButton#promptResetButton,
+QPushButton#promptChannelButton,
 QPushButton#promptClearButton, QPushButton#promptCloudButton {
     background: transparent; border: none; padding: 0;
 }
