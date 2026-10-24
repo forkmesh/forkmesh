@@ -48,8 +48,10 @@ agent out and Siri lists your agents and asks which one.
 ## Apple Watch
 
 Say "Start a new agent in ForkMesh" on the watch, dictate the prompt and
-confirm. The iPhone starts the agent on the last repository and model you used.
-The iPhone must be nearby and signed in.
+confirm. The iPhone starts the agent with the last model you used, on the last
+repository you used unless you name one. The **Start an agent** action takes an
+optional **Repository** (`owner/name` or just the name), so a shortcut can fix
+it. The iPhone must be nearby and signed in.
 
 ## Commands without a built-in phrase
 
