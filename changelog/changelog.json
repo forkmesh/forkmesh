@@ -20,6 +20,12 @@
      ]
     },
     {
+     "title": "World",
+     "items": [
+      "A neighbour's hexagon with a bug terrarium now draws in about a third of the steps it used to, so the World runs smoother near it."
+     ]
+    },
+    {
      "title": "Settings",
      "items": [
       "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick."
