@@ -121,7 +121,8 @@ def test_branded_email_names_the_instance_and_credits_forkmesh():
 
 def test_forkmesh_com_keeps_every_feature():
     plain = env()
-    assert instance_features.enabled_ids(plain) == set(instance_features.IDS)
+    assert instance_features.enabled_ids(plain) == set(instance_features.IDS) - \
+        instance_features.OPT_IN
     for path in ("/api/hackathon", "/world", "/api/world/state", "/about"):
         assert instance_features.blocked(plain, path) == ""
 

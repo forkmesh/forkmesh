@@ -238,10 +238,12 @@ def test_issue_rows_stack_recent_commenters_with_imported_pictures():
     from test_issue_timeline_people import _const
     code = "\n".join(
         [_const(HELPERS, name) for name in ("FORGE_PROFILES", "FORGE_IDENTITY_RE", "forgeAvatarSets")]
+        + [HELPERS[HELPERS.index("  const BOT_AVATAR_GLYPHS = {"):
+                   HELPERS.index("\n  };\n", HELPERS.index("  const BOT_AVATAR_GLYPHS = {")) + 5]]
         + [_function(HELPERS, name) for name in (
             "escapeHtml", "forgeIdentity", "forgeLinkAttrs", "issueActorPixels",
-            "issueActorIsBot", "issuePersonHandle", "rememberForgeAvatars", "forgeAvatarSrc",
-            "issueActorAvatarHtml")]
+            "botAvatarKind", "botAvatarSvg", "issueActorIsBot", "issuePersonHandle",
+            "rememberForgeAvatars", "forgeAvatarSrc", "issueActorAvatarHtml")]
         + [_function(CONTENT, "renderIssueRowCommenters")])
     script = """
 const state = { session: null, selectedRepo: { owner: "example", name: "forum" } };
