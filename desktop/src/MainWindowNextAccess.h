@@ -1,9 +1,12 @@
 #pragma once
 
+#include <QList>
 #include <QString>
 
 class MainWindow;
+class QHBoxLayout;
 class QMenu;
+class QPushButton;
 class QWidget;
 
 namespace forkmesh::ui {
@@ -23,6 +26,13 @@ struct NextAccess {
     static QWidget *railToggleButton(MainWindow &window);
     static QWidget *railResizeHandle(MainWindow &window);
     static void setRailWidth(MainWindow &window, int width, bool remember);
+    static QWidget *buildSidebarHeader(MainWindow &window);
+    static QWidget *buildSidebarFooter(MainWindow &window);
+    static void refreshSidebarChrome(MainWindow &window);
+    static void installTopBar(MainWindow &window, QHBoxLayout *row,
+                              QWidget *history, QWidget *before,
+                              const QList<QPushButton *> &windowButtons);
+    static void showPingsPopover(MainWindow &window, QWidget *anchor);
 
     static void installWelcome(MainWindow &window);
     static bool maybeShowWelcome(MainWindow &window);
