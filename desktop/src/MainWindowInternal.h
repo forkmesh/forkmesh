@@ -9352,6 +9352,7 @@ public:
     QString label() const { return m_label; }
     bool syncing() const { return m_syncing; }
     bool alertTint() const { return m_alert; }
+    bool dangerTint() const { return m_danger; }
     void setBadgeObserver(std::function<void()> observer)
     {
         m_badgeObserver = std::move(observer);
@@ -9409,6 +9410,14 @@ public:
         if (m_alert == alert)
             return;
         m_alert = alert;
+        update();
+    }
+
+    void setDangerTint(bool danger)
+    {
+        if (m_danger == danger)
+            return;
+        m_danger = danger;
         update();
     }
 
@@ -9495,6 +9504,8 @@ protected:
         const QColor fg =
             !isEnabled() ? Theme::remapColor(QColor(dark ? "#484f58" : "#b6bdc4"))
                 : accentAction ? QColor("#ffffff")
+                : m_danger ? QColor(dark ? (lit ? "#ff7b72" : "#f85149")
+                                          : (lit ? "#a40e26" : "#cf222e"))
                 : m_alert ? QColor(dark ? (lit ? "#f0b72f" : "#d29922")
                                          : (lit ? "#7d4e00" : "#9a6700"))
                           : (dark ? Theme::remapColor(QColor(lit ? "#e6edf3" : "#8b949e"))
@@ -9505,6 +9516,12 @@ protected:
             const QColor fill = dark
                                     ? QColor(lit ? "#2ea043" : "#238636")
                                     : QColor(lit ? "#2ea043" : "#1f883d");
+            p.setPen(Qt::NoPen);
+            p.setBrush(fill);
+            p.drawRoundedRect(QRectF(rect()).adjusted(1, 2, -1, -2), 6, 6);
+        } else if (isEnabled() && m_danger) {
+            QColor fill(dark ? "#f85149" : "#cf222e");
+            fill.setAlpha(lit ? 56 : 32);
             p.setPen(Qt::NoPen);
             p.setBrush(fill);
             p.drawRoundedRect(QRectF(rect()).adjusted(1, 2, -1, -2), 6, 6);
@@ -9668,6 +9685,7 @@ private:
         state.spinAngle = m_spinAngle;
         state.badgeUrgent = m_badgeUrgent;
         state.alert = m_alert;
+        state.danger = m_danger;
         state.accent = m_accent;
         state.syncing = m_syncing;
         state.compact = m_compact;
@@ -9712,6 +9730,7 @@ private:
     int m_pendingSync = 0;
     bool m_badgeUrgent = false;
     bool m_alert = false;
+    bool m_danger = false;
     bool m_accent = false;
     bool m_syncing = false;
     bool m_compact = false;
