@@ -16126,9 +16126,9 @@ else:
                   tourButton && tourButton->isVisibleTo(&window) &&
                   window.testOnboardingTour() &&
                   window.testOnboardingTour()->view() ==
-                      forkmesh::ui::OnboardingTour::View::Tour,
+                      forkmesh::ui::OnboardingTour::View::Choose,
               QStringLiteral("reinstalling the Tour package from the Market "
-                             "brings the rail button and the walkthrough back"));
+                             "brings the rail button and the tour chooser back"));
         if (window.testOnboardingTour())
             window.testOnboardingTour()->dismiss();
         stopChildProcesses(window);

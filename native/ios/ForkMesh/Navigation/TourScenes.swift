@@ -1035,7 +1035,7 @@ struct TourWorkspaceScene: View {
             }
             .padding(.horizontal, 12)
             ForEach(0..<TourWorkspaceScene.tasks.count, id: \.self) { (at: Int) in
-                task(at)
+                taskRow(at)
             }
             Spacer(minLength: 0)
         }
@@ -1060,7 +1060,7 @@ struct TourWorkspaceScene: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func task(_ at: Int) -> some View {
+    private func taskRow(_ at: Int) -> some View {
         let finished: Bool = at < checked
         let mark: Color = finished ? fm.accent : fm.textTertiary
         let ink: Color = finished ? fm.textTertiary : fm.textPrimary
@@ -1132,9 +1132,9 @@ struct TourMarketScene: View {
     }
 
     private func icon(_ at: Int) -> some View {
-        let package: (title: String, symbol: String, detail: String) = TourMarketScene.packages[at]
+        let listing: (title: String, symbol: String, detail: String) = TourMarketScene.packages[at]
         let item: ShellBarItem = ShellBarItem(
-            id: "tour-\(package.title)", title: package.title, symbol: package.symbol, badge: 0, selected: false,
+            id: "tour-\(listing.title)", title: listing.title, symbol: listing.symbol, badge: 0, selected: false,
             kind: .action, pulse: installed, action: {})
         return ShellHomeIcon(item: item, style: .outline, iconSize: 18, labelSize: 10)
             .frame(width: 64)
@@ -1142,10 +1142,10 @@ struct TourMarketScene: View {
     }
 
     private func listing(_ at: Int) -> some View {
-        let package: (title: String, symbol: String, detail: String) = TourMarketScene.packages[at]
+        let listing: (title: String, symbol: String, detail: String) = TourMarketScene.packages[at]
         let got: Bool = at < installed
         let tint: Color? = got ? fm.success : nil
-        return TourRow(symbol: package.symbol, title: package.title, detail: package.detail) {
+        return TourRow(symbol: listing.symbol, title: listing.title, detail: listing.detail) {
             Button(action: { act(got ? at : at + 1) }) {
                 TourPill(text: got ? "Installed" : "Get", filled: !got, tint: tint, lit: at == installed)
             }

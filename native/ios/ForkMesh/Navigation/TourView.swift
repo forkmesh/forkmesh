@@ -388,7 +388,7 @@ struct TourTrackCard: View {
             .background(fm.bgRaised, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(suggested ? fm.accent.opacity(0.6) : fm.border, lineWidth: suggested ? 1.5 : 0.5)
+                    .strokeBorder(stroke, lineWidth: suggested ? 1.5 : 0.5)
             }
             .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
@@ -398,6 +398,8 @@ struct TourTrackCard: View {
         .accessibilityLabel(Text("\(track.title). \(meta). \(track.summary)\(done ? " Done." : "")"))
         .accessibilityIdentifier("tour-track-\(track.rawValue)")
     }
+
+    private var stroke: Color { suggested ? fm.accent.opacity(0.6) : fm.border }
 
     private var meta: String {
         let minutes: Int = TourCatalog.minutes(for: count)

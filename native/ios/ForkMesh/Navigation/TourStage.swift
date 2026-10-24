@@ -320,13 +320,17 @@ struct TourPill: View {
     var tint: Color? = nil
     var lit: Bool = false
 
+    private var base: Color { tint ?? fm.accent }
+    private var ink: Color { filled ? Color.white : base }
+    private var fill: Color { filled ? base : base.opacity(0.14) }
+
     var body: some View {
         Text(text)
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(filled ? Color.white : (tint ?? fm.accent))
+            .foregroundStyle(ink)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(filled ? (tint ?? fm.accent) : (tint ?? fm.accent).opacity(0.14), in: Capsule())
+            .background(fill, in: Capsule())
             .tourTarget(lit)
     }
 }
