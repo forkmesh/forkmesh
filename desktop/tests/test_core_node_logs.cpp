@@ -377,6 +377,17 @@ static void testClassification()
                QStringLiteral("error admin.api: request error error=loading config: "
                               "panic: runtime error"),
                "a Caddy JSON line reads as level, logger, message and error");
+    const JournalEntry altSvc = entry(
+        "caddy.service", "caddy", "6",
+        QStringLiteral("{\"level\":\"error\",\"ts\":1.5,\"logger\":\"http.log\","
+                       "\"msg\":\"setting HTTP/3 Alt-Svc header\",\"error\":\"no "
+                       "port can be announced, specify it explicitly using "
+                       "Server.Port or Server.Addr\"}"));
+    check(isCaddyReloadNoise(altSvc) && classify(altSvc).forward &&
+              classify(altSvc).severity == Severity::Warning &&
+              !isCaddyReloadNoise(caddyPanic) &&
+              classify(caddyPanic).severity == Severity::Error,
+          "a missing HTTP/3 advert while Caddy reloads is a warning, not an error");
     const JournalEntry goPanic = entry("forkmesh-mirror-node.service",
                                        "forkmesh-mirror-node", "6",
                                        QStringLiteral("panic: runtime error: index out of range"));

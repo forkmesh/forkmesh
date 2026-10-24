@@ -7,6 +7,7 @@
 #include "MainWindowInternal.h"
 #include "NativePackageExtension.h"
 #include "PetHostFeed.h"
+#include "SettingsWrite.h"
 #include "ForkMeshPackageRegistry.h"
 #include "TeammateStore.h"
 
@@ -115,6 +116,24 @@ QString preferredCrmOrganization()
 
 }
 
+double MainWindow::genieSpot(const QString &key) const
+{
+    const auto pending = m_genieSpotPending.constFind(key);
+    if (pending != m_genieSpotPending.cend())
+        return *pending;
+    return genieSettings().value(key, 0.82).toDouble();
+}
+
+void MainWindow::flushGenieSpot()
+{
+    if (m_genieSpotPending.isEmpty())
+        return;
+    QSettings settings;
+    for (auto it = m_genieSpotPending.cbegin(); it != m_genieSpotPending.cend(); ++it)
+        forkmesh::settings::put(settings, it.key(), it.value());
+    m_genieSpotPending.clear();
+}
+
 void MainWindow::setupGenieSpider()
 {
     if (m_genieSpider || !m_globalOverlayHost || genieHasNoAudience() || !genieSpiderShown())
@@ -125,7 +144,7 @@ void MainWindow::setupGenieSpider()
         m_genieSigns = saved;
 
     m_genieSpider = new GenieSpiderWidget(m_globalOverlayHost);
-    m_genieSpider->setHomeFraction(settings.value(kGenieSpotSetting, 0.82).toDouble());
+    m_genieSpider->setHomeFraction(genieSpot(kGenieSpotSetting));
     m_genieSpider->setWanders(settings.value(kGenieWandersSetting, true).toBool());
     m_genieSpider->setParked(settings.value(kGenieParkedSetting, false).toBool());
     m_genieSpider->setEscapes(true);
@@ -153,8 +172,8 @@ void MainWindow::setupGenieSpider()
     connect(m_genieSpider, &GenieSpiderWidget::escaped, this, &MainWindow::releaseGenieToDesktop);
     connect(m_genieSpider, &GenieSpiderWidget::moved, this, [this] {
         if (!m_genieSpider->parked())
-            genieSettings().setValue(m_genieOnDesktop ? kGenieDesktopSpotSetting : kGenieSpotSetting,
-                                     m_genieSpider->homeFraction());
+            m_genieSpotPending.insert(m_genieOnDesktop ? kGenieDesktopSpotSetting : kGenieSpotSetting,
+                                      m_genieSpider->homeFraction());
         if (m_genieCoach->isVisible())
             m_genieCoach->place(m_genieSpider->bodyRect());
     });
@@ -1002,7 +1021,7 @@ void MainWindow::moveGenieToDesktop(bool thrown, const QPointF &foot, const QPoi
         m_genieSpider->throwFrom(foot, velocity);
     } else {
         const QRect arena = stage->rect();
-        const double fraction = genieSettings().value(kGenieDesktopSpotSetting, 0.82).toDouble();
+        const double fraction = genieSpot(kGenieDesktopSpotSetting);
         m_genieSpider->setHomeFraction(fraction);
         m_genieSpider->throwFrom(
             QPointF(arena.left() + fraction * arena.width(), arena.top() + GenieSpiderWidget::kSide), QPointF());
@@ -1026,7 +1045,7 @@ void MainWindow::bringGenieInside()
     m_genieSpider->setEscapes(true);
     positionGenieSpider();
     const QRect host = m_globalOverlayHost->rect();
-    const double fraction = genieSettings().value(kGenieSpotSetting, 0.82).toDouble();
+    const double fraction = genieSpot(kGenieSpotSetting);
     m_genieSpider->setHomeFraction(fraction);
     m_genieSpider->throwFrom(QPointF(host.left() + fraction * host.width(), host.top() + GenieSpiderWidget::kSide),
                              QPointF());

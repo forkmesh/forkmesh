@@ -30,7 +30,13 @@ Windows and macOS read paths from there.
   "errors: 0"), so the DNS health loop's `ok (fails 0)` lines no longer badge
   ERROR. The crash handler's "termination signal survived" note avoids the
   word "fail" for the same reason: a stop deferred while an Action runs is not
-  an error.
+  an error. "no new failures" counts as a cleared tally too.
+- A badge set by the caller (for example a deploy line's DEPLOY) lives only in
+  the style cache. When the cache is cleared, or the buffer is reloaded from
+  `network_log.txt` at start, the badge comes from the text again. The deploy
+  log follower therefore also stores its severity in the line's source suffix
+  (`|ERROR` or `|INFO`). The deploy agent's "tests: no new failures against
+  the deployed …" was showing up as an ERROR in diagnostic report #9.
 - Main categories: INFO, ERROR, GIT, WEB, STALL, BGBLOCK (a GUI-thread wait for
   background work), plus package lanes (for example **Sentry**). A
   `Push to owner/repo on branch → commit — subject` line always badges GIT,
@@ -492,6 +498,43 @@ returned, so summed frame totals overstate a function's own cost.
     reports, and the `noteBackgroundActivity` frames are stale return
     addresses whose leaves were GL buffer swaps, text layout and
     `purgeSessionState`.
+- **Theme switch, pull list and settings writes (report #9, 2026-10-24).**
+  The app was still running a binary built on 2026-10-23 02:57, before the
+  avatar cache above, so its `forkMeshAvatarPng` stalls were already fixed in
+  source.
+  - Choosing a theme or interface from the View menu froze the window for
+    16 s. Qt 6.8's `QApplication::setStyleSheet` repolishes every widget that
+    has cached style rules and then recurses into each one's children, so a
+    widget is restyled once per styled ancestor. `MainWindow::applyTheme` now
+    leaves an unchanged sheet alone. To change it, the app clears the sheet
+    and sets the new one, which goes through `QApplication::setStyle` (the
+    same path startup takes) and visits each widget once per pass. Offscreen
+    with 5,600 widgets: 83,000 `StyleChange` events (up to 21 on one widget)
+    and about 5.6 s per switch before; 11,700 events and 0.8 to 3.3 s after,
+    depending on machine load
+    (`forkmesh-window-tests --theme-switch-only`).
+  - `refreshPullList` checked each row for running checks by scanning every
+    action run (about 7,600); it now collects the running pull numbers once
+    per rebuild (`pullsWithRunningChecks`).
+  - The Genie spider saved its spot each time it finished a wander, every
+    5 to 24 s, and the repository page saved the open tab on each switch,
+    both through a static `QSettings`. See
+    [Settings writes](#settings-writes).
+  - No change: the `ActivityRailButton::paintEvent` and "Qt widget paint"
+    stalls wait in the GPU driver (`amdgpu_bo_free`, `QRhi::endFrame`) right
+    after the theme switch. The rich-text stalls run inside a layout pass
+    with no app frame. The `ensureSectionBuilt` stall sizes a
+    `ResizeToContents` table, but its action record had rotated out, so the
+    page could not be named. `saveMutedLogCategories`, `saveRepositories`
+    and `deleteCancelledRunsAutomatically` waited on the `QSettings` lock or
+    on `fdatasync` while the disk was busy (io full 55 %).
+  - Still open: four workers write `ForkMesh.conf` and take the process-wide
+    `QSettings` lock while they sync. They are the served-mirror-head scan
+    (`MainWindowActions.cpp`, `setValue` plus `sync()` under
+    `QtConcurrent::run`), `scanExternalActionsSources`,
+    `writeQueuedApprovals` (`ActionStore.cpp`) and RoomSeal's `storeValues`.
+    A GUI-thread `QSettings()` waits on the lock for as long as their fsync
+    takes.
 
 ### Background file writes
 
@@ -527,6 +570,12 @@ a freeze.
   `ForkMesh.conf` written with `diskwrite::writeLater`; batch hot values on a
   timer flushed at quit. A worker does not help: `QSettings` shares one
   in-memory file per process.
+- A long-lived `QSettings` (a `static` or a member) does not buffer: each
+  `setValue` posts an `UpdateRequest`, and the next event-loop turn rewrites
+  and fsyncs the file. In report #9 one such event took 2.66 s. The Genie
+  spider's spot (`MainWindow::genieSpot`) and the repository page's last tab
+  stay in memory and are written by `flushDeferredSettings()` from
+  `closeEvent` and the destructor.
 - `QSettings::sync()` rereads and parses the whole file even when nothing is
   pending, so never call it for an unchanged value. `PackageRegistry::setPlaces`
   returns before writing or syncing when the stored places already match:
@@ -702,7 +751,10 @@ drop-ins. Linux only.
   (`tests/test_stall_repair_routing.cpp`), and grouping/relay-flap checks in
   `tests/test_crypto.cpp`.
 - Window tests: `forkmesh-window-tests` (inline notices, error alerts,
-  `--error-log-triage-only`), `forkmesh-high-memory-panel-window-tests`,
+  `--error-log-triage-only`; `--theme-switch-only` counts `StyleChange`
+  events per theme switch; `--deploy-log-badges-only`; `--repo-lazy-only`
+  also checks the deferred last-tab write),
+  `forkmesh-high-memory-panel-window-tests`,
   `forkmesh-off-thread-teardown-window-tests`.
 - Source-text checks: `app/tests/test_qt_*_git_off_gui.py`,
   `tests/validate_error_log_regressions.py`.

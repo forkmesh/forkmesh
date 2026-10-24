@@ -8516,18 +8516,8 @@ void MainWindow::recordNavLocation()
     }
     captureNavSubPlace(here);
 
-    if (here.detailTab >= 0) {
-        // Keep this tiny preference buffered for the process lifetime.  A
-        // temporary QSettings flushes (including fdatasync on Linux) from its
-        // destructor; doing that during every navigation produced a measured
-        // half-second GUI stall.  The persistent instance still flushes on a
-        // normal application shutdown.
-        static QSettings navigationSettings;
-        if (navigationSettings.value(kLastRepoDetailTabSetting, -1).toInt() !=
-            here.detailTab)
-            navigationSettings.setValue(kLastRepoDetailTabSetting,
-                                        here.detailTab);
-    }
+    if (here.detailTab >= 0)
+        m_lastRepoDetailTabPending = here.detailTab;
 
     if (m_navHistoryIndex >= 0 && m_navHistoryIndex < m_navHistory.size() &&
         m_navHistory.at(m_navHistoryIndex) == here)
