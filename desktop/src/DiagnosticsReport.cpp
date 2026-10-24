@@ -281,12 +281,86 @@ QStringList findings(const Snapshot &s)
                                "category below if it carries nothing useful.")
                     .arg(linesPerMinute, 0, 'f', 0));
     }
+    if (!s.securityIncidents.isEmpty())
+        add("CRITICAL",
+            QStringLiteral("%1 intrusion-detection incident(s) on the fleet. "
+                           "Newest: %2")
+                .arg(s.securityIncidents.size())
+                .arg(clip(s.securityIncidents.last(), kMaxLineChars)));
     const int groups = problemGroups(s.log).size();
     if (groups > 0)
         add(groups >= 10 ? "WARNING" : "INFO",
             QStringLiteral("%1 distinct problem line(s) in the log buffer.")
                 .arg(groups));
     return out;
+}
+
+bool isSecurityIncident(const QString &message)
+{
+    if (!message.startsWith(QLatin1String("Node ")))
+        return false;
+    static const QRegularExpression incident(QStringLiteral(
+        "^Node \\S+ \\S+ fmnext-ids\\S* [a-z]+: (?:alert|lockdown)\\b"));
+    static const QRegularExpression replayed(QStringLiteral(
+        " \\(logged [0-9-]+ [0-9:]+, replayed\\)$"));
+    return incident.match(message).hasMatch() &&
+           !replayed.match(message).hasMatch();
+}
+
+Alert alert(const AlertInputs &in)
+{
+    Alert out;
+    if (in.crashes > 0)
+        out.ui << QStringLiteral("%1 crash record(s) in the log").arg(in.crashes);
+    if (in.stalls > 0)
+        out.ui << QStringLiteral("%1 UI stall(s): the GUI thread was blocked")
+                      .arg(in.stalls);
+    if (in.loopLagP95Ms >= 100)
+        out.ui << QStringLiteral("Event-loop lag p95 is %1 ms").arg(in.loopLagP95Ms);
+    const qint64 gib = 1024LL * 1024 * 1024;
+    if (in.residentBytes >= 2 * gib)
+        out.performance << QStringLiteral("The app holds %1 resident")
+                               .arg(bytesText(in.residentBytes));
+    if (in.cpuPercent >= 50.0)
+        out.performance << QStringLiteral("The app is using %1% CPU")
+                               .arg(in.cpuPercent, 0, 'f', 0);
+    const double hostMemory = usedPercent(in.hostMemoryTotal, in.hostMemoryAvailable);
+    if (hostMemory >= 85.0)
+        out.performance << QStringLiteral("Host memory is %1% used")
+                               .arg(hostMemory, 0, 'f', 0);
+    const double disk = usedPercent(in.diskTotal, in.diskFree);
+    if (disk >= 90.0)
+        out.performance << QStringLiteral("The home drive is %1% full")
+                               .arg(disk, 0, 'f', 0);
+    if (in.openFiles > 0 && in.openFileLimit > 0 &&
+        in.openFiles * 100 >= in.openFileLimit * 70)
+        out.performance << QStringLiteral("%1 of %2 file descriptors are open")
+                               .arg(in.openFiles)
+                               .arg(in.openFileLimit);
+    if (in.securityIncidents > 0) {
+        QString text = QStringLiteral("%1 intrusion-detection incident(s)")
+                           .arg(in.securityIncidents);
+        if (!in.securitySample.isEmpty())
+            text += QStringLiteral(": ") + clip(in.securitySample, 160);
+        out.security << text;
+    }
+    return out;
+}
+
+QString Alert::summary() const
+{
+    QStringList lines;
+    auto section = [&lines](const char *title, const QStringList &items) {
+        if (items.isEmpty())
+            return;
+        lines << QLatin1String(title);
+        for (const QString &item : items)
+            lines << QStringLiteral("  - ") + item;
+    };
+    section("Performance", performance);
+    section("Security", security);
+    section("UI", ui);
+    return lines.join(QLatin1Char('\n'));
 }
 
 QString build(const Snapshot &s, const Baseline &previous)

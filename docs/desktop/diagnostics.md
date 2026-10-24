@@ -192,7 +192,11 @@ Qt desktop.
 
 ### Diagnostic report
 
-The Report tool copies a Markdown report meant for a coding agent.
+The debug bar's Diagnose tool builds a Markdown report meant for a coding
+agent. A click starts an agent with it, using the provider and model picked in
+the composer (`promptAreaAgentChoice`); right-click offers "Copy diagnostic
+report" and "Start comparisons over". Until 2026-10-24 this was two tools,
+Report (copy) and Send diagnostic (start an agent).
 
 - `src/DiagnosticsReport.{h,cpp}` (`forkmesh::diagreport`) formats a plain
   `Snapshot`; `MainWindow::diagnosticsReport` fills it from the log buffer,
@@ -202,10 +206,29 @@ The Report tool copies a Markdown report meant for a coding agent.
   numbers, hashes, UUIDs, paths, URLs and quoted text folded. Bulky sections
   come last; the report is cut at 48,000 characters.
 - A baseline in `diagnostics/selfFixReportBaseline` lets the next report mark
-  NEW groups, list groups that stopped, and show deltas. Right-click offers
-  "Send report to a new agent" and "Start comparisons over".
+  NEW groups, list groups that stopped, and show deltas.
 - The CPU figure reuses `m_debugLastCpuPercent`; calling
   `SystemStats::cpuPercent()` again would reset its sampling window.
+- Fleet intrusion-detection incidents (`fmnext-ids` lines whose body starts
+  `alert` or `lockdown`, not replayed history) are kept by
+  `logSystemFrom` in `m_securityIncidentLines` and listed as a CRITICAL finding.
+
+#### Red Diagnose tool
+
+`MainWindow::updateDiagnosticsAlert` runs off the one-second diagnostics timer
+at most every 5 s and tints the tool red (`ActivityRailButton::setDangerTint`)
+when `diagreport::alert` finds an issue. Its tooltip lists them by kind:
+
+- Performance: 2 GB resident, CPU at 50% or more (an average over about 5 s,
+  so one busy second does not flash it), host memory at 85%, the home drive at
+  90%, 70% of file descriptors open.
+- Security: intrusion-detection incidents.
+- UI: crash blocks in the log buffer, UI stalls, event-loop lag p95 of 100 ms.
+
+The thresholds match the WARNING findings in the report. Crashes, stalls and
+incidents are events, so starting an agent from the tool acknowledges the ones
+seen so far (`acknowledgeDiagnosticsAlert`) and the tool only turns red again
+for new ones; the resource checks stay red while the condition holds.
 
 ## Stall watchdog
 

@@ -1336,13 +1336,33 @@ void checkFooterOverlayGeometry(MainWindow &window)
               QStringLiteral("restart, resize and the log tail are captioned "
                              "tools at the debug bar's right edge"));
 
-        QPushButton *reportTool = window.testDebugCopyDiagnosticsButton();
+        QPushButton *reportTool = window.testDebugDiagnosticsButton();
         check(reportTool && tools && reportTool->parentWidget() == tools &&
                   logTool &&
                   reportTool->mapTo(&window, QPoint(0, 0)).x() <
                       logTool->mapTo(&window, QPoint(0, 0)).x(),
-              QStringLiteral("the diagnostic report tool sits just left of the "
-                             "log tail"));
+              QStringLiteral("the diagnose tool sits just left of the log tail"));
+        int diagnosticTools = 0;
+        if (tools)
+            for (QPushButton *tool : tools->findChildren<QPushButton *>())
+                if (tool->accessibleName().contains(QLatin1String("iagnos")))
+                    ++diagnosticTools;
+        check(diagnosticTools == 1,
+              QStringLiteral("one diagnose tool replaces the separate report "
+                             "and send buttons"));
+        auto *diagnoseRail = dynamic_cast<forkmesh::ui::ActivityRailButton *>(reportTool);
+        window.testLogSystem(QStringLiteral(
+            "Node n1 core fmnext-ids.service err: alert ssh_foreign_ip: login "
+            "from 203.0.113.9"));
+        const bool alerted = window.testDiagnosticsAlertDetected();
+        check(diagnoseRail && alerted && diagnoseRail->dangerTint() &&
+                  diagnoseRail->toolTip().contains(QStringLiteral("Security")),
+              QStringLiteral("an IDS incident turns the diagnose tool red and "
+                             "names it under Security"));
+        window.testAcknowledgeDiagnosticsAlert();
+        check(diagnoseRail && !diagnoseRail->toolTip().contains(
+                                  QStringLiteral("intrusion-detection")),
+              QStringLiteral("sending the report acknowledges the incident"));
         const QString diagnostics = window.testDiagnosticsReport();
         check(diagnostics.startsWith(
                   QStringLiteral("# ForkMesh desktop diagnostic report #")) &&

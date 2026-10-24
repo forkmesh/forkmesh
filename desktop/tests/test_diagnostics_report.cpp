@@ -142,6 +142,67 @@ int main()
               diagreport::kMaxReportChars + 200,
           "the report stays under its size cap");
 
+    check(!diagreport::alert(diagreport::AlertInputs{}).detected(),
+          "nothing measured raises no alert");
+    diagreport::AlertInputs calm;
+    calm.cpuPercent = 12.0;
+    calm.residentBytes = 600LL * 1024 * 1024;
+    calm.loopLagP95Ms = 20;
+    calm.hostMemoryTotal = 100;
+    calm.hostMemoryAvailable = 60;
+    calm.diskTotal = 100;
+    calm.diskFree = 40;
+    calm.openFiles = 100;
+    calm.openFileLimit = 1024;
+    check(!diagreport::alert(calm).detected(), "a healthy app raises no alert");
+
+    diagreport::AlertInputs slow = calm;
+    slow.cpuPercent = 85.0;
+    slow.residentBytes = 3LL * 1024 * 1024 * 1024;
+    const diagreport::Alert perf = diagreport::alert(slow);
+    check(perf.detected() && perf.performance.size() == 2 && perf.ui.isEmpty() &&
+              perf.security.isEmpty(),
+          "high CPU and memory are performance issues");
+    check(perf.summary().startsWith(QStringLiteral("Performance\n  - ")),
+          "the summary groups issues under their kind");
+
+    diagreport::AlertInputs janky = calm;
+    janky.stalls = 1;
+    janky.loopLagP95Ms = 240;
+    janky.crashes = 1;
+    const diagreport::Alert ui = diagreport::alert(janky);
+    check(ui.ui.size() == 3 && ui.performance.isEmpty(),
+          "stalls, loop lag and crashes are UI issues");
+
+    const QString incident = QString::fromUtf8(
+        "Node n1 core fmnext-ids.service err: alert listener_unexpected: root "
+        "listens on tcp port 25 \xC2\xB7 incident c3Z2tm");
+    check(diagreport::isSecurityIncident(incident), "an IDS alert line is an incident");
+    check(diagreport::isSecurityIncident(QStringLiteral(
+              "Node r2 runner fmnext-ids warning: lockdown ptrace: traced")),
+          "an IDS lockdown line is an incident");
+    check(!diagreport::isSecurityIncident(QStringLiteral(
+              "Node n1 core fmnext-ids.service info: started lockdown=false node=n1")),
+          "an IDS status line is not an incident");
+    check(!diagreport::isSecurityIncident(
+              incident + QStringLiteral(" (logged 2026-10-01 10:00:00, replayed)")),
+          "a replayed incident is history, not a new one");
+    check(!diagreport::isSecurityIncident(QStringLiteral(
+              "Node n1 core caddy err: alert something")),
+          "only the IDS unit reports incidents");
+    diagreport::AlertInputs breached = calm;
+    breached.securityIncidents = 2;
+    breached.securitySample = incident;
+    const diagreport::Alert sec = diagreport::alert(breached);
+    check(sec.security.size() == 1 && sec.security.first().startsWith(
+              QStringLiteral("2 intrusion-detection incident(s): Node n1")),
+          "IDS incidents are security issues with the newest line");
+    diagreport::Snapshot withIncident = sampleSnapshot();
+    withIncident.securityIncidents = {incident};
+    check(diagreport::findings(withIncident).join(QLatin1Char('\n')).contains(
+              QStringLiteral("CRITICAL: 1 intrusion-detection incident(s)")),
+          "the report lists IDS incidents as critical findings");
+
     if (failures > 0) {
         std::cerr << failures << " diagnostics report test(s) failed\n";
         return 1;

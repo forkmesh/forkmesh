@@ -28,6 +28,7 @@
 #include "SystemdTimersPanel.h"
 #include "MeshFirewall.h"
 #include "NodeDiagnostics.h"
+#include "DiagnosticsReport.h"
 #include "QrCode.h"
 #include "SuggestedApps.h"
 #include "UiSounds.h"
@@ -10255,6 +10256,13 @@ void MainWindow::logSystemFrom(const QString &text, const QString &sourcePath,
             line, LogLineStyle{plain, badge, accentForBadge(badge)});
     if (badge == QLatin1String("ERROR"))
         NodeDiagnostics::hostCollector().noteErrorLine(plain);
+    if (forkmesh::diagreport::isSecurityIncident(plain)) {
+        ++m_securityIncidentCount;
+        m_securityIncidentLines.append(plain);
+        if (m_securityIncidentLines.size() > 20)
+            m_securityIncidentLines.removeFirst();
+        m_diagnosticsAlertLastCheckMs = 0;
+    }
     if (m_networkLog.capacity() <= kNetworkLogLimit)
         m_networkLog.reserve(2 * kNetworkLogLimit);
     m_networkLog.append(line);

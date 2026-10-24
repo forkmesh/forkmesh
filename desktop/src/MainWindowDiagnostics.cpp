@@ -417,6 +417,10 @@ void MainWindow::updateFooterDiagnostics()
     }
 #endif
     m_debugLastCpuPercent = cpuPct;
+    if (cpuPct >= 0.0)
+        m_diagnosticsCpuAverage = m_diagnosticsCpuAverage < 0.0
+                                      ? cpuPct
+                                      : 0.8 * m_diagnosticsCpuAverage + 0.2 * cpuPct;
     auto *resources = static_cast<ResourceQuadrantSparkline *>(m_resourceChart);
     if (resources) {
         resources->addSample(ResourceQuadrantSparkline::Cpu,
@@ -520,6 +524,84 @@ void MainWindow::updateFooterDiagnostics()
         m_logActivityLights->setStallToolTip(stallTip);
     if (m_logActivityHeader)
         m_logActivityHeader->setStallToolTip(stallTip);
+    updateDiagnosticsAlert();
+}
+
+int MainWindow::crashBannerLineCount() const
+{
+    int count = 0;
+    for (const QString &line : std::as_const(m_networkLog))
+        if (line.contains(forkmesh::crashlog::kCrashBanner))
+            ++count;
+    return count;
+}
+
+void MainWindow::updateDiagnosticsAlert()
+{
+    auto *button = dynamic_cast<ActivityRailButton *>(m_debugDiagnosticsButton);
+    if (!button)
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_diagnosticsAlertLastCheckMs > 0 && now - m_diagnosticsAlertLastCheckMs < 5000)
+        return;
+    m_diagnosticsAlertLastCheckMs = now;
+
+    const int crashes = crashBannerLineCount();
+    m_diagnosticsAckCrashes = qMin(m_diagnosticsAckCrashes, crashes);
+    m_diagnosticsAckStalls = qMin(m_diagnosticsAckStalls, m_stallCount);
+    m_diagnosticsAckSecurity = qMin(m_diagnosticsAckSecurity, m_securityIncidentCount);
+
+    forkmesh::diagreport::AlertInputs in;
+    in.crashes = crashes - m_diagnosticsAckCrashes;
+    in.stalls = m_stallCount - m_diagnosticsAckStalls;
+    in.securityIncidents = m_securityIncidentCount - m_diagnosticsAckSecurity;
+    if (in.securityIncidents > 0 && !m_securityIncidentLines.isEmpty())
+        in.securitySample = m_securityIncidentLines.last();
+    if (m_qtDiagnostics)
+        in.loopLagP95Ms = m_qtDiagnostics->snapshot().p95LoopLagMs;
+    in.cpuPercent = m_diagnosticsCpuAverage;
+    in.residentBytes = SystemStats::residentBytes();
+    in.hostMemoryTotal = SystemStats::totalMemoryBytes();
+    in.hostMemoryAvailable = SystemStats::availableMemoryBytes();
+    in.diskTotal = SystemStats::diskTotalBytes(QDir::homePath());
+    in.diskFree = SystemStats::diskFreeBytes(QDir::homePath());
+    in.openFiles = SystemStats::openFileCount();
+    in.openFileLimit = SystemStats::openFileSoftLimit();
+    const forkmesh::diagreport::Alert alert = forkmesh::diagreport::alert(in);
+
+    m_diagnosticsAlertDetected = alert.detected();
+    button->setDangerTint(m_diagnosticsAlertDetected);
+    const forkmesh::teammates::AgentChoice choice = promptAreaAgentChoice();
+    QString agent = agentProviderName(choice.provider);
+    if (const QString model = agentModelLabel(choice.model); !model.isEmpty())
+        agent += QStringLiteral(" (%1)").arg(model);
+    if (agent.trimmed().isEmpty())
+        agent = QStringLiteral("the selected agent");
+    const QString action =
+        QStringLiteral("Click to start %1 with a diagnostic snapshot to fix them. "
+                       "Right-click to copy the report instead.")
+            .arg(agent);
+    button->setToolTip(
+        m_diagnosticsAlertDetected
+            ? QStringLiteral("Diagnostics found issues:\n%1\n\n%2")
+                  .arg(alert.summary(), action)
+            : QStringLiteral("No performance, security or UI issues detected. "
+                             "Click to start %1 with a diagnostic snapshot to "
+                             "fix errors and optimize resource usage. "
+                             "Right-click to copy the report instead.")
+                  .arg(agent));
+    button->setAccessibleDescription(m_diagnosticsAlertDetected
+                                         ? alert.summary()
+                                         : QStringLiteral("No issues detected"));
+}
+
+void MainWindow::acknowledgeDiagnosticsAlert()
+{
+    m_diagnosticsAckCrashes = crashBannerLineCount();
+    m_diagnosticsAckStalls = m_stallCount;
+    m_diagnosticsAckSecurity = m_securityIncidentCount;
+    m_diagnosticsAlertLastCheckMs = 0;
+    updateDiagnosticsAlert();
 }
 
 void MainWindow::checkFileDescriptorPressure()
@@ -1294,6 +1376,7 @@ QString MainWindow::diagnosticsReport(bool advanceBaseline)
         forkmesh::crashlog::parseCrashRecords(m_networkLog);
     for (int i = qMax(0, int(crashes.size()) - 3); i < crashes.size(); ++i)
         s.crashes.append(forkmesh::crashlog::describe(crashes.at(i)));
+    s.securityIncidents = m_securityIncidentLines;
     s.healthFindings =
         NodeDiagnostics::detailText(NodeDiagnostics::hostCollector().findings());
     s.logLocations = stallLogLocationsBlock();
@@ -1383,6 +1466,7 @@ void MainWindow::sendDiagnosticsReportToAgent()
                      true, QString(), forkmesh::kLocalOperationNoticeKind);
         return;
     }
+    acknowledgeDiagnosticsAlert();
     flashMessage(QStringLiteral("Diagnostic report sent to desktop agent #%1. Follow its progress in Agents.")
                      .arg(sessionId));
 }
