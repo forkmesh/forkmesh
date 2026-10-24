@@ -65,6 +65,47 @@ the author needs to rebase it". A branch pull says which branch is missing.
 `materializePullRef` returns without an error in that case, which is why the
 old message only ever said the code was not here.
 
+## Stacked patches whose earlier parts merged
+
+On 2026-10-24 Merge all left out twelve pull requests: #552 to #564 (parts 4
+to 16 of a 16-part series sent as signed patches) and #567. The series' author
+sent each part with only its own commit. Each patch was cut from the author's
+`main` with the earlier parts on top. Parts 1, 2, 3, 5 and 14 had arrived as
+branches rebased onto a newer `main` and were merged. So the files part 4
+expects (`index <pre>..` in its patch) existed nowhere here: neither on the
+base tip, nor in its history (`patchPreimageBaseCommit`), nor as blobs for
+`git am --3way`.
+
+`replayStackedPullSeries` in `PullStore.cpp` now rebuilds such a pull before
+it is given up:
+
+1. The patch's first commit gives the author's email and date. The author's
+   commits from the three days before it are found on the base branch and on
+   every `pr/*` branch, local or tracked (`git log -F --author=<email>`),
+   starting from the files the patch touches and widening to the files those
+   commits touch. One commit per author date and subject is kept, so a copy
+   rebuilt on a `pr/*` branch counts once. More than 30 commits means it is
+   not a short stack, and the search stops.
+2. The candidate bases are the last 40 first-parent commits of the base branch
+   committed before the patch was written. For each one, the author's commits
+   it does not contain are the stack. Files that no stacked commit touches
+   must already hold the blobs the patch expects.
+3. A scratch worktree at that base cherry-picks the stack in author-date
+   order. Only when every file then holds exactly the blob the patch names
+   does `git am` replay the patch on top. At most three bases are tried.
+
+The resulting `pr/<n>` branch forks from the author's base and carries the
+author's exact tree, so it conflicts with the current base tip just as the
+pull request does. That merge is what the agent resolves. Later parts find
+the rebuilt earlier part on its `pr/*` branch, so a whole series rebuilds in
+number order. A patch cut from a fork whose files this repository never had,
+such as #567 (generated pages of a fork with a different `main`), still
+cannot be rebuilt. It keeps the "the author needs to rebase it" reason.
+
+The twelve pull requests of 2026-10-24 were rebuilt by hand the same way on
+the node that runs Merge all. #567 was rebased onto `main` and its conflicts
+were resolved, because no commit here matches its fork's generated pages.
+
 ## Why ForkMesh cleans up, not the agent
 
 The pull request ledger is signed with the node identity key. The agent cannot

@@ -5820,6 +5820,123 @@ int main(int argc, char *argv[])
         }
 
         {
+            QTemporaryDir stackRoot;
+            QTemporaryDir authorRoot;
+            const QString stackRepo = stackRoot.path();
+            const QString authorRepo = authorRoot.path() + QStringLiteral("/author");
+            const QString authorName = QStringLiteral("Stack Author");
+            const QString authorEmail = QStringLiteral("stack@example.test");
+            bool stackSetup =
+                stackRoot.isValid() && authorRoot.isValid() &&
+                runTestGit(stackRepo, {QStringLiteral("init"), QStringLiteral("-q"),
+                                       QStringLiteral("-b"), QStringLiteral("main")}) &&
+                runTestGit(stackRepo, {QStringLiteral("config"), QStringLiteral("user.name"),
+                                       QStringLiteral("Stack Tester")}) &&
+                runTestGit(stackRepo, {QStringLiteral("config"), QStringLiteral("user.email"),
+                                       QStringLiteral("tester@example.test")}) &&
+                writeTestFile(stackRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("head\n1\n2\n3\n4\n5\nend\n")) &&
+                writeTestFile(stackRepo + QStringLiteral("/b.txt"),
+                              QByteArrayLiteral("x\n")) &&
+                commitTestTree(stackRepo, QStringLiteral("base"),
+                               QStringLiteral("2026-09-01T10:00:00Z"),
+                               QStringLiteral("Stack Tester"),
+                               QStringLiteral("tester@example.test"));
+            const QString authorBase = testGitHead(stackRepo);
+            stackSetup =
+                stackSetup && !authorBase.isEmpty() &&
+                runTestGit(authorRoot.path(), {QStringLiteral("clone"), QStringLiteral("-q"),
+                                               stackRepo, authorRepo}) &&
+                writeTestFile(authorRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("head\n1\n2\n3\n4\n5\nend\np1\n")) &&
+                commitTestTree(authorRepo, QStringLiteral("part one"),
+                               QStringLiteral("2026-09-02T10:00:00Z"), authorName,
+                               authorEmail);
+            const QString partOne = testGitHead(authorRepo);
+            QByteArray partOneMbox;
+            QByteArray partTwoPatch;
+            QByteArray partTwoMbox;
+            stackSetup =
+                stackSetup && !partOne.isEmpty() &&
+                writeTestFile(authorRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("head\n1\n2\n3\n4\n5\nend\np1\np2\n")) &&
+                writeTestFile(authorRepo + QStringLiteral("/b.txt"),
+                              QByteArrayLiteral("x\ny\n")) &&
+                commitTestTree(authorRepo, QStringLiteral("part two"),
+                               QStringLiteral("2026-09-02T11:00:00Z"), authorName,
+                               authorEmail) &&
+                runTestGit(authorRepo,
+                           {QStringLiteral("format-patch"), QStringLiteral("--stdout"),
+                            authorBase + QStringLiteral("..") + partOne},
+                           &partOneMbox) &&
+                runTestGit(authorRepo,
+                           {QStringLiteral("diff"), QStringLiteral("--binary"),
+                            partOne + QStringLiteral("..HEAD")},
+                           &partTwoPatch) &&
+                runTestGit(authorRepo,
+                           {QStringLiteral("format-patch"), QStringLiteral("--stdout"),
+                            partOne + QStringLiteral("..HEAD")},
+                           &partTwoMbox) &&
+                writeTestFile(stackRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("HEAD\n1\n2\n3\n4\n5\nend\n")) &&
+                commitTestTree(stackRepo, QStringLiteral("upstream moves"),
+                               QStringLiteral("2026-09-03T10:00:00Z"),
+                               QStringLiteral("Stack Tester"),
+                               QStringLiteral("tester@example.test")) &&
+                runTestGitInput(stackRepo, {QStringLiteral("am"), QStringLiteral("-q")},
+                                partOneMbox) &&
+                writeTestFile(stackRepo + QStringLiteral("/a.txt"),
+                              QByteArrayLiteral("HEAD\n1\n2\n3\n4\n5\nEND\np1\n")) &&
+                commitTestTree(stackRepo, QStringLiteral("upstream edits the end"),
+                               QStringLiteral("2026-09-04T10:00:00Z"),
+                               QStringLiteral("Stack Tester"),
+                               QStringLiteral("tester@example.test"));
+            check(stackSetup,
+                  "set up a stacked pull whose earlier part merged in another form");
+            if (stackSetup) {
+                PullStore stackPulls(stackRepo, QString(), &identity,
+                                     QStringLiteral("tester"));
+                PullRequest stacked;
+                stacked.title = QStringLiteral("Stacked part two");
+                stacked.base = QStringLiteral("main");
+                stacked.head = QStringLiteral("othernode:pr/02-part-two");
+                stacked.patch = QString::fromUtf8(partTwoPatch);
+                stacked.commits = QString::fromUtf8(partTwoMbox);
+                stacked = stackPulls.makeSignedPull(stacked);
+                QString stackError;
+                check(stackPulls.applyRemotePull(stacked, &stackError),
+                      "a stacked cross-node pull is stored");
+                int stackedNumber = 0;
+                for (const PullRequest &candidate : stackPulls.loadAll())
+                    if (candidate.title == stacked.title)
+                        stackedNumber = candidate.number;
+                QByteArray stackedA;
+                QByteArray stackedB;
+                QByteArray stackedMergeBase;
+                check(stackedNumber > 0 &&
+                          runTestGit(stackRepo,
+                                     {QStringLiteral("show"),
+                                      QStringLiteral("pr/%1:a.txt").arg(stackedNumber)},
+                                     &stackedA) &&
+                          runTestGit(stackRepo,
+                                     {QStringLiteral("show"),
+                                      QStringLiteral("pr/%1:b.txt").arg(stackedNumber)},
+                                     &stackedB) &&
+                          stackedA == QByteArrayLiteral("head\n1\n2\n3\n4\n5\nend\np1\np2\n") &&
+                          stackedB == QByteArrayLiteral("x\ny\n"),
+                      "a stacked pull is rebuilt on its author's earlier part and "
+                      "carries the author's exact tree");
+                check(stackedNumber > 0 &&
+                          runTestGit(stackRepo,
+                                     {QStringLiteral("merge-base"), QStringLiteral("main"),
+                                      QStringLiteral("pr/%1").arg(stackedNumber)},
+                                     &stackedMergeBase) &&
+                          QString::fromUtf8(stackedMergeBase).trimmed() == authorBase,
+                      "the rebuilt stacked pull forks from the base its author had");
+            }
+        }
+
+        {
             QTemporaryDir vectorRoot;
             const QString vectorRepo = vectorRoot.path();
             const QByteArray vectorPatch = QByteArrayLiteral(
