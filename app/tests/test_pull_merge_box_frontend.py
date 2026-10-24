@@ -650,37 +650,24 @@ def test_a_failed_merge_marks_the_refused_step_and_keeps_merge_again():
 
 
 @needs_node
-def test_polling_pauses_while_the_tab_is_hidden_and_stops_on_a_terminal_answer():
+def test_polling_slows_while_the_tab_is_hidden_and_stops_on_a_terminal_answer():
     out = _run(r"""
-      let listener = null;
-      globalThis.document = {
-        visibilityState: "hidden",
-        querySelector: () => null,
-        addEventListener: (name, fn) => { if (name === "visibilitychange") listener = fn; },
-        removeEventListener: (name, fn) => { if (listener === fn) listener = null; },
-      };
+      globalThis.document = { visibilityState: "hidden", querySelector: () => null };
+      const waits = [];
+      window.setTimeout = (fn, ms) => { waits.push(ms); fn(); return 1; };
       let calls = 0;
       globalThis.fetch = async (url, init) => {
         calls += 1;
         const body = JSON.parse(init.body);
-        if (calls === 1) return { ok: false, status: 202, json: async () => ({ ok: true, status: "processing", requestId: body.requestId }) };
+        if (calls < 3) return { ok: false, status: 202, json: async () => ({ ok: true, status: "processing", requestId: body.requestId }) };
         return { ok: false, status: 409, json: async () => ({ ok: false, status: "failed", error: "merge_conflict", requestId: body.requestId }) };
       };
-      const pending = postRepoPullMutation("/x", { requestId: "dashboard_0001" });
-      for (let i = 0; i < 20; i += 1) await Promise.resolve();
-      const whileHidden = calls;
-      const waiting = Boolean(listener);
-      globalThis.document.visibilityState = "visible";
-      listener();
-      const result = await pending;
-      for (let i = 0; i < 20; i += 1) await Promise.resolve();
-      console.log(JSON.stringify({ whileHidden, waiting, calls, error: result.payload.error, listenerLeft: Boolean(listener) }));
+      const result = await postRepoPullMutation("/x", { requestId: "dashboard_0001" });
+      console.log(JSON.stringify({ calls, waits, error: result.payload.error }));
     """)
-    assert out["whileHidden"] == 1
-    assert out["waiting"] is True
-    assert out["calls"] == 2
+    assert out["calls"] == 3
+    assert out["waits"] == [1000, 10000, 2000, 10000]
     assert out["error"] == "merge_conflict"
-    assert out["listenerLeft"] is False
 
 
 @needs_node
@@ -746,5 +733,6 @@ def test_progress_respects_reduced_motion_and_reads_as_one_live_line():
     assert "if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;" in patch
     poll = _function("postRepoPullMutation")
     assert "started += await waitForRepoPullMutationVisible();" in poll
+    assert "if (!pullDetailIsCurrent(repo, number)) return;" in patch
     assert "PULL_MUTATION_POLL_MS[Math.min(polls, PULL_MUTATION_POLL_MS.length - 1)]" in poll
     assert "const PULL_MUTATION_POLL_MS = [1000, 2000, 3000];" in CONTENT

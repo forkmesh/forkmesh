@@ -153,8 +153,15 @@ repository dashboard has no realtime channel for pull requests (the only
 WebSocket is the notes editor's), and the job lives on one mirror the relay
 proxies to. While a job is in flight the page asks after 1, 2, then every 3
 seconds, starting again at 1 second on each new phase; it stops on a terminal
-answer, waits while the tab is hidden (hidden time does not count against the
-150-second budget), and asks nothing when no merge or update is in flight. A
+answer, and asks nothing when no merge or update is in flight. While the tab
+is hidden it keeps asking every 10 seconds, and that time does not count
+against the 150-second budget: the relay learns that a job finished only
+from these polls, so a page that stopped asking while hidden (as it did
+until 2026-10-24) could leave a finished merge unrecorded once the tab was
+closed. Progress is painted only into the merge box of the pull request that
+asked (`pullDetailIsCurrent`), so opening another pull mid-merge no longer
+shows the first one's steps there, and a job that is run again starts its
+step list afresh. A
 poll changes only the step line's text, so a screen reader announces each new
 step once (`role="status"`, `aria-live="polite"` on that line only; the
 elapsed clock is `aria-hidden`). A one-second ticker updates the clock and

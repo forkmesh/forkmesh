@@ -8036,18 +8036,12 @@
     return globalThis.document?.visibilityState === "hidden";
   }
 
+  const PULL_MUTATION_HIDDEN_POLL_MS = 10000;
+
   function waitForRepoPullMutationVisible() {
-    if (!repoPullMutationHidden() || typeof document.addEventListener !== "function") {
-      return Promise.resolve(0);
-    }
-    const hiddenAt = Date.now();
+    if (!repoPullMutationHidden()) return Promise.resolve(0);
     return new Promise((resolve) => {
-      const onChange = () => {
-        if (repoPullMutationHidden()) return;
-        document.removeEventListener("visibilitychange", onChange);
-        resolve(Date.now() - hiddenAt);
-      };
-      document.addEventListener("visibilitychange", onChange);
+      window.setTimeout(() => resolve(PULL_MUTATION_HIDDEN_POLL_MS), PULL_MUTATION_HIDDEN_POLL_MS);
     });
   }
 
@@ -8635,6 +8629,7 @@
   }
 
   function patchRepoPullMutationProgress(repo, number, parsed, kind) {
+    if (!pullDetailIsCurrent(repo, number)) return;
     const slot = document.querySelector("[data-repo-pull-merge-slot]");
     const block = slot?.querySelector?.(`[data-repo-pull-merge-progress="${kind}"]`);
     const model = block ? repoPullMergeModel(repo, number, parsed) : null;

@@ -11860,6 +11860,8 @@ class GatewayApplication:
         def report(phase: str) -> None:
             self._note_merge_progress(request_id, phase)
 
+        with self._merge_lock:
+            self.__dict__.setdefault("_merge_progress", {}).pop(request_id, None)
         report("claimed")
         try:
             status_payload = dict(payload, action="status")
