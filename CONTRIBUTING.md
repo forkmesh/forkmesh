@@ -28,11 +28,15 @@ www/          Marketing, docs and blog site
 world/        World code and media
 server/       Go daemon: mirror, core and runner roles
 deploy/       Fleet file, node renderer, certsync, IDS, systemd units
-native/       Native iOS (Swift) and Android (Kotlin) apps
+native/       Native iOS and watchOS (Swift) and Android (Kotlin) apps
 marketplace/  Package catalog and packages
 conformance/  Versioned contracts, vectors and shared fixtures
 tools/        Release, fleet, ledger and agent helpers
+office/       Office (2D) code and media
+changelog/    The one changelog: forkmesh.com/changelog and the apps' What's new
+examples/     Example third-party apps (see docs/APPS.md)
 docs/         Developer documentation, one home page per subsystem
+.github/      Forge compatibility: PR template and the GitHub mirror's CI
 .forkmesh/    Signed in-repo data: issues, discussions, releases, workflows
 ```
 
@@ -68,7 +72,8 @@ Git-facing behavior also need the
 | Desktop (`desktop/`) | Qt 6.4+, CMake 3.16+, OpenSSL headers, Git, C++17, `openssl` CLI | `cd desktop && ./run.sh` (build and launch), `./run.sh test` (critical contracts) |
 | App, host, fleet | Python 3 | `python3 tools/run_critical_tests.py worker`, `python3 -m pytest app/tests/host app/host/tests_unit deploy/tests` |
 | World | Python 3 | `python3 tools/run_critical_tests.py world` |
-| Browser smoke tests | Node.js | `npm --prefix app/browser_tests test` (`run test:all` for the full set) |
+| Browser smoke tests | Node.js | `npm --prefix app/browser_tests test` (the full set) |
+| Guarded deletes and security contracts | Python 3 | `python3 tools/run_critical_tests.py security` |
 | Native iOS core | Swift 6.3 (Linux or macOS) | `cd native/ios/ForkMeshCore && swift test` |
 | Native Android core | JDK 17+ | `cd native/android && ./gradlew :core:coreTest` |
 | Mirror server (`server/`) | Go | `cd server && go test ./...` |
@@ -144,6 +149,29 @@ committed diff. See the
 cases. MCP-capable agents can use `open_pr_from_branch`, which creates the same
 signed record and grants no review bypass.
 
+A pull request is a signed record that carries the patch and the commits, not
+a pointer to a branch on the server, so it can also be sent straight to the
+HTTP API: `POST /api/repo/forkmesh/forkmesh/pulls` with a body signed by your
+node key. The [agent guide](app/public/forkmesh-agent.md#3-open-a-pull-request)
+gives the exact fields and signature; `verify_pull_event` in
+`app/src/events.py` is the reference. The server answers with a provisional
+number; the pull request is in only once the owner's node has taken it in
+(`git ls-remote origin 'refs/heads/forkmesh/pull/*'` lists those).
+
+Keep pull requests easy to accept:
+
+- **Small.** Keep each patch at or under about 0.5 MB. Put generated files
+  (the dashboard bundle, rendered pages) in their own pull requests.
+- **Independent.** Build each one on a fresh branch from the current
+  `origin/main` and check it with `git apply --check`, so any one can be
+  accepted on its own. When later work really depends on earlier work, open
+  an ordered series and name the dependency in each description.
+- **Never broken in between.** Every merge to `main` deploys. Keep a module,
+  the route that reaches it and the hooks that call it together, and say why
+  in the description.
+- **Split commits by scope.** Stage explicit paths; never sweep unrelated
+  work into a commit.
+
 The owner's node runs the repository's `on: pull_request` workflows and reports
 them under **Checks**. For a first-time contributor these runs wait as
 *Awaiting approval* until a maintainer releases them, because a check executes
@@ -152,21 +180,51 @@ contributed commands on another machine.
 ### 4. Complete the description
 
 Use [the repository template](.github/PULL_REQUEST_TEMPLATE.md). Describe the
-user-visible outcome and how to verify it, and complete all five evidence
+user-visible outcome and how to verify it, and complete the five evidence
 sections: threat review; abuse and privacy review; benchmark and budget
-evidence; regression-test evidence; operational evidence. A section that does
-not apply needs a concrete reason; placeholder or unexplained `N/A` sections
-fail CI.
+evidence; regression-test evidence; operational evidence. The template's
+Documentation section names the `docs/` page you updated. A section that does
+not apply needs a concrete reason, not a placeholder or a bare `N/A`. The
+GitHub mirror's CI checks the evidence sections
+(`python3 tools/quality_gate.py pr-evidence`); pull requests opened on
+ForkMesh are checked by the reviewer, so run it yourself if in doubt.
 
-### 5. Review and merge
+### 5. Record what users will notice
 
-Every pull request needs at least one approval from someone other than the
-author. The latest decisive review from each signer counts, and an unresolved
-request for changes blocks the merge. Approvals never bypass tests, security
-checks or maintainer judgment
-([onboarding guide](https://forkmesh.com/docs/onboarding#reviews)). Address
-feedback with follow-up commits on the same branch; the maintainer performs the
-final merge.
+- A change a user can notice adds one sentence to the changelog with
+  `python3 tools/changelog.py add --area <Area> "<sentence>"`, then
+  re-renders the site with `python3 app/tools/site_templates.py`
+  ([docs/changelog.md](docs/changelog.md)).
+- A change an iPhone user can see also registers itself for Android with
+  `python3 tools/native_sync.py add <sha> "<sentence>" --area <Area> --kind feature|ui|fix`
+  ([docs/native/SYNC.md](docs/native/SYNC.md)). New phone features land in
+  `native/ios` first.
+
+### 6. Review and merge
+
+- **Who merges.** Only an owner merges: an owner of the organization for an
+  organization's repository, or the repository's owner for a personal one.
+  Contributors see "Waiting for a maintainer to merge" instead of a Merge
+  button.
+- **Reviews.** Each reviewer's latest review counts, and an unresolved
+  request for changes blocks the merge. On a protected branch
+  (`protectDefaultBranch` in the repository settings, which also covers
+  `forkmesh/*`), only an approval from an organization owner or admin (the
+  owner, for a personal repository) who is not the author counts, and the
+  owner cannot waive review. On other branches an owner may merge with the
+  review waiver. The pull request list's review chip counts any reviewer
+  other than the author, so a pull request can show **Approved** and still
+  wait for an owner's approval on a protected branch.
+- **Approvals stay.** An approval is not tied to the head commit: commits
+  pushed after it keep it. The owner who merges reviews the final diff.
+- **Keeping up with `main`.** When `main` moves, press **Update branch** on
+  the pull request if you can push its head branch, or merge `main` into your
+  branch yourself. A pull request opened from a fork takes new commits with
+  **Update pull request** ([pull request revisions](docs/app/pull-revisions.md)).
+- Approvals never bypass tests, required checks, security checks or the
+  owner's judgment ([branch protection](docs/app/branch-protection.md),
+  [onboarding guide](https://forkmesh.com/docs/onboarding#reviews)). Address
+  feedback with follow-up commits on the same branch.
 
 ### AI agents
 
@@ -174,6 +232,13 @@ Agent-authored commits and pull requests must be attributable and go through
 the same review. Agents must also follow [`AGENTS.md`](AGENTS.md): never erase
 ForkMesh user data, sandbox `HOME` and `XDG_*_HOME` in tests that run the
 installers, and keep explanations in `docs/`.
+
+To hand ForkMesh work to Claude Code or another agent, give it the
+[agent guide](https://app.forkmesh.com/forkmesh-agent.md) (source:
+[`app/public/forkmesh-agent.md`](app/public/forkmesh-agent.md)). It covers
+starting an instance, working on a repository and the pull request rules
+above. [Working with coding agents](www/docs/coding-agents.md) shows how to
+keep a copy in your clone without committing it.
 
 ## Code of conduct
 

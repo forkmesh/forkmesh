@@ -371,3 +371,61 @@
   btn.addEventListener("click", submit);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
 })();
+
+(() => {
+  const $ = (sel) => document.querySelector(sel);
+  const button = $("#recover-btn");
+  if (!button) return;
+  const hint = $("#recover-hint");
+  const say = (text, tone) => {
+    hint.textContent = text;
+    hint.className = "hint" + (tone ? " " + tone : "");
+  };
+  const messages = {
+    invalid_recovery_code: "That username and recovery code do not match.",
+    password_too_short: "The new password needs at least 8 characters.",
+    too_many_attempts: "Too many attempts. Wait a few minutes and try again.",
+  };
+  button.addEventListener("click", async () => {
+    const nodeName = $("#recover-name").value.trim().toLowerCase();
+    const recoveryCode = $("#recover-code").value.trim();
+    const newPassword = $("#recover-pass").value;
+    if (!nodeName || !recoveryCode) {
+      say("Enter your username and recovery code.", "bad");
+      return;
+    }
+    if (newPassword.length < 8) {
+      say(messages.password_too_short, "bad");
+      return;
+    }
+    button.disabled = true;
+    say("Checking…", "");
+    let body = {};
+    let ok = false;
+    try {
+      const response = await fetch("/api/accounts/recover", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ nodeName, recoveryCode, newPassword }),
+      });
+      ok = response.ok;
+      body = await response.json().catch(() => ({}));
+    } catch (_) {
+      say("Network error. Try again.", "bad");
+      button.disabled = false;
+      return;
+    }
+    button.disabled = false;
+    if (!ok || !body.recoveryCode) {
+      say(messages[body.error] || "Could not reset the password. Try again.", "bad");
+      return;
+    }
+    $("#recover-pass").value = "";
+    $("#recover-code").value = "";
+    say("", "");
+    button.hidden = true;
+    $("#recover-new-code").textContent = String(body.recoveryCode);
+    $("#recover-done").hidden = false;
+  });
+})();

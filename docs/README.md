@@ -68,10 +68,12 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [app/instance-legal-pages.md](app/instance-legal-pages.md): Terms, Privacy and Security pages on self-hosted instances.
 - [app/ai-review.md](app/ai-review.md): automated AI review of pull requests with Cloudflare Workers AI (instance settings, per-repository opt-in, budgets, privacy, prompt-injection handling).
 - [app/privacy-mode.md](app/privacy-mode.md): privacy mode for self-hosted instances: no visitor logs, what remains and why.
+- [app/accounts-and-moderation.md](app/accounts-and-moderation.md): email-free sign-up with recovery codes, random usernames, moderators, blocks, hidden posts, locked threads, first-post approval and new-account limits.
 - [app/instance-federation.md](app/instance-federation.md): self-hosted instances joining the forkmesh.com directory and the ForkMesh World.
 - [app/security-advisories.md](app/security-advisories.md): private vulnerability reporting, security advisories (OSV export, signed repository ledger) and researcher credits.
 - [app/recent-push-banner.md](app/recent-push-banner.md): the "had recent pushes · Compare & pull request" bar for branches the signed-in account just pushed.
 - [app/comment-reactions.md](app/comment-reactions.md): emoji reactions on issue, pull request and discussion comments (storage, API, limits, first paint, picker, gratitude group and Thank you sticker, custom reactions, animation).
+- [app/translations.md](app/translations.md): on-device post translation (browser Translator API, no network) and signed community translations attached to posts.
 - [app/repo-media.md](app/repo-media.md): uploading videos into issue and pull request markdown, stored in the replicated database and served with Range support.
 - [app/pull-revisions.md](app/pull-revisions.md): updating a pull request with new commits or a rewritten branch (signed revisions, no force push).
 - [app/comment-edits.md](app/comment-edits.md): editing and deleting your own issue and pull request comments (signed `comment-edit`/`comment-delete` events).

@@ -3,11 +3,14 @@ import secrets
 from urllib.parse import parse_qs, quote, urlparse
 from hidden_unicode import clean_query as clean_hidden_query
 
+import account_policy
 import instance_features
 import instance_home
 import instance_privacy
 import instance_registry
+import instance_theme
 import instance_world
+import moderation
 
 
 def _bind_runtime(runtime):
@@ -15,6 +18,7 @@ def _bind_runtime(runtime):
     for name, value in runtime.items():
         if not name.startswith("__") and name not in namespace:
             namespace[name] = value
+    moderation._bind_runtime(runtime)
 
 
 PLUGINS_VIEW = "plugins"
@@ -22,7 +26,17 @@ DIRECTORY_VIEW = "federation"
 WORLD_VIEW = "world-territory"
 HOME_VIEW = "home-page"
 PRIVACY_VIEW = "privacy"
-VIEWS = (PLUGINS_VIEW, DIRECTORY_VIEW, WORLD_VIEW, HOME_VIEW, PRIVACY_VIEW)
+ACCOUNTS_VIEW = "accounts-moderation"
+THEME_VIEW = "site-theme"
+VIEWS = (PLUGINS_VIEW, DIRECTORY_VIEW, WORLD_VIEW, HOME_VIEW, PRIVACY_VIEW,
+         ACCOUNTS_VIEW, THEME_VIEW)
+CUSTOM_THEME = "custom"
+MODE_LABELS = {
+    "": "The theme's own default",
+    "system": "Follow each visitor's system setting (light or dark)",
+    "dark": "Dark",
+    "light": "Light",
+}
 MAX_FORM_BYTES = 32 * 1024
 POST_TIMEOUT_SECONDS = 20
 NOTICES = {
@@ -50,6 +64,11 @@ NOTICES = {
     "home_saved": ("Home page saved. Visitors see it within a minute.", "ok"),
     "home_invalid": ("Not saved: name a repository as owner/name.", "bad"),
     "home_core": ("forkmesh.com keeps its own home page.", "bad"),
+    "theme_saved": ("Site theme saved. Visitors see it within a minute.",
+                    "ok"),
+    "theme_invalid": ("Not saved: choose one of the themes and colour modes "
+                      "listed.", "bad"),
+    "theme_core": ("forkmesh.com keeps its own colours.", "bad"),
     "privacy_on": ("Privacy mode is on. The app stops recording visitors "
                    "within a minute.", "ok"),
     "privacy_off": ("Privacy mode is off.", "ok"),
@@ -57,13 +76,24 @@ NOTICES = {
                        "(INSTANCE_PRIVACY_MODE), so it stays on.", "warn"),
     "privacy_core": ("Privacy mode is chosen on self-hosted instances only.",
                      "bad"),
+    "accounts_saved": ("Sign-up and moderation settings saved. They apply "
+                       "within 30 seconds.", "ok"),
+    "moderation_done": ("Done. The change is in the moderation log below.",
+                        "ok"),
+    "moderation_refused": ("Not done: check the account name. Administrators "
+                           "and your own account cannot be blocked.", "bad"),
     "csrf": ("Action blocked: reload the page and try again.", "bad"),
     "invalid": ("Action failed: unknown action.", "bad"),
 }
 ACTIONS = {"save_plugins": PLUGINS_VIEW, "save_directory": DIRECTORY_VIEW,
            "announce_directory": DIRECTORY_VIEW, "save_world": WORLD_VIEW,
-           "save_home": HOME_VIEW,
-           "save_privacy": PRIVACY_VIEW}
+           "save_home": HOME_VIEW, "save_theme": THEME_VIEW,
+           "save_privacy": PRIVACY_VIEW,
+           "save_accounts": ACCOUNTS_VIEW, "add_moderator": ACCOUNTS_VIEW,
+           "remove_moderator": ACCOUNTS_VIEW, "block": ACCOUNTS_VIEW,
+           "unblock": ACCOUNTS_VIEW}
+MODERATION_ACTIONS = ("add_moderator", "remove_moderator", "block", "unblock",
+                      "approve", "reject")
 STATE_PILLS = {
     "listed": ("Listed", "ok"),
     "removed": ("Not listed", ""),
@@ -489,6 +519,102 @@ async def save_home(env, form):
     return "home_saved", {"repository": repository}
 
 
+def _theme_choice(theme):
+    if theme.get("dark") or theme.get("light"):
+        return CUSTOM_THEME
+    return theme.get("preset") or instance_theme.DEFAULT_THEME
+
+
+def _theme_option(value, label, description, current, swatches=()):
+    swatch = "".join(
+        '<span style="display:inline-block;width:14px;height:14px;'
+        'border-radius:3px;border:1px solid var(--border);background:%s">'
+        '</span>' % _esc(colour) for colour in swatches)
+    return (
+        '<label style="display:flex;gap:10px;align-items:flex-start">'
+        '<input type="radio" name="preset" value="%s"%s>'
+        '<span class="stack" style="gap:2px"><strong>%s</strong>'
+        '<span class="hint">%s</span><span style="display:flex;gap:3px">%s'
+        '</span></span></label>' % (
+            _esc(value), " checked" if value == current else "",
+            _esc(label), _esc(description), swatch))
+
+
+async def render_theme(env, csrf_field, admin_query):
+    shell = _admin_shell  # noqa: F821
+    head = shell.page_head(
+        "Site theme",
+        "The colours every visitor sees, and whether pages follow the "
+        "visitor's light or dark system setting.", crumb="Platform")
+    if not instance_branded(env):  # noqa: F821
+        return head + shell.card(
+            title="forkmesh.com keeps its own colours",
+            description="Self-hosted instances choose a site theme here.")
+    theme = instance_theme.parse(await settings_doc(env, "theme"))
+    current = _theme_choice(theme)
+    options = []
+    if current == CUSTOM_THEME:
+        colours = [(theme.get(mode) or {}).get("primary") for mode in
+                   instance_theme.MODES]
+        options.append(_theme_option(
+            CUSTOM_THEME, "Keep the custom colours",
+            "The colours chosen when the instance was set up.", current,
+            [colour for colour in colours if colour]))
+    for entry in instance_theme.catalogue():
+        if entry["status"] != "ready":
+            continue
+        options.append(_theme_option(
+            entry["id"], entry["name"], entry["description"], current,
+            entry["palette"]))
+    mode = str(theme.get("mode") or "")
+    form = (
+        '<form method="post" action="%s" class="stack">%s'
+        '<input type="hidden" name="action" value="save_theme">'
+        '<fieldset class="stack" style="border:0;padding:0;margin:0">'
+        '<legend><strong>Theme</strong></legend>%s</fieldset>'
+        '<label class="stack" style="gap:4px"><span>Light or dark for a '
+        'visitor who has not chosen</span>%s<span class="hint">A visitor\'s '
+        'own choice in Settings, Appearance always wins.</span></label>'
+        '<div><button type="submit" class="btn btn-primary">Save site theme'
+        '</button></div></form>' % (
+            _admin_href(admin_query, view=THEME_VIEW),  # noqa: F821
+            csrf_field, "".join(options),
+            _select("mode", tuple(MODE_LABELS), MODE_LABELS, mode)))
+    names = {entry["id"]: entry["name"] for entry in instance_theme.catalogue()}
+    names[CUSTOM_THEME] = "custom colours"
+    now = {"system": "following each visitor's system setting",
+           "light": "light", "dark": "dark"}[instance_theme.color_mode(theme)]
+    return head + shell.card(
+        title="Site theme",
+        description="Now: %s, %s." % (_esc(names.get(current, current)), now),
+        body=form)
+
+
+async def save_theme(env, form):
+    if not instance_branded(env):  # noqa: F821
+        return "theme_core", None
+    choice = _first(form, "preset").strip().lower()
+    mode = _first(form, "mode").strip().lower()
+    if mode not in MODE_LABELS:
+        return "theme_invalid", None
+    if choice == CUSTOM_THEME:
+        current = instance_theme.parse(await settings_doc(env, "theme"))
+        wanted = {key: value for key, value in current.items()
+                  if key != "mode"}
+    else:
+        wanted = {"preset": choice}
+    if mode:
+        wanted["mode"] = mode
+    try:
+        theme = instance_theme.clean(wanted)
+        doc = instance_theme.dump(theme)
+    except instance_theme.ThemeError:
+        return "theme_invalid", None
+    await save_setting(env, "theme", doc)
+    return "theme_saved", {"preset": theme.get("preset") or "",
+                           "mode": instance_theme.color_mode(theme)}
+
+
 PRIVACY_STOPS = (
     ("Visitor addresses", "The app sees a pseudonym instead of the "
      "address; the key behind it lives only in memory and changes every "
@@ -569,6 +695,219 @@ async def save_privacy(env, form):
         "mode": mode, "forced": instance_privacy.forced(env)}
 
 
+def _select(name, options, labels, current):
+    return '<select name="%s">%s</select>' % (_esc(name), "".join(
+        '<option value="%s"%s>%s</option>' % (
+            _esc(option), " selected" if option == current else "",
+            _esc(labels[option])) for option in options))
+
+
+def _number_input(name, value, label, hint):
+    low, high = account_policy.NUMBER_LIMITS[name]
+    return (
+        '<label class="stack" style="gap:4px"><span>%s</span>'
+        '<input type="number" name="%s" value="%d" min="%d" max="%d">'
+        '<span class="hint">%s</span></label>' % (
+            _esc(label), _esc(name), int(value), low, high, _esc(hint)))
+
+
+def _name_form(action, admin_query, csrf_field, button, extra=""):
+    return (
+        '<form method="post" action="%s" class="stack" style="gap:8px">%s'
+        '<input type="hidden" name="action" value="%s">'
+        '<input type="text" name="name" placeholder="username" '
+        'maxlength="63" required>%s<div><button type="submit" class="btn">'
+        '%s</button></div></form>' % (
+            _admin_href(admin_query, view=ACCOUNTS_VIEW),  # noqa: F821
+            csrf_field, _esc(action), extra, _esc(button)))
+
+
+def _row_button(action, name, admin_query, csrf_field, label):
+    return (
+        '<form method="post" action="%s" style="display:inline">%s'
+        '<input type="hidden" name="action" value="%s">'
+        '<input type="hidden" name="name" value="%s">'
+        '<button type="submit" class="btn btn-sm btn-danger">%s</button>'
+        '</form>' % (
+            _admin_href(admin_query, view=ACCOUNTS_VIEW),  # noqa: F821
+            csrf_field, _esc(action), _esc(name), _esc(label)))
+
+
+def _queue_button(action, queue_id, admin_query, csrf_field, label, tone):
+    return (
+        '<form method="post" action="%s" style="display:inline">%s'
+        '<input type="hidden" name="action" value="%s">'
+        '<input type="hidden" name="id" value="%d">'
+        '<button type="submit" class="btn btn-sm %s">%s</button>'
+        '</form>' % (
+            _admin_href(admin_query, view=ACCOUNTS_VIEW),  # noqa: F821
+            csrf_field, _esc(action), int(queue_id), tone, _esc(label)))
+
+
+async def render_accounts(env, csrf_field, admin_query):
+    shell = _admin_shell  # noqa: F821
+    setting = await moderation.policy(env)
+    head = shell.page_head(
+        "Sign-up and moderation",
+        "Who can create an account, what a new account may do, and who "
+        "moderates every repository on this server.", crumb="People")
+    recommended = account_policy.RECOMMENDED
+    form = (
+        '<form method="post" action="%s" class="stack">%s'
+        '<input type="hidden" name="action" value="save_accounts">'
+        '<label class="stack" style="gap:4px"><span>Sign-up</span>%s'
+        '<span class="hint">Email optional stores no address: the account '
+        'gets a one-time recovery code instead. Invite code only uses the '
+        'one-time code under Controls.</span></label>'
+        '<label class="stack" style="gap:4px"><span>Usernames</span>%s'
+        '<span class="hint">Random names such as quiet-otter-7f3k keep '
+        'people from reusing a name they use elsewhere.</span></label>'
+        '%s%s%s%s%s%s'
+        '<p class="hint">Recommended for a public forum: email optional, '
+        'suggest random names, accounts required, first-post approval, '
+        '%d threads and %d comments a day for the first %d days.</p>'
+        '<div><button type="submit" class="btn btn-primary">Save</button>'
+        '</div></form>' % (
+            _admin_href(admin_query, view=ACCOUNTS_VIEW),  # noqa: F821
+            csrf_field,
+            _select("signup", account_policy.SIGNUP_MODES,
+                    account_policy.SIGNUP_LABELS, setting["signup"]),
+            _select("handles", account_policy.HANDLE_MODES,
+                    account_policy.HANDLE_LABELS, setting["handles"]),
+            shell.switch("accountRequired",
+                         "Only signed-in accounts can post, comment or vote",
+                         setting["accountRequired"], "1", "accounts-required"),
+            shell.switch("firstPostApproval",
+                         "Hold a new account's posts until a moderator "
+                         "approves the first one",
+                         setting["firstPostApproval"], "1",
+                         "accounts-approval"),
+            shell.switch("hideBlockedPosts",
+                         "Hide the existing posts of accounts blocked with "
+                         "\"hide their posts\"",
+                         setting["hideBlockedPosts"], "1", "accounts-hide"),
+            _number_input("newAccountDays", setting["newAccountDays"],
+                          "New-account period (days)",
+                          "Daily limits below apply this long. 0 turns them "
+                          "off."),
+            _number_input("newThreadsPerDay", setting["newThreadsPerDay"],
+                          "New threads per day for a new account",
+                          "0 means no limit."),
+            _number_input("newCommentsPerDay", setting["newCommentsPerDay"],
+                          "Comments per day for a new account",
+                          "0 means no limit."),
+            recommended["newThreadsPerDay"], recommended["newCommentsPerDay"],
+            recommended["newAccountDays"]))
+    _scope, state = await moderation.console_state(env)
+    moderators = shell.table(
+        "<th>Moderator</th><th>Added by</th><th></th>",
+        ["<tr><td>%s</td><td class=\"muted\">%s</td><td>%s</td></tr>" % (
+            _esc(row["name"]), _esc(row["by"]),
+            _row_button("remove_moderator", row["name"], admin_query,
+                        csrf_field, "Remove"))
+         for row in state["moderators"]],
+        "No instance moderators. Organization owners, admins and their "
+        "moderators moderate their own repositories.")
+    blocked = shell.table(
+        "<th>Blocked</th><th>Posts</th><th>Reason</th><th>By</th><th></th>",
+        ["<tr><td>%s</td><td>%s</td><td class=\"muted\">%s</td>"
+         "<td class=\"muted\">%s</td><td>%s</td></tr>" % (
+             _esc(row["name"]),
+             shell.pill("hidden", "bad") if row["hideContent"]
+             else shell.pill("shown", ""), _esc(row["reason"]),
+             _esc(row["by"]),
+             _row_button("unblock", row["name"], admin_query, csrf_field,
+                         "Unblock"))
+         for row in state["blocked"]], "Nobody is blocked on this server.")
+    held = shell.table(
+        "<th>Held post</th><th>Author</th><th>Repository</th><th></th>",
+        ["<tr><td>%s<div class=\"muted\">%s</div></td><td>%s</td>"
+         "<td class=\"muted\">%s</td><td>%s %s</td></tr>" % (
+             _esc(row["title"] or ("comment on #%d" % row["number"])),
+             _esc(row["body"][:280]), _esc(row["author"]), _esc(row["repo"]),
+             _queue_button("approve", row["id"], admin_query, csrf_field,
+                           "Approve", "btn-primary"),
+             _queue_button("reject", row["id"], admin_query, csrf_field,
+                           "Reject", "btn-danger"))
+         for row in state["queue"]],
+        "No posts are waiting. Posts in an organization's repositories wait "
+        "in that organization's queue.")
+    block_extra = (
+        '<input type="text" name="reason" placeholder="reason (optional, '
+        'shown to moderators only)" maxlength="280">%s' % shell.switch(
+            "hideContent", "Also hide their existing posts", False, "1",
+            "block-hide"))
+    log_rows = shell.table(
+        "<th>When</th><th>Who</th><th>Action</th><th>Account</th>"
+        "<th>Detail</th>",
+        ["<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+         "<td class=\"muted\">%s</td></tr>" % (
+             shell.time_html(row["at"], _now()), _esc(row["actor"]),
+             _esc(row["action"]), _esc(row["target"]),
+             _esc(", ".join("%s %s" % item for item in sorted(
+                 row["detail"].items()))))
+         for row in state["log"]], "No moderation actions yet.")
+    return head + shell.card(
+        title="Accounts", description="These settings apply to every "
+        "repository on this server.", body=form) + shell.card(
+        title="Instance moderators",
+        description="Moderators can approve held posts, hide or delete any "
+        "post, lock threads and block accounts on every repository here.",
+        table=moderators, footer='<div class="card-b">%s</div>' % _name_form(
+            "add_moderator", admin_query, csrf_field, "Add moderator")) + \
+        shell.card(
+            title="Held posts",
+            description="First posts on repositories outside an organization "
+            "wait here until an admin or instance moderator approves them.",
+            table=held) + \
+        shell.card(
+            title="Blocked on the whole server",
+            description="A blocked account cannot post, comment, vote or "
+            "react on any repository here.", table=blocked,
+            footer='<div class="card-b">%s</div>' % _name_form(
+                "block", admin_query, csrf_field, "Block account",
+                block_extra)) + shell.card(
+            title="Moderation log",
+            description="Who did what. No addresses are recorded.",
+            table=log_rows)
+
+
+async def save_accounts(env, form):
+    before = await moderation.policy(env)
+    after = account_policy.from_form(form, before, _now())
+    code_mode = None
+    if after["signup"] == "invite" and before["signup"] != "invite":
+        if not await _admin_signup_referral_code_mode(env):  # noqa: F821
+            await _set_admin_signup_referral_code_mode(env, True)  # noqa: F821
+            after["inviteSetCode"] = True
+            code_mode = True
+    elif after["signup"] != "invite" and before["signup"] == "invite":
+        if before.get("inviteSetCode"):
+            await _set_admin_signup_referral_code_mode(env, False)  # noqa: F821
+            code_mode = False
+        after["inviteSetCode"] = False
+    await moderation.save_policy(env, after)
+    details = account_policy.changes(before, after)
+    if code_mode is not None:
+        details["inviteCodeRequired"] = code_mode
+    return "accounts_saved", details
+
+
+async def moderation_action(env, request, form, account):
+    actor = moderation.clean_name(account)
+    data = {"action": _first(form, "action"), "name": _first(form, "name"),
+            "reason": _first(form, "reason"),
+            "hideContent": _first(form, "hideContent") == "1",
+            "id": _first(form, "id")}
+    scope_bi = await moderation.instance_scope(env)
+    refused = await moderation.apply_action(
+        env, request, scope_bi, moderation.INSTANCE_SCOPE, actor or "admin",
+        True, data)
+    if refused is not None:
+        return "moderation_refused", {"name": data["name"][:63], "id": data["id"][:12]}
+    return "moderation_done", {"name": data["name"][:63], "id": data["id"][:12]}
+
+
 async def admin_handler(env, request, params, csrf_field="", admin_query="",
                         account=""):
     view = _first(params, "view")
@@ -586,9 +925,15 @@ async def admin_handler(env, request, params, csrf_field="", admin_query="",
     elif view == HOME_VIEW:
         title = "Home page"
         content = await render_home(env, csrf_field, admin_query)
+    elif view == THEME_VIEW:
+        title = "Site theme"
+        content = await render_theme(env, csrf_field, admin_query)
     elif view == PRIVACY_VIEW:
         title = "Privacy mode"
         content = await render_privacy(env, csrf_field, admin_query)
+    elif view == ACCOUNTS_VIEW:
+        title = "Sign-up and moderation"
+        content = await render_accounts(env, csrf_field, admin_query)
     else:
         title = "Plugins"
         content = await render_plugins(env, csrf_field, admin_query)
@@ -627,8 +972,14 @@ async def _handle_post(env, request, view, admin_query, account):
         notice, details = await save_world(env, form)
     elif action == "save_home":
         notice, details = await save_home(env, form)
+    elif action == "save_theme":
+        notice, details = await save_theme(env, form)
     elif action == "save_privacy":
         notice, details = await save_privacy(env, form)
+    elif action == "save_accounts":
+        notice, details = await save_accounts(env, form)
+    elif action in MODERATION_ACTIONS:
+        notice, details = await moderation_action(env, request, form, account)
     else:
         notice, details = await announce_directory(env)
     await _audit_sensitive_action(  # noqa: F821

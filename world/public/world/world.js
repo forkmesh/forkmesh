@@ -32344,12 +32344,12 @@ class ForkMeshWorld extends HTMLElement {
     );
   }
 
-  perfCopyReport() {
+  perfCopyReport({ logTail = false } = {}) {
     if (!this.world?.auditScene) return "";
     const profile = this.world.getProfile?.() || null;
     if (profile?.frames || !this.perfLastProfile) this.perfLastProfile = profile;
     this.runPerfAudit();
-    return this.perfReportMarkdown({ logTail: false });
+    return this.perfReportMarkdown({ logTail });
   }
 
   perfReportMarkdown({ logTail = true } = {}) {
@@ -32483,7 +32483,7 @@ class ForkMeshWorld extends HTMLElement {
   }
 
   async copyPerfReport() {
-    const text = this.perfReportMarkdown();
+    const text = this.perfCopyReport({ logTail: true }) || this.perfReportMarkdown();
     try {
       await navigator.clipboard.writeText(text);
       this.notice("📋 Optimization report copied — paste it into an issue or an agent prompt.");

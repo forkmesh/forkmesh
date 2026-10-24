@@ -3528,6 +3528,12 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await organization_succession_handler(
                 self.env, request, org, action)
+        org_moderation_match = ORG_MODERATION_RE.match(url.path)
+        if org_moderation_match:
+            org = safe_segment(org_moderation_match.group(1))
+            if not org:
+                return json_response({"error": "not_found"}, status=404)
+            return await moderation_org_handler(self.env, request, org)
         org_pull_rules_match = ORG_PULL_RULES_RE.match(url.path)
         if org_pull_rules_match:
             org = safe_segment(org_pull_rules_match.group(1))
@@ -3955,6 +3961,15 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_star_handler(self.env, request, owner, repo)
 
+        moderation_match = REPO_MODERATION_RE.match(url.path)
+        if moderation_match:
+            owner = safe_segment(moderation_match.group(1))
+            repo = safe_segment(moderation_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await moderation_repo_handler(
+                self.env, request, owner, repo)
+
         reactions_match = REPO_REACTIONS_RE.match(url.path)
         if reactions_match:
             owner = safe_segment(reactions_match.group(1))
@@ -3993,6 +4008,15 @@ class Default:
         if comment_tips_match:
             return await comment_tips_handler(
                 self.env, request, comment_tips_match.group(1))
+
+        translations_match = REPO_TRANSLATIONS_RE.match(url.path)
+        if translations_match:
+            owner = safe_segment(translations_match.group(1))
+            repo = safe_segment(translations_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await post_translations_handler(
+                self.env, request, owner, repo)
 
         forks_match = REPO_FORKS_RE.match(url.path)
         if forks_match:
@@ -5334,8 +5358,12 @@ class Default:
         # Keep the claim server-side and the signed handle in an HttpOnly
         # host-only cookie scoped to the one endpoint that consumes it.
         await ensure_schema(self.env)
+        signup_policy = await _signup_policy(self.env)
         referral_code_required = await _admin_signup_referral_code_mode(
-            self.env)
+            self.env) or _account_policy.invite_only(signup_policy)
+        handle_suggestion = (
+            await _account_recovery.suggest_handle(self.env)
+            if signup_policy.get("handles") != "off" else "")
         claim_id, issued_at, expires_at, email_field_name = (
             await _issue_account_signup_intent(self.env))
         base = url.scheme + "://" + url.netloc + "/"
@@ -5353,6 +5381,13 @@ class Default:
                 raise RuntimeError("signup referral code marker unavailable")
             body = body.replace(
                 code_marker, "" if referral_code_required else "hidden", 1)
+            policy_marker = "__FORKMESH_SIGNUP_POLICY__"
+            if body.count(policy_marker) != 1:
+                raise RuntimeError("signup policy marker unavailable")
+            body = body.replace(policy_marker, _html_escape(json.dumps(
+                _account_policy.signup_page_doc(
+                    signup_policy, handle_suggestion),
+                separators=(",", ":"))), 1)
             # Turnstile widget (turnstile.py): the public site key, and cdata
             # that ties the token to this page view's signup claim.
             for widget_marker, widget_value in (

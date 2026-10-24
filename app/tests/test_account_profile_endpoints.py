@@ -136,7 +136,8 @@ def test_signup_email_validation_requires_well_formed_domain_and_tld():
         ENTRY_TEXT.index("async def _account_signup"):
         ENTRY_TEXT.index("async def _account_reserve")
     ]
-    assert "if not valid_account_email(email):" in signup_body
+    assert ("if (email or not email_optional) and not "
+            "valid_account_email(email):") in signup_body
     assert "valid_email_required" in signup_body
 
 
@@ -667,6 +668,9 @@ def test_namespace_rename_moves_account_repo_and_repo_scoped_state():
         "UPDATE notifications SET recipient_bi=? WHERE recipient_bi=?",
         "UPDATE catalog_rate SET owner_bi=? WHERE owner_bi=?",
         "purge_catalog_related_caches()",
+        '"moderation_roles", "moderation_blocks"',
+        '"UPDATE OR IGNORE " + table + " SET account_bi=? "',
+        "UPDATE moderation_queue SET author_bi=? WHERE author_bi=?",
     ):
         assert required in rename_body
 

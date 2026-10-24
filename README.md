@@ -70,6 +70,32 @@ and a C++17 compiler. Per-distribution package commands are in the
 [Getting started](www/docs/getting-started.md) walks through these steps, chat,
 and your first change in more detail.
 
+### 3. Get the phone and watch apps
+
+ForkMesh is on the App Store for iPhone and iPad, with an Apple Watch app for
+following and steering agents, and on Android as a signed APK. See
+[ForkMesh apps](www/docs/apps.md).
+
+## Start your own instance
+
+Run your own ForkMesh, under your own name, on your own server: open
+[forkmesh.com/start](https://forkmesh.com/start), fill in six short sections
+(or upload one [settings file](www/docs/start-config.md)), and ForkMesh
+connects over SSH, installs everything and shows each step live. It needs a
+fresh Debian 13 or Ubuntu 24.04 server with 1 GB RAM and takes about fifteen
+minutes.
+
+Or let a coding agent do it. Paste this into Claude Code:
+
+```text
+Read https://app.forkmesh.com/forkmesh-agent.md and help me start my own ForkMesh instance. Ask me for anything you need first.
+```
+
+The [agent guide](app/public/forkmesh-agent.md) also explains how the ForkMesh
+team opens pull requests, and [Working with coding agents](www/docs/coding-agents.md)
+shows how to keep it in your repository without committing it. The full
+walkthrough is [Start your own instance](www/docs/start-your-own-instance.md).
+
 ## Usage examples
 
 **Clone a public repository with stock Git.** The stable URL is served by
@@ -94,7 +120,10 @@ git push forkmesh docs/my-change
 **Open a pull request.** In the desktop app, select the branch under
 **Code → Branches** and choose **Create PR**. For an upstream project, fork it
 first and use **Pulls → New pull request**; the signed request is queued for
-the owner even while their node is offline.
+the owner even while their node is offline. Agents can open the same signed
+record with the MCP tool `open_pr_from_branch` or the HTTP API
+(`POST /api/repo/<owner>/<repo>/pulls`); keep each one small and independent
+([pull request workflow](CONTRIBUTING.md#opening-a-pull-request)).
 
 **Hand work to an agent.** Assign an issue to a coding agent from the desktop
 app. Agents run in isolated worktrees with live transcripts and diffs, and
@@ -173,9 +202,10 @@ world.forkmesh.com ┘  →  core nodes, each running the app, a replicated
 - **Mirror servers** are Go daemons (or desktop nodes) that hold the Git data
   and publish signed health; the cores also host repositories created on the
   web ([docs/HOSTED_REPOS.md](docs/HOSTED_REPOS.md)).
-- **Clients** are the ForkMesh desktop app and native iOS (Swift) and
-  Android (Kotlin) apps. Phones are access clients; Git mirroring remains a
-  desktop or headless-node job.
+- **Clients** are the web app, the ForkMesh desktop app, and the native iOS
+  (Swift), watchOS and Android (Kotlin) apps. Phones are mobile nodes with
+  their own key and Git engine; the watch works through the iPhone. Mirroring
+  remains a desktop or headless-node job.
 
 The developer view of how these pieces talk is
 [`docs/architecture.md`](docs/architecture.md).
@@ -183,7 +213,9 @@ The developer view of how these pieces talk is
 The app is also the self-hosting unit: deploy it at an address such as
 `forkmesh.example.com` for the complete Git, account, API, and realtime
 surface. World is optional, and self-hosts do not need to reproduce the
-marketing site.
+marketing site. [forkmesh.com/start](https://forkmesh.com/start) installs a
+complete white-label instance on your server
+([docs/INSTANCES.md](docs/INSTANCES.md)).
 
 ## Self-hosting and operations
 
@@ -230,9 +262,12 @@ app/         Git UI, API/relay, accounts, shared migrations; app/host/ runs it o
 conformance/ versioned contracts: protocol vectors, stock-Git matrix, shared fixtures
 deploy/      fleet file, node renderer, certsync, IDS, systemd units
 desktop/     Qt 6 desktop node
+changelog/   the one changelog: forkmesh.com/changelog and the apps' What's new
 docs/        developer documentation, one home page per subsystem
+examples/    example third-party apps (docs/APPS.md)
 marketplace/ creator package schema, catalog, packages, and editor plugins
-native/      native iOS (Swift/SwiftUI) and Android (Kotlin/Compose) apps
+native/      native iOS and watchOS (Swift/SwiftUI) and Android (Kotlin/Compose) apps
+office/      Office (2D) code and media
 server/      Go mirror daemon, core and runner roles, and server packaging
 tools/       maintenance, MCP server, test runners, and security helpers
 world/       World backend modules, tests, and 3D client assets
@@ -252,7 +287,8 @@ Build and test the component you change before opening a pull request:
 | Mirror server (`server/`) | `cd server && go test ./...` |
 | Native iOS core (`native/ios/`) | `cd native/ios/ForkMeshCore && swift test` |
 | Native Android core (`native/android/`) | `cd native/android && ./gradlew :core:coreTest` |
-| Host and fleet | `python3 -m pytest app/tests/host deploy/tests` |
+| Host and fleet | `python3 -m pytest app/tests/host app/host/tests_unit deploy/tests` |
+| Guarded deletes and security contracts | `python3 tools/run_critical_tests.py security` |
 | Git transport changes | `python3 tools/git_conformance.py run --protocol-version 2 --output artifacts/git-conformance-v2.json` |
 
 [CONTRIBUTING.md](CONTRIBUTING.md#building-and-testing) has the full
@@ -275,22 +311,42 @@ GET  /api/chat/agent-guestbook
 greeting; the response carries `messageForUser` for the agent to relay.
 
 `tools/forkmesh_mcp_server.py` exposes capability-scoped tools over MCP for
-compatible AI clients:
+compatible AI clients such as Claude Code (this repository's `.mcp.json`
+already lists it):
 
 - **Code:** list repositories and tracked files, read bounded text blobs, and
   run bounded literal searches at a Git ref. Reads come from Git objects, so
   ignored credentials, `.git`, and arbitrary server files stay out of reach.
+- **Issues and pull requests:** search issues; create issues, comments,
+  milestones and projects; read a pull request's diff; and
+  `open_pr_from_branch`, which signs the same pull request record the desktop
+  makes.
 - **Notes:** create, get, list, search, and update signed Markdown. Repository
   notes are committed under `.forkmesh/notes`; personal notes live in the
   ForkMesh application-data directory (override with `FORKMESH_MCP_NOTES_DIR`).
 - **Chat:** read retained messages and post to `mainnode/forkmesh` `#general`
   through the existing encrypted room protocol (override the relay with
   `FORKMESH_CHAT_ORIGIN`).
+- **Organization tools**, signed as the desktop's account: the Tasks page
+  (create, update, complete, attach work items, soft delete and restore),
+  CRM contacts and pipeline, and the marketing channel's next post (saved for
+  the team, never posted).
+- **Desktop tools**, only inside an agent the desktop launched: start other
+  agents, message them, list runners, notify the user, show windows and
+  widgets, drive a small browser window, and manage desktop releases.
+- **Email and expenses:** `send_email` sends one message through the
+  configured Zoho Mail account **at once, with no confirmation step**, and
+  logs it in the CRM; `record_expense` needs an admin account.
 
-Browse-only access needs no token. For writes, generate a device-local,
-revocable token in **Desktop → Settings → MCP**. No MCP tool provides a shell,
-arbitrary filesystem access, room keys, infrastructure credentials, code
-modification, Git pushes, note deletion, or administration.
+Access depends on whether the node has published a connector in
+**Desktop → Settings → MCP**. Until it has, the server is open: every tool
+works with the authority of the local node key. Once it has, write tools and
+the organization, desktop and email tools need the connector's token in
+`FORKMESH_MCP_TOKEN`; code, note, chat, issue and pull reads still work
+without it. Publish a connector before giving the server to an agent you do
+not fully trust. No MCP tool provides a shell, arbitrary filesystem access,
+room keys, infrastructure credentials, code modification, Git pushes or note
+deletion. `create_release` does tag a release and start its workflows.
 
 ## Security model
 
@@ -316,6 +372,9 @@ boundaries are documented in [www/docs/security](www/docs/security).
 | Goal | Guide |
 | --- | --- |
 | Install and complete first-run setup | [Getting started](www/docs/getting-started.md) |
+| Start your own instance on your server | [Start your own instance](www/docs/start-your-own-instance.md) |
+| Hand ForkMesh work to Claude Code or another coding agent | [Working with coding agents](www/docs/coding-agents.md) and the [agent guide](app/public/forkmesh-agent.md) |
+| Use the iPhone, Apple Watch and Android apps | [ForkMesh apps](www/docs/apps.md) |
 | Build, run, and troubleshoot the desktop app | [Desktop app guide](www/docs/qt-client.md) |
 | Decide whether ForkMesh fits, and when another option fits better | [Category comparisons](www/docs/category-comparisons.md) |
 | Check supported Git operations and limitations | [Git compatibility](www/docs/git-compatibility.md) |

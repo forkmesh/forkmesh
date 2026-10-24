@@ -1220,7 +1220,8 @@ _URL_EXPORT_NAMES = (
     "REPO_FORK_COUNTS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
     "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
     "SEASON_RE",
-    "AI_REVIEW_RE",
+    "AI_REVIEW_RE", "REPO_MODERATION_RE", "ORG_MODERATION_RE",
+    "REPO_TRANSLATIONS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
@@ -13989,7 +13990,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "3a826662aff96ff870fdb057b5cedb5c57e52adc867aff9b4d7ca8f538891cbc"
+    "5acceac3d4386ea85e51e3ea37b79eab8aa4b347be6c104682e159bbb3346eb3"
 )
 
 
@@ -16764,6 +16765,21 @@ pull_attention_handler = _pull_attention.export("handler")
 pull_attention_review_posted = _pull_attention.export("review_posted")
 pull_attention_record = _pull_attention.export("pull_record")
 pull_attention_claim_quick_reply = _pull_attention.export("claim_quick_reply")
+_moderation = _LazyModule("moderation")
+moderation_repo_handler = _moderation.export("repo_handler")
+moderation_org_handler = _moderation.export("org_handler")
+moderation_blocked_response = _moderation.export("blocked_response")
+moderation_can_moderate_repo = _moderation.export("can_moderate_repo")
+_account_policy = _LazyModule("account_policy")
+_random_handles = _LazyModule("random_handles")
+_account_recovery = _LazyModule("account_recovery")
+account_recover_handler = _account_recovery.export("recover_handler")
+account_recovery_code_handler = _account_recovery.export(
+    "regenerate_handler")
+account_handle_suggestion_handler = _account_recovery.export(
+    "suggestion_handler")
+_post_translations = _LazyModule("post_translations")
+post_translations_handler = _post_translations.export("handler")
 
 
 def _repo_identity_from_clone_url(value):
@@ -17455,6 +17471,9 @@ async def repo_about_handler(env, request, owner, repo):
             not owner_key_authed
             and not await _repo_admin_allowed(env, actor, owner, repo)):
         return json_response({"error": "not_authorized"}, status=403)
+    # An organization has no node key of its own; its owners and admins were
+    # already checked above, so its repositories' About (and images) can be
+    # edited from the web like a person's.
     if not await _owner_pubkey(env, owner) and not (
             await _branch_protection.settings_only(env, data, owner, repo)):
         linked = await d1_first(
@@ -19204,6 +19223,9 @@ async def _rename_account_namespace(env, name_bi, rec, new_name):
     moderation_error = await username_moderation_error(env, new_name)
     if moderation_error:
         return name_bi, rec, moderation_error
+    if ((await _signup_policy(env)).get("handles") == "require"
+            and not _random_handles.is_random_handle(new_name)):
+        return name_bi, rec, "random_handle_required"
 
     new_name_bi, target = await _account_row(env, new_name)
     quarantined = await d1_first(
@@ -19269,6 +19291,16 @@ async def _rename_account_namespace(env, name_bi, rec, new_name):
     await _delete_chat_direct_conversations(env, name_bi)
     await d1_run(
         env, "UPDATE account_presence SET name_bi=? WHERE name_bi=?",
+        new_name_bi, name_bi)
+    for table in ("moderation_roles", "moderation_blocks",
+                  "moderation_post_counts"):
+        await d1_run(
+            env, "UPDATE OR IGNORE " + table + " SET account_bi=? "
+            "WHERE account_bi=?", new_name_bi, name_bi)
+        await d1_run(
+            env, "DELETE FROM " + table + " WHERE account_bi=?", name_bi)
+    await d1_run(
+        env, "UPDATE moderation_queue SET author_bi=? WHERE author_bi=?",
         new_name_bi, name_bi)
     await d1_run(
         env, "UPDATE pending_verifications SET name_bi=? WHERE name_bi=?",
@@ -19407,6 +19439,9 @@ _REPO_SCOPED_TABLES = (
     ("pull_submission_receipts", "repo_bi"),
     ("recent_pushes", "repo_bi"),
     ("comment_reactions", "repo_bi"),
+    ("moderation_flags", "repo_bi"),
+    ("moderation_queue", "repo_bi"),
+    ("post_translations", "repo_bi"),
     ("member_repo_activity", "repo_bi"),
     ("member_activity_repos", "repo_bi"),
     ("comment_tips", "repo_bi"),
@@ -19614,6 +19649,15 @@ async def _delete_account_namespace(env, name_bi, rec):
     await d1_run(env, "DELETE FROM notifications WHERE recipient_bi=?", name_bi)
     await d1_run(env, "DELETE FROM recent_pushes WHERE account_bi=?", name_bi)
     await d1_run(env, "DELETE FROM comment_reactions WHERE account_bi=?", name_bi)
+    for moderation_table, moderation_column in (
+            ("moderation_roles", "account_bi"),
+            ("moderation_blocks", "account_bi"),
+            ("moderation_post_counts", "account_bi"),
+            ("moderation_queue", "author_bi")):
+        await d1_run(
+            env, "DELETE FROM " + moderation_table + " WHERE "
+            + moderation_column + "=?", name_bi)
+    await d1_run(env, "DELETE FROM post_translations WHERE account_bi=?", name_bi)
     await d1_run(
         env, "DELETE FROM comment_reaction_rate WHERE account_bi=?", name_bi)
     await d1_run(
@@ -22196,6 +22240,18 @@ async def _account_signup(env, request):
         env, request, "signup_started", {"path": "/signup"}, dedupe=True)
     signup_referral_code = _admin_signup_referral_code_normalize(
         data.get("signupReferralCode", ""))
+    signup_policy = await _signup_policy(env)
+    if _account_policy.signup_closed(signup_policy):
+        await log_blocked_signup(env, request, SIGNUP_PATH, 403,
+                                 "signup_closed")
+        return await _signup_refused(
+            env, "signup_closed", 403, claim=signup_claim,
+            name=data.get("nodeName", ""))
+    if _account_policy.invite_only(signup_policy) and not (
+            await _admin_signup_referral_code_mode(env)):
+        return await _signup_refused(
+            env, "invalid_signup_referral_code", 403, claim=signup_claim,
+            name=data.get("nodeName", ""))
     if not await _admin_signup_referral_code_matches(
             env, signup_referral_code):
         await log_blocked_signup(env, request, SIGNUP_PATH, 403,
@@ -22218,9 +22274,15 @@ async def _account_signup(env, request):
     if not valid_node_name(name):
         return await _signup_refused(
             env, "invalid_node_name", 400, claim=signup_claim, name=name)
-    if not valid_account_email(email):
+    email_optional = _account_policy.email_optional(signup_policy)
+    if (email or not email_optional) and not valid_account_email(email):
         return await _signup_refused(
             env, "valid_email_required", 400, claim=signup_claim, name=name)
+    if (signup_policy.get("handles") == "require"
+            and not _random_handles.is_random_handle(name)):
+        return await _signup_refused(
+            env, "random_handle_required", 400, claim=signup_claim,
+            name=name)
     if len(password) < 8:
         return await _signup_refused(
             env, "password_too_short", 400, claim=signup_claim, name=name)
@@ -22237,12 +22299,12 @@ async def _account_signup(env, request):
         return await _signup_refused(
             env, "node_name_taken", 409, claim=signup_claim, name=name)
 
-    email_bi = await blind_index(env, email)
+    email_bi = await blind_index(env, email) if email else None
     quarantined = await d1_first(
         env,
         "SELECT 1 AS reserved FROM quarantined_users "
         "WHERE status<>'restored' AND (user_bi=? OR email_bi=?) LIMIT 1",
-        name_bi, email_bi,
+        name_bi, email_bi or name_bi,
     )
     if quarantined:
         await log_blocked_signup(env, request, SIGNUP_PATH, 409,
@@ -22251,7 +22313,8 @@ async def _account_signup(env, request):
             env, "account_pending_verification", 409, claim=signup_claim,
             name=name)
     dup = await d1_first(
-        env, "SELECT user_bi AS name_bi FROM users WHERE email_bi=?", email_bi)
+        env, "SELECT user_bi AS name_bi FROM users WHERE email_bi=?",
+        email_bi) if email_bi else None
     if dup and dup.get("name_bi") != name_bi:
         return await _signup_refused(
             env, "email_taken", 409, claim=signup_claim, name=name)
@@ -22300,6 +22363,9 @@ async def _account_signup(env, request):
         name, clean_string(data.get("nodeName", ""), MAX_NODE_NAME)))
     rec["status"] = "active"
     rec["email_verified"] = bool(rec.get("email_verified", False))
+    recovery_code = ""
+    if not email:
+        recovery_code = await _account_recovery.issue(rec)
     # A reservation already carries created_at, but it is not a joined user
     # until signup promotes it to active. The duplicate-active guard above
     # makes this transition the one reliable signal for a welcome.
@@ -22396,9 +22462,18 @@ async def _account_signup(env, request):
         env, rec,
         session_device_label=_account_session_device_label(request),
         session_client_ip=_account_session_client_ip(request))
+    if recovery_code:
+        payload["recoveryCode"] = recovery_code
     return await _account_session_response(
         env, request, payload, status=201
     )
+
+
+async def _signup_policy(env):
+    moderation = globals().get("_moderation")
+    if moderation is None:
+        return dict(_account_policy.DEFAULTS)
+    return await moderation.policy(env)
 
 
 async def _account_password_record(env, data):
@@ -35360,6 +35435,12 @@ async def accounts_handler(env, request):
         return await _account_forgot_password_challenge(env, request)
     if url.path == "/api/accounts/reset-password" and method == "POST":
         return await _account_reset_password(env, request)
+    if url.path == "/api/accounts/recover" and method == "POST":
+        return await account_recover_handler(env, request)
+    if url.path == "/api/accounts/recovery-code" and method == "POST":
+        return await account_recovery_code_handler(env, request)
+    if url.path == "/api/accounts/handle-suggestion" and method == "GET":
+        return await account_handle_suggestion_handler(env, request)
     if url.path == "/api/accounts/change-password" and method == "POST":
         return await _account_change_password(env, request)
     if url.path == "/api/accounts/claim-node" and method == "POST":
@@ -41803,7 +41884,8 @@ async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event,
 
 
 async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
-                                   repo_keys, actions_job=False):
+                                   repo_keys, actions_job=False,
+                                   approved=None):
     event = data.get("event")
     if not isinstance(event, dict):
         return json_response({"error": "event_required"}, status=400)
@@ -41818,7 +41900,7 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         return json_response({"error": "bad_signature"}, status=401)
     if actions_job:
         event["authorVerified"] = True
-    else:
+    elif approved is None:
         refused = await _bind_session_author(env, request, data, event)
         if refused is not None:
             return refused
@@ -41834,8 +41916,16 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         return json_response(
             {"ok": True, "number": queued.get("number", number)},
             status=201)
+    moderation = globals().get("_moderation")
+    moderation_refusal, moderation_context = (
+        await moderation.submission_gate(
+            env, request, data, owner, repo, event, "issue", actions_job)
+        if moderation is not None and approved is None else (None, {}))
+    if moderation_refusal is not None:
+        return moderation_refusal
+    held = bool(moderation_context.get("hold"))
     signed_number = number
-    if event_type == "open":
+    if event_type == "open" and not held:
         reserved = await _forkbot_next_issue_number(
             env, repo_bi, owner, repo, "issue")
         # A desktop submission may already carry a usable proposal. A web
@@ -41860,6 +41950,10 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         if not ok and event_type in ("edit", "delete"):
             ok = await _issue_comment_owned_by_submitter(
                 env, owner, repo, number, event)
+        if not ok and moderation is not None and \
+                event_type in moderation.MODERATOR_ISSUE_EVENTS:
+            ok = await _issue_moderator_allowed(
+                env, request, data, owner, repo)
         if not ok:
             return err
     # Self-assignment (issue #570) is the one assignment a public
@@ -41943,6 +42037,11 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         "submitter": clean_string(event.get("author", ""), 120),
         "submittedAt": int(Date.now()),
     }
+    if held:
+        original = REPO_API_PREFIX_RE.match(urlparse(request.url).path)
+        return await moderation.hold(
+            env, owner, repo, repo_bi, item, moderation_context,
+            safe_segment(unquote(original.group(1))) if original else owner)
     await d1_run(
         env,
         "INSERT INTO issue_inbox (repo_bi, data, submitter_bi) VALUES (?,?,?)",
@@ -42019,6 +42118,52 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
     await _best_effort_inbox_side_effect(_queue_issue_actions(
         env, owner, repo, number, event, item, actions_job))
     return json_response({"ok": True, "number": number}, status=201)
+
+
+async def _moderation_submission_refusal(env, request, data, owner, repo,
+                                         event, surface):
+    moderation = globals().get("_moderation")
+    if moderation is None:
+        return None
+    refused, _context = await moderation.submission_gate(
+        env, request, data, owner, repo, event, surface)
+    return refused
+
+
+async def _issue_moderator_allowed(env, request, data, owner, repo):
+    try:
+        _, rec = await _account_session_record(env, request, data)
+    except Exception:
+        return False
+    actor = clean_string(
+        (rec or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+    if not actor:
+        return False
+    moderation = globals().get("_moderation")
+    if moderation is None:
+        return False
+    return await moderation.can_moderate_repo(env, actor, owner, repo)
+
+
+async def _moderation_commit_issue(env, request, held):
+    owner = safe_segment(held.get("owner") or "")
+    repo = safe_segment(held.get("repo") or "")
+    public_owner = safe_segment(held.get("publicOwner") or "") or owner
+    item = held.get("item") if isinstance(held.get("item"), dict) else {}
+    event = item.get("event") if isinstance(item.get("event"), dict) else {}
+    if not owner or not repo or not event:
+        return json_response({"error": "invalid_item"}, status=400)
+    meta = dict(item.get("meta") or {}) if isinstance(
+        item.get("meta"), dict) else {}
+    meta.pop("wantsAgent", None)
+    data = {"event": event, "number": int(item.get("number") or 0),
+            "titleIfNew": item.get("titleIfNew", ""), "meta": meta,
+            "attachmentData": item.get("attachmentData")}
+    repo_bi = await blind_index(env, owner + "/" + repo)
+    return await _accept_issue_submission(
+        env, request, owner, repo, repo_bi, data,
+        event_signing_repo_keys((public_owner, repo), (owner, repo)),
+        approved=held)
 
 
 async def _queue_issue_actions(env, owner, repo, number, event, item,
@@ -42373,6 +42518,12 @@ async def pulls_handler(env, request, owner, repo):
             refused = await _bind_session_author(env, request, data, event)
             if refused is not None:
                 return refused
+            moderation_gate = globals().get("_moderation_submission_refusal")
+            moderation_refusal = await moderation_gate(
+                env, request, data, owner, repo, event,
+                "pull") if moderation_gate else None
+            if moderation_refusal is not None:
+                return moderation_refusal
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi
             )
@@ -42421,6 +42572,12 @@ async def pulls_handler(env, request, owner, repo):
             refused = await _bind_session_author(env, request, data, event)
             if refused is not None:
                 return refused
+            moderation_gate = globals().get("_moderation_submission_refusal")
+            moderation_refusal = await moderation_gate(
+                env, request, data, owner, repo, event,
+                "pull") if moderation_gate else None
+            if moderation_refusal is not None:
+                return moderation_refusal
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi
             )
@@ -42567,6 +42724,13 @@ async def pulls_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, pull)
         if refused is not None:
             return refused
+        moderation_gate = globals().get("_moderation_submission_refusal")
+        moderation_refusal = await moderation_gate(
+            env, request, data, owner, repo,
+            {"type": "open", "authorName": pull.get("authorName", "")},
+            "pull") if moderation_gate else None
+        if moderation_refusal is not None:
+            return moderation_refusal
         disclosure_check = globals().get("pull_ai_disclosure_check")
         if disclosure_check is not None:
             refusal = await disclosure_check(env, owner, repo, pull)
@@ -42871,10 +43035,21 @@ async def discussions_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, event)
         if refused is not None:
             return refused
+        moderation_gate = globals().get("_moderation_submission_refusal")
+        moderation_refusal = await moderation_gate(
+            env, request, data, owner, repo, event,
+            "discussion") if moderation_gate else None
+        if moderation_refusal is not None:
+            return moderation_refusal
         owner_approved = False
         if event_type in DISCUSSION_OWNER_EVENT_TYPES or event_type == "answer":
             owner_approved = await _discussion_answer_by_owner(
                 env, request, data, owner, repo)
+            moderation = globals().get("_moderation")
+            if (not owner_approved and moderation is not None
+                    and event_type in moderation.MODERATOR_DISCUSSION_EVENTS):
+                owner_approved = await _issue_moderator_allowed(
+                    env, request, data, owner, repo)
             if event_type in DISCUSSION_OWNER_EVENT_TYPES and not owner_approved:
                 return json_response({"error": "not_authorized"}, status=403)
         submitter_bi = await blind_index(env, event.get("author", ""))
@@ -52291,6 +52466,45 @@ def _https_mirror_merge_body(raw, pull_number, mutation="merge"):
     }
 
 
+HTTPS_MIRROR_MERGE_PROGRESS_PHASES = (
+    "claimed", "fetching", "verifying", "checking", "testing",
+    "committing", "hooks", "pushing", "publishing",
+)
+
+
+def _https_mirror_merge_progress(value):
+    if not isinstance(value, dict):
+        return None
+    phases = HTTPS_MIRROR_MERGE_PROGRESS_PHASES
+    limit = 2 ** 53
+
+    def stamp(item):
+        return (
+            item if isinstance(item, int) and not isinstance(item, bool)
+            and 0 < item < limit else 0)
+
+    steps = []
+    for step in (value.get("steps") if isinstance(
+            value.get("steps"), list) else [])[:len(phases) * 2]:
+        if (
+            isinstance(step, dict)
+            and step.get("phase") in phases
+            and stamp(step.get("at"))
+        ):
+            steps.append({"phase": step["phase"], "at": step["at"]})
+    phase = value.get("phase")
+    started = stamp(value.get("startedAt"))
+    updated = stamp(value.get("updatedAt"))
+    if phase not in phases or not started or not updated or not steps:
+        return None
+    return {
+        "phase": phase,
+        "startedAt": started,
+        "updatedAt": updated,
+        "steps": steps,
+    }
+
+
 def _https_mirror_merge_result(value, request, mutation="merge"):
     """Return a bounded node result or None; no origin data is projected."""
     profile = HTTPS_MIRROR_PULL_MUTATIONS[mutation]
@@ -52303,11 +52517,15 @@ def _https_mirror_merge_result(value, request, mutation="merge"):
     if status == "processing":
         if value.get("ok") is not True:
             return None
-        return {
+        output = {
             "ok": True,
             "status": "processing",
             "requestId": request_id,
         }
+        progress = _https_mirror_merge_progress(value.get("progress"))
+        if progress:
+            output["progress"] = progress
+        return output
     if status == "failed":
         error = str(value.get("error") or "")
         if error not in profile["failures"]:

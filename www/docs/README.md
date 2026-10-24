@@ -25,6 +25,15 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Diagnose a failed clone, pull or push | [Git errors](git-errors.md) |
 | Change the project and open a pull request | [Contributing](../../CONTRIBUTING.md) |
 
+## Chat, calls and jams
+
+| Goal | Guide |
+| --- | --- |
+| Make voice, video and group calls, and check call quality | [Voice and video calls](calls.md) |
+| Check safety numbers and approve new devices in direct messages | [Safety numbers and trusted devices](chat-safety-numbers.md) |
+| Mention people and pick usernames as you type | [Mentions and username suggestions](mentions-and-autocomplete.md) |
+| Share a queue and decks with friends in Video Mix DJ Studio | [DJ Studio jams](dj-studio.md) |
+
 ## Product and policy
 
 | Topic | Page |

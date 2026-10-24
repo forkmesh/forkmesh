@@ -28,7 +28,8 @@ def test_issue_and_pull_compose_show_spinner_while_submitting():
     issue = _slice(COMPOSE, "async function handleIssueComposeSubmit(",
                    "// --- CSV issue import")
     assert 'setSubmitBusy(submit, true, "Submitting issue…")' in issue
-    assert issue.count("setSubmitBusy(submit, false)") == 2
+    # Sent, held for a moderator's review, or failed.
+    assert issue.count("setSubmitBusy(submit, false)") == 3
     assert "submit.disabled" not in issue
 
     # The failure sentences themselves moved out to webPullSubmitErrorText

@@ -40,6 +40,23 @@ def rename_markup(text: str, escaped: str) -> str:
     return "".join(out)
 OLD_TAG_RE = re.compile(r'<script src="/instance-brand\.js"[^>]*' + MARKER + r'[^>]*></script>')
 THEME_TAG = '<link rel="stylesheet" href="/instance-theme.css" data-instance-theme />'
+MODE_TAG = (
+    r'<script data-instance-color-mode>(function(){try{var d=document.documentElement,'
+    r'q=matchMedia("(prefers-color-scheme: light)"),'
+    r'm=getComputedStyle(d).getPropertyValue("--instance-color-mode").trim();'
+    r'function choice(){var c="";try{c=localStorage.getItem("forkmesh.dashboard.theme")'
+    r'||localStorage.getItem("forkmesh.theme")||""}catch(_){}'
+    r'if(!c){var k=/(?:^|;\s*)forkmesh_theme=([a-z]+)/.exec(document.cookie);c=k?k[1]:""}'
+    r'return c==="light"||c==="dark"||c==="system"?c:""}'
+    r'function apply(){var c=choice(),x=c||m,t=c==="light"||c==="dark"?c:'
+    r'x==="system"?(q.matches?"light":"dark"):x==="light"?"light":"";'
+    r'd.setAttribute("data-dashboard-theme-resolved","");if(!t)return;'
+    r'd.setAttribute("data-dashboard-theme",t);d.style.colorScheme=t;'
+    r'var e=document.querySelector("meta[name=theme-color]");'
+    r'if(e)e.setAttribute("content",t==="light"?"#f6f8fb":"#090909")}'
+    r'apply();if(q.addEventListener)q.addEventListener("change",apply);'
+    r'else if(q.addListener)q.addListener(apply)}catch(_){}})()</script>')
+MODE_TAG_RE = re.compile(r"<script data-instance-color-mode>.*?</script>", re.DOTALL)
 ICON_RE = re.compile(r'[ \t]*<link\s+rel="(?:icon|shortcut icon|apple-touch-icon)"[^>]*>[ \t]*\n?', re.IGNORECASE)
 LOGO_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "svg": "image/svg+xml"}
 MAX_LOGO_BYTES = 200 * 1024
@@ -183,6 +200,7 @@ def brand_page(text: str, name: str, logo: str = "", powered_by=True, white_labe
     escaped = html.escape(name, quote=True)
     text = OLD_TAG_RE.sub("", text)
     text = text.replace(THEME_TAG, "")
+    text = MODE_TAG_RE.sub("", text)
     if logo:
         found = ICON_RE.search(text)
         if found:
@@ -197,7 +215,7 @@ def brand_page(text: str, name: str, logo: str = "", powered_by=True, white_labe
         text = offsite_chrome(text)
     text = name_beside_logo(text, escaped)
     off = ' data-instance-powered-by="off"' if not powered_by else ""
-    tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
+    tag = THEME_TAG + MODE_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
     text = instance_info_early(text)
     lower = text.lower()
     index = lower.rfind("</head>")
