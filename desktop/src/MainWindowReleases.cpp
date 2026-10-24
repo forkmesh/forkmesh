@@ -1951,12 +1951,21 @@ QWidget *MainWindow::buildMirrorNodesSection()
 {
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("mirrorNodesSection"));
+    const bool next = Theme::isNext();
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
+    if (next) {
+        page->setAttribute(Qt::WA_StyledBackground, true);
+        layout->setContentsMargins(16, 8, 12, 8);
+    }
 
     auto *headerRow = new QHBoxLayout;
     headerRow->setContentsMargins(0, 0, 0, 0);
+    if (next) {
+        headerRow->setObjectName(QStringLiteral("mirrorNodesHeaderRow"));
+        headerRow->setSpacing(12);
+    }
     auto *heading = new QLabel(QStringLiteral("Repository mirrors"));
     heading->setObjectName("sectionLabel");
     m_mirrorNodesRepoCombo = new QComboBox;
@@ -1988,7 +1997,9 @@ QWidget *MainWindow::buildMirrorNodesSection()
         else
             requestMirrorNodesRefresh();
     });
-    m_mirrorNodesOnlineOnlyCheck = new QCheckBox(QStringLiteral("Online only"));
+    m_mirrorNodesOnlineOnlyCheck =
+        next ? new kit::Toggle(QStringLiteral("Online only"))
+             : new QCheckBox(QStringLiteral("Online only"));
     m_mirrorNodesOnlineOnlyCheck->setChecked(true);
     m_mirrorNodesOnlineOnlyCheck->setToolTip(QStringLiteral(
         "Show the chosen repository's copy only for nodes that are online "
@@ -1997,7 +2008,7 @@ QWidget *MainWindow::buildMirrorNodesSection()
             &MainWindow::loadMirrorNodesPanel);
     auto *refreshNodesButton = new QPushButton;
     refreshNodesButton->setObjectName("ghostButton");
-    refreshNodesButton->setFixedSize(32, 30);
+    refreshNodesButton->setFixedSize(next ? QSize(28, 28) : QSize(32, 30));
     refreshNodesButton->setAccessibleName(QStringLiteral("Refresh nodes"));
     refreshNodesButton->setCursor(Qt::PointingHandCursor);
     refreshNodesButton->setToolTip(QStringLiteral(
