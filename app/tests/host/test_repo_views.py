@@ -754,8 +754,9 @@ def test_issue_list_rows_show_recent_commenters_with_imported_pictures(monkeypat
     assert faces.count("<img") == 1
 
 
-def test_the_server_list_is_newest_created_first_like_the_dashboard_and_github():
+def test_the_server_list_is_newest_created_first_with_forum_lists_on(monkeypatch):
     from types import SimpleNamespace
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset())
     rows = [{"number": n, "title": "t%d" % n, "state": "open", "ts": ts, "author": "a"}
             for n, ts in ((3, 1_700_000_000_000), (9, 1_600_000_000_000),
                           (5, 1_700_000_000), (4, ""), (8, 1_700_000_000_000))]
@@ -764,7 +765,10 @@ def test_the_server_list_is_newest_created_first_like_the_dashboard_and_github()
     html = repo_views._render(bundle)
     order = [int(n) for n in re.findall(r'href="/o/r/issues/(\d+)"', html)]
     assert order == [8, 5, 3, 9, 4]
-
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset({"forum-list"}))
+    repo_views_html = repo_views._render(bundle)
+    order = [int(n) for n in re.findall(r'href="/o/r/issues/(\d+)"', repo_views_html)]
+    assert order == [3, 9, 5, 4, 8]
 
 
 def test_issue_list_rows_have_no_commenter_faces_unless_forum_lists_are_on(monkeypatch):

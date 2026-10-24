@@ -1223,7 +1223,7 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
     if kind in ("pulls", "issues"):
         shown = [r for r in rows if str(r.get("state") or "open").lower()
                  == "open" and not r.get("deleted")]
-        if kind == "issues":
+        if kind == "issues" and "forum-list" not in _plugins_off():
             shown.sort(key=lambda r: (-_created_ms(r.get("ts")), -r["number"]))
         if open_count is None:
             open_count = len(shown)
