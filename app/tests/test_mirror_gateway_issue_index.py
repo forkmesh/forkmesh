@@ -433,3 +433,143 @@ def test_index_is_sent_as_utf8_not_escapes(tmp_path):
         assert "Блокировка".encode() in body and b"\\u" not in body
     finally:
         app.close()
+
+
+def _ledger(**extra):
+    return dict({"schema": "forkmesh-forge-sync/v1", "provider": "github",
+                 "repository": "example/forum", "mode": "mirror",
+                 "issues": {"12": {"remoteId": "9001", "remoteNumber": 512},
+                            "10": {"remoteId": "9002", "remoteNumber": 77,
+                                   "detached": True},
+                            "3": {"remoteId": "9003", "remoteNumber": True},
+                            "x": {"remoteNumber": 4}}}, **extra)
+
+
+def test_index_entries_carry_their_forge_source_from_the_ledger(tmp_path):
+    bare = _make_repository(tmp_path, dict(RECORDS, **{
+        ".forkmesh/forge-sync.json": _ledger()}))
+    app = _application(tmp_path, bare)
+    try:
+        rows = {item["number"]: item for item in _payload(app, "ref=main")["issues"]}
+        assert rows[12]["sourceUrl"] == "https://github.com/example/forum/issues/512"
+        assert all("sourceUrl" not in rows[n] for n in (10, 9, 8, 4, 3))
+        related = _payload(app, "ref=main&related=12")
+        assert related["sourceUrl"] == "https://github.com/example/forum/issues/512"
+        assert "sourceUrl" not in _payload(app, "ref=main&related=10")
+        _make_repository(tmp_path, {".forkmesh/forge-sync.json": _ledger(
+            provider="gitea", baseUrl="https://codeberg.org/")}, bare=bare)
+        head = run(["git", "rev-parse", "main"], bare)
+        rows = {item["number"]: item for item in app.repositories[
+            ("alice", "project")].issue_index({"ref": head})["issues"]}
+        assert rows[12]["sourceUrl"] == "https://codeberg.org/example/forum/issues/512"
+    finally:
+        app.close()
+
+
+def test_a_ledger_that_names_no_safe_forge_gives_no_sources():
+    def urls(**extra):
+        return gateway._forge_source_urls(json.dumps(_ledger(**extra)).encode())
+    assert urls() == {12: "https://github.com/example/forum/issues/512"}
+    assert urls(baseUrl="https://ghe.example/api/v3") == {}
+    assert urls(provider="gitea") == {}
+    assert urls(provider="gitea", baseUrl="http://plain.example") == {}
+    assert urls(provider="gitea", baseUrl="https://x.example/a\"b") == {}
+    assert urls(repository="../etc") == {}
+    assert urls(repository="a/b/c") == {}
+    assert urls(provider="gitlab") == {}
+    assert gateway._forge_source_urls(b"{bad") == {}
+    assert gateway._forge_source_urls(b"[1]") == {}
+
+
+def _source(**extra):
+    return dict({"schema": "forkmesh-forge-source-v1", "provider": "github",
+                 "repository": "example/forum", "baseUrl": "",
+                 "issueUrl": "https://github.com/example/forum/issues/{number}",
+                 "renumbered": {"21": 700, "x": 3, "22": True}}, **extra)
+
+
+def _imported(number, opener):
+    return {"number": number, "title": "imported %d" % number, "events": [
+        _event("open", opener, "github:alice", T, body="hi")]}
+
+
+def test_the_public_source_file_names_imported_issues_originals(tmp_path):
+    records = {
+        ".forkmesh/issues/open/20/issue-20.json": _imported(20, "forge-github-issue-1"),
+        ".forkmesh/issues/open/21/issue-21.json": _imported(21, "forge-github-issue-2"),
+        ".forkmesh/issues/open/22/issue-22.json": _imported(22, "forge-github-issue-3"),
+        ".forkmesh/issues/open/23/issue-23.json": _imported(23, "native-open"),
+        ".forkmesh/forge-source.json": _source(),
+        ".forkmesh/forge-sync.json": _ledger(),
+    }
+    bare = _make_repository(tmp_path, records)
+    app = _application(tmp_path, bare)
+    try:
+        rows = {item["number"]: item for item in _payload(app, "ref=main")["issues"]}
+        base = "https://github.com/example/forum/issues/"
+        assert rows[20]["sourceUrl"] == base + "20"
+        assert rows[21]["sourceUrl"] == base + "700"
+        assert rows[22]["sourceUrl"] == base + "22"
+        assert "sourceUrl" not in rows[23]
+        assert _payload(app, "ref=main&related=21")["sourceUrl"] == base + "700"
+        _make_repository(tmp_path, {".forkmesh/forge-source.json": _source(
+            issueUrl="javascript:alert({number})")}, bare=bare)
+        head = run(["git", "rev-parse", "main"], bare)
+        rows = app.repositories[("alice", "project")].issue_index({"ref": head})["issues"]
+        assert not any("sourceUrl" in item for item in rows)
+    finally:
+        app.close()
+
+
+def test_a_source_file_is_read_strictly():
+    spec = lambda **extra: gateway._forge_source_spec(json.dumps(_source(**extra)).encode())  # noqa: E731
+    assert spec()["renumbered"] == {21: 700}
+    assert spec(schema="other") == {}
+    assert spec(issueUrl="https://github.com/a/b/issues/") == {}
+    assert spec(issueUrl="https://github.com/{number}/{number}") == {}
+    assert spec(issueUrl='https://x.example/"{number}') == {}
+    assert spec(provider="GitHub!") == {}
+    assert gateway._forge_source_spec(b"\xff") == {}
+    url = gateway._forge_source_url(spec(provider="gitea",
+        issueUrl="https://codeberg.org/o/r/issues/{number}"), 4, "forge-gitea-issue-9")
+    assert url == "https://codeberg.org/o/r/issues/4"
+    assert gateway._forge_source_url(spec(), 4, "forge-gitea-issue-9") == ""
+
+
+def test_rows_name_their_recent_commenters_like_the_dashboard(issue_app):
+    app, _bare, _tmp = issue_app
+    rows = {item["number"]: item for item in _payload(app, "ref=main")["issues"]}
+    assert rows[12]["recentCommenters"] == ["frank", "bob"]
+    assert rows[10]["recentCommenters"] == ["hal"]
+    assert rows[3]["recentCommenters"] == []
+    events = [{"type": "comment", "id": "c%d" % i, "authorName": name, "author": "k"}
+              for i, name in enumerate(["a", "b", " c ", "a", "d", "e", ""])]
+    events += [{"type": "comment", "id": "x", "author": "key-only"},
+               {"type": "delete", "target": "c4"}, "junk", None]
+    records = {1: json.dumps({"events": events})}
+    summaries = [dict(gateway._issue_index_summary(1, records[1].encode()), location="open")]
+    assert summaries[0]["recentCommenters"] == ["key-only", "k", "e", "a"]
+    out = _node_compare(summaries, records)
+    assert out["rows"] == {"1": []}
+
+
+def test_the_index_lists_the_imported_avatars_and_the_related_answer_its_people(tmp_path):
+    records = dict(RECORDS, **{
+        ".forkmesh/contributors/github-bob.png": "png",
+        ".forkmesh/contributors/github-zed.png": "png",
+        ".forkmesh/contributors/github-..x.png": "png",
+        ".forkmesh/contributors/contributors.json": "{}",
+        ".forkmesh/issues/open/30/issue-30.json": {"number": 30, "events": [
+            _event("open", "o30", "github:Zed", T),
+            _event("comment", "c30", "github:Bob", T + 1, body="hi")]},
+    })
+    bare = _make_repository(tmp_path, records)
+    app = _application(tmp_path, bare)
+    try:
+        full = _payload(app, "ref=main")
+        assert full["forgeAvatars"] == ["github:bob", "github:zed"]
+        related = _payload(app, "ref=main&related=30")
+        assert related["forgeAvatars"] == ["github:bob", "github:zed"]
+        assert "forgeAvatars" not in _payload(app, "ref=main&related=12")
+    finally:
+        app.close()

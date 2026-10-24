@@ -38,7 +38,8 @@ FUNCTIONS = {
         "parseFlexibleDate", "formatDate", "formatTimeAgo", "formatCount", "loadingHtml",
         "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
         "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs",
-        "repositoryViewKey", "botAvatarKind", "botAvatarSvg"),
+        "repositoryViewKey", "botAvatarKind", "botAvatarSvg", "rememberForgeAvatars",
+        "forgeAvatarSrc"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
         "markdownVideoButtonHtml",
@@ -69,11 +70,12 @@ FUNCTIONS = {
         "issueAiPromptText", "renderIssueAiPrompt", "issueAssignmentHours", "issueAssignmentTimes",
         "issueAssigneeHasPull", "issueDeadlineDuration", "issueAssignmentDeadline",
         "renderIssueAssignmentDeadline", "issueAssigneeDeadlineHtml", "issueSubscriptionNote",
-        "issueViewKey", "issueViewsLabel", "issueViewsHtml"),
+        "issueViewKey", "issueViewsLabel", "issueViewsHtml", "issueSourceUrlSafe",
+        "renderIssueSourceLink"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE",
-                     "BOT_AVATAR_GLYPHS"),
+                     "BOT_AVATAR_GLYPHS", "forgeAvatarSets"),
     "06-repo-content.js": (
         "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS", "MD_BARE_URL", "MD_ENTITIES", "MD_ESCAPED_ENTITY", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
@@ -134,6 +136,7 @@ const location = { pathname: %(path)s, search: "" };
 const input = JSON.parse(%(input)s);
 const repo = { owner: %(owner)s, name: %(name)s, isPrivate: false };
 state.selectedRepo = repo;
+rememberForgeAvatars(repo, input.avatars || []);
 const index = input.index.map((text, i) => parseIssueJson(text, 0));
 const parsed = issueDetailParsed(input.issue, input.number);
 const byNumber = new Map(index.map((issue) => [Number(issue.number), issue]));
@@ -146,13 +149,14 @@ parsed.issueMentions = issueMentionsOf(index, input.number);
 parsed.issueMutationAuthorized = false;
 parsed.issueSubscribed = false;
 parsed.repoCollabSettings = { aiPromptTemplate: input.template || "" };
+parsed.issueSourceUrl = input.source || "";
 state.repoRecordDetail = { repo, kind: "issues", number: input.number, parsed };
 process.stdout.write(renderRepoIssueDetail(repo, input.number, parsed));
 """
 
 
 def js_render(issue, number, index=(), viewer="guest", origin="", template="",
-              reactions=None, off=()):
+              reactions=None, off=(), source="", avatars=()):
     code = "\n".join(
         [_const(SOURCES[name], const) for name, consts in CONSTANTS.items() for const in consts]
         + [_function(SOURCES[name], fn) for name, fns in FUNCTIONS.items() for fn in fns])
@@ -165,6 +169,7 @@ def js_render(issue, number, index=(), viewer="guest", origin="", template="",
         "path": json.dumps(PAGE_PATH), "code": code, "owner": json.dumps(OWNER),
         "name": json.dumps(NAME), "input": json.dumps(json.dumps({
             "issue": json.dumps(issue), "number": number, "template": template,
+            "source": source, "avatars": list(avatars),
             "index": [json.dumps(row) for row in index]}))}
     return subprocess.run(["node", "-"], input=script, check=True, capture_output=True,
                           text=True, env={"TZ": "UTC", "LANG": "en_US.UTF-8",
@@ -173,13 +178,14 @@ def js_render(issue, number, index=(), viewer="guest", origin="", template="",
 
 
 def py_render(issue, number, index=(), viewer="guest", origin="", template="",
-              reactions=None, off=()):
+              reactions=None, off=(), source="", avatars=()):
     ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, "main", origin=origin)
     rows = [repo_ssr_issue.parse_issue(json.dumps(row), 0) for row in index]
     return repo_ssr_issue.render_issue(
         repo_ssr_issue.parse_issue(json.dumps(issue), number), ctx, OWNER, PAGE_PATH,
         index=rows, now=NOW_MS / 1000, viewer=viewer, repo=NAME, prompt=template,
-        reactions=reactions, off=frozenset(off))
+        reactions=reactions, off=frozenset(off), source=source,
+        avatars=frozenset(name.lower() for name in avatars))
 
 
 ICON_RE = re.compile(r'<svg xmlns="http://www.w3.org/2000/svg"[^>]*class="lucide lucide-'
@@ -381,7 +387,8 @@ def _tailwind_selector(token):
 
 
 def test_first_view_uses_classes_the_stylesheet_has():
-    html = py_render(issue27(), 27, index_rows(), viewer="both") + repo_ssr_issue.FRAME
+    html = py_render(issue27(), 27, index_rows(), viewer="both",
+                     source="https://github.com/example/forum/issues/1") + repo_ssr_issue.FRAME
     css = (DASHBOARD / "tailwind.css").read_text("utf-8")
     shell = (DASHBOARD / "shell.html").read_text("utf-8")
     tokens = {token for match in re.finditer(r'class="([^"]*)"', html)
@@ -632,3 +639,84 @@ def test_the_server_reads_the_switches_from_the_instance_plugins(monkeypatch):
     assert repo_ssr_issue.plugins_off() == {"fediverse-ui"}
     monkeypatch.delitem(sys.modules, "instance_features")
     assert repo_ssr_issue.plugins_off() == frozenset()
+
+
+@needs_node
+@pytest.mark.parametrize("source", [
+    "https://github.com/example/forum/issues/512",
+    "https://codeberg.org/example/forum/issues/7",
+    "javascript:alert(1)", "https://github.com/a\"b/issues/1", ""])
+def test_the_view_on_github_button_matches_the_dashboard(source):
+    issue = mirrored_issue()
+    expected = normalize(js_render(issue, 9, (), "member", source=source))
+    got = normalize(py_render(issue, 9, (), "member", source=source))
+    assert got == expected
+    safe = source.startswith("https://") and '"' not in source
+    assert ("data-repo-issue-source" in got) is safe
+    if safe:
+        link = re.search(r'<a data-repo-issue-source [^>]*>', got).group(0)
+        assert 'href="%s"' % source in link and 'target="_blank"' in link
+        assert 'rel="noopener noreferrer nofollow"' in link
+        assert ("View on GitHub" in got) is ("github.com" in source)
+
+
+def test_the_source_comes_from_the_related_answer_or_the_full_index():
+    url = "https://github.com/example/forum/issues/512"
+    assert repo_ssr_issue.index_source_url(
+        {"related": 9, "sourceUrl": url, "issues": []}, 9) == url
+    assert repo_ssr_issue.index_source_url(
+        {"related": 8, "sourceUrl": url, "issues": []}, 9) == ""
+    assert repo_ssr_issue.index_source_url(
+        {"issues": [{"number": 9, "sourceUrl": url}]}, 9) == url
+    assert repo_ssr_issue.index_source_url(
+        {"issues": [{"number": 9, "sourceUrl": "http://x/1"}]}, 9) == ""
+    assert repo_ssr_issue.index_source_url(None, 9) == ""
+
+
+def test_the_issue_page_links_its_forge_original_and_honours_the_switches(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    bundle = bundle_for(mirrored_issue())
+    bundle.number = 27
+    url = "https://github.com/example/forum/issues/512"
+    bundle.model["index"] = {"related": 27, "sourceUrl": url, "issues": []}
+    page = repo_ssr.inject_issue(repo_page(), DATA, bundle, short=True)
+    assert 'data-repo-issue-source href="%s"' % url in page
+    assert "data-repo-federated-thread" in page and "data-repo-issue-ai-prompt" in page
+    monkeypatch.setitem(sys.modules, "instance_features", SimpleNamespace(
+        switched_off=lambda: frozenset({"fediverse-ui", "issue-ai-prompt"})))
+    page = repo_ssr.inject_issue(repo_page(), DATA, bundle, short=True)
+    assert "data-repo-federated-thread" not in page
+    assert "data-repo-issue-ai-prompt" not in page
+
+
+@needs_node
+@pytest.mark.parametrize("viewer", ["guest", "member"])
+def test_imported_forge_avatars_render_the_same_on_both_sides(viewer):
+    issue = mirrored_issue()
+    avatars = ["github:gulp-run", "GitHub:ALICE"]
+    expected = normalize(js_render(issue, 9, (), viewer, avatars=avatars))
+    got = normalize(py_render(issue, 9, (), viewer, avatars=avatars))
+    assert got == expected
+    raw = "/api/repo/acme-bolt/Bolt/raw?path=.forkmesh%2Fcontributors%2Fgithub-alice.png&amp;ref=main"
+    assert '<img src="%s" alt="" width="40" height="40" loading="lazy"' % raw.replace(
+        "alice", "gulp-run") in got
+    assert raw in got and "github.com" not in re.sub(r'href="https://github.com/[^"]*"', "", got)
+    plain = normalize(py_render(issue, 9, (), viewer))
+    assert "/raw?path=.forkmesh%2Fcontributors" not in plain
+
+
+def test_the_avatar_set_comes_from_the_index_answer():
+    assert repo_ssr_issue.forge_avatars({"forgeAvatars": ["github:A", 3]}) == {"github:a"}
+    assert repo_ssr_issue.forge_avatars(None) == frozenset()
+
+
+@needs_node
+def test_comments_render_oldest_first_by_their_timestamp_on_both_sides():
+    issue = mirrored_issue()
+    first, second = issue["events"][1], issue["events"][2]
+    issue["events"] = [issue["events"][0], second, first]
+    expected = normalize(js_render(issue, 9, (), "guest"))
+    got = normalize(py_render(issue, 9, (), "guest"))
+    assert got == expected
+    assert got.index("\u540c\u610f") < got.index("~sync")

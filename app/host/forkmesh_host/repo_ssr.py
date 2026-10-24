@@ -1002,7 +1002,9 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
         issue, ctx, owner, "%s/issues/%d" % (link, bundle.number),
         index=repo_ssr_issue.index_rows(model.get("index")), now=now, repo=repo,
         prompt=repo_ssr_issue.prompt_template(model.get("settings")),
-        reactions=reactions, off=off)
+        reactions=reactions, off=off,
+        source=repo_ssr_issue.index_source_url(model.get("index"), bundle.number),
+        avatars=repo_ssr_issue.forge_avatars(model.get("index")))
     if len(bundle.rendered) >= repo_views.RENDERED_PER_BUNDLE:
         bundle.rendered.clear()
     bundle.rendered[key] = (now, article)

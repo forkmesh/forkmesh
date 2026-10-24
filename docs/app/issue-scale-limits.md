@@ -62,6 +62,45 @@ about 490 KB, 56 KB gzip.
   fields those panels draw plus `mentionRefs` (`[issue, ts, author key,
   name]`, only the references to `<n>`). The full index keeps
   `mentionRefs` internally but does not send it.
+- **`sourceUrl`.** On a repository that `tools/forge_sync.py` mirrors or
+  syncs, an entry also carries the address of the provider issue it was
+  imported from, and the `related` answer carries the asked issue's own as a
+  top-level `sourceUrl`. The source is the public file
+  `.forkmesh/forge-source.json` at the same commit
+  (`{"schema": "forkmesh-forge-source-v1", "provider", "repository",
+  "baseUrl", "issueUrl": "https://github.com/<repo>/issues/{number}",
+  "renumbered": {"<local>": <remote>}}`, written by the sync; the sync
+  ledger itself lives on the sync server, not in the repository). Only an
+  issue whose opening event id starts with `forge-<provider>-` gets one:
+  `issueUrl` with `{number}` replaced by `renumbered[<local>]`, else the
+  local number (`_forge_source_spec`, `_forge_source_url`). The template
+  must be `https`, name `{number}` once and contain only plain path
+  characters. A repository from before the move that still has
+  `.forkmesh/forge-sync.json` and no source file is read the old way
+  (`_forge_source_urls`: `remoteNumber` of each linked, not `detached`,
+  entry; `https://github.com/<repository>/issues/<n>` for `github` without
+  an Enterprise `baseUrl`, `<baseUrl>/<repository>/issues/<n>` for an
+  `https` `gitea`). Without either file there is no link. The cached answer
+  is keyed by the `.forkmesh/issues` tree id **and** the source file's blob
+  id, so a sync pass that only changes the source file is seen.
+- **`recentCommenters`.** Each entry (and `parseIssueJson`, so the full-record
+  path agrees) names up to four distinct comment authors, newest comment
+  first, skipping deleted comments: `authorName`, else `author`, trimmed. The
+  opener is in it only if they commented. With the `forum-list` plugin on,
+  issue rows draw them as a stack of 20 px avatars right of the assignees (`renderIssueRowCommenters`; the
+  server-rendered list floats the same faces right of the title), in a fixed
+  `w-16` slot from `md` up, so rows keep their height.
+- **`forgeAvatars`.** The `<provider>:<login>` people whose picture the forge
+  sync stored as `.forkmesh/contributors/<provider>-<login>.png` at the same
+  commit (one `ls-tree` of that folder, part of the cache key). The full
+  answer lists all of them; the `related` answer only those among the asked
+  issue's participants, assignees and commenters. The dashboard keeps them per
+  repository (`rememberForgeAvatars`) and the server renderer takes them from
+  the bundle's answer; both then draw the picture from the repository's own
+  raw URL over the initial (`loading="lazy"`, `width`/`height`, `alt=""`,
+  `referrerpolicy="no-referrer"`). A person not listed keeps the initial, so
+  no page asks for a file that is not there, and nothing ever loads from the
+  provider.
 - **`issue-search?ref=&q=`.** Free-text search. Typing in the search box
   filters the loaded rows on number, title, author and the
   status/labels/milestone line at once, as before, and after 250 ms asks

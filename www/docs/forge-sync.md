@@ -79,10 +79,54 @@ Imported records are signed by the sync key and credited as
 `<provider>:<login>`. The web dashboard shows a `github:<login>` author as
 `@<login>`, linked to `https://github.com/<login>` in a new tab
 (`forgeIdentity` in `app/public/dashboard/js/02-helpers.js`); its avatar is the
-initial only, and list rows show plain `@<login>` text (`userNameHtml`; the
+picture the sync stored in the repository ([Avatars](#avatars)), else the
+initial, and list rows show plain `@<login>` text (`userNameHtml`; the
 server renderer `user_name_html` matches), so a page never loads anything from GitHub (readers of a mirror
 may be on networks where GitHub is blocked or watched). The ledger `identities` map links provider logins to
 ForkMesh accounts for assignees only; ambiguous links are ignored.
+
+## Avatars
+
+With `--avatars`, a `sync` pass also copies each provider author's picture
+into the repository, so pages can show it without the reader's browser ever
+contacting the provider. Without it the pass leaves `.forkmesh/contributors`
+alone and authors show their initials, as before.
+
+- **Who.** Every issue author the pass lists, every comment author it reads,
+  and every `<provider>:<login>` author already in the records (comments on
+  issues that have not changed since an earlier pass are not listed again, so
+  the records fill those in). People are kept in the ledger `avatars` map
+  (`login`, the API's `avatar_url`, `fetchedAt`, `fetchedUrl`, `failed`).
+- **Where from.** The API's `avatar_url` (`user.avatar_url` on issues and
+  comments, `RemoteIssue.author_avatar` / `RemoteComment.author_avatar`), asked
+  for at 96 px (`&s=96` on GitHub). Without one, GitHub's
+  `https://avatars.githubusercontent.com/<login>?s=96`. Only `https` on the
+  provider's picture host is fetched: `avatars.githubusercontent.com` for
+  GitHub, the `baseUrl` host for Gitea; a redirect anywhere else is refused.
+  At most 1 MiB, 10 s, 100 pictures per pass (a big forum fills in over a
+  few passes). The token is never sent.
+- **What is stored.** `.forkmesh/contributors/<provider>-<login lowercased>.png`.
+  With Pillow installed the picture is decoded and written as a 96x96 PNG.
+  Without it, a picture whose bytes start like a PNG or a JPEG is kept as it
+  came (browsers draw a JPEG served as `image/png`, since `<img>` decodes by
+  content); anything else is dropped and the page keeps the initial.
+- **When again.** Only when the file is missing, the provider's URL changed,
+  or it is 30 days old (`AVATAR_REFRESH_MS`); a failed fetch waits a day
+  (`AVATAR_RETRY_MS`). An unchanged pass downloads and writes nothing.
+- **Roster.** `.forkmesh/contributors/contributors.json` gets one row per
+  person (`slug`, `name`, `github` or `login`, a `profile` link for GitHub,
+  `avatar` when the picture exists), sorted by login, in the schema of
+  [the contributor roster](folder-about.md#contributor-roster). Rows whose
+  slug does not start with `<provider>-` are kept as they are, before the
+  synced ones, with the file's own `count`; a file that is not valid JSON is
+  left alone.
+- **Mirror mode** is unchanged: pictures are read from the picture host,
+  nothing is written to the provider.
+
+The dashboard and the server-rendered pages draw the stored picture for a
+`github:<login>` author (`issueActorAvatarHtml` / `avatar_html`) from the
+repository's own raw URL, over the initial, when the issue index lists the
+person in `forgeAvatars`.
 
 ## Rate limits and status
 
