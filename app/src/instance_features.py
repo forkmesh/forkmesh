@@ -90,6 +90,10 @@ FEATURES = (
      "Atom feeds of a repository's issues, threads, labels and activity, a "
      "no-JavaScript lite view of every thread, and the forum home page.",
      (), ()),
+    ("mirror-quota", "Mirror goal",
+     "A Mirrors card on each repository page with a goal for independent "
+     "copies, their health, and a page that asks readers to run one.",
+     (), (r"^/api/repo/[^/]+/[^/]+/mirror-quota$",)),
     ("forum-list", "Forum-style issue lists",
      "Issue lists open on Newest first, as on GitHub, and each row shows the "
      "thread's last few commenters.",
@@ -126,6 +130,8 @@ INSTANCE_NOTES = {
                       "forkmesh mirror in the dashboard.",
     "read-surfaces": "Serves /<owner>/<repo>/issues.atom, /lite and the home "
                      "page for readers on slow or filtered links and feed readers.",
+    "mirror-quota": "Lets maintainers set how many independent mirrors a "
+                    "repository should have and checks them.",
     "forum-list": "Lists a repository's issues newest first and shows who "
                   "commented last, like a forum.",
     "issue-ai-prompt": "Offers readers a prompt to paste into a coding agent "
@@ -137,7 +143,7 @@ INSTANCE_NOTES = {
                  "at /changelog. On unless turned off.",
 }
 DEFAULT_ON = frozenset({"changelog", "issue-ai-prompt", "fediverse-ui"})
-OPT_IN = frozenset({"forum-list", "read-surfaces"})
+OPT_IN = frozenset({"forum-list", "read-surfaces", "mirror-quota"})
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)

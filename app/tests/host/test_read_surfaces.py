@@ -124,7 +124,7 @@ class FakeFastPath:
         return 404, b"", {"ok": False}
 
 
-def worker(home="example/forum", quota=None, plugin=True):
+def worker(home="example/forum", quota=None, plugin=True, mirrors=True):
     calls = []
 
     async def fetch(request):
@@ -132,7 +132,8 @@ def worker(home="example/forum", quota=None, plugin=True):
         calls.append(path)
         if path == "/api/instance":
             data = {"ok": True, "name": "example", "branded": True,
-                    "plugins": [{"id": "read-surfaces", "enabled": plugin}],
+                    "plugins": [{"id": "read-surfaces", "enabled": plugin},
+                                {"id": "mirror-quota", "enabled": mirrors}],
                     "logo": "/instance-logo.png", "poweredBy": None,
                     "home": {"repository": home} if home else None}
         elif path == "/api/repositories":
@@ -160,7 +161,7 @@ def plugin_on(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def fresh():
-    for store in (rs._heads, rs._instance, rs._listing, rs._cache):
+    for store in (rs._heads, rs._instance, rs._listing, rs._cache, rs._quotas):
         store.clear()
     rs._cache_bytes[0] = 0
     yield
@@ -201,6 +202,7 @@ def test_routes():
         "label-feed", "example", "forum", "reading group")
     assert kind("/example/forum/lite") == ("lite", "example", "forum")
     assert kind("/example/forum/lite/issues/7/") == ("lite-thread", "example", "forum", 7)
+    assert kind("/example/forum/mirror") == ("mirror", "example", "forum")
     assert kind("/lite") == ("lite-home",)
     assert kind("/") == ("home",)
     assert kind("/example/forum/issues.atom", "POST") is None
@@ -401,6 +403,7 @@ def test_forum_home_page():
     assert "<section data-forum-mirrors><p" in text and "3 healthy mirrors of 10 wanted" in text
     assert "<script" not in text and 'src="http' not in text
     rs._cache.clear()
+    rs._quotas.clear()
     plain = get("/", fetch=worker())[2].decode()
     assert "<section data-forum-mirrors></section>" in plain
     assert get("/?x=1", fetch=worker()) is None
@@ -512,3 +515,129 @@ def test_read_surface_pages_carry_cloudflare_email_off_markers():
 def test_without_the_plugin_every_read_surface_falls_through_to_the_worker():
     for path in ("/example/forum/lite", "/example/forum/issues.atom", "/"):
         assert get(path, fetch=worker(plugin=False)) is None
+
+
+QUOTA = {"ok": True, "target": 10, "healthy": 3, "total": 4, "status": "red",
+         "cloneUrl": "https://forum.example.org/example/forum.git", "mirrors": [
+             {"id": "self", "label": "This instance", "url": "https://forum.example.org/"
+              "example/forum", "host": "forum.example.org", "status": "green",
+              "statusLabel": "Serving this page", "lastCheck": {"at": START}},
+             {"id": "a1", "label": "Bob's <mirror>", "url": "https://m.example.org/bbs.git",
+              "host": "m.example.org", "status": "yellow", "statusLabel": "Behind",
+              "lastCheck": {"at": 1792480000000}},
+             {"id": "a2", "label": "down", "url": "https://d.example.org/bbs.git",
+              "host": "d.example.org", "status": "red", "lastCheck": None}]}
+
+
+def test_the_how_to_help_page():
+    from forkmesh_host import mirror_help
+    status, headers, body = get("/example/forum/mirror", fetch=worker(quota=QUOTA))
+    assert status == 200 and headers["cache-control"] == "public, max-age=60"
+    text = body.decode()
+    assert "<h1>Help keep this forum reachable</h1>" in text
+    assert '<h2>Status: <span class="st-red">urgent</span></h2><p>3 of 10 healthy mirrors.' in text
+    assert "<b>7 more mirrors needed.</b>" in text
+    assert "Bob&#x27;s &lt;mirror&gt;" in text and '<td class="st-yellow">Behind</td>' in text
+    assert "2026-10-20" in text or "2026-10-21" in text
+    assert "<td>never</td>" in text
+    assert ("git clone --mirror https://forum.example.org/example/forum.git "
+            "/srv/git/forum.git") in text
+    assert "remote update --prune &amp;&amp; git -C /srv/git/forum.git update-server-info" in text
+    assert "install-instance.sh --config settings.json" in text
+    assert 'href="https://forkmesh.com/start">Start your own instance</a>' in text
+    assert "GitHub Pages, Codeberg Pages" in text
+    assert "<b>Add a mirror</b>" in text and "POST /api/repo/example/forum/mirror-quota" in text
+    assert "<script" not in text and "<img" not in text
+    for href in re.findall(r'href="([^"]+)"', text):
+        assert href.startswith("/") or href in (
+            mirror_help.START_URL, mirror_help.FORGE_SYNC_DOCS, mirror_help.MIRROR_DOCS), href
+    assert len(body) < 12 * 1024, len(body)
+    rs._cache.clear()
+    rs._quotas.clear()
+    plain = get("/example/forum/mirror", fetch=worker(quota=None))[2].decode()
+    assert "The mirror count is not available right now." in plain
+    assert "git clone --mirror https://forum.example.org/example/forum.git" in plain
+    assert get("/example/other/mirror", fetch=worker()) is None
+
+
+def test_the_home_page_and_lite_list_ask_for_mirrors():
+    text = get("/", fetch=worker(quota=QUOTA))[2].decode()
+    banner = text[text.index("<aside class=\"help big\""):]
+    assert text.index("data-forum-help") < text.index("data-forum-readme")
+    assert "<b>This forum needs your help</b> &mdash; 3 of 10 mirrors running." in banner
+    assert '<a class="go" href="/example/forum/mirror">Run a mirror or join the federation' \
+        in banner
+    rs._cache.clear()
+    rs._quotas.clear()
+    unknown = get("/", fetch=worker())[2].decode()
+    assert "<b>This forum needs your help</b>.</p>" in unknown and "mirrors running" not in unknown
+    rs._cache.clear()
+    rs._quotas.clear()
+    met = get("/", fetch=worker(quota=dict(QUOTA, healthy=10)))[2].decode()
+    assert "data-forum-help" not in met
+    rs._cache.clear()
+    rs._quotas.clear()
+    lite = get("/example/forum/lite", fetch=worker(quota=QUOTA))[2].decode()
+    assert '<p class="help"><b>This forum needs your help</b> &mdash; 3 of 10 mirrors running. ' \
+        '<a href="/example/forum/mirror">' in lite
+    assert len(re.search(r"<style>.*?</style>", lite).group(0)) < 2048
+
+
+def test_feeds_carry_the_call_for_mirrors_as_their_subtitle():
+    root, _h, _b = feed("/example/forum/issues.atom", fetch=worker(quota=QUOTA))
+    assert root.find(ATOM + "subtitle").text == (
+        "This forum needs your help: 3 of 10 mirrors running. "
+        "Run a mirror or join the federation.")
+    related = root.find(ATOM + "link[@rel='related']")
+    assert related.get("href") == ORIGIN + "/example/forum/mirror"
+    children = [child.tag for child in root]
+    assert children.index(ATOM + "subtitle") < children.index(ATOM + "entry")
+    rs._cache.clear()
+    rs._quotas.clear()
+    quiet, _h, _b = feed("/example/forum/issues.atom", fetch=worker(
+        home="example/other", quota=dict(QUOTA, healthy=10)))
+    assert quiet.find(ATOM + "subtitle") is None
+
+
+def test_the_issue_list_banner_matches_the_dashboard():
+    import shutil
+    import subprocess
+    from pathlib import Path
+    from forkmesh_host import mirror_help, repo_ssr, repo_views
+    py = mirror_help.banner_dashboard("/example/forum", 3, 10)
+    assert "border-attention/40 bg-attention/10" in py and "bg-cta" not in py
+    async def listing():
+        loop = asyncio.get_running_loop()
+        repo_ssr._quota_memo.clear()
+        repo_ssr._remember_quota("/api/repo/example/forum/mirror-quota",
+                                 json.dumps(QUOTA).encode(), loop.time())
+        bundle = type("B", (), {"owner": "example", "repo": "forum"})()
+        markup = repo_views._list(bundle, "issues", [])
+        repo_ssr._quota_memo.clear()
+        return markup
+    markup = asyncio.run(listing())
+    assert '<div class="fm-ssr-box">' + py in markup
+    assert mirror_help.dashboard_banner_for("/x/y", dict(QUOTA, healthy=10)) == ""
+    app = Path(rs.__file__).resolve().parents[2]
+    source = (app / "public/dashboard/js/09-read-surfaces.js").read_text()
+    content = (app / "public/dashboard/js/06-repo-content.js").read_text()
+    assert "container.innerHTML = repoMirrorHelpSlot(state.selectedRepo) + filterBar" in content
+    if shutil.which("node") is None:
+        return
+    helpers = (app / "public/dashboard/js/02-helpers.js").read_text()
+    start = helpers.index("  function escapeHtml(")
+    escape = helpers[start:helpers.index("\n  }\n", start) + 4]
+    start = source.index("  function repoMirrorHelpBanner(")
+    banner = source[start:source.index("\n  }\n", start) + 4]
+    js = subprocess.run(["node", "-"], input="%s\n%s\nprocess.stdout.write("
+                        "repoMirrorHelpBanner('/example/forum', 3, 10));" % (escape, banner),
+                        check=True, capture_output=True, text=True).stdout
+    assert js == py
+
+
+
+def test_without_the_mirror_plugin_there_is_no_help_page_and_no_call_for_mirrors():
+    quota = {"ok": True, "target": 10, "healthy": 3, "mirrors": [], "status": "red"}
+    assert get("/example/forum/mirror", fetch=worker(quota=quota, mirrors=False)) is None
+    status, _headers, body = get("/example/forum/lite", fetch=worker(quota=quota, mirrors=False))
+    assert status == 200 and b"/example/forum/mirror" not in body

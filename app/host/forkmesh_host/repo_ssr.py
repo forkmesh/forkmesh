@@ -436,7 +436,7 @@ def start(fastpath, scope):
 # background request refreshes them, for up to MICRO_STALE_SECONDS. A signed
 # in visitor (cookie or Authorization) always reaches the Worker, and a
 # write to the same path through this node drops the entry.
-MICRO_CACHE_RE = re.compile(r"^/api/repo/[^/]+/[^/]+/about$")
+MICRO_CACHE_RE = re.compile(r"^/api/repo/[^/]+/[^/]+/(?:about|mirror-quota)$")
 MICRO_FRESH_SECONDS = 15.0
 MICRO_STALE_SECONDS = 300.0
 MICRO_MAX_ENTRIES = 512
@@ -445,6 +445,8 @@ _micro = {}
 _micro_refreshing = set()
 ABOUT_MEMO_SECONDS = 24 * 3600.0
 _about_memo = {}   # "/api/repo/<owner>/<repo>/about" (lowercase) -> (time, about)
+_quota_memo = {}
+QUOTA_MEMO_SECONDS = MICRO_STALE_SECONDS
 _warmer = {}       # "fetch": the Worker fetch, "headers": a visitor's headers
 
 
@@ -459,6 +461,7 @@ def micro_cache_key(scope):
     method = scope.get("method", "GET").upper()
     if method != "GET":
         _micro.pop(path, None)  # a write: the next read goes to the Worker
+        _quota_memo.pop(path.lower(), None)
         for key in [k for k in _micro if k.startswith(path + "?")]:
             _micro.pop(key, None)
         return None
@@ -486,6 +489,7 @@ async def _micro_store(key, response):
         now = asyncio.get_running_loop().time()
         _micro[key] = (now, 200, headers, body)
         _remember_about(str(key), body, now)
+        _remember_quota(str(key), body, now)
     return _js.Response(body, response.status, "", _js.Headers(dict(headers)))
 
 
@@ -624,15 +628,45 @@ def _remember_about(path, body, now):
         _about_memo[path.lower()] = (now, about)
 
 
-def warm_about(owner, repo):
+def _remember_quota(path, body, now):
+    if "?" in path or not path.endswith("/mirror-quota"):
+        return
+    try:
+        data = json.loads(body)
+    except (TypeError, ValueError):
+        return
+    if isinstance(data, dict) and data.get("ok") and isinstance(data.get("mirrors"), list) \
+            and "viewer" not in data:
+        if len(_quota_memo) >= MICRO_MAX_ENTRIES:
+            _quota_memo.clear()
+        _quota_memo[path.lower()] = (now, data)
+
+
+def cached_quota(owner, repo):
+    path = "/api/repo/%s/%s/mirror-quota" % (owner, repo)
+    try:
+        now = asyncio.get_running_loop().time()
+    except RuntimeError:
+        return None
+    try:
+        warm_about(owner, repo, "mirror-quota", _quota_memo)
+    except Exception:
+        pass
+    entry = _quota_memo.get(path.lower())
+    if entry is None or now - entry[0] >= QUOTA_MEMO_SECONDS:
+        return None
+    return entry[1]
+
+
+def warm_about(owner, repo, action="about", memo=None):
     worker_fetch = _warmer.get("fetch")
     if worker_fetch is None:
         return
-    path = "/api/repo/%s/%s/about" % (urllib.parse.quote(owner, safe=""),
-                                      urllib.parse.quote(repo, safe=""))
+    path = "/api/repo/%s/%s/%s" % (urllib.parse.quote(owner, safe=""),
+                                   urllib.parse.quote(repo, safe=""), action)
     key = MicroKey(path)
     loop = asyncio.get_running_loop()
-    entry = _about_memo.get(path.lower())
+    entry = (_about_memo if memo is None else memo).get(path.lower())
     if (entry is not None and loop.time() - entry[0] < MICRO_FRESH_SECONDS) \
             or key in _micro_refreshing:
         return
@@ -944,6 +978,9 @@ def inject(page, data, short=False):
     if about and isinstance(about.get("features"), dict):
         payload["features"] = {key: bool(value) for key, value in about["features"].items()
                                if key in ("issues", "pulls", "discussions")}
+    quota = cached_quota(data["owner"], data["repo"])
+    if quota is not None:
+        payload["mirrorQuota"] = quota
     head = (CHARSET + '\n    <script type="application/json" '
             'id="forkmesh-repo-ssr">' + _json_for_script(payload)
             + "</script>\n    " + STYLE)
@@ -1527,7 +1564,8 @@ def _contributors_html(people, base, raw):
     return str(total), "".join(avatars)
 
 
-def _about_rail(about, readme_href, info=None, values=None, base="", raw=""):
+def _about_rail(about, readme_href, info=None, values=None, base="", raw="", quota=None,
+                help_href=""):
     description = str((info or {}).get("about") or (about or {}).get("description")
                       or "").strip()
     website = str((info or {}).get("website") or "").strip()
@@ -1594,12 +1632,20 @@ def _about_rail(about, readme_href, info=None, values=None, base="", raw=""):
         '<div class="mt-4 border-t border-border pt-4"><div class="flex items-center '
         'justify-between gap-2 text-xs font-semibold text-foreground"><span '
         'class="inline-flex items-center gap-1.5">%sRepository logo</span>%s</div></div>'
-        '</aside>' % (
+        '%s</aside>' % (
             text, _icon("link", "h-3.5 w-3.5", "shrink-0"), html.escape(readme_href),
             _icon("book-open"), _icon("activity"), rows, bar, legend,
             html.escape(count), people,
             _icon("image-plus", "h-3.5 w-3.5", "text-muted-foreground"),
-            _icon("chevron-down", "h-3.5 w-3.5", "text-muted-foreground")))
+            _icon("chevron-down", "h-3.5 w-3.5", "text-muted-foreground"),
+            _mirror_quota_section(quota, help_href)))
+
+
+def _mirror_quota_section(quota, help_href=""):
+    from . import repo_ssr_issue, repo_ssr_mirrors
+    if "mirror-quota" in repo_ssr_issue.plugins_off():
+        return ""
+    return repo_ssr_mirrors.section_html(quota, None, help_href)
 
 
 def render_view(data, short=False, about=None):
@@ -1684,7 +1730,10 @@ def render_view(data, short=False, about=None):
             summary, "".join(rows), readme,
             _about_rail(about, readme_href, data.get("info"),
                         repo_ssr_about.rail_values(data.get("extras")),
-                        base, raw_prefix(data))))
+                        base, raw_prefix(data),
+                        cached_quota(data["owner"], data["repo"]),
+                        "/%s/%s/mirror" % (urllib.parse.quote(data["owner"]),
+                                           urllib.parse.quote(data["repo"])))))
 
 
 HEADER_CONTEXT = '<span data-dashboard-header-context class="min-w-0 truncate"></span>'

@@ -283,6 +283,7 @@ LAZY_MODULES = {
     "instance_pages.py",
     "instance_theme.py",
     "remote_forks.py",
+    "mirror_quota.py",
     "turnstile.py",
     "apps.py",
     "apps_api.py",

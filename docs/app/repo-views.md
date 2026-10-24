@@ -307,7 +307,9 @@ Commit emails are not sent to the browser. Direct
 access lists online mirrors as plain rows with no green: the node name, its
 version or, for the node serving the page, the response time, and an
 open-direct icon. The repository-logo suggestion form and the owner's
-fediverse posts sit at the bottom as collapsibles.
+fediverse posts sit at the bottom as collapsibles. Below them, last in the rail, is the "Mirrors"
+card with the repository's mirror goal and the health of each copy
+([mirror-quota.md](mirror-quota.md)).
 
 ## Issues, pull requests and discussions
 

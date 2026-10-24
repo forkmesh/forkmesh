@@ -13984,7 +13984,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "4a86f7d139c6259f7a25728fb8b972f15241c8344eab2ab7c0794f408af49bf7"
+    "3a826662aff96ff870fdb057b5cedb5c57e52adc867aff9b4d7ca8f538891cbc"
 )
 
 
@@ -19406,6 +19406,8 @@ _REPO_SCOPED_TABLES = (
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
+    ("repo_mirror_quota", "repo_bi"),
+    ("repo_mirror_registry", "repo_bi"),
     ("repo_privacy_policy", "repo_bi"),
     ("repo_remote_forks", "repo_bi"),
     ("repo_security_scan_leases", "repo_bi"),
@@ -54508,6 +54510,8 @@ def _cron_due_phases(minute_slot):
         phases.append("webhook-outbox")
         phases.append("app-events")
         phases.append("provider-mirror")
+    if minute % 5 == 3:
+        phases.append("mirror-quota")
     if minute % 10 == 8:
         phases.append("ap-digest")
     if minute % 20 == 12:
@@ -54733,6 +54737,10 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await run_badge_sweep(env)
     if phase == "member-activity":
         return await _chat_member_stats.refresh_member_repo_activity(env)
+    if phase == "mirror-quota":
+        import mirror_quota
+        mirror_quota._bind_runtime(globals())
+        return await mirror_quota.run_checks(env)
     if phase == "workflow-schedules":
         return await run_due_workflow_schedules(env)
     if phase == "ai-review":
