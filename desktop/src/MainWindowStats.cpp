@@ -19,6 +19,8 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QEvent>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -32,6 +34,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QVariantMap>
 
 #include <algorithm>
 #include <cmath>
@@ -230,6 +233,58 @@ StatsTileSeries sampledSeries(const QVector<double> &samples, const QStringList 
     series.labels = labels.mid(labels.size() - n);
     return series;
 }
+
+QVariantMap nextChartColors()
+{
+    if (!Theme::isNext())
+        return {};
+    const struct {
+        const char *key;
+        Theme::Role role;
+    } roles[] = {
+        {"surface", Theme::Role::Surface},       {"surfaceRaised", Theme::Role::SurfaceRaised},
+        {"border", Theme::Role::Border},         {"borderStrong", Theme::Role::BorderStrong},
+        {"fg", Theme::Role::Fg},                 {"fgMuted", Theme::Role::FgMuted},
+        {"fgSubtle", Theme::Role::FgSubtle},     {"accent", Theme::Role::Accent},
+        {"accentSubtle", Theme::Role::AccentSubtle}, {"success", Theme::Role::Success},
+        {"warning", Theme::Role::Warning},       {"danger", Theme::Role::Danger},
+    };
+    QVariantMap map;
+    for (const auto &entry : roles)
+        map.insert(QLatin1String(entry.key), Theme::color(entry.role));
+    map.insert(QStringLiteral("edges"), Theme::edgeIndicators());
+    return map;
+}
+
+void applyNextChartColors(QWidget *widget)
+{
+    if (!widget)
+        return;
+    const QVariantMap map = nextChartColors();
+    if (widget->property("nextColors").toMap() != map)
+        widget->setProperty("nextColors", map);
+}
+
+class NextChartColorSync : public QObject
+{
+public:
+    explicit NextChartColorSync(QWidget *target) : QObject(target), m_target(target)
+    {
+        target->installEventFilter(this);
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_target &&
+            (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange ||
+             event->type() == QEvent::Show))
+            applyNextChartColors(m_target);
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QWidget *m_target;
+};
 
 QString hostOf(const QString &url)
 {
@@ -465,16 +520,34 @@ QStringList MainWindow::testButtonPlacementMenuActions(const QString &key)
 
 QWidget *MainWindow::buildStatsSection()
 {
+    const bool next = Theme::isNext();
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("statsSection"));
     auto *outer = new QVBoxLayout(page);
     outer->setContentsMargins(20, 18, 20, 20);
     outer->setSpacing(10);
+    if (next) {
+        outer->setContentsMargins(0, 0, 0, 0);
+        outer->setSpacing(0);
+    }
 
     auto *heading = new QHBoxLayout;
+    QVBoxLayout *titleColumn = nullptr;
+    if (next) {
+        heading->setContentsMargins(24, 12, 24, 12);
+        heading->setSpacing(6);
+        outer->addLayout(heading);
+        titleColumn = new QVBoxLayout;
+        titleColumn->setContentsMargins(0, 0, 0, 0);
+        titleColumn->setSpacing(2);
+        heading->addLayout(titleColumn, 1);
+    }
     auto *title = new QLabel(QStringLiteral("Stats"));
     title->setObjectName(QStringLiteral("pageTitle"));
-    heading->addWidget(title);
+    if (next)
+        titleColumn->addWidget(title);
+    else
+        heading->addWidget(title);
     // The helper that makes a "?" button lives in MainWindowChat.cpp's file
     // scope, so the explanation rides on the title's tooltip instead.
     title->setToolTip(QStringLiteral(
@@ -491,8 +564,14 @@ QWidget *MainWindow::buildStatsSection()
     m_statsStatus = new QLabel;
     m_statsStatus->setObjectName(QStringLiteral("mutedLabel"));
     m_statsStatus->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    heading->addWidget(m_statsStatus);
-    heading->addStretch();
+    if (next) {
+        m_statsStatus->setProperty("statsRole", QStringLiteral("summary"));
+        titleColumn->addWidget(m_statsStatus);
+        heading->addSpacing(12);
+    } else {
+        heading->addWidget(m_statsStatus);
+        heading->addStretch();
+    }
 
     auto *addButton = new QPushButton(QStringLiteral("Add tile"));
     addButton->setObjectName(QStringLiteral("repoAction"));
@@ -500,6 +579,10 @@ QWidget *MainWindow::buildStatsSection()
     addButton->setToolTip(
         QStringLiteral("Pick a statistic to add to the board; stats already "
                        "placed are ticked"));
+    if (next) {
+        addButton->setProperty("statsRole", QStringLiteral("create"));
+        addButton->setProperty("nextIconRole", int(Theme::Role::Bg));
+    }
     setOcticon(addButton, "plus", 14);
     connect(addButton, &QPushButton::clicked, this, [this, addButton] {
         if (!m_statsDashboard)
@@ -514,24 +597,46 @@ QWidget *MainWindow::buildStatsSection()
     resetButton->setObjectName(QStringLiteral("ghostButton"));
     resetButton->setCursor(Qt::PointingHandCursor);
     resetButton->setToolTip(QStringLiteral("Put every statistic back on the board"));
+    if (next) {
+        resetButton->setProperty("statsRole", QStringLiteral("action"));
+        resetButton->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    }
     setOcticon(resetButton, "history", 14);
     connect(resetButton, &QPushButton::clicked, this, [this] {
         if (m_statsDashboard)
             m_statsDashboard->resetLayout();
     });
-    heading->addWidget(resetButton);
+    if (next)
+        heading->insertWidget(heading->indexOf(addButton), resetButton);
+    else
+        heading->addWidget(resetButton);
 
     auto *refreshButton = new QPushButton(QStringLiteral("Refresh"));
     refreshButton->setObjectName(QStringLiteral("ghostButton"));
     refreshButton->setCursor(Qt::PointingHandCursor);
     refreshButton->setToolTip(QStringLiteral("Re-read every tile now"));
+    if (next) {
+        refreshButton->setProperty("statsRole", QStringLiteral("action"));
+        refreshButton->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+    }
     setOcticon(refreshButton, "sync", 14);
     connect(refreshButton, &QPushButton::clicked, this,
             [this] { refreshStatsPage(); });
-    heading->addWidget(refreshButton);
-    outer->addLayout(heading);
+    if (next) {
+        heading->insertWidget(heading->indexOf(addButton), refreshButton);
+        auto *divider = new QFrame;
+        divider->setObjectName(QStringLiteral("statsHeaderDivider"));
+        divider->setFrameShape(QFrame::NoFrame);
+        divider->setFixedHeight(1);
+        outer->addWidget(divider);
+    } else {
+        heading->addWidget(refreshButton);
+        outer->addLayout(heading);
+    }
 
     m_statsDashboard = new StatsDashboard;
+    new NextChartColorSync(m_statsDashboard);
+    applyNextChartColors(m_statsDashboard);
     m_statsDashboard->setCatalog(statsTileCatalog());
     m_statsDashboard->setDefaultLayout(defaultStatsLayout());
     m_statsDashboard->setDataProvider(
@@ -578,6 +683,8 @@ QWidget *MainWindow::buildStatsSection()
     auto *body = new QWidget;
     auto *bodyLayout = new QVBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
+    if (next)
+        bodyLayout->setContentsMargins(24, 24, 24, 24);
     bodyLayout->setSpacing(0);
     bodyLayout->addWidget(m_statsDashboard);
     bodyLayout->addStretch();
@@ -726,6 +833,7 @@ void MainWindow::refreshStatsPage()
     if (!m_statsDashboard)
         return;
     sampleStatsHistory();
+    applyNextChartColors(m_statsDashboard);
     m_statsDashboard->refresh();
     if (m_statsStatus)
         m_statsStatus->setText(
