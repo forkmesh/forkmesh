@@ -52,7 +52,7 @@ def test_launcher_wears_a_painted_face_when_no_photo_was_uploaded():
     # render as an empty disc in the top-right corner. The deterministic
     # portrait the 3D head already paints stands in, keyed to the same
     # identity so the badge and the avatar in the scene match.
-    assert "export function paintProceduralAvatarFace(context, identityKey)" in FACE
+    assert "export function paintProceduralAvatarFace(context, identityKey, expression = null)" in FACE
     assert "export function proceduralAvatarFaceDataURL(identityKey, size = 128)" in FACE
     assert "skin = paintProceduralAvatarFace(context, identityKey);" in SCENE
     assert (

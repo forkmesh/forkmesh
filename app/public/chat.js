@@ -131,6 +131,7 @@ const READ_MARK_FUTURE_SLACK_MS = 24 * 60 * 60 * 1000;
 const CHAT_INVITES_ENDPOINT = "/api/chat/invites";
 const CHAT_INVITE_HASH_RE = /^#invite=([0-9a-f]{64})$/;
 const CHAT_ROOM_HASH_RE = /^#room=([0-9a-f]{32})$/;
+const CHAT_DIRECT_HASH_RE = /^#direct=([0-9a-f]{32})$/;
 const CALL_ICE_SERVERS = [{ urls: "stun:stun.cloudflare.com:3478" }];
 const FORKBOT_ENDPOINT = "/api/forkbot/chat";
 // Cloudflare Workers AI models ForkBot can be pointed at, plus the picked one.
@@ -395,7 +396,7 @@ const groupCalls = createGroupCalls({
   callSigner: groupCallSigner,
   callAccount: () => roomSeals?.account() || "",
   callId: (channelKey) => (roomTransport?.room?.scope === channelKey ? String(roomTransport?.access?.roomName || "") : ""),
-  prepareLocal: createFmmLocal(),
+  prepareLocal: createFmmLocal({ avatarImage: ownAvatarImage }),
 });
 
 async function groupCallSigner() {
@@ -1078,6 +1079,10 @@ function avatarColor(name) {
 // to letters before settling. This lets a repeat render paint the portrait in
 // the same tick it builds the row.
 const avatarPortraits = new Map();
+
+function ownAvatarImage() {
+  return avatarImageSource(userSession()?.avatarPng);
+}
 
 function avatarImageSource(png) {
   const value = String(png || "");
@@ -2986,7 +2991,15 @@ async function openChatLinkFromHash() {
   const room = CHAT_ROOM_HASH_RE.exec(hash);
   if (room) {
     clearChatLinkHash();
+    if (!privateChannels.has(room[1]) && userSession()) await refreshPrivateChannels({ selectSaved: false });
     if (privateChannels.has(room[1])) setActiveChannel(privateChannelKey(room[1]));
+    return;
+  }
+  const direct = CHAT_DIRECT_HASH_RE.exec(hash);
+  if (direct) {
+    clearChatLinkHash();
+    if (!directMessages.has(direct[1]) && userSession()) await refreshDirectMessages();
+    if (directMessages.has(direct[1])) setActiveChannel(directMessageKey(direct[1]));
     return;
   }
   const invite = CHAT_INVITE_HASH_RE.exec(hash);
@@ -6749,6 +6762,7 @@ const chatCalls = createChatCalls({
   partnerFor: (channelKey) => directMessageForKey(channelKey)?.otherUser || "",
   onMissed: sendMissedCallLine,
   requestStart: (media) => startDirectCall(media),
+  avatarImage: ownAvatarImage,
 });
 
 function offerRequestedCall(partner) {

@@ -20,7 +20,8 @@ def test_home_navigation_reaches_the_world_before_the_app():
     menu = HOME.index('id="mobile-menu-toggle"')
     panel = HOME.index('id="home-mobile-panel"')
     assert brand < menu < panel
-    mobile_world = HOME.index('<a href="https://world.forkmesh.com/">World</a>', panel)
+    mobile_world = HOME.index(
+        '<a href="https://world.forkmesh.com/" data-plugin-entry="world">World</a>', panel)
     mobile_app = HOME.index('<a href="https://app.forkmesh.com/">App</a>', panel)
     assert mobile_world < mobile_app
     desktop_world = HOME.index(

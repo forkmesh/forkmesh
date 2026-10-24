@@ -1826,9 +1826,6 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
         menu->addSeparator();
         addProxy(menu, window.m_promptClearButton, QStringLiteral("x"),
                  QStringLiteral("Clear the prompt"), true);
-        addProxy(menu, window.m_promptDetachButton,
-                 QStringLiteral("screen-full"),
-                 QStringLiteral("Pop the prompt out into its own window"), true);
         return;
     }
 

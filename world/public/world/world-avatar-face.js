@@ -26,7 +26,7 @@ export function hashNumber(value) {
 // launcher badge in the top-right corner, which every guest reaches without a
 // photo — can print the identical 128px face onto a plain 2D canvas instead of
 // sitting empty. Returns the drawn skin colour.
-export function paintProceduralAvatarFace(context, identityKey) {
+export function paintProceduralAvatarFace(context, identityKey, expression = null) {
   const seed = hashNumber(String(identityKey || "forkmesh-visitor"));
   const skins = ["#f6d8b6", "#e9bb8c", "#c98555", "#8e5738", "#5d392a"];
   const eyes = ["#30231c", "#31576d", "#3f633b", "#725138"];
@@ -38,34 +38,52 @@ export function paintProceduralAvatarFace(context, identityKey) {
   const smile = (seed >>> 16) % 3;
   const glasses = ((seed >>> 19) & 3) === 0;
   const freckles = ((seed >>> 22) & 3) === 0;
+  const live = expression && typeof expression === "object" ? expression : null;
+  const level = (name, low = 0, high = 1) => Math.max(low, Math.min(high, Number(live?.[name]) || 0));
   context.fillStyle = skin;
   context.fillRect(0, 0, 128, 128);
   context.lineCap = "round";
   context.lineJoin = "round";
 
-  context.strokeStyle = "#553a2d";
+  const leftRaise = level("browLeft", -1, 1) * 7;
+  const rightRaise = level("browRight", -1, 1) * 7;
+  context.strokeStyle = live && seed % skins.length >= 3 ? "#1b110c" : "#553a2d";
   context.lineWidth = 5;
   context.beginPath();
-  context.moveTo(64 - eyeSpacing - 8, 42 - browLift);
-  context.quadraticCurveTo(64 - eyeSpacing, 38 - browLift, 64 - eyeSpacing + 8, 42 - browLift);
-  context.moveTo(64 + eyeSpacing - 8, 42 - (6 - browLift));
-  context.quadraticCurveTo(64 + eyeSpacing, 38 - (6 - browLift), 64 + eyeSpacing + 8, 42 - (6 - browLift));
+  context.moveTo(64 - eyeSpacing - 8, 42 - browLift - leftRaise);
+  context.quadraticCurveTo(64 - eyeSpacing, 38 - browLift - leftRaise * 1.3, 64 - eyeSpacing + 8, 42 - browLift - leftRaise);
+  context.moveTo(64 + eyeSpacing - 8, 42 - (6 - browLift) - rightRaise);
+  context.quadraticCurveTo(64 + eyeSpacing, 38 - (6 - browLift) - rightRaise * 1.3, 64 + eyeSpacing + 8, 42 - (6 - browLift) - rightRaise);
   context.stroke();
 
-  context.fillStyle = "#ffffff";
-  [64 - eyeSpacing, 64 + eyeSpacing].forEach((x) => {
+  const lookX = level("gazeX", -1, 1) * eyeRadius * 0.9;
+  const lookY = level("gazeY", -1, 1) * eyeRadius * 0.7;
+  [[64 - eyeSpacing, level("lidLeft")], [64 + eyeSpacing, level("lidRight")]].forEach(([x, lid]) => {
+    const open = 1 - lid;
+    if (open < 0.18) {
+      context.strokeStyle = "#3a2a22";
+      context.lineWidth = 3;
+      context.beginPath();
+      context.moveTo(x - eyeRadius - 3, 58);
+      context.quadraticCurveTo(x, 61, x + eyeRadius + 3, 58);
+      context.stroke();
+      return;
+    }
+    context.save();
+    context.fillStyle = "#ffffff";
     context.beginPath();
-    context.ellipse(x, 57, eyeRadius + 3, eyeRadius + 5, 0, 0, Math.PI * 2);
+    context.ellipse(x, 57 + (1 - open) * 2, eyeRadius + 3, (eyeRadius + 5) * open, 0, 0, Math.PI * 2);
     context.fill();
+    context.clip();
     context.fillStyle = eye;
     context.beginPath();
-    context.arc(x, 58, eyeRadius, 0, Math.PI * 2);
+    context.arc(x + lookX, 58 + lookY, eyeRadius, 0, Math.PI * 2);
     context.fill();
     context.fillStyle = "#ffffff";
     context.beginPath();
-    context.arc(x - 1, 56, 1.5, 0, Math.PI * 2);
+    context.arc(x - 1 + lookX, 56 + lookY, 1.5, 0, Math.PI * 2);
     context.fill();
-    context.fillStyle = "#ffffff";
+    context.restore();
   });
 
   context.strokeStyle = "#9a6245";
@@ -75,12 +93,68 @@ export function paintProceduralAvatarFace(context, identityKey) {
   context.quadraticCurveTo(58 + (seed % 13), 72, 65, 76);
   context.stroke();
 
-  context.strokeStyle = "#5c3028";
-  context.lineWidth = 5;
-  context.beginPath();
-  context.moveTo(43, 88);
-  context.quadraticCurveTo(64, 100 + smile * 4, 85, 88 - smile * 2);
-  context.stroke();
+  const lips = Array.isArray(live?.lips) && live.lips.length >= 20 ? live.lips : null;
+  if (lips) {
+    const scaleX = eyeSpacing * 2;
+    const scaleY = 31;
+    const at = ([x, y]) => [64 + x * scaleX, 57 + y * scaleY];
+    const outer = lips.slice(0, 12).map(at);
+    const inner = lips.slice(12, 20).map(at);
+    context.fillStyle = "#b0524a";
+    context.beginPath();
+    outer.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
+    context.closePath();
+    context.fill();
+    const gap = Math.abs(inner[6][1] - inner[2][1]);
+    if (gap > 1.2) {
+      context.fillStyle = "#3b1016";
+      context.beginPath();
+      inner.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
+      context.closePath();
+      context.fill();
+      context.save();
+      context.clip();
+      context.fillStyle = "#f3ece2";
+      context.fillRect(inner[0][0], Math.min(inner[2][1], inner[3][1], inner[1][1]) - 1, inner[4][0] - inner[0][0], Math.max(2, gap * 0.28));
+      if (level("tongue") > 0.3) {
+        context.fillStyle = "#e0727a";
+        context.beginPath();
+        context.ellipse((inner[0][0] + inner[4][0]) / 2, inner[6][1], (inner[4][0] - inner[0][0]) * 0.3, gap * 0.45, 0, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.restore();
+    }
+    context.strokeStyle = "#5c3028";
+    context.lineWidth = 1.5;
+    context.beginPath();
+    outer.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
+    context.closePath();
+    context.stroke();
+  } else if (live) {
+    const open = level("mouth");
+    const grin = level("smile");
+    const round = level("round");
+    const half = 21 * (1 + grin * 0.25 - round * 0.4);
+    if (open > 0.08) {
+      context.fillStyle = "#3b1016";
+      context.beginPath();
+      context.ellipse(64, 90 + open * 4, half, 3 + open * 14, 0, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.strokeStyle = "#5c3028";
+    context.lineWidth = 5;
+    context.beginPath();
+    context.moveTo(64 - half, 88 - grin * 5);
+    context.quadraticCurveTo(64, 96 + grin * 8 + open * 8, 64 + half, 88 - grin * 5);
+    context.stroke();
+  } else {
+    context.strokeStyle = "#5c3028";
+    context.lineWidth = 5;
+    context.beginPath();
+    context.moveTo(43, 88);
+    context.quadraticCurveTo(64, 100 + smile * 4, 85, 88 - smile * 2);
+    context.stroke();
+  }
 
   if (glasses) {
     context.strokeStyle = "#253a39";

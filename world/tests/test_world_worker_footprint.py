@@ -1,3 +1,4 @@
+import ast
 import importlib.util
 import re
 from functools import lru_cache
@@ -147,8 +148,19 @@ def test_every_lazily_proxied_module_is_budgeted_as_on_demand():
         item["name"]: item["phase"]
         for item in generator.footprint()["modules"]
     }
+    eager = set()
+    for path in sources:
+        if phases.get(path.name) != "startup":
+            continue
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.Import):
+                eager.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                eager.add(node.module)
     billed_to_startup = sorted(
-        name for name in proxied if phases.get(name + ".py") == "startup"
+        name
+        for name in proxied - eager
+        if phases.get(name + ".py") == "startup"
     )
     assert not billed_to_startup, (
         "add to LAZY_MODULES in build_worker_footprint.py: %s"

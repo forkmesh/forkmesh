@@ -30,6 +30,7 @@ and "Native face renderer (iOS)".
 | --- | --- |
 | Reference codec (Go), fuzz targets, parity fixture generator | `server/rtc/facestream/` |
 | Browser: codec, sender helpers, receiver, WebGL renderer, tile | `app/public/chat-call-facestream.js` |
+| The 68-point 3D template (shared with the World's avatar rig) | `app/public/chat-call-face-template.js`, re-exported as `FACE_STREAM_TEMPLATE` |
 | iPhone and Linux: codec, sender helpers, receiver maths | `native/ios/ForkMeshCore/Sources/FMChat/FaceStream/` |
 | iPhone app: Metal renderer, reference capture, tile badge | `native/ios/ForkMesh/Features/Chat/Calls/Native/NativeFaceStream*.swift`, `NativeFaceStream.metal` |
 | Android: codec only (no renderer yet) | `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/chat/facestream/` |

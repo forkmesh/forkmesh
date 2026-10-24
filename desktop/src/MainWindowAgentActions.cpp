@@ -1080,7 +1080,6 @@ void MainWindow::updateQuickAddEnterTarget()
     for (QPushButton *button : {m_quickAddSendToAgentButton, m_quickAddSendButton})
         tintComposerActionButton(button);
     updateQuickAddTargetAgentLabel();
-    schedulePromptChatPreview();
 }
 
 void MainWindow::updateQuickAddTargetAgentLabel()
