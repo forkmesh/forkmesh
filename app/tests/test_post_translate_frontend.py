@@ -494,3 +494,23 @@ out.canHover = [postTranslateCanHover({ matchMedia: () => ({ matches: true }) })
 
 def test_the_translate_bar_starts_only_with_the_plugin_on():
     assert 'if (instancePluginOn("post-translate")) initPostTranslate();' in BOOT
+
+
+@needs_node
+def test_an_idle_slice_that_timed_out_still_draws_one_bar():
+    script = """
+const postTranslateUi = { scheduled: false, pending: [], posts: new Map() };
+const drawn = [];
+async function postTranslateDecorate(body) { drawn.push(body.id); }
+const queue = [];
+function requestIdleCallback(fn) { queue.push(fn); }
+%s
+postTranslateUi.pending.push({ id: 1, isConnected: true }, { id: 2, isConnected: true });
+postTranslateSchedule();
+for (let round = 0; round < 4 && queue.length; round += 1) {
+  queue.shift()({ didTimeout: true, timeRemaining: () => 0 });
+}
+console.log(JSON.stringify(drawn));
+""" % _function(FRAGMENT, "postTranslateSchedule")
+    result = subprocess.run(["node", "-"], input=script, capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == [1, 2]

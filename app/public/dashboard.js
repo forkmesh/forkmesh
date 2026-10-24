@@ -56621,9 +56621,11 @@ Your reply
     const slice = (deadline) => {
       postTranslateUi.scheduled = false;
       const started = Date.now();
+      let handled = 0;
       while (postTranslateUi.pending.length) {
         const left = typeof deadline?.timeRemaining === "function" ? deadline.timeRemaining() : 8 - (Date.now() - started);
-        if (left <= 1) break;
+        if (left <= 1 && (handled || !deadline?.didTimeout)) break;
+        handled += 1;
         const body = postTranslateUi.pending.shift();
         if (body?.isConnected && !postTranslateUi.posts.has(body)) void postTranslateDecorate(body);
       }

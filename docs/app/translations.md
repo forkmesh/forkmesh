@@ -283,7 +283,10 @@ not keep or understand the folder.
 ### Cost on a long thread
 
 Bodies are decorated in idle slices (`requestIdleCallback`, at most about
-8 ms per slice), so a 99-post thread draws before its bars do. Icons are
+8 ms per slice), so a 99-post thread draws before its bars do. A slice that
+starts because the 500 ms timeout ran out (`didTimeout`, no idle time left)
+still decorates one body, so a page that is never idle (an animation) gets
+its bars one per slice instead of never. Icons are
 created at most once per frame. Word lists and language names are cached for
 the page's lifetime.
 
