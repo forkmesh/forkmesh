@@ -7562,7 +7562,9 @@ QWidget *MainWindow::createGlobalSearchBox()
 {
     m_globalSearch = new QLineEdit;
     m_globalSearch->setObjectName("globalSearch");
-    m_globalSearch->setPlaceholderText(QString::fromUtf8("Search\xE2\x80\xA6"));
+    m_globalSearch->setPlaceholderText(
+        QString::fromUtf8(Theme::isNext() ? "Search or jump to\xE2\x80\xA6"
+                                          : "Search\xE2\x80\xA6"));
     m_globalSearch->setMinimumWidth(150);
     m_globalSearch->setMaximumWidth(360);
     // The magnifier is a way in, not decoration: with a query it runs the
@@ -14859,6 +14861,7 @@ void MainWindow::updateRepoActivityRail()
                 ? QString::fromUtf8("Search agents & transcripts\xE2\x80\xA6")
             : onIssues
                 ? QString::fromUtf8("Search issues\xE2\x80\xA6  is:open label:bug author:me")
+            : Theme::isNext() ? QString::fromUtf8("Search or jump to\xE2\x80\xA6")
                 : QString::fromUtf8("Search\xE2\x80\xA6"));
     if (m_globalSearch && onTeam) {
         m_globalSearch->setToolTip(

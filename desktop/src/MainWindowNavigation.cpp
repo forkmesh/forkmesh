@@ -2852,6 +2852,115 @@ void MainWindow::adoptRailGroupsFromLayout()
         saveRailGroupState();
 }
 
+namespace {
+
+constexpr int kNextRailHeadingHeight = 36;
+constexpr int kNextRailHeadingText = 24;
+constexpr int kNextRailHeadingLeft = 18;
+
+class RailGroupHeadingStyle : public QObject
+{
+public:
+    using QObject::QObject;
+
+    static void fit(RailGroupSeparator *separator)
+    {
+        const bool heading = Theme::isNext() && railExpanded();
+        if (heading && separator->height() != kNextRailHeadingHeight)
+            separator->setFixedHeight(kNextRailHeadingHeight);
+        else if (!heading && separator->height() == kNextRailHeadingHeight)
+            separator->followRailCaptionPreference();
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        auto *separator = dynamic_cast<RailGroupSeparator *>(watched);
+        if (!separator)
+            return false;
+        switch (event->type()) {
+        case QEvent::Paint:
+            if (!Theme::isNext())
+                return false;
+            paint(separator);
+            return true;
+        case QEvent::Resize:
+        case QEvent::Show:
+            fit(separator);
+            return false;
+        case QEvent::DragEnter: {
+            const auto *drag = static_cast<QDragEnterEvent *>(event);
+            const bool dropping = separator->isCustom() && drag->mimeData() &&
+                                  drag->mimeData()->hasFormat(kRailItemMimeType);
+            separator->setProperty("nextDropping", dropping);
+            separator->update();
+            return false;
+        }
+        case QEvent::DragLeave:
+        case QEvent::Drop:
+            separator->setProperty("nextDropping", false);
+            separator->update();
+            return false;
+        default:
+            return false;
+        }
+    }
+
+private:
+    static void paint(RailGroupSeparator *separator)
+    {
+        QPainter painter(separator);
+        const bool dropping = separator->property("nextDropping").toBool();
+        const int width = separator->width();
+        const int height = separator->height();
+        if (!railExpanded()) {
+            const int line = qMin(20, qMax(0, width - 12));
+            painter.fillRect(QRect((width - line) / 2, height / 2, line, 1),
+                             Theme::color(dropping ? Theme::Role::Accent
+                                                   : Theme::Role::Border));
+            return;
+        }
+        QFont font = separator->font();
+        font.setPixelSize(11);
+        font.setWeight(QFont::Medium);
+        font.setCapitalization(QFont::AllUppercase);
+        font.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+        painter.setFont(font);
+        painter.setPen(Theme::color(dropping ? Theme::Role::AccentFg
+                                             : Theme::Role::FgSubtle));
+        const QRect text(kNextRailHeadingLeft, height - kNextRailHeadingText,
+                         qMax(0, width - 2 * kNextRailHeadingLeft),
+                         kNextRailHeadingText);
+        painter.drawText(text, Qt::AlignLeft | Qt::AlignVCenter,
+                         QFontMetrics(font).elidedText(separator->name(),
+                                                       Qt::ElideRight,
+                                                       text.width()));
+        if (dropping)
+            painter.fillRect(QRect(text.left(), height - 2, text.width(), 1),
+                             Theme::color(Theme::Role::Accent));
+    }
+};
+
+void polishRailGroupHeading(QObject *owner, RailGroupSeparator *separator)
+{
+    auto *style = dynamic_cast<RailGroupHeadingStyle *>(owner->findChild<QObject *>(
+        QStringLiteral("railGroupHeadingStyle"), Qt::FindDirectChildrenOnly));
+    if (!style) {
+        style = new RailGroupHeadingStyle(owner);
+        style->setObjectName(QStringLiteral("railGroupHeadingStyle"));
+    }
+    if (separator->property("nextHeadingStyled").toBool()) {
+        RailGroupHeadingStyle::fit(separator);
+        return;
+    }
+    separator->setProperty("nextHeadingStyled", true);
+    separator->installEventFilter(style);
+    RailGroupHeadingStyle::fit(separator);
+    separator->update();
+}
+
+}
+
 void MainWindow::refreshRailGroupSeparators()
 {
     if (!m_appNavigationRailLayout)
@@ -2871,6 +2980,7 @@ void MainWindow::refreshRailGroupSeparators()
             settle();
             separator = next;
             any = false;
+            polishRailGroupHeading(this, next);
             continue;
         }
         any = any || !content || widget->isVisibleTo(content);
