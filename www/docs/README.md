@@ -15,7 +15,10 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | --- | --- |
 | Install ForkMesh and complete first-run setup | [Getting started](getting-started.md) |
 | Supported platforms, signing, upgrade, rollback, uninstall | [Installation support matrix](install-support-matrix.md) |
+| Start your own instance on your server from forkmesh.com/start | [Start your own instance](start-your-own-instance.md) |
 | Start an instance from a settings file | [Start from a settings file](start-config.md) |
+| Hand ForkMesh work to Claude Code or another coding agent | [Working with coding agents](coding-agents.md) |
+| Use the web, desktop, iPhone, Apple Watch and Android apps | [ForkMesh apps](apps.md) |
 | Build, run and use the desktop application | [ForkMesh desktop app guide](qt-client.md) |
 | Read and clone public projects without an account | [Reading and cloning without an account](accountless-reading.md) |
 | Create a repository from the web and push to it | [Hosted repositories](hosted-repositories.md) |
@@ -102,7 +105,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 - `engineering/`: quality gates, performance budgets and completion policy.
 - `security/`: security boundaries and local integration contracts.
 - `operations/`: deployment, recovery, gateways, headless nodes and runbooks.
-- `mobile/`: mobile node contract and the mobile Git engine.
+- `mobile/`: mobile node contract, the mobile Git engine, and phone guides (Siri, Apple Health, file editing, agent access).
 - `plugins/`, `launch/`, `strategy/`, `research/`: planned plugins, launch material and research.
 - `*.schema.json`: machine-readable configuration and protocol schemas.
 
