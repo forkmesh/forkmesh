@@ -1266,8 +1266,11 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
     if not items:
         items.append('<div class="fm-ssr-item" data-ssr-usable>No open %s.'
                      '</div>' % {"pulls": "pull requests"}.get(kind, kind))
-    return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s</div>' % (
-        head, "".join(items)), link)
+    feeds = ('<p class="fm-ssr-sub" data-repo-issue-feeds><a href="%s/issues.atom" '
+             'type="application/atom+xml">Feed</a> &middot; <a href="%s/lite">Lite view</a>'
+             '</p>' % (_esc(base), _esc(base))) if kind == "issues" else ""
+    return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s</div>%s' % (
+        head, "".join(items), feeds), link)
 
 
 def _diff(patch, href="", usable=True):

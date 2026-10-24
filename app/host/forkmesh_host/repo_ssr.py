@@ -955,7 +955,8 @@ def inject(page, data, short=False):
         "></span>", ">public</span>"), 1)
     page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
         'class="inline-flex', 'class="hidden inline-flex'), 1)
-    return page.replace(PLACEHOLDER, render_view(data, short, about), 1)
+    return read_links(page.replace(PLACEHOLDER, render_view(data, short, about), 1),
+                      data["owner"], data["repo"])
 
 
 def inject_header(page, data, tab, short=False):
@@ -1103,9 +1104,10 @@ def inject_issue_page(page, data, bundle, short=False, origin="", reactions=None
         article = str(article)
     drawn = article if isinstance(article, str) \
         else article.before + article.mark + article.after
-    return IssuePage(page.replace(PLACEHOLDER, (
+    return IssuePage(read_links(page.replace(PLACEHOLDER, (
         '<div data-repo-ssr data-repo-layout="first-view" class="min-w-0">%s%s%s</div>'
-        % (_icon_sprite(), tabs, repo_ssr_issue.FRAME % drawn)), 1), article)
+        % (_icon_sprite(), tabs, repo_ssr_issue.FRAME % drawn)), 1),
+        owner, repo, bundle.number), article)
 
 
 def _view_reads_head(meta, after_page=False):
@@ -1130,7 +1132,8 @@ def inject_view_reads(page, owner, repo, view, number):
         query.append(("number", str(number)))
     meta = {"base": base.lower(), "view": view, "number": number,
             "url": base + "/page-reads?" + urllib.parse.urlencode(query)}
-    return page.replace(CHARSET, _view_reads_head(meta), 1)
+    page = page.replace(CHARSET, _view_reads_head(meta), 1)
+    return read_links(page, owner, repo, number) if view in ("issues", "issue") else page
 
 
 def inject_view(page, bundle, section="", reactions=None, link=None,
@@ -1153,8 +1156,22 @@ def inject_view(page, bundle, section="", reactions=None, link=None,
     head = (_view_reads_head(meta) + reactions_seed(
         meta["base"], repo_views.reaction_subject(bundle), reactions)
         + "\n    " + STYLE + repo_views.VIEW_STYLE)
-    page = page.replace(CHARSET, head, 1)
-    return page.replace(PLACEHOLDER, view, 1)
+    page = page.replace(CHARSET, head, 1).replace(PLACEHOLDER, view, 1)
+    if bundle.view in ("issues", "issue"):
+        page = read_links(page, bundle.owner, bundle.repo, bundle.number)
+    return page
+
+
+BODY_RE = re.compile(r"<body\b[^>]*>")
+
+
+def read_links(page, owner, repo, number=0):
+    from . import read_surfaces, repo_ssr_issue
+    if read_surfaces.PLUGIN in repo_ssr_issue.plugins_off():
+        return page
+    page = page.replace(CHARSET, CHARSET + read_surfaces.head_links(owner, repo, number), 1)
+    return BODY_RE.sub(lambda match: match.group(0) + read_surfaces.noscript(
+        owner, repo, number), page, count=1)
 
 
 def _when(value):

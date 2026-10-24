@@ -711,6 +711,7 @@ def test_actions_install_job_tools_and_configure_the_app():
     assert 'echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"' in writer
     assert 'echo "ACTIONS_INSTANCE_RUNNER=$RUNNER_NAME"' in writer
     assert '"plugins", "actions", "poweredBy", "platformUrl",' in writer
+    assert '"webFirewall", "whiteLabel"]' in writer
     assert 'RUNNER_NAME=""' in TEXT
     assert "  resolve_runner_name\n" in writer
     assert '[ -n "$RUNNER_NAME" ] || resolve_runner_name' in function("setup_actions_runner")
@@ -1016,3 +1017,13 @@ def test_an_update_restarts_the_git_node_only_when_its_inputs_change(tmp_path):
     assert digest() != first
     write(binary="binary-2")
     assert digest() != first
+
+
+def test_white_label_is_off_unless_the_settings_ask_for_it(tmp_path):
+    found = values(parse(tmp_path, settings()).stdout)
+    assert found["CFG_whiteLabel"] == "0"
+    found = values(parse(tmp_path, settings(whiteLabel=True)).stdout)
+    assert found["CFG_whiteLabel"] == "1"
+    assert parse(tmp_path, settings(whiteLabel="yes")).returncode != 0
+    assert 'brand_args+=(--white-label)' in TEXT
+    assert 'echo "INSTANCE_WHITE_LABEL=${CFG_whiteLabel:-0}"' in TEXT
