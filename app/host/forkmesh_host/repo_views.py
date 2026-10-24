@@ -423,7 +423,8 @@ def _indexed_issues(index):
     return {"rows": rows, "open": open_count,
             "closed": int(index.get("closedFolders") or 0),
             "avatars": [name for name in index.get("forgeAvatars") or []
-                        if isinstance(name, str)]}
+                        if isinstance(name, str)],
+            "avatarCommit": str(index.get("commit") or "")}
 
 
 async def plan_issues(reader, branch):
@@ -477,6 +478,17 @@ async def plan_issues(reader, branch):
     return {"rows": rows, "open": open_count, "closed": closed_count}
 
 
+async def _issue_attachments(reader, branch, number):
+    from . import repo_ssr_issue
+    path = repo_ssr_issue.attachments_path(number)
+    blob = (await _blobs(reader, [path], branch)).get(path)
+    try:
+        doc = json.loads(blob_text(blob) or "null") if blob else None
+    except ValueError:
+        doc = None
+    return repo_ssr_issue.attachment_files(doc)
+
+
 async def plan_issue(reader, branch, number):
     """loadRepoRecordDetail for an issue, plus the open-issue index it reads
     for mentions and sub-issues (loadRepoIssueRelationIndex)."""
@@ -500,6 +512,7 @@ async def plan_issue(reader, branch, number):
         return await _blobs(reader, [issue_path(n, "open") for n in numbers],
                             commit if is_commit(commit) else "")
     index = asyncio.ensure_future(relation_index())
+    attachments = asyncio.ensure_future(_issue_attachments(reader, branch, number))
     settings = asyncio.ensure_future(reader.get(
         "blobs", [("path", path) for path in COLLAB_SETTINGS_PATHS]
         + [("ref", branch)]))
@@ -507,10 +520,10 @@ async def plan_issue(reader, branch, number):
     blobs = await _blobs(reader, paths, branch)
     found = next((path for path in paths if blobs.get(path)), "")
     issue = issue_summary(blob_text(blobs[found]), number) if found else None
-    _root_done, open_issues, settings_data = await asyncio.gather(
-        root, index, settings)
+    _root_done, open_issues, settings_data, attached = await asyncio.gather(
+        root, index, settings, attachments)
     return {"issue": issue, "issueJson": blob_text(blobs[found]) if found else "",
-            "index": open_issues or {},
+            "index": open_issues or {}, "attachments": attached,
             "settings": (settings_data or {}).get("blobs") or {}}
 
 
@@ -1400,8 +1413,9 @@ def _render(bundle, section="", reactions=None, link=None, reader=False, origin=
         ctx = repo_ssr_issue.Context(base, "/api/repo/%s/%s" % (
             urllib.parse.quote(bundle.owner, safe=""),
             urllib.parse.quote(bundle.repo, safe="")), str(bundle.ref or "main"))
-        token = repo_ssr_issue.FORGE_AVATARS.set((ctx, frozenset(
-            name.lower() for name in model.get("avatars") or [])))
+        token = repo_ssr_issue.FORGE_AVATARS.set((ctx, repo_ssr_issue.AvatarSet(
+            (name.lower() for name in model.get("avatars") or []),
+            model.get("avatarCommit"))))
         try:
             return _list(bundle, "issues", model.get("rows") or [],
                          model.get("open"), model.get("closed"), link)

@@ -17,8 +17,9 @@ Paths: `NI/` is `native/ios/`, `NIC/` is `native/ios/ForkMeshCore/Sources/`,
 ## 1. Feature matrix
 
 Both apps implement every row unless section 2 says otherwise. Rows 7, 51 and
-76 are iOS only; rows 63 and 64 are platform-specific (the announcer is
-desktop-only; on-device models run through MLX on iOS).
+76 are iOS only; rows 63 and 64 are platform-specific (the announcer runs on
+the desktop and the watch, not the phone; on-device models run through MLX on
+iOS).
 
 | # | Feature |
 |---|---|
@@ -84,7 +85,7 @@ desktop-only; on-device models run through MLX on iOS).
 | 60 | Agent Watch screen (field of bodies, faces, figures, dot display, sound list with the two switches) |
 | 61 | Listen sonifier engine: motions, voices on the D-major pentatonic grid, marimba synth with ping-pong echo, cadences |
 | 62 | Sound and haptics output (AVAudioEngine voice pool; Core Haptics pulses) |
-| 63 | Announcer (sportscaster text-to-speech; desktop only, Piper) |
+| 63 | Announcer (sportscaster text-to-speech; desktop with Piper, watch with `AVSpeechSynthesizer`, 4.3) |
 | 64 | On-device Gemma 4 (E2B/E4B) through MLX |
 | 65 | One floating frosted composer for every agent prompt and chat: growing field, "+", model chip, send/stop, `/` commands, extra controls (dictation is the `/dictate` command); surfaces that cannot take photos hide "+" |
 | 66 | Photo attachments: camera or library; downscale to 2048 px; JPEG q80 with all metadata stripped; sent as image blocks to the model |
@@ -463,8 +464,9 @@ ForkMesh client. It unseals transcripts, turns them into compact beat lists
 beats, turn and token counts) and sends them with `WCSession.sendMessage`
 (while reachable), `updateApplicationContext` (latest list) and
 `transferCurrentComplicationUserInfo`. Watch commands travel back as messages:
-`stop`, `continue`, `prompt(text)`, `retry`, `listen(on/off)`, `diff`,
-`start(text, repo)`. iOS wakes the phone app to handle them.
+`refresh`, `watch(key)` (the agent in the live view, nil on the list, read
+first and more often), `stop`, `continue`, `prompt(text)`, `retry`,
+`listen(on/off)`, `diff`, `start(text, repo)`. iOS wakes the phone app to handle them.
 
 Reasons: the session and keys live in the phone's device-only keychain, which
 does not reach the watch; transcripts are sealed per enrolled owner device;
@@ -492,8 +494,11 @@ FMApi on watchOS, and flips `WKRunsIndependentlyOfCompanionApp` to true.
   run done `.success`, needs attention `.notification`; at most one per 0.6 s.
 - **Sound**: the FMAgentWatch synth renders PCM on the watch; `AVAudioEngine`
   with `.playback`. Continuous Listen uses `routeSharingPolicy =
-  .longFormAudio` and the `audio` background mode. Listen and per-agent mute
-  are in settings.
+  .longFormAudio` and the `audio` background mode. The Announcer
+  (`AVSpeechSynthesizer`, off by default) speaks one line when a run starts,
+  finishes, fails or waits for you, for the agent in the live view or every
+  agent while Listen is on. Listen, Sounds, Haptics, Announcer and per-agent
+  mute are in settings.
 - **Complications and Smart Stack** (watch widget extension): circular,
   rectangular, inline and corner families reading the last
   `ComplicationSummary` from the watch's keychain group; relevance rises while

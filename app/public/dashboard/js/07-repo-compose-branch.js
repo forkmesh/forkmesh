@@ -297,6 +297,7 @@
   function webIssueSubmitErrorText(error) {
     const code = String(error?.message || "");
     const status = Number(error?.status) || 0;
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "inbox_full") return "Issue delivery is temporarily full. Try again later.";
     if (code === "author_quota") return "You've reached the submission limit for this repository.";
     if (code === "issue_too_large" || code === "attachment_too_large"
@@ -430,6 +431,15 @@
       const result = await submitWebIssue(
         repo, title, body, assignAgent, agentModel, agentProvider,
         { milestone, project }, updateSubmissionProgress);
+      if (result?.pending === "review") {
+        if (titleInput) titleInput.value = "";
+        if (bodyInput) bodyInput.value = "";
+        images.length = 0;
+        form.querySelector("[data-repo-issue-attachments]")?.replaceChildren();
+        setSubmitBusy(submit, false);
+        setHint(moderationPendingMessage(result), "good");
+        return;
+      }
       const number = Number(result.number || 0);
       if (!Number.isInteger(number) || number <= 0) {
         throw new Error("number_unavailable");
@@ -660,6 +670,10 @@
             priority: it.priority,
             assignees: it.assignees,
           });
+        if (result?.pending === "review") {
+          ok++;
+          continue;
+        }
         const number = Number(result.number || 0);
         if (!Number.isInteger(number) || number <= 0) {
           throw new Error("number_unavailable");

@@ -150,6 +150,13 @@ PREWARM_AFTER_MERGE_QUIET_SECONDS = 5.0
 BACKGROUND_MUTATIONS = frozenset({"delete-agent-branch"})
 MAX_MERGE_REQUEST_BODY = 8 * 1024
 MAX_MERGE_JOB_CACHE = 1_000
+MERGE_PROGRESS_PREFIX = "forkmesh-progress "
+MERGE_PROGRESS_PHASES = (
+    "claimed", "fetching", "verifying", "checking", "testing",
+    "committing", "hooks", "pushing", "publishing",
+)
+MAX_MERGE_PROGRESS_LINES = 64
+MAX_MERGE_PROGRESS_LINE_BYTES = 256
 # A published mutation result carries the executor's node-signed attestation
 # of the refs this mirror serves right after the change. The relay checks the
 # attestation's freshness before admitting that state, so a cached result
@@ -1936,6 +1943,87 @@ class ExternalMergeExecutor:
             raise GatewayError("merge executor returned a non-object")
         _assert_no_secret_fields(response, "merge executor response")
         return response
+
+    def stream(
+        self,
+        request: dict[str, Any],
+        *,
+        timeout: int,
+        on_progress: Callable[[str], None],
+        max_bytes: int = 16 * 1024,
+    ) -> dict[str, Any]:
+        read_end, write_end = os.pipe()
+        try:
+            process = subprocess.Popen(
+                list(self.command),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=write_end,
+                text=True,
+                env=_safe_merge_environment(),
+            )
+        except OSError as exc:
+            os.close(read_end)
+            os.close(write_end)
+            raise GatewayError("merge executor failed") from exc
+        os.close(write_end)
+        reader = threading.Thread(
+            target=_read_merge_progress,
+            args=(read_end, on_progress),
+            name="forkmesh-merge-progress",
+            daemon=True,
+        )
+        reader.start()
+        try:
+            stdout, _ = process.communicate(
+                _canonical_json(request) + "\n", timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.communicate()
+            raise GatewayError("merge executor failed") from exc
+        finally:
+            reader.join(timeout=1)
+        if process.returncode != 0:
+            raise GatewayError("merge executor failed")
+        if len(stdout.encode("utf-8", "replace")) > max_bytes:
+            raise GatewayError("merge executor returned too much data")
+        try:
+            response = json.loads(stdout)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise GatewayError("merge executor returned invalid JSON") from exc
+        if not isinstance(response, dict):
+            raise GatewayError("merge executor returned a non-object")
+        _assert_no_secret_fields(response, "merge executor response")
+        return response
+
+
+def _merge_progress_phase(line: bytes) -> str:
+    text = line.decode("utf-8", "replace").strip()
+    if not text.startswith(MERGE_PROGRESS_PREFIX):
+        return ""
+    try:
+        value = json.loads(text[len(MERGE_PROGRESS_PREFIX):])
+    except (ValueError, RecursionError):
+        return ""
+    phase = value.get("phase") if isinstance(value, dict) else None
+    return phase if phase in MERGE_PROGRESS_PHASES else ""
+
+
+def _read_merge_progress(
+    descriptor: int, on_progress: Callable[[str], None]
+) -> None:
+    lines = 0
+    with os.fdopen(descriptor, "rb") as stream:
+        while True:
+            line = stream.readline(MAX_MERGE_PROGRESS_LINE_BYTES + 1)
+            if not line:
+                return
+            if lines >= MAX_MERGE_PROGRESS_LINES:
+                continue
+            lines += 1
+            phase = _merge_progress_phase(line)
+            if phase:
+                on_progress(phase)
 
 
 @dataclass(frozen=True)
@@ -9057,6 +9145,11 @@ class ReplayCache:
             return True
 
 
+def privacy_mode() -> bool:
+    return os.environ.get("FORKMESH_PRIVACY_MODE", "").strip().lower() in (
+        "1", "true", "yes", "on", "strict")
+
+
 def service_counter_agent_class(user_agent: str) -> str:
     """Reduce a request User-Agent to one bounded, non-identifying class.
 
@@ -11691,7 +11784,9 @@ class GatewayApplication:
 
     @staticmethod
     def _merge_response(
-        value: Mapping[str, Any], operation: str = "merge-pull"
+        value: Mapping[str, Any],
+        operation: str = "merge-pull",
+        progress: Mapping[str, Any] | None = None,
     ) -> GatewayResponse:
         profile = PULL_MUTATIONS[operation]
         request_id = str(value.get("requestId") or "")
@@ -11713,11 +11808,14 @@ class GatewayApplication:
             status != profile["terminal"]
             or value.get("published") is not True
         ):
-            return json_response({
+            processing: dict[str, Any] = {
                 "ok": True,
                 "status": "processing",
                 "requestId": request_id,
-            }, 202)
+            }
+            if progress:
+                processing["progress"] = dict(progress)
+            return json_response(processing, 202)
         output = {
             "ok": True,
             "status": profile["terminal"],
@@ -11758,6 +11856,13 @@ class GatewayApplication:
             "ok": True, "status": "processing", "requestId": request_id}
         if operation in BACKGROUND_MUTATIONS:
             _lower_thread_priority()
+
+        def report(phase: str) -> None:
+            self._note_merge_progress(request_id, phase)
+
+        with self._merge_lock:
+            self.__dict__.setdefault("_merge_progress", {}).pop(request_id, None)
+        report("claimed")
         try:
             status_payload = dict(payload, action="status")
             status = self.merge_executor.call(status_payload, timeout=30)
@@ -11768,14 +11873,22 @@ class GatewayApplication:
                     status.get("status") == terminal
                     and status.get("generationReady") is True
                 ):
-                    status = self.merge_executor.call(
-                        dict(payload, action="execute"),
-                        timeout=MERGE_EXECUTOR_TIMEOUT_SECONDS,
-                    )
+                    execute = dict(payload, action="execute")
+                    stream = getattr(self.merge_executor, "stream", None)
+                    if callable(stream):
+                        status = stream(
+                            execute,
+                            timeout=MERGE_EXECUTOR_TIMEOUT_SECONDS,
+                            on_progress=report,
+                        )
+                    else:
+                        status = self.merge_executor.call(
+                            execute, timeout=MERGE_EXECUTOR_TIMEOUT_SECONDS)
                 if (
                     status.get("status") == terminal
                     and status.get("generationReady") is True
                 ):
+                    report("publishing")
                     self.reload_from_disk(prewarm=False)
                     self._schedule_prewarm()
                     registered = self.merge_executor.call(
@@ -11791,6 +11904,38 @@ class GatewayApplication:
             with self._merge_lock:
                 self._merge_results[request_id] = result
                 self._merge_threads.pop(request_id, None)
+
+    def _note_merge_progress(self, request_id: str, phase: str) -> None:
+        if phase not in MERGE_PROGRESS_PHASES:
+            return
+        clock = self.__dict__.get("clock_ms")
+        now = int(clock() if clock else time.time() * 1000)
+        with self._merge_lock:
+            table = self.__dict__.setdefault("_merge_progress", {})
+            progress = table.get(request_id)
+            if progress is None:
+                progress = {"startedAt": now, "steps": []}
+                table[request_id] = progress
+            steps = progress["steps"]
+            if steps and steps[-1]["phase"] == phase:
+                return
+            if len(steps) >= len(MERGE_PROGRESS_PHASES) * 2:
+                return
+            steps.append({"phase": phase, "at": now})
+            progress["phase"] = phase
+            progress["updatedAt"] = now
+
+    def _merge_progress_snapshot(self, request_id: str) -> dict[str, Any]:
+        with self._merge_lock:
+            progress = self.__dict__.get("_merge_progress", {}).get(request_id)
+            if not progress or not progress.get("steps"):
+                return {}
+            return {
+                "phase": progress["phase"],
+                "startedAt": progress["startedAt"],
+                "updatedAt": progress["updatedAt"],
+                "steps": [dict(step) for step in progress["steps"]],
+            }
 
     def _prewarm_after_merge(self) -> None:
         try:
@@ -11881,6 +12026,8 @@ class GatewayApplication:
                     if old_id not in self._merge_threads:
                         self._merge_payload_digests.pop(old_id, None)
                         self._merge_results.pop(old_id, None)
+                        self.__dict__.get("_merge_progress", {}).pop(
+                            old_id, None)
                         break
                 if len(self._merge_payload_digests) >= MAX_MERGE_JOB_CACHE:
                     raise GatewayError("merge job capacity is exhausted")
@@ -11921,7 +12068,7 @@ class GatewayApplication:
             "ok": True,
             "status": "processing",
             "requestId": request_id,
-        }, operation)
+        }, operation, self._merge_progress_snapshot(request_id))
 
     def _actions_status(
         self, owner: str, repository: str
@@ -12304,6 +12451,8 @@ class GatewayApplication:
         delivered: bool,
         user_agent: str = "",
     ) -> bool:
+        if privacy_mode():
+            return False
         if not delivered or not 200 <= int(status) < 300:
             return False
         try:

@@ -65,7 +65,7 @@ Part of [the desktop docs](README.md).
 
 `MainWindow::setCloudLogMonitorEnabled()` (`src/MainWindowLogs.cpp`) can run
 `npx wrangler tail` for the Worker named in `app/wrangler.toml` (setting
-`diagnostics/cloudLogMonitor`). The served stack has no Workers: when the tail
+`diagnostics/cloudLogMonitor`). The app and World run no Workers: when the tail
 reports the Worker missing (`cloudflareTailWorkerMissing()`), the monitor stops,
 records the name in `diagnostics/cloudLogMonitorMissingWorker`, and skips the
 tail on later launches until the box is ticked again. The Node.js probe runs on

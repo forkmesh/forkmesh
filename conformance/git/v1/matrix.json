@@ -32,7 +32,7 @@
       "read": true,
       "write": false,
       "transport": "HTTPS smart protocol under the stable repository URL",
-      "authentication": "Anonymous read of a public repository; HTTPS writes are rejected",
+      "authentication": "None for reading a public repository. A push to the same URL needs an account credential and goes through the authenticated push proxy, which this suite does not probe",
       "description": "The stable repository URL proxies upload-pack in place from one integrity-matching HTTPS mirror."
     },
     {
@@ -75,8 +75,8 @@
       "reproduction": ["git", "-C", "worktree", "push", "origin", "HEAD"],
       "support": {
         "direct": {"status": "supported", "note": "Requires a registered SSH public key and repository write permission."},
-        "relay": {"status": "unsupported", "note": "HTTPS receive-pack fails before reading a request body.", "limitation": "https-receive-pack"},
-        "mirror-failover": {"status": "unsupported", "note": "Writes never fan out through read mirrors.", "limitation": "https-receive-pack"}
+        "relay": {"status": "unsupported", "note": "Without a credential, the push gets HTTP 401 push_unauthorized before its body is read. A push with an account credential is accepted but not probed by this suite.", "limitation": "https-receive-pack"},
+        "mirror-failover": {"status": "unsupported", "note": "Read mirrors never take writes; an authenticated push goes to one endpoint that accepts receive-pack.", "limitation": "https-receive-pack"}
       }
     },
     {
@@ -97,8 +97,8 @@
       "reproduction": ["git", "-C", "worktree", "switch", "-c", "topic/example"],
       "support": {
         "direct": {"status": "supported", "note": "Create, fetch, push, and delete through ordinary refspecs."},
-        "relay": {"status": "conditional", "note": "Read and local branch operations work; publish the branch with the SSH URL.", "limitation": "https-receive-pack"},
-        "mirror-failover": {"status": "conditional", "note": "Read and local branch operations work; publish the branch with the SSH URL.", "limitation": "https-receive-pack"}
+        "relay": {"status": "conditional", "note": "Read and local branch operations work; publish the branch with an authenticated HTTPS push or over SSH.", "limitation": "https-receive-pack"},
+        "mirror-failover": {"status": "conditional", "note": "Read and local branch operations work; publish the branch with an authenticated HTTPS push or over SSH.", "limitation": "https-receive-pack"}
       }
     },
     {
@@ -108,8 +108,8 @@
       "reproduction": ["git", "-C", "worktree", "rebase", "origin/main"],
       "support": {
         "direct": {"status": "local", "note": "Rebase is local; the resulting ref can be pushed over SSH."},
-        "relay": {"status": "local", "note": "Fetch over HTTPS, rebase locally, then publish over SSH."},
-        "mirror-failover": {"status": "local", "note": "Fetch over HTTPS, rebase locally, then publish over SSH."}
+        "relay": {"status": "local", "note": "Fetch over HTTPS, rebase locally, then publish with an authenticated HTTPS push or over SSH."},
+        "mirror-failover": {"status": "local", "note": "Fetch over HTTPS, rebase locally, then publish with an authenticated HTTPS push or over SSH."}
       }
     },
     {
@@ -119,8 +119,8 @@
       "reproduction": ["git", "-C", "worktree", "push", "--force-with-lease", "origin", "topic/example"],
       "support": {
         "direct": {"status": "supported", "note": "A stale expected old object ID is rejected without changing the remote ref."},
-        "relay": {"status": "unsupported", "note": "Use the repository SSH URL for writes.", "limitation": "https-receive-pack"},
-        "mirror-failover": {"status": "unsupported", "note": "Use the owner SSH URL; mirror reads are never a write quorum.", "limitation": "https-receive-pack"}
+        "relay": {"status": "unsupported", "note": "Not probed over HTTPS. An authenticated HTTPS push accepts it on branches other than the default and protected branches of a repository the core nodes hold.", "limitation": "https-receive-pack"},
+        "mirror-failover": {"status": "unsupported", "note": "Mirror reads are never a write quorum; send it as an authenticated HTTPS push or over SSH.", "limitation": "https-receive-pack"}
       }
     },
     {
@@ -130,8 +130,8 @@
       "reproduction": ["git", "-C", "worktree", "push", "--force", "origin", "topic/example"],
       "support": {
         "direct": {"status": "supported", "note": "Accepted for an authorized writable repository; create a bundle or backup ref first."},
-        "relay": {"status": "unsupported", "note": "Use the repository SSH URL for writes.", "limitation": "https-receive-pack"},
-        "mirror-failover": {"status": "unsupported", "note": "Use the owner SSH URL; mirrors remain read-only.", "limitation": "https-receive-pack"}
+        "relay": {"status": "unsupported", "note": "Not probed over HTTPS. An authenticated HTTPS push may force-update branches other than the default and protected branches of a repository the core nodes hold; the previous tip is kept.", "limitation": "https-receive-pack"},
+        "mirror-failover": {"status": "unsupported", "note": "Mirrors stay read-only; send it as an authenticated HTTPS push or over SSH.", "limitation": "https-receive-pack"}
       }
     },
     {
@@ -207,7 +207,7 @@
       "reproduction": ["git", "clone", "recovery.bundle", "recovered"],
       "support": {
         "direct": {"status": "supported", "note": "A verified pre-force bundle restores the exact previous ref over authorized SSH."},
-        "relay": {"status": "local", "note": "Recovery is prepared locally and published through the SSH write path."},
+        "relay": {"status": "local", "note": "Recovery is prepared locally and published with an authenticated HTTPS push or over SSH."},
         "mirror-failover": {"status": "local", "note": "A recovered owner ref is served only after mirrors refresh and attest the new state."}
       }
     }
@@ -253,13 +253,13 @@
   "limitations": [
     {
       "id": "https-receive-pack",
-      "title": "HTTPS and failover paths are read-only",
+      "title": "HTTPS pushes need a credential and are not probed by this suite",
       "appliesTo": ["relay", "mirror-failover"],
-      "expected": "Git receives HTTP 501 with error code direct_https_receive_pack_required before ForkMesh reads the push body.",
-      "reproduction": ["git", "push", "https://forkmesh.com/OWNER/REPOSITORY", "HEAD"],
-      "action": "Register an SSH public key, copy the repository's published ssh:// URL, and push that remote instead.",
-      "recovery": "No remote ref or object is changed. Correct the remote URL and retry the same push.",
-      "lastTested": {"date": "2026-08-20", "client": "Git 2.47.3", "evidence": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"}
+      "expected": "A push to the stable HTTPS URL without a credential gets HTTP 401 push_unauthorized with a Basic challenge before ForkMesh reads the push body. With a credential, the relay checks that the account may write the repository and streams the push to one endpoint that accepts receive-pack; for a repository the core nodes host, that is the core that last took a push, else the first live core in rendezvous order. Read mirrors never take writes.",
+      "reproduction": ["git", "push", "https://app.forkmesh.com/OWNER/REPOSITORY.git", "HEAD"],
+      "action": "When Git asks, enter your ForkMesh account name or email and either your account password (when two-factor authentication is off) or the push credential from Settings, SSH keys, Push code over HTTPS. On the core nodes the default and protected branches only fast-forward, other branches may be force-pushed by accounts that may write them, new tags are allowed, and a push never deletes a branch.",
+      "recovery": "A refused push changes no remote ref or object. Check the account name and the password or credential, then retry the same push; HTTP 403 push_forbidden means the account may not push to this repository. The Git errors page lists every message.",
+      "lastTested": {"date": "2026-10-24", "client": "not applicable (source contract tests)", "evidence": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body, app/tests/test_hosted_repositories.py::test_account_name_or_email_and_password_push"}
     },
     {
       "id": "server-hooks",

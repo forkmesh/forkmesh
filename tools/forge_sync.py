@@ -68,6 +68,7 @@ def _load(name: str, path: Path) -> Any:
 
 providers = _load("forkmesh_forge_providers", _TOOLS / "forge_providers.py")
 bridge = _load("forkmesh_forge_bridge", _TOOLS / "github_forkmesh_bridge.py")
+attachments_mirror = _load("forkmesh_forge_attachments", _TOOLS / "forge_attachments.py")
 sync_status = _load("forkmesh_forge_sync_status", _TOOLS.parent / "app" / "src" / "sync_status.py")
 
 LEDGER_REL = ".forkmesh/forge-sync.json"
@@ -463,10 +464,12 @@ class SyncReport:
 class Engine:
     def __init__(self, provider: Any, signer: Any, *, checkout: Path,
                  clock: Callable[[], int] = lambda: int(time.time() * 1000),
-                 avatars: Callable[[str, tuple[str, ...]], bytes | None] | None = None) -> None:
+                 avatars: Callable[[str, tuple[str, ...]], bytes | None] | None = None,
+                 attachments: Callable[..., dict[str, Any]] | None = None) -> None:
         self.checkout = Path(checkout)
         self.clock = clock
         self.avatars = avatars
+        self.attachments = attachments
         self.seen: dict[str, str] = {}
         self.logins: dict[str, str] = {}
         self.ledger = load_ledger(self.checkout)
@@ -541,7 +544,20 @@ class Engine:
             self.local.flush()
         if self.avatars is not None:
             self.sync_avatars(now)
-        return self.result(now)
+        mirrored = self.sync_attachments(now)
+        result = self.result(now)
+        if mirrored is not None:
+            result["attachments"] = mirrored
+        return result
+
+    def sync_attachments(self, now: int) -> dict[str, Any] | None:
+        if self.attachments is None or self.p != "github":
+            return None
+        try:
+            return self.attachments(self.checkout, self.local.records, now)
+        except OSError as exc:
+            self.report.warnings.append(f"attachments: {exc.__class__.__name__}")
+            return None
 
     def see(self, login: str, avatar: str) -> None:
         if not AVATAR_LOGIN_RE.fullmatch(str(login or "")):
@@ -1129,6 +1145,18 @@ def build_provider(ledger: dict[str, Any], token: str, **transport: Any) -> Any:
     return adapter(ledger["repository"], token, **kwargs)
 
 
+def attachment_mirror(args: argparse.Namespace) -> Callable[..., dict[str, Any]] | None:
+    switch = os.environ.get("FORKMESH_FORGE_ATTACHMENTS", "").strip().lower()
+    if not args.attachments or switch in ("0", "off", "no", "false"):
+        return None
+    files = max(0, int(args.attachment_files))
+    budget = max(0, int(args.attachment_megabytes)) * 1024 * 1024
+
+    def mirror(checkout: Path, records: dict[int, Any], now: int) -> dict[str, Any]:
+        return attachments_mirror.sync(checkout, records, now, max_files=files, max_bytes=budget)
+    return mirror
+
+
 def main(argv: list[str] | None = None) -> int:
     previous = os.environ.get(LEDGER_ENV)
     try:
@@ -1163,6 +1191,13 @@ def _main(argv: list[str] | None = None) -> int:
     s.add_argument("--report", type=Path)
     s.add_argument("--avatars", action="store_true",
                    help="also download provider avatars into .forkmesh/contributors")
+    s.add_argument("--attachments", action="store_true",
+                   help="also copy provider-hosted images and files into .forkmesh/attachments")
+    s.add_argument("--attachment-files", type=int, default=attachments_mirror.PASS_FILES,
+                   help="most attachment downloads in one pass")
+    s.add_argument("--attachment-megabytes", type=int,
+                   default=attachments_mirror.PASS_BYTES // (1024 * 1024),
+                   help="most attachment megabytes downloaded in one pass")
     sub.add_parser("status", help="show lag, conflicts and failures without contacting the provider")
     p = sub.add_parser("pause")
     p.add_argument("--reason", default="")
@@ -1198,7 +1233,8 @@ def _main(argv: list[str] | None = None) -> int:
             ledger = load_ledger(args.checkout)
             engine = Engine(build_provider(ledger, token), bridge.BridgeSigner.from_text(key),
                             checkout=args.checkout,
-                            avatars=fetch_avatar if args.avatars else None)
+                            avatars=fetch_avatar if args.avatars else None,
+                            attachments=attachment_mirror(args))
             result = engine.run()
             if args.report:
                 args.report.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n",

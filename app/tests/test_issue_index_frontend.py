@@ -238,7 +238,8 @@ HELPERS = (ROOT / "public" / "dashboard" / "js" / "02-helpers.js").read_text(enc
 def test_issue_rows_stack_recent_commenters_with_imported_pictures():
     from test_issue_timeline_people import _const
     code = "\n".join(
-        [_const(HELPERS, name) for name in ("FORGE_PROFILES", "FORGE_IDENTITY_RE", "forgeAvatarSets")]
+        [_const(HELPERS, name) for name in ("FORGE_PROFILES", "FORGE_IDENTITY_RE", "forgeAvatarSets",
+                                            "forgeAvatarCommits")]
         + [HELPERS[HELPERS.index("  const BOT_AVATAR_GLYPHS = {"):
                    HELPERS.index("\n  };\n", HELPERS.index("  const BOT_AVATAR_GLYPHS = {")) + 5]]
         + [_function(HELPERS, name) for name in (

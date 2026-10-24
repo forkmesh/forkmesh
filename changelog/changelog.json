@@ -19,7 +19,11 @@
       "Mirrored issues link back to the original on GitHub or Gitea, show the imported avatars, and can list threads newest first with their last commenters (the Forum-style issue lists plugin).",
       "Long issue threads open faster: the page arrives with the whole thread, sent in parts, and the dashboard takes it over in place.",
       "Instances can turn on Atom feeds of a repository's issues, a lite view of every thread that works without JavaScript, and a forum-style home page (the Feeds and lite view plugin); white label is an install setting.",
-      "Repositories can set a goal for independent mirrors, see how healthy each listed mirror is, and ask readers to run one (the Mirror goal plugin)."
+      "Repositories can set a goal for independent mirrors, see how healthy each listed mirror is, and ask readers to run one (the Mirror goal plugin).",
+      "Images and files in mirrored GitHub threads are copied into the repository, so issue pages show them without loading anything from GitHub (the Mirrored attachments plugin).",
+      "Posts in other languages get a Translate bar that translates on your device or shows the instance's own English translation, and members can add their own translations (the Translations plugins).",
+      "Issue pages load faster on mirrored forums: imported avatars are cached, names are checked in one request per page, and Translate bars appear without slowing the thread.",
+      "Merging a pull request or updating its branch from the web shows each step live, from handing it to a mirror to publishing the result."
      ]
     },
     {
@@ -29,9 +33,17 @@
      ]
     },
     {
+     "title": "World",
+     "items": [
+      "A neighbour's hexagon with a bug terrarium now draws in about a third of the steps it used to, so the World runs smoother near it."
+     ]
+    },
+    {
      "title": "Settings",
      "items": [
-      "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick."
+      "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick.",
+      "Instances can let people sign up without an email address, using a one-time recovery code, suggest random usernames, and appoint moderators who approve first posts, block accounts and lock threads.",
+      "Instances can use a GitHub-style theme that follows each visitor's light or dark system setting, and Settings, Appearance has a System choice."
      ]
     },
     {
@@ -49,6 +61,14 @@
       "Merge all with AI now rebuilds a pull request from a stacked series whose earlier parts were already merged, instead of leaving it out because its code is not on this computer.",
       "The install line on the homepage has a small Binary / Source switch, so you can copy the command that compiles ForkMesh from source.",
       "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it."
+     ]
+    },
+    {
+     "title": "Server",
+     "items": [
+      "Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.",
+      "Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so.",
+      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you."
      ]
     }
    ]

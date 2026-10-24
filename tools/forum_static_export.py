@@ -196,7 +196,8 @@ class FallbackMarkdown:
 
 
 class StaticContext:
-    def __init__(self, prefix: str, numbers: frozenset[int], source_url: str) -> None:
+    def __init__(self, prefix: str, numbers: frozenset[int], source_url: str,
+                 attachments: dict | None = None) -> None:
         self.prefix = prefix
         self.numbers = numbers
         self.source_url = source_url.rstrip("/")
@@ -206,6 +207,7 @@ class StaticContext:
         self.issue_tasks = None
         self.figures = False
         self.origin = ""
+        self.attachments: dict = attachments or {}
 
     def record_url(self, kind: str, number: Any) -> str:
         number = int(number)
@@ -231,6 +233,7 @@ class CheckoutSource:
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
         self.commit = _git_text(["git", "-C", str(self.root), "rev-parse", "HEAD"])
+        self.tracked: set[str] | None = None
 
     def list(self, prefix: str) -> list[str]:
         base = self.root / prefix
@@ -239,11 +242,33 @@ class CheckoutSource:
         found = []
         for directory, _dirs, names in os.walk(base):
             for name in names:
-                found.append(Path(directory, name).relative_to(self.root).as_posix())
+                if not Path(directory, name).is_symlink():
+                    found.append(Path(directory, name).relative_to(self.root).as_posix())
         return sorted(found)
 
     def exists(self, rel: str) -> bool:
         return (self.root / rel).is_file()
+
+    def published(self, rel: str) -> bool:
+        if self.tracked is None:
+            listing = subprocess.run(["git", "-C", str(self.root), "ls-files", "-s", "-z"],
+                                     capture_output=True)
+            self.tracked = set()
+            for entry in listing.stdout.split(b"\0") if listing.returncode == 0 else ():
+                meta, _, path = entry.partition(b"\t")
+                if meta.split()[:1] in ([b"100644"], [b"100755"]):
+                    self.tracked.add(path.decode("utf-8", "surrogateescape"))
+        return rel in self.tracked and self.regular(rel)
+
+    def regular(self, rel: str) -> bool:
+        target = self.root / rel
+        if target.is_symlink() or not target.is_file():
+            return False
+        try:
+            target.resolve().relative_to(self.root.resolve())
+        except ValueError:
+            return False
+        return True
 
     def read(self, rel: str) -> bytes:
         return (self.root / rel).read_bytes()
@@ -265,14 +290,17 @@ class GitSource:
         listing = subprocess.run(self.git + ["ls-tree", "-r", "-z", "--long", "--full-tree", commit],
                                  capture_output=True, check=True).stdout
         self.blobs: dict[str, tuple[str, int]] = {}
+        self.links: set[str] = set()
         for entry in listing.split(b"\0"):
             if not entry:
                 continue
             meta, _, path = entry.partition(b"\t")
             fields = meta.split()
             if len(fields) == 4 and fields[1] == b"blob":
-                self.blobs[path.decode("utf-8", "surrogateescape")] = (
-                    fields[2].decode(), int(fields[3]))
+                name = path.decode("utf-8", "surrogateescape")
+                self.blobs[name] = (fields[2].decode(), int(fields[3]))
+                if fields[0] == b"120000":
+                    self.links.add(name)
         self.proc: subprocess.Popen | None = None
 
     def list(self, prefix: str) -> list[str]:
@@ -281,6 +309,12 @@ class GitSource:
 
     def exists(self, rel: str) -> bool:
         return rel in self.blobs
+
+    def published(self, rel: str) -> bool:
+        return rel in self.blobs and rel not in self.links
+
+    def regular(self, rel: str) -> bool:
+        return self.published(rel)
 
     def size(self, rel: str) -> int:
         return self.blobs[rel][1]
@@ -493,7 +527,13 @@ class Exporter:
 
     def markdown(self, text: str, ctx: StaticContext, headings: bool = False) -> str:
         if self.renderer is not None:
-            markup = self.renderer.render_markdown(text, ctx)
+            override = getattr(self.renderer, "PLUGINS_OFF", None)
+            token = override.set(frozenset()) if override is not None else None
+            try:
+                markup = self.renderer.render_markdown(text, ctx)
+            finally:
+                if token is not None:
+                    override.reset(token)
         else:
             markup = FallbackMarkdown(ctx).render(text)
         return self.slim(markup, ctx.prefix, headings)
@@ -529,7 +569,7 @@ class Exporter:
                     continue
                 dropped.append(False)
                 depth += 1
-                rel = ' rel="nofollow ugc"' if re.match(r"^https?:", href, re.I) else ""
+                rel = ' rel="nofollow ugc noreferrer"' if re.match(r"^https?:", href, re.I) else ""
                 out.append('<a href="%s"%s>' % (esc(href), rel))
                 continue
             src = values.get("src", "")
@@ -585,8 +625,13 @@ class Exporter:
         if not parts or ".." in parts or parts[0] == ".git":
             return ""
         rel = "/".join(parts)
-        if not self.source.exists(rel) or self.source.size(rel) > self.max_attachment:
+        stored = STORED_RE.match(rel)
+        allowed = self.source.regular(rel) if stored else self.source.published(rel)
+        if not allowed or self.source.size(rel) > self.max_attachment:
             return ""
+        if stored:
+            self.copies["files/" + stored.group(1)] = rel
+            return prefix + "files/" + stored.group(1)
         self.copies["repo/" + rel] = rel
         return prefix + "repo/" + "/".join(urllib.parse.quote(part) for part in parts)
 
@@ -639,7 +684,7 @@ class Exporter:
         return "c-" + (re.sub(r"[^A-Za-z0-9_-]", "", comment_id)[:24] or "x")
 
     def thread_page(self, thread: dict[str, Any], numbers: frozenset[int], slugs: dict[str, str]) -> bytes:
-        ctx = StaticContext("../", numbers, self.source_url)
+        ctx = StaticContext("../", numbers, self.source_url, self.attachments)
         labels = "".join('<a class="lb" href="../labels/%s.html">%s</a>' % (slugs[label], esc(label))
                          for label in thread["labels"])
         posts = [self.post("c0", thread["author"], thread["createdAt"], thread["body"], ctx)]
@@ -680,7 +725,7 @@ class Exporter:
         return "", ""
 
     def feed(self, threads: list[dict[str, Any]], numbers: frozenset[int]) -> bytes:
-        ctx = StaticContext("", numbers, self.source_url)
+        ctx = StaticContext("", numbers, self.source_url, self.attachments)
         tag = "tag:forkmesh.com,2026:static/%s" % urllib.parse.quote(self.site_id, safe="/")
         entries = []
         for thread in threads:
@@ -759,7 +804,7 @@ class Exporter:
             self.files[rel] = page
             thread_files[rel] = self.thread_copies(page)
             self.stats["rendered"] += 1
-        ctx = StaticContext("", numbers, self.source_url)
+        ctx = StaticContext("", numbers, self.source_url, self.attachments)
         label_counts = {label: sum(1 for t in threads if label in t["labels"]) for label in slugs}
         label_index = '<p>%s</p>' % " ".join(
             '<a class="lb" href="labels/%s.html">%s (%d)</a>' % (slugs[label], esc(label), label_counts[label])

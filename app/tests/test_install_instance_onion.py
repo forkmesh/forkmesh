@@ -104,6 +104,7 @@ def test_the_onion_site_is_plain_http_on_loopback_and_reaches_the_same_app(tmp_p
     assert "\t\treverse_proxy 127.0.0.1:8790\n" in out
     assert "\t\treverse_proxy 127.0.0.1:8080 {\n\t\t\theader_up Host %s\n" % ADDRESS in out
     assert "header_up -X-Forwarded-For" in out
+    assert "\t\t\theader_up Cf-Connecting-Ip 100.64.0.1\n" in out and "{remote_host}" not in out
     assert '\t\tContent-Security-Policy "; upgrade-insecure-requests" ""\n' in out
     assert "\t\t-Strict-Transport-Security\n" in out and "tls" not in out.split("\n", 1)[1]
     assert 'header Onion-Location "http://%s{uri}"' % ADDRESS in out

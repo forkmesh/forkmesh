@@ -779,3 +779,80 @@ func TestMergeExecutorFailsClosedOnAnInvalidChecksPolicy(t *testing.T) {
 		t.Fatalf("invalid policy: %+v", result)
 	}
 }
+
+func progressPhases(t *testing.T, raw string) []string {
+	t.Helper()
+	var phases []string
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		if line == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, pullProgressPrefix) {
+			t.Fatalf("progress line without prefix: %q", line)
+		}
+		var value struct {
+			Phase string `json:"phase"`
+			At    int64  `json:"at"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, pullProgressPrefix)), &value); err != nil || value.At <= 0 {
+			t.Fatalf("progress line %q: %v", line, err)
+		}
+		phases = append(phases, value.Phase)
+	}
+	return phases
+}
+
+func TestMergeExecutorReportsEachPhaseOnceInOrder(t *testing.T) {
+	f := newMergeFixture(t)
+	var progress strings.Builder
+	f.executor.Progress = &progress
+	if status := f.request(t, "status", "merge", nil); status["status"] != "missing" {
+		t.Fatalf("status: %+v", status)
+	}
+	if progress.Len() != 0 {
+		t.Fatalf("a status read reported progress: %q", progress.String())
+	}
+	result := f.request(t, "execute", "merge", nil)
+	if result["status"] != "merged" {
+		t.Fatalf("merge did not land: %+v", result)
+	}
+	want := []string{"fetching", "verifying", "checking", "testing", "committing", "pushing", "publishing"}
+	if got := progressPhases(t, progress.String()); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("phases %v, want %v", got, want)
+	}
+	if strings.Contains(progress.String(), f.featureOid) || strings.Contains(progress.String(), "forkmesh/") {
+		t.Fatalf("progress leaked repository data: %q", progress.String())
+	}
+}
+
+func TestMergeExecutorStopsReportingAtTheRefusedPhase(t *testing.T) {
+	f := newMergeFixture(t)
+	var progress strings.Builder
+	f.executor.Progress = &progress
+	stale := f.request(t, "execute", "merge", map[string]any{
+		"requestId": "merge_request_stale", "expectedBaseOid": strings.Repeat("1", 40)})
+	if stale["error"] != "stale_base" {
+		t.Fatalf("stale base: %+v", stale)
+	}
+	if got := progressPhases(t, progress.String()); strings.Join(got, ",") != "fetching" {
+		t.Fatalf("phases %v", got)
+	}
+}
+
+func TestUpdateExecutorReportsItsPhases(t *testing.T) {
+	f := newMergeFixture(t)
+	writeFile(t, filepath.Join(f.source, "README.md"), "two\n")
+	run(t, f.source, "git", "add", "README.md")
+	run(t, f.source, "git", "commit", "-q", "-m", "two")
+	run(t, f.source, "git", "push", "-q", f.bare, "main:refs/heads/main")
+	f.mainOid = run(t, f.source, "git", "rev-parse", "main")
+	var progress strings.Builder
+	f.executor.Progress = &progress
+	if result := f.request(t, "execute", "update", nil); result["status"] != "updated" {
+		t.Fatalf("update failed: %+v", result)
+	}
+	want := []string{"fetching", "verifying", "testing", "committing", "pushing", "publishing"}
+	if got := progressPhases(t, progress.String()); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("phases %v, want %v", got, want)
+	}
+}

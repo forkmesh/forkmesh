@@ -23,6 +23,15 @@ extra organization owners); optional mail provider; listing choices
   or a zip holding that JSON and a logo image. It is read in the browser only.
   The user guide is `www/docs/start-config.md`; examples are
   `app/public/start-config.example.json` and `.zip`.
+- **Let your coding agent do it.** A card under "Set up from a file" holds a
+  read-only one-line prompt with a Copy button
+  (`data-start-agent-prompt`, `data-start-agent-copy`) that points a coding
+  agent at `app/public/forkmesh-agent.md` (served at
+  `/forkmesh-agent.md`), plus links to read it, download it as
+  `FORKMESH.md`, and the user guide `www/docs/coding-agents.md`. The agent
+  writes the settings file and the person uploads it here, so SSH secrets
+  are typed by nobody but them. The card has no section number; the six
+  numbered sections are unchanged.
 - **Colour theme.** A toolbar of accent swatches (plus a free colour picker),
   three surface families (Slate, the ForkMesh default, Zinc and Stone), a
   dark/light preview switch and Shuffle, over a live mock of a repository
@@ -359,8 +368,10 @@ upload CSS.
   start page and in Settings draw only the palette,
   as one colour block with primary three times as wide as the rest (a mock
   screen was tried first and read as clutter). Planned themes show as "Coming soon" cards
-  and are refused by the API. Today all four are ready: `default` (the
-  ForkMesh colours), `blt`, `cloudflare` and `google`.
+  and are refused by the API. Today all five are ready: `default` (the
+  ForkMesh colours), `blt`, `cloudflare`, `google` and `github`. An entry
+  may also name `colorMode` (`dark`, `light` or `system`, see
+  [Colour mode](#colour-mode)); without one it is `dark`.
 - **Storage:** choosing a theme stores `{"preset": "<id>"}` in the
   `instance_settings` theme row (optionally with `dark`/`light` colour
   overrides on top), not a copy of its colours, so polishing a theme in the
@@ -396,7 +407,12 @@ upload CSS.
   current theme. The password field is cleared on success, failure, cancel,
   leaving the section and `pagehide`, and the form carries a hidden
   `autocomplete="username"` field so a browser does not save a password
-  without an account name. The route checks the session is an admin, then the account password with its
+  without an account name. The admin console offers the same choice under Platform, **Site theme**
+  (`?view=site-theme`: one radio per ready theme, "Keep the custom colours"
+  when the stored theme has its own, and the colour mode), behind the
+  console's own sign-in and CSRF check, recording `admin.console_save_theme`
+  in the audit log; picking a named theme there drops any custom colour
+  overrides, so the theme is seen as designed. The route checks the session is an admin, then the account password with its
   own attempt budget (`instance-theme-v1` blind index, the login lockout
   rules), and records `instance.theme` in the sensitive-action audit log
   either way. Repository share cards take their accent from the stored
@@ -429,6 +445,19 @@ upload CSS.
   12/16/24 px radii, regular-weight headings and
   Google Sans when the visitor has it installed (Roboto or the system font
   otherwise; no font is downloaded).
+- **GitHub (follows system):** GitHub's default light and default dark
+  themes, picked from each visitor's system setting (`colorMode: system`).
+  Light: white canvas, `#f6f8fa` header and subtle surfaces, `#d0d7de`
+  borders, `#1f2328` text, `#59636e` muted text, `#0969da` links and focus,
+  `#1f883d` create button, `#1a7f37` success, `#9a6700` attention,
+  `#d1242f` danger. Dark: `#0d1117` canvas under a `#010409` header,
+  `#151b23` subtle surfaces and popovers, `#3d444d` borders, `#f0f6fc` text,
+  `#9198a1` muted text, `#4493f8` links, `#1f6feb` focus ring, `#238636`
+  create button, `#3fb950`, `#d29922` and `#f85149` for status. Its
+  stylesheet sets GitHub's system font stack (no font is downloaded), 6 px
+  radii, 600-weight headings, pill labels and GitHub's faint border on the
+  green button. forum.example.org, a GitHub forum mirror, asked for
+  it in October 2026 so the mirror reads like the forum its visitors know.
 - **Adding a theme:** add its entry and stylesheet, set `status` to `ready`
   when it is finished, and check it with `/instance-theme.css?preset=<id>`
   before shipping. `app/tests/test_instance_theme.py` requires every ready theme to
@@ -450,6 +479,51 @@ The gateway tools were not in the digest at all, so a gateway code change only
 took effect because of that spurious restart. The cost now is that the
 `version` label in the catalog stays at the commit of the last real restart
 when an update changed nothing the node runs.
+
+## Colour mode
+
+The dashboard has always opened dark unless the visitor picked light in
+Settings, Appearance. An instance can instead open in light, or follow each
+visitor's `prefers-color-scheme`, without a flash of the wrong theme.
+
+- **Setting:** the theme document's `mode` (`dark`, `light`, `system`), else
+  the preset's `colorMode`, else `dark` (`instance_theme.color_mode`).
+  `clean` keeps `mode` only when it differs from the preset's own, so
+  `{"preset": "github"}` already follows the system. The installer's
+  settings file takes `"theme": "github"`; an object with `mode` goes
+  through the console page, the launch API or `PUT /api/instance/theme`.
+- **Visitor's choice wins:** Settings, Appearance offers System, Dark and
+  Light. Dark or Light is stored as before (`forkmesh.dashboard.theme`,
+  `forkmesh.theme`, the `forkmesh_theme` cookie); System stores `system`, so
+  that visitor follows the system even on an instance whose default is
+  dark. With nothing stored, the instance's mode decides. The public site
+  reads the same keys: `site-header.js` and `home-theme.js` follow the
+  system for `system` (the homepage's own light default applies only when
+  nothing is stored), and `static-page.js` resolves it without writing a
+  fixed theme back over it.
+- **First paint:** the shell's head script resolves a stored choice
+  (`system` through `matchMedia`) and sets `data-dashboard-theme` and
+  `data-dashboard-theme-resolved`. `/instance-theme.css` (render-blocking,
+  linked by `tools/apply_instance_brand.py` at the end of `<head>`) writes
+  `--instance-color-mode` when the mode is not dark, and the brand tool puts
+  a small inline script (`data-instance-color-mode`, `MODE_TAG`) right after
+  that link. A script after a stylesheet runs only once the stylesheet has
+  loaded, so it can read the variable and switch the page before anything
+  is painted; it also follows a later system change. The dashboard bundle
+  (`02-helpers.js` `readDashboardTheme`) reads the same variable, so its
+  boot keeps that choice instead of going back to dark.
+- **Without JavaScript** (Tor Browser's safest level, script blockers):
+  nothing sets `data-dashboard-theme-resolved`, so the stylesheet's own
+  `@media (prefers-color-scheme: light){html:not([data-dashboard-theme-resolved]){...}}`
+  block applies the light tokens: `theme.json`'s light values, the shell's
+  light link colours (`BASE_LIGHT_HEX`), then the preset's and the
+  instance's own. The server-rendered first views (repository, issue list
+  and issue pages, `repo_ssr*.py`) draw only with those tokens, so they come
+  out light or dark correctly; rules keyed on `[data-dashboard-theme="light"]`
+  wait for the script. The forum home page and the lite pages
+  (`read_surfaces.py`) carry their own GitHub light and dark palette behind
+  a media query and need no script either; they ignore the visitor's stored
+  choice, because they are cached by URL.
 
 ## Private admin console path
 
@@ -1429,6 +1503,34 @@ never carry it.
   goal the maintainers set, and is shown on instances too. See
   [app/mirror-quota.md](app/mirror-quota.md).
 
+## Accounts, sign-up and moderation
+
+An admin chooses under People, **Sign-up & moderation**
+(`app/src/instance_console.py`, view `accounts-moderation`); the choice is the
+`instance_settings` row `accounts` and applies within 30 seconds, without a
+restart. Defaults keep the behaviour from before (email required, people pick
+their usernames, no review, no limits). Details, APIs and storage:
+[app/accounts-and-moderation.md](app/accounts-and-moderation.md).
+
+| Setting | Choices |
+| --- | --- |
+| Sign-up | open with email required; open with email optional (no address stored, a one-time recovery code instead); invite code only (the Controls code, email optional); closed |
+| Usernames | people choose; suggest a random name like `quiet-otter-7f3k`; random names only |
+| Only signed-in accounts can post | off / on |
+| First-post approval | off / on: a new account's posts wait in the organization's Moderation queue until a moderator approves one |
+| New-account period, threads and comments per day | 7 days, 0 (no limit), 0 (no limit) |
+| Hide the posts of accounts blocked with "hide their posts" | on |
+
+The same page lists instance moderators (they moderate every repository
+here), accounts blocked on the whole server, and the moderation log.
+Organization owners and admins name their own moderators and block accounts
+from the organization's settings page.
+
+For a public forum such as forum.example.org: email optional, suggest
+random names, only signed-in accounts can post, first-post approval on,
+3 threads and 20 comments a day for the first 7 days. Sign-up still needs the
+Turnstile keys (see [Limits](#limits)).
+
 ## Directory
 
 After a successful launch, `instance_directory.publish` writes an
@@ -1487,6 +1589,18 @@ otherwise SMTP or Mailtrap by configuration. `MAIL_SENDER` and
 `MAIL_SENDER_NAME` set the sender. Budgets, suppression and the mail log apply
 to every provider.
 
+## Privacy mode
+
+An admin can make the instance keep no records about visitors beyond what it
+needs to run: Platform → Privacy mode in the admin console (`instance_settings`
+key `privacy`), or the install setting `privacyMode: true`
+(`INSTANCE_PRIVACY_MODE=1` in `app.env`). Only the install setting also
+reaches Caddy, uvicorn, the git node and the journal. To turn it on for an
+existing instance, add `"privacyMode": true` to
+`/etc/forkmesh-instance/instance.json` and run `install-instance.sh --update`.
+[app/privacy-mode.md](app/privacy-mode.md) has the audit of what is recorded
+normally, what privacy mode stops, and what remains and why.
+
 ## Limits
 
 - Public sign-up needs Turnstile keys in `app.env`; it fails closed without
@@ -1524,6 +1638,7 @@ switch, git node program),
 `test_instance_plugins.py`, `test_instance_registry.py`,
 `test_instance_legal_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
+`test_accounts_moderation.py`,
 `test_instance_node_reconnect_frontend.py`,
 `test_instance_served_by_frontend.py`, `test_repo_canonical_addresses.py`,
 `test_single_org_contributors.py`, and

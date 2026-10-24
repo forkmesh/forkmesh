@@ -59,8 +59,11 @@ again (nobody here can push to their copy, `docs/app/pull-merge-box.md`).
 The branch, base and clone values are shell-quoted when a command is copied.
 
 `ai_missing` reads `repoCollabSettings.requireAiDisclosure` and the pull's
-`aiModel`; on a build without AI disclosure the setting is never present, so
-the reply never shows.
+stated model through `pullAiModel`: the `aiModel` field or an "AI model:" line
+in the description, as the disclosure chip does. Reading only the field
+offered the reply on pulls that stated their model in the description. On a
+build without AI disclosure the setting is never present, so the reply never
+shows.
 
 ### `.forkmesh/review-replies.json`
 

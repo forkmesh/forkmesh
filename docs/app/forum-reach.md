@@ -46,7 +46,7 @@ needs no work tree), and writes:
 | `feed.atom` | Atom 1.0, the newest 100 posts (`--feed-size`); comments carry RFC 4685 `thr:in-reply-to` pointing at their thread, so rss2email threads them |
 | `files/<sha256>.<ext>` | mirrored attachments that a page uses (copied from `.forkmesh/attachments/`) |
 | `avatars/<provider>-<login>.png` | mirrored avatars that a page uses (`.forkmesh/contributors/`, `--no-avatars` leaves them out) |
-| `repo/<path>` | repository files the README shows (a logo) |
+| `repo/<path>` | committed repository files a page shows (a logo); see below |
 | `style.css` | one shared stylesheet, about 1.5 KB, light and dark |
 | `manifest.json` | SHA-256 and size of every file, the source commit and URL, and the input hashes used for incremental runs |
 | `.nojekyll` | GitHub Pages serves the folder as is |
@@ -106,6 +106,15 @@ post, code blocks, quotes, lists, links; 6.2 MB of issue JSON):
 A full export takes 3 s; a re-run with nothing changed takes 0.3 s and
 writes nothing. Markup is about 250 bytes per post over its text.
 
+A post or the README can point at a repository file with a relative path,
+and the export copies that file into `repo/`. Only a file the source commit
+holds is copied: `CheckoutSource.published` takes paths from
+`git ls-files -s` (regular files, mode 100644 or 100755) and refuses a
+symlink or anything that resolves outside the checkout; `GitSource`
+refuses symlink blobs. Before 2026-10-24 the checkout mode copied any file
+on disk, so a comment with `![x](.env)` published an untracked secret, or
+the file behind a symlink, to every static copy.
+
 ## Publishing (`tools/forum_static_publish.py`)
 
 ```
@@ -122,6 +131,14 @@ next run commits on top of the new tip. An unchanged site is
 `up-to-date` and pushes nothing. History keeps every published version.
 `--dry-run` builds the commit and reports the changed file count, but
 pushes nothing.
+
+The new tree replaces the old one, so a publish refuses a branch whose tip
+has no `manifest.json` of this export (`published_before`): pointing a
+target at the code branch of a repository would otherwise replace the code
+at its tip. `--init` publishes onto such a branch once. `CNAME` and
+`.domains` (the custom domain of GitHub Pages and Codeberg Pages) are
+carried over from the tip, and a target URL or branch that starts with `-`
+is refused before git sees it.
 
 `targets.json`:
 
@@ -232,6 +249,14 @@ while a sync writes to it can catch a half-written state; `--source
 the HTTPS site advertises it with `Onion-Location`, so Tor Browser offers
 it. Details, files and the key backup are in
 [INSTANCES.md](../INSTANCES.md#tor-onion-service).
+
+Every onion visitor reaches Caddy from Tor's loopback connection, and the
+host skips its rate limiter for a loopback address, so the onion site sends
+the fixed address `100.64.0.1` as `Cf-Connecting-Ip`. All onion visitors
+share that one rate-limit bucket and one probe-ban entry: a flood over Tor
+slows every Tor reader rather than going unlimited. A per-circuit address
+(`HiddenServiceExportCircuitID haproxy` with Caddy's `proxy_protocol`
+listener) would separate them.
 
 ## Risks and limits
 

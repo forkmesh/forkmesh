@@ -1,0 +1,42 @@
+{
+  "adjectives": [
+    "amber", "ample", "arctic", "autumn", "azure", "balmy", "bold", "brave",
+    "breezy", "bright", "brisk", "bronze", "calm", "candid", "cedar", "clear",
+    "clever", "cloudy", "cobalt", "comet", "coral", "cosmic", "cozy", "crisp",
+    "curious", "dapper", "dawn", "deep", "distant", "dusky", "eager", "early",
+    "earnest", "ember", "even", "fabled", "fair", "far", "fern", "fleet",
+    "floral", "foggy", "frosty", "gentle", "gilded", "glad", "glassy", "golden",
+    "grand", "granite", "hardy", "hazel", "hidden", "hollow", "humble", "icy",
+    "indigo", "ivory", "jade", "jolly", "keen", "kind", "lively", "lofty",
+    "lucky", "lunar", "maple", "marble", "meadow", "mellow", "merry", "mighty",
+    "misty", "modest", "mossy", "nimble", "noble", "northern", "oaken", "ocean",
+    "olive", "opal", "patient", "pearl", "pine", "placid", "plucky", "polar",
+    "prairie", "proud", "quick", "quiet", "rapid", "rainy", "ready", "river",
+    "rocky", "rosy", "royal", "rustic", "sandy", "scarlet", "serene", "shady",
+    "silent", "silver", "simple", "sleek", "snowy", "solar", "sound", "spry",
+    "starry", "steady", "stellar", "still", "stoic", "stony", "sturdy", "sunny",
+    "swift", "tidal", "tidy", "tranquil", "true", "valiant", "velvet", "vivid",
+    "wandering", "warm", "wary", "watchful", "wild", "windy", "wise", "witty",
+    "woven", "young", "zesty"
+  ],
+  "animals": [
+    "albatross", "alpaca", "antelope", "badger", "beetle", "bison", "bluejay",
+    "bobcat", "buffalo", "camel", "caribou", "cheetah", "chipmunk", "cicada",
+    "condor", "cougar", "coyote", "crane", "cricket", "curlew", "deer",
+    "dolphin", "dove", "dragonfly", "eagle", "egret", "elk", "falcon",
+    "ferret", "finch", "firefly", "flamingo", "fox", "gazelle", "gecko",
+    "gibbon", "giraffe", "gopher", "grouse", "gull", "hare", "harrier",
+    "hawk", "hedgehog", "heron", "hornbill", "ibex", "ibis", "iguana",
+    "impala", "jackal", "jaguar", "kestrel", "kingfisher", "kiwi", "koala",
+    "lark", "lemur", "leopard", "lion", "llama", "lobster", "loon", "lynx",
+    "magpie", "manatee", "marmot", "marten", "meerkat", "mink", "mole",
+    "moose", "narwhal", "newt", "nightjar", "ocelot", "octopus", "oriole",
+    "osprey", "otter", "owl", "panda", "panther", "parrot", "pelican",
+    "penguin", "petrel", "pheasant", "pika", "plover", "puffin", "puma",
+    "quail", "rabbit", "raccoon", "raven", "reindeer", "robin", "salmon",
+    "sandpiper", "seal", "shrike", "skylark", "sparrow", "squirrel",
+    "starling", "stork", "swallow", "swan", "swift", "tapir", "tern", "thrush",
+    "tiger", "toucan", "trout", "turtle", "walrus", "warbler", "weasel",
+    "whale", "wolf", "wombat", "wren", "yak", "zebra"
+  ]
+}

@@ -97,9 +97,12 @@ about 490 KB, 56 KB gzip.
   commit (one `ls-tree` of that folder, part of the cache key). The full
   answer lists all of them; the `related` answer only those among the asked
   issue's participants, assignees and commenters. The dashboard keeps them per
-  repository (`rememberForgeAvatars`) and the server renderer takes them from
-  the bundle's answer; both then draw the picture from the repository's own
-  raw URL over the initial (`loading="lazy"`, `width`/`height`, `alt=""`,
+  repository (`rememberForgeAvatars`, with the answer's `commit`) and the
+  server renderer takes them from the bundle's answer; both then draw the
+  picture from the repository's own raw URL pinned to that commit, which the
+  host serves as `immutable` and keeps in memory, so a thread's faces are not
+  asked for again on the next visit (with a branch name they were `no-cache`,
+  32 revalidations per visit on bbs#519), over the initial (`loading="lazy"`, `width`/`height`, `alt=""`,
   `referrerpolicy="no-referrer"`). A person not listed keeps the initial, so
   no page asks for a file that is not there, and nothing ever loads from the
   provider.
@@ -178,3 +181,21 @@ dashboard shell before the issue (116 KB of it is one inline `<style>`
 block): the next saving for slow links is a smaller shell for server-rendered
 pages, not fewer comments. Of the first part, the browser paints the top
 as soon as it arrives; later cards are `content-visibility: auto`.
+
+## Mirrored attachments
+
+`tools/forge_attachments.py` (see
+[forge-sync.md](../../www/docs/forge-sync.md#attachments)) keeps a mirror's
+images and files in the repository itself, so they count against its size:
+
+| Limit | Value | Where |
+|---|---|---|
+| One file | 25 MiB | `MAX_BYTES` |
+| Downloads per pass | 300 | `PASS_FILES`, `--attachment-files` |
+| Bytes per pass | 256 MiB | `PASS_BYTES`, `--attachment-megabytes` |
+| Time per pass | 300 s | `PASS_SECONDS` |
+| Request timeout | 30 s | `TIMEOUT_SECONDS` |
+
+An issue page reads only its own `.forkmesh/attachments/issues/<n>.json`
+(a few hundred bytes per picture), never the whole `index.json`. For
+github.com/example/forum the copies are about 110-120 MB.

@@ -36,6 +36,7 @@ import time
 import urllib.parse
 
 from . import repo_code_ref
+from . import repo_moderation
 from . import repo_ssr_about
 
 PAGE_RE = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/?$")
@@ -326,6 +327,7 @@ class ViewTicket:
         self.reader = reader
         self.origin = ""
         self.reactions = None
+        self.moderation = None
 
 
 _prerendered = {}   # (owner, repo) -> (monotonic time, data)
@@ -384,6 +386,7 @@ def start(fastpath, scope):
     if fastpath is None:
         return None
     forget_reactions(scope)
+    repo_moderation.forget(scope)
     key = micro_cache_key(scope)
     if key is not None:
         return key
@@ -777,6 +780,9 @@ async def fetch(ticket, worker_fetch, request):
             ticket.reactions = read_reactions(
                 worker_fetch, request_origin(request), owner, repo, view,
                 number)
+            ticket.moderation = repo_moderation.read(
+                worker_fetch, request_origin(request), owner, repo, view,
+                number)
         if ticket is not None and not isinstance(ticket, ViewTicket):
             _remember_warmer(worker_fetch, request)
         return await worker_fetch(request)
@@ -840,16 +846,21 @@ async def finish(task, response):
         rendered = None
         reactions = await reactions_within(view.reactions) \
             if view is not None else None
+        moderation = await repo_moderation.within(view.moderation) \
+            if view is not None else None
         if view is not None and view.root is not None:
             root = await _within(view.root, ISSUE_BUDGET_SECONDS - (
                 asyncio.get_running_loop().time() - started))
             if root:
                 rendered = inject_issue_page(page, root, data, origin=view.origin,
-                                             reactions=reactions)
+                                             reactions=reactions,
+                                             moderation=moderation)
                 if rendered is not None:
                     headers = response.headers
                     headers.set("cache-control", "no-cache")
                     return rendered.response(response.status, headers)
+        if rendered is None and repo_moderation.active(moderation):
+            return _js.Response(body, response.status, "", response.headers)
         if rendered is None:
             rendered = inject_view(page, data, view.section, reactions,
                                    reader=view.reader, origin=view.origin) \
@@ -912,7 +923,10 @@ async def _finish_short(ticket, response):
             bundle = await _within(bundle_task, ISSUE_BUDGET_SECONDS - (
                 loop.time() - started))
             if bundle is not None and (bundle.owner, bundle.repo) == (owner, repo):
-                rendered = inject_issue_page(page, data, bundle, short=canonical)
+                rendered = inject_issue_page(
+                    page, data, bundle, short=canonical,
+                    moderation=repo_moderation.cached(
+                        owner, repo, ticket.issue))
                 if rendered is not None:
                     headers = response.headers
                     headers.set("cache-control", "no-cache")
@@ -1022,7 +1036,8 @@ def inject_header(page, data, tab, short=False):
 ISSUE_RENDER_SECONDS = 60.0
 
 
-def issue_article(bundle, data, short=False, origin="", reactions=None):
+def issue_article(bundle, data, short=False, origin="", reactions=None,
+                  moderation=None):
     from . import repo_ssr_issue, repo_views
     model = bundle.model or {}
     if not model.get("issue") or not model.get("issueJson"):
@@ -1030,7 +1045,7 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
     origin = repo_ssr_issue.public_site_origin(origin)
     off = repo_ssr_issue.plugins_off()
     key = ("dashboard", bool(short), origin, repo_views.reactions_digest(reactions),
-           tuple(sorted(off)))
+           tuple(sorted(off)), repo_moderation.digest(moderation))
     now = time.time()
     kept = bundle.rendered.get(key)
     if kept and now - kept[0] < ISSUE_RENDER_SECONDS:
@@ -1040,8 +1055,10 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
         urllib.parse.quote(owner), urllib.parse.quote(repo))
     ctx = repo_ssr_issue.Context(link, "/api/repo/%s/%s" % (
         urllib.parse.quote(owner, safe=""), urllib.parse.quote(repo, safe="")),
-        str(bundle.ref or data.get("ref") or "main"), origin=origin)
-    issue = repo_ssr_issue.parse_issue(model["issueJson"], bundle.number)
+        str(bundle.ref or data.get("ref") or "main"), origin=origin,
+        attachments=model.get("attachments"))
+    issue = repo_ssr_issue.parse_issue(
+        repo_moderation.apply(model["issueJson"], moderation), bundle.number)
     if issue["deleted"]:
         return None
     article = repo_ssr_issue.render_issue_parts(
@@ -1100,18 +1117,22 @@ class IssuePage:
         return _js.Response(_js.ReadableStream(self.stream()), status, "", headers)
 
 
-def inject_issue(page, data, bundle, short=False, origin="", reactions=None):
-    rendered = inject_issue_page(page, data, bundle, short, origin, reactions)
+def inject_issue(page, data, bundle, short=False, origin="", reactions=None,
+                 moderation=None):
+    rendered = inject_issue_page(page, data, bundle, short, origin, reactions,
+                                 moderation)
     return None if rendered is None else str(rendered)
 
 
-def inject_issue_page(page, data, bundle, short=False, origin="", reactions=None):
+def inject_issue_page(page, data, bundle, short=False, origin="", reactions=None,
+                      moderation=None):
     if 'data-page="repo"' not in page or PLACEHOLDER not in page \
             or CHARSET not in page or bundle is None or bundle.view != "issue":
         return None
     from . import repo_ssr_issue
     try:
-        article = issue_article(bundle, data, short, origin, reactions)
+        article = issue_article(bundle, data, short, origin, reactions,
+                                moderation)
     except Exception as error:  # the header-only page is still correct
         print("issue ssr skipped: %r" % (error,))
         article = None
@@ -1874,6 +1895,12 @@ def _image_src(url, raw):
 def _image_html(alt, url, raw):
     hint = _SIZE_HINT.search(url)
     target = url[:hint.start()] if hint else url
+    from .repo_ssr_issue import MD_GITHUB_ATTACHMENT_URL, plugins_off
+    if "mirrored-attachments" not in plugins_off() and MD_GITHUB_ATTACHMENT_URL.match(target.strip()):
+        label = alt if alt and alt.lower() != "image" else ""
+        return ('<a href="%s" data-md-github-image="" rel="noopener noreferrer nofollow ugc">'
+                '%s</a>' % (html.escape(target.strip()), html.escape(
+                    "%s (image on GitHub)" % label if label else "image on GitHub")))
     source = _image_src(target, raw)
     if not source:
         return html.escape(alt)

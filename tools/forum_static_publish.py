@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 MANIFEST = "manifest.json"
+MANIFEST_SCHEMA = "forkmesh-static-export-v1"
+KEPT = ("CNAME", ".domains")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$")
 DEFAULT_AUTHOR = ("forum static export", "static-export@forkmesh.invalid")
@@ -138,21 +140,47 @@ def site_files(site: Path) -> list[str]:
     return names
 
 
-def build_tree(git: Git, site: Path, names: list[str], index: Path) -> str:
+def build_tree(git: Git, site: Path, names: list[str], index: Path,
+               kept: list[tuple[str, str]] = ()) -> str:
     extra = {"GIT_INDEX_FILE": str(index)}
     git.run("read-tree", "--empty", extra=extra)
     shas = git.run("hash-object", "-w", "--no-filters", "--stdin-paths",
                    stdin="".join(str(site / name) + "\n" for name in names)).stdout.split()
     if len(shas) != len(names):
         raise PublishError("git hash-object returned %d ids for %d files" % (len(shas), len(names)))
+    entries = list(zip(shas, names)) + [(sha, name) for sha, name in kept if name not in names]
     git.run("update-index", "--add", "--index-info", extra=extra,
-            stdin="".join("100644 %s\t%s\n" % (sha, name) for sha, name in zip(shas, names)))
+            stdin="".join("100644 %s\t%s\n" % (sha, name) for sha, name in entries))
     return git.run("write-tree", extra=extra).stdout.strip()
 
 
+def published_before(git: Git, parent: str) -> bool:
+    shown = git.run("cat-file", "-p", "%s:%s" % (parent, MANIFEST), check=False)
+    if shown.returncode != 0:
+        return False
+    try:
+        return json.loads(shown.stdout).get("schema") == MANIFEST_SCHEMA
+    except (ValueError, AttributeError):
+        return False
+
+
+def kept_files(git: Git, parent: str) -> list[tuple[str, str]]:
+    listed = git.run("ls-tree", parent, "--", *KEPT, check=False).stdout
+    kept = []
+    for line in listed.splitlines():
+        meta, _, name = line.partition("\t")
+        fields = meta.split()
+        if len(fields) == 3 and fields[0] == "100644" and fields[1] == "blob" and name in KEPT:
+            kept.append((fields[2], name))
+    return kept
+
+
 def publish_target(site: Path, target: dict[str, Any], cache: Path, *, dry_run: bool,
-                   message: str, author: tuple[str, str], environ: dict[str, str]) -> dict[str, Any]:
+                   message: str, author: tuple[str, str], environ: dict[str, str],
+                   init: bool = False) -> dict[str, Any]:
     name, url, branch = target["name"], str(target["url"]), str(target["branch"])
+    if url.startswith("-") or branch.startswith("-"):
+        raise PublishError("target %s has a url or branch that starts with -" % name)
     env, secrets = credentials(target, environ)
     git_dir = cache / ("%s.git" % name)
     if not (git_dir / "HEAD").is_file():
@@ -170,8 +198,12 @@ def publish_target(site: Path, target: dict[str, Any], cache: Path, *, dry_run: 
         git.run("fetch", "--quiet", "--no-tags", url, "+refs/heads/%s:%s" % (branch, tracking))
         if git.run("rev-parse", tracking).stdout.strip() != parent:
             raise PublishError("target %s moved while fetching; try again" % name)
+    if parent and not init and not published_before(git, parent):
+        raise PublishError("target %s branch %s holds something other than a static export; "
+                           "pass --init to replace it" % (name, branch))
     names = site_files(site)
-    tree = build_tree(git, site, names, git_dir / "export-index")
+    tree = build_tree(git, site, names, git_dir / "export-index",
+                      kept_files(git, parent) if parent else [])
     report.update({"parent": parent, "tree": tree, "files": len(names)})
     if parent and git.run("rev-parse", parent + "^{tree}").stdout.strip() == tree:
         report["status"] = "up-to-date"
@@ -226,6 +258,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--author-name", default=DEFAULT_AUTHOR[0])
     parser.add_argument("--author-email", default=DEFAULT_AUTHOR[1])
     parser.add_argument("--dry-run", action="store_true", help="build the commit but push nothing")
+    parser.add_argument("--init", action="store_true",
+                        help="publish onto a branch that does not hold a static export yet")
     args = parser.parse_args(argv)
     try:
         targets = load_targets(args.targets, args.target)
@@ -248,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             results.append(publish_target(site, target, cache, dry_run=args.dry_run, message=message,
                                           author=(args.author_name, args.author_email),
-                                          environ=dict(os.environ)))
+                                          environ=dict(os.environ), init=args.init))
         except (PublishError, subprocess.SubprocessError, OSError) as error:
             failed += 1
             results.append({"target": target["name"], "status": "failed", "error": str(error)})

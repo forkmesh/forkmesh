@@ -64,6 +64,8 @@ NAV = (
     )),
     ("People", (
         ("users", "Users", "users", ("console", "users")),
+        ("accounts-moderation", "Sign-up & moderation", "shield",
+         ("console", "accounts-moderation")),
     )),
     ("Support", (
         ("bugs", "Bug reports", "bug", ("console", "bugs")),
@@ -95,6 +97,8 @@ NAV = (
         ("world-territory", "World", "grid",
          ("console", "world-territory")),
         ("home-page", "Home page", "globe", ("console", "home-page")),
+        ("site-theme", "Site theme", "system", ("console", "site-theme")),
+        ("privacy", "Privacy mode", "shield", ("console", "privacy")),
         ("database", "Database", "database", ("console", "database")),
     )),
 )
