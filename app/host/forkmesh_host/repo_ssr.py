@@ -1040,7 +1040,8 @@ def issue_article(bundle, data, short=False, origin="", reactions=None):
         urllib.parse.quote(owner), urllib.parse.quote(repo))
     ctx = repo_ssr_issue.Context(link, "/api/repo/%s/%s" % (
         urllib.parse.quote(owner, safe=""), urllib.parse.quote(repo, safe="")),
-        str(bundle.ref or data.get("ref") or "main"), origin=origin)
+        str(bundle.ref or data.get("ref") or "main"), origin=origin,
+        attachments=model.get("attachments"))
     issue = repo_ssr_issue.parse_issue(model["issueJson"], bundle.number)
     if issue["deleted"]:
         return None
@@ -1874,6 +1875,12 @@ def _image_src(url, raw):
 def _image_html(alt, url, raw):
     hint = _SIZE_HINT.search(url)
     target = url[:hint.start()] if hint else url
+    from .repo_ssr_issue import MD_GITHUB_ATTACHMENT_URL, plugins_off
+    if "mirrored-attachments" not in plugins_off() and MD_GITHUB_ATTACHMENT_URL.match(target.strip()):
+        label = alt if alt and alt.lower() != "image" else ""
+        return ('<a href="%s" data-md-github-image="" rel="noopener noreferrer nofollow ugc">'
+                '%s</a>' % (html.escape(target.strip()), html.escape(
+                    "%s (image on GitHub)" % label if label else "image on GitHub")))
     source = _image_src(target, raw)
     if not source:
         return html.escape(alt)

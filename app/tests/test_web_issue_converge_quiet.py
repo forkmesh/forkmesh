@@ -107,6 +107,7 @@ const repoStaleReadMark = () => 0;
 const finishRepoRead = () => {};
 const repoReadIsTransient = () => false;
 const handleRepoReadFailure = () => false;
+const loadRepoIssueAttachments = async () => {};
 const repoIssueSourceUrl = () => "";
 const loadRepoIssueRelations = async () => ({ issueDependencies: [], issueSubIssues: [], issueMentions: [] });
 

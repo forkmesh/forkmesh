@@ -129,7 +129,7 @@ def test_the_site_is_static_relative_and_never_embeds_github_images(tmp_path):
             assert "javascript:" not in text
     thread = files["issues/1.html"].decode()
     assert '<img src="../files/%s.png"' % SHA in thread
-    assert '<a href="%s" rel="nofollow noreferrer">[image: gone]</a>' % MISSING in thread
+    assert '<a href="%s" rel="nofollow ugc">gone (image on GitHub)</a>' % MISSING in thread
     assert '<a href="../issues/2.html">#2</a>' in thread
     assert 'href="https://forum.example/example/forum/issues/99"' in thread
     assert 'href="https://forum.example/@carol"' in thread

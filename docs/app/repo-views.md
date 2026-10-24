@@ -651,6 +651,37 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   `img[data-md-figure]` in `shell.html`, at most 24rem high, with the picture
   scaled down inside it, so the conversation below does not move when it
   loads.
+- **Mirrored attachments.** On a repository whose issues come from GitHub,
+  `tools/forge_sync.py` copies the images and files the threads embed into
+  `.forkmesh/attachments/` ([forge-sync.md](../../www/docs/forge-sync.md#attachments)).
+  The issue page reads the issue's own map,
+  `.forkmesh/attachments/issues/<n>.json`, with one `blobs` read at the
+  branch (`loadRepoIssueAttachments`, kept per repository in
+  `repoAttachmentFiles`; `_issue_attachments` in `plan_issue` puts the same
+  read in the bundle and the map in `model["attachments"]`, which
+  `issue_article` hands to the `Context`). The list page reads nothing. Both
+  renderers then, for an address in the map (looked up as written, with the
+  five `escapeHtml` entities undone: `mdAttachmentKey` / `attachment_key`):
+  - draw an image (`mdImageHtml` / `image_html`) from the raw URL of the
+    stored file at the page's branch (`repoRawUrl` / `Context.raw_url`), an
+    SVG through `data-repo-svg-src`; a stored file that is not an image, in
+    an image's place, becomes a link;
+  - point a link (`mdLinkHtml` / `link_html`), bare addresses included, at
+    that raw URL, `data-md-attachment`, in a new tab.
+  With the `mirrored-attachments` instance plugin on (an `OPT_IN` plugin,
+  off on instances and on forkmesh.com until chosen), a GitHub attachment
+  address that is not in the map
+  (`MD_GITHUB_ATTACHMENT_URL`: `github.com/user-attachments/`,
+  `github.com/<o>/<r>/assets|files/`, `user-images`, `private-user-images`
+  and `objects.githubusercontent.com`) is never drawn as an `<img>`: it
+  becomes a link reading "image on GitHub" (or "<alt> (image on GitHub)"),
+  `data-md-github-image`, the address in its `href` and `title`, which the
+  reader may choose to open. This applies to READMEs too, and to the plain
+  fallback view (`repo_ssr._image_html`), which has no map. Links to such
+  addresses stay links to GitHub. Images on other hosts are drawn as before.
+  The map's paths must look like `.forkmesh/attachments/<sha256>.<ext>`;
+  anything else is ignored. The parity tests cover a mapped and an unmapped
+  thread.
 
 ## Pull requests for AI reviewers
 

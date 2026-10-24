@@ -196,7 +196,8 @@ class FallbackMarkdown:
 
 
 class StaticContext:
-    def __init__(self, prefix: str, numbers: frozenset[int], source_url: str) -> None:
+    def __init__(self, prefix: str, numbers: frozenset[int], source_url: str,
+                 attachments: dict | None = None) -> None:
         self.prefix = prefix
         self.numbers = numbers
         self.source_url = source_url.rstrip("/")
@@ -206,6 +207,9 @@ class StaticContext:
         self.issue_tasks = None
         self.figures = False
         self.origin = ""
+        # The mirrored copies (.forkmesh/attachments): the renderer points at
+        # them through raw_url, and repo_file stores them under files/.
+        self.attachments: dict = attachments or {}
 
     def record_url(self, kind: str, number: Any) -> str:
         number = int(number)
@@ -518,7 +522,13 @@ class Exporter:
 
     def markdown(self, text: str, ctx: StaticContext, headings: bool = False) -> str:
         if self.renderer is not None:
-            markup = self.renderer.render_markdown(text, ctx)
+            override = getattr(self.renderer, "PLUGINS_OFF", None)
+            token = override.set(frozenset()) if override is not None else None
+            try:
+                markup = self.renderer.render_markdown(text, ctx)
+            finally:
+                if token is not None:
+                    override.reset(token)
         else:
             markup = FallbackMarkdown(ctx).render(text)
         return self.slim(markup, ctx.prefix, headings)
@@ -612,6 +622,10 @@ class Exporter:
         rel = "/".join(parts)
         if not self.source.published(rel) or self.source.size(rel) > self.max_attachment:
             return ""
+        stored = STORED_RE.match(rel)
+        if stored:
+            self.copies["files/" + stored.group(1)] = rel
+            return prefix + "files/" + stored.group(1)
         self.copies["repo/" + rel] = rel
         return prefix + "repo/" + "/".join(urllib.parse.quote(part) for part in parts)
 
@@ -664,7 +678,7 @@ class Exporter:
         return "c-" + (re.sub(r"[^A-Za-z0-9_-]", "", comment_id)[:24] or "x")
 
     def thread_page(self, thread: dict[str, Any], numbers: frozenset[int], slugs: dict[str, str]) -> bytes:
-        ctx = StaticContext("../", numbers, self.source_url)
+        ctx = StaticContext("../", numbers, self.source_url, self.attachments)
         labels = "".join('<a class="lb" href="../labels/%s.html">%s</a>' % (slugs[label], esc(label))
                          for label in thread["labels"])
         posts = [self.post("c0", thread["author"], thread["createdAt"], thread["body"], ctx)]
@@ -705,7 +719,7 @@ class Exporter:
         return "", ""
 
     def feed(self, threads: list[dict[str, Any]], numbers: frozenset[int]) -> bytes:
-        ctx = StaticContext("", numbers, self.source_url)
+        ctx = StaticContext("", numbers, self.source_url, self.attachments)
         tag = "tag:forkmesh.com,2026:static/%s" % urllib.parse.quote(self.site_id, safe="/")
         entries = []
         for thread in threads:
@@ -784,7 +798,7 @@ class Exporter:
             self.files[rel] = page
             thread_files[rel] = self.thread_copies(page)
             self.stats["rendered"] += 1
-        ctx = StaticContext("", numbers, self.source_url)
+        ctx = StaticContext("", numbers, self.source_url, self.attachments)
         label_counts = {label: sum(1 for t in threads if label in t["labels"]) for label in slugs}
         label_index = '<p>%s</p>' % " ".join(
             '<a class="lb" href="labels/%s.html">%s (%d)</a>' % (slugs[label], esc(label), label_counts[label])

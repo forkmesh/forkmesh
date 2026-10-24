@@ -39,7 +39,7 @@ FUNCTIONS = {
         "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
         "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs",
         "repositoryViewKey", "botAvatarKind", "botAvatarSvg", "rememberForgeAvatars",
-        "forgeAvatarSrc"),
+        "forgeAvatarSrc", "repoKey"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
         "markdownVideoButtonHtml",
@@ -73,7 +73,8 @@ FUNCTIONS = {
         "issueAssigneeHasPull", "issueDeadlineDuration", "issueAssignmentDeadline",
         "renderIssueAssignmentDeadline", "issueAssigneeDeadlineHtml", "issueSubscriptionNote",
         "issueViewKey", "issueViewsLabel", "issueViewsHtml", "issueSourceUrlSafe",
-        "renderIssueSourceLink"),
+        "renderIssueSourceLink", "mdAttachmentKey", "mdAttachmentFile", "mdAttachmentHref",
+        "mdGithubImageHtml"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE",
@@ -85,7 +86,9 @@ CONSTANTS = {
         "COMMENT_REACTION_CUSTOM_RE", "MD_GIPHY_GIF",
         "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
         "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT",
-        "ISSUE_ASSIGNMENT_HOURS_MAX", "ISSUE_ASSIGNMENT_WARN_FRACTION", "ISSUE_TIMELINE_FIRST"),
+        "ISSUE_ASSIGNMENT_HOURS_MAX", "ISSUE_ASSIGNMENT_WARN_FRACTION", "ISSUE_TIMELINE_FIRST",
+        "MD_GITHUB_ATTACHMENT_URL", "MD_ATTACHMENT_PATH", "MD_ATTACHMENT_ENTITIES",
+        "repoAttachmentFiles"),
 }
 
 
@@ -113,6 +116,7 @@ def _const(text, name):
 HARNESS = """
 const NOW = %(now)d;
 Date.now = () => NOW;
+function instancePluginOn(id) { return (input.plugins || []).includes(id); }
 const VIEWER = %(viewer)s;
 const state = { session: VIEWER === "member" ? { nodeName: "me" } : null,
   userNameCases: new Map(), issuesView: { items: [] }, repoCollectionItems: {},
@@ -141,6 +145,7 @@ const input = JSON.parse(%(input)s);
 const repo = { owner: %(owner)s, name: %(name)s, isPrivate: false };
 state.selectedRepo = repo;
 rememberForgeAvatars(repo, input.avatars || []);
+repoAttachmentFiles.set(repoKey(repo), new Map(Object.entries(input.attachments || {})));
 const index = input.index.map((text, i) => parseIssueJson(text, 0));
 const parsed = issueDetailParsed(input.issue, input.number);
 const byNumber = new Map(index.map((issue) => [Number(issue.number), issue]));
@@ -161,7 +166,8 @@ process.stdout.write("\\n<!--rest-->" + issueTimelineStream.rest.map((entry) => 
 
 
 def js_render(issue, number, index=(), viewer="guest", origin="", template="",
-              reactions=None, off=(), source="", avatars=(), hash="", rest=False):
+              reactions=None, off=(), source="", avatars=(), hash="", rest=False,
+              attachments=None, plugins=()):
     code = "\n".join(
         [_const(SOURCES[name], const) for name, consts in CONSTANTS.items() for const in consts]
         + [_function(SOURCES[name], fn) for name, fns in FUNCTIONS.items() for fn in fns])
@@ -175,7 +181,8 @@ def js_render(issue, number, index=(), viewer="guest", origin="", template="",
         "owner": json.dumps(OWNER),
         "name": json.dumps(NAME), "input": json.dumps(json.dumps({
             "issue": json.dumps(issue), "number": number, "template": template,
-            "source": source, "avatars": list(avatars),
+            "source": source, "avatars": list(avatars), "attachments": attachments or {},
+            "plugins": list(plugins),
             "index": [json.dumps(row) for row in index]}))}
     out = subprocess.run(["node", "-"], input=script, check=True, capture_output=True,
                           text=True, env={"TZ": "UTC", "LANG": "en_US.UTF-8",
@@ -191,8 +198,9 @@ MORE_RE = re.compile(r"<div data-repo-issue-more .*?</p></div>", re.S)
 
 
 def py_render(issue, number, index=(), viewer="guest", origin="", template="",
-              reactions=None, off=(), source="", avatars=()):
-    ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, "main", origin=origin)
+              reactions=None, off=(), source="", avatars=(), attachments=None):
+    ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, "main", origin=origin,
+                                 attachments=attachments)
     rows = [repo_ssr_issue.parse_issue(json.dumps(row), 0) for row in index]
     return repo_ssr_issue.render_issue(
         repo_ssr_issue.parse_issue(json.dumps(issue), number), ctx, OWNER, PAGE_PATH,
@@ -1013,3 +1021,114 @@ def test_the_stream_keeps_the_comments_the_server_already_sent():
     assert out["reused"] == 40 and not out["stale"]
     assert out["comments"] == list(range(50))
     assert out["steps"][-1]["icons"] == 1
+
+
+SHA = "ab" * 32
+ATTACHED_ASSET = "https://github.com/user-attachments/assets/46d2bdf0-a7d0-4ae8-bc7b-323f7e73b588"
+ATTACHED_OLD = "https://user-images.githubusercontent.com/1/2-a.png"
+ATTACHED_SVG = "https://github.com/user-attachments/assets/56d2bdf0-a7d0-4ae8-bc7b-323f7e73b588"
+ATTACHED_ZIP = "https://github.com/user-attachments/files/7/logs.zip"
+ATTACHED_VIDEO = "https://github.com/user-attachments/assets/66d2bdf0-a7d0-4ae8-bc7b-323f7e73b588"
+ATTACHED_OBJECT = ("https://objects.githubusercontent.com/github-production-repository-file-5c1aeb/"
+                   "1/2?a=1&b=2")
+UNMAPPED = ("https://private-user-images.githubusercontent.com/1/3-b.png?jwt=x.y.z")
+ATTACHMENTS = {
+    ATTACHED_ASSET: {"path": ".forkmesh/attachments/%s.png" % SHA, "type": "image/png"},
+    ATTACHED_OLD: {"path": ".forkmesh/attachments/%s.png" % SHA, "type": "image/png"},
+    ATTACHED_SVG: {"path": ".forkmesh/attachments/%s.svg" % SHA, "type": "image/svg+xml"},
+    ATTACHED_ZIP: {"path": ".forkmesh/attachments/%s.zip" % SHA, "type": "application/zip"},
+    ATTACHED_VIDEO: {"path": ".forkmesh/attachments/%s.mp4" % SHA, "type": "video/mp4"},
+    ATTACHED_OBJECT: {"path": ".forkmesh/attachments/%s.pdf" % SHA, "type": "application/pdf"},
+}
+
+
+def attached_issue():
+    body = ("Shot:\n\n![image](%s)\n\n<img width=\"320\" alt=\"Screenshot 1\" src=\"%s\">\n\n"
+            "![logo](%s) and ![image](%s) and ![lost](%s)\n\n[logs.zip](%s) "
+            "[report](https://github.com/example/forum/files/9/r.pdf)\n\n"
+            "<a href=\"%s\"><img src=\"%s\"></a>\n\n<img src=\"%s\">\n\n"
+            "![third](https://ehgt.org/a/b.png)" % (
+                ATTACHED_ASSET, ATTACHED_OLD, ATTACHED_SVG, UNMAPPED, UNMAPPED.replace("3-b", "4-c"),
+                ATTACHED_ZIP, ATTACHED_ASSET, ATTACHED_ASSET,
+                ATTACHED_OBJECT.replace("&", "&amp;")))
+    opener = {"type": "open", "id": "forge-github-issue-4", "author": "s1",
+              "authorName": "github:alice", "ts": NOW_MS - 7200_000, "title": "Pictures",
+              "body": body}
+    return {"number": 4, "title": "Pictures", "status": "open", "authorName": "github:alice",
+            "author": "s1", "createdAt": opener["ts"], "events": [
+                opener,
+                {"type": "comment", "id": "forge-github-comment-1", "author": "s1",
+                 "authorName": "github:ox", "ts": NOW_MS - 3600_000,
+                 "body": "Video: %s\n\n![zip](%s)" % (ATTACHED_VIDEO, ATTACHED_ZIP)}]}
+
+
+@needs_node
+@pytest.mark.parametrize("viewer", ["guest", "member"])
+def test_mirrored_attachments_render_the_same_from_the_instance_copy(viewer, monkeypatch):
+    monkeypatch.setattr(repo_ssr_issue, "plugins_off", lambda: frozenset())
+    issue = attached_issue()
+    expected = normalize(js_render(issue, 4, (), viewer, attachments=ATTACHMENTS,
+                                   plugins=("mirrored-attachments",)))
+    got = normalize(py_render(issue, 4, (), viewer, attachments=ATTACHMENTS))
+    assert got == expected
+    raw = "%s/raw?path=.forkmesh%%2Fattachments%%2F%s" % (API_BASE, SHA)
+    assert got.count('<img src="%s.png&amp;ref=main"' % raw) == 3
+    assert 'data-repo-svg-src="%s.svg&amp;ref=main"' % raw in got
+    assert '<a href="%s.zip&amp;ref=main" data-md-attachment=""' % raw in got
+    assert '<a href="%s.mp4&amp;ref=main" data-md-attachment=""' % raw in got
+    assert '<a href="%s.pdf&amp;ref=main" data-md-attachment=""' % raw in got
+    assert 'width="320"' in got
+    assert re.findall(r'<img [^>]*src="https://(?:[^"/]*\.)?github', got) == []
+    assert re.findall(r'<img [^>]*src="https://[^"]*githubusercontent', got) == []
+    assert got.count('data-md-github-image=""') == 2
+    assert '>image on GitHub</a>' in got and '>lost (image on GitHub)</a>' in got
+    assert 'href="https://github.com/example/forum/files/9/r.pdf"' in got
+    assert '<img src="https://ehgt.org/a/b.png"' in got
+
+
+@needs_node
+def test_without_a_mirrored_copy_no_github_image_is_loaded(monkeypatch):
+    monkeypatch.setattr(repo_ssr_issue, "plugins_off", lambda: frozenset())
+    issue = attached_issue()
+    expected = normalize(js_render(issue, 4, plugins=("mirrored-attachments",)))
+    got = normalize(py_render(issue, 4))
+    assert got == expected
+    assert "<img" in got and re.findall(r'<img [^>]*src="https://(?!ehgt\.org)', got) == []
+    assert got.count('data-md-github-image=""') == 8
+
+
+def test_the_attachment_shard_is_read_where_the_dashboard_reads_it():
+    content = SOURCES["06-repo-content.js"]
+    assert "return `.forkmesh/attachments/issues/${Number(number)}.json`;" in content
+    assert repo_ssr_issue.attachments_path(27) == ".forkmesh/attachments/issues/27.json"
+    assert "const blobs = await fetchRepoBlobs(repo, [path]);" in content
+    assert 'doc?.schema === "%s"' % repo_ssr_issue.ATTACHMENTS_ISSUE_SCHEMA in content
+    assert repo_ssr_issue.attachment_files({"schema": "x", "files": {"a": {"path": "p"}}}) == {}
+    assert repo_ssr_issue.attachment_files({
+        "schema": repo_ssr_issue.ATTACHMENTS_ISSUE_SCHEMA,
+        "files": {"a": {"path": "p", "type": "image/png", "bytes": 3}, "b": "x"}}) == {
+        "a": {"path": "p", "type": "image/png"}}
+    ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, attachments={
+        "u": {"path": "../../secret.png", "type": "image/png"}})
+    assert repo_ssr_issue.attachment_file("u", ctx) is None
+
+
+def test_the_issue_page_draws_mirrored_attachments_from_its_bundle(monkeypatch):
+    monkeypatch.setattr(repo_ssr_issue, "plugins_off", lambda: frozenset())
+    issue = attached_issue()
+    issue["number"] = 27
+    bundle = bundle_for(issue)
+    bundle.model["attachments"] = ATTACHMENTS
+    page = repo_ssr.inject_issue(repo_page(), DATA, bundle, short=True)
+    assert "%s/raw?path=.forkmesh%%2Fattachments%%2F%s.png" % (API_BASE, SHA) in page
+    assert re.findall(r'<img [^>]*src="https://[^"]*github', page) == []
+
+
+
+@needs_node
+def test_without_the_plugin_github_images_load_as_before_on_both_sides(monkeypatch):
+    monkeypatch.setattr(repo_ssr_issue, "plugins_off", lambda: frozenset({"mirrored-attachments"}))
+    issue = attached_issue()
+    expected = normalize(js_render(issue, 4))
+    got = normalize(py_render(issue, 4))
+    assert got == expected and 'data-md-github-image=""' not in got

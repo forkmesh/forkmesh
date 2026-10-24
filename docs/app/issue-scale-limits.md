@@ -178,3 +178,21 @@ dashboard shell before the issue (116 KB of it is one inline `<style>`
 block): the next saving for slow links is a smaller shell for server-rendered
 pages, not fewer comments. Of the first part, the browser paints the top
 as soon as it arrives; later cards are `content-visibility: auto`.
+
+## Mirrored attachments
+
+`tools/forge_attachments.py` (see
+[forge-sync.md](../../www/docs/forge-sync.md#attachments)) keeps a mirror's
+images and files in the repository itself, so they count against its size:
+
+| Limit | Value | Where |
+|---|---|---|
+| One file | 25 MiB | `MAX_BYTES` |
+| Downloads per pass | 300 | `PASS_FILES`, `--attachment-files` |
+| Bytes per pass | 256 MiB | `PASS_BYTES`, `--attachment-megabytes` |
+| Time per pass | 300 s | `PASS_SECONDS` |
+| Request timeout | 30 s | `TIMEOUT_SECONDS` |
+
+An issue page reads only its own `.forkmesh/attachments/issues/<n>.json`
+(a few hundred bytes per picture), never the whole `index.json`. For
+github.com/example/forum the copies are about 110-120 MB.

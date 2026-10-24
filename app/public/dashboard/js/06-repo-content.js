@@ -59,6 +59,57 @@
   const MD_DATA_IMAGE_URL =
     /^data:image\/(?:png|apng|jpeg|jpg|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/]+={0,2}$/i;
 
+  const MD_GITHUB_ATTACHMENT_URL =
+    /^https?:\/\/(?:github\.com\/(?:user-attachments\/|[^/?#]+\/[^/?#]+\/(?:assets|files)\/)|(?:private-)?user-images\.githubusercontent\.com\/|objects\.githubusercontent\.com\/)/i;
+  const MD_ATTACHMENT_PATH = /^\.forkmesh\/attachments\/[0-9a-f]{64}\.[a-z0-9]{1,8}$/;
+  const MD_ATTACHMENT_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', "#039": "'" };
+  const repoAttachmentFiles = new Map();
+
+  function mdAttachmentKey(url) {
+    return String(url || "").trim().replace(/&(amp|lt|gt|quot|#039);/g, (_, name) => MD_ATTACHMENT_ENTITIES[name]);
+  }
+
+  function mdAttachmentFile(url, context) {
+    if (!context?.repo) return null;
+    const entry = repoAttachmentFiles.get(repoKey(context.repo))?.get(mdAttachmentKey(url));
+    return entry && MD_ATTACHMENT_PATH.test(String(entry.path || "")) ? entry : null;
+  }
+
+  function mdAttachmentHref(entry, context) {
+    return escapeHtml(repoRawUrl(context.repo, entry.path));
+  }
+
+  function mdGithubImageHtml(alt, url) {
+    const source = String(url || "").trim();
+    const label = alt && alt.toLowerCase() !== "image" ? `${alt} (image on GitHub)` : "image on GitHub";
+    return `<a href="${mdSafeUrl(source)}" data-md-github-image="" title="${source}" class="dashboard-accent-link underline underline-offset-2 hover:text-foreground" target="_blank" rel="noopener noreferrer nofollow ugc">${label}</a>`;
+  }
+
+  function repoIssueAttachmentsPath(number) {
+    return `.forkmesh/attachments/issues/${Number(number)}.json`;
+  }
+
+  async function loadRepoIssueAttachments(repo, number) {
+    const path = repoIssueAttachmentsPath(number);
+    let files = null;
+    try {
+      const blobs = await fetchRepoBlobs(repo, [path]);
+      const doc = blobs[path] ? JSON.parse(blobText(blobs[path]) || "null") : null;
+      if (doc?.schema === "forkmesh-attachments-issue-v1" && doc.files && typeof doc.files === "object") files = doc.files;
+    } catch (_) {
+      files = null;
+    }
+    if (!files) return;
+    const key = repoKey(repo);
+    const known = repoAttachmentFiles.get(key) || new Map();
+    Object.entries(files).forEach(([url, entry]) => {
+      if (entry && typeof entry === "object" && typeof entry.path === "string") {
+        known.set(url, { path: entry.path, type: String(entry.type || "") });
+      }
+    });
+    repoAttachmentFiles.set(key, known);
+  }
+
   // A markdown image URL that is a bare repo path ("logo.png") is not a URL
   // this origin serves; it resolves against the repository the README came
   // from, through the same /raw route the file viewer shows images with.
@@ -93,6 +144,10 @@
   function mdLinkHtml(labelHtml, url, context) {
     const linkClass = "dashboard-accent-link underline underline-offset-2 hover:text-foreground";
     const source = String(url || "").trim();
+    const attachment = mdAttachmentFile(source, context);
+    if (attachment) {
+      return `<a href="${mdAttachmentHref(attachment, context)}" data-md-attachment="" class="${linkClass}" target="_blank" rel="noopener noreferrer nofollow ugc">${labelHtml}</a>`;
+    }
     if (source.startsWith("#")) {
       const anchor = mdHeadingSlug(source.slice(1));
       return `<a href="${source}" data-repo-markdown-anchor="${anchor}" class="${linkClass}">${labelHtml}</a>`;
@@ -137,10 +192,15 @@
     }
     const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
-    const source = mdImageSource(target, context);
+    const attachment = mdAttachmentFile(target, context);
+    if (attachment && !attachment.type.startsWith("image/")) return mdLinkHtml(alt || "attachment", target, context);
+    if (!attachment && typeof instancePluginOn === "function" && instancePluginOn("mirrored-attachments")
+        && MD_GITHUB_ATTACHMENT_URL.test(String(target || "").trim())) return mdGithubImageHtml(alt, target);
+    const source = attachment ? mdAttachmentHref(attachment, context) : mdImageSource(target, context);
     if (!source || source === "#") return alt;
     if (!hint && MD_GIPHY_GIF.test(source)) return mdGifHtml(alt, source);
-    const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
+    const svg = attachment ? attachment.type === "image/svg+xml"
+      : Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
     const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
     const external = /^https?:/i.test(source) ? ' referrerpolicy="no-referrer"' : "";
@@ -11545,6 +11605,7 @@ Your reply
         ])
         : null;
       issueAccess?.catch(() => {});
+      const issueAttachments = kind === "issues" ? loadRepoIssueAttachments(repo, number) : null;
       const collabSettings = kind === "discussions" ? null : loadRepoCollabSettings(repo);
       let blob;
       if (kind === "issues") {
@@ -11616,6 +11677,7 @@ Your reply
         parsed.issueMutationAuthorized = mutationAuthorized;
         parsed.issueSubscribed = subscription?.subscribed === true;
         parsed.issueSubscriptionReason = subscription?.reason || "";
+        await issueAttachments;
       }
       if (kind === "discussions") {
         const thread = await discussionConversation;

@@ -376,7 +376,7 @@ def test_lite_thread_is_rtl_safe_and_keeps_images_on_the_instance():
     assert '<img src="/api/repo/example/forum/raw?path=docs%2Fmap.png' in text
     assert 'loading="lazy"' in text
     assert not re.search(r"<img[^>]+src=\"(?!/)", text)
-    assert '>[shot]</a>' in text
+    assert '>shot (image on GitHub)</a>' in text
     assert "Reply with" in text and "ampersand" in text
     assert get("/example/forum/lite/issues/4242")[0] == 404
 
