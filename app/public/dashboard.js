@@ -1235,6 +1235,25 @@
     return `href="${escapeHtml(forge.href)}" target="_blank" rel="noopener noreferrer nofollow" data-forge-person="${escapeHtml(forge.provider)}" title="${escapeHtml(forge.title)}"`;
   }
 
+  const forgeAvatarSets = new Map();
+
+  function rememberForgeAvatars(repo, names) {
+    if (!repo || !Array.isArray(names) || !names.length) return;
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    const known = forgeAvatarSets.get(key) || new Set();
+    names.forEach((name) => { if (typeof name === "string") known.add(name.toLowerCase()); });
+    forgeAvatarSets.set(key, known);
+  }
+
+  function forgeAvatarSrc(forge) {
+    const repo = state.selectedRepo;
+    if (!repo || !forge) return "";
+    const known = forgeAvatarSets.get(`${repo.owner || ""}/${repo.name || ""}`.toLowerCase());
+    const login = forge.login.toLowerCase();
+    return known?.has(`${forge.provider}:${login}`)
+      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`) : "";
+  }
+
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
     const label = String(name || author || (agent ? "Agent" : "unknown"));
     const bot = agent || issueActorIsBot(label);
@@ -1245,11 +1264,12 @@
     const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
     const botKind = bot ? (agent && !botAvatarKind(label) ? "ai" : botAvatarKind(label) || "bot") : "";
+    const forgePicture = forge ? forgeAvatarSrc(forge) : "";
     const inner = bot
       ? botAvatarSvg(botKind, pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5")
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
-        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
+        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>${forgePicture ? `<img src="${escapeHtml(forgePicture)}" alt="" width="${pixels}" height="${pixels}" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />` : ""}`;
     const override = bot && !agent ? issuePersonHandle(label) : "";
     const hydrate = (handle || override) && !ownAvatar
       ? ` data-issue-actor-avatar="${escapeHtml(handle || override)}"` : "";
@@ -2129,6 +2149,14 @@
     const info = await instanceInfo();
     const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
     return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
+  function instancePluginOn(id) {
+    if (!instancePluginStates) {
+      void instanceInfo();
+      return false;
+    }
+    return instancePluginStates.get(id) === true;
   }
 
   function instancePluginOff(id) {
@@ -4595,12 +4623,12 @@
     if (detail?.kind !== "issues" || !detail.repo) return;
     const container = $("[data-repo-issues]");
     if (!container) return;
-    container.innerHTML = renderRepoRecordDetail(
+    paintRepoIssueDetail(container, renderRepoRecordDetail(
       detail.repo,
       "issues",
       detail.number,
       detail.parsed,
-    );
+    ));
     mountIssueStickyHeader(container);
     window.lucide?.createIcons();
   }
@@ -19353,6 +19381,13 @@
       .map((event) => String(event.target)));
     const commentCount = events.filter((event) => event?.type === "comment"
       && !deletedEventIds.has(String(event.id || ""))).length;
+    const recentCommenters = [];
+    for (let index = events.length - 1; index >= 0 && recentCommenters.length < 4; index -= 1) {
+      const event = events[index];
+      if (event?.type !== "comment" || deletedEventIds.has(String(event.id || ""))) continue;
+      const name = String(event.authorName || event.author || "").trim();
+      if (name && !recentCommenters.includes(name)) recentCommenters.push(name);
+    }
     return {
       number,
       events,
@@ -19367,6 +19402,7 @@
       meta: [status, labels, issue.milestone].filter(Boolean).join(" · "),
       body: effectiveOpen.body || issue.body || "",
       commentCount,
+      recentCommenters,
       wantsAgent: Boolean(issue.wantsAgent),
       milestone: String(issue.milestone || ""),
       priority: Number(issue.priority || 0) || 0,
@@ -19398,11 +19434,32 @@
     };
   }
 
+  const repoIssueSources = new Map();
+
+  function issueSourceUrlSafe(value) {
+    const url = String(value || "");
+    return url.length <= 500 && /^https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/.test(url) ? url : "";
+  }
+
+  function repoIssueSourceUrl(repo, number, items = []) {
+    const own = (Array.isArray(items) ? items : []).find((issue) => Number(issue?.number) === Number(number));
+    return issueSourceUrlSafe(own?.sourceUrl) || repoIssueSources.get(`${repoKey(repo)}#${Number(number)}`) || "";
+  }
+
+  function renderIssueSourceLink(url) {
+    const safe = issueSourceUrlSafe(url);
+    if (!safe) return "";
+    const host = safe.slice(8).split(/[/:]/)[0].toLowerCase();
+    const label = host === "github.com" ? "View on GitHub" : `View on ${host}`;
+    return `<a data-repo-issue-source href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer nofollow" aria-label="${escapeHtml(label)}" title="Open the original issue in a new tab" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="external-link" class="h-4 w-4 text-muted-foreground"></i><span class="hidden sm:inline">${escapeHtml(label)}</span></a>`;
+  }
+
   async function fetchRepoIssueIndex(repo, options = {}) {
     try {
       const params = options.ref ? { ref: options.ref } : {};
       if (options.related) params.related = Number(options.related);
       const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", params));
+      if (data && typeof rememberForgeAvatars === "function") rememberForgeAvatars(repo, data.forgeAvatars);
       if (!data || data.truncated || !Array.isArray(data.issues)) return null;
       return data;
     } catch (_) {
@@ -19723,6 +19780,9 @@
       || await fetchRepoIssueIndex(repo);
     if (indexed) {
       const items = indexed.issues.map(issueFromIndex);
+      if (number && issueSourceUrlSafe(indexed.sourceUrl)) {
+        repoIssueSources.set(`${repoKey(repo)}#${Number(number)}`, issueSourceUrlSafe(indexed.sourceUrl));
+      }
       state.issueRelationIndex = { key, at: Date.now(), items };
       return items;
     }
@@ -19756,6 +19816,7 @@
       issueDependencies: dependencies,
       issueSubIssues: subIssues,
       issueMentions: issueMentionsOf(relationIndex, number),
+      issueSourceUrl: repoIssueSourceUrl(repo, number, relationIndex),
     };
   }
 
@@ -19774,7 +19835,7 @@
       if (!repoIssueDetailBusy(container)) {
         Object.assign(parsed, relations);
         const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
-        container.innerHTML = renderRepoRecordDetail(repo, "issues", number, parsed);
+        paintRepoIssueDetail(container, renderRepoRecordDetail(repo, "issues", number, parsed));
         mountIssueStickyHeader(container);
         if (draft) {
           const body = container.querySelector("[data-repo-issue-comment-body]");
@@ -20119,7 +20180,7 @@
     const fullWhen = formatRecordDateTime(ev.ts);
     const body = String(ev.body || "").trim();
     return `
-      <div data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+      <div${ev.id ? ` id="issuecomment-${escapeHtml(ev.id)}"` : ""} data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(who, ev.author, "h-10 w-10")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
@@ -20173,6 +20234,10 @@
   // detail view shows every action stored in the issue JSON (adhoc #45). The
   // opening event is omitted here since it's already shown as the issue body.
   function renderIssueTimeline(events) {
+    return issueTimelineEntries(events, arguments[1]).map((entry) => entry.html()).join("");
+  }
+
+  function issueTimelineEntries(events) {
     const options = arguments[1] || {};
     // Mentions from other issues join the history at the time they were
     // written. They are derived rows, flagged so no signed event is mistaken
@@ -20208,9 +20273,10 @@
         const href = options.repo
           ? repoRecordUrl(options.repo, "issues", ev.sourceNumber)
           : `#issue-${ev.sourceNumber}`;
-        items.push(renderIssueTimelineEvent("link", who, ev.author,
+        const html = renderIssueTimelineEvent("link", who, ev.author,
           `<span>mentioned this in</span><a href="${escapeHtml(href)}" class="min-w-0 font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(ev.sourceNumber)} ${escapeHtml(ev.sourceTitle || `issue #${ev.sourceNumber}`)}</a>${String(ev.sourceStatus).toLowerCase() === "closed" ? "<span>(closed)</span>" : ""}`,
-          ev.ts, `data-repo-issue-mention="${escapeHtml(ev.sourceNumber)}"`));
+          ev.ts, `data-repo-issue-mention="${escapeHtml(ev.sourceNumber)}"`);
+        items.push({ id: "", comment: false, html: () => html });
         continue;
       }
       if (ev.type === "comment") {
@@ -20223,28 +20289,198 @@
             const href = options.repo ? repoRecordUrl(options.repo, "pulls", match[2]) : `#pull-${match[2]}`;
             return `<span>${match[1] ? "unlinked" : "linked"} pull request</span><a href="${escapeHtml(href)}" class="font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(match[2])}</a>`;
           };
-          items.push(renderIssueTimelineEvent(links.every((match) => match[1]) ? "unlink" : "git-pull-request", who, ev.author,
+          const html = renderIssueTimelineEvent(links.every((match) => match[1]) ? "unlink" : "git-pull-request", who, ev.author,
             links.map(linkHtml).join('<span aria-hidden="true">,</span>'), ev.ts,
-            `data-repo-issue-development-event="${escapeHtml(ev.id || "")}"`));
+            `data-repo-issue-development-event="${escapeHtml(ev.id || "")}"`);
+          items.push({ id: "", comment: false, html: () => html });
           continue;
         }
-        ev = {
-          ...ev,
-          ...(edit ? { body: edit.body } : {}),
-          _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
-          _edited: Boolean(edit),
-          _reactions: ev.id
-            ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(ev.id),
-              reactionsByTarget.get(String(ev.id)), "px-4 pb-3")
-            : "",
-        };
-        items.push(renderIssueTimelineComment(ev));
+        const comment = ev;
+        items.push({
+          id: String(ev.id || ""),
+          comment: true,
+          html: () => renderIssueTimelineComment({
+            ...comment,
+            ...(edit ? { body: edit.body } : {}),
+            _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
+            _edited: Boolean(edit),
+            _reactions: comment.id
+              ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(comment.id),
+                reactionsByTarget.get(String(comment.id)), "px-4 pb-3")
+              : "",
+          }),
+        });
         continue;
       }
-      items.push(renderIssueTimelineEvent(issueEventIcon(ev.type), who, ev.author,
-        issueEventDescriptionHtml(ev), ev.ts));
+      const html = renderIssueTimelineEvent(issueEventIcon(ev.type), who, ev.author,
+        issueEventDescriptionHtml(ev), ev.ts);
+      items.push({ id: "", comment: false, html: () => html });
     }
-    return items.join("");
+    return items;
+  }
+
+  const ISSUE_TIMELINE_FIRST = 10;
+  const ISSUE_TIMELINE_BATCH = 15;
+  const ISSUE_DETAIL_KEPT_BLOCKS = [
+    "[data-repo-issue-sticky]", "[data-repo-record-hero]", "[data-repo-issue-opening]",
+    "[data-repo-record-sidebar]", "[data-repo-federated-thread]"];
+  const issueTimelineSignatures = new WeakMap();
+  let issueTimelineStream = null;
+  let issueTimelineScrolled = "";
+
+  function issueTimelineMoreHtml(rest) {
+    if (!rest.length) return "";
+    const comments = rest.filter((entry) => entry.comment).length;
+    const count = comments || rest.length;
+    const noun = `${comments ? "comment" : "event"}${count === 1 ? "" : "s"}`;
+    const bar = (width) => `<span class="block h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted-foreground/20 motion-reduce:animate-none"></span><span class="block h-3 ${width} max-w-full animate-pulse rounded bg-muted-foreground/20 motion-reduce:animate-none"></span>`;
+    return `<div data-repo-issue-more data-remaining="${rest.length}" role="status" aria-live="polite" class="grid gap-2 sm:ml-14"><div aria-hidden="true" class="flex items-center gap-2 py-1.5">${bar("w-72")}</div><div aria-hidden="true" class="flex items-center gap-2 py-1.5">${bar("w-56")}</div><p class="py-1.5 text-[14px] text-muted-foreground">Loading ${formatCount(count)} more ${noun}…</p></div>`;
+  }
+
+  function issueTimelineHashIndex(entries) {
+    const match = /^#issuecomment-(.+)$/.exec(String(location.hash || ""));
+    if (!match) return -1;
+    let id = match[1];
+    try { id = decodeURIComponent(id); } catch (_) { id = match[1]; }
+    return entries.findIndex((entry) => entry.comment
+      && (entry.id === id || entry.id === `forge-github-comment-${id}`));
+  }
+
+  function issueTimelineEagerCount(number, entries) {
+    const target = issueTimelineHashIndex(entries);
+    return Math.min(Math.max(ISSUE_TIMELINE_FIRST, target + 1), entries.length);
+  }
+
+  function queueIssueTimelineRest(number, entries, eager) {
+    const job = { number: String(number), rest: entries.slice(eager), next: 0, more: null, shown: [], added: 0 };
+    issueTimelineStream = job;
+    if (typeof window === "undefined") return;
+    const target = entries[issueTimelineHashIndex(entries)];
+    const scrollKey = target ? `${location.pathname}${location.hash}` : "";
+    if (target && issueTimelineScrolled !== scrollKey) {
+      issueTimelineScrolled = scrollKey;
+      window.setTimeout(() => {
+        document.getElementById(`issuecomment-${target.id}`)?.scrollIntoView({ block: "start" });
+      }, 0);
+    }
+    if (job.rest.length) scheduleIssueTimelineStream(job);
+  }
+
+  function scheduleIssueTimelineStream(job) {
+    const run = () => runIssueTimelineStream(job);
+    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(run, { timeout: 120 });
+    else window.setTimeout(run, 16);
+  }
+
+  function runIssueTimelineStream(job) {
+    if (issueTimelineStream !== job) return;
+    if (!job.more) {
+      const more = document.querySelector('[data-repo-record-detail="issues"] [data-repo-issue-timeline] > [data-repo-issue-more]');
+      if (!more || more.dataset.remaining !== String(job.rest.length)
+          || String(state.repoRecordDetail?.number) !== job.number) return;
+      job.more = more;
+    }
+    if (!job.more.isConnected) return;
+    const batch = job.rest.slice(job.next, job.next + ISSUE_TIMELINE_BATCH);
+    job.next += batch.length;
+    job.added += placeIssueTimelineItems(job, batch.map((entry) => entry.html()).join(""));
+    if (job.next < job.rest.length) {
+      scheduleIssueTimelineStream(job);
+      return;
+    }
+    job.shown.splice(0).forEach((node) => node.remove());
+    job.more.remove();
+    if (job.added) window.lucide?.createIcons();
+  }
+
+  function placeIssueTimelineItems(job, html) {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    let added = 0;
+    Array.from(template.content.children).forEach((node) => {
+      const signature = issueNodeSignature(node);
+      const at = job.shown.slice(0, ISSUE_TIMELINE_BATCH)
+        .findIndex((shown) => issueTimelineSignatures.get(shown) === signature);
+      if (at >= 0) {
+        job.shown.splice(0, at).forEach((stale) => stale.remove());
+        job.shown.shift();
+        return;
+      }
+      issueTimelineSignatures.set(node, signature);
+      (job.shown[0] || job.more).before(node);
+      added += 1;
+    });
+    return added;
+  }
+
+  function issueNodeSignature(node) {
+    let copy = node;
+    if (node.querySelector("svg.lucide")) {
+      copy = node.cloneNode(true);
+      copy.querySelectorAll("svg.lucide").forEach((svg) => {
+        const classes = Array.from(svg.classList);
+        const icon = document.createElement("i");
+        icon.setAttribute("data-lucide", (classes.find((name) => name.startsWith("lucide-")) || "").slice(7));
+        icon.setAttribute("class", classes.filter((name) => name !== "lucide" && !name.startsWith("lucide-")).join(" "));
+        svg.replaceWith(icon);
+      });
+    }
+    return copy.outerHTML.replace(/\s+/g, " ").trim();
+  }
+
+  function signIssueDetail(article) {
+    if (!article) return;
+    ISSUE_DETAIL_KEPT_BLOCKS.forEach((selector) => {
+      const block = article.querySelector(selector);
+      if (block) issueTimelineSignatures.set(block, issueNodeSignature(block));
+    });
+    Array.from(article.querySelector("[data-repo-issue-timeline]")?.children || [])
+      .filter((node) => !node.matches("[data-repo-issue-more]"))
+      .forEach((node) => issueTimelineSignatures.set(node, issueNodeSignature(node)));
+  }
+
+  function paintRepoIssueDetail(container, html) {
+    const article = '[data-repo-record-detail="issues"]';
+    const old = container.querySelector(`:scope > article${article}`);
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const fresh = template.content.querySelector(`article${article}`);
+    if (fresh) {
+      ISSUE_DETAIL_KEPT_BLOCKS.forEach((selector) => {
+        const after = fresh.querySelector(selector);
+        if (!after) return;
+        const before = old?.querySelector(selector);
+        const signature = issueNodeSignature(after);
+        if (before && issueTimelineSignatures.get(before) === signature) after.replaceWith(before);
+        else issueTimelineSignatures.set(after, signature);
+      });
+      const kept = new Map();
+      Array.from(old?.querySelector("[data-repo-issue-timeline]")?.children || []).forEach((node) => {
+        const signature = issueTimelineSignatures.get(node);
+        if (!signature) return;
+        if (!kept.has(signature)) kept.set(signature, []);
+        kept.get(signature).push(node);
+      });
+      const used = new Set();
+      Array.from(fresh.querySelector("[data-repo-issue-timeline]")?.children || []).forEach((node) => {
+        if (node.matches("[data-repo-issue-more]")) return;
+        const signature = issueNodeSignature(node);
+        const match = kept.get(signature)?.shift();
+        if (match) {
+          used.add(match);
+          node.replaceWith(match);
+        } else issueTimelineSignatures.set(node, signature);
+      });
+      const more = fresh.querySelector("[data-repo-issue-timeline] > [data-repo-issue-more]");
+      const job = issueTimelineStream;
+      if (more && job && !job.more && job.number === String(state.repoRecordDetail?.number)) {
+        job.shown = Array.from(old?.querySelector("[data-repo-issue-timeline]")?.children || [])
+          .filter((node) => !used.has(node) && issueTimelineSignatures.has(node));
+        job.shown.forEach((node) => more.before(node));
+        more.hidden = job.shown.length >= job.rest.length;
+      }
+    }
+    container.replaceChildren(template.content);
   }
 
   function projectJsonPath(number) {
@@ -21290,6 +21526,15 @@
     return `<span data-repo-issue-row-assignees class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml([item.wantsAgent ? "Agent" : "", ...assignees].filter(Boolean).join(", "))}">${faces.join("")}</span>`;
   }
 
+  function renderIssueRowCommenters(item) {
+    if (!instancePluginOn("forum-list")) return "";
+    const names = (Array.isArray(item.recentCommenters) ? item.recentCommenters : [])
+      .map((name) => String(name || "").trim()).filter(Boolean).slice(0, 4);
+    if (!names.length) return "";
+    const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
+    return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
+  }
+
   function pullStateIconHtml(stateLabel, extra = "") {
     const value = String(stateLabel || "open").toLowerCase();
     const [icon, tone] = value === "open" ? ["git-pull-request", "text-[var(--dashboard-open)]"]
@@ -21381,6 +21626,7 @@
             <span class="hidden w-14 justify-end sm:flex">${Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px] text-muted-foreground" title="Priority ${Number(item.priority)} — 1 is highest">P${Number(item.priority)}</span>` : ""}</span>
             <span class="flex w-12 justify-end">${commentCount ? `<span class="inline-flex items-center gap-1 leading-5 hover:text-[var(--dashboard-link)]" title="${formatCount(commentCount)} comment${commentCount === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(commentCount)}</span>` : ""}</span>
             <span class="hidden w-[4.5rem] justify-end sm:flex">${renderIssueRowAvatars(item)}</span>
+            <span class="hidden w-16 justify-end md:flex">${renderIssueRowCommenters(item)}</span>
           </span>` : `
           ${pullStateIconHtml(stateLabel, "mt-1")}
           <span class="min-w-0">
@@ -28408,12 +28654,16 @@ Your reply
     const stateLabel = closed ? "Closed" : status === "open" ? "Open" : status.charAt(0).toUpperCase() + status.slice(1);
     const issueUrl = `${publicSiteOrigin()}${repoRecordUrl(repo, "issues", number)}`;
 
-    const timeline = renderIssueTimeline(events, {
+    const timelineEntries = issueTimelineEntries(events, {
       canManage,
       mentions: parsed.issueMentions,
       repo,
       number,
     });
+    const eagerItems = issueTimelineEagerCount(number, timelineEntries);
+    const timeline = timelineEntries.slice(0, eagerItems).map((entry) => entry.html()).join("")
+      + issueTimelineMoreHtml(timelineEntries.slice(eagerItems));
+    queueIssueTimelineRest(number, timelineEntries, eagerItems);
     const bodyReactions = renderCommentReactionBar(commentReactionSubject("issues", number), "body",
       foldIssueReactions(events).get(String(parsed.issueOpenEventId || "")));
     const reactionRow = `<div data-repo-issue-reactions class="flex flex-wrap items-center gap-1.5 px-4 pb-4">
@@ -28544,7 +28794,7 @@ Your reply
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
               ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
-              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
+              ${renderIssueSourceLink(parsed.issueSourceUrl)}<button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
           </div>
@@ -28563,7 +28813,7 @@ Your reply
             <section data-repo-record-conversation class="grid min-w-0 gap-4">
               ${openingCard}
               ${subIssues}
-              <div data-repo-issue-timeline data-empty="${timeline ? "false" : "true"}" class="grid gap-2">${timeline}</div>
+              <div data-repo-issue-timeline data-empty="${timelineEntries.length ? "false" : "true"}" class="grid gap-2">${timeline}</div>
               ${renderIssueCommentForm(number)}
             </section>
             ${repo.isPrivate || instancePluginOff("fediverse-ui") ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
@@ -28669,6 +28919,7 @@ Your reply
   function keepRepoFirstViewIssue(detail) {
     const article = detail?.querySelector?.("article[data-repo-ssr-issue]");
     if (!article) return;
+    signIssueDetail(article);
     repoFirstViewIssue = {
       number: String(article.dataset.repoSsrIssue || ""),
       path: location.pathname,
@@ -29544,7 +29795,9 @@ Your reply
     if (kind === "issues") withPendingIssueStatus(repo, number, parsed);
     state.repoRecordDetail = { repo, kind, number, parsed };
     setRepoRecordOpen(kind, true);
-    container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+    const html = renderRepoRecordDetail(repo, kind, number, parsed);
+    if (kind === "issues") paintRepoIssueDetail(container, html);
+    else container.innerHTML = html;
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
@@ -29685,7 +29938,8 @@ Your reply
           Object.assign(parsed, early);
           issueRelations = null;
         } else {
-          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [] });
+          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [],
+            issueSourceUrl: repoIssueSourceUrl(repo, number, state.issuesView?.items) });
         }
       }
       if (collabSettings) parsed.repoCollabSettings = await collabSettings;
@@ -29741,7 +29995,9 @@ Your reply
         ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
         : "";
       state.repoRecordDetail = { repo, kind, number, parsed };
-      container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+      const html = renderRepoRecordDetail(repo, kind, number, parsed);
+      if (kind === "issues") paintRepoIssueDetail(container, html);
+      else container.innerHTML = html;
       finishRepoRead(staleMark, reconnect);
       if (kind === "issues") mountIssueStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
@@ -30281,12 +30537,16 @@ Your reply
   const ISSUE_FILTER_ME = "__forkmesh_me__";
   const ISSUE_FILTER_ASSIGNED = "__forkmesh_assigned__";
 
+  function issueDefaultSort() {
+    return instancePluginOn("forum-list") ? "newest" : "recently_updated";
+  }
+
   function issueFilterState() {
     const filters = state.issuesView?.filters;
     if (filters && typeof filters === "object") return filters;
     state.issuesView.filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     return state.issuesView.filters;
   }
@@ -30372,8 +30632,8 @@ Your reply
     }
     if (field === "sort") {
       return [
-        { value: "recently_updated", label: "Recently updated" },
         { value: "newest", label: "Newest" },
+        { value: "recently_updated", label: "Recently updated" },
         { value: "oldest", label: "Oldest" },
         { value: "priority", label: "Highest priority" },
         { value: "comments", label: "Most commented" },
@@ -30505,8 +30765,12 @@ Your reply
         || stamp(b, "updatedAtMs") - stamp(a, "updatedAtMs")
         || stableNewest(a, b));
     }
-    return items.sort((a, b) => stamp(b, "updatedAtMs")
-      - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    if (sort === "recently_updated") {
+      return items.sort((a, b) => stamp(b, "updatedAtMs")
+        - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    }
+    return items.sort((a, b) => stamp(b, "createdAtMs")
+      - stamp(a, "createdAtMs") || stableNewest(a, b));
   }
 
   // The Issues sidebar: GitHub's saved views, each a set of filters. A view is
@@ -30641,7 +30905,7 @@ Your reply
     if (filters.milestone === ISSUE_FILTER_NONE) parts.push("no:milestone");
     else if (filters.milestone) parts.push(`milestone:${issueQueryValue(filters.milestone)}`);
     if (filters.type) parts.push(`type:${filters.type}`);
-    if (filters.sort && filters.sort !== "recently_updated") {
+    if (filters.sort && filters.sort !== issueDefaultSort()) {
       parts.push(`sort:${ISSUE_QUERY_SORTS[filters.sort] || filters.sort}`);
     }
     const free = String(state.issuesView.query || "").trim();
@@ -30655,7 +30919,7 @@ Your reply
   function parseIssueQuery(text) {
     const filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     // With no state qualifier the search spans every issue, as on GitHub.
     let status = "all";
@@ -30847,11 +31111,12 @@ Your reply
       ? `<p data-repo-issue-search-pending role="status" class="border-b border-border px-4 py-2 text-[12px] text-muted-foreground">${loadingHtml("Searching descriptions and comments...")}</p>`
       : "";
     setRepoIssueRecordOpen(false);
-    container.innerHTML = filterBar + warnBar + searchHint + (filtered.length
+    container.innerHTML = repoMirrorHelpSlot(state.selectedRepo) + filterBar + warnBar + searchHint + (filtered.length
       ? renderRepoRecordList(filtered, config, "issues")
       : issuesView.closedLoading
         ? `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`
-        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint;
+        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint
+      + repoIssueFeedLinks(state.selectedRepo);
     const viewsNav = $("[data-repo-issue-views]");
     if (viewsNav) viewsNav.innerHTML = renderIssueViewsNav();
     const heading = $("[data-repo-issue-view-title]");
@@ -35174,6 +35439,7 @@ Your reply
     loadRepoAboutInfo(repo);
     loadRepoAboutRelease(repo);
     loadRepoAboutInsights(repo);
+    loadRepoMirrorQuota(repo);
   }
 
   function scheduleRepoAboutRail(repo) {
@@ -45976,7 +46242,7 @@ Your reply
       query: "",
       filters: {
         author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: "",
-        mentions: "", involves: "", type: "", sort: "recently_updated",
+        mentions: "", involves: "", type: "", sort: issueDefaultSort(),
       },
     };
     state.pullsView = { filter: "open", query: "" };
@@ -46463,6 +46729,7 @@ Your reply
               <p class="mt-2 text-[11px] leading-4 text-muted-foreground">Posts this repository published to its Mastodon followers. Deleting one sends a removal to every follower's server so it disappears from their timelines.</p>
               <div data-repo-fedi-posts-list class="mt-2 grid gap-2"></div>
             </details>` : ""}
+            ${repo.isPrivate ? "" : repoMirrorQuotaSection(repo)}
           </aside>
           <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
@@ -54392,6 +54659,314 @@ Your reply
     renderMicrojobsPage();
     $("[data-microjobs-refresh]")?.addEventListener("click", renderMicrojobsPage);
   }
+  const MIRROR_QUOTA_DOT = Object.freeze({
+    green: "bg-success",
+    yellow: "bg-attention",
+    red: "bg-destructive",
+    unknown: "bg-muted-foreground/40",
+  });
+  const MIRROR_QUOTA_WORD = Object.freeze({
+    green: "Healthy",
+    yellow: "Behind",
+    red: "Unreachable",
+    unknown: "Not checked",
+  });
+  const MIRROR_QUOTA_START_URL = "https://forkmesh.com/start";
+  const mirrorQuotaUi = { data: new Map(), loads: new Map(), dialog: null };
+
+  function mirrorQuotaRowHtml(row) {
+    const status = MIRROR_QUOTA_DOT[row?.status] ? row.status : "unknown";
+    const label = String(row?.label || row?.host || "");
+    const url = String(row?.url || "");
+    const href = /^https:\/\/[^\s"'<>]+$/.test(url) ? url : "";
+    const word = MIRROR_QUOTA_WORD[status];
+    const detail = String(row?.statusLabel || word);
+    const at = Number(row?.lastCheck?.at) || 0;
+    const checked = row?.id !== "self" && at > 0 ? ` · checked ${formatTimeAgo(at)}` : "";
+    const name = href
+      ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer nofollow" class="dashboard-accent-link block min-w-0 truncate">${escapeHtml(label)}</a>`
+      : `<span class="block min-w-0 truncate text-foreground" title="${escapeHtml(url)}">${escapeHtml(label)}</span>`;
+    const host = row?.host && row.host !== label ? `${escapeHtml(row.host)} · ` : "";
+    const remove = row?.canRemove && !row?.builtin
+      ? `<button type="button" data-mirror-quota-remove="${escapeHtml(row.id)}" aria-label="Remove ${escapeHtml(label)}" class="shrink-0 text-[11px] text-muted-foreground hover:text-destructive">Remove</button>`
+      : "";
+    return `<li data-mirror-quota-row="${escapeHtml(row?.id || "")}" data-mirror-status="${status}" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs"><span role="img" aria-label="${word}" title="${word}" class="h-2 w-2 shrink-0 rounded-full ${MIRROR_QUOTA_DOT[status]}"></span><span class="min-w-0 flex-1">${name}<span class="block truncate text-[11px] text-muted-foreground">${host}${escapeHtml(detail)}${escapeHtml(checked)}</span></span>${remove}</li>`;
+  }
+
+  const MIRROR_QUOTA_OVERALL_WORD = Object.freeze({
+    green: "Mirror goal met",
+    yellow: "At least half of the mirror goal",
+    red: "Below half of the mirror goal",
+    unknown: "No mirrors checked yet",
+  });
+
+  function mirrorQuotaOverall(healthy, target) {
+    if (target <= 0) return healthy > 0 ? "green" : "unknown";
+    if (healthy >= target) return "green";
+    return healthy * 2 >= target ? "yellow" : "red";
+  }
+
+  function renderRepoMirrorQuotaCard(data, viewer = null, helpHref = "") {
+    if (!data || typeof data !== "object" || !Array.isArray(data.mirrors)) return "";
+    const target = Math.max(0, Number(data.target) || 0);
+    const healthy = Math.max(0, Number(data.healthy) || 0);
+    const registered = Math.max(0, Number(data.registered) || 0);
+    const canSet = Boolean(viewer?.canSetTarget);
+    if (!target && !registered && !canSet) return "";
+    const count = target ? `${healthy} / ${target} healthy` : `${healthy} healthy`;
+    const overall = mirrorQuotaOverall(healthy, target);
+    const percent = target ? Math.min(100, Math.round((healthy * 100) / target)) : 0;
+    const missing = Math.max(0, target - healthy);
+    const help = helpHref && target && overall !== "green"
+      ? `<p data-mirror-quota-help class="mt-1.5 text-[11px] text-muted-foreground">Needs ${missing} more mirror${missing === 1 ? "" : "s"} &middot; <a href="${escapeHtml(helpHref)}" class="dashboard-accent-link">How to help &rarr;</a></p>`
+      : "";
+    const bar = (target
+      ? `<div role="progressbar" aria-label="Healthy mirrors" aria-valuemin="0" aria-valuemax="${target}" aria-valuenow="${Math.min(healthy, target)}" class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted-foreground/20"><span class="block h-full rounded-full ${MIRROR_QUOTA_DOT[overall]}" style="width:${percent}%"></span></div>`
+      : "") + help;
+    const rows = data.mirrors.map((row) => mirrorQuotaRowHtml(row)).join("");
+    const goal = canSet
+      ? `<form data-mirror-quota-target-form class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground"><label class="inline-flex items-center gap-1.5">${target ? "Goal" : "Set a mirror goal"}<input name="target" type="number" inputmode="numeric" min="0" max="${Number(data.maxTarget) || 100}" value="${target || 10}" aria-label="Healthy mirrors wanted" class="h-control-sm w-14 rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-primary" /></label><button type="submit" class="fm-btn fm-btn-sm">Set target</button><span data-mirror-quota-target-status role="status" class="min-w-0 truncate"></span></form>`
+      : "";
+    const summary = MIRROR_QUOTA_OVERALL_WORD[overall];
+    return `<div data-mirror-quota-overall="${overall}" class="flex items-center justify-between gap-3"><h4 class="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"><span role="img" aria-label="${summary}" title="${summary}" class="h-2 w-2 shrink-0 rounded-full ${MIRROR_QUOTA_DOT[overall]}"></span>Mirrors</h4><span data-mirror-quota-count class="font-mono text-[11px] text-muted-foreground">${count}</span></div>${bar}<ul class="-mx-2 mt-2 grid">${rows}</ul><div class="mt-2 flex flex-wrap items-center gap-2"><button type="button" data-mirror-quota-add class="fm-btn fm-btn-sm">Add a mirror</button><span data-mirror-quota-status role="status" class="min-w-0 truncate text-[11px] text-destructive"></span></div>${goal}`;
+  }
+
+  function mirrorQuotaKey(repo) {
+    return repo ? repoApiBase(repo).toLowerCase() : "";
+  }
+
+  function mirrorQuotaKnown(repo) {
+    const key = mirrorQuotaKey(repo);
+    if (!key) return null;
+    if (mirrorQuotaUi.data.has(key)) return mirrorQuotaUi.data.get(key);
+    const seeded = repoFirstViewSeed(repo)?.mirrorQuota;
+    return seeded && typeof seeded === "object" && Array.isArray(seeded.mirrors) ? seeded : null;
+  }
+
+  function repoMirrorQuotaSection(repo) {
+    if (!instancePluginOn("mirror-quota")) return "";
+    const data = mirrorQuotaKnown(repo);
+    const inner = renderRepoMirrorQuotaCard(data, data?.viewer || null, repoMirrorHelpHref(repo));
+    return `<section data-repo-mirror-quota aria-label="Mirrors" class="mt-3 border-t border-border pt-3"${inner ? "" : " hidden"}>${inner}</section>`;
+  }
+
+  function paintRepoMirrorQuota(repo) {
+    const section = document.querySelector("[data-repo-mirror-quota]");
+    if (!section || !repo) return;
+    const data = mirrorQuotaUi.data.get(mirrorQuotaKey(repo)) || null;
+    const inner = renderRepoMirrorQuotaCard(data, data?.viewer || null, repoMirrorHelpHref(repo));
+    section.innerHTML = inner;
+    section.hidden = !inner;
+  }
+
+  function mirrorQuotaCurrent(repo) {
+    const selected = state.selectedRepo;
+    return Boolean(selected && repo && mirrorQuotaKey(selected) === mirrorQuotaKey(repo));
+  }
+
+  async function loadRepoMirrorQuota(repo) {
+    const key = mirrorQuotaKey(repo);
+    if (!key || repo.isPrivate || !instancePluginOn("mirror-quota")) return null;
+    if (mirrorQuotaUi.loads.has(key)) return mirrorQuotaUi.loads.get(key);
+    const signedIn = Boolean(state.session?.sessionToken);
+    const load = (async () => {
+      try {
+        const data = await fetchJson(`${repoApiBase(repo)}/mirror-quota`, { fresh: signedIn });
+        if (!data || data.ok === false || !Array.isArray(data.mirrors)) return null;
+        mirrorQuotaUi.data.set(key, data);
+        if (mirrorQuotaCurrent(repo)) paintRepoMirrorQuota(repo);
+        return data;
+      } catch (_) {
+        return null;
+      } finally {
+        mirrorQuotaUi.loads.delete(key);
+      }
+    })();
+    mirrorQuotaUi.loads.set(key, load);
+    return load;
+  }
+
+  function mirrorQuotaErrorText(data, status) {
+    if (data?.message) return String(data.message);
+    if (status === 401) return "Sign in first.";
+    if (status === 403) return "You can't change this repository's mirrors.";
+    if (status === 429) return "Too many changes. Try again in a minute.";
+    return String(data?.error || `HTTP ${status}`).replace(/_/g, " ");
+  }
+
+  async function sendRepoMirrorQuota(repo, method, body = {}) {
+    const response = await fetch(`${repoApiBase(repo)}/mirror-quota`, {
+      method,
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...body, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(mirrorQuotaErrorText(data, response.status));
+    mirrorQuotaUi.data.set(mirrorQuotaKey(repo), data);
+    if (mirrorQuotaCurrent(repo)) paintRepoMirrorQuota(repo);
+    return data;
+  }
+
+  function mirrorQuotaRunHtml(data, repo) {
+    const clone = String(data?.cloneUrl || "") || `${publicSiteOrigin()}${repoLinkUrl(repo)}.git`;
+    const folder = `${String(repo?.name || "repository").replace(/[^A-Za-z0-9._-]/g, "")}.git`;
+    const commands = `git clone --mirror ${clone}\ncd ${folder} && git update-server-info`;
+    const cron = `*/15 * * * * cd /srv/${folder} && git remote update --prune && git update-server-info`;
+    const block = (text, label) => `<div class="mt-2 flex items-start gap-2"><pre class="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-secondary px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground">${escapeHtml(text)}</pre><button type="button" data-mirror-quota-copy="${escapeHtml(text)}" aria-label="${escapeHtml(label)}" class="fm-btn fm-btn-sm">Copy</button></div>`;
+    return `<p class="text-xs leading-5 text-muted-foreground">Every copy keeps this project reachable if this site or the original is blocked or taken down. Issues live in <code class="font-mono">.forkmesh/issues</code>, so a clone carries the whole forum, not only the code.</p>${repoMirrorHelpHref(repo) ? `<p class="mt-2 text-xs"><a href="${escapeHtml(repoMirrorHelpHref(repo))}" class="dashboard-accent-link font-semibold">Read the full guide: run a mirror, join the federation, register it &rarr;</a></p>` : ""}<h3 class="mt-3 text-xs font-semibold text-foreground">Run a mirror</h3>${block(commands, "Copy the clone commands")}<p class="mt-2 text-[11px] text-muted-foreground">Keep it fresh every 15 minutes with cron:</p>${block(cron, "Copy the cron line")}<p class="mt-2 text-[11px] leading-5 text-muted-foreground">Serve the folder over HTTPS with any web server, or push it to another forge. Or <a href="${MIRROR_QUOTA_START_URL}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link">start your own ForkMesh instance</a>.</p>`;
+  }
+
+  function mirrorQuotaFormHtml() {
+    if (!state.session?.sessionToken) {
+      return `<p class="mt-3 text-xs text-muted-foreground"><a href="/login?next=${encodeURIComponent(location.pathname)}" class="dashboard-accent-link">Sign in</a> to list your mirror here so it is checked and counted.</p>`;
+    }
+    return `<form data-mirror-quota-add-form class="mt-3 grid gap-2"><h3 class="text-xs font-semibold text-foreground">List your mirror</h3><input name="url" type="text" inputmode="url" autocomplete="off" spellcheck="false" required maxlength="300" placeholder="https://example.org/example/forum.git" aria-label="Mirror address" class="h-control rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-primary" /><input name="label" type="text" autocomplete="off" maxlength="60" placeholder="Name (optional)" aria-label="Mirror name" class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground outline-none focus:border-primary" /><p class="text-[11px] text-muted-foreground">https addresses are checked every 15 minutes. git:// and ssh addresses are listed but not checked.</p><span data-mirror-quota-add-status role="status" class="min-h-4 text-[11px] text-muted-foreground"></span></form>`;
+  }
+
+  function closeMirrorQuotaDialog() {
+    const dialog = mirrorQuotaUi.dialog;
+    if (!dialog) return;
+    mirrorQuotaUi.dialog = null;
+    document.removeEventListener("keydown", dialog.onKey, true);
+    dialog.overlay.remove();
+    if (dialog.previous?.isConnected && typeof dialog.previous.focus === "function") dialog.previous.focus();
+  }
+
+  function openMirrorQuotaDialog(repo) {
+    closeMirrorQuotaDialog();
+    const data = mirrorQuotaKnown(repo);
+    const overlay = document.createElement("div");
+    overlay.dataset.mirrorQuotaDialog = "";
+    overlay.className = "fixed inset-0 z-[90] flex items-start justify-center bg-background/70 p-4 pt-[10vh]";
+    const signedIn = Boolean(state.session?.sessionToken);
+    overlay.innerHTML = `<div role="dialog" aria-modal="true" aria-labelledby="mirrorQuotaDialogTitle" class="fm-dialog w-full max-w-lg"><div class="fm-dialog-header"><h2 id="mirrorQuotaDialogTitle" class="fm-dialog-title">Add a mirror</h2><button type="button" data-mirror-quota-close aria-label="Close" class="fm-btn fm-btn-sm fm-btn-icon fm-btn-invisible"><i data-lucide="x"></i></button></div><div class="fm-dialog-body">${mirrorQuotaRunHtml(data, repo)}${mirrorQuotaFormHtml()}</div><div class="fm-dialog-footer"><button type="button" data-mirror-quota-close class="fm-btn fm-btn-sm">${signedIn ? "Cancel" : "Close"}</button>${signedIn ? `<button type="button" data-mirror-quota-submit class="fm-btn fm-btn-sm">Add mirror</button>` : ""}</div></div>`;
+    const onKey = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeMirrorQuotaDialog();
+    };
+    mirrorQuotaUi.dialog = { overlay, onKey, repo, previous: document.activeElement };
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+    window.lucide?.createIcons();
+    (overlay.querySelector("[data-mirror-quota-add-form] input[name=url]") || overlay.querySelector("[data-mirror-quota-close]"))?.focus();
+  }
+
+  async function submitMirrorQuotaDialog() {
+    const dialog = mirrorQuotaUi.dialog;
+    const form = dialog?.overlay.querySelector("[data-mirror-quota-add-form]");
+    if (!dialog || !form) return;
+    const status = form.querySelector("[data-mirror-quota-add-status]");
+    const button = dialog.overlay.querySelector("[data-mirror-quota-submit]");
+    const url = String(form.elements.url?.value || "").trim();
+    if (!url) {
+      if (status) status.textContent = "Enter the mirror's address.";
+      form.elements.url?.focus();
+      return;
+    }
+    if (button) button.disabled = true;
+    if (status) {
+      status.className = "min-h-4 text-[11px] text-muted-foreground";
+      status.textContent = "Adding...";
+    }
+    try {
+      await sendRepoMirrorQuota(dialog.repo, "POST", { url, label: String(form.elements.label?.value || "").trim() });
+      closeMirrorQuotaDialog();
+    } catch (error) {
+      if (status) {
+        status.className = "min-h-4 text-[11px] text-destructive";
+        status.textContent = error.message;
+      }
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function submitMirrorQuotaTarget(form) {
+    const repo = state.selectedRepo;
+    const status = form.querySelector("[data-mirror-quota-target-status]");
+    const target = Number(form.elements.target?.value);
+    if (!repo || !Number.isInteger(target) || target < 0) {
+      if (status) status.textContent = "Enter a whole number.";
+      return;
+    }
+    if (status) status.textContent = "Saving...";
+    try {
+      await sendRepoMirrorQuota(repo, "PUT", { target });
+    } catch (error) {
+      const fresh = document.querySelector("[data-mirror-quota-target-status]");
+      if (fresh) {
+        fresh.className = "min-w-0 truncate text-destructive";
+        fresh.textContent = error.message;
+      }
+    }
+  }
+
+  async function removeRepoMirror(button) {
+    const repo = state.selectedRepo;
+    const id = button.getAttribute("data-mirror-quota-remove") || "";
+    if (!repo || !id) return;
+    const ok = await confirmAccountAction({
+      title: "Remove this mirror?",
+      body: "It stops being checked and counted. The copy itself is not touched.",
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
+    try {
+      await sendRepoMirrorQuota(repo, "DELETE", { id });
+    } catch (error) {
+      const status = document.querySelector("[data-mirror-quota-status]");
+      if (status) status.textContent = error.message;
+    }
+  }
+
+  function initRepoMirrorQuota() {
+    document.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!target?.closest) return;
+      if (target.closest("[data-mirror-quota-add]")) {
+        event.preventDefault();
+        if (state.selectedRepo) openMirrorQuotaDialog(state.selectedRepo);
+        return;
+      }
+      const remove = target.closest("[data-mirror-quota-remove]");
+      if (remove) {
+        event.preventDefault();
+        removeRepoMirror(remove);
+        return;
+      }
+      const dialog = mirrorQuotaUi.dialog;
+      if (!dialog || !dialog.overlay.contains(target)) return;
+      if (target === dialog.overlay || target.closest("[data-mirror-quota-close]")) {
+        closeMirrorQuotaDialog();
+        return;
+      }
+      if (target.closest("[data-mirror-quota-submit]")) {
+        event.preventDefault();
+        submitMirrorQuotaDialog();
+        return;
+      }
+      const copy = target.closest("[data-mirror-quota-copy]");
+      if (copy) {
+        event.preventDefault();
+        if (await copyTextToClipboard(copy.getAttribute("data-mirror-quota-copy") || "")) copy.textContent = "Copied";
+      }
+    });
+    document.addEventListener("submit", (event) => {
+      const goal = event.target?.closest?.("[data-mirror-quota-target-form]");
+      if (goal) {
+        event.preventDefault();
+        submitMirrorQuotaTarget(goal);
+        return;
+      }
+      if (event.target?.closest?.("[data-mirror-quota-add-form]")) {
+        event.preventDefault();
+        submitMirrorQuotaDialog();
+      }
+    });
+  }
   // initNotesPage lives in 09-notes.js (a per-page chunk).
   function initNotesPage(...args) {
     return loadDashboardChunk("notes").then((chunk) => chunk.initNotesPage(...args));
@@ -54831,6 +55406,89 @@ Your reply
       }
     });
   }
+
+  function repoReadSurfaceBase(repo) {
+    const owner = String(repoPublicOwner(repo) || repo?.owner || "").trim().toLowerCase();
+    const name = String(repo?.name || "").trim();
+    if (!owner || !name) return "";
+    return ["", owner, name].map(encodeURIComponent).join("/");
+  }
+
+  function repoIssueFeedLinks(repo) {
+    if (!instancePluginOn("read-surfaces")) return "";
+    const base = repoReadSurfaceBase(repo);
+    if (!base) return "";
+    const link = "text-[var(--dashboard-link)] hover:underline";
+    return `<p data-repo-issue-feeds class="border-t border-border px-4 py-2 text-[12px] text-muted-foreground"><a href="${escapeHtml(`${base}/issues.atom`)}" type="application/atom+xml" class="${link}">Feed</a> &middot; <a href="${escapeHtml(`${base}/lite`)}" class="${link}">Lite view</a></p>`;
+  }
+
+  function liteViewHref() {
+    const base = document.body?.dataset.page === "repo" ? repoReadSurfaceBase(state.selectedRepo) : "";
+    if (!base) return "/lite";
+    const issue = location.pathname.match(/\/issues\/([1-9]\d{0,8})\/?$/);
+    return issue ? `${base}/lite/issues/${issue[1]}` : `${base}/lite`;
+  }
+
+  document.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("a[data-lite-link]") : null;
+    if (link) link.setAttribute("href", liteViewHref());
+  }, true);
+
+  void instanceInfo().then(() => {
+    const on = instancePluginOn("read-surfaces");
+    document.querySelectorAll("a[data-lite-link]").forEach((link) => { link.hidden = !on; });
+  }).catch(() => {});
+  function repoMirrorHelpHref(repo) {
+    const base = repoReadSurfaceBase(repo);
+    return base ? `${base}/mirror` : "";
+  }
+
+  function repoMirrorHelpBanner(base, healthy, target) {
+    return `<div data-repo-mirror-help class="flex min-w-0 items-center gap-2 rounded-t-md border-b border-attention/40 bg-attention/10 px-3 py-1.5 text-xs text-foreground"><span aria-hidden="true" class="h-2 w-2 shrink-0 rounded-full bg-attention"></span><span class="min-w-0 flex-1 truncate"><b class="font-semibold">This forum needs your help</b> &mdash; ${healthy} of ${target} mirrors running. <a href="${escapeHtml(`${base}/mirror`)}" class="dashboard-accent-link font-semibold">Run a mirror or join the federation &rarr;</a></span><button type="button" data-repo-mirror-help-dismiss aria-label="Dismiss" class="shrink-0 text-muted-foreground hover:text-foreground">&times;</button></div>`;
+  }
+
+  function repoMirrorHelpDismissKey(base) {
+    return `forkmesh.mirrorHelpDismissed:${base}`;
+  }
+
+  function repoMirrorHelpDismissed(base) {
+    try {
+      return localStorage.getItem(repoMirrorHelpDismissKey(base)) === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function repoMirrorHelpFor(repo) {
+    const base = repoReadSurfaceBase(repo);
+    if (!base || repo?.isPrivate || repoMirrorHelpDismissed(base)) return "";
+    const data = mirrorQuotaKnown(repo);
+    const target = Math.max(0, Math.floor(Number(data?.target) || 0));
+    const healthy = Math.max(0, Math.floor(Number(data?.healthy) || 0));
+    if (!data || !target || healthy >= target) return "";
+    return repoMirrorHelpBanner(base, healthy, target);
+  }
+
+  function repoMirrorHelpSlot(repo) {
+    if (repo && !repo.isPrivate && !mirrorQuotaKnown(repo)) {
+      void loadRepoMirrorQuota(repo).then(() => {
+        const slot = document.querySelector("[data-repo-mirror-help-slot]");
+        if (slot && mirrorQuotaCurrent(repo)) slot.innerHTML = repoMirrorHelpFor(repo);
+      });
+    }
+    return `<div data-repo-mirror-help-slot>${repoMirrorHelpFor(repo)}</div>`;
+  }
+
+  document.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest("[data-repo-mirror-help-dismiss]") : null;
+    if (!button) return;
+    event.preventDefault();
+    const base = repoReadSurfaceBase(state.selectedRepo);
+    try {
+      if (base) localStorage.setItem(repoMirrorHelpDismissKey(base), "1");
+    } catch (_) {}
+    button.closest("[data-repo-mirror-help]")?.remove();
+  });
   const RECENT_PUSHES_URL = "/api/me/recent-pushes";
   const RECENT_PUSHES_CACHE_KEY = "forkmesh.recentPushes";
   const RECENT_PUSHES_DISMISSED_KEY = "forkmesh.recentPushes.dismissed";
@@ -56914,6 +57572,7 @@ Your reply
       void initAiReviewSettings();
       void initSeasonSettings();
       watchSeason();
+      initRepoMirrorQuota();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

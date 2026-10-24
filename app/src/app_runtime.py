@@ -9,6 +9,15 @@ from hidden_unicode import clean_query as clean_hidden_query
 
 
 
+ONION_ALPHABET = frozenset("abcdefghijklmnopqrstuvwxyz234567")
+
+
+def instance_onion_address(env):
+    value = str(getattr(env, "INSTANCE_ONION", "") or "").strip().lower()
+    label = value[:-len(".onion")] if value.endswith(".onion") else ""
+    return value if len(label) == 56 and set(label) <= ONION_ALPHABET else None
+
+
 async def _org_office_resync(env, request, org, response):
     if method_name(request) in ("GET", "HEAD", "OPTIONS"):
         return
@@ -1902,6 +1911,18 @@ class Default:
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "public, max-age=60"}))
 
+    async def _instance_home_public(self):
+        if not instance_branded(self.env):
+            return None
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_home.SETTING_KEY)
+        except Exception:
+            row = None
+        return instance_home.public(
+            instance_home.parse((row or {}).get("doc") or ""))
+
     async def _instance_world_public(self):
         if not instance_branded(self.env):
             return None
@@ -2050,6 +2071,7 @@ class Default:
                 "name": instance_name(self.env),
                 "branded": instance_branded(self.env),
                 "logo": instance_logo_url(self.env),
+                "onion": instance_onion_address(self.env),
                 "loginDeadline": login_deadline,
                 "gitNode": str(getattr(self.env, "INSTANCE_FLAGSHIP_NODE", "")
                                or "").strip().lower()[:63],
@@ -2069,6 +2091,7 @@ class Default:
                 "directory": await self._instance_directory_links(),
                 "world": await self._instance_world_public(),
                 "sidebar": await self._instance_sidebar_setting(),
+                "home": await self._instance_home_public(),
             }, cache_control="public, max-age=60")
         if instance_branded(self.env) and url.path.rstrip("/") == \
                 "/api/world/neighbour-scene" and \
@@ -2154,6 +2177,11 @@ class Default:
             action = safe_segment(pieces[4] if len(pieces) > 4 else "")
             if action == "viewer-permission" and len(pieces) == 5:
                 return await repo_viewer_permission_handler(
+                    self.env, request, owner, repo)
+            if action == "mirror-quota" and len(pieces) == 5:
+                import mirror_quota
+                mirror_quota._bind_runtime(globals())
+                return await mirror_quota.handler(
                     self.env, request, owner, repo)
             if action == "security":
                 import security_advisories

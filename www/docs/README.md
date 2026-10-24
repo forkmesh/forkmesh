@@ -18,6 +18,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Start an instance from a settings file | [Start from a settings file](start-config.md) |
 | Build, run and use the desktop application | [ForkMesh desktop app guide](qt-client.md) |
 | Read and clone public projects without an account | [Reading and cloning without an account](accountless-reading.md) |
+| Follow issues by Atom feed or email, or read them without JavaScript | [Subscribing by feed or email](feeds-and-email.md) |
 | Create a repository from the web and push to it | [Hosted repositories](hosted-repositories.md) |
 | Fork a repository, push a branch and open a pull request with git only | [Contribute with git only](contributing-with-git.md) |
 | Import repositories from another forge | [Repository imports](repository-imports.md) |
@@ -54,6 +55,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Availability proof and repository risk | [Availability proof](availability-proof.md) |
 | Signed availability contracts backed by mirror capacity | [Repository availability contracts](availability-contract.md) |
 | Fast preservation during shutdowns and takedowns | [Crisis preservation](crisis-preservation.md) |
+| A goal of healthy mirrors and the copies people run | [Mirror goals](mirror-quota.md) |
 | Removable-media exports and resumable low-bandwidth fetches | [Offline and low-bandwidth sync](offline-sync.md) |
 | Clearnet, Tor, I2P, overlay and LAN transports | [Transports and anonymity postures](transports.md) |
 | Recovery from origin, DNS, key, region and backup loss | [Disaster recovery](disaster-recovery/README.md) and its [printable runbook](disaster-recovery/runbook.md) |

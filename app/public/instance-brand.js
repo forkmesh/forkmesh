@@ -259,6 +259,39 @@
     document.body.append(footer);
   };
 
+  const onionNote = (address) => {
+    if (typeof address !== "string" || !/^[a-z2-7]{56}\.onion$/.test(address)) return;
+    if (location.hostname === address || document.querySelector("[data-instance-onion]")) return;
+    const link = document.createElement("a");
+    link.href = `http://${address}${location.pathname}`;
+    link.rel = "noopener";
+    link.title = `Also available over Tor at ${address}`;
+    link.textContent = "Tor .onion";
+    link.setAttribute("data-instance-onion", "");
+    Object.assign(link.style, { color: "inherit", fontWeight: "700", pointerEvents: "auto" });
+    let footer = document.querySelector("[data-instance-powered-by]");
+    if (footer) {
+      footer.append(" \u00b7 ", link);
+      return;
+    }
+    footer = document.createElement("footer");
+    footer.setAttribute("role", "contentinfo");
+    Object.assign(footer.style, {
+      position: "fixed",
+      left: "10px",
+      bottom: "8px",
+      zIndex: "2147483000",
+      padding: "3px 9px",
+      borderRadius: "999px",
+      font: "500 11px/1.4 system-ui, -apple-system, Segoe UI, sans-serif",
+      color: "rgba(127, 127, 127, 0.95)",
+      background: "rgba(127, 127, 127, 0.12)",
+      pointerEvents: "none",
+    });
+    footer.append("Also on ", link);
+    document.body.append(footer);
+  };
+
   const legalStyle = () => {
     if (document.querySelector("style[data-instance-legal-pending]")) return;
     const style = document.createElement("style");
@@ -308,6 +341,7 @@
     shared
       .then((data) => {
         legal = (data && data.legal && typeof data.legal === "object") ? data.legal : {};
+        if (data) onionNote(data.onion);
         if (!data || !Array.isArray(data.plugins)) {
           ready = true;
           hideLinks(document.documentElement);

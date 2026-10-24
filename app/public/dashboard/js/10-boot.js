@@ -218,6 +218,7 @@
       void initAiReviewSettings();
       void initSeasonSettings();
       watchSeason();
+      initRepoMirrorQuota();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

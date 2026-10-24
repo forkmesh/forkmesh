@@ -34,6 +34,7 @@ LOADER = _region(
 
 
 HARNESS = r'''
+function paintRepoIssueDetail(container, html) { container.innerHTML = html; }
 const timers = [];
 globalThis.window = {
   setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length; },
@@ -106,6 +107,8 @@ const repoStaleReadMark = () => 0;
 const finishRepoRead = () => {};
 const repoReadIsTransient = () => false;
 const handleRepoReadFailure = () => false;
+const repoIssueSourceUrl = () => "";
+const loadRepoIssueRelations = async () => ({ issueDependencies: [], issueSubIssues: [], issueMentions: [] });
 
 __LOADER__
 

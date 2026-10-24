@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import types
+import re
 import shutil
 import subprocess
 import urllib.parse
@@ -729,3 +730,53 @@ def test_a_reader_waits_for_a_cold_pull_that_a_person_does_not(monkeypatch):
         http_scope("/forkmesh/forkmesh/pull/4", CHATGPT), FakeFastPath(), pages)
     assert "Patch pull" in reader and 'class="a">+new' in reader
     assert 'href="/forkmesh/forkmesh/pull/4.diff"' in reader
+
+
+def test_issue_list_rows_show_recent_commenters_with_imported_pictures(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset())
+    index = {"issues": [{
+        "number": 7, "title": "Forum thread", "status": "open", "location": "open",
+        "author": "github:ann", "recentCommenters": ["github:Bob", "carol", 5,
+                                                     "dan", "erin", "fay"]}],
+        "openFolders": 1, "closedFolders": 0,
+        "forgeAvatars": ["github:bob"]}
+    model = repo_views._indexed_issues(index)
+    assert model["rows"][0]["commenters"] == ["github:Bob", "carol", "dan", "erin"]
+    bundle = SimpleNamespace(owner="o", repo="r", view="issues", number=0, model=model,
+                             ref="main")
+    html = repo_views._render(bundle)
+    faces = html.split("data-repo-issue-row-commenters>", 1)[1].split("</span><a ", 1)[0]
+    assert faces.count("h-5 w-5") == 4
+    assert ('src="/api/repo/o/r/raw?path=.forkmesh%2Fcontributors%2Fgithub-bob.png'
+            '&amp;ref=main"') in faces
+    assert "github.com" not in faces.replace('href="https://github.com/', "")
+    assert faces.count("<img") == 1
+
+
+def test_the_server_list_is_newest_created_first_with_forum_lists_on(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset())
+    rows = [{"number": n, "title": "t%d" % n, "state": "open", "ts": ts, "author": "a"}
+            for n, ts in ((3, 1_700_000_000_000), (9, 1_600_000_000_000),
+                          (5, 1_700_000_000), (4, ""), (8, 1_700_000_000_000))]
+    bundle = SimpleNamespace(owner="o", repo="r", view="issues", number=0, ref="main",
+                             model={"rows": rows, "open": 5, "closed": 0})
+    html = repo_views._render(bundle)
+    order = [int(n) for n in re.findall(r'href="/o/r/issues/(\d+)"', html)]
+    assert order == [8, 5, 3, 9, 4]
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset({"forum-list"}))
+    repo_views_html = repo_views._render(bundle)
+    order = [int(n) for n in re.findall(r'href="/o/r/issues/(\d+)"', repo_views_html)]
+    assert order == [3, 9, 5, 4, 8]
+
+
+def test_issue_list_rows_have_no_commenter_faces_unless_forum_lists_are_on(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset({"forum-list"}))
+    index = {"issues": [{"number": 7, "title": "Thread", "status": "open", "location": "open",
+                         "author": "ann", "recentCommenters": ["bob"]}],
+             "openFolders": 1, "closedFolders": 0}
+    model = repo_views._indexed_issues(index)
+    bundle = SimpleNamespace(owner="o", repo="r", view="issues", number=0, model=model, ref="main")
+    assert "data-repo-issue-row-commenters" not in repo_views._render(bundle)

@@ -1,7 +1,9 @@
 
 from __future__ import annotations
 
+import contextvars
 import datetime
+import functools
 import html
 import json
 import re
@@ -11,6 +13,9 @@ import urllib.parse
 
 MAX_BODY_CHARS = 262_144
 MAX_EVENTS = 5000
+TIMELINE_FIRST = 10
+STREAM_CHUNK = 10
+REST_MARK = "\x00fm-issue-rest\x00"
 
 VIEWER_STYLE = ("<style>html[data-guest] [data-ssr-member],"
                 "html:not([data-guest]) [data-ssr-guest]{display:none!important}"
@@ -20,7 +25,7 @@ def esc(value):
     text = "" if value is None else value
     if isinstance(text, bool):
         text = "true" if text else "false"
-    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+    return (str(text).replace("\x00", "\ufffd").replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#039;"))
 
 
@@ -212,6 +217,22 @@ def actor_pixels(size):
     return int(float(match.group(1)) * 4 + 0.5) if match else 28
 
 
+FORGE_AVATARS = contextvars.ContextVar("forge_avatars", default=(None, frozenset()))
+
+
+def forge_avatars(index):
+    names = (index or {}).get("forgeAvatars") if isinstance(index, dict) else None
+    return frozenset(name.lower() for name in names or () if isinstance(name, str))
+
+
+def forge_avatar_src(forge):
+    ctx, known = FORGE_AVATARS.get()
+    login = forge["login"].lower()
+    if ctx is None or "%s:%s" % (forge["provider"], login) not in known:
+        return ""
+    return ctx.raw_url(".forkmesh/contributors/%s-%s.png" % (forge["provider"], login))
+
+
 def avatar_html(name, author="", size="h-7 w-7", agent=False, link=True):
     label = str(name or author or ("Agent" if agent else "unknown"))
     bot = agent or actor_is_bot(label)
@@ -224,6 +245,11 @@ def avatar_html(name, author="", size="h-7 w-7", agent=False, link=True):
                            else "h-5 w-5") if bot else (
         '<span class="text-[9px] font-bold text-muted-foreground">%s</span>' % esc(
             ((forge["login"] if forge else label)[:1] or "?").upper()))
+    picture = forge_avatar_src(forge) if forge and not bot else ""
+    if picture:
+        inner += ('<img src="%s" alt="" width="%d" height="%d" loading="lazy" decoding="async" '
+                  'referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full '
+                  'object-cover" />' % (esc(picture), pixels, pixels))
     override = person_handle(label) if bot and not agent else ""
     hydrate = ' data-issue-actor-avatar="%s"' % esc(handle or override) \
         if handle or override else ""
@@ -335,6 +361,9 @@ ICONS = {
         '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>'),
     'eye': (
         '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle>'),
+    'external-link': (
+        '<path d="M15 3h6v6"></path><path d="M10 14 21 3"></path>'
+        '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>'),
     'flag': (
         '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" x2="4" y1="22" y2="15"></line>'),
     'gauge': (
@@ -1387,8 +1416,9 @@ class Renderer:
     def timeline_comment(self, event, edited, reactions):
         who = event.get("authorName") or event.get("author") or "unknown"
         body = str(event.get("body") or "").strip()
+        anchor = ' id="issuecomment-%s"' % esc(event["id"]) if event.get("id") else ""
         return (
-            '\n      <div data-repo-issue-comment class="relative grid min-w-0 gap-4 '
+            '\n      <div%s data-repo-issue-comment class="relative grid min-w-0 gap-4 '
             'sm:grid-cols-[40px_minmax(0,1fr)]">\n        <span class="hidden sm:block">%s'
             '</span>\n        <div class="min-w-0 overflow-hidden rounded-md border border-border '
             'bg-background">\n          <div class="flex min-w-0 flex-wrap items-center gap-1.5 '
@@ -1396,7 +1426,7 @@ class Renderer:
             'text-[14px] text-muted-foreground">\n            %s\n            <span>commented'
             '</span>%s%s\n            \n          </div>\n          %s\n          %s\n'
             '        </div>\n      </div>' % (
-                avatar_html(who, event.get("author"), "h-10 w-10"),
+                anchor, avatar_html(who, event.get("author"), "h-10 w-10"),
                 card_author_html(who, event.get("author")), self.time(event.get("ts")),
                 "<span>· edited</span>" if edited else "",
                 '<div data-repo-issue-comment-text class="px-4 py-3 %s">%s</div>' % (
@@ -1421,6 +1451,14 @@ class Renderer:
                 name_html(who) if agent else person_name_html(who), description, self.time(ts)))
 
     def timeline(self, events, mentions):
+        return "".join(render() for render, _ in self.timeline_items(events, mentions))
+
+    def timeline_comment_with_reactions(self, event, edited, ledger):
+        return self.timeline_comment(event, edited, reaction_bar(
+            self.subject, str(event["id"]), self.reactions.get(str(event["id"])), ledger,
+            "px-4 pb-3") if event.get("id") else "")
+
+    def timeline_items(self, events, mentions):
         rows = [dict(e, _mention=False) if e.get("_mention") else e for e in events]
         rows = sorted(rows + [m for m in mentions if m.get("_mention")], key=_event_ts)
         deleted = {e.get("target") for e in rows if e.get("type") == "delete"
@@ -1438,7 +1476,7 @@ class Renderer:
             who = event.get("authorName") or event.get("author") or "unknown"
             if event.get("_mention"):
                 number = event["sourceNumber"]
-                items.append(self.timeline_event(
+                items.append((functools.partial(str, self.timeline_event(
                     "link", who, event.get("author"),
                     '<span>mentioned this in</span><a href="%s" class="min-w-0 font-semibold '
                     'text-foreground hover:text-[var(--dashboard-link)] hover:underline">#%s %s'
@@ -1446,7 +1484,7 @@ class Renderer:
                                 esc(event.get("sourceTitle") or "issue #%s" % number),
                                 "<span>(closed)</span>" if str(event.get("sourceStatus"))
                                 .lower() == "closed" else ""),
-                    event.get("ts"), 'data-repo-issue-mention="%s"' % esc(number)))
+                    event.get("ts"), 'data-repo-issue-mention="%s"' % esc(number))), False))
                 continue
             if kind == "comment":
                 if event.get("id") in deleted:
@@ -1455,7 +1493,7 @@ class Renderer:
                 shown = dict(event, body=edit.get("body")) if edit else event
                 links = development_link_lines(shown.get("body"))
                 if links:
-                    items.append(self.timeline_event(
+                    items.append((functools.partial(str, self.timeline_event(
                         "unlink" if all(m.group(1) for m in links) else "git-pull-request",
                         who, event.get("author"), '<span aria-hidden="true">,</span>'.join(
                             '<span>%s pull request</span><a href="%s" class="font-semibold '
@@ -1465,19 +1503,17 @@ class Renderer:
                                 esc(self.ctx.record_url("pulls", m.group(2))), esc(m.group(2)))
                             for m in links),
                         event.get("ts"),
-                        'data-repo-issue-development-event="%s"' % esc(event.get("id") or "")))
+                        'data-repo-issue-development-event="%s"' % esc(event.get("id") or ""))),
+                        False))
                     continue
-                items.append(self.timeline_comment(
-                    shown, bool(edit), reaction_bar(
-                        self.subject, str(event["id"]),
-                        self.reactions.get(str(event["id"])),
-                        reactions.get(str(event["id"])), "px-4 pb-3")
-                    if event.get("id") else ""))
+                items.append((functools.partial(
+                    self.timeline_comment_with_reactions, shown, bool(edit),
+                    reactions.get(str(event["id"])) if event.get("id") else None), True))
                 continue
-            items.append(self.timeline_event(EVENT_ICONS.get(kind, "activity"), who,
-                                             event.get("author"),
-                                             event_description_html(event), event.get("ts")))
-        return "".join(items)
+            items.append((functools.partial(str, self.timeline_event(
+                EVENT_ICONS.get(kind, "activity"), who, event.get("author"),
+                event_description_html(event), event.get("ts"))), False))
+        return items
 
 
 def participants(issue):
@@ -1753,12 +1789,47 @@ def ai_prompt_html(ctx, number, title, repo, template=""):
             icon("copy", "copy-icon h-3.5 w-3.5"), icon("check", "copy-check h-3.5 w-3.5")))
 
 
+SOURCE_URL_RE = re.compile(r"^https://[A-Za-z0-9.-]+(?::\d{1,5})?/[A-Za-z0-9._~/-]*$")
+
+
+def source_url(value):
+    url = str(value or "")
+    return url if len(url) <= 500 and SOURCE_URL_RE.match(url) else ""
+
+
+def index_source_url(index, number):
+    if not isinstance(index, dict):
+        return ""
+    if index.get("related") == number:
+        return source_url(index.get("sourceUrl"))
+    own = next((item for item in index.get("issues") or []
+                if isinstance(item, dict) and item.get("number") == number), {})
+    return source_url(own.get("sourceUrl"))
+
+
+def source_link_html(url):
+    safe = source_url(url)
+    if not safe:
+        return ""
+    host = re.split(r"[/:]", safe[8:])[0].lower()
+    label = "View on GitHub" if host == "github.com" else "View on %s" % host
+    return ('<a data-repo-issue-source href="%s" target="_blank" rel="noopener noreferrer '
+            'nofollow" aria-label="%s" title="Open the original issue in a new tab" '
+            'class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border '
+            'bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">'
+            '%s<span class="hidden sm:inline">%s</span></a>' % (
+                esc(safe), esc(label), icon("external-link", "h-4 w-4", "text-muted-foreground"),
+                esc(label)))
+
+
 def plugins_off():
     features = sys.modules.get("instance_features")
     try:
         return frozenset(features.switched_off()) if features is not None else frozenset()
     except Exception:
         return frozenset()
+
+
 def issue_views_html(number):
     return ('<span data-repo-issue-views-separator aria-hidden="true" hidden>·</span>'
             '<span data-repo-issue-views="%s" title="Views by people, counted once a day per '
@@ -1767,8 +1838,51 @@ def issue_views_html(number):
                 esc(number), icon("eye", "h-4 w-4")))
 
 
-def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
-                 repo="", prompt="", reactions=None, off=frozenset()):
+class IssueParts:
+    mark = REST_MARK
+
+    def __init__(self, before, rest, after, ctx, avatars):
+        self.before, self.rest, self.after = before, rest, after
+        self.ctx, self.avatars = ctx, avatars
+        self.keep = lambda text: None
+
+    def chunk(self, start, size=STREAM_CHUNK):
+        token = FORGE_AVATARS.set((self.ctx, self.avatars))
+        try:
+            return "".join(render() for render, _ in self.rest[start:start + size])
+        finally:
+            FORGE_AVATARS.reset(token)
+
+    def chunks(self, size=STREAM_CHUNK):
+        for start in range(0, len(self.rest), size):
+            yield self.chunk(start, size)
+
+    def __str__(self):
+        return self.before + "".join(self.chunks()) + self.after
+
+
+def render_issue_parts(issue, ctx, owner, path, index=None, now=None, viewer="both",
+                       repo="", prompt="", reactions=None, off=frozenset(), source="",
+                       avatars=frozenset()):
+    avatars = frozenset(avatars)
+    token = FORGE_AVATARS.set((ctx, avatars))
+    try:
+        article, rest = _render_issue(issue, ctx, owner, path, index, now, viewer, repo,
+                                      prompt, reactions, off, source)
+    finally:
+        FORGE_AVATARS.reset(token)
+    if article.count(REST_MARK) != 1:
+        raise ValueError("issue page split mark is not unique")
+    before, after = article.split(REST_MARK, 1)
+    return IssueParts(before, rest, after, ctx, avatars)
+
+
+def render_issue(*args, **kwargs):
+    return str(render_issue_parts(*args, **kwargs))
+
+
+def _render_issue(issue, ctx, owner, path, index, now, viewer, repo, prompt, reactions,
+                  off, source):
     now = time.time() if now is None else now
     number = issue["number"]
     title = issue["title"] or "Issue #%d" % number
@@ -1801,7 +1915,8 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
                   else {"number": n, "title": "", "status": "unknown"} for n in children]
     child_rows = [row for row in child_rows if not row.get("deleted")]
 
-    timeline = render.timeline(events, mentions)
+    items = render.timeline_items(events, mentions)
+    timeline = "".join(item() for item, _ in items[:TIMELINE_FIRST]) + REST_MARK
     chips = reaction_bar(render.subject, "body", render.reactions.get("body"),
                          fold_reactions(events).get(issue["openEventId"]))
     reaction_row = (
@@ -1943,7 +2058,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
                                  else viewer == "member")
     pill_class = "bg-[#6e7681]" if closed else "bg-success"
     pill_icon = "circle-check" if closed else "circle-dot"
-    return (
+    return ((
         '\n      <article data-repo-record-detail="issues" data-repo-ssr-issue="%d" '
         'class="min-w-0 bg-background">\n        <div data-repo-issue-sticky aria-hidden="true" '
         'class="pointer-events-none sticky top-0 z-20 -mx-3 mb-0 flex h-0 items-start '
@@ -1960,7 +2075,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
         'font-normal leading-tight text-foreground [overflow-wrap:anywhere] sm:text-[32px]">%s '
         '<span class="font-light text-muted-foreground">%s</span></h1>\n            \n'
         '            <div class="flex shrink-0 items-center gap-2 pt-1">\n              \n'
-        '              <button type="button" data-repo-issue-new class="inline-flex h-8 '
+        '              %s<button type="button" data-repo-issue-new class="inline-flex h-8 '
         'items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground '
         'hover:bg-cta/90">New issue</button>\n              <button type="button" '
         'data-dashboard-copy="%s" aria-label="Copy link to this issue" title="Copy link" '
@@ -1985,7 +2100,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
         '              \n              \n            </div>\n          </aside>\n        </div>\n'
         '      </article>' % (
             number, pill_class, icon(pill_icon, "h-3.5 w-3.5"), state_label, esc(title),
-            record_label, esc(title), record_label,
+            record_label, esc(title), record_label, source_link_html(source),
             esc(ctx.origin + ctx.record_url("issues", number)),
             icon("link", "copy-icon h-4 w-4"), icon("check", "copy-check h-4 w-4"),
             parents_html(ctx, parents), pill_class, icon(pill_icon, "h-4 w-4"), state_label,
@@ -1993,7 +2108,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
             format_count(len(people)), plural, issue_views_html(number),
             "" if closed or "issue-ai-prompt" in off
             else ai_prompt_html(ctx, number, title, repo, prompt),
-            opening, sub_issues, "false" if timeline else "true", timeline, comment_box,
+            opening, sub_issues, "false" if items else "true", timeline, comment_box,
             "" if "fediverse-ui" in off else FEDERATED_THREAD % (
                 icon("radio", "h-4 w-4"), icon(
                     "chevron-down", "ml-auto h-4 w-4 transition-transform group-open:rotate-180")),
@@ -2003,7 +2118,8 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
             section("Milestone", milestone_value, "milestone"),
             section("Development", development, "development", development_button),
             section("Notifications", notifications),
-            section("%s %s" % (format_count(len(people)), plural), people_value)))
+            section("%s %s" % (format_count(len(people)), plural), people_value))),
+        items[TIMELINE_FIRST:])
 
 
 FEDERATED_THREAD = (

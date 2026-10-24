@@ -172,6 +172,52 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   [app/server-update.md](app/server-update.md).
   `--config FILE` takes the same JSON as the page for a manual install.
 
+## Tor onion service
+
+Setting `onionService` (a boolean, default `false`, kept in `instance.json`)
+serves the instance over Tor too, so blocking its domain or IP address does
+not block it ([app/forum-reach.md](app/forum-reach.md)). To turn it on for a
+running instance, add `"onionService": true` to
+`/etc/forkmesh-instance/instance.json` and run `install-instance.sh
+--update`; `false` (or removing the key) turns it off.
+
+| Piece | Where |
+| --- | --- |
+| Package | `tor` joins the `packages` step |
+| Hidden service | `/etc/tor/torrc.d/forkmesh-instance.conf`: `HiddenServiceDir /var/lib/tor/forkmesh-instance/`, `HiddenServicePort 80 127.0.0.1:8091`; `/etc/tor/torrc` gets one `%include /etc/tor/torrc.d/*.conf` line if it has none |
+| Onion site | `/etc/caddy/conf.d/forkmesh-onion.caddy`: `http://<addr>.onion:8091`, bound to `127.0.0.1`, the same gateway paths and app as the HTTPS site, `Host` set to the onion name |
+| Advertisement | `/etc/caddy/site.d/forkmesh-onion-location.caddy`: `Onion-Location: http://<addr>.onion{uri}` on the HTTPS site, which Tor Browser offers to switch to |
+| App | `FORKMESH_PUBLIC_HOSTS=<domain>,<addr>.onion` (the host allowlist in `request_guard.py` answers the onion name) and `FORKMESH_VAR_INSTANCE_ONION=<addr>.onion` in the unit; `/api/instance` answers `onion: "<addr>.onion"` (`null` without one) and `instance-brand.js` adds a "Tor .onion" link to the footer badge |
+
+- The step runs after `configure` and before `services`, inside the
+  `configure` progress step, so the start page's step list is unchanged.
+  The address is read from `/var/lib/tor/forkmesh-instance/hostname` (v3,
+  56 base32 characters); the setup stops if Tor does not write one within
+  two minutes.
+- **Plain HTTP on purpose.** Tor encrypts and authenticates the connection
+  to the onion address end to end, and no public CA issues `.onion`
+  certificates cheaply. Caddy listens only on loopback, so the onion site
+  is reachable only through Tor. The onion site drops the app's
+  `upgrade-insecure-requests` CSP directive (it would send Tor Browser to
+  `https://` for every asset) and the HSTS header.
+- **Idempotent.** Each run rewrites the torrc snippet and the two Caddy
+  files; Tor restarts only when its configuration changed or it is not
+  running, and Caddy reloads only when its files changed. `--update`
+  keeps the same address.
+- **The key is the address.** `/var/lib/tor/forkmesh-instance/` holds
+  `hs_ed25519_secret_key`; whoever has it can serve that address. Back the
+  folder up (root only, mode 0700, owner `debian-tor`) to move the address
+  to a new server; turning the setting off removes the site files but
+  keeps the key, so turning it back on keeps the address.
+- **Egress and the allowlist.** The app makes no outbound calls for this:
+  `FORKMESH_EGRESS_PRODUCTION_ALLOW` is unchanged, and only the host
+  allowlist gains the onion name. The web firewall (`webFirewall`) is
+  unaffected: Tor dials out, and port 8091 is loopback only.
+- **Visitors share one address.** Every onion visitor reaches the app from
+  `127.0.0.1` (`Cf-Connecting-Ip`), so per-IP rate limits are shared among
+  them; probe bans never apply to non-global addresses.
+- Tests: `app/tests/test_install_instance_onion.py`.
+
 ## Updates build beside the running version
 
 Until October 2026 `--update` checked the new commit out in
@@ -871,6 +917,39 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   and never turns a page on. forkmesh.com keeps its own pages and links.
   Details: [app/instance-legal-pages.md](app/instance-legal-pages.md).
 
+- **ForkMesh's own sites** (install setting `"whiteLabel": true`, off by
+  default; `apply_instance_brand --white-label`, `INSTANCE_WHITE_LABEL=1`;
+  `apply_instance_brand.offsite_chrome`, `instance_features.OFFSITE_CHROME`):
+  the brand tool removes header and
+  sidebar links to forkmesh.com pages (Marketplace `forkmesh.com/market`,
+  Pricing, Membership), app.forkmesh.com and Patreon from every built page,
+  points the sidebar's Home at `/` and the header and sidebar World links at
+  `/world` (which the World plugin's rule hides while it is off). The links
+  are gone at the first paint and for a reader without JavaScript, where
+  before `instance-brand.js` hid them only after `/api/instance` answered.
+  `/instance-theme.css` also hides any such link the dashboard draws later in
+  `header`, `nav`, `aside` or `footer`, except inside the Powered by badge,
+  which stays only while `poweredBy` is on. forkmesh.com is untouched.
+
+## Home page
+
+An admin chooses a home repository from the admin console, Platform → Home
+page (`instance_console.render_home`, `save_home`; `app/src/instance_home.py`).
+It is one `instance_settings` row (`k = 'home'`,
+`{"repository": "owner/name"}`), CSRF-checked and audited as
+`admin.console_save_home`; an empty field turns the page off. `GET
+/api/instance` reports it as `home` (`{"repository": ...}` or `null`; always
+`null` on forkmesh.com).
+
+With a home repository set, `/` is a forum front page rendered by the host
+(`app/host/forkmesh_host/read_surfaces.py`): the repository's README with one
+`dir="auto"` section per heading, the latest threads from its issue index,
+its labels, links to its Atom feeds and lite view, and a slot for the
+repository's mirror line. It needs no JavaScript and makes no request to
+another site. Without one, or while the repository is not public, `/`
+redirects to `/dashboard` as before. example sets `example/forum`.
+Details: [app/feeds-and-lite.md](app/feeds-and-lite.md).
+
 ## Plugins
 
 An admin turns optional plugins on and off from the admin console, Platform →
@@ -886,6 +965,7 @@ reinstall or restart.
 | `issue-ai-prompt` | The "Fix <url>: read the issue, make the change…" box under an open issue's title, which readers copy into a coding agent. On by default. |
 | `fediverse-ui` | The Fediverse thread panel under issues, pull requests and discussions, and the repository's Watchers row with its "Watch on the fediverse" menu. Off also answers 404 to `GET /api/repo/<o>/<r>/fedi-comments`. On by default. |
 | `changelog` | The platform changelog at `/changelog`: what changed in the platform version the instance runs. On by default. |
+| `forum-list` | Forum-style issue lists: newest first, with each row's last few commenters ([repo views](app/repo-views.md)). Opt-in (`OPT_IN`): off unless chosen, on forkmesh.com too. |
 
 Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
 `discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
@@ -1343,6 +1423,11 @@ never carry it.
   The Mirrors tab stays as the full diagnostic view. The "Powered by
   ForkMesh" badge is not a served-by label and stays (see the top of this
   page).
+- **Mirror goal.** The rail's "Mirrors" card is not a served-by label: it
+  counts plain git copies kept elsewhere (this instance, the original named
+  by `.forkmesh/forge-source.json`, and copies people register) against a
+  goal the maintainers set, and is shown on instances too. See
+  [app/mirror-quota.md](app/mirror-quota.md).
 
 ## Directory
 

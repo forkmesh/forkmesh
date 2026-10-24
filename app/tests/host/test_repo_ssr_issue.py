@@ -38,7 +38,8 @@ FUNCTIONS = {
         "parseFlexibleDate", "formatDate", "formatTimeAgo", "formatCount", "loadingHtml",
         "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
         "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs",
-        "repositoryViewKey", "botAvatarKind", "botAvatarSvg"),
+        "repositoryViewKey", "botAvatarKind", "botAvatarSvg", "rememberForgeAvatars",
+        "forgeAvatarSrc"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
         "markdownVideoButtonHtml",
@@ -56,6 +57,8 @@ FUNCTIONS = {
         "renderCommentReactionChip", "renderCommentReactionExtras", "renderCommentReactionBar",
         "issueEventDescription", "renderIssueTimelineComment",
         "renderIssueTimelineEvent", "issueEventDescriptionHtml", "renderIssueTimeline",
+        "issueTimelineEntries", "issueTimelineMoreHtml", "issueTimelineHashIndex",
+        "issueTimelineEagerCount", "queueIssueTimelineRest",
         "formatRecordDateTime", "issueLabelHue", "renderIssueLabelChip",
         "issueRelationStatusPill", "renderRepoIssueParents", "renderRepoIssueSubIssues",
         "issueDescriptionWithoutDependencies", "issueParticipants", "issueCommentCount",
@@ -69,11 +72,12 @@ FUNCTIONS = {
         "issueAiPromptText", "renderIssueAiPrompt", "issueAssignmentHours", "issueAssignmentTimes",
         "issueAssigneeHasPull", "issueDeadlineDuration", "issueAssignmentDeadline",
         "renderIssueAssignmentDeadline", "issueAssigneeDeadlineHtml", "issueSubscriptionNote",
-        "issueViewKey", "issueViewsLabel", "issueViewsHtml"),
+        "issueViewKey", "issueViewsLabel", "issueViewsHtml", "issueSourceUrlSafe",
+        "renderIssueSourceLink"),
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE",
-                     "BOT_AVATAR_GLYPHS"),
+                     "BOT_AVATAR_GLYPHS", "forgeAvatarSets"),
     "06-repo-content.js": (
         "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS", "MD_BARE_URL", "MD_ENTITIES", "MD_ESCAPED_ENTITY", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
@@ -81,7 +85,7 @@ CONSTANTS = {
         "COMMENT_REACTION_CUSTOM_RE", "MD_GIPHY_GIF",
         "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
         "ISSUE_PULL_LINK_LINE", "DEVELOPMENT_HINT", "ISSUE_AI_PROMPT_DEFAULT",
-        "ISSUE_ASSIGNMENT_HOURS_MAX", "ISSUE_ASSIGNMENT_WARN_FRACTION"),
+        "ISSUE_ASSIGNMENT_HOURS_MAX", "ISSUE_ASSIGNMENT_WARN_FRACTION", "ISSUE_TIMELINE_FIRST"),
 }
 
 
@@ -114,6 +118,8 @@ const state = { session: VIEWER === "member" ? { nodeName: "me" } : null,
   userNameCases: new Map(), issuesView: { items: [] }, repoCollectionItems: {},
   commentReactions: %(reactions)s };
 let countFormatter = null;
+let issueTimelineStream = null;
+let issueTimelineScrolled = "";
 function watchIssueActorAvatars() {}
 const PLUGINS_OFF = %(off)s;
 function instancePluginOff(id) { return PLUGINS_OFF.includes(id); }
@@ -129,11 +135,12 @@ function repoLinkUrl(repo, kind = "tree", path = "") {
 function repoRecordUrl(repo, kind, number) { return `%(link)s/${kind === "pulls" ? "pull" : kind}/${number}`; }
 function repoRawUrl(repo, path) { return `%(api)s/raw?path=${encodeURIComponent(path)}&ref=main`; }
 const navigator = { platform: "Linux" };
-const location = { pathname: %(path)s, search: "" };
+const location = { pathname: %(path)s, search: "", hash: %(hash)s };
 %(code)s
 const input = JSON.parse(%(input)s);
 const repo = { owner: %(owner)s, name: %(name)s, isPrivate: false };
 state.selectedRepo = repo;
+rememberForgeAvatars(repo, input.avatars || []);
 const index = input.index.map((text, i) => parseIssueJson(text, 0));
 const parsed = issueDetailParsed(input.issue, input.number);
 const byNumber = new Map(index.map((issue) => [Number(issue.number), issue]));
@@ -146,13 +153,15 @@ parsed.issueMentions = issueMentionsOf(index, input.number);
 parsed.issueMutationAuthorized = false;
 parsed.issueSubscribed = false;
 parsed.repoCollabSettings = { aiPromptTemplate: input.template || "" };
+parsed.issueSourceUrl = input.source || "";
 state.repoRecordDetail = { repo, kind: "issues", number: input.number, parsed };
 process.stdout.write(renderRepoIssueDetail(repo, input.number, parsed));
+process.stdout.write("\\n<!--rest-->" + issueTimelineStream.rest.map((entry) => entry.html()).join(""));
 """
 
 
 def js_render(issue, number, index=(), viewer="guest", origin="", template="",
-              reactions=None, off=()):
+              reactions=None, off=(), source="", avatars=(), hash="", rest=False):
     code = "\n".join(
         [_const(SOURCES[name], const) for name, consts in CONSTANTS.items() for const in consts]
         + [_function(SOURCES[name], fn) for name, fns in FUNCTIONS.items() for fn in fns])
@@ -162,24 +171,34 @@ def js_render(issue, number, index=(), viewer="guest", origin="", template="",
         "origin": json.dumps(origin),
         "reactions": json.dumps({"issue:%d" % number: {"reactions": reactions}}
                                 if reactions is not None else {}),
-        "path": json.dumps(PAGE_PATH), "code": code, "owner": json.dumps(OWNER),
+        "path": json.dumps(PAGE_PATH), "hash": json.dumps(hash), "code": code,
+        "owner": json.dumps(OWNER),
         "name": json.dumps(NAME), "input": json.dumps(json.dumps({
             "issue": json.dumps(issue), "number": number, "template": template,
+            "source": source, "avatars": list(avatars),
             "index": [json.dumps(row) for row in index]}))}
-    return subprocess.run(["node", "-"], input=script, check=True, capture_output=True,
+    out = subprocess.run(["node", "-"], input=script, check=True, capture_output=True,
                           text=True, env={"TZ": "UTC", "LANG": "en_US.UTF-8",
                                           "PATH": "/usr/bin:/bin:" + str(Path(shutil.which("node")).parent)}
                           ).stdout
+    if rest:
+        return out
+    first, later = out.split("\n<!--rest-->", 1)
+    return MORE_RE.sub(lambda _: later, first)
+
+
+MORE_RE = re.compile(r"<div data-repo-issue-more .*?</p></div>", re.S)
 
 
 def py_render(issue, number, index=(), viewer="guest", origin="", template="",
-              reactions=None, off=()):
+              reactions=None, off=(), source="", avatars=()):
     ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, "main", origin=origin)
     rows = [repo_ssr_issue.parse_issue(json.dumps(row), 0) for row in index]
     return repo_ssr_issue.render_issue(
         repo_ssr_issue.parse_issue(json.dumps(issue), number), ctx, OWNER, PAGE_PATH,
         index=rows, now=NOW_MS / 1000, viewer=viewer, repo=NAME, prompt=template,
-        reactions=reactions, off=frozenset(off))
+        reactions=reactions, off=frozenset(off), source=source,
+        avatars=frozenset(name.lower() for name in avatars))
 
 
 ICON_RE = re.compile(r'<svg xmlns="http://www.w3.org/2000/svg"[^>]*class="lucide lucide-'
@@ -314,7 +333,8 @@ def test_linked_pull_requests_match_the_dashboard(viewer):
     expected = normalize(js_render(issue, 27, index_rows(), viewer))
     got = normalize(py_render(issue, 27, index_rows(), viewer))
     assert got == expected
-    assert 'data-repo-issue-development-event="k1"' in got
+    rest = normalize(js_render(issue, 27, index_rows(), viewer, rest=True).split("<!--rest-->")[1])
+    assert 'data-repo-issue-development-event="k1"' in rest
     development = got.split('data-repo-development="issues"')[1].split("</div> </div>")[0]
     assert "/Bolt/pull/11" in development and "/Bolt/pull/5" in development
     assert "/Bolt/pull/9" not in development and "/Bolt/pull/12" not in development
@@ -381,7 +401,8 @@ def _tailwind_selector(token):
 
 
 def test_first_view_uses_classes_the_stylesheet_has():
-    html = py_render(issue27(), 27, index_rows(), viewer="both") + repo_ssr_issue.FRAME
+    html = py_render(issue27(), 27, index_rows(), viewer="both",
+                     source="https://github.com/example/forum/issues/1") + repo_ssr_issue.FRAME
     css = (DASHBOARD / "tailwind.css").read_text("utf-8")
     shell = (DASHBOARD / "shell.html").read_text("utf-8")
     tokens = {token for match in re.finditer(r'class="([^"]*)"', html)
@@ -632,3 +653,363 @@ def test_the_server_reads_the_switches_from_the_instance_plugins(monkeypatch):
     assert repo_ssr_issue.plugins_off() == {"fediverse-ui"}
     monkeypatch.delitem(sys.modules, "instance_features")
     assert repo_ssr_issue.plugins_off() == frozenset()
+
+
+@needs_node
+@pytest.mark.parametrize("source", [
+    "https://github.com/example/forum/issues/512",
+    "https://codeberg.org/example/forum/issues/7",
+    "javascript:alert(1)", "https://github.com/a\"b/issues/1", ""])
+def test_the_view_on_github_button_matches_the_dashboard(source):
+    issue = mirrored_issue()
+    expected = normalize(js_render(issue, 9, (), "member", source=source))
+    got = normalize(py_render(issue, 9, (), "member", source=source))
+    assert got == expected
+    safe = source.startswith("https://") and '"' not in source
+    assert ("data-repo-issue-source" in got) is safe
+    if safe:
+        link = re.search(r'<a data-repo-issue-source [^>]*>', got).group(0)
+        assert 'href="%s"' % source in link and 'target="_blank"' in link
+        assert 'rel="noopener noreferrer nofollow"' in link
+        assert ("View on GitHub" in got) is ("github.com" in source)
+
+
+def test_the_source_comes_from_the_related_answer_or_the_full_index():
+    url = "https://github.com/example/forum/issues/512"
+    assert repo_ssr_issue.index_source_url(
+        {"related": 9, "sourceUrl": url, "issues": []}, 9) == url
+    assert repo_ssr_issue.index_source_url(
+        {"related": 8, "sourceUrl": url, "issues": []}, 9) == ""
+    assert repo_ssr_issue.index_source_url(
+        {"issues": [{"number": 9, "sourceUrl": url}]}, 9) == url
+    assert repo_ssr_issue.index_source_url(
+        {"issues": [{"number": 9, "sourceUrl": "http://x/1"}]}, 9) == ""
+    assert repo_ssr_issue.index_source_url(None, 9) == ""
+
+
+def test_the_issue_page_links_its_forge_original_and_honours_the_switches(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    bundle = bundle_for(mirrored_issue())
+    bundle.number = 27
+    url = "https://github.com/example/forum/issues/512"
+    bundle.model["index"] = {"related": 27, "sourceUrl": url, "issues": []}
+    page = repo_ssr.inject_issue(repo_page(), DATA, bundle, short=True)
+    assert 'data-repo-issue-source href="%s"' % url in page
+    assert "data-repo-federated-thread" in page and "data-repo-issue-ai-prompt" in page
+    monkeypatch.setitem(sys.modules, "instance_features", SimpleNamespace(
+        switched_off=lambda: frozenset({"fediverse-ui", "issue-ai-prompt"})))
+    page = repo_ssr.inject_issue(repo_page(), DATA, bundle, short=True)
+    assert "data-repo-federated-thread" not in page
+    assert "data-repo-issue-ai-prompt" not in page
+
+
+@needs_node
+@pytest.mark.parametrize("viewer", ["guest", "member"])
+def test_imported_forge_avatars_render_the_same_on_both_sides(viewer):
+    issue = mirrored_issue()
+    avatars = ["github:gulp-run", "GitHub:ALICE"]
+    expected = normalize(js_render(issue, 9, (), viewer, avatars=avatars))
+    got = normalize(py_render(issue, 9, (), viewer, avatars=avatars))
+    assert got == expected
+    raw = "/api/repo/acme-bolt/Bolt/raw?path=.forkmesh%2Fcontributors%2Fgithub-alice.png&amp;ref=main"
+    assert '<img src="%s" alt="" width="40" height="40" loading="lazy"' % raw.replace(
+        "alice", "gulp-run") in got
+    assert raw in got and "github.com" not in re.sub(r'href="https://github.com/[^"]*"', "", got)
+    plain = normalize(py_render(issue, 9, (), viewer))
+    assert "/raw?path=.forkmesh%2Fcontributors" not in plain
+
+
+def test_the_avatar_set_comes_from_the_index_answer():
+    assert repo_ssr_issue.forge_avatars({"forgeAvatars": ["github:A", 3]}) == {"github:a"}
+    assert repo_ssr_issue.forge_avatars(None) == frozenset()
+
+
+@needs_node
+def test_comments_render_oldest_first_by_their_timestamp_on_both_sides():
+    issue = mirrored_issue()
+    first, second = issue["events"][1], issue["events"][2]
+    issue["events"] = [issue["events"][0], second, first]
+    expected = normalize(js_render(issue, 9, (), "guest"))
+    got = normalize(py_render(issue, 9, (), "guest"))
+    assert got == expected
+    assert got.index("\u540c\u610f") < got.index("~sync")
+
+
+def long_issue(comments=30):
+    events = [{"type": "open", "id": "o1", "author": "k1", "authorName": "ann",
+               "ts": NOW_MS - 900_000_000, "title": "Long", "body": "Opening **post**"}]
+    for i in range(comments):
+        events.append({"type": "comment", "id": "forge-github-comment-%d" % (100 + i),
+                       "author": "k%d" % (i % 4), "authorName": "user%d" % (i % 4),
+                       "body": "Comment %d with `code`" % i,
+                       "ts": NOW_MS - 800_000_000 + i * 60_000})
+        if i == 4:
+            events.append({"type": "labels", "id": "l1", "author": "k1", "authorName": "ann",
+                           "labels": ["bug"], "ts": NOW_MS - 800_000_000 + i * 60_000 + 1})
+    return {"number": 77, "title": "Long thread", "status": "open", "authorName": "ann",
+            "author": "k1", "createdAt": events[0]["ts"], "events": events}
+
+
+def timeline_items(markup):
+    timeline = markup.split("data-repo-issue-timeline")[1]
+    return re.findall(r'data-repo-issue-(comment|event) ', timeline.split("data-repo-issue-more")[0])
+
+
+def test_both_renderers_draw_the_same_number_of_items_first():
+    js_source = SOURCES["06-repo-content.js"]
+    first = int(re.search(r"const ISSUE_TIMELINE_FIRST = (\d+);", js_source).group(1))
+    assert repo_ssr_issue.TIMELINE_FIRST == first == 10
+
+
+@needs_node
+@pytest.mark.parametrize("viewer", ["guest", "member"])
+def test_a_long_issue_sends_every_comment_in_the_first_response(viewer):
+    issue = long_issue()
+    expected = normalize(js_render(issue, 77, (), viewer))
+    got = normalize(py_render(issue, 77, (), viewer))
+    assert got == expected
+    assert len(timeline_items(got)) == 31
+    assert "data-repo-issue-more" not in got
+    assert 'id="issuecomment-forge-github-comment-129"' in got
+
+
+@needs_node
+def test_the_dashboard_draws_ten_first_and_a_placeholder_for_the_rest():
+    first = normalize(js_render(long_issue(), 77, (), "guest", rest=True).split("<!--rest-->")[0])
+    assert len(timeline_items(first)) == repo_ssr_issue.TIMELINE_FIRST
+    assert 'data-repo-issue-more data-remaining="21"' in first
+    assert "Loading 21 more comments\u2026" in first
+    assert "Comment 9 " not in first and "Comment 8 " in first
+
+
+def test_the_page_streams_the_top_first_and_the_comments_in_chunks():
+    bundle = bundle_for(long_issue(45), [])
+    page = repo_ssr.inject_issue_page(repo_page(), DATA, bundle, short=True)
+    assert page.prefix.count("data-repo-issue-comment ") == repo_ssr_issue.TIMELINE_FIRST - 1
+    assert "data-repo-issue-opening" in page.prefix and "data-repo-record-sidebar" not in page.prefix
+
+    async def collect():
+        return [chunk async for chunk in page.stream()]
+    chunks = asyncio.run(collect())
+    assert len(chunks) == 2 + 4
+    whole = "".join(chunks)
+    assert "\x00" not in whole
+    assert whole.count("data-repo-issue-comment ") == 45
+    assert [int(n) for n in re.findall(r"Comment (\d+) with", whole)] == list(range(45))
+    assert whole == repo_ssr.inject_issue(repo_page(), DATA, bundle, short=True)
+
+
+def test_a_split_mark_in_posted_text_never_moves_the_stream_cut():
+    issue = long_issue(45)
+    mark = repo_ssr_issue.REST_MARK
+    issue["authorName"] = "evil" + mark
+    issue["events"][0]["authorName"] = "evil" + mark
+    issue["events"][12]["id"] = "x onfocus=alert(1) autofocus tabindex=0 y"
+    issue["events"][3]["body"] = "Comment 2 with " + mark
+    bundle = bundle_for(issue, [])
+    page = repo_ssr.inject_issue_page(repo_page(), DATA, bundle, short=True)
+
+    async def collect():
+        return [chunk async for chunk in page.stream()]
+    whole = "".join(asyncio.run(collect()))
+    assert "\x00" not in whole
+    import html.parser
+
+    class Attributes(html.parser.HTMLParser):
+        names = set()
+
+        def handle_starttag(self, tag, attrs):
+            self.names.update(name for name, _ in attrs)
+    parser = Attributes()
+    parser.feed(whole)
+    assert "onfocus" not in parser.names and "autofocus" not in parser.names
+    assert whole.count("data-repo-issue-comment ") == 45
+    assert whole == repo_ssr.inject_issue(repo_page(), DATA, bundle, short=True)
+
+
+def test_a_split_mark_in_the_page_shell_falls_back_to_one_piece():
+    bundle = bundle_for(long_issue(45), [])
+    shell = repo_page().replace("</head>", "<meta name=x content=\"%s\"></head>"
+                                % repo_ssr_issue.REST_MARK, 1)
+    page = repo_ssr.inject_issue_page(shell, DATA, bundle, short=True)
+    assert isinstance(page.article, str) and page.suffix == ""
+    assert str(page).count("data-repo-issue-comment ") == 45
+
+
+def test_a_short_issue_has_no_placeholder():
+    got = py_render(mirrored_issue(), 9)
+    assert "data-repo-issue-more" not in got
+
+
+@needs_node
+def test_the_rest_follows_the_first_items_oldest_first():
+    issue = long_issue()
+    markup = js_render(issue, 77, (), "guest", rest=True)
+    first, rest = markup.split("<!--rest-->")
+    order = [int(n) for n in re.findall(r"Comment (\d+) with", first.split(
+        "data-repo-issue-more")[0] + rest)]
+    assert order == list(range(30))
+    assert "data-repo-issue-more" not in rest
+
+
+@needs_node
+@pytest.mark.parametrize("anchor", ["#issuecomment-forge-github-comment-125", "#issuecomment-125"])
+def test_a_link_to_a_later_comment_draws_through_it_at_once(anchor):
+    markup = normalize(js_render(long_issue(), 77, (), "guest", hash=anchor, rest=True)
+                       .split("<!--rest-->")[0])
+    assert 'id="issuecomment-forge-github-comment-125"' in markup
+    assert "Comment 26 " not in markup
+    assert 'data-repo-issue-more data-remaining="4"' in markup
+
+
+STREAM_HARNESS = """
+const NOW = %(now)d;
+Date.now = () => NOW;
+const state = { session: null, userNameCases: new Map(), issuesView: { items: [] },
+  repoCollectionItems: {}, commentReactions: {} };
+let countFormatter = null;
+let issueTimelineStream = null;
+let issueTimelineScrolled = "";
+const issueTimelineSignatures = new WeakMap();
+function watchIssueActorAvatars() {}
+function instancePluginOff() { return false; }
+function platformName() { return "Acme Code"; }
+function publicSiteOrigin() { return ""; }
+function publicProfileUrl(name) { return `/@${name}`; }
+function repoLinkUrl() { return "%(link)s"; }
+function repoRecordUrl(repo, kind, number) { return `%(link)s/${kind}/${number}`; }
+function repoRawUrl(repo, path) { return `%(api)s/raw?path=${path}`; }
+const navigator = { platform: "Linux" };
+const location = { pathname: %(path)s, search: "", hash: "" };
+function topLevel(html) {
+  const nodes = [];
+  let depth = 0, start = -1;
+  const tags = /<(\\/?)div\\b[^>]*>/g;
+  let match;
+  while ((match = tags.exec(html))) {
+    if (!match[1]) { if (depth === 0) start = match.index; depth += 1; }
+    else { depth -= 1; if (depth === 0) nodes.push(html.slice(start, tags.lastIndex)); }
+  }
+  return nodes;
+}
+class Node {
+  constructor(html, tag = "") { this.outerHTML = html; this.tag = tag; this.parent = null;
+    this.children = []; this.dataset = {}; }
+  get isConnected() { return Boolean(this.parent && this.parent.isConnected); }
+  matches(selector) { return selector === "[data-repo-issue-more]" && this.tag === "more"; }
+  querySelector(selector) {
+    if (selector === ":scope > [data-repo-issue-more]") return this.children.find((n) => n.tag === "more") || null;
+    return null;
+  }
+  remove() { this.parent.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; }
+  before(node) {
+    if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1);
+    node.parent = this.parent;
+    this.parent.children.splice(this.parent.children.indexOf(this), 0, node);
+  }
+}
+const root = new Node("", "root");
+Object.defineProperty(root, "isConnected", { value: true });
+const timeline = new Node("", "timeline");
+timeline.parent = root;
+const idle = [];
+let icons = 0;
+const window = { requestIdleCallback: (fn) => idle.push(fn), setTimeout: (fn) => idle.push(fn),
+  lucide: { createIcons: () => { icons += 1; } } };
+const document = {
+  createElement: () => {
+    const template = { content: { children: [] } };
+    Object.defineProperty(template, "innerHTML", { set(html) {
+      template.content.children = topLevel(html).map((part) => new Node(part)); } });
+    return template;
+  },
+  querySelector: (selector) => {
+    if (selector.endsWith("> [data-repo-issue-more]")) return timeline.querySelector(":scope > [data-repo-issue-more]");
+    if (selector.endsWith("[data-repo-issue-timeline]")) return timeline;
+    return null;
+  },
+  getElementById: () => null,
+};
+%(code)s
+const issue = parseIssueJson(%(issue)s, %(number)d);
+const parsed = issueDetailParsed(%(issue)s, %(number)d);
+state.repoRecordDetail = { number: %(number)d, parsed };
+const entries = issueTimelineEntries(parsed.issueEvents, { number: %(number)d, mentions: [] });
+const first = entries.slice(0, ISSUE_TIMELINE_FIRST).map((entry) => {
+  const node = new Node(entry.html(), "ssr"); node.parent = timeline; return node; });
+timeline.children.push(...first);
+const more = new Node("", "more");
+more.parent = timeline;
+more.dataset.remaining = String(entries.length - ISSUE_TIMELINE_FIRST);
+timeline.children.push(more);
+queueIssueTimelineRest(%(number)d, entries, ISSUE_TIMELINE_FIRST);
+const SHOWN = %(shown)s;
+const served = SHOWN ? entries.slice(ISSUE_TIMELINE_FIRST).map((entry, i) => {
+  const node = new Node(i === SHOWN.stale ? "<div>stale</div>" : entry.html(), "ssr");
+  issueTimelineSignatures.set(node, issueNodeSignature(node));
+  more.before(node);
+  return node;
+}) : [];
+issueTimelineStream.shown = served.slice();
+const everyNode = timeline.children.slice();
+const steps = [];
+while (idle.length) {
+  idle.shift()();
+  steps.push({ items: timeline.children.filter((n) => n.tag !== "more").length,
+    more: timeline.children.includes(more), icons });
+}
+const comments = timeline.children.map((n) => (/Comment (\\d+) with/.exec(n.outerHTML) || [])[1])
+  .filter(Boolean).map(Number);
+process.stdout.write(JSON.stringify({
+  steps, total: entries.length, comments,
+  keptFirst: first.every((node, i) => timeline.children[i] === node),
+  signed: timeline.children.slice(ISSUE_TIMELINE_FIRST).every((n) => issueTimelineSignatures.has(n)),
+  eager: issueTimelineEagerCount(%(number)d, entries),
+  reused: timeline.children.filter((n) => served.includes(n)).length,
+  stale: timeline.children.some((n) => n.outerHTML === "<div>stale</div>"),
+}));
+"""
+
+STREAM_FUNCTIONS = ("runIssueTimelineStream", "scheduleIssueTimelineStream",
+                    "placeIssueTimelineItems", "issueNodeSignature")
+
+
+def stream_run(shown="null"):
+    issue = long_issue(50)
+    code = "\n".join(
+        [_const(SOURCES[name], const) for name, consts in CONSTANTS.items() for const in consts]
+        + [_const(SOURCES["06-repo-content.js"], "ISSUE_TIMELINE_BATCH")]
+        + [_function(SOURCES[name], fn) for name, fns in FUNCTIONS.items() for fn in fns]
+        + [_function(SOURCES["06-repo-content.js"], fn) for fn in STREAM_FUNCTIONS])
+    script = STREAM_HARNESS % {
+        "now": NOW_MS, "link": LINK_BASE, "api": API_BASE, "path": json.dumps(PAGE_PATH),
+        "code": code, "issue": json.dumps(json.dumps(issue)), "number": 77, "shown": shown}
+    return json.loads(subprocess.run(
+        ["node", "-"], input=script, check=True, capture_output=True, text=True,
+        env={"TZ": "UTC", "PATH": "/usr/bin:/bin:" + str(Path(shutil.which("node")).parent)}
+    ).stdout)
+
+
+@needs_node
+def test_the_rest_streams_in_batches_in_order_and_keeps_the_first_items():
+    out = stream_run()
+    assert out["total"] == 51
+    assert [step["items"] for step in out["steps"]] == [25, 40, 51]
+    assert [step["more"] for step in out["steps"]] == [True, True, False]
+    assert [step["icons"] for step in out["steps"]] == [0, 0, 1]
+    assert out["comments"] == list(range(50))
+    assert out["keptFirst"] and out["signed"]
+    assert out["eager"] == 10
+
+
+@needs_node
+def test_the_stream_keeps_the_comments_the_server_already_sent():
+    out = stream_run("{ stale: -1 }")
+    assert out["reused"] == 41 and not out["stale"]
+    assert out["comments"] == list(range(50))
+    assert out["keptFirst"] and out["steps"][-1] == {"items": 51, "more": False, "icons": 0}
+    out = stream_run("{ stale: 20 }")
+    assert out["reused"] == 40 and not out["stale"]
+    assert out["comments"] == list(range(50))
+    assert out["steps"][-1]["icons"] == 1

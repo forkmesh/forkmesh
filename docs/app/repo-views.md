@@ -307,7 +307,9 @@ Commit emails are not sent to the browser. Direct
 access lists online mirrors as plain rows with no green: the node name, its
 version or, for the node serving the page, the response time, and an
 open-direct icon. The repository-logo suggestion form and the owner's
-fediverse posts sit at the bottom as collapsibles.
+fediverse posts sit at the bottom as collapsibles. Below them, last in the rail, is the "Mirrors"
+card with the repository's mirror goal and the health of each copy
+([mirror-quota.md](mirror-quota.md)).
 
 ## Issues, pull requests and discussions
 
@@ -497,12 +499,104 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   `<i data-lucide>`. The frame around it is `renderRepoDetail` with the
   Issues tab open on a record. `dashboard.js` keeps that article in place
   when it takes the page over (`takeRepoFirstViewIssue`, and
-  `loadRepoRecordDetail` puts it where the skeleton would go), then replaces
-  it with its own render of the same markup, so nothing moves. Any change to
+  `loadRepoRecordDetail` puts it where the skeleton would go), then paints
+  its own render of the same markup over it, keeping every server-drawn node
+  it would draw the same way (see **Long threads** below), so nothing moves.
+  Any change to
   the dashboard's issue markup must be made in both; the parity tests in
   `app/tests/host/test_repo_ssr_issue.py` run the dashboard's own functions
   under node and compare the two renders (add any new helper the issue view
   calls to the test's `FUNCTIONS`/`CONSTANTS`).
+- **Long threads.** A forum thread of a hundred comments used to arrive as
+  one HTML page that the node sent only once every comment was rendered
+  (example/forum#519: 179 KB gzip, received after 468 ms, DOMContentLoaded
+  at 852 ms), and the dashboard then redrew the whole thread. The forum's
+  own requirements  are that the whole thread is
+  readable from the first HTTP response without JavaScript, on links as
+  slow as a DNS tunnel, so the first HTML still carries every comment. What
+  changed on 2026-10-21 is how it is sent and taken over:
+  - **Streamed.** `inject_issue_page` (`repo_ssr.py`) returns an
+    `IssuePage`: the page up to and including the header, the opening post
+    and the first `TIMELINE_FIRST` (10) timeline items, then the remaining
+    items rendered `STREAM_CHUNK` (10) at a time, then the rest of the page
+    (the sidebar, the comment box, the shell's scripts). `finish` answers
+    with a `ReadableStream` over it, so the ASGI layer sends each part as
+    it is ready (chunked transfer): the top no longer waits for the
+    Markdown of every comment. `render_issue_parts` (`repo_ssr_issue.py`)
+    leaves `REST_MARK` where the later items go and returns their render
+    functions (`Renderer.timeline_items`), each chunk rendered with the
+    forge-avatar context set again. The page is cut at the mark, so the
+    mark must come only from the renderer: `esc` turns every NUL a post
+    carries into U+FFFD, `render_issue_parts` refuses an article with more
+    than one mark, and `inject_issue_page` sends the page in one piece if
+    the shell or the tabs hold one. Before 2026-10-24 an author name holding
+    the mark moved the cut inside an attribute, and the comments streamed
+    after it became live attributes (stored XSS on the app origin). The
+    whole article is remembered on the
+    bundle once the last chunk is sent; a remembered article goes out in
+    one piece. A chunk that fails ends the thread early and still closes
+    the page; the dashboard draws what is missing. `inject_issue` joins the
+    parts for callers that want a string. Caddy must not hold the stream:
+    the instance Caddyfile (`install-instance.sh`) sets `flush_interval -1`
+    on the App proxy, as `deploy/core/render.py` already did for the
+    served stack; Cloudflare passes chunked HTML through as it arrives.
+  - **No competing download.** The page's head script fetches the view's
+    `page-reads` bundle (`window.__forkmeshView`); on a server-rendered
+    issue page it now waits for `DOMContentLoaded`
+    (`_view_reads_head(meta, after_page=True)`), so the record does not
+    share a slow link with the HTML the reader is waiting for. The
+    dashboard still needs the record once, for the comment form,
+    reactions and edit controls, and reads it from that bundle
+    (`seededRepoRead`).
+  - **Taking over without redrawing.** `renderRepoIssueDetail` builds the
+    timeline as entries (`issueTimelineEntries`, each with a lazy `html()`)
+    and draws only the first `ISSUE_TIMELINE_FIRST` (10, kept equal to
+    `TIMELINE_FIRST` by a test) plus, on in-app navigation, a placeholder
+    (`<div data-repo-issue-more data-remaining="N">`, two shimmer rows on
+    the rail and "Loading N more comments…"). Every issue render goes
+    through `paintRepoIssueDetail` (`loadRepoRecordDetail`, the optimistic
+    view, the late relations redraw, `renderCurrentWebIssueDetail`): for the
+    sticky bar, header, opening post, sidebar, Fediverse thread and each
+    timeline item it keeps the node already on screen when its signature
+    matches (`issueNodeSignature`: the markup as first drawn, lucide `<svg>`
+    turned back into `<i data-lucide>`, whitespace collapsed; recorded when
+    a node is drawn, for the server's page by `keepRepoFirstViewIssue`
+    before avatars are filled in). Items on screen past the first ten (the
+    server's, or an earlier render's) stay where they are, in front of a
+    hidden placeholder, and the stream (`queueIssueTimelineRest`,
+    `ISSUE_TIMELINE_BATCH` = 15 entries per `requestIdleCallback`, a 16 ms
+    timeout without it) renders each entry in turn and keeps the matching
+    node (`placeIssueTimelineItems`), inserting only what differs and
+    removing what no longer exists. A guest's page therefore stays the very
+    nodes the server sent (no picture is decoded again, nothing moves), a
+    member only sees the comments that gain edit buttons swapped, and the
+    scroll position holds. Without a server page the placeholder shows and
+    the items are appended. Lucide draws new icons once, after the last
+    batch. A newer render stops the old stream.
+  - **Comment links.** Each comment card has `id="issuecomment-<event id>"`.
+    A fragment `#issuecomment-<id>` (or GitHub's `#issuecomment-<number>`
+    for a mirrored `forge-github-comment-<number>`) makes the dashboard draw
+    through that comment at once and scroll to it, once per address; on the
+    server page the browser finds it by itself.
+  - **Off-screen cards.** `shell.html` gives timeline comment cards
+    `content-visibility: auto` with `contain-intrinsic-height: auto 180px`
+    and `scroll-margin-top: 64px` (clear of the sticky title bar). The
+    browser lays out and paints only the cards near the screen, which is
+    what lets a 500-comment page paint its top at once; their text stays in
+    the DOM, so find in page and anchors reach it, and `auto` remembers a
+    card's height once drawn. Paint containment clips a card's own
+    overflow, which its `overflow-hidden` box already did, except a 2 px
+    avatar hover ring at the card's left edge; the reaction picker opens in
+    `document.body`.
+  - Comment posting appends after the placeholder, avatars and person links
+    are filled in by the existing `MutationObserver`, and edit, delete and
+    reaction controls are delegated, so streamed items behave like the rest.
+  - Tests in `test_repo_ssr_issue.py`: parity of the whole thread (the
+    dashboard's first ten plus its streamed rest against the server page),
+    the streamed response's parts and order, the dashboard's placeholder and
+    fragment handling, and a node harness with a small fake DOM that runs
+    the stream (batches of 15, order, the first nodes kept, server-sent
+    nodes reused and a stale one replaced).
 - **Viewer-dependent parts.** The comment box, the sub-issue Add button and
   the Development settings button depend on who is looking, so both the guest and the member variants are
   drawn and the page's head script picks one before the first paint
@@ -522,6 +616,36 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   view, which are usually remembered; otherwise it is served without them.
   Without a remembered `/about`, a feature tab's page still draws the tabs a
   repository has by default.
+- **View on GitHub.** When the issue index knows the provider issue an issue
+  was mirrored from (`sourceUrl`, see
+  [issue-scale-limits.md](issue-scale-limits.md#the-issue-index)), the title
+  actions start with a link to it (`renderIssueSourceLink` /
+  `source_link_html`): "View on GitHub" for github.com, "View on <host>"
+  otherwise, the text hidden below `sm` so the row stays one line on a phone.
+  It opens in a new tab with `rel="noopener noreferrer nofollow"`; both
+  renderers accept only an `https` address of plain path characters. It is
+  a link the reader chooses to follow: nothing on the page loads from the
+  provider. The dashboard learns the address with the issue's relations
+  (`loadRepoIssueRelations`, kept per issue in `repoIssueSources`), the
+  server renderer from the bundle's `related` answer (`index_source_url`).
+- **Order, as on GitHub (`forum-list` plugin).** With the instance plugin
+  `forum-list` on (an `OPT_IN` plugin: off on instances and on forkmesh.com
+  until chosen), the issue list's default sort is Newest (`newest`: created
+  time descending, ties by number descending), GitHub's
+  `sort=created&direction=desc`; without it the default stays "Recently
+  updated" (`issueDefaultSort`). Both stay in the Sort menu, and "Recently
+  updated" is what the Recent view picks. The default is not written into the search
+  box (`sort:` appears only for another choice). `issueSortItems` falls back
+  to Newest for an unknown sort, and the server-rendered list orders its rows
+  the same way (`_created_ms`, seconds read as milliseconds like `stamp`).
+  A thread shows its comments and events oldest first by their `ts`
+  (`renderIssueTimeline` / `Renderer.timeline`, both stable sorts), whatever
+  order the record stores them in; mirrored comments carry the provider's
+  creation time.
+- **Instance switches.** With the `issue-ai-prompt` or `fediverse-ui` plugin
+  off ([INSTANCES.md](../INSTANCES.md#plugins)) neither renderer draws the
+  prompt box or the Fediverse thread; the server renderer reads
+  `plugins_off()` and keys its kept article by it.
 - **Pictures.** A paragraph that is one picture of unknown size (no width or
   height, `mdLoneImage` / `lone_image`) is drawn in a fixed 16:9 frame,
   `img[data-md-figure]` in `shell.html`, at most 24rem high, with the picture
