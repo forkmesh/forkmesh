@@ -487,7 +487,11 @@ visitor's `prefers-color-scheme`, without a flash of the wrong theme.
   Light. Dark or Light is stored as before (`forkmesh.dashboard.theme`,
   `forkmesh.theme`, the `forkmesh_theme` cookie); System stores `system`, so
   that visitor follows the system even on an instance whose default is
-  dark. With nothing stored, the instance's mode decides.
+  dark. With nothing stored, the instance's mode decides. The public site
+  reads the same keys: `site-header.js` and `home-theme.js` follow the
+  system for `system` (the homepage's own light default applies only when
+  nothing is stored), and `static-page.js` resolves it without writing a
+  fixed theme back over it.
 - **First paint:** the shell's head script resolves a stored choice
   (`system` through `matchMedia`) and sets `data-dashboard-theme` and
   `data-dashboard-theme-resolved`. `/instance-theme.css` (render-blocking,
