@@ -275,3 +275,44 @@ def test_warm_pass_reports_every_drawn_material():
     """
     )
     assert result == {"seen": [1, 2]}
+
+
+def test_a_failed_full_context_retries_with_the_compact_renderer():
+    quality = SCENE_DIR / "quality.js"
+    result = node(
+        f"""
+      const store = new Map([["forkmesh.world.gpu.v1", "ANGLE (Mesa, llvmpipe (LLVM 22.1.8 256 bits))"]]);
+      globalThis.localStorage = {{ getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) }};
+      const {{ planWorldRenderer, prepareWorldRendererContext }} = await import({json.dumps(quality.as_uri())});
+      const win = {{
+        matchMedia: () => ({{ matches: false }}),
+        navigator: {{ hardwareConcurrency: 12, deviceMemory: 16 }},
+        devicePixelRatio: 1,
+        innerWidth: 1600,
+        innerHeight: 900,
+        screen: {{ width: 1920, height: 1080 }},
+      }};
+      const container = {{ getBoundingClientRect: () => ({{ width: 1600, height: 900 }}) }};
+      const full = planWorldRenderer({{ container, win }});
+      const compact = planWorldRenderer({{ container, win, forceCompactRenderer: true }});
+      let lost = 0;
+      const context = {{ getExtension: () => ({{ loseContext: () => {{ lost += 1; }} }}) }};
+      const doc = {{ createElement: () => ({{ getContext: () => context }}) }};
+      class WebGLRenderer {{ constructor() {{ throw new Error("Error creating WebGL context."); }} }}
+      const prepared = prepareWorldRendererContext(full, {{ WebGLRenderer }}, doc);
+      process.stdout.write(JSON.stringify({{
+        prepared,
+        lost,
+        compactAntialias: compact.contextAttributes.antialias,
+        compactPower: compact.contextAttributes.powerPreference,
+      }}));
+    """
+    )
+    assert result == {"prepared": None, "lost": 1, "compactAntialias": False, "compactPower": "default"}
+    prepare = block(APP, "  prepareWorldRenderer() {", "\n  async bootstrap() {")
+    retry = prepare.index("if (!prepared?.renderer && this.rendererSafeMode !== true) {")
+    assert retry < prepare.index("const compactPlan = planFor(true);")
+    assert prepare.index("if (compact?.renderer) {") < prepare.index("this.rendererSafeMode = true;")
+    assert prepare.index("this.rendererSafeMode = true;") < prepare.index("if (!prepared?.renderer || plan.compactRenderer) return prepared;")
+    boot = block(APP, "  async bootstrap() {", "WORLD_BOOT?.endScene();")
+    assert boot.index("const prepared = await preparedRenderer;") < boot.index("forceCompactRenderer: this.rendererSafeMode === true,")
