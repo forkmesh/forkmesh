@@ -36,6 +36,8 @@
 #include "TerminalWidget.h"
 #include "WorldSpeechBridge.h"
 
+#include <QAbstractSlider>
+#include <QAbstractSpinBox>
 #include <QActionGroup>
 #include <QCheckBox>
 #include <QDialog>
@@ -314,6 +316,22 @@ private:
     QPointer<QWidget> m_preview;
     int m_radius = 0;
 };
+
+bool isPromptDragSurface(QWidget *widget, const QWidget *wrapper, const QWidget *bar)
+{
+    if (!widget || !wrapper || (widget != wrapper && !wrapper->isAncestorOf(widget)))
+        return false;
+    if (bar && (widget == bar || bar->isAncestorOf(widget)))
+        return false;
+    for (QWidget *w = widget; w && w != wrapper; w = w->parentWidget()) {
+        if (qobject_cast<QAbstractButton *>(w) || qobject_cast<QComboBox *>(w) ||
+            qobject_cast<QAbstractSpinBox *>(w) || qobject_cast<QLineEdit *>(w) ||
+            qobject_cast<QTextEdit *>(w) || qobject_cast<QPlainTextEdit *>(w) ||
+            qobject_cast<QAbstractSlider *>(w) || qobject_cast<QAbstractItemView *>(w))
+            return false;
+    }
+    return true;
+}
 
 class PromptResizeEdge : public QWidget
 {
@@ -4133,6 +4151,9 @@ QWidget *MainWindow::buildNetworkLogDock()
 
     promptWrapper->setMinimumWidth(0);
     promptWrapper->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    for (QWidget *surface : promptWrapper->findChildren<QWidget *>())
+        if (isPromptDragSurface(surface, promptWrapper, promptHandle))
+            surface->installEventFilter(this);
     promptWrapper->installEventFilter(this);
 
     auto *promptOverlayHost = new QWidget;
@@ -4537,7 +4558,9 @@ void MainWindow::loadPromptOverlayPlacement()
 
 bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
 {
-    if (m_promptWrapper && object == m_promptWrapper && m_promptDragHandle) {
+    if (m_promptDragHandle &&
+        isPromptDragSurface(qobject_cast<QWidget *>(object), m_promptWrapper,
+                            m_promptDragHandle)) {
         const QEvent::Type type = event->type();
         if (type != QEvent::MouseButtonPress && type != QEvent::MouseMove &&
             type != QEvent::MouseButtonRelease)

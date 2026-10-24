@@ -519,14 +519,18 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   transparent to the composer's surface, so a chat line running under the
   buttons fades out instead of colliding with them. With no chat to show, a
   band of the bar's height (`promptTopSpacer`) keeps it off the prompt text.
-  The whole body drags the composer, not just the bar: a press anywhere on
-  `promptWrapper` that no control takes (the chat lines, the bottom bar's
-  empty space, the gaps around the send column) and then moves past the
-  drag distance hands off to the bar's drag (`handlePromptPlacementEvent`),
-  so it can be moved anywhere or dragged out of the window into its own.
+  The whole body drags the composer, not just the bar: `promptWrapper` and
+  every widget in it that is not a control (`isPromptDragSurface`: not a
+  button, picker, text field, slider or list) are watched, so a press on the
+  chat lines, the bottom bar's empty space or the gaps around the send
+  column that moves past the drag distance hands off to the bar's drag
+  (`handlePromptPlacementEvent`). Each widget is watched directly because a
+  rich-text label keeps its own presses instead of passing them up. The
+  composer can be moved anywhere or dragged out of the window into its own.
   The prompt text, buttons and pickers keep their presses, and a plain click
   on a chat line still opens its channel. This works from the centred
-  Agents-page layout too: the first drag lifts the composer out to float. Until 2026-10-22 the bar was a full-width
+  Agents-page layout too: the first drag lifts the composer out to float.
+  Until 2026-10-22 the bar was a full-width
   strip with a centre drag pill and the grip on the left.
 - **Channel picker** (`promptChannelButton`, `m_promptChannelButton`): the
   bar's first control names the chat channel the composer is in
