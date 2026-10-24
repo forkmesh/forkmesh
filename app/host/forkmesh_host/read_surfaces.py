@@ -201,12 +201,11 @@ def label_list(value):
     return out
 
 
-# -- reading the repository ----------------------------------------------------
 
-_heads = {}      # (owner, repo) -> (monotonic, commit or "")
-_instance = {}   # "doc" -> (monotonic, dict or None)
-_listing = {}    # "repos" -> (monotonic, list)
-_cache = {}      # key -> (etag, body, last_modified, content_type)
+_heads = {}
+_instance = {}
+_listing = {}
+_cache = {}
 _cache_bytes = [0]
 
 
@@ -364,7 +363,6 @@ def posts(issue):
     return out
 
 
-# -- markdown ---------------------------------------------------------------
 
 def context(owner, repo, commit, files=None):
     base = repo_base(owner, repo)
@@ -412,10 +410,9 @@ def absolute(markup, origin):
     return ROOT_URL.sub(lambda m: '%s="%s/' % (m.group(1), origin), markup)
 
 
-# -- Atom ---------------------------------------------------------------------
 
 def tag_id(origin, *parts):
-    host = urllib.parse.urlsplit(origin).hostname or "localhost"
+    host = re.sub(r"[^a-z0-9.-]", "", urllib.parse.urlsplit(origin).hostname or "") or "localhost"
     return "tag:%s,%s:%s" % (host, TAG_DATE, "/".join(
         urllib.parse.quote(str(part), safe="-._~") for part in parts))
 
@@ -553,7 +550,6 @@ async def feed_thread(source, row, origin, limit, self_path):
     return body, newest
 
 
-# -- lite pages ---------------------------------------------------------------
 
 def page(title, body, head_links=""):
     return ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" '
@@ -721,7 +717,6 @@ def lite_home(name, repos, home):
     return page("%s - lite" % name, body, links)
 
 
-# -- forum home ---------------------------------------------------------------
 
 HOME_STYLE = (
     "<style>header{display:flex;flex-wrap:wrap;gap:.5em 1em;align-items:center;"
@@ -784,7 +779,6 @@ def quota_line(base, quota):
         esc(text), esc(base), " &middot; clone <code>%s</code>" % esc(clone) if clone else "")
 
 
-# -- Worker reads ---------------------------------------------------------------
 
 async def worker_json(worker_fetch, origin, path, budget=WORKER_BUDGET_SECONDS):
     if worker_fetch is None or not origin:
@@ -851,7 +845,6 @@ async def public_repositories(worker_fetch, origin):
     return repos
 
 
-# -- caching and the ASGI answer ---------------------------------------------------
 
 def remember(key, value):
     old = _cache.pop(key, None)
@@ -935,8 +928,6 @@ async def handle(fastpath, worker_fetch, scope, send, origin):
         if home is not None:
             repos = [item for item in repos if item[:2] == home] + \
                 [item for item in repos if item[:2] != home]
-            if not any(item[:2] == home for item in repos):
-                repos.insert(0, home + ("",))
         name = str(doc.get("name") or "ForkMesh")
         body = lite_home(name, repos, home).encode("utf-8")
         await send_answer(scope, send, 200, body, HTML_TYPE, etag_for(("lite-home", body)))

@@ -21,7 +21,7 @@ JavaScript, from data the node already has:
 | `/<o>/<r>/labels/<label>.atom` | New threads with one label (`issues.atom?label=` is the same feed) |
 | `/<o>/<r>/lite` | Thread list, 50 a page, `?page=`, `?label=`, `?sort=active` |
 | `/<o>/<r>/lite/issues/<n>` | The whole thread on one page |
-| `/lite` | The instance's public repositories, the home repository first |
+| `/lite` | The instance's public repositories, the home repository first when it is one of them |
 | `/` | The forum home page, on an instance with a home repository |
 
 The user-facing guide is [www/docs/feeds-and-email.md](../../www/docs/feeds-and-email.md).
@@ -203,7 +203,10 @@ repository, `/` behaves as before.
   `inject_view_reads`).
 - The issue list ends with "Feed · Lite view", in the server-rendered first
   view (`repo_views._list`) and in the dashboard (`repoIssueFeedLinks` in
-  `09-read-surfaces.js`, appended by `renderRepoIssues`).
+  `09-read-surfaces.js`, appended by `renderRepoIssues`). The server adds
+  it only while `read-surfaces` is on (`_plugins_off()`); before 2026-10-24
+  every instance's first view showed the links, which led nowhere with the
+  plugin off.
 - The sidebar's bottom row (Security, Privacy, Terms) has a "Lite" link to
   `/lite`; on a repository page a click handler points it at that
   repository's lite list, or at the thread when an issue is open.

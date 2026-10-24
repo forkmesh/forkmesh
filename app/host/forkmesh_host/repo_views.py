@@ -1268,7 +1268,8 @@ def _list(bundle, kind, rows, open_count=None, closed_count=None, link=None):
                      '</div>' % {"pulls": "pull requests"}.get(kind, kind))
     feeds = ('<p class="fm-ssr-sub" data-repo-issue-feeds><a href="%s/issues.atom" '
              'type="application/atom+xml">Feed</a> &middot; <a href="%s/lite">Lite view</a>'
-             '</p>' % (_esc(base), _esc(base))) if kind == "issues" else ""
+             '</p>' % (_esc(base), _esc(base))) \
+        if kind == "issues" and "read-surfaces" not in _plugins_off() else ""
     return _frame(bundle, kind, '<div class="fm-ssr-box">%s%s</div>%s' % (
         head, "".join(items), feeds), link)
 

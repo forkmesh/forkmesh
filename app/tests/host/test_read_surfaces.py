@@ -436,13 +436,16 @@ def test_repository_pages_point_at_the_feeds_and_the_lite_view():
     assert "<noscript>" not in repo_ssr.inject_view_reads(page, "example", "forum", "pulls", 0)
 
 
-def test_issue_list_first_view_and_dashboard_link_the_feeds():
+def test_issue_list_first_view_and_dashboard_link_the_feeds(monkeypatch):
     from pathlib import Path
     from forkmesh_host import repo_views
     bundle = type("B", (), {"owner": "example", "repo": "forum"})()
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset())
     markup = repo_views._list(bundle, "issues", [])
     assert 'data-repo-issue-feeds><a href="/example/forum/issues.atom"' in markup
     assert "data-repo-issue-feeds" not in repo_views._list(bundle, "pulls", [])
+    monkeypatch.setattr(repo_views, "_plugins_off", lambda: frozenset({"read-surfaces"}))
+    assert "data-repo-issue-feeds" not in repo_views._list(bundle, "issues", [])
     app = Path(rs.__file__).resolve().parents[2]
     source = (app / "public/dashboard/js/09-read-surfaces.js").read_text()
     assert "data-repo-issue-feeds" in source and "a[data-lite-link]" in source
