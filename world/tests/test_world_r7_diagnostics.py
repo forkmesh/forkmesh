@@ -180,5 +180,7 @@ def test_the_optimization_report_names_the_build_and_audits_the_same_window():
     assert "runningWorldDeployFingerprint()" in report
     assert '"unknown"' not in report.split("## Frame", 1)[0]
     assert "the findings above use this window" in report
-    copy = APP.split("  perfCopyReport() {", 1)[1].split("\n  }\n", 1)[0]
+    copy = APP.split("  perfCopyReport({ logTail = false } = {}) {", 1)[1].split("\n  }\n", 1)[0]
     assert copy.index("getProfile") < copy.index("this.runPerfAudit();")
+    button = APP.split("  async copyPerfReport() {", 1)[1].split("\n  }\n", 1)[0]
+    assert "this.perfCopyReport({ logTail: true })" in button

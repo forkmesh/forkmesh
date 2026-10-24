@@ -164,9 +164,12 @@ def test_bugs_show_through_the_glass_and_links_are_clickable():
     tank = HEXES[HEXES.index("function sceneTerrarium("):
                  HEXES.index("export function buildNeighbourScene(")]
     assert "depthWrite: false,\n  });" in tank
-    assert "entry.icon ? icon(entry.icon) : \"\"" in tank
+    assert "const url = entry.icon ? icon(entry.icon) : \"\";" in HEXES
     # A bug opens its card (neighbour-bug); its link is on the card.
     assert "bug(sprite, entry);" in tank
+    assert "sprite.visible = false;" in tank
+    assert "sprite.userData.raycastProxy = true;" in tank
+    assert "tank.add(bugBoard(THREE, centers, bugIconAtlas(THREE, item.bugs, icon, accent)));" in tank
     assert "pick(object, item.url, item.label)" in HEXES
     assert 'object.userData.interactive = "instance-hexagon";' in HEXES
     assert 'if (ground.pattern !== "circuit") {' in HEXES
@@ -389,3 +392,14 @@ def test_the_icon_route_fetches_once_and_answers_cors_open(monkeypatch):
     assert '"/api/world/neighbour-icon", "/api/world/neighbour-icon/"' \
         in runtime
     assert "await world_neighbour_icon_handler(self.env, request)" in runtime
+
+
+def test_a_terrarium_draws_its_bugs_in_one_call_and_merges_its_decor():
+    board = HEXES[HEXES.index("function bugBoardMaterial("):HEXES.index("function sceneHouse(")]
+    assert '"MeshBasicMaterial"' in board and "alphaTest: 0.5" in board
+    assert "mvPosition.xy += bugCorner;" in board
+    assert 'material.customProgramCacheKey = () => "forkmesh-neighbour-bug-board";' in board
+    assert "new THREE.Sprite(" not in HEXES[HEXES.index("function bugIconAtlas("):HEXES.index("function sceneHouse(")]
+    built = HEXES[HEXES.index("export function buildNeighbourScene("):]
+    assert "if (child.userData.neighbourBugBoard) child.castShadow = false;" in built
+    assert "mergeMeshesByMaterial(THREE, group, { skip: (object) => Boolean(object.userData.interactive) });" in built

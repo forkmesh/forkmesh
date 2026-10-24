@@ -46,9 +46,9 @@ def test_copied_log_has_the_audit_section_and_ends_with_the_agent_note():
 
 def test_the_world_feeds_the_optimize_report_into_the_copied_log():
     assert "WORLD_BOOT?.setReportProvider(() => this.perfCopyReport());" in APP
-    copy = APP.split("  perfCopyReport() {", 1)[1].split("\n  }\n", 1)[0]
+    copy = APP.split("  perfCopyReport({ logTail = false } = {}) {", 1)[1].split("\n  }\n", 1)[0]
     assert "this.runPerfAudit();" in copy
-    assert "this.perfReportMarkdown({ logTail: false })" in copy
+    assert "this.perfReportMarkdown({ logTail })" in copy
     report = APP.split("  perfReportMarkdown({ logTail = true } = {}) {", 1)[1].split(
         "\n  async copyPerfReport", 1)[0]
     for piece in (
