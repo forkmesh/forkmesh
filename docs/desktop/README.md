@@ -342,8 +342,9 @@ Details, manual CMake, test targets and known failures:
   and changes nothing (or moves the checkout aside); a fresh clone runs only
   when there is no checkout, into a missing or empty folder.
   `app/tests/test_desktop_update_keeps_checkout.py` covers it.
-- **Hosts.** Network → Hosts installs, updates and removes ForkMesh on SSH
-  hosts; every host update also refreshes the host's agent CLIs
+- **Hosts.** The Hosts rail beside Network → Nodes installs, updates and
+  removes ForkMesh on SSH hosts, and each saved host is a row of the node list
+  ([networking.md](networking.md#network--nodes)); every host update also refreshes the host's agent CLIs
   ([../agents/README.md](../agents/README.md#agent-cli-refresh-on-hosts)).
 - Logs and diagnosis: [diagnostics.md](diagnostics.md).
 

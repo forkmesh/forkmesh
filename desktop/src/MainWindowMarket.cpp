@@ -4085,8 +4085,9 @@ void MainWindow::syncPackageSurfaces()
     if (m_networkTabs) {
         const bool nodes = on(QStringLiteral("network"));
         const bool hosts = on(QStringLiteral("hosts"));
-        m_networkTabs->setTabVisible(kNetworkNodesTab, nodes);
-        m_networkTabs->setTabVisible(kNetworkHostsTab, hosts);
+        m_networkTabs->setTabVisible(kNetworkNodesTab, nodes || hosts);
+        if (m_hostsRail)
+            m_hostsRail->setVisible(hosts);
         const int current = m_networkTabs->currentIndex();
         if (!m_networkTabs->isTabVisible(current)) {
             for (int i = 0; i < m_networkTabs->count(); ++i) {

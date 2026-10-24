@@ -191,7 +191,7 @@ marketing site.
 
 The headless Go service supervises repository synchronization, the public HTTPS
 Git gateway, and signed endpoint publication. Production hosts can be created and checked from
-**App → Network → Hosts**. For a manual build:
+the Hosts rail of **App → Network → Nodes**. For a manual build:
 
 ```sh
 cd server

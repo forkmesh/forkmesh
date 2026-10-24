@@ -184,10 +184,10 @@ void MainWindow::renderVultrProvisionProgress(bool failed)
         }
         applySheet(m_vultrStageNumbers.at(i),
             QStringLiteral("QLabel { background:%1; color:%2; border:2px solid %3; "
-                           "border-radius:14px; font-weight:700; }")
+                           "border-radius:10px; font-size:10px; font-weight:700; }")
                 .arg(background, foreground, border));
         applySheet(m_vultrStageLabels.at(i),
-            QStringLiteral("QLabel { color:%1; font-size:11px; %2 }")
+            QStringLiteral("QLabel { color:%1; font-size:9px; %2 }")
                 .arg((complete || active || stageFailed)
                          ? reachedLabelColor
                          : pendingLabelColor,
@@ -205,7 +205,7 @@ void MainWindow::renderVultrProvisionProgress(bool failed)
                 : complete ? completeDetailColor
                 : pendingLabelColor;
             applySheet(detailLabel,
-                QStringLiteral("QLabel { color:%1; font-size:11px; }").arg(detailColor));
+                QStringLiteral("QLabel { color:%1; font-size:9px; }").arg(detailColor));
         }
     }
     if (m_vultrLiveBadge) {

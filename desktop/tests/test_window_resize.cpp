@@ -680,9 +680,10 @@ void checkNodesPageRunnersAndRelays(MainWindow &window)
     check(window.testNodesRoleFilterKeys() ==
               QStringList{QString(), QStringLiteral("core"),
                           QStringLiteral("runner"), QStringLiteral("mirror"),
-                          QStringLiteral("desktop"), QStringLiteral("relay")},
+                          QStringLiteral("desktop"), QStringLiteral("instance"),
+                          QStringLiteral("relay")},
           QStringLiteral("the Role filter offers all, core, runner, mirror, "
-                         "desktop and relay (%1)")
+                         "desktop, instance and relay (%1)")
               .arg(window.testNodesRoleFilterKeys().join(QStringLiteral(","))));
     int runnerRows = 0;
     for (const QString &name : window.testNodeDirectoryNames())
@@ -705,6 +706,96 @@ void checkNodesPageRunnersAndRelays(MainWindow &window)
               .arg(window.testNodesRoleFilterKey())
               .arg(window.testVisibleNodeDirectoryRows()));
     window.testSetNodesRoleFilter(QString());
+
+    const QVariant savedHosts = QSettings().value(QStringLiteral("hosts/list"));
+    QSettings().setValue(
+        QStringLiteral("hosts/list"),
+        QString::fromUtf8(QJsonDocument(QJsonArray{QJsonObject{
+                                            {QStringLiteral("name"), QStringLiteral("rail-host-1")},
+                                            {QStringLiteral("ip"), QStringLiteral("203.0.113.50")},
+                                            {QStringLiteral("user"), QStringLiteral("forkmesh")},
+                                            {QStringLiteral("status"), QStringLiteral("installed")},
+                                            {QStringLiteral("region"), QStringLiteral("ewr")},
+                                        }})
+                              .toJson(QJsonDocument::Compact)));
+    window.testSetVultrFleetJson(QByteArrayLiteral(
+        R"({"instances":[)"
+        R"({"label":"fmnext-core-7","main_ip":"203.0.113.17","tags":["forkmesh-next"]}]})"));
+    window.testSetDirectoryInstances(QJsonArray{QJsonObject{
+        {QStringLiteral("id"), QStringLiteral("f455c98c739e5b0f7348dfd5914d2eac")},
+        {QStringLiteral("name"), QStringLiteral("OWASP BLT")},
+        {QStringLiteral("url"), QStringLiteral("https://git.owaspblt.org/")},
+        {QStringLiteral("status"), QStringLiteral("online")},
+        {QStringLiteral("world"), true},
+        {QStringLiteral("checkedAt"), double(now - 60000)},
+    }});
+    window.testShowNodesSection();
+    QApplication::processEvents();
+    check(cell(QStringLiteral("rail-host-1"), "Role") == QStringLiteral("Mirror") &&
+              cell(QStringLiteral("rail-host-1"), "Scope") == QStringLiteral("saved host") &&
+              cell(QStringLiteral("rail-host-1"), "Endpoint") ==
+                  QStringLiteral("203.0.113.50") &&
+              cell(QStringLiteral("rail-host-1"), "Actions") == QStringLiteral("Logs"),
+          QStringLiteral("a saved host is a row of the node list (%1 | %2 | %3)")
+              .arg(cell(QStringLiteral("rail-host-1"), "Role"),
+                   cell(QStringLiteral("rail-host-1"), "Scope"),
+                   cell(QStringLiteral("rail-host-1"), "Endpoint")));
+    check(cell(QStringLiteral("n7"), "Role") == QStringLiteral("Core") &&
+              cell(QStringLiteral("n7"), "Endpoint") == QStringLiteral("203.0.113.17"),
+          QStringLiteral("a fleet core from the cloud listing is a row of the node "
+                         "list (%1 | %2)")
+              .arg(cell(QStringLiteral("n7"), "Role"),
+                   cell(QStringLiteral("n7"), "Endpoint")));
+    check(cell(QStringLiteral("OWASP BLT"), "Role") == QStringLiteral("Instance") &&
+              cell(QStringLiteral("OWASP BLT"), "Status") == QStringLiteral("Online") &&
+              cell(QStringLiteral("OWASP BLT"), "Endpoint") ==
+                  QStringLiteral("git.owaspblt.org") &&
+              cell(QStringLiteral("OWASP BLT"), "Actions") == QStringLiteral("Website"),
+          QStringLiteral("a self-hosted instance from the public directory is a "
+                         "row of the node list (%1 | %2 | %3)")
+              .arg(cell(QStringLiteral("OWASP BLT"), "Role"),
+                   cell(QStringLiteral("OWASP BLT"), "Status"),
+                   cell(QStringLiteral("OWASP BLT"), "Endpoint")));
+    const QStringList visualCaptions = window.testNodeDirectoryVisualCaptions();
+    check(visualCaptions.mid(0, 5) ==
+              QStringList{QStringLiteral("Node"), QStringLiteral("Status"),
+                          QStringLiteral("CPU"), QStringLiteral("RAM"),
+                          QStringLiteral("Disk")},
+          QStringLiteral("CPU, RAM and disk come right after the node and its "
+                         "status (%1)")
+              .arg(visualCaptions.mid(0, 6).join(QStringLiteral(", "))));
+    auto *hostsRail = window.findChild<QScrollArea *>(QStringLiteral("networkHostsRail"));
+    bool hostsTab = false;
+    for (const QString &label : window.testNetworkTabLabels())
+        hostsTab |= label.startsWith(QStringLiteral("Hosts"));
+    check(hostsRail && hostsRail->isVisible() && !hostsTab &&
+              hostsRail->width() <= 320,
+          QStringLiteral("the saved-host controls sit in a rail beside the node "
+                         "list, with no Hosts tab"));
+    QTableWidget *railHosts =
+        hostsRail ? hostsRail->findChild<QTableWidget *>(QStringLiteral("issueTable"))
+                  : nullptr;
+    QTableWidget *directory = nullptr;
+    for (QTableWidget *table : window.findChildren<QTableWidget *>())
+        if (table->property("nodesDirectory").toBool())
+            directory = table;
+    int hostRow = -1;
+    for (int row = 0; directory && row < directory->rowCount(); ++row) {
+        const QTableWidgetItem *name = directory->item(row, 0);
+        if (name && name->data(Qt::UserRole).toString() == QLatin1String("rail-host-1"))
+            hostRow = row;
+    }
+    if (directory && hostRow >= 0)
+        emit directory->cellClicked(hostRow, 0);
+    QApplication::processEvents();
+    check(railHosts && hostRow >= 0 && railHosts->currentRow() == 0 &&
+              railHosts->selectionModel()->isRowSelected(0, QModelIndex()),
+          QStringLiteral("clicking a saved host's row picks it in the Hosts rail"));
+    if (savedHosts.isValid())
+        QSettings().setValue(QStringLiteral("hosts/list"), savedHosts);
+    else
+        QSettings().remove(QStringLiteral("hosts/list"));
+    window.testSetDirectoryInstances(QJsonArray{});
     window.testSetVultrFleetJson(QByteArrayLiteral(R"({"instances":[]})"));
     window.testSetRunnersPayload(QJsonObject{{QStringLiteral("ok"), true},
                                              {QStringLiteral("runners"), QJsonArray{}}});
@@ -22651,21 +22742,32 @@ else:
     QWidget *hostsPageBody =
         window.findChild<QWidget *>(QStringLiteral("hostsPageBody"));
     QLayout *hostsPageLayout = hostsPageBody ? hostsPageBody->layout() : nullptr;
-    QLayout *hostsProvisioningRow = window.findChild<QLayout *>(
-        QStringLiteral("hostsProvisioningRow"));
     QTableWidget *hostsPageTable =
         hostsPageBody
             ? hostsPageBody->findChild<QTableWidget *>(QStringLiteral("issueTable"))
             : nullptr;
     QWidget *hostsAutoscalePanel =
         window.findChild<QFrame *>(QStringLiteral("fleetAutoscalePanel"));
-    check(hostsPageLayout && hostsPageTable && hostsProvisioningRow &&
-              hostsAutoscalePanel &&
-              hostsPageLayout->indexOf(hostsPageTable) == 0 &&
-              hostsPageLayout->indexOf(hostsAutoscalePanel) == 1 &&
-              hostsPageLayout->indexOf(hostsProvisioningRow) == 2,
+    QStringList railSections;
+    int firstSection = -1;
+    for (int i = 0; hostsPageLayout && i < hostsPageLayout->count(); ++i) {
+        QWidget *widget = hostsPageLayout->itemAt(i)->widget();
+        if (!widget || widget->objectName() != QLatin1String("hostsRailSection"))
+            continue;
+        if (firstSection < 0)
+            firstSection = i;
+        railSections.append(widget->property("railSection").toString());
+    }
+    check(hostsPageLayout && hostsPageTable && hostsAutoscalePanel &&
+              hostsPageLayout->indexOf(hostsPageTable) >= 0 &&
+              hostsPageLayout->indexOf(hostsPageTable) < firstSection &&
+              railSections == QStringList{QStringLiteral("addHost"), QStringLiteral("vultr"),
+                                          QStringLiteral("runners"), QStringLiteral("fleet"),
+                                          QStringLiteral("output")},
           QStringLiteral(
-              "Hosts puts the saved-host fleet first, fleet autoscaling next, then the provisioning cards"));
+              "the Hosts rail puts the saved hosts first, then collapsible add-host, "
+              "Vultr, runner, fleet and output sections (%1)")
+              .arg(railSections.join(QStringLiteral(", "))));
     QLabel *fleetHealthSummary = window.findChild<QLabel *>(
         QStringLiteral("hostsFleetHealthSummary"));
     check(fleetHealthSummary &&

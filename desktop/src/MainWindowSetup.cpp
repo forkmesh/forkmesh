@@ -1453,6 +1453,24 @@ void MainWindow::testSetRunnersPayload(const QJsonObject &payload)
     setRunnerAttention(forkmesh::runners::runnerAttentionFromRunners(m_runners));
 }
 
+void MainWindow::testSetDirectoryInstances(const QJsonArray &instances)
+{
+    m_directoryInstances = instances;
+    m_directoryInstancesFetchedMs = QDateTime::currentMSecsSinceEpoch();
+}
+
+QStringList MainWindow::testNodeDirectoryVisualCaptions() const
+{
+    QStringList captions;
+    if (!m_nodesTable)
+        return captions;
+    const QHeaderView *header = m_nodesTable->horizontalHeader();
+    for (int visual = 0; visual < header->count(); ++visual)
+        if (QTableWidgetItem *item = m_nodesTable->horizontalHeaderItem(header->logicalIndex(visual)))
+            captions.append(item->text());
+    return captions;
+}
+
 QStringList MainWindow::testRelayRowNames() const
 {
     QStringList names;
