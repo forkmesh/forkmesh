@@ -28,7 +28,10 @@ The Approve and Always run buttons stay in the pull's Checks section
 The footer says whether the pull can merge, why not, and holds the controls.
 Only someone who may merge (the repository's owner, or for an organization's
 repository an owner of the organization) sees the merge controls; everyone
-else sees the same rows and who can merge.
+else sees the same rows and who can merge. The status button in the pull's
+header (`repoPullMergeStatus`) said a green "Ready to merge" to everyone, and
+contributors read it as permission to merge their own pull request; anyone
+who may not merge now sees "Waiting for a maintainer to merge" instead.
 
 *Re-run failed* is shown only to someone who may merge and only when the
 Actions read named its executor node: `actions/control` refuses a request
@@ -90,21 +93,39 @@ an older commit. The words live in each icon's tooltip and label.
 ## Update branch
 
 A branch-backed pull (`derive: branch`, its head is a branch of this
-repository) that is behind and merges cleanly gets **Update branch** for an
-organization owner. It posts `forkmesh.pull-update-v1` to `/api/repo/<o>/<r>/pulls/<n>/update`
+repository) that is behind gets **Update branch**, as on GitHub. It posts
+`forkmesh.pull-update-v1` to `/api/repo/<o>/<r>/pulls/<n>/update`
 (`repository_pull_merge_handler`, mutation `update`); the mirror merges the
 base into the head branch (`update-pull-branch`, `_update_execute_locked` and
 `server/merge.go`). Only merging is supported: the executor has no rebase
 mode, so none is offered.
 
-- A pull from someone else's copy (a fork on another node, a web or
-  cross-node submission) is patch-backed: its commits travel in the ledger as
+- **Who.** Contributors had to fetch, merge and push by hand every time the
+  base moved, because only an organization owner could press the button.
+  Anyone who may push to the head branch may now update it
+  (`_account_may_write_branch`): the repository's owner, an organization
+  member with write permission or better, or a contributor whose head is in
+  their own `pr/<account>/` namespace on a repository open to contributor
+  pushes. Being the pull's author is not enough on its own, because a pull
+  can name any branch of the repository as its head. The page offers the
+  button on the same basis (`loadRepoPullUpdateAuthorization`); the relay
+  decides.
+- **Protected heads.** An update that would move a protected branch is
+  refused (`branch_protected`), for owners too: a protected branch changes
+  only by merging an approved pull request.
+- **Outcome.** A clean update shows "Synced this branch with `<base>`" and
+  the time. When the branch conflicts with the base, nothing is changed and
+  the box says to resolve the conflicts locally and push; there is no
+  web conflict editor. The button is shown on a conflicting branch too, so
+  pressing it gives that answer.
+- A pull from someone else's copy (a fork, a web or cross-node submission)
+  is patch-backed: its commits travel in the ledger as
   `commits.mbox`/`changes.patch`, there is no branch here to update, and no
-  maintainer can push to the author's copy. The box says so, says that only
-  the author can refresh it by rebasing and resubmitting, and that it can
-  still be merged while behind.
-- A visitor or the author of a branch-backed pull sees the commands to merge
-  the base locally and push.
+  maintainer can push to the author's copy. Being behind does not matter for
+  it: the mirror replays the series onto the newest base when it merges. The
+  row used to warn "N commits behind", which sent contributors to rebase and
+  resubmit for nothing; it now says it merges cleanly and needs no update.
+- A visitor sees the commands to merge the base locally and push.
 
 ## "The pull-request metadata changed"
 

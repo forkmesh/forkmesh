@@ -2341,6 +2341,7 @@ async def org_agent_bots_handler(
                 sessions.append(_org_agent_hide_private_runner(
                     _org_agent_session_projection(row, record), row, record,
                     context["actor"]))
+        import agent_branches
         targets = await _org_agent_session_targets(env, context)
         return json_response({
             "ok": True,
@@ -2353,6 +2354,7 @@ async def org_agent_bots_handler(
             "canQueueAgent": True,
             "canViewAgentSessions": True,
             "canDeleteAgentSessions": True,
+            "canMergeAgentBranches": agent_branches.merge_allowed(context),
             "accessBasis": context["accessBasis"],
             "accessReason": (
                 "Owner access to agent-capable repository nodes."
@@ -4323,14 +4325,47 @@ async def _pull_mutation_node(env, context, candidates, operation):
         len(candidates), rejected)
 
 
+async def _pull_update_head(env, context, pull_number):
+    record = await _pull_lifecycle_record(
+        env, context["owner"], context["repo"], int(pull_number))
+    if (
+        str(record.get("status") or "open").strip().lower() != "open"
+        or str(record.get("derive") or "").strip() != "branch"
+    ):
+        return ""
+    head = str(record.get("head") or "").strip()
+    if not head or ":" in head or not _branch_protection.valid_branch(head):
+        return ""
+    return head
+
+
+async def _account_may_write_branch(env, request, context, branch, actor):
+    if not branch or not actor:
+        return False
+    if await _account_owns_node(env, actor, context["owner"]):
+        return True
+    if await _org_write_allowed(env, context["owner"], context["repo"], actor):
+        return True
+    prefix = _hosted_git.contributor_ref_prefix(actor)
+    if not prefix or not ("refs/heads/" + branch).startswith(prefix):
+        return False
+    try:
+        match = REPO_API_PREFIX_RE.match(urlparse(request.url).path)
+    except Exception:
+        match = None
+    alias = (safe_segment(match.group(1)) or "") if match else ""
+    return await _hosted_git.contributor_push_allowed(
+        env, context["owner"], context["repo"], actor, alias=alias)
+
+
 async def repository_pull_merge_handler(
         env, request, owner, repo, pull_number, mutation="merge"):
     """Authorize, pin, dispatch, and durably reconcile one pull mutation job.
 
     ``mutation`` selects between merging the pull request into the base branch
     and merging the base branch into the pull request's own head branch. Both
-    are exact-OID, idempotent-by-request-id, owner-only, and audited; they share
-    this handler so neither can drift away from those four properties.
+    are exact-OID, idempotent-by-request-id, and audited; a merge is owner-only,
+    and an update is open to anyone who may push to the head branch.
     """
     profile = HTTPS_MIRROR_PULL_MUTATIONS[mutation]
     if method_name(request) != "POST":
@@ -4371,6 +4406,15 @@ async def repository_pull_merge_handler(
             env, request, context["owner"], context["repo"], actor)
     except Exception:
         authorized = False
+    update_head = ""
+    if mutation == "update":
+        try:
+            update_head = await _pull_update_head(env, context, pull_number)
+            if not authorized:
+                authorized = await _account_may_write_branch(
+                    env, request, context, update_head, actor)
+        except Exception:
+            authorized = False
     target = context["owner"] + "/" + context["repo"]
     # An owner may merge without the independent-review gate. Only the owner
     # check above stands between a caller and that waiver, so every audit line
@@ -4448,6 +4492,15 @@ async def repository_pull_merge_handler(
                            "reason": protection[1].get("error", "")})
             return json_response(
                 protection[1], status=protection[0], cache_control="no-store")
+    if row is None and mutation == "update" and update_head:
+        refused = await _branch_protection.branch_refusal(
+            env, context["owner"], context["repo"], [update_head])
+        if refused is not None:
+            await _audit_sensitive_action(
+                env, actor, profile["action"], "repository", target,
+                "denied", {"pullNumber": int(pull_number),
+                           "reason": "branch_protected"})
+            return refused
     if row is None:
         if not await _repo_merge_jobs_make_room(
                 env, context["repoBi"], now):

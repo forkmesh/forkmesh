@@ -40,7 +40,10 @@
       "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.",
       "Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.",
       "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.",
-      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows."
+      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows.",
+      "Anyone who can push to a pull request's branch can press Update branch to bring in the newest base branch; it says when the branch was synced, or that there are merge conflicts to resolve locally.",
+      "Only organization owners can merge pull requests and agent branches: contributors no longer see a green Ready to merge button or a Merge & clean up button for agent work.",
+      "A pull request from a fork no longer warns that it is commits behind when it still merges cleanly, and you are told when a pull request was opened on your fork because the original repository is a read-only mirror."
      ]
     },
     {
