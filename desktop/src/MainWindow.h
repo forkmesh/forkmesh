@@ -11639,8 +11639,8 @@ private:
     QPushButton *m_promptVibeCheck = nullptr;
     QLabel *m_promptChatPreview = nullptr;
     QTimer *m_promptChatPreviewTimer = nullptr;
-    bool m_promptPreviewPressed = false;
-    QPoint m_promptPreviewPressPos;
+    bool m_promptBodyPressed = false;
+    QPoint m_promptBodyPressPos;
     forkmesh::ui::OverflowActionRow *m_agentHeaderActions = nullptr;
     forkmesh::ui::OverflowActionRow *m_agentListActions = nullptr;
     forkmesh::ui::OverflowActionRow *m_agentRecycleActions = nullptr;
@@ -12653,6 +12653,7 @@ private:
     QPlainTextEdit *m_issueQuickAdd = nullptr;
     QFrame *m_promptWrapper = nullptr; // geometry anchor for notification/prompt bubbles
     QPushButton *m_promptChannelButton = nullptr;
+    QPushButton *m_promptResetButton = nullptr;
     QComboBox *m_quickAddAgentProvider = nullptr;
     QComboBox *m_quickAddAgentModelSelector = nullptr;
     QComboBox *m_quickAddTaskAssignee = nullptr;

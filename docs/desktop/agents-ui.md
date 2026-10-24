@@ -510,7 +510,7 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 
 - The three toggles are icon buttons in the composer's floating button bar
   (`FloatingPromptBar`, `promptDragHandle`), after the channel picker and
-  before the clear (×) button. An "on" toggle gets a
+  before the clear (×) and reset buttons. An "on" toggle gets a
   thin accent border, so the branch icon (on by default) reads as connected.
   They were a checkbox, a checkbox-plus-icon pair and a "vibe" checkbox on the
   left until 2026-10-22, which crowded the grip and hid what was on.
@@ -519,10 +519,14 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   transparent to the composer's surface, so a chat line running under the
   buttons fades out instead of colliding with them. With no chat to show, a
   band of the bar's height (`promptTopSpacer`) keeps it off the prompt text.
-  The fade and the gaps between buttons still drag the composer, and so do
-  the chat lines: a press on them that moves past the drag distance hands
-  off to the bar's drag (`handlePromptPlacementEvent`), while a plain click
-  still opens the line's channel. Until 2026-10-22 the bar was a full-width
+  The whole body drags the composer, not just the bar: a press anywhere on
+  `promptWrapper` that no control takes (the chat lines, the bottom bar's
+  empty space, the gaps around the send column) and then moves past the
+  drag distance hands off to the bar's drag (`handlePromptPlacementEvent`),
+  so it can be moved anywhere or dragged out of the window into its own.
+  The prompt text, buttons and pickers keep their presses, and a plain click
+  on a chat line still opens its channel. This works from the centred
+  Agents-page layout too: the first drag lifts the composer out to float. Until 2026-10-22 the bar was a full-width
   strip with a centre drag pill and the grip on the left.
 - **Channel picker** (`promptChannelButton`, `m_promptChannelButton`): the
   bar's first control names the chat channel the composer is in
@@ -535,9 +539,11 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   the distinct senders in the loaded history plus you; chats are the loaded
   top-level messages. Until 2026-10-24 this spot showed the characters left
   of the 16,000 the prompt holds; the limit still applies, uncounted.
-- There is no reset or pop-out button since 2026-10-24: double-clicking the
-  bar snaps the composer back (`resetPromptOverlayPlacement`) and dragging it
-  out of the window still tears it off into its own window.
+- The reset button (`promptResetButton`, sync icon) at the bar's right end
+  snaps the composer back to its default size and place
+  (`resetPromptOverlayPlacement`), as double-clicking the bar does. There is
+  no pop-out button since 2026-10-24: dragging the composer out of the window
+  still tears it off into its own window, and a double-click docks it.
 - **Resizing**: every edge and corner of the composer is a resize handle
   (`PromptResizeEdge`, `promptResizeEdge`, eight invisible bands 5 px thick
   with 10 px corners, children of `promptOverlayHost` laid over
@@ -545,9 +551,11 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   grabbed edges (`resizedPromptRect`), keeps the 280×120 minimum and stops at
   the window's edges. A docked composer lifts off the footer on the first
   resize, as it does on a drag; a popped-out composer asks the window system
-  to resize from that edge (`startSystemResize`). The bands hide with the
-  button bar, so the centred Agents-page composer and the collapsed avatar
-  cannot be resized. The bar keeps a 10 px right margin so the top-right
+  to resize from that edge (`startSystemResize`). The bands show whenever the
+  composer does, the centred Agents-page layout included (its first resize
+  lifts it out to float); only the collapsed avatar has none. Until
+  2026-10-24 they hid with the button bar, so the centred composer could not
+  be resized. The bar keeps a 10 px right margin so the top-right
   corner never covers its buttons. Until 2026-10-23 a small grip at the right
   end of the bar was the only handle and always resized from the top-right
   corner.

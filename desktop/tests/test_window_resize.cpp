@@ -1455,9 +1455,8 @@ void checkFooterOverlayGeometry(MainWindow &window)
           QStringLiteral("the prompt has no resize grip: every edge and corner "
                          "is a resize handle"));
     check(!window.findChild<QPushButton *>(QStringLiteral("promptDetachButton")) &&
-              !window.findChild<QPushButton *>(QStringLiteral("promptResetButton")) &&
               !window.findChild<QLabel *>(QStringLiteral("quickAddCharCount")),
-          QStringLiteral("the prompt strip has no reset, pop-out or characters-left "
+          QStringLiteral("the prompt strip has no pop-out or characters-left "
                          "control"));
     check(promptClear && promptChannel && promptGrip &&
               !promptGrip->geometry().intersects(QRect(
@@ -1647,14 +1646,18 @@ void checkFooterOverlayGeometry(MainWindow &window)
               QStringLiteral("docking the prompt again brings it back "
                              "inside the app"));
 
-        {
-            window.testResetPromptOverlayPlacement();
+        auto *promptReset =
+            window.findChild<QPushButton *>(QStringLiteral("promptResetButton"));
+        check(promptReset != nullptr,
+              QStringLiteral("the prompt has an explicit reset-placement button"));
+        if (promptReset) {
+            promptReset->click();
             // Checked before the event loop spins: the reset has to land the
             // panel in the corner in the same pass, not leave a frame where it
             // is nowhere on screen (adhoc #85).
             check(prompt->parentWidget() == dock &&
                       prompt->geometry().bottom() == dock->rect().bottom(),
-                  QStringLiteral("resetting snaps the prompt back to the "
+                  QStringLiteral("the reset button snaps the prompt back to the "
                                  "footer anchor"));
             // The strip itself has to stay inside the workspace it overlays.
             // Sized from an empty row's size hint it hangs a whole panel height
@@ -10786,6 +10789,42 @@ void checkWorkspaceDesign(MainWindow &window)
                          "to the open agent (%1)")
               .arg(centredSend ? centredSend->text() : QStringLiteral("none")));
     shoot(QStringLiteral("agents-new-layout"));
+    {
+        int shownEdges = 0;
+        for (QWidget *edge :
+             window.findChildren<QWidget *>(QStringLiteral("promptResizeEdge")))
+            shownEdges += edge->isVisibleTo(&window) ? 1 : 0;
+        check(shownEdges == 8,
+              QStringLiteral("the centred composer keeps all eight edges and corners "
+                             "resizable (%1 shown)")
+                  .arg(shownEdges));
+        auto *body = window.findChild<QWidget *>(QStringLiteral("quickAddBottomBarHost"));
+        if (body && body->isVisibleTo(&window)) {
+            const QPoint start = body->mapToGlobal(QPoint(2, body->height() / 2));
+            const QPoint end = start + QPoint(-40, -120);
+            QMouseEvent press(QEvent::MouseButtonPress, body->mapFromGlobal(start),
+                              QPointF(start), Qt::LeftButton, Qt::LeftButton,
+                              Qt::NoModifier);
+            QApplication::sendEvent(body, &press);
+            QMouseEvent move(QEvent::MouseMove, body->mapFromGlobal(end), QPointF(end),
+                             Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(body, &move);
+            if (auto *handle =
+                    window.findChild<QWidget *>(QStringLiteral("promptDragHandle"))) {
+                QMouseEvent release(QEvent::MouseButtonRelease,
+                                    handle->mapFromGlobal(end), QPointF(end),
+                                    Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                QApplication::sendEvent(handle, &release);
+            }
+            settle();
+        }
+        check(body && window.testPromptOverlayPlacement() == QStringLiteral("floating"),
+              QStringLiteral("dragging the centred composer by its body lifts it out "
+                             "to float anywhere (%1)")
+                  .arg(window.testPromptOverlayPlacement()));
+        window.testResetPromptOverlayPlacement();
+        settle();
+    }
     forkmesh::ui::setWorkspaceLayoutClassic(true);
     NextAccess::syncWorkspace(window);
     settle();

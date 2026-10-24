@@ -353,7 +353,7 @@ public:
                       : m_edges & Qt::BottomEdge ? r.bottom() - h + 1
                                                  : r.top() + kCornerPx;
         setGeometry(x, y, qMax(0, w), qMax(0, h));
-        setVisible(!m_panel->isHidden() && (!m_bar || !m_bar->isHidden()));
+        setVisible(!m_panel->isHidden());
         raise();
     }
 
@@ -3972,7 +3972,6 @@ QWidget *MainWindow::buildNetworkLogDock()
         switchConversation(conversation);
         showSection(2);
     };
-    chatPreview->installEventFilter(this);
     chatPreview->hide();
     m_promptChatPreview = chatPreview;
     constexpr int kPromptBarPx = 24;
@@ -4100,6 +4099,18 @@ QWidget *MainWindow::buildNetworkLogDock()
     promptHandleRow->addWidget(m_promptVibeCheck, 0);
     promptHandleRow->addSpacing(6);
     promptHandleRow->addWidget(m_promptClearButton, 0);
+
+    m_promptResetButton = new QPushButton;
+    m_promptResetButton->setObjectName(QStringLiteral("promptResetButton"));
+    m_promptResetButton->setCursor(Qt::PointingHandCursor);
+    m_promptResetButton->setFixedSize(handleButtonPx, handleButtonPx);
+    setComposerIconTone(m_promptResetButton);
+    setOcticon(m_promptResetButton, "sync", next ? 14 : 10);
+    m_promptResetButton->setToolTip(
+        QStringLiteral("Reset the prompt back to its default size and position"));
+    connect(m_promptResetButton, &QPushButton::clicked, this,
+            &MainWindow::resetPromptOverlayPlacement);
+    promptHandleRow->addWidget(m_promptResetButton, 0);
     refreshQuickAddSendToChannelButton();
 
     auto *promptStack = new QVBoxLayout(promptWrapper);
@@ -4122,6 +4133,7 @@ QWidget *MainWindow::buildNetworkLogDock()
 
     promptWrapper->setMinimumWidth(0);
     promptWrapper->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    promptWrapper->installEventFilter(this);
 
     auto *promptOverlayHost = new QWidget;
     m_promptOverlayHost = promptOverlayHost;
@@ -4525,7 +4537,7 @@ void MainWindow::loadPromptOverlayPlacement()
 
 bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
 {
-    if (m_promptChatPreview && object == m_promptChatPreview && m_promptDragHandle) {
+    if (m_promptWrapper && object == m_promptWrapper && m_promptDragHandle) {
         const QEvent::Type type = event->type();
         if (type != QEvent::MouseButtonPress && type != QEvent::MouseMove &&
             type != QEvent::MouseButtonRelease)
@@ -4533,24 +4545,23 @@ bool MainWindow::handlePromptPlacementEvent(QObject *object, QEvent *event)
         auto *mouse = static_cast<QMouseEvent *>(event);
         const QPoint cursor = mouse->globalPosition().toPoint();
         if (type == QEvent::MouseButtonPress) {
-            m_promptPreviewPressed = mouse->button() == Qt::LeftButton;
-            m_promptPreviewPressPos = cursor;
+            m_promptBodyPressed = mouse->button() == Qt::LeftButton;
+            m_promptBodyPressPos = cursor;
             return false;
         }
         if (type == QEvent::MouseButtonRelease) {
-            m_promptPreviewPressed = false;
+            m_promptBodyPressed = false;
             return false;
         }
-        if (!m_promptPreviewPressed || !(mouse->buttons() & Qt::LeftButton) ||
-            m_promptDragHandle->isHidden())
+        if (!m_promptBodyPressed || !(mouse->buttons() & Qt::LeftButton))
             return false;
-        if ((cursor - m_promptPreviewPressPos).manhattanLength() <
+        if ((cursor - m_promptBodyPressPos).manhattanLength() <
             QApplication::startDragDistance())
             return true;
-        m_promptPreviewPressed = false;
+        m_promptBodyPressed = false;
         QMouseEvent press(QEvent::MouseButtonPress,
-                          m_promptDragHandle->mapFromGlobal(m_promptPreviewPressPos),
-                          m_promptPreviewPressPos, Qt::LeftButton, Qt::LeftButton,
+                          m_promptDragHandle->mapFromGlobal(m_promptBodyPressPos),
+                          m_promptBodyPressPos, Qt::LeftButton, Qt::LeftButton,
                           mouse->modifiers());
         if (!handlePromptPlacementEvent(m_promptDragHandle, &press))
             return false;
