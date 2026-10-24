@@ -183,7 +183,8 @@ class HostRuntime:
             raise RuntimeError("host is sealed")
         ctx = self.context()
         self._remember_instance()
-        with d1_caller.request_scope(request):
+        from . import privacy
+        with d1_caller.request_scope(request, privacy.active(self.env)):
             if self._db_scope is not None:
                 with self._db_scope():
                     response = await self.entrypoint(ctx).fetch(request)

@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import urls  # noqa: E402
+import instance_privacy  # noqa: E402
 
 ENTRY = ROOT / "src" / "entry.py"
 CATALOG = ROOT / "src" / "catalog.py"
@@ -25,6 +26,7 @@ FUNCS = {
     "repo_view_handler", "repo_views_lookup_handler", "_record_repo_view",
     "_repo_viewer_key", "_repo_view_totals", "_repo_view_lookup_keys",
     "_public_repo_owner", "method_name", "safe_segment",
+    "_visitor_count_address",
 }
 CONSTANTS = {
     "REPO_VIEW_WINDOW_MS", "REPO_VIEW_LOOKUP_LIMIT", "REPO_VIEW_LOOKUP_CHUNK",
@@ -146,6 +148,7 @@ def _harness(private=()):
         "json_response": json_response,
         "bounded_json_request": json_from_request_double,
         "world_visitor_metrics": _Visitors,
+        "instance_privacy": instance_privacy,
         "REPO_VIEW_RE": urls.REPO_VIEW_RE,
         "ROOM_NAME_RE": re.compile(r"^[A-Za-z0-9._-]+$"),
         "MAX_REPO_SEGMENT": 100,

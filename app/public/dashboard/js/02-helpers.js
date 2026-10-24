@@ -181,6 +181,10 @@
     return theme === "light" ? "light" : "dark";
   }
 
+  function seasonActive(name) {
+    return document.documentElement.dataset.season === name;
+  }
+
   function readDashboardTheme() {
     try {
       const cookieTheme = document.cookie
@@ -847,6 +851,25 @@
     return `href="${escapeHtml(forge.href)}" target="_blank" rel="noopener noreferrer nofollow" data-forge-person="${escapeHtml(forge.provider)}" title="${escapeHtml(forge.title)}"`;
   }
 
+  const forgeAvatarSets = new Map();
+
+  function rememberForgeAvatars(repo, names) {
+    if (!repo || !Array.isArray(names) || !names.length) return;
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    const known = forgeAvatarSets.get(key) || new Set();
+    names.forEach((name) => { if (typeof name === "string") known.add(name.toLowerCase()); });
+    forgeAvatarSets.set(key, known);
+  }
+
+  function forgeAvatarSrc(forge) {
+    const repo = state.selectedRepo;
+    if (!repo || !forge) return "";
+    const known = forgeAvatarSets.get(`${repo.owner || ""}/${repo.name || ""}`.toLowerCase());
+    const login = forge.login.toLowerCase();
+    return known?.has(`${forge.provider}:${login}`)
+      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`) : "";
+  }
+
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
     const label = String(name || author || (agent ? "Agent" : "unknown"));
     const bot = agent || issueActorIsBot(label);
@@ -857,11 +880,12 @@
     const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
     const botKind = bot ? (agent && !botAvatarKind(label) ? "ai" : botAvatarKind(label) || "bot") : "";
+    const forgePicture = forge ? forgeAvatarSrc(forge) : "";
     const inner = bot
       ? botAvatarSvg(botKind, pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5")
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
-        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
+        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>${forgePicture ? `<img src="${escapeHtml(forgePicture)}" alt="" width="${pixels}" height="${pixels}" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />` : ""}`;
     const override = bot && !agent ? issuePersonHandle(label) : "";
     const hydrate = (handle || override) && !ownAvatar
       ? ` data-issue-actor-avatar="${escapeHtml(handle || override)}"` : "";
@@ -1741,6 +1765,14 @@
     const info = await instanceInfo();
     const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
     return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
+  function instancePluginOn(id) {
+    if (!instancePluginStates) {
+      void instanceInfo();
+      return false;
+    }
+    return instancePluginStates.get(id) === true;
   }
 
   function instancePluginOff(id) {

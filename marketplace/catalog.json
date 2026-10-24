@@ -50,7 +50,7 @@
     { "id": "face-changer", "version": "1.2.0", "manifest": "packages/face-changer/manifest.json" },
     { "id": "video-mix-dj-studio", "version": "1.2.0", "manifest": "packages/video-mix-dj-studio/manifest.json" },
     { "id": "agent-watch", "version": "1.0.0", "manifest": "packages/agent-watch/manifest.json" },
-    { "id": "tour", "version": "1.1.0", "manifest": "packages/tour/manifest.json" },
+    { "id": "tour", "version": "1.2.0", "manifest": "packages/tour/manifest.json" },
     { "id": "aquarium", "version": "1.4.0", "manifest": "packages/aquarium/manifest.json" },
     { "id": "spider-room", "version": "1.0.0", "manifest": "packages/spider-room/manifest.json" },
     { "id": "backups", "version": "1.0.0", "manifest": "packages/backups/manifest.json" },

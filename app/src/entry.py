@@ -1393,6 +1393,8 @@ instance_pages = _LazyModule("instance_pages")
 instance_legal = _LazyModule("instance_legal")
 instance_registry = _LazyModule("instance_registry")
 instance_world = _LazyModule("instance_world")
+instance_home = _LazyModule("instance_home")
+instance_privacy = _LazyModule("instance_privacy")
 instance_world_scene = _LazyModule("instance_world_scene")
 instance_theme = _LazyModule("instance_theme")
 mail_tracking = _LazyModule("mail_tracking")
@@ -9067,10 +9069,12 @@ async def _fold_blog_post_view(env, request, slug, referer, self_host):
     same blinded per-slug digest the HLL folds, held in ``blog_post_view_seen``
     only long enough for the window to mean something.
     """
+    if instance_privacy.active(env):
+        return
     now = int(Date.now())
     await ensure_schema(env)
 
-    address = world_visitor_metrics.canonical_edge_address(
+    address = _visitor_count_address(
         request.headers.get("cf-connecting-ip") or "")
     category = world_visitor_metrics.generalized_user_agent(
         str(request.headers.get("user-agent") or "")[:2048])
@@ -9904,7 +9908,7 @@ async def _world_unique_visitor_tokens(env, request, now):
         # CF-Connecting-IP is authored by Cloudflare for an inbound Worker
         # request. Never fall back to X-Forwarded-For, query data, cookies, or a
         # caller-provided JSON field: those can contain a forged address.
-        address = world_visitor_metrics.canonical_edge_address(
+        address = _visitor_count_address(
             headers.get("cf-connecting-ip") or "")
         raw_agent = str(headers.get("user-agent") or "")[:2048]
     except Exception:
@@ -11856,7 +11860,7 @@ class _NotesRuntime(_WorldCommunityRuntime):
         """
         try:
             headers = self.request.headers
-            address = world_visitor_metrics.canonical_edge_address(
+            address = _visitor_count_address(
                 headers.get("cf-connecting-ip") or "")
             agent = str(headers.get("user-agent") or "")[:2048]
         except Exception:
@@ -12341,7 +12345,7 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         return _request_origin(self.request) if self.request is not None else ""
 
     def request_visitor(self):
-        if self.request is None:
+        if self.request is None or instance_privacy.active(self.env):
             return {"ip": "", "agent": ""}
         headers = self.request.headers
         return {"ip": str(headers.get("cf-connecting-ip") or "").strip()[:64],
@@ -13985,7 +13989,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "4a86f7d139c6259f7a25728fb8b972f15241c8344eab2ab7c0794f408af49bf7"
+    "3a826662aff96ff870fdb057b5cedb5c57e52adc867aff9b4d7ca8f538891cbc"
 )
 
 
@@ -18260,6 +18264,8 @@ async def record_release_download(env, repo_bi, sha256, ua=""):
     """Log one completed release-asset download. Best-effort; never raises —
     called fire-and-forget from the streaming DO response, so a D1 hiccup must
     never fail or delay the download itself."""
+    if instance_privacy.active(env):
+        ua = ""
     try:
         await ensure_schema(env)
         await d1_run(
@@ -19407,6 +19413,8 @@ _REPO_SCOPED_TABLES = (
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
+    ("repo_mirror_quota", "repo_bi"),
+    ("repo_mirror_registry", "repo_bi"),
     ("repo_privacy_policy", "repo_bi"),
     ("repo_remote_forks", "repo_bi"),
     ("repo_security_scan_leases", "repo_bi"),
@@ -21574,6 +21582,12 @@ def _chat_socket_target(request, path=None, account_bi="", address=""):
         query="&".join(query), fragment="").geturl()
 
 
+def _visitor_count_address(raw):
+    if instance_privacy.is_pseudonym(raw):
+        return ""
+    return world_visitor_metrics.canonical_edge_address(raw)
+
+
 def _generalized_client_category(request):
     """Reduce a user agent to a non-identifying category."""
     try:
@@ -21602,6 +21616,8 @@ def _account_session_client_ip(request):
     try:
         raw = str(request.headers.get("cf-connecting-ip") or "")
     except Exception:
+        return ""
+    if instance_privacy.is_pseudonym(raw):
         return ""
     try:
         return str(ipaddress.ip_address(raw.strip().strip("[]")[:64]))[:64]
@@ -22305,7 +22321,8 @@ async def _account_signup(env, request):
     rec["signup"] = signup_meta
     if data.get("marketingEmail") is True:
         marketing_email.apply_consent(rec, True, "signup", int(Date.now()))
-    ip_bi = await blind_index(env, signup_ip) if signup_ip else None
+    ip_bi = await blind_index(env, signup_ip) if signup_ip and \
+        not instance_privacy.is_pseudonym(signup_ip) else None
     await _save_account(env, name_bi, rec, email_bi=email_bi, ip_bi=ip_bi)
     await _record_signup_origin(env, name_bi, rec)
     # Attribution: join the account to its browser session — or record it
@@ -22969,8 +22986,12 @@ def _signup_metadata(request):
     # automatic referral enforcement and the cryptographically authenticated
     # is_admin Users page; ordinary profile/directory payloads never include it.
     # users.ip_bi remains the indexed one-way equality token.
+    address = _transient_client_address(request)
+    if instance_privacy.is_pseudonym(address):
+        return {"clientCategory": _generalized_client_category(request),
+                "at": int(Date.now())}
     return {
-        "ip": _transient_client_address(request),
+        "ip": address,
         "userAgent": _referral_user_agent(request),
         "country": world_request_country(request),
         "clientCategory": _generalized_client_category(request),
@@ -32696,6 +32717,8 @@ async def _mail_tracked_html(env, send_id, html, footer=False):
     base = (getattr(env, "API_ORIGIN", "") or "https://app.forkmesh.com").rstrip("/")
     tok = mail_tracking.token(
         send_id, await blind_index(env, "mail-track:" + send_id))
+    if instance_privacy.active(env):
+        return html or "", "%s/api/mail/t/u/%s" % (base, tok)
     if footer:
         return (mail_activity.add_footer(
             html or "", "%s/api/mail/t/l/%s.png" % (base, tok)),
@@ -36845,6 +36868,8 @@ def _repo_view_totals(row):
 
 async def _repo_viewer_key(env, request, data, repo_key,
                            scope="repo-view-v1"):
+    if instance_privacy.active(env):
+        return ""
     try:
         account_bi, account_rec = await _account_session_record(
             env, request, data)
@@ -36854,7 +36879,7 @@ async def _repo_viewer_key(env, request, data, repo_key,
         subject = "account\n%s" % account_bi
     else:
         try:
-            address = world_visitor_metrics.canonical_edge_address(
+            address = _visitor_count_address(
                 request.headers.get("cf-connecting-ip") or "")
             agent = str(request.headers.get("user-agent") or "")[:2048]
         except Exception:
@@ -45038,6 +45063,8 @@ async def capture_sentry_error(env, status, method, path, message, ray="",
                                cloudflare_error_code="", service="forkmesh"):
     """Send one Sentry event with vanilla Python + Worker fetch. Best-effort."""
     try:
+        if instance_privacy.active(env):
+            return False
         parts = _sentry_dsn_parts(getattr(env, "SENTRY_DSN", ""))
         if not parts:
             return False
@@ -45128,6 +45155,8 @@ async def capture_sentry_cron_check_in(env, status, check_in_id="",
                                        cron="", duration=None):
     """Send a Sentry Cron Monitoring check-in. Best-effort."""
     try:
+        if instance_privacy.active(env):
+            return False
         parts = _sentry_dsn_parts(getattr(env, "SENTRY_DSN", ""))
         if not parts:
             return False
@@ -45251,6 +45280,8 @@ async def _write_error_log(env, status, method, path, message, ray="",
         return
     try:
         message = _privacy_safe_error_text(path, message)
+        if instance_privacy.active(env):
+            actor = ""
         await ensure_schema(env)
         # Is this the first row of its group? Read before the insert, so the
         # row we are about to write cannot answer its own question.
@@ -54509,6 +54540,8 @@ def _cron_due_phases(minute_slot):
         phases.append("webhook-outbox")
         phases.append("app-events")
         phases.append("provider-mirror")
+    if minute % 5 == 3:
+        phases.append("mirror-quota")
     if minute % 10 == 8:
         phases.append("ap-digest")
     if minute % 20 == 12:
@@ -54734,6 +54767,10 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await run_badge_sweep(env)
     if phase == "member-activity":
         return await _chat_member_stats.refresh_member_repo_activity(env)
+    if phase == "mirror-quota":
+        import mirror_quota
+        mirror_quota._bind_runtime(globals())
+        return await mirror_quota.run_checks(env)
     if phase == "workflow-schedules":
         return await run_due_workflow_schedules(env)
     if phase == "ai-review":

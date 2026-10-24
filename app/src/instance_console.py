@@ -4,6 +4,8 @@ from urllib.parse import parse_qs, quote, urlparse
 from hidden_unicode import clean_query as clean_hidden_query
 
 import instance_features
+import instance_home
+import instance_privacy
 import instance_registry
 import instance_world
 
@@ -18,7 +20,9 @@ def _bind_runtime(runtime):
 PLUGINS_VIEW = "plugins"
 DIRECTORY_VIEW = "federation"
 WORLD_VIEW = "world-territory"
-VIEWS = (PLUGINS_VIEW, DIRECTORY_VIEW, WORLD_VIEW)
+HOME_VIEW = "home-page"
+PRIVACY_VIEW = "privacy"
+VIEWS = (PLUGINS_VIEW, DIRECTORY_VIEW, WORLD_VIEW, HOME_VIEW, PRIVACY_VIEW)
 MAX_FORM_BYTES = 32 * 1024
 POST_TIMEOUT_SECONDS = 20
 NOTICES = {
@@ -43,11 +47,23 @@ NOTICES = {
                       "checks listed below.", "bad"),
     "world_core": ("The ForkMesh World is configured by forkmesh.com.",
                    "bad"),
+    "home_saved": ("Home page saved. Visitors see it within a minute.", "ok"),
+    "home_invalid": ("Not saved: name a repository as owner/name.", "bad"),
+    "home_core": ("forkmesh.com keeps its own home page.", "bad"),
+    "privacy_on": ("Privacy mode is on. The app stops recording visitors "
+                   "within a minute.", "ok"),
+    "privacy_off": ("Privacy mode is off.", "ok"),
+    "privacy_forced": ("Privacy mode is set by the install settings "
+                       "(INSTANCE_PRIVACY_MODE), so it stays on.", "warn"),
+    "privacy_core": ("Privacy mode is chosen on self-hosted instances only.",
+                     "bad"),
     "csrf": ("Action blocked: reload the page and try again.", "bad"),
     "invalid": ("Action failed: unknown action.", "bad"),
 }
 ACTIONS = {"save_plugins": PLUGINS_VIEW, "save_directory": DIRECTORY_VIEW,
-           "announce_directory": DIRECTORY_VIEW, "save_world": WORLD_VIEW}
+           "announce_directory": DIRECTORY_VIEW, "save_world": WORLD_VIEW,
+           "save_home": HOME_VIEW,
+           "save_privacy": PRIVACY_VIEW}
 STATE_PILLS = {
     "listed": ("Listed", "ok"),
     "removed": ("Not listed", ""),
@@ -429,6 +445,130 @@ async def save_world(env, form):
         "bugs": bool(setting["bugs"])}
 
 
+async def render_home(env, csrf_field, admin_query):
+    shell = _admin_shell  # noqa: F821
+    head = shell.page_head(
+        "Home page",
+        "Choose a repository whose README, latest threads and labels make up "
+        "this instance's front page.", crumb="Platform")
+    if not instance_branded(env):  # noqa: F821
+        return head + shell.card(
+            title="forkmesh.com keeps its own home page",
+            description="Self-hosted instances choose a home repository here.")
+    current = instance_home.parse(await settings_doc(env, instance_home.SETTING_KEY))
+    form = (
+        '<form method="post" action="%s" class="stack">%s'
+        '<input type="hidden" name="action" value="save_home">'
+        '<label>Home repository <input name="repository" value="%s" '
+        'placeholder="owner/name" autocomplete="off" spellcheck="false"></label>'
+        '<div><button type="submit" class="btn btn-primary">Save home page'
+        '</button></div></form>' % (
+            _admin_href(admin_query, view=HOME_VIEW),  # noqa: F821
+            csrf_field, _esc(current)))
+    about = (
+        "<p>With a home repository, / shows its README (each section keeps its "
+        "own reading direction), the latest threads from its issues, its labels "
+        "and links to the Atom feeds and the lite view. Without one, / opens the "
+        "dashboard. The repository must be public. Leave the field empty to "
+        "turn the page off. The page, the feeds and the lite view are served "
+        "only while the Feeds and lite view plugin is on (Plugins).</p>")
+    return head + shell.card(
+        title="Home repository",
+        description="Now: %s" % (_esc(current) if current else "none, / opens the dashboard"),
+        body=form) + shell.card(title="What visitors see", body=about)
+
+
+async def save_home(env, form):
+    if not instance_branded(env):  # noqa: F821
+        return "home_core", None
+    try:
+        repository = instance_home.clean(_first(form, "repository"))
+    except instance_home.SettingError:
+        return "home_invalid", None
+    await save_setting(env, instance_home.SETTING_KEY, instance_home.dump(repository))
+    return "home_saved", {"repository": repository}
+
+
+PRIVACY_STOPS = (
+    ("Visitor addresses", "The app sees a pseudonym instead of the "
+     "address; the key behind it lives only in memory and changes every "
+     "day. Sessions and sign-ups keep no address, user agent or country."),
+    ("Visitor statistics", "Page views, referrers, acquisition sessions, "
+     "repository and note view counters, World and blog visitor counts and "
+     "the 404 log are not recorded."),
+    ("Browser reports", "Analytics is never offered, and browser and desktop "
+     "error reports are not stored."),
+    ("Email tracking", "No open pixel and no tracked links; opens and clicks "
+     "are not recorded."),
+    ("Logs", "Request paths in the app's own log lines become route groups, "
+     "and the web server's request lines are not written."),
+    ("Outside services", "No error reports to Sentry, and Turnstile is not "
+     "sent the visitor's address."),
+)
+PRIVACY_INSTALL = (
+    "The web server (Caddy), the git node and the system journal follow the "
+    "install setting privacyMode. Set \"privacyMode\": true in "
+    "/etc/forkmesh-instance/instance.json and run install-instance.sh "
+    "--update to turn them on as well.")
+
+
+async def render_privacy(env, csrf_field, admin_query):
+    shell = _admin_shell  # noqa: F821
+    head = shell.page_head(
+        "Privacy mode",
+        "Keep no records about visitors beyond what the instance needs to "
+        "run.", crumb="Platform")
+    if not instance_branded(env):  # noqa: F821
+        return head + shell.card(
+            title="Not offered here",
+            description="Privacy mode is for self-hosted instances.")
+    stored = instance_privacy.parse(
+        await settings_doc(env, instance_privacy.SETTING_KEY))
+    forced = instance_privacy.forced(env)
+    on = forced or stored == instance_privacy.STRICT
+    if forced:
+        source = ("On from the install settings (INSTANCE_PRIVACY_MODE=1 in "
+                  "app.env). Run the installer with privacyMode false to "
+                  "turn it off.")
+    elif stored is None:
+        source = "Off. Nothing has been saved on this page yet."
+    else:
+        source = "Saved from this page."
+    state = shell.pill("On" if on else "Off", "ok" if on else "")
+    form = (
+        '<form method="post" action="%s" class="stack">%s'
+        '<input type="hidden" name="action" value="save_privacy">%s'
+        '<div><button type="submit" class="btn btn-primary">Save privacy '
+        'mode</button></div></form>' % (
+            _admin_href(admin_query, view=PRIVACY_VIEW),  # noqa: F821
+            csrf_field, shell.switch(
+                "privacy", "Privacy mode: no visitor logs", on, "1",
+                "privacy-mode")))
+    stops = shell.table(
+        "<th>What</th><th>With privacy mode on</th>",
+        ["<tr><td><strong>%s</strong></td><td class=\"muted\">%s</td></tr>"
+         % (_esc(what), _esc(text)) for what, text in PRIVACY_STOPS])
+    return head + shell.card(
+        title="Privacy mode", description=source, body=state + form) + \
+        shell.card(title="What it stops", table=stops) + shell.card(
+            title="Web server, git node and journal",
+            description=PRIVACY_INSTALL)
+
+
+async def save_privacy(env, form):
+    if not instance_branded(env):  # noqa: F821
+        return "privacy_core", None
+    wanted = _first(form, "privacy") == "1"
+    mode = instance_privacy.STRICT if wanted else instance_privacy.OFF
+    await save_setting(env, instance_privacy.SETTING_KEY,
+                       instance_privacy.dump(mode))
+    instance_privacy.remember(mode, _now())
+    if not wanted and instance_privacy.forced(env):
+        return "privacy_forced", {"mode": mode, "forced": True}
+    return ("privacy_on" if wanted else "privacy_off"), {
+        "mode": mode, "forced": instance_privacy.forced(env)}
+
+
 async def admin_handler(env, request, params, csrf_field="", admin_query="",
                         account=""):
     view = _first(params, "view")
@@ -443,6 +583,12 @@ async def admin_handler(env, request, params, csrf_field="", admin_query="",
     elif view == WORLD_VIEW:
         title = "World"
         content = await render_world(env, csrf_field, admin_query)
+    elif view == HOME_VIEW:
+        title = "Home page"
+        content = await render_home(env, csrf_field, admin_query)
+    elif view == PRIVACY_VIEW:
+        title = "Privacy mode"
+        content = await render_privacy(env, csrf_field, admin_query)
     else:
         title = "Plugins"
         content = await render_plugins(env, csrf_field, admin_query)
@@ -479,6 +625,10 @@ async def _handle_post(env, request, view, admin_query, account):
         notice, details = await save_directory(env, form)
     elif action == "save_world":
         notice, details = await save_world(env, form)
+    elif action == "save_home":
+        notice, details = await save_home(env, form)
+    elif action == "save_privacy":
+        notice, details = await save_privacy(env, form)
     else:
         notice, details = await announce_directory(env)
     await _audit_sensitive_action(  # noqa: F821

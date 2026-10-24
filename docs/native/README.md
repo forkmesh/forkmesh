@@ -33,6 +33,7 @@ Topic pages:
 | [opus.md](opus.md) | Opus built from a pinned Xiph commit with DRED, deep PLC and OSCE (`native/opus/`): the pin and model weights, `build.sh` for iOS, Android and the host, options, sizes, output layout, smoke tests and how the call engines link it |
 | [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md) | Sounds, listening, ducking and Bluetooth held back while another app's call is up |
 | [DESKTOP_PINGS.md](DESKTOP_PINGS.md), [PING_QUICK_FIXES.md](PING_QUICK_FIXES.md), [PUSH_ICONS.md](PUSH_ICONS.md) | Desktop pings, one-tap fixes, banner icons |
+| [PERMISSIONS.md](PERMISSIONS.md) | The permissions intro screen and when each system prompt comes up |
 | [MESH_PUSH.md](MESH_PUSH.md) | Wake pushes and local alerts for the `#mesh` room |
 | [PUSH_ON_SCREEN.md](PUSH_ON_SCREEN.md) | No banner, or no phone ping, for what is already on screen |
 | [DESKTOP_UPDATE.md](DESKTOP_UPDATE.md) | Rebuilding and restarting the desktop from the phone |

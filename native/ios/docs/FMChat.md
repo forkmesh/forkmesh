@@ -88,6 +88,11 @@ the answer; EHOSTUNREACH means Local Network access is off.
   peripheral and central), tests get `UnavailableMeshTransport`. `MeshBle`/`MeshBleOutbox` hold
   the platform-free parts (UUIDs, dial tie-break, chunking, long-write reassembly). Bluetooth
   permission is requested only once `#mesh` has been opened.
+- `LocalMeshService.waitsForRoom` holds the whole mesh (listener, discovery, sweep, Bluetooth) so
+  a fresh install shows no Local Network prompt at launch: `start`, `resume` and `networkChanged`
+  do nothing while it is set, and the first `roomOpened` clears it, calls `onFirstRoomOpen` and
+  starts. The app sets it from `PermissionPacing.nearbyAllowed` and records the first open with
+  `PermissionPacing.markNearbyOpened` (`docs/native/PERMISSIONS.md`).
 - Constants: `meshConversation` ("#mesh"), `meshDiscoveryPort` (48732), `meshMulticastGroup`.
 - Chat protocol v3 links: each side sends a plaintext `fm-link-hello`, then a plaintext
   `fm-link-auth` (the dialer or Bluetooth central is the initiator); only after the peer's

@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <script src="/api-client.js?v=${version}"></script><!--#page earlyreads-->
+    <script src="/season.js?v=${version}"></script>
     <script src="/analytics.js" defer></script>
     <script src="/safe-input.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -237,6 +238,14 @@
         --muted-foreground: #59636e;
         --border: rgb(var(--dashboard-border-rgb));
         color-scheme: light;
+      }
+
+      [data-season="halloween"] {
+        /*#season halloween dark*/
+      }
+
+      [data-season="halloween"][data-dashboard-theme="light"] {
+        /*#season halloween light*/
       }
 
       * {
@@ -816,6 +825,11 @@
       [data-repo-issue-timeline] > [data-repo-issue-comment] > *,
       [data-repo-pull-conversation] > [data-repo-issue-comment] > * {
         position: relative;
+      }
+      [data-repo-issue-timeline] > [data-repo-issue-comment] {
+        content-visibility: auto;
+        contain-intrinsic-height: auto 180px;
+        scroll-margin-top: 64px;
       }
       @media (min-width: 640px) {
         [data-repo-issue-timeline][data-empty="false"]::before,

@@ -4178,6 +4178,7 @@ ISSUE_INDEX_CARRIER_OPERATION = "blobs"
 ISSUE_INDEX_MAX_ISSUES = 50_000
 ISSUE_INDEX_READ_BYTES = 1024 * 1024 * 1024
 ISSUE_INDEX_RECORD_CACHE = 20_000
+ISSUE_INDEX_RECENT_COMMENTERS = 4
 ISSUE_INDEX_FOLDER_RE = re.compile(r"^(?:(open|closed)/)?([0-9]+)/(.+)$")
 _JS_SPACE = (
     "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006"
@@ -4529,6 +4530,17 @@ def _issue_index_fold(fallback: int, issue: dict[str, Any]) -> dict[str, Any]:
     comments = sum(
         1 for event in events if _js_get(event, "type") == "comment"
         and _js_string(_js_or(_js_get(event, "id"), "")) not in removed)
+    commenters: list[str] = []
+    for event in reversed(events):
+        if len(commenters) >= ISSUE_INDEX_RECENT_COMMENTERS:
+            break
+        if _js_get(event, "type") != "comment" or _js_string(
+                _js_or(_js_get(event, "id"), "")) in removed:
+            continue
+        name = _js_trim(_js_string(_js_or(
+            _js_get(event, "authorName"), _js_get(event, "author"), "")))
+        if name and name not in commenters:
+            commenters.append(name)
     milestone = _js_get(issue, "milestone")
     author = _js_or(
         _js_get(issue, "authorName"), _js_get(opened, "authorName"),
@@ -4577,6 +4589,7 @@ def _issue_index_fold(fallback: int, issue: dict[str, Any]) -> dict[str, Any]:
         "dependsOn": _issue_index_dependency_numbers(body),
         "childRefs": _issue_index_child_numbers(body, number),
         "commentCount": comments,
+        "recentCommenters": commenters,
         "wantsAgent": _js_truthy(_js_get(issue, "wantsAgent")),
         "milestone": _js_string(_js_or(milestone, "")),
         "priority": _json_number(_js_number_or_zero(
@@ -4603,6 +4616,116 @@ def _issue_index_fold(fallback: int, issue: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+FORGE_SOURCE_PATH = ".forkmesh/forge-source.json"
+FORGE_SOURCE_SCHEMA = "forkmesh-forge-source-v1"
+FORGE_LEDGER_PATH = ".forkmesh/forge-sync.json"
+FORGE_SOURCE_URL_RE = re.compile(
+    r"https://[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?/[A-Za-z0-9._~/-]{0,400}",
+    re.ASCII)
+FORGE_LEDGER_MAX_BYTES = 64 * 1024 * 1024
+FORGE_REPOSITORY_RE = re.compile(
+    r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", re.ASCII)
+FORGE_WEB_BASE_RE = re.compile(
+    r"https://[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~-]+)*",
+    re.ASCII)
+FORGE_GITHUB_API = ("", "https://api.github.com")
+
+
+def _forge_web_base(ledger: Mapping[str, Any]) -> str:
+    provider = ledger.get("provider")
+    base = ledger.get("baseUrl") or ""
+    if not isinstance(base, str):
+        return ""
+    base = base.rstrip("/")
+    if provider == "github":
+        return "https://github.com" if base in FORGE_GITHUB_API else ""
+    if provider == "gitea" and FORGE_WEB_BASE_RE.fullmatch(base):
+        return base
+    return ""
+
+
+def _forge_source_urls(raw: bytes) -> dict[int, str]:
+    try:
+        ledger = json.loads(raw.decode("utf-8"),
+                            parse_constant=_issue_index_reject)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return {}
+    if not isinstance(ledger, dict):
+        return {}
+    repository = ledger.get("repository")
+    base = _forge_web_base(ledger)
+    issues = ledger.get("issues")
+    if not base or not isinstance(repository, str) \
+            or not FORGE_REPOSITORY_RE.fullmatch(repository) \
+            or any(part in (".", "..") for part in repository.split("/")) \
+            or not isinstance(issues, dict):
+        return {}
+    sources: dict[int, str] = {}
+    for local, entry in issues.items():
+        if not isinstance(entry, dict) or entry.get("detached") \
+                or not re.fullmatch(r"[1-9][0-9]{0,8}", str(local)):
+            continue
+        remote = entry.get("remoteNumber")
+        if isinstance(remote, bool) or not isinstance(remote, int) \
+                or not 0 < remote < 10 ** 9:
+            continue
+        sources[int(local)] = "%s/%s/issues/%d" % (base, repository, remote)
+    return sources
+
+
+FORGE_AVATAR_DIR = ".forkmesh/contributors"
+FORGE_AVATAR_FILE_RE = re.compile(
+    r"(github|gitea)-([a-z0-9](?:[a-z0-9._-]{0,38}[a-z0-9])?)\.png", re.ASCII)
+
+
+def _forge_avatar_names(listing: bytes) -> list[str]:
+    names = set()
+    for entry in listing.split(b"\0"):
+        meta, _tab, raw = entry.partition(b"\t")
+        fields = meta.split()
+        if len(fields) < 2 or fields[1] != b"blob":
+            continue
+        match = FORGE_AVATAR_FILE_RE.fullmatch(raw.decode("utf-8", "replace"))
+        if match and ".." not in match.group(2):
+            names.add("%s:%s" % match.groups())
+    return sorted(names)
+
+
+def _forge_source_spec(raw: bytes) -> dict[str, Any]:
+    try:
+        doc = json.loads(raw.decode("utf-8"), parse_constant=_issue_index_reject)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return {}
+    if not isinstance(doc, dict) or doc.get("schema") != FORGE_SOURCE_SCHEMA:
+        return {}
+    provider, template = doc.get("provider"), doc.get("issueUrl")
+    if not isinstance(provider, str) or not re.fullmatch(r"[a-z]{1,20}", provider) \
+            or not isinstance(template, str) or template.count("{number}") != 1 \
+            or not FORGE_SOURCE_URL_RE.fullmatch(template.replace("{number}", "1")):
+        return {}
+    renumbered: dict[int, int] = {}
+    moved = doc.get("renumbered")
+    for local, remote in (moved.items() if isinstance(moved, dict) else ()):
+        if re.fullmatch(r"[1-9][0-9]{0,8}", str(local)) \
+                and isinstance(remote, int) and not isinstance(remote, bool) \
+                and 0 < remote < 10 ** 9:
+            renumbered[int(local)] = remote
+    return {"prefix": "forge-%s-" % provider, "template": template,
+            "renumbered": renumbered}
+
+
+def _forge_source_url(spec: Mapping[str, Any], number: Any,
+                      opener: Any) -> str:
+    if not spec or isinstance(number, bool) or not isinstance(number, int):
+        return ""
+    if "urls" in spec:
+        return spec["urls"].get(number, "")
+    if not isinstance(opener, str) or not opener.startswith(spec["prefix"]):
+        return ""
+    remote = spec["renumbered"].get(number, number)
+    return spec["template"].replace("{number}", str(remote))
+
+
 ISSUE_INDEX_RELATION_ONLY_FIELDS = frozenset({"mentionRefs"})
 ISSUE_INDEX_RELATED_FIELDS = (
     "number", "title", "status", "deleted", "author", "progress", "priority",
@@ -4626,8 +4749,16 @@ def _issue_index_related(result: Mapping[str, Any], number: int
                      if key in item}
             entry["mentionRefs"] = references
             related.append(entry)
-    return {"issues": related, "related": number,
-            "truncated": bool(result.get("truncated"))}
+    answer = {"issues": related, "related": number,
+              "truncated": bool(result.get("truncated"))}
+    if own.get("sourceUrl"):
+        answer["sourceUrl"] = own["sourceUrl"]
+    people = {_js_string(name).lower() for name in (own.get("participants") or [])
+              + (own.get("assignees") or []) + (own.get("recentCommenters") or [])}
+    avatars = [name for name in result.get("forgeAvatars") or [] if name in people]
+    if avatars:
+        answer["forgeAvatars"] = avatars
+    return answer
 
 
 def _issue_index_reject(_constant: str) -> Any:
@@ -4852,7 +4983,7 @@ class GitRepository:
         self._pulse_issues: tuple[str, list[dict[str, Any]]] = ("\0", [])
         self._pulse_issue_records: dict[str, dict[str, Any] | None] = {}
         self._issue_index_lock = threading.Lock()
-        self._issue_index_tree: tuple[str, dict[str, Any]] = ("\0", {})
+        self._issue_index_tree: tuple[Any, dict[str, Any]] = ("\0", {})
         self._issue_index_records: OrderedDict[
             tuple[str, int], dict[str, Any]] = OrderedDict()
         self._issue_search_texts: OrderedDict[
@@ -6923,9 +7054,15 @@ class GitRepository:
             raise GatewayError("issue number is invalid")
         commit = self.resolve_commit(query.get("ref", ""))
         tree = self._issues_tree(commit)
+        source = self._forge_source_blob(commit)
+        pictures = self._forge_avatar_tree(commit)
         with self._issue_index_lock:
-            if self._issue_index_tree[0] != tree:
-                self._issue_index_tree = (tree, self._build_issue_index(tree))
+            if self._issue_index_tree[0] != (tree, source, pictures):
+                built = self._build_issue_index(tree, self._forge_sources(source))
+                avatars = self._forge_avatars(pictures)
+                if avatars:
+                    built["forgeAvatars"] = avatars
+                self._issue_index_tree = ((tree, source, pictures), built)
             result = self._issue_index_tree[1]
         if related:
             return dict(_issue_index_related(result, int(related)),
@@ -7024,7 +7161,55 @@ class GitRepository:
         chosen.update({number: "open" for number in opened})
         return chosen, records, opened, closed
 
-    def _build_issue_index(self, tree: str) -> dict[str, Any]:
+    def _forge_avatar_tree(self, commit: str) -> str:
+        code, output = _run_git_status(
+            self.git_dir,
+            ["rev-parse", "--verify", "--quiet", commit + ":" + FORGE_AVATAR_DIR],
+            max_output=256,
+            allowed_codes=(0, 1),
+        )
+        return output.decode("ascii", "replace").strip().lower() \
+            if code == 0 else ""
+
+    def _forge_avatars(self, tree: str) -> list[str]:
+        if not tree:
+            return []
+        try:
+            listing = _run_git(self.git_dir, ["ls-tree", "-z", tree],
+                               max_output=64 * 1024 * 1024)
+        except GitError:
+            return []
+        return _forge_avatar_names(listing)
+
+    def _forge_source_blob(self, commit: str) -> tuple[str, str]:
+        for path in (FORGE_SOURCE_PATH, FORGE_LEDGER_PATH):
+            code, output = _run_git_status(
+                self.git_dir,
+                ["rev-parse", "--verify", "--quiet", commit + ":" + path],
+                max_output=256,
+                allowed_codes=(0, 1),
+            )
+            if code == 0:
+                return path, output.decode("ascii", "replace").strip().lower()
+        return "", ""
+
+    def _forge_sources(self, source: tuple[str, str]) -> dict[str, Any]:
+        path, blob = source
+        if not blob:
+            return {}
+        try:
+            raw = _run_git(self.git_dir, ["cat-file", "blob", blob],
+                           max_output=FORGE_LEDGER_MAX_BYTES)
+        except GitError:
+            return {}
+        if path == FORGE_SOURCE_PATH:
+            return _forge_source_spec(raw)
+        urls = _forge_source_urls(raw)
+        return {"urls": urls} if urls else {}
+
+    def _build_issue_index(self, tree: str,
+                           sources: Mapping[str, Any] | None = None
+                           ) -> dict[str, Any]:
         chosen, records, opened, closed = self._issue_folders(tree)
         numbers = sorted(chosen, reverse=True)
         truncated = len(numbers) > ISSUE_INDEX_MAX_ISSUES
@@ -7069,6 +7254,10 @@ class GitRepository:
             else:
                 cache.move_to_end(key)
             item = dict(summary, location=place)
+            source_url = _forge_source_url(sources or {}, number,
+                                           summary.get("openEventId"))
+            if source_url:
+                item["sourceUrl"] = source_url
             used += len(json.dumps(
                 item, separators=(",", ":"), ensure_ascii=False).encode(
                     "utf-8")) + 1
@@ -8866,6 +9055,11 @@ class ReplayCache:
                 del self._seen[oldest]
             self._seen[request_id] = expires_at
             return True
+
+
+def privacy_mode() -> bool:
+    return os.environ.get("FORKMESH_PRIVACY_MODE", "").strip().lower() in (
+        "1", "true", "yes", "on", "strict")
 
 
 def service_counter_agent_class(user_agent: str) -> str:
@@ -12115,6 +12309,8 @@ class GatewayApplication:
         delivered: bool,
         user_agent: str = "",
     ) -> bool:
+        if privacy_mode():
+            return False
         if not delivered or not 200 <= int(status) < 300:
             return False
         try:

@@ -686,6 +686,7 @@ private struct ChatTranscript<Drawer: View>: View {
         Task {
             if await hub.sendChatText(text) {
                 draft = ""
+                if let push = Services.get(PushNotificationService.self) { await push.askWhenUseful() }
             }
         }
     }

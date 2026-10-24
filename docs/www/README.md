@@ -92,6 +92,13 @@ answers them without running the Worker. Static responses carry
   line the total across every release, from
   `/api/repo/forkmesh/forkmesh/releases/downloads`; when that call fails the
   counts are simply left out.
+- **Hero install line.** A small Binary / Source switch sits inside the
+  homepage's install pill. Binary (the default) keeps the plain
+  `curl -fsSL https://forkmesh.com/install.sh | bash`; Source swaps the shown
+  and copied command to `… | FORKMESH_FROM_SOURCE=1 bash`, the installer's
+  explicit source build. The variable sits on the `bash` side of the pipe so
+  the installer, not `curl`, sees it. Both copies count as the same
+  `home-install-hero` product action.
 
 ## Protocols and interfaces
 

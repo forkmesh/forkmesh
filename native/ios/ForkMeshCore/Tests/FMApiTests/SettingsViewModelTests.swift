@@ -183,6 +183,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertTrue(pushCanEnable(token: "", permission: "notDetermined"))
         XCTAssertFalse(pushCanEnable(token: "", permission: "denied"))
         XCTAssertFalse(pushCanEnable(token: "t", permission: "authorized"))
+        XCTAssertTrue(pushCanEnable(token: "t", permission: "notDetermined"))
         XCTAssertEqual(pushSendLabel(sending: true), "Sending…")
         XCTAssertEqual(pushSendLabel(sending: false), "Send test notification")
     }

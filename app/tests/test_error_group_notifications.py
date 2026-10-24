@@ -13,6 +13,7 @@ import ast
 import asyncio
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from _maintenance_stubs import with_maintenance_off
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -114,6 +115,7 @@ def _harness(admins=("root",)):
         "valid_node_name": lambda name: bool(name) and name.isalnum(),
         "clean_string": lambda value, limit: str(value or "")[:limit],
         "_privacy_safe_error_text": lambda _path, message: message,
+        "instance_privacy": SimpleNamespace(active=lambda _env: False),
         "_safe_error_text": str,
         "_error_log_actor": _error_log_actor,
         "method_name": lambda request: "GET",

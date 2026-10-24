@@ -1429,13 +1429,17 @@
     `;
   }
 
+  const HALLOWEEN_PUMPKIN = '<svg viewBox="0 0 64 60" width="40" height="38" aria-hidden="true" class="shrink-0"><path d="M30 12C29 7 31 3 36 1l1.5 2.5C34 5 33 8 34 12z" fill="#4d7c2a"/><ellipse cx="18" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="46" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="32" cy="35" rx="15" ry="22" fill="#fa7a18"/><path d="M20 28l6-4 1 7zM44 28l-6-4-1 7z" fill="#3a1606"/><path d="M18 40q14 12 28 0l-4 1-2 4-4-3-4 5-4-5-4 3-2-4z" fill="#3a1606"/><path d="M21 29.5l4-2.5.5 3.5zM43 29.5l-4-2.5-.5 3.5z" fill="#fddf68"/></svg>';
+
   function renderHomeFeed() {
     const container = $("[data-home-feed]");
     if (!container) return;
     const cards = homeFeedItems().map(homeFeedCard);
     container.innerHTML = cards.length
       ? cards.join("")
-      : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
+        : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
     window.lucide?.createIcons();
   }
 
@@ -1635,7 +1639,9 @@
     }
     container.innerHTML = sessions.length
       ? sessions.slice(0, HOME_AGENT_LIMIT).map((session) => homeAgentRow(session, data.account)).join("")
-      : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-4 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>No agents yet. Type a prompt above and press new to summon one.</span></div>`
+        : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
   }
 
   async function loadHomeAgentSessions() {

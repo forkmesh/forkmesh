@@ -2,6 +2,7 @@ import ipaddress
 import json
 import re
 from urllib.parse import unquote
+import instance_privacy
 
 
 def _bind_runtime(runtime):
@@ -290,6 +291,8 @@ def classify(path):
 
 
 def mode(env):
+    if instance_privacy.active(env):
+        return "off"
     value = str(getattr(env, MODE_ENV, "") or "").strip().lower()
     return value if value in MODES else "ban"
 

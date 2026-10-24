@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <script src="/api-client.js?v=${version}"></script>
+    <script src="/season.js?v=${version}"></script>
     <script src="/analytics.js" defer></script>
     <script src="/safe-input.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -297,6 +298,16 @@
         --muted-foreground: #59636e;
         --border: rgb(var(--dashboard-border-rgb));
         color-scheme: light;
+      }
+
+      [data-season="halloween"] {
+        --dashboard-cta-rgb: 194 65 12;
+        --dashboard-success-rgb: 250 122 24;
+      }
+
+      [data-season="halloween"][data-dashboard-theme="light"] {
+        --dashboard-cta-rgb: 194 65 12;
+        --dashboard-success-rgb: 188 76 0;
       }
 
       * {
@@ -876,6 +887,11 @@
       [data-repo-issue-timeline] > [data-repo-issue-comment] > *,
       [data-repo-pull-conversation] > [data-repo-issue-comment] > * {
         position: relative;
+      }
+      [data-repo-issue-timeline] > [data-repo-issue-comment] {
+        content-visibility: auto;
+        contain-intrinsic-height: auto 180px;
+        scroll-margin-top: 64px;
       }
       @media (min-width: 640px) {
         [data-repo-issue-timeline][data-empty="false"]::before,
@@ -3961,6 +3977,7 @@
           <a href="/security-report">Security</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
+          <a href="/lite" data-lite-link hidden>Lite</a>
           <button data-feedback-open type="button">Feedback</button>
         </nav>
       </aside>

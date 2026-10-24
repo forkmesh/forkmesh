@@ -67,6 +67,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [attribution.md](attribution.md): acquisition attribution.
 - [app/instance-legal-pages.md](app/instance-legal-pages.md): Terms, Privacy and Security pages on self-hosted instances.
 - [app/ai-review.md](app/ai-review.md): automated AI review of pull requests with Cloudflare Workers AI (instance settings, per-repository opt-in, budgets, privacy, prompt-injection handling).
+- [app/privacy-mode.md](app/privacy-mode.md): privacy mode for self-hosted instances: no visitor logs, what remains and why.
 - [app/instance-federation.md](app/instance-federation.md): self-hosted instances joining the forkmesh.com directory and the ForkMesh World.
 - [app/security-advisories.md](app/security-advisories.md): private vulnerability reporting, security advisories (OSV export, signed repository ledger) and researcher credits.
 - [app/recent-push-banner.md](app/recent-push-banner.md): the "had recent pushes · Compare & pull request" bar for branches the signed-in account just pushed.
@@ -75,6 +76,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [app/pull-revisions.md](app/pull-revisions.md): updating a pull request with new commits or a rewritten branch (signed revisions, no force push).
 - [app/comment-edits.md](app/comment-edits.md): editing and deleting your own issue and pull request comments (signed `comment-edit`/`comment-delete` events).
 - [app/comment-gifs.md](app/comment-gifs.md): GIFs and stickers in comment composers (GIPHY proxy, key handling, rendering, reduced motion).
+- [app/seasonal-theme.md](app/seasonal-theme.md): the Halloween theme an administrator or moderator switches on in Settings, Appearance (orange colours, spider web, witch hats, auto-off).
 - [app/comment-tips.md](app/comment-tips.md): wallet-to-wallet Solana Pay tips on comments (requests, read-only verification, limits, settings).
 - [app/branch-protection.md](app/branch-protection.md): protected default branches (merge only an owner- or admin-approved pull request) and the per-repository Actions switch.
 - [app/username-autocomplete.md](app/username-autocomplete.md): the shared username picker on chat channel invites, new channels, repository collaborators and advisory credits, and account search behind every @mention list.

@@ -8194,12 +8194,24 @@ class ForkMeshWorld extends HTMLElement {
     ])
       .then(async ([quality, environment, THREE]) => {
         if (this.destroyed || this.world) return null;
-        const plan = quality.planWorldRenderer({
-          container: this.$("[data-world-canvas-wrap]"),
-          forceCompactRenderer: this.rendererSafeMode === true,
-          qualityTier: this.requestedQualityTier,
-        });
-        const prepared = quality.prepareWorldRendererContext(plan, THREE, document);
+        const planFor = (forceCompactRenderer) =>
+          quality.planWorldRenderer({
+            container: this.$("[data-world-canvas-wrap]"),
+            forceCompactRenderer,
+            qualityTier: this.requestedQualityTier,
+          });
+        let plan = planFor(this.rendererSafeMode === true);
+        let prepared = quality.prepareWorldRendererContext(plan, THREE, document);
+        if (!prepared?.renderer && this.rendererSafeMode !== true) {
+          quality.releaseWorldRendererContext(prepared);
+          const compactPlan = planFor(true);
+          const compact = quality.prepareWorldRendererContext(compactPlan, THREE, document);
+          if (compact?.renderer) {
+            this.rendererSafeMode = true;
+            plan = compactPlan;
+            prepared = compact;
+          }
+        }
         if (!prepared?.renderer || plan.compactRenderer) return prepared;
         await new Promise((resolve) => setTimeout(() => resolve(), 0));
         if (this.destroyed || this.world) {
