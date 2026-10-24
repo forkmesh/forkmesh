@@ -66,6 +66,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [attribution.md](attribution.md): acquisition attribution.
 - [app/instance-legal-pages.md](app/instance-legal-pages.md): Terms, Privacy and Security pages on self-hosted instances.
 - [app/ai-review.md](app/ai-review.md): automated AI review of pull requests with Cloudflare Workers AI (instance settings, per-repository opt-in, budgets, privacy, prompt-injection handling).
+- [app/privacy-mode.md](app/privacy-mode.md): privacy mode for self-hosted instances: no visitor logs, what remains and why.
 - [app/instance-federation.md](app/instance-federation.md): self-hosted instances joining the forkmesh.com directory and the ForkMesh World.
 - [app/security-advisories.md](app/security-advisories.md): private vulnerability reporting, security advisories (OSV export, signed repository ledger) and researcher credits.
 - [app/recent-push-banner.md](app/recent-push-banner.md): the "had recent pushes · Compare & pull request" bar for branches the signed-in account just pushed.

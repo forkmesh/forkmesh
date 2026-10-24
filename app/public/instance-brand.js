@@ -259,6 +259,14 @@
     document.body.append(footer);
   };
 
+  // The onion link and the privacy note share one footer: the "Powered by"
+  // line when there is one, otherwise a small pill made by whichever comes first.
+  const footerLine = () => {
+    const mark = document.querySelector(
+      "[data-instance-powered-by], [data-instance-onion], [data-instance-privacy-mode]");
+    return mark && (mark.hasAttribute("data-instance-powered-by") ? mark : mark.closest("footer"));
+  };
+
   const onionNote = (address) => {
     if (typeof address !== "string" || !/^[a-z2-7]{56}\.onion$/.test(address)) return;
     if (location.hostname === address || document.querySelector("[data-instance-onion]")) return;
@@ -269,7 +277,7 @@
     link.textContent = "Tor .onion";
     link.setAttribute("data-instance-onion", "");
     Object.assign(link.style, { color: "inherit", fontWeight: "700", pointerEvents: "auto" });
-    let footer = document.querySelector("[data-instance-powered-by]");
+    let footer = footerLine();
     if (footer) {
       footer.append(" \u00b7 ", link);
       return;
@@ -290,6 +298,37 @@
     });
     footer.append("Also on ", link);
     document.body.append(footer);
+  };
+
+  const PRIVACY_NOTE = "Privacy mode: no visitor logs";
+
+  const privacyNote = () => {
+    if (document.querySelector("[data-instance-privacy-mode]")) return;
+    const note = document.createElement("span");
+    note.setAttribute("data-instance-privacy-mode", "");
+    note.textContent = PRIVACY_NOTE;
+    const footer = footerLine();
+    if (footer) {
+      footer.append(" \u00b7 ", note);
+      return;
+    }
+    const pill = document.createElement("footer");
+    pill.setAttribute("role", "contentinfo");
+    Object.assign(pill.style, {
+      position: "fixed",
+      left: "10px",
+      bottom: "8px",
+      zIndex: "2147483000",
+      padding: "3px 9px",
+      borderRadius: "999px",
+      font: "500 11px/1.4 system-ui, -apple-system, Segoe UI, sans-serif",
+      color: "rgba(127, 127, 127, 0.95)",
+      background: "rgba(127, 127, 127, 0.12)",
+      backdropFilter: "blur(6px)",
+      pointerEvents: "none",
+    });
+    pill.append(note);
+    document.body.append(pill);
   };
 
   const legalStyle = () => {
@@ -342,6 +381,7 @@
       .then((data) => {
         legal = (data && data.legal && typeof data.legal === "object") ? data.legal : {};
         if (data) onionNote(data.onion);
+        if (data && data.privacyMode === true && document.body) privacyNote();
         if (!data || !Array.isArray(data.plugins)) {
           ready = true;
           hideLinks(document.documentElement);

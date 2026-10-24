@@ -282,6 +282,8 @@ def _namespace(db):
 
     namespace = {
         "d1_run": d1_run,
+        "instance_privacy": SimpleNamespace(active=lambda _env: False,
+                                            is_pseudonym=lambda _raw: False),
         "d1_all": d1_all,
         "d1_first": d1_first,
         "_contribution_run_batch": _contribution_run_batch,

@@ -1487,6 +1487,18 @@ otherwise SMTP or Mailtrap by configuration. `MAIL_SENDER` and
 `MAIL_SENDER_NAME` set the sender. Budgets, suppression and the mail log apply
 to every provider.
 
+## Privacy mode
+
+An admin can make the instance keep no records about visitors beyond what it
+needs to run: Platform → Privacy mode in the admin console (`instance_settings`
+key `privacy`), or the install setting `privacyMode: true`
+(`INSTANCE_PRIVACY_MODE=1` in `app.env`). Only the install setting also
+reaches Caddy, uvicorn, the git node and the journal. To turn it on for an
+existing instance, add `"privacyMode": true` to
+`/etc/forkmesh-instance/instance.json` and run `install-instance.sh --update`.
+[app/privacy-mode.md](app/privacy-mode.md) has the audit of what is recorded
+normally, what privacy mode stops, and what remains and why.
+
 ## Limits
 
 - Public sign-up needs Turnstile keys in `app.env`; it fails closed without
