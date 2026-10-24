@@ -1099,6 +1099,8 @@ def inject_issue_page(page, data, bundle, short=False, origin="", reactions=None
         "></span>", ">public</span>"), 1)
     page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
         'class="inline-flex', 'class="hidden inline-flex'), 1)
+    if not isinstance(article, str) and article.mark in page + tabs:
+        article = str(article)
     drawn = article if isinstance(article, str) \
         else article.before + article.mark + article.after
     return IssuePage(page.replace(PLACEHOLDER, (

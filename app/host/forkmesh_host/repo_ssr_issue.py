@@ -25,7 +25,7 @@ def esc(value):
     text = "" if value is None else value
     if isinstance(text, bool):
         text = "true" if text else "false"
-    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+    return (str(text).replace("\x00", "\ufffd").replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#039;"))
 
 
@@ -1871,6 +1871,8 @@ def render_issue_parts(issue, ctx, owner, path, index=None, now=None, viewer="bo
                                       prompt, reactions, off, source)
     finally:
         FORGE_AVATARS.reset(token)
+    if article.count(REST_MARK) != 1:
+        raise ValueError("issue page split mark is not unique")
     before, after = article.split(REST_MARK, 1)
     return IssueParts(before, rest, after, ctx, avatars)
 

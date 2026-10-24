@@ -523,7 +523,14 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
     Markdown of every comment. `render_issue_parts` (`repo_ssr_issue.py`)
     leaves `REST_MARK` where the later items go and returns their render
     functions (`Renderer.timeline_items`), each chunk rendered with the
-    forge-avatar context set again. The whole article is remembered on the
+    forge-avatar context set again. The page is cut at the mark, so the
+    mark must come only from the renderer: `esc` turns every NUL a post
+    carries into U+FFFD, `render_issue_parts` refuses an article with more
+    than one mark, and `inject_issue_page` sends the page in one piece if
+    the shell or the tabs hold one. Before 2026-10-24 an author name holding
+    the mark moved the cut inside an attribute, and the comments streamed
+    after it became live attributes (stored XSS on the app origin). The
+    whole article is remembered on the
     bundle once the last chunk is sent; a remembered article goes out in
     one piece. A chunk that fails ends the thread early and still closes
     the page; the dashboard draws what is missing. `inject_issue` joins the

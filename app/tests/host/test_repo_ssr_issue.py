@@ -800,6 +800,43 @@ def test_the_page_streams_the_top_first_and_the_comments_in_chunks():
     assert whole == repo_ssr.inject_issue(repo_page(), DATA, bundle, short=True)
 
 
+def test_a_split_mark_in_posted_text_never_moves_the_stream_cut():
+    issue = long_issue(45)
+    mark = repo_ssr_issue.REST_MARK
+    issue["authorName"] = "evil" + mark
+    issue["events"][0]["authorName"] = "evil" + mark
+    issue["events"][12]["id"] = "x onfocus=alert(1) autofocus tabindex=0 y"
+    issue["events"][3]["body"] = "Comment 2 with " + mark
+    bundle = bundle_for(issue, [])
+    page = repo_ssr.inject_issue_page(repo_page(), DATA, bundle, short=True)
+
+    async def collect():
+        return [chunk async for chunk in page.stream()]
+    whole = "".join(asyncio.run(collect()))
+    assert "\x00" not in whole
+    import html.parser
+
+    class Attributes(html.parser.HTMLParser):
+        names = set()
+
+        def handle_starttag(self, tag, attrs):
+            self.names.update(name for name, _ in attrs)
+    parser = Attributes()
+    parser.feed(whole)
+    assert "onfocus" not in parser.names and "autofocus" not in parser.names
+    assert whole.count("data-repo-issue-comment ") == 45
+    assert whole == repo_ssr.inject_issue(repo_page(), DATA, bundle, short=True)
+
+
+def test_a_split_mark_in_the_page_shell_falls_back_to_one_piece():
+    bundle = bundle_for(long_issue(45), [])
+    shell = repo_page().replace("</head>", "<meta name=x content=\"%s\"></head>"
+                                % repo_ssr_issue.REST_MARK, 1)
+    page = repo_ssr.inject_issue_page(shell, DATA, bundle, short=True)
+    assert isinstance(page.article, str) and page.suffix == ""
+    assert str(page).count("data-repo-issue-comment ") == 45
+
+
 def test_a_short_issue_has_no_placeholder():
     got = py_render(mirrored_issue(), 9)
     assert "data-repo-issue-more" not in got
