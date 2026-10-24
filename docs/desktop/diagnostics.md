@@ -528,6 +528,25 @@ returned, so summed frame totals overstate a function's own cost.
     page could not be named. `saveMutedLogCategories`, `saveRepositories`
     and `deleteCancelledRunsAutomatically` waited on the `QSettings` lock or
     on `fdatasync` while the disk was busy (io full 55 %).
+  - Report #10, taken 14 minutes later from the same old binary while a build
+    kept the disk 30 to 88 % busy, added writes that waited on the disk:
+    - Action run output: `ActionStore::appendLog` opened, appended and closed
+      `log.txt` on the GUI thread for every line (`ActionRunner::emitLog`).
+      It now queues on one writer thread, `forkmesh::OrderedAppendWriter`
+      (`src/OrderedAppendWriter.h`), the class the agent transcript writers
+      already used, now shared from a header. `readLog` and `deleteRun` wait
+      for the run's queued lines first (`ActionStore::flushLog`), so a reader
+      sees every line and a deleted run's folder is not created again.
+    - The ping-fix ledger (`ping-fixes.json`) is written with
+      `diskwrite::writeLater` instead of a `QSaveFile` commit on every ping.
+    - `savePromptOverlayPlacement` writes its five keys with `settings::put`,
+      so an unchanged placement no longer rewrites `ForkMesh.conf`.
+    - Already fixed in source by `19eee71df3`, which the running binary
+      predates: the chat ratchet save (`ChatDevice::saveRatchets`, 14 stalls
+      of up to 7.2 s) and `UserActivityLog::flush`.
+    - No change: `maxRunningAgents` and `storeRepositoryRecords` read or
+      write settings that are rarely changed, and they waited on the
+      `QSettings` lock while the disk was 75 to 88 % busy.
   - Still open: four workers write `ForkMesh.conf` and take the process-wide
     `QSettings` lock while they sync. They are the served-mirror-head scan
     (`MainWindowActions.cpp`, `setValue` plus `sync()` under

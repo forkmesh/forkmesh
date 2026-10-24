@@ -2,6 +2,7 @@
 #include "ForkMeshVersion.h"
 #include "ProcessReaper.h"
 #include "ProjectRegistry.h"
+#include "SettingsWrite.h"
 #include "Tooltips.h"
 #include "UiSounds.h"
 #include "MainWindow.h"
@@ -4506,14 +4507,15 @@ void MainWindow::resetPromptOverlayPlacement()
 void MainWindow::savePromptOverlayPlacement()
 {
     QSettings settings;
-    settings.setValue(QLatin1String(kPromptFloatingSetting), m_promptOverlayFloating);
-    settings.setValue(QLatin1String(kPromptFloatPosSetting), m_promptOverlayPos);
-    settings.setValue(QLatin1String(kPromptFloatSizeSetting), m_promptOverlaySize);
-    settings.setValue(QLatin1String(kPromptDetachedSetting), m_promptOverlayDetached);
+    using forkmesh::settings::put;
+    put(settings, QLatin1String(kPromptFloatingSetting), m_promptOverlayFloating);
+    put(settings, QLatin1String(kPromptFloatPosSetting), m_promptOverlayPos);
+    put(settings, QLatin1String(kPromptFloatSizeSetting), m_promptOverlaySize);
+    put(settings, QLatin1String(kPromptDetachedSetting), m_promptOverlayDetached);
     if (m_promptOverlayDetached && m_promptDetachWindow)
         m_promptDetachGeometry = m_promptDetachWindow->geometry();
-    settings.setValue(QLatin1String(kPromptDetachGeometrySetting),
-                      m_promptDetachGeometry);
+    put(settings, QLatin1String(kPromptDetachGeometrySetting),
+        m_promptDetachGeometry);
 }
 
 void MainWindow::loadPromptOverlayPlacement()

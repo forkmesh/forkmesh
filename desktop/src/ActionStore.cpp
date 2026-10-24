@@ -1,5 +1,6 @@
 #include "ActionStore.h"
 #include "HiddenTerms.h"
+#include "OrderedAppendWriter.h"
 #include "SafeDelete.h"
 
 #include <QCoreApplication>
@@ -24,6 +25,12 @@
 #include <QtConcurrentRun>
 
 namespace {
+
+forkmesh::OrderedAppendWriter &actionLogWriter()
+{
+    static forkmesh::OrderedAppendWriter writer;
+    return writer;
+}
 
 QString legacySanitize(const QString &owner, const QString &name)
 {
@@ -584,6 +591,7 @@ bool ActionStore::saveRun(const ActionRun &run) const
 
 bool ActionStore::deleteRun(const ActionRun &run) const
 {
+    flushLog(run);
     bool removed = true;
     const QString canonicalPath = runDir(run);
     if (QDir(canonicalPath).exists())
@@ -644,18 +652,17 @@ void ActionStore::deleteRunsInBackground(const QList<ActionRun> &runs) const
 
 void ActionStore::appendLog(const ActionRun &run, const QString &text) const
 {
-    const QString directory = existingRunDir(run);
-    QDir().mkpath(directory);
-    QFile f(directory + QStringLiteral("/log.txt"));
-    if (!f.open(QIODevice::Append | QIODevice::Text))
-        return;
-    f.write(text.toUtf8());
-    if (!text.endsWith(QLatin1Char('\n')))
-        f.write("\n");
+    actionLogWriter().appendLog(logPath(run), text);
+}
+
+void ActionStore::flushLog(const ActionRun &run) const
+{
+    actionLogWriter().flushPath(logPath(run));
 }
 
 QString ActionStore::readLog(const ActionRun &run) const
 {
+    flushLog(run);
     QFile f(logPath(run));
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
         return QString();

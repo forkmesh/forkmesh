@@ -112,6 +112,7 @@ public:
     // Same, for a batch: forgets them immediately, unlinks the trees on a worker.
     void deleteRunsInBackground(const QList<ActionRun> &runs) const;
     void appendLog(const ActionRun &run, const QString &text) const;
+    void flushLog(const ActionRun &run) const;
     QString readLog(const ActionRun &run) const;
     // Where readLog() reads from. Handed to agents so they open the whole file
     // instead of working from a tail that stopped before the failing line.

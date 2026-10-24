@@ -279,6 +279,28 @@ int main(int argc, char **argv)
               "fatal: '/sandbox/source' already exists\n")),
           "checkout does not retry an occupied destination");
 
+    {
+        ActionStore logStore(temp.filePath(QStringLiteral("log-order")));
+        ActionRun logged;
+        logged.id = 7;
+        logged.owner = QStringLiteral("me");
+        logged.name = QStringLiteral("log-order");
+        check(logStore.saveRun(logged), "log-order fixture run is saved");
+        QString expected;
+        for (int line = 0; line < 2000; ++line) {
+            const QString text = QStringLiteral("line %1").arg(line);
+            logStore.appendLog(logged, text);
+            expected += text + QLatin1Char('\n');
+        }
+        check(logStore.readLog(logged) == expected,
+              "queued run log lines read back complete and in order");
+        logStore.appendLog(logged, QStringLiteral("last"));
+        check(logStore.deleteRun(logged) &&
+                  !QFileInfo::exists(logStore.logPath(logged)),
+              "deleting a run waits for its queued log lines, so none "
+              "recreate the folder");
+    }
+
     // Pre-v2 storage replaced every non [A-Za-z0-9.-] character with "_".
     // These two distinct repositories therefore shared both run and approval
     // storage. The v2 key must split their records without copying that
