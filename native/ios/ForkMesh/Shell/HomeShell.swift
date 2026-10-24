@@ -937,7 +937,7 @@ struct HomeShell: View {
                 })
             }
             .sheet(isPresented: $showTour) {
-                TourView(onFinish: { showTour = false })
+                TourView(onFinish: { showTour = false }, onJump: { (jump: TourJump) in tourJump(jump) })
             }
             .sheet(isPresented: $genie.sheetShown, onDismiss: genieClosed) {
                 if let session = genie.session {
@@ -1276,6 +1276,22 @@ struct HomeShell: View {
             showHub = false
         } else if page != nil {
             page = nil
+        }
+    }
+
+    private func tourJump(_ jump: TourJump) {
+        showTour = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            switch jump {
+            case let .tab(tab): selectTab(tab)
+            case .home: showHome()
+            case .hub: openHub()
+            case .composer: openComposer(nil)
+            case .palette: openPalette()
+            case .projects: showProjects = true
+            case let .route(route): openRoute(route)
+            }
         }
     }
 

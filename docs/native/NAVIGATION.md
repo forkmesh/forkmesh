@@ -572,6 +572,47 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   the screen "is not in this version of the app yet" and never name the
   internal owner.
 
+### 2.0.2.2 The tour
+
+The `tour` package shows the tour once after sign-in (`ShellTour.seen`,
+`fm.tour.seen.v1`) and keeps a Tour icon on Home. The operator asked on
+2026-10-24 for the tour to look like the screens it describes, to move, and
+to offer three depths.
+
+- **Tracks** (`TourTrack`, `FMPackages/TourCatalog.swift`): Essentials (Home,
+  Agents, the new agent button, Inbox, the hub), Advanced (adds hold to talk,
+  review and merge, the command palette, search and the bottom bar) and The
+  whole shebang (adds chat, projects, desktops, Notes/Tasks/Calendar, the
+  Market, personal tools, notifications and widgets, and looks). Each track
+  contains the one before it, so stops keep their order. A track card shows its
+  stop count, an estimate at 20 s a stop, and its stops' symbols.
+- **The package gate decides the stops.** A stop with `needs` (Agents, Inbox,
+  Repos, Chat) is left out when that tab's package is not installed. A stop
+  with `offers` (Desktops, Notes and the rest, personal tools) stays, but when
+  none of its packages is installed it says so and its button opens the Market
+  instead (`TourStop.fromMarket`).
+- **Each stop is a live mock** (`TourStage`, `Navigation/TourStage.swift`;
+  scenes in `TourScenes.swift`): a rounded screen drawn with the shell's own
+  pieces where they exist (`ShellHomeIcon`, `ShellBarPreview`,
+  `ShellHomeIconPreview`, `ShellSparkleField`, `AvatarWithDot`) and simple
+  copies of the rest. It plays its interaction every 1.9 s while the page is
+  current. The control to try has a pulsing ring (`tourTarget`), and the hint
+  under the screen names it ("Tap Allow", "Touch and hold the button").
+  Touching the mock acts at once and holds the autoplay for 6 s. The voice
+  stop listens for a real touch and hold and shows the words arriving, so the
+  gesture can be practised. Reduce Motion stops the ring, the ripples and the
+  animated changes; the steps still advance.
+- **Show me** (`TourStop.jump`) closes the tour and opens the real place:
+  a tab, Home, the hub, the composer, the palette, the project switcher or a
+  route (`HomeShell.tourJump`, after the sheet's 0.45 s dismissal). Opened as
+  the `.tour` route, the tour has no shell, so only tab and route jumps show.
+- **Progress.** The bar of segments under the header jumps to a stop. Closing
+  part-way stores the place (`fm.tour.place.v1`, `TourPlace`), and the chooser
+  then offers "Pick up where you left off". Finishing a track marks it and every
+  smaller track done (`fm.tour.done.v1`, seals on the cards), then returns to
+  the chooser with the next track suggested; finishing the last one closes the
+  tour. The Tour icon's count on Home is the number of tracks not yet done.
+
 ### 2.0.3 Other pages
 
 - **Inbox** (`InboxScreen`): one centered bar of small square icons at the

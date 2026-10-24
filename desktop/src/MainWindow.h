@@ -120,6 +120,8 @@ namespace forkmesh::ui { struct GitCaptureResult; }
 namespace MarkdownRender { struct RepoLink; }
 namespace forkmesh::ui { class ChannelGroupTree; }
 namespace forkmesh::ui { class OnboardingTour; }
+namespace forkmesh::ui { struct OnboardingStep; }
+namespace forkmesh::ui { enum class OnboardingTrack; }
 namespace forkmesh::ui { class WindowBackdrop; }
 namespace forkmesh::ui { class WindowFade; }
 namespace forkmesh::ui { class OverflowActionRow; }
@@ -1395,10 +1397,17 @@ public:
     bool testDraftStallPromptInComposer();
     QString testQuickAddText() const;
     QString testDiagnosticsReport() { return diagnosticsReport(false); }
-    QPushButton *testDebugCopyDiagnosticsButton() const
+    QPushButton *testDebugDiagnosticsButton() const
     {
-        return m_debugCopyDiagnosticsButton;
+        return m_debugDiagnosticsButton;
     }
+    bool testDiagnosticsAlertDetected()
+    {
+        m_diagnosticsAlertLastCheckMs = 0;
+        updateDiagnosticsAlert();
+        return m_diagnosticsAlertDetected;
+    }
+    void testAcknowledgeDiagnosticsAlert() { acknowledgeDiagnosticsAlert(); }
     void testShowSettingsSection() { showSection(1); }
     void testShowChatSection() { showSection(2); }
     // The proof and the ordered body fields one organization request signs
@@ -3793,6 +3802,9 @@ private:
     void maybeShowFirstRunWelcome();
     void showFirstRunWelcome();
     void startFeatureTour();
+    void startFeatureTourTrack(forkmesh::ui::OnboardingTrack track);
+    bool prepareFeatureTour();
+    QVector<forkmesh::ui::OnboardingStep> featureTourSteps();
     void completeFirstRunWelcome();
     void ensureTourTargetVisible(QWidget *target);
     void syncTourPackage(bool installed);
@@ -4795,6 +4807,9 @@ private:
     void copyDiagnosticsReport();
     void sendDiagnosticsReportToAgent();
     void resetDiagnosticsReportBaseline();
+    void updateDiagnosticsAlert();
+    void acknowledgeDiagnosticsAlert();
+    int crashBannerLineCount() const;
     void showDiagnosticsDialog();
     void showDesktopResourceDiagnostics();
     void showDesktopProcessDetails(const forkmesh::desktopprocs::Process &process);
@@ -11521,7 +11536,7 @@ private:
     QCheckBox *m_debugBarStartupCheck = nullptr;
     QTextEdit *m_debugLogTail = nullptr;
     QPushButton *m_debugLogTailButton = nullptr;
-    QPushButton *m_debugCopyDiagnosticsButton = nullptr;
+    QPushButton *m_debugDiagnosticsButton = nullptr;
     int m_debugLogTailHeight = 0; // the strip the window grows by, in pixels
     bool m_debugLogTailShown = false;
     QStringList m_footerLogPending;
@@ -12883,6 +12898,14 @@ private:
     qulonglong m_diagLastCpuTicks = 0;
     qint64 m_diagLastCpuMs = 0;
     qint64 m_fdPressureLastCheckMs = 0;
+    qint64 m_diagnosticsAlertLastCheckMs = 0;
+    double m_diagnosticsCpuAverage = -1.0;
+    QStringList m_securityIncidentLines;
+    int m_securityIncidentCount = 0;
+    int m_diagnosticsAckStalls = 0;
+    int m_diagnosticsAckCrashes = 0;
+    int m_diagnosticsAckSecurity = 0;
+    bool m_diagnosticsAlertDetected = false;
     bool m_fdPressureAlertArmed = true;
 
     int m_repoDetailIndex = -1;
