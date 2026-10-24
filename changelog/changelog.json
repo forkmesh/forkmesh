@@ -8,6 +8,12 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Market",
+     "items": [
+      "The Tour plugin lets you choose Essentials, Advanced or The whole shebang, and on iPhone each stop is a live copy of the screen it describes that you can try before opening the real one."
+     ]
+    },
+    {
      "title": "Desktop",
      "items": [
       "In the desktop's live database Visualizer, clicking a table opens that table in the Database tab."
