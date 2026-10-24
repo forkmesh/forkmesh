@@ -959,3 +959,183 @@ def test_an_update_checks_head_protection_before_queueing():
     assert "branch_refusal(" in MERGE_HANDLER_TEXT
     assert MERGE_HANDLER_TEXT.index("branch_refusal(") < (
         MERGE_HANDLER_TEXT.index("_repo_merge_jobs_make_room"))
+
+def test_gateway_reports_each_phase_while_the_job_runs():
+    release = threading.Event()
+    executing = threading.Event()
+
+    class Executor:
+        def call(self, request, timeout=20):
+            action = request["action"]
+            if action == "status":
+                return {"ok": True, "status": "missing",
+                        "requestId": request["requestId"],
+                        "generationReady": False}
+            assert action == "register"
+            return {"ok": True, "status": "registered",
+                    "requestId": request["requestId"]}
+
+        def stream(self, request, *, timeout, on_progress):
+            assert request["action"] == "execute"
+            for phase in ("fetching", "verifying", "verifying", "testing"):
+                on_progress(phase)
+            executing.set()
+            release.wait(5)
+            on_progress("pushing")
+            return {"ok": True, "status": "merged",
+                    "requestId": request["requestId"],
+                    "baseBefore": OID_A, "head": OID_B,
+                    "pullsBefore": OID_C, "baseAfter": OID_B,
+                    "pullsAfter": "d" * 40, "generationReady": True}
+
+    clock = iter(range(1_000, 100_000, 10))
+    app = object.__new__(gateway.GatewayApplication)
+    app.merge_executor = Executor()
+    app.clock_ms = lambda: next(clock)
+    app._merge_lock = threading.Lock()
+    app._merge_threads = {}
+    app._merge_results = {}
+    app._merge_payload_digests = {}
+    app.reload_from_disk = lambda **_: None
+    app._schedule_prewarm = lambda: None
+
+    app._dispatch_merge_pull("mirror2", "forkmesh", merge_body())
+    assert executing.wait(5)
+    running = app._dispatch_merge_pull("mirror2", "forkmesh", merge_body())
+    assert running.status == 202
+    progress = json.loads(running.body)["progress"]
+    assert progress["phase"] == "testing"
+    assert [step["phase"] for step in progress["steps"]] == [
+        "claimed", "fetching", "verifying", "testing"]
+    assert progress["startedAt"] == progress["steps"][0]["at"]
+    assert progress["updatedAt"] == progress["steps"][-1]["at"]
+    assert set(progress) == {"phase", "startedAt", "updatedAt", "steps"}
+    release.set()
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        done = app._dispatch_merge_pull("mirror2", "forkmesh", merge_body())
+        if done.status == 200:
+            break
+        time.sleep(0.01)
+    body = json.loads(done.body)
+    assert body["status"] == "merged" and "progress" not in body
+
+
+def test_executor_stream_relays_only_known_phases_from_stderr(tmp_path):
+    script = tmp_path / "executor.py"
+    script.write_text(
+        "import json, sys\n"
+        "request = json.loads(sys.stdin.read())\n"
+        "for line in ['forkmesh-progress {\"phase\":\"fetching\",\"at\":1}',\n"
+        "             'git: some noise',\n"
+        "             'forkmesh-progress {\"phase\":\"rm -rf\",\"at\":2}',\n"
+        "             'forkmesh-progress not json',\n"
+        "             'forkmesh-progress {\"phase\":\"pushing\",\"at\":3}']:\n"
+        "    print(line, file=sys.stderr, flush=True)\n"
+        "print(json.dumps({'ok': True, 'status': 'merged',"
+        " 'requestId': request['requestId']}))\n",
+        encoding="utf-8")
+    executor = gateway.ExternalMergeExecutor([sys.executable, str(script)])
+    phases = []
+    result = executor.stream(
+        {"action": "execute", "requestId": "merge_request_0001"},
+        timeout=30, on_progress=phases.append)
+    assert result["status"] == "merged"
+    assert phases == ["fetching", "pushing"]
+    failing = tmp_path / "fail.py"
+    failing.write_text("import sys\nsys.exit(3)\n", encoding="utf-8")
+    with pytest.raises(gateway.GatewayError):
+        gateway.ExternalMergeExecutor([sys.executable, str(failing)]).stream(
+            {"action": "execute"}, timeout=30, on_progress=phases.append)
+
+
+def test_relay_keeps_only_a_bounded_known_progress_shape():
+    ns = _entry_functions(
+        "_https_mirror_merge_body", "_https_mirror_merge_result",
+        "_https_mirror_merge_progress",
+        constants=("HTTPS_MIRROR_PULL_MUTATIONS",
+                   "HTTPS_MIRROR_MERGE_PROGRESS_PHASES"))
+    parsed = ns["_https_mirror_merge_body"](merge_body().decode(), 7)
+    validate = ns["_https_mirror_merge_result"]
+    processing = {
+        "ok": True, "status": "processing",
+        "requestId": parsed["requestId"],
+        "progress": {
+            "phase": "testing", "startedAt": 10, "updatedAt": 30,
+            "message": "<script>", "node": "evil",
+            "steps": [
+                {"phase": "claimed", "at": 10},
+                {"phase": "unknown", "at": 15},
+                {"phase": "fetching", "at": True},
+                {"phase": "testing", "at": 30, "extra": "x"},
+            ],
+        },
+    }
+    checked = validate(processing, parsed)
+    assert checked["progress"] == {
+        "phase": "testing", "startedAt": 10, "updatedAt": 30,
+        "steps": [{"phase": "claimed", "at": 10},
+                  {"phase": "testing", "at": 30}],
+    }
+    for broken in ({"phase": "evil"}, {"startedAt": "10"}, {"steps": []},
+                   {"steps": [{"phase": "claimed", "at": 1}] * 40}):
+        progress = dict(processing["progress"], **broken)
+        result = validate(dict(processing, progress=progress), parsed)
+        assert result["status"] == "processing"
+        if "steps" in broken and broken["steps"]:
+            assert len(result["progress"]["steps"]) == 18
+        else:
+            assert "progress" not in result
+    assert "progress" not in validate(
+        dict(processing, progress="fetching"), parsed)
+
+
+def _route_functions(*names):
+    tree = ast.parse(ROUTE_HANDLERS_TEXT)
+    nodes = [node for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.Assign))
+             and (getattr(node, "name", None) in names
+                  or (isinstance(node, ast.Assign)
+                      and getattr(node.targets[0], "id", "")
+                      == "PULL_MUTATION_PROGRESS_MESSAGES"))]
+    namespace = {"json": json}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), "rh", "exec"),
+         namespace)
+    return namespace
+
+
+def test_relay_status_names_the_mirror_and_survives_its_absence():
+    ns = _route_functions(
+        "_pull_mutation_progress", "_pull_mutation_stored_progress")
+    progress = ns["_pull_mutation_progress"]
+    stored = ns["_pull_mutation_stored_progress"]
+    live = progress({"phase": "verifying", "startedAt": 1, "updatedAt": 2,
+                     "steps": [{"phase": "verifying", "at": 2}]},
+                    "mirror9", "processing")
+    assert live["state"] == "processing" and live["node"] == "mirror9"
+    assert live["message"] == "Verifying the reviewed commits."
+    older = progress(None, "mirror9", "processing")
+    assert older["phase"] == "claimed" and older["steps"] == []
+    row = {"status": "requested",
+           "result": json.dumps({"progress": {"phase": "pushing"}})}
+    assert stored(row) == {"phase": "pushing"}
+    assert stored(dict(row, status="succeeded")) == {}
+    assert stored({"status": "requested", "result": ""}) == {}
+    waiting = progress(stored(row), "mirror9", "waiting")
+    assert waiting["state"] == "waiting" and waiting["phase"] == "pushing"
+
+
+def test_relay_records_progress_only_for_the_authorized_in_flight_job():
+    forbidden = MERGE_HANDLER_TEXT.index(
+        'return json_response({"error": "forbidden"}, status=403)')
+    assert MERGE_HANDLER_TEXT.index("_pull_mutation_progress(") > forbidden
+    write = MERGE_HANDLER_TEXT[
+        MERGE_HANDLER_TEXT.index("if progress and progress != "):
+        MERGE_HANDLER_TEXT.index("return _https_mirror_merge_response(result, mutation)")]
+    assert "WHERE request_id=? AND status='requested'" in write
+    assert '"reason": "job_node_offline",\n             "progress": _pull_mutation_progress(' in MERGE_HANDLER_TEXT
+    # Every other reader of the job row only reads terminal results, so the
+    # in-flight progress can never be mistaken for a receipt.
+    for text in (ENTRY_TEXT, (WORKER / "src" / "repo_sync.py").read_text(encoding="utf-8")):
+        for match in re.finditer(r"SELECT[^;]*?result[^;]*?FROM repo_merge_jobs[^;]*?(?:\"\"\"|\"\s*\))", text, re.S):
+            assert "status='succeeded'" in match.group(0) or "request_id=?" in match.group(0), match.group(0)

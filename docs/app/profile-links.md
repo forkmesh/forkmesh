@@ -38,8 +38,13 @@ This page lists the shared helpers per surface and the rules they all follow.
   renderer uses for a person's name. It renders
   `<a href="/@name" data-issue-person>` (with the display casing from
   `userNameHtml`, and the platform name for the instance's own account). The
-  person hydration (`hydrateIssuePersonLink`) asks `/api/accounts/<name>`
-  through `issueActorAccount`. The link stays only when the account is
+  person hydration (`hydrateIssuePersonLink`) first asks, for every name on
+  the page in one request, `/api/accounts/name-case?names=…` which of them are
+  public accounts (`issueActorKnown`), and asks `/api/accounts/<name>` through
+  `issueActorAccount` only for those; on a mirror whose threads mention
+  GitHub logins that saves one request per name. A private profile is not in
+  the batch answer, which ends where the per-name answer would: not
+  linkable. The link stays only when the account is
   `linkable`: it exists, the name is taken (`available: false`), the profile is
   not private, and its kind is `user` or `node`. Otherwise the name loses its
   `href`, or points at the repository roster's profile when the roster knows

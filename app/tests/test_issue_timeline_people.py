@@ -34,7 +34,7 @@ def _const(text, name):
 HELPER_NAMES = (
     "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issuePersonHandle",
     "botAvatarKind", "botAvatarSvg", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref", "issueActorAvatarHtml",
-    "issuePersonNameHtml", "hydrateIssuePersonLink", "issueActorPortraitPng", "issueActorAccount",
+    "issuePersonNameHtml", "hydrateIssuePersonLink", "issueActorPortraitPng", "issueActorKnown", "issueActorAccount",
     "forgeIdentity", "forgeLinkAttrs", "rememberForgeAvatars", "forgeAvatarSrc",
 )
 CONTENT_NAMES = (
@@ -62,12 +62,18 @@ const MD_BODY_CLASS = "md";
 const fetched = [];
 globalThis.fetch = async (url) => {
   fetched.push(url);
+  if (String(url).startsWith("/api/accounts/name-case?")) {
+    const names = decodeURIComponent(String(url).split("names=")[1]).split(",");
+    return { ok: true, json: async () => ({ ok: true, names: Object.fromEntries(names.filter((name) => name === "alice").map((name) => [name, name])) }) };
+  }
   const name = decodeURIComponent(String(url).split("/").pop());
   const exists = name === "alice";
   return { ok: true, json: async () => ({ exists, avatarPng: exists ? "iVBORw0KGgo=" : "" }) };
 };
 const issueActorAccounts = new Map();
 const issueActorAccountsSettled = new Map();
+const issueActorBatch = { names: new Set(), promise: null };
+const USER_NAME_BATCH = 50;
 %s
 %s
 %s
@@ -219,7 +225,7 @@ console.log(JSON.stringify({
     assert out["mention"] == "@dave"
     assert out["accounts"][0] == {"exists": True, "png": "iVBORw0KGgo=", "linkable": False} == out["accounts"][1]
     assert out["accounts"][2] == {"exists": False, "png": "", "linkable": False}
-    assert out["fetched"] == ["/api/accounts/alice"]
+    assert out["fetched"] == ["/api/accounts/name-case?names=alice", "/api/accounts/alice"]
     assert out["match"] == {"name": "Vandana", "login": "Vandana42", "profile": "https://github.com/vandana42",
                             "avatarUrl": "/raw/vandana42.png", "commits": 3}
     assert out["gitlab"] == "Vandana42" and out["miss"] is None

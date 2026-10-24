@@ -38,4 +38,17 @@ Data** before moving machines. `FORKMESH_HOME` or `FORKMESH_PROJECTS_DIR`
 moves the layout. Uninstalling removes only the program unless `--purge` is
 given.
 
+## Phones and the watch
+
+Get ForkMesh for iPhone and iPad on the App Store (the Apple Watch app comes
+with it) or the Android APK from the downloads page. Sign in with the same
+account; see [ForkMesh apps](apps.md).
+
+## Your own instance
+
+To run ForkMesh under your own name on your own server, open
+[forkmesh.com/start](https://forkmesh.com/start), or hand the job to a coding
+agent. See [Start your own instance](start-your-own-instance.md) and
+[Working with coding agents](coding-agents.md).
+
 Next: [the desktop app](qt-client.md) or the [documentation index](README.md).

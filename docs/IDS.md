@@ -186,16 +186,16 @@ contains everything the start step wrote.
 For a manual change, open a window first:
 
 ```sh
-python3 tools/next_ids.py expect n2 --path /etc/ssh --allow modules --execute
-python3 tools/next_ids.py expect n2 --allow ptrace --minutes 10 --execute
-python3 tools/next_ids.py baseline n2 --execute
+python3 tools/next_ids.py expect n3 --path /etc/ssh --allow modules --execute
+python3 tools/next_ids.py expect n3 --allow ptrace --minutes 10 --execute
+python3 tools/next_ids.py baseline n3 --execute
 ```
 
 ## Operator commands
 
 ```sh
 python3 tools/next_ids.py status [nN|rN ...]
-python3 tools/next_ids.py test-fire n1 --execute
+python3 tools/next_ids.py test-fire n3 --execute
 python3 tools/next_ids.py baseline nN --execute
 python3 tools/next_ids.py release nN --note "why" --execute
 python3 tools/next_vault.py seal nN --restart --execute

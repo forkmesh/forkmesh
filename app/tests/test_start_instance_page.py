@@ -93,6 +93,29 @@ def test_a_settings_file_fills_the_whole_form_and_starts_in_one_click():
     assert "(start-config.md)" in (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
 
 
+def test_a_coding_agent_can_take_over_from_one_copied_prompt():
+    guide = (ROOT / "app" / "public" / "forkmesh-agent.md").read_text(encoding="utf-8")
+    prompt = PAGE.split("data-start-agent-prompt", 1)[0].rsplit("<input", 1)[1]
+    assert "https://app.forkmesh.com/forkmesh-agent.md" in prompt
+    assert 'href="/forkmesh-agent.md" download="FORKMESH.md"' in PAGE
+    assert 'href="https://forkmesh.com/docs/coding-agents/"' in PAGE
+    assert '$("[data-start-agent-copy]").addEventListener("click"' in SCRIPT
+    assert PAGE.count('class="section-num"') == 6
+    for needle in ("https://forkmesh.com/start", "install-instance.sh --config",
+                   "within five", "forkmesh-pull-event-v2", "git apply --check",
+                   ".git/info/exclude", "start-config.example.json"):
+        assert needle in guide, needle
+    example = json.loads((ROOT / "app" / "public" / "start-config.example.json").read_text(encoding="utf-8"))
+    sample = json.loads(guide.split("```json\n", 1)[1].split("```", 1)[0])
+    assert set(sample) <= set(example)
+    for kept_out in ("adminPath", "sshPassword", "sshPrivateKey", "sshPassphrase",
+                     "adminPassword", "mailApiKey"):
+        assert kept_out not in sample, kept_out
+    docs = (ROOT / "www" / "docs" / "coding-agents.md").read_text(encoding="utf-8")
+    assert "https://app.forkmesh.com/forkmesh-agent.md" in docs
+    assert "(coding-agents.md)" in (ROOT / "www" / "docs" / "README.md").read_text(encoding="utf-8")
+
+
 def test_the_form_takes_an_optional_logo():
     assert 'type="hidden" name="logo"' in PAGE
     assert 'accept="image/png,image/jpeg,image/webp,image/svg+xml" data-start-logo-file' in PAGE
