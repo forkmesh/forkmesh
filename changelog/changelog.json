@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-24",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Desktop",
+     "items": [
+      "In the desktop's live database Visualizer, clicking a table opens that table in the Database tab."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-23",
    "version": "",
    "title": "",

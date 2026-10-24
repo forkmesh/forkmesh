@@ -448,6 +448,26 @@ int main(int argc, char **argv)
     check(sessions.contains(QLatin1String("30 statements")) &&
               sessions.contains(QLatin1String("INSERT 30")),
           "a table bubble explains its traffic and mix: " + sessions);
+    check(!sessions.contains(QLatin1String("Database tab")) &&
+              !view.clickAt(QPointF(0, 0)),
+          "without a handler a table bubble is not a link");
+    QStringList opened;
+    view.onTableClicked = [&opened](const QString &table) { opened.append(table); };
+    view.advance(0.0);
+    view.grab();
+    const QString link = findToolTip(view, QStringLiteral("sessions\n"));
+    check(link.contains(QLatin1String("Click to open the table in the Database tab")),
+          "a table bubble says a click opens it: " + link);
+    check(clickFirst(view, link) && opened == QStringList{QStringLiteral("sessions")},
+          "clicking a table bubble opens that table");
+    const QString noTable = findToolTip(view, QStringLiteral("(no table)\n"));
+    check(!noTable.isEmpty() && !noTable.contains(QLatin1String("Database tab")) &&
+              !clickFirst(view, noTable) && opened.size() == 1,
+          "a statement without a table is not a link: " + noTable);
+    const QString node = findToolTip(view, QStringLiteral("n1 (core)\n"));
+    check(!clickFirst(view, node) && opened.size() == 1,
+          "clicking a node opens nothing");
+    view.onTableClicked = nullptr;
     const QString memory = findToolTip(view, QStringLiteral("n1 (core)\nMemory"));
     check(memory.contains(QLatin1String("70% used (ok)")) &&
               memory.contains(QLatin1String("Open file handles: 2,300")) &&
