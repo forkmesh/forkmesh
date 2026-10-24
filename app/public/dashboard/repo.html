@@ -142,13 +142,16 @@
           const cookie = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("forkmesh_theme="))?.slice(15);
           const stored = localStorage.getItem(key) || localStorage.getItem(siteKey);
           const preferred = hint === "light" || hint === "dark" ? hint : (stored || cookie);
-          theme = preferred === "light" ? "light" : "dark";
+          theme = preferred === "system"
+            ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+            : preferred === "light" ? "light" : "dark";
           if (hint === "light" || hint === "dark") {
             localStorage.setItem(key, theme);
             localStorage.setItem(siteKey, theme);
           }
         } catch (_) {}
         document.documentElement.dataset.dashboardTheme = theme;
+        document.documentElement.dataset.dashboardThemeResolved = "";
         document.documentElement.style.colorScheme = theme;
         try {
           const stored = JSON.parse(localStorage.getItem("forkmesh.session") || "null");

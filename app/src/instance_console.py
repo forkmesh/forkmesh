@@ -8,6 +8,7 @@ import instance_features
 import instance_home
 import instance_privacy
 import instance_registry
+import instance_theme
 import instance_world
 import moderation
 
@@ -26,8 +27,16 @@ WORLD_VIEW = "world-territory"
 HOME_VIEW = "home-page"
 PRIVACY_VIEW = "privacy"
 ACCOUNTS_VIEW = "accounts-moderation"
+THEME_VIEW = "site-theme"
 VIEWS = (PLUGINS_VIEW, DIRECTORY_VIEW, WORLD_VIEW, HOME_VIEW, PRIVACY_VIEW,
-         ACCOUNTS_VIEW)
+         ACCOUNTS_VIEW, THEME_VIEW)
+CUSTOM_THEME = "custom"
+MODE_LABELS = {
+    "": "The theme's own default",
+    "system": "Follow each visitor's system setting (light or dark)",
+    "dark": "Dark",
+    "light": "Light",
+}
 MAX_FORM_BYTES = 32 * 1024
 POST_TIMEOUT_SECONDS = 20
 NOTICES = {
@@ -55,6 +64,11 @@ NOTICES = {
     "home_saved": ("Home page saved. Visitors see it within a minute.", "ok"),
     "home_invalid": ("Not saved: name a repository as owner/name.", "bad"),
     "home_core": ("forkmesh.com keeps its own home page.", "bad"),
+    "theme_saved": ("Site theme saved. Visitors see it within a minute.",
+                    "ok"),
+    "theme_invalid": ("Not saved: choose one of the themes and colour modes "
+                      "listed.", "bad"),
+    "theme_core": ("forkmesh.com keeps its own colours.", "bad"),
     "privacy_on": ("Privacy mode is on. The app stops recording visitors "
                    "within a minute.", "ok"),
     "privacy_off": ("Privacy mode is off.", "ok"),
@@ -73,7 +87,7 @@ NOTICES = {
 }
 ACTIONS = {"save_plugins": PLUGINS_VIEW, "save_directory": DIRECTORY_VIEW,
            "announce_directory": DIRECTORY_VIEW, "save_world": WORLD_VIEW,
-           "save_home": HOME_VIEW,
+           "save_home": HOME_VIEW, "save_theme": THEME_VIEW,
            "save_privacy": PRIVACY_VIEW,
            "save_accounts": ACCOUNTS_VIEW, "add_moderator": ACCOUNTS_VIEW,
            "remove_moderator": ACCOUNTS_VIEW, "block": ACCOUNTS_VIEW,
@@ -505,6 +519,102 @@ async def save_home(env, form):
     return "home_saved", {"repository": repository}
 
 
+def _theme_choice(theme):
+    if theme.get("dark") or theme.get("light"):
+        return CUSTOM_THEME
+    return theme.get("preset") or instance_theme.DEFAULT_THEME
+
+
+def _theme_option(value, label, description, current, swatches=()):
+    swatch = "".join(
+        '<span style="display:inline-block;width:14px;height:14px;'
+        'border-radius:3px;border:1px solid var(--border);background:%s">'
+        '</span>' % _esc(colour) for colour in swatches)
+    return (
+        '<label style="display:flex;gap:10px;align-items:flex-start">'
+        '<input type="radio" name="preset" value="%s"%s>'
+        '<span class="stack" style="gap:2px"><strong>%s</strong>'
+        '<span class="hint">%s</span><span style="display:flex;gap:3px">%s'
+        '</span></span></label>' % (
+            _esc(value), " checked" if value == current else "",
+            _esc(label), _esc(description), swatch))
+
+
+async def render_theme(env, csrf_field, admin_query):
+    shell = _admin_shell  # noqa: F821
+    head = shell.page_head(
+        "Site theme",
+        "The colours every visitor sees, and whether pages follow the "
+        "visitor's light or dark system setting.", crumb="Platform")
+    if not instance_branded(env):  # noqa: F821
+        return head + shell.card(
+            title="forkmesh.com keeps its own colours",
+            description="Self-hosted instances choose a site theme here.")
+    theme = instance_theme.parse(await settings_doc(env, "theme"))
+    current = _theme_choice(theme)
+    options = []
+    if current == CUSTOM_THEME:
+        colours = [(theme.get(mode) or {}).get("primary") for mode in
+                   instance_theme.MODES]
+        options.append(_theme_option(
+            CUSTOM_THEME, "Keep the custom colours",
+            "The colours chosen when the instance was set up.", current,
+            [colour for colour in colours if colour]))
+    for entry in instance_theme.catalogue():
+        if entry["status"] != "ready":
+            continue
+        options.append(_theme_option(
+            entry["id"], entry["name"], entry["description"], current,
+            entry["palette"]))
+    mode = str(theme.get("mode") or "")
+    form = (
+        '<form method="post" action="%s" class="stack">%s'
+        '<input type="hidden" name="action" value="save_theme">'
+        '<fieldset class="stack" style="border:0;padding:0;margin:0">'
+        '<legend><strong>Theme</strong></legend>%s</fieldset>'
+        '<label class="stack" style="gap:4px"><span>Light or dark for a '
+        'visitor who has not chosen</span>%s<span class="hint">A visitor\'s '
+        'own choice in Settings, Appearance always wins.</span></label>'
+        '<div><button type="submit" class="btn btn-primary">Save site theme'
+        '</button></div></form>' % (
+            _admin_href(admin_query, view=THEME_VIEW),  # noqa: F821
+            csrf_field, "".join(options),
+            _select("mode", tuple(MODE_LABELS), MODE_LABELS, mode)))
+    names = {entry["id"]: entry["name"] for entry in instance_theme.catalogue()}
+    names[CUSTOM_THEME] = "custom colours"
+    now = {"system": "following each visitor's system setting",
+           "light": "light", "dark": "dark"}[instance_theme.color_mode(theme)]
+    return head + shell.card(
+        title="Site theme",
+        description="Now: %s, %s." % (_esc(names.get(current, current)), now),
+        body=form)
+
+
+async def save_theme(env, form):
+    if not instance_branded(env):  # noqa: F821
+        return "theme_core", None
+    choice = _first(form, "preset").strip().lower()
+    mode = _first(form, "mode").strip().lower()
+    if mode not in MODE_LABELS:
+        return "theme_invalid", None
+    if choice == CUSTOM_THEME:
+        current = instance_theme.parse(await settings_doc(env, "theme"))
+        wanted = {key: value for key, value in current.items()
+                  if key != "mode"}
+    else:
+        wanted = {"preset": choice}
+    if mode:
+        wanted["mode"] = mode
+    try:
+        theme = instance_theme.clean(wanted)
+        doc = instance_theme.dump(theme)
+    except instance_theme.ThemeError:
+        return "theme_invalid", None
+    await save_setting(env, "theme", doc)
+    return "theme_saved", {"preset": theme.get("preset") or "",
+                           "mode": instance_theme.color_mode(theme)}
+
+
 PRIVACY_STOPS = (
     ("Visitor addresses", "The app sees a pseudonym instead of the "
      "address; the key behind it lives only in memory and changes every "
@@ -815,6 +925,9 @@ async def admin_handler(env, request, params, csrf_field="", admin_query="",
     elif view == HOME_VIEW:
         title = "Home page"
         content = await render_home(env, csrf_field, admin_query)
+    elif view == THEME_VIEW:
+        title = "Site theme"
+        content = await render_theme(env, csrf_field, admin_query)
     elif view == PRIVACY_VIEW:
         title = "Privacy mode"
         content = await render_privacy(env, csrf_field, admin_query)
@@ -859,6 +972,8 @@ async def _handle_post(env, request, view, admin_query, account):
         notice, details = await save_world(env, form)
     elif action == "save_home":
         notice, details = await save_home(env, form)
+    elif action == "save_theme":
+        notice, details = await save_theme(env, form)
     elif action == "save_privacy":
         notice, details = await save_privacy(env, form)
     elif action == "save_accounts":

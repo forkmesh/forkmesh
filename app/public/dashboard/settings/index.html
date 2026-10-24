@@ -33,13 +33,16 @@
           const cookie = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("forkmesh_theme="))?.slice(15);
           const stored = localStorage.getItem(key) || localStorage.getItem(siteKey);
           const preferred = hint === "light" || hint === "dark" ? hint : (stored || cookie);
-          theme = preferred === "light" ? "light" : "dark";
+          theme = preferred === "system"
+            ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+            : preferred === "light" ? "light" : "dark";
           if (hint === "light" || hint === "dark") {
             localStorage.setItem(key, theme);
             localStorage.setItem(siteKey, theme);
           }
         } catch (_) {}
         document.documentElement.dataset.dashboardTheme = theme;
+        document.documentElement.dataset.dashboardThemeResolved = "";
         document.documentElement.style.colorScheme = theme;
         try {
           const stored = JSON.parse(localStorage.getItem("forkmesh.session") || "null");
@@ -5041,7 +5044,27 @@
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">Appearance</h2>
                     <p class="mt-1 text-sm text-muted-foreground">Choose the dashboard theme for this device.</p>
                     <div class="mt-5 grid max-w-3xl gap-4">
-                      <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Dashboard theme">
+                      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Dashboard theme">
+                        <button
+                          data-appearance-theme="system"
+                          type="button"
+                          role="radio"
+                          aria-checked="false"
+                          class="grid min-h-24 gap-3 rounded-md border border-border bg-card p-3 text-left transition-colors hover:bg-secondary"
+                        >
+                          <span class="flex items-center justify-between gap-2">
+                            <span class="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                              <i data-lucide="monitor" class="h-4 w-4"></i>
+                              System
+                            </span>
+                            <i data-lucide="check" class="hidden h-4 w-4 text-accent" data-appearance-check></i>
+                          </span>
+                          <span class="grid gap-1.5">
+                            <span class="h-2 rounded-full bg-secondary"></span>
+                            <span class="h-2 w-4/5 rounded-full bg-muted-foreground/40"></span>
+                            <span class="h-6 rounded-md border border-border bg-background"></span>
+                          </span>
+                        </button>
                         <button
                           data-appearance-theme="dark"
                           type="button"
