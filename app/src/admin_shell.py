@@ -94,6 +94,7 @@ NAV = (
          ("console", "federation")),
         ("world-territory", "World", "grid",
          ("console", "world-territory")),
+        ("home-page", "Home page", "globe", ("console", "home-page")),
         ("database", "Database", "database", ("console", "database")),
     )),
 )

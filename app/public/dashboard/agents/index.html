@@ -889,6 +889,11 @@
       [data-repo-pull-conversation] > [data-repo-issue-comment] > * {
         position: relative;
       }
+      [data-repo-issue-timeline] > [data-repo-issue-comment] {
+        content-visibility: auto;
+        contain-intrinsic-height: auto 180px;
+        scroll-margin-top: 64px;
+      }
       @media (min-width: 640px) {
         [data-repo-issue-timeline][data-empty="false"]::before,
         [data-repo-pull-conversation][data-empty="false"]::before {
@@ -3973,6 +3978,7 @@
           <a href="/security-report">Security</a>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
+          <a href="/lite" data-lite-link hidden>Lite</a>
           <button data-feedback-open type="button">Feedback</button>
         </nav>
       </aside>

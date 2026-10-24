@@ -1902,6 +1902,18 @@ class Default:
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "public, max-age=60"}))
 
+    async def _instance_home_public(self):
+        if not instance_branded(self.env):
+            return None
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_home.SETTING_KEY)
+        except Exception:
+            row = None
+        return instance_home.public(
+            instance_home.parse((row or {}).get("doc") or ""))
+
     async def _instance_world_public(self):
         if not instance_branded(self.env):
             return None
@@ -2069,6 +2081,7 @@ class Default:
                 "directory": await self._instance_directory_links(),
                 "world": await self._instance_world_public(),
                 "sidebar": await self._instance_sidebar_setting(),
+                "home": await self._instance_home_public(),
             }, cache_control="public, max-age=60")
         if instance_branded(self.env) and url.path.rstrip("/") == \
                 "/api/world/neighbour-scene" and \

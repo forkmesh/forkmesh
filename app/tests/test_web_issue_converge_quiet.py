@@ -34,6 +34,7 @@ LOADER = _region(
 
 
 HARNESS = r'''
+function paintRepoIssueDetail(container, html) { container.innerHTML = html; }
 const timers = [];
 globalThis.window = {
   setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length; },

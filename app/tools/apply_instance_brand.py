@@ -158,7 +158,28 @@ def instance_info_early(text: str) -> str:
     return text[:at] + INFO_EARLY + text[at:]
 
 
-def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
+CHROME_BLOCK_RE = re.compile(r"<(header|aside|footer)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+OFFSITE_HREF_RE = re.compile(
+    r"^https://(?:(?:www\.|app\.)?forkmesh\.com/.+|(?:www\.)?patreon\.com/.*)$", re.IGNORECASE)
+CHROME_HREFS = {"https://forkmesh.com/": "/", "https://world.forkmesh.com/": "/world"}
+
+
+def _chrome_anchor(match: re.Match) -> str:
+    attributes = match.group(1)
+    href = _attribute(attributes, "href") or ""
+    if href in CHROME_HREFS:
+        attributes = attributes.replace('href="%s"' % href, 'href="%s"' % CHROME_HREFS[href], 1)
+        return "<a%s>%s</a>" % (attributes, match.group(2))
+    if OFFSITE_HREF_RE.match(href) or re.search(r"(?<![\w-])data-forkmesh-membership(?![\w-])", attributes):
+        return ""
+    return match.group(0)
+
+
+def offsite_chrome(text: str) -> str:
+    return CHROME_BLOCK_RE.sub(lambda block: ANCHOR_RE.sub(_chrome_anchor, block.group(0)), text)
+
+
+def brand_page(text: str, name: str, logo: str = "", powered_by=True, white_label=False) -> str:
     escaped = html.escape(name, quote=True)
     text = OLD_TAG_RE.sub("", text)
     text = text.replace(THEME_TAG, "")
@@ -172,6 +193,8 @@ def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
         text, count=1)
     text = META_RE.sub(lambda match: match.group(1) + escaped + match.group(2), text)
     text = rename_markup(text, escaped)
+    if white_label:
+        text = offsite_chrome(text)
     text = name_beside_logo(text, escaped)
     off = ' data-instance-powered-by="off"' if not powered_by else ""
     tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
@@ -227,7 +250,8 @@ def name_manifest(dist: Path, name: str) -> None:
     manifest.write_text(json.dumps(app, separators=(",", ":")), encoding="utf-8")
 
 
-def apply(dist: Path, name: str, logo: Path | None = None, powered_by: bool = True) -> int:
+def apply(dist: Path, name: str, logo: Path | None = None, powered_by: bool = True,
+          white_label: bool = False) -> int:
     if not NAME_RE.fullmatch(name):
         raise SystemExit("instance name: letters, numbers, spaces and ._&+- only, up to 40")
     if not dist.is_dir():
@@ -238,7 +262,7 @@ def apply(dist: Path, name: str, logo: Path | None = None, powered_by: bool = Tr
     changed = 0
     for page in sorted(dist.rglob("*.html")):
         original = page.read_text(encoding="utf-8", errors="surrogateescape")
-        branded = brand_page(original, name, logo_path, powered_by)
+        branded = brand_page(original, name, logo_path, powered_by, white_label)
         if branded != original:
             page.write_text(branded, encoding="utf-8", errors="surrogateescape")
             changed += 1
@@ -251,9 +275,11 @@ def main(argv=None) -> int:
     parser.add_argument("--dist", default=str(APP / "dist"), help="the built app directory")
     parser.add_argument("--logo", help="the instance's logo: a PNG, JPEG, WebP or SVG file")
     parser.add_argument("--no-powered-by", action="store_true", help="leave out the Powered by ForkMesh badge")
+    parser.add_argument("--white-label", action="store_true",
+                        help="drop the header and sidebar links to forkmesh.com's own sites")
     args = parser.parse_args(argv)
     changed = apply(Path(args.dist), " ".join(args.name.split()), Path(args.logo) if args.logo else None,
-                    powered_by=not args.no_powered_by)
+                    powered_by=not args.no_powered_by, white_label=args.white_label)
     print("branded %d pages as %s" % (changed, args.name))
     return 0
 
