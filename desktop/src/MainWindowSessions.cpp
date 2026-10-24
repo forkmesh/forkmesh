@@ -8,8 +8,11 @@
 #include "ClaudePeerMessaging.h"
 #include "ClaudeSessionScan.h"
 #include "ClaudeTranscriptView.h"
+#include "DesignTokens.h"
+#include "UiKit.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDateTime>
@@ -18,6 +21,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFrame>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QJsonArray>
@@ -26,17 +30,24 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollArea>
+#include <QSet>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QStyledItemDelegate>
+#include <QSysInfo>
+#include <QTextCursor>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -96,6 +107,45 @@ struct SessionsPageUi : public QObject {
     QPointer<QPushButton> send;
     QPointer<QLabel> composerNote;
 
+    struct DetailRow {
+        QPointer<QWidget> row;
+        QPointer<QLabel> icon;
+        QPointer<QLabel> text;
+        QPointer<QLabel> trailing;
+    };
+    struct DetailCard {
+        QPointer<QFrame> frame;
+        QPointer<QWidget> body;
+        QPointer<QLabel> chevron;
+        QPointer<QLabel> meta;
+        QList<DetailRow> rows;
+    };
+    QPointer<QPushButton> filterButton;
+    QPointer<QAction> searchIcon;
+    QPointer<QWidget> header;
+    QPointer<QPushButton> titleMenu;
+    QPointer<QFrame> branchBadge;
+    QPointer<QLabel> branchText;
+    QPointer<QPushButton> panelToggle;
+    QPointer<QWidget> column;
+    QVBoxLayout *columnLayout = nullptr;
+    QPointer<QWidget> emptyColumn;
+    QVBoxLayout *composerSlot = nullptr;
+    QPointer<QWidget> composerHost;
+    QHBoxLayout *composerHostLayout = nullptr;
+    QPointer<QWidget> starters;
+    QPointer<QLabel> composerModel;
+    QPointer<QScrollArea> details;
+    DetailCard envCard;
+    DetailCard contextCard;
+    DetailCard changesCard;
+    QPointer<QWidget> contextBarRow;
+    QPointer<QProgressBar> contextBar;
+    bool next = false;
+    bool panelOpen = true;
+    bool groupByRepo = true;
+    QSet<QString> collapsedGroups;
+
     int openId = 0;
     bool newMode = false;
     bool listDirty = true;
@@ -128,6 +178,7 @@ namespace {
 
 constexpr int kSessionsHeaderActive = INT_MIN;
 constexpr int kSessionsHeaderRecent = INT_MIN + 1;
+constexpr int kSessionsHeaderGroup = INT_MIN + 2;
 constexpr int kSessionsRecentLimit = 300;
 constexpr int kSessionsPickerLimit = 40;
 constexpr int kSessionsRelayLimit = 200;
@@ -142,7 +193,17 @@ enum SessionsRole {
     kSessionDotRole,
     kSessionUnreadRole,
     kSessionRelaysRole,
+    kSessionStateRole,
+    kSessionGroupRole,
+    kSessionCollapsedRole,
+    kSessionAddableRole,
 };
+
+bool sessionsHeaderId(int id)
+{
+    return id == kSessionsHeaderActive || id == kSessionsHeaderRecent ||
+           id == kSessionsHeaderGroup;
+}
 
 const QString kSessionsEnvelopeLead = QStringLiteral("Message from ForkMesh agent #");
 
@@ -388,6 +449,544 @@ public:
     }
 };
 
+QString sessionsGroupKey(const AgentSession &session, bool byRepo)
+{
+    if (!byRepo)
+        return sessionsActiveRank(session) >= 0 ? QStringLiteral("@active")
+                                                : QStringLiteral("@recent");
+    return session.owner.isEmpty() ? QStringLiteral("@other")
+                                   : session.owner + QLatin1Char('/') + session.name;
+}
+
+QString sessionsCompactCount(qint64 value)
+{
+    if (value < 1000)
+        return QString::number(value);
+    if (value < 1000000)
+        return QString::number(value / 1000.0, 'f', 1) + QLatin1Char('k');
+    return QString::number(value / 1000000.0, 'f', 1) + QLatin1Char('M');
+}
+
+QString sessionsHomePath(const QString &path)
+{
+    const QString home = QDir::homePath();
+    if (!home.isEmpty() && (path == home || path.startsWith(home + QLatin1Char('/'))))
+        return QLatin1Char('~') + path.mid(home.size());
+    return path;
+}
+
+qreal sessionsIconRatio()
+{
+    return qMax<qreal>(2.0, qApp ? qApp->devicePixelRatio() : 1.0);
+}
+
+QIcon sessionsPanelIcon(const QColor &color)
+{
+    const qreal ratio = sessionsIconRatio();
+    const int px = 16;
+    QPixmap pixmap(qRound(px * ratio), qRound(px * ratio));
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(color, 1.4);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRoundedRect(QRectF(1.7, 2.7, 12.6, 10.6), 2.4, 2.4);
+    painter.drawLine(QPointF(10.0, 2.7), QPointF(10.0, 13.3));
+    return QIcon(pixmap);
+}
+
+void paintSessionsStatusIcon(QPainter *painter, const QRectF &box, const QString &state)
+{
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing);
+    const QPointF c = box.center();
+    const qreal r = box.width() / 2.0 - 1.0;
+    const QRectF circle(c.x() - r, c.y() - r, 2 * r, 2 * r);
+    QPen pen;
+    pen.setWidthF(1.5);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter->setBrush(Qt::NoBrush);
+    if (state == AgentStatus::Running) {
+        pen.setColor(Theme::color(Theme::Role::AccentFg));
+        painter->setPen(pen);
+        painter->drawArc(circle, 90 * 16, -270 * 16);
+    } else if (state == AgentStatus::Waiting) {
+        pen.setColor(Theme::color(Theme::Role::Warning));
+        painter->setPen(pen);
+        painter->drawEllipse(circle);
+        QFont font = painter->font();
+        font.setPixelSize(qMax(7, int(r * 1.45)));
+        font.setWeight(QFont::Bold);
+        painter->setFont(font);
+        painter->drawText(circle, Qt::AlignCenter, QStringLiteral("?"));
+    } else if (state == AgentStatus::Failed) {
+        pen.setColor(Theme::color(Theme::Role::Danger));
+        painter->setPen(pen);
+        const qreal d = r * 0.68;
+        painter->drawLine(c + QPointF(-d, -d), c + QPointF(d, d));
+        painter->drawLine(c + QPointF(-d, d), c + QPointF(d, -d));
+    } else if (state == AgentStatus::Success || state == QLatin1String("merged")) {
+        pen.setColor(Theme::color(state == AgentStatus::Success ? Theme::Role::FgMuted
+                                                                : Theme::Role::Success));
+        painter->setPen(pen);
+        QPainterPath path;
+        path.moveTo(c.x() - r * 0.8, c.y() + r * 0.02);
+        path.lineTo(c.x() - r * 0.22, c.y() + r * 0.6);
+        path.lineTo(c.x() + r * 0.85, c.y() - r * 0.58);
+        painter->drawPath(path);
+    } else if (state == AgentStatus::Stopped || state == AgentStatus::Cleared) {
+        pen.setColor(Theme::color(Theme::Role::FgSubtle));
+        painter->setPen(pen);
+        painter->drawEllipse(circle);
+        const qreal d = r * 0.7;
+        painter->drawLine(c + QPointF(-d, d), c + QPointF(d, -d));
+    } else {
+        pen.setColor(Theme::color(Theme::Role::FgSubtle));
+        pen.setDashPattern({1.4, 1.9});
+        pen.setCapStyle(Qt::FlatCap);
+        painter->setPen(pen);
+        painter->drawEllipse(circle);
+    }
+    painter->restore();
+}
+
+class SessionsNextRowDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        if (index.data(kSessionHeaderRole).toBool())
+            return QSize(option.rect.width(), index.row() == 0 ? 28 : 36);
+        return QSize(option.rect.width(), 33);
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        const QRect rect = option.rect;
+        const bool hovered = option.state & QStyle::State_MouseOver;
+        if (index.data(kSessionHeaderRole).toBool()) {
+            const QRect band(rect.left(), rect.bottom() - 27, rect.width(), 28);
+            const QColor tone = Theme::color(hovered ? Theme::Role::FgMuted
+                                                     : Theme::Role::FgSubtle);
+            QPen pen(tone, 1.4);
+            pen.setCapStyle(Qt::RoundCap);
+            pen.setJoinStyle(Qt::RoundJoin);
+            painter->setPen(pen);
+            painter->setBrush(Qt::NoBrush);
+            const QPointF mark(band.left() + 10.5, band.center().y() + 0.5);
+            QPainterPath chevron;
+            if (index.data(kSessionCollapsedRole).toBool()) {
+                chevron.moveTo(mark + QPointF(-1.5, -3.0));
+                chevron.lineTo(mark + QPointF(1.5, 0.0));
+                chevron.lineTo(mark + QPointF(-1.5, 3.0));
+            } else {
+                chevron.moveTo(mark + QPointF(-3.0, -1.5));
+                chevron.lineTo(mark + QPointF(0.0, 1.5));
+                chevron.lineTo(mark + QPointF(3.0, -1.5));
+            }
+            painter->drawPath(chevron);
+            const bool addable = index.data(kSessionAddableRole).toBool();
+            int textRight = band.right() - 8;
+            if (addable && hovered) {
+                const QPointF plus(band.right() - 13.5, band.center().y() + 0.5);
+                painter->drawLine(plus + QPointF(-4.0, 0.0), plus + QPointF(4.0, 0.0));
+                painter->drawLine(plus + QPointF(0.0, -4.0), plus + QPointF(0.0, 4.0));
+                textRight = band.right() - 28;
+            }
+            QFont font = option.font;
+            font.setPixelSize(12);
+            font.setWeight(QFont::Medium);
+            painter->setFont(font);
+            painter->setPen(tone);
+            const int left = band.left() + 20;
+            const QString label = QFontMetrics(font).elidedText(
+                index.data(Qt::DisplayRole).toString(), Qt::ElideRight,
+                qMax(0, textRight - left));
+            painter->drawText(QRect(left, band.top(), qMax(0, textRight - left),
+                                    band.height()),
+                              Qt::AlignLeft | Qt::AlignVCenter, label);
+            painter->restore();
+            return;
+        }
+        const QRect band = rect.adjusted(0, 0, 0, -1);
+        const bool selected = option.state & QStyle::State_Selected;
+        if (selected || hovered) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(selected ? Theme::Role::SurfaceActive
+                                                    : Theme::Role::SurfaceRaised));
+            painter->drawRoundedRect(QRectF(band), 8, 8);
+        }
+        paintSessionsStatusIcon(painter,
+                                QRectF(band.left() + 9, band.center().y() - 6.5, 14, 14),
+                                index.data(kSessionStateRole).toString());
+
+        const bool unread = index.data(kSessionUnreadRole).toBool();
+        QFont small = option.font;
+        small.setPixelSize(11);
+        const QFontMetrics smallMetrics(small);
+        int titleRight = band.right() - 8;
+        if (hovered) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(Theme::Role::FgMuted));
+            const QPointF dots(band.right() - 14.5, band.center().y() + 0.5);
+            for (int step = -1; step <= 1; ++step)
+                painter->drawEllipse(dots + QPointF(step * 4.0, 0.0), 1.3, 1.3);
+            titleRight = band.right() - 30;
+        } else {
+            const QString age = index.data(kSessionAgeRole).toString();
+            if (!age.isEmpty()) {
+                const int ageWidth = smallMetrics.horizontalAdvance(age);
+                painter->setFont(small);
+                painter->setPen(Theme::color(Theme::Role::FgSubtle));
+                painter->drawText(QRect(titleRight - ageWidth, band.top(), ageWidth,
+                                        band.height()),
+                                  Qt::AlignRight | Qt::AlignVCenter, age);
+                titleRight -= ageWidth + 8;
+            }
+            const int relays = index.data(kSessionRelaysRole).toInt();
+            if (relays > 0) {
+                const QString badge = QString::fromUtf8("\xE2\x87\x84%1").arg(relays);
+                const int badgeWidth = smallMetrics.horizontalAdvance(badge);
+                painter->setFont(small);
+                painter->setPen(Theme::color(Theme::Role::AccentFg));
+                painter->drawText(QRect(titleRight - badgeWidth, band.top(), badgeWidth,
+                                        band.height()),
+                                  Qt::AlignRight | Qt::AlignVCenter, badge);
+                titleRight -= badgeWidth + 8;
+            }
+            if (unread) {
+                painter->setPen(Qt::NoPen);
+                painter->setBrush(Theme::color(Theme::Role::Accent));
+                painter->drawEllipse(QPointF(titleRight - 3, band.center().y() + 0.5),
+                                     3.0, 3.0);
+                titleRight -= 12;
+            }
+        }
+        QFont titleFont = option.font;
+        titleFont.setPixelSize(13);
+        titleFont.setWeight(unread ? QFont::DemiBold : QFont::Normal);
+        painter->setFont(titleFont);
+        painter->setPen(Theme::color(selected || hovered || unread
+                                         ? Theme::Role::Fg
+                                         : Theme::Role::FgSecondary));
+        const int left = band.left() + 31;
+        const QString title = QFontMetrics(titleFont).elidedText(
+            index.data(Qt::DisplayRole).toString(), Qt::ElideRight,
+            qMax(0, titleRight - left));
+        painter->drawText(QRect(left, band.top(), qMax(0, titleRight - left), band.height()),
+                          Qt::AlignLeft | Qt::AlignVCenter, title);
+        painter->restore();
+    }
+};
+
+class SessionsElidedLabel : public QLabel
+{
+public:
+    using QLabel::QLabel;
+
+    QSize minimumSizeHint() const override
+    {
+        const QSize hint = QLabel::minimumSizeHint();
+        return QSize(qMin(hint.width(), 36), hint.height());
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        const QRect area = contentsRect();
+        painter.setFont(font());
+        painter.setPen(palette().color(isEnabled() ? QPalette::Active : QPalette::Disabled,
+                                       foregroundRole()));
+        painter.drawText(area, Qt::AlignLeft | Qt::AlignVCenter,
+                         fontMetrics().elidedText(text(), Qt::ElideRight, area.width()));
+    }
+};
+
+SessionsPageUi::DetailCard makeSessionsCard(QWidget *parent, QVBoxLayout *into,
+                                            const QString &title)
+{
+    SessionsPageUi::DetailCard card;
+    card.frame = new QFrame(parent);
+    card.frame->setObjectName(QStringLiteral("sessionsDetailCard"));
+    card.frame->setAttribute(Qt::WA_StyledBackground, true);
+    auto *layout = new QVBoxLayout(card.frame);
+    layout->setContentsMargins(0, 0, 0, 6);
+    layout->setSpacing(0);
+    auto *head = new QPushButton(card.frame);
+    head->setObjectName(QStringLiteral("sessionsDetailHeader"));
+    head->setCursor(Qt::PointingHandCursor);
+    head->setFixedHeight(40);
+    auto *headLayout = new QHBoxLayout(head);
+    headLayout->setContentsMargins(14, 0, 14, 0);
+    headLayout->setSpacing(6);
+    auto *titleLabel = new QLabel(title, head);
+    titleLabel->setObjectName(QStringLiteral("sessionsDetailTitle"));
+    titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    card.chevron = new QLabel(head);
+    card.chevron->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    setLabelOcticon(card.chevron, QStringLiteral("chevron-down"), 12);
+    card.meta = new QLabel(head);
+    card.meta->setObjectName(QStringLiteral("sessionsDetailMeta"));
+    card.meta->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    headLayout->addWidget(titleLabel);
+    headLayout->addWidget(card.chevron);
+    headLayout->addStretch(1);
+    headLayout->addWidget(card.meta);
+    card.body = new QWidget(card.frame);
+    card.body->setObjectName(QStringLiteral("sessionsDetailBody"));
+    auto *bodyLayout = new QVBoxLayout(card.body);
+    bodyLayout->setContentsMargins(6, 0, 6, 0);
+    bodyLayout->setSpacing(0);
+    layout->addWidget(head);
+    layout->addWidget(card.body);
+    into->addWidget(card.frame);
+    QPointer<QWidget> body = card.body;
+    QPointer<QLabel> chevron = card.chevron;
+    QObject::connect(head, &QPushButton::clicked, card.frame, [body, chevron] {
+        if (!body)
+            return;
+        const bool open = body->isHidden();
+        body->setVisible(open);
+        if (chevron)
+            setLabelOcticon(chevron, open ? QStringLiteral("chevron-down")
+                                          : QStringLiteral("chevron-right"),
+                            12);
+    });
+    return card;
+}
+
+void addSessionsDetailRow(SessionsPageUi::DetailCard &card, const QString &icon)
+{
+    SessionsPageUi::DetailRow row;
+    row.row = new QWidget(card.body);
+    row.row->setObjectName(QStringLiteral("sessionsDetailRow"));
+    row.row->setFixedHeight(30);
+    auto *layout = new QHBoxLayout(row.row);
+    layout->setContentsMargins(8, 0, 8, 0);
+    layout->setSpacing(10);
+    if (!icon.isEmpty()) {
+        row.icon = new QLabel(row.row);
+        setLabelOcticon(row.icon, icon, 14);
+        layout->addWidget(row.icon);
+    }
+    row.text = new SessionsElidedLabel(row.row);
+    row.text->setObjectName(QStringLiteral("sessionsDetailText"));
+    row.text->setTextFormat(Qt::PlainText);
+    layout->addWidget(row.text, 1);
+    row.trailing = new QLabel(row.row);
+    row.trailing->setObjectName(QStringLiteral("sessionsDetailTrailing"));
+    row.trailing->setTextFormat(Qt::PlainText);
+    layout->addWidget(row.trailing);
+    card.body->layout()->addWidget(row.row);
+    card.rows.append(row);
+}
+
+QScrollArea *buildSessionsDetails(SessionsPageUi *ui, QWidget *parent)
+{
+    auto *scroll = new QScrollArea(parent);
+    scroll->setObjectName(QStringLiteral("sessionsDetails"));
+    scroll->setFixedWidth(288);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *inner = new QWidget;
+    inner->setObjectName(QStringLiteral("sessionsDetailsInner"));
+    inner->setAttribute(Qt::WA_StyledBackground, true);
+    auto *layout = new QVBoxLayout(inner);
+    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setSpacing(8);
+
+    ui->envCard = makeSessionsCard(inner, layout, QStringLiteral("Environment"));
+    for (const QString &icon :
+         {QStringLiteral("device-desktop"), QStringLiteral("file-directory"),
+          QStringLiteral("git-branch"), QStringLiteral("smart-toy"),
+          QStringLiteral("shield-check")})
+        addSessionsDetailRow(ui->envCard, icon);
+
+    ui->contextCard = makeSessionsCard(inner, layout, QStringLiteral("Context"));
+    ui->contextBarRow = new QWidget(ui->contextCard.body);
+    auto *barLayout = new QVBoxLayout(ui->contextBarRow);
+    barLayout->setContentsMargins(8, 2, 8, 6);
+    ui->contextBar = new QProgressBar(ui->contextBarRow);
+    ui->contextBar->setObjectName(QStringLiteral("sessionsContextBar"));
+    ui->contextBar->setTextVisible(false);
+    ui->contextBar->setRange(0, 1000);
+    ui->contextBar->setFixedHeight(6);
+    barLayout->addWidget(ui->contextBar);
+    ui->contextCard.body->layout()->addWidget(ui->contextBarRow);
+    for (int row = 0; row < 5; ++row)
+        addSessionsDetailRow(ui->contextCard, QString());
+
+    ui->changesCard = makeSessionsCard(inner, layout, QStringLiteral("Changes"));
+    ui->changesCard.meta->setTextFormat(Qt::RichText);
+    for (const QString &icon :
+         {QStringLiteral("file-diff"), QStringLiteral("pencil"),
+          QStringLiteral("git-pull-request"), QStringLiteral("alert")})
+        addSessionsDetailRow(ui->changesCard, icon);
+
+    layout->addStretch(1);
+    scroll->setWidget(inner);
+    return scroll;
+}
+
+struct SessionsDetails {
+    QString machine;
+    QString machineNote;
+    QString machineIcon;
+    QString path;
+    QString pathFull;
+    QString branch;
+    QString branchNote;
+    QString agent;
+    QString mode;
+    qint64 contextUsed = 0;
+    qint64 contextWindow = 0;
+    qint64 totalTokens = 0;
+    double costUsd = 0.0;
+    int files = -1;
+    int added = -1;
+    int removed = -1;
+    int dirty = -1;
+    int prNumber = 0;
+    bool conflicted = false;
+};
+
+void setSessionsDetailRow(const SessionsPageUi::DetailRow &row, const QString &text,
+                          const QString &trailing, const QString &tip = QString())
+{
+    if (!row.row || !row.text || !row.trailing)
+        return;
+    row.row->setVisible(!text.isEmpty());
+    row.text->setText(text);
+    row.trailing->setText(trailing);
+    row.trailing->setVisible(!trailing.isEmpty());
+    row.row->setToolTip(tip);
+}
+
+void fillSessionsDetails(SessionsPageUi *ui, const SessionsDetails &d)
+{
+    SessionsPageUi::DetailCard &env = ui->envCard;
+    if (env.rows.size() >= 5) {
+        if (QLabel *icon = env.rows.at(0).icon;
+            icon && icon->property("forkmeshOcticon").toString() != d.machineIcon)
+            setLabelOcticon(icon, d.machineIcon, 14);
+        setSessionsDetailRow(env.rows.at(0), d.machine, d.machineNote);
+        setSessionsDetailRow(env.rows.at(1), d.path, QString(), d.pathFull);
+        setSessionsDetailRow(env.rows.at(2), d.branch, d.branchNote, d.branch);
+        setSessionsDetailRow(env.rows.at(3), d.agent, QString());
+        setSessionsDetailRow(env.rows.at(4),
+                             d.mode.isEmpty() ? QString()
+                                              : QStringLiteral("%1 mode").arg(d.mode),
+                             QString());
+    }
+
+    SessionsPageUi::DetailCard &context = ui->contextCard;
+    const bool hasWindow = d.contextWindow > 0;
+    if (context.frame)
+        context.frame->setVisible(hasWindow || d.totalTokens > 0 || d.costUsd > 0.0);
+    if (ui->contextBarRow)
+        ui->contextBarRow->setVisible(hasWindow);
+    const qint64 used = qBound<qint64>(0, d.contextUsed, qMax<qint64>(0, d.contextWindow));
+    if (ui->contextBar && hasWindow)
+        ui->contextBar->setValue(int(used * 1000 / d.contextWindow));
+    if (context.meta)
+        context.meta->setText(
+            hasWindow ? QStringLiteral("%1%").arg(qRound(used * 100.0 / d.contextWindow))
+                      : QString());
+    if (context.rows.size() >= 5) {
+        setSessionsDetailRow(context.rows.at(0), hasWindow ? QStringLiteral("Used") : QString(),
+                             sessionsCompactCount(used));
+        setSessionsDetailRow(context.rows.at(1), hasWindow ? QStringLiteral("Free") : QString(),
+                             sessionsCompactCount(d.contextWindow - used));
+        setSessionsDetailRow(context.rows.at(2),
+                             hasWindow ? QStringLiteral("Window") : QString(),
+                             sessionsCompactCount(d.contextWindow));
+        setSessionsDetailRow(context.rows.at(3),
+                             d.totalTokens > 0 ? QStringLiteral("Tokens used") : QString(),
+                             sessionsCompactCount(d.totalTokens));
+        setSessionsDetailRow(context.rows.at(4),
+                             d.costUsd > 0.0 ? QStringLiteral("Cost") : QString(),
+                             QStringLiteral("$%1").arg(d.costUsd, 0, 'f', 2));
+    }
+
+    SessionsPageUi::DetailCard &changes = ui->changesCard;
+    const bool hasStat = d.files >= 0;
+    if (changes.frame)
+        changes.frame->setVisible(hasStat || d.prNumber > 0);
+    if (changes.meta)
+        changes.meta->setText(
+            hasStat && d.added >= 0 && d.removed >= 0
+                ? QStringLiteral("<span style=\"color:%1\">+%2</span>&nbsp;"
+                                 "<span style=\"color:%3\">−%4</span>")
+                      .arg(Theme::hex(Theme::Role::Success))
+                      .arg(d.added)
+                      .arg(Theme::hex(Theme::Role::Danger))
+                      .arg(d.removed)
+                : QString());
+    if (changes.rows.size() >= 4) {
+        setSessionsDetailRow(changes.rows.at(0),
+                             !hasStat        ? QString()
+                             : d.files == 0  ? QStringLiteral("No files changed")
+                             : d.files == 1  ? QStringLiteral("1 file changed")
+                                             : QStringLiteral("%1 files changed").arg(d.files),
+                             QString());
+        setSessionsDetailRow(changes.rows.at(1),
+                             d.dirty > 0 ? QStringLiteral("%1 uncommitted").arg(d.dirty)
+                                         : QString(),
+                             QString());
+        setSessionsDetailRow(changes.rows.at(2),
+                             d.prNumber > 0
+                                 ? QStringLiteral("Pull request #%1").arg(d.prNumber)
+                                 : QString(),
+                             QString());
+        setSessionsDetailRow(changes.rows.at(3),
+                             d.conflicted ? QStringLiteral("Conflicts with the base branch")
+                                          : QString(),
+                             QString());
+    }
+}
+
+void retintSessionsIcons(SessionsPageUi *ui)
+{
+    if (!ui || !ui->next)
+        return;
+    if (ui->searchIcon)
+        ui->searchIcon->setIcon(QIcon(forkmesh::ui::kit::tintedIcon(
+            QStringLiteral("search"), Theme::color(Theme::Role::FgSubtle), 14,
+            sessionsIconRatio())));
+    if (ui->panelToggle)
+        ui->panelToggle->setIcon(sessionsPanelIcon(Theme::color(Theme::Role::FgMuted)));
+}
+
+void placeSessionsComposer(SessionsPageUi *ui)
+{
+    if (!ui || !ui->next || !ui->composerHost || !ui->composerSlot ||
+        !ui->columnLayout || !ui->composerHostLayout)
+        return;
+    const bool centred = ui->newMode;
+    QWidget *target = centred ? ui->emptyColumn.data() : ui->column.data();
+    if (!target || ui->composerHost->parentWidget() == target)
+        return;
+    if (centred) {
+        ui->composerHostLayout->setContentsMargins(0, 0, 0, 0);
+        ui->composerSlot->addWidget(ui->composerHost);
+    } else {
+        ui->composerHostLayout->setContentsMargins(24, 0, 24, 16);
+        ui->columnLayout->addWidget(ui->composerHost);
+    }
+    ui->composerHost->show();
+}
+
 }
 
 QString MainWindow::sessionsTitle(const AgentSession &session) const
@@ -432,6 +1031,8 @@ QWidget *MainWindow::buildSessionsSection()
     if (!m_sessionsUi)
         m_sessionsUi = new SessionsPageUi(this);
     SessionsPageUi *ui = m_sessionsUi;
+    const bool next = Theme::isNext();
+    ui->next = next;
 
     auto *page = new QWidget;
     page->setObjectName(QStringLiteral("sessionsPage"));
@@ -448,7 +1049,7 @@ QWidget *MainWindow::buildSessionsSection()
     sidebar->setMinimumWidth(240);
     auto *side = new QVBoxLayout(sidebar);
     side->setContentsMargins(10, 10, 10, 6);
-    side->setSpacing(8);
+    side->setSpacing(next ? 6 : 8);
 
     ui->newButton = new QPushButton(QStringLiteral("New session"), sidebar);
     ui->newButton->setObjectName(QStringLiteral("sessionsNewButton"));
@@ -462,7 +1063,23 @@ QWidget *MainWindow::buildSessionsSection()
     ui->search->setObjectName(QStringLiteral("sessionsSearch"));
     ui->search->setPlaceholderText(QStringLiteral("Search sessions"));
     ui->search->setClearButtonEnabled(true);
-    side->addWidget(ui->search);
+    if (next) {
+        ui->searchIcon = ui->search->addAction(QIcon(), QLineEdit::LeadingPosition);
+        ui->filterButton = new QPushButton(sidebar);
+        ui->filterButton->setObjectName(QStringLiteral("sessionsFilterButton"));
+        ui->filterButton->setCursor(Qt::PointingHandCursor);
+        ui->filterButton->setToolTip(QStringLiteral("Filter and group sessions"));
+        ui->filterButton->setFixedSize(32, 32);
+        ui->filterButton->setProperty("nextIconRole", int(Theme::Role::FgMuted));
+        setOcticon(ui->filterButton, QStringLiteral("filter"), 14);
+        auto *searchRow = new QHBoxLayout;
+        searchRow->setSpacing(4);
+        searchRow->addWidget(ui->search, 1);
+        searchRow->addWidget(ui->filterButton);
+        side->addLayout(searchRow);
+    } else {
+        side->addWidget(ui->search);
+    }
 
     ui->betweenFilter =
         new QPushButton(QStringLiteral("Between sessions"), sidebar);
@@ -473,11 +1090,16 @@ QWidget *MainWindow::buildSessionsSection()
         QStringLiteral("Show only sessions that sent or received a message "
                        "from another session"));
     side->addWidget(ui->betweenFilter, 0, Qt::AlignLeft);
+    if (next)
+        ui->betweenFilter->hide();
 
     ui->list = new QListWidget(sidebar);
     ui->list->setObjectName(QStringLiteral("sessionsList"));
     ui->list->setFrameShape(QFrame::NoFrame);
-    ui->list->setItemDelegate(new SessionsRowDelegate(ui->list));
+    if (next)
+        ui->list->setItemDelegate(new SessionsNextRowDelegate(ui->list));
+    else
+        ui->list->setItemDelegate(new SessionsRowDelegate(ui->list));
     ui->list->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->list->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     ui->list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -496,30 +1118,71 @@ QWidget *MainWindow::buildSessionsSection()
     auto *header = new QWidget(center);
     header->setObjectName(QStringLiteral("sessionsHeader"));
     header->setAttribute(Qt::WA_StyledBackground, true);
+    ui->header = header;
     auto *headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(16, 10, 16, 10);
-    headerLayout->setSpacing(10);
-    auto *titles = new QVBoxLayout;
-    titles->setSpacing(2);
-    ui->title = new QLabel(header);
-    ui->title->setObjectName(QStringLiteral("sessionsTitle"));
-    ui->title->setTextFormat(Qt::PlainText);
-    ui->title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    ui->meta = new QLabel(header);
-    ui->meta->setObjectName(QStringLiteral("sessionsMeta"));
-    ui->meta->setTextFormat(Qt::PlainText);
-    ui->meta->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    titles->addWidget(ui->title);
-    titles->addWidget(ui->meta);
-    headerLayout->addLayout(titles, 1);
-    ui->status = new QLabel(header);
-    ui->status->setObjectName(QStringLiteral("sessionsStatus"));
-    headerLayout->addWidget(ui->status, 0, Qt::AlignVCenter);
-    const auto headerButton = [header](const QString &text, const QString &name,
-                                       const QString &icon) {
+    if (next) {
+        header->setFixedHeight(48);
+        headerLayout->setContentsMargins(12, 0, 12, 0);
+        headerLayout->setSpacing(6);
+        ui->title = new SessionsElidedLabel(header);
+        ui->title->setObjectName(QStringLiteral("sessionsTitle"));
+        ui->title->setTextFormat(Qt::PlainText);
+        ui->titleMenu = new QPushButton(header);
+        ui->titleMenu->setObjectName(QStringLiteral("sessionsTitleMenu"));
+        ui->titleMenu->setCursor(Qt::PointingHandCursor);
+        ui->titleMenu->setToolTip(QStringLiteral("Session actions"));
+        ui->titleMenu->setFixedSize(22, 22);
+        ui->titleMenu->setProperty("nextIconRole", int(Theme::Role::FgSubtle));
+        setOcticon(ui->titleMenu, QStringLiteral("chevron-down"), 12);
+        ui->branchBadge = new QFrame(header);
+        ui->branchBadge->setObjectName(QStringLiteral("sessionsBranchBadge"));
+        ui->branchBadge->setAttribute(Qt::WA_StyledBackground, true);
+        ui->branchBadge->setFixedHeight(22);
+        auto *badgeLayout = new QHBoxLayout(ui->branchBadge);
+        badgeLayout->setContentsMargins(6, 0, 8, 0);
+        badgeLayout->setSpacing(4);
+        auto *branchIcon = new QLabel(ui->branchBadge);
+        setLabelOcticon(branchIcon, QStringLiteral("git-branch"), 12);
+        ui->branchText = new QLabel(ui->branchBadge);
+        ui->branchText->setObjectName(QStringLiteral("sessionsBranchText"));
+        ui->branchText->setTextFormat(Qt::PlainText);
+        ui->branchText->setFont(Theme::monospaceFont(ui->branchText->font()));
+        badgeLayout->addWidget(branchIcon);
+        badgeLayout->addWidget(ui->branchText);
+        ui->branchBadge->hide();
+        ui->meta = new SessionsElidedLabel(header);
+        ui->meta->setObjectName(QStringLiteral("sessionsMeta"));
+        ui->meta->setTextFormat(Qt::PlainText);
+        ui->meta->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        ui->status = new QLabel(header);
+        ui->status->setObjectName(QStringLiteral("sessionsStatus"));
+    } else {
+        headerLayout->setContentsMargins(16, 10, 16, 10);
+        headerLayout->setSpacing(10);
+        auto *titles = new QVBoxLayout;
+        titles->setSpacing(2);
+        ui->title = new QLabel(header);
+        ui->title->setObjectName(QStringLiteral("sessionsTitle"));
+        ui->title->setTextFormat(Qt::PlainText);
+        ui->title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        ui->meta = new QLabel(header);
+        ui->meta->setObjectName(QStringLiteral("sessionsMeta"));
+        ui->meta->setTextFormat(Qt::PlainText);
+        ui->meta->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        titles->addWidget(ui->title);
+        titles->addWidget(ui->meta);
+        headerLayout->addLayout(titles, 1);
+        ui->status = new QLabel(header);
+        ui->status->setObjectName(QStringLiteral("sessionsStatus"));
+        headerLayout->addWidget(ui->status, 0, Qt::AlignVCenter);
+    }
+    const auto headerButton = [header, next](const QString &text, const QString &name,
+                                             const QString &icon) {
         auto *button = new QPushButton(text, header);
         button->setObjectName(name);
         button->setCursor(Qt::PointingHandCursor);
+        if (next)
+            button->setProperty("nextIconRole", int(Theme::Role::FgMuted));
         setOcticon(button, icon, 14);
         return button;
     };
@@ -532,9 +1195,38 @@ QWidget *MainWindow::buildSessionsSection()
     ui->openInAgents = headerButton(QStringLiteral("Open in Agents"),
                                     QStringLiteral("sessionsOpenInAgents"),
                                     QStringLiteral("smart-toy"));
-    headerLayout->addWidget(ui->stop);
-    headerLayout->addWidget(ui->resume);
-    headerLayout->addWidget(ui->openInAgents);
+    if (next) {
+        headerLayout->addWidget(ui->title);
+        headerLayout->addWidget(ui->titleMenu);
+        headerLayout->addSpacing(4);
+        headerLayout->addWidget(ui->branchBadge);
+        headerLayout->addWidget(ui->status, 0, Qt::AlignVCenter);
+        headerLayout->addSpacing(2);
+        headerLayout->addWidget(ui->meta, 1);
+        headerLayout->addWidget(ui->stop);
+        headerLayout->addWidget(ui->resume);
+        headerLayout->addWidget(ui->openInAgents);
+        auto *divider = new QFrame(header);
+        divider->setObjectName(QStringLiteral("sessionsHeaderDivider"));
+        divider->setAttribute(Qt::WA_StyledBackground, true);
+        divider->setFixedSize(1, 16);
+        headerLayout->addSpacing(2);
+        headerLayout->addWidget(divider);
+        headerLayout->addSpacing(2);
+        ui->panelToggle = new QPushButton(header);
+        ui->panelToggle->setObjectName(QStringLiteral("sessionsPanelToggle"));
+        ui->panelToggle->setCursor(Qt::PointingHandCursor);
+        ui->panelToggle->setCheckable(true);
+        ui->panelToggle->setChecked(ui->panelOpen);
+        ui->panelToggle->setToolTip(QStringLiteral("Hide details"));
+        ui->panelToggle->setFixedSize(28, 28);
+        ui->panelToggle->setIconSize(QSize(16, 16));
+        headerLayout->addWidget(ui->panelToggle);
+    } else {
+        headerLayout->addWidget(ui->stop);
+        headerLayout->addWidget(ui->resume);
+        headerLayout->addWidget(ui->openInAgents);
+    }
     centerLayout->addWidget(header);
 
     ui->relayStrip = new QWidget(center);
@@ -551,6 +1243,24 @@ QWidget *MainWindow::buildSessionsSection()
     ui->relayStrip->hide();
     centerLayout->addWidget(ui->relayStrip);
 
+    if (next) {
+        auto *body = new QWidget(center);
+        body->setObjectName(QStringLiteral("sessionsBody"));
+        auto *bodyLayout = new QHBoxLayout(body);
+        bodyLayout->setContentsMargins(0, 0, 0, 0);
+        bodyLayout->setSpacing(0);
+        ui->column = new QWidget(body);
+        ui->column->setObjectName(QStringLiteral("sessionsColumn"));
+        ui->columnLayout = new QVBoxLayout(ui->column);
+        ui->columnLayout->setContentsMargins(0, 0, 0, 0);
+        ui->columnLayout->setSpacing(0);
+        bodyLayout->addWidget(ui->column, 1);
+        ui->details = buildSessionsDetails(ui, body);
+        ui->details->hide();
+        bodyLayout->addWidget(ui->details);
+        centerLayout->addWidget(body, 1);
+    }
+
     ui->centerStack = new QStackedWidget(center);
     auto *empty = new QWidget(ui->centerStack);
     empty->setObjectName(QStringLiteral("sessionsEmpty"));
@@ -563,9 +1273,82 @@ QWidget *MainWindow::buildSessionsSection()
     ui->emptyBody->setObjectName(QStringLiteral("sessionsEmptyBody"));
     ui->emptyBody->setAlignment(Qt::AlignCenter);
     ui->emptyBody->setWordWrap(true);
-    emptyLayout->addWidget(ui->emptyTitle);
-    emptyLayout->addWidget(ui->emptyBody);
-    emptyLayout->addStretch(2);
+    if (next) {
+        emptyLayout->setContentsMargins(32, 24, 32, 24);
+        auto *emptyRow = new QHBoxLayout;
+        emptyRow->setContentsMargins(0, 0, 0, 0);
+        ui->emptyColumn = new QWidget(empty);
+        ui->emptyColumn->setObjectName(QStringLiteral("sessionsEmptyColumn"));
+        ui->emptyColumn->setMaximumWidth(680);
+        auto *emptyColumnLayout = new QVBoxLayout(ui->emptyColumn);
+        emptyColumnLayout->setContentsMargins(0, 0, 0, 0);
+        emptyColumnLayout->setSpacing(6);
+        emptyColumnLayout->addWidget(ui->emptyTitle);
+        emptyColumnLayout->addWidget(ui->emptyBody);
+        ui->composerSlot = new QVBoxLayout;
+        ui->composerSlot->setContentsMargins(0, 22, 0, 0);
+        emptyColumnLayout->addLayout(ui->composerSlot);
+        ui->starters = new QWidget(ui->emptyColumn);
+        ui->starters->setObjectName(QStringLiteral("sessionsStarters"));
+        auto *startersLayout = new QHBoxLayout(ui->starters);
+        startersLayout->setContentsMargins(0, 18, 0, 0);
+        startersLayout->setSpacing(8);
+        const QList<QStringList> starters{
+            {QStringLiteral("Fix a failing test"),
+             QStringLiteral("Find the cause and patch it"),
+             QStringLiteral("Run the tests, find the one that fails, work out why "
+                            "and fix it.")},
+            {QStringLiteral("Review recent changes"),
+             QStringLiteral("Look over the latest commits"),
+             QStringLiteral("Review the most recent commits on this branch and point "
+                            "out bugs or risky changes.")},
+            {QStringLiteral("Explore the codebase"),
+             QStringLiteral("Map a subsystem for me"),
+             QStringLiteral("Explore this repository and explain how it is organised: "
+                            "the main parts, where they live and how they connect.")}};
+        for (const QStringList &starter : starters) {
+            auto *card = new QPushButton(ui->starters);
+            card->setObjectName(QStringLiteral("sessionsStarter"));
+            card->setCursor(Qt::PointingHandCursor);
+            card->setToolTip(starter.at(2));
+            card->setMinimumHeight(66);
+            card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+            auto *cardLayout = new QVBoxLayout(card);
+            cardLayout->setContentsMargins(12, 10, 12, 10);
+            cardLayout->setSpacing(2);
+            auto *cardTitle = new QLabel(starter.at(0), card);
+            cardTitle->setObjectName(QStringLiteral("sessionsStarterTitle"));
+            cardTitle->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+            auto *cardBody = new QLabel(starter.at(1), card);
+            cardBody->setObjectName(QStringLiteral("sessionsStarterBody"));
+            cardBody->setWordWrap(true);
+            cardBody->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+            cardLayout->addWidget(cardTitle);
+            cardLayout->addWidget(cardBody);
+            cardLayout->addStretch(1);
+            startersLayout->addWidget(card, 1);
+            const QString prompt = starter.at(2);
+            connect(card, &QPushButton::clicked, this, [this, prompt] {
+                if (!m_sessionsUi || !m_sessionsUi->composer ||
+                    !m_sessionsUi->composer->isEnabled())
+                    return;
+                m_sessionsUi->composer->setPlainText(prompt);
+                m_sessionsUi->composer->moveCursor(QTextCursor::End);
+                m_sessionsUi->composer->setFocus(Qt::OtherFocusReason);
+            });
+        }
+        ui->starters->hide();
+        emptyColumnLayout->addWidget(ui->starters);
+        emptyRow->addStretch(1);
+        emptyRow->addWidget(ui->emptyColumn, 100);
+        emptyRow->addStretch(1);
+        emptyLayout->addLayout(emptyRow);
+        emptyLayout->addStretch(1);
+    } else {
+        emptyLayout->addWidget(ui->emptyTitle);
+        emptyLayout->addWidget(ui->emptyBody);
+        emptyLayout->addStretch(2);
+    }
     ui->centerStack->addWidget(empty);
 
     ui->transcript = new ClaudeTranscriptView(ui->centerStack);
@@ -576,17 +1359,27 @@ QWidget *MainWindow::buildSessionsSection()
         QSettings().value(kTerminalTranscriptOutputSetting, true).toBool());
     ui->transcript->setTheme(currentThemeIsDark());
     ui->centerStack->addWidget(ui->transcript);
-    centerLayout->addWidget(ui->centerStack, 1);
+    if (next) {
+        ui->transcript->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+        if (QWidget *column = ui->transcript->widget())
+            column->setMaximumWidth(808);
+        ui->columnLayout->addWidget(ui->centerStack, 1);
+    } else {
+        centerLayout->addWidget(ui->centerStack, 1);
+    }
 
     auto *composerBox = new QFrame(center);
     composerBox->setObjectName(QStringLiteral("sessionsComposer"));
     auto *composerLayout = new QVBoxLayout(composerBox);
-    composerLayout->setContentsMargins(12, 10, 12, 10);
+    if (next)
+        composerLayout->setContentsMargins(10, 12, 8, 8);
+    else
+        composerLayout->setContentsMargins(12, 10, 12, 10);
     composerLayout->setSpacing(6);
     ui->composer = new QPlainTextEdit(composerBox);
     ui->composer->setObjectName(QStringLiteral("sessionsComposerInput"));
     ui->composer->setTabChangesFocus(true);
-    ui->composer->setFixedHeight(84);
+    ui->composer->setFixedHeight(next ? 60 : 84);
     composerLayout->addWidget(ui->composer);
 
     auto *controls = new QHBoxLayout;
@@ -664,19 +1457,49 @@ QWidget *MainWindow::buildSessionsSection()
     ui->composerNote->setWordWrap(true);
     ui->composerNote->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     controls->addWidget(ui->composerNote, 1);
-    ui->send = new QPushButton(QStringLiteral("Send"), composerBox);
-    ui->send->setObjectName(QStringLiteral("sessionsSend"));
-    ui->send->setCursor(Qt::PointingHandCursor);
-    setOcticon(ui->send, QStringLiteral("paper-airplane"), 14);
+    if (next) {
+        ui->composerModel = new QLabel(composerBox);
+        ui->composerModel->setObjectName(QStringLiteral("sessionsComposerModel"));
+        ui->composerModel->setTextFormat(Qt::PlainText);
+        ui->composerModel->hide();
+        controls->addWidget(ui->composerModel);
+        ui->send = new QPushButton(composerBox);
+        ui->send->setObjectName(QStringLiteral("sessionsSend"));
+        ui->send->setCursor(Qt::PointingHandCursor);
+        ui->send->setToolTip(QStringLiteral("Send (Enter)"));
+        ui->send->setFixedSize(28, 28);
+        ui->send->setProperty("sessionsRound", true);
+        ui->send->setProperty("nextIconRole", int(Theme::Role::OnAccent));
+        setOcticon(ui->send, QStringLiteral("arrow-left"), 14, 90.0);
+    } else {
+        ui->send = new QPushButton(QStringLiteral("Send"), composerBox);
+        ui->send->setObjectName(QStringLiteral("sessionsSend"));
+        ui->send->setCursor(Qt::PointingHandCursor);
+        setOcticon(ui->send, QStringLiteral("paper-airplane"), 14);
+    }
     controls->addWidget(ui->send);
     composerLayout->addLayout(controls);
-    centerLayout->addWidget(composerBox);
+    if (next) {
+        ui->composerHost = new QWidget(ui->column);
+        ui->composerHost->setObjectName(QStringLiteral("sessionsComposerHost"));
+        ui->composerHostLayout = new QHBoxLayout(ui->composerHost);
+        ui->composerHostLayout->setContentsMargins(24, 0, 24, 16);
+        ui->composerHostLayout->setSpacing(0);
+        ui->composerHostLayout->addStretch(1);
+        ui->composerHostLayout->addWidget(composerBox, 100);
+        ui->composerHostLayout->addStretch(1);
+        composerBox->setMaximumWidth(760);
+        composerBox->setProperty("sessionsHosted", true);
+        ui->columnLayout->addWidget(ui->composerHost);
+    } else {
+        centerLayout->addWidget(composerBox);
+    }
 
     split->addWidget(sidebar);
     split->addWidget(center);
     split->setStretchFactor(0, 0);
     split->setStretchFactor(1, 1);
-    split->setSizes({300, 900});
+    split->setSizes({next ? 264 : 300, 900});
 
     auto *pageLayout = new QVBoxLayout(page);
     pageLayout->setContentsMargins(0, 0, 0, 0);
@@ -818,6 +1641,115 @@ QWidget *MainWindow::buildSessionsSection()
     ui->emptyBody->setText(
         QStringLiteral("Pick a session on the left, or start a new one."));
     ui->centerStack->setCurrentIndex(0);
+
+    if (next) {
+        auto *filterMenu = new QMenu(ui->filterButton);
+        ui->filterButton->setMenu(filterMenu);
+        connect(filterMenu, &QMenu::aboutToShow, this, [this, filterMenu] {
+            filterMenu->clear();
+            SessionsPageUi *ui = m_sessionsUi;
+            if (!ui)
+                return;
+            filterMenu->addSection(QStringLiteral("Show"));
+            QAction *between = filterMenu->addAction(
+                QStringLiteral("Between sessions only"), this, [this](bool on) {
+                    if (m_sessionsUi && m_sessionsUi->betweenFilter)
+                        m_sessionsUi->betweenFilter->setChecked(on);
+                });
+            between->setCheckable(true);
+            between->setChecked(ui->betweenFilter && ui->betweenFilter->isChecked());
+            between->setToolTip(ui->betweenFilter ? ui->betweenFilter->toolTip()
+                                                  : QString());
+            filterMenu->addSection(QStringLiteral("Group by"));
+            const auto groupAction = [this, filterMenu](const QString &text, bool byRepo) {
+                QAction *action = filterMenu->addAction(text, this, [this, byRepo] {
+                    if (!m_sessionsUi || m_sessionsUi->groupByRepo == byRepo)
+                        return;
+                    m_sessionsUi->groupByRepo = byRepo;
+                    refreshSessionsList();
+                });
+                action->setCheckable(true);
+                action->setChecked(m_sessionsUi && m_sessionsUi->groupByRepo == byRepo);
+            };
+            groupAction(QStringLiteral("Repository"), true);
+            groupAction(QStringLiteral("Status"), false);
+        });
+        connect(ui->betweenFilter, &QPushButton::toggled, this, [this](bool on) {
+            if (!m_sessionsUi || !m_sessionsUi->filterButton)
+                return;
+            QPushButton *button = m_sessionsUi->filterButton;
+            button->setProperty("filterActive", on);
+            button->style()->unpolish(button);
+            button->style()->polish(button);
+        });
+        connect(ui->titleMenu, &QPushButton::clicked, this, [this] {
+            if (!m_sessionsUi || m_sessionsUi->openId == 0 || !m_sessionsUi->titleMenu)
+                return;
+            QPushButton *button = m_sessionsUi->titleMenu;
+            showSessionsContextMenu(m_sessionsUi->openId,
+                                    button->mapToGlobal(QPoint(0, button->height() + 4)));
+        });
+        connect(ui->panelToggle, &QPushButton::toggled, this, [this](bool on) {
+            if (!m_sessionsUi)
+                return;
+            m_sessionsUi->panelOpen = on;
+            if (m_sessionsUi->panelToggle)
+                m_sessionsUi->panelToggle->setToolTip(on ? QStringLiteral("Hide details")
+                                                         : QStringLiteral("Show details"));
+            refreshSessionsHeader();
+        });
+        ui->list->viewport()->installEventFilter(new SessionsEventHook(
+            [this](QObject *, QEvent *event) {
+                if (event->type() != QEvent::MouseButtonPress || !m_sessionsUi ||
+                    !m_sessionsUi->list)
+                    return false;
+                auto *mouse = static_cast<QMouseEvent *>(event);
+                if (mouse->button() != Qt::LeftButton)
+                    return false;
+                QListWidget *list = m_sessionsUi->list;
+                const QPoint at = mouse->position().toPoint();
+                QListWidgetItem *item = list->itemAt(at);
+                if (!item)
+                    return false;
+                const QRect rect = list->visualItemRect(item);
+                if (item->data(kSessionHeaderRole).toBool()) {
+                    const QString key = item->data(kSessionGroupRole).toString();
+                    if (key.isEmpty())
+                        return true;
+                    if (item->data(kSessionAddableRole).toBool() &&
+                        at.x() >= rect.right() - 26) {
+                        startNewSessionInSessionsPage();
+                        if (!m_sessionsUi || !m_sessionsUi->repoCombo)
+                            return true;
+                        for (int index = 0; index < m_repositories.size(); ++index) {
+                            const RepositoryRecord &repo = m_repositories.at(index);
+                            if (repo.owner + QLatin1Char('/') + repo.name != key)
+                                continue;
+                            const int row = m_sessionsUi->repoCombo->findData(index);
+                            if (row >= 0) {
+                                m_sessionsUi->repoCombo->setCurrentIndex(row);
+                                break;
+                            }
+                        }
+                        return true;
+                    }
+                    if (!m_sessionsUi->collapsedGroups.remove(key))
+                        m_sessionsUi->collapsedGroups.insert(key);
+                    refreshSessionsList();
+                    return true;
+                }
+                const int id = item->data(kSessionIdRole).toInt();
+                if (id != 0 && at.x() >= rect.right() - 30) {
+                    showSessionsContextMenu(
+                        id, list->viewport()->mapToGlobal(
+                                QPoint(rect.right() - 26, rect.bottom() + 2)));
+                    return true;
+                }
+                return false;
+            },
+            ui->list->viewport()));
+        retintSessionsIcons(ui);
+    }
     return page;
 }
 
@@ -842,7 +1774,7 @@ void MainWindow::showSessionsPage(int sessionId)
     if (ui->listedIds.isEmpty())
         refreshSessionsList();
     for (int id : std::as_const(ui->listedIds)) {
-        if (id != kSessionsHeaderActive && id != kSessionsHeaderRecent) {
+        if (!sessionsHeaderId(id)) {
             openSessionInSessionsPage(id);
             return;
         }
@@ -948,34 +1880,124 @@ void MainWindow::refreshSessionsList()
     if (recent.size() > kSessionsRecentLimit)
         recent = recent.mid(0, kSessionsRecentLimit);
 
+    struct Header {
+        QString label;
+        QString key;
+        bool collapsed = false;
+        bool addable = false;
+    };
     QList<int> ids;
     QList<const AgentSession *> sessions;
-    if (!active.isEmpty()) {
-        ids.append(kSessionsHeaderActive);
+    QList<Header> headers;
+    const auto addHeader = [&ids, &sessions, &headers](int id, const Header &header) {
+        ids.append(id);
         sessions.append(nullptr);
-        for (const Row &row : std::as_const(active)) {
-            ids.append(row.session->id);
-            sessions.append(row.session);
+        headers.append(header);
+    };
+    const auto addRow = [&ids, &sessions, &headers](const Row &row) {
+        ids.append(row.session->id);
+        sessions.append(row.session);
+        headers.append(Header());
+    };
+    if (ui->next && ui->groupByRepo) {
+        QSet<QString> localRepos;
+        for (const RepositoryRecord &repo : std::as_const(m_repositories))
+            if (!repo.previewOnly && !repo.localPath.trimmed().isEmpty())
+                localRepos.insert(repo.owner + QLatin1Char('/') + repo.name);
+        struct Group {
+            QString key;
+            QString name;
+            QList<Row> rows;
+            bool hasActive = false;
+            qint64 latest = 0;
+        };
+        QList<Group> groups;
+        QHash<QString, int> groupAt;
+        const auto place = [&groups, &groupAt](const Row &row) {
+            const QString key = sessionsGroupKey(*row.session, true);
+            int at = groupAt.value(key, -1);
+            if (at < 0) {
+                at = int(groups.size());
+                groupAt.insert(key, at);
+                Group group;
+                group.key = key;
+                group.name = row.session->owner.isEmpty() ? QStringLiteral("Other sessions")
+                                                          : row.session->name;
+                groups.append(group);
+            }
+            Group &group = groups[at];
+            group.rows.append(row);
+            group.hasActive = group.hasActive || row.rank >= 0;
+            group.latest = std::max(group.latest, row.at);
+        };
+        for (const Row &row : std::as_const(active))
+            place(row);
+        for (const Row &row : std::as_const(recent))
+            place(row);
+        std::stable_sort(groups.begin(), groups.end(), [](const Group &a, const Group &b) {
+            if (a.hasActive != b.hasActive)
+                return a.hasActive;
+            return a.latest > b.latest;
+        });
+        QHash<QString, int> names;
+        for (const Group &group : std::as_const(groups))
+            ++names[group.name];
+        for (const Group &group : std::as_const(groups)) {
+            Header header;
+            header.key = group.key;
+            header.label = names.value(group.name) > 1 && !group.key.startsWith(QLatin1Char('@'))
+                               ? group.key
+                               : group.name;
+            header.collapsed = ui->collapsedGroups.contains(group.key);
+            header.addable = localRepos.contains(group.key);
+            addHeader(kSessionsHeaderGroup, header);
+            if (!header.collapsed)
+                for (const Row &row : group.rows)
+                    addRow(row);
         }
-    }
-    if (!recent.isEmpty()) {
-        ids.append(kSessionsHeaderRecent);
-        sessions.append(nullptr);
-        for (const Row &row : std::as_const(recent)) {
-            ids.append(row.session->id);
-            sessions.append(row.session);
+    } else {
+        if (!active.isEmpty()) {
+            Header header;
+            header.label = QStringLiteral("Active (%1)").arg(active.size());
+            if (ui->next) {
+                header.key = QStringLiteral("@active");
+                header.collapsed = ui->collapsedGroups.contains(header.key);
+            }
+            addHeader(kSessionsHeaderActive, header);
+            if (!header.collapsed)
+                for (const Row &row : std::as_const(active))
+                    addRow(row);
+        }
+        if (!recent.isEmpty()) {
+            Header header;
+            header.label = QStringLiteral("Recent");
+            if (ui->next) {
+                header.key = QStringLiteral("@recent");
+                header.collapsed = ui->collapsedGroups.contains(header.key);
+            }
+            addHeader(kSessionsHeaderRecent, header);
+            if (!header.collapsed)
+                for (const Row &row : std::as_const(recent))
+                    addRow(row);
         }
     }
 
-    const auto fill = [this, ui, &active](QListWidgetItem *item, int id,
-                                          const AgentSession *session) {
+    const auto fill = [this, ui](QListWidgetItem *item, int id,
+                                 const AgentSession *session, const Header &header) {
         if (!session) {
             item->setData(kSessionIdRole, 0);
             item->setData(kSessionHeaderRole, true);
-            item->setData(Qt::DisplayRole,
-                          id == kSessionsHeaderActive
-                              ? QStringLiteral("Active (%1)").arg(active.size())
-                              : QStringLiteral("Recent"));
+            item->setData(Qt::DisplayRole, header.label);
+            if (ui->next) {
+                item->setData(kSessionGroupRole, header.key);
+                item->setData(kSessionCollapsedRole, header.collapsed);
+                item->setData(kSessionAddableRole, header.addable);
+                item->setToolTip(header.addable
+                                     ? QStringLiteral("%1. Click to fold, + starts a new "
+                                                      "session here.")
+                                           .arg(header.key)
+                                     : QString());
+            }
             item->setFlags(Qt::NoItemFlags);
             return;
         }
@@ -1005,15 +2027,23 @@ void MainWindow::refreshSessionsList()
         item->setData(kSessionDotRole, agentStatusIconColor(*session));
         item->setData(kSessionUnreadRole, agentSessionUnread(*session));
         item->setData(kSessionRelaysRole, ui->relayCounts.value(id));
-        item->setToolTip(QStringLiteral("#%1 %2 \u2014 %3")
-                             .arg(id)
-                             .arg(sessionsTitle(*session), agentStatusLabel(*session)));
+        const QString tip = QStringLiteral("#%1 %2 \u2014 %3")
+                                .arg(id)
+                                .arg(sessionsTitle(*session), agentStatusLabel(*session));
+        if (ui->next) {
+            item->setData(kSessionStateRole, session->merged ? QStringLiteral("merged")
+                                                             : session->status);
+            const QString detail = subtitle.join(QString::fromUtf8(" \xC2\xB7 "));
+            item->setToolTip(detail.isEmpty() ? tip : tip + QLatin1Char('\n') + detail);
+        } else {
+            item->setToolTip(tip);
+        }
     };
 
     QSignalBlocker block(ui->list);
     if (ids == ui->listedIds && ui->list->count() == ids.size()) {
         for (int row = 0; row < ids.size(); ++row)
-            fill(ui->list->item(row), ids.at(row), sessions.at(row));
+            fill(ui->list->item(row), ids.at(row), sessions.at(row), headers.at(row));
         ui->list->viewport()->update();
         return;
     }
@@ -1021,7 +2051,7 @@ void MainWindow::refreshSessionsList()
     ui->list->clear();
     for (int row = 0; row < ids.size(); ++row) {
         auto *item = new QListWidgetItem;
-        fill(item, ids.at(row), sessions.at(row));
+        fill(item, ids.at(row), sessions.at(row), headers.at(row));
         ui->list->addItem(item);
         if (ids.at(row) == ui->openId && ui->openId != 0 && !ui->newMode)
             ui->list->setCurrentItem(item);
@@ -1042,6 +2072,81 @@ void MainWindow::refreshSessionsHeader()
                            !isStoppableAgentSession(session->id) &&
                            session->status != AgentStatus::Queued);
     ui->openInAgents->setVisible(session != nullptr);
+    if (ui->next) {
+        if (ui->header)
+            ui->header->setVisible(!ui->newMode);
+        if (ui->titleMenu)
+            ui->titleMenu->setVisible(session != nullptr);
+        if (ui->panelToggle)
+            ui->panelToggle->setVisible(session != nullptr);
+        QString branch;
+        if (session) {
+            branch = session->branchName;
+            if (branch.isEmpty() && isExternalSession(session->id) &&
+                !isCloudSession(session->id))
+                branch = m_externalSurfaced.value(session->id).gitBranch;
+        }
+        if (ui->branchText)
+            ui->branchText->setText(branch);
+        if (ui->branchBadge) {
+            ui->branchBadge->setVisible(!branch.isEmpty());
+            ui->branchBadge->setToolTip(branch);
+        }
+        const bool showDetails = session && ui->panelOpen && ui->details;
+        if (ui->details)
+            ui->details->setVisible(showDetails);
+        if (showDetails) {
+            const bool cloud = isCloudSession(session->id);
+            const bool outside = isExternalSession(session->id) && !cloud;
+            const AgentDiffStat stat = m_agentDiffStats.value(session->id);
+            SessionsDetails details;
+            if (cloud) {
+                details.machine = session->cloudNode.isEmpty() ? QStringLiteral("Cloud runner")
+                                                               : session->cloudNode;
+                details.machineNote = session->cloudHere ? QStringLiteral("this computer")
+                                                         : QStringLiteral("cloud");
+                details.machineIcon = QStringLiteral("cloud");
+            } else {
+                details.machine = QSysInfo::machineHostName();
+                details.machineNote = outside ? QStringLiteral("outside ForkMesh")
+                                              : QStringLiteral("this computer");
+                details.machineIcon = QStringLiteral("device-desktop");
+            }
+            QString path = stat.worktree;
+            if (path.isEmpty() && outside)
+                path = m_externalSurfaced.value(session->id).cwd;
+            if (path.isEmpty())
+                path = session->claudeImportCwd;
+            details.pathFull = path;
+            details.path = sessionsHomePath(path);
+            details.branch = branch;
+            if (stat.ahead >= 0 && stat.behind >= 0)
+                details.branchNote = QString::fromUtf8("\xE2\x86\x91%1 \xE2\x86\x93%2")
+                                         .arg(stat.ahead)
+                                         .arg(stat.behind);
+            QString agent = cliProviderLabel(session->provider);
+            const QString model = agentModelLabel(session->model);
+            if (!model.isEmpty())
+                agent = agent.isEmpty() ? model
+                                        : agent + QString::fromUtf8(" \xC2\xB7 ") + model;
+            if (outside)
+                agent = model.isEmpty() ? QStringLiteral("Claude Code")
+                                        : QStringLiteral("Claude Code \u00B7 ") + model;
+            details.agent = agent.trimmed();
+            details.mode = sessionsModeLabel(*session);
+            details.contextUsed = session->contextTokens;
+            details.contextWindow = session->contextWindow;
+            details.totalTokens = session->totalTokens;
+            details.costUsd = session->costUsd;
+            details.files = stat.files;
+            details.added = stat.added;
+            details.removed = stat.removed;
+            details.dirty = stat.dirty;
+            details.conflicted = stat.conflicted;
+            details.prNumber = session->prNumber;
+            fillSessionsDetails(ui, details);
+        }
+    }
     if (!session) {
         ui->title->setText(ui->newMode ? QStringLiteral("New session")
                                        : QStringLiteral("Sessions"));
@@ -1054,10 +2159,12 @@ void MainWindow::refreshSessionsHeader()
         return;
     }
     ui->title->setText(sessionsTitle(*session));
+    if (ui->next)
+        ui->title->setToolTip(ui->title->text());
     QStringList meta{QStringLiteral("#%1").arg(session->id)};
     if (!session->owner.isEmpty())
         meta << session->owner + QLatin1Char('/') + session->name;
-    if (!session->branchName.isEmpty())
+    if (!session->branchName.isEmpty() && !ui->next)
         meta << session->branchName;
     QString provider = cliProviderLabel(session->provider);
     const QString model = agentModelLabel(session->model);
@@ -1126,6 +2233,11 @@ void MainWindow::refreshSessionsComposer()
         return;
     ui->targetRow->setVisible(!ui->newMode);
     ui->newRow->setVisible(ui->newMode);
+    placeSessionsComposer(ui);
+    if (ui->starters)
+        ui->starters->setVisible(ui->newMode);
+    if (ui->composerModel)
+        ui->composerModel->hide();
     if (ui->newMode) {
         if (ui->repoCombo->property("sessionsRepoCount").toInt() !=
                 int(m_repositories.size()) ||
@@ -1174,6 +2286,19 @@ void MainWindow::refreshSessionsComposer()
     }
     ui->composer->setEnabled(enabled);
     ui->send->setEnabled(enabled);
+    if (ui->composerModel && session) {
+        QStringList parts;
+        const QString mode = sessionsModeLabel(*session);
+        if (!mode.isEmpty())
+            parts << mode;
+        QString model = agentModelLabel(session->model);
+        if (model.isEmpty())
+            model = cliProviderLabel(session->provider);
+        if (!model.trimmed().isEmpty())
+            parts << model.trimmed();
+        ui->composerModel->setText(parts.join(QString::fromUtf8(" \xC2\xB7 ")));
+        ui->composerModel->setVisible(!parts.isEmpty());
+    }
     ui->forward->setEnabled(session != nullptr);
     ui->toCombo->setEnabled(enabled);
     ui->alsoCombo->setEnabled(enabled);
@@ -1255,6 +2380,7 @@ void MainWindow::refreshSessionsPageTheme(bool dark)
 {
     if (m_sessionsUi && m_sessionsUi->transcript)
         m_sessionsUi->transcript->setTheme(dark);
+    retintSessionsIcons(m_sessionsUi);
 }
 
 void MainWindow::recordSessionsRelay(int fromId, int toId, qint64 atMs)
@@ -1318,8 +2444,12 @@ void MainWindow::openSessionInSessionsPage(int sessionId)
         showSessionsPage(sessionId);
         return;
     }
-    if (!findAgentSession(sessionId))
+    const AgentSession *opened = findAgentSession(sessionId);
+    if (!opened)
         return;
+    if (ui->next &&
+        ui->collapsedGroups.remove(sessionsGroupKey(*opened, ui->groupByRepo)))
+        refreshSessionsList();
     const bool changed = ui->openId != sessionId || ui->newMode;
     ui->newMode = false;
     if (changed) {
@@ -1942,7 +3072,7 @@ QList<int> MainWindow::testSessionsListIds() const
     if (!m_sessionsUi)
         return ids;
     for (int id : std::as_const(m_sessionsUi->listedIds))
-        if (id != kSessionsHeaderActive && id != kSessionsHeaderRecent)
+        if (!sessionsHeaderId(id))
             ids.append(id);
     return ids;
 }

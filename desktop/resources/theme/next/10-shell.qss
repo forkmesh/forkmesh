@@ -1,9 +1,13 @@
 #appWindowFrame { background-color: @border; }
-#windowChromeBar { background-color: @bgSubtle; border-bottom: 1px solid @border; }
-#serverRail, #navRail { background-color: @bgSubtle; border-right: 1px solid @border; }
+#windowChromeBar { background-color: @bgSubtle; border: none; }
+#serverRail, #navRail { background-color: @bgSubtle; border: none; }
 #appNavigationRail, #appNavigationRailContent {
-    background-color: @bgSubtle; border-right: 1px solid @border;
+    background-color: @bgSubtle; border: none;
 }
+#shellContentCard {
+    background-color: @bg; border: 1px solid @border; border-radius: 14px;
+}
+#teammateRail, #teammateRailContent { background-color: @bgSubtle; border: none; }
 #debugBar { background-color: @bgSubtle; border-top: 1px solid @border; }
 #footerLogPanel { background-color: @bg; border: 1px solid @border; border-radius: 8px; }
 
@@ -110,3 +114,91 @@ QPushButton#welcomeLink:hover { color: @accentHover; }
     color: @fgSubtle; font-size: 11px; font-weight: 500; background: transparent;
     padding: 8px 10px 2px 10px;
 }
+
+#sidebarHeader, #sidebarFooter { background-color: @bgSubtle; }
+#sidebarFooter { border-top: 1px solid @border; }
+QPushButton#sidebarWorkspace, QPushButton#sidebarAccount {
+    background: transparent; border: none; border-radius: 8px; padding: 0px; text-align: left;
+}
+QPushButton#sidebarWorkspace:hover, QPushButton#sidebarAccount:hover,
+QPushButton#sidebarWorkspace:pressed, QPushButton#sidebarAccount:pressed {
+    background-color: @surfaceRaised;
+}
+#sidebarHeader QLabel, #sidebarFooter QLabel { background: transparent; border: none; }
+QLabel#sidebarTitle { color: @fg; font-size: 13px; font-weight: 600; }
+#sidebarFooter QLabel#sidebarTitle { font-weight: 500; }
+QLabel#sidebarSubtitle { color: @fgMuted; font-size: 11px; }
+QPushButton#sidebarNewSession {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    padding: 0px; text-align: left;
+}
+QPushButton#sidebarNewSession:hover { background-color: @surfaceRaised; }
+QLabel#sidebarNewSessionText { color: @fg; font-size: 13px; font-weight: 500; }
+QLabel#sidebarKbd, QLabel#topSearchKbd {
+    color: @fgMuted; font-size: 10px; font-weight: 500; background-color: @surface;
+    border: 1px solid @border; border-radius: 4px; min-width: 12px; padding: 0px 3px;
+    min-height: 18px; max-height: 18px;
+}
+#globalSearch { font-size: 13px; }
+
+QMenu#workspaceMenu { border-radius: 12px; padding: 4px; }
+QMenu#workspaceMenu::separator { height: 1px; background: @border; margin: 4px 0px; }
+QLabel#workspaceMenuHeading {
+    color: @fgSubtle; font-size: 11px; font-weight: 500; letter-spacing: 1px;
+    padding: 6px 8px 4px 8px; background: transparent;
+}
+QPushButton#workspaceMenuRow {
+    background: transparent; border: none; border-radius: 6px; padding: 0px; text-align: left;
+}
+QPushButton#workspaceMenuRow:hover, QPushButton#workspaceMenuRow:focus {
+    background-color: @surfaceActive;
+}
+QPushButton#workspaceMenuRow QLabel { background: transparent; border: none; }
+QLabel#workspaceMenuRowTitle { color: @fg; font-size: 13px; }
+QLabel#workspaceMenuRowHint { color: @fgMuted; font-size: 12px; }
+
+QLabel#topPageTitle {
+    color: @fgMuted; font-size: 13px; font-weight: 500; background: transparent;
+    padding-left: 4px;
+}
+QPushButton[topIconButton="true"] {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+}
+QPushButton[topIconButton="true"]:hover { background-color: @surfaceRaised; }
+QPushButton[topStatusButton="true"] {
+    background: transparent; border: none; border-radius: 6px; color: @fgMuted;
+    font-size: 12px; padding: 0px 8px; text-align: left;
+}
+QPushButton[topStatusButton="true"]:hover { background-color: @surfaceRaised; color: @fg; }
+#topRightCluster { background: transparent; }
+QPushButton[trafficLight="close"], QPushButton[trafficLight="minimize"],
+QPushButton[trafficLight="zoom"] {
+    border-radius: 6px; padding: 0px; min-width: 12px; max-width: 12px;
+    min-height: 12px; max-height: 12px;
+}
+QPushButton[trafficLight="close"] { background-color: #ff5f57; border: 1px solid #e0443e; }
+QPushButton[trafficLight="minimize"] { background-color: #febc2e; border: 1px solid #dea123; }
+QPushButton[trafficLight="zoom"] { background-color: #28c840; border: 1px solid #1aab29; }
+
+QFrame#pingsPopover {
+    background-color: @surface; border: 1px solid @borderStrong; border-radius: 12px;
+}
+#pingsPopoverHead { background: transparent; border-bottom: 1px solid @border; }
+QLabel#pingsPopoverTitle { color: @fg; font-size: 14px; font-weight: 600; background: transparent; }
+QPushButton#pingsPopoverLink {
+    background: transparent; border: none; color: @fgMuted; font-size: 12px; padding: 0px;
+}
+QPushButton#pingsPopoverLink:hover { color: @fg; }
+#pingsPopoverList, #pingsPopoverFoot { background: transparent; }
+#pingsPopoverFoot { border-top: 1px solid @border; }
+QPushButton#pingsPopoverRow {
+    background: transparent; border: none; border-radius: 8px; text-align: left; padding: 0px;
+}
+QPushButton#pingsPopoverRow:hover { background-color: @surfaceRaised; }
+QLabel#pingsPopoverRowTitle { color: @fg; font-size: 14px; background: transparent; }
+QLabel#pingsPopoverRowMeta { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#pingsPopoverEmpty { color: @fgSubtle; font-size: 13px; background: transparent; }
+QPushButton#pingsPopoverAll {
+    background: transparent; border: none; border-radius: 8px; color: @fgMuted; font-size: 13px;
+}
+QPushButton#pingsPopoverAll:hover { background-color: @surfaceRaised; color: @fg; }

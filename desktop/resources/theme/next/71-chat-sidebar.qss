@@ -14,13 +14,13 @@
 #sidebar QListWidget#chatDmList::item:hover,
 #sidebar QListWidget#chatDmList::item:selected {
     background-color: transparent; border: none; border-radius: 0px;
-    color: @fgSecondary; padding: 0px 8px; margin: 0px;
+    color: @fgMuted; padding: 0px 8px; margin: 0px;
 }
 #sidebar QTreeWidget#chatChannelTree::item:selected,
 #sidebar QListWidget#chatDmList::item:selected { color: @fg; }
 
 QPushButton#chatAddChannelButton, QPushButton#chatIntegrationButton {
-    background-color: transparent; border: 1px solid @border; border-radius: 6px;
+    background-color: transparent; border: 1px solid @border; border-radius: 8px;
     color: @fgSecondary; font-weight: 500; padding: 0px 10px;
     min-height: 30px; max-height: 30px; text-align: center;
 }
@@ -39,59 +39,70 @@ QPushButton#chatIntegrationButton[bad="true"]:hover {
     border-color: @border; color: @danger;
 }
 
-QWidget#sidebar { background-color: @chatRail; border: none; }
+QWidget#sidebar { background-color: @bg; border: none; }
 #sidebar QScrollArea#chatSidebarScroll, #sidebar QWidget#chatSidebarRooms {
     background: transparent; border: none;
 }
 #sidebar QScrollBar:vertical { background: transparent; width: 8px; margin: 0px; }
-#sidebar QScrollBar::handle:vertical { background: @chatEdge; border-radius: 4px; min-height: 30px; margin: 0px; }
-#sidebar QScrollBar::handle:vertical:hover { background: @chatFaint; }
+#sidebar QScrollBar::handle:vertical { background: @borderStrong; border-radius: 4px; min-height: 30px; margin: 0px; }
+#sidebar QScrollBar::handle:vertical:hover { background: @fgSubtle; }
 #sidebar QScrollBar::add-line:vertical, #sidebar QScrollBar::sub-line:vertical { height: 0px; }
 #sidebar QScrollBar::add-page:vertical, #sidebar QScrollBar::sub-page:vertical { background: transparent; }
-#sidebar QWidget#chatWorkspaceHeader { background-color: @chatRail; border: none; border-bottom: 1px solid @chatEdge; }
+#sidebar QWidget#chatWorkspaceHeader { background-color: @bg; border: none; }
 #sidebar QPushButton#chatWorkspaceMenu {
-    background: transparent; border: none; border-radius: 4px; color: @chatTextStrong;
-    font-size: 15px; font-weight: 700; text-align: left; padding: 4px 8px;
+    background: transparent; border: none; border-radius: 8px; color: @fg;
+    font-size: 14px; font-weight: 600; text-align: left; padding: 4px 8px;
 }
-#sidebar QPushButton#chatWorkspaceMenu:hover { background-color: @chatRowHover; }
+#sidebar QPushButton#chatWorkspaceMenu:hover { background-color: @surfaceRaised; }
+#sidebar QLineEdit#chatJumpSearch {
+    background-color: @surface; border: 1px solid transparent; border-radius: 8px;
+    color: @fg; font-size: 13px; padding: 0px 6px 0px 2px;
+    min-height: 32px; max-height: 32px;
+}
+#sidebar QLineEdit#chatJumpSearch:hover { background-color: @surfaceRaised; border-color: transparent; }
+#sidebar QLineEdit#chatJumpSearch:focus { background-color: @surfaceRaised; border-color: @accent; }
 #sidebar QPushButton#chatComposeButton {
-    background: transparent; border: none; border-radius: 4px; padding: 0px;
+    background: transparent; border: none; border-radius: 8px; padding: 0px;
 }
-#sidebar QPushButton#chatComposeButton:hover { background-color: @chatRowHover; }
-#sidebar QWidget#chatUserPanel { background-color: @chatRailFooter; border: none; }
+#sidebar QPushButton#chatComposeButton:hover { background-color: @surfaceRaised; }
+#sidebar QPushButton#chatComposeButton:pressed { background-color: @surfaceActive; }
+#sidebar QWidget#chatUserPanel { background-color: @bg; border: none; border-top: 1px solid @border; }
 #sidebar QLabel#chatUserAvatar { background: transparent; }
-#sidebar QLabel#chatWorkspaceUser { color: @chatTextStrong; font-size: 13px; background: transparent; }
+#sidebar QLabel#chatWorkspaceUser { color: @fg; font-size: 13px; background: transparent; }
+#sidebar QWidget#chatEncryptionFooter { background-color: @bg; border: none; border-top: 1px solid @border; }
+#sidebar QLabel#chatEncryptionFooterIcon { background: transparent; }
+#sidebar QLabel#chatEncryptionFooterText { color: @fgSubtle; font-size: 11px; background: transparent; }
 #sidebar QPushButton#chatNavButton {
-    background: transparent; border: none; border-radius: 4px; color: @chatMuted;
-    font-size: 15px; font-weight: 500; text-align: left; padding: 0px 8px;
-    margin: 0px 8px; min-height: 32px; max-height: 32px;
+    background: transparent; border: none; border-radius: 8px; color: @fgMuted;
+    font-size: 13px; font-weight: 400; text-align: left; padding: 0px 8px;
+    margin: 0px 10px; min-height: 32px; max-height: 32px;
 }
-#sidebar QPushButton#chatNavButton:hover { background-color: @chatRowHover; color: @chatText; }
-#sidebar QPushButton#chatNavButton[unread="true"] { color: @chatTextStrong; font-weight: 600; }
+#sidebar QPushButton#chatNavButton:hover { background-color: @surfaceRaised; color: @fg; }
+#sidebar QPushButton#chatNavButton[unread="true"] { color: @fg; font-weight: 500; }
 #sidebar QLabel#chatNavBadge {
-    background-color: @chatNew; color: #ffffff; border-radius: 8px;
-    font-size: 11px; font-weight: 700; padding: 0px 5px;
-    min-width: 6px; min-height: 16px; max-height: 16px;
+    background-color: @accent; color: @onAccent; border-radius: 8px;
+    font-size: 10px; font-weight: 600; padding: 0px 4px;
+    min-width: 8px; min-height: 16px; max-height: 16px;
 }
-#sidebar QFrame#chatSidebarDivider { background-color: @chatDivider; border: none; margin: 0px 10px; }
+#sidebar QFrame#chatSidebarDivider { background-color: @border; border: none; margin: 0px 10px; }
 #sidebar QWidget#chatSectionHeader { background: transparent; }
 #sidebar QPushButton#chatSectionToggle {
-    background: transparent; border: none; color: @chatMuted; font-size: 12px;
-    font-weight: 600; text-align: left; padding: 0px 4px; min-height: 24px;
+    background: transparent; border: none; color: @fgSubtle; font-size: 12px;
+    font-weight: 500; text-align: left; padding: 0px 2px; min-height: 28px;
 }
-#sidebar QPushButton#chatSectionToggle:hover { color: @chatText; }
+#sidebar QPushButton#chatSectionToggle:hover { color: @fgMuted; }
 #sidebar QPushButton#chatSectionAddButton {
-    background: transparent; border: none; border-radius: 4px; padding: 0px;
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
 }
-#sidebar QPushButton#chatSectionAddButton:hover { background-color: @chatRowHover; }
-QSplitter#chatSidebarSplit { background-color: @chatPane; }
+#sidebar QPushButton#chatSectionAddButton:hover { background-color: @surfaceRaised; }
+QSplitter#chatSidebarSplit { background-color: @bg; }
 QSplitter#chatSidebarSplit::handle:horizontal {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 @chatRail, stop:0.49 @chatRail, stop:0.5 @chatEdge,
-        stop:0.55 @chatEdge, stop:0.56 @chatPane, stop:1 @chatPane);
+        stop:0 @bg, stop:0.49 @bg, stop:0.5 @border,
+        stop:0.55 @border, stop:0.56 @bg, stop:1 @bg);
 }
 QSplitter#chatSidebarSplit::handle:horizontal:hover, QSplitter#chatSidebarSplit::handle:horizontal:pressed {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 @chatRail, stop:0.33 @chatRail, stop:0.34 @accent,
-        stop:0.66 @accent, stop:0.67 @chatPane, stop:1 @chatPane);
+        stop:0 @bg, stop:0.33 @bg, stop:0.34 @accent,
+        stop:0.66 @accent, stop:0.67 @bg, stop:1 @bg);
 }
