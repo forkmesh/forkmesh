@@ -42,6 +42,15 @@ and the vendored SDK. Every other module must be **on-demand**: listed in
 `LAZY_MODULES`, or a marketplace package worker module
 (`_marketplace_worker_modules`).
 
+`test_every_lazily_proxied_module_is_budgeted_as_on_demand` derives the
+expected list from the `_LazyModule("name")` proxies. A proxied module that a
+startup module also imports at top level (`hidden_unicode`, imported by
+`app_runtime.py`) is parsed at startup anyway, so it stays a startup module.
+On 2026-10-24, 38 proxied modules added since the list was last kept (account
+names, comment reactions, instance console, instance home and privacy, post
+translations, pull rules, self-update and others) were added to
+`LAZY_MODULES`.
+
 ## Adding a module
 
 1. Import it in `entry.py` through `_LazyModule("name")`, never at top level.

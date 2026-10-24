@@ -1481,6 +1481,30 @@ Then run the native tests: `swift test --filter CallVoice` from
 `native/ios/ForkMeshCore` (`FM_ONLY=FMChat` keeps the build small), and
 `./gradlew --offline :core:coreTest -Pfilter=CallVoice` from `native/android`.
 
+### Your avatar as the face
+
+The face picker in a direct call offers "Your avatar" (id `avatar`, added
+2026-10-24) after "Your own face". It uses the account's profile picture
+(`userSession().avatarPng`, passed to `createChatCalls` as `avatarImage`) as
+the stand-in, through the same path as "Your photo…": `stageFaceFor` hands the
+stage the `custom` face with the avatar image, and the picker shows "Your
+avatar" while the stage reports `custom`. The option is hidden without a
+profile picture, and an avatar with no face the mesh can find says so and
+falls back to your own face, like an unusable photo. `createFmmLocal` reads
+the same saved choice, so group calls and the World's "send video" use it too
+(`avatarImage` and `faceChoice` options). `faceImageFor`, `photoFaceId` and
+`stageFaceFor` in `chat-call-face-custom.js` are the shared helpers.
+
+### Hand tracking
+
+`chat-call-hand-tracker.js` runs MediaPipe's palm detector and 21-point hand
+landmark model (`app/public/assets/hand-tracking/`, Apache 2.0) on the same
+WebGL runner and names gestures. The World uses it to move avatar arms and
+send reactions ([../world/voice.md](../world/voice.md), "Hands and
+reactions"). The converter now maps `FULLY_CONNECTED` on a 1 x 1 input to a
+1 x 1 convolution and knows fused `RELU6`, and the runner has `relu6`; the
+existing models convert to the same bytes.
+
 ### Preview and reuse outside a call
 
 `/chat`'s pre-call check (above) opens the camera through the same stage

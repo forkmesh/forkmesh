@@ -83,3 +83,17 @@ showed the Discord refresh's append slices (`finish @ dashboard-chat.js`)
 taking 4.3 s of main thread over 42 slices, up to 1.3 s each, although each
 slice is meant to stop after 6 ms; that whole-log read was the only
 per-message step that grows with the log.
+
+## Links and the World embed (2026-10-24)
+
+`/chat#room=<channel id>` and the new `/chat#direct=<conversation id>` open
+that conversation. The room link used to be read before the channel list had
+loaded, so a fresh page cleared the hash and stayed on #general; it now loads
+the channel or direct-message list first when the conversation is not known
+yet.
+
+`/chat?embed=world` is the World's conversation pane: the same page without
+the site header, the room list and the people column, set on `<html>` before
+first paint like `embed=office`. The World's channel list
+([../world/voice.md](../world/voice.md)) opens channels and direct messages in
+it, with every chat feature and call button working.
