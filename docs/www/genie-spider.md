@@ -130,3 +130,13 @@ news for signed-in users (notifications from
 `GET /api/notifications?node=…&limit=1`, cached 5 minutes in
 `forkmesh.genie.inbox`, or new chat messages), then the page's line
 (`PAGE_LINES`), then general lines (`GUEST_LINES`, `MEMBER_LINES`).
+
+## Halloween
+
+While `<html>` has `data-season="halloween"` (set by `season.js`, see
+[the seasonal theme](../app/seasonal-theme.md)), the painter swaps the teal
+glow (`TEAL_GLOW*`) for orange (`EMBER*`) and draws `witchHat()` instead of
+`turban()`: a purple-black hat with a bent tip that flops as it walks, an
+orange band and a glowing buckle. The check runs every frame, so the Genie
+changes as soon as the season does. Effect strokes built with `glowRgb()`, the
+focus ring and the speech bubble border follow the same colour.

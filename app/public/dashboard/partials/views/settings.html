@@ -313,7 +313,7 @@
 
                   <section id="settings-notifications" data-settings-section="notifications" data-ping-settings class="hidden pb-8">
                     <style>
-                      [data-ping-settings], [data-genie-setting] { --ps-border: rgb(var(--dashboard-border-rgb)); --ps-muted: rgb(var(--dashboard-muted-foreground-rgb)); --ps-accent: rgb(var(--dashboard-accent-rgb)); --ps-on: rgb(var(--dashboard-primary-rgb)); }
+                      [data-ping-settings], [data-genie-setting], [data-season-setting] { --ps-border: rgb(var(--dashboard-border-rgb)); --ps-muted: rgb(var(--dashboard-muted-foreground-rgb)); --ps-accent: rgb(var(--dashboard-accent-rgb)); --ps-on: rgb(var(--dashboard-primary-rgb)); }
                       .ping-switch { position: relative; flex-shrink: 0; width: 2.25rem; height: 1.3rem; border-radius: 999px; background: var(--ps-border); transition: background .15s; }
                       .ping-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(1.3rem - 4px); height: calc(1.3rem - 4px); border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: translate .15s; }
                       .ping-switch[aria-checked="true"] { background: var(--ps-on); }
@@ -1056,6 +1056,23 @@
                             </div>
                           </div>
                           <button data-home-redirect type="button" role="switch" aria-checked="true" aria-label="Open the dashboard from forkmesh.com" class="ping-switch mt-1"></button>
+                        </div>
+                      </div>
+                      <div data-season-setting hidden class="overflow-hidden rounded-md border border-border bg-card">
+                        <div class="flex items-start justify-between gap-4 p-4">
+                          <div class="flex min-w-0 items-start gap-3">
+                            <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="ghost" class="h-4 w-4"></i></span>
+                            <div class="min-w-0">
+                              <h3 class="text-base font-semibold text-foreground">Halloween theme</h3>
+                              <p class="mt-1 text-sm leading-6 text-muted-foreground">Turns the green buttons, status dots and activity graph orange, hangs a spider web, puts a witch hat on profile pictures and dresses up the Genie, for everyone on this ForkMesh. Only platform administrators and moderators see this setting.</p>
+                            </div>
+                          </div>
+                          <button data-season-toggle type="button" role="switch" aria-checked="false" aria-label="Halloween theme" class="ping-switch mt-1"></button>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3">
+                          <label for="season-until" class="text-sm text-foreground">Turn off automatically</label>
+                          <input id="season-until" data-season-until type="datetime-local" class="h-control rounded-control border border-border bg-background px-2 text-control text-foreground" />
+                          <p data-season-status role="status" aria-live="polite" class="min-h-4 basis-full text-xs text-muted-foreground"></p>
                         </div>
                       </div>
                     </div>
