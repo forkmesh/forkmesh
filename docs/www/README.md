@@ -332,6 +332,16 @@ so elements rendered later are covered without a DOM walk. API:
 Page calls (`rememberStatusPage`, `refreshStatusPage`, `statusPageShown`,
 `data-status-entry`, `forkmesh.statusPage.v1`) ride on the same fetch.
 
+## Pages contributed by packages
+
+A Market package can add a page to the website through a `www.page`
+contribution (`app/tools/build_app_plugins.py`, `WWW_SOCKET`): a `route` that
+must not collide with a core route (`static_routes.CORE_RESERVED_ROUTE_PREFIXES`)
+or another package, a title and its assets. Each package page documents
+itself; current ones include the Feed's public post page
+`forkmesh.com/feed?post=<id>` ([instance-feed.md](../marketplace/instance-feed.md)).
+Test: `app/tests/test_www_plugin_pages.py`.
+
 ## Related docs
 
 - [docs/app/README.md](../app/README.md), [World](../world/README.md)
