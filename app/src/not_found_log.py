@@ -3,6 +3,7 @@ import re
 from urllib.parse import quote
 
 from hidden_unicode import clean_query as clean_hidden_query
+import instance_privacy
 
 
 def _bind_runtime(runtime):
@@ -254,6 +255,8 @@ def _under_args(path, prefix):
 
 async def record(env, site, method, path, referrer="", now=None,
                  client=None, fetch_site=""):
+    if instance_privacy.active(env):
+        return False
     try:
         site = normalize_site(site)
         method = normalize_method(method)

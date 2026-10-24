@@ -11,7 +11,7 @@ and **runners** (untrusted, outbound-only agent compute). The runbook is
 
 | Path | Responsibility |
 | --- | --- |
-| `deploy/fleet.toml` | the live fleet: `[[nodes]]`, `[[runners]]`, `[paths]`, `[wireguard]`, `[rqlite]`, `[caddy]`, `[app]`, `[production]`, `[turn]`, `[calls]`, `[dns]`, `[ids]`, `[logs]`, `[hosted]`. No secrets, no addresses. |
+| `deploy/fleet.toml` | the live fleet: `[[nodes]]`, `[[runners]]`, `[paths]`, `[wireguard]`, `[rqlite]`, `[caddy]`, `[app]`, `[production]`, `[autoscale]`, `[turn]`, `[calls]`, `[dns]`, `[ids]`, `[self_deploy]`, `[logs]`, `[hosted]`. No secrets, no addresses. |
 | `deploy/fleet.example.toml` | annotated template |
 | `deploy/core/render.py` | renders a node's files into a tree plus `MANIFEST.json`; never reads secrets |
 | `deploy/core/caddy_routes.py` | Caddy route snippets shipped with each release |

@@ -102,7 +102,7 @@ ALLOWED = {
         "PointsMaterial": 1,
         "SpriteMaterial": 1,
     },
-    "scene/instance-hexes.js": {"BufferGeometry": 1},
+    "scene/instance-hexes.js": {"BufferGeometry": 2},
     "scene/instance-territory.js": {
         "BoxGeometry": 1,
         "BufferGeometry": 1,

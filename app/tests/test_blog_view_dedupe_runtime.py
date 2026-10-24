@@ -92,6 +92,8 @@ def _namespace(clock):
     namespace = {
         "re": re,
         "urlparse": urlparse,
+        "instance_privacy": SimpleNamespace(active=lambda _env: False,
+                                            is_pseudonym=lambda _raw: False),
         "clean_string": clean_string,
         "world_visitor_metrics": world_visitors,
         "Date": SimpleNamespace(now=lambda: clock["now"]),
@@ -115,7 +117,7 @@ def _namespace(clock):
         "_site_referrer_host", "_blog_post_slug", "_blog_post_permalink",
         "_blog_post_network_for_host", "blog_post_links",
         "_fold_blog_post_view", "blog_post_metrics",
-        "prune_blog_post_view_seen",
+        "prune_blog_post_view_seen", "_visitor_count_address",
     ):
         exec(_source(name), namespace)
     return namespace, db

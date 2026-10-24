@@ -59,6 +59,26 @@ branch.
   branch-backed pull lands as a merge commit, and a patch-backed pull is
   replayed onto the newest base. It is shown as a warning, not a blocker.
 
+## Review chip in the pull request list
+
+Each open row of the pull request list shows its review state instead of its
+branches: **Approved**, **Changes requested** or **Review required**, with a
+title such as "Approved by 2 reviewers". `review_state` in
+`app/host/forkmesh_host/repo_views.py` (server-rendered list) and
+`pullListReviewState` in `06-repo-content.js` (client) compute it the same
+way, over each reviewer's latest review with the pull's author left out
+(`review_policy` / `pullReviewPolicy`): any request for changes wins, one
+approval and no blockers is Approved, and a closed or draft pull with neither
+shows no chip. The mirror gateway's `.forkmesh/pulls` listing
+(`tools/mirror_gateway.py`) carries every committed review's
+`(reviewer, state)` in file order so the list can compute it.
+
+The chip is a summary, not the merge gate. On a protected branch only an
+owner's or admin's approval counts ([branch-protection.md](branch-protection.md#approvals)),
+so a pull approved by another contributor shows **Approved** while the
+Review row of the merge box still waits. Tests:
+`app/tests/test_pull_list_review_state.py`.
+
 ## Merge status button and compact header
 
 An open pull request shows a merge status button beside the copy-link button
@@ -126,6 +146,47 @@ mode, so none is offered.
   row used to warn "N commits behind", which sent contributors to rebase and
   resubmit for nothing; it now says it merges cleanly and needs no update.
 - A visitor sees the commands to merge the base locally and push.
+
+## Live progress
+
+After *Merge pull request* or *Update branch* the box shows what the mirror is
+doing instead of one static line: a spinner, the current step ("Verifying the
+reviewed commits…", "Merging into main…", "Publishing…"), the time since the
+click, a step list with a tick and the mirror-reported duration for each
+finished step, and the mirror's name. A merge ends with "Merged as `abc1234`"
+linking to the merge commit (an update with "New head"); a failure marks the
+step that refused (from the error when the last poll had not seen it yet),
+keeps the reason and *Merge again*, which resumes the same request id when the
+answer was "not yet". A failure no mirror ever held keeps the plain line.
+Phases come from the executor ([merge-executor.md, "Progress"](../server/merge-executor.md#progress)).
+
+Before a mirror holds the job the step is "Waiting for an online mirror…";
+after 8 seconds it becomes "Waiting for an online mirror to pick this up (no
+mirror has accepted it yet)" with what to expect: it keeps retrying while the
+page is open, a retry can never apply it twice, and on a single-server
+instance the node may be restarting. When the mirror that took the job stops
+answering, the page names it and says only that mirror may finish it.
+
+Updates come from the request the page was already repeating with the same
+request id (`postRepoPullMutation`), not a new endpoint or socket: the
+repository dashboard has no realtime channel for pull requests (the only
+WebSocket is the notes editor's), and the job lives on one mirror the relay
+proxies to. While a job is in flight the page asks after 1, 2, then every 3
+seconds, starting again at 1 second on each new phase; it stops on a terminal
+answer, and asks nothing when no merge or update is in flight. While the tab
+is hidden it keeps asking every 10 seconds, and that time does not count
+against the 150-second budget: the relay learns that a job finished only
+from these polls, so a page that stopped asking while hidden (as it did
+until 2026-10-24) could leave a finished merge unrecorded once the tab was
+closed. Progress is painted only into the merge box of the pull request that
+asked (`pullDetailIsCurrent`), so opening another pull mid-merge no longer
+shows the first one's steps there, and a job that is run again starts its
+step list afresh. A
+poll changes only the step line's text, so a screen reader announces each new
+step once (`role="status"`, `aria-live="polite"` on that line only; the
+elapsed clock is `aria-hidden`). A one-second ticker updates the clock and
+stops itself when no clock is on the page. With `prefers-reduced-motion` the
+spinner is a still ring with a dot.
 
 ## "The pull-request metadata changed"
 

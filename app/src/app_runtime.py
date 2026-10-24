@@ -9,6 +9,15 @@ from hidden_unicode import clean_query as clean_hidden_query
 
 
 
+ONION_ALPHABET = frozenset("abcdefghijklmnopqrstuvwxyz234567")
+
+
+def instance_onion_address(env):
+    value = str(getattr(env, "INSTANCE_ONION", "") or "").strip().lower()
+    label = value[:-len(".onion")] if value.endswith(".onion") else ""
+    return value if len(label) == 56 and set(label) <= ONION_ALPHABET else None
+
+
 async def _org_office_resync(env, request, org, response):
     if method_name(request) in ("GET", "HEAD", "OPTIONS"):
         return
@@ -939,6 +948,7 @@ class Default:
         if instance_features.branded(self.env):
             instance_features.remember_instance(self.env)
             await self._instance_plugins_load()
+            await instance_privacy.load(self.env, int(Date.now()))
             plugin_path = urlparse(str(request.url)).path
             switched_off = instance_features.blocked(self.env, plugin_path)
             if switched_off:
@@ -1169,7 +1179,8 @@ class Default:
         # referral counter below — a top-level text/html GET and nothing
         # else — so git, raw-blob and API requests never see it. It can only
         # add a Set-Cookie to a response that already exists.
-        if not read_only and not private_console:
+        private_mode = instance_privacy.active(self.env)
+        if not read_only and not private_console and not private_mode:
             response = await _attribution.capture_page_view(
                 self.env, request, url, response, status)
         # A failed forkmesh/forkmesh content read is /status evidence that
@@ -1183,14 +1194,15 @@ class Default:
         # Credit the website that sent this visitor. Gated to served page
         # navigations carrying an external Referer, so the extra D1 write only
         # happens on the rare request that is actually an inbound referral.
-        if not read_only and not private_console:
+        if not read_only and not private_console and not private_mode:
             await record_site_referral(self.env, request, url, status)
         # Blog reach is recorded from the same successfully served top-level
         # navigation. It stores totals, a fixed aggregate HLL projection and
         # per-post referring-host counters only.
-        if not read_only:
+        if not read_only and not private_mode:
             await record_blog_visit(self.env, request, url, status)
-        if not read_only and status == 404 and url is not None:
+        if not read_only and status == 404 and url is not None and \
+                not private_mode:
             await _not_found_log.record_response(self.env, request, url)
         if status >= 500:
             # An offline node's content being re-requested (502/503/504 on a
@@ -1902,6 +1914,18 @@ class Default:
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "public, max-age=60"}))
 
+    async def _instance_home_public(self):
+        if not instance_branded(self.env):
+            return None
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_home.SETTING_KEY)
+        except Exception:
+            row = None
+        return instance_home.public(
+            instance_home.parse((row or {}).get("doc") or ""))
+
     async def _instance_world_public(self):
         if not instance_branded(self.env):
             return None
@@ -2038,6 +2062,9 @@ class Default:
         switched_off = instance_features.blocked(self.env, url.path)
         if switched_off:
             return self._instance_feature_off(url.path, switched_off)
+        if instance_privacy.discards(self.env, method_name(request), url.path):
+            return json_response({"ok": True, "stored": False},
+                                 status=202, cache_control="no-store")
         if url.path in ("/api/instance", "/api/instance/"):
             try:
                 login_deadline = int(getattr(
@@ -2050,6 +2077,7 @@ class Default:
                 "name": instance_name(self.env),
                 "branded": instance_branded(self.env),
                 "logo": instance_logo_url(self.env),
+                "onion": instance_onion_address(self.env),
                 "loginDeadline": login_deadline,
                 "gitNode": str(getattr(self.env, "INSTANCE_FLAGSHIP_NODE", "")
                                or "").strip().lower()[:63],
@@ -2069,6 +2097,8 @@ class Default:
                 "directory": await self._instance_directory_links(),
                 "world": await self._instance_world_public(),
                 "sidebar": await self._instance_sidebar_setting(),
+                "home": await self._instance_home_public(),
+                "privacyMode": instance_privacy.active(self.env),
             }, cache_control="public, max-age=60")
         if instance_branded(self.env) and url.path.rstrip("/") == \
                 "/api/world/neighbour-scene" and \
@@ -2154,6 +2184,11 @@ class Default:
             action = safe_segment(pieces[4] if len(pieces) > 4 else "")
             if action == "viewer-permission" and len(pieces) == 5:
                 return await repo_viewer_permission_handler(
+                    self.env, request, owner, repo)
+            if action == "mirror-quota" and len(pieces) == 5:
+                import mirror_quota
+                mirror_quota._bind_runtime(globals())
+                return await mirror_quota.handler(
                     self.env, request, owner, repo)
             if action == "security":
                 import security_advisories
@@ -3490,6 +3525,12 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await organization_succession_handler(
                 self.env, request, org, action)
+        org_moderation_match = ORG_MODERATION_RE.match(url.path)
+        if org_moderation_match:
+            org = safe_segment(org_moderation_match.group(1))
+            if not org:
+                return json_response({"error": "not_found"}, status=404)
+            return await moderation_org_handler(self.env, request, org)
         org_pull_rules_match = ORG_PULL_RULES_RE.match(url.path)
         if org_pull_rules_match:
             org = safe_segment(org_pull_rules_match.group(1))
@@ -3917,6 +3958,15 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_star_handler(self.env, request, owner, repo)
 
+        moderation_match = REPO_MODERATION_RE.match(url.path)
+        if moderation_match:
+            owner = safe_segment(moderation_match.group(1))
+            repo = safe_segment(moderation_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await moderation_repo_handler(
+                self.env, request, owner, repo)
+
         reactions_match = REPO_REACTIONS_RE.match(url.path)
         if reactions_match:
             owner = safe_segment(reactions_match.group(1))
@@ -3955,6 +4005,15 @@ class Default:
         if comment_tips_match:
             return await comment_tips_handler(
                 self.env, request, comment_tips_match.group(1))
+
+        translations_match = REPO_TRANSLATIONS_RE.match(url.path)
+        if translations_match:
+            owner = safe_segment(translations_match.group(1))
+            repo = safe_segment(translations_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await post_translations_handler(
+                self.env, request, owner, repo)
 
         forks_match = REPO_FORKS_RE.match(url.path)
         if forks_match:
@@ -5296,8 +5355,12 @@ class Default:
         # Keep the claim server-side and the signed handle in an HttpOnly
         # host-only cookie scoped to the one endpoint that consumes it.
         await ensure_schema(self.env)
+        signup_policy = await _signup_policy(self.env)
         referral_code_required = await _admin_signup_referral_code_mode(
-            self.env)
+            self.env) or _account_policy.invite_only(signup_policy)
+        handle_suggestion = (
+            await _account_recovery.suggest_handle(self.env)
+            if signup_policy.get("handles") != "off" else "")
         claim_id, issued_at, expires_at, email_field_name = (
             await _issue_account_signup_intent(self.env))
         base = url.scheme + "://" + url.netloc + "/"
@@ -5315,6 +5378,13 @@ class Default:
                 raise RuntimeError("signup referral code marker unavailable")
             body = body.replace(
                 code_marker, "" if referral_code_required else "hidden", 1)
+            policy_marker = "__FORKMESH_SIGNUP_POLICY__"
+            if body.count(policy_marker) != 1:
+                raise RuntimeError("signup policy marker unavailable")
+            body = body.replace(policy_marker, _html_escape(json.dumps(
+                _account_policy.signup_page_doc(
+                    signup_policy, handle_suggestion),
+                separators=(",", ":"))), 1)
             # Turnstile widget (turnstile.py): the public site key, and cdata
             # that ties the token to this page view's signup claim.
             for widget_marker, widget_value in (

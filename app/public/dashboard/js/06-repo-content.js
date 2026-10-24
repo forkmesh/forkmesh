@@ -59,6 +59,57 @@
   const MD_DATA_IMAGE_URL =
     /^data:image\/(?:png|apng|jpeg|jpg|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/]+={0,2}$/i;
 
+  const MD_GITHUB_ATTACHMENT_URL =
+    /^https?:\/\/(?:github\.com\/(?:user-attachments\/|[^/?#]+\/[^/?#]+\/(?:assets|files)\/)|(?:private-)?user-images\.githubusercontent\.com\/|objects\.githubusercontent\.com\/)/i;
+  const MD_ATTACHMENT_PATH = /^\.forkmesh\/attachments\/[0-9a-f]{64}\.[a-z0-9]{1,8}$/;
+  const MD_ATTACHMENT_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', "#039": "'" };
+  const repoAttachmentFiles = new Map();
+
+  function mdAttachmentKey(url) {
+    return String(url || "").trim().replace(/&(amp|lt|gt|quot|#039);/g, (_, name) => MD_ATTACHMENT_ENTITIES[name]);
+  }
+
+  function mdAttachmentFile(url, context) {
+    if (!context?.repo) return null;
+    const entry = repoAttachmentFiles.get(repoKey(context.repo))?.get(mdAttachmentKey(url));
+    return entry && MD_ATTACHMENT_PATH.test(String(entry.path || "")) ? entry : null;
+  }
+
+  function mdAttachmentHref(entry, context) {
+    return escapeHtml(repoRawUrl(context.repo, entry.path));
+  }
+
+  function mdGithubImageHtml(alt, url) {
+    const source = String(url || "").trim();
+    const label = alt && alt.toLowerCase() !== "image" ? `${alt} (image on GitHub)` : "image on GitHub";
+    return `<a href="${mdSafeUrl(source)}" data-md-github-image="" title="${source}" class="dashboard-accent-link underline underline-offset-2 hover:text-foreground" target="_blank" rel="noopener noreferrer nofollow ugc">${label}</a>`;
+  }
+
+  function repoIssueAttachmentsPath(number) {
+    return `.forkmesh/attachments/issues/${Number(number)}.json`;
+  }
+
+  async function loadRepoIssueAttachments(repo, number) {
+    const path = repoIssueAttachmentsPath(number);
+    let files = null;
+    try {
+      const blobs = await fetchRepoBlobs(repo, [path]);
+      const doc = blobs[path] ? JSON.parse(blobText(blobs[path]) || "null") : null;
+      if (doc?.schema === "forkmesh-attachments-issue-v1" && doc.files && typeof doc.files === "object") files = doc.files;
+    } catch (_) {
+      files = null;
+    }
+    if (!files) return;
+    const key = repoKey(repo);
+    const known = repoAttachmentFiles.get(key) || new Map();
+    Object.entries(files).forEach(([url, entry]) => {
+      if (entry && typeof entry === "object" && typeof entry.path === "string") {
+        known.set(url, { path: entry.path, type: String(entry.type || "") });
+      }
+    });
+    repoAttachmentFiles.set(key, known);
+  }
+
   // A markdown image URL that is a bare repo path ("logo.png") is not a URL
   // this origin serves; it resolves against the repository the README came
   // from, through the same /raw route the file viewer shows images with.
@@ -93,6 +144,10 @@
   function mdLinkHtml(labelHtml, url, context) {
     const linkClass = "dashboard-accent-link underline underline-offset-2 hover:text-foreground";
     const source = String(url || "").trim();
+    const attachment = mdAttachmentFile(source, context);
+    if (attachment) {
+      return `<a href="${mdAttachmentHref(attachment, context)}" data-md-attachment="" class="${linkClass}" target="_blank" rel="noopener noreferrer nofollow ugc">${labelHtml}</a>`;
+    }
     if (source.startsWith("#")) {
       const anchor = mdHeadingSlug(source.slice(1));
       return `<a href="${source}" data-repo-markdown-anchor="${anchor}" class="${linkClass}">${labelHtml}</a>`;
@@ -137,10 +192,15 @@
     }
     const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
-    const source = mdImageSource(target, context);
+    const attachment = mdAttachmentFile(target, context);
+    if (attachment && !attachment.type.startsWith("image/")) return mdLinkHtml(alt || "attachment", target, context);
+    if (!attachment && typeof instancePluginOn === "function" && instancePluginOn("mirrored-attachments")
+        && MD_GITHUB_ATTACHMENT_URL.test(String(target || "").trim())) return mdGithubImageHtml(alt, target);
+    const source = attachment ? mdAttachmentHref(attachment, context) : mdImageSource(target, context);
     if (!source || source === "#") return alt;
     if (!hint && MD_GIPHY_GIF.test(source)) return mdGifHtml(alt, source);
-    const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
+    const svg = attachment ? attachment.type === "image/svg+xml"
+      : Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
     const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
     const external = /^https?:/i.test(source) ? ' referrerpolicy="no-referrer"' : "";
@@ -1021,6 +1081,13 @@
       .map((event) => String(event.target)));
     const commentCount = events.filter((event) => event?.type === "comment"
       && !deletedEventIds.has(String(event.id || ""))).length;
+    const recentCommenters = [];
+    for (let index = events.length - 1; index >= 0 && recentCommenters.length < 4; index -= 1) {
+      const event = events[index];
+      if (event?.type !== "comment" || deletedEventIds.has(String(event.id || ""))) continue;
+      const name = String(event.authorName || event.author || "").trim();
+      if (name && !recentCommenters.includes(name)) recentCommenters.push(name);
+    }
     return {
       number,
       events,
@@ -1035,6 +1102,7 @@
       meta: [status, labels, issue.milestone].filter(Boolean).join(" · "),
       body: effectiveOpen.body || issue.body || "",
       commentCount,
+      recentCommenters,
       wantsAgent: Boolean(issue.wantsAgent),
       milestone: String(issue.milestone || ""),
       priority: Number(issue.priority || 0) || 0,
@@ -1066,11 +1134,32 @@
     };
   }
 
+  const repoIssueSources = new Map();
+
+  function issueSourceUrlSafe(value) {
+    const url = String(value || "");
+    return url.length <= 500 && /^https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/.test(url) ? url : "";
+  }
+
+  function repoIssueSourceUrl(repo, number, items = []) {
+    const own = (Array.isArray(items) ? items : []).find((issue) => Number(issue?.number) === Number(number));
+    return issueSourceUrlSafe(own?.sourceUrl) || repoIssueSources.get(`${repoKey(repo)}#${Number(number)}`) || "";
+  }
+
+  function renderIssueSourceLink(url) {
+    const safe = issueSourceUrlSafe(url);
+    if (!safe) return "";
+    const host = safe.slice(8).split(/[/:]/)[0].toLowerCase();
+    const label = host === "github.com" ? "View on GitHub" : `View on ${host}`;
+    return `<a data-repo-issue-source href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer nofollow" aria-label="${escapeHtml(label)}" title="Open the original issue in a new tab" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="external-link" class="h-4 w-4 text-muted-foreground"></i><span class="hidden sm:inline">${escapeHtml(label)}</span></a>`;
+  }
+
   async function fetchRepoIssueIndex(repo, options = {}) {
     try {
       const params = options.ref ? { ref: options.ref } : {};
       if (options.related) params.related = Number(options.related);
       const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", params));
+      if (data && typeof rememberForgeAvatars === "function") rememberForgeAvatars(repo, data.forgeAvatars, data.commit);
       if (!data || data.truncated || !Array.isArray(data.issues)) return null;
       return data;
     } catch (_) {
@@ -1391,6 +1480,9 @@
       || await fetchRepoIssueIndex(repo);
     if (indexed) {
       const items = indexed.issues.map(issueFromIndex);
+      if (number && issueSourceUrlSafe(indexed.sourceUrl)) {
+        repoIssueSources.set(`${repoKey(repo)}#${Number(number)}`, issueSourceUrlSafe(indexed.sourceUrl));
+      }
       state.issueRelationIndex = { key, at: Date.now(), items };
       return items;
     }
@@ -1424,6 +1516,7 @@
       issueDependencies: dependencies,
       issueSubIssues: subIssues,
       issueMentions: issueMentionsOf(relationIndex, number),
+      issueSourceUrl: repoIssueSourceUrl(repo, number, relationIndex),
     };
   }
 
@@ -1442,7 +1535,7 @@
       if (!repoIssueDetailBusy(container)) {
         Object.assign(parsed, relations);
         const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
-        container.innerHTML = renderRepoRecordDetail(repo, "issues", number, parsed);
+        paintRepoIssueDetail(container, renderRepoRecordDetail(repo, "issues", number, parsed));
         mountIssueStickyHeader(container);
         if (draft) {
           const body = container.querySelector("[data-repo-issue-comment-body]");
@@ -1787,7 +1880,7 @@
     const fullWhen = formatRecordDateTime(ev.ts);
     const body = String(ev.body || "").trim();
     return `
-      <div data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+      <div${ev.id ? ` id="issuecomment-${escapeHtml(ev.id)}"` : ""} data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(who, ev.author, "h-10 w-10")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
@@ -1841,6 +1934,10 @@
   // detail view shows every action stored in the issue JSON (adhoc #45). The
   // opening event is omitted here since it's already shown as the issue body.
   function renderIssueTimeline(events) {
+    return issueTimelineEntries(events, arguments[1]).map((entry) => entry.html()).join("");
+  }
+
+  function issueTimelineEntries(events) {
     const options = arguments[1] || {};
     // Mentions from other issues join the history at the time they were
     // written. They are derived rows, flagged so no signed event is mistaken
@@ -1876,9 +1973,10 @@
         const href = options.repo
           ? repoRecordUrl(options.repo, "issues", ev.sourceNumber)
           : `#issue-${ev.sourceNumber}`;
-        items.push(renderIssueTimelineEvent("link", who, ev.author,
+        const html = renderIssueTimelineEvent("link", who, ev.author,
           `<span>mentioned this in</span><a href="${escapeHtml(href)}" class="min-w-0 font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(ev.sourceNumber)} ${escapeHtml(ev.sourceTitle || `issue #${ev.sourceNumber}`)}</a>${String(ev.sourceStatus).toLowerCase() === "closed" ? "<span>(closed)</span>" : ""}`,
-          ev.ts, `data-repo-issue-mention="${escapeHtml(ev.sourceNumber)}"`));
+          ev.ts, `data-repo-issue-mention="${escapeHtml(ev.sourceNumber)}"`);
+        items.push({ id: "", comment: false, html: () => html });
         continue;
       }
       if (ev.type === "comment") {
@@ -1891,28 +1989,198 @@
             const href = options.repo ? repoRecordUrl(options.repo, "pulls", match[2]) : `#pull-${match[2]}`;
             return `<span>${match[1] ? "unlinked" : "linked"} pull request</span><a href="${escapeHtml(href)}" class="font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(match[2])}</a>`;
           };
-          items.push(renderIssueTimelineEvent(links.every((match) => match[1]) ? "unlink" : "git-pull-request", who, ev.author,
+          const html = renderIssueTimelineEvent(links.every((match) => match[1]) ? "unlink" : "git-pull-request", who, ev.author,
             links.map(linkHtml).join('<span aria-hidden="true">,</span>'), ev.ts,
-            `data-repo-issue-development-event="${escapeHtml(ev.id || "")}"`));
+            `data-repo-issue-development-event="${escapeHtml(ev.id || "")}"`);
+          items.push({ id: "", comment: false, html: () => html });
           continue;
         }
-        ev = {
-          ...ev,
-          ...(edit ? { body: edit.body } : {}),
-          _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
-          _edited: Boolean(edit),
-          _reactions: ev.id
-            ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(ev.id),
-              reactionsByTarget.get(String(ev.id)), "px-4 pb-3")
-            : "",
-        };
-        items.push(renderIssueTimelineComment(ev));
+        const comment = ev;
+        items.push({
+          id: String(ev.id || ""),
+          comment: true,
+          html: () => renderIssueTimelineComment({
+            ...comment,
+            ...(edit ? { body: edit.body } : {}),
+            _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
+            _edited: Boolean(edit),
+            _reactions: comment.id
+              ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(comment.id),
+                reactionsByTarget.get(String(comment.id)), "px-4 pb-3")
+              : "",
+          }),
+        });
         continue;
       }
-      items.push(renderIssueTimelineEvent(issueEventIcon(ev.type), who, ev.author,
-        issueEventDescriptionHtml(ev), ev.ts));
+      const html = renderIssueTimelineEvent(issueEventIcon(ev.type), who, ev.author,
+        issueEventDescriptionHtml(ev), ev.ts);
+      items.push({ id: "", comment: false, html: () => html });
     }
-    return items.join("");
+    return items;
+  }
+
+  const ISSUE_TIMELINE_FIRST = 10;
+  const ISSUE_TIMELINE_BATCH = 15;
+  const ISSUE_DETAIL_KEPT_BLOCKS = [
+    "[data-repo-issue-sticky]", "[data-repo-record-hero]", "[data-repo-issue-opening]",
+    "[data-repo-record-sidebar]", "[data-repo-federated-thread]"];
+  const issueTimelineSignatures = new WeakMap();
+  let issueTimelineStream = null;
+  let issueTimelineScrolled = "";
+
+  function issueTimelineMoreHtml(rest) {
+    if (!rest.length) return "";
+    const comments = rest.filter((entry) => entry.comment).length;
+    const count = comments || rest.length;
+    const noun = `${comments ? "comment" : "event"}${count === 1 ? "" : "s"}`;
+    const bar = (width) => `<span class="block h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted-foreground/20 motion-reduce:animate-none"></span><span class="block h-3 ${width} max-w-full animate-pulse rounded bg-muted-foreground/20 motion-reduce:animate-none"></span>`;
+    return `<div data-repo-issue-more data-remaining="${rest.length}" role="status" aria-live="polite" class="grid gap-2 sm:ml-14"><div aria-hidden="true" class="flex items-center gap-2 py-1.5">${bar("w-72")}</div><div aria-hidden="true" class="flex items-center gap-2 py-1.5">${bar("w-56")}</div><p class="py-1.5 text-[14px] text-muted-foreground">Loading ${formatCount(count)} more ${noun}…</p></div>`;
+  }
+
+  function issueTimelineHashIndex(entries) {
+    const match = /^#issuecomment-(.+)$/.exec(String(location.hash || ""));
+    if (!match) return -1;
+    let id = match[1];
+    try { id = decodeURIComponent(id); } catch (_) { id = match[1]; }
+    return entries.findIndex((entry) => entry.comment
+      && (entry.id === id || entry.id === `forge-github-comment-${id}`));
+  }
+
+  function issueTimelineEagerCount(number, entries) {
+    const target = issueTimelineHashIndex(entries);
+    return Math.min(Math.max(ISSUE_TIMELINE_FIRST, target + 1), entries.length);
+  }
+
+  function queueIssueTimelineRest(number, entries, eager) {
+    const job = { number: String(number), rest: entries.slice(eager), next: 0, more: null, shown: [], added: 0 };
+    issueTimelineStream = job;
+    if (typeof window === "undefined") return;
+    const target = entries[issueTimelineHashIndex(entries)];
+    const scrollKey = target ? `${location.pathname}${location.hash}` : "";
+    if (target && issueTimelineScrolled !== scrollKey) {
+      issueTimelineScrolled = scrollKey;
+      window.setTimeout(() => {
+        document.getElementById(`issuecomment-${target.id}`)?.scrollIntoView({ block: "start" });
+      }, 0);
+    }
+    if (job.rest.length) scheduleIssueTimelineStream(job);
+  }
+
+  function scheduleIssueTimelineStream(job) {
+    const run = () => runIssueTimelineStream(job);
+    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(run, { timeout: 120 });
+    else window.setTimeout(run, 16);
+  }
+
+  function runIssueTimelineStream(job) {
+    if (issueTimelineStream !== job) return;
+    if (!job.more) {
+      const more = document.querySelector('[data-repo-record-detail="issues"] [data-repo-issue-timeline] > [data-repo-issue-more]');
+      if (!more || more.dataset.remaining !== String(job.rest.length)
+          || String(state.repoRecordDetail?.number) !== job.number) return;
+      job.more = more;
+    }
+    if (!job.more.isConnected) return;
+    const batch = job.rest.slice(job.next, job.next + ISSUE_TIMELINE_BATCH);
+    job.next += batch.length;
+    job.added += placeIssueTimelineItems(job, batch.map((entry) => entry.html()).join(""));
+    if (job.next < job.rest.length) {
+      scheduleIssueTimelineStream(job);
+      return;
+    }
+    job.shown.splice(0).forEach((node) => node.remove());
+    job.more.remove();
+    if (job.added) window.lucide?.createIcons();
+  }
+
+  function placeIssueTimelineItems(job, html) {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    let added = 0;
+    Array.from(template.content.children).forEach((node) => {
+      const signature = issueNodeSignature(node);
+      const at = job.shown.slice(0, ISSUE_TIMELINE_BATCH)
+        .findIndex((shown) => issueTimelineSignatures.get(shown) === signature);
+      if (at >= 0) {
+        job.shown.splice(0, at).forEach((stale) => stale.remove());
+        job.shown.shift();
+        return;
+      }
+      issueTimelineSignatures.set(node, signature);
+      (job.shown[0] || job.more).before(node);
+      added += 1;
+    });
+    return added;
+  }
+
+  function issueNodeSignature(node) {
+    let copy = node;
+    if (node.querySelector("svg.lucide")) {
+      copy = node.cloneNode(true);
+      copy.querySelectorAll("svg.lucide").forEach((svg) => {
+        const classes = Array.from(svg.classList);
+        const icon = document.createElement("i");
+        icon.setAttribute("data-lucide", (classes.find((name) => name.startsWith("lucide-")) || "").slice(7));
+        icon.setAttribute("class", classes.filter((name) => name !== "lucide" && !name.startsWith("lucide-")).join(" "));
+        svg.replaceWith(icon);
+      });
+    }
+    return copy.outerHTML.replace(/\s+/g, " ").trim();
+  }
+
+  function signIssueDetail(article) {
+    if (!article) return;
+    ISSUE_DETAIL_KEPT_BLOCKS.forEach((selector) => {
+      const block = article.querySelector(selector);
+      if (block) issueTimelineSignatures.set(block, issueNodeSignature(block));
+    });
+    Array.from(article.querySelector("[data-repo-issue-timeline]")?.children || [])
+      .filter((node) => !node.matches("[data-repo-issue-more]"))
+      .forEach((node) => issueTimelineSignatures.set(node, issueNodeSignature(node)));
+  }
+
+  function paintRepoIssueDetail(container, html) {
+    const article = '[data-repo-record-detail="issues"]';
+    const old = container.querySelector(`:scope > article${article}`);
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const fresh = template.content.querySelector(`article${article}`);
+    if (fresh) {
+      ISSUE_DETAIL_KEPT_BLOCKS.forEach((selector) => {
+        const after = fresh.querySelector(selector);
+        if (!after) return;
+        const before = old?.querySelector(selector);
+        const signature = issueNodeSignature(after);
+        if (before && issueTimelineSignatures.get(before) === signature) after.replaceWith(before);
+        else issueTimelineSignatures.set(after, signature);
+      });
+      const kept = new Map();
+      Array.from(old?.querySelector("[data-repo-issue-timeline]")?.children || []).forEach((node) => {
+        const signature = issueTimelineSignatures.get(node);
+        if (!signature) return;
+        if (!kept.has(signature)) kept.set(signature, []);
+        kept.get(signature).push(node);
+      });
+      const used = new Set();
+      Array.from(fresh.querySelector("[data-repo-issue-timeline]")?.children || []).forEach((node) => {
+        if (node.matches("[data-repo-issue-more]")) return;
+        const signature = issueNodeSignature(node);
+        const match = kept.get(signature)?.shift();
+        if (match) {
+          used.add(match);
+          node.replaceWith(match);
+        } else issueTimelineSignatures.set(node, signature);
+      });
+      const more = fresh.querySelector("[data-repo-issue-timeline] > [data-repo-issue-more]");
+      const job = issueTimelineStream;
+      if (more && job && !job.more && job.number === String(state.repoRecordDetail?.number)) {
+        job.shown = Array.from(old?.querySelector("[data-repo-issue-timeline]")?.children || [])
+          .filter((node) => !used.has(node) && issueTimelineSignatures.has(node));
+        job.shown.forEach((node) => more.before(node));
+        more.hidden = job.shown.length >= job.rest.length;
+      }
+    }
+    container.replaceChildren(template.content);
   }
 
   function projectJsonPath(number) {
@@ -2958,6 +3226,15 @@
     return `<span data-repo-issue-row-assignees class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml([item.wantsAgent ? "Agent" : "", ...assignees].filter(Boolean).join(", "))}">${faces.join("")}</span>`;
   }
 
+  function renderIssueRowCommenters(item) {
+    if (!instancePluginOn("forum-list")) return "";
+    const names = (Array.isArray(item.recentCommenters) ? item.recentCommenters : [])
+      .map((name) => String(name || "").trim()).filter(Boolean).slice(0, 4);
+    if (!names.length) return "";
+    const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
+    return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
+  }
+
   function pullStateIconHtml(stateLabel, extra = "") {
     const value = String(stateLabel || "open").toLowerCase();
     const [icon, tone] = value === "open" ? ["git-pull-request", "text-[var(--dashboard-open)]"]
@@ -3049,6 +3326,7 @@
             <span class="hidden w-14 justify-end sm:flex">${Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px] text-muted-foreground" title="Priority ${Number(item.priority)} — 1 is highest">P${Number(item.priority)}</span>` : ""}</span>
             <span class="flex w-12 justify-end">${commentCount ? `<span class="inline-flex items-center gap-1 leading-5 hover:text-[var(--dashboard-link)]" title="${formatCount(commentCount)} comment${commentCount === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(commentCount)}</span>` : ""}</span>
             <span class="hidden w-[4.5rem] justify-end sm:flex">${renderIssueRowAvatars(item)}</span>
+            <span class="hidden w-16 justify-end md:flex">${renderIssueRowCommenters(item)}</span>
           </span>` : `
           ${pullStateIconHtml(stateLabel, "mt-1")}
           <span class="min-w-0">
@@ -7752,12 +8030,28 @@
     "merge_queue_full",
   ]);
   const PULL_MUTATION_WAIT_MS = 150000;
+  const PULL_MUTATION_POLL_MS = [1000, 2000, 3000];
+
+  function repoPullMutationHidden() {
+    return globalThis.document?.visibilityState === "hidden";
+  }
+
+  const PULL_MUTATION_HIDDEN_POLL_MS = 10000;
+
+  function waitForRepoPullMutationVisible() {
+    if (!repoPullMutationHidden()) return Promise.resolve(0);
+    return new Promise((resolve) => {
+      window.setTimeout(() => resolve(PULL_MUTATION_HIDDEN_POLL_MS), PULL_MUTATION_HIDDEN_POLL_MS);
+    });
+  }
 
   // Submits one exact-OID pull mutation and follows it to an answer. Resolves
   // to the last response; `waiting` means the time budget ran out first.
   async function postRepoPullMutation(endpoint, request, onWait) {
-    const started = Date.now();
+    let started = Date.now();
     let backoff = 1000;
+    let polls = 0;
+    let phase = "";
     for (;;) {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -7781,12 +8075,32 @@
       if (Date.now() - started >= PULL_MUTATION_WAIT_MS) {
         return { response, payload, waiting: true };
       }
-      onWait?.(processing);
-      await new Promise((resolve) => window.setTimeout(
-        resolve, processing ? 750 : backoff,
-      ));
+      const nextPhase = processing ? String(payload?.progress?.phase || "claimed") : "";
+      if (nextPhase !== phase) {
+        phase = nextPhase;
+        polls = 0;
+      }
+      onWait?.(processing, payload);
+      const delay = processing
+        ? PULL_MUTATION_POLL_MS[Math.min(polls, PULL_MUTATION_POLL_MS.length - 1)]
+        : backoff;
+      polls += 1;
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+      started += await waitForRepoPullMutationVisible();
       if (!processing) backoff = Math.min(backoff * 2, 8000);
     }
+  }
+
+  function repoPullMutationWaitState(current, accepted, payload) {
+    const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : null;
+    const offline = !accepted && payload?.reason === "job_node_offline";
+    return {
+      ...current,
+      queued: !accepted && !offline,
+      queuedSince: !accepted && !offline ? current.queuedSince || Date.now() : 0,
+      offline,
+      progress: progress || (accepted || offline ? current.progress || null : null),
+    };
   }
 
   const PULL_MERGE_REPIN_ERRORS = new Set(["stale_pull_metadata", "stale_base"]);
@@ -8052,6 +8366,8 @@
       branchRow.title = `Up to date with ${baseBranch}`;
       branchRow.detail = `This branch already contains ${baseBranch} and merges cleanly.`;
     }
+    const updateProgress = repoPullMutationProgressModel(repo, "update", update, baseBranch, headBranch);
+    if (updateProgress) branchRow.progress = updateProgress;
     if (update.state === "updated") {
       const at = update.at ? new Date(update.at) : null;
       const when = at ? ` · ${at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : "";
@@ -8091,6 +8407,8 @@
     const merged = merge.state === "merged" || status === "merged";
     const busy = merge.state === "processing";
     const footer = { tone: "muted", text: "", method: "merge" };
+    const mergeProgress = repoPullMutationProgressModel(repo, "merge", merge, baseBranch, headBranch);
+    if (mergeProgress) footer.progress = mergeProgress;
     if (status !== "open" && !merged) {
       footer.tone = "muted";
       footer.text = "This pull request is closed.";
@@ -8149,6 +8467,221 @@
     };
   }
 
+  const PULL_MUTATION_STEPS = {
+    merge: ["queued", "claimed", "fetching", "verifying", "checking", "testing", "committing", "pushing", "publishing"],
+    update: ["queued", "claimed", "fetching", "verifying", "testing", "committing", "pushing", "publishing"],
+  };
+  const PULL_MUTATION_WAITING_NOTICE_MS = 8000;
+  const PULL_MUTATION_FAILED_PHASE = {
+    stale_pull_metadata: "fetching",
+    stale_base: "fetching",
+    stale_head: "verifying",
+    review_required: "verifying",
+    checks_required: "checking",
+    rules_required: "checking",
+    merge_conflict: "testing",
+    already_current: "verifying",
+  };
+
+  function pullMutationStepText(kind, phase, names) {
+    const merge = kind === "merge";
+    const texts = {
+      queued: ["Wait for an online mirror", "Waiting for an online mirror…"],
+      claimed: [names.node ? `Picked up by ${names.node}` : "Picked up by a mirror", names.node ? `${names.node} picked this up…` : "A mirror picked this up…"],
+      fetching: ["Fetch base and head", "Reading the base and head commits…"],
+      verifying: merge
+        ? ["Verify the reviewed commits", "Verifying the reviewed commits…"]
+        : ["Verify the branch tips", "Verifying the branch tips…"],
+      checking: ["Branch protection and required checks", "Checking branch protection and required checks…"],
+      testing: ["Test merge (conflict check)", "Test-merging to check for conflicts…"],
+      committing: merge
+        ? ["Create the merge commit", "Creating the merge commit…"]
+        : [`Merge ${names.base} into the branch`, `Merging ${names.base} into ${names.head}…`],
+      hooks: ["Pre-merge hooks", "Running pre-merge hooks…"],
+      pushing: merge
+        ? [`Merge into ${names.base}`, `Merging into ${names.base}…`]
+        : [`Update ${names.head}`, `Updating ${names.head}…`],
+      publishing: ["Publish to mirrors and the catalog", "Publishing…"],
+    };
+    const [label, now] = texts[phase] || [phase, "Working…"];
+    return { label, now };
+  }
+
+  function formatRepoPullElapsed(ms) {
+    const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  }
+
+  function formatRepoPullStepTime(ms) {
+    if (!(ms >= 0)) return "";
+    return ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : formatRepoPullElapsed(ms);
+  }
+
+  function repoPullMutationProgressModel(repo, kind, job, baseBranch, headBranch, now = Date.now()) {
+    const terminal = kind === "merge" ? "merged" : "updated";
+    const running = job?.state === "processing" && Boolean(job.request);
+    const ended = job?.state === terminal || (job?.state === "failed" && job.progress);
+    if (!running && !ended) return null;
+    const progress = job.progress && typeof job.progress === "object" ? job.progress : {};
+    const node = String(progress.node || "").slice(0, 64);
+    const names = { base: baseBranch, head: headBranch, node };
+    const order = PULL_MUTATION_STEPS[kind];
+    const reported = Array.isArray(progress.steps) ? progress.steps : [];
+    const at = {};
+    reported.forEach((step) => {
+      if (order.includes(step?.phase) && Number.isFinite(step.at) && !(step.phase in at)) at[step.phase] = step.at;
+    });
+    let phase = order.includes(progress.phase) ? progress.phase : "";
+    if (!phase) phase = running && job.queued !== false ? "queued" : "claimed";
+    const failedAt = PULL_MUTATION_FAILED_PHASE[job.error];
+    if (job.state === "failed" && order.includes(failedAt) && order.indexOf(failedAt) > order.indexOf(phase)) phase = failedAt;
+    if (job.state === terminal) phase = "";
+    const index = phase ? order.indexOf(phase) : order.length;
+    const failed = job.state === "failed";
+    const steps = order.map((step, position) => {
+      const later = order.slice(position + 1).find((next) => next in at);
+      return {
+        phase: step,
+        label: pullMutationStepText(kind, step, names).label,
+        state: position < index ? "done" : position === index ? (failed ? "failed" : "current") : "todo",
+        ms: step in at && later ? at[later] - at[step] : null,
+      };
+    });
+    const since = Number(job.startedAt) || now;
+    const model = { kind, node, steps, since, state: "running", headline: "", detail: "", lateAfter: 0, lateText: "", commit: null };
+    if (job.state === terminal) {
+      model.state = "done";
+      model.headline = kind === "merge" ? `Merged into ${baseBranch}` : `Updated ${headBranch} with ${baseBranch}`;
+      if (kind === "merge") model.detail = "The merged state is pinned as current and every mirror is syncing it.";
+      const oid = immutableGitCommit(job.commit);
+      if (oid) model.commit = { oid, label: kind === "merge" ? "Merged as" : "New head", href: repoCommitUrl(repo, oid) };
+      return model;
+    }
+    if (failed) {
+      model.state = "failed";
+      model.headline = job.message || "The mirror could not finish this.";
+      return model;
+    }
+    if (job.offline) {
+      model.state = "waiting";
+      model.headline = node
+        ? `Waiting for ${node} to answer again…`
+        : "Waiting for the mirror that took this to answer again…";
+      model.detail = "Only the mirror that took this job may finish it, so nothing can happen twice. It is asked again automatically while this page is open; on a single-server instance the node may be restarting.";
+      return model;
+    }
+    if (phase === "queued" && job.queued !== true) {
+      model.headline = "Handing this to an online mirror…";
+      return model;
+    }
+    if (phase === "queued") {
+      model.state = "waiting";
+      model.headline = "Waiting for an online mirror…";
+      model.lateAfter = Math.max(0, (Number(job.queuedSince) || since) + PULL_MUTATION_WAITING_NOTICE_MS - since);
+      model.lateText = "Waiting for an online mirror to pick this up (no mirror has accepted it yet).";
+      model.detail = "This keeps retrying automatically while the page is open, and a retry can never apply it twice. On a single-server instance the node may be restarting; it picks this up as soon as it is back.";
+      if (now - (Number(job.queuedSince) || since) >= PULL_MUTATION_WAITING_NOTICE_MS) model.headline = model.lateText;
+      return model;
+    }
+    model.headline = pullMutationStepText(kind, phase, names).now;
+    return model;
+  }
+
+  function renderRepoPullMutationProgress(model) {
+    if (!model) return "";
+    const icon = { done: "check", failed: "x", current: "", todo: "" };
+    const steps = model.steps.map((step) => `
+          <li class="fm-merge-step" data-step="${escapeHtml(step.phase)}" data-state="${escapeHtml(step.state)}">
+            <span class="fm-merge-step-mark" aria-hidden="true">${icon[step.state] ? `<i data-lucide="${icon[step.state]}"></i>` : ""}</span>
+            <span class="fm-merge-step-label">${escapeHtml(step.label)}<span class="sr-only">${step.state === "done" ? " (done)" : step.state === "current" ? " (in progress)" : step.state === "failed" ? " (failed)" : ""}</span></span>
+            ${step.ms !== null ? `<span class="fm-merge-step-time">${escapeHtml(formatRepoPullStepTime(step.ms))}</span>` : ""}
+          </li>`).join("");
+    const live = model.state === "running" || model.state === "waiting";
+    const elapsed = live
+      ? `<span class="fm-merge-progress-elapsed" data-repo-pull-merge-elapsed data-since="${escapeHtml(String(model.since))}" aria-hidden="true">${escapeHtml(formatRepoPullElapsed(Date.now() - model.since))}</span>`
+      : "";
+    const late = model.lateText
+      ? ` data-late-after="${escapeHtml(String(model.lateAfter))}" data-late-since="${escapeHtml(String(model.since))}" data-late-text="${escapeHtml(model.lateText)}"`
+      : "";
+    const mark = model.state === "done"
+      ? '<span class="fm-merge-progress-mark" data-state="done" aria-hidden="true"><i data-lucide="check"></i></span>'
+      : model.state === "failed"
+        ? '<span class="fm-merge-progress-mark" data-state="failed" aria-hidden="true"><i data-lucide="x"></i></span>'
+        : '<span class="fm-merge-spinner" aria-hidden="true"></span>';
+    const commit = model.commit
+      ? `<p class="fm-merge-progress-result">${escapeHtml(model.commit.label)} <a href="${escapeHtml(model.commit.href)}" data-dashboard-link><code>${escapeHtml(model.commit.oid.slice(0, 7))}</code></a></p>`
+      : "";
+    return `
+      <div class="fm-merge-progress" data-repo-pull-merge-progress="${escapeHtml(model.kind)}" data-state="${escapeHtml(model.state)}">
+        <div class="fm-merge-progress-head">
+          ${mark}
+          <p class="fm-merge-progress-now" data-repo-pull-merge-now role="status" aria-live="polite"${late}>${escapeHtml(model.headline)}</p>
+          ${elapsed}
+        </div>
+        <div data-repo-pull-merge-progress-body>
+          ${model.detail ? `<p class="fm-merge-progress-detail">${escapeHtml(model.detail)}</p>` : ""}
+          ${commit}
+          <ol class="fm-merge-steps" aria-label="Steps">${steps}</ol>
+          ${model.node ? `<p class="fm-merge-progress-node">Mirror <code>${escapeHtml(model.node)}</code></p>` : ""}
+        </div>
+      </div>`;
+  }
+
+  function patchRepoPullMutationProgress(repo, number, parsed, kind) {
+    if (!pullDetailIsCurrent(repo, number)) return;
+    const slot = document.querySelector("[data-repo-pull-merge-slot]");
+    const block = slot?.querySelector?.(`[data-repo-pull-merge-progress="${kind}"]`);
+    const model = block ? repoPullMergeModel(repo, number, parsed) : null;
+    const progress = kind === "merge"
+      ? model?.footer.progress
+      : model?.rows.find((row) => row.id === "branch")?.progress;
+    if (!block || !progress) {
+      updateRepoPullMergePanel(repo, number, parsed);
+      return;
+    }
+    const scratch = document.createElement("div");
+    scratch.innerHTML = renderRepoPullMutationProgress(progress);
+    const fresh = scratch.firstElementChild;
+    const now = block.querySelector("[data-repo-pull-merge-now]");
+    const freshNow = fresh.querySelector("[data-repo-pull-merge-now]");
+    if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
+    ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
+      if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
+      else now.removeAttribute(name);
+    });
+    block.dataset.state = fresh.dataset.state;
+    block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
+    window.lucide?.createIcons();
+    startRepoPullMutationTicker();
+  }
+
+  let repoPullMutationTicker = 0;
+
+  function tickRepoPullMutationProgress() {
+    const clocks = document.querySelectorAll("[data-repo-pull-merge-elapsed]");
+    if (!clocks.length) {
+      window.clearInterval(repoPullMutationTicker);
+      repoPullMutationTicker = 0;
+      return;
+    }
+    const now = Date.now();
+    clocks.forEach((clock) => {
+      const text = formatRepoPullElapsed(now - Number(clock.dataset.since || now));
+      if (clock.textContent !== text) clock.textContent = text;
+    });
+    document.querySelectorAll("[data-late-text]").forEach((line) => {
+      const due = Number(line.dataset.lateSince || now) + Number(line.dataset.lateAfter || 0);
+      if (now >= due && line.textContent !== line.dataset.lateText) line.textContent = line.dataset.lateText;
+    });
+  }
+
+  function startRepoPullMutationTicker() {
+    if (repoPullMutationTicker || typeof window.setInterval !== "function") return;
+    if (!document.querySelector?.("[data-repo-pull-merge-elapsed]")) return;
+    repoPullMutationTicker = window.setInterval(tickRepoPullMutationProgress, 1000);
+  }
+
   const PULL_MERGE_ROW_ICONS = {
     good: "check-circle-2",
     warn: "alert-circle",
@@ -8200,7 +8733,7 @@
             <p class="fm-merge-row-title">${escapeHtml(row.title)}</p>
             ${meta}
             <p class="fm-merge-row-detail">${escapeHtml(row.detail)}</p>
-            ${conflicts}${checkList}${note}
+            ${conflicts}${checkList}${row.progress ? renderRepoPullMutationProgress(row.progress) : ""}${note}
           </div>
           ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
         </div>`;
@@ -8230,8 +8763,8 @@
       <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
         ${rows}
         ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
-          <p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>
+        <div data-repo-pull-merge-panel ${footer.progress ? "" : 'role="status" aria-live="polite" aria-atomic="true" '}aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
+          ${footer.progress ? renderRepoPullMutationProgress(footer.progress) : `<p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>`}
           ${changes}
           ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
         </div>
@@ -8329,6 +8862,7 @@
       restored.setSelectionRange(focused.start, focused.end);
     }
     window.lucide?.createIcons();
+    startRepoPullMutationTicker();
   }
 
   const PULL_QUICK_REPLY_PATH = ".forkmesh/review-replies.json";
@@ -8847,11 +9381,10 @@
     const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/merge`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request, (accepted) => {
+      result = await postRepoPullMutation(endpoint, request, (accepted, payload) => {
         if (parsed.pullMerge?.request?.requestId !== request.requestId) return;
-        if (Boolean(parsed.pullMerge.queued) === !accepted) return;
-        parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };
-        updateRepoPullMergePanel(repo, number, parsed);
+        parsed.pullMerge = repoPullMutationWaitState(parsed.pullMerge, accepted, payload);
+        patchRepoPullMutationProgress(repo, number, parsed, "merge");
       });
     } catch (_) {
       return {
@@ -8879,7 +9412,7 @@
       && immutableGitCommit(payload.head) === request.expectedHeadOid
       && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
     ) {
-      return { state: "merged", request };
+      return { state: "merged", request, commit: immutableGitCommit(payload.baseAfter) };
     }
     const error = String(payload?.error || "");
     return {
@@ -8905,7 +9438,8 @@
     const previous = parsed.pullMerge || {};
     if (previous.state === "processing") return;
     let request = previous.resumable === true ? previous.request : null;
-    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request };
+    const startedAt = Date.now();
+    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request, startedAt };
     updateRepoPullMergePanel(repo, number, parsed);
     if (!request) {
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
@@ -8924,9 +9458,10 @@
     }
     let outcome = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      parsed.pullMerge = { state: "processing", phase: "", request };
+      parsed.pullMerge = { state: "processing", phase: "", request, startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
       outcome = await sendRepoPullMerge(repo, number, parsed, request);
+      outcome = { ...outcome, progress: parsed.pullMerge?.progress || null, startedAt };
       if (
         attempt > 0
         || outcome.state !== "failed"
@@ -8935,7 +9470,7 @@
       ) {
         break;
       }
-      parsed.pullMerge = { state: "processing", phase: "repinning" };
+      parsed.pullMerge = { state: "processing", phase: "repinning", startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
       if (!pullDetailIsCurrent(repo, number)) return;
@@ -8983,11 +9518,11 @@
     };
   }
 
-  async function sendRepoPullUpdate(repo, request) {
+  async function sendRepoPullUpdate(repo, request, onWait) {
     const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/update`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request);
+      result = await postRepoPullMutation(endpoint, request, onWait);
     } catch (_) {
       return {
         state: "failed",
@@ -9015,7 +9550,7 @@
       && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
       && immutableGitCommit(payload.headAfter)
     ) {
-      return { state: "updated", request, at: Date.now() };
+      return { state: "updated", request, at: Date.now(), commit: immutableGitCommit(payload.headAfter) };
     }
     const error = String(payload?.error || "");
     return {
@@ -9036,7 +9571,8 @@
     const previous = parsed.pullUpdate || {};
     if (previous.state === "processing") return;
     let request = previous.resumable === true ? previous.request : null;
-    parsed.pullUpdate = { state: "processing", request };
+    const startedAt = Date.now();
+    parsed.pullUpdate = { state: "processing", request, startedAt };
     updateRepoPullMergePanel(repo, number, parsed);
     if (!request) {
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
@@ -9057,9 +9593,14 @@
     }
     let outcome = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      parsed.pullUpdate = { state: "processing", request };
+      parsed.pullUpdate = { state: "processing", request, startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
-      outcome = await sendRepoPullUpdate(repo, request);
+      outcome = await sendRepoPullUpdate(repo, request, (accepted, payload) => {
+        if (parsed.pullUpdate?.request?.requestId !== request.requestId) return;
+        parsed.pullUpdate = repoPullMutationWaitState(parsed.pullUpdate, accepted, payload);
+        patchRepoPullMutationProgress(repo, number, parsed, "update");
+      });
+      outcome = { ...outcome, progress: parsed.pullUpdate?.progress || null, startedAt };
       if (
         attempt > 0
         || outcome.state !== "failed"
@@ -10076,12 +10617,16 @@ Your reply
     const stateLabel = closed ? "Closed" : status === "open" ? "Open" : status.charAt(0).toUpperCase() + status.slice(1);
     const issueUrl = `${publicSiteOrigin()}${repoRecordUrl(repo, "issues", number)}`;
 
-    const timeline = renderIssueTimeline(events, {
+    const timelineEntries = issueTimelineEntries(events, {
       canManage,
       mentions: parsed.issueMentions,
       repo,
       number,
     });
+    const eagerItems = issueTimelineEagerCount(number, timelineEntries);
+    const timeline = timelineEntries.slice(0, eagerItems).map((entry) => entry.html()).join("")
+      + issueTimelineMoreHtml(timelineEntries.slice(eagerItems));
+    queueIssueTimelineRest(number, timelineEntries, eagerItems);
     const bodyReactions = renderCommentReactionBar(commentReactionSubject("issues", number), "body",
       foldIssueReactions(events).get(String(parsed.issueOpenEventId || "")));
     const reactionRow = `<div data-repo-issue-reactions class="flex flex-wrap items-center gap-1.5 px-4 pb-4">
@@ -10212,7 +10757,7 @@ Your reply
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
               ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
-              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
+              ${renderIssueSourceLink(parsed.issueSourceUrl)}<button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
           </div>
@@ -10231,7 +10776,7 @@ Your reply
             <section data-repo-record-conversation class="grid min-w-0 gap-4">
               ${openingCard}
               ${subIssues}
-              <div data-repo-issue-timeline data-empty="${timeline ? "false" : "true"}" class="grid gap-2">${timeline}</div>
+              <div data-repo-issue-timeline data-empty="${timelineEntries.length ? "false" : "true"}" class="grid gap-2">${timeline}</div>
               ${renderIssueCommentForm(number)}
             </section>
             ${repo.isPrivate || instancePluginOff("fediverse-ui") ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
@@ -10337,6 +10882,7 @@ Your reply
   function keepRepoFirstViewIssue(detail) {
     const article = detail?.querySelector?.("article[data-repo-ssr-issue]");
     if (!article) return;
+    signIssueDetail(article);
     repoFirstViewIssue = {
       number: String(article.dataset.repoSsrIssue || ""),
       path: location.pathname,
@@ -11212,7 +11758,9 @@ Your reply
     if (kind === "issues") withPendingIssueStatus(repo, number, parsed);
     state.repoRecordDetail = { repo, kind, number, parsed };
     setRepoRecordOpen(kind, true);
-    container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+    const html = renderRepoRecordDetail(repo, kind, number, parsed);
+    if (kind === "issues") paintRepoIssueDetail(container, html);
+    else container.innerHTML = html;
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
@@ -11320,6 +11868,8 @@ Your reply
         ])
         : null;
       issueAccess?.catch(() => {});
+      const issueAttachments = kind === "issues" ? loadRepoIssueAttachments(repo, number) : null;
+      const issueModeration = kind === "issues" ? fetchIssueModeration(repo, number) : null;
       const collabSettings = kind === "discussions" ? null : loadRepoCollabSettings(repo);
       let blob;
       if (kind === "issues") {
@@ -11341,8 +11891,10 @@ Your reply
       // so parse them the same way the list does and map into the shape the
       // detail renderer expects. Any live mirror serving .forkmesh/issues/
       // answers this blob read, so the detail loads whenever the list does.
+      const moderation = kind === "issues" ? await issueModerationWithin(issueModeration) : null;
       const parsed = kind === "issues"
-        ? withPendingIssueStatus(repo, number, issueDetailParsed(blobText(blob), number))
+        ? withPendingIssueStatus(repo, number, issueDetailParsed(
+          applyIssueModeration(blobText(blob), moderation), number))
         : parseFrontMatter(blobText(blob));
       let issueRelations = null;
       if (kind === "issues") {
@@ -11353,7 +11905,8 @@ Your reply
           Object.assign(parsed, early);
           issueRelations = null;
         } else {
-          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [] });
+          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [],
+            issueSourceUrl: repoIssueSourceUrl(repo, number, state.issuesView?.items) });
         }
       }
       if (collabSettings) parsed.repoCollabSettings = await collabSettings;
@@ -11390,6 +11943,9 @@ Your reply
         parsed.issueMutationAuthorized = mutationAuthorized;
         parsed.issueSubscribed = subscription?.subscribed === true;
         parsed.issueSubscriptionReason = subscription?.reason || "";
+        await issueAttachments;
+        parsed.issueModeration = moderation;
+        if (moderation?.canModerate) parsed.issueMutationAuthorized = true;
       }
       if (kind === "discussions") {
         const thread = await discussionConversation;
@@ -11409,10 +11965,13 @@ Your reply
         ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
         : "";
       state.repoRecordDetail = { repo, kind, number, parsed };
-      container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+      const html = renderRepoRecordDetail(repo, kind, number, parsed);
+      if (kind === "issues") paintRepoIssueDetail(container, html);
+      else container.innerHTML = html;
       finishRepoRead(staleMark, reconnect);
       if (kind === "issues") mountIssueStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+      if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
         if (commentBody) commentBody.value = commentDraft;
@@ -11949,12 +12508,16 @@ Your reply
   const ISSUE_FILTER_ME = "__forkmesh_me__";
   const ISSUE_FILTER_ASSIGNED = "__forkmesh_assigned__";
 
+  function issueDefaultSort() {
+    return instancePluginOn("forum-list") ? "newest" : "recently_updated";
+  }
+
   function issueFilterState() {
     const filters = state.issuesView?.filters;
     if (filters && typeof filters === "object") return filters;
     state.issuesView.filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     return state.issuesView.filters;
   }
@@ -12040,8 +12603,8 @@ Your reply
     }
     if (field === "sort") {
       return [
-        { value: "recently_updated", label: "Recently updated" },
         { value: "newest", label: "Newest" },
+        { value: "recently_updated", label: "Recently updated" },
         { value: "oldest", label: "Oldest" },
         { value: "priority", label: "Highest priority" },
         { value: "comments", label: "Most commented" },
@@ -12173,8 +12736,12 @@ Your reply
         || stamp(b, "updatedAtMs") - stamp(a, "updatedAtMs")
         || stableNewest(a, b));
     }
-    return items.sort((a, b) => stamp(b, "updatedAtMs")
-      - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    if (sort === "recently_updated") {
+      return items.sort((a, b) => stamp(b, "updatedAtMs")
+        - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    }
+    return items.sort((a, b) => stamp(b, "createdAtMs")
+      - stamp(a, "createdAtMs") || stableNewest(a, b));
   }
 
   // The Issues sidebar: GitHub's saved views, each a set of filters. A view is
@@ -12309,7 +12876,7 @@ Your reply
     if (filters.milestone === ISSUE_FILTER_NONE) parts.push("no:milestone");
     else if (filters.milestone) parts.push(`milestone:${issueQueryValue(filters.milestone)}`);
     if (filters.type) parts.push(`type:${filters.type}`);
-    if (filters.sort && filters.sort !== "recently_updated") {
+    if (filters.sort && filters.sort !== issueDefaultSort()) {
       parts.push(`sort:${ISSUE_QUERY_SORTS[filters.sort] || filters.sort}`);
     }
     const free = String(state.issuesView.query || "").trim();
@@ -12323,7 +12890,7 @@ Your reply
   function parseIssueQuery(text) {
     const filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     // With no state qualifier the search spans every issue, as on GitHub.
     let status = "all";
@@ -12515,11 +13082,12 @@ Your reply
       ? `<p data-repo-issue-search-pending role="status" class="border-b border-border px-4 py-2 text-[12px] text-muted-foreground">${loadingHtml("Searching descriptions and comments...")}</p>`
       : "";
     setRepoIssueRecordOpen(false);
-    container.innerHTML = filterBar + warnBar + searchHint + (filtered.length
+    container.innerHTML = repoMirrorHelpSlot(state.selectedRepo) + filterBar + warnBar + searchHint + (filtered.length
       ? renderRepoRecordList(filtered, config, "issues")
       : issuesView.closedLoading
         ? `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`
-        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint;
+        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint
+      + repoIssueFeedLinks(state.selectedRepo);
     const viewsNav = $("[data-repo-issue-views]");
     if (viewsNav) viewsNav.innerHTML = renderIssueViewsNav();
     const heading = $("[data-repo-issue-view-title]");
@@ -16842,6 +17410,7 @@ Your reply
     loadRepoAboutInfo(repo);
     loadRepoAboutRelease(repo);
     loadRepoAboutInsights(repo);
+    loadRepoMirrorQuota(repo);
   }
 
   function scheduleRepoAboutRail(repo) {

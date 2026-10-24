@@ -569,25 +569,56 @@
     return document.documentElement.dataset.season === name;
   }
 
-  function readDashboardTheme() {
+  function dashboardThemeChoice() {
     try {
       const cookieTheme = document.cookie
         .split(";")
         .map((part) => part.trim())
         .find((part) => part.startsWith("forkmesh_theme="))
         ?.slice("forkmesh_theme=".length);
-      return normalizeDashboardTheme(
-        localStorage.getItem(DASHBOARD_THEME_KEY) ||
+      const choice = localStorage.getItem(DASHBOARD_THEME_KEY) ||
         localStorage.getItem("forkmesh.theme") ||
-        cookieTheme
-      );
+        cookieTheme;
+      return ["light", "dark", "system"].includes(choice) ? choice : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function instanceColorMode() {
+    try {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue("--instance-color-mode").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function systemDashboardTheme() {
+    try {
+      return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     } catch (_) {
       return "dark";
     }
   }
 
+  function readDashboardTheme() {
+    const choice = dashboardThemeChoice();
+    if (choice === "light" || choice === "dark") return choice;
+    const mode = choice || instanceColorMode();
+    if (mode === "system") return systemDashboardTheme();
+    return normalizeDashboardTheme(mode);
+  }
+
+  function dashboardAppearanceChoice() {
+    const choice = dashboardThemeChoice();
+    if (choice) return choice;
+    return instanceColorMode() === "system" ? "system" : readDashboardTheme();
+  }
+
   function renderAppearanceTheme(theme = readDashboardTheme()) {
-    const current = normalizeDashboardTheme(theme);
+    const effective = normalizeDashboardTheme(theme);
+    const current = dashboardAppearanceChoice();
     $$("[data-appearance-theme]").forEach((button) => {
       const active = button.dataset.appearanceTheme === current;
       button.setAttribute("aria-checked", active ? "true" : "false");
@@ -598,9 +629,12 @@
     });
     const status = $("[data-appearance-theme-status]");
     if (status) {
-      status.textContent = current === "light"
+      const active = effective === "light"
         ? "Light mode is active for the dashboard."
         : "Dark mode is active for the dashboard.";
+      status.textContent = current === "system"
+        ? `Following your system setting. ${active}`
+        : active;
     }
   }
 
@@ -617,7 +651,7 @@
   }
 
   function saveDashboardTheme(theme) {
-    const nextTheme = normalizeDashboardTheme(theme);
+    const nextTheme = theme === "system" ? "system" : normalizeDashboardTheme(theme);
     try {
       localStorage.setItem(DASHBOARD_THEME_KEY, nextTheme);
       localStorage.setItem("forkmesh.theme", nextTheme);
@@ -627,7 +661,17 @@
       document.cookie = `forkmesh_theme=${nextTheme}; Path=/; Max-Age=31536000; SameSite=Lax${sharedDomain}`
         + (location.protocol === "https:" ? "; Secure" : "");
     } catch (_) {}
-    applyDashboardTheme(nextTheme);
+    applyDashboardTheme(readDashboardTheme());
+  }
+
+  function followSystemDashboardTheme() {
+    try {
+      matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+        const choice = dashboardThemeChoice();
+        if (choice === "light" || choice === "dark") return;
+        applyDashboardTheme(readDashboardTheme());
+      });
+    } catch (_) {}
   }
 
   function renderGenieSetting() {
@@ -1235,6 +1279,28 @@
     return `href="${escapeHtml(forge.href)}" target="_blank" rel="noopener noreferrer nofollow" data-forge-person="${escapeHtml(forge.provider)}" title="${escapeHtml(forge.title)}"`;
   }
 
+  const forgeAvatarSets = new Map();
+  const forgeAvatarCommits = new Map();
+
+  function rememberForgeAvatars(repo, names, commit = "") {
+    if (!repo || !Array.isArray(names) || !names.length) return;
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    if (/^[0-9a-f]{40}$/.test(String(commit || ""))) forgeAvatarCommits.set(key, String(commit));
+    const known = forgeAvatarSets.get(key) || new Set();
+    names.forEach((name) => { if (typeof name === "string") known.add(name.toLowerCase()); });
+    forgeAvatarSets.set(key, known);
+  }
+
+  function forgeAvatarSrc(forge) {
+    const repo = state.selectedRepo;
+    if (!repo || !forge) return "";
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    const known = forgeAvatarSets.get(key);
+    const login = forge.login.toLowerCase();
+    return known?.has(`${forge.provider}:${login}`)
+      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`, forgeAvatarCommits.get(key) || "") : "";
+  }
+
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
     const label = String(name || author || (agent ? "Agent" : "unknown"));
     const bot = agent || issueActorIsBot(label);
@@ -1245,11 +1311,12 @@
     const handle = bot || forge ? "" : issuePersonHandle(label);
     const pixels = issueActorPixels(size);
     const botKind = bot ? (agent && !botAvatarKind(label) ? "ai" : botAvatarKind(label) || "bot") : "";
+    const forgePicture = forge ? forgeAvatarSrc(forge) : "";
     const inner = bot
       ? botAvatarSvg(botKind, pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5")
       : ownAvatar
         ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
-        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>`;
+        : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml(((forge ? forge.login : label)[0] || "?").toUpperCase())}</span>${forgePicture ? `<img src="${escapeHtml(forgePicture)}" alt="" width="${pixels}" height="${pixels}" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />` : ""}`;
     const override = bot && !agent ? issuePersonHandle(label) : "";
     const hydrate = (handle || override) && !ownAvatar
       ? ` data-issue-actor-avatar="${escapeHtml(handle || override)}"` : "";
@@ -1301,12 +1368,45 @@
     return png.length <= 400_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? png : "";
   }
 
+  const issueActorBatch = { names: new Set(), promise: null };
+
+  function issueActorKnown(key) {
+    issueActorBatch.names.add(key);
+    if (!issueActorBatch.promise) {
+      issueActorBatch.promise = new Promise((resolve) => setTimeout(resolve, 0)).then(async () => {
+        const names = [...issueActorBatch.names];
+        issueActorBatch.names = new Set();
+        issueActorBatch.promise = null;
+        const found = new Set();
+        for (let start = 0; start < names.length; start += USER_NAME_BATCH) {
+          const batch = names.slice(start, start + USER_NAME_BATCH);
+          try {
+            const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+              credentials: "omit",
+              headers: { accept: "application/json" },
+            });
+            const data = response.ok ? await response.json() : null;
+            if (!data || typeof data.names !== "object") return null;
+            Object.keys(data.names).forEach((name) => found.add(name.toLowerCase()));
+          } catch (_) {
+            return null;
+          }
+        }
+        return found;
+      });
+    }
+    return issueActorBatch.promise.then((found) => (found ? found.has(key) : true));
+  }
+
   function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
     if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "", linkable: false });
     if (!issueActorAccounts.has(key)) {
-      issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
+      issueActorAccounts.set(key, issueActorKnown(key)
+        .then((exists) => (exists
+          ? fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
+            .then((response) => (response.ok ? response.json() : null))
+          : { exists: false }))
         .then((profile) => ({
           exists: profile?.exists === true,
           png: profile?.exists === true && profile?.profilePrivate !== true
@@ -2129,6 +2229,14 @@
     const info = await instanceInfo();
     const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
     return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
+  function instancePluginOn(id) {
+    if (!instancePluginStates) {
+      void instanceInfo();
+      return false;
+    }
+    return instancePluginStates.get(id) === true;
   }
 
   function instancePluginOff(id) {
@@ -4409,6 +4517,14 @@
     setHint("Signing and sending…");
     try {
       const result = await submitWebIssueComment(repo, number, body);
+      if (result?.pending === "review") {
+        stopSpinner();
+        if (bodyInput) bodyInput.value = "";
+        actionButtons.forEach((button) => { button.disabled = false; });
+        form._issueSubmitAction = "comment";
+        setHint(moderationPendingMessage(result));
+        return;
+      }
       // Show the comment straight away: it only reaches the mirror once the
       // maintainer's node drains the inbox, so the timeline can't reload it yet.
       // The composer sits in its own row of the conversation, so find the
@@ -4595,13 +4711,14 @@
     if (detail?.kind !== "issues" || !detail.repo) return;
     const container = $("[data-repo-issues]");
     if (!container) return;
-    container.innerHTML = renderRepoRecordDetail(
+    paintRepoIssueDetail(container, renderRepoRecordDetail(
       detail.repo,
       "issues",
       detail.number,
       detail.parsed,
-    );
+    ));
     mountIssueStickyHeader(container);
+    decorateIssueModeration(container, detail.repo, detail.number, detail.parsed);
     window.lucide?.createIcons();
   }
 
@@ -4612,6 +4729,7 @@
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
     }
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
       return "Only the comment's author, the repository owner or an organization admin can change this comment.";
     }
@@ -6217,6 +6335,7 @@
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
       bindAccountPasswordControls();
+      bindAccountRecoveryControls();
       loadAccountSessions({ force: true });
       loadAccountDevices({ force: true });
       loadPatreonConnection();
@@ -7175,6 +7294,55 @@
     else if (!instanceThemeState.previewing) setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is the current theme.`);
   }
 
+  function bindAccountRecoveryControls() {
+    const button = $("[data-account-recovery-new]");
+    if (!button || button.dataset.controlsBound === "true") return;
+    button.dataset.controlsBound = "true";
+    const status = (text, bad) => {
+      const node = $("[data-account-recovery-status]");
+      if (!node) return;
+      node.textContent = text || "";
+      node.className = "min-h-4 text-xs " + (bad ? "text-destructive" : "text-muted-foreground");
+    };
+    button.addEventListener("click", async () => {
+      const field = $("[data-account-recovery-password]");
+      const password = field?.value || "";
+      if (!password) {
+        status("Enter your current password.", true);
+        field?.focus();
+        return;
+      }
+      button.disabled = true;
+      try {
+        const token = state.session?.sessionToken || "";
+        const response = await fetch("/api/accounts/recovery-code", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+            ...(token && token !== "cookie" ? { authorization: "Bearer " + token } : {}),
+          },
+          body: JSON.stringify({ password }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || !body.recoveryCode) throw new Error(body.error || `http_${response.status}`);
+        if (field) field.value = "";
+        const code = $("[data-account-recovery-code]");
+        if (code) {
+          code.textContent = String(body.recoveryCode);
+          code.hidden = false;
+        }
+        status("This is your new recovery code. The old one no longer works.");
+      } catch (error) {
+        status(ACCOUNT_PASSWORD_ERRORS[error.message] || "Could not make a new code. Try again.", true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
   // ---- Nodes & devices (account_devices registry) ----------------------------
   // The web dashboard is the source of truth for every node key bound to the
   // account (desktop and mobile). Listing is session-gated like sessions; the
@@ -8021,6 +8189,7 @@
     renderOrgDetail(
       root, name, profile, members, teams, repos, fediverse, botTokens);
     void loadOrgPullRules(root, name);
+    void loadOrgModeration(root, name);
   }
 
   async function loadOrgPullRules(root, name) {
@@ -8410,6 +8579,11 @@
         '<h4 class="text-sm font-semibold text-foreground">Pull request rules</h4>' +
         '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Requirements every pull request on this organization\'s linked repositories must meet: tests, documentation, size, commit format, secrets, protected paths, or a required AI model. Each repository can add its own rules in <span class="font-mono">.forkmesh/pull-rules.json</span>. A failing rule is flagged on the pull request with how to fix it; a blocking one also locks the merge.</p>' +
         '<div data-org-pull-rules class="mt-3 text-xs text-muted-foreground">Loading rules…</div>' +
+      "</section>" +
+      '<section class="mt-6" data-org-moderation-section hidden>' +
+        '<h4 class="text-sm font-semibold text-foreground">Moderation</h4>' +
+        '<p class="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">Posts waiting for review, the people who moderate this organization\'s repositories, and the accounts blocked from them.</p>' +
+        '<div data-org-moderation class="mt-3 text-xs text-muted-foreground">Loading moderation…</div>' +
       "</section>" +
       botTokenControls +
       (canManage
@@ -11485,7 +11659,9 @@
     renderProfileReferrals(session);
     if (!session?.emailVerified) {
       state.nodeNameAvailability.available = false;
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
     } else if (!($("[data-profile-rename-input]")?.value || "").trim()) {
       state.nodeNameAvailability.available = false;
       setRenameStatus("Enter a new username to check availability.", "");
@@ -12329,7 +12505,9 @@
       return;
     }
     if (!state.session?.emailVerified) {
-      setRenameStatus("Verify your email before changing your username.", "bad");
+      setRenameStatus(state.session?.email
+        ? "Verify your email before changing your username."
+        : "An account without an email keeps its username. Add and verify an email to change it.", "bad");
       updateRenameButton();
       return;
     }
@@ -16229,8 +16407,8 @@
     return { kind: preview[0], mime: preview[1], label: preview[2] };
   }
 
-  function repoRawUrl(repo, path) {
-    return repoLiveUrl(repo, "raw", { path });
+  function repoRawUrl(repo, path, ref = "") {
+    return repoLiveUrl(repo, "raw", ref ? { path, ref } : { path });
   }
 
   function repoLiveUrl(repo, action, params = {}) {
@@ -18391,6 +18569,57 @@
   const MD_DATA_IMAGE_URL =
     /^data:image\/(?:png|apng|jpeg|jpg|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/]+={0,2}$/i;
 
+  const MD_GITHUB_ATTACHMENT_URL =
+    /^https?:\/\/(?:github\.com\/(?:user-attachments\/|[^/?#]+\/[^/?#]+\/(?:assets|files)\/)|(?:private-)?user-images\.githubusercontent\.com\/|objects\.githubusercontent\.com\/)/i;
+  const MD_ATTACHMENT_PATH = /^\.forkmesh\/attachments\/[0-9a-f]{64}\.[a-z0-9]{1,8}$/;
+  const MD_ATTACHMENT_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', "#039": "'" };
+  const repoAttachmentFiles = new Map();
+
+  function mdAttachmentKey(url) {
+    return String(url || "").trim().replace(/&(amp|lt|gt|quot|#039);/g, (_, name) => MD_ATTACHMENT_ENTITIES[name]);
+  }
+
+  function mdAttachmentFile(url, context) {
+    if (!context?.repo) return null;
+    const entry = repoAttachmentFiles.get(repoKey(context.repo))?.get(mdAttachmentKey(url));
+    return entry && MD_ATTACHMENT_PATH.test(String(entry.path || "")) ? entry : null;
+  }
+
+  function mdAttachmentHref(entry, context) {
+    return escapeHtml(repoRawUrl(context.repo, entry.path));
+  }
+
+  function mdGithubImageHtml(alt, url) {
+    const source = String(url || "").trim();
+    const label = alt && alt.toLowerCase() !== "image" ? `${alt} (image on GitHub)` : "image on GitHub";
+    return `<a href="${mdSafeUrl(source)}" data-md-github-image="" title="${source}" class="dashboard-accent-link underline underline-offset-2 hover:text-foreground" target="_blank" rel="noopener noreferrer nofollow ugc">${label}</a>`;
+  }
+
+  function repoIssueAttachmentsPath(number) {
+    return `.forkmesh/attachments/issues/${Number(number)}.json`;
+  }
+
+  async function loadRepoIssueAttachments(repo, number) {
+    const path = repoIssueAttachmentsPath(number);
+    let files = null;
+    try {
+      const blobs = await fetchRepoBlobs(repo, [path]);
+      const doc = blobs[path] ? JSON.parse(blobText(blobs[path]) || "null") : null;
+      if (doc?.schema === "forkmesh-attachments-issue-v1" && doc.files && typeof doc.files === "object") files = doc.files;
+    } catch (_) {
+      files = null;
+    }
+    if (!files) return;
+    const key = repoKey(repo);
+    const known = repoAttachmentFiles.get(key) || new Map();
+    Object.entries(files).forEach(([url, entry]) => {
+      if (entry && typeof entry === "object" && typeof entry.path === "string") {
+        known.set(url, { path: entry.path, type: String(entry.type || "") });
+      }
+    });
+    repoAttachmentFiles.set(key, known);
+  }
+
   // A markdown image URL that is a bare repo path ("logo.png") is not a URL
   // this origin serves; it resolves against the repository the README came
   // from, through the same /raw route the file viewer shows images with.
@@ -18425,6 +18654,10 @@
   function mdLinkHtml(labelHtml, url, context) {
     const linkClass = "dashboard-accent-link underline underline-offset-2 hover:text-foreground";
     const source = String(url || "").trim();
+    const attachment = mdAttachmentFile(source, context);
+    if (attachment) {
+      return `<a href="${mdAttachmentHref(attachment, context)}" data-md-attachment="" class="${linkClass}" target="_blank" rel="noopener noreferrer nofollow ugc">${labelHtml}</a>`;
+    }
     if (source.startsWith("#")) {
       const anchor = mdHeadingSlug(source.slice(1));
       return `<a href="${source}" data-repo-markdown-anchor="${anchor}" class="${linkClass}">${labelHtml}</a>`;
@@ -18469,10 +18702,15 @@
     }
     const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
-    const source = mdImageSource(target, context);
+    const attachment = mdAttachmentFile(target, context);
+    if (attachment && !attachment.type.startsWith("image/")) return mdLinkHtml(alt || "attachment", target, context);
+    if (!attachment && typeof instancePluginOn === "function" && instancePluginOn("mirrored-attachments")
+        && MD_GITHUB_ATTACHMENT_URL.test(String(target || "").trim())) return mdGithubImageHtml(alt, target);
+    const source = attachment ? mdAttachmentHref(attachment, context) : mdImageSource(target, context);
     if (!source || source === "#") return alt;
     if (!hint && MD_GIPHY_GIF.test(source)) return mdGifHtml(alt, source);
-    const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
+    const svg = attachment ? attachment.type === "image/svg+xml"
+      : Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
     const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
     const external = /^https?:/i.test(source) ? ' referrerpolicy="no-referrer"' : "";
@@ -19353,6 +19591,13 @@
       .map((event) => String(event.target)));
     const commentCount = events.filter((event) => event?.type === "comment"
       && !deletedEventIds.has(String(event.id || ""))).length;
+    const recentCommenters = [];
+    for (let index = events.length - 1; index >= 0 && recentCommenters.length < 4; index -= 1) {
+      const event = events[index];
+      if (event?.type !== "comment" || deletedEventIds.has(String(event.id || ""))) continue;
+      const name = String(event.authorName || event.author || "").trim();
+      if (name && !recentCommenters.includes(name)) recentCommenters.push(name);
+    }
     return {
       number,
       events,
@@ -19367,6 +19612,7 @@
       meta: [status, labels, issue.milestone].filter(Boolean).join(" · "),
       body: effectiveOpen.body || issue.body || "",
       commentCount,
+      recentCommenters,
       wantsAgent: Boolean(issue.wantsAgent),
       milestone: String(issue.milestone || ""),
       priority: Number(issue.priority || 0) || 0,
@@ -19398,11 +19644,32 @@
     };
   }
 
+  const repoIssueSources = new Map();
+
+  function issueSourceUrlSafe(value) {
+    const url = String(value || "");
+    return url.length <= 500 && /^https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/.test(url) ? url : "";
+  }
+
+  function repoIssueSourceUrl(repo, number, items = []) {
+    const own = (Array.isArray(items) ? items : []).find((issue) => Number(issue?.number) === Number(number));
+    return issueSourceUrlSafe(own?.sourceUrl) || repoIssueSources.get(`${repoKey(repo)}#${Number(number)}`) || "";
+  }
+
+  function renderIssueSourceLink(url) {
+    const safe = issueSourceUrlSafe(url);
+    if (!safe) return "";
+    const host = safe.slice(8).split(/[/:]/)[0].toLowerCase();
+    const label = host === "github.com" ? "View on GitHub" : `View on ${host}`;
+    return `<a data-repo-issue-source href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer nofollow" aria-label="${escapeHtml(label)}" title="Open the original issue in a new tab" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70"><i data-lucide="external-link" class="h-4 w-4 text-muted-foreground"></i><span class="hidden sm:inline">${escapeHtml(label)}</span></a>`;
+  }
+
   async function fetchRepoIssueIndex(repo, options = {}) {
     try {
       const params = options.ref ? { ref: options.ref } : {};
       if (options.related) params.related = Number(options.related);
       const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", params));
+      if (data && typeof rememberForgeAvatars === "function") rememberForgeAvatars(repo, data.forgeAvatars, data.commit);
       if (!data || data.truncated || !Array.isArray(data.issues)) return null;
       return data;
     } catch (_) {
@@ -19723,6 +19990,9 @@
       || await fetchRepoIssueIndex(repo);
     if (indexed) {
       const items = indexed.issues.map(issueFromIndex);
+      if (number && issueSourceUrlSafe(indexed.sourceUrl)) {
+        repoIssueSources.set(`${repoKey(repo)}#${Number(number)}`, issueSourceUrlSafe(indexed.sourceUrl));
+      }
       state.issueRelationIndex = { key, at: Date.now(), items };
       return items;
     }
@@ -19756,6 +20026,7 @@
       issueDependencies: dependencies,
       issueSubIssues: subIssues,
       issueMentions: issueMentionsOf(relationIndex, number),
+      issueSourceUrl: repoIssueSourceUrl(repo, number, relationIndex),
     };
   }
 
@@ -19774,7 +20045,7 @@
       if (!repoIssueDetailBusy(container)) {
         Object.assign(parsed, relations);
         const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
-        container.innerHTML = renderRepoRecordDetail(repo, "issues", number, parsed);
+        paintRepoIssueDetail(container, renderRepoRecordDetail(repo, "issues", number, parsed));
         mountIssueStickyHeader(container);
         if (draft) {
           const body = container.querySelector("[data-repo-issue-comment-body]");
@@ -20119,7 +20390,7 @@
     const fullWhen = formatRecordDateTime(ev.ts);
     const body = String(ev.body || "").trim();
     return `
-      <div data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
+      <div${ev.id ? ` id="issuecomment-${escapeHtml(ev.id)}"` : ""} data-repo-issue-comment class="relative grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(who, ev.author, "h-10 w-10")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
@@ -20173,6 +20444,10 @@
   // detail view shows every action stored in the issue JSON (adhoc #45). The
   // opening event is omitted here since it's already shown as the issue body.
   function renderIssueTimeline(events) {
+    return issueTimelineEntries(events, arguments[1]).map((entry) => entry.html()).join("");
+  }
+
+  function issueTimelineEntries(events) {
     const options = arguments[1] || {};
     // Mentions from other issues join the history at the time they were
     // written. They are derived rows, flagged so no signed event is mistaken
@@ -20208,9 +20483,10 @@
         const href = options.repo
           ? repoRecordUrl(options.repo, "issues", ev.sourceNumber)
           : `#issue-${ev.sourceNumber}`;
-        items.push(renderIssueTimelineEvent("link", who, ev.author,
+        const html = renderIssueTimelineEvent("link", who, ev.author,
           `<span>mentioned this in</span><a href="${escapeHtml(href)}" class="min-w-0 font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(ev.sourceNumber)} ${escapeHtml(ev.sourceTitle || `issue #${ev.sourceNumber}`)}</a>${String(ev.sourceStatus).toLowerCase() === "closed" ? "<span>(closed)</span>" : ""}`,
-          ev.ts, `data-repo-issue-mention="${escapeHtml(ev.sourceNumber)}"`));
+          ev.ts, `data-repo-issue-mention="${escapeHtml(ev.sourceNumber)}"`);
+        items.push({ id: "", comment: false, html: () => html });
         continue;
       }
       if (ev.type === "comment") {
@@ -20223,28 +20499,198 @@
             const href = options.repo ? repoRecordUrl(options.repo, "pulls", match[2]) : `#pull-${match[2]}`;
             return `<span>${match[1] ? "unlinked" : "linked"} pull request</span><a href="${escapeHtml(href)}" class="font-semibold text-foreground hover:text-[var(--dashboard-link)] hover:underline">#${escapeHtml(match[2])}</a>`;
           };
-          items.push(renderIssueTimelineEvent(links.every((match) => match[1]) ? "unlink" : "git-pull-request", who, ev.author,
+          const html = renderIssueTimelineEvent(links.every((match) => match[1]) ? "unlink" : "git-pull-request", who, ev.author,
             links.map(linkHtml).join('<span aria-hidden="true">,</span>'), ev.ts,
-            `data-repo-issue-development-event="${escapeHtml(ev.id || "")}"`));
+            `data-repo-issue-development-event="${escapeHtml(ev.id || "")}"`);
+          items.push({ id: "", comment: false, html: () => html });
           continue;
         }
-        ev = {
-          ...ev,
-          ...(edit ? { body: edit.body } : {}),
-          _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
-          _edited: Boolean(edit),
-          _reactions: ev.id
-            ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(ev.id),
-              reactionsByTarget.get(String(ev.id)), "px-4 pb-3")
-            : "",
-        };
-        items.push(renderIssueTimelineComment(ev));
+        const comment = ev;
+        items.push({
+          id: String(ev.id || ""),
+          comment: true,
+          html: () => renderIssueTimelineComment({
+            ...comment,
+            ...(edit ? { body: edit.body } : {}),
+            _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
+            _edited: Boolean(edit),
+            _reactions: comment.id
+              ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(comment.id),
+                reactionsByTarget.get(String(comment.id)), "px-4 pb-3")
+              : "",
+          }),
+        });
         continue;
       }
-      items.push(renderIssueTimelineEvent(issueEventIcon(ev.type), who, ev.author,
-        issueEventDescriptionHtml(ev), ev.ts));
+      const html = renderIssueTimelineEvent(issueEventIcon(ev.type), who, ev.author,
+        issueEventDescriptionHtml(ev), ev.ts);
+      items.push({ id: "", comment: false, html: () => html });
     }
-    return items.join("");
+    return items;
+  }
+
+  const ISSUE_TIMELINE_FIRST = 10;
+  const ISSUE_TIMELINE_BATCH = 15;
+  const ISSUE_DETAIL_KEPT_BLOCKS = [
+    "[data-repo-issue-sticky]", "[data-repo-record-hero]", "[data-repo-issue-opening]",
+    "[data-repo-record-sidebar]", "[data-repo-federated-thread]"];
+  const issueTimelineSignatures = new WeakMap();
+  let issueTimelineStream = null;
+  let issueTimelineScrolled = "";
+
+  function issueTimelineMoreHtml(rest) {
+    if (!rest.length) return "";
+    const comments = rest.filter((entry) => entry.comment).length;
+    const count = comments || rest.length;
+    const noun = `${comments ? "comment" : "event"}${count === 1 ? "" : "s"}`;
+    const bar = (width) => `<span class="block h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted-foreground/20 motion-reduce:animate-none"></span><span class="block h-3 ${width} max-w-full animate-pulse rounded bg-muted-foreground/20 motion-reduce:animate-none"></span>`;
+    return `<div data-repo-issue-more data-remaining="${rest.length}" role="status" aria-live="polite" class="grid gap-2 sm:ml-14"><div aria-hidden="true" class="flex items-center gap-2 py-1.5">${bar("w-72")}</div><div aria-hidden="true" class="flex items-center gap-2 py-1.5">${bar("w-56")}</div><p class="py-1.5 text-[14px] text-muted-foreground">Loading ${formatCount(count)} more ${noun}…</p></div>`;
+  }
+
+  function issueTimelineHashIndex(entries) {
+    const match = /^#issuecomment-(.+)$/.exec(String(location.hash || ""));
+    if (!match) return -1;
+    let id = match[1];
+    try { id = decodeURIComponent(id); } catch (_) { id = match[1]; }
+    return entries.findIndex((entry) => entry.comment
+      && (entry.id === id || entry.id === `forge-github-comment-${id}`));
+  }
+
+  function issueTimelineEagerCount(number, entries) {
+    const target = issueTimelineHashIndex(entries);
+    return Math.min(Math.max(ISSUE_TIMELINE_FIRST, target + 1), entries.length);
+  }
+
+  function queueIssueTimelineRest(number, entries, eager) {
+    const job = { number: String(number), rest: entries.slice(eager), next: 0, more: null, shown: [], added: 0 };
+    issueTimelineStream = job;
+    if (typeof window === "undefined") return;
+    const target = entries[issueTimelineHashIndex(entries)];
+    const scrollKey = target ? `${location.pathname}${location.hash}` : "";
+    if (target && issueTimelineScrolled !== scrollKey) {
+      issueTimelineScrolled = scrollKey;
+      window.setTimeout(() => {
+        document.getElementById(`issuecomment-${target.id}`)?.scrollIntoView({ block: "start" });
+      }, 0);
+    }
+    if (job.rest.length) scheduleIssueTimelineStream(job);
+  }
+
+  function scheduleIssueTimelineStream(job) {
+    const run = () => runIssueTimelineStream(job);
+    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(run, { timeout: 120 });
+    else window.setTimeout(run, 16);
+  }
+
+  function runIssueTimelineStream(job) {
+    if (issueTimelineStream !== job) return;
+    if (!job.more) {
+      const more = document.querySelector('[data-repo-record-detail="issues"] [data-repo-issue-timeline] > [data-repo-issue-more]');
+      if (!more || more.dataset.remaining !== String(job.rest.length)
+          || String(state.repoRecordDetail?.number) !== job.number) return;
+      job.more = more;
+    }
+    if (!job.more.isConnected) return;
+    const batch = job.rest.slice(job.next, job.next + ISSUE_TIMELINE_BATCH);
+    job.next += batch.length;
+    job.added += placeIssueTimelineItems(job, batch.map((entry) => entry.html()).join(""));
+    if (job.next < job.rest.length) {
+      scheduleIssueTimelineStream(job);
+      return;
+    }
+    job.shown.splice(0).forEach((node) => node.remove());
+    job.more.remove();
+    if (job.added) window.lucide?.createIcons();
+  }
+
+  function placeIssueTimelineItems(job, html) {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    let added = 0;
+    Array.from(template.content.children).forEach((node) => {
+      const signature = issueNodeSignature(node);
+      const at = job.shown.slice(0, ISSUE_TIMELINE_BATCH)
+        .findIndex((shown) => issueTimelineSignatures.get(shown) === signature);
+      if (at >= 0) {
+        job.shown.splice(0, at).forEach((stale) => stale.remove());
+        job.shown.shift();
+        return;
+      }
+      issueTimelineSignatures.set(node, signature);
+      (job.shown[0] || job.more).before(node);
+      added += 1;
+    });
+    return added;
+  }
+
+  function issueNodeSignature(node) {
+    let copy = node;
+    if (node.querySelector("svg.lucide")) {
+      copy = node.cloneNode(true);
+      copy.querySelectorAll("svg.lucide").forEach((svg) => {
+        const classes = Array.from(svg.classList);
+        const icon = document.createElement("i");
+        icon.setAttribute("data-lucide", (classes.find((name) => name.startsWith("lucide-")) || "").slice(7));
+        icon.setAttribute("class", classes.filter((name) => name !== "lucide" && !name.startsWith("lucide-")).join(" "));
+        svg.replaceWith(icon);
+      });
+    }
+    return copy.outerHTML.replace(/\s+/g, " ").trim();
+  }
+
+  function signIssueDetail(article) {
+    if (!article) return;
+    ISSUE_DETAIL_KEPT_BLOCKS.forEach((selector) => {
+      const block = article.querySelector(selector);
+      if (block) issueTimelineSignatures.set(block, issueNodeSignature(block));
+    });
+    Array.from(article.querySelector("[data-repo-issue-timeline]")?.children || [])
+      .filter((node) => !node.matches("[data-repo-issue-more]"))
+      .forEach((node) => issueTimelineSignatures.set(node, issueNodeSignature(node)));
+  }
+
+  function paintRepoIssueDetail(container, html) {
+    const article = '[data-repo-record-detail="issues"]';
+    const old = container.querySelector(`:scope > article${article}`);
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const fresh = template.content.querySelector(`article${article}`);
+    if (fresh) {
+      ISSUE_DETAIL_KEPT_BLOCKS.forEach((selector) => {
+        const after = fresh.querySelector(selector);
+        if (!after) return;
+        const before = old?.querySelector(selector);
+        const signature = issueNodeSignature(after);
+        if (before && issueTimelineSignatures.get(before) === signature) after.replaceWith(before);
+        else issueTimelineSignatures.set(after, signature);
+      });
+      const kept = new Map();
+      Array.from(old?.querySelector("[data-repo-issue-timeline]")?.children || []).forEach((node) => {
+        const signature = issueTimelineSignatures.get(node);
+        if (!signature) return;
+        if (!kept.has(signature)) kept.set(signature, []);
+        kept.get(signature).push(node);
+      });
+      const used = new Set();
+      Array.from(fresh.querySelector("[data-repo-issue-timeline]")?.children || []).forEach((node) => {
+        if (node.matches("[data-repo-issue-more]")) return;
+        const signature = issueNodeSignature(node);
+        const match = kept.get(signature)?.shift();
+        if (match) {
+          used.add(match);
+          node.replaceWith(match);
+        } else issueTimelineSignatures.set(node, signature);
+      });
+      const more = fresh.querySelector("[data-repo-issue-timeline] > [data-repo-issue-more]");
+      const job = issueTimelineStream;
+      if (more && job && !job.more && job.number === String(state.repoRecordDetail?.number)) {
+        job.shown = Array.from(old?.querySelector("[data-repo-issue-timeline]")?.children || [])
+          .filter((node) => !used.has(node) && issueTimelineSignatures.has(node));
+        job.shown.forEach((node) => more.before(node));
+        more.hidden = job.shown.length >= job.rest.length;
+      }
+    }
+    container.replaceChildren(template.content);
   }
 
   function projectJsonPath(number) {
@@ -21290,6 +21736,15 @@
     return `<span data-repo-issue-row-assignees class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml([item.wantsAgent ? "Agent" : "", ...assignees].filter(Boolean).join(", "))}">${faces.join("")}</span>`;
   }
 
+  function renderIssueRowCommenters(item) {
+    if (!instancePluginOn("forum-list")) return "";
+    const names = (Array.isArray(item.recentCommenters) ? item.recentCommenters : [])
+      .map((name) => String(name || "").trim()).filter(Boolean).slice(0, 4);
+    if (!names.length) return "";
+    const shown = names.map((name) => forgeIdentity(name) ? `@${forgeIdentity(name).login}` : name);
+    return `<span data-repo-issue-row-commenters class="flex items-center justify-end [&>span]:-ml-1.5 [&>span]:ring-2 [&>span]:ring-[rgb(var(--dashboard-canvas-rgb))]" title="${escapeHtml(`Recent comments: ${shown.join(", ")}`)}">${names.map((name) => issueActorAvatarHtml(name, name, "h-5 w-5", false, false)).join("")}</span>`;
+  }
+
   function pullStateIconHtml(stateLabel, extra = "") {
     const value = String(stateLabel || "open").toLowerCase();
     const [icon, tone] = value === "open" ? ["git-pull-request", "text-[var(--dashboard-open)]"]
@@ -21381,6 +21836,7 @@
             <span class="hidden w-14 justify-end sm:flex">${Number(item.priority) > 0 ? `<span class="rounded-md border border-border px-1.5 font-mono text-[12px] leading-[18px] text-muted-foreground" title="Priority ${Number(item.priority)} — 1 is highest">P${Number(item.priority)}</span>` : ""}</span>
             <span class="flex w-12 justify-end">${commentCount ? `<span class="inline-flex items-center gap-1 leading-5 hover:text-[var(--dashboard-link)]" title="${formatCount(commentCount)} comment${commentCount === 1 ? "" : "s"}"><i data-lucide="message-square" class="h-4 w-4"></i>${formatCount(commentCount)}</span>` : ""}</span>
             <span class="hidden w-[4.5rem] justify-end sm:flex">${renderIssueRowAvatars(item)}</span>
+            <span class="hidden w-16 justify-end md:flex">${renderIssueRowCommenters(item)}</span>
           </span>` : `
           ${pullStateIconHtml(stateLabel, "mt-1")}
           <span class="min-w-0">
@@ -26084,12 +26540,28 @@
     "merge_queue_full",
   ]);
   const PULL_MUTATION_WAIT_MS = 150000;
+  const PULL_MUTATION_POLL_MS = [1000, 2000, 3000];
+
+  function repoPullMutationHidden() {
+    return globalThis.document?.visibilityState === "hidden";
+  }
+
+  const PULL_MUTATION_HIDDEN_POLL_MS = 10000;
+
+  function waitForRepoPullMutationVisible() {
+    if (!repoPullMutationHidden()) return Promise.resolve(0);
+    return new Promise((resolve) => {
+      window.setTimeout(() => resolve(PULL_MUTATION_HIDDEN_POLL_MS), PULL_MUTATION_HIDDEN_POLL_MS);
+    });
+  }
 
   // Submits one exact-OID pull mutation and follows it to an answer. Resolves
   // to the last response; `waiting` means the time budget ran out first.
   async function postRepoPullMutation(endpoint, request, onWait) {
-    const started = Date.now();
+    let started = Date.now();
     let backoff = 1000;
+    let polls = 0;
+    let phase = "";
     for (;;) {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -26113,12 +26585,32 @@
       if (Date.now() - started >= PULL_MUTATION_WAIT_MS) {
         return { response, payload, waiting: true };
       }
-      onWait?.(processing);
-      await new Promise((resolve) => window.setTimeout(
-        resolve, processing ? 750 : backoff,
-      ));
+      const nextPhase = processing ? String(payload?.progress?.phase || "claimed") : "";
+      if (nextPhase !== phase) {
+        phase = nextPhase;
+        polls = 0;
+      }
+      onWait?.(processing, payload);
+      const delay = processing
+        ? PULL_MUTATION_POLL_MS[Math.min(polls, PULL_MUTATION_POLL_MS.length - 1)]
+        : backoff;
+      polls += 1;
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+      started += await waitForRepoPullMutationVisible();
       if (!processing) backoff = Math.min(backoff * 2, 8000);
     }
+  }
+
+  function repoPullMutationWaitState(current, accepted, payload) {
+    const progress = payload?.progress && typeof payload.progress === "object" ? payload.progress : null;
+    const offline = !accepted && payload?.reason === "job_node_offline";
+    return {
+      ...current,
+      queued: !accepted && !offline,
+      queuedSince: !accepted && !offline ? current.queuedSince || Date.now() : 0,
+      offline,
+      progress: progress || (accepted || offline ? current.progress || null : null),
+    };
   }
 
   const PULL_MERGE_REPIN_ERRORS = new Set(["stale_pull_metadata", "stale_base"]);
@@ -26384,6 +26876,8 @@
       branchRow.title = `Up to date with ${baseBranch}`;
       branchRow.detail = `This branch already contains ${baseBranch} and merges cleanly.`;
     }
+    const updateProgress = repoPullMutationProgressModel(repo, "update", update, baseBranch, headBranch);
+    if (updateProgress) branchRow.progress = updateProgress;
     if (update.state === "updated") {
       const at = update.at ? new Date(update.at) : null;
       const when = at ? ` · ${at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : "";
@@ -26423,6 +26917,8 @@
     const merged = merge.state === "merged" || status === "merged";
     const busy = merge.state === "processing";
     const footer = { tone: "muted", text: "", method: "merge" };
+    const mergeProgress = repoPullMutationProgressModel(repo, "merge", merge, baseBranch, headBranch);
+    if (mergeProgress) footer.progress = mergeProgress;
     if (status !== "open" && !merged) {
       footer.tone = "muted";
       footer.text = "This pull request is closed.";
@@ -26481,6 +26977,221 @@
     };
   }
 
+  const PULL_MUTATION_STEPS = {
+    merge: ["queued", "claimed", "fetching", "verifying", "checking", "testing", "committing", "pushing", "publishing"],
+    update: ["queued", "claimed", "fetching", "verifying", "testing", "committing", "pushing", "publishing"],
+  };
+  const PULL_MUTATION_WAITING_NOTICE_MS = 8000;
+  const PULL_MUTATION_FAILED_PHASE = {
+    stale_pull_metadata: "fetching",
+    stale_base: "fetching",
+    stale_head: "verifying",
+    review_required: "verifying",
+    checks_required: "checking",
+    rules_required: "checking",
+    merge_conflict: "testing",
+    already_current: "verifying",
+  };
+
+  function pullMutationStepText(kind, phase, names) {
+    const merge = kind === "merge";
+    const texts = {
+      queued: ["Wait for an online mirror", "Waiting for an online mirror…"],
+      claimed: [names.node ? `Picked up by ${names.node}` : "Picked up by a mirror", names.node ? `${names.node} picked this up…` : "A mirror picked this up…"],
+      fetching: ["Fetch base and head", "Reading the base and head commits…"],
+      verifying: merge
+        ? ["Verify the reviewed commits", "Verifying the reviewed commits…"]
+        : ["Verify the branch tips", "Verifying the branch tips…"],
+      checking: ["Branch protection and required checks", "Checking branch protection and required checks…"],
+      testing: ["Test merge (conflict check)", "Test-merging to check for conflicts…"],
+      committing: merge
+        ? ["Create the merge commit", "Creating the merge commit…"]
+        : [`Merge ${names.base} into the branch`, `Merging ${names.base} into ${names.head}…`],
+      hooks: ["Pre-merge hooks", "Running pre-merge hooks…"],
+      pushing: merge
+        ? [`Merge into ${names.base}`, `Merging into ${names.base}…`]
+        : [`Update ${names.head}`, `Updating ${names.head}…`],
+      publishing: ["Publish to mirrors and the catalog", "Publishing…"],
+    };
+    const [label, now] = texts[phase] || [phase, "Working…"];
+    return { label, now };
+  }
+
+  function formatRepoPullElapsed(ms) {
+    const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  }
+
+  function formatRepoPullStepTime(ms) {
+    if (!(ms >= 0)) return "";
+    return ms < 10000 ? `${(ms / 1000).toFixed(1)}s` : formatRepoPullElapsed(ms);
+  }
+
+  function repoPullMutationProgressModel(repo, kind, job, baseBranch, headBranch, now = Date.now()) {
+    const terminal = kind === "merge" ? "merged" : "updated";
+    const running = job?.state === "processing" && Boolean(job.request);
+    const ended = job?.state === terminal || (job?.state === "failed" && job.progress);
+    if (!running && !ended) return null;
+    const progress = job.progress && typeof job.progress === "object" ? job.progress : {};
+    const node = String(progress.node || "").slice(0, 64);
+    const names = { base: baseBranch, head: headBranch, node };
+    const order = PULL_MUTATION_STEPS[kind];
+    const reported = Array.isArray(progress.steps) ? progress.steps : [];
+    const at = {};
+    reported.forEach((step) => {
+      if (order.includes(step?.phase) && Number.isFinite(step.at) && !(step.phase in at)) at[step.phase] = step.at;
+    });
+    let phase = order.includes(progress.phase) ? progress.phase : "";
+    if (!phase) phase = running && job.queued !== false ? "queued" : "claimed";
+    const failedAt = PULL_MUTATION_FAILED_PHASE[job.error];
+    if (job.state === "failed" && order.includes(failedAt) && order.indexOf(failedAt) > order.indexOf(phase)) phase = failedAt;
+    if (job.state === terminal) phase = "";
+    const index = phase ? order.indexOf(phase) : order.length;
+    const failed = job.state === "failed";
+    const steps = order.map((step, position) => {
+      const later = order.slice(position + 1).find((next) => next in at);
+      return {
+        phase: step,
+        label: pullMutationStepText(kind, step, names).label,
+        state: position < index ? "done" : position === index ? (failed ? "failed" : "current") : "todo",
+        ms: step in at && later ? at[later] - at[step] : null,
+      };
+    });
+    const since = Number(job.startedAt) || now;
+    const model = { kind, node, steps, since, state: "running", headline: "", detail: "", lateAfter: 0, lateText: "", commit: null };
+    if (job.state === terminal) {
+      model.state = "done";
+      model.headline = kind === "merge" ? `Merged into ${baseBranch}` : `Updated ${headBranch} with ${baseBranch}`;
+      if (kind === "merge") model.detail = "The merged state is pinned as current and every mirror is syncing it.";
+      const oid = immutableGitCommit(job.commit);
+      if (oid) model.commit = { oid, label: kind === "merge" ? "Merged as" : "New head", href: repoCommitUrl(repo, oid) };
+      return model;
+    }
+    if (failed) {
+      model.state = "failed";
+      model.headline = job.message || "The mirror could not finish this.";
+      return model;
+    }
+    if (job.offline) {
+      model.state = "waiting";
+      model.headline = node
+        ? `Waiting for ${node} to answer again…`
+        : "Waiting for the mirror that took this to answer again…";
+      model.detail = "Only the mirror that took this job may finish it, so nothing can happen twice. It is asked again automatically while this page is open; on a single-server instance the node may be restarting.";
+      return model;
+    }
+    if (phase === "queued" && job.queued !== true) {
+      model.headline = "Handing this to an online mirror…";
+      return model;
+    }
+    if (phase === "queued") {
+      model.state = "waiting";
+      model.headline = "Waiting for an online mirror…";
+      model.lateAfter = Math.max(0, (Number(job.queuedSince) || since) + PULL_MUTATION_WAITING_NOTICE_MS - since);
+      model.lateText = "Waiting for an online mirror to pick this up (no mirror has accepted it yet).";
+      model.detail = "This keeps retrying automatically while the page is open, and a retry can never apply it twice. On a single-server instance the node may be restarting; it picks this up as soon as it is back.";
+      if (now - (Number(job.queuedSince) || since) >= PULL_MUTATION_WAITING_NOTICE_MS) model.headline = model.lateText;
+      return model;
+    }
+    model.headline = pullMutationStepText(kind, phase, names).now;
+    return model;
+  }
+
+  function renderRepoPullMutationProgress(model) {
+    if (!model) return "";
+    const icon = { done: "check", failed: "x", current: "", todo: "" };
+    const steps = model.steps.map((step) => `
+          <li class="fm-merge-step" data-step="${escapeHtml(step.phase)}" data-state="${escapeHtml(step.state)}">
+            <span class="fm-merge-step-mark" aria-hidden="true">${icon[step.state] ? `<i data-lucide="${icon[step.state]}"></i>` : ""}</span>
+            <span class="fm-merge-step-label">${escapeHtml(step.label)}<span class="sr-only">${step.state === "done" ? " (done)" : step.state === "current" ? " (in progress)" : step.state === "failed" ? " (failed)" : ""}</span></span>
+            ${step.ms !== null ? `<span class="fm-merge-step-time">${escapeHtml(formatRepoPullStepTime(step.ms))}</span>` : ""}
+          </li>`).join("");
+    const live = model.state === "running" || model.state === "waiting";
+    const elapsed = live
+      ? `<span class="fm-merge-progress-elapsed" data-repo-pull-merge-elapsed data-since="${escapeHtml(String(model.since))}" aria-hidden="true">${escapeHtml(formatRepoPullElapsed(Date.now() - model.since))}</span>`
+      : "";
+    const late = model.lateText
+      ? ` data-late-after="${escapeHtml(String(model.lateAfter))}" data-late-since="${escapeHtml(String(model.since))}" data-late-text="${escapeHtml(model.lateText)}"`
+      : "";
+    const mark = model.state === "done"
+      ? '<span class="fm-merge-progress-mark" data-state="done" aria-hidden="true"><i data-lucide="check"></i></span>'
+      : model.state === "failed"
+        ? '<span class="fm-merge-progress-mark" data-state="failed" aria-hidden="true"><i data-lucide="x"></i></span>'
+        : '<span class="fm-merge-spinner" aria-hidden="true"></span>';
+    const commit = model.commit
+      ? `<p class="fm-merge-progress-result">${escapeHtml(model.commit.label)} <a href="${escapeHtml(model.commit.href)}" data-dashboard-link><code>${escapeHtml(model.commit.oid.slice(0, 7))}</code></a></p>`
+      : "";
+    return `
+      <div class="fm-merge-progress" data-repo-pull-merge-progress="${escapeHtml(model.kind)}" data-state="${escapeHtml(model.state)}">
+        <div class="fm-merge-progress-head">
+          ${mark}
+          <p class="fm-merge-progress-now" data-repo-pull-merge-now role="status" aria-live="polite"${late}>${escapeHtml(model.headline)}</p>
+          ${elapsed}
+        </div>
+        <div data-repo-pull-merge-progress-body>
+          ${model.detail ? `<p class="fm-merge-progress-detail">${escapeHtml(model.detail)}</p>` : ""}
+          ${commit}
+          <ol class="fm-merge-steps" aria-label="Steps">${steps}</ol>
+          ${model.node ? `<p class="fm-merge-progress-node">Mirror <code>${escapeHtml(model.node)}</code></p>` : ""}
+        </div>
+      </div>`;
+  }
+
+  function patchRepoPullMutationProgress(repo, number, parsed, kind) {
+    if (!pullDetailIsCurrent(repo, number)) return;
+    const slot = document.querySelector("[data-repo-pull-merge-slot]");
+    const block = slot?.querySelector?.(`[data-repo-pull-merge-progress="${kind}"]`);
+    const model = block ? repoPullMergeModel(repo, number, parsed) : null;
+    const progress = kind === "merge"
+      ? model?.footer.progress
+      : model?.rows.find((row) => row.id === "branch")?.progress;
+    if (!block || !progress) {
+      updateRepoPullMergePanel(repo, number, parsed);
+      return;
+    }
+    const scratch = document.createElement("div");
+    scratch.innerHTML = renderRepoPullMutationProgress(progress);
+    const fresh = scratch.firstElementChild;
+    const now = block.querySelector("[data-repo-pull-merge-now]");
+    const freshNow = fresh.querySelector("[data-repo-pull-merge-now]");
+    if (now.textContent !== freshNow.textContent) now.textContent = freshNow.textContent;
+    ["data-late-after", "data-late-since", "data-late-text"].forEach((name) => {
+      if (freshNow.hasAttribute(name)) now.setAttribute(name, freshNow.getAttribute(name));
+      else now.removeAttribute(name);
+    });
+    block.dataset.state = fresh.dataset.state;
+    block.querySelector("[data-repo-pull-merge-progress-body]").innerHTML = fresh.querySelector("[data-repo-pull-merge-progress-body]").innerHTML;
+    window.lucide?.createIcons();
+    startRepoPullMutationTicker();
+  }
+
+  let repoPullMutationTicker = 0;
+
+  function tickRepoPullMutationProgress() {
+    const clocks = document.querySelectorAll("[data-repo-pull-merge-elapsed]");
+    if (!clocks.length) {
+      window.clearInterval(repoPullMutationTicker);
+      repoPullMutationTicker = 0;
+      return;
+    }
+    const now = Date.now();
+    clocks.forEach((clock) => {
+      const text = formatRepoPullElapsed(now - Number(clock.dataset.since || now));
+      if (clock.textContent !== text) clock.textContent = text;
+    });
+    document.querySelectorAll("[data-late-text]").forEach((line) => {
+      const due = Number(line.dataset.lateSince || now) + Number(line.dataset.lateAfter || 0);
+      if (now >= due && line.textContent !== line.dataset.lateText) line.textContent = line.dataset.lateText;
+    });
+  }
+
+  function startRepoPullMutationTicker() {
+    if (repoPullMutationTicker || typeof window.setInterval !== "function") return;
+    if (!document.querySelector?.("[data-repo-pull-merge-elapsed]")) return;
+    repoPullMutationTicker = window.setInterval(tickRepoPullMutationProgress, 1000);
+  }
+
   const PULL_MERGE_ROW_ICONS = {
     good: "check-circle-2",
     warn: "alert-circle",
@@ -26532,7 +27243,7 @@
             <p class="fm-merge-row-title">${escapeHtml(row.title)}</p>
             ${meta}
             <p class="fm-merge-row-detail">${escapeHtml(row.detail)}</p>
-            ${conflicts}${checkList}${note}
+            ${conflicts}${checkList}${row.progress ? renderRepoPullMutationProgress(row.progress) : ""}${note}
           </div>
           ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
         </div>`;
@@ -26562,8 +27273,8 @@
       <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
         ${rows}
         ${model.open ? renderRepoPullQuickReplies(repo, number, parsed) : ""}
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
-          <p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>
+        <div data-repo-pull-merge-panel ${footer.progress ? "" : 'role="status" aria-live="polite" aria-atomic="true" '}aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
+          ${footer.progress ? renderRepoPullMutationProgress(footer.progress) : `<p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>`}
           ${changes}
           ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
         </div>
@@ -26661,6 +27372,7 @@
       restored.setSelectionRange(focused.start, focused.end);
     }
     window.lucide?.createIcons();
+    startRepoPullMutationTicker();
   }
 
   const PULL_QUICK_REPLY_PATH = ".forkmesh/review-replies.json";
@@ -27179,11 +27891,10 @@
     const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/merge`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request, (accepted) => {
+      result = await postRepoPullMutation(endpoint, request, (accepted, payload) => {
         if (parsed.pullMerge?.request?.requestId !== request.requestId) return;
-        if (Boolean(parsed.pullMerge.queued) === !accepted) return;
-        parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };
-        updateRepoPullMergePanel(repo, number, parsed);
+        parsed.pullMerge = repoPullMutationWaitState(parsed.pullMerge, accepted, payload);
+        patchRepoPullMutationProgress(repo, number, parsed, "merge");
       });
     } catch (_) {
       return {
@@ -27211,7 +27922,7 @@
       && immutableGitCommit(payload.head) === request.expectedHeadOid
       && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
     ) {
-      return { state: "merged", request };
+      return { state: "merged", request, commit: immutableGitCommit(payload.baseAfter) };
     }
     const error = String(payload?.error || "");
     return {
@@ -27237,7 +27948,8 @@
     const previous = parsed.pullMerge || {};
     if (previous.state === "processing") return;
     let request = previous.resumable === true ? previous.request : null;
-    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request };
+    const startedAt = Date.now();
+    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request, startedAt };
     updateRepoPullMergePanel(repo, number, parsed);
     if (!request) {
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
@@ -27256,9 +27968,10 @@
     }
     let outcome = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      parsed.pullMerge = { state: "processing", phase: "", request };
+      parsed.pullMerge = { state: "processing", phase: "", request, startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
       outcome = await sendRepoPullMerge(repo, number, parsed, request);
+      outcome = { ...outcome, progress: parsed.pullMerge?.progress || null, startedAt };
       if (
         attempt > 0
         || outcome.state !== "failed"
@@ -27267,7 +27980,7 @@
       ) {
         break;
       }
-      parsed.pullMerge = { state: "processing", phase: "repinning" };
+      parsed.pullMerge = { state: "processing", phase: "repinning", startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
       if (!pullDetailIsCurrent(repo, number)) return;
@@ -27315,11 +28028,11 @@
     };
   }
 
-  async function sendRepoPullUpdate(repo, request) {
+  async function sendRepoPullUpdate(repo, request, onWait) {
     const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/update`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request);
+      result = await postRepoPullMutation(endpoint, request, onWait);
     } catch (_) {
       return {
         state: "failed",
@@ -27347,7 +28060,7 @@
       && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
       && immutableGitCommit(payload.headAfter)
     ) {
-      return { state: "updated", request, at: Date.now() };
+      return { state: "updated", request, at: Date.now(), commit: immutableGitCommit(payload.headAfter) };
     }
     const error = String(payload?.error || "");
     return {
@@ -27368,7 +28081,8 @@
     const previous = parsed.pullUpdate || {};
     if (previous.state === "processing") return;
     let request = previous.resumable === true ? previous.request : null;
-    parsed.pullUpdate = { state: "processing", request };
+    const startedAt = Date.now();
+    parsed.pullUpdate = { state: "processing", request, startedAt };
     updateRepoPullMergePanel(repo, number, parsed);
     if (!request) {
       const changes = await refreshRepoPullMergePins(repo, number, parsed);
@@ -27389,9 +28103,14 @@
     }
     let outcome = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      parsed.pullUpdate = { state: "processing", request };
+      parsed.pullUpdate = { state: "processing", request, startedAt };
       updateRepoPullMergePanel(repo, number, parsed);
-      outcome = await sendRepoPullUpdate(repo, request);
+      outcome = await sendRepoPullUpdate(repo, request, (accepted, payload) => {
+        if (parsed.pullUpdate?.request?.requestId !== request.requestId) return;
+        parsed.pullUpdate = repoPullMutationWaitState(parsed.pullUpdate, accepted, payload);
+        patchRepoPullMutationProgress(repo, number, parsed, "update");
+      });
+      outcome = { ...outcome, progress: parsed.pullUpdate?.progress || null, startedAt };
       if (
         attempt > 0
         || outcome.state !== "failed"
@@ -28408,12 +29127,16 @@ Your reply
     const stateLabel = closed ? "Closed" : status === "open" ? "Open" : status.charAt(0).toUpperCase() + status.slice(1);
     const issueUrl = `${publicSiteOrigin()}${repoRecordUrl(repo, "issues", number)}`;
 
-    const timeline = renderIssueTimeline(events, {
+    const timelineEntries = issueTimelineEntries(events, {
       canManage,
       mentions: parsed.issueMentions,
       repo,
       number,
     });
+    const eagerItems = issueTimelineEagerCount(number, timelineEntries);
+    const timeline = timelineEntries.slice(0, eagerItems).map((entry) => entry.html()).join("")
+      + issueTimelineMoreHtml(timelineEntries.slice(eagerItems));
+    queueIssueTimelineRest(number, timelineEntries, eagerItems);
     const bodyReactions = renderCommentReactionBar(commentReactionSubject("issues", number), "body",
       foldIssueReactions(events).get(String(parsed.issueOpenEventId || "")));
     const reactionRow = `<div data-repo-issue-reactions class="flex flex-wrap items-center gap-1.5 px-4 pb-4">
@@ -28544,7 +29267,7 @@ Your reply
             </form>` : ""}
             <div class="flex shrink-0 items-center gap-2 pt-1">
               ${canManage ? `<button type="button" data-repo-issue-title-edit class="inline-flex h-8 items-center rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground hover:bg-secondary/70">Edit</button>` : ""}
-              <button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
+              ${renderIssueSourceLink(parsed.issueSourceUrl)}<button type="button" data-repo-issue-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New issue</button>
               <button type="button" data-dashboard-copy="${escapeHtml(issueUrl)}" aria-label="Copy link to this issue" title="Copy link" class="copy-button inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="link" class="copy-icon h-4 w-4"></i><i data-lucide="check" class="copy-check h-4 w-4"></i></button>
             </div>
           </div>
@@ -28563,7 +29286,7 @@ Your reply
             <section data-repo-record-conversation class="grid min-w-0 gap-4">
               ${openingCard}
               ${subIssues}
-              <div data-repo-issue-timeline data-empty="${timeline ? "false" : "true"}" class="grid gap-2">${timeline}</div>
+              <div data-repo-issue-timeline data-empty="${timelineEntries.length ? "false" : "true"}" class="grid gap-2">${timeline}</div>
               ${renderIssueCommentForm(number)}
             </section>
             ${repo.isPrivate || instancePluginOff("fediverse-ui") ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
@@ -28669,6 +29392,7 @@ Your reply
   function keepRepoFirstViewIssue(detail) {
     const article = detail?.querySelector?.("article[data-repo-ssr-issue]");
     if (!article) return;
+    signIssueDetail(article);
     repoFirstViewIssue = {
       number: String(article.dataset.repoSsrIssue || ""),
       path: location.pathname,
@@ -29544,7 +30268,9 @@ Your reply
     if (kind === "issues") withPendingIssueStatus(repo, number, parsed);
     state.repoRecordDetail = { repo, kind, number, parsed };
     setRepoRecordOpen(kind, true);
-    container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+    const html = renderRepoRecordDetail(repo, kind, number, parsed);
+    if (kind === "issues") paintRepoIssueDetail(container, html);
+    else container.innerHTML = html;
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
     if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
@@ -29652,6 +30378,8 @@ Your reply
         ])
         : null;
       issueAccess?.catch(() => {});
+      const issueAttachments = kind === "issues" ? loadRepoIssueAttachments(repo, number) : null;
+      const issueModeration = kind === "issues" ? fetchIssueModeration(repo, number) : null;
       const collabSettings = kind === "discussions" ? null : loadRepoCollabSettings(repo);
       let blob;
       if (kind === "issues") {
@@ -29673,8 +30401,10 @@ Your reply
       // so parse them the same way the list does and map into the shape the
       // detail renderer expects. Any live mirror serving .forkmesh/issues/
       // answers this blob read, so the detail loads whenever the list does.
+      const moderation = kind === "issues" ? await issueModerationWithin(issueModeration) : null;
       const parsed = kind === "issues"
-        ? withPendingIssueStatus(repo, number, issueDetailParsed(blobText(blob), number))
+        ? withPendingIssueStatus(repo, number, issueDetailParsed(
+          applyIssueModeration(blobText(blob), moderation), number))
         : parseFrontMatter(blobText(blob));
       let issueRelations = null;
       if (kind === "issues") {
@@ -29685,7 +30415,8 @@ Your reply
           Object.assign(parsed, early);
           issueRelations = null;
         } else {
-          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [] });
+          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [],
+            issueSourceUrl: repoIssueSourceUrl(repo, number, state.issuesView?.items) });
         }
       }
       if (collabSettings) parsed.repoCollabSettings = await collabSettings;
@@ -29722,6 +30453,9 @@ Your reply
         parsed.issueMutationAuthorized = mutationAuthorized;
         parsed.issueSubscribed = subscription?.subscribed === true;
         parsed.issueSubscriptionReason = subscription?.reason || "";
+        await issueAttachments;
+        parsed.issueModeration = moderation;
+        if (moderation?.canModerate) parsed.issueMutationAuthorized = true;
       }
       if (kind === "discussions") {
         const thread = await discussionConversation;
@@ -29741,10 +30475,13 @@ Your reply
         ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
         : "";
       state.repoRecordDetail = { repo, kind, number, parsed };
-      container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+      const html = renderRepoRecordDetail(repo, kind, number, parsed);
+      if (kind === "issues") paintRepoIssueDetail(container, html);
+      else container.innerHTML = html;
       finishRepoRead(staleMark, reconnect);
       if (kind === "issues") mountIssueStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+      if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
         if (commentBody) commentBody.value = commentDraft;
@@ -30281,12 +31018,16 @@ Your reply
   const ISSUE_FILTER_ME = "__forkmesh_me__";
   const ISSUE_FILTER_ASSIGNED = "__forkmesh_assigned__";
 
+  function issueDefaultSort() {
+    return instancePluginOn("forum-list") ? "newest" : "recently_updated";
+  }
+
   function issueFilterState() {
     const filters = state.issuesView?.filters;
     if (filters && typeof filters === "object") return filters;
     state.issuesView.filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     return state.issuesView.filters;
   }
@@ -30372,8 +31113,8 @@ Your reply
     }
     if (field === "sort") {
       return [
-        { value: "recently_updated", label: "Recently updated" },
         { value: "newest", label: "Newest" },
+        { value: "recently_updated", label: "Recently updated" },
         { value: "oldest", label: "Oldest" },
         { value: "priority", label: "Highest priority" },
         { value: "comments", label: "Most commented" },
@@ -30505,8 +31246,12 @@ Your reply
         || stamp(b, "updatedAtMs") - stamp(a, "updatedAtMs")
         || stableNewest(a, b));
     }
-    return items.sort((a, b) => stamp(b, "updatedAtMs")
-      - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    if (sort === "recently_updated") {
+      return items.sort((a, b) => stamp(b, "updatedAtMs")
+        - stamp(a, "updatedAtMs") || stableNewest(a, b));
+    }
+    return items.sort((a, b) => stamp(b, "createdAtMs")
+      - stamp(a, "createdAtMs") || stableNewest(a, b));
   }
 
   // The Issues sidebar: GitHub's saved views, each a set of filters. A view is
@@ -30641,7 +31386,7 @@ Your reply
     if (filters.milestone === ISSUE_FILTER_NONE) parts.push("no:milestone");
     else if (filters.milestone) parts.push(`milestone:${issueQueryValue(filters.milestone)}`);
     if (filters.type) parts.push(`type:${filters.type}`);
-    if (filters.sort && filters.sort !== "recently_updated") {
+    if (filters.sort && filters.sort !== issueDefaultSort()) {
       parts.push(`sort:${ISSUE_QUERY_SORTS[filters.sort] || filters.sort}`);
     }
     const free = String(state.issuesView.query || "").trim();
@@ -30655,7 +31400,7 @@ Your reply
   function parseIssueQuery(text) {
     const filters = {
       author: "", label: "", milestone: "", assignee: "",
-      mentions: "", involves: "", type: "", sort: "recently_updated",
+      mentions: "", involves: "", type: "", sort: issueDefaultSort(),
     };
     // With no state qualifier the search spans every issue, as on GitHub.
     let status = "all";
@@ -30847,11 +31592,12 @@ Your reply
       ? `<p data-repo-issue-search-pending role="status" class="border-b border-border px-4 py-2 text-[12px] text-muted-foreground">${loadingHtml("Searching descriptions and comments...")}</p>`
       : "";
     setRepoIssueRecordOpen(false);
-    container.innerHTML = filterBar + warnBar + searchHint + (filtered.length
+    container.innerHTML = repoMirrorHelpSlot(state.selectedRepo) + filterBar + warnBar + searchHint + (filtered.length
       ? renderRepoRecordList(filtered, config, "issues")
       : issuesView.closedLoading
         ? `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`
-        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint;
+        : `<div class="fm-blankslate"><i data-lucide="circle-dot"></i><p class="fm-blankslate-desc">${emptyLabel}</p></div>`) + allHint
+      + repoIssueFeedLinks(state.selectedRepo);
     const viewsNav = $("[data-repo-issue-views]");
     if (viewsNav) viewsNav.innerHTML = renderIssueViewsNav();
     const heading = $("[data-repo-issue-view-title]");
@@ -35174,6 +35920,7 @@ Your reply
     loadRepoAboutInfo(repo);
     loadRepoAboutRelease(repo);
     loadRepoAboutInsights(repo);
+    loadRepoMirrorQuota(repo);
   }
 
   function scheduleRepoAboutRail(repo) {
@@ -39685,6 +40432,7 @@ Your reply
   function webIssueSubmitErrorText(error) {
     const code = String(error?.message || "");
     const status = Number(error?.status) || 0;
+    if (moderationRefusalText(code)) return moderationRefusalText(code);
     if (code === "inbox_full") return "Issue delivery is temporarily full. Try again later.";
     if (code === "author_quota") return "You've reached the submission limit for this repository.";
     if (code === "issue_too_large" || code === "attachment_too_large"
@@ -39818,6 +40566,15 @@ Your reply
       const result = await submitWebIssue(
         repo, title, body, assignAgent, agentModel, agentProvider,
         { milestone, project }, updateSubmissionProgress);
+      if (result?.pending === "review") {
+        if (titleInput) titleInput.value = "";
+        if (bodyInput) bodyInput.value = "";
+        images.length = 0;
+        form.querySelector("[data-repo-issue-attachments]")?.replaceChildren();
+        setSubmitBusy(submit, false);
+        setHint(moderationPendingMessage(result), "good");
+        return;
+      }
       const number = Number(result.number || 0);
       if (!Number.isInteger(number) || number <= 0) {
         throw new Error("number_unavailable");
@@ -40048,6 +40805,10 @@ Your reply
             priority: it.priority,
             assignees: it.assignees,
           });
+        if (result?.pending === "review") {
+          ok++;
+          continue;
+        }
         const number = Number(result.number || 0);
         if (!Number.isInteger(number) || number <= 0) {
           throw new Error("number_unavailable");
@@ -45976,7 +46737,7 @@ Your reply
       query: "",
       filters: {
         author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: "",
-        mentions: "", involves: "", type: "", sort: "recently_updated",
+        mentions: "", involves: "", type: "", sort: issueDefaultSort(),
       },
     };
     state.pullsView = { filter: "open", query: "" };
@@ -46463,6 +47224,7 @@ Your reply
               <p class="mt-2 text-[11px] leading-4 text-muted-foreground">Posts this repository published to its Mastodon followers. Deleting one sends a removal to every follower's server so it disappears from their timelines.</p>
               <div data-repo-fedi-posts-list class="mt-2 grid gap-2"></div>
             </details>` : ""}
+            ${repo.isPrivate ? "" : repoMirrorQuotaSection(repo)}
           </aside>
           <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
@@ -54392,6 +55154,642 @@ Your reply
     renderMicrojobsPage();
     $("[data-microjobs-refresh]")?.addEventListener("click", renderMicrojobsPage);
   }
+  const MIRROR_QUOTA_DOT = Object.freeze({
+    green: "bg-success",
+    yellow: "bg-attention",
+    red: "bg-destructive",
+    unknown: "bg-muted-foreground/40",
+  });
+  const MIRROR_QUOTA_WORD = Object.freeze({
+    green: "Healthy",
+    yellow: "Behind",
+    red: "Unreachable",
+    unknown: "Not checked",
+  });
+  const MIRROR_QUOTA_START_URL = "https://forkmesh.com/start";
+  const mirrorQuotaUi = { data: new Map(), loads: new Map(), dialog: null };
+
+  function mirrorQuotaRowHtml(row) {
+    const status = MIRROR_QUOTA_DOT[row?.status] ? row.status : "unknown";
+    const label = String(row?.label || row?.host || "");
+    const url = String(row?.url || "");
+    const href = /^https:\/\/[^\s"'<>]+$/.test(url) ? url : "";
+    const word = MIRROR_QUOTA_WORD[status];
+    const detail = String(row?.statusLabel || word);
+    const at = Number(row?.lastCheck?.at) || 0;
+    const checked = row?.id !== "self" && at > 0 ? ` · checked ${formatTimeAgo(at)}` : "";
+    const name = href
+      ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer nofollow" class="dashboard-accent-link block min-w-0 truncate">${escapeHtml(label)}</a>`
+      : `<span class="block min-w-0 truncate text-foreground" title="${escapeHtml(url)}">${escapeHtml(label)}</span>`;
+    const host = row?.host && row.host !== label ? `${escapeHtml(row.host)} · ` : "";
+    const remove = row?.canRemove && !row?.builtin
+      ? `<button type="button" data-mirror-quota-remove="${escapeHtml(row.id)}" aria-label="Remove ${escapeHtml(label)}" class="shrink-0 text-[11px] text-muted-foreground hover:text-destructive">Remove</button>`
+      : "";
+    return `<li data-mirror-quota-row="${escapeHtml(row?.id || "")}" data-mirror-status="${status}" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs"><span role="img" aria-label="${word}" title="${word}" class="h-2 w-2 shrink-0 rounded-full ${MIRROR_QUOTA_DOT[status]}"></span><span class="min-w-0 flex-1">${name}<span class="block truncate text-[11px] text-muted-foreground">${host}${escapeHtml(detail)}${escapeHtml(checked)}</span></span>${remove}</li>`;
+  }
+
+  const MIRROR_QUOTA_OVERALL_WORD = Object.freeze({
+    green: "Mirror goal met",
+    yellow: "At least half of the mirror goal",
+    red: "Below half of the mirror goal",
+    unknown: "No mirrors checked yet",
+  });
+
+  function mirrorQuotaOverall(healthy, target) {
+    if (target <= 0) return healthy > 0 ? "green" : "unknown";
+    if (healthy >= target) return "green";
+    return healthy * 2 >= target ? "yellow" : "red";
+  }
+
+  function renderRepoMirrorQuotaCard(data, viewer = null, helpHref = "") {
+    if (!data || typeof data !== "object" || !Array.isArray(data.mirrors)) return "";
+    const target = Math.max(0, Number(data.target) || 0);
+    const healthy = Math.max(0, Number(data.healthy) || 0);
+    const registered = Math.max(0, Number(data.registered) || 0);
+    const canSet = Boolean(viewer?.canSetTarget);
+    if (!target && !registered && !canSet) return "";
+    const count = target ? `${healthy} / ${target} healthy` : `${healthy} healthy`;
+    const overall = mirrorQuotaOverall(healthy, target);
+    const percent = target ? Math.min(100, Math.round((healthy * 100) / target)) : 0;
+    const missing = Math.max(0, target - healthy);
+    const help = helpHref && target && overall !== "green"
+      ? `<p data-mirror-quota-help class="mt-1.5 text-[11px] text-muted-foreground">Needs ${missing} more mirror${missing === 1 ? "" : "s"} &middot; <a href="${escapeHtml(helpHref)}" class="dashboard-accent-link">How to help &rarr;</a></p>`
+      : "";
+    const bar = (target
+      ? `<div role="progressbar" aria-label="Healthy mirrors" aria-valuemin="0" aria-valuemax="${target}" aria-valuenow="${Math.min(healthy, target)}" class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted-foreground/20"><span class="block h-full rounded-full ${MIRROR_QUOTA_DOT[overall]}" style="width:${percent}%"></span></div>`
+      : "") + help;
+    const rows = data.mirrors.map((row) => mirrorQuotaRowHtml(row)).join("");
+    const goal = canSet
+      ? `<form data-mirror-quota-target-form class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground"><label class="inline-flex items-center gap-1.5">${target ? "Goal" : "Set a mirror goal"}<input name="target" type="number" inputmode="numeric" min="0" max="${Number(data.maxTarget) || 100}" value="${target || 10}" aria-label="Healthy mirrors wanted" class="h-control-sm w-14 rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-primary" /></label><button type="submit" class="fm-btn fm-btn-sm">Set target</button><span data-mirror-quota-target-status role="status" class="min-w-0 truncate"></span></form>`
+      : "";
+    const summary = MIRROR_QUOTA_OVERALL_WORD[overall];
+    return `<div data-mirror-quota-overall="${overall}" class="flex items-center justify-between gap-3"><h4 class="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"><span role="img" aria-label="${summary}" title="${summary}" class="h-2 w-2 shrink-0 rounded-full ${MIRROR_QUOTA_DOT[overall]}"></span>Mirrors</h4><span data-mirror-quota-count class="font-mono text-[11px] text-muted-foreground">${count}</span></div>${bar}<ul class="-mx-2 mt-2 grid">${rows}</ul><div class="mt-2 flex flex-wrap items-center gap-2"><button type="button" data-mirror-quota-add class="fm-btn fm-btn-sm">Add a mirror</button><span data-mirror-quota-status role="status" class="min-w-0 truncate text-[11px] text-destructive"></span></div>${goal}`;
+  }
+
+  function mirrorQuotaKey(repo) {
+    return repo ? repoApiBase(repo).toLowerCase() : "";
+  }
+
+  function mirrorQuotaKnown(repo) {
+    const key = mirrorQuotaKey(repo);
+    if (!key) return null;
+    if (mirrorQuotaUi.data.has(key)) return mirrorQuotaUi.data.get(key);
+    const seeded = repoFirstViewSeed(repo)?.mirrorQuota;
+    return seeded && typeof seeded === "object" && Array.isArray(seeded.mirrors) ? seeded : null;
+  }
+
+  function repoMirrorQuotaSection(repo) {
+    if (!instancePluginOn("mirror-quota")) return "";
+    const data = mirrorQuotaKnown(repo);
+    const inner = renderRepoMirrorQuotaCard(data, data?.viewer || null, repoMirrorHelpHref(repo));
+    return `<section data-repo-mirror-quota aria-label="Mirrors" class="mt-3 border-t border-border pt-3"${inner ? "" : " hidden"}>${inner}</section>`;
+  }
+
+  function paintRepoMirrorQuota(repo) {
+    const section = document.querySelector("[data-repo-mirror-quota]");
+    if (!section || !repo) return;
+    const data = mirrorQuotaUi.data.get(mirrorQuotaKey(repo)) || null;
+    const inner = renderRepoMirrorQuotaCard(data, data?.viewer || null, repoMirrorHelpHref(repo));
+    section.innerHTML = inner;
+    section.hidden = !inner;
+  }
+
+  function mirrorQuotaCurrent(repo) {
+    const selected = state.selectedRepo;
+    return Boolean(selected && repo && mirrorQuotaKey(selected) === mirrorQuotaKey(repo));
+  }
+
+  async function loadRepoMirrorQuota(repo) {
+    const key = mirrorQuotaKey(repo);
+    if (!key || repo.isPrivate || !instancePluginOn("mirror-quota")) return null;
+    if (mirrorQuotaUi.loads.has(key)) return mirrorQuotaUi.loads.get(key);
+    const signedIn = Boolean(state.session?.sessionToken);
+    const load = (async () => {
+      try {
+        const data = await fetchJson(`${repoApiBase(repo)}/mirror-quota`, { fresh: signedIn });
+        if (!data || data.ok === false || !Array.isArray(data.mirrors)) return null;
+        mirrorQuotaUi.data.set(key, data);
+        if (mirrorQuotaCurrent(repo)) paintRepoMirrorQuota(repo);
+        return data;
+      } catch (_) {
+        return null;
+      } finally {
+        mirrorQuotaUi.loads.delete(key);
+      }
+    })();
+    mirrorQuotaUi.loads.set(key, load);
+    return load;
+  }
+
+  function mirrorQuotaErrorText(data, status) {
+    if (data?.message) return String(data.message);
+    if (status === 401) return "Sign in first.";
+    if (status === 403) return "You can't change this repository's mirrors.";
+    if (status === 429) return "Too many changes. Try again in a minute.";
+    return String(data?.error || `HTTP ${status}`).replace(/_/g, " ");
+  }
+
+  async function sendRepoMirrorQuota(repo, method, body = {}) {
+    const response = await fetch(`${repoApiBase(repo)}/mirror-quota`, {
+      method,
+      credentials: "same-origin",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...body, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(mirrorQuotaErrorText(data, response.status));
+    mirrorQuotaUi.data.set(mirrorQuotaKey(repo), data);
+    if (mirrorQuotaCurrent(repo)) paintRepoMirrorQuota(repo);
+    return data;
+  }
+
+  function mirrorQuotaRunHtml(data, repo) {
+    const clone = String(data?.cloneUrl || "") || `${publicSiteOrigin()}${repoLinkUrl(repo)}.git`;
+    const folder = `${String(repo?.name || "repository").replace(/[^A-Za-z0-9._-]/g, "")}.git`;
+    const commands = `git clone --mirror ${clone}\ncd ${folder} && git update-server-info`;
+    const cron = `*/15 * * * * cd /srv/${folder} && git remote update --prune && git update-server-info`;
+    const block = (text, label) => `<div class="mt-2 flex items-start gap-2"><pre class="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-secondary px-2 py-1.5 font-mono text-[11px] leading-5 text-foreground">${escapeHtml(text)}</pre><button type="button" data-mirror-quota-copy="${escapeHtml(text)}" aria-label="${escapeHtml(label)}" class="fm-btn fm-btn-sm">Copy</button></div>`;
+    return `<p class="text-xs leading-5 text-muted-foreground">Every copy keeps this project reachable if this site or the original is blocked or taken down. Issues live in <code class="font-mono">.forkmesh/issues</code>, so a clone carries the whole forum, not only the code.</p>${repoMirrorHelpHref(repo) ? `<p class="mt-2 text-xs"><a href="${escapeHtml(repoMirrorHelpHref(repo))}" class="dashboard-accent-link font-semibold">Read the full guide: run a mirror, join the federation, register it &rarr;</a></p>` : ""}<h3 class="mt-3 text-xs font-semibold text-foreground">Run a mirror</h3>${block(commands, "Copy the clone commands")}<p class="mt-2 text-[11px] text-muted-foreground">Keep it fresh every 15 minutes with cron:</p>${block(cron, "Copy the cron line")}<p class="mt-2 text-[11px] leading-5 text-muted-foreground">Serve the folder over HTTPS with any web server, or push it to another forge. Or <a href="${MIRROR_QUOTA_START_URL}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link">start your own ForkMesh instance</a>.</p>`;
+  }
+
+  function mirrorQuotaFormHtml() {
+    if (!state.session?.sessionToken) {
+      return `<p class="mt-3 text-xs text-muted-foreground"><a href="/login?next=${encodeURIComponent(location.pathname)}" class="dashboard-accent-link">Sign in</a> to list your mirror here so it is checked and counted.</p>`;
+    }
+    return `<form data-mirror-quota-add-form class="mt-3 grid gap-2"><h3 class="text-xs font-semibold text-foreground">List your mirror</h3><input name="url" type="text" inputmode="url" autocomplete="off" spellcheck="false" required maxlength="300" placeholder="https://example.org/example/forum.git" aria-label="Mirror address" class="h-control rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-primary" /><input name="label" type="text" autocomplete="off" maxlength="60" placeholder="Name (optional)" aria-label="Mirror name" class="h-control rounded-md border border-border bg-background px-2 text-control text-foreground outline-none focus:border-primary" /><p class="text-[11px] text-muted-foreground">https addresses are checked every 15 minutes. git:// and ssh addresses are listed but not checked.</p><span data-mirror-quota-add-status role="status" class="min-h-4 text-[11px] text-muted-foreground"></span></form>`;
+  }
+
+  function closeMirrorQuotaDialog() {
+    const dialog = mirrorQuotaUi.dialog;
+    if (!dialog) return;
+    mirrorQuotaUi.dialog = null;
+    document.removeEventListener("keydown", dialog.onKey, true);
+    dialog.overlay.remove();
+    if (dialog.previous?.isConnected && typeof dialog.previous.focus === "function") dialog.previous.focus();
+  }
+
+  function openMirrorQuotaDialog(repo) {
+    closeMirrorQuotaDialog();
+    const data = mirrorQuotaKnown(repo);
+    const overlay = document.createElement("div");
+    overlay.dataset.mirrorQuotaDialog = "";
+    overlay.className = "fixed inset-0 z-[90] flex items-start justify-center bg-background/70 p-4 pt-[10vh]";
+    const signedIn = Boolean(state.session?.sessionToken);
+    overlay.innerHTML = `<div role="dialog" aria-modal="true" aria-labelledby="mirrorQuotaDialogTitle" class="fm-dialog w-full max-w-lg"><div class="fm-dialog-header"><h2 id="mirrorQuotaDialogTitle" class="fm-dialog-title">Add a mirror</h2><button type="button" data-mirror-quota-close aria-label="Close" class="fm-btn fm-btn-sm fm-btn-icon fm-btn-invisible"><i data-lucide="x"></i></button></div><div class="fm-dialog-body">${mirrorQuotaRunHtml(data, repo)}${mirrorQuotaFormHtml()}</div><div class="fm-dialog-footer"><button type="button" data-mirror-quota-close class="fm-btn fm-btn-sm">${signedIn ? "Cancel" : "Close"}</button>${signedIn ? `<button type="button" data-mirror-quota-submit class="fm-btn fm-btn-sm">Add mirror</button>` : ""}</div></div>`;
+    const onKey = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeMirrorQuotaDialog();
+    };
+    mirrorQuotaUi.dialog = { overlay, onKey, repo, previous: document.activeElement };
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+    window.lucide?.createIcons();
+    (overlay.querySelector("[data-mirror-quota-add-form] input[name=url]") || overlay.querySelector("[data-mirror-quota-close]"))?.focus();
+  }
+
+  async function submitMirrorQuotaDialog() {
+    const dialog = mirrorQuotaUi.dialog;
+    const form = dialog?.overlay.querySelector("[data-mirror-quota-add-form]");
+    if (!dialog || !form) return;
+    const status = form.querySelector("[data-mirror-quota-add-status]");
+    const button = dialog.overlay.querySelector("[data-mirror-quota-submit]");
+    const url = String(form.elements.url?.value || "").trim();
+    if (!url) {
+      if (status) status.textContent = "Enter the mirror's address.";
+      form.elements.url?.focus();
+      return;
+    }
+    if (button) button.disabled = true;
+    if (status) {
+      status.className = "min-h-4 text-[11px] text-muted-foreground";
+      status.textContent = "Adding...";
+    }
+    try {
+      await sendRepoMirrorQuota(dialog.repo, "POST", { url, label: String(form.elements.label?.value || "").trim() });
+      closeMirrorQuotaDialog();
+    } catch (error) {
+      if (status) {
+        status.className = "min-h-4 text-[11px] text-destructive";
+        status.textContent = error.message;
+      }
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function submitMirrorQuotaTarget(form) {
+    const repo = state.selectedRepo;
+    const status = form.querySelector("[data-mirror-quota-target-status]");
+    const target = Number(form.elements.target?.value);
+    if (!repo || !Number.isInteger(target) || target < 0) {
+      if (status) status.textContent = "Enter a whole number.";
+      return;
+    }
+    if (status) status.textContent = "Saving...";
+    try {
+      await sendRepoMirrorQuota(repo, "PUT", { target });
+    } catch (error) {
+      const fresh = document.querySelector("[data-mirror-quota-target-status]");
+      if (fresh) {
+        fresh.className = "min-w-0 truncate text-destructive";
+        fresh.textContent = error.message;
+      }
+    }
+  }
+
+  async function removeRepoMirror(button) {
+    const repo = state.selectedRepo;
+    const id = button.getAttribute("data-mirror-quota-remove") || "";
+    if (!repo || !id) return;
+    const ok = await confirmAccountAction({
+      title: "Remove this mirror?",
+      body: "It stops being checked and counted. The copy itself is not touched.",
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
+    try {
+      await sendRepoMirrorQuota(repo, "DELETE", { id });
+    } catch (error) {
+      const status = document.querySelector("[data-mirror-quota-status]");
+      if (status) status.textContent = error.message;
+    }
+  }
+
+  function initRepoMirrorQuota() {
+    document.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!target?.closest) return;
+      if (target.closest("[data-mirror-quota-add]")) {
+        event.preventDefault();
+        if (state.selectedRepo) openMirrorQuotaDialog(state.selectedRepo);
+        return;
+      }
+      const remove = target.closest("[data-mirror-quota-remove]");
+      if (remove) {
+        event.preventDefault();
+        removeRepoMirror(remove);
+        return;
+      }
+      const dialog = mirrorQuotaUi.dialog;
+      if (!dialog || !dialog.overlay.contains(target)) return;
+      if (target === dialog.overlay || target.closest("[data-mirror-quota-close]")) {
+        closeMirrorQuotaDialog();
+        return;
+      }
+      if (target.closest("[data-mirror-quota-submit]")) {
+        event.preventDefault();
+        submitMirrorQuotaDialog();
+        return;
+      }
+      const copy = target.closest("[data-mirror-quota-copy]");
+      if (copy) {
+        event.preventDefault();
+        if (await copyTextToClipboard(copy.getAttribute("data-mirror-quota-copy") || "")) copy.textContent = "Copied";
+      }
+    });
+    document.addEventListener("submit", (event) => {
+      const goal = event.target?.closest?.("[data-mirror-quota-target-form]");
+      if (goal) {
+        event.preventDefault();
+        submitMirrorQuotaTarget(goal);
+        return;
+      }
+      if (event.target?.closest?.("[data-mirror-quota-add-form]")) {
+        event.preventDefault();
+        submitMirrorQuotaDialog();
+      }
+    });
+  }
+  const MODERATION_HIDDEN_TEXT = "*This post was hidden by the moderators.*";
+  const MODERATION_WAIT_MS = 2000;
+  const MODERATION_EMPTY = Object.freeze({
+    hidden: [], hiddenAuthors: [], locked: false, canModerate: false, pendingMine: 0,
+  });
+
+  function moderationHeaders(json = false) {
+    const headers = { accept: "application/json" };
+    if (json) headers["content-type"] = "application/json";
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    return headers;
+  }
+
+  async function fetchIssueModeration(repo, number) {
+    if (!repo || !Number(number)) return MODERATION_EMPTY;
+    try {
+      const response = await fetch(
+        `${repoApiBase(repo)}/moderation?kind=issue&number=${encodeURIComponent(number)}`,
+        { credentials: "same-origin", cache: "no-store", headers: moderationHeaders() });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) return MODERATION_EMPTY;
+      return {
+        hidden: Array.isArray(data.hidden) ? data.hidden.map(String) : [],
+        hiddenAuthors: Array.isArray(data.hiddenAuthors)
+          ? data.hiddenAuthors.map((name) => String(name).toLowerCase()) : [],
+        locked: data.locked === true,
+        canModerate: data.canModerate === true,
+        pendingMine: Number(data.pendingMine || 0) || 0,
+      };
+    } catch (_) {
+      return MODERATION_EMPTY;
+    }
+  }
+
+  async function issueModerationWithin(pending) {
+    if (!pending) return MODERATION_EMPTY;
+    return Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(() => resolve(MODERATION_EMPTY), MODERATION_WAIT_MS)),
+    ]);
+  }
+
+  function applyIssueModeration(text, moderation) {
+    const hidden = new Set((moderation?.hidden || []).map(String));
+    const authors = new Set((moderation?.hiddenAuthors || []).map((name) => String(name).toLowerCase()));
+    if (!hidden.size && !authors.size) return text;
+    let record;
+    try {
+      record = JSON.parse(String(text || ""));
+    } catch (_) {
+      return text;
+    }
+    if (!record || typeof record !== "object" || !Array.isArray(record.events)) return text;
+    const opened = record.events.find((event) => event && event.type === "open") || {};
+    const openId = String(opened.id || "");
+    const covered = new Set();
+    for (const event of record.events) {
+      if (!event || (event.type !== "open" && event.type !== "comment")) continue;
+      const id = String(event.id || "");
+      const author = String(event.authorName || "").toLowerCase();
+      if ((id && hidden.has(id)) || (event.type === "open" && hidden.has("body"))
+          || (author && authors.has(author))) covered.add(id);
+    }
+    if (hidden.has("body") && openId) covered.add(openId);
+    if (!covered.size) return text;
+    const originals = {};
+    record.events = record.events.map((event) => {
+      if (!event || typeof event !== "object") return event;
+      const id = String(event.id || "");
+      const target = String(event.target || "");
+      const hit = ((event.type === "open" || event.type === "comment") && covered.has(id))
+        || (event.type === "edit" && (covered.has(target) || (!target && covered.has(openId))));
+      if (!hit) return event;
+      if (event.type !== "edit") originals[id] = String(event.body || "");
+      else originals[target || openId] = String(event.body || "");
+      return { ...event, body: MODERATION_HIDDEN_TEXT, attachments: [], moderationHidden: true };
+    });
+    if (covered.has(openId) && "body" in record) record.body = MODERATION_HIDDEN_TEXT;
+    if (moderation?.canModerate) moderation.originals = originals;
+    return JSON.stringify(record);
+  }
+
+  async function postIssueModeration(repo, number, action, target = "") {
+    const response = await fetch(`${repoApiBase(repo)}/moderation`, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: moderationHeaders(true),
+      body: JSON.stringify({ action, kind: "issue", number: Number(number), target }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.message || data.error || `HTTP ${response.status}`);
+    return data;
+  }
+
+  function moderationButtonHtml(attr, value, icon, label) {
+    return `<button type="button" ${attr}="${escapeHtml(value)}" class="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground" title="${escapeHtml(label)}"><i data-lucide="${icon}" class="h-4 w-4"></i><span class="hidden sm:inline">${escapeHtml(label)}</span></button>`;
+  }
+
+  function moderationNoticeHtml(icon, text) {
+    return `<div data-repo-issue-moderation-notice class="flex items-start gap-2 rounded-md border border-border bg-secondary/20 px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><i data-lucide="${icon}" class="mt-0.5 h-4 w-4 shrink-0"></i><span>${escapeHtml(text)}</span></div>`;
+  }
+
+  function decorateIssueModeration(container, repo, number, parsed) {
+    const moderation = parsed?.issueModeration;
+    if (!container || !moderation) return;
+    const hidden = new Set(moderation.hidden || []);
+    const form = container.querySelector("[data-repo-issue-comment-form]");
+    const formRow = form?.parentElement;
+    if (moderation.pendingMine > 0 && formRow) {
+      formRow.insertAdjacentHTML("beforebegin", moderationNoticeHtml("hourglass",
+        moderation.pendingMine === 1
+          ? "One of your posts here is waiting for a moderator. It appears once it is approved."
+          : `${moderation.pendingMine} of your posts here are waiting for a moderator.`));
+    }
+    if (moderation.locked) {
+      const text = moderation.canModerate
+        ? "This thread is locked. Only moderators can reply."
+        : "This thread is locked. New comments are turned off.";
+      if (!moderation.canModerate && formRow) {
+        formRow.outerHTML = moderationNoticeHtml("lock", text);
+      } else if (formRow) {
+        formRow.insertAdjacentHTML("beforebegin", moderationNoticeHtml("lock", text));
+      }
+    }
+    if (!moderation.canModerate) {
+      window.lucide?.createIcons();
+      return;
+    }
+    const actions = container.querySelector("[data-repo-issue-sidebar-actions]");
+    if (actions) {
+      actions.insertAdjacentHTML("beforeend", moderationButtonHtml(
+        "data-repo-issue-moderation-lock", moderation.locked ? "unlock" : "lock",
+        moderation.locked ? "lock-open" : "lock",
+        moderation.locked ? "Unlock thread" : "Lock thread"));
+    }
+    container.querySelectorAll("[data-repo-issue-comment-delete]").forEach((button) => {
+      const id = button.getAttribute("data-repo-issue-comment-delete") || "";
+      if (!id) return;
+      button.insertAdjacentHTML("beforebegin", moderationButtonHtml(
+        "data-repo-issue-moderation-hide", id, hidden.has(id) ? "eye" : "eye-off",
+        hidden.has(id) ? "Unhide" : "Hide"));
+    });
+    const opening = container.querySelector("[data-repo-issue-opening] .border-b");
+    if (opening) {
+      opening.insertAdjacentHTML("beforeend", moderationButtonHtml(
+        "data-repo-issue-moderation-hide", "body", hidden.has("body") ? "eye" : "eye-off",
+        hidden.has("body") ? "Unhide" : "Hide"));
+    }
+    const originals = moderation.originals || {};
+    container.querySelectorAll("[data-repo-issue-comment-delete]").forEach((button) => {
+      const id = button.getAttribute("data-repo-issue-comment-delete") || "";
+      const card = button.closest("[data-repo-issue-comment]");
+      if (!originals[id] || !card) return;
+      revealToggle(card.querySelector("[data-repo-issue-comment-text]"), originals[id]);
+    });
+    const openId = String(parsed.issueOpenEventId || "");
+    if (originals[openId]) {
+      revealToggle(container.querySelector("[data-repo-record-body]"), originals[openId]);
+    }
+    container.querySelectorAll("[data-repo-issue-moderation-hide], [data-repo-issue-moderation-lock]")
+      .forEach((button) => button.addEventListener("click", async () => {
+        const lock = button.getAttribute("data-repo-issue-moderation-lock");
+        const target = button.getAttribute("data-repo-issue-moderation-hide") || "";
+        const action = lock || (hidden.has(target) ? "unhide" : "hide");
+        button.disabled = true;
+        try {
+          await postIssueModeration(repo, number, action, target);
+          await refreshIssueModeration(container, repo, number);
+        } catch (error) {
+          button.disabled = false;
+          button.title = error.message || "Not saved";
+        }
+      }));
+    window.lucide?.createIcons();
+  }
+
+  function revealToggle(holder, original) {
+    if (!holder || holder.querySelector("[data-repo-issue-moderation-original]")) return;
+    holder.insertAdjacentHTML("beforeend", `<details data-repo-issue-moderation-original class="mt-2 text-[13px]"><summary class="cursor-pointer text-muted-foreground">Show the hidden text (moderators only)</summary><div class="mt-2 border-l-2 border-border pl-3">${renderRecordMarkdown(original)}</div></details>`);
+  }
+
+  async function refreshIssueModeration(container, repo, number) {
+    if (!container?.isConnected) return;
+    await loadRepoRecordDetail(repo, "issues", number);
+  }
+
+  function moderationRefusalText(code) {
+    return ({
+      account_required: "Sign in to post here.",
+      account_blocked: "A moderator has blocked this account from posting here.",
+      thread_locked: "This thread is locked. Only moderators can reply.",
+      new_account_limit: "New accounts can only post a few times a day. Try again tomorrow.",
+      review_queue_full: "Too many of your posts are already waiting for review.",
+    })[String(code || "")] || "";
+  }
+
+  function moderationPendingMessage(result) {
+    return String(result?.message || "Sent to the moderators. It appears once a moderator approves it.");
+  }
+
+  async function loadOrgModeration(root, name) {
+    const holder = root.querySelector("[data-org-moderation]");
+    const section = root.querySelector("[data-org-moderation-section]");
+    if (!holder || !section) return;
+    let data;
+    try {
+      data = await orgApiRequest("GET", `/api/orgs/${encodeURIComponent(name)}/moderation`);
+    } catch (error) {
+      if (["forbidden", "unauthorized", "http_403", "http_401"].includes(error.code)) {
+        section.hidden = true;
+        return;
+      }
+      holder.textContent = error.message;
+      return;
+    }
+    section.hidden = false;
+    holder.innerHTML = renderOrgModeration(data);
+    window.lucide?.createIcons();
+    wireOrgModeration(root, name, holder);
+  }
+
+  function moderationWhen(ms) {
+    return ms ? formatTimeAgo(ms) : "";
+  }
+
+  function renderOrgModeration(data) {
+    const row = (left, right) => `<div class="flex min-w-0 items-center gap-2 rounded-md border border-border bg-card px-3 py-2">${left}<span class="flex-1"></span>${right}</div>`;
+    const empty = (text) => `<p class="text-xs text-muted-foreground">${escapeHtml(text)}</p>`;
+    const queue = (data.queue || []).map((item) => `
+      <div class="grid gap-2 rounded-md border border-border bg-card px-3 py-2">
+        <div class="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span class="font-medium text-foreground">${issuePersonNameHtml(item.author || "anonymous", "")}</span>
+          <span>${item.kind === "thread" ? "new thread in" : `comment on #${escapeHtml(item.number)} in`}</span>
+          <span class="font-mono">${escapeHtml(item.repo)}</span>
+          <span>${escapeHtml(moderationWhen(item.at))}</span>
+        </div>
+        ${item.title ? `<p class="text-sm font-semibold text-foreground">${escapeHtml(item.title)}</p>` : ""}
+        <div class="max-h-48 overflow-auto text-sm ${MD_BODY_CLASS}">${renderRecordMarkdown(item.body || "")}</div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" data-org-moderation-approve="${escapeHtml(item.id)}" class="fm-btn fm-btn-sm">Approve</button>
+          <button type="button" data-org-moderation-reject="${escapeHtml(item.id)}" class="fm-btn fm-btn-sm fm-btn-danger">Reject</button>
+        </div>
+      </div>`).join("");
+    const moderators = (data.moderators || []).map((item) => row(
+      `<span class="truncate text-sm font-medium text-foreground">${issuePersonNameHtml(item.name, "")}</span><span class="text-[11px] text-muted-foreground">added by ${escapeHtml(item.by || "an admin")}</span>`,
+      data.canManageModerators ? `<button type="button" data-org-moderation-unmod="${escapeHtml(item.name)}" class="fm-btn fm-btn-sm fm-btn-danger">Remove</button>` : "")).join("");
+    const blocked = (data.blocked || []).map((item) => row(
+      `<span class="truncate text-sm font-medium text-foreground">${issuePersonNameHtml(item.name, "")}</span><span class="text-[11px] text-muted-foreground">${item.hideContent ? "posts hidden" : "posts shown"}${item.reason ? ` · ${escapeHtml(item.reason)}` : ""}</span>`,
+      `<button type="button" data-org-moderation-unblock="${escapeHtml(item.name)}" class="fm-btn fm-btn-sm">Unblock</button>`)).join("");
+    const log = (data.log || []).slice(0, 50).map((item) => `<li><span class="text-foreground">${escapeHtml(item.actor || "")}</span> ${escapeHtml(String(item.action || "").replace(/_/g, " "))}${item.target ? ` <span class="text-foreground">${escapeHtml(item.target)}</span>` : ""}${item.detail?.repo ? ` · ${escapeHtml(item.detail.repo)}` : ""}${item.detail?.subject ? ` ${escapeHtml(item.detail.subject)}` : ""} <span>${escapeHtml(moderationWhen(item.at))}</span></li>`).join("");
+    const policy = data.policy || {};
+    const rules = [
+      policy.firstPostApproval ? "a new account's first post waits for approval" : "",
+      policy.accountRequired ? "only signed-in accounts can post" : "",
+      Number(policy.newThreadsPerDay) ? `new accounts open at most ${Number(policy.newThreadsPerDay)} threads a day` : "",
+      Number(policy.newCommentsPerDay) ? `and write at most ${Number(policy.newCommentsPerDay)} comments a day for ${Number(policy.newAccountDays)} days` : "",
+    ].filter(Boolean).join(", ");
+    return `
+      ${rules ? `<p class="text-xs text-muted-foreground">On this server ${escapeHtml(rules)}.</p>` : ""}
+      <p data-org-moderation-status class="mt-1 min-h-4 text-xs text-muted-foreground"></p>
+      <h5 class="mt-3 text-xs font-semibold text-foreground">Waiting for review (${(data.queue || []).length})</h5>
+      <div class="mt-2 grid gap-2">${queue || empty("Nothing is waiting.")}</div>
+      <h5 class="mt-4 text-xs font-semibold text-foreground">Moderators</h5>
+      <p class="mt-1 text-[11px] text-muted-foreground">Owners and admins always moderate. Moderators can approve posts, hide or delete any post, lock threads and block accounts here, but cannot change settings or members.</p>
+      <div class="mt-2 grid gap-2">${moderators || empty("No extra moderators.")}</div>
+      ${data.canManageModerators ? `<form data-org-moderation-add class="mt-2 flex flex-wrap gap-2"><input data-org-moderation-name placeholder="account name" autocomplete="off" class="${ORG_INPUT_CLASS} min-w-[12rem] flex-1" /><button type="submit" class="${ORG_BTN_SECONDARY}">Add moderator</button></form>` : ""}
+      <h5 class="mt-4 text-xs font-semibold text-foreground">Blocked accounts</h5>
+      <p class="mt-1 text-[11px] text-muted-foreground">A blocked account cannot post, comment, vote or react on this organization's repositories. Mirrored GitHub authors are not accounts: hide their posts on the issue instead.</p>
+      <div class="mt-2 grid gap-2">${blocked || empty("Nobody is blocked.")}</div>
+      <form data-org-moderation-block class="mt-2 flex flex-wrap items-center gap-2">
+        <input data-org-moderation-block-name placeholder="account name" autocomplete="off" class="${ORG_INPUT_CLASS} min-w-[10rem] flex-1" />
+        <input data-org-moderation-block-reason placeholder="reason (moderators only)" maxlength="280" autocomplete="off" class="${ORG_INPUT_CLASS} min-w-[10rem] flex-1" />
+        <label class="inline-flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" data-org-moderation-block-hide /> Hide their posts</label>
+        <button type="submit" class="${ORG_BTN_SECONDARY}">Block</button>
+      </form>
+      <details class="mt-4"><summary class="cursor-pointer text-xs font-semibold text-foreground">Moderation log</summary>
+        <ul class="mt-2 grid gap-1 text-xs text-muted-foreground">${log || "<li>No actions yet.</li>"}</ul>
+      </details>`;
+  }
+
+  function wireOrgModeration(root, name, holder) {
+    const path = `/api/orgs/${encodeURIComponent(name)}/moderation`;
+    const status = (text, ok) => {
+      const node = holder.querySelector("[data-org-moderation-status]");
+      if (!node) return;
+      node.textContent = text || "";
+      node.className = "mt-1 min-h-4 text-xs " + (ok ? "text-muted-foreground" : "text-destructive");
+    };
+    const act = async (body) => {
+      try {
+        const data = await orgApiRequest("POST", path, body);
+        holder.innerHTML = renderOrgModeration(data);
+        window.lucide?.createIcons();
+        wireOrgModeration(root, name, holder);
+        status("Done.", true);
+      } catch (error) {
+        status(error.data?.message || error.message, false);
+      }
+    };
+    const on = (selector, fn) => holder.querySelectorAll(selector).forEach((node) =>
+      node.addEventListener("click", () => fn(node)));
+    on("[data-org-moderation-approve]", (node) =>
+      act({ action: "approve", id: Number(node.getAttribute("data-org-moderation-approve")) }));
+    on("[data-org-moderation-reject]", (node) =>
+      act({ action: "reject", id: Number(node.getAttribute("data-org-moderation-reject")) }));
+    on("[data-org-moderation-unmod]", (node) =>
+      act({ action: "remove_moderator", name: node.getAttribute("data-org-moderation-unmod") }));
+    on("[data-org-moderation-unblock]", (node) =>
+      act({ action: "unblock", name: node.getAttribute("data-org-moderation-unblock") }));
+    holder.querySelector("[data-org-moderation-add]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = holder.querySelector("[data-org-moderation-name]")?.value.trim().toLowerCase();
+      if (value) act({ action: "add_moderator", name: value });
+    });
+    holder.querySelector("[data-org-moderation-block]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = holder.querySelector("[data-org-moderation-block-name]")?.value.trim().toLowerCase();
+      if (!value) return;
+      act({
+        action: "block",
+        name: value,
+        reason: holder.querySelector("[data-org-moderation-block-reason]")?.value.trim() || "",
+        hideContent: Boolean(holder.querySelector("[data-org-moderation-block-hide]")?.checked),
+      });
+    });
+  }
   // initNotesPage lives in 09-notes.js (a per-page chunk).
   function initNotesPage(...args) {
     return loadDashboardChunk("notes").then((chunk) => chunk.initNotesPage(...args));
@@ -54584,6 +55982,1325 @@ Your reply
       toggle?.focus();
     });
   }
+  const POST_TRANSLATE_PREFS_KEY = "forkmesh.postTranslate.v1";
+  const POST_TRANSLATE_SKIP = new Set(["PRE", "CODE", "KBD", "SAMP", "VAR", "SCRIPT", "STYLE", "TEXTAREA", "INPUT", "SELECT", "BUTTON", "SVG", "MATH", "IMG", "VIDEO", "AUDIO"]);
+  const POST_TRANSLATE_INLINE = new Set(["B", "STRONG", "I", "EM", "U", "S", "DEL", "INS", "MARK", "SMALL", "SUB", "SUP", "SPAN", "ABBR", "Q", "CITE", "DFN", "BDI", "BDO", "FONT"]);
+  const POST_TRANSLATE_NO_TRANSLATE = "pre, code, kbd, samp, var";
+  const POST_TRANSLATE_LANGUAGES = Object.freeze([
+    "en", "zh", "zh-Hant", "fa", "ar", "ru", "tk", "tr", "uk", "es", "fr", "de", "pt", "it", "ja", "ko",
+    "vi", "id", "hi", "bn", "ur", "he", "pl", "nl", "sv", "my", "th", "kk", "uz", "az",
+  ]);
+  const POST_TRANSLATE_DETECT_CHARS = 2000;
+  const POST_TRANSLATE_MIN_CONFIDENCE = 0.5;
+  const POST_TRANSLATE_CHECK_MS = 4000;
+  const POST_TRANSLATE_STALL_MS = 20000;
+  const POST_TRANSLATE_DETECTOR_MS = 8000;
+  const POST_TRANSLATE_WORDS = Object.freeze({
+    en: "the and is are was of to in that it for this with not on be you have but can from they will what about there a an as at by or if has we so do which would their been more some all just also only than how who",
+    es: "el la los las de que y en por para con una es no se del como pero más este esta también",
+    fr: "le la les de des et est une que pour dans pas sur avec il ce qui du ne sont mais aussi",
+    de: "der die das und ist nicht ein eine zu mit von den auf für ich es sich auch dass wird",
+    pt: "o os de que e do da em um uma para com não por mais se é dos das mas também",
+    it: "il la di che e è un una per non con del della sono si anche gli più come",
+    tr: "ve bir bu için ile de da çok ne olarak değil gibi ama daha var ben",
+    id: "yang dan di ini itu dengan untuk tidak ada dari saya akan juga bisa atau",
+    nl: "de het een en van is dat niet op te met voor zijn ook maar",
+    pl: "i w nie na się z że do to jest jak co ale czy przez",
+    tk: "we bilen üçin bu hem däl bolsa ýa-da ýaly bar",
+  });
+  const POST_TRANSLATE_LETTERS = Object.freeze({
+    de: /[ß]/g, es: /[ñ¿¡]/g, pt: /[ãõ]/g, tr: /[ğı]/g, pl: /[ąęłśźżń]/g, tk: /[ňýž]/g,
+  });
+  const POST_TRANSLATE_RUNNABLE = new Set(["available", "downloadable", "downloading", "unknown", "pending", "machine"]);
+  const POST_MACHINE_SCHEMA = "forkmesh-machine-translations-issue-v1";
+  const POST_TRANSLATE_HOVER_MS = 350;
+  const POST_TRANSLATE_SPARKLES = 12;
+  const POST_TRANSLATE_STYLE = `
+    .fm-xl-sparkle { position: fixed; z-index: 90; width: 16px; height: 16px; margin: -8px 0 0 -8px; pointer-events: none; color: rgb(var(--dashboard-primary-rgb, 9 105 218)); filter: drop-shadow(0 0 4px currentColor); animation: fm-xl-spark var(--fm-xl-life, 800ms) ease-out var(--fm-xl-delay, 0ms) both; }
+    .fm-xl-sparkle::before { content: ""; position: absolute; inset: 0; background: currentColor; clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%); }
+    .fm-xl-sparkle:nth-child(3n) { color: rgb(var(--dashboard-accent-rgb, 130 80 223)); }
+    @keyframes fm-xl-spark { 0% { opacity: 0; transform: translate(0, 0) scale(.2) rotate(0deg); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--fm-xl-dx), var(--fm-xl-dy)) scale(var(--fm-xl-size, 1)) rotate(120deg); } }
+    .fm-xl-reveal { animation: fm-xl-reveal 650ms ease-out both; }
+    @keyframes fm-xl-reveal { 0% { opacity: .2; filter: blur(4px); } 60% { opacity: 1; filter: blur(0); } 100% { opacity: 1; filter: none; } }
+    [data-post-translate-hoverable] { transition: background-color .2s; border-radius: 6px; }
+    @media (hover: hover) { [data-post-translate-hoverable]:hover { background: rgb(var(--dashboard-primary-rgb, 9 105 218) / .04); } }
+    @media (prefers-reduced-motion: reduce) { .fm-xl-sparkle { display: none; } .fm-xl-reveal { animation: none; } }
+  `;
+  const POST_TRANSLATE_BODIES = "[data-repo-record-detail] [data-repo-record-body], [data-repo-record-detail] [data-repo-issue-comment-text]";
+  const postTranslateUi = {
+    posts: new WeakMap(),
+    translated: new Map(),
+    translators: new Map(),
+    cache: new Map(),
+    detector: null,
+    availability: new Map(),
+    failed: new Set(),
+    thread: "",
+    originals: false,
+    machine: new Map(),
+    hover: null,
+    pending: [],
+    scheduled: false,
+    iconsFrame: 0,
+    words: null,
+    names: new Map(),
+    observer: null,
+    queue: Promise.resolve(),
+  };
+
+  function postTranslateCanHover(scope = globalThis) {
+    try {
+      return scope.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches === true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function postTranslateApi(scope = globalThis) {
+    const translator = scope?.Translator;
+    const detector = scope?.LanguageDetector;
+    return {
+      translator: translator && typeof translator.create === "function" && typeof translator.availability === "function" ? translator : null,
+      detector: detector && typeof detector.create === "function" ? detector : null,
+    };
+  }
+
+  function postTranslateReadPrefs(storage = globalThis.localStorage) {
+    let saved = null;
+    try { saved = JSON.parse(storage?.getItem(POST_TRANSLATE_PREFS_KEY) || "null"); } catch (_) { saved = null; }
+    const target = postTranslateCode(saved?.target);
+    return { target, auto: saved?.auto === true, machine: saved?.machine !== false };
+  }
+
+  function postTranslateWritePrefs(prefs, storage = globalThis.localStorage) {
+    const clean = { target: postTranslateCode(prefs?.target), auto: prefs?.auto === true, machine: prefs?.machine !== false };
+    try { storage?.setItem(POST_TRANSLATE_PREFS_KEY, JSON.stringify(clean)); } catch (_) {}
+    return clean;
+  }
+
+  function postTranslateCode(value) {
+    const raw = String(value || "").trim().replace(/_/g, "-");
+    if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/.test(raw)) return "";
+    const parts = raw.split("-");
+    const primary = parts[0].toLowerCase();
+    if (primary === "zh") {
+      const rest = parts.slice(1).map((part) => part.toLowerCase());
+      return rest.some((part) => ["hant", "tw", "hk", "mo"].includes(part)) ? "zh-Hant" : "zh";
+    }
+    if (primary === "iw") return "he";
+    if (primary === "pes" || primary === "prs") return "fa";
+    return primary;
+  }
+
+  function postTranslateSame(a, b) {
+    const left = postTranslateCode(a);
+    const right = postTranslateCode(b);
+    return Boolean(left) && left === right;
+  }
+
+  function postTranslateReaderLanguage(prefs = postTranslateReadPrefs(), nav = globalThis.navigator) {
+    if (prefs.target) return prefs.target;
+    const list = Array.isArray(nav?.languages) && nav.languages.length ? nav.languages : [nav?.language];
+    for (const item of list) {
+      const code = postTranslateCode(item);
+      if (code) return code;
+    }
+    return "en";
+  }
+
+  function postTranslateLanguageName(code, displayIn = "en") {
+    const clean = postTranslateCode(code);
+    if (!clean) return "";
+    const key = `${displayIn || "en"}\u0000${clean}`;
+    const names = postTranslateUi.names;
+    if (names.has(key)) return names.get(key);
+    let found = clean;
+    try {
+      const name = new Intl.DisplayNames([displayIn || "en"], { type: "language" }).of(clean);
+      if (name && name !== clean) found = name;
+    } catch (_) {}
+    names.set(key, found);
+    return found;
+  }
+
+  function postTranslateNativeName(code) {
+    return postTranslateLanguageName(code, postTranslateCode(code) || "en");
+  }
+
+  function postTranslateSkipped(element) {
+    if (!element || element.nodeType !== 1) return false;
+    if (POST_TRANSLATE_SKIP.has(String(element.tagName || "").toUpperCase())) return true;
+    if (element.getAttribute?.("translate") === "no") return true;
+    return element.hasAttribute?.("data-post-translate") === true;
+  }
+
+  function postTranslateSegments(root) {
+    const segments = [];
+    let open = false;
+    const walk = (element) => {
+      for (const child of Array.from(element.childNodes || [])) {
+        if (child.nodeType === 3) {
+          if (!open) {
+            segments.push([]);
+            open = true;
+          }
+          segments[segments.length - 1].push(child);
+          continue;
+        }
+        if (child.nodeType !== 1) continue;
+        if (postTranslateSkipped(child)) {
+          open = false;
+          continue;
+        }
+        if (POST_TRANSLATE_INLINE.has(String(child.tagName || "").toUpperCase())) {
+          walk(child);
+          continue;
+        }
+        open = false;
+        walk(child);
+        open = false;
+      }
+    };
+    if (root) walk(root);
+    return segments.filter((nodes) => postTranslateWorthy(nodes.map((node) => node.nodeValue || "").join("")));
+  }
+
+  function postTranslateWorthy(text) {
+    const value = String(text || "").trim();
+    if (!value || !/\p{L}/u.test(value)) return false;
+    if (/^(?:https?:\/\/|www\.)\S+$/i.test(value)) return false;
+    return !/^[@#][\w.-]+$/.test(value);
+  }
+
+  function postTranslatePlainText(root, limit = POST_TRANSLATE_DETECT_CHARS) {
+    let text = "";
+    for (const nodes of postTranslateSegments(root)) {
+      text += `${nodes.map((node) => node.nodeValue || "").join("").trim()}\n`;
+      if (text.length >= limit) break;
+    }
+    return text.slice(0, limit).trim();
+  }
+
+  function postTranslateProse(text) {
+    return String(text || "").slice(0, POST_TRANSLATE_DETECT_CHARS)
+      .replace(/(?:https?:\/\/|www\.)\S+|[@#][\w.-]+|\S*[\/_.]\S*[\/_.]\S*|\S*\d\S*/gi, " ");
+  }
+
+  function postTranslateScriptGuess(text) {
+    const sample = postTranslateProse(text);
+    const count = (pattern) => (sample.match(pattern) || []).length;
+    const letters = count(/\p{L}/gu);
+    if (!letters) return "";
+    const kana = count(/[぀-ヿ]/g);
+    const han = count(/\p{Script=Han}/gu);
+    const hangul = count(/\p{Script=Hangul}/gu);
+    const arabic = count(/\p{Script=Arabic}/gu);
+    const share = (value) => value / letters;
+    if (share(kana) > 0.1) return "ja";
+    if (share(hangul) > 0.3) return "ko";
+    if (share(han) > 0.3 || (han >= 12 && share(han) > 0.12)) return "zh";
+    if (share(arabic) > 0.5) {
+      const persian = count(/[پچژگکی]/g);
+      const arabicOnly = count(/[ةيىأإ]/g);
+      if (persian >= 2 && persian > arabicOnly) return "fa";
+      if (arabicOnly >= 2 && persian === 0) return "ar";
+      return "";
+    }
+    const cyrillic = count(/\p{Script=Cyrillic}/gu);
+    if (share(cyrillic) > 0.5) {
+      if (count(/[әғқңөұүһ]/gi) >= 2) return "kk";
+      const ukrainian = count(/[іїєґ]/gi);
+      const russian = count(/[ыэъё]/gi);
+      if (ukrainian >= 2 && ukrainian > russian) return "uk";
+      return ukrainian && !russian ? "" : "ru";
+    }
+    if (count(/[ăđơư]/gi) >= 2 && count(/[ạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/gi) >= 2) return "vi";
+    const scripts = [["th", /\p{Script=Thai}/gu], ["he", /\p{Script=Hebrew}/gu], ["el", /\p{Script=Greek}/gu],
+      ["my", /\p{Script=Myanmar}/gu], ["hy", /\p{Script=Armenian}/gu], ["ka", /\p{Script=Georgian}/gu]];
+    for (const [code, pattern] of scripts) {
+      if (share(count(pattern)) > 0.5) return code;
+    }
+    return "";
+  }
+
+  function postTranslateWordGuess(text) {
+    const words = postTranslateProse(text).toLowerCase().match(/\p{L}[\p{L}'’-]*/gu) || [];
+    if (words.length < 4) return "";
+    if (!postTranslateUi.words) {
+      postTranslateUi.words = Object.entries(POST_TRANSLATE_WORDS).map(([code, list]) => [code, new Set(list.split(" "))]);
+    }
+    const scores = postTranslateUi.words.map(([code, known]) => {
+      let hits = words.filter((word) => known.has(word)).length;
+      const letters = POST_TRANSLATE_LETTERS[code];
+      if (letters) hits += Math.min(3, (postTranslateProse(text).match(letters) || []).length);
+      return [code, hits / words.length, hits];
+    }).sort((a, b) => b[1] - a[1]);
+    const [best, second] = scores;
+    if (best[1] < 0.06 || best[2] < 2) return "";
+    return best[1] >= second[1] * 1.6 ? best[0] : "";
+  }
+
+  function postTranslateGuess(text) {
+    return postTranslateScriptGuess(text) || postTranslateWordGuess(text);
+  }
+
+  function postTranslateWithin(promise, ms, fallback) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(fallback), ms);
+      Promise.resolve(promise).then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      }, () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      });
+    });
+  }
+
+  async function postTranslateDetectorInstance(api, gesture) {
+    const cached = postTranslateUi.detector;
+    if (cached?.api === api.detector && cached.instance) return cached.instance;
+    const availability = typeof api.detector.availability === "function"
+      ? await postTranslateWithin(api.detector.availability(), POST_TRANSLATE_CHECK_MS, "unknown") : "available";
+    if (availability === "unavailable") return null;
+    if (availability !== "available" && !gesture) return "later";
+    if (cached?.api === api.detector && cached.failed) return null;
+    postTranslateUi.detector = { api: api.detector, instance: null };
+    const instance = await postTranslateWithin(api.detector.create(), POST_TRANSLATE_DETECTOR_MS, null);
+    postTranslateUi.detector = { api: api.detector, instance, failed: !instance };
+    return instance;
+  }
+
+  async function postTranslateDetect(text, api = postTranslateApi(), gesture = false) {
+    const sample = String(text || "").trim();
+    if (!sample) return { language: "", confidence: 0, source: "none" };
+    let later = false;
+    if (api.detector) {
+      try {
+        const instance = await postTranslateDetectorInstance(api, gesture);
+        later = instance === "later";
+        if (instance && !later) {
+          const results = await instance.detect(sample);
+          const best = Array.isArray(results) ? results[0] : null;
+          const language = postTranslateCode(best?.detectedLanguage);
+          const confidence = Number(best?.confidence) || 0;
+          if (language && language !== "und" && confidence >= POST_TRANSLATE_MIN_CONFIDENCE) {
+            return { language, confidence, source: "detector" };
+          }
+        }
+      } catch (_) {}
+    }
+    const script = postTranslateScriptGuess(sample);
+    if (script) return { language: script, confidence: 0.6, source: "script" };
+    const words = postTranslateWordGuess(sample);
+    if (words) return { language: words, confidence: 0.55, source: "words" };
+    return { language: "", confidence: 0, source: later ? "later" : "none" };
+  }
+
+  async function postTranslateAvailability(source, target, api = postTranslateApi(), detection = "") {
+    if (!api.translator) return "no-api";
+    if (!target) return "unknown-source";
+    if (!source) return detection === "later" ? "unknown" : "unknown-source";
+    if (postTranslateSame(source, target)) return "same";
+    const key = `${source}>${target}`;
+    if (postTranslateUi.failed.has(key)) return "unavailable";
+    if (postTranslateUi.translators.has(key)) return "available";
+    const cached = postTranslateUi.availability.get(key);
+    if (cached?.api === api.translator) return cached.answer;
+    const answer = (async () => {
+      try {
+        const value = await postTranslateWithin(api.translator.availability({ sourceLanguage: source, targetLanguage: target }), POST_TRANSLATE_CHECK_MS, "unknown");
+        return ["available", "downloadable", "downloading", "unavailable", "unknown"].includes(value) ? value : "unavailable";
+      } catch (_) {
+        return "unavailable";
+      }
+    })();
+    postTranslateUi.availability.set(key, { api: api.translator, answer });
+    const value = await answer;
+    if (value === "unknown") postTranslateUi.availability.delete(key);
+    return value;
+  }
+
+  async function postTranslateSha256(text) {
+    const data = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(data), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  function postMachineDoc() {
+    const detail = state.repoRecordDetail;
+    if (!detail?.repo || detail.kind !== "issues" || !Number(detail.number)) return Promise.resolve(null);
+    const key = `${repoKey(detail.repo)}#${Number(detail.number)}`;
+    if (!postTranslateUi.machine.has(key)) {
+      postTranslateUi.machine.set(key, (async () => {
+        const path = `.forkmesh/translations/issues/${Number(detail.number)}.json`;
+        try {
+          const blobs = await fetchRepoBlobs(detail.repo, [path]);
+          const doc = blobs[path] ? JSON.parse(blobText(blobs[path]) || "null") : null;
+          return doc?.schema === POST_MACHINE_SCHEMA && doc.posts && typeof doc.posts === "object" ? doc : null;
+        } catch (_) {
+          return null;
+        }
+      })());
+    }
+    return postTranslateUi.machine.get(key);
+  }
+
+  async function postMachineEntry(record) {
+    if (!record?.comment || !globalThis.crypto?.subtle) return null;
+    for (let attempt = 0; attempt < 20 && !state.repoRecordDetail?.parsed; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    const doc = await postMachineDoc();
+    const entry = doc?.posts?.[record.comment];
+    if (!entry || typeof entry.text !== "string" || !postTranslateSame(doc.target, record.target)) return null;
+    if (!state.repoRecordDetail?.parsed) return null;
+    const text = postTranslationSourceText(record.comment);
+    if (!text || await postTranslateSha256(text) !== entry.hash) return null;
+    return { source: postTranslateCode(entry.source), text: entry.text };
+  }
+
+  function postTranslateStyleOnce() {
+    if (document.querySelector("style[data-post-translate-style]")) return;
+    const style = document.createElement("style");
+    style.setAttribute("data-post-translate-style", "");
+    style.textContent = POST_TRANSLATE_STYLE;
+    (document.head || document.documentElement).append(style);
+  }
+
+  function postTranslateSparkle(body, point) {
+    if (!body?.isConnected || globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    postTranslateStyleOnce();
+    const box = body.getBoundingClientRect();
+    const x = Number.isFinite(point?.x) ? point.x : box.left + Math.min(box.width, 240) / 2;
+    const y = Number.isFinite(point?.y) ? point.y : box.top + Math.min(box.height, 60) / 2;
+    const layer = document.createElement("div");
+    layer.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < POST_TRANSLATE_SPARKLES; index += 1) {
+      const spark = document.createElement("span");
+      const angle = (Math.PI * 2 * index) / POST_TRANSLATE_SPARKLES + Math.random() * 0.6;
+      const reach = 30 + Math.random() * 42;
+      spark.className = "fm-xl-sparkle";
+      spark.style.left = `${Math.round(x)}px`;
+      spark.style.top = `${Math.round(y)}px`;
+      spark.style.setProperty("--fm-xl-dx", `${Math.round(Math.cos(angle) * reach)}px`);
+      spark.style.setProperty("--fm-xl-dy", `${Math.round(Math.sin(angle) * reach - 10)}px`);
+      spark.style.setProperty("--fm-xl-size", (0.7 + Math.random() * 0.9).toFixed(2));
+      spark.style.setProperty("--fm-xl-delay", `${Math.round(Math.random() * 120)}ms`);
+      spark.style.setProperty("--fm-xl-life", `${Math.round(650 + Math.random() * 350)}ms`);
+      layer.append(spark);
+    }
+    document.body.append(layer);
+    setTimeout(() => layer.remove(), 1300);
+  }
+
+  function postTranslateReveal(body, point) {
+    if (!body?.isConnected) return;
+    postTranslateStyleOnce();
+    postTranslateSparkle(body, point);
+    body.classList.remove("fm-xl-reveal");
+    void body.offsetWidth;
+    body.classList.add("fm-xl-reveal");
+    setTimeout(() => body.classList.remove("fm-xl-reveal"), 800);
+  }
+
+  function postTranslateHoverable(record) {
+    return Boolean(record?.hover && record.showing === "original" && !record.busy && !record.hoverOff
+      && (record.machineEntry || record.availability === "available"));
+  }
+
+  function postTranslateMarkHover(body, record) {
+    if (postTranslateHoverable(record)) {
+      postTranslateStyleOnce();
+      body.setAttribute("data-post-translate-hoverable", "");
+    } else {
+      body.removeAttribute("data-post-translate-hoverable");
+    }
+  }
+
+  function postTranslateHoverStart(body, point) {
+    const record = postTranslateUi.posts.get(body);
+    if (!postTranslateHoverable(record)) return;
+    if (postTranslateUi.hover?.body === body) {
+      postTranslateUi.hover.point = point;
+      return;
+    }
+    postTranslateHoverStop();
+    const hover = { body, point, timer: 0 };
+    hover.timer = setTimeout(() => {
+      if (postTranslateUi.hover !== hover) return;
+      postTranslateUi.hover = null;
+      const current = postTranslateUi.posts.get(body);
+      if (!postTranslateHoverable(current)) return;
+      if (current.machineEntry) {
+        postMachineApply(body, current);
+        postTranslateReveal(body, hover.point);
+      } else {
+        void postTranslateRun(body, false).then((done) => {
+          if (done?.showing === "translation") postTranslateReveal(body, hover.point);
+        });
+      }
+    }, POST_TRANSLATE_HOVER_MS);
+    postTranslateUi.hover = hover;
+  }
+
+  function postTranslateHoverStop(body = null) {
+    const hover = postTranslateUi.hover;
+    if (!hover || (body && hover.body !== body)) return;
+    clearTimeout(hover.timer);
+    postTranslateUi.hover = null;
+  }
+
+  function postMachineApply(body, record) {
+    const entry = record.machineEntry;
+    if (!entry || record.showing === "translation") return;
+    record.originalHtml = body.innerHTML;
+    body.innerHTML = renderRecordMarkdown(entry.text, state.repoRecordDetail?.repo);
+    body.setAttribute("lang", record.target);
+    record.machine = entry;
+    record.showing = "translation";
+    record.saved = [];
+    body.removeAttribute("data-post-translate-hoverable");
+    postTranslatePaint(body);
+  }
+
+  async function postTranslateRecordAvailability(record, api) {
+    if (record.alsoIn && postTranslateSame(record.alsoIn, record.target)) return "same";
+    return postTranslateAvailability(record.source, record.target, api, record.detection);
+  }
+
+  async function postTranslateTranslator(source, target, api = postTranslateApi(), onProgress = null, stallMs = POST_TRANSLATE_STALL_MS) {
+    const key = `${source}>${target}`;
+    if (postTranslateUi.translators.has(key)) return postTranslateUi.translators.get(key);
+    let stall = null;
+    let fail = null;
+    const watch = () => {
+      clearTimeout(stall);
+      stall = setTimeout(() => fail?.(new Error("translator_stalled")), stallMs);
+    };
+    const created = new Promise((resolve, reject) => {
+      fail = reject;
+      watch();
+      Promise.resolve(api.translator.create({
+        sourceLanguage: source,
+        targetLanguage: target,
+        monitor(monitor) {
+          monitor?.addEventListener?.("downloadprogress", (event) => {
+            watch();
+            onProgress?.(Math.max(0, Math.min(1, Number(event?.loaded) || 0)));
+          });
+        },
+      })).then(resolve, reject);
+    }).finally(() => clearTimeout(stall));
+    postTranslateUi.translators.set(key, created);
+    try {
+      return await created;
+    } catch (error) {
+      postTranslateUi.translators.delete(key);
+      postTranslateUi.availability.delete(key);
+      postTranslateUi.failed.add(key);
+      throw error;
+    }
+  }
+
+  async function postTranslateText(translator, source, target, text) {
+    const key = `${source}>${target}\u0000${text}`;
+    if (postTranslateUi.cache.has(key)) return postTranslateUi.cache.get(key);
+    const result = String(await translator.translate(text));
+    postTranslateUi.cache.set(key, result);
+    return result;
+  }
+
+  async function postTranslateApply(root, record, translator) {
+    const saved = [];
+    try {
+      for (const nodes of postTranslateSegments(root)) {
+        const original = nodes.map((node) => node.nodeValue || "");
+        const joined = original.join("");
+        const lead = /^\s*/.exec(joined)[0];
+        const trail = /\s*$/.exec(joined.slice(lead.length))[0];
+        const core = joined.slice(lead.length, joined.length - trail.length);
+        const translated = await postTranslateText(translator, record.source, record.target, core);
+        nodes.forEach((node, index) => saved.push([node, original[index]]));
+        nodes[0].nodeValue = `${lead}${translated}${trail}`;
+        nodes.slice(1).forEach((node) => { node.nodeValue = ""; });
+      }
+    } catch (error) {
+      saved.forEach(([node, value]) => { node.nodeValue = value; });
+      throw error;
+    }
+    record.saved = saved;
+    record.showing = "translation";
+    root.setAttribute?.("lang", record.target);
+    return record;
+  }
+
+  function postTranslateRestore(root, record) {
+    (record.saved || []).forEach(([node, value]) => { node.nodeValue = value; });
+    record.saved = [];
+    if (record.machine && typeof record.originalHtml === "string") root.innerHTML = record.originalHtml;
+    record.machine = null;
+    record.originalHtml = null;
+    record.showing = "original";
+    if (record.source) root.setAttribute?.("lang", record.source);
+    else root.removeAttribute?.("lang");
+    return record;
+  }
+
+  function postTranslatePostKey(body) {
+    const card = body.closest?.("[data-repo-issue-comment]") || body.closest?.("[data-repo-record-description]") || body.parentElement;
+    const bar = card?.querySelector?.("[data-comment-reactions][data-comment-id]");
+    const article = body.closest?.("[data-repo-record-detail]");
+    const subject = bar?.getAttribute("data-comment-reactions") || `${article?.getAttribute("data-repo-record-detail") || "record"}:${location.pathname}`;
+    const comment = bar?.getAttribute("data-comment-id") || (body.hasAttribute("data-repo-record-body") ? "body" : "");
+    return { subject, comment, key: comment ? `${location.pathname}\u0000${subject}\u0000${comment}` : "" };
+  }
+
+  function postTranslateStatusText(record, availability) {
+    const from = postTranslateLanguageName(record.source);
+    if (record.showing === "translation" && record.machine) return `Machine translation from ${from || "another language"}`;
+    if (record.showing === "translation") return `Translated from ${from || "another language"} · on your device`;
+    if ((availability === "machine" || availability === "available") && record.hover && !record.hoverOff) {
+      return from ? `Written in ${from} · hover to translate` : "Hover to translate";
+    }
+    if (availability === "machine") return from ? `Written in ${from} · translation ready` : "Translation ready";
+    if (record.busy) return record.progress > 0 && record.progress < 1 ? `Downloading the ${from} model… ${Math.round(record.progress * 100)}%` : "Translating on your device…";
+    if (record.error) return record.error;
+    if (availability === "downloadable") return `${from} · the translation model downloads once to your device`;
+    return from ? `Written in ${from}` : "";
+  }
+
+  function postTranslateBarHtml(record) {
+    const target = postTranslateLanguageName(record.target);
+    const availability = record.availability;
+    const hidden = availability === "same" || availability === "pending" || availability === "unknown-source"
+      || (availability === "no-api" && !record.source);
+    const unsupported = availability === "no-api" || availability === "unavailable" || availability === "unknown-source";
+    const from = postTranslateLanguageName(record.source);
+    const marked = from ? ` This post is marked as ${from}, so the browser knows what to translate.` : "";
+    const hint = availability === "no-api"
+      ? `Your browser can't translate on-device; use its Translate page option.${marked}`
+      : availability === "unavailable"
+        ? `On-device translation from ${from || "this language"} to ${target} isn't available in this browser; use its Translate page option.${marked}`
+        : availability === "unknown-source"
+          ? "Couldn't tell which language this post is in; use your browser's Translate page option."
+          : "";
+    if (hidden) return `<div class="fm-xl-row"><span data-post-translations class="fm-xl-community"></span></div>`;
+    const thread = postTranslateUi.thread
+      ? `<button type="button" data-post-translate-originals class="fm-xl-button">Show all originals</button>`
+      : `<button type="button" data-post-translate-all class="fm-xl-button">Translate every post on this page</button>`;
+    const label = record.showing === "translation" ? "Show original" : `Translate to ${target}`;
+    const options = Array.from(new Set([record.target, ...POST_TRANSLATE_LANGUAGES])).map((code) => `<option value="${escapeHtml(code)}"${code === record.target ? " selected" : ""}>${escapeHtml(postTranslateNativeName(code))}${postTranslateNativeName(code) === postTranslateLanguageName(code) ? "" : ` · ${escapeHtml(postTranslateLanguageName(code))}`}</option>`).join("");
+    return `<div class="fm-xl-row"><button type="button" data-post-translate-toggle class="fm-xl-button"${unsupported ? ` aria-disabled="true" title="${escapeHtml(hint)}"` : ""}${record.busy ? " disabled" : ""}><i data-lucide="languages" class="h-4 w-4"></i><span>${escapeHtml(label)}</span></button>
+      <span data-post-translate-status class="fm-xl-note" role="status" aria-live="polite">${escapeHtml(record.hintShown && hint ? hint : postTranslateStatusText(record, availability))}</span>
+      <details data-post-translate-menu class="fm-xl-menu">
+        <summary aria-label="Translation settings" title="Translation settings" class="fm-xl-icon"><i data-lucide="settings-2" class="h-4 w-4"></i></summary>
+        <div class="fm-xl-pop" role="group" aria-label="Translation settings">
+          <label class="fm-xl-field"><span>Translate posts to</span><select data-post-translate-target translate="no" class="fm-xl-select">${options}</select></label>
+          <label class="fm-xl-check"><input type="checkbox" data-post-translate-machine${record.machineAuto !== false ? " checked" : ""} /><span>Use this site's translations</span></label>
+          <label class="fm-xl-check"><input type="checkbox" data-post-translate-auto${record.auto ? " checked" : ""} /><span>Translate right away instead of on hover</span></label>
+          ${thread}
+          <p class="fm-xl-fine">This site's translations are made on its own server with open translation models. Other translations run on your device with your browser's built-in translator. Nothing is sent to a translation service.</p>
+        </div>
+      </details>
+      <span data-post-translations class="fm-xl-community"></span></div>`;
+  }
+
+  function postTranslateRecordFor(body) {
+    let record = postTranslateUi.posts.get(body);
+    if (!record) {
+      const prefs = postTranslateReadPrefs();
+      const { key, subject, comment } = postTranslatePostKey(body);
+      record = { key, subject, comment, source: "", target: postTranslateReaderLanguage(prefs), auto: prefs.auto, machineAuto: prefs.machine, hover: postTranslateCanHover(), availability: "pending", showing: "original", saved: [] };
+      postTranslateUi.posts.set(body, record);
+    }
+    return record;
+  }
+
+  function postTranslateBarFor(body) {
+    const next = body.nextElementSibling;
+    return next?.hasAttribute?.("data-post-translate") ? next : null;
+  }
+
+  function postTranslatePaint(body) {
+    const record = postTranslateUi.posts.get(body);
+    const bar = postTranslateBarFor(body);
+    if (!record || !bar) return;
+    const open = bar.querySelector("[data-post-translate-menu]")?.open === true;
+    const community = bar.querySelector("[data-post-translations]")?.innerHTML || "";
+    const row = bar.querySelector(".fm-xl-row");
+    if (row) row.outerHTML = postTranslateBarHtml(record);
+    else bar.insertAdjacentHTML("afterbegin", postTranslateBarHtml(record));
+    const menu = bar.querySelector("[data-post-translate-menu]");
+    if (menu && open) menu.open = true;
+    const slot = bar.querySelector("[data-post-translations]");
+    if (slot) slot.innerHTML = community;
+    postTranslateMarkHover(body, record);
+    if (bar.querySelector("i[data-lucide]")) postTranslateIcons();
+  }
+
+  function postTranslateIcons() {
+    if (postTranslateUi.iconsFrame) return;
+    const run = () => {
+      postTranslateUi.iconsFrame = 0;
+      window.lucide?.createIcons?.();
+    };
+    postTranslateUi.iconsFrame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(run) : setTimeout(run, 16);
+  }
+
+  function postTranslatePrepareBody(body) {
+    if (!body.hasAttribute("dir")) body.setAttribute("dir", "auto");
+    body.setAttribute("translate", "yes");
+    body.querySelectorAll(POST_TRANSLATE_NO_TRANSLATE).forEach((node) => node.setAttribute("translate", "no"));
+  }
+
+  async function postTranslateDecorate(body) {
+    if (!body?.isConnected || postTranslateUi.posts.has(body)) return;
+    const record = postTranslateRecordFor(body);
+    postTranslatePrepareBody(body);
+    if (!postTranslateBarFor(body)) {
+      const bar = document.createElement("div");
+      bar.setAttribute("data-post-translate", "");
+      bar.className = "fm-xl-bar px-4 pb-2";
+      body.insertAdjacentElement("afterend", bar);
+    }
+    postTranslatePaint(body);
+    void postTranslationAttach(body);
+    const api = postTranslateApi();
+    record.machineEntry = record.machineAuto === false ? null : await postMachineEntry(record);
+    if (record.busy || record.showing === "translation") return;
+    if (record.machineEntry) {
+      record.source = record.machineEntry.source;
+      record.availability = "machine";
+      if (record.source && !body.hasAttribute("lang")) body.setAttribute("lang", record.source);
+      postTranslatePaint(body);
+      if (record.machineAuto !== false && !postTranslateUi.originals
+          && (record.auto || !record.hover || postTranslateUi.thread === record.target)) {
+        postMachineApply(body, record);
+      }
+      return;
+    }
+    const text = postTranslatePlainText(body);
+    const detected = await postTranslateDetect(text, api);
+    if (record.busy || record.showing === "translation") return;
+    record.source = detected.language;
+    record.detection = detected.source;
+    const whole = postTranslatePlainText(body, POST_TRANSLATE_DETECT_CHARS * 10);
+    record.alsoIn = "";
+    for (let start = 0; start < whole.length && !record.alsoIn; start += POST_TRANSLATE_DETECT_CHARS) {
+      const found = postTranslateWordGuess(whole.slice(start, start + POST_TRANSLATE_DETECT_CHARS));
+      if (postTranslateSame(found, record.target)) record.alsoIn = found;
+    }
+    if (record.source && !body.hasAttribute("lang")) body.setAttribute("lang", record.source);
+    const short = !record.source && (postTranslateProse(text).match(/\p{L}+/gu) || []).length < 12;
+    const availability = short ? "unknown-source" : await postTranslateRecordAvailability(record, api);
+    if (record.busy || record.showing === "translation") return;
+    record.availability = availability;
+    postTranslatePaint(body);
+    const remembered = record.key ? postTranslateUi.translated.get(record.key) : "";
+    const ready = record.availability === "available" || postTranslateUi.translators.has(`${record.source}>${record.target}`);
+    const thread = postTranslateUi.thread === record.target && record.availability !== "unavailable";
+    if (ready && (remembered === record.target || record.auto)) void postTranslateRun(body, false);
+    else if (thread && POST_TRANSLATE_RUNNABLE.has(record.availability)) void postTranslateRun(body, false);
+  }
+
+  function postTranslateRun(body, gesture = true) {
+    const record = postTranslateUi.posts.get(body);
+    if (!record || record.busy || record.showing === "translation") return Promise.resolve(record);
+    if (record.machineEntry) {
+      postMachineApply(body, record);
+      if (gesture && postTranslateUi.thread !== record.target) postTranslateThread(record.target);
+      return Promise.resolve(record);
+    }
+    const api = postTranslateApi();
+    if (!api.translator || !POST_TRANSLATE_RUNNABLE.has(record.availability)) {
+      record.hintShown = true;
+      postTranslatePaint(body);
+      return Promise.resolve(record);
+    }
+    record.busy = true;
+    record.error = "";
+    record.progress = 0;
+    postTranslatePaint(body);
+    const onProgress = (loaded) => {
+      record.progress = loaded;
+      const status = postTranslateBarFor(body)?.querySelector("[data-post-translate-status]");
+      if (status) status.textContent = postTranslateStatusText(record, record.availability);
+    };
+    const stallMs = record.availability === "unknown" ? POST_TRANSLATE_CHECK_MS * 2 : POST_TRANSLATE_STALL_MS;
+    const start = record.source
+      ? Promise.resolve(postTranslateTranslator(record.source, record.target, api, onProgress, stallMs))
+      : postTranslateResolve(body, record, api, gesture, onProgress);
+    start.catch(() => {});
+    const job = postTranslateUi.queue.then(async () => {
+      try {
+        const translator = await start;
+        if (!translator || !body.isConnected) return record;
+        await postTranslateApply(body, record, translator);
+        record.availability = "available";
+        if (record.key) postTranslateUi.translated.set(record.key, record.target);
+        if (gesture && postTranslateUi.thread !== record.target) postTranslateThread(record.target);
+      } catch (error) {
+        const stalled = String(error?.message || "") === "translator_stalled";
+        if (stalled || postTranslateUi.failed.has(`${record.source}>${record.target}`)) {
+          record.availability = "unavailable";
+          record.hintShown = true;
+          postTranslateRepaintPair(record.source, record.target, body);
+        }
+        record.error = gesture && !record.hintShown ? "The on-device translation didn't finish. Use your browser's Translate page option." : "";
+      } finally {
+        record.busy = false;
+        postTranslatePaint(body);
+      }
+      return record;
+    });
+    postTranslateUi.queue = job.catch(() => {});
+    return job;
+  }
+
+  async function postTranslateResolve(body, record, api, gesture, onProgress) {
+    if (!record.source) {
+      const detected = await postTranslateDetect(postTranslatePlainText(body), api, gesture);
+      record.source = detected.language;
+      record.detection = detected.source;
+      if (record.source && !body.hasAttribute("lang")) body.setAttribute("lang", record.source);
+    }
+    record.availability = await postTranslateRecordAvailability(record, api);
+    if (record.availability === "unknown" && record.source) record.availability = "downloadable";
+    if (!["available", "downloadable", "downloading"].includes(record.availability)) {
+      record.hintShown = record.availability !== "same";
+      return null;
+    }
+    return postTranslateTranslator(record.source, record.target, api, onProgress);
+  }
+
+  function postTranslateToggle(body) {
+    const record = postTranslateUi.posts.get(body);
+    if (!record) return;
+    if (record.showing === "translation") {
+      postTranslateRestore(body, record);
+      record.hoverOff = true;
+      if (record.key) postTranslateUi.translated.delete(record.key);
+      postTranslatePaint(body);
+      return;
+    }
+    record.hoverOff = false;
+    void postTranslateRun(body, true);
+  }
+
+  function postTranslateThread(target) {
+    postTranslateUi.thread = target;
+    postTranslateUi.originals = false;
+    postTranslateBodies().forEach((body) => {
+      const record = postTranslateUi.posts.get(body);
+      if (!record) return;
+      postTranslatePaint(body);
+      if (record.showing !== "translation" && record.source && record.target === target
+          && POST_TRANSLATE_RUNNABLE.has(record.availability) && record.availability !== "pending") {
+        void postTranslateRun(body, false);
+      }
+    });
+  }
+
+  function postTranslateOriginals() {
+    postTranslateUi.thread = "";
+    postTranslateUi.originals = true;
+    postTranslateBodies().forEach((body) => {
+      const record = postTranslateUi.posts.get(body);
+      if (!record) return;
+      if (record.showing === "translation") postTranslateRestore(body, record);
+      if (record.key) postTranslateUi.translated.delete(record.key);
+      postTranslatePaint(body);
+    });
+  }
+
+  function postTranslateRepaintPair(source, target, except) {
+    postTranslateBodies().forEach((body) => {
+      const record = postTranslateUi.posts.get(body);
+      if (!record || body === except || record.source !== source || record.target !== target) return;
+      if (record.showing === "translation" || record.busy) return;
+      record.availability = "unavailable";
+      postTranslatePaint(body);
+    });
+  }
+
+  function postTranslateBodies(root = document) {
+    return Array.from(root.querySelectorAll?.(POST_TRANSLATE_BODIES) || []);
+  }
+
+  function postTranslateAll() {
+    const first = postTranslateBodies().map((body) => postTranslateUi.posts.get(body))
+      .find((record) => record && record.source && record.availability !== "same");
+    if (first) postTranslateUi.thread = first.target;
+    postTranslateBodies().forEach((body) => {
+      const record = postTranslateUi.posts.get(body);
+      if (record && record.showing !== "translation" && record.availability !== "same") void postTranslateRun(body, true);
+    });
+    postTranslateUi.originals = false;
+    postTranslateBodies().forEach((body) => {
+      if (postTranslateUi.posts.has(body)) postTranslatePaint(body);
+    });
+  }
+
+  async function postTranslateRetarget(target, auto, machine = postTranslateReadPrefs().machine) {
+    const prefs = postTranslateWritePrefs({ ...postTranslateReadPrefs(), target, auto, machine });
+    const api = postTranslateApi();
+    for (const body of postTranslateBodies()) {
+      const record = postTranslateUi.posts.get(body);
+      if (!record) continue;
+      const changed = record.target !== postTranslateReaderLanguage(prefs);
+      if (changed) postTranslateUi.thread = "";
+      if (changed && record.showing === "translation") postTranslateRestore(body, record);
+      record.target = postTranslateReaderLanguage(prefs);
+      record.auto = prefs.auto;
+      record.machineAuto = prefs.machine;
+      record.hintShown = false;
+      if (changed) {
+        record.availability = await postTranslateRecordAvailability(record, api);
+        record.machineEntry = record.availability === "same" || !prefs.machine ? null : await postMachineEntry(record);
+        if (record.machineEntry) record.availability = "machine";
+      }
+      if (!prefs.machine && record.machine) postTranslateRestore(body, record);
+      postTranslatePaint(body);
+      if (prefs.machine && record.machineEntry && !postTranslateUi.originals && (prefs.auto || !record.hover)) {
+        postMachineApply(body, record);
+        continue;
+      }
+      if (record.auto && record.availability === "available") void postTranslateRun(body, false);
+    }
+  }
+
+  function postTranslateScan(root = document) {
+    const scope = root?.querySelectorAll ? root : document;
+    const bodies = scope.matches?.("[data-repo-record-body], [data-repo-issue-comment-text]") ? [scope] : [];
+    bodies.concat(postTranslateBodies(scope)).forEach((body) => {
+      if (body.closest("[data-repo-record-detail]") && !postTranslateUi.posts.has(body)) postTranslateUi.pending.push(body);
+    });
+    postTranslateSchedule();
+  }
+
+  function postTranslateSchedule() {
+    if (postTranslateUi.scheduled || !postTranslateUi.pending.length) return;
+    postTranslateUi.scheduled = true;
+    const slice = (deadline) => {
+      postTranslateUi.scheduled = false;
+      const started = Date.now();
+      let handled = 0;
+      while (postTranslateUi.pending.length) {
+        const left = typeof deadline?.timeRemaining === "function" ? deadline.timeRemaining() : 8 - (Date.now() - started);
+        if (left <= 1 && (handled || !deadline?.didTimeout)) break;
+        handled += 1;
+        const body = postTranslateUi.pending.shift();
+        if (body?.isConnected && !postTranslateUi.posts.has(body)) void postTranslateDecorate(body);
+      }
+      postTranslateSchedule();
+    };
+    if (typeof requestIdleCallback === "function") requestIdleCallback(slice, { timeout: 500 });
+    else setTimeout(slice, 16);
+  }
+
+  function postTranslatePlaceMenu(menu) {
+    const summary = menu.querySelector("summary");
+    const pop = menu.querySelector(".fm-xl-pop");
+    if (!summary || !pop) return;
+    const anchor = summary.getBoundingClientRect();
+    const width = pop.offsetWidth || 280;
+    const height = pop.offsetHeight || 200;
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
+    const below = anchor.bottom + 4;
+    const top = below + height > window.innerHeight - 8 ? Math.max(8, anchor.top - height - 4) : below;
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
+  }
+
+  function initPostTranslate() {
+    if (postTranslateUi.observer || typeof MutationObserver !== "function" || !document.body) return;
+    postTranslateScan(document);
+    postTranslateUi.observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node.nodeType === 1 && !node.hasAttribute("data-post-translate") && !node.closest("[data-post-translate]")) postTranslateScan(node);
+        }
+      }
+    });
+    postTranslateUi.observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("click", (event) => {
+      const bar = event.target.closest?.("[data-post-translate]");
+      if (!bar) {
+        document.querySelectorAll("[data-post-translate-menu][open]").forEach((menu) => { menu.open = false; });
+        return;
+      }
+      const body = bar.previousElementSibling;
+      if (postTranslationClick(event, bar, body)) return;
+      if (event.target.closest("[data-post-translate-toggle]")) {
+        event.preventDefault();
+        postTranslateToggle(body);
+      } else if (event.target.closest("[data-post-translate-all]")) {
+        event.preventDefault();
+        bar.querySelector("[data-post-translate-menu]")?.removeAttribute("open");
+        postTranslateAll();
+      } else if (event.target.closest("[data-post-translate-originals]")) {
+        event.preventDefault();
+        bar.querySelector("[data-post-translate-menu]")?.removeAttribute("open");
+        postTranslateOriginals();
+      }
+    });
+    document.addEventListener("pointerover", (event) => {
+      if (event.pointerType && event.pointerType !== "mouse") return;
+      const body = event.target.closest?.("[data-post-translate-hoverable]");
+      if (body) postTranslateHoverStart(body, { x: event.clientX, y: event.clientY });
+    });
+    document.addEventListener("pointermove", (event) => {
+      const hover = postTranslateUi.hover;
+      if (hover) hover.point = { x: event.clientX, y: event.clientY };
+    }, { passive: true });
+    document.addEventListener("pointerout", (event) => {
+      const body = event.target.closest?.("[data-post-translate-hoverable]");
+      if (body && !body.contains(event.relatedTarget)) postTranslateHoverStop(body);
+    });
+    document.addEventListener("toggle", (event) => {
+      const menu = event.target;
+      if (menu?.matches?.("[data-post-translate-menu]") && menu.open) postTranslatePlaceMenu(menu);
+    }, true);
+    const closeMenus = () => document.querySelectorAll("[data-post-translate-menu][open]").forEach((menu) => { menu.open = false; });
+    window.addEventListener("resize", closeMenus);
+    window.addEventListener("scroll", closeMenus, { passive: true });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeMenus();
+    });
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest?.("[data-post-translation-form]");
+      if (!form) return;
+      event.preventDefault();
+      void postTranslationSubmit(form);
+    });
+    document.addEventListener("change", (event) => {
+      const langSelect = event.target.closest?.("[data-post-translation-lang]");
+      if (langSelect) {
+        langSelect.closest("form")?.querySelector("[data-post-translation-body]")?.setAttribute("lang", langSelect.value);
+        return;
+      }
+      const control = event.target.closest?.("[data-post-translate-target], [data-post-translate-auto], [data-post-translate-machine]");
+      if (!control) return;
+      const bar = control.closest("[data-post-translate]");
+      const target = bar?.querySelector("[data-post-translate-target]")?.value || "";
+      const auto = bar?.querySelector("[data-post-translate-auto]")?.checked === true;
+      const machine = bar?.querySelector("[data-post-translate-machine]")?.checked !== false;
+      void postTranslateRetarget(target, auto, machine);
+    });
+  }
+
+  const POST_TRANSLATION_PLUGIN = "community-translations";
+  const POST_TRANSLATION_MAX_BODY = 20000;
+  const postTranslationUi = { data: new Map(), loads: new Map() };
+
+  function postTranslationParts(subject) {
+    const match = /^(issue|pull|discussion):([1-9]\d{0,9})$/.exec(String(subject || ""));
+    return match ? { kind: match[1], number: Number(match[2]) } : null;
+  }
+
+  function postTranslationRepo() {
+    return state.repoRecordDetail?.repo || state.selectedRepo || null;
+  }
+
+  function postTranslationBase(repo) {
+    return repo ? repoApiBase(repo) : "";
+  }
+
+  function postTranslationSigningRepo(base) {
+    const parts = String(base || "").split("/");
+    return { owner: decodeURIComponent(parts[3] || ""), name: decodeURIComponent(parts[4] || "") };
+  }
+
+  function postTranslationSigningText(base, subject, comment, lang, pub, ts, bodyHash) {
+    const repo = postTranslationSigningRepo(base);
+    return ["forkmesh-translation-v1", `${repo.owner.trim().toLowerCase()}/${repo.name.trim().toLowerCase()}`,
+      subject, comment, lang, pub, String(ts), bodyHash].join("\n");
+  }
+
+  function postTranslationCleanBody(value) {
+    return String(value || "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").replace(/\s+$/, "");
+  }
+
+  function postTranslationLangCode(value) {
+    const raw = String(value || "").trim().replace(/_/g, "-");
+    if (!raw) return "";
+    const parts = raw.split("-");
+    parts[0] = parts[0].toLowerCase();
+    const code = parts.join("-");
+    return /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$/.test(code) ? code : "";
+  }
+
+  function postTranslationSourceText(comment, parsed = state.repoRecordDetail?.parsed) {
+    if (!parsed) return "";
+    if (comment === "body") return String(parsed.body || "");
+    const events = Array.isArray(parsed.issueEvents) ? parsed.issueEvents : [];
+    const original = events.find((event) => event && String(event.id || "") === comment);
+    if (!original) return "";
+    const edits = events.filter((event) => event?.type === "edit" && String(event.target || "") === comment);
+    return String((edits.length ? edits[edits.length - 1].body : original.body) || "");
+  }
+
+  function postTranslationLanguages(entries) {
+    const counts = new Map();
+    (entries || []).forEach((entry) => counts.set(entry.lang, (counts.get(entry.lang) || 0) + 1));
+    return Array.from(counts, ([lang, count]) => ({ lang, count }));
+  }
+
+  function postTranslationChipsHtml(entries, signedIn, openLang = "") {
+    const languages = postTranslationLanguages(entries);
+    const chips = languages.map(({ lang, count }) => `<button type="button" data-post-translation-chip="${escapeHtml(lang)}" aria-pressed="${lang === openLang ? "true" : "false"}" class="fm-xl-chip" lang="${escapeHtml(lang)}">${escapeHtml(postTranslateNativeName(lang) || lang)}${count > 1 ? ` <span aria-label="${count} translations">· ${count}</span>` : ""}</button>`).join("");
+    const label = languages.length ? `<span class="fm-xl-note">Community translations:</span>${chips}` : "";
+    const add = signedIn ? `<button type="button" data-post-translation-add class="fm-xl-link">${languages.length ? "Add yours" : "Add a translation"}</button>` : "";
+    return label + add;
+  }
+
+  function postTranslationEntryHtml(entry, options = {}) {
+    const lang = escapeHtml(entry.lang);
+    const name = postTranslateLanguageName(entry.lang) || entry.lang;
+    const stale = options.sourceHash && entry.source && entry.source !== options.sourceHash;
+    const when = entry.updatedAt ? formatTimeAgo(entry.updatedAt) : "";
+    const actions = [
+      entry.mine ? `<button type="button" data-post-translation-edit="${lang}" class="fm-xl-link">Edit</button>` : "",
+      entry.mine || options.canModerate ? `<button type="button" data-post-translation-remove="${lang}" data-post-translation-account="${escapeHtml(entry.mine ? "" : entry.name)}" class="fm-xl-link fm-xl-danger">Remove</button>` : "",
+    ].join("");
+    return `<div data-post-translation-entry="${lang}" class="grid gap-2">
+        <p class="fm-xl-meta"><span>Community translation into ${escapeHtml(name)} by ${escapeHtml(entry.name)}${entry.agent ? " (agent)" : ""}${when ? ` · ${escapeHtml(when)}` : ""}</span><span>· the original above is the source of truth</span>${stale ? `<span class="text-attention">· the original was edited after this translation</span>` : ""}${actions}</p>
+        <div class="${MD_BODY_CLASS}" lang="${lang}" dir="auto" translate="yes">${renderRecordMarkdown(entry.body, postTranslationRepo())}</div>
+      </div>`;
+  }
+
+  function postTranslationFormHtml(lang, body = "") {
+    const options = Array.from(new Set([lang, ...POST_TRANSLATE_LANGUAGES].filter(Boolean))).map((code) => `<option value="${escapeHtml(code)}"${code === lang ? " selected" : ""}>${escapeHtml(postTranslateNativeName(code))}</option>`).join("");
+    return `<form data-post-translation-form class="grid gap-2">
+        <label class="fm-xl-field"><span class="fm-xl-meta">Translate this post into</span><select data-post-translation-lang translate="no" class="fm-xl-select">${options}</select></label>
+        <textarea data-post-translation-body rows="8" maxlength="${POST_TRANSLATION_MAX_BODY}" dir="auto" lang="${escapeHtml(lang)}" class="fm-xl-textarea" aria-label="Translation (Markdown)" placeholder="Markdown. Keep links and code as they are.">${escapeHtml(body)}</textarea>
+        <p class="fm-xl-fine">Shown beside the original with your name, signed by this browser. It never replaces the post.</p>
+        <p data-post-translation-hint class="fm-xl-fine" role="status" aria-live="polite"></p>
+        <div class="fm-xl-actions"><button type="button" data-post-translation-cancel class="fm-xl-button">Cancel</button><button type="submit" class="fm-xl-button">Publish translation</button></div>
+      </form>`;
+  }
+
+  async function postTranslationLoad(subject, fresh = false) {
+    const parts = postTranslationParts(subject);
+    const base = postTranslationBase(postTranslationRepo());
+    if (!parts || !base) return null;
+    await instanceInfo();
+    if (instancePluginOff(POST_TRANSLATION_PLUGIN)) return null;
+    const key = `${base.toLowerCase()}|${subject}`;
+    if (!fresh && postTranslationUi.data.has(key)) return postTranslationUi.data.get(key);
+    if (!fresh && postTranslationUi.loads.has(key)) return postTranslationUi.loads.get(key);
+    const load = (async () => {
+      try {
+        const data = await fetchJson(`${base}/translations?kind=${parts.kind}&number=${parts.number}`, { fresh: fresh || Boolean(state.session?.sessionToken) });
+        if (!data || data.ok === false || typeof data.translations !== "object") return null;
+        const entry = { translations: data.translations || {}, signedIn: data.signedIn === true || Boolean(state.session?.sessionToken) };
+        postTranslationUi.data.set(key, entry);
+        return entry;
+      } catch (_) {
+        return null;
+      } finally {
+        postTranslationUi.loads.delete(key);
+      }
+    })();
+    postTranslationUi.loads.set(key, load);
+    return load;
+  }
+
+  function postTranslationPaintChips(body, entry) {
+    const record = postTranslateUi.posts.get(body);
+    const slot = postTranslateBarFor(body)?.querySelector("[data-post-translations]");
+    if (!record || !slot || !entry) return;
+    const open = postTranslateBarFor(body)?.querySelector("[data-post-translation-panel]")?.getAttribute("data-post-translation-panel") || "";
+    slot.innerHTML = postTranslationChipsHtml(entry.translations[record.comment] || [], entry.signedIn, open);
+  }
+
+  async function postTranslationAttach(body) {
+    const record = postTranslateUi.posts.get(body);
+    if (!record?.comment || !postTranslationParts(record.subject)) return;
+    for (let attempt = 0; attempt < 20 && !postTranslationRepo(); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      if (!body.isConnected) return;
+    }
+    const entry = await postTranslationLoad(record.subject);
+    if (entry && body.isConnected) postTranslationPaintChips(body, entry);
+  }
+
+  function postTranslationRefreshSubject(subject, entry) {
+    postTranslateBodies().forEach((body) => {
+      if (postTranslateUi.posts.get(body)?.subject === subject) postTranslationPaintChips(body, entry);
+    });
+  }
+
+  function postTranslationPanel(bar, mode) {
+    let panel = bar.querySelector("[data-post-translation-panel]");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.className = "fm-xl-panel";
+      bar.appendChild(panel);
+    }
+    panel.setAttribute("data-post-translation-panel", mode);
+    return panel;
+  }
+
+  function postTranslationClose(bar) {
+    bar.querySelector("[data-post-translation-panel]")?.remove();
+    bar.querySelectorAll("[data-post-translation-chip]").forEach((chip) => chip.setAttribute("aria-pressed", "false"));
+  }
+
+  async function postTranslationShow(body, lang) {
+    const record = postTranslateUi.posts.get(body);
+    const bar = postTranslateBarFor(body);
+    const parts = postTranslationParts(record?.subject);
+    const base = postTranslationBase(postTranslationRepo());
+    if (!record || !bar || !parts || !base) return;
+    if (bar.querySelector("[data-post-translation-panel]")?.getAttribute("data-post-translation-panel") === lang) {
+      postTranslationClose(bar);
+      return;
+    }
+    const panel = postTranslationPanel(bar, lang);
+    bar.querySelectorAll("[data-post-translation-chip]").forEach((chip) => chip.setAttribute("aria-pressed", chip.getAttribute("data-post-translation-chip") === lang ? "true" : "false"));
+    panel.innerHTML = `<p class="fm-xl-fine">Loading the translation…</p>`;
+    try {
+      const data = await fetchJson(`${base}/translations?kind=${parts.kind}&number=${parts.number}&comment=${encodeURIComponent(record.comment)}&lang=${encodeURIComponent(lang)}`, { fresh: true });
+      const entries = data?.translations?.[record.comment] || [];
+      const source = postTranslationSourceText(record.comment);
+      const sourceHash = source ? await sha256HexLower(source) : "";
+      const canModerate = Boolean(state.repoRecordDetail?.parsed?.issueMutationAuthorized);
+      if (panel.getAttribute("data-post-translation-panel") !== lang) return;
+      panel.innerHTML = entries.length
+        ? entries.map((entry) => postTranslationEntryHtml(entry, { sourceHash, canModerate })).join("")
+        : `<p class="fm-xl-fine">This translation was removed.</p>`;
+      panel._entries = entries;
+      window.lucide?.createIcons?.();
+    } catch (_) {
+      panel.innerHTML = `<p class="fm-xl-fine">The translation could not be loaded. Try again.</p>`;
+    }
+  }
+
+  function postTranslationOpenForm(body, lang = "", text = "") {
+    const record = postTranslateUi.posts.get(body);
+    const bar = postTranslateBarFor(body);
+    if (!record || !bar) return;
+    if (!state.session?.sessionToken) return;
+    const panel = postTranslationPanel(bar, "form");
+    const fallback = postTranslateSame(record.source, record.target) ? (postTranslateSame(record.source, "en") ? "zh" : "en") : record.target;
+    panel.innerHTML = postTranslationFormHtml(lang || fallback, text);
+    panel.querySelector("[data-post-translation-body]")?.focus();
+  }
+
+  function postTranslationErrorText(code) {
+    if (code === "rate_limited") return "Slow down a little and try again in a minute.";
+    if (code === "daily_limit") return "You've reached today's translation limit.";
+    if (code === "too_many_translations" || code === "record_full") return "This thread has reached its translation limit.";
+    if (code === "unauthorized") return "Sign in again to publish a translation.";
+    if (code === "bad_signature") return "This browser couldn't sign the translation.";
+    if (code === "invalid_body") return `Write the translation first (up to ${POST_TRANSLATION_MAX_BODY} characters).`;
+    if (code === "feature_disabled" || code === "plugin_disabled") return "Translations are switched off here.";
+    return "The translation didn't save. Try again.";
+  }
+
+  async function postTranslationSign(base, subject, comment, lang, text) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const ts = Date.now();
+    const canonical = postTranslationSigningText(base, subject, comment, lang, pub, ts, await sha256HexLower(text));
+    const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+    return { pub, sig, ts };
+  }
+
+  async function postTranslationSend(payload) {
+    const base = postTranslationBase(postTranslationRepo());
+    const response = await fetch(`${base}/translations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...payload, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
+    return data;
+  }
+
+  async function postTranslationSubmit(form) {
+    const bar = form.closest("[data-post-translate]");
+    const body = bar?.previousElementSibling;
+    const record = body ? postTranslateUi.posts.get(body) : null;
+    const parts = postTranslationParts(record?.subject);
+    const base = postTranslationBase(postTranslationRepo());
+    const hint = form.querySelector("[data-post-translation-hint]");
+    const lang = postTranslationLangCode(form.querySelector("[data-post-translation-lang]")?.value);
+    const text = postTranslationCleanBody(form.querySelector("[data-post-translation-body]")?.value);
+    if (!record || !parts || !base || !lang) return;
+    if (!text.trim() || text.length > POST_TRANSLATION_MAX_BODY) {
+      if (hint) hint.textContent = postTranslationErrorText("invalid_body");
+      return;
+    }
+    const buttons = form.querySelectorAll("button");
+    buttons.forEach((button) => { button.disabled = true; });
+    if (hint) hint.textContent = "Signing and publishing…";
+    try {
+      const source = postTranslationSourceText(record.comment);
+      const signature = await postTranslationSign(base, record.subject, record.comment, lang, text);
+      await postTranslationSend({ kind: parts.kind, number: parts.number, comment: record.comment, lang, body: text,
+        source: source ? await sha256HexLower(source) : "", ...signature });
+      const entry = await postTranslationLoad(record.subject, true);
+      postTranslationClose(bar);
+      if (entry) postTranslationRefreshSubject(record.subject, entry);
+      await postTranslationShow(body, lang);
+    } catch (error) {
+      buttons.forEach((button) => { button.disabled = false; });
+      if (hint) hint.textContent = postTranslationErrorText(error?.message === "signing_unavailable" ? "bad_signature" : String(error?.message || ""));
+    }
+  }
+
+  async function postTranslationRemove(body, lang, account) {
+    const record = postTranslateUi.posts.get(body);
+    const parts = postTranslationParts(record?.subject);
+    const bar = postTranslateBarFor(body);
+    if (!record || !parts || !bar) return;
+    try {
+      await postTranslationSend({ kind: parts.kind, number: parts.number, comment: record.comment, lang, remove: true, ...(account ? { account } : {}) });
+      postTranslationClose(bar);
+      const entry = await postTranslationLoad(record.subject, true);
+      if (entry) postTranslationRefreshSubject(record.subject, entry);
+    } catch (error) {
+      const panel = bar.querySelector("[data-post-translation-panel]");
+      if (panel) panel.insertAdjacentHTML("beforeend", `<p class="fm-xl-fine" role="status">${escapeHtml(postTranslationErrorText(String(error?.message || "")))}</p>`);
+    }
+  }
+
+  function postTranslationClick(event, bar, body) {
+    const chip = event.target.closest("[data-post-translation-chip]");
+    if (chip) {
+      event.preventDefault();
+      void postTranslationShow(body, chip.getAttribute("data-post-translation-chip") || "");
+      return true;
+    }
+    if (event.target.closest("[data-post-translation-add]")) {
+      event.preventDefault();
+      postTranslationOpenForm(body);
+      return true;
+    }
+    if (event.target.closest("[data-post-translation-cancel]")) {
+      event.preventDefault();
+      postTranslationClose(bar);
+      return true;
+    }
+    const edit = event.target.closest("[data-post-translation-edit]");
+    if (edit) {
+      event.preventDefault();
+      const lang = edit.getAttribute("data-post-translation-edit") || "";
+      const mine = (bar.querySelector("[data-post-translation-panel]")?._entries || []).find((entry) => entry.mine && entry.lang === lang);
+      postTranslationOpenForm(body, lang, mine?.body || "");
+      return true;
+    }
+    const remove = event.target.closest("[data-post-translation-remove]");
+    if (remove) {
+      event.preventDefault();
+      void postTranslationRemove(body, remove.getAttribute("data-post-translation-remove") || "", remove.getAttribute("data-post-translation-account") || "");
+      return true;
+    }
+    return false;
+  }
+
   const reactionSettingsUi = { scopes: [], scope: "", reactions: [], editing: "", loaded: false };
 
   async function reactionSettingsPost(path, body) {
@@ -54831,6 +57548,89 @@ Your reply
       }
     });
   }
+
+  function repoReadSurfaceBase(repo) {
+    const owner = String(repoPublicOwner(repo) || repo?.owner || "").trim().toLowerCase();
+    const name = String(repo?.name || "").trim();
+    if (!owner || !name) return "";
+    return ["", owner, name].map(encodeURIComponent).join("/");
+  }
+
+  function repoIssueFeedLinks(repo) {
+    if (!instancePluginOn("read-surfaces")) return "";
+    const base = repoReadSurfaceBase(repo);
+    if (!base) return "";
+    const link = "text-[var(--dashboard-link)] hover:underline";
+    return `<p data-repo-issue-feeds class="border-t border-border px-4 py-2 text-[12px] text-muted-foreground"><a href="${escapeHtml(`${base}/issues.atom`)}" type="application/atom+xml" class="${link}">Feed</a> &middot; <a href="${escapeHtml(`${base}/lite`)}" class="${link}">Lite view</a></p>`;
+  }
+
+  function liteViewHref() {
+    const base = document.body?.dataset.page === "repo" ? repoReadSurfaceBase(state.selectedRepo) : "";
+    if (!base) return "/lite";
+    const issue = location.pathname.match(/\/issues\/([1-9]\d{0,8})\/?$/);
+    return issue ? `${base}/lite/issues/${issue[1]}` : `${base}/lite`;
+  }
+
+  document.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("a[data-lite-link]") : null;
+    if (link) link.setAttribute("href", liteViewHref());
+  }, true);
+
+  void instanceInfo().then(() => {
+    const on = instancePluginOn("read-surfaces");
+    document.querySelectorAll("a[data-lite-link]").forEach((link) => { link.hidden = !on; });
+  }).catch(() => {});
+  function repoMirrorHelpHref(repo) {
+    const base = repoReadSurfaceBase(repo);
+    return base ? `${base}/mirror` : "";
+  }
+
+  function repoMirrorHelpBanner(base, healthy, target) {
+    return `<div data-repo-mirror-help class="flex min-w-0 items-center gap-2 rounded-t-md border-b border-attention/40 bg-attention/10 px-3 py-1.5 text-xs text-foreground"><span aria-hidden="true" class="h-2 w-2 shrink-0 rounded-full bg-attention"></span><span class="min-w-0 flex-1 truncate"><b class="font-semibold">This forum needs your help</b> &mdash; ${healthy} of ${target} mirrors running. <a href="${escapeHtml(`${base}/mirror`)}" class="dashboard-accent-link font-semibold">Run a mirror or join the federation &rarr;</a></span><button type="button" data-repo-mirror-help-dismiss aria-label="Dismiss" class="shrink-0 text-muted-foreground hover:text-foreground">&times;</button></div>`;
+  }
+
+  function repoMirrorHelpDismissKey(base) {
+    return `forkmesh.mirrorHelpDismissed:${base}`;
+  }
+
+  function repoMirrorHelpDismissed(base) {
+    try {
+      return localStorage.getItem(repoMirrorHelpDismissKey(base)) === "1";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function repoMirrorHelpFor(repo) {
+    const base = repoReadSurfaceBase(repo);
+    if (!base || repo?.isPrivate || repoMirrorHelpDismissed(base)) return "";
+    const data = mirrorQuotaKnown(repo);
+    const target = Math.max(0, Math.floor(Number(data?.target) || 0));
+    const healthy = Math.max(0, Math.floor(Number(data?.healthy) || 0));
+    if (!data || !target || healthy >= target) return "";
+    return repoMirrorHelpBanner(base, healthy, target);
+  }
+
+  function repoMirrorHelpSlot(repo) {
+    if (repo && !repo.isPrivate && !mirrorQuotaKnown(repo)) {
+      void loadRepoMirrorQuota(repo).then(() => {
+        const slot = document.querySelector("[data-repo-mirror-help-slot]");
+        if (slot && mirrorQuotaCurrent(repo)) slot.innerHTML = repoMirrorHelpFor(repo);
+      });
+    }
+    return `<div data-repo-mirror-help-slot>${repoMirrorHelpFor(repo)}</div>`;
+  }
+
+  document.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest("[data-repo-mirror-help-dismiss]") : null;
+    if (!button) return;
+    event.preventDefault();
+    const base = repoReadSurfaceBase(state.selectedRepo);
+    try {
+      if (base) localStorage.setItem(repoMirrorHelpDismissKey(base), "1");
+    } catch (_) {}
+    button.closest("[data-repo-mirror-help]")?.remove();
+  });
   const RECENT_PUSHES_URL = "/api/me/recent-pushes";
   const RECENT_PUSHES_CACHE_KEY = "forkmesh.recentPushes";
   const RECENT_PUSHES_DISMISSED_KEY = "forkmesh.recentPushes.dismissed";
@@ -56885,6 +59685,7 @@ Your reply
     window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
+    followSystemDashboardTheme();
     applyPlatformName();
     void instanceInfo();
     watchGenieSetting();
@@ -56914,6 +59715,10 @@ Your reply
       void initAiReviewSettings();
       void initSeasonSettings();
       watchSeason();
+      initRepoMirrorQuota();
+      void instanceInfo().then(() => {
+        if (instancePluginOn("post-translate")) initPostTranslate();
+      }).catch(() => {});
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

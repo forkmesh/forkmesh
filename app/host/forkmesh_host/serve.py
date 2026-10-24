@@ -100,6 +100,9 @@ def cmd_serve(args):
     if vault.enabled(os.environ):
         vault.harden_process()
     app = make_app(args)
+    from . import privacy
+    access_log = args.access_log and not privacy.active(
+        getattr(getattr(app, "runtime", None), "env", None))
     loop = "auto"
     try:
         import uvloop  # noqa: F401
@@ -117,7 +120,7 @@ def cmd_serve(args):
         http = stopping_protocol(http, stopping)
     uvicorn.run(app, host=args.host, port=args.port, loop=loop, http=http,
                 ws=DrainingWebSocketProtocol, lifespan="on", workers=1,
-                log_level=args.log_level, access_log=args.access_log,
+                log_level=args.log_level, access_log=access_log,
                 proxy_headers=False, server_header=False,
                 **server_limits(os.environ))
     return 0

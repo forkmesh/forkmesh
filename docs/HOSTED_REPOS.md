@@ -202,8 +202,8 @@ same session-bound credential an owner uses.
   contributor gets one limited to its namespace, and the push answer names
   that one ref namespace (an owner or writer gets no prefix). Signing out
   revokes it.
-- **Enforcement.** The routing Worker signs `pushPrefix` into the
-  receive-pack capability, so a contributor cannot widen it, and the gateway
+- **Enforcement.** The app's relay router (`app/src/edge_routing.py`) signs
+  `pushPrefix` into the receive-pack capability, so a contributor cannot widen it, and the gateway
   (`tools/mirror_gateway.py`) refuses any command outside it, with at most
   `MAX_CONTRIBUTOR_BRANCHES` (32) branches there. A refusal is answered as a
   receive-pack report (`ng <ref> <reason>`), so stock Git prints the reason

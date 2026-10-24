@@ -158,13 +158,13 @@
       "subject": "forkmesh-protocol",
       "dimension": "workflow",
       "basis": "evidence",
-      "text": "Stock Git clones, fetches, and pushes over SSH. HTTPS and failover paths are read-only, hooks pushed with a repository never run on a mirror, and partial clone needs Git protocol v2.",
+      "text": "Stock Git clones and fetches over HTTPS and SSH, and pushes over SSH or over HTTPS with an account credential. Read mirrors never take writes, hooks pushed with a repository never run on a mirror, and partial clone needs Git protocol v2.",
       "evidence": [
         {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "known-limitations"},
         {"kind": "product-evidence", "path": "conformance/git/v1/results.json"},
         {"kind": "test", "ref": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "fm-protocol-operations",
@@ -708,13 +708,13 @@
   "notForYou": [
     {
       "id": "nfy-https-push",
-      "text": "You need to push over HTTPS or through a read mirror. ForkMesh accepts pushes only over SSH to a gateway.",
+      "text": "You need anonymous pushes, or pushes that land on a read mirror. ForkMesh takes pushes only from an authenticated account, over SSH or HTTPS, and streams them to one write endpoint.",
       "instead": ["centralized-hosting", "self-hosted-forge"],
       "evidence": [
-        {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-and-failover-paths-are-read-only"},
+        {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-receive-pack"},
         {"kind": "test", "ref": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"}
       ],
-      "verifiedOn": "2026-09-14"
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "nfy-slo-support",
@@ -788,9 +788,9 @@
   "limitations": [
     {
       "id": "lim-https-read-only",
-      "text": "HTTPS and mirror-failover Git paths are read-only; publish branches with the SSH URL.",
-      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-and-failover-paths-are-read-only"}],
-      "verifiedOn": "2026-09-14"
+      "text": "Read mirrors never take writes; an HTTPS push needs the account name and password or a push credential, and the compatibility suite does not probe it yet.",
+      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-receive-pack"}],
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "lim-server-hooks",
@@ -841,9 +841,9 @@
     },
     {
       "id": "mig-remotes",
-      "text": "Everyone who pushes registers an SSH public key and changes their push remote to the SSH URL; reads keep working over HTTPS.",
-      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-and-failover-paths-are-read-only"}],
-      "verifiedOn": "2026-09-14"
+      "text": "Everyone who pushes signs in with a ForkMesh account: over HTTPS with the account password or a push credential, or over SSH with a registered key.",
+      "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-receive-pack"}],
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "mig-forge-sync",

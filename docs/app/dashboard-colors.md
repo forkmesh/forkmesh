@@ -21,6 +21,12 @@ roles and a compact control size. Both live in one file,
 - `roles` and `rules`: what each colour is for, in words an agent can follow.
   `AGENTS.md` points agents at this file.
 
+Which of the two sets a page shows is the visitor's Settings, Appearance
+choice (System, Dark or Light), else the instance's colour mode (dark unless
+its theme says light or system); see
+[Colour mode](../INSTANCES.md#colour-mode). The light values here are also
+what a script-less visitor gets on a system-mode instance.
+
 ## Why `primary` is blue
 
 In October 2026 the user asked why every new page came out with green inputs,
