@@ -181,6 +181,10 @@
     return theme === "light" ? "light" : "dark";
   }
 
+  function seasonActive(name) {
+    return document.documentElement.dataset.season === name;
+  }
+
   function readDashboardTheme() {
     try {
       const cookieTheme = document.cookie

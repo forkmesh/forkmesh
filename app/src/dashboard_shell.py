@@ -45,6 +45,7 @@ PLUGIN_NAV_MARKER = "<!-- forkmesh:plugin-navigation -->"
 PAGE_TOKEN_RE = re.compile(r"<!--#page ([a-z]+)-->")
 
 THEME_TOKEN_RE = re.compile(r"/\*#theme (dark|light)\*/")
+SEASON_TOKEN_RE = re.compile(r"/\*#season ([a-z]+) (dark|light)\*/")
 THEME_PATH = "dashboard/theme.json"
 
 # Root-relative first-party script and stylesheet references, with an optional
@@ -377,6 +378,7 @@ CACHE_BUSTED_ASSETS = (
     "dashboard.js",
     "dashboard-chat.js",
     "dashboard-plugin-host.js",
+    "season.js",
     # Shared site chrome, on nearly every marketing/auth page.
     "site-header.js",
     "site-footer.js",
@@ -547,10 +549,19 @@ def theme_declarations(theme, mode):
     return "\n        ".join(lines)
 
 
+def season_declarations(theme, season, mode):
+    colors = (theme.get("seasons") or {}).get(season) or {}
+    return "\n        ".join(
+        "--dashboard-%s-rgb: %s;" % (name, values[mode])
+        for name, values in colors.items())
+
+
 def apply_theme(shell, read):
     theme = json.loads(read(THEME_PATH))
-    return THEME_TOKEN_RE.sub(
+    shell = THEME_TOKEN_RE.sub(
         lambda m: theme_declarations(theme, m.group(1)), shell)
+    return SEASON_TOKEN_RE.sub(
+        lambda m: season_declarations(theme, m.group(1), m.group(2)), shell)
 
 
 def compose_page_from_reader(
