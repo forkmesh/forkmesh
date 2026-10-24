@@ -44,7 +44,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 | Service | Kind | Needed | Components | Observes |
 | --- | --- | --- | --- | --- |
-| [Cloudflare Workers, D1, KV, Durable Objects, Queues, Workers AI, DNS, and TLS edge](#cloudflare) | hosting, dns, certificates, cdn-edge, ai-provider, telemetry | Mandatory for the hosted service | app-worker, app-browser, www-browser, world-worker, world-browser, mirror-node, desktop, operator-tools | Every request to forkmesh.com, app.forkmesh.com, and world.forkmesh.com terminates here: client IP address, TLS SNI, headers including User-Agent, request path, and timing. D1, KV, Durable Objects, and Queues hold the hosted service's account, catalog, collaboration, presence, and health data; sensitive fields are encrypted under DATA_KEY before storage. Workers AI receives ForkBot prompts, bug-report text, and usernames sent for moderation. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code. |
+| [Cloudflare DNS, the forkmesh.com website Worker, DNS over HTTPS, and Web Analytics](#cloudflare) | hosting, dns, certificates, cdn-edge, telemetry | Mandatory for the hosted service | app-worker, app-browser, www-browser, world-worker, world-browser, mirror-node, desktop, operator-tools | Requests to forkmesh.com and www.forkmesh.com end at the forkmesh-www Worker: client IP address, TLS SNI, headers including User-Agent, request path, and timing. The Worker serves the homepage, blog, docs, and static pages and passes app paths on to app.forkmesh.com. app.forkmesh.com and world.forkmesh.com are unproxied DNS records that point at the core nodes, so Cloudflare answers the DNS lookups for them but never sees their requests. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code. |
 | [ACME certificate authorities for direct-HTTPS mirrors](#acme-certificate-authority) | certificates | Degrades one feature | mirror-node | The mirror's public hostname and the host's IP address during certificate issuance and renewal. Issued certificates are published in public Certificate Transparency logs. |
 | [GitHub source and release downloads](#github-downloads) | forge-api, package-registry | Degrades one feature | desktop, installer, mirror-node, operator-tools, ci | The downloading host's IP address and the release or repository requested: desktop self-update clones of forkmesh/forkmesh when no source checkout exists, the age binary for the macOS installer, the pinned cloudflared release, and build toolchains. |
 | [GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors](#forge-apis) | forge-api | Optional, off unless enabled | app-worker, desktop, operator-tools, ci | The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. The relay's GitHub Actions watcher reads the public workflow runs, jobs and annotations of forkmesh/forkmesh every 5 minutes, with an optional read-only GITHUB_ACTIONS_WATCH_TOKEN. |
@@ -66,7 +66,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | [CelesTrak satellite orbital elements](#celestrak) | infrastructure | Degrades one feature | world-worker | The Worker's egress IP on a cron refresh. Visitors never contact CelesTrak. |
 | [ActivityPub peer servers](#fediverse-peers) | social | Optional, off unless enabled | app-worker, marketplace-package | Public activities ForkMesh publishes, the actor's public key, and HTTP signatures, delivered to the inboxes of remote followers; remote servers fetching actor profiles see the requesting server's IP address. |
 | [Hosted AI model providers (user-supplied keys)](#ai-providers) | ai-provider | Optional, off unless enabled | desktop, mobile | Prompts the user chooses to send, including issue threads, pull request diffs, and repository context, with the user's own API key; usage and cost queries for that key. Agent CLI install scripts are downloaded from claude.ai and chatgpt.com when the user installs them on a node. |
-| [Vultr server provisioning](#vultr) | infrastructure | Optional, off unless enabled | app-worker, desktop | The user's own Vultr API key and the instance they create, including cloud-init data with the Cloudflare token and payout address they supplied. |
+| [Vultr virtual machines for the core nodes and runners, and one-click mirror hosts](#vultr) | hosting, infrastructure | Mandatory for the hosted service | app-worker, world-worker, operator-tools, desktop | Vultr runs the machines that serve app.forkmesh.com and world.forkmesh.com: three core nodes (currently n3, n4, and n5) and the runner r1, all in its ewr region. As the hosting provider it has physical and hypervisor access to their disks, memory, and network traffic, which hold the replicated rqlite database (accounts, sessions, the catalog, collaboration, presence, and health data; sensitive fields encrypted under DATA_KEY, which the cores hold only in memory), repositories hosted on the cores, and the HTTPS traffic Caddy terminates. The Vultr API sees the operator's key and the instances the fleet tools and the core autoscaler create. Separately, a user who chooses one-click mirror hosting sends their own Vultr API key and the instance's cloud-init data, including the Cloudflare token and payout address they supplied. |
 | [Zoho Mail for the CRM marketplace package](#crm-package-providers) | email, identity | Optional, off unless enabled | marketplace-package, app-worker | For users who install the CRM package and connect Zoho Mail: OAuth tokens and the mail they choose to sync. |
 | [RDAP whois for CRM email open pings](#crm-whois-rdap) | infrastructure | Optional, off unless enabled | marketplace-package, app-worker | The App's egress IP and the public IP address that first opened or clicked a tracked CRM email (often the mail provider's image proxy). |
 | [ipify public IP lookup in the installer](#ipify) | infrastructure | Operator tooling only | installer | The installing host's public IP address. |
@@ -90,7 +90,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 | Service | What still works / what stops | Self-host or offline alternative | Drill |
 | --- | --- | --- | --- |
-| Cloudflare Workers, D1, KV, Durable Objects, Queues, Workers AI, DNS, and TLS edge | The hosted website, dashboard, API, accounts, chat, catalog, and clone routing through app.forkmesh.com stop. Direct mirror URLs keep serving Git clone, fetch, and SSH push; desktops keep local Git, signed records, and direct mirror access; the Go mirror node keeps publishing signed health locally. | Clone from any independent mirror node's direct HTTPS or SSH URL. A self-host deploys its own app Worker on its own Cloudflare account; no non-Cloudflare runtime for the app Worker exists yet. | tested |
+| Cloudflare DNS, the forkmesh.com website Worker, DNS over HTTPS, and Web Analytics | forkmesh.com and www.forkmesh.com stop, along with the app paths reached through them. When cached DNS answers expire (the app and world records have a 60-second TTL), app.forkmesh.com and world.forkmesh.com stop resolving, so new visitors cannot reach the dashboard, API, or Git over HTTPS even though the core nodes keep running. Mirrors reached by their own hostnames keep serving Git clone and fetch; desktops keep local Git, signed records, and direct mirror access. DNS-over-HTTPS checks of mirrors and profile domains report unavailable rather than rejected. | Clone from any independent mirror node's direct HTTPS or SSH URL. A self-hosted instance runs the same app on its own server behind Caddy and needs no Cloudflare account; putting Cloudflare in front of it is optional. | tested |
 | ACME certificate authorities for direct-HTTPS mirrors | Existing certificates keep serving until they expire, so clones continue. New direct-HTTPS mirrors cannot obtain a certificate, and a mirror whose renewal keeps failing stops serving HTTPS at expiry; its SSH gateway and other mirrors are unaffected. | Self-host operators may point Caddy at any ACME issuer or their own certificate, or run the mirror node in Cloudflare Tunnel mode. | **gap** |
 | GitHub source and release downloads | Desktop self-update without a local checkout, first-time macOS installs that need age, cloudflared installation, and toolchain bootstraps fail with a download error. Running desktops, mirrors, and the hosted service are unaffected. | Update from a local source checkout or a ForkMesh mirror clone; self-host operators can preinstall age and cloudflared from their distribution. | **gap** |
 | GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors | New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. The GitHub Actions watcher sends no pings until GitHub answers again. Imported repositories, clones, and collaboration keep working. | Push the repository directly to a ForkMesh mirror with stock Git; no forge API is needed. | tested |
@@ -104,7 +104,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | Patreon memberships | New links, pledge reconciliation, and supporter badge updates pause; unconfigured deployments answer an expected-degraded 503. Repository access, identity, and collaboration never depend on it. | Self-host operators leave Patreon unset; paid plans are optional adapters. | **gap** |
 | Solana JSON-RPC providers | Tips, bounties, reward pool balances, and store purchase confirmation degrade across the fallback list and then show the last reading or a stale marker. Repository access, identity, contribution, and governance never read them. | Point SOLANA_RPC_URL at your own Solana node, or self-host with incentives unconfigured. | tested |
 | CoinGecko price API | Ledger fiat values show as unavailable (price 0). Balances in SOL and every other feature continue. | Show SOL amounts only; a self-host needs nothing. | **gap** |
-| Sentry error reporting | Error events and cron check-ins are dropped; reporting failures never fail the request being served, and the D1 error log still records the event. | Leave SENTRY_DSN unset and read the D1 error log, or self-host Sentry. | tested |
+| Sentry error reporting | Error events and cron check-ins are dropped; reporting failures never fail the request being served, and the relay's error log still records the event. | Leave SENTRY_DSN unset and read the relay's error log, or self-host Sentry. | tested |
 | jsDelivr CDN (lucide icons on dashboard pages) | Dashboard icons do not render; pages call window.lucide?.createIcons() and otherwise work. | Serving lucide from the app's own assets removes this dependency; self-host operators can block the CDN without losing function. | **gap** |
 | YouTube video embeds | The demo video does not appear; the page otherwise works. | Host the video file on ForkMesh assets, or use a local poster image and load the embed only on click. | **gap** |
 | World social feeds (X, Reddit, Mastodon) | World banners show their static sign and a named unavailable reason. The World and every other feature continue. | A self-host omits the World or leaves the feeds unconfigured. | tested |
@@ -112,7 +112,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | CelesTrak satellite orbital elements | World satellites keep the last good orbital snapshot and record a refresh status. | A self-host omits the World sky layer. | tested |
 | ActivityPub peer servers | Delivery to that peer is queued for retry; local posting and every other feature continue. | Disable federation; local posts remain. | tested |
 | Hosted AI model providers (user-supplied keys) | That agent run or assistant action fails with the provider's error. Manual work and local models are unaffected. | Use a local Ollama model or Workers AI; keys stay on the user's device. | **gap** |
-| Vultr server provisioning | One-click mirror host creation fails at that step; existing hosts keep running. | Install the mirror node on any Linux host with install.sh. | **gap** |
+| Vultr virtual machines for the core nodes and runners, and one-click mirror hosts | One core can fail: rqlite keeps quorum with the other two, and the operator box's DNS health loop takes the failed core out of the app and world records after three failed probes. Losing the region or the account stops app.forkmesh.com and world.forkmesh.com (dashboard, API, accounts, chat, catalog, and Git over HTTPS) and the runner's Actions and agent runs; the forkmesh.com pages on Cloudflare keep serving. Independent mirrors keep serving Git clone and fetch, and desktops keep local Git, signed records, and direct mirror access. One-click mirror host creation fails at that step; existing user hosts keep running. | A self-hosted instance runs the same app on any Linux server it owns, and the mirror node installs on any Linux host with install.sh. Moving the hosted service to another provider means provisioning new cores and restoring a backup; the fleet tools only create Vultr instances. | tested |
 | Zoho Mail for the CRM marketplace package | Mail sync fails inside the CRM package; the rest of ForkMesh is unaffected. | Uninstall the package or use the CRM without a mail connection. | **gap** |
 | RDAP whois for CRM email open pings | The open or click ping says the whois had no answer; tracking and the ping still work. | Remove the RDAP origins from the CRM manifest and the ping shows only the user agent. | **gap** |
 | ipify public IP lookup in the installer | Direct-mirror setup warns and stops at the public-address step. | Set FORKMESH_PUBLIC_ADDRESS so the installer never contacts ipify. | **gap** |
@@ -136,23 +136,23 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 <a id="cloudflare"></a>
 
-### Cloudflare Workers, D1, KV, Durable Objects, Queues, Workers AI, DNS, and TLS edge
+### Cloudflare DNS, the forkmesh.com website Worker, DNS over HTTPS, and Web Analytics
 
 - **Needed:** Mandatory for the hosted service
-- **Kind:** hosting, dns, certificates, cdn-edge, ai-provider, telemetry
+- **Kind:** hosting, dns, certificates, cdn-edge, telemetry
 - **Components:** app-worker, app-browser, www-browser, world-worker, world-browser, mirror-node, desktop, operator-tools
 - **Hosts:** `api.cloudflare.com`, `www.cloudflare.com`, `cloudflare-dns.com`, `static.cloudflareinsights.com`, `cloudflare.com`
 - **Credentials:** `USAGE_ANALYTICS_API_TOKEN`, `WORKERS_OBSERVABILITY_ACCOUNT_ID`, `WORKERS_OBSERVABILITY_API_TOKEN`, `WORKERS_OBSERVABILITY_SERVICE`
-- **Observes:** Every request to forkmesh.com, app.forkmesh.com, and world.forkmesh.com terminates here: client IP address, TLS SNI, headers including User-Agent, request path, and timing. D1, KV, Durable Objects, and Queues hold the hosted service's account, catalog, collaboration, presence, and health data; sensitive fields are encrypted under DATA_KEY before storage. Workers AI receives ForkBot prompts, bug-report text, and usernames sent for moderation. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code.
-- **Retention:** D1 rows persist until the owning feature deletes them; persisted room frames last 7 days and at most 500 per room. Workers observability on forkmesh-www, the only Worker still deployed since the app and World Workers were deleted on 2026-09-27, samples 5% of logs and traces every request, kept for the Cloudflare plan's retention; relay data on the core nodes is covered by the relay data retention page. Edge caches expire by their Cache-Control lifetimes.
-- **Jurisdiction:** Cloudflare, Inc. (United States) on a global edge network; D1 data lives in the database's primary location chosen at creation.
-- **Canonical data:** Canonical for hosted accounts, sessions, device and SSH public keys, organization membership, the catalog, pull and issue inboxes, and routing health. Not canonical for Git objects and refs, which live on mirrors and desktops, or for signed .forkmesh records, which live in Git.
-- **When it is gone:** The hosted website, dashboard, API, accounts, chat, catalog, and clone routing through app.forkmesh.com stop. Direct mirror URLs keep serving Git clone, fetch, and SSH push; desktops keep local Git, signed records, and direct mirror access; the Go mirror node keeps publishing signed health locally.
-- **Recovery:** Service resumes when Cloudflare recovers; D1 point-in-time restore and the node backup runbook cover data loss. The router reverts to the last accepted signed refs pins.
-- **Alternative:** Clone from any independent mirror node's direct HTTPS or SSH URL. A self-host deploys its own app Worker on its own Cloudflare account; no non-Cloudflare runtime for the app Worker exists yet.
-- **Failure drills:** `app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising`, `app/tests/test_https_mirror_health_leases.py::test_cloudflare_dns_check_distinguishes_unavailable_from_rejected`, `app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum`, `app/tests/test_forkbot.py::test_forkbot_files_the_raw_request_when_ai_is_unreachable`
-- **Known gap:** The app Worker has no non-Cloudflare runtime, so a self-host cannot leave Cloudflare for accounts, catalog, and realtime; only Git serving is provider-independent.
-- **Evidence:** `app/wrangler.toml`, `www/wrangler.toml`, `world/wrangler.toml`, `app/src/app_runtime.py`, `app/src/usage_reporting.py`, `app/src/entry.py`
+- **Observes:** Requests to forkmesh.com and www.forkmesh.com end at the forkmesh-www Worker: client IP address, TLS SNI, headers including User-Agent, request path, and timing. The Worker serves the homepage, blog, docs, and static pages and passes app paths on to app.forkmesh.com. app.forkmesh.com and world.forkmesh.com are unproxied DNS records that point at the core nodes, so Cloudflare answers the DNS lookups for them but never sees their requests. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code.
+- **Retention:** Workers observability on forkmesh-www, the only Worker still deployed since the app and World Workers were deleted on 2026-09-27, samples 5% of logs and traces every request, kept for the Cloudflare plan's retention. Edge caches expire by their Cache-Control lifetimes. Relay data on the core nodes is covered by the relay data retention page.
+- **Jurisdiction:** Cloudflare, Inc. (United States) on a global edge network.
+- **Canonical data:** Canonical only for the DNS records of ForkMesh domains. Accounts, sessions, keys, organizations, the catalog, and inboxes live on the core nodes (see Vultr); the website's pages are built from www/ in Git.
+- **When it is gone:** forkmesh.com and www.forkmesh.com stop, along with the app paths reached through them. When cached DNS answers expire (the app and world records have a 60-second TTL), app.forkmesh.com and world.forkmesh.com stop resolving, so new visitors cannot reach the dashboard, API, or Git over HTTPS even though the core nodes keep running. Mirrors reached by their own hostnames keep serving Git clone and fetch; desktops keep local Git, signed records, and direct mirror access. DNS-over-HTTPS checks of mirrors and profile domains report unavailable rather than rejected.
+- **Recovery:** Service resumes when Cloudflare recovers. No data is lost: it lives on the core nodes, which keep running.
+- **Alternative:** Clone from any independent mirror node's direct HTTPS or SSH URL. A self-hosted instance runs the same app on its own server behind Caddy and needs no Cloudflare account; putting Cloudflare in front of it is optional.
+- **Failure drills:** `app/tests/test_https_mirror_health_leases.py::test_cloudflare_dns_check_distinguishes_unavailable_from_rejected`, `app/tests/test_availability_proof.py::test_source_host_outage_does_not_remove_a_mirror_quorum`
+- **Known gap:** Every ForkMesh domain uses Cloudflare DNS with no second provider, so a Cloudflare DNS outage takes app.forkmesh.com and world.forkmesh.com offline even while the core nodes are healthy.
+- **Evidence:** `www/worker.js`, `www/wrangler.production.toml`, `docs/PLAN.md`, `app/src/app_runtime.py`, `app/src/usage_reporting.py`, `app/src/entry.py`
 
 <a id="acme-certificate-authority"></a>
 
@@ -292,7 +292,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Observes:** Recipient email address, subject and body of verification, password, invitation, and notice email, a ForkMesh send id, and delivery, bounce, and spam events. Open and click events only if the operator's plan enables tracking.
 - **Retention:** Mailtrap keeps email logs per the operator's plan. ForkMesh keeps send status rows keyed by account blind index and webhook event ids for replay rejection.
 - **Jurisdiction:** Mailtrap (Railsware); data region per the operator's Mailtrap account.
-- **Canonical data:** None. Account email addresses are canonical in D1, encrypted; Mailtrap message ids only settle delivery status.
+- **Canonical data:** None. Account email addresses are canonical in the relay database, encrypted; Mailtrap message ids only settle delivery status.
 - **When it is gone:** Verification, password, and notice email is not delivered and the status page's email system turns red. Signup falls back to the administrator verification queue; a failed notice never undoes the change it announces. Git, accounts, and collaboration continue.
 - **Recovery:** Resend from the account page or administrator console after Mailtrap recovers; delivery status settles from the next webhook or log lookup.
 - **Alternative:** A self-host may leave MAILTRAP_API_TOKEN unset and verify accounts from the administrator queue. No other email provider adapter exists yet.
@@ -403,12 +403,12 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Hosts:** `sentry.io`, `o000000.ingest.sentry.io`
 - **Credentials:** `SENTRY_DSN`, `SENTRY_CRON_CHECKIN_MARGIN_MINUTES`, `SENTRY_CRON_MAX_RUNTIME_MINUTES`, `SENTRY_CRON_MONITOR_SLUG`, `SENTRY_CRON_TIMEZONE`
 - **Observes:** A generalized, redacted route, method, status, service host, Cloudflare Ray id, coarse edge colo, transport versions, and code stack locations. No raw IP, country, User-Agent, cookies, authorization, or query strings; private-repository routes are replaced by a fixed redaction.
-- **Retention:** Set by the operator's Sentry organization; the D1 error log is kept separately.
+- **Retention:** Set by the operator's Sentry organization; the relay's own error log (the error_log table) is kept separately.
 - **Jurisdiction:** The host inside SENTRY_DSN: sentry.io (Functional Software, Inc., United States) or a self-hosted Sentry.
-- **Canonical data:** None. D1 error rows remain the operator's own record.
-- **When it is gone:** Error events and cron check-ins are dropped; reporting failures never fail the request being served, and the D1 error log still records the event.
+- **Canonical data:** None. The relay's error_log rows remain the operator's own record.
+- **When it is gone:** Error events and cron check-ins are dropped; reporting failures never fail the request being served, and the relay's error log still records the event.
 - **Recovery:** Nothing to replay; new errors report once Sentry recovers.
-- **Alternative:** Leave SENTRY_DSN unset and read the D1 error log, or self-host Sentry.
+- **Alternative:** Leave SENTRY_DSN unset and read the relay's error log, or self-host Sentry.
 - **Failure drills:** `app/tests/test_sentry_worker.py::test_worker_exception_capture_does_not_raise_from_reporting_failures`, `app/tests/test_leaderboards_partial_failure.py::test_telemetry_failure_cannot_sink_the_response`, `app/tests/test_d1_transient_errors.py::test_d1_outage_is_logged_to_d1_only_never_to_sentry`
 - **Evidence:** `app/src/entry.py`, `app/.env.production.example`
 
@@ -496,7 +496,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Observes:** The Worker's egress IP on a cron refresh. Visitors never contact CelesTrak.
 - **Retention:** Set by CelesTrak.
 - **Jurisdiction:** CelesTrak (United States).
-- **Canonical data:** None. The last good snapshot is kept in D1.
+- **Canonical data:** None. The last good snapshot is kept in the relay database.
 - **When it is gone:** World satellites keep the last good orbital snapshot and record a refresh status.
 - **Recovery:** The next cron refresh replaces the snapshot.
 - **Alternative:** A self-host omits the World sky layer.
@@ -516,7 +516,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Jurisdiction:** Wherever each follower's server operates.
 - **Canonical data:** ForkMesh is canonical for its own actors and posts; remote actor records are cached copies of what peers publish.
 - **When it is gone:** Delivery to that peer is queued for retry; local posting and every other feature continue.
-- **Recovery:** Queued deliveries retry from the D1 outbox.
+- **Recovery:** Queued deliveries retry from the outbox in the relay database.
 - **Alternative:** Disable federation; local posts remain.
 - **Failure drills:** `app/tests/test_ap_post_delete.py::test_delete_drops_local_even_when_federation_disabled`
 - **Evidence:** `app/src/activitypub.py`, `app/src/fediverse_routes.py`, `marketplace/packages/crm/manifest.json`
@@ -541,21 +541,23 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 <a id="vultr"></a>
 
-### Vultr server provisioning
+### Vultr virtual machines for the core nodes and runners, and one-click mirror hosts
 
-- **Needed:** Optional, off unless enabled
-- **Kind:** infrastructure
-- **Components:** app-worker, desktop
+- **Needed:** Mandatory for the hosted service
+- **Kind:** hosting, infrastructure
+- **Components:** app-worker, world-worker, operator-tools, desktop
 - **Hosts:** `api.vultr.com`
-- **Observes:** The user's own Vultr API key and the instance they create, including cloud-init data with the Cloudflare token and payout address they supplied.
-- **Retention:** Set by Vultr for the user's account. ForkMesh does not store the key.
-- **Jurisdiction:** Vultr (The Constant Company, United States).
-- **Canonical data:** Vultr is canonical for the virtual machine only.
-- **When it is gone:** One-click mirror host creation fails at that step; existing hosts keep running.
-- **Recovery:** Retry provisioning.
-- **Alternative:** Install the mirror node on any Linux host with install.sh.
-- **Known gap:** No drill simulates a Vultr API outage during provisioning.
-- **Evidence:** `tools/next_fleet.py`, `desktop/src/MainWindowChat.cpp`
+- **Credentials:** `VULTR_API_KEY`
+- **Observes:** Vultr runs the machines that serve app.forkmesh.com and world.forkmesh.com: three core nodes (currently n3, n4, and n5) and the runner r1, all in its ewr region. As the hosting provider it has physical and hypervisor access to their disks, memory, and network traffic, which hold the replicated rqlite database (accounts, sessions, the catalog, collaboration, presence, and health data; sensitive fields encrypted under DATA_KEY, which the cores hold only in memory), repositories hosted on the cores, and the HTTPS traffic Caddy terminates. The Vultr API sees the operator's key and the instances the fleet tools and the core autoscaler create. Separately, a user who chooses one-click mirror hosting sends their own Vultr API key and the instance's cloud-init data, including the Cloudflare token and payout address they supplied.
+- **Retention:** Set by Vultr for the instances and their disks. Data on the cores is kept as the relay data retention page describes. Nightly rqlite backups are pulled off Vultr to the operator box, encrypted with age, and kept as 7 daily and 4 weekly copies. ForkMesh does not store a user's own Vultr key.
+- **Jurisdiction:** Vultr (The Constant Company, United States); the fleet runs in the ewr region (New Jersey).
+- **Canonical data:** The core nodes are canonical for hosted accounts, sessions, device and SSH public keys, organization membership, the catalog, pull and issue inboxes, routing health, and repositories hosted on the cores. The data is in rqlite, replicated across the three cores, and Cloudflare D1 and Durable Objects are emulated on top of it. Not canonical for repositories published from users' own nodes, which live on those nodes, mirrors, and desktops, or for signed .forkmesh records, which live in Git. For a user's mirror host, Vultr is canonical for the virtual machine only.
+- **When it is gone:** One core can fail: rqlite keeps quorum with the other two, and the operator box's DNS health loop takes the failed core out of the app and world records after three failed probes. Losing the region or the account stops app.forkmesh.com and world.forkmesh.com (dashboard, API, accounts, chat, catalog, and Git over HTTPS) and the runner's Actions and agent runs; the forkmesh.com pages on Cloudflare keep serving. Independent mirrors keep serving Git clone and fetch, and desktops keep local Git, signed records, and direct mirror access. One-click mirror host creation fails at that step; existing user hosts keep running.
+- **Recovery:** A failed core rejoins or is replaced from deploy/fleet.toml with tools/next_fleet.py. After data loss, decrypt the newest verified nightly backup with tools/next_backup.py restore and load it through the rqlite leader's /db/load. Retry a failed mirror host provisioning.
+- **Alternative:** A self-hosted instance runs the same app on any Linux server it owns, and the mirror node installs on any Linux host with install.sh. Moving the hosted service to another provider means provisioning new cores and restoring a backup; the fleet tools only create Vultr instances.
+- **Failure drills:** `deploy/tests/test_next_dns.py::test_production_failover_removes_from_both_names_and_readds`, `app/tests/test_d1_transient_errors.py::test_router_answers_503_degraded_instead_of_re_raising`, `app/host/tests_unit/test_autoscale.py::test_boot_timeout_destroys_a_node_that_never_joined`
+- **Known gap:** All three cores and the runner are in one Vultr region, and no drill covers losing the region or the account.
+- **Evidence:** `deploy/fleet.toml`, `docs/OPERATIONS.md`, `tools/next_fleet.py`, `tools/next_backup.py`, `app/host/forkmesh_host/vultr_guard.py`, `app/host/forkmesh_host/d1_rqlite.py`, `app/host/forkmesh_host/durable.py`, `desktop/src/MainWindowChat.cpp`
 
 <a id="crm-package-providers"></a>
 
