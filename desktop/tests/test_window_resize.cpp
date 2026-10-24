@@ -1427,13 +1427,33 @@ void checkFooterOverlayGeometry(MainWindow &window)
               QStringLiteral("restart, resize and the log tail are captioned "
                              "tools at the debug bar's right edge"));
 
-        QPushButton *reportTool = window.testDebugCopyDiagnosticsButton();
+        QPushButton *reportTool = window.testDebugDiagnosticsButton();
         check(reportTool && tools && reportTool->parentWidget() == tools &&
                   logTool &&
                   reportTool->mapTo(&window, QPoint(0, 0)).x() <
                       logTool->mapTo(&window, QPoint(0, 0)).x(),
-              QStringLiteral("the diagnostic report tool sits just left of the "
-                             "log tail"));
+              QStringLiteral("the diagnose tool sits just left of the log tail"));
+        int diagnosticTools = 0;
+        if (tools)
+            for (QPushButton *tool : tools->findChildren<QPushButton *>())
+                if (tool->accessibleName().contains(QLatin1String("iagnos")))
+                    ++diagnosticTools;
+        check(diagnosticTools == 1,
+              QStringLiteral("one diagnose tool replaces the separate report "
+                             "and send buttons"));
+        auto *diagnoseRail = dynamic_cast<forkmesh::ui::ActivityRailButton *>(reportTool);
+        window.testLogSystem(QStringLiteral(
+            "Node n1 core fmnext-ids.service err: alert ssh_foreign_ip: login "
+            "from 203.0.113.9"));
+        const bool alerted = window.testDiagnosticsAlertDetected();
+        check(diagnoseRail && alerted && diagnoseRail->dangerTint() &&
+                  diagnoseRail->toolTip().contains(QStringLiteral("Security")),
+              QStringLiteral("an IDS incident turns the diagnose tool red and "
+                             "names it under Security"));
+        window.testAcknowledgeDiagnosticsAlert();
+        check(diagnoseRail && !diagnoseRail->toolTip().contains(
+                                  QStringLiteral("intrusion-detection")),
+              QStringLiteral("sending the report acknowledges the incident"));
         const QString diagnostics = window.testDiagnosticsReport();
         check(diagnostics.startsWith(
                   QStringLiteral("# ForkMesh desktop diagnostic report #")) &&
@@ -16057,21 +16077,27 @@ else:
         auto *tourButton = window.findChild<QPushButton *>(
             QStringLiteral("tourNavButton"));
         QPushButton *takeTour = nullptr;
+        QPushButton *takeEssentials = nullptr;
         if (tour) {
-            for (QPushButton *button : tour->findChildren<QPushButton *>()) {
-                if (button->text() == QStringLiteral("Take the tour  →")) {
+            for (QPushButton *button : tour->findChildren<QPushButton *>(
+                     QStringLiteral("onboardingTrackButton"))) {
+                if (button->text().startsWith(
+                        QStringLiteral("The whole shebang  ·  25 stops")))
                     takeTour = button;
-                    break;
-                }
+                else if (button->text().startsWith(
+                             QStringLiteral("Essentials  ·  8 stops")))
+                    takeEssentials = button;
             }
         }
         check(tour && tour->isVisible() &&
                   tour->view() ==
                       forkmesh::ui::OnboardingTour::View::Welcome &&
-                  takeTour &&
+                  takeTour && takeEssentials &&
+                  tour->trackChoices().size() == 3 &&
                   window.testStackIndex() == 1,
               QStringLiteral("a fresh install opens the welcome over the usable "
-                             "app shell with a Take the tour choice"));
+                             "app shell with Essentials, Advanced and the whole "
+                             "shebang to choose from"));
         check(tourButton && tourButton->isVisibleTo(&window) &&
                   tourButton->accessibleName().contains(
                       QStringLiteral("feature tour")) &&
@@ -16122,6 +16148,13 @@ else:
             tourButton->click();
         QApplication::processEvents();
         check(tour && tour->view() ==
+                          forkmesh::ui::OnboardingTour::View::Choose &&
+                  tour->trackChoices().size() == 3,
+              QStringLiteral("the rail Tour button opens the track chooser"));
+        if (tour)
+            tour->chooseTrack(forkmesh::ui::OnboardingTrack::Everything);
+        QApplication::processEvents();
+        check(tour && tour->view() ==
                           forkmesh::ui::OnboardingTour::View::Tour &&
                   tour->currentStepId() == QStringLiteral("navigation") &&
                   !QSettings().value(
@@ -16155,6 +16188,17 @@ else:
         if (tourButton)
             tourButton->click();
         QApplication::processEvents();
+        if (tour)
+            tour->chooseTrack(forkmesh::ui::OnboardingTrack::Essentials);
+        QApplication::processEvents();
+        const QStringList essentialSteps{
+            QStringLiteral("navigation"), QStringLiteral("agents"),
+            QStringLiteral("prompt"), QStringLiteral("repositories"),
+            QStringLiteral("repo-switcher"), QStringLiteral("pings"),
+            QStringLiteral("search"), QStringLiteral("ready")};
+        check(tour && tour->stepIds() == essentialSteps,
+              QStringLiteral("Essentials keeps the everyday stops in tour order "
+                             "and still ends on the finish"));
         bool replayHasSkip = false;
         if (tour) {
             for (QPushButton *button : tour->findChildren<QPushButton *>()) {
@@ -16193,9 +16237,9 @@ else:
                   tourButton && tourButton->isVisibleTo(&window) &&
                   window.testOnboardingTour() &&
                   window.testOnboardingTour()->view() ==
-                      forkmesh::ui::OnboardingTour::View::Tour,
+                      forkmesh::ui::OnboardingTour::View::Choose,
               QStringLiteral("reinstalling the Tour package from the Market "
-                             "brings the rail button and the walkthrough back"));
+                             "brings the rail button and the tour chooser back"));
         if (window.testOnboardingTour())
             window.testOnboardingTour()->dismiss();
         stopChildProcesses(window);

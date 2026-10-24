@@ -28,6 +28,7 @@ struct RailButtonPaintState {
     int spinAngle = 0;
     bool badgeUrgent = false;
     bool alert = false;
+    bool danger = false;
     bool accent = false;
     bool syncing = false;
     bool compact = false;

@@ -331,6 +331,7 @@ bool paintRailButtonHook(QWidget *button, QPainter &painter,
     const bool accentAction = enabled && state.accent;
     const QColor fg = !enabled ? Theme::color(Theme::Role::FgSubtle)
                       : accentAction ? Theme::color(Theme::Role::OnAccent)
+                      : state.danger ? Theme::color(Theme::Role::Danger)
                       : state.alert ? Theme::color(Theme::Role::Warning)
                       : Theme::color(lit ? Theme::Role::Fg
                                          : Theme::Role::FgMuted);
@@ -340,6 +341,11 @@ bool paintRailButtonHook(QWidget *button, QPainter &painter,
 
     const QRectF body = row ? QRectF(kRowInset, 0.5, width - 2 * kRowInset, height - 1)
                             : QRectF(3, 2, width - 6, height - 4);
+    if (enabled && state.danger && !accentAction) {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(Theme::color(Theme::Role::DangerSubtle));
+        painter.drawRoundedRect(body, 8, 8);
+    }
     paintBody(painter, body, accentAction, checked, hovered);
 
     const int iconPx = kRailIconPx;
