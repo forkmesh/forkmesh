@@ -1,7 +1,7 @@
 {
   "schema": "forkmesh-external-dependency-map-v1",
   "issue": 503,
-  "updated": "2026-10-25",
+  "updated": "2026-10-24",
   "documentation": "www/docs/external-dependency-map.md",
   "inventoryScope": {
     "include": [
@@ -130,7 +130,7 @@
       "categories": ["forge-api"],
       "components": ["app-worker", "desktop", "operator-tools", "ci"],
       "necessity": "optional",
-      "hosts": ["api.github.com", "gitlab.com", "codeberg.org", "gitea.com"],
+      "hosts": ["api.github.com", "gitlab.com", "codeberg.org", "gitea.com", "user-images.githubusercontent.com"],
       "configuredHosts": [],
       "credentials": ["GITHUB_ACTIONS_WATCH_TOKEN"],
       "observes": "The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. The relay's GitHub Actions watcher reads the public workflow runs, jobs and annotations of forkmesh/forkmesh every 5 minutes, with an optional read-only GITHUB_ACTIONS_WATCH_TOKEN.",

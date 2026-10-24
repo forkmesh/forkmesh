@@ -23,7 +23,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | Office (2D) | `office/` | [office/README.md](office/README.md) |
 | World (3D) | `world/` | [world/README.md](world/README.md) |
 | World voice, camera and channels | `world/public/world/world-voice*.js`, `world-channels.js`, `app/public/call-avatar-*.js` | [world/voice.md](world/voice.md) |
-| Native apps (iOS, Android) | `native/` | [native/README.md](native/README.md) |
+| Native apps (iOS, watchOS, Android) | `native/` | [native/README.md](native/README.md) |
 | Marketplace packages | `marketplace/` | [marketplace/README.md](marketplace/README.md) |
 | Plugins and the core: which plugins a build adds | `marketplace/plugins.json`, `marketplace/tools/marketplace_lib.py`, `desktop/cmake/ForkMeshPackageModules.cmake`, `app/tools/build_app_plugins.py` | [marketplace/plugins.md](marketplace/plugins.md) |
 | Codebase analysis (Code Map, Size Map, Strata, Ember, Synapse) | `desktop/src/RepoInsight*`, `marketplace/packages/{code-map,size-map,strata,ember,synapse}/`, `native/ios/ForkMeshCore/Sources/FMCodeInsight`, `native/android/core/.../codeinsight`, `native/fixtures/insight` | [marketplace/codebase-analysis.md](marketplace/codebase-analysis.md) |
@@ -54,13 +54,14 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | [deploy/self-deploy.md](deploy/self-deploy.md) | phone-approved deploys run by the cores |
 | [HOSTED_REPOS.md](HOSTED_REPOS.md) | repositories hosted on the cores |
 | [CORE_PUSH.md](CORE_PUSH.md) | owner pushes, tag moves and branch deletes on the cores |
-| [INSTANCES.md](INSTANCES.md) | self-hosted white-label instances |
+| [INSTANCES.md](INSTANCES.md) | self-hosted white-label instances started from `forkmesh.com/start`; user guide [www/docs/start-your-own-instance.md](../www/docs/start-your-own-instance.md) |
 | [MAIL_LOG.md](MAIL_LOG.md) | the #email-log channel, mail tracking and core mail delivery |
 
 ## Features and topics
 
 - [finance/grants/README.md](finance/grants/README.md): the ranked grant list, its CRM import and one-click ChatGPT drafts.
-- [APPS.md](APPS.md): third-party apps through OAuth.
+- [APPS.md](APPS.md): third-party apps through OAuth; `examples/apps/hello-app` is the worked example.
+- [desktop/networking.md](desktop/networking.md) ("Visualizer"): the desktop Log → Visualizer, including opening a table bubble in the Database tab.
 - [app/account-data.md](app/account-data.md): Settings > Data: phone settings saved encrypted to the account, the inventory of everything ForkMesh keeps about a person, the export and per-item delete.
 - [marketplace-usage-feed-mastodon.md](marketplace-usage-feed-mastodon.md): privacy and federation boundaries for the Usage, Feed, and Mastodon packages.
 - [MARKETPLACE_RATINGS.md](MARKETPLACE_RATINGS.md): Market ratings and reviews.
@@ -112,5 +113,16 @@ runs; see [app/workflows.md](app/workflows.md#desktop-workflows-and-special-agen
 | Reddit scout | [community/reddit.md](community/reddit.md) |
 | Site crawler | [www/site-crawler.md](www/site-crawler.md) |
 | Sentinel (security) | [security/sentinel.md](security/sentinel.md) |
+
+## Coding agents
+
+`app/public/forkmesh-agent.md`, served at
+`https://app.forkmesh.com/forkmesh-agent.md`, is the one guide written for
+outside coding agents: starting an instance, working on a repository, and the
+pull request workflow. The start page copies a one-line prompt that points an
+agent at it. Keep it in step with [INSTANCES.md](INSTANCES.md),
+`www/docs/start-config.md` and the pull request section of `CONTRIBUTING.md`;
+`app/tests/test_start_instance_page.py` checks the parts that must match.
+User guide: [www/docs/coding-agents.md](../www/docs/coding-agents.md).
 
 Repository rules: `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`.

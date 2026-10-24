@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-25",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Server",
+     "items": [
+      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-24",
    "version": "",
    "title": "",

@@ -75,7 +75,7 @@ Repository shape: A bare repository whose main branch has three commits: an SSH-
 - Reproduce: `git push https://app.forkmesh.com/OWNER/REPOSITORY.git HEAD`
 - Action: When Git asks, enter your ForkMesh account name or email and either your account password (when two-factor authentication is off) or the push credential from Settings, SSH keys, Push code over HTTPS. On the core nodes the default and protected branches only fast-forward, other branches may be force-pushed by accounts that may write them, new tags are allowed, and a push never deletes a branch.
 - Recovery: A refused push changes no remote ref or object. Check the account name and the password or credential, then retry the same push; HTTP 403 push_forbidden means the account may not push to this repository. The Git errors page lists every message.
-- Last tested: 2026-10-25 · not applicable (source contract tests) · app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body, app/tests/test_hosted_repositories.py::test_account_name_or_email_and_password_push
+- Last tested: 2026-10-24 · not applicable (source contract tests) · app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body, app/tests/test_hosted_repositories.py::test_account_name_or_email_and_password_push
 
 ### Repository-controlled server hooks are disabled
 <a id="server-hooks"></a>

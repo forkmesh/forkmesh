@@ -48,8 +48,9 @@ website agent jobs. No desktop app or GUI process is involved.
 Every served repository advertises `merge-preview`, `merge-pull` and
 `update-pull-branch`. The gateway's `mergeExecutorCommand` points at this binary
 (`forkmesh-mirror-node --config … --execute-mirror-merge`). The relay
-authenticates the owner, signs the exact-OID request and hands it to one healthy
-mirror. The executor verifies the pinned pull record on the `forkmesh/pulls`
+authenticates the account (an owner to merge; for `update-pull-branch`, anyone
+who may push the pull's head branch), signs the exact-OID request and hands it
+to one healthy mirror. The executor verifies the pinned pull record on the `forkmesh/pulls`
 ledger, the base and head tips, the peer-review gate (an owner may waive it with
 `overrideReview`) and any `.forkmesh/required-checks.json` policy, then moves the
 base branch, the ledger and `forkmesh/pull/<n>` in one atomic `update-ref`.

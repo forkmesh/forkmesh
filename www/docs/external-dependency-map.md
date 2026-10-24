@@ -197,7 +197,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Needed:** Optional, off unless enabled
 - **Kind:** forge-api
 - **Components:** app-worker, desktop, operator-tools, ci
-- **Hosts:** `api.github.com`, `gitlab.com`, `codeberg.org`, `gitea.com`
+- **Hosts:** `api.github.com`, `gitlab.com`, `codeberg.org`, `gitea.com`, `user-images.githubusercontent.com`
 - **Credentials:** `GITHUB_ACTIONS_WATCH_TOKEN`
 - **Observes:** The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. The relay's GitHub Actions watcher reads the public workflow runs, jobs and annotations of forkmesh/forkmesh every 5 minutes, with an optional read-only GITHUB_ACTIONS_WATCH_TOKEN.
 - **Retention:** Set by each forge's API log terms. ForkMesh never stores user-supplied import tokens. A mirror's access token is stored encrypted until the owner disconnects the mirror.
