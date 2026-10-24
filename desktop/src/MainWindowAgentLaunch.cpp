@@ -2181,7 +2181,12 @@ void MainWindow::switchToAgentsTab(int sessionId)
 
 void MainWindow::openAgentsOverview()
 {
-    if (m_selectedAgentSessionId > 0 && findAgentSession(m_selectedAgentSessionId)) {
+    const bool repoOpen = m_repoDetailIndex >= 0 && m_repoDetailStack;
+    const auto reachable = [&](const AgentSession &s) {
+        return repoOpen || repoIndexFor(s.owner, s.name) >= 0;
+    };
+    if (const AgentSession *selected = findAgentSession(m_selectedAgentSessionId);
+        m_selectedAgentSessionId > 0 && selected && reachable(*selected)) {
         switchToAgentsTab(m_selectedAgentSessionId);
         return;
     }
@@ -2191,6 +2196,8 @@ void MainWindow::openAgentsOverview()
     for (const AgentSession &s : std::as_const(m_agentSessions)) {
         if (hideTeammates && s.hasTeammateAttribution())
             continue;
+        if (!reachable(s))
+            continue;
         if (!newest || s.createdAtMs > newest->createdAtMs)
             newest = &s;
     }
@@ -2198,14 +2205,18 @@ void MainWindow::openAgentsOverview()
         switchToAgentsTab(newest->id);
         return;
     }
-    if (m_repoDetailIndex >= 0 && m_repoDetailStack) {
-        showSection(0);
-        ensureRepoDetailTabBuilt(3);
-        m_repoDetailStack->setCurrentIndex(3);
-        if (m_agentsNavButton)
-            m_agentsNavButton->setChecked(true);
-        reloadAgents(AgentReloadScan::FromCache);
-    }
+    if (!repoOpen && !m_repositories.isEmpty())
+        openRepoDetail(0, kRepoAgentsTab);
+    if (m_repoDetailIndex < 0 || !m_repoDetailStack)
+        return;
+    showSection(0);
+    ensureRepoDetailTabBuilt(kRepoAgentsTab);
+    if (m_repoDetailTabs && m_repoDetailTabs->button(kRepoAgentsTab))
+        m_repoDetailTabs->button(kRepoAgentsTab)->setChecked(true);
+    m_repoDetailStack->setCurrentIndex(kRepoAgentsTab);
+    if (m_agentsNavButton)
+        m_agentsNavButton->setChecked(true);
+    reloadAgents(AgentReloadScan::FromCache);
 }
 
 void MainWindow::openRepoAgentsList()
