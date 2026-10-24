@@ -1221,6 +1221,7 @@ _URL_EXPORT_NAMES = (
     "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
     "SEASON_RE",
     "AI_REVIEW_RE", "REPO_MODERATION_RE", "ORG_MODERATION_RE",
+    "REPO_TRANSLATIONS_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
@@ -13987,7 +13988,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "f2e84e44b730d394ab04d9d8d76145591e361d6d49625f9c1e5e69cfda50c1cd"
+    "5acceac3d4386ea85e51e3ea37b79eab8aa4b347be6c104682e159bbb3346eb3"
 )
 
 
@@ -16774,6 +16775,8 @@ account_recovery_code_handler = _account_recovery.export(
     "regenerate_handler")
 account_handle_suggestion_handler = _account_recovery.export(
     "suggestion_handler")
+_post_translations = _LazyModule("post_translations")
+post_translations_handler = _post_translations.export("handler")
 
 
 def _repo_identity_from_clone_url(value):
@@ -19432,6 +19435,7 @@ _REPO_SCOPED_TABLES = (
     ("comment_reactions", "repo_bi"),
     ("moderation_flags", "repo_bi"),
     ("moderation_queue", "repo_bi"),
+    ("post_translations", "repo_bi"),
     ("member_repo_activity", "repo_bi"),
     ("member_activity_repos", "repo_bi"),
     ("comment_tips", "repo_bi"),
@@ -19647,6 +19651,7 @@ async def _delete_account_namespace(env, name_bi, rec):
         await d1_run(
             env, "DELETE FROM " + moderation_table + " WHERE "
             + moderation_column + "=?", name_bi)
+    await d1_run(env, "DELETE FROM post_translations WHERE account_bi=?", name_bi)
     await d1_run(
         env, "DELETE FROM comment_reaction_rate WHERE account_bi=?", name_bi)
     await d1_run(

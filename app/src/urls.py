@@ -422,6 +422,7 @@ COMMENT_TIPS_RE = re.compile(r"^/api/tips/(config|recipients|verify|settings)$")
 SEASON_RE = re.compile(r"^/api/season(?:/(settings))?/?$")
 REPO_MODERATION_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/moderation$")
 ORG_MODERATION_RE = re.compile(r"^/api/orgs/([^/]+)/moderation$")
+REPO_TRANSLATIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/translations$")
 REPO_VIEW_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/view$")
 REPO_VIEWS_RE = re.compile(r"^/api/repo-views/?$")
 REPO_ISSUE_VIEW_RE = re.compile(
