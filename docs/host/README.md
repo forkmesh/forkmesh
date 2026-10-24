@@ -12,7 +12,7 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
 
 | File | Responsibility |
 | --- | --- |
-| `serve.py`, `__main__.py` | CLI: `serve`, `build`, `migrate`, `rss`, `ops`, `instance-bootstrap` |
+| `serve.py`, `__main__.py` | CLI: `serve`, `build`, `migrate`, `rss`, `ops`, `instance-bootstrap`, `instance-runner`, `instance-single-org`, `instance-repo`, `pull-resync` |
 | `runtime.py` | imports `entry` and calls `Default(ctx, env)` per fetch, scheduled and queue event |
 | `asgi.py`, `ws_protocol.py` | ASGI front end for HTTP and WebSocket |
 | `request_guard.py` | Host allowlist, streamed body caps, `x-forkmesh-edge-client` verification |
@@ -30,6 +30,14 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
 | `error_log.py` | one `ERROR … -> 500` line and traceback for host-side failures |
 | `js.py`, `ffi.py`, `workers.py`, `webcrypto.py` | the JavaScript surface, `pyodide.ffi`, Workers SDK classes, WebCrypto |
 | `ops.py` | one-off operator actions inside the unsealed app |
+| `instance_bootstrap.py`, `instance_repo.py`, `pull_resync.py` | self-hosted instance commands: first admin, own runner, single-organization mode, hosted repository import, moving open pulls to a moved head branch |
+| `autoscaler.py` | autoscaler for app replicas (`aN`) and burst runners (`bN`): leased tick, join tokens, node states from creating to removing, metrics publisher ([AUTOSCALING.md](../fleet/AUTOSCALING.md)) |
+| `fleet_api.py` | `/api/fleet/` endpoints for joining nodes, release bundles and autoscale settings, status and commands |
+| `d1_caller.py` | names the caller of each D1 statement in logs and the `x-fm-d1-caller` header; `D1-done` timing lines |
+| `mail_events.py` | drains the core mail spool (`/var/lib/fmnext-mail-spool`) into the app every 15 s |
+| `world_health.py` | answers World's `GET /health/mobile` from the files Caddy serves in `world/dist` |
+| `host_metrics.py` | five-minute window of request latency, event-loop lag, load, CPU, memory and disk |
+| `ssh_helper.py` | socket-activated `fmnext-ssh-helper`: key scans and SSH installs of runners and instances |
 | `app/host/requirements.txt`, `RQLITE_VERSION` | pinned dependencies and rqlite version |
 
 ## Architecture

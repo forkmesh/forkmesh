@@ -23,7 +23,7 @@ App's clients. Public, user-facing descriptions live in `www/docs/`.
 | Path | Responsibility |
 | --- | --- |
 | `app/src/app_runtime.py` | The `Default` WorkerEntrypoint: `fetch`, `scheduled`, `queue`; stateless fast paths and the handoff to `entry.py` |
-| `app/src/entry.py` | The router, most route handlers, the Durable Object classes (`ForkMeshRoom`, `ForkMeshNodes`, `ForkMeshNoteRoom`, `ForkMeshCronRunner`, `ForkMeshCronWatchdog`, `ForkMeshDiscordGate`), crypto helpers, `ensure_schema` |
+| `app/src/entry.py` | The router, most route handlers, the Durable Object classes (`ForkMeshRoom`, `ForkMeshNodes`, `ForkMeshNoteRoom`, `ForkMeshCronRunner`, `ForkMeshCronWatchdog`, `ForkMeshDiscordGate`, `ForkMeshOrgOffice`), crypto helpers, `ensure_schema` |
 | `app/src/*.py` (other modules) | Domain modules loaded on demand through `_LazyModule` |
 | `app/src/schema.py` | Runtime DDL and the schema fingerprint stored in `schema_meta` |
 | `world/src/*.py` | World, Office and organization task routes and the `ForkMeshWorld` / `ForkMeshOfficeRoom` Durable Objects; staged into the App |
@@ -42,12 +42,9 @@ App's clients. Public, user-facing descriptions live in `www/docs/`.
 | Area | Pages |
 | --- | --- |
 | Platform | [cron-and-durable-objects](cron-and-durable-objects.md), [d1](d1.md), [worker-footprint](worker-footprint.md), [auth-sessions](auth-sessions.md), [login-page](login-page.md), [update-notice](update-notice.md), [docs-book](docs-book.md), [world-boot-latency](world-boot-latency.md), [dashboard-colors](dashboard-colors.md), [dashboard-components](dashboard-components.md), [seasonal-theme](seasonal-theme.md) |
-| Repositories | [repo-views](repo-views.md), [ai-review](ai-review.md), [pull-merge-box](pull-merge-box.md), [repo-features](repo-features.md), [repo-settings-access](repo-settings-access.md), [repository-traffic](repository-traffic.md), [repository-activity](repository-activity.md), [repository-file-edits](repository-file-edits.md), [ai-disclosure](ai-disclosure.md), [pull-review-prompt](pull-review-prompt.md), [directory-about](directory-about.md), [branch-ops](branch-ops.md), [remote-forks](remote-forks.md), [provider-mirrors](provider-mirrors.md), [archive-sync](archive-sync.md), [issue-scale-limits](issue-scale-limits.md), [public-pages](public-pages.md) |
+| Repositories | [repo-views](repo-views.md), [ai-review](ai-review.md), [pull-merge-box](pull-merge-box.md), [pull-quick-replies](pull-quick-replies.md), [repo-features](repo-features.md), [repo-settings-access](repo-settings-access.md), [repository-traffic](repository-traffic.md), [repository-activity](repository-activity.md), [repository-file-edits](repository-file-edits.md), [ai-disclosure](ai-disclosure.md), [pull-review-prompt](pull-review-prompt.md), [directory-about](directory-about.md), [branch-ops](branch-ops.md), [remote-forks](remote-forks.md), [provider-mirrors](provider-mirrors.md), [archive-sync](archive-sync.md), [issue-scale-limits](issue-scale-limits.md), [public-pages](public-pages.md) |
 | Chat | [chat-protocol-v3](chat-protocol-v3.md), [chat-protocol-v4](chat-protocol-v4.md), [chat-relay-hardening](chat-relay-hardening.md), [chat-relay-server](chat-relay-server.md), [web-chat-relay-hardening](web-chat-relay-hardening.md), [chat-sealed-sender](chat-sealed-sender.md), [chat-private-rooms](chat-private-rooms.md), [chat-direct-calls](chat-direct-calls.md), [chat-group-calls](chat-group-calls.md), [face-stream](face-stream.md), [fmm-browser](fmm-browser.md), [chat-push-previews](chat-push-previews.md), [chat-read-sync](chat-read-sync.md), [chat-unread-reminders](chat-unread-reminders.md), [chat-everyone-channels](chat-everyone-channels.md), [chat-formatting](chat-formatting.md), [chat-stickers](chat-stickers.md), [web-chat-layout](web-chat-layout.md), [chat-member-stats](chat-member-stats.md), [web-composer](web-composer.md) |
 | Notifications | [notification-email](notification-email.md), [new-issue-pings](new-issue-pings.md), [content-first-pings](content-first-pings.md), [thread-notifications](thread-notifications.md) |
-| Repositories | [repo-views](repo-views.md), [ai-review](ai-review.md), [pull-merge-box](pull-merge-box.md), [pull-quick-replies](pull-quick-replies.md), [repo-features](repo-features.md), [repo-settings-access](repo-settings-access.md), [repository-traffic](repository-traffic.md), [repository-activity](repository-activity.md), [repository-file-edits](repository-file-edits.md), [directory-about](directory-about.md), [branch-ops](branch-ops.md), [remote-forks](remote-forks.md), [provider-mirrors](provider-mirrors.md), [archive-sync](archive-sync.md), [public-pages](public-pages.md) |
-| Chat | [chat-protocol-v3](chat-protocol-v3.md), [chat-protocol-v4](chat-protocol-v4.md), [chat-sealed-sender](chat-sealed-sender.md), [chat-private-rooms](chat-private-rooms.md), [chat-direct-calls](chat-direct-calls.md), [chat-push-previews](chat-push-previews.md), [chat-read-sync](chat-read-sync.md), [chat-unread-reminders](chat-unread-reminders.md), [chat-everyone-channels](chat-everyone-channels.md), [chat-formatting](chat-formatting.md), [chat-stickers](chat-stickers.md), [web-chat-layout](web-chat-layout.md), [web-composer](web-composer.md) |
-| Notifications | [notification-email](notification-email.md), [new-issue-pings](new-issue-pings.md) |
 | Notes | [notes-sharing](notes-sharing.md), [notes-convert](notes-convert.md), [notes-activity](notes-activity.md) |
 | Tasks | [task-progress](task-progress.md), [issue-to-task](issue-to-task.md), [task-markdown](task-markdown.md), [task-trash](task-trash.md), [task-pings](task-pings.md), [task-email](task-email.md), [task-board-filters](task-board-filters.md) |
 | Agents and desktop | [agents-page](agents-page.md), [desktop-agents-web](desktop-agents-web.md), [desktop-commands](desktop-commands.md), [settings-agents-and-runners](settings-agents-and-runners.md), [agent-notes](agent-notes.md), [activity-today](activity-today.md), [workflows](workflows.md), [workflow-steps](workflow-steps.md), [workflow-scripts](workflow-scripts.md) |
@@ -80,7 +77,8 @@ that object is unavailable the request gets a marked 503
 `ForkMeshNodes` (per-owner event sockets), `ForkMeshNoteRoom` (live notes),
 `ForkMeshWorld` and `ForkMeshOfficeRoom` (World presence and Office meetings),
 `ForkMeshCronRunner` (cron coordinator and ingress shards),
-`ForkMeshCronWatchdog`, `ForkMeshDiscordGate`. Each object is placed on one
+`ForkMeshCronWatchdog`, `ForkMeshDiscordGate`, `ForkMeshOrgOffice`
+(organization offices, `app/src/org_office_room.py`). Each object is placed on one
 live node by rendezvous hash; storage and alarms live in rqlite. See
 [cron-and-durable-objects.md](cron-and-durable-objects.md).
 
@@ -231,7 +229,10 @@ exhaust memory. Browser tests:
   from source to check the dashboard's compare, history, branch and raw
   reads stay on the direct HTTPS gateway.
 - **Read guard.** Heavy readers go through `app/src/d1_read_guard.py`
-  `shared_read`; the switch is off by default on rqlite.
+  `shared_read`. With no `d1_read_guard` row the switch is `auto`
+  (conserve once today's rows-read sample reaches 60%);
+  `tools/rqlite_migrate.py` stamps `off` unless `--d1-read-guard` says
+  otherwise.
 
 ## Related docs
 
