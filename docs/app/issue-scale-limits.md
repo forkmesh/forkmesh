@@ -18,6 +18,8 @@ on 2026-10-21; keep paired values in step.
 | `MAX_BUNDLE_BYTES` | `app/host/forkmesh_host/repo_views.py` | 8 MiB | 32 MiB | the host-built issues bundle behind the first view |
 | `MAX_BODY_CHARS` | `repo_views.py`, `repo_ssr_issue.py` | 60,000 | 262,144 | markdown rendered per body or comment on the server (GitHub allows 65,536 characters) |
 | `MAX_EVENTS` | `app/host/forkmesh_host/repo_ssr_issue.py` | 400 | 5,000 | events in the server-rendered issue page |
+| `TIMELINE_FIRST`, `STREAM_CHUNK` | `repo_ssr_issue.py` | (one piece) | 10, 10 | timeline items in the first flushed part of the issue page, then items per later part; every comment is still sent |
+| `ISSUE_TIMELINE_FIRST`, `ISSUE_TIMELINE_BATCH` | `06-repo-content.js` | all at once | 10, 15 | items the dashboard draws at once, then per idle callback |
 | labels per list row | `repo_views.py` | 6 | 20 | labels in the server-rendered list |
 | `IMMUTABLE_CACHE_ENTRY_MAX` | `app/host/forkmesh_host/repo_fastpath.py` | 4 MiB | 16 MiB | the largest commit-pinned response kept in the host cache |
 | `MAX_ISSUE_BYTES` | `app/src/entry.py` | 64 KiB | 256 KiB | a web-posted issue or comment body in UTF-8 bytes (65,536 CJK or Cyrillic characters need up to about 190 KB) |
@@ -154,3 +156,25 @@ about 490 KB, 56 KB gzip.
   `pulse` on `stats`), so no signed configuration changes. A gateway or host
   without one answers 404 and the reader falls back: `related` to the full
   index, the index to the per-record `blobs` reads.
+
+## Long threads load progressively
+
+The first HTML of an issue page carries the whole thread, as the forum asks
+, but is sent in parts: the top (shell, header, opening
+post, first ten items) first, then ten items at a time (see
+[repo-views.md](repo-views.md#issue-page-first-view), **Long threads**).
+Measured locally with a synthetic thread of poorly compressible text (about
+2.7 KB of record JSON per comment, close to bbs#519's ratio), the test page
+shell included, one core:
+
+| Comments | Record | Page raw | Page gzip | First part (raw, gzip) | First part ready | Whole page rendered |
+| --- | --- | --- | --- | --- | --- | --- |
+| 98 | 264 KB | 781 KB | 204 KB | 241 KB, 52 KB | 32 ms | 124 ms |
+| 500 | 1.3 MB | 3.0 MB | 864 KB | 241 KB, 52 KB | 87 ms | 601 ms |
+
+Before, the first byte waited for the whole page (the 124 ms / 601 ms column
+plus the bundle read). About 30 KB of the first part's gzip is the
+dashboard shell before the issue (116 KB of it is one inline `<style>`
+block): the next saving for slow links is a smaller shell for server-rendered
+pages, not fewer comments. Of the first part, the browser paints the top
+as soon as it arrives; later cards are `content-visibility: auto`.

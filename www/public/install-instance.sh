@@ -1497,6 +1497,7 @@ $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 		reverse_proxy 127.0.0.1:$APP_PORT {
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Host
+			flush_interval -1
 		}
 	}
 	handle {
@@ -1505,6 +1506,7 @@ $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 			header_up -Cf-Ipcountry
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Host
+			flush_interval -1
 		}
 	}
 }
