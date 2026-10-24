@@ -2,14 +2,17 @@
 
 `forkmesh-mirror-node --config … --execute-mirror-merge` performs
 owner-authorized web merges and pull-branch updates on a mirror, so an owner
-can merge while the source desktop is offline. Code: `server/merge.go`,
+can merge while the source desktop is offline. A merge needs an owner; an
+update needs only someone who may push the pull's head branch
+([app/pull-merge-box.md](../app/pull-merge-box.md#update-branch)). Code: `server/merge.go`,
 `server/checks.go`, `server/pull_metadata_refs.go`. Operator view:
 [mirror-node.md, "Owner-authorized web merges"](../../www/docs/operations/mirror-node.md#owner-authorized-web-merges).
 
 ## Flow
 
-1. The Worker authenticates an organization owner, signs the exact
-   request (expected base, head and ledger object ids), and sends it to one
+1. The relay (the app on the cores) authenticates the account (an owner
+   for a merge, anyone who may push the head branch for an update), signs
+   the exact request (expected base, head and ledger object ids), and sends it to one
    healthy mirror's gateway (`merge-preview`, `merge-pull`,
    `update-pull-branch`).
 2. The gateway (`tools/mirror_gateway.py`) runs this binary with one JSON

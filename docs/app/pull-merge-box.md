@@ -59,6 +59,26 @@ branch.
   branch-backed pull lands as a merge commit, and a patch-backed pull is
   replayed onto the newest base. It is shown as a warning, not a blocker.
 
+## Review chip in the pull request list
+
+Each open row of the pull request list shows its review state instead of its
+branches: **Approved**, **Changes requested** or **Review required**, with a
+title such as "Approved by 2 reviewers". `review_state` in
+`app/host/forkmesh_host/repo_views.py` (server-rendered list) and
+`pullListReviewState` in `06-repo-content.js` (client) compute it the same
+way, over each reviewer's latest review with the pull's author left out
+(`review_policy` / `pullReviewPolicy`): any request for changes wins, one
+approval and no blockers is Approved, and a closed or draft pull with neither
+shows no chip. The mirror gateway's `.forkmesh/pulls` listing
+(`tools/mirror_gateway.py`) carries every committed review's
+`(reviewer, state)` in file order so the list can compute it.
+
+The chip is a summary, not the merge gate. On a protected branch only an
+owner's or admin's approval counts ([branch-protection.md](branch-protection.md#approvals)),
+so a pull approved by another contributor shows **Approved** while the
+Review row of the merge box still waits. Tests:
+`app/tests/test_pull_list_review_state.py`.
+
 ## Merge status button and compact header
 
 An open pull request shows a merge status button beside the copy-link button

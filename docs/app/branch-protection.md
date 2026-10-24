@@ -36,6 +36,10 @@ to `issues`, `pulls` and `discussions` (`REPO_FEATURE_DEFAULTS` in
   repository no longer needs the owner to have a desktop key
   (`settings_only`): the `account_required` check exists because About text
   is delivered to the owner's desktop, which hosted repositories do not have.
+  An organization's repository never needs one, for any About save
+  (description, logo, banner): an organization has no node key, so every
+  save answered `account_required` even for its owner. The repository admin
+  check decides who may edit (`app/tests/test_org_repo_admin.py`).
 - **Operator:** `python -m forkmesh_host instance-repo ...
   --protect-default-branch | --no-protect-default-branch` and
   `--actions on|off` ([../INSTANCES.md](../INSTANCES.md#importing-a-repository-on-the-server-instance_repopy)).
