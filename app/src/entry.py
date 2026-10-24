@@ -1568,6 +1568,8 @@ world_relay_instances_handler = _world_routes.export(
 world_satellites_handler = _world_routes.export("world_satellites_handler")
 world_social_posts_handler = _world_routes.export("world_social_posts_handler")
 world_ticket_handler = _world_routes.export("world_ticket_handler")
+world_voice_ticket_handler = _world_routes.export(
+    "world_voice_ticket_handler")
 world_mesh_handler = _world_routes.export("world_mesh_handler")
 world_neighbour_scene_handler = _world_routes.export(
     "world_neighbour_scene_handler")

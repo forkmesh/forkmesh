@@ -2389,6 +2389,9 @@ class Default:
         if url.path in ("/api/world/ticket", "/api/world/ticket/"):
             return await world_ticket_handler(self.env, request)
 
+        if url.path in ("/api/world/voice/ticket", "/api/world/voice/ticket/"):
+            return await world_voice_ticket_handler(self.env, request)
+
         if url.path in ("/api/world/mesh", "/api/world/mesh/"):
             return await world_mesh_handler(self.env, request)
 

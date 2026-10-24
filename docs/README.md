@@ -22,6 +22,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 | Website and docs library | `www/` | [www/README.md](www/README.md) |
 | Office (2D) | `office/` | [office/README.md](office/README.md) |
 | World (3D) | `world/` | [world/README.md](world/README.md) |
+| World voice, camera and channels | `world/public/world/world-voice*.js`, `world-channels.js`, `app/public/call-avatar-*.js` | [world/voice.md](world/voice.md) |
 | Native apps (iOS, Android) | `native/` | [native/README.md](native/README.md) |
 | Marketplace packages | `marketplace/` | [marketplace/README.md](marketplace/README.md) |
 | Plugins and the core: which plugins a build adds | `marketplace/plugins.json`, `marketplace/tools/marketplace_lib.py`, `desktop/cmake/ForkMeshPackageModules.cmake`, `app/tools/build_app_plugins.py` | [marketplace/plugins.md](marketplace/plugins.md) |

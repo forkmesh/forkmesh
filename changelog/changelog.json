@@ -8,6 +8,25 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Calls",
+     "items": [
+      "Direct calls can use your avatar as your face, and group calls now apply your chosen face and voice on every connection."
+     ]
+    },
+    {
+     "title": "Chat",
+     "items": [
+      "Links to a channel or direct message open it even on a freshly loaded chat page."
+     ]
+    },
+    {
+     "title": "World",
+     "items": [
+      "Talk in the World with your microphone and camera: join the whole World, a World channel, a voice room you start, or a privacy bubble with the people next to you, while your camera moves your avatar's face, head and hands, hand gestures send reactions to whoever is speaking, and every speaker wears a live word count.",
+      "One channel list now holds the World channels, voice rooms, Office rooms, your channels and your direct messages, and opens conversations right in the World."
+     ]
+    },
+    {
      "title": "Desktop",
      "items": [
       "In the desktop's live database Visualizer, clicking a table opens that table in the Database tab.",

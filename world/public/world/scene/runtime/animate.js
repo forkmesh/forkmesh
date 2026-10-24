@@ -408,6 +408,7 @@ export function functions({
         ctx.emoteSprites.splice(index, 1);
       }
     }
+    fns.updateAvatarVoice?.(delta, time);
     for (let index = ctx.rewardFlights.length - 1; index >= 0; index -= 1) {
       const flight = ctx.rewardFlights[index];
       const elapsed = time - flight.startedAt;

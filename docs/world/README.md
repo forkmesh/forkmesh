@@ -24,6 +24,7 @@ desktop embeds the same page.
 | `world/public/world/scene/render-stalls.js` | Render stall monitor: splits frames over 50 ms into compiles, uploads, shadow and reflection draws |
 | `world/public/world/scene/gpu-pacer.js` | Program-link pacing and texture upload budget |
 | `world/public/world/world-office*.js` | The Office tower, meeting rooms and task boards |
+| `world/public/world/world-voice*.js`, `world-channels.js`, `world-avatar-puppets.js`, `scene/avatar-rig.js`, `scene/runtime/avatar-voice.js` | Voice and camera in the World, avatars driven by face and hands, privacy bubbles, voice rooms, word badges, the one channel list ([voice.md](voice.md)) |
 | `world/public/world/world-floor-notes.js` | Floor notes: placement chip, floor cards, thread panel, @mention suggestions |
 | `world/public/world/world-profiler.js` | Admin profiler: frame phases, per-callback cost, draw-call attribution, GPU timer queries, scene audit |
 | `world/public/world/world-resource-cache.js` | Shared geometry/material caches, instanced items, instanced mirrors |
@@ -438,7 +439,11 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   `transform` or `backdrop-filter` on an ancestor of the phone HUD's fixed
   avatar badge. An element given `display` in the component layer needs a
   `[hidden] { display: none; }` rule. Avoid `backdrop-filter` over the live
-  canvas.
+  canvas. Rules for retired UI go with it: the chat terminal and quick
+  channel strip (now the HUD island's native chat), the avatar action menu
+  (the island toolbar), the `.world-loading-curtain` (inlined in
+  `index.html`) and the HTML aquarium controls (the 3D reef panel) were
+  removed from `world.css` on 2026-10-24; tests check they stay gone.
 
 ## User interface
 
@@ -1005,6 +1010,7 @@ them without changing page.
 
 ## Related docs
 
+- [voice.md](voice.md): voice, camera, privacy bubbles, voice rooms and the one channel list
 - [docs/app/README.md](../app/README.md) (the App),
   [sessions](../app/auth-sessions.md),
   [footprint](../app/worker-footprint.md)
