@@ -132,6 +132,9 @@ def _members_handler(viewer, viewer_role):
     def response(data, status=200, **kwargs):
         return {"status": status, "data": data}
 
+    async def name_case(env, name):
+        return {"ada": "Ada"}.get(name, "")
+
     namespace = _load(
         "org_members_handler",
         "_org_world_access",
@@ -151,6 +154,7 @@ def _members_handler(viewer, viewer_role):
             "json_response": response,
             "clean_string": catalog.clean_string,
             "_org_rbac": org_rbac,
+            "_account_name_case": name_case,
         },
     )
     return namespace["org_members_handler"], queries
@@ -161,10 +165,12 @@ def test_member_roster_carries_each_members_teams():
     result = _run(handler(None, _Request(), "acme"))
     assert result["status"] == 200
     assert result["data"]["members"] == [
-        {"name": "ada", "role": "member", "since": 11,
+        {"name": "ada", "nameCase": "Ada", "role": "member", "since": 11,
          "teams": ["core", "release"]},
-        {"name": "grace", "role": "admin", "since": 12, "teams": ["core"]},
-        {"name": "linus", "role": "member", "since": 13, "teams": []},
+        {"name": "grace", "nameCase": "grace", "role": "admin", "since": 12,
+         "teams": ["core"]},
+        {"name": "linus", "nameCase": "linus", "role": "member", "since": 13,
+         "teams": []},
     ]
     # One roster read plus one team read: never one request per team.
     assert sum("org_team_members" in sql for sql in queries) == 1

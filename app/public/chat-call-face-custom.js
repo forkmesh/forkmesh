@@ -296,6 +296,32 @@ export function savedCustomFaceImage(storage = globalThis.localStorage) {
   }
 }
 
+export const AVATAR_FACE_ID = "avatar";
+
+export function avatarFaceImage(source) {
+  let value = "";
+  try {
+    value = typeof source === "function" ? source() : source;
+  } catch (_) {
+    value = "";
+  }
+  return typeof value === "string" && value.startsWith("data:image/") ? value : "";
+}
+
+export function photoFaceId(id) {
+  return id === CUSTOM_FACE_ID || id === AVATAR_FACE_ID;
+}
+
+export function stageFaceFor(id) {
+  return id === AVATAR_FACE_ID ? CUSTOM_FACE_ID : id || "";
+}
+
+export function faceImageFor(id, { storage = globalThis.localStorage, avatarImage = null } = {}) {
+  if (id === CUSTOM_FACE_ID) return savedCustomFaceImage(storage);
+  if (id === AVATAR_FACE_ID) return avatarFaceImage(avatarImage);
+  return "";
+}
+
 export function rememberCustomFaceImage(image, storage = globalThis.localStorage) {
   try {
     if (image) storage?.setItem(CUSTOM_FACE_STORAGE_KEY, image);

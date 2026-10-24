@@ -90,6 +90,7 @@ const slices = (channels) => Math.ceil(channels / 4);
 function activation(name, alphaRow = 0) {
   if (name === "prelu") return `v = max(v, 0.0) + wAt(s, ${alphaRow.toFixed(1)}) * min(v, 0.0);`;
   if (name === "relu") return "v = max(v, 0.0);";
+  if (name === "relu6") return "v = clamp(v, 0.0, 6.0);";
   if (name === "hswish") return "v = v * clamp(v + 3.0, 0.0, 6.0) / 6.0;";
   if (name === "sigmoid") return "v = 1.0 / (1.0 + exp(-clamp(v, -30.0, 30.0)));";
   return "";
