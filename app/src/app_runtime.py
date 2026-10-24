@@ -9,6 +9,15 @@ from hidden_unicode import clean_query as clean_hidden_query
 
 
 
+ONION_ALPHABET = frozenset("abcdefghijklmnopqrstuvwxyz234567")
+
+
+def instance_onion_address(env):
+    value = str(getattr(env, "INSTANCE_ONION", "") or "").strip().lower()
+    label = value[:-len(".onion")] if value.endswith(".onion") else ""
+    return value if len(label) == 56 and set(label) <= ONION_ALPHABET else None
+
+
 async def _org_office_resync(env, request, org, response):
     if method_name(request) in ("GET", "HEAD", "OPTIONS"):
         return
@@ -2062,6 +2071,7 @@ class Default:
                 "name": instance_name(self.env),
                 "branded": instance_branded(self.env),
                 "logo": instance_logo_url(self.env),
+                "onion": instance_onion_address(self.env),
                 "loginDeadline": login_deadline,
                 "gitNode": str(getattr(self.env, "INSTANCE_FLAGSHIP_NODE", "")
                                or "").strip().lower()[:63],
