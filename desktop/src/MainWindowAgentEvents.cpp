@@ -608,8 +608,6 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
     m_streamEvents[sessionId].append(ev);
     if (m_sessionsUi)
         noteSessionsPageEvent(sessionId, ev);
-    if (sessionId == m_promptChatSessionId || sessionId == m_selectedAgentSessionId)
-        schedulePromptChatPreview();
     // Every run's events pass through here; the sonifier ignores the ones
     // nobody switched Listen on for.
     if (m_agentSonifier)
