@@ -74,6 +74,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [app/pull-revisions.md](app/pull-revisions.md): updating a pull request with new commits or a rewritten branch (signed revisions, no force push).
 - [app/comment-edits.md](app/comment-edits.md): editing and deleting your own issue and pull request comments (signed `comment-edit`/`comment-delete` events).
 - [app/comment-gifs.md](app/comment-gifs.md): GIFs and stickers in comment composers (GIPHY proxy, key handling, rendering, reduced motion).
+- [app/seasonal-theme.md](app/seasonal-theme.md): the Halloween theme an administrator or moderator switches on in Settings, Appearance (orange colours, spider web, witch hats, auto-off).
 - [app/comment-tips.md](app/comment-tips.md): wallet-to-wallet Solana Pay tips on comments (requests, read-only verification, limits, settings).
 - [app/branch-protection.md](app/branch-protection.md): protected default branches (merge only an owner- or admin-approved pull request) and the per-repository Actions switch.
 - [app/username-autocomplete.md](app/username-autocomplete.md): the shared username picker on chat channel invites, new channels, repository collaborators and advisory credits, and account search behind every @mention list.

@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <script src="/api-client.js?v=${version}"></script><!--#page earlyreads-->
+    <script src="/season.js?v=${version}"></script>
     <script src="/analytics.js" defer></script>
     <script src="/safe-input.js" defer></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -237,6 +238,14 @@
         --muted-foreground: #59636e;
         --border: rgb(var(--dashboard-border-rgb));
         color-scheme: light;
+      }
+
+      [data-season="halloween"] {
+        /*#season halloween dark*/
+      }
+
+      [data-season="halloween"][data-dashboard-theme="light"] {
+        /*#season halloween light*/
       }
 
       * {
