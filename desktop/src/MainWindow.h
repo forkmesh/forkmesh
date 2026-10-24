@@ -120,6 +120,8 @@ namespace forkmesh::ui { struct GitCaptureResult; }
 namespace MarkdownRender { struct RepoLink; }
 namespace forkmesh::ui { class ChannelGroupTree; }
 namespace forkmesh::ui { class OnboardingTour; }
+namespace forkmesh::ui { struct OnboardingStep; }
+namespace forkmesh::ui { enum class OnboardingTrack; }
 namespace forkmesh::ui { class WindowBackdrop; }
 namespace forkmesh::ui { class WindowFade; }
 namespace forkmesh::ui { class OverflowActionRow; }
@@ -3800,6 +3802,9 @@ private:
     void maybeShowFirstRunWelcome();
     void showFirstRunWelcome();
     void startFeatureTour();
+    void startFeatureTourTrack(forkmesh::ui::OnboardingTrack track);
+    bool prepareFeatureTour();
+    QVector<forkmesh::ui::OnboardingStep> featureTourSteps();
     void completeFirstRunWelcome();
     void ensureTourTargetVisible(QWidget *target);
     void syncTourPackage(bool installed);

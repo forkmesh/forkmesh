@@ -67,7 +67,51 @@ QFrame *featureCard(const QString &number, const QString &title,
     return card;
 }
 
+constexpr OnboardingTrack kTracks[] = {
+    OnboardingTrack::Essentials,
+    OnboardingTrack::Advanced,
+    OnboardingTrack::Everything,
+};
+
+QString trackSummary(OnboardingTrack track)
+{
+    switch (track) {
+    case OnboardingTrack::Essentials:
+        return QStringLiteral("The rail, agents, the prompt, repositories, Pings and search.");
+    case OnboardingTrack::Advanced:
+        return QStringLiteral("Adds planning, review, automation, chat, files, the Market and settings.");
+    case OnboardingTrack::Everything:
+        return QStringLiteral("Every workspace, from the ledger and calendar to your nodes.");
+    }
+    return {};
+}
+
 } // namespace
+
+QVector<OnboardingStep> OnboardingTour::stepsForTrack(const QVector<OnboardingStep> &steps,
+                                                      OnboardingTrack track)
+{
+    QVector<OnboardingStep> out;
+    out.reserve(steps.size());
+    for (const OnboardingStep &step : steps) {
+        if (static_cast<int>(step.track) <= static_cast<int>(track))
+            out.append(step);
+    }
+    return out;
+}
+
+QString OnboardingTour::trackTitle(OnboardingTrack track)
+{
+    switch (track) {
+    case OnboardingTrack::Essentials:
+        return QStringLiteral("Essentials");
+    case OnboardingTrack::Advanced:
+        return QStringLiteral("Advanced");
+    case OnboardingTrack::Everything:
+        return QStringLiteral("The whole shebang");
+    }
+    return {};
+}
 
 OnboardingTour::OnboardingTour(QWidget *parent) : QWidget(parent)
 {
@@ -154,6 +198,29 @@ void OnboardingTour::buildCard()
         m_welcomeFeatures), 1);
     outer->addWidget(m_welcomeFeatures);
 
+    m_trackRow = new QWidget(m_card);
+    m_trackRow->setObjectName(QStringLiteral("onboardingTrackRow"));
+    auto *trackLayout = new QHBoxLayout(m_trackRow);
+    trackLayout->setContentsMargins(0, 4, 0, 2);
+    trackLayout->setSpacing(10);
+    for (const OnboardingTrack track : kTracks) {
+        auto *button = new QPushButton(m_trackRow);
+        button->setObjectName(QStringLiteral("onboardingTrackButton"));
+        button->setProperty("onboardingTrack", static_cast<int>(track));
+        button->setCursor(Qt::PointingHandCursor);
+        button->setMinimumHeight(78);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        button->setAccessibleName(
+            QStringLiteral("Take the %1 tour").arg(trackTitle(track)));
+        button->setAccessibleDescription(trackSummary(track));
+        connect(button, &QPushButton::clicked, this,
+                [this, track] { chooseTrack(track); });
+        trackLayout->addWidget(button, 1);
+        m_trackButtons.append(button);
+    }
+    m_trackSizes = {0, 0, 0};
+    outer->addWidget(m_trackRow);
+
     m_details = new QLabel(m_card);
     m_details->setObjectName(QStringLiteral("onboardingDetails"));
     m_details->setWordWrap(true);
@@ -201,21 +268,12 @@ void OnboardingTour::buildCard()
     buttons->addWidget(m_primaryButton);
     outer->addLayout(buttons);
 
-    connect(m_secondaryButton, &QPushButton::clicked, this, [this] {
-        if (m_view == View::Welcome) {
-            closeOverlay(false, true);
-            return;
-        }
-        closeOverlay(false, false);
-    });
+    connect(m_secondaryButton, &QPushButton::clicked, this, &OnboardingTour::dismiss);
     connect(m_primaryButton, &QPushButton::clicked, this, [this] {
-        if (m_view == View::Welcome) {
-            if (startTourRequested)
-                startTourRequested();
-            return;
-        }
-        nextStep();
+        if (m_view == View::Tour)
+            nextStep();
     });
+    setTrackSizes({});
 
     auto *effect = new QGraphicsOpacityEffect(m_card);
     effect->setOpacity(1.0);
@@ -247,16 +305,11 @@ void OnboardingTour::showWelcome(const QString &nodeName)
     m_welcomeFeatures->show();
     m_details->hide();
     m_hint->setText(QStringLiteral(
-        "Take a quick, no-risk tour of the desktop. It opens feature pages but "
-        "does not create, publish, or change anything."));
-    m_progress->hide();
-    m_progressLabel->hide();
-    m_backButton->hide();
-    m_secondaryButton->show();
+        "Pick how deep to go. The tour opens feature pages but does not create, "
+        "publish, or change anything."));
+    showTrackChoices(true);
     m_secondaryButton->setText(QStringLiteral("Explore on my own"));
     m_secondaryButton->setAccessibleName(QStringLiteral("Skip the tour"));
-    m_primaryButton->setText(QStringLiteral("Take the tour  →"));
-    m_primaryButton->setAccessibleName(QStringLiteral("Take the ForkMesh tour"));
     m_closeButton->setAccessibleName(QStringLiteral("Explore on my own"));
     show();
     raise();
@@ -264,6 +317,78 @@ void OnboardingTour::showWelcome(const QString &nodeName)
     positionCard();
     animateCard();
     update();
+}
+
+void OnboardingTour::showChooser()
+{
+    stopWatchingTarget();
+    m_steps.clear();
+    m_currentStep = -1;
+    setView(View::Choose);
+    m_kicker->setText(QStringLiteral("TOUR"));
+    m_title->setText(QStringLiteral("Take the tour"));
+    m_body->setText(QStringLiteral(
+        "Each track spotlights the real controls. Essentials covers the everyday "
+        "desktop, Advanced adds the repository workspace and collaboration, and "
+        "the whole shebang visits every page."));
+    m_welcomeFeatures->hide();
+    m_details->hide();
+    m_hint->setText(QStringLiteral(
+        "The tour opens feature pages but does not create, publish, or change anything."));
+    showTrackChoices(true);
+    m_secondaryButton->setText(QStringLiteral("Not now"));
+    m_secondaryButton->setAccessibleName(QStringLiteral("Close the tour"));
+    m_closeButton->setAccessibleName(QStringLiteral("Close the tour"));
+    show();
+    raise();
+    setFocus(Qt::OtherFocusReason);
+    positionCard();
+    animateCard();
+    update();
+}
+
+void OnboardingTour::showTrackChoices(bool shown)
+{
+    m_trackRow->setVisible(shown);
+    m_primaryButton->setVisible(!shown);
+    m_progress->setVisible(!shown);
+    m_progressLabel->setVisible(!shown);
+    m_backButton->setVisible(!shown);
+    m_secondaryButton->show();
+    if (shown && !m_trackButtons.isEmpty())
+        m_trackButtons.first()->setDefault(true);
+    m_primaryButton->setDefault(!shown);
+}
+
+void OnboardingTour::setTrackSizes(const QVector<OnboardingStep> &steps)
+{
+    for (int i = 0; i < m_trackButtons.size(); ++i) {
+        const OnboardingTrack track = kTracks[i];
+        const int size = steps.isEmpty() ? 0 : stepsForTrack(steps, track).size();
+        m_trackSizes[i] = size;
+        const QString heading = size > 0
+                                    ? QStringLiteral("%1  ·  %2 stops").arg(trackTitle(track)).arg(size)
+                                    : trackTitle(track);
+        m_trackButtons.at(i)->setText(heading + QLatin1Char('\n') + trackSummary(track));
+    }
+}
+
+QStringList OnboardingTour::trackChoices() const
+{
+    QStringList out;
+    if (!m_trackRow || m_trackRow->isHidden())
+        return out;
+    for (const OnboardingTrack track : kTracks)
+        out.append(trackTitle(track));
+    return out;
+}
+
+void OnboardingTour::chooseTrack(OnboardingTrack track)
+{
+    if (m_view != View::Welcome && m_view != View::Choose)
+        return;
+    if (startTourRequested)
+        startTourRequested(track);
 }
 
 void OnboardingTour::startTour(QVector<OnboardingStep> steps)
@@ -278,10 +403,7 @@ void OnboardingTour::startTour(QVector<OnboardingStep> steps)
     setView(View::Tour);
     m_welcomeFeatures->hide();
     m_details->show();
-    m_progress->show();
-    m_progressLabel->show();
-    m_backButton->show();
-    m_secondaryButton->show();
+    showTrackChoices(false);
     m_secondaryButton->setText(QStringLiteral("Skip tour"));
     m_secondaryButton->setAccessibleName(QStringLiteral("Skip the rest of the tour"));
     m_closeButton->setAccessibleName(QStringLiteral("Skip the rest of the tour"));
@@ -295,8 +417,9 @@ void OnboardingTour::setView(View view)
 {
     m_view = view;
     setProperty("onboardingView",
-                view == View::Welcome ? QStringLiteral("welcome")
-                                      : QStringLiteral("tour"));
+                view == View::Welcome  ? QStringLiteral("welcome")
+                : view == View::Choose ? QStringLiteral("choose")
+                                       : QStringLiteral("tour"));
     style()->unpolish(this);
     style()->polish(this);
 }
@@ -323,10 +446,15 @@ void OnboardingTour::previousStep()
 
 void OnboardingTour::dismiss()
 {
-    if (m_view == View::Welcome)
+    if (m_view == View::Welcome) {
         closeOverlay(false, true);
-    else if (m_view == View::Tour)
+    } else if (m_view == View::Choose) {
+        stopWatchingTarget();
+        hide();
+        m_view = View::Hidden;
+    } else if (m_view == View::Tour) {
         closeOverlay(false, false);
+    }
 }
 
 void OnboardingTour::closeOverlay(bool completed, bool fromWelcome)
@@ -463,11 +591,11 @@ void OnboardingTour::positionCard()
     if (!m_card || width() <= 0 || height() <= 0)
         return;
 
-    const bool centred = m_view == View::Welcome || mappedTargetRect().isEmpty() ||
+    const bool choosing = m_view == View::Welcome || m_view == View::Choose;
+    const bool centred = choosing || mappedTargetRect().isEmpty() ||
                          (m_view == View::Tour &&
                           m_currentStep == m_steps.size() - 1);
-    const int wantedWidth = m_view == View::Welcome ? kWelcomeCardWidth
-                                                    : kCardWidth;
+    const int wantedWidth = choosing ? kWelcomeCardWidth : kCardWidth;
     const int cardWidth = qMax(300, qMin(wantedWidth, width() - 2 * kOverlayMargin));
     m_card->setFixedWidth(cardWidth);
     m_card->setMaximumHeight(qMax(240, height() - 2 * kOverlayMargin));
@@ -569,6 +697,18 @@ void OnboardingTour::keyPressEvent(QKeyEvent *event)
         event->accept();
         return;
     }
+    if ((m_view == View::Welcome || m_view == View::Choose) &&
+        (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
+        chooseTrack(OnboardingTrack::Essentials);
+        event->accept();
+        return;
+    }
+    if ((m_view == View::Welcome || m_view == View::Choose) &&
+        event->key() >= Qt::Key_1 && event->key() <= Qt::Key_3) {
+        chooseTrack(kTracks[event->key() - Qt::Key_1]);
+        event->accept();
+        return;
+    }
     QWidget::keyPressEvent(event);
 }
 
@@ -578,7 +718,8 @@ void OnboardingTour::paintEvent(QPaintEvent *event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
-    const QColor shadow(1, 4, 9, m_view == View::Welcome ? 218 : 188);
+    const bool choosing = m_view == View::Welcome || m_view == View::Choose;
+    const QColor shadow(1, 4, 9, choosing ? 218 : 188);
     QPainterPath shade;
     shade.setFillRule(Qt::OddEvenFill);
     shade.addRect(rect());
@@ -587,7 +728,7 @@ void OnboardingTour::paintEvent(QPaintEvent *event)
         shade.addRoundedRect(QRectF(target), 11, 11);
     painter.fillPath(shade, shadow);
 
-    if (m_view == View::Welcome) {
+    if (choosing) {
         // A quiet mesh behind the welcome card: deterministic and code-native,
         // so it is crisp at every scale and follows the active palette.
         const QColor accent = palette().color(QPalette::Highlight);

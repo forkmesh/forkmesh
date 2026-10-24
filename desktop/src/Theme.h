@@ -282,6 +282,15 @@ QPushButton#onboardingCloseButton {
     border-radius: 15px; padding: 0; font-size: 22px; font-weight: 400;
 }
 QPushButton#onboardingCloseButton:hover { background: #30363d; color: #f0f6fc; }
+#onboardingTrackRow { background: transparent; }
+QPushButton#onboardingTrackButton {
+    background-color: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+    border-radius: 10px; padding: 11px 14px; text-align: left;
+    font-size: 12px; font-weight: 600;
+}
+QPushButton#onboardingTrackButton:hover { border-color: #58a6ff; color: #f0f6fc; }
+QPushButton#onboardingTrackButton:focus { border-color: #58a6ff; }
+QPushButton#onboardingTrackButton:pressed { background-color: #161b22; }
 #calendarAgentCard {
     background-color: #161b22;
     border: 1px solid #30363d;
@@ -2509,6 +2518,15 @@ QPushButton#onboardingCloseButton {
     border-radius: 15px; padding: 0; font-size: 22px; font-weight: 400;
 }
 QPushButton#onboardingCloseButton:hover { background: #d0d7de; color: #1f2328; }
+#onboardingTrackRow { background: transparent; }
+QPushButton#onboardingTrackButton {
+    background-color: #f6f8fa; color: #424a53; border: 1px solid #d0d7de;
+    border-radius: 10px; padding: 11px 14px; text-align: left;
+    font-size: 12px; font-weight: 600;
+}
+QPushButton#onboardingTrackButton:hover { border-color: #0969da; color: #1f2328; }
+QPushButton#onboardingTrackButton:focus { border-color: #0969da; }
+QPushButton#onboardingTrackButton:pressed { background-color: #eaeef2; }
 #calendarAgentCard {
     background-color: #f6f8fa;
     border: 1px solid #d0d7de;

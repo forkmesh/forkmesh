@@ -206,4 +206,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S131 | 2026-10-23 | Chat | fix | Answering a call works even when the permission prompt stays open, and says why when the call can no longer be answered. | 407a9d2c6f | pending |  |
 | S132 | 2026-10-23 | Chat | fix | Video calls switch to the other person's picture as soon as it arrives and play through the loudspeaker. | a53238311c | pending |  |
 | S133 | 2026-10-23 | Chat | fix | The pre-call microphone test records your voice and plays it back on the speaker, even with the phone on silent. | a53238311c | pending |  |
+| S134 | 2026-10-24 | Shell | feature | The tour offers Essentials, Advanced and The whole shebang, and each stop shows a live copy of the screen it describes that you can try, with a button that opens the real one. | e763e201e9 | pending |  |
 <!-- ledger:end -->
