@@ -395,7 +395,13 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
 - **Performance bar and profiler** (`createWorldProfiler`, only while an
   admin bar is shown): frame phases, per-callback cost, draw-call attribution
   by World element, GPU timer queries; `auditWorldScene` finds duplicate
-  geometries/materials, instancing candidates and culling opt-outs.
+  geometries/materials, instancing candidates and culling opt-outs. Both
+  copy paths (the drawer's Copy button and the boot log's report provider)
+  go through `perfCopyReport()`, which samples a fresh profile window and
+  re-runs the audit on it, so the findings and the Frame budget table
+  describe the same frames. The button used to print the newest window
+  beside findings from the last periodic audit, so one report could show
+  two different `renderer.render` costs.
 - **Render stall monitor** (`scene/render-stalls.js`): splits frames over
   50 ms into program compiles, texture uploads, shadow and reflection draws,
   and scene update parts (matrix walk, animation, labels, camera). Long
@@ -777,6 +783,17 @@ them without changing page.
   hid every bug drawn after it. A house, its label and each bug with an https
   `url` are `instance-hexagon` picks, so clicking one opens that link in a new
   tab.
+- **Neighbour scene draw cost.** A terrarium's bugs are one draw: their icons
+  share one canvas atlas and one `forkmesh-instance-hex-bug-board` mesh whose
+  vertex shader turns each quad to face the camera like a sprite. The board
+  uses `alphaTest` instead of blending, so overlapping icons need no sorting
+  and it casts no shadow. Each bug keeps a hidden `Sprite` with
+  `raycastProxy`, which carries the `neighbour-bug` pick. Unpicked meshes
+  (glass panes, frames, windows, lamps, trees) are then merged by material
+  (`mergeMeshesByMaterial` with `skip` for anything interactive). Before this a
+  32-bug scene cost 64 draws, 43 of them transparent; now it costs 19, 5
+  transparent. The hex layer is the `instance-hexes` World element
+  ("Neighbour hexagons"), so the profiler names its draws.
 - **Bug icons through home.** An instance's raw-file route sends no CORS
   header, so a cross-origin icon cannot be drawn into a WebGL texture and
   every bug fell back to its initial. The World loads each icon from its own

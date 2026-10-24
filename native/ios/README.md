@@ -62,7 +62,7 @@ export PATH="$HOME/projects/forkmesh/toolchain/swift/usr/bin:$PATH"   # swift.or
 cd native/ios/ForkMeshCore
 swift test                                   # every module
 FM_ONLY=FMCrypto swift test                  # one module, its dependencies and its tests
-native/ios/tools/check_swift_syntax.sh       # parse (not type-check) the SwiftUI sources
+../tools/check_swift_syntax.sh               # parse (not type-check) the SwiftUI sources
 ```
 
 macOS notes:
@@ -98,7 +98,7 @@ hand, `working_directory: native/ios`, `mac_mini_m2`):
 | Workflow | What it does |
 | --- | --- |
 | `ios-native-build` | Generates the project, installs Xcode 26's Metal toolchain and resolves the Swift packages (`native_packages`), builds Debug for the simulator, archives Release unsigned, zips `ForkMesh-native.app.zip`, builds the watch app for the watchOS simulator, then runs the `ForkMeshCore` tests last so a core test failure cannot hide whether the app compiles. |
-| `ios-native-release` | Registers the bundle ids (`tools/asc_bundle_ids.py ensure`), picks the next App Store Connect build number, cloud-signs at export, uploads and submits to TestFlight (`app_store_connect` variable group). Stops before the archive if the app record does not exist. |
+| `ios-native-release` | Registers the bundle ids (`tools/asc_bundle_ids.py ensure`), picks the next App Store Connect build number, cloud-signs at export, uploads to TestFlight (`app_store_connect` variable group). With `FORKMESH_IOS_APP_STORE=1`, which a tagged release sets, it also submits the build for App Store review ([IOS_RELEASE.md](../../docs/native/IOS_RELEASE.md)). Stops before the archive if the app record does not exist. |
 | `ios-native-adhoc` | Ad hoc IPA for the devices registered in the developer account. |
 
 From 2026-09-24 to 2026-10-15 `ios-native-build` ran a merged diagnostic

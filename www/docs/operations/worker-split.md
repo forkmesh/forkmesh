@@ -1,5 +1,11 @@
 # Cloudflare deployment boundaries
 
+This page describes the optional, legacy Cloudflare Workers deployment. The
+hosted service (app.forkmesh.com and world.forkmesh.com) runs on self-hosted
+core nodes ([PLAN.md](../../../docs/PLAN.md)); only forkmesh.com runs as the
+`forkmesh-www` Worker. A default self-host installs on a VPS
+([start your own instance](../start-your-own-instance.md)).
+
 A Cloudflare deployment of ForkMesh uses three Workers. The App owns the whole
 control plane; there is no separate API or edge-control Worker.
 
@@ -37,9 +43,9 @@ failure-isolated, interrupted phases are reported incomplete rather than
 replayed, and each tick writes one bounded `cron_tick` row (read by
 `/api/accounts/admin-cron-report`).
 
-## Self-hosted topology
+## Single-Worker topology
 
-A default self-host is one App at one origin: set `PUBLIC_BASE_URL`,
+A Workers self-host is one App at one origin: set `PUBLIC_BASE_URL`,
 `API_ORIGIN`, `APP_ORIGIN`, `WWW_ORIGIN`, and allowed CORS origins to it, and
 `SINGLE_WORKER_SITE=true`. The bootstrapper creates one App Worker, one D1
 database, one hostname, and one route. World is optional.

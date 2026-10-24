@@ -189,6 +189,7 @@
     window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
+    followSystemDashboardTheme();
     applyPlatformName();
     void instanceInfo();
     watchGenieSetting();
@@ -219,6 +220,9 @@
       void initSeasonSettings();
       watchSeason();
       initRepoMirrorQuota();
+      void instanceInfo().then(() => {
+        if (instancePluginOn("post-translate")) initPostTranslate();
+      }).catch(() => {});
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

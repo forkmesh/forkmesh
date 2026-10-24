@@ -29,6 +29,7 @@ change something are dry runs unless given `--execute`.
 | `next_backup.py` | Nightly age-encrypted rqlite backup: `run`, `prune`, `keygen`, `verify`, `restore` |
 | `next_rekey.py` | Offline re-key of a database copy ([REKEY.md](../REKEY.md)) |
 | `next_git_host.py`, `next_codemagic.py` | Private Git over HTTPS on the cores; native iOS builds cloned from it (full history: dumb HTTP has no shallow clones) |
+| `next_import.py` | Replays the old separate Next repository's history onto a branch here (`next-import`); refuses to rewind a diverged branch without `--force` |
 | `rqlite_migrate.py` | Applies `app/migrations/*.sql` to rqlite, keeping the `d1_migrations` ledger shape |
 | `source_publisher.py` | Publishes `forkmesh/forkmesh` from a checkout without the desktop ([source-publisher.md](source-publisher.md)) |
 | `prune_merged.py` | Prunes merged branches, worktrees and finished agent sessions ([prune-merged.md](prune-merged.md)) |

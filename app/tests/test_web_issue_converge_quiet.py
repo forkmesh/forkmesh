@@ -108,6 +108,10 @@ const finishRepoRead = () => {};
 const repoReadIsTransient = () => false;
 const handleRepoReadFailure = () => false;
 const loadRepoIssueAttachments = async () => {};
+const fetchIssueModeration = () => null;
+const issueModerationWithin = async () => null;
+const applyIssueModeration = (text) => text;
+const decorateIssueModeration = () => {};
 const repoIssueSourceUrl = () => "";
 const loadRepoIssueRelations = async () => ({ issueDependencies: [], issueSubIssues: [], issueMentions: [] });
 

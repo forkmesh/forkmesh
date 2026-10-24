@@ -287,8 +287,8 @@ def test_web_merge_waits_out_transient_refusals_with_the_same_request():
 
 
 def test_the_merge_panel_says_no_mirror_has_taken_the_job_yet():
-    assert "? \"Waiting for an online mirror to take this merge. No mirror has accepted it yet.\"" in CONTENT
-    assert "parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };" in CONTENT
+    assert "Waiting for an online mirror to pick this up (no mirror has accepted it yet)." in CONTENT
+    assert "parsed.pullMerge = repoPullMutationWaitState(parsed.pullMerge, accepted, payload);" in CONTENT
 
 
 def _function_source(name):

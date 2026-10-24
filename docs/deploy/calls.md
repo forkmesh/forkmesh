@@ -136,8 +136,8 @@ app signs join tickets with it, and the SFU checks them
 3. Check:
 
    ```sh
-   for n in n2 n3 n4; do curl -fsS https://$n.next.forkmesh.com/calls/health; echo; done
-   python3 tools/next_ids.py status n2 n3 n4
+   for n in n3 n4 n5; do curl -fsS https://$n.next.forkmesh.com/calls/health; echo; done
+   python3 tools/next_ids.py status n3 n4 n5
    ssh root@<core> systemctl status fmnext-calls
    ```
 
@@ -148,7 +148,7 @@ Edit `FORKMESH_CALLS_SECRET` in `secrets.env`, then run
 each core:
 
 ```sh
-for n in n2 n3 n4; do python3 tools/next_fleet.py install $n --steps calls --execute; done
+for n in n3 n4 n5; do python3 tools/next_fleet.py install $n --steps calls --execute; done
 ```
 
 The `calls` step sees that the running process loaded a different secret and
@@ -194,7 +194,7 @@ Rollout, once clients exist:
 2. Check every core advertises it:
 
    ```sh
-   for n in n2 n3 n4; do curl -fsS https://$n.next.forkmesh.com/calls/health; echo; done
+   for n in n3 n4 n5; do curl -fsS https://$n.next.forkmesh.com/calls/health; echo; done
    ```
 
    Each should list `fmm` with two hashes.
