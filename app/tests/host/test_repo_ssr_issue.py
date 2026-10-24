@@ -78,7 +78,7 @@ FUNCTIONS = {
 }
 CONSTANTS = {
     "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE",
-                     "BOT_AVATAR_GLYPHS", "forgeAvatarSets"),
+                     "BOT_AVATAR_GLYPHS", "forgeAvatarSets", "forgeAvatarCommits"),
     "06-repo-content.js": (
         "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS", "MD_BARE_URL", "MD_ENTITIES", "MD_ESCAPED_ENTITY", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
@@ -1132,3 +1132,20 @@ def test_without_the_plugin_github_images_load_as_before_on_both_sides(monkeypat
     expected = normalize(js_render(issue, 4))
     got = normalize(py_render(issue, 4))
     assert got == expected and 'data-md-github-image=""' not in got
+
+
+def test_mirrored_avatars_are_pinned_to_the_index_commit():
+    commit = "c" * 40
+    avatars = repo_ssr_issue.forge_avatars({"forgeAvatars": ["github:Bob"], "commit": commit})
+    assert avatars == frozenset({"github:bob"}) and avatars.commit == commit
+    assert repo_ssr_issue.forge_avatars({"forgeAvatars": ["github:bob"], "commit": "main"}).commit == ""
+    ctx = repo_ssr_issue.Context(LINK_BASE, API_BASE, "main")
+    token = repo_ssr_issue.FORGE_AVATARS.set((ctx, avatars))
+    try:
+        src = repo_ssr_issue.forge_avatar_src({"provider": "github", "login": "Bob"})
+    finally:
+        repo_ssr_issue.FORGE_AVATARS.reset(token)
+    assert src == "%s/raw?path=.forkmesh%%2Fcontributors%%2Fgithub-bob.png&ref=%s" % (API_BASE, commit)
+    helpers = SOURCES["02-helpers.js"]
+    assert "rememberForgeAvatars(repo, data.forgeAvatars, data.commit)" in SOURCES["06-repo-content.js"]
+    assert "forgeAvatarCommits.get(key)" in helpers

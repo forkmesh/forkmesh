@@ -1280,10 +1280,12 @@
   }
 
   const forgeAvatarSets = new Map();
+  const forgeAvatarCommits = new Map();
 
-  function rememberForgeAvatars(repo, names) {
+  function rememberForgeAvatars(repo, names, commit = "") {
     if (!repo || !Array.isArray(names) || !names.length) return;
     const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    if (/^[0-9a-f]{40}$/.test(String(commit || ""))) forgeAvatarCommits.set(key, String(commit));
     const known = forgeAvatarSets.get(key) || new Set();
     names.forEach((name) => { if (typeof name === "string") known.add(name.toLowerCase()); });
     forgeAvatarSets.set(key, known);
@@ -1292,10 +1294,11 @@
   function forgeAvatarSrc(forge) {
     const repo = state.selectedRepo;
     if (!repo || !forge) return "";
-    const known = forgeAvatarSets.get(`${repo.owner || ""}/${repo.name || ""}`.toLowerCase());
+    const key = `${repo.owner || ""}/${repo.name || ""}`.toLowerCase();
+    const known = forgeAvatarSets.get(key);
     const login = forge.login.toLowerCase();
     return known?.has(`${forge.provider}:${login}`)
-      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`) : "";
+      ? repoRawUrl(repo, `.forkmesh/contributors/${forge.provider}-${login}.png`, forgeAvatarCommits.get(key) || "") : "";
   }
 
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
@@ -1365,12 +1368,45 @@
     return png.length <= 400_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? png : "";
   }
 
+  const issueActorBatch = { names: new Set(), promise: null };
+
+  function issueActorKnown(key) {
+    issueActorBatch.names.add(key);
+    if (!issueActorBatch.promise) {
+      issueActorBatch.promise = new Promise((resolve) => setTimeout(resolve, 0)).then(async () => {
+        const names = [...issueActorBatch.names];
+        issueActorBatch.names = new Set();
+        issueActorBatch.promise = null;
+        const found = new Set();
+        for (let start = 0; start < names.length; start += USER_NAME_BATCH) {
+          const batch = names.slice(start, start + USER_NAME_BATCH);
+          try {
+            const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+              credentials: "omit",
+              headers: { accept: "application/json" },
+            });
+            const data = response.ok ? await response.json() : null;
+            if (!data || typeof data.names !== "object") return null;
+            Object.keys(data.names).forEach((name) => found.add(name.toLowerCase()));
+          } catch (_) {
+            return null;
+          }
+        }
+        return found;
+      });
+    }
+    return issueActorBatch.promise.then((found) => (found ? found.has(key) : true));
+  }
+
   function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
     if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "", linkable: false });
     if (!issueActorAccounts.has(key)) {
-      issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
+      issueActorAccounts.set(key, issueActorKnown(key)
+        .then((exists) => (exists
+          ? fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
+            .then((response) => (response.ok ? response.json() : null))
+          : { exists: false }))
         .then((profile) => ({
           exists: profile?.exists === true,
           png: profile?.exists === true && profile?.profilePrivate !== true
@@ -16371,8 +16407,8 @@
     return { kind: preview[0], mime: preview[1], label: preview[2] };
   }
 
-  function repoRawUrl(repo, path) {
-    return repoLiveUrl(repo, "raw", { path });
+  function repoRawUrl(repo, path, ref = "") {
+    return repoLiveUrl(repo, "raw", ref ? { path, ref } : { path });
   }
 
   function repoLiveUrl(repo, action, params = {}) {
@@ -19633,7 +19669,7 @@
       const params = options.ref ? { ref: options.ref } : {};
       if (options.related) params.related = Number(options.related);
       const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", params));
-      if (data && typeof rememberForgeAvatars === "function") rememberForgeAvatars(repo, data.forgeAvatars);
+      if (data && typeof rememberForgeAvatars === "function") rememberForgeAvatars(repo, data.forgeAvatars, data.commit);
       if (!data || data.truncated || !Array.isArray(data.issues)) return null;
       return data;
     } catch (_) {
@@ -55740,6 +55776,11 @@ Your reply
     originals: false,
     machine: new Map(),
     hover: null,
+    pending: [],
+    scheduled: false,
+    iconsFrame: 0,
+    words: null,
+    names: new Map(),
     observer: null,
     queue: Promise.resolve(),
   };
@@ -55807,11 +55848,16 @@ Your reply
   function postTranslateLanguageName(code, displayIn = "en") {
     const clean = postTranslateCode(code);
     if (!clean) return "";
+    const key = `${displayIn || "en"}\u0000${clean}`;
+    const names = postTranslateUi.names;
+    if (names.has(key)) return names.get(key);
+    let found = clean;
     try {
       const name = new Intl.DisplayNames([displayIn || "en"], { type: "language" }).of(clean);
-      if (name && name !== clean) return name;
+      if (name && name !== clean) found = name;
     } catch (_) {}
-    return clean;
+    names.set(key, found);
+    return found;
   }
 
   function postTranslateNativeName(code) {
@@ -55917,8 +55963,10 @@ Your reply
   function postTranslateWordGuess(text) {
     const words = postTranslateProse(text).toLowerCase().match(/\p{L}[\p{L}'’-]*/gu) || [];
     if (words.length < 4) return "";
-    const scores = Object.entries(POST_TRANSLATE_WORDS).map(([code, list]) => {
-      const known = new Set(list.split(" "));
+    if (!postTranslateUi.words) {
+      postTranslateUi.words = Object.entries(POST_TRANSLATE_WORDS).map(([code, list]) => [code, new Set(list.split(" "))]);
+    }
+    const scores = postTranslateUi.words.map(([code, known]) => {
       let hits = words.filter((word) => known.has(word)).length;
       const letters = POST_TRANSLATE_LETTERS[code];
       if (letters) hits += Math.min(3, (postTranslateProse(text).match(letters) || []).length);
@@ -56042,6 +56090,7 @@ Your reply
     const doc = await postMachineDoc();
     const entry = doc?.posts?.[record.comment];
     if (!entry || typeof entry.text !== "string" || !postTranslateSame(doc.target, record.target)) return null;
+    if (!state.repoRecordDetail?.parsed) return null;
     const text = postTranslationSourceText(record.comment);
     if (!text || await postTranslateSha256(text) !== entry.hash) return null;
     return { source: postTranslateCode(entry.source), text: entry.text };
@@ -56323,7 +56372,16 @@ Your reply
     const slot = bar.querySelector("[data-post-translations]");
     if (slot) slot.innerHTML = community;
     postTranslateMarkHover(body, record);
-    window.lucide?.createIcons?.();
+    if (bar.querySelector("i[data-lucide]")) postTranslateIcons();
+  }
+
+  function postTranslateIcons() {
+    if (postTranslateUi.iconsFrame) return;
+    const run = () => {
+      postTranslateUi.iconsFrame = 0;
+      window.lucide?.createIcons?.();
+    };
+    postTranslateUi.iconsFrame = typeof requestAnimationFrame === "function" ? requestAnimationFrame(run) : setTimeout(run, 16);
   }
 
   function postTranslatePrepareBody(body) {
@@ -56345,6 +56403,19 @@ Your reply
     postTranslatePaint(body);
     void postTranslationAttach(body);
     const api = postTranslateApi();
+    record.machineEntry = record.machineAuto === false ? null : await postMachineEntry(record);
+    if (record.busy || record.showing === "translation") return;
+    if (record.machineEntry) {
+      record.source = record.machineEntry.source;
+      record.availability = "machine";
+      if (record.source && !body.hasAttribute("lang")) body.setAttribute("lang", record.source);
+      postTranslatePaint(body);
+      if (record.machineAuto !== false && !postTranslateUi.originals
+          && (record.auto || !record.hover || postTranslateUi.thread === record.target)) {
+        postMachineApply(body, record);
+      }
+      return;
+    }
     const text = postTranslatePlainText(body);
     const detected = await postTranslateDetect(text, api);
     if (record.busy || record.showing === "translation") return;
@@ -56361,20 +56432,7 @@ Your reply
     const availability = short ? "unknown-source" : await postTranslateRecordAvailability(record, api);
     if (record.busy || record.showing === "translation") return;
     record.availability = availability;
-    if (availability !== "same" && availability !== "unknown-source") {
-      record.machineEntry = record.machineAuto === false ? null : await postMachineEntry(record);
-      if (record.busy || record.showing === "translation") return;
-      if (record.machineEntry) {
-        record.availability = "machine";
-        if (!record.source) record.source = record.machineEntry.source;
-      }
-    }
     postTranslatePaint(body);
-    if (record.machineEntry && record.machineAuto !== false && !postTranslateUi.originals
-        && (record.auto || !record.hover || postTranslateUi.thread === record.target)) {
-      postMachineApply(body, record);
-      return;
-    }
     const remembered = record.key ? postTranslateUi.translated.get(record.key) : "";
     const ready = record.availability === "available" || postTranslateUi.translators.has(`${record.source}>${record.target}`);
     const thread = postTranslateUi.thread === record.target && record.availability !== "unavailable";
@@ -56552,8 +56610,27 @@ Your reply
     const scope = root?.querySelectorAll ? root : document;
     const bodies = scope.matches?.("[data-repo-record-body], [data-repo-issue-comment-text]") ? [scope] : [];
     bodies.concat(postTranslateBodies(scope)).forEach((body) => {
-      if (body.closest("[data-repo-record-detail]")) void postTranslateDecorate(body);
+      if (body.closest("[data-repo-record-detail]") && !postTranslateUi.posts.has(body)) postTranslateUi.pending.push(body);
     });
+    postTranslateSchedule();
+  }
+
+  function postTranslateSchedule() {
+    if (postTranslateUi.scheduled || !postTranslateUi.pending.length) return;
+    postTranslateUi.scheduled = true;
+    const slice = (deadline) => {
+      postTranslateUi.scheduled = false;
+      const started = Date.now();
+      while (postTranslateUi.pending.length) {
+        const left = typeof deadline?.timeRemaining === "function" ? deadline.timeRemaining() : 8 - (Date.now() - started);
+        if (left <= 1) break;
+        const body = postTranslateUi.pending.shift();
+        if (body?.isConnected && !postTranslateUi.posts.has(body)) void postTranslateDecorate(body);
+      }
+      postTranslateSchedule();
+    };
+    if (typeof requestIdleCallback === "function") requestIdleCallback(slice, { timeout: 500 });
+    else setTimeout(slice, 16);
   }
 
   function postTranslatePlaceMenu(menu) {
