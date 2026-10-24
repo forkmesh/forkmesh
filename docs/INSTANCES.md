@@ -23,6 +23,15 @@ extra organization owners); optional mail provider; listing choices
   or a zip holding that JSON and a logo image. It is read in the browser only.
   The user guide is `www/docs/start-config.md`; examples are
   `app/public/start-config.example.json` and `.zip`.
+- **Let your coding agent do it.** A card under "Set up from a file" holds a
+  read-only one-line prompt with a Copy button
+  (`data-start-agent-prompt`, `data-start-agent-copy`) that points a coding
+  agent at `app/public/forkmesh-agent.md` (served at
+  `/forkmesh-agent.md`), plus links to read it, download it as
+  `FORKMESH.md`, and the user guide `www/docs/coding-agents.md`. The agent
+  writes the settings file and the person uploads it here, so SSH secrets
+  are typed by nobody but them. The card has no section number; the six
+  numbered sections are unchanged.
 - **Colour theme.** A toolbar of accent swatches (plus a free colour picker),
   three surface families (Slate, the ForkMesh default, Zinc and Stone), a
   dark/light preview switch and Shuffle, over a live mock of a repository
