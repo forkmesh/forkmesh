@@ -373,6 +373,37 @@ void DatabaseManagerWidget::activate()
     loadInventory(false);
 }
 
+void DatabaseManagerWidget::showTable(const QString &name)
+{
+    if (name.isEmpty())
+        return;
+    QString resolved = name;
+    for (const D1DatabaseTable &table : std::as_const(m_tables))
+        if (table.name.compare(name, Qt::CaseInsensitive) == 0) {
+            resolved = table.name;
+            break;
+        }
+    {
+        const QSignalBlocker searchBlocker(m_tableSearch);
+        const QSignalBlocker viewBlocker(m_tableView);
+        m_tableSearch->clear();
+        m_tableView->setCurrentIndex(0);
+    }
+    if (m_tables.isEmpty()) {
+        m_table = resolved;
+        if (!m_activated)
+            activate();
+        else
+            loadInventory(false);
+        return;
+    }
+    if (resolved != m_table)
+        selectTable(resolved);
+    rebuildTableList();
+    if (QTreeWidgetItem *item = m_tableList->currentItem())
+        m_tableList->scrollToItem(item);
+}
+
 void DatabaseManagerWidget::setStatus(const QString &text, bool error)
 {
     m_status->setText(error ? QStringLiteral("<span style='color:#cf222e'>%1"

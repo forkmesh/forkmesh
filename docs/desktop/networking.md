@@ -147,7 +147,12 @@ compiled out under `FORKMESH_WINDOW_TESTS`).
   inspector (`src/QueryInspector.{h,cpp}`; callers, code sites, latency
   histogram, top statements; bounded memory) and **This desktop**
   (`src/DesktopProcessView.{h,cpp}`, sampling `/proc` every 2 s; Linux only).
-  Everything runs only while the tab is visible.
+  Everything runs only while the tab is visible. Clicking a table bubble opens
+  that table in Log → **Database** (`DatabaseManagerWidget::showTable`): the
+  tab's filter and view are reset so the table is listed, the name is matched
+  case-insensitively (statement shapes lowercase it), and if the inventory has
+  not loaded yet the table is selected once it arrives. The `(no table)` and
+  `+N more` bubbles are not links.
 
 ## Network & nodes
 
