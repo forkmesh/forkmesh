@@ -21,12 +21,20 @@
 #include "PrivateMirrorRuntime.h"
 #include "PublicMirrorRuntime.h"
 #include "UpstreamCheckoutSync.h"
+#include "DesignTokens.h"
+#include "FlowLayout.h"
+#include "UiKit.h"
 
+#include <QButtonGroup>
+#include <QCheckBox>
 #include <QCryptographicHash>
+#include <QFontDatabase>
 #include <QFutureWatcher>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QPainter>
 #include <QSaveFile>
+#include <QStyledItemDelegate>
 #include <QVersionNumber>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -4632,6 +4640,12 @@ constexpr int kNotificationSettingsWidth = 72;
 constexpr int kPingFullTextRole = Qt::UserRole + 5;
 
 constexpr int kPingOpensRole = Qt::UserRole + 6;
+constexpr int kPingUnreadRole = Qt::UserRole + 7;
+constexpr int kPingCategoryRole = Qt::UserRole + 8;
+constexpr int kPingIconNameRole = Qt::UserRole + 9;
+constexpr int kPingsNextRowHeight = 56;
+constexpr int kPingsNextHeadingHeight = 30;
+constexpr int kPingsNextTableRowHeight = 34;
 
 struct PingIcon {
     QString name;
@@ -5012,6 +5026,542 @@ QString pingTitleWithoutUnreadDot(const QString &title)
         headline = headline.mid(1).trimmed();
     return headline;
 }
+
+QString pingNextCategory(const QString &kind, const NotificationLink &link,
+                         bool warning)
+{
+    const QString normalized = kind.trimmed().toLower();
+    if (warning || normalized == QLatin1String("error"))
+        return QStringLiteral("errors");
+    if (normalized == QLatin1String("mention") ||
+        normalized == QLatin1String("subscribed") ||
+        normalized == QLatin1String("chat") ||
+        normalized == QLatin1String("comment") ||
+        normalized == QLatin1String("discussion") ||
+        normalized == QLatin1String("chat_webhook") ||
+        link.kind == QLatin1String("chat") ||
+        link.kind == QLatin1String("discussion"))
+        return QStringLiteral("mentions");
+    if (normalized == QLatin1String("pull") ||
+        normalized == QLatin1String("pull_submitted") ||
+        link.kind == QLatin1String("pull"))
+        return QStringLiteral("reviews");
+    if (normalized == kAgentDonePingKind || link.kind == QLatin1String("agent"))
+        return QStringLiteral("agents");
+    return {};
+}
+
+QString pingsNextAge(qint64 ms)
+{
+    if (ms <= 0)
+        return {};
+    const QDateTime when = QDateTime::fromMSecsSinceEpoch(ms);
+    const QDateTime now = QDateTime::currentDateTime();
+    const qint64 seconds = when.secsTo(now);
+    if (seconds < 60)
+        return QStringLiteral("Now");
+    if (seconds < 3600)
+        return QStringLiteral("%1m ago").arg(seconds / 60);
+    const QDate day = when.date();
+    const QDate today = now.date();
+    if (day == today)
+        return QStringLiteral("%1h ago").arg(seconds / 3600);
+    if (day == today.addDays(-1))
+        return QStringLiteral("Yesterday");
+    if (day.year() == today.year())
+        return QLocale().toString(day, QStringLiteral("MMM d"));
+    return QLocale().toString(day, QStringLiteral("MMM d, yyyy"));
+}
+
+QString pingsNextGroup(qint64 ms)
+{
+    if (ms <= 0)
+        return QStringLiteral("EARLIER");
+    const QDate day = QDateTime::fromMSecsSinceEpoch(ms).date();
+    const QDate today = QDate::currentDate();
+    if (day == today)
+        return QStringLiteral("TODAY");
+    if (day == today.addDays(-1))
+        return QStringLiteral("YESTERDAY");
+    return QStringLiteral("EARLIER");
+}
+
+QString pingsNextWhen(qint64 ms)
+{
+    if (ms <= 0)
+        return {};
+    const QDateTime when = QDateTime::fromMSecsSinceEpoch(ms);
+    const QDate today = QDate::currentDate();
+    const QString time = when.time().toString(QStringLiteral("HH:mm"));
+    if (when.date() == today)
+        return QStringLiteral("Today, %1").arg(time);
+    if (when.date() == today.addDays(-1))
+        return QStringLiteral("Yesterday, %1").arg(time);
+    if (when.date().year() == today.year())
+        return QLocale().toString(when.date(), QStringLiteral("ddd, MMM d")) +
+               QStringLiteral(", ") + time;
+    return QLocale().toString(when.date(), QStringLiteral("MMM d, yyyy")) +
+           QStringLiteral(", ") + time;
+}
+
+QString pingsNextInitials(const QString &text)
+{
+    static const QRegularExpression separators(QStringLiteral("[\\s._@-]+"));
+    QString initials;
+    const QStringList parts = text.split(separators, Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        initials += part.at(0).toUpper();
+        if (initials.size() == 2)
+            break;
+    }
+    return initials;
+}
+
+QString pingsNextPerson(const QString &category, const QString &actor)
+{
+    if (category == QLatin1String("mentions") ||
+        category == QLatin1String("reviews"))
+        return pingsNextInitials(actor);
+    return {};
+}
+
+QPixmap pingsNextAvatar(const QString &iconName, const QString &initials,
+                        int side, qreal dpr)
+{
+    const qreal ratio = dpr > 0.0 ? dpr : 1.0;
+    QPixmap pixmap(qMax(1, qRound(side * ratio)), qMax(1, qRound(side * ratio)));
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Theme::color(Theme::Role::SurfaceActive));
+    painter.drawEllipse(QRectF(0, 0, side, side));
+    if (!initials.isEmpty()) {
+        QFont font = painter.font();
+        font.setPixelSize(qMax(9, side * 10 / 28));
+        font.setWeight(QFont::DemiBold);
+        painter.setFont(font);
+        painter.setPen(Theme::color(Theme::Role::FgMuted));
+        painter.drawText(QRectF(0, 0, side, side), Qt::AlignCenter, initials);
+        return pixmap;
+    }
+    const int glyph = side >= 34 ? 16 : 14;
+    const QPixmap icon = kit::tintedIcon(
+        iconName.isEmpty() ? QStringLiteral("bell") : iconName,
+        Theme::color(Theme::Role::FgMuted), glyph, ratio);
+    painter.drawPixmap(QRectF((side - glyph) / 2.0, (side - glyph) / 2.0,
+                              glyph, glyph),
+                       icon, QRectF(icon.rect()));
+    return pixmap;
+}
+
+QString pingsNextCellText(const QTableWidget *table, int row, int column)
+{
+    const QTableWidgetItem *cell = table ? table->item(row, column) : nullptr;
+    if (!cell)
+        return {};
+    const QVariant full = cell->data(kPingFullTextRole);
+    return full.isValid() ? full.toString() : cell->text();
+}
+
+class PingsNextRowDelegate final : public QStyledItemDelegate
+{
+public:
+    explicit PingsNextRowDelegate(QTableWidget *table)
+        : QStyledItemDelegate(table), m_table(table)
+    {
+    }
+
+    void setHeadings(QHash<int, QString> headings)
+    {
+        m_headings = std::move(headings);
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        const int row = index.row();
+        const QTableWidgetItem *type = m_table->item(row, NotificationColType);
+        const bool unread = type && type->data(kPingUnreadRole).toBool();
+        const QString category =
+            type ? type->data(kPingCategoryRole).toString() : QString();
+        const QString iconName =
+            type ? type->data(kPingIconNameRole).toString() : QString();
+        const QString title = pingTitleWithoutUnreadDot(
+            pingsNextCellText(m_table, row, NotificationColTitle));
+        const QString actor =
+            pingsNextCellText(m_table, row, NotificationColFrom).trimmed();
+        const QString repo =
+            pingsNextCellText(m_table, row, NotificationColRepository).trimmed();
+        const QString typeText =
+            pingsNextCellText(m_table, row, NotificationColType).trimmed();
+        const QTableWidgetItem *whenCell = m_table->item(row, NotificationColWhen);
+        const qint64 whenMs =
+            whenCell ? whenCell->data(Qt::UserRole).toLongLong() : 0;
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        QRect rect = option.rect;
+        const QString heading = m_headings.value(row);
+        if (!heading.isEmpty()) {
+            const QRect band(rect.left(), rect.top(), rect.width(),
+                             kPingsNextHeadingHeight);
+            painter->fillRect(band, Theme::color(Theme::Role::Bg));
+            QFont headingFont = option.font;
+            headingFont.setPixelSize(11);
+            headingFont.setWeight(QFont::Medium);
+            headingFont.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+            painter->setFont(headingFont);
+            painter->setPen(Theme::color(Theme::Role::FgSubtle));
+            painter->drawText(band.adjusted(16, 0, -16, -5),
+                              Qt::AlignLeft | Qt::AlignBottom, heading);
+            rect.setTop(band.bottom() + 1);
+        }
+        if (option.state & QStyle::State_Selected)
+            painter->fillRect(rect, Theme::color(Theme::Role::SurfaceActive));
+        else if (option.state & QStyle::State_MouseOver)
+            painter->fillRect(rect, Theme::color(Theme::Role::SurfaceRaised));
+
+        const int mid = rect.center().y();
+        int x = rect.left() + 16;
+        if (unread) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(Theme::Role::Accent));
+            painter->drawEllipse(QRectF(x + 1, mid - 3, 6, 6));
+        }
+        x += 20;
+        const qreal dpr = painter->device()
+                              ? painter->device()->devicePixelRatioF()
+                              : 1.0;
+        painter->drawPixmap(QRect(x, mid - 14, 28, 28),
+                            avatar(iconName, pingsNextPerson(category, actor),
+                                   dpr));
+        x += 40;
+
+        QFont titleFont = option.font;
+        titleFont.setPixelSize(13);
+        titleFont.setWeight(unread ? QFont::Medium : QFont::Normal);
+        QFont smallFont = option.font;
+        smallFont.setPixelSize(12);
+        const QFontMetrics titleMetrics(titleFont);
+        const QFontMetrics smallMetrics(smallFont);
+        const QString age = pingsNextAge(whenMs);
+        const int ageWidth = age.isEmpty() ? 0 : smallMetrics.horizontalAdvance(age);
+        const int right = rect.right() - 16;
+        const int textWidth = qMax(0, right - x - (ageWidth > 0 ? ageWidth + 12 : 0));
+        const int block = titleMetrics.height() + smallMetrics.height() + 2;
+        const int top = mid - block / 2;
+        const QRect titleRect(x, top, textWidth, titleMetrics.height());
+        painter->setFont(titleFont);
+        painter->setPen(Theme::color(unread ? Theme::Role::Fg
+                                            : Theme::Role::FgMuted));
+        painter->drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter,
+                          titleMetrics.elidedText(
+                              title.isEmpty() ? QStringLiteral("Ping") : title,
+                              Qt::ElideRight, textWidth));
+        QString source = actor.isEmpty() ? typeText : actor;
+        if (!repo.isEmpty() && repo != source)
+            source += (source.isEmpty() ? QString()
+                                        : QString::fromUtf8(" \xC2\xB7 ")) +
+                      repo;
+        painter->setFont(smallFont);
+        painter->setPen(Theme::color(Theme::Role::FgSubtle));
+        painter->drawText(QRect(x, titleRect.bottom() + 3, textWidth,
+                                smallMetrics.height()),
+                          Qt::AlignLeft | Qt::AlignVCenter,
+                          smallMetrics.elidedText(source, Qt::ElideRight,
+                                                  textWidth));
+        if (ageWidth > 0)
+            painter->drawText(QRect(right - ageWidth, titleRect.top(), ageWidth,
+                                    titleMetrics.height()),
+                              Qt::AlignRight | Qt::AlignVCenter, age);
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &) const override
+    {
+        return {qMax(240, option.rect.width()), kPingsNextRowHeight};
+    }
+
+private:
+    QPixmap avatar(const QString &iconName, const QString &initials,
+                   qreal dpr) const
+    {
+        const QString key = iconName + QChar(0x1f) + initials + QChar(0x1f) +
+                            QString::number(Theme::activeDark()) +
+                            QChar(0x1f) + QString::number(dpr);
+        auto found = m_avatars.constFind(key);
+        if (found != m_avatars.constEnd())
+            return found.value();
+        if (m_avatars.size() > 256)
+            m_avatars.clear();
+        const QPixmap pixmap = pingsNextAvatar(iconName, initials, 28, dpr);
+        m_avatars.insert(key, pixmap);
+        return pixmap;
+    }
+
+    QTableWidget *m_table = nullptr;
+    QHash<int, QString> m_headings;
+    mutable QHash<QString, QPixmap> m_avatars;
+};
+
+class PingsNextEventHook final : public QObject
+{
+public:
+    PingsNextEventHook(QObject *parent,
+                       std::function<void(QObject *, QEvent::Type)> handler)
+        : QObject(parent), m_handler(std::move(handler))
+    {
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        const QEvent::Type type = event->type();
+        if (m_handler && (type == QEvent::Show || type == QEvent::Hide))
+            m_handler(watched, type);
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    std::function<void(QObject *, QEvent::Type)> m_handler;
+};
+
+void pingsNextRepolish(QWidget *widget)
+{
+    if (!widget)
+        return;
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+    for (QLabel *label : widget->findChildren<QLabel *>()) {
+        label->style()->unpolish(label);
+        label->style()->polish(label);
+    }
+    widget->update();
+}
+
+void pingsNextDropHiddenSelection(QTableWidget *table)
+{
+    if (!table || !table->selectionModel())
+        return;
+    QItemSelectionModel *selection = table->selectionModel();
+    QSet<int> rows;
+    const QModelIndexList selected = selection->selectedIndexes();
+    for (const QModelIndex &index : selected)
+        rows.insert(index.row());
+    for (int row : std::as_const(rows)) {
+        if (table->isRowHidden(row))
+            selection->select(table->model()->index(row, 0),
+                              QItemSelectionModel::Deselect |
+                                  QItemSelectionModel::Rows);
+    }
+}
+
+QString pingsNextSortLabel(const QTableWidget *table)
+{
+    const QHeaderView *header = table->horizontalHeader();
+    const int section = header->sortIndicatorSection();
+    const bool ascending = header->sortIndicatorOrder() == Qt::AscendingOrder;
+    if (section == NotificationColWhen || section < 0 ||
+        section >= table->columnCount())
+        return ascending ? QStringLiteral("Oldest first")
+                         : QStringLiteral("Newest first");
+    const QTableWidgetItem *label = table->horizontalHeaderItem(section);
+    return QStringLiteral("By %1").arg(
+        label ? label->text().toLower() : QStringLiteral("column"));
+}
+
+void pingsNextLayout(QTableWidget *table)
+{
+    if (!table || !Theme::isNext())
+        return;
+    auto *delegate = dynamic_cast<PingsNextRowDelegate *>(
+        table->property("pingsNextDelegate").value<QObject *>());
+    if (!delegate)
+        return;
+    const bool tableMode = table->property("pingsNextTableMode").toBool();
+    const QString filter = table->property("pingsNextFilter").toString();
+    QHash<QString, int> unreadBy;
+    int unread = 0;
+    int localUnread = 0;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        const QTableWidgetItem *type = table->item(row, NotificationColType);
+        const QString category =
+            type ? type->data(kPingCategoryRole).toString() : QString();
+        if (type && type->data(kPingUnreadRole).toBool()) {
+            ++unread;
+            if (type->data(Qt::UserRole + 3).toLongLong() > 0)
+                ++localUnread;
+            if (!category.isEmpty())
+                ++unreadBy[category];
+        }
+        const bool match = filter.isEmpty() || category == filter;
+        if (table->isRowHidden(row) == match)
+            table->setRowHidden(row, !match);
+    }
+    pingsNextDropHiddenSelection(table);
+
+    const bool byWhen =
+        table->horizontalHeader()->sortIndicatorSection() == NotificationColWhen;
+    QHash<int, QString> headings;
+    QString previous;
+    int shown = 0;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        if (table->isRowHidden(row))
+            continue;
+        ++shown;
+        const QTableWidgetItem *when = table->item(row, NotificationColWhen);
+        const QString group =
+            byWhen && !tableMode ? pingsNextGroup(when ? when->data(Qt::UserRole).toLongLong()
+                                         : 0)
+                   : QString();
+        if (!group.isEmpty() && group != previous)
+            headings.insert(row, group);
+        previous = group;
+        const int height =
+            tableMode ? kPingsNextTableRowHeight
+                      : kPingsNextRowHeight +
+                            (headings.contains(row) ? kPingsNextHeadingHeight : 0);
+        if (table->rowHeight(row) != height)
+            table->setRowHeight(row, height);
+    }
+    delegate->setHeadings(headings);
+    table->viewport()->update();
+
+    auto *page = qobject_cast<QWidget *>(
+        table->property("pingsNextPageObject").value<QObject *>());
+    if (!page)
+        return;
+    const int total = table->rowCount();
+    if (auto *summary = page->findChild<QLabel *>(QStringLiteral("pingsNextSummary"))) {
+        const QString inbox = QStringLiteral("%1 in your inbox").arg(total);
+        summary->setText(
+            unread > 0
+                ? QStringLiteral("%1 unread").arg(unread) +
+                      QString::fromUtf8(" \xC2\xB7 ") + inbox
+            : total > 0 ? QStringLiteral("You are all caught up") +
+                              QString::fromUtf8(" \xC2\xB7 ") + inbox
+                        : QStringLiteral("Nothing in your inbox"));
+    }
+    if (auto *markRead =
+            page->findChild<QPushButton *>(QStringLiteral("pingsNextMarkRead")))
+        markRead->setEnabled(localUnread > 0);
+    const QList<QPushButton *> filters =
+        page->findChildren<QPushButton *>(QStringLiteral("pingsNextFilter"));
+    for (QPushButton *button : filters) {
+        const QString id = button->property("pingsFilter").toString();
+        const int count = id.isEmpty() ? unread : unreadBy.value(id);
+        if (auto *pill =
+                button->findChild<QLabel *>(QStringLiteral("pingsNextFilterCount"))) {
+            pill->setText(QString::number(count));
+            pill->setVisible(count > 0);
+        }
+        const bool active = id == filter;
+        if (button->property("active").toBool() != active) {
+            button->setProperty("active", active);
+            pingsNextRepolish(button);
+        }
+        if (QLayout *inner = button->layout()) {
+            inner->invalidate();
+            inner->activate();
+            button->setFixedWidth(inner->sizeHint().width());
+        }
+    }
+    if (auto *sort = page->findChild<QPushButton *>(QStringLiteral("pingsNextSort")))
+        sort->setText(pingsNextSortLabel(table));
+    if (auto *emptyTitle =
+            page->findChild<QLabel *>(QStringLiteral("pingsNextEmptyTitle"))) {
+        auto *emptyBody =
+            page->findChild<QLabel *>(QStringLiteral("pingsNextEmptyBody"));
+        auto *showAll =
+            page->findChild<QPushButton *>(QStringLiteral("pingsNextShowAll"));
+        if (shown == 0) {
+            emptyTitle->setText(filter.isEmpty()
+                                    ? QStringLiteral("Nothing in your inbox")
+                                    : QStringLiteral("No pings of this kind"));
+            if (emptyBody)
+                emptyBody->setText(
+                    filter.isEmpty()
+                        ? QStringLiteral("New pings from agents, CI and "
+                                         "teammates will show up here.")
+                        : QStringLiteral("Pings of this kind will appear "
+                                         "here when they arrive."));
+        } else {
+            emptyTitle->setText(QStringLiteral("Select a ping"));
+            if (emptyBody)
+                emptyBody->setText(QStringLiteral(
+                    "Choose a ping on the left to see the details."));
+        }
+        if (showAll)
+            showAll->setVisible(shown == 0 && !filter.isEmpty());
+    }
+}
+
+void pingsNextSetTableMode(QTableWidget *table, bool on)
+{
+    auto *delegate = qobject_cast<QAbstractItemDelegate *>(
+        table ? table->property("pingsNextDelegate").value<QObject *>()
+              : nullptr);
+    if (!delegate || table->property("pingsNextTableMode").toBool() == on)
+        return;
+    table->setProperty("pingsNextTableMode", on);
+    if (on) {
+        table->setItemDelegateForColumn(NotificationColTitle, nullptr);
+        const QVariantList hidden =
+            table->property("pingsNextTableHidden").toList();
+        for (int column = 0; column < table->columnCount(); ++column)
+            table->setColumnHidden(column, hidden.contains(column));
+        table->horizontalHeader()->show();
+        table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    } else {
+        QVariantList hidden;
+        for (int column = 0; column < table->columnCount(); ++column)
+            if (table->isColumnHidden(column))
+                hidden << column;
+        table->setProperty("pingsNextTableHidden", hidden);
+        for (int column = 0; column < table->columnCount(); ++column)
+            table->setColumnHidden(column, column != NotificationColTitle);
+        table->horizontalHeader()->hide();
+        table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        table->setItemDelegateForColumn(NotificationColTitle, delegate);
+    }
+    pingsNextLayout(table);
+}
+
+void pingsNextRefreshQuiet(QWidget *page)
+{
+    if (!page)
+        return;
+    auto *label = page->findChild<QLabel *>(QStringLiteral("pingsNextQuietLabel"));
+    auto *toggle = page->findChild<QCheckBox *>(QStringLiteral("pingsNextQuietToggle"));
+    auto *icon = page->findChild<QLabel *>(QStringLiteral("pingsNextQuietIcon"));
+    const forkmesh::pings::QuietHours quiet = forkmesh::pings::loadQuietHours();
+    const qint64 until = forkmesh::pings::quietUntilMs(
+        quiet, QDateTime::currentMSecsSinceEpoch());
+    const QString range = forkmesh::pings::minuteLabel(quiet.start) +
+                          QStringLiteral(" to ") +
+                          forkmesh::pings::minuteLabel(quiet.end);
+    if (label) {
+        label->setText(
+            until > 0 ? QStringLiteral("Quiet hours on until %1")
+                            .arg(QDateTime::fromMSecsSinceEpoch(until)
+                                     .time()
+                                     .toString(QStringLiteral("HH:mm")))
+                      : QStringLiteral("Quiet hours %1").arg(range));
+        label->setToolTip(forkmesh::pings::quietHoursSummary(quiet) +
+                          QStringLiteral(". Days and times are in Settings "
+                                         "> Pings."));
+    }
+    if (icon)
+        icon->setPixmap(kit::tintedIcon(
+            until > 0 ? QStringLiteral("bell") : QStringLiteral("moon"),
+            Theme::color(Theme::Role::FgMuted), 14, icon->devicePixelRatioF()));
+    if (toggle && toggle->isChecked() != quiet.enabled) {
+        const QSignalBlocker blocker(toggle);
+        toggle->setChecked(quiet.enabled);
+    }
+}
 } // namespace
 
 QWidget *MainWindow::buildNotificationsSection()
@@ -5088,16 +5638,253 @@ QWidget *MainWindow::buildNotificationsSection()
     connect(settingsButton, &QPushButton::clicked, this,
             [this] { openPingSettings(); });
 
-    auto *header = new QHBoxLayout;
-    header->setContentsMargins(16, 12, 16, 4);
-    header->addWidget(title);
-    header->addStretch();
-    header->addWidget(settingsButton);
-    header->addWidget(m_pingPauseButton);
-    header->addWidget(testButton);
-    header->addWidget(refreshButton);
-    header->addWidget(deleteButton);
-    header->addWidget(clearButton);
+    const bool next = Theme::isNext();
+    QWidget *nextHeader = nullptr;
+    QHBoxLayout *header = nullptr;
+    if (!next) {
+        header = new QHBoxLayout;
+        header->setContentsMargins(16, 12, 16, 4);
+        header->addWidget(title);
+        header->addStretch();
+        header->addWidget(settingsButton);
+        header->addWidget(m_pingPauseButton);
+        header->addWidget(testButton);
+        header->addWidget(refreshButton);
+        header->addWidget(deleteButton);
+        header->addWidget(clearButton);
+    } else {
+        page->setProperty("pingsNextPage", true);
+        nextHeader = new QWidget(page);
+        nextHeader->setObjectName(QStringLiteral("pingsNextHeader"));
+        nextHeader->setAttribute(Qt::WA_StyledBackground, true);
+        auto *headerColumn = new QVBoxLayout(nextHeader);
+        headerColumn->setContentsMargins(24, 12, 24, 12);
+        headerColumn->setSpacing(10);
+        auto *topRow = new QHBoxLayout;
+        topRow->setContentsMargins(0, 0, 0, 0);
+        topRow->setSpacing(6);
+        auto *titleColumn = new QVBoxLayout;
+        titleColumn->setContentsMargins(0, 0, 0, 0);
+        titleColumn->setSpacing(2);
+        titleColumn->addWidget(title);
+        auto *summary = new QLabel(nextHeader);
+        summary->setObjectName(QStringLiteral("pingsNextSummary"));
+        titleColumn->addWidget(summary);
+        topRow->addLayout(titleColumn);
+        topRow->addStretch(1);
+
+        auto *quiet = new QWidget(nextHeader);
+        quiet->setObjectName(QStringLiteral("pingsNextQuiet"));
+        auto *quietRow = new QHBoxLayout(quiet);
+        quietRow->setContentsMargins(8, 0, 4, 0);
+        quietRow->setSpacing(8);
+        auto *quietIcon = new QLabel(quiet);
+        quietIcon->setObjectName(QStringLiteral("pingsNextQuietIcon"));
+        auto *quietLabel = new QLabel(quiet);
+        quietLabel->setObjectName(QStringLiteral("pingsNextQuietLabel"));
+        auto *quietToggle = new kit::Toggle(quiet);
+        quietToggle->setObjectName(QStringLiteral("pingsNextQuietToggle"));
+        quietToggle->setToolTip(QStringLiteral(
+            "Turn quiet hours on or off. Pings still arrive here; no email, "
+            "phone banner, desktop alert or sound is raised."));
+        quietRow->addWidget(quietIcon);
+        quietRow->addWidget(quietLabel);
+        quietRow->addWidget(quietToggle);
+        topRow->addWidget(quiet);
+        connect(quietToggle, &QCheckBox::clicked, this, [this, page](bool on) {
+            ensureSectionBuilt(1);
+            auto *box = findChild<QCheckBox *>(
+                QStringLiteral("pingQuietHoursCheck"));
+            if (box) {
+                if (box->isChecked() != on)
+                    box->setChecked(on);
+                refreshPingPauseSurfaces();
+            } else {
+                openPingSettings();
+            }
+            pingsNextRefreshQuiet(page);
+        });
+
+        topRow->addWidget(m_pingPauseButton);
+
+        auto *markRead = new QPushButton(QStringLiteral("Mark all read"), nextHeader);
+        markRead->setObjectName(QStringLiteral("pingsNextMarkRead"));
+        markRead->setCursor(Qt::PointingHandCursor);
+        markRead->setToolTip(QStringLiteral(
+            "Mark this desktop's pings seen. A website ping is marked read "
+            "when you open it."));
+        setOcticon(markRead, "check", 14);
+        connect(markRead, &QPushButton::clicked, this, [this] {
+            markLocalPingsSeen();
+            updateNotificationButton();
+            if (!m_notificationsTable)
+                return;
+            for (int row = 0; row < m_notificationsTable->rowCount(); ++row) {
+                QTableWidgetItem *type =
+                    m_notificationsTable->item(row, NotificationColType);
+                if (type && type->data(Qt::UserRole + 3).toLongLong() > 0 &&
+                    type->data(kPingUnreadRole).toBool())
+                    type->setData(kPingUnreadRole, false);
+            }
+            pingsNextLayout(m_notificationsTable);
+        });
+        topRow->addWidget(markRead);
+
+        auto *hiddenActions = new QWidget(nextHeader);
+        hiddenActions->setObjectName(QStringLiteral("pingsNextHiddenActions"));
+        auto *hiddenRow = new QHBoxLayout(hiddenActions);
+        hiddenRow->setContentsMargins(0, 0, 0, 0);
+        const QList<QPointer<QPushButton>> overflow{
+            settingsButton, testButton, refreshButton, deleteButton,
+            clearButton};
+        for (const QPointer<QPushButton> &button : overflow)
+            hiddenRow->addWidget(button);
+        hiddenActions->hide();
+        topRow->addWidget(hiddenActions);
+
+        auto *more = new QPushButton(nextHeader);
+        more->setObjectName(QStringLiteral("pingsNextMore"));
+        more->setCursor(Qt::PointingHandCursor);
+        more->setToolTip(QStringLiteral(
+            "Ping settings, test ping, refresh, delete and clear"));
+        setOcticon(more, "kebab-horizontal", 16);
+        connect(more, &QPushButton::clicked, this, [this, more, overflow] {
+            QMenu menu(this);
+            QHash<QAction *, QPointer<QPushButton>> mapped;
+            for (const QPointer<QPushButton> &button : overflow) {
+                if (!button || button->isHidden())
+                    continue;
+                if (button == overflow.value(3))
+                    menu.addSeparator();
+                QAction *action = menu.addAction(button->icon(), button->text());
+                action->setEnabled(button->isEnabled());
+                action->setToolTip(button->toolTip());
+                mapped.insert(action, button);
+            }
+            menu.addSeparator();
+            QAction *tableView = menu.addAction(QStringLiteral("Show as table"));
+            tableView->setCheckable(true);
+            tableView->setChecked(
+                m_notificationsTable &&
+                m_notificationsTable->property("pingsNextTableMode").toBool());
+            tableView->setToolTip(QStringLiteral(
+                "Show every column with its header, where each column's menu "
+                "sorts, selects, hides and moves it"));
+            QAction *chosen =
+                menu.exec(more->mapToGlobal(QPoint(0, more->height() + 4)));
+            if (chosen && chosen == tableView) {
+                pingsNextSetTableMode(m_notificationsTable, tableView->isChecked());
+                return;
+            }
+            const QPointer<QPushButton> button = mapped.value(chosen);
+            if (button)
+                button->click();
+        });
+        topRow->addWidget(more);
+        headerColumn->addLayout(topRow);
+
+        auto *filterRow = new QHBoxLayout;
+        filterRow->setContentsMargins(0, 0, 0, 0);
+        filterRow->setSpacing(8);
+        auto *filters = new QFrame(nextHeader);
+        filters->setObjectName(QStringLiteral("pingsNextFilters"));
+        auto *filtersRow = new QHBoxLayout(filters);
+        filtersRow->setContentsMargins(3, 3, 3, 3);
+        filtersRow->setSpacing(2);
+        auto *filterGroup = new QButtonGroup(filters);
+        filterGroup->setExclusive(true);
+        const QList<QPair<QString, QString>> filterChoices{
+            {QString(), QStringLiteral("All")},
+            {QStringLiteral("mentions"), QStringLiteral("Mentions")},
+            {QStringLiteral("reviews"), QStringLiteral("Reviews")},
+            {QStringLiteral("errors"), QStringLiteral("Errors")},
+            {QStringLiteral("agents"), QStringLiteral("Agents")}};
+        for (const auto &choice : filterChoices) {
+            auto *button = new QPushButton(filters);
+            button->setObjectName(QStringLiteral("pingsNextFilter"));
+            button->setProperty("pingsFilter", choice.first);
+            button->setProperty("active", choice.first.isEmpty());
+            button->setCheckable(true);
+            button->setChecked(choice.first.isEmpty());
+            button->setCursor(Qt::PointingHandCursor);
+            button->setFixedHeight(28);
+            auto *inner = new QHBoxLayout(button);
+            inner->setContentsMargins(10, 0, 10, 0);
+            inner->setSpacing(6);
+            auto *label = new QLabel(choice.second, button);
+            label->setObjectName(QStringLiteral("pingsNextFilterLabel"));
+            label->setAttribute(Qt::WA_TransparentForMouseEvents);
+            auto *count = new QLabel(button);
+            count->setObjectName(QStringLiteral("pingsNextFilterCount"));
+            count->setAttribute(Qt::WA_TransparentForMouseEvents);
+            count->setAlignment(Qt::AlignCenter);
+            count->hide();
+            inner->addWidget(label);
+            inner->addWidget(count);
+            filterGroup->addButton(button);
+            filtersRow->addWidget(button);
+            const QString id = choice.first;
+            connect(button, &QPushButton::clicked, this, [this, id] {
+                if (!m_notificationsTable)
+                    return;
+                m_notificationsTable->setProperty("pingsNextFilter", id);
+                pingsNextLayout(m_notificationsTable);
+            });
+        }
+        filterRow->addWidget(filters);
+        filterRow->addStretch(1);
+        auto *sort = new QPushButton(nextHeader);
+        sort->setObjectName(QStringLiteral("pingsNextSort"));
+        sort->setCursor(Qt::PointingHandCursor);
+        sort->setToolTip(QStringLiteral("Choose how the pings are ordered"));
+        setOcticon(sort, "sort-desc", 14);
+        connect(sort, &QPushButton::clicked, this, [this, sort] {
+            if (!m_notificationsTable)
+                return;
+            QMenu menu(this);
+            const QList<QPair<int, Qt::SortOrder>> choices{
+                {NotificationColWhen, Qt::DescendingOrder},
+                {NotificationColWhen, Qt::AscendingOrder},
+                {NotificationColTitle, Qt::AscendingOrder},
+                {NotificationColType, Qt::AscendingOrder},
+                {NotificationColKind, Qt::AscendingOrder},
+                {NotificationColRepository, Qt::AscendingOrder},
+                {NotificationColFrom, Qt::AscendingOrder},
+                {NotificationColStatus, Qt::AscendingOrder}};
+            QHeaderView *pingHeader = m_notificationsTable->horizontalHeader();
+            QHash<QAction *, QPair<int, Qt::SortOrder>> mapped;
+            for (const auto &choice : choices) {
+                QString text;
+                if (choice.first == NotificationColWhen)
+                    text = choice.second == Qt::DescendingOrder
+                               ? QStringLiteral("Newest first")
+                               : QStringLiteral("Oldest first");
+                else if (QTableWidgetItem *label =
+                             m_notificationsTable->horizontalHeaderItem(
+                                 choice.first))
+                    text = QStringLiteral("By %1").arg(label->text().toLower());
+                QAction *action = menu.addAction(text);
+                action->setCheckable(true);
+                action->setChecked(
+                    pingHeader->sortIndicatorSection() == choice.first &&
+                    (choice.first != NotificationColWhen ||
+                     pingHeader->sortIndicatorOrder() == choice.second));
+                mapped.insert(action, choice);
+                if (choice.first == NotificationColWhen &&
+                    choice.second == Qt::AscendingOrder)
+                    menu.addSeparator();
+            }
+            QAction *chosen =
+                menu.exec(sort->mapToGlobal(QPoint(0, sort->height() + 4)));
+            if (!chosen || !mapped.contains(chosen))
+                return;
+            const auto picked = mapped.value(chosen);
+            m_notificationsTable->sortByColumn(picked.first, picked.second);
+        });
+        filterRow->addWidget(sort);
+        headerColumn->addLayout(filterRow);
+        pingsNextRefreshQuiet(page);
+    }
 
     m_notificationsTable = new QTableWidget(0, kNotificationColumns);
     installColumnHeaderMenu(m_notificationsTable);
@@ -5253,10 +6040,46 @@ QWidget *MainWindow::buildNotificationsSection()
                 }
             });
 
+    if (next) {
+        m_notificationsTable->setProperty("pingsNext", true);
+        m_notificationsTable->setProperty(
+            "pingsNextPageObject", QVariant::fromValue<QObject *>(page));
+        auto *rowDelegate = new PingsNextRowDelegate(m_notificationsTable);
+        m_notificationsTable->setProperty(
+            "pingsNextDelegate", QVariant::fromValue<QObject *>(rowDelegate));
+        m_notificationsTable->setItemDelegateForColumn(NotificationColTitle,
+                                                       rowDelegate);
+        m_notificationsTable->horizontalHeader()->hide();
+        for (int column = 0; column < kNotificationColumns; ++column)
+            m_notificationsTable->setColumnHidden(column,
+                                                  column != NotificationColTitle);
+        m_notificationsTable->setAlternatingRowColors(false);
+        m_notificationsTable->setShowGrid(false);
+        m_notificationsTable->setWordWrap(false);
+        m_notificationsTable->setFrameShape(QFrame::NoFrame);
+        m_notificationsTable->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_notificationsTable->setVerticalScrollMode(
+            QAbstractItemView::ScrollPerPixel);
+        m_notificationsTable->setMinimumWidth(300);
+        m_notificationsTable->viewport()->setAttribute(Qt::WA_Hover, true);
+        m_notificationsTable->verticalHeader()->setDefaultSectionSize(
+            kPingsNextRowHeight);
+        connect(m_notificationsTable->selectionModel(),
+                &QItemSelectionModel::selectionChanged, m_notificationsTable,
+                [this] { pingsNextDropHiddenSelection(m_notificationsTable); });
+        connect(pingHeader, &QHeaderView::sortIndicatorChanged, this, [this] {
+            QTimer::singleShot(0, this,
+                               [this] { pingsNextLayout(m_notificationsTable); });
+        });
+    }
+
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(6);
-    layout->addLayout(header);
+    layout->setSpacing(next ? 0 : 6);
+    if (nextHeader)
+        layout->addWidget(nextHeader);
+    else
+        layout->addLayout(header);
 
     m_pingDetailPane = new QScrollArea;
     m_pingDetailPane->setObjectName(QStringLiteral("issueSidebarScroll"));
@@ -5279,6 +6102,66 @@ QWidget *MainWindow::buildNotificationsSection()
     splitter->setStretchFactor(1, 0);
     splitter->setSizes({900, 340});
     m_pingDetailPane->hide();
+    if (next) {
+        m_pingDetailPane->setMinimumWidth(320);
+        m_pingDetailPane->setMaximumWidth(QWIDGETSIZE_MAX);
+        m_pingDetailPane->setProperty("pingsNext", true);
+        auto *placeholder = new QWidget;
+        placeholder->setObjectName(QStringLiteral("pingsNextEmptyDetail"));
+        placeholder->setAttribute(Qt::WA_StyledBackground, true);
+        auto *emptyColumn = new QVBoxLayout(placeholder);
+        emptyColumn->setContentsMargins(32, 32, 32, 32);
+        emptyColumn->setSpacing(8);
+        emptyColumn->addStretch(1);
+        auto *emptyIcon = new QLabel(placeholder);
+        emptyIcon->setPixmap(pingsNextAvatar(QStringLiteral("comment"), QString(),
+                                             40, placeholder->devicePixelRatioF()));
+        emptyIcon->setAlignment(Qt::AlignCenter);
+        emptyColumn->addWidget(emptyIcon, 0, Qt::AlignHCenter);
+        auto *emptyTitle = new QLabel(QStringLiteral("Select a ping"), placeholder);
+        emptyTitle->setObjectName(QStringLiteral("pingsNextEmptyTitle"));
+        emptyTitle->setAlignment(Qt::AlignCenter);
+        emptyColumn->addWidget(emptyTitle);
+        auto *emptyBody = new QLabel(
+            QStringLiteral("Choose a ping on the left to see the details."),
+            placeholder);
+        emptyBody->setObjectName(QStringLiteral("pingsNextEmptyBody"));
+        emptyBody->setAlignment(Qt::AlignCenter);
+        emptyBody->setWordWrap(true);
+        emptyColumn->addWidget(emptyBody);
+        auto *showAll = new QPushButton(QStringLiteral("Show all pings"), placeholder);
+        showAll->setObjectName(QStringLiteral("pingsNextShowAll"));
+        showAll->setCursor(Qt::PointingHandCursor);
+        showAll->hide();
+        connect(showAll, &QPushButton::clicked, this, [this, page] {
+            const QList<QPushButton *> filterButtons =
+                page->findChildren<QPushButton *>(
+                    QStringLiteral("pingsNextFilter"));
+            for (QPushButton *button : filterButtons)
+                if (button->property("pingsFilter").toString().isEmpty())
+                    button->click();
+        });
+        emptyColumn->addWidget(showAll, 0, Qt::AlignHCenter);
+        emptyColumn->addStretch(2);
+        splitter->addWidget(placeholder);
+        splitter->setCollapsible(2, false);
+        splitter->setStretchFactor(0, 0);
+        splitter->setStretchFactor(1, 1);
+        splitter->setStretchFactor(2, 1);
+        splitter->setHandleWidth(1);
+        splitter->setSizes({420, 900, 900});
+        auto *hook = new PingsNextEventHook(
+            page, [this, page, placeholder](QObject *watched, QEvent::Type type) {
+                if (watched == m_pingDetailPane) {
+                    placeholder->setVisible(m_pingDetailPane->isHidden());
+                } else if (watched == page && type == QEvent::Show) {
+                    pingsNextRefreshQuiet(page);
+                    pingsNextLayout(m_notificationsTable);
+                }
+            });
+        m_pingDetailPane->installEventFilter(hook);
+        page->installEventFilter(hook);
+    }
     layout->addWidget(splitter, 1);
 
     auto *closeDetail = new QShortcut(QKeySequence(Qt::Key_Escape), page);
@@ -5347,6 +6230,7 @@ void MainWindow::refreshNotificationsTable()
         QString href;
         qint64 localId = 0;
         QString webId;
+        bool unread = false;
     };
     // Row heights live on the vertical header, not on the items, so they stay
     // put when a sort moves the rows. One height for the whole grid is the only
@@ -5372,6 +6256,11 @@ void MainWindow::refreshNotificationsTable()
                               static_cast<qlonglong>(data.localId));
         if (!data.webId.isEmpty())
             typeItem->setData(Qt::UserRole + 4, data.webId);
+        typeItem->setData(kPingUnreadRole, data.unread);
+        typeItem->setData(kPingCategoryRole,
+                          pingNextCategory(data.kind, data.destination,
+                                           data.warning));
+        typeItem->setData(kPingIconNameRole, pingIcon.name);
 
         auto *whenItem = new TimestampItem(
             data.whenMs > 0 ? formatRepoDate(data.whenMs) : QString(),
@@ -5509,6 +6398,7 @@ void MainWindow::refreshNotificationsTable()
         data.whenMs = run.createdAtMs;
         data.link = QStringLiteral("run #%1").arg(run.id);
         data.runId = run.id;
+        data.unread = true;
         addRow(data);
     }
     for (const AppNotification &notice : std::as_const(m_notifications)) {
@@ -5532,6 +6422,10 @@ void MainWindow::refreshNotificationsTable()
         data.warning = notice.warning;
         data.destination = notice.link;
         data.localId = notice.id;
+        data.unread = (m_localPingsSeenAtMs >= 0 &&
+                       notice.timestampMs > m_localPingsSeenAtMs &&
+                       notice.sync != forkmesh::PingSync::Synced) ||
+                      (notice.dismissOnly && !notice.acknowledged);
         addRow(data);
     }
     for (const QJsonValue &value : std::as_const(m_webAlerts)) {
@@ -5576,6 +6470,7 @@ void MainWindow::refreshNotificationsTable()
         data.destination = webAlertLink(alert);
         data.href = webUrl;
         data.webId = alert.value(QStringLiteral("id")).toString().trimmed();
+        data.unread = unread;
         addRow(data);
     }
     m_notificationsTable->setRowCount(nextRow);
@@ -5588,6 +6483,7 @@ void MainWindow::refreshNotificationsTable()
             m_notificationsTable->setRowHeight(row, uniform);
     }
     m_notificationsTable->setSortingEnabled(true);
+    pingsNextLayout(m_notificationsTable);
     refreshPingDetail();
 }
 
@@ -5848,32 +6744,133 @@ void MainWindow::renderPingDetail(int row)
         return;
     m_pingDetailSignature = signature;
 
+    const bool next = Theme::isNext() &&
+                      m_pingDetailPane->property("pingsNext").toBool();
     auto *body = new QWidget;
     body->setObjectName(QStringLiteral("issueSidebar"));
     body->setProperty("pingKey", key);
-    auto *layout = new QVBoxLayout(body);
-    layout->setContentsMargins(14, 16, 12, 18);
-    layout->setSpacing(8);
+    QVBoxLayout *layout = nullptr;
+    QWidget *actionsHost = nullptr;
+    if (next) {
+        body->setProperty("pingNext", true);
+        auto *centre = new QHBoxLayout(body);
+        centre->setContentsMargins(32, 28, 32, 28);
+        centre->setSpacing(0);
+        auto *column = new QWidget(body);
+        column->setObjectName(QStringLiteral("pingsNextDetailColumn"));
+        column->setMaximumWidth(720);
+        layout = new QVBoxLayout(column);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(8);
+        centre->addStretch(1);
+        centre->addWidget(column, 100);
+        centre->addStretch(1);
+        actionsHost = new QWidget(column);
+        actionsHost->setObjectName(QStringLiteral("pingsNextDetailActions"));
+        new FlowLayout(actionsHost, 0, 6, 6);
+    } else {
+        layout = new QVBoxLayout(body);
+        layout->setContentsMargins(14, 16, 12, 18);
+        layout->setSpacing(8);
+    }
 
-    auto addButton = [this, body, layout](const QString &text,
-                                          const QString &icon,
-                                          const QString &objectName) {
+    auto addButton = [this, body, layout, actionsHost](const QString &text,
+                                                       const QString &icon,
+                                                       const QString &objectName) {
         auto *button = new QPushButton(text, body);
         button->setObjectName(objectName);
         button->setProperty("buttonSize", "sm");
         button->setCursor(Qt::PointingHandCursor);
         setOcticon(button, icon, 14);
-        layout->addWidget(button, 0, Qt::AlignLeft);
+        if (actionsHost)
+            actionsHost->layout()->addWidget(button);
+        else
+            layout->addWidget(button, 0, Qt::AlignLeft);
         return button;
     };
-    auto addHeading = [body, layout](const QString &text) {
-        auto *label = new QLabel(text, body);
+    auto addHeading = [body, layout, next](const QString &text) {
+        auto *label = new QLabel(next ? text.toUpper() : text, body);
         label->setObjectName(QStringLiteral("issueSidebarHeading"));
-        layout->addSpacing(8);
+        layout->addSpacing(next ? 16 : 8);
         layout->addWidget(label);
     };
 
-    auto *top = new QHBoxLayout;
+    const QString category =
+        typeCell->data(kPingCategoryRole).toString();
+    if (next) {
+        const QTableWidgetItem *whenCell =
+            m_notificationsTable->item(row, NotificationColWhen);
+        const qint64 whenMs =
+            whenCell ? whenCell->data(Qt::UserRole).toLongLong() : 0;
+        auto *top = new QHBoxLayout;
+        top->setContentsMargins(0, 0, 0, 0);
+        top->setSpacing(12);
+        auto *avatar = new QLabel(body);
+        avatar->setObjectName(QStringLiteral("pingsNextDetailIcon"));
+        avatar->setPixmap(pingsNextAvatar(
+            typeCell->data(kPingIconNameRole).toString(),
+            pingsNextPerson(category, actor), 36, body->devicePixelRatioF()));
+        avatar->setFixedSize(36, 36);
+        top->addWidget(avatar, 0, Qt::AlignTop);
+        auto *heading = new QVBoxLayout;
+        heading->setContentsMargins(0, 0, 0, 0);
+        heading->setSpacing(6);
+        auto *titleLabel = new QLabel(
+            title.isEmpty() ? QStringLiteral("Ping") : title, body);
+        titleLabel->setObjectName(QStringLiteral("issuePageTitle"));
+        titleLabel->setTextFormat(Qt::PlainText);
+        titleLabel->setWordWrap(true);
+        titleLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        heading->addWidget(titleLabel);
+        auto *meta = new QHBoxLayout;
+        meta->setContentsMargins(0, 0, 0, 0);
+        meta->setSpacing(6);
+        const QString source =
+            !actor.trimmed().isEmpty() ? actor.trimmed()
+            : !repo.trimmed().isEmpty() ? repo.trimmed()
+                                        : type;
+        auto *sourceLabel = new QLabel(source, body);
+        sourceLabel->setObjectName(QStringLiteral("pingsNextDetailMeta"));
+        sourceLabel->setTextFormat(Qt::PlainText);
+        meta->addWidget(sourceLabel);
+        const QString whenText = pingsNextWhen(whenMs);
+        if (!whenText.isEmpty()) {
+            auto *dot = new QLabel(QString::fromUtf8("Â·"), body);
+            dot->setObjectName(QStringLiteral("pingsNextDetailMetaDot"));
+            meta->addWidget(dot);
+            auto *clock = new QLabel(body);
+            clock->setPixmap(kit::tintedIcon(QStringLiteral("clock"),
+                                             Theme::color(Theme::Role::FgMuted),
+                                             12, body->devicePixelRatioF()));
+            meta->addWidget(clock);
+            auto *whenLabel = new QLabel(whenText, body);
+            whenLabel->setObjectName(QStringLiteral("pingsNextDetailMeta"));
+            whenLabel->setToolTip(when);
+            meta->addWidget(whenLabel);
+        }
+        if (!type.trimmed().isEmpty())
+            meta->addWidget(new kit::Badge(
+                type, category == QLatin1String("errors") ? kit::Tone::Danger
+                                                          : kit::Tone::Neutral,
+                false, body));
+        meta->addStretch(1);
+        heading->addLayout(meta);
+        top->addLayout(heading, 1);
+        auto *close = new QPushButton(body);
+        close->setObjectName(QStringLiteral("ghostButton"));
+        close->setProperty("buttonSize", "xs");
+        close->setCursor(Qt::PointingHandCursor);
+        close->setToolTip(QStringLiteral("Close details (Esc)"));
+        setOcticon(close, QStringLiteral("x"), 12);
+        connect(close, &QPushButton::clicked, this, [this] { hidePingDetail(); });
+        top->addWidget(close, 0, Qt::AlignTop);
+        layout->addLayout(top);
+        layout->addSpacing(12);
+        layout->addWidget(actionsHost);
+    }
+
+    auto *top = next ? nullptr : new QHBoxLayout;
+    if (top) {
     top->setSpacing(8);
     auto *icon = new QLabel(body);
     icon->setPixmap(typeCell->icon().pixmap(20, 20));
@@ -5899,7 +6896,8 @@ void MainWindow::renderPingDetail(int row)
     titleLabel->setWordWrap(true);
     titleLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     layout->addWidget(titleLabel);
-    if (!detail.isEmpty()) {
+    }
+    if (!next && !detail.isEmpty()) {
         auto *detailLabel = new QLabel(detail, body);
         detailLabel->setObjectName(QStringLiteral("statusLine"));
         detailLabel->setTextFormat(Qt::PlainText);
@@ -5910,7 +6908,8 @@ void MainWindow::renderPingDetail(int row)
 
     const QString openLabel = pingOpenLabel(destination, runId, href);
     if (!openLabel.isEmpty()) {
-        layout->addSpacing(4);
+        if (!next)
+            layout->addSpacing(4);
         QPushButton *open = addButton(openLabel, QStringLiteral("chevron-right"),
                                       QStringLiteral("primaryButton"));
         connect(open, &QPushButton::clicked, this, [this, key] {
@@ -5920,7 +6919,8 @@ void MainWindow::renderPingDetail(int row)
         });
     }
 
-    addHeading(QStringLiteral("Actions"));
+    if (!next)
+        addHeading(QStringLiteral("Actions"));
     const QString prompt = pingPromptText(type, title, detail, repo, actor,
                                           when, href.isEmpty() ? link : href);
     QPushButton *toPrompt =
@@ -5995,6 +6995,36 @@ void MainWindow::renderPingDetail(int row)
             m_notificationsTable->selectRow(current);
             deleteSelectedNotifications();
         });
+    }
+
+    if (next && !detail.isEmpty()) {
+        const bool log = category == QLatin1String("errors");
+        addHeading(log ? QStringLiteral("Log excerpt")
+                   : !actor.trimmed().isEmpty() ? QStringLiteral("Message")
+                                                : QStringLiteral("Summary"));
+        auto *card = new QFrame(body);
+        card->setObjectName(QStringLiteral("pingsNextDetailCard"));
+        card->setProperty("pingLog", log);
+        auto *cardLayout = new QVBoxLayout(card);
+        cardLayout->setContentsMargins(16, 12, 16, 12);
+        cardLayout->setSpacing(6);
+        auto *detailLabel = new QLabel(detail, card);
+        detailLabel->setObjectName(QStringLiteral("statusLine"));
+        detailLabel->setProperty("pingDetailText", true);
+        detailLabel->setTextFormat(Qt::PlainText);
+        detailLabel->setWordWrap(true);
+        detailLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        if (log)
+            detailLabel->setFont(
+                QFontDatabase::systemFont(QFontDatabase::FixedFont));
+        cardLayout->addWidget(detailLabel);
+        if (!log && !actor.trimmed().isEmpty()) {
+            auto *by = new QLabel(actor.trimmed(), card);
+            by->setObjectName(QStringLiteral("pingsNextDetailMeta"));
+            by->setTextFormat(Qt::PlainText);
+            cardLayout->addWidget(by);
+        }
+        layout->addWidget(card);
     }
 
     addHeading(QStringLiteral("Details"));
