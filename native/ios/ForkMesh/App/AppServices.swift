@@ -250,6 +250,7 @@ final class AppServices {
         Services.put(AgentPromptHandoff())
         Services.put(ShellPromptTargets())
 
+        settings.settlePermissionPacing()
         // The feature areas, each creating and registering its own services.
         ChatFeature.register()
         CodeFeature.register()

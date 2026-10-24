@@ -212,6 +212,13 @@ environment, token, pending open, badge, and shared-keychain credentials for the
 is declined or notifications are off in Settings, so the phone still registers its device and VoIP
 tokens and calls ring through CallKit (`docs/app/chat-direct-calls.md`).
 
+`start` (and so sign-in, resume and `rebind`) never shows the system prompt: while permission is
+`notDetermined` it registers for calls only. The prompt comes from `start(accountKey:ask: true)`,
+which `enable` (Settings' "Enable notifications", now offered while permission is not asked yet)
+and `askWhenUseful` call. The app calls `askWhenUseful` after the first chat message is sent; it
+does nothing unless push has started and permission is still `notDetermined`
+(`docs/native/PERMISSIONS.md`).
+
 ```swift
 let push = PushNotificationService(api: api, platform: applePushBridge)   // platform nil = unsupported
 push.accountKeyProvider = { auth.session?.nodeName ?? "" }
@@ -220,7 +227,7 @@ push.didOpen(PushOpen(arguments: response.notification.request.content.userInfo)
 ```
 
 State: `supported`, `token`, `environment`, `permission`, `registered`, `relayConfigured`,
-`lastError`, `pendingOpen`. Actions: `start`, `rebind`, `enable`, `stop` (sign-out), `sendTest`,
+`lastError`, `pendingOpen`. Actions: `start`, `rebind`, `enable`, `askWhenUseful`, `stop` (sign-out), `sendTest`,
 `setBadge`, `collectLaunchOpen`, `takePendingOpen`. `PushOpen` carries `topic`, `alertId`, a
 same-site `href`, `isChat`, `isDirectMessage` and `deepLink`.
 
