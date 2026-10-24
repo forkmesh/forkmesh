@@ -321,6 +321,7 @@ LAZY_MODULES = {
     "instance_console.py",
     "instance_home.py",
     "instance_privacy.py",
+    "post_translations.py",
     "instance_directory_admin.py",
     "instance_legal.py",
     "instance_registry.py",

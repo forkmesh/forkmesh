@@ -46,9 +46,10 @@ and the vendored SDK. Every other module must be **on-demand**: listed in
 expected list from the `_LazyModule("name")` proxies. A proxied module that a
 startup module also imports at top level (`hidden_unicode`, imported by
 `app_runtime.py`) is parsed at startup anyway, so it stays a startup module.
-On 2026-10-24, 37 proxied modules added since the list was last kept (account
-names, comment reactions, instance console, instance home and privacy, pull
-rules, self-update and others) were added to `LAZY_MODULES`.
+On 2026-10-24, 38 proxied modules added since the list was last kept (account
+names, comment reactions, instance console, instance home and privacy, post
+translations, pull rules, self-update and others) were added to
+`LAZY_MODULES`.
 
 ## Adding a module
 
