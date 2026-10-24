@@ -1548,8 +1548,31 @@ bool runPullHeadGit(const QString &dir, const QStringList &args)
     return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
 }
 
+bool preimagesFit(const QString &dir, const QString &rev,
+                  const QMap<QString, QString> &wanted, const QStringList &paths)
+{
+    if (paths.isEmpty())
+        return true;
+    QByteArray query;
+    for (const QString &path : paths)
+        query += (rev + QLatin1Char(':') + path).toUtf8() + '\n';
+    QByteArray answers;
+    if (!runGitWithInput(dir, {"cat-file", "--batch-check=%(objectname)"}, query,
+                         &answers))
+        return false;
+    const QList<QByteArray> lines = answers.split('\n');
+    for (qsizetype i = 0; i < paths.size(); ++i) {
+        const QByteArray line = i < lines.size() ? lines.at(i) : QByteArray();
+        if (line.isEmpty() || line.contains(' ') ||
+            !QString::fromUtf8(line).toLower().startsWith(wanted.value(paths.at(i))))
+            return false;
+    }
+    return true;
+}
+
 QString replayPullSeries(const QString &workTree, int number, const QString &baseOid,
-                         const QString &series)
+                         const QString &series, const QStringList &stack = {},
+                         const QMap<QString, QString> &stackPreimages = {})
 {
     const QString stamp = QStringLiteral("%1-%2-%3")
                               .arg(number)
@@ -1559,24 +1582,189 @@ QString replayPullSeries(const QString &workTree, int number, const QString &bas
         QDir::temp().filePath(QStringLiteral("forkmesh-pr-ref-") + stamp);
     if (!runPullHeadGit(workTree, {"worktree", "add", "--detach", scratchDir, baseOid}))
         return QString();
+    bool stacked = true;
+    for (const QString &commit : stack) {
+        if (!runPullHeadGit(scratchDir, {"cherry-pick", "--allow-empty",
+                                         "--keep-redundant-commits", "--no-gpg-sign",
+                                         commit})) {
+            stacked = false;
+            break;
+        }
+    }
+    stacked = stacked && (stack.isEmpty() ||
+                          preimagesFit(scratchDir, QStringLiteral("HEAD"),
+                                       stackPreimages, stackPreimages.keys()));
+    const QString start = resolvedCommitOid(scratchDir, QStringLiteral("HEAD"));
     const QString mboxPath =
         QDir::temp().filePath(QStringLiteral("forkmesh-pr-ref-%1.mbox").arg(stamp));
     QString tipSha;
-    if (writeTextFile(mboxPath, series, nullptr) &&
+    if (stacked && writeTextFile(mboxPath, series, nullptr) &&
         runPullHeadGit(scratchDir, {"am", "--quiet", "--3way", "--no-gpg-sign",
                                     "--no-message-id", "--no-scissors", "--no-keep-cr",
                                     "--committer-date-is-author-date", mboxPath})) {
         const QString tip = resolvedCommitOid(scratchDir, QStringLiteral("HEAD"));
-        if (tip != baseOid.toLower())
+        if (tip != start)
             tipSha = tip;
     }
     QFile::remove(mboxPath);
+    runGit(scratchDir, {"cherry-pick", "--abort"}, nullptr, nullptr);
     runGit(scratchDir, {"am", "--abort"}, nullptr, nullptr);
     runGit(workTree, {"worktree", "remove", "--force", scratchDir}, nullptr, nullptr);
     forkmesh::safedelete::removeTree(scratchDir, QDir::tempPath(), nullptr,
                                      forkmesh::safedelete::Allow::OwnWorktree);
     runGit(workTree, {"worktree", "prune"}, nullptr, nullptr);
     return tipSha;
+}
+
+constexpr qint64 kStackWindowSecs = 3 * 24 * 60 * 60;
+constexpr qint64 kStackWalkSecs = 30 * 24 * 60 * 60;
+constexpr int kStackMaxCommits = 30;
+constexpr int kStackMaxBases = 40;
+constexpr int kStackMaxAttempts = 3;
+
+struct StackedCommit
+{
+    QString oid;
+    qint64 at = 0;
+    QStringList files;
+};
+
+bool seriesAuthor(const QString &series, QString *email, qint64 *at)
+{
+    static const QRegularExpression from(
+        QStringLiteral("^From: [^\\n]*<([^<>\\s]+@[^<>\\s]+)>\\s*$"),
+        QRegularExpression::MultilineOption);
+    static const QRegularExpression date(QStringLiteral("^Date: ([^\\n]+)$"),
+                                         QRegularExpression::MultilineOption);
+    const QRegularExpressionMatch who = from.match(series);
+    const QRegularExpressionMatch when = date.match(series);
+    if (!who.hasMatch() || !when.hasMatch())
+        return false;
+    const QDateTime stamp =
+        QDateTime::fromString(when.captured(1).trimmed(), Qt::RFC2822Date);
+    if (!stamp.isValid())
+        return false;
+    *email = who.captured(1).trimmed();
+    *at = stamp.toSecsSinceEpoch();
+    return true;
+}
+
+QList<StackedCommit> stackedAuthorCommits(const QString &dir, const QString &baseTip,
+                                          const QString &email, qint64 before,
+                                          QStringList paths)
+{
+    QList<StackedCommit> found;
+    QSet<QString> seen;
+    QSet<QString> keys;
+    for (int round = 0; round < 4; ++round) {
+        QByteArray out;
+        if (!runGit(dir,
+                    QStringList{"log", "--no-merges", "--full-diff", "--name-only",
+                                "-F", QStringLiteral("--author=<%1>").arg(email),
+                                QStringLiteral("--since=@%1").arg(before - kStackWalkSecs),
+                                "--max-count=200",
+                                "--format=%x01%H %at%x09%s",
+                                "--glob=refs/heads/pr/*", "--glob=refs/remotes/*/pr/*",
+                                "--end-of-options", baseTip, "--"} +
+                        paths,
+                    &out))
+            return {};
+        bool grew = false;
+        for (const QByteArray &record : out.split('\x01')) {
+            const QStringList lines = QString::fromUtf8(record).split(QLatin1Char('\n'));
+            const QString head = lines.value(0);
+            const QString oid = head.section(QLatin1Char(' '), 0, 0).toLower();
+            const qint64 at = head.section(QLatin1Char(' '), 1).section(QLatin1Char('\t'), 0, 0)
+                                  .toLongLong();
+            if (!validCommitOid(oid) || seen.contains(oid) || at >= before ||
+                at < before - kStackWindowSecs)
+                continue;
+            seen.insert(oid);
+            const QString key = head.section(QLatin1Char(' '), 1);
+            if (keys.contains(key))
+                continue;
+            keys.insert(key);
+            StackedCommit commit{oid, at, {}};
+            for (qsizetype i = 1; i < lines.size(); ++i)
+                if (!lines.at(i).trimmed().isEmpty())
+                    commit.files << lines.at(i).trimmed();
+            for (const QString &file : std::as_const(commit.files))
+                if (!paths.contains(file))
+                    paths << file;
+            found << commit;
+            grew = true;
+        }
+        if (found.size() > kStackMaxCommits)
+            return {};
+        if (!grew)
+            break;
+    }
+    std::stable_sort(found.begin(), found.end(),
+                     [](const StackedCommit &a, const StackedCommit &b) { return a.at < b.at; });
+    return found;
+}
+
+QString replayStackedPullSeries(const QString &workTree, int number,
+                                const QString &baseTip, const QString &patch,
+                                const QString &series)
+{
+    const QMap<QString, QString> wanted = patchPreimageBlobs(patch);
+    QString email;
+    qint64 at = 0;
+    if (wanted.isEmpty() || !seriesAuthor(series, &email, &at))
+        return QString();
+    const QList<StackedCommit> stack =
+        stackedAuthorCommits(workTree, baseTip, email, at, wanted.keys());
+    if (stack.isEmpty())
+        return QString();
+    QByteArray revs;
+    if (!runGit(workTree,
+                {"rev-list", "--first-parent",
+                 QStringLiteral("--max-count=%1").arg(kStackMaxBases),
+                 QStringLiteral("--before=@%1").arg(at), "--end-of-options", baseTip},
+                &revs))
+        return QString();
+    int attempts = 0;
+    for (const QByteArray &raw : revs.split('\n')) {
+        const QString base = QString::fromUtf8(raw).trimmed().toLower();
+        if (!validCommitOid(base))
+            continue;
+        QStringList args{"rev-list", "--end-of-options", QLatin1Char('^') + base};
+        for (const StackedCommit &commit : stack)
+            args << commit.oid;
+        QByteArray outside;
+        if (!runGit(workTree, args, &outside))
+            continue;
+        const QSet<QString> pending = [&outside] {
+            QSet<QString> oids;
+            for (const QByteArray &line : outside.split('\n'))
+                oids.insert(QString::fromUtf8(line).trimmed().toLower());
+            return oids;
+        }();
+        QStringList picks;
+        QSet<QString> touched;
+        for (const StackedCommit &commit : stack) {
+            if (!pending.contains(commit.oid))
+                continue;
+            picks << commit.oid;
+            for (const QString &file : commit.files)
+                touched.insert(file);
+        }
+        if (picks.isEmpty())
+            continue;
+        QStringList untouched;
+        for (auto it = wanted.cbegin(); it != wanted.cend(); ++it)
+            if (!touched.contains(it.key()))
+                untouched << it.key();
+        if (!preimagesFit(workTree, base, wanted, untouched))
+            continue;
+        const QString tip = replayPullSeries(workTree, number, base, series, picks, wanted);
+        if (!tip.isEmpty())
+            return tip;
+        if (++attempts >= kStackMaxAttempts)
+            break;
+    }
+    return QString();
 }
 
 QString recordedPullHead(const QString &dir, const PullRequest &pr,
@@ -1855,6 +2043,9 @@ bool PullStore::materializePullRef(const PullRequest &pr, QString *error) const
             if (!sha.isEmpty())
                 break;
         }
+        if (sha.isEmpty() && !pr.branchBacked)
+            sha = replayStackedPullSeries(m_workTree, pr.number, baseTip, pr.patch,
+                                          series);
     }
     // An earlier materialization, or the checks runner publishing the head to
     // the served mirror, may already have recorded the commit this pull is
