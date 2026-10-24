@@ -56,4 +56,6 @@ def test_a_read_only_refusal_from_the_parent_reopens_the_pull_on_the_fork():
     submit = function_source(ISSUES_IO, "submitWebPullOpen")
     assert '!== "read_only_mirror") throw error;' in submit
     assert "signWebPull(repo, repo, title, body, base, head, head)" in submit
-    assert "targetRepo: repo };" in submit
+    assert "targetRepo: repo, refusedBy: targetRepo };" in submit
+    assert "if (result.refusedBy) {" in COMPOSE
+    assert "was opened on your fork instead" in COMPOSE
