@@ -1,0 +1,50 @@
+#teammatesTopBar QLabel#pageTitle[teamNextRole="title"] {
+    color: @fg; font-size: 15px; font-weight: 600; background: transparent;
+}
+#teammatesTopBar QLabel#teammatesNextSummary {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#teammatesTopBar QFrame#teammatesNextDivider { background-color: @border; border: none; }
+#teammatesTopBar QComboBox[teamNextRole="repo"] {
+    min-height: 28px; max-height: 30px; border-radius: 8px; font-size: 12px;
+}
+#teammatesTopBar QLineEdit#teammatesNextSearch {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    min-height: 30px; max-height: 32px; padding: 0px 8px 0px 2px; font-size: 13px; color: @fg;
+}
+#teammatesTopBar QLineEdit#teammatesNextSearch:focus { border-color: @accent; }
+
+QWidget#teammateNextCardHud {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+}
+
+QFrame#teammateSidePanel {
+    background-color: @bg; border: none; border-left: 1px solid @border; border-radius: 0px;
+}
+QLabel#teammateNextPanelTile {
+    background-color: @surfaceActive; border: none; border-radius: 12px;
+    color: @fgMuted; font-size: 13px; font-weight: 600;
+}
+QLabel#teammateNextPanelName { color: @fg; font-size: 13px; font-weight: 600; background: transparent; }
+QLabel#teammateNextPanelRole { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#teammateNextPanelStatus { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#teammateNextPanelStatus[kind="working"] { color: @accentFg; }
+QLabel#teammateNextPanelStatus[kind="paused"] { color: @fgSubtle; }
+
+QWidget#teammateNextPanelTabs {
+    background: transparent; border: none; border-bottom: 1px solid @border;
+}
+QToolButton#teammateNextPanelTab {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0px; color: @fgMuted; padding: 0px 10px; margin: 0px;
+    min-height: 34px; font-size: 13px; font-weight: 500;
+}
+QToolButton#teammateNextPanelTab:hover { color: @fg; }
+QToolButton#teammateNextPanelTab:checked { color: @fg; border-bottom: 2px solid @fg; }
+
+#teammateSidePanel QFrame#teammateSection {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#teammateSidePanel QLabel#teammateSectionTitle {
+    color: @fg; font-size: 13px; font-weight: 500; background: transparent;
+}
