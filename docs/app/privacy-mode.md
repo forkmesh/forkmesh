@@ -70,13 +70,19 @@ HTTP and WebSocket requests. It does two things:
 
 The pseudonym is shaped to keep rate limits and checks working:
 
-- **It is a valid IPv6 address in `fd00::/8`.** Parsers, rate limiters and
+- **It is a valid IPv6 address in `fd3a:9c41:7e00::/40`**, one fixed random
+  range inside the unique-local `fd00::/8`. Parsers, rate limiters and
   per-client keys keep working. One visitor stays one bucket for the day.
+  Until 2026-10-24 the whole of `fd00::/8` counted as a pseudonym, so with
+  privacy mode off a visitor over Tailscale, WireGuard or LAN IPv6 lost
+  session addresses, sign-up evidence and Turnstile's `remoteip`, and with
+  it on a real unique-local address passed through unchanged.
 - **It is never a public address.** Nothing can mistake it for one: probe
   bans and Turnstile skip it.
-- **It keeps IPv6 /64 grouping.** For IPv6 visitors, the upper 64 bits hash
+- **It keeps IPv6 /64 grouping.** For IPv6 visitors, bits 40 to 63 hash
   the visitor's /64 and the lower 64 bits hash the full address. A limiter
-  that groups by /64 still groups one network together.
+  that groups by /64 still groups one network together; two networks share
+  a /64 only when their 24-bit hashes collide.
 - **Some addresses are not replaced.** Loopback keeps its address, so the
   host's own sub-requests keep it. So do addresses inside
   `SSH_GATEWAY_ALLOWED_ADDRESSES`, the operator's own SSH relay: the

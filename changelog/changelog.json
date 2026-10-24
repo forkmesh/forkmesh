@@ -54,7 +54,8 @@
     {
      "title": "Server",
      "items": [
-      "Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address."
+      "Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.",
+      "Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so."
      ]
     }
    ]

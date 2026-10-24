@@ -12,8 +12,8 @@ OFF = "off"
 MODES = (OFF, STRICT)
 CACHE_MS = 30 * 1000
 SALT_ROTATE_S = 24 * 60 * 60
-PSEUDONYM_PREFIX = b"\xfd"
-PSEUDONYM_NETWORK = ipaddress.ip_network("fd00::/8")
+PSEUDONYM_PREFIX = b"\xfd\x3a\x9c\x41\x7e"
+PSEUDONYM_NETWORK = ipaddress.ip_network("fd3a:9c41:7e00::/40")
 ON_WORDS = ("1", "true", "yes", "on", STRICT)
 NOTE = "Privacy mode: no visitor logs"
 DISCARD_PATHS = frozenset({
@@ -143,10 +143,10 @@ def pseudonym(address, env=None, now_s=None):
     key = _key(time.time() if now_s is None else now_s)
     if parsed.version == 6:
         prefix = parsed.packed[:8]
-        head = _digest(key, b"6p" + prefix, 7)
+        head = _digest(key, b"6p" + prefix, 3)
         tail = _digest(key, b"6a" + parsed.packed, 8)
     else:
-        head = _digest(key, b"4p" + parsed.packed, 7)
+        head = _digest(key, b"4p" + parsed.packed, 3)
         tail = _digest(key, b"4a" + parsed.packed, 8)
     return str(ipaddress.IPv6Address(PSEUDONYM_PREFIX + head + tail))
 

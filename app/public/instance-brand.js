@@ -259,8 +259,6 @@
     document.body.append(footer);
   };
 
-  // The onion link and the privacy note share one footer: the "Powered by"
-  // line when there is one, otherwise a small pill made by whichever comes first.
   const footerLine = () => {
     const mark = document.querySelector(
       "[data-instance-powered-by], [data-instance-onion], [data-instance-privacy-mode]");
