@@ -1226,7 +1226,8 @@ the website's own:
 | `/<owner>/<repo>/commit/<sha>`, `/commits/<ref>` | `.commit`, `.commits` |
 | `/<owner>/<repo>/actions[/runs/<id>]`, `/releases[/tag/<t>]`, `/mirrors`, `/agents`, `/worktrees`, `/about`, `/shortcuts` | the matching section, `.run`, `.release`, `.shortcuts(r)` |
 | `/@<name>` | `.profile(name)` |
-| `/dashboard/chat`, `/notes`, `/tasks`, `/calendar`, `/settings[/<section>]`, `/network`, `/ads`, `/repos`, `/profile`, `/people`, `/docs` | the matching route |
+| `/dashboard/chat` | `.chat` (the web 308-redirects it to `/chat`, its one chat page since 2026-10-23; the app does not parse `/chat` yet, so a `/chat` link opens in the browser) |
+| `/dashboard/notes`, `/tasks`, `/calendar`, `/settings[/<section>]`, `/network`, `/ads`, `/repos`, `/profile`, `/people`, `/docs` | the matching route |
 | `/dashboard/apps` | `.settings(section: "apps")` |
 | `/ledger.html`, `/market.html`, `/status.html` | `.ledger`, `.market`, `.status` |
 | `/market/<package-id>` (plugin share link; not `/market/previews/…`) | `.market`, then `.package(id)` |

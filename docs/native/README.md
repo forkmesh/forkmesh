@@ -1,4 +1,4 @@
-# Native apps (iOS and Android)
+# Native apps (iOS, watchOS and Android)
 
 `native/ios` (Swift + SwiftUI) and `native/android` (Kotlin + Jetpack Compose)
 are the ForkMesh phone apps. Each signs in to a ForkMesh instance, browses and
@@ -14,6 +14,12 @@ desktop cannot tell them apart.
   `forkmesh-android-universal.apk` asset) is built as `com.forkmesh.forkmesh`;
   local builds default to `com.forkmesh.nativeapp`, which installs beside it
   ([ANDROID.md](ANDROID.md), section 4).
+
+- The Apple Watch app (`native/ios/ForkMeshWatch`) ships inside the iOS app
+  and works through the iPhone over WatchConnectivity; a standalone mode is
+  phase 2 ([PARITY.md](PARITY.md), section 4).
+
+User guide for all the apps: [`www/docs/apps.md`](../../www/docs/apps.md).
 
 Topic pages:
 
@@ -70,6 +76,10 @@ Shortcuts (`.forkmesh/shortcuts/`):
 | `deploy-native-ios-ad-hoc-mac.sh`, `deploy-native-ios-app-store-mac.sh`, `build-desktop-macos-mac.sh` | The same builds on the office Mac ([MAC_BUILD.md](MAC_BUILD.md)) |
 | `ios-app-store-status.sh`, `testflight-feedback-to-tasks.sh` | Read-only App Store Connect report; TestFlight feedback to tasks ([IOS_RELEASE.md](IOS_RELEASE.md)) |
 | `task-mobile-app-store-deploy.sh`, `task-mobile-play-store-deploy.sh` | Create a signed reminder task with the version, tag, `main` head and the release steps for the App Store or the Play Store |
+
+The Play Store path exists only as that reminder: no tool uploads to Google
+Play, and Android releases ship as the signed
+`forkmesh-android-universal.apk` in the release manifest.
 
 ## Architecture
 
