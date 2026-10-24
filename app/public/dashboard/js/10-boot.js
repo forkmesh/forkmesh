@@ -216,6 +216,8 @@
       initCommentTips();
       void initReactionSettings();
       void initAiReviewSettings();
+      void initSeasonSettings();
+      watchSeason();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

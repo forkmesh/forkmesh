@@ -21,9 +21,25 @@
 #include "WorldSpeechBridge.h"
 #include "FontSizing.h"
 
+#include "DesignTokens.h"
+#include "UiKit.h"
+
+#include <QAction>
+#include <QComboBox>
 #include <QFontDatabase>
+#include <QHeaderView>
 #include <QInputDialog>
+#include <QItemSelectionModel>
+#include <QLineEdit>
+#include <QMenu>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPointer>
+#include <QRegularExpression>
+#include <QStyledItemDelegate>
 #include <QTabWidget>
+
+#include <functional>
 
 #include <algorithm>
 
@@ -264,6 +280,347 @@ QPair<QString, int> usersActivityRecency(const QString &bucket)
         return {QStringLiteral("More than 10 days"), 6};
     return {QStringLiteral("Not reported"), 7};
 }
+
+constexpr int kUsersNextRowHeight = 48;
+
+QString usersNextInitials(const QString &text)
+{
+    static const QRegularExpression separators(QStringLiteral("[\\s._-]+"));
+    QString initials;
+    const QStringList parts = text.split(separators, Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        initials += part.at(0).toUpper();
+        if (initials.size() == 2)
+            break;
+    }
+    if (initials.isEmpty() && !text.isEmpty())
+        initials = text.left(1).toUpper();
+    return initials;
+}
+
+void usersNextRowHover(QStyleOptionViewItem *option, const QModelIndex &index)
+{
+    const auto *view = qobject_cast<const QAbstractItemView *>(option->widget);
+    if (!view)
+        return;
+    option->state &= ~QStyle::State_MouseOver;
+    QWidget *viewport = view->viewport();
+    if (!viewport || !viewport->underMouse())
+        return;
+    const QModelIndex hovered =
+        view->indexAt(viewport->mapFromGlobal(QCursor::pos()));
+    if (hovered.isValid() && hovered.row() == index.row())
+        option->state |= QStyle::State_MouseOver;
+}
+
+void usersNextDrawBackground(QStyleOptionViewItem *option,
+                             QPainter *painter)
+{
+    option->text.clear();
+    option->icon = QIcon();
+    option->features &= ~QStyleOptionViewItem::HasDecoration;
+    QStyle *style =
+        option->widget ? option->widget->style() : QApplication::style();
+    style->drawControl(QStyle::CE_ItemViewItem, option, painter,
+                       option->widget);
+}
+
+class UsersNextPersonDelegate final : public QStyledItemDelegate
+{
+public:
+    UsersNextPersonDelegate(int displayNameColumn,
+                            std::function<QString()> self, QObject *parent)
+        : QStyledItemDelegate(parent),
+          m_displayNameColumn(displayNameColumn), m_self(std::move(self))
+    {
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt(option);
+        initStyleOption(&opt, index);
+        usersNextRowHover(&opt, index);
+        const QString handle = opt.text.trimmed();
+        const QIcon avatar = opt.icon;
+        const QFont base = opt.font;
+        usersNextDrawBackground(&opt, painter);
+
+        const QString title = titleFor(index, handle);
+        const bool self = isSelf(handle);
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        const QRect rect = opt.rect.adjusted(12, 0, -8, 0);
+        constexpr int side = 28;
+        const QRect circle(rect.left(), rect.center().y() - side / 2 + 1, side,
+                           side);
+        if (!avatar.isNull()) {
+            QPainterPath clip;
+            clip.addEllipse(QRectF(circle));
+            painter->setClipPath(clip);
+            avatar.paint(painter, circle);
+            painter->setClipping(false);
+        } else {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(Theme::Role::SurfaceActive));
+            painter->drawEllipse(circle);
+            QFont initialsFont = base;
+            initialsFont.setPixelSize(10);
+            initialsFont.setWeight(QFont::DemiBold);
+            painter->setFont(initialsFont);
+            painter->setPen(Theme::color(Theme::Role::FgMuted));
+            painter->drawText(circle, Qt::AlignCenter, usersNextInitials(title));
+        }
+
+        const int textLeft = circle.right() + 11;
+        const int textWidth = qMax(0, rect.right() - textLeft);
+        const QFont nameFont = font(base, 13, QFont::Medium);
+        const QFont handleFont = font(base, 12, QFont::Normal);
+        const QFont badgeFont = font(base, 11, QFont::Medium);
+        const QFontMetrics nameMetrics(nameFont);
+        const QFontMetrics handleMetrics(handleFont);
+        const QFontMetrics badgeMetrics(badgeFont);
+        const QString badge = self ? QStringLiteral("You") : QString();
+        const int badgeWidth =
+            badge.isEmpty() ? 0 : badgeMetrics.horizontalAdvance(badge) + 12;
+        const int block = nameMetrics.height() + handleMetrics.height();
+        const int top = rect.center().y() - block / 2 + 1;
+        const QString name = nameMetrics.elidedText(
+            title, Qt::ElideRight,
+            qMax(0, textWidth - (badgeWidth > 0 ? badgeWidth + 6 : 0)));
+        const QRect nameRect(textLeft, top, textWidth, nameMetrics.height());
+        painter->setFont(nameFont);
+        painter->setPen(Theme::color(Theme::Role::Fg));
+        painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter, name);
+        if (badgeWidth > 0) {
+            const int x = textLeft + nameMetrics.horizontalAdvance(name) + 6;
+            const QRect pill(x, nameRect.center().y() - 8, badgeWidth, 16);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(Theme::color(Theme::Role::AccentSubtle));
+            painter->drawRoundedRect(pill, 5, 5);
+            painter->setFont(badgeFont);
+            painter->setPen(Theme::color(Theme::Role::AccentFg));
+            painter->drawText(pill, Qt::AlignCenter, badge);
+        }
+        painter->setFont(handleFont);
+        painter->setPen(Theme::color(Theme::Role::FgMuted));
+        painter->drawText(
+            QRect(textLeft, nameRect.bottom() + 1, textWidth,
+                  handleMetrics.height()),
+            Qt::AlignLeft | Qt::AlignVCenter,
+            handleMetrics.elidedText(QStringLiteral("@") + handle,
+                                     Qt::ElideRight, textWidth));
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        const QString handle = index.data(Qt::DisplayRole).toString().trimmed();
+        const QString title = titleFor(index, handle);
+        const QFontMetrics nameMetrics(font(option.font, 13, QFont::Medium));
+        const QFontMetrics handleMetrics(font(option.font, 12, QFont::Normal));
+        const QFontMetrics badgeMetrics(font(option.font, 11, QFont::Medium));
+        int nameWidth = nameMetrics.horizontalAdvance(title);
+        if (isSelf(handle))
+            nameWidth += badgeMetrics.horizontalAdvance(QStringLiteral("You")) + 18;
+        const int textWidth = qMax(
+            nameWidth,
+            handleMetrics.horizontalAdvance(QStringLiteral("@") + handle));
+        return {qMin(12 + 28 + 11 + textWidth + 16, 360), kUsersNextRowHeight};
+    }
+
+private:
+    static QFont font(const QFont &base, int pixels, QFont::Weight weight)
+    {
+        QFont result = base;
+        result.setPixelSize(pixels);
+        result.setWeight(weight);
+        return result;
+    }
+
+    QString titleFor(const QModelIndex &index, const QString &handle) const
+    {
+        const QModelIndex display =
+            index.sibling(index.row(), m_displayNameColumn);
+        if (!display.isValid() ||
+            display.data(kTableSortRole).toString().isEmpty())
+            return handle;
+        const QString text = display.data(Qt::DisplayRole).toString().trimmed();
+        return text.isEmpty() ? handle : text;
+    }
+
+    bool isSelf(const QString &handle) const
+    {
+        if (!m_self || handle.isEmpty())
+            return false;
+        const QString self = m_self().trimmed();
+        return !self.isEmpty() &&
+               handle.compare(self, Qt::CaseInsensitive) == 0;
+    }
+
+    int m_displayNameColumn = 0;
+    std::function<QString()> m_self;
+};
+
+class UsersNextDotDelegate final : public QStyledItemDelegate
+{
+public:
+    UsersNextDotDelegate(std::function<Theme::Role(const QModelIndex &)> tone,
+                         QObject *parent)
+        : QStyledItemDelegate(parent), m_tone(std::move(tone))
+    {
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt(option);
+        initStyleOption(&opt, index);
+        usersNextRowHover(&opt, index);
+        const QString text = opt.text;
+        const QFont base = opt.font;
+        usersNextDrawBackground(&opt, painter);
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        const QRect rect = opt.rect.adjusted(12, 0, -8, 0);
+        const QRect dot(rect.left(), rect.center().y() - 2, 6, 6);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(Theme::color(m_tone ? m_tone(index)
+                                              : Theme::Role::FgSubtle));
+        painter->drawEllipse(dot);
+        painter->setFont(base);
+        painter->setPen(Theme::color(Theme::Role::FgSecondary));
+        const QRect textRect = rect.adjusted(12, 0, 0, 0);
+        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(base).elidedText(text, Qt::ElideRight,
+                                                        textRect.width()));
+        painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        QSize size = QStyledItemDelegate::sizeHint(option, index);
+        size.setWidth(size.width() + 12);
+        return size;
+    }
+
+private:
+    std::function<Theme::Role(const QModelIndex &)> m_tone;
+};
+
+class UsersNextRowHeight final : public QObject
+{
+public:
+    using QObject::QObject;
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Show && Theme::isNext()) {
+            if (auto *table = qobject_cast<QTableView *>(watched)) {
+                QHeaderView *vertical = table->verticalHeader();
+                if (vertical &&
+                    vertical->defaultSectionSize() != kUsersNextRowHeight)
+                    vertical->setDefaultSectionSize(kUsersNextRowHeight);
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+};
+
+void usersNextDropHiddenSelection(QTableWidget *table)
+{
+    if (!table || !table->selectionModel())
+        return;
+    QItemSelectionModel *selection = table->selectionModel();
+    QSet<int> rows;
+    const QModelIndexList selected = selection->selectedIndexes();
+    for (const QModelIndex &index : selected)
+        rows.insert(index.row());
+    for (int row : std::as_const(rows)) {
+        if (table->isRowHidden(row))
+            selection->select(table->model()->index(row, 0),
+                              QItemSelectionModel::Deselect |
+                                  QItemSelectionModel::Rows);
+    }
+}
+
+void usersNextFilterTable(QTableWidget *table, const QString &needle,
+                          int role, const QList<int> &columns,
+                          int adminColumn)
+{
+    if (!table)
+        return;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        bool match = true;
+        if (role > 0) {
+            const QTableWidgetItem *admin = table->item(row, adminColumn);
+            const bool isAdmin =
+                admin && admin->data(kTableSortRole).toInt() == 1;
+            match = role == 1 ? isAdmin : !isAdmin;
+        }
+        if (match && !needle.isEmpty()) {
+            match = false;
+            for (int column : columns) {
+                const QTableWidgetItem *cell = table->item(row, column);
+                if (cell && cell->text().contains(needle, Qt::CaseInsensitive)) {
+                    match = true;
+                    break;
+                }
+            }
+        }
+        if (table->isRowHidden(row) == match)
+            table->setRowHidden(row, !match);
+    }
+    usersNextDropHiddenSelection(table);
+}
+
+void usersNextRefreshFilter(QTabWidget *tabs, QTableWidget *users,
+                            QTableWidget *quarantine)
+{
+    if (!tabs || !Theme::isNext())
+        return;
+    QWidget *bar = tabs->cornerWidget(Qt::TopRightCorner);
+    if (!bar)
+        return;
+    auto *search = bar->findChild<QLineEdit *>(QStringLiteral("usersNextSearch"));
+    auto *role = bar->findChild<QComboBox *>(QStringLiteral("usersNextRoleFilter"));
+    auto *shown = bar->findChild<QLabel *>(QStringLiteral("usersNextShown"));
+    const QString needle = search ? search->text().trimmed() : QString();
+    const int roleIndex = role ? role->currentIndex() : 0;
+    usersNextFilterTable(users, needle, roleIndex,
+                         {kUsersColName, kUsersColDiscordUsername,
+                          kUsersColDiscordDisplayName, kUsersColEmail},
+                         kUsersColAdmin);
+    usersNextFilterTable(quarantine, needle, roleIndex,
+                         {kUsersQuarantineColName,
+                          kUsersQuarantineColDiscordUsername,
+                          kUsersQuarantineColDiscordDisplayName,
+                          kUsersQuarantineColEmail},
+                         kUsersQuarantineColAdmin);
+    QTableWidget *current = tabs->currentIndex() == 1 ? quarantine : users;
+    if (!shown || !current)
+        return;
+    int count = 0;
+    for (int row = 0; row < current->rowCount(); ++row)
+        if (!current->isRowHidden(row))
+            ++count;
+    shown->setText(QStringLiteral("%1 shown").arg(count));
+}
+
+void usersNextMoveColumns(QTableWidget *table, const QList<int> &order)
+{
+    QHeaderView *header = table ? table->horizontalHeader() : nullptr;
+    if (!header)
+        return;
+    for (int target = 0; target < order.size(); ++target) {
+        const int from = header->visualIndex(order.at(target));
+        if (from >= 0 && from != target)
+            header->moveSection(from, target);
+    }
+}
 } // namespace
 
 QWidget *MainWindow::buildUsersSection()
@@ -277,14 +634,36 @@ QWidget *MainWindow::buildUsersSection()
     header->setContentsMargins(0, 0, 0, 0);
     header->setSpacing(10);
 
+    const bool next = Theme::isNext();
+    if (next) {
+        page->setProperty("usersNextPage", true);
+        outer->setContentsMargins(24, 16, 24, 24);
+        header->setSpacing(6);
+    }
+    QBoxLayout *titleRow = header;
+    QVBoxLayout *titleColumn = nullptr;
+    if (next) {
+        titleColumn = new QVBoxLayout;
+        titleColumn->setContentsMargins(0, 0, 0, 0);
+        titleColumn->setSpacing(2);
+        auto *nameRow = new QHBoxLayout;
+        nameRow->setContentsMargins(0, 0, 0, 0);
+        nameRow->setSpacing(6);
+        titleColumn->addLayout(nameRow);
+        header->addLayout(titleColumn);
+        titleRow = nameRow;
+    }
+
     auto *title = new QLabel(QStringLiteral("Users"));
     title->setObjectName(QStringLiteral("sectionTitle"));
-    QFont titleFont = title->font();
-    titleFont = forkmesh::resizedFont(titleFont, 4);
-    titleFont.setBold(true);
-    title->setFont(titleFont);
-    header->addWidget(title);
-    header->addWidget(makeInlineHelpButton(
+    if (!next) {
+        QFont titleFont = title->font();
+        titleFont = forkmesh::resizedFont(titleFont, 4);
+        titleFont.setBold(true);
+        title->setFont(titleFont);
+    }
+    titleRow->addWidget(title);
+    titleRow->addWidget(makeInlineHelpButton(
         QStringLiteral("About user statistics"),
         QStringLiteral(
             "Administrator-only account directory containing every users-table "
@@ -298,7 +677,13 @@ QWidget *MainWindow::buildUsersSection()
 
     m_usersStatus = new QLabel(QStringLiteral("Loading users..."));
     m_usersStatus->setObjectName(QStringLiteral("mutedLabel"));
-    header->addWidget(m_usersStatus, 1);
+    if (titleColumn) {
+        titleRow->addStretch(1);
+        titleColumn->addWidget(m_usersStatus);
+        header->addStretch(1);
+    } else {
+        header->addWidget(m_usersStatus, 1);
+    }
 
     m_usersQuarantineButton =
         new QPushButton(QString::fromUtf8("Quarantine\xE2\x80\xA6"));
@@ -401,6 +786,9 @@ QWidget *MainWindow::buildUsersSection()
                 });
             });
     codeLayout->addWidget(m_usersSignupReferralCodeCopyButton);
+    if (next)
+        m_usersSignupReferralCodePanel->setAttribute(Qt::WA_StyledBackground,
+                                                     true);
     outer->addWidget(m_usersSignupReferralCodePanel);
 
     m_usersTabs = new QTabWidget;
@@ -486,6 +874,131 @@ QWidget *MainWindow::buildUsersSection()
                 refreshUsersDeleteButton();
                 updateUsersStatus();
             });
+    if (next) {
+        auto *bar = new QWidget;
+        bar->setObjectName(QStringLiteral("usersNextToolbar"));
+        auto *barLayout = new QHBoxLayout(bar);
+        barLayout->setContentsMargins(8, 0, 0, 4);
+        barLayout->setSpacing(8);
+        auto *search = new QLineEdit(bar);
+        search->setObjectName(QStringLiteral("usersNextSearch"));
+        search->setPlaceholderText(QStringLiteral("Search people"));
+        search->setClearButtonEnabled(true);
+        search->setFixedWidth(240);
+        search->addAction(QIcon(kit::tintedIcon(
+                              QStringLiteral("search"),
+                              Theme::color(Theme::Role::FgSubtle), 14,
+                              search->devicePixelRatioF())),
+                          QLineEdit::LeadingPosition);
+        auto *role = new QComboBox(bar);
+        role->setObjectName(QStringLiteral("usersNextRoleFilter"));
+        role->addItems({QStringLiteral("All roles"), QStringLiteral("Admins"),
+                        QStringLiteral("Not admins")});
+        role->setToolTip(QStringLiteral("Show everyone, only admins, or only "
+                                        "members who are not admins"));
+        auto *shown = new QLabel(bar);
+        shown->setObjectName(QStringLiteral("usersNextShown"));
+        barLayout->addWidget(search);
+        barLayout->addWidget(role);
+        barLayout->addWidget(shown);
+        m_usersTabs->setCornerWidget(bar, Qt::TopRightCorner);
+        connect(search, &QLineEdit::textChanged, this, [this] {
+            usersNextRefreshFilter(m_usersTabs, m_usersTable,
+                                   m_usersQuarantineTable);
+        });
+        connect(role, qOverload<int>(&QComboBox::currentIndexChanged), this,
+                [this] {
+                    usersNextRefreshFilter(m_usersTabs, m_usersTable,
+                                           m_usersQuarantineTable);
+                });
+
+        const auto self = [this] { return accountOwner(); };
+        auto *rowHeight = new UsersNextRowHeight(page);
+        const auto dressTable = [this, self, rowHeight](
+                                    QTableWidget *table, int displayColumn,
+                                    const QList<QPointer<QPushButton>> &actions) {
+            table->setItemDelegateForColumn(
+                0, new UsersNextPersonDelegate(displayColumn, self, table));
+            table->verticalHeader()->setDefaultSectionSize(kUsersNextRowHeight);
+            table->installEventFilter(rowHeight);
+            connect(table->selectionModel(),
+                    &QItemSelectionModel::selectionChanged, table,
+                    [table] { usersNextDropHiddenSelection(table); });
+            table->setContextMenuPolicy(Qt::CustomContextMenu);
+            connect(table, &QWidget::customContextMenuRequested, this,
+                    [this, table, actions](const QPoint &pos) {
+                        QTableWidgetItem *item = table->itemAt(pos);
+                        if (item && !item->isSelected())
+                            table->selectRow(item->row());
+                        QMenu menu(this);
+                        QHash<QAction *, QPointer<QPushButton>> mapped;
+                        for (const QPointer<QPushButton> &button : actions) {
+                            if (!button) {
+                                if (!menu.isEmpty())
+                                    menu.addSeparator();
+                                continue;
+                            }
+                            if (button->isHidden())
+                                continue;
+                            QAction *action =
+                                menu.addAction(button->icon(), button->text());
+                            action->setEnabled(button->isEnabled());
+                            action->setToolTip(button->toolTip());
+                            mapped.insert(action, button);
+                        }
+                        QAction *chosen =
+                            menu.exec(table->viewport()->mapToGlobal(pos));
+                        const QPointer<QPushButton> button = mapped.value(chosen);
+                        if (button)
+                            button->click();
+                    });
+        };
+        dressTable(m_usersTable, kUsersColDiscordDisplayName,
+                   {m_usersTipButton, m_usersQuarantineButton,
+                    m_usersDeleteButton, nullptr,
+                    m_usersRefreshButton});
+        dressTable(m_usersQuarantineTable,
+                   kUsersQuarantineColDiscordDisplayName,
+                   {m_usersUnquarantineButton, nullptr,
+                    m_usersRefreshButton});
+        const auto tone = [](Theme::Role on, Theme::Role off) {
+            return [on, off](const QModelIndex &index) {
+                return index.data(kTableSortRole).toInt() == 1 ? on : off;
+            };
+        };
+        m_usersTable->setItemDelegateForColumn(
+            kUsersColVerified,
+            new UsersNextDotDelegate(
+                tone(Theme::Role::Success, Theme::Role::Warning), m_usersTable));
+        m_usersTable->setItemDelegateForColumn(
+            kUsersColStatus,
+            new UsersNextDotDelegate(
+                [](const QModelIndex &index) {
+                    return index.data(Qt::DisplayRole)
+                                       .toString()
+                                       .compare(QStringLiteral("active"),
+                                                Qt::CaseInsensitive) == 0
+                               ? Theme::Role::Success
+                               : Theme::Role::FgSubtle;
+                },
+                m_usersTable));
+        m_usersQuarantineTable->setItemDelegateForColumn(
+            kUsersQuarantineColVerified,
+            new UsersNextDotDelegate(
+                tone(Theme::Role::Success, Theme::Role::Warning),
+                m_usersQuarantineTable));
+        usersNextMoveColumns(m_usersTable,
+                             {kUsersColName, kUsersColAdmin, kUsersColNodes,
+                              kUsersColVerified, kUsersColStatus,
+                              kUsersColActivityRecency});
+        usersNextMoveColumns(m_usersQuarantineTable,
+                             {kUsersQuarantineColName,
+                              kUsersQuarantineColAdmin,
+                              kUsersQuarantineColNodes,
+                              kUsersQuarantineColStatus,
+                              kUsersQuarantineColReasons,
+                              kUsersQuarantineColQuarantined});
+    }
     outer->addWidget(m_usersTabs, 1);
 
     renderUsersPage(m_usersDirectoryPayload);
@@ -1428,6 +1941,7 @@ void MainWindow::updateUsersStatus()
 {
     if (!m_usersStatus)
         return;
+    usersNextRefreshFilter(m_usersTabs, m_usersTable, m_usersQuarantineTable);
     if (m_usersTabs && m_usersTabs->currentIndex() == 1) {
         const int count = m_usersQuarantineTable
                               ? m_usersQuarantineTable->rowCount()

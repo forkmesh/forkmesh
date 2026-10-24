@@ -27,6 +27,15 @@ The toolbar has **Tool efficiency** (`src/AgentToolEfficiencyBoard.*`),
 **Announcer**. Watch is a Market package page in the rail (see
 [Watch](#watch-market-package-agent-watch)).
 
+The page is tab 3 of an open repository, and its list shows only that
+repository's agents. `openAgentsOverview` opens the selected or newest agent
+whose repository is open or in the repository list; with no repository open
+it opens the first repository on its Agents tab. Rail **Agents** with no
+repository at all unchecks the button, shows Repos and a notice that agents
+work inside a repository; the tour and the composer's Models link keep their
+own handling. Before 2026-10-23 a click with no repository open did nothing,
+which left a checked Agents button over an unchanged page in both designs.
+
 ### Usage page: Refresh and reset times (2026-10-19)
 
 The `usage` Market package's page is `MainWindow::buildAgentUsagePage`

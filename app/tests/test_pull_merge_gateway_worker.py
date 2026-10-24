@@ -878,3 +878,84 @@ def test_rules_protection_and_checks_still_run_after_owner_authorization():
     authorize = MERGE_HANDLER_TEXT.index("_repository_owner_can_merge_repo")
     for gate in ("_pull_rules.merge_gate(", "_branch_protection.merge_refusal("):
         assert authorize < MERGE_HANDLER_TEXT.index(gate)
+
+
+class _UpdateRequest:
+    def __init__(self, path):
+        self.url = "https://app.forkmesh.com" + path
+
+
+def _update_writer(owners=(), writers=(), contributors=()):
+    import hosted_git
+
+    async def owns(env, actor, node):
+        return actor in owners
+
+    async def org_write(env, owner, repo, actor):
+        return actor in writers
+
+    class Hosted:
+        contributor_ref_prefix = staticmethod(hosted_git.contributor_ref_prefix)
+
+        @staticmethod
+        async def contributor_push_allowed(env, owner, repo, actor, alias=""):
+            return actor in contributors
+
+    from urllib.parse import urlparse
+    return _route_handler_function(
+        "_account_may_write_branch",
+        _account_owns_node=owns, _org_write_allowed=org_write,
+        _hosted_git=Hosted, REPO_API_PREFIX_RE=urls.REPO_API_PREFIX_RE,
+        urlparse=urlparse, safe_segment=lambda value: value)
+
+
+def test_update_is_open_to_whoever_may_push_the_head_branch():
+    context = {"owner": "alice", "repo": "widgets"}
+    request = _UpdateRequest("/api/repo/alice/widgets/pulls/7/update")
+    may = _update_writer(owners={"alice"}, writers={"wendy"},
+                         contributors={"bob", "mallory"})
+
+    def allowed(branch, actor):
+        return asyncio.run(may(None, request, context, branch, actor))
+
+    assert allowed("feature", "alice")
+    assert allowed("feature", "wendy")
+    assert allowed("pr/bob/fix", "bob")
+    assert not allowed("feature", "bob")
+    assert not allowed("pr/bob/fix", "mallory")
+    assert not allowed("pr/bobby/fix", "bob")
+    assert not allowed("pr/bob/fix", "eve")
+    assert not allowed("", "alice")
+
+
+def test_update_reads_only_an_open_branch_backed_head():
+    records = {}
+
+    async def record(env, owner, repo, number):
+        return records.get(number, {})
+
+    class Protection:
+        @staticmethod
+        def valid_branch(branch):
+            return bool(branch) and ".." not in branch
+
+    head = _route_handler_function(
+        "_pull_update_head", _pull_lifecycle_record=record,
+        _branch_protection=Protection)
+    context = {"owner": "alice", "repo": "widgets"}
+    records[1] = {"status": "open", "derive": "branch", "head": "pr/bob/fix"}
+    records[2] = {"status": "open", "head": "bob:fix"}
+    records[3] = {"status": "merged", "derive": "branch", "head": "x"}
+    records[4] = {"status": "open", "derive": "branch", "head": "a:b"}
+    assert asyncio.run(head(None, context, 1)) == "pr/bob/fix"
+    for number in (2, 3, 4, 5):
+        assert asyncio.run(head(None, context, number)) == ""
+
+
+def test_an_update_checks_head_protection_before_queueing():
+    assert "_account_may_write_branch" in MERGE_HANDLER_TEXT
+    assert MERGE_HANDLER_TEXT.index("_account_may_write_branch") < (
+        MERGE_HANDLER_TEXT.index("\n    if not authorized:\n"))
+    assert "branch_refusal(" in MERGE_HANDLER_TEXT
+    assert MERGE_HANDLER_TEXT.index("branch_refusal(") < (
+        MERGE_HANDLER_TEXT.index("_repo_merge_jobs_make_room"))

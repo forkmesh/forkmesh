@@ -88,3 +88,12 @@ since it loads after `tailwind.css` and its `.fm-cal-day` border would win
 over a utility), an accent weekday label and an accent date pill. Both carry
 `aria-current="date"`. Calendar list dots keep their per-calendar colours,
 and New event and Save event stay green as create actions.
+
+## Seasons
+
+`theme.json` also has `seasons`: colours that replace a role while a seasonal
+theme is on. `seasons.halloween` turns `cta` and `success` orange; the shell's
+`/*#season halloween dark*/` and `/*#season halloween light*/` markers receive
+them inside `[data-season="halloween"]` rules. Pages keep using the roles
+(`bg-cta`, `success`), never a seasonal colour directly. See
+[seasonal-theme](seasonal-theme.md).

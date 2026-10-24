@@ -1,5 +1,6 @@
 #include "AnalyticsFeature.h"
 #include "AnalyticsReplay.h"
+#include "DesignTokens.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -8,21 +9,30 @@
 #include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QFile>
+#include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QHelpEvent>
+#include <QIcon>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPixmap>
 #include <QPointer>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QStyledItemDelegate>
+#include <QSvgRenderer>
 #include <QTableWidget>
+#include <QToolButton>
 #include <QToolTip>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -60,7 +70,10 @@ QLabel *mutedLabel(const QString &value)
 QLabel *sectionLabel(const QString &value)
 {
     auto *label = new QLabel(value);
-    label->setStyleSheet(QStringLiteral("font-weight: 600; font-size: 12px;"));
+    if (Theme::isNext())
+        label->setProperty("analyticsRole", QStringLiteral("cardTitle"));
+    else
+        label->setStyleSheet(QStringLiteral("font-weight: 600; font-size: 12px;"));
     return label;
 }
 
@@ -95,6 +108,282 @@ QFont compactFont(QFont font)
 QColor visitorColor(bool dark) { return QColor(dark ? "#3aa7e0" : "#1f8fd1"); }
 QColor pageviewColor(bool dark) { return QColor(dark ? "#c98500" : "#d08a00"); }
 
+constexpr int kNextRankedRow = 34;
+constexpr int kNextRankedRows = 6;
+constexpr int kNextGridRow = 36;
+
+QFont pixelFont(QFont font, int pixels, QFont::Weight weight = QFont::Normal)
+{
+    font.setPixelSize(pixels);
+    font.setWeight(weight);
+    return font;
+}
+
+QIcon analyticsIcon(const QString &name, const QColor &color, int side)
+{
+    QString path = QStringLiteral(":/icons/octicons/%1.svg").arg(name);
+    if (!QFile::exists(path))
+        path = QStringLiteral(":/icons/codicons/%1.svg").arg(name);
+    QSvgRenderer renderer(path);
+    QIcon icon;
+    for (const qreal scale : {1.0, 2.0}) {
+        QPixmap pixmap(QSize(side, side) * scale);
+        pixmap.setDevicePixelRatio(scale);
+        pixmap.fill(Qt::transparent);
+        if (renderer.isValid()) {
+            QPainter painter(&pixmap);
+            painter.setRenderHint(QPainter::Antialiasing);
+            renderer.render(&painter, QRectF(0, 0, side, side));
+            painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            painter.fillRect(QRectF(0, 0, side, side), color);
+        }
+        icon.addPixmap(pixmap);
+    }
+    return icon;
+}
+
+QIcon chartKindGlyph(bool bars, const QColor &color, int side)
+{
+    QIcon icon;
+    for (const qreal scale : {1.0, 2.0}) {
+        QPixmap pixmap(QSize(side, side) * scale);
+        pixmap.setDevicePixelRatio(scale);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.scale(side / 16.0, side / 16.0);
+        painter.setPen(QPen(color, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawLine(QPointF(2, 2), QPointF(2, 14));
+        painter.drawLine(QPointF(2, 14), QPointF(14, 14));
+        if (bars) {
+            const qreal heights[][2] = {{5.5, 8}, {8.5, 4.5}, {11.5, 9.5}};
+            for (const auto &bar : heights)
+                painter.drawLine(QPointF(bar[0], 11.5), QPointF(bar[0], bar[1]));
+        } else {
+            QPainterPath line;
+            line.moveTo(4.5, 10.5);
+            line.lineTo(7.5, 7);
+            line.lineTo(9.5, 9);
+            line.lineTo(13.5, 4.5);
+            painter.drawPath(line);
+        }
+        painter.end();
+        icon.addPixmap(pixmap);
+    }
+    return icon;
+}
+
+void repolishTree(QWidget *widget)
+{
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+    for (QWidget *child : widget->findChildren<QWidget *>()) {
+        child->style()->unpolish(child);
+        child->style()->polish(child);
+    }
+    widget->update();
+}
+
+QString rangePhrase(int hours)
+{
+    if (hours <= 24)
+        return QStringLiteral("%1 hours").arg(hours);
+    return QStringLiteral("%1 days").arg(hours / 24);
+}
+
+double niceChartMax(double value)
+{
+    const double step = std::max(1.0, value / 3);
+    const double magnitude = std::pow(10, std::floor(std::log10(step)));
+    for (const double nice : {1.0, 2.0, 2.5, 5.0, 10.0}) {
+        if (nice == 2.5 && magnitude < 10)
+            continue;
+        if (nice * magnitude >= step)
+            return nice * magnitude * 3;
+    }
+    return magnitude * 30;
+}
+
+class StatCard final : public QFrame
+{
+public:
+    explicit StatCard(QWidget *parent = nullptr) : QFrame(parent)
+    {
+        setObjectName(QStringLiteral("analyticsStatCard"));
+    }
+
+    std::function<void()> activated;
+
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (activated && event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()))
+            activated();
+        QFrame::mouseReleaseEvent(event);
+    }
+
+    void keyPressEvent(QKeyEvent *event) override
+    {
+        if (activated && (event->key() == Qt::Key_Space || event->key() == Qt::Key_Return
+                          || event->key() == Qt::Key_Enter)) {
+            activated();
+            return;
+        }
+        QFrame::keyPressEvent(event);
+    }
+};
+
+class RankedRowDelegate final : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        const QSize base = QStyledItemDelegate::sizeHint(option, index);
+        if (!Theme::isNext() || index.column() == 0)
+            return base;
+        const bool primary = index.column() == 1;
+        const QFont font = pixelFont(option.font, primary ? 13 : 12);
+        return {QFontMetrics(font).horizontalAdvance(display(option, index)) + (primary ? 30 : 20),
+                base.height()};
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        const auto *view = qobject_cast<const QTableView *>(option.widget);
+        if (!Theme::isNext() || !view) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        const QRect cell = option.rect;
+        const QRectF row(6, cell.top() + 1, std::max(0, view->viewport()->width() - 12), cell.height() - 2);
+        double peak = 0;
+        for (int line = 0; line < index.model()->rowCount(); ++line)
+            peak = std::max(peak, index.model()->index(line, 1).data(Qt::UserRole).toDouble());
+        const double value = index.siblingAtColumn(1).data(Qt::UserRole).toDouble();
+        if (peak > 0 && value > 0) {
+            painter->setClipRect(cell);
+            QPainterPath bar;
+            bar.addRoundedRect(QRectF(row.left(), row.top(), std::max<qreal>(6, row.width() * value / peak),
+                                      row.height()), 6, 6);
+            painter->fillPath(bar, Theme::color(Theme::Role::AccentSubtle));
+            painter->setClipping(false);
+        }
+        const QString label = display(option, index);
+        const QHeaderView *header = view->horizontalHeader();
+        const bool last = header->visualIndex(index.column()) == header->count() - 1;
+        QRect area;
+        QFont font;
+        QColor ink;
+        Qt::Alignment align = Qt::AlignRight | Qt::AlignVCenter;
+        if (index.column() == 0) {
+            area = QRect(int(row.left()) + 10, cell.top(), cell.right() - int(row.left()) - 16, cell.height());
+            font = pixelFont(option.font, 13);
+            ink = Theme::color(index.siblingAtColumn(1).data(Qt::UserRole).isValid() ? Theme::Role::Fg
+                                                                                    : Theme::Role::FgSubtle);
+            align = Qt::AlignLeft | Qt::AlignVCenter;
+        } else if (index.column() == 1) {
+            area = cell.adjusted(4, 0, last ? -16 : -8, 0);
+            font = pixelFont(option.font, 13);
+            ink = Theme::color(Theme::Role::FgSecondary);
+        } else {
+            area = cell.adjusted(4, 0, last ? -16 : -10, 0);
+            font = pixelFont(option.font, 12);
+            ink = Theme::color(Theme::Role::FgMuted);
+        }
+        painter->setFont(font);
+        painter->setPen(ink);
+        painter->drawText(area, align, QFontMetrics(font).elidedText(label, Qt::ElideMiddle, area.width()));
+        painter->restore();
+    }
+
+private:
+    static QString display(const QStyleOptionViewItem &option, const QModelIndex &index)
+    {
+        const QString value = index.data(Qt::DisplayRole).toString();
+        if (index.column() < 2 || value.isEmpty())
+            return value;
+        const auto *view = qobject_cast<const QTableWidget *>(option.widget);
+        const QTableWidgetItem *head = view ? view->horizontalHeaderItem(index.column()) : nullptr;
+        return head ? value + QLatin1Char(' ') + head->text().toLower() : value;
+    }
+};
+
+void styleRankedTable(QTableWidget *table)
+{
+    table->setProperty("analyticsRole", QStringLiteral("ranked"));
+    table->horizontalHeader()->setVisible(false);
+    table->setShowGrid(false);
+    table->setAlternatingRowColors(false);
+    table->setFrameShape(QFrame::NoFrame);
+    table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    table->verticalHeader()->setDefaultSectionSize(kNextRankedRow);
+    table->setItemDelegate(new RankedRowDelegate(table));
+    if (table->columnCount() == 3)
+        table->horizontalHeader()->moveSection(2, 1);
+    table->setFixedHeight(kNextRankedRow * kNextRankedRows + 2);
+}
+
+void styleGridTable(QTableWidget *table)
+{
+    table->setProperty("analyticsRole", QStringLiteral("grid"));
+    table->setShowGrid(false);
+    table->setAlternatingRowColors(false);
+    table->setFrameShape(QFrame::NoFrame);
+    table->verticalHeader()->setDefaultSectionSize(kNextGridRow);
+}
+
+QFrame *nextCard(QLabel *title, const QString &column, QWidget *content, int margin)
+{
+    auto *card = new QFrame;
+    card->setProperty("analyticsRole", QStringLiteral("card"));
+    auto *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    auto *head = new QWidget;
+    head->setAttribute(Qt::WA_StyledBackground, true);
+    head->setProperty("analyticsRole", QStringLiteral("cardHead"));
+    head->setFixedHeight(40);
+    auto *headLayout = new QHBoxLayout(head);
+    headLayout->setContentsMargins(16, 0, 16, 0);
+    headLayout->setSpacing(8);
+    headLayout->addWidget(title);
+    headLayout->addStretch(1);
+    if (!column.isEmpty()) {
+        auto *caption = new QLabel(column);
+        caption->setProperty("analyticsRole", QStringLiteral("cardColumn"));
+        QFont font = caption->font();
+        font.setCapitalization(QFont::AllUppercase);
+        font.setLetterSpacing(QFont::AbsoluteSpacing, 0.8);
+        caption->setFont(font);
+        headLayout->addWidget(caption);
+    }
+    layout->addWidget(head);
+    auto *inner = new QVBoxLayout;
+    inner->setContentsMargins(margin, margin, margin, margin);
+    inner->addWidget(content);
+    layout->addLayout(inner, 1);
+    return card;
+}
+
+void setNextDelta(QLabel *change, QFrame *card, const QString &delta)
+{
+    change->setText(delta);
+    const QString tone = delta.startsWith(QLatin1Char('-'))                        ? QStringLiteral("down")
+                         : delta.isEmpty() || delta == QLatin1String("+0%") ? QStringLiteral("flat")
+                                                                              : QStringLiteral("up");
+    change->setProperty("analyticsTone", tone);
+    change->style()->unpolish(change);
+    change->style()->polish(change);
+    change->setVisible(!delta.isEmpty());
+    if (QLabel *hint = card ? card->findChild<QLabel *>(QStringLiteral("analyticsKpiHint")) : nullptr)
+        hint->setVisible(!delta.isEmpty());
+}
+
 } // namespace
 
 class AnalyticsChart final : public QWidget
@@ -121,12 +410,33 @@ public:
                 m_pageviews = series.value(QStringLiteral("data")).toArray();
         }
         setAccessibleName(QStringLiteral("Visitors and pageviews over the selected range"));
+        if (Theme::isNext())
+            setAccessibleName(QStringLiteral("%1 over the selected range").arg(metricName()));
+        m_hover = -1;
         update();
     }
+
+    void setMetric(int metric)
+    {
+        m_metric = metric;
+        if (Theme::isNext())
+            setAccessibleName(QStringLiteral("%1 over the selected range").arg(metricName()));
+        update();
+    }
+
+    void setBars(bool bars)
+    {
+        m_bars = bars;
+        update();
+    }
+
+    bool hourly() const { return m_hourly; }
 
 protected:
     void paintEvent(QPaintEvent *) override
     {
+        if (Theme::isNext())
+            return paintNext();
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         const bool dark = palette().color(QPalette::Window).lightness() < 128;
@@ -202,11 +512,13 @@ protected:
         if (event->type() != QEvent::ToolTip)
             return QWidget::event(event);
         const auto *help = static_cast<QHelpEvent *>(event);
-        const QRectF plot = plotRect();
+        const QRectF plot = Theme::isNext() ? nextPlot() : plotRect();
         if (m_labels.isEmpty() || help->pos().x() < plot.left() || help->pos().x() > plot.right())
             return true;
-        const int index = std::clamp(int((help->pos().x() - plot.left()) / (plot.width() / m_labels.size())), 0,
-                                     int(m_labels.size()) - 1);
+        const int index = Theme::isNext()
+            ? nextIndexAt(help->pos().x())
+            : std::clamp(int((help->pos().x() - plot.left()) / (plot.width() / m_labels.size())), 0,
+                         int(m_labels.size()) - 1);
         const QDateTime at = QDateTime::fromMSecsSinceEpoch(qint64(m_labels.at(index).toDouble()));
         QToolTip::showText(help->globalPos(),
                            QStringLiteral("%1\n%2 visitors · %3 pageviews")
@@ -218,7 +530,145 @@ protected:
         return true;
     }
 
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        QWidget::mouseMoveEvent(event);
+        if (!Theme::isNext())
+            return;
+        const QRectF plot = nextPlot();
+        const qreal x = event->position().x();
+        const int hover = m_labels.isEmpty() || x < plot.left() - 8 || x > plot.right() + 8 ? -1 : nextIndexAt(x);
+        if (hover != m_hover) {
+            m_hover = hover;
+            update();
+        }
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        QWidget::leaveEvent(event);
+        if (m_hover >= 0) {
+            m_hover = -1;
+            update();
+        }
+    }
+
 private:
+    QString metricName() const
+    {
+        return m_metric == 0 ? QStringLiteral("Visitors") : QStringLiteral("Pageviews");
+    }
+
+    const QJsonArray &metricSeries() const { return m_metric == 0 ? m_visitors : m_pageviews; }
+
+    QRectF nextPlot() const
+    {
+        return QRectF(40, 12, std::max<qreal>(20, width() - 48), std::max<qreal>(20, height() - 38));
+    }
+
+    qreal nextX(int index) const
+    {
+        const QRectF plot = nextPlot();
+        const int count = int(m_labels.size());
+        if (m_bars)
+            return plot.left() + plot.width() / std::max(1, count) * (index + 0.5);
+        return count > 1 ? plot.left() + plot.width() * index / (count - 1) : plot.center().x();
+    }
+
+    int nextIndexAt(qreal x) const
+    {
+        const QRectF plot = nextPlot();
+        const int count = int(m_labels.size());
+        if (count <= 1)
+            return 0;
+        const int index = m_bars ? int(std::floor((x - plot.left()) / (plot.width() / count)))
+                                 : int(std::lround((x - plot.left()) / (plot.width() / (count - 1))));
+        return std::clamp(index, 0, count - 1);
+    }
+
+    void paintNext()
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF plot = nextPlot();
+        const QJsonArray &series = metricSeries();
+        const int count = int(m_labels.size());
+        double top = 0;
+        for (int index = 0; index < count && index < series.size(); ++index)
+            top = std::max(top, series.at(index).toDouble());
+        const double peak = niceChartMax(top);
+        const QColor faint = Theme::color(Theme::Role::FgSubtle);
+        painter.setFont(pixelFont(font(), 10));
+        for (int step = 0; step <= 3; ++step) {
+            const qreal y = std::round(plot.bottom() - plot.height() * step / 3) + 0.5;
+            QPen pen(Theme::color(Theme::Role::Border), 1);
+            if (step > 0)
+                pen.setDashPattern({2, 4});
+            painter.setPen(pen);
+            painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y));
+            painter.setPen(faint);
+            painter.drawText(QRectF(0, y - 8, plot.left() - 8, 16), Qt::AlignRight | Qt::AlignVCenter,
+                             AnalyticsFeature::countText(peak * step / 3));
+        }
+        if (count == 0)
+            return;
+        const int every = std::max(1, int(std::ceil(count / std::max<qreal>(1, std::floor(plot.width() / 64)))));
+        painter.setPen(faint);
+        for (int index = 0; index < count; index += every)
+            painter.drawText(QRectF(nextX(index) - 40, plot.bottom() + 8, 80, 14), Qt::AlignHCenter | Qt::AlignTop,
+                             nextBucketLabel(index));
+        const QColor accent = Theme::color(Theme::Role::Accent);
+        const auto yFor = [&](int index) {
+            const double value = index < series.size() ? series.at(index).toDouble() : 0;
+            return plot.bottom() - plot.height() * value / peak;
+        };
+        if (m_bars) {
+            const qreal slot = plot.width() / count;
+            const qreal barWidth = std::min<qreal>(28, std::max<qreal>(4, slot * 0.56));
+            painter.setPen(Qt::NoPen);
+            for (int index = 0; index < count; ++index) {
+                const qreal h = std::max<qreal>(2, plot.bottom() - yFor(index));
+                const QRectF bar(nextX(index) - barWidth / 2, plot.bottom() - h, barWidth, h);
+                QColor fill = accent;
+                if (m_hover >= 0 && m_hover != index)
+                    fill.setAlphaF(0.45);
+                QPainterPath path;
+                const qreal radius = std::min<qreal>(4, std::min(barWidth, h) / 2);
+                path.addRoundedRect(bar, radius, radius);
+                path.addRect(QRectF(bar.left(), bar.bottom() - h / 2, barWidth, h / 2));
+                path.setFillRule(Qt::WindingFill);
+                painter.fillPath(path.simplified(), fill);
+            }
+            return;
+        }
+        QPainterPath path;
+        for (int index = 0; index < count; ++index) {
+            const QPointF point(nextX(index), yFor(index));
+            if (index == 0)
+                path.moveTo(point);
+            else
+                path.lineTo(point);
+        }
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(accent, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.drawPath(path);
+        if (m_hover >= 0 && m_hover < count) {
+            const qreal x = nextX(m_hover);
+            painter.setPen(QPen(Theme::color(Theme::Role::BorderStrong), 1));
+            painter.drawLine(QPointF(x, plot.top()), QPointF(x, plot.bottom()));
+            painter.setPen(QPen(Theme::color(Theme::Role::Surface), 2));
+            painter.setBrush(accent);
+            painter.drawEllipse(QPointF(x, yFor(m_hover)), 4.5, 4.5);
+        }
+    }
+
+    QString nextBucketLabel(int index) const
+    {
+        const QDateTime at = QDateTime::fromMSecsSinceEpoch(qint64(m_labels.at(index).toDouble()));
+        return m_hourly ? QLocale().toString(at.time(), QStringLiteral("h AP"))
+                        : QLocale().toString(at.date(), QStringLiteral("MMM d"));
+    }
+
     QRectF plotRect() const
     {
         return QRectF(52, 22, std::max<qreal>(20, width() - 62), std::max<qreal>(20, height() - 46));
@@ -235,6 +685,9 @@ private:
     QJsonArray m_visitors;
     QJsonArray m_pageviews;
     bool m_hourly = false;
+    int m_metric = 1;
+    bool m_bars = false;
+    int m_hover = -1;
 };
 
 QString AnalyticsFeature::countText(double value)
@@ -317,14 +770,34 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
       m_searchIndexChanged(host.searchIndexChanged), m_packageId(host.packageId)
 {
     setObjectName(QStringLiteral("analyticsSection"));
+    const bool next = Theme::isNext();
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(16, 12, 16, 12);
     outer->setSpacing(6);
+    if (next) {
+        outer->setContentsMargins(0, 0, 0, 0);
+        outer->setSpacing(0);
+    }
 
     auto *heading = new QHBoxLayout;
     auto *title = new QLabel(QStringLiteral("Analytics"));
     title->setObjectName(QStringLiteral("pageTitle"));
-    heading->addWidget(title);
+    QVBoxLayout *titleBlock = nullptr;
+    QHBoxLayout *tabs = nullptr;
+    if (next) {
+        heading->setContentsMargins(24, 12, 24, 10);
+        heading->setSpacing(6);
+        titleBlock = new QVBoxLayout;
+        titleBlock->setContentsMargins(0, 0, 0, 0);
+        titleBlock->setSpacing(2);
+        titleBlock->addWidget(title);
+        heading->addLayout(titleBlock, 1);
+        tabs = new QHBoxLayout;
+        tabs->setContentsMargins(14, 0, 24, 0);
+        tabs->setSpacing(4);
+    } else {
+        heading->addWidget(title);
+    }
     heading->addStretch();
     m_organization = new QComboBox;
     m_organization->setObjectName(QStringLiteral("analyticsOrganization"));
@@ -349,9 +822,28 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
         button->setObjectName(QStringLiteral("ghostButton"));
         button->setAccessibleName(sectionNames.at(index));
         m_sectionGroup->addButton(button, index);
+        if (next) {
+            button->setProperty("analyticsRole", QStringLiteral("tab"));
+            button->setCursor(Qt::PointingHandCursor);
+            tabs->addWidget(button);
+            continue;
+        }
         heading->addWidget(button);
     }
-    heading->addSpacing(8);
+    if (next)
+        tabs->addStretch(1);
+    else
+        heading->addSpacing(8);
+    QFrame *rangeSegment = nullptr;
+    QHBoxLayout *rangeLayout = nullptr;
+    if (next) {
+        rangeSegment = new QFrame;
+        rangeSegment->setObjectName(QStringLiteral("analyticsRangeSegment"));
+        rangeLayout = new QHBoxLayout(rangeSegment);
+        rangeLayout->setContentsMargins(2, 2, 2, 2);
+        rangeLayout->setSpacing(2);
+        heading->addWidget(rangeSegment);
+    }
     m_rangeGroup = new QButtonGroup(this);
     m_rangeGroup->setExclusive(true);
     static constexpr std::pair<const char *, int> ranges[] = {
@@ -363,6 +855,12 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
         button->setObjectName(QStringLiteral("ghostButton"));
         button->setAccessibleName(QStringLiteral("Last %1").arg(QString::fromLatin1(label)));
         m_rangeGroup->addButton(button, hours);
+        if (next) {
+            button->setProperty("analyticsRole", QStringLiteral("segment"));
+            button->setCursor(Qt::PointingHandCursor);
+            rangeLayout->addWidget(button);
+            continue;
+        }
         heading->addWidget(button);
     }
     auto *refreshButton = new QPushButton(QStringLiteral("Refresh"));
@@ -373,10 +871,36 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
         button->setObjectName(QStringLiteral("ghostButton"));
         heading->addWidget(button);
     }
+    if (next) {
+        const QColor iconInk = Theme::color(Theme::Role::FgMuted);
+        refreshButton->setIcon(analyticsIcon(QStringLiteral("sync"), iconInk, 14));
+        webButton->setIcon(analyticsIcon(QStringLiteral("link-external"), iconInk, 14));
+        refreshButton->setToolTip(QStringLiteral("Refresh"));
+        webButton->setToolTip(QStringLiteral("Open in browser\n") + webButton->toolTip());
+        for (QPushButton *button : {refreshButton, webButton}) {
+            button->setAccessibleName(button->text());
+            button->setText(QString());
+            button->setIconSize(QSize(14, 14));
+            button->setProperty("analyticsRole", QStringLiteral("icon"));
+            button->setCursor(Qt::PointingHandCursor);
+        }
+    }
     outer->addLayout(heading);
+    if (next) {
+        outer->addLayout(tabs);
+        auto *divider = new QFrame;
+        divider->setObjectName(QStringLiteral("analyticsHeaderDivider"));
+        divider->setFixedHeight(1);
+        outer->addWidget(divider);
+    }
 
     m_status = mutedLabel(QStringLiteral("Loading Analytics…"));
-    outer->addWidget(m_status);
+    if (next) {
+        m_status->setProperty("analyticsRole", QStringLiteral("summary"));
+        titleBlock->addWidget(m_status);
+    } else {
+        outer->addWidget(m_status);
+    }
 
     m_installPanel = new QWidget;
     auto *installLayout = new QVBoxLayout(m_installPanel);
@@ -429,13 +953,62 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     auto *layout = new QVBoxLayout;
     layout->setSpacing(8);
     columns->addLayout(layout, 1);
+    if (next) {
+        columns->setContentsMargins(24, 20, 24, 24);
+        layout->setSpacing(16);
+    }
 
     m_kpis = new QGridLayout;
     m_kpis->setHorizontalSpacing(20);
     m_kpis->setVerticalSpacing(0);
     const QStringList kpiNames{QStringLiteral("Visitors"), QStringLiteral("Pageviews"), QStringLiteral("Sessions"),
                                QStringLiteral("Bounce rate"), QStringLiteral("Avg. session")};
-    for (int column = 0; column < kpiNames.size(); ++column) {
+    if (next)
+        m_kpis->setHorizontalSpacing(12);
+    for (int column = 0; next && column < kpiNames.size(); ++column) {
+        auto *card = new StatCard;
+        auto *cardLayout = new QVBoxLayout(card);
+        cardLayout->setContentsMargins(16, 12, 16, 12);
+        cardLayout->setSpacing(4);
+        QLabel *name = mutedLabel(kpiNames.at(column));
+        name->setWordWrap(false);
+        name->setProperty("analyticsRole", QStringLiteral("statLabel"));
+        cardLayout->addWidget(name);
+        auto *value = new QLabel(QStringLiteral("–"));
+        value->setObjectName(QStringLiteral("analyticsKpi"));
+        value->setAccessibleName(kpiNames.at(column));
+        cardLayout->addWidget(value);
+        auto *deltaRow = new QHBoxLayout;
+        deltaRow->setContentsMargins(0, 0, 0, 0);
+        deltaRow->setSpacing(6);
+        auto *change = new QLabel;
+        change->setObjectName(QStringLiteral("analyticsKpiChange"));
+        change->setTextFormat(Qt::PlainText);
+        change->setVisible(false);
+        deltaRow->addWidget(change);
+        auto *hint = new QLabel(QStringLiteral("vs previous"));
+        hint->setObjectName(QStringLiteral("analyticsKpiHint"));
+        hint->setVisible(false);
+        deltaRow->addWidget(hint);
+        deltaRow->addStretch(1);
+        cardLayout->addLayout(deltaRow);
+        cardLayout->addStretch(1);
+        m_kpis->addWidget(card, 0, column);
+        m_kpis->setColumnStretch(column, 1);
+        m_kpiValues.append(value);
+        m_kpiChanges.append(change);
+        m_kpiCards.append(card);
+        if (column > 1)
+            continue;
+        card->setProperty("analyticsClickable", true);
+        card->setProperty("analyticsSelected", column == m_chartMetric);
+        card->setCursor(Qt::PointingHandCursor);
+        card->setFocusPolicy(Qt::TabFocus);
+        card->setAccessibleName(QStringLiteral("Show %1 in the chart").arg(kpiNames.at(column).toLower()));
+        card->setToolTip(card->accessibleName());
+        card->activated = [this, column] { selectChartMetric(column); };
+    }
+    for (int column = 0; !next && column < kpiNames.size(); ++column) {
         m_kpis->addWidget(mutedLabel(kpiNames.at(column)), 0, column);
         auto *value = new QLabel(QStringLiteral("–"));
         value->setObjectName(QStringLiteral("analyticsKpi"));
@@ -448,12 +1021,65 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
         m_kpis->addWidget(change, 2, column);
         m_kpiChanges.append(change);
     }
-    m_kpis->setColumnStretch(kpiNames.size(), 1);
+    if (!next)
+        m_kpis->setColumnStretch(kpiNames.size(), 1);
     layout->addLayout(m_kpis);
 
     m_chart = new AnalyticsChart;
     m_chart->setFixedHeight(150);
-    layout->addWidget(m_chart);
+    if (next) {
+        m_chart->setFixedHeight(240);
+        m_chart->setMetric(m_chartMetric);
+        auto *chartCard = new QFrame;
+        chartCard->setObjectName(QStringLiteral("analyticsChartCard"));
+        chartCard->setProperty("analyticsRole", QStringLiteral("card"));
+        auto *chartLayout = new QVBoxLayout(chartCard);
+        chartLayout->setContentsMargins(16, 14, 16, 12);
+        chartLayout->setSpacing(10);
+        auto *chartHead = new QHBoxLayout;
+        chartHead->setSpacing(12);
+        auto *chartWords = new QVBoxLayout;
+        chartWords->setSpacing(2);
+        m_chartTitle = new QLabel;
+        m_chartTitle->setProperty("analyticsRole", QStringLiteral("cardTitle"));
+        m_chartHint = new QLabel;
+        m_chartHint->setProperty("analyticsRole", QStringLiteral("cardHint"));
+        chartWords->addWidget(m_chartTitle);
+        chartWords->addWidget(m_chartHint);
+        chartHead->addLayout(chartWords, 1);
+        auto *kindFrame = new QFrame;
+        kindFrame->setObjectName(QStringLiteral("analyticsChartKind"));
+        auto *kindLayout = new QHBoxLayout(kindFrame);
+        kindLayout->setContentsMargins(2, 2, 2, 2);
+        kindLayout->setSpacing(2);
+        auto *kindGroup = new QButtonGroup(kindFrame);
+        kindGroup->setExclusive(true);
+        const QColor kindInk = Theme::color(Theme::Role::FgMuted);
+        for (int kind = 0; kind < 2; ++kind) {
+            auto *button = new QToolButton;
+            button->setProperty("analyticsRole", QStringLiteral("chartKind"));
+            button->setCheckable(true);
+            button->setChecked(kind == 0);
+            button->setAutoRaise(true);
+            button->setFixedSize(28, 28);
+            button->setIconSize(QSize(14, 14));
+            button->setIcon(chartKindGlyph(kind == 1, kindInk, 14));
+            button->setCursor(Qt::PointingHandCursor);
+            const QString label = kind == 0 ? QStringLiteral("Line chart") : QStringLiteral("Bar chart");
+            button->setToolTip(label);
+            button->setAccessibleName(label);
+            kindGroup->addButton(button, kind);
+            kindLayout->addWidget(button);
+        }
+        connect(kindGroup, &QButtonGroup::idClicked, this, [this](int kind) { m_chart->setBars(kind == 1); });
+        chartHead->addWidget(kindFrame, 0, Qt::AlignTop);
+        chartLayout->addLayout(chartHead);
+        chartLayout->addWidget(m_chart);
+        layout->addWidget(chartCard);
+        renderChartHeading();
+    } else {
+        layout->addWidget(m_chart);
+    }
 
     auto *tables = new QGridLayout;
     tables->setHorizontalSpacing(10);
@@ -475,7 +1101,27 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
         {QStringLiteral("Countries"), m_countries}, {QStringLiteral("Devices"), m_devices},
         {QStringLiteral("Browsers"), m_browsers},   {QStringLiteral("Events"), m_events}};
     constexpr int kTableColumns = 4;
-    for (int index = 0; index < sections.size(); ++index) {
+    if (next) {
+        tables->setHorizontalSpacing(12);
+        tables->setVerticalSpacing(12);
+        const QList<std::pair<QString, QTableWidget *>> cards{
+            {QStringLiteral("Top pages"), m_pages},     {QStringLiteral("Referrers"), m_referrers},
+            {QStringLiteral("Landing pages"), m_landing}, {QStringLiteral("Countries"), m_countries},
+            {QStringLiteral("Devices"), m_devices},     {QStringLiteral("Events"), m_events},
+            {QStringLiteral("Browsers"), m_browsers},   {QStringLiteral("Search terms"), m_terms}};
+        constexpr int kCardColumns = 3;
+        for (int index = 0; index < cards.size(); ++index) {
+            QTableWidget *table = cards.at(index).second;
+            styleRankedTable(table);
+            const QTableWidgetItem *column = table->horizontalHeaderItem(1);
+            tables->addWidget(nextCard(sectionLabel(cards.at(index).first), column ? column->text() : QString(),
+                                       table, 6),
+                              index / kCardColumns, index % kCardColumns);
+        }
+        for (int column = 0; column < kCardColumns; ++column)
+            tables->setColumnStretch(column, 1);
+    }
+    for (int index = 0; !next && index < sections.size(); ++index) {
         const int row = index / kTableColumns * 2;
         const int column = index % kTableColumns;
         tables->addWidget(sectionLabel(sections.at(index).first), row, column);
@@ -490,33 +1136,79 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     auto *campaignsLabel = sectionLabel(QStringLiteral("Campaigns"));
     campaignsLabel->setToolTip(QStringLiteral(
         "Visits grouped by their first page's campaign tags (utm_source, utm_medium, utm_campaign), or by the referring site when untagged"));
-    tables->addWidget(campaignsLabel, campaignRow, 0, 1, kTableColumns);
-    tables->addWidget(m_campaigns, campaignRow + 1, 0, 1, kTableColumns);
-    layout->addLayout(tables);
+    if (next) {
+        styleGridTable(m_campaigns);
+        m_campaigns->setFixedHeight(kNextGridRow * kCompactRows + kNextGridRow + 2);
+        layout->addLayout(tables);
+        layout->addWidget(nextCard(campaignsLabel, QString(), m_campaigns, 0));
+    } else {
+        tables->addWidget(campaignsLabel, campaignRow, 0, 1, kTableColumns);
+        tables->addWidget(m_campaigns, campaignRow + 1, 0, 1, kTableColumns);
+        layout->addLayout(tables);
+    }
 
     m_truncated = mutedLabel(QStringLiteral(
         "This range holds more events than one query scans, so only the most recent ones were counted."));
     m_truncated->setVisible(false);
     layout->addWidget(m_truncated);
 
-    auto *setupRow = new QHBoxLayout;
-    setupRow->addWidget(sectionLabel(QStringLiteral("Add this project to a site")));
-    m_writeKey = mutedLabel(QString());
-    m_writeKey->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    setupRow->addWidget(m_writeKey, 1);
+    QHBoxLayout *bottomRow = nullptr;
+    if (next) {
+        m_writeKey = mutedLabel(QString());
+        m_writeKey->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    }
     auto *copyButton = new QPushButton(QStringLiteral("Copy snippet"));
     copyButton->setObjectName(QStringLiteral("ghostButton"));
     copyButton->setToolTip(QStringLiteral("Copy the script tags to paste before </head> on your site"));
-    setupRow->addWidget(copyButton);
-    layout->addLayout(setupRow);
+    if (next) {
+        m_writeKey->setTextFormat(Qt::PlainText);
+        m_writeKey->setWordWrap(false);
+        m_writeKey->setProperty("analyticsRole", QStringLiteral("key"));
+        m_writeKey->setFont(Theme::monospaceFont(pixelFont(m_writeKey->font(), 11)));
+        copyButton->setProperty("analyticsRole", QStringLiteral("action"));
+        copyButton->setIcon(analyticsIcon(QStringLiteral("copy"), Theme::color(Theme::Role::FgMuted), 14));
+        copyButton->setIconSize(QSize(14, 14));
+        auto *setupCard = new QFrame;
+        setupCard->setObjectName(QStringLiteral("analyticsSetupCard"));
+        setupCard->setProperty("analyticsRole", QStringLiteral("card"));
+        auto *setupLayout = new QVBoxLayout(setupCard);
+        setupLayout->setContentsMargins(16, 12, 16, 14);
+        setupLayout->setSpacing(8);
+        auto *setupHead = new QHBoxLayout;
+        setupHead->addWidget(sectionLabel(QStringLiteral("Add this project to a site")));
+        setupHead->addStretch(1);
+        setupHead->addWidget(copyButton);
+        setupLayout->addLayout(setupHead);
+        setupLayout->addWidget(m_writeKey);
+        setupLayout->addStretch(1);
+        bottomRow = new QHBoxLayout;
+        bottomRow->setSpacing(12);
+        bottomRow->addWidget(setupCard, 1);
+        layout->addLayout(bottomRow);
+    } else {
+        auto *setupRow = new QHBoxLayout;
+        setupRow->addWidget(sectionLabel(QStringLiteral("Add this project to a site")));
+        m_writeKey = mutedLabel(QString());
+        m_writeKey->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        setupRow->addWidget(m_writeKey, 1);
+        setupRow->addWidget(copyButton);
+        layout->addLayout(setupRow);
+    }
     layout->addStretch();
 
     auto *recordingsPanel = new QWidget;
     recordingsPanel->setObjectName(QStringLiteral("analyticsRecordingsPanel"));
-    recordingsPanel->setFixedWidth(380);
+    if (!next)
+        recordingsPanel->setFixedWidth(380);
     auto *recordingsLayout = new QVBoxLayout(recordingsPanel);
     recordingsLayout->setContentsMargins(0, 0, 0, 0);
     recordingsLayout->setSpacing(3);
+    if (next) {
+        recordingsPanel->setAttribute(Qt::WA_StyledBackground, true);
+        recordingsPanel->setProperty("analyticsRole", QStringLiteral("card"));
+        recordingsLayout->setContentsMargins(16, 12, 16, 12);
+        recordingsLayout->setSpacing(8);
+    }
     auto *recordingsTitle = sectionLabel(QStringLiteral("Recordings"));
     recordingsTitle->setToolTip(QStringLiteral(
         "The latest recorded visits. Click one to play back the visitor's mouse movement, clicks and scrolling."));
@@ -542,13 +1234,25 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     m_recordings->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_recordings->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     recordingsLayout->addWidget(m_recordings, 1);
-    columns->addWidget(recordingsPanel);
+    if (next) {
+        m_recordingsEnable->setProperty("analyticsRole", QStringLiteral("action"));
+        styleGridTable(m_recordings);
+        m_recordings->setVisible(false);
+        bottomRow->insertWidget(0, recordingsPanel, 1);
+    } else {
+        columns->addWidget(recordingsPanel);
+    }
     scroll->setWidget(body);
     m_sections = new QStackedWidget;
     m_sections->addWidget(m_content);
     m_sections->addWidget(buildConversionsPage());
     m_sections->addWidget(buildExperimentsPage());
     outer->addWidget(m_sections, 1);
+    for (int index = 1; next && index < m_sections->count(); ++index) {
+        auto *area = qobject_cast<QScrollArea *>(m_sections->widget(index));
+        if (area && area->widget() && area->widget()->layout())
+            area->widget()->layout()->setContentsMargins(24, 16, 24, 24);
+    }
 
     connect(m_organization, &QComboBox::currentIndexChanged, this, [this](int index) {
         if (index < 0 || m_loading)
@@ -868,6 +1572,8 @@ void AnalyticsFeature::fillCampaigns(const QString &groupBy, const QJsonObject &
             cell(index, 0, text(row, groupBy == QLatin1String("landing") ? "landing" : "term"), false);
             cell(index, 1, countText(number(row, "sessions")), true);
             cell(index, 2, bounce(row), true);
+            if (Theme::isNext())
+                table->item(index, 1)->setData(Qt::UserRole, number(row, "sessions"));
         }
     }
     if (table->rowCount() == 0) {
@@ -965,6 +1671,8 @@ void AnalyticsFeature::applyState()
     m_project->setVisible(installed && m_project->count() > 1);
     for (QAbstractButton *button : m_rangeGroup->buttons())
         button->setVisible(installed && hasProjects);
+    if (auto *segment = findChild<QFrame *>(QStringLiteral("analyticsRangeSegment")))
+        segment->setVisible(installed && hasProjects);
     for (QAbstractButton *button : m_sectionGroup->buttons())
         button->setVisible(installed && hasProjects);
     m_content->setVisible(!m_overview.isEmpty());
@@ -992,6 +1700,8 @@ void AnalyticsFeature::fillTable(QTableWidget *table, const QJsonArray &rows, bo
         table->setItem(index, 0, label);
         auto *count = new QTableWidgetItem(countText(number(row, "count")));
         count->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        if (Theme::isNext())
+            count->setData(Qt::UserRole, number(row, "count"));
         table->setItem(index, 1, count);
         if (visitors) {
             auto *people = new QTableWidgetItem(countText(number(row, "visitors")));
@@ -1112,6 +1822,8 @@ void AnalyticsFeature::renderRecordings()
     m_recordingsNote->setText(note);
     m_recordingsNote->setVisible(!note.isEmpty());
     m_recordingsEnable->setVisible(!enabled && canManage());
+    if (Theme::isNext())
+        m_recordings->setVisible(!m_recordingList.isEmpty());
 }
 
 void AnalyticsFeature::openRecording(int row)
@@ -1171,6 +1883,10 @@ void AnalyticsFeature::renderOverview()
         const double before = number(previous, counted.at(index));
         m_kpiValues.at(index)->setText(countText(current));
         const QString change = changeText(current, before);
+        if (Theme::isNext() && index < m_kpiCards.size()) {
+            setNextDelta(m_kpiChanges.at(index), m_kpiCards.at(index), change);
+            continue;
+        }
         m_kpiChanges.at(index)->setText(change.isEmpty() ? QString() : change + QStringLiteral(" vs previous"));
         m_kpiChanges.at(index)->setStyleSheet(
             change.startsWith(QLatin1Char('-'))                       ? QStringLiteral("color: #d1453b;")
@@ -1181,7 +1897,10 @@ void AnalyticsFeature::renderOverview()
     m_kpiChanges.at(3)->clear();
     m_kpiValues.at(4)->setText(durationText(qint64(number(totals, "averageSessionMs"))));
     m_kpiChanges.at(4)->clear();
+    for (int index = 3; index < m_kpiCards.size(); ++index)
+        setNextDelta(m_kpiChanges.at(index), m_kpiCards.at(index), QString());
     m_chart->setSeries(result.value(QStringLiteral("timeseries")).toObject());
+    renderChartHeading();
     const QJsonObject breakdowns = result.value(QStringLiteral("breakdowns")).toObject();
     fillTable(m_pages, breakdowns.value(QStringLiteral("pages")).toArray(), true);
     fillTable(m_referrers, breakdowns.value(QStringLiteral("referrers")).toArray(), false);
@@ -1191,8 +1910,35 @@ void AnalyticsFeature::renderOverview()
     fillTable(m_events, breakdowns.value(QStringLiteral("events")).toArray(), false);
     m_truncated->setVisible(m_overview.value(QStringLiteral("truncated")).toBool());
     setStatus(QStringLiteral("%1 events in the last %2 · updated %3")
-                  .arg(countText(number(totals, "events")), m_rangeGroup->button(m_rangeHours)->text(),
+                  .arg(countText(number(totals, "events")),
+                       Theme::isNext() ? rangePhrase(m_rangeHours) : m_rangeGroup->button(m_rangeHours)->text(),
                        QLocale().toString(QTime::currentTime(), QStringLiteral("h:mm AP"))));
+}
+
+void AnalyticsFeature::selectChartMetric(int metric)
+{
+    if (!m_chart || metric < 0 || metric > 1)
+        return;
+    m_chartMetric = metric;
+    m_chart->setMetric(metric);
+    for (int index = 0; index < m_kpiCards.size() && index < 2; ++index) {
+        m_kpiCards.at(index)->setProperty("analyticsSelected", index == metric);
+        repolishTree(m_kpiCards.at(index));
+    }
+    renderChartHeading();
+}
+
+void AnalyticsFeature::renderChartHeading()
+{
+    if (!m_chartTitle || !m_chartHint)
+        return;
+    const QString unit = m_chart->hourly() ? QStringLiteral("hour") : QStringLiteral("day");
+    m_chartTitle->setText(QStringLiteral("%1 per %2")
+                              .arg(m_chartMetric == 0 ? QStringLiteral("Visitors") : QStringLiteral("Pageviews"),
+                                   unit));
+    m_chartHint->setText(QStringLiteral("Last %1 · hover %2 for its value")
+                             .arg(rangePhrase(m_rangeHours),
+                                  m_chart->hourly() ? QStringLiteral("an hour") : QStringLiteral("a day")));
 }
 
 void AnalyticsFeature::setStatus(const QString &value, bool error)

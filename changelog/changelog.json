@@ -10,7 +10,15 @@
     {
      "title": "Desktop",
      "items": [
+      "In the desktop's live database Visualizer, clicking a table opens that table in the Database tab.",
+      "In the new desktop design, Control, Network, Repos, Git, Files, Memory, Tasks, Chat, Settings, Users, Pings, Ledger, Analytics, Market, Stats, Health, Calendar, Specials and Calories are restyled to match, with a board view for tasks, a node detail panel, a places column in Files, repository cards, a Market grid, wallet QR codes in Ledger, a relay switcher in the sidebar and a table in Settings for choosing where each app shows up.",
       "Merge all with AI now rebuilds a pull request from a stacked series whose earlier parts were already merged, instead of leaving it out because its code is not on this computer."
+     ]
+    },
+    {
+     "title": "Settings",
+     "items": [
+      "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick."
      ]
     }
    ]
@@ -40,7 +48,10 @@
       "Pull requests show a green, orange or red merge status button at the top, a compact icon-based Reviewers list, and no longer repeat the repository's Fork and Star bar.",
       "Issues have an Assign button next to Comment, and contributors can take a second issue once they have a pull request open for the first.",
       "The pull request review prompt now links a working diff and a plain-text page with every comment, and asks for feedback written to the author, or a short approval when nothing needs to change.",
-      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows."
+      "Instances can pin the repositories shown in Top repositories and choose how many forks each row shows.",
+      "Anyone who can push to a pull request's branch can press Update branch to bring in the newest base branch; it says when the branch was synced, or that there are merge conflicts to resolve locally.",
+      "Only organization owners can merge pull requests and agent branches: contributors no longer see a green Ready to merge button or a Merge & clean up button for agent work.",
+      "A pull request from a fork no longer warns that it is commits behind when it still merges cleanly, and you are told when a pull request was opened on your fork because the original repository is a read-only mirror."
      ]
     },
     {
@@ -111,7 +122,8 @@
       "In the desktop's new design, alerts and confirmations are laid out evenly: the heading and message are centred with the same padding on every side, and the buttons sit centred below them at one width.",
       "Merge all now pulls pull request branches from the cloud before starting, and explains when a pull request's patch no longer applies.",
       "On desktop, you can now resize the prompt by dragging any of its edges or corners; the small resize grip in its top-right corner is gone.",
-      "Right-click any item in the left rail or a repository tab and choose to hide it: it leaves the rail but stays on Home, where right-clicking its icon puts it back."
+      "Right-click any item in the left rail or a repository tab and choose to hide it: it leaves the rail but stays on Home, where right-clicking its icon puts it back.",
+      "The new desktop design has a fresh Home with a prompt box, suggestions and a Needs you list, a calmer sidebar, top bar and team rail, and restyled Sessions, Code and CRM pages."
      ]
     },
     {

@@ -1,0 +1,79 @@
+QWidget#organizationTasksSection { background-color: @bg; }
+QFrame#tasksNextHeader { background-color: @bg; border: none; border-bottom: 1px solid @border; }
+QLabel#tasksNextTitle { color: @fg; font-size: 15px; font-weight: 600; background: transparent; }
+QLabel#tasksNextSummary { color: @fgMuted; font-size: 12px; background: transparent; }
+QLineEdit#tasksNextFilter {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    padding: 0px 8px 0px 2px; min-height: 30px; max-height: 30px; font-size: 13px; color: @fg;
+}
+QLineEdit#tasksNextFilter:hover { border-color: @borderStrong; }
+QLineEdit#tasksNextFilter:focus { border-color: @accent; }
+QPushButton#tasksNextAssignee {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    padding: 0px 10px; min-height: 30px; max-height: 30px; font-size: 13px; color: @fg;
+}
+QPushButton#tasksNextAssignee:hover { background-color: @surfaceRaised; border-color: @borderStrong; }
+QPushButton#tasksNextAssignee::menu-indicator { image: none; width: 0px; }
+QFrame#tasksNextViewSwitch { background-color: @surface; border: none; border-radius: 8px; }
+QPushButton#tasksNextViewButton {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+}
+QPushButton#tasksNextViewButton:hover { background-color: @surfaceRaised; }
+QPushButton#tasksNextViewButton:checked { background-color: @surfaceActive; }
+
+QFrame#tasksNextChips { background-color: @bg; border: none; border-bottom: 1px solid @border; }
+
+QSplitter#tasksNextSplit::handle { background-color: @border; }
+QScrollArea#tasksNextBoardScroll { background: transparent; border: none; }
+QScrollArea#tasksNextBoardScroll > QWidget#qt_scrollarea_viewport { background: transparent; }
+QScrollArea#tasksNextBoardScroll > QWidget > QWidget#tasksNextBoard { background: transparent; }
+QFrame#tasksBoardColumn {
+    background-color: @bgSubtle; border: 1px solid transparent; border-radius: 16px;
+}
+QFrame#tasksBoardColumn[dropTarget="true"] { background-color: @accentSubtle; border-color: @accent; }
+QLabel#tasksBoardColumnTitle { color: @fg; font-size: 13px; font-weight: 500; background: transparent; }
+QLabel#tasksBoardColumnCount { color: @fgSubtle; font-size: 12px; background: transparent; }
+QLabel#tasksBoardColumnIcon { background: transparent; }
+QToolButton#tasksBoardColumnAdd { background: transparent; border: none; border-radius: 6px; }
+QToolButton#tasksBoardColumnAdd:hover { background-color: @surfaceRaised; }
+QListWidget#tasksBoardList { background: transparent; border: none; outline: none; }
+QListWidget#tasksBoardList::item { background: transparent; border: none; }
+
+QFrame#tasksNextFooter { background-color: @bg; border: none; border-top: 1px solid @border; }
+QLabel#tasksNextHint { color: @fgSubtle; font-size: 11px; background: transparent; }
+QFrame#tasksNextFooter QLabel#organizationTasksStatus { color: @fgMuted; font-size: 11px; background: transparent; }
+
+QWidget#tasksNextDetailPanel { background-color: @bg; border: none; }
+QFrame#tasksNextDetailHeader { background-color: @bg; border: none; border-bottom: 1px solid @border; }
+QLabel#tasksNextDetailId { color: @fgMuted; background: transparent; }
+QPushButton#tasksNextDetailMore, QPushButton#tasksNextDetailClose {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+}
+QPushButton#tasksNextDetailMore:hover, QPushButton#tasksNextDetailClose:hover { background-color: @surfaceRaised; }
+QPushButton#tasksNextDetailMore:pressed, QPushButton#tasksNextDetailClose:pressed { background-color: @surfaceActive; }
+QPushButton#tasksNextDetailMore::menu-indicator { image: none; width: 0px; }
+QWidget#tasksNextDetailActions { background-color: @bg; border: none; border-bottom: 1px solid @border; }
+QScrollArea#tasksNextDetailScroll { background: transparent; border: none; }
+QScrollArea#tasksNextDetailScroll > QWidget#qt_scrollarea_viewport { background: transparent; }
+QScrollArea#tasksNextDetailScroll > QWidget > QWidget#tasksNextDetailBody { background: transparent; }
+QLabel#tasksNextDetailTitle { color: @fg; font-size: 18px; font-weight: 600; background: transparent; }
+QWidget#tasksNextDetailBody QTextBrowser#organizationTaskDetail {
+    background: transparent; border: none; color: @fgSecondary; font-size: 13px;
+}
+QWidget#tasksNextDetailBody QWidget#organizationTaskSide { background: transparent; }
+
+QFrame#tasksNextCommentBar { background-color: @bg; border: none; border-top: 1px solid @border; }
+QFrame#tasksNextCommentBox {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+QFrame#tasksNextCommentBox QPlainTextEdit#organizationTaskQuickComment {
+    background: transparent; border: none; color: @fg; font-size: 13px; padding: 2px 0px;
+}
+QFrame#tasksNextCommentBox QPushButton#organizationTaskQuickCommentSend {
+    background: transparent; border: none; border-radius: 6px; color: @fgMuted;
+    padding: 0px 8px; min-height: 28px; max-height: 28px; font-size: 12px; font-weight: 500;
+}
+QFrame#tasksNextCommentBox QPushButton#organizationTaskQuickCommentSend:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+QFrame#tasksNextCommentBox QPushButton#organizationTaskQuickCommentSend:disabled { color: @fgSubtle; }

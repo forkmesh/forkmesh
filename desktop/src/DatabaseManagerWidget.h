@@ -46,6 +46,8 @@ public:
 
     // Loads the inventory the first time the tab is shown.
     void activate();
+    void showTable(const QString &name);
+    QString shownTable() const { return m_table; }
 
 private:
     using Reply = std::function<void(int status, const QJsonObject &body)>;

@@ -31,6 +31,7 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QSettings>
+#include <QSvgRenderer>
 #include <QStyleHints>
 #include <QTextDocument>
 #include <QTimer>
@@ -119,6 +120,70 @@ QPixmap stickerGlyph(int size, qreal dpr, const QColor &color)
     peel.moveTo(far, far - fold);
     peel.quadTo(far - fold, far - fold, far - fold, far);
     painter.drawPath(peel);
+    return pixmap;
+}
+
+int avatarSide()
+{
+    return Theme::isNext() ? 32 : kAvatarSize;
+}
+
+bool isSpecialSender(const QString &senderId)
+{
+    return senderId.startsWith(QLatin1String("teammate:"));
+}
+
+QPixmap nextInitialsAvatar(const QString &name, int side, bool square)
+{
+    const qreal dpr = qGuiApp ? qGuiApp->devicePixelRatio() : 1.0;
+    QPixmap pixmap(qMax(1, qRound(side * dpr)), qMax(1, qRound(side * dpr)));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Theme::color(Theme::Role::SurfaceActive));
+    if (square)
+        painter.drawRoundedRect(QRectF(0, 0, side, side), 8, 8);
+    else
+        painter.drawEllipse(QRectF(0, 0, side, side));
+    QString initials;
+    for (const QString &part :
+         name.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+        initials += part.left(1).toUpper();
+        if (initials.size() >= 2)
+            break;
+    }
+    if (initials.isEmpty())
+        initials = QStringLiteral("?");
+    QFont font = painter.font();
+    font.setPixelSize(qMax(7, qRound(side * 10.0 / 32.0)));
+    font.setWeight(QFont::DemiBold);
+    painter.setFont(font);
+    painter.setPen(Theme::color(Theme::Role::FgMuted));
+    painter.drawText(QRect(0, 0, side, side), Qt::AlignCenter, initials);
+    return pixmap;
+}
+
+QPixmap nextFileGlyph(const QColor &color, int size)
+{
+    const qreal dpr = qGuiApp ? qGuiApp->devicePixelRatio() : 1.0;
+    QPixmap pixmap(qMax(1, qRound(size * dpr)), qMax(1, qRound(size * dpr)));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    const QByteArray svg =
+        QStringLiteral("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' "
+                       "viewBox='0 0 24 24' fill='none' stroke='%1' stroke-width='2' "
+                       "stroke-linecap='round' stroke-linejoin='round'><path d='M15 2H6"
+                       "a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/><path "
+                       "d='M14 2v4a2 2 0 0 0 2 2h4'/><path d='M10 9H8'/><path d='M16 "
+                       "13H8'/><path d='M16 17H8'/></svg>")
+            .arg(color.name(QColor::HexRgb))
+            .toUtf8();
+    QSvgRenderer renderer(svg);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    renderer.render(&painter, QRectF(0, 0, size, size));
     return pixmap;
 }
 
@@ -280,6 +345,19 @@ QString renderMentionedText(const QString &text,
         themeIsDark());
 }
 
+QString nextBodyHtml(QString html)
+{
+    const forkmesh::chatformat::Palette palette =
+        forkmesh::chatformat::paletteFor(themeIsDark());
+    html.replace(
+        QStringLiteral("<code style=\"background-color:%1\">").arg(palette.codeBackground),
+        QStringLiteral("<code style=\"background-color:%1; font-family:'%2'; "
+                       "font-size:12px\">")
+            .arg(Theme::hex(Theme::Role::SurfaceActive), Theme::monoFontFamily()));
+    return QStringLiteral("<div style=\"line-height:150%\">") + html +
+           QStringLiteral("</div>");
+}
+
 // What a link's tooltip says: where it actually goes. A [label](target) link
 // hides its destination inside the sentence, so the target is worth seeing
 // before the click rather than after it.
@@ -378,7 +456,7 @@ protected:
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(QPen(Theme::isNext()
-                                ? Theme::chatColor(QStringLiteral("chatFaint"))
+                                ? Theme::color(Theme::Role::FgSubtle)
                                 : Theme::remapColor(QColor(dark ? "#30363d" : "#d0d7de")),
                             1.2));
         painter.setBrush(Qt::NoBrush);
@@ -386,7 +464,7 @@ protected:
         if (frac > 0.004) {
             painter.setPen(Qt::NoPen);
             painter.setBrush(Theme::isNext()
-                                 ? Theme::chatColor(QStringLiteral("chatMuted"))
+                                 ? Theme::color(Theme::Role::FgMuted)
                                  : Theme::remapColor(QColor(dark ? "#8b949e" : "#9a6700")));
             painter.drawPie(box, 90 * 16, -int(frac * 360.0 * 16));
         }
@@ -500,8 +578,8 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
     auto *outer = new QHBoxLayout(this);
     m_outer = outer;
     if (Theme::isNext()) {
-        outer->setContentsMargins(16, kGroupGapPx, 16, 2);
-        outer->setSpacing(16);
+        outer->setContentsMargins(12, kGroupGapPx, 12, 4);
+        outer->setSpacing(12);
     } else {
         outer->setContentsMargins(18, 7, 18, 7);
         outer->setSpacing(10);
@@ -511,6 +589,11 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
     m_avatarLabel = new QLabel;
     m_avatarLabel->setFixedSize(kAvatarSize, kAvatarSize);
     m_avatarLabel->setPixmap(initialsAvatar(message.senderName, nameColor));
+    if (Theme::isNext()) {
+        m_avatarLabel->setFixedSize(avatarSide(), avatarSide());
+        m_avatarLabel->setPixmap(nextInitialsAvatar(
+            message.senderName, avatarSide(), isSpecialSender(message.senderId)));
+    }
     m_avatarLabel->setCursor(Qt::PointingHandCursor);
     m_avatarLabel->setToolTip("View user profile");
     m_avatarLabel->installEventFilter(this);
@@ -518,8 +601,14 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
 
     auto *column = new QVBoxLayout;
     column->setContentsMargins(0, 0, 0, 0);
-    column->setSpacing(3);
+    column->setSpacing(Theme::isNext() ? 2 : 3);
 
+    QLabel *timeLabel = nullptr;
+    if (Theme::isNext()) {
+        timeLabel = new QLabel(this);
+        timeLabel->setObjectName(QStringLiteral("messageTime"));
+        timeLabel->setTextFormat(Qt::RichText);
+    }
     auto *header = new MeasuredLabel;
     header->setTextFormat(Qt::RichText);
     header->setObjectName(QStringLiteral("messageSender"));
@@ -531,6 +620,15 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
     headerRow->setContentsMargins(0, 0, 0, 0);
     headerRow->setSpacing(6);
     headerRow->addWidget(header);
+    if (timeLabel) {
+        if (isSpecialSender(message.senderId)) {
+            auto *badge = new QLabel(QStringLiteral("Special"), this);
+            badge->setObjectName(QStringLiteral("messageSpecialBadge"));
+            badge->setToolTip(QStringLiteral("A special agent"));
+            headerRow->addWidget(badge, 0, Qt::AlignVCenter);
+        }
+        headerRow->addWidget(timeLabel, 0, Qt::AlignVCenter);
+    }
     m_headerRow = headerRow;
     if (message.recipientCount >= 0) {
         m_message.recipientCount = -1;
@@ -621,6 +719,8 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
                     !forkmesh::chatblocks::senderMayFormat(message.senderId)
                 ? renderMentionedText(message.text, m_mentionProfiles)
                 : forkmesh::chatblocks::html(message.blocks, themeIsDark()));
+        if (Theme::isNext())
+            body->setText(nextBodyHtml(body->text()));
         body->setObjectName("messageText");
         body->setTextFormat(Qt::RichText);
         body->setWordWrap(true);
@@ -685,7 +785,32 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
                       .arg(count, threadSummary.latestSender));
         connect(thread, &QPushButton::clicked, this,
                 [this] { emit threadRequested(m_message.id); });
-        column->addWidget(thread, 0, Qt::AlignLeft);
+        if (Theme::isNext()) {
+            thread->setText(count);
+            const QPixmap smallPile =
+                threadFacePile(threadSummary.faces, 16, 4);
+            if (!smallPile.isNull()) {
+                thread->setIcon(QIcon(smallPile));
+                thread->setIconSize(smallPile.deviceIndependentSize().toSize());
+            }
+            auto *threadLine = new QWidget(this);
+            threadLine->setObjectName(QStringLiteral("threadSummaryLine"));
+            auto *threadLineLayout = new QHBoxLayout(threadLine);
+            threadLineLayout->setContentsMargins(0, 2, 0, 0);
+            threadLineLayout->setSpacing(4);
+            threadLineLayout->addWidget(thread, 0, Qt::AlignVCenter);
+            auto *meta = new QLabel(threadLine);
+            meta->setObjectName(QStringLiteral("threadSummaryMeta"));
+            meta->setTextFormat(Qt::PlainText);
+            if (!threadSummary.latestSender.isEmpty())
+                meta->setText(QString::fromUtf8("\xC2\xB7 ") +
+                              threadSummary.latestSender);
+            threadLineLayout->addWidget(meta, 0, Qt::AlignVCenter);
+            threadLineLayout->addStretch(1);
+            column->addWidget(threadLine);
+        } else {
+            column->addWidget(thread, 0, Qt::AlignLeft);
+        }
     }
 
     m_reactionsBar = nullptr;
@@ -850,6 +975,51 @@ void MessageRow::buildAttachment(QWidget *, QVBoxLayout *layout)
         return;
     }
 
+    if (Theme::isNext()) {
+        auto *card = new QWidget;
+        card->setObjectName("fileChip");
+        card->setAttribute(Qt::WA_StyledBackground, true);
+        card->setMaximumWidth(340);
+        card->setToolTip(m_message.fileName);
+        auto *cardLayout = new QHBoxLayout(card);
+        cardLayout->setContentsMargins(12, 10, 10, 10);
+        cardLayout->setSpacing(12);
+        auto *tile = new QLabel;
+        tile->setObjectName(QStringLiteral("fileChipTile"));
+        tile->setFixedSize(36, 36);
+        tile->setAlignment(Qt::AlignCenter);
+        tile->setPixmap(nextFileGlyph(Theme::color(Theme::Role::FgMuted), 16));
+        auto *text = new QWidget;
+        text->setObjectName(QStringLiteral("fileChipText"));
+        auto *textLayout = new QVBoxLayout(text);
+        textLayout->setContentsMargins(0, 0, 0, 0);
+        textLayout->setSpacing(1);
+        auto *name = new QLabel;
+        name->setObjectName(QStringLiteral("fileChipName"));
+        name->setTextFormat(Qt::PlainText);
+        name->setMinimumWidth(0);
+        name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        name->setText(name->fontMetrics().elidedText(m_message.fileName,
+                                                     Qt::ElideMiddle, 200));
+        auto *meta = new QLabel(humanSize(data.size()));
+        meta->setObjectName(QStringLiteral("fileChipMeta"));
+        meta->setTextFormat(Qt::PlainText);
+        textLayout->addWidget(name);
+        textLayout->addWidget(meta);
+        auto *save = new QPushButton("Save");
+        save->setObjectName("ghostButton");
+        save->setProperty("buttonSize", "sm");
+        save->setCursor(Qt::PointingHandCursor);
+        connect(save, &QPushButton::clicked, this, [this] {
+            emit saveFileRequested(m_message.fileName, m_message.fileData);
+        });
+        cardLayout->addWidget(tile, 0, Qt::AlignVCenter);
+        cardLayout->addWidget(text, 1, Qt::AlignVCenter);
+        cardLayout->addWidget(save, 0, Qt::AlignVCenter);
+        layout->addWidget(card, 0, Qt::AlignLeft);
+        return;
+    }
+
     auto *chip = new QWidget;
     chip->setObjectName("fileChip");
     auto *chipLayout = new QHBoxLayout(chip);
@@ -908,8 +1078,13 @@ void MessageRow::setRecipientCount(int count, const QStringList &names)
         m_recipientsLabel = new QLabel;
         m_recipientsLabel->setObjectName(QStringLiteral("messageRecipients"));
         m_recipientsLabel->setTextFormat(Qt::RichText);
-        m_headerRow->insertWidget(m_headerRow->indexOf(m_senderLabel) + 1,
-                                  m_recipientsLabel, 0, Qt::AlignBottom);
+        QWidget *after = m_senderLabel;
+        if (auto *time = findChild<QLabel *>(QStringLiteral("messageTime"),
+                                             Qt::FindDirectChildrenOnly))
+            after = time;
+        m_headerRow->insertWidget(m_headerRow->indexOf(after) + 1,
+                                  m_recipientsLabel,
+                                  0, Theme::isNext() ? Qt::AlignVCenter : Qt::AlignBottom);
     }
     const QString tooltip =
         forkmesh::recipients::tooltip(count, m_message.recipientNames);
@@ -966,9 +1141,14 @@ void MessageRow::setContinuation(bool continuation)
         return;
     m_continuation = continuation;
     applyOuterMargins();
-    m_avatarLabel->setFixedHeight(continuation ? 0 : kAvatarSize);
+    m_avatarLabel->setFixedHeight(continuation ? 0 : avatarSide());
     if (m_senderLabel)
         m_senderLabel->setVisible(!continuation);
+    for (const char *name : {"messageTime", "messageSpecialBadge"}) {
+        if (auto *label = findChild<QLabel *>(QLatin1String(name),
+                                              Qt::FindDirectChildrenOnly))
+            label->setVisible(!continuation);
+    }
     if (m_expiryRing)
         m_expiryRing->setVisible(!continuation);
     if (m_menuButton) {
@@ -1043,21 +1223,39 @@ void MessageRow::renderSenderHeader()
         m_senderStatusEmoji.isEmpty()
             ? QString()
             : QStringLiteral("&nbsp;") + m_senderStatusEmoji.toHtmlEscaped();
-    m_senderLabel->setText(
-        "<span style='color:" +
-        (Theme::isNext() ? Theme::chatColor(QStringLiteral("chatTextStrong")).name()
-                         : m_nameColor) +
-        "; font-weight:" + (Theme::isNext() ? "600" : "700") + "'>" +
-        m_message.senderName.toHtmlEscaped() + "</span>" + status +
-        "&nbsp;&nbsp;<span style='color:" +
-        (Theme::isNext() ? Theme::chatColor(QStringLiteral("chatFaint")).name()
-                         : QStringLiteral("#6b7280")) +
-        "; font-size:" + (Theme::isNext() ? "12px" : "11px") + "'>" + time +
-        (m_message.edited ? " (edited)" : "") + "</span>" +
-        (m_deliveryNote.isEmpty()
-             ? QString()
-             : "&nbsp;&nbsp;<span style='color:#d97706; font-size:11px'>" +
-                   m_deliveryNote.toHtmlEscaped() + "</span>"));
+    if (auto *timeLabel = Theme::isNext()
+                              ? findChild<QLabel *>(QStringLiteral("messageTime"),
+                                                    Qt::FindDirectChildrenOnly)
+                              : nullptr) {
+        m_senderLabel->setText(
+            QStringLiteral("<span style='color:%1; font-weight:600'>")
+                .arg(Theme::hex(Theme::Role::Fg)) +
+            m_message.senderName.toHtmlEscaped() + QStringLiteral("</span>") + status);
+        timeLabel->setText(
+            sent.toString(QStringLiteral("h:mm AP")) +
+            (m_message.edited ? " (edited)" : "") +
+            (m_deliveryNote.isEmpty()
+                 ? QString()
+                 : QStringLiteral("&nbsp;&nbsp;<span style='color:%1'>")
+                           .arg(Theme::hex(Theme::Role::Warning)) +
+                       m_deliveryNote.toHtmlEscaped() + QStringLiteral("</span>")));
+    } else {
+        m_senderLabel->setText(
+            "<span style='color:" +
+            (Theme::isNext() ? Theme::chatColor(QStringLiteral("chatTextStrong")).name()
+                             : m_nameColor) +
+            "; font-weight:" + (Theme::isNext() ? "600" : "700") + "'>" +
+            m_message.senderName.toHtmlEscaped() + "</span>" + status +
+            "&nbsp;&nbsp;<span style='color:" +
+            (Theme::isNext() ? Theme::chatColor(QStringLiteral("chatFaint")).name()
+                             : QStringLiteral("#6b7280")) +
+            "; font-size:" + (Theme::isNext() ? "12px" : "11px") + "'>" + time +
+            (m_message.edited ? " (edited)" : "") + "</span>" +
+            (m_deliveryNote.isEmpty()
+                 ? QString()
+                 : "&nbsp;&nbsp;<span style='color:#d97706; font-size:11px'>" +
+                       m_deliveryNote.toHtmlEscaped() + "</span>"));
+    }
     const QString stamp = sent.toString("dddd, MMMM d, yyyy  h:mm:ss AP");
     QString tooltip = m_senderStatusTooltip.isEmpty()
                           ? stamp
@@ -1066,6 +1264,9 @@ void MessageRow::renderSenderHeader()
     if (!m_deliveryTooltip.isEmpty())
         tooltip = m_deliveryTooltip + QStringLiteral("\n\n") + tooltip;
     m_senderLabel->setToolTip(tooltip);
+    if (auto *timeLabel = findChild<QLabel *>(QStringLiteral("messageTime"),
+                                              Qt::FindDirectChildrenOnly))
+        timeLabel->setToolTip(tooltip);
 }
 
 bool MessageRow::eventFilter(QObject *watched, QEvent *event)
@@ -1114,15 +1315,21 @@ void MessageRow::setAvatar(const QPixmap &pixmap)
     if (pixmap.isNull())
         return;
     const qreal dpr = devicePixelRatio();
-    QPixmap rounded(qMax(1, qRound(kAvatarSize * dpr)),
-                    qMax(1, qRound(kAvatarSize * dpr)));
+    const int side = avatarSide();
+    QPixmap rounded(qMax(1, qRound(side * dpr)),
+                    qMax(1, qRound(side * dpr)));
     rounded.setDevicePixelRatio(dpr);
     rounded.fill(Qt::transparent);
     QPainter painter(&rounded);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
     QPainterPath clip;
-    clip.addEllipse(0, 0, kAvatarSize, kAvatarSize);
+    if (Theme::isNext() && isSpecialSender(m_message.senderId))
+        clip.addRoundedRect(QRectF(0, 0, side, side), 8, 8);
+    else if (Theme::isNext())
+        clip.addEllipse(0, 0, side, side);
+    else
+        clip.addEllipse(0, 0, kAvatarSize, kAvatarSize);
     painter.setClipPath(clip);
     QPixmap scaled = pixmap.scaled(rounded.width(), rounded.height(),
                                    Qt::KeepAspectRatioByExpanding,
@@ -1170,6 +1377,10 @@ void MessageRow::setReactions(const QMap<QString, QStringList> &reactionMap)
         } else {
             chip->setText(reactions::displayName(reaction) + " " +
                           QString::number(count));
+        }
+        if (Theme::isNext()) {
+            const QString self = property("chatSelfName").toString();
+            chip->setProperty("mine", !self.isEmpty() && it.value().contains(self));
         }
         chip->setCursor(Qt::PointingHandCursor);
         chip->setToolTip(reactions::displayName(reaction) +
@@ -1467,6 +1678,11 @@ void MessageRow::setReceiptMark(forkmesh::recipients::ReceiptMark mark)
         m_receiptLabel->setObjectName(QStringLiteral("messageReceipt"));
         QWidget *anchor = m_recipientsLabel ? static_cast<QWidget *>(m_recipientsLabel)
                                             : static_cast<QWidget *>(m_senderLabel);
+        if (!m_recipientsLabel) {
+            if (auto *time = findChild<QLabel *>(QStringLiteral("messageTime"),
+                                                 Qt::FindDirectChildrenOnly))
+                anchor = time;
+        }
         m_headerRow->insertWidget(m_headerRow->indexOf(anchor) + 1,
                                   m_receiptLabel, 0, Qt::AlignVCenter);
     }

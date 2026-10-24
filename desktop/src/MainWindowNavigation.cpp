@@ -7,6 +7,7 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
+#include "PageSwitchTrace.h"
 #include "MainWindowNetworkInternal.h"
 #include "SystemPressure.h"
 #include "AgentCliLocator.h"
@@ -376,8 +377,16 @@ QWidget *MainWindow::buildBreadcrumb()
     m_agentsNavButton->setCursor(Qt::PointingHandCursor);
     m_agentsNavButton->setToolTip(QStringLiteral("Agents"));
     setOcticon(m_agentsNavButton, "smart-toy", 16);
-    connect(m_agentsNavButton, &QPushButton::clicked, this,
-            &MainWindow::openAgentsOverview);
+    connect(m_agentsNavButton, &QPushButton::clicked, this, [this] {
+        openAgentsOverview();
+        if (m_repoDetailIndex >= 0 && m_repoDetailStack)
+            return;
+        m_agentsNavButton->setChecked(false);
+        showSection(kNetworkReposSectionIndex);
+        showPageNotice(QStringLiteral("Agents work inside a repository. Clone "
+                                      "or add one to start an agent."),
+                       false);
+    });
 
     m_sessionsNavButton = new ActivityRailButton(QStringLiteral("history"),
                                                  QStringLiteral("Sessions"));
@@ -742,7 +751,8 @@ QWidget *MainWindow::buildBreadcrumb()
     auto *searchClusterRow = new QHBoxLayout(searchCluster);
     searchClusterRow->setContentsMargins(0, 0, 0, 0);
     searchClusterRow->setSpacing(8);
-    searchClusterRow->addWidget(createNavHistoryButtons());
+    QWidget *historyButtons = createNavHistoryButtons();
+    searchClusterRow->addWidget(historyButtons);
     searchClusterRow->addWidget(createGlobalSearchBox());
     chromeRow->addWidget(searchCluster, 0, Qt::AlignCenter);
     chromeRow->addStretch();
@@ -793,6 +803,9 @@ QWidget *MainWindow::buildBreadcrumb()
     chromeRow->addWidget(closeButton);
     installTimersClockSlots(chrome, identityBalanceRow, searchClusterRow,
                             chromeRow, viewModeButton);
+    forkmesh::ui::NextAccess::installTopBar(
+        *this, chromeRow, historyButtons, viewModeButton,
+        {minimizeButton, maximizeButton, closeButton});
     chrome->setMinimumWidth(0);
     chrome->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     auto *chromeScroll = new QScrollArea;
@@ -2839,6 +2852,115 @@ void MainWindow::adoptRailGroupsFromLayout()
         saveRailGroupState();
 }
 
+namespace {
+
+constexpr int kNextRailHeadingHeight = 36;
+constexpr int kNextRailHeadingText = 24;
+constexpr int kNextRailHeadingLeft = 18;
+
+class RailGroupHeadingStyle : public QObject
+{
+public:
+    using QObject::QObject;
+
+    static void fit(RailGroupSeparator *separator)
+    {
+        const bool heading = Theme::isNext() && railExpanded();
+        if (heading && separator->height() != kNextRailHeadingHeight)
+            separator->setFixedHeight(kNextRailHeadingHeight);
+        else if (!heading && separator->height() == kNextRailHeadingHeight)
+            separator->followRailCaptionPreference();
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        auto *separator = dynamic_cast<RailGroupSeparator *>(watched);
+        if (!separator)
+            return false;
+        switch (event->type()) {
+        case QEvent::Paint:
+            if (!Theme::isNext())
+                return false;
+            paint(separator);
+            return true;
+        case QEvent::Resize:
+        case QEvent::Show:
+            fit(separator);
+            return false;
+        case QEvent::DragEnter: {
+            const auto *drag = static_cast<QDragEnterEvent *>(event);
+            const bool dropping = separator->isCustom() && drag->mimeData() &&
+                                  drag->mimeData()->hasFormat(kRailItemMimeType);
+            separator->setProperty("nextDropping", dropping);
+            separator->update();
+            return false;
+        }
+        case QEvent::DragLeave:
+        case QEvent::Drop:
+            separator->setProperty("nextDropping", false);
+            separator->update();
+            return false;
+        default:
+            return false;
+        }
+    }
+
+private:
+    static void paint(RailGroupSeparator *separator)
+    {
+        QPainter painter(separator);
+        const bool dropping = separator->property("nextDropping").toBool();
+        const int width = separator->width();
+        const int height = separator->height();
+        if (!railExpanded()) {
+            const int line = qMin(20, qMax(0, width - 12));
+            painter.fillRect(QRect((width - line) / 2, height / 2, line, 1),
+                             Theme::color(dropping ? Theme::Role::Accent
+                                                   : Theme::Role::Border));
+            return;
+        }
+        QFont font = separator->font();
+        font.setPixelSize(11);
+        font.setWeight(QFont::Medium);
+        font.setCapitalization(QFont::AllUppercase);
+        font.setLetterSpacing(QFont::AbsoluteSpacing, 0.6);
+        painter.setFont(font);
+        painter.setPen(Theme::color(dropping ? Theme::Role::AccentFg
+                                             : Theme::Role::FgSubtle));
+        const QRect text(kNextRailHeadingLeft, height - kNextRailHeadingText,
+                         qMax(0, width - 2 * kNextRailHeadingLeft),
+                         kNextRailHeadingText);
+        painter.drawText(text, Qt::AlignLeft | Qt::AlignVCenter,
+                         QFontMetrics(font).elidedText(separator->name(),
+                                                       Qt::ElideRight,
+                                                       text.width()));
+        if (dropping)
+            painter.fillRect(QRect(text.left(), height - 2, text.width(), 1),
+                             Theme::color(Theme::Role::Accent));
+    }
+};
+
+void polishRailGroupHeading(QObject *owner, RailGroupSeparator *separator)
+{
+    auto *style = dynamic_cast<RailGroupHeadingStyle *>(owner->findChild<QObject *>(
+        QStringLiteral("railGroupHeadingStyle"), Qt::FindDirectChildrenOnly));
+    if (!style) {
+        style = new RailGroupHeadingStyle(owner);
+        style->setObjectName(QStringLiteral("railGroupHeadingStyle"));
+    }
+    if (separator->property("nextHeadingStyled").toBool()) {
+        RailGroupHeadingStyle::fit(separator);
+        return;
+    }
+    separator->setProperty("nextHeadingStyled", true);
+    separator->installEventFilter(style);
+    RailGroupHeadingStyle::fit(separator);
+    separator->update();
+}
+
+}
+
 void MainWindow::refreshRailGroupSeparators()
 {
     if (!m_appNavigationRailLayout)
@@ -2858,6 +2980,7 @@ void MainWindow::refreshRailGroupSeparators()
             settle();
             separator = next;
             any = false;
+            polishRailGroupHeading(this, next);
             continue;
         }
         any = any || !content || widget->isVisibleTo(content);
@@ -6647,6 +6770,12 @@ void MainWindow::ensureSectionBuilt(int index)
     if (!placeholder ||
         !placeholder->property("forkmeshDeferredSection").toBool())
         return;
+    QElapsedTimer buildTimer;
+    buildTimer.start();
+    struct BuildTime {
+        QElapsedTimer &timer;
+        ~BuildTime() { forkmesh::PageSwitchTrace::instance().addBuild(timer.elapsed()); }
+    } buildTime{buildTimer};
 
     QWidget *section = nullptr;
     switch (index) {
@@ -6747,6 +6876,10 @@ void MainWindow::showSection(int index)
         return showNetworkTab(kNetworkNodesTab);
     if (index == 5)
         index = 0;
+    const forkmesh::PageSwitchScope switchTrace(
+        QStringLiteral("section %1").arg(index), [this, index]() -> QWidget * {
+            return m_sectionStack ? m_sectionStack->widget(index) : nullptr;
+        });
     ensureSectionBuilt(index);
     if (index != 1 && m_voiceTestRecording)
         stopMicTest();

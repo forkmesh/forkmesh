@@ -24,6 +24,9 @@ namespace {
 constexpr int kHoverRadius = 14;
 constexpr int kPlateRadius = 16;
 constexpr int kPillHeight = 20;
+constexpr int kFlatPlateRadius = 14;
+constexpr int kFlatGlyph = 22;
+constexpr int kFlatPillHeight = 18;
 constexpr int kPulseMs = 80;
 constexpr int kPulseSteps = 24;
 constexpr int kFlipCooldownMs = 400;
@@ -168,6 +171,12 @@ void HomeBoard::setFilter(const QString &text)
     relayout(width());
     update();
     notifyPages();
+}
+
+void HomeBoard::setStyle(const HomeBoardStyle &style)
+{
+    m_style = style;
+    update();
 }
 
 bool HomeBoard::matches(const HomeGroup &group, const HomeTile &tile) const
@@ -340,6 +349,10 @@ void HomeBoard::paintTile(QPainter &painter, const HomeTile &tile,
                           const QString &group, const QRect &rect,
                           bool hovered) const
 {
+    if (m_style.flat) {
+        paintFlatTile(painter, tile, rect, hovered);
+        return;
+    }
     const QPalette colors = palette();
     const bool dark = darkPalette(colors);
     const QColor accent = dark ? QColor("#2ea043") : QColor("#1f883d");
@@ -448,6 +461,108 @@ void HomeBoard::paintTile(QPainter &painter, const HomeTile &tile,
         painter.setPen(QPen(window, 2));
         painter.setBrush(amber);
         painter.drawEllipse(QRect(plate.left() - 4, plate.bottom() - d + 4, d, d));
+        painter.restore();
+    }
+}
+
+void HomeBoard::paintFlatTile(QPainter &painter, const HomeTile &tile,
+                              const QRect &rect, bool hovered) const
+{
+    const HomeBoardStyle &style = m_style;
+    const QColor window =
+        style.page.isValid() ? style.page : palette().color(QPalette::Window);
+    const QRect plate(rect.left() + (rect.width() - kPlate) / 2, rect.top() + 14,
+                      kPlate, kPlate);
+    const QRectF plateF = QRectF(plate).adjusted(0.5, 0.5, -0.5, -0.5);
+    painter.setPen(QPen(hovered ? style.plateHoverBorder : style.plateBorder, 1));
+    painter.setBrush(style.plate);
+    painter.drawRoundedRect(plateF, kFlatPlateRadius, kFlatPlateRadius);
+
+    if (tile.live) {
+        const double wave =
+            0.5 + 0.5 * std::sin(2.0 * kPi * m_phase / kPulseSteps);
+        QColor ring = style.ring;
+        ring.setAlpha(int(60 + 140 * wave));
+        painter.setPen(QPen(ring, 1.5));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRoundedRect(plateF.adjusted(-3, -3, 3, 3),
+                                kFlatPlateRadius + 3, kFlatPlateRadius + 3);
+    }
+
+    if (m_iconProvider) {
+        const QColor glyph = tile.alert ? style.warning
+                             : hovered  ? style.title
+                                        : style.icon;
+        const QPixmap pixmap = m_iconProvider(tile.icon, glyph, kFlatGlyph);
+        if (!pixmap.isNull())
+            painter.drawPixmap(QRect(plate.center().x() - kFlatGlyph / 2 + 1,
+                                     plate.center().y() - kFlatGlyph / 2 + 1,
+                                     kFlatGlyph, kFlatGlyph),
+                               pixmap);
+    }
+
+    QFont titleFont = font();
+    titleFont.setWeight(QFont::Medium);
+    painter.setFont(titleFont);
+    painter.setPen(style.title);
+    const QRect titleRect(rect.left() + 2, plate.bottom() + 10,
+                          rect.width() - 4, 20);
+    painter.drawText(titleRect, Qt::AlignHCenter | Qt::AlignVCenter,
+                     QFontMetrics(titleFont).elidedText(
+                         tile.title, Qt::ElideRight, titleRect.width()));
+
+    QFont smallFont = resized(font(), -1.5);
+    painter.setFont(smallFont);
+    painter.setPen(tile.urgent ? style.danger
+                   : tile.alert ? style.warning
+                                : style.detail);
+    const QRect detailRect(rect.left() + 2, titleRect.bottom() + 1,
+                           rect.width() - 4, 16);
+    painter.drawText(detailRect, Qt::AlignHCenter | Qt::AlignVCenter,
+                     QFontMetrics(smallFont).elidedText(
+                         tile.detail, Qt::ElideRight, detailRect.width()));
+
+    QFont pillFont = resized(font(), -2.0);
+    pillFont.setWeight(QFont::DemiBold);
+    painter.setFont(pillFont);
+    const QFontMetrics pillMetrics(pillFont);
+    const auto drawPill = [&](const QRectF &pill, const QColor &color,
+                              const QString &label) {
+        painter.setPen(QPen(window, 2));
+        painter.setBrush(color);
+        painter.drawRoundedRect(pill, kFlatPillHeight / 2.0,
+                                kFlatPillHeight / 2.0);
+        painter.setPen(style.onBadge);
+        painter.drawText(pill, Qt::AlignCenter, label);
+    };
+    if (tile.badge > 0) {
+        const QString label = badgeText(tile.badge);
+        const int w =
+            qMax(kFlatPillHeight, pillMetrics.horizontalAdvance(label) + 10);
+        drawPill(QRectF(plate.right() + 8 - w, plate.top() - 7, w,
+                        kFlatPillHeight),
+                 tile.urgent ? style.danger : style.badge, label);
+    }
+    if (tile.pending > 0) {
+        const QString label = badgeText(tile.pending) + QChar(0x2191);
+        const int w =
+            qMax(kFlatPillHeight, pillMetrics.horizontalAdvance(label) + 10);
+        drawPill(QRectF(plate.left() - 8, plate.top() - 7, w, kFlatPillHeight),
+                 style.warning, label);
+    } else if (tile.live) {
+        const int d = 10;
+        painter.setPen(QPen(window, 2));
+        painter.setBrush(style.success);
+        painter.drawEllipse(QRect(plate.left() - 3, plate.top() - 3, d, d));
+    }
+    if (tile.desktopOffline) {
+        const int d = 10;
+        painter.save();
+        painter.setOpacity(
+            0.2 + 0.8 * (0.5 + 0.5 * std::cos(2.0 * kPi * m_phase / kPulseSteps)));
+        painter.setPen(QPen(window, 2));
+        painter.setBrush(style.warning);
+        painter.drawEllipse(QRect(plate.left() - 3, plate.bottom() - d + 3, d, d));
         painter.restore();
     }
 }

@@ -1251,3 +1251,27 @@ def test_branch_ops_try_the_cores_before_the_desktop_queue():
     helper = helper[:helper.index("\nasync def ")]
     assert "agent_branches.core_branch_op(" in helper
     assert '"source": "cores"' in helper
+
+
+def test_only_owners_may_merge_an_agent_branch():
+    assert agent_branches.merge_allowed(
+        {"scope": "owner", "accessBasis": "owner_nodes"})
+    assert not agent_branches.merge_allowed(
+        {"scope": "owner", "accessBasis": "own_session"})
+    assert agent_branches.merge_allowed(
+        {"scope": "organization", "role": "owner"})
+    for role in ("admin", "maintainer", "member", ""):
+        assert not agent_branches.merge_allowed(
+            {"scope": "organization", "role": role})
+
+
+def test_a_member_cannot_merge_an_agent_branch(world):
+    context = {"org": "alice", "orgBi": "org-bi", "repo": "proj",
+               "actor": "bob", "scope": "organization", "role": "member"}
+    row = {"session_id": "s1", "org_bi": "org-bi", "status": world.status,
+           "target_node": world.target}
+    response = run(agent_branches.session_action(
+        None, Request(), context, row, world.record, "merge", {}, False))
+    assert "merge" not in world.record
+    assert response["status"] == 403
+    assert response["payload"]["error"] == "forbidden"
