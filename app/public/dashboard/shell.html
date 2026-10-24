@@ -372,6 +372,39 @@
       .fm-merge-footer[data-tone="good"] .fm-merge-footer-text::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 999px; background: rgb(var(--dashboard-success-rgb)); vertical-align: 1px; }
       .fm-merge-changes { margin: 0; padding-left: 18px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); list-style: disc; }
       .fm-merge-footer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+      .fm-merge-progress { display: grid; gap: 8px; min-width: 0; }
+      .fm-merge-row-body .fm-merge-progress { margin-top: 8px; padding: 10px 12px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 6px; background: rgb(var(--dashboard-subtle-rgb)); }
+      .fm-merge-progress-head { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+      .fm-merge-progress-now { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 13px; font-weight: 600; color: rgb(var(--dashboard-foreground-rgb)); overflow-wrap: anywhere; }
+      .fm-merge-progress[data-state="failed"] .fm-merge-progress-now { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-merge-progress-elapsed { flex: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); font-variant-numeric: tabular-nums; }
+      .fm-merge-spinner { flex: none; width: 14px; height: 14px; margin-top: 2px; border: 2px solid rgb(var(--dashboard-primary-rgb) / 0.25); border-top-color: rgb(var(--dashboard-primary-rgb)); border-radius: 999px; animation: fm-merge-spin 0.8s linear infinite; }
+      .fm-merge-progress[data-state="waiting"] .fm-merge-spinner { border-color: rgb(var(--dashboard-attention-rgb) / 0.25); border-top-color: rgb(var(--dashboard-attention-rgb)); }
+      @keyframes fm-merge-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .fm-merge-spinner { animation: none; border-color: rgb(var(--dashboard-primary-rgb)); background: radial-gradient(circle, rgb(var(--dashboard-primary-rgb)) 0 2px, transparent 3px); }
+        .fm-merge-progress[data-state="waiting"] .fm-merge-spinner { border-color: rgb(var(--dashboard-attention-rgb)); background: radial-gradient(circle, rgb(var(--dashboard-attention-rgb)) 0 2px, transparent 3px); }
+      }
+      .fm-merge-progress-mark { display: flex; flex: none; margin-top: 1px; }
+      .fm-merge-progress-mark svg, .fm-merge-progress-mark i { width: 16px; height: 16px; }
+      .fm-merge-progress-mark[data-state="done"] { color: rgb(var(--dashboard-success-rgb)); }
+      .fm-merge-progress-mark[data-state="failed"] { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-merge-progress-detail, .fm-merge-progress-node, .fm-merge-progress-result { margin: 0; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); overflow-wrap: anywhere; }
+      .fm-merge-progress-result { color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-merge-progress-result a { color: rgb(var(--dashboard-accent-rgb)); text-decoration: none; }
+      .fm-merge-progress-result a:hover { text-decoration: underline; }
+      .fm-merge-progress code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+      .fm-merge-steps { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+      .fm-merge-step { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-merge-step-mark { display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 999px; }
+      .fm-merge-step-mark svg, .fm-merge-step-mark i { width: 10px; height: 10px; stroke-width: 3; }
+      .fm-merge-step[data-state="done"] .fm-merge-step-mark { border-color: rgb(var(--dashboard-success-rgb)); background: rgb(var(--dashboard-success-rgb)); color: rgb(var(--dashboard-background-rgb)); }
+      .fm-merge-step[data-state="current"] { color: rgb(var(--dashboard-foreground-rgb)); font-weight: 600; }
+      .fm-merge-step[data-state="current"] .fm-merge-step-mark { border: 2px solid rgb(var(--dashboard-primary-rgb)); }
+      .fm-merge-step[data-state="failed"] { color: rgb(var(--dashboard-destructive-rgb)); font-weight: 600; }
+      .fm-merge-step[data-state="failed"] .fm-merge-step-mark { border-color: rgb(var(--dashboard-destructive-rgb)); background: rgb(var(--dashboard-destructive-rgb)); color: rgb(var(--dashboard-background-rgb)); }
+      .fm-merge-step-label { min-width: 0; overflow-wrap: anywhere; }
+      .fm-merge-step-time { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 400; color: rgb(var(--dashboard-muted-foreground-rgb)); font-variant-numeric: tabular-nums; }
       .fm-merge-method { display: flex; min-width: 0; flex: 1 1 14rem; max-width: 100%; align-items: center; gap: 8px; font-size: 12px; color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-merge-method > span { white-space: nowrap; }
       .fm-merge-method select { width: 0; min-width: 0; flex: 1 1 auto; max-width: 18rem; height: var(--dashboard-control-height-sm); padding: 0 8px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 12px; }
