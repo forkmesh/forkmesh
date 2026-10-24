@@ -78,7 +78,8 @@ ACTIONS = {"save_plugins": PLUGINS_VIEW, "save_directory": DIRECTORY_VIEW,
            "save_accounts": ACCOUNTS_VIEW, "add_moderator": ACCOUNTS_VIEW,
            "remove_moderator": ACCOUNTS_VIEW, "block": ACCOUNTS_VIEW,
            "unblock": ACCOUNTS_VIEW}
-MODERATION_ACTIONS = ("add_moderator", "remove_moderator", "block", "unblock")
+MODERATION_ACTIONS = ("add_moderator", "remove_moderator", "block", "unblock",
+                      "approve", "reject")
 STATE_PILLS = {
     "listed": ("Listed", "ok"),
     "removed": ("Not listed", ""),
@@ -622,6 +623,17 @@ def _row_button(action, name, admin_query, csrf_field, label):
             csrf_field, _esc(action), _esc(name), _esc(label)))
 
 
+def _queue_button(action, queue_id, admin_query, csrf_field, label, tone):
+    return (
+        '<form method="post" action="%s" style="display:inline">%s'
+        '<input type="hidden" name="action" value="%s">'
+        '<input type="hidden" name="id" value="%d">'
+        '<button type="submit" class="btn btn-sm %s">%s</button>'
+        '</form>' % (
+            _admin_href(admin_query, view=ACCOUNTS_VIEW),  # noqa: F821
+            csrf_field, _esc(action), int(queue_id), tone, _esc(label)))
+
+
 async def render_accounts(env, csrf_field, admin_query):
     shell = _admin_shell  # noqa: F821
     setting = await moderation.policy(env)
@@ -697,6 +709,19 @@ async def render_accounts(env, csrf_field, admin_query):
              _row_button("unblock", row["name"], admin_query, csrf_field,
                          "Unblock"))
          for row in state["blocked"]], "Nobody is blocked on this server.")
+    held = shell.table(
+        "<th>Held post</th><th>Author</th><th>Repository</th><th></th>",
+        ["<tr><td>%s<div class=\"muted\">%s</div></td><td>%s</td>"
+         "<td class=\"muted\">%s</td><td>%s %s</td></tr>" % (
+             _esc(row["title"] or ("comment on #%d" % row["number"])),
+             _esc(row["body"][:280]), _esc(row["author"]), _esc(row["repo"]),
+             _queue_button("approve", row["id"], admin_query, csrf_field,
+                           "Approve", "btn-primary"),
+             _queue_button("reject", row["id"], admin_query, csrf_field,
+                           "Reject", "btn-danger"))
+         for row in state["queue"]],
+        "No posts are waiting. Posts in an organization's repositories wait "
+        "in that organization's queue.")
     block_extra = (
         '<input type="text" name="reason" placeholder="reason (optional, '
         'shown to moderators only)" maxlength="280">%s' % shell.switch(
@@ -720,6 +745,11 @@ async def render_accounts(env, csrf_field, admin_query):
         "post, lock threads and block accounts on every repository here.",
         table=moderators, footer='<div class="card-b">%s</div>' % _name_form(
             "add_moderator", admin_query, csrf_field, "Add moderator")) + \
+        shell.card(
+            title="Held posts",
+            description="First posts on repositories outside an organization "
+            "wait here until an admin or instance moderator approves them.",
+            table=held) + \
         shell.card(
             title="Blocked on the whole server",
             description="A blocked account cannot post, comment, vote or "
@@ -757,14 +787,15 @@ async def moderation_action(env, request, form, account):
     actor = moderation.clean_name(account)
     data = {"action": _first(form, "action"), "name": _first(form, "name"),
             "reason": _first(form, "reason"),
-            "hideContent": _first(form, "hideContent") == "1"}
+            "hideContent": _first(form, "hideContent") == "1",
+            "id": _first(form, "id")}
     scope_bi = await moderation.instance_scope(env)
     refused = await moderation.apply_action(
         env, request, scope_bi, moderation.INSTANCE_SCOPE, actor or "admin",
         True, data)
     if refused is not None:
-        return "moderation_refused", {"name": data["name"][:63]}
-    return "moderation_done", {"name": data["name"][:63]}
+        return "moderation_refused", {"name": data["name"][:63], "id": data["id"][:12]}
+    return "moderation_done", {"name": data["name"][:63], "id": data["id"][:12]}
 
 
 async def admin_handler(env, request, params, csrf_field="", admin_query="",

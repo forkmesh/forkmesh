@@ -38,7 +38,8 @@
     {
      "title": "Settings",
      "items": [
-      "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick."
+      "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick.",
+      "Instances can let people sign up without an email address, using a one-time recovery code, suggest random usernames, and appoint moderators who approve first posts, block accounts and lock threads."
      ]
     },
     {

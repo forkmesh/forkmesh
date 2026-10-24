@@ -105,7 +105,11 @@ async def recover_handler(env, request):
     usable = bool(rec and rec.get("status") == "active"
                   and _account_kind(rec) == "user"  # noqa: F821
                   and has_code(rec))
-    if not usable or not await matches(rec, code):
+    if not usable:
+        await seal({}, code)
+        return await _login_failure_response(  # noqa: F821
+            env, attempt_keys, "invalid_recovery_code")
+    if not await matches(rec, code):
         return await _login_failure_response(  # noqa: F821
             env, attempt_keys, "invalid_recovery_code")
     salt, digest = await hash_password(password)  # noqa: F821

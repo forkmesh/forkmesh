@@ -586,8 +586,8 @@ def test_the_review_queue_flow(world, mod):
         "example"))
     assert approved.status == 200 and len(world.commits) == 1
     assert world.commits[0]["item"]["titleIfNew"] == "Hello"
-    assert world.accounts["newbie"]["moderation_trusted_at"] == world.now
-    assert not gate(mod, "newbie", "comment")[1]["hold"]
+    assert "moderation_trusted_at" not in world.accounts["newbie"]
+    assert gate(mod, "newbie", "comment")[1]["hold"]
     rejected = run(mod.org_handler(None, Request(
         "mod1", "POST", body={"action": "reject", "id": queue[1]["id"]}),
         "example"))
@@ -599,6 +599,26 @@ def test_the_review_queue_flow(world, mod):
     assert ("mod1", "reject", "other") in log
     stored = world.rows("SELECT data FROM moderation_log")
     assert all("ip" not in json.loads(r["data"][4:]) for r in stored)
+
+
+def test_only_admins_and_instance_moderators_trust_an_account_everywhere(world, mod):
+    set_policy(mod, firstPostApproval=True)
+    world.add_org("spam", {"spammer": "owner"}, repos=["node/forum"])
+    world.add_account("spammer", age_days=0)
+    world.add_account("sock", age_days=0)
+    world.add_account("root")
+    world.admins.add("root")
+    refused = run(mod.org_handler(None, Request(
+        "spammer", "POST", body={"action": "trust", "name": "sock"}), "spam"))
+    assert refused.status == 403
+    assert "moderation_trusted_at" not in world.accounts["sock"]
+    assert gate(mod, "sock", "comment")[1]["hold"]
+    _hold(world, mod, "sock")
+    [row] = world.rows("SELECT id FROM moderation_queue")
+    approved = run(mod.org_handler(None, Request(
+        "root", "POST", body={"action": "approve", "id": row["id"]}), "spam"))
+    assert approved.status == 200
+    assert world.accounts["sock"]["moderation_trusted_at"] == world.now
 
 
 def test_a_failed_approval_keeps_the_post_in_the_queue(world, mod):
@@ -1272,7 +1292,9 @@ def test_the_admin_console_manages_instance_moderators_and_blocks(
 
 
 def test_the_console_view_is_in_the_people_menu():
-    import admin_shell
+    spec = importlib.util.spec_from_file_location("admin_shell_src", SRC / "admin_shell.py")
+    admin_shell = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(admin_shell)
     keys = [item[0] for group, items in admin_shell.NAV for item in items
             if group == "People"]
     assert "accounts-moderation" in keys

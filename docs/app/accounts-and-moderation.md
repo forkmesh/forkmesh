@@ -87,8 +87,9 @@ filter, up to six tries.
 
 `require` accepts any name of that form whose words are in the lists: the
 server cannot prove a name was suggested to this browser, but nobody can pick
-a name they use elsewhere. Existing accounts keep their names. The copy on the
-form says why: a random name keeps this account apart from your other
+a name they use elsewhere. Existing accounts keep their names, but a rename
+under `require` must also pick such a name (`random_handle_required`). The
+copy on the form says why: a random name keeps this account apart from your other
 accounts.
 
 ### Recovery codes instead of email
@@ -252,8 +253,13 @@ account that needs approval goes to `moderation_queue` instead of the issue
 inbox (`moderation.hold`), and the author gets `202 {"pending": "review"}`;
 the composer says "Sent to the moderators. It appears once a moderator
 approves it." and the issue page tells the author how many posts wait. An
-account needs approval until a moderator approves one of its posts (or marks
-it trusted), which stamps `moderation_trusted_at` on the account record.
+account needs approval until an admin or instance moderator approves one of
+its posts (or marks it trusted), which stamps `moderation_trusted_at` on the
+account record (`moderation.can_trust`). The stamp is server-wide, so an
+organization's own moderators can approve a post into their repositories but
+do not trust the author anywhere else, and `trust` from an organization scope
+answers 403: anyone can create an organization, and before 2026-10-24 a
+spammer could make one and trust their own accounts everywhere.
 Accounts created before the setting was turned on (`approvalSince`) never
 need it, so switching it on does not hold the existing community. Anonymous
 posts (when `accountRequired` is off) are always held while approval is on.
@@ -268,7 +274,10 @@ gets its number then, the author's name is the one bound when it was written
 before it is replayed (`claimed_at`, released after 5 minutes or on failure),
 so two moderators cannot approve the same post twice, and a refusal (inbox
 full, number unavailable) leaves it waiting. The queue holds at most 2000
-posts per organization and 20 per author (`review_queue_full`).
+posts per organization and 20 per author (`review_queue_full`). Posts on
+repositories outside any organization wait in the instance queue, shown in
+the admin console (People → Sign-up and moderation → Held posts) with
+Approve and Reject.
 
 ### Daily limits
 
@@ -343,6 +352,12 @@ is a separate change.
 
 Refusal codes: `account_required` (401), `account_blocked`, `thread_locked`
 (403), `new_account_limit`, `review_queue_full` (429), each with a `message`.
+
+A rename re-keys the account's moderator roles, blocks, new-account post
+counts and held posts to the new name (`_rename_account_namespace`), so a
+block does not end with a rename and whoever takes the old name inherits no
+role. A recovery attempt for a name without a code still spends one PBKDF2
+hash, so the answer time does not say which names have one.
 
 ## Known limits
 

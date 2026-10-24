@@ -276,6 +276,20 @@ async def can_moderate_org(env, account, org_bi):
         env, account_bi, [org_bi, await instance_scope(env)]))
 
 
+async def can_trust(env, account):
+    account = clean_name(account)
+    if not account:
+        return False
+    try:
+        if await _is_admin(env, account):  # noqa: F821
+            return True
+        account_bi = await blind_index(env, account)  # noqa: F821
+        return bool(await _moderator_row(
+            env, account_bi, [await instance_scope(env)]))
+    except Exception:
+        return False
+
+
 async def can_manage_moderators(env, account, org_bi):
     account = clean_name(account)
     if not account:
@@ -742,6 +756,9 @@ async def apply_action(env, request, scope_bi, scope_text, actor, manage,
     if action in ("add_moderator", "remove_moderator") and not manage:
         return json_response({"error": "forbidden"}, status=403,  # noqa: F821
                              cache_control=PRIVATE_CACHE)
+    if action == "trust" and not await can_trust(env, actor):
+        return json_response({"error": "forbidden"}, status=403,  # noqa: F821
+                             cache_control=PRIVATE_CACHE)
     now = _now()
     detail = {}
     if action == "add_moderator":
@@ -835,7 +852,7 @@ async def _decide(env, request, scope_bi, scope_text, actor, action,
             return response if response is not None else json_response(  # noqa: F821
                 {"error": "approve_failed"}, status=503,
                 cache_control=PRIVATE_CACHE)
-        if account:
+        if account and await can_trust(env, actor):
             await trust_account(env, account)
         detail["number"] = str((payload or {}).get("number") or "")
     await d1_run(  # noqa: F821

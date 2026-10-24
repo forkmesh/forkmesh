@@ -19214,6 +19214,9 @@ async def _rename_account_namespace(env, name_bi, rec, new_name):
     moderation_error = await username_moderation_error(env, new_name)
     if moderation_error:
         return name_bi, rec, moderation_error
+    if ((await _signup_policy(env)).get("handles") == "require"
+            and not _random_handles.is_random_handle(new_name)):
+        return name_bi, rec, "random_handle_required"
 
     new_name_bi, target = await _account_row(env, new_name)
     quarantined = await d1_first(
@@ -19279,6 +19282,16 @@ async def _rename_account_namespace(env, name_bi, rec, new_name):
     await _delete_chat_direct_conversations(env, name_bi)
     await d1_run(
         env, "UPDATE account_presence SET name_bi=? WHERE name_bi=?",
+        new_name_bi, name_bi)
+    for table in ("moderation_roles", "moderation_blocks",
+                  "moderation_post_counts"):
+        await d1_run(
+            env, "UPDATE OR IGNORE " + table + " SET account_bi=? "
+            "WHERE account_bi=?", new_name_bi, name_bi)
+        await d1_run(
+            env, "DELETE FROM " + table + " WHERE account_bi=?", name_bi)
+    await d1_run(
+        env, "UPDATE moderation_queue SET author_bi=? WHERE author_bi=?",
         new_name_bi, name_bi)
     await d1_run(
         env, "UPDATE pending_verifications SET name_bi=? WHERE name_bi=?",
