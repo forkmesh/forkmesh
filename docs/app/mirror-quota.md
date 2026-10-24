@@ -129,8 +129,22 @@ Cron phase `mirror-quota` runs at minute 3 of every five
 The run stops starting checks after 15 seconds: the cron tick has a 35-second
 budget (`CRON_DISPATCH_TIMEOUT_MS`) shared with the other phases, so each
 check gets 10 seconds rather than the 20 a standalone checker would allow.
-At ten checks every five minutes, 24 mirrors keep a 15-minute cadence; more
-are checked less often, oldest first.
+At six checks every five minutes, 18 mirrors keep a 15-minute cadence; more
+are checked less often, oldest first. A new mirror is first due within the
+3-minute jitter, not at once, so a mirror deleted and added again never
+jumps ahead of the ones already waiting, and one account lists at most 3
+mirrors of a repository (`MAX_MIRRORS_PER_ACCOUNT`, added 2026-10-24 after a
+review showed that a few re-added mirrors could take every check slot).
+"Healthy" means only that the mirror advertises the current head commit; a
+server that replays the ref listing without the objects behind it passes.
+
+The body of a check has its own deadline (`BODY_TIMEOUT_SECONDS`, 10 s from
+the first read, checked on every chunk): the fetch timeout covers only the
+headers, and a mirror that sent one byte at a time used to hold the whole
+cron tick. The API and the cron phase both answer as if absent while the
+`mirror-quota` plugin is off (`plugin_on`, from
+`instance_features.enabled_ids`), on forkmesh.com too unless
+`FORKMESH_CORE_PLUGINS` names it.
 
 **One check** is `git ls-remote` without git: `GET <url>/info/refs?service=git-upload-pack`
 through the App's `fetch`, so the host's egress guard applies (public

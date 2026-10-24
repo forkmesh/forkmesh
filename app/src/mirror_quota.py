@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import random
@@ -8,6 +9,7 @@ KINDS = ("forkmesh-instance", "git", "github", "gitlab", "codeberg", "other")
 STATUSES = ("green", "yellow", "red", "unknown")
 MAX_TARGET = 100
 MAX_MIRRORS = 100
+MAX_MIRRORS_PER_ACCOUNT = 3
 MAX_URL_LENGTH = 300
 MAX_LABEL_LENGTH = 60
 MAX_ADDS_PER_DAY = 10
@@ -27,6 +29,7 @@ QUOTA_ROWS_PER_RUN = 4
 CHECKS_PER_RUN = 6
 RUN_BUDGET_MS = 15 * 1000
 PROBE_TIMEOUT_SECONDS = 10
+BODY_TIMEOUT_SECONDS = 10
 SELF_READ_TIMEOUT_SECONDS = 5
 MAX_REFS_BYTES = 4 * 1024 * 1024
 MAX_SOURCE_BYTES = 64 * 1024
@@ -234,28 +237,42 @@ def _chunk(value):
     return bytes(value)
 
 
-async def bounded_body(response, limit):
+async def _cancel(reader):
+    try:
+        cancelled = reader.cancel()
+        if hasattr(cancelled, "__await__"):
+            await cancelled
+    except Exception:
+        pass
+
+
+async def bounded_body(response, limit, seconds=BODY_TIMEOUT_SECONDS):
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
     body = getattr(response, "body", None)
     reader_of = getattr(body, "getReader", None)
     if callable(reader_of):
         reader = reader_of()
         chunks, total = [], 0
         while True:
-            result = await reader.read()
+            try:
+                result = await asyncio.wait_for(
+                    reader.read(), max(0.0, deadline - loop.time()))
+            except asyncio.TimeoutError:
+                await _cancel(reader)
+                raise TimeoutError("body timed out")
             if bool(_field(result, "done", False)):
                 return b"".join(chunks)
             chunk = _chunk(_field(result, "value"))
             total += len(chunk)
             if total > limit:
-                try:
-                    cancelled = reader.cancel()
-                    if hasattr(cancelled, "__await__"):
-                        await cancelled
-                except Exception:
-                    pass
+                await _cancel(reader)
                 return None
             chunks.append(chunk)
-    raw = await response.text()
+    try:
+        raw = await asyncio.wait_for(response.text(), seconds)
+    except asyncio.TimeoutError:
+        raise TimeoutError("body timed out")
     raw = raw.encode("utf-8") if isinstance(raw, str) else _chunk(raw)
     return raw if len(raw) <= limit else None
 
@@ -701,6 +718,13 @@ async def _add(env, request, owner, repo):
     if int((count or {}).get("n") or 0) >= MAX_MIRRORS:
         return _error("too_many_mirrors", 409,
                       "A repository can list up to %d mirrors." % MAX_MIRRORS)
+    mine = await d1_first(
+        env, "SELECT COUNT(*) AS n FROM repo_mirror_registry WHERE repo_bi=? AND added_by_bi=?",
+        ctx["repoBi"], account_bi)
+    if int((mine or {}).get("n") or 0) >= MAX_MIRRORS_PER_ACCOUNT:
+        return _error("too_many_mirrors", 409,
+                      "One account can list up to %d mirrors of a repository."
+                      % MAX_MIRRORS_PER_ACCOUNT)
     if await _recent_adds(env, account_bi, now - MINUTE_MS) >= MAX_ADDS_PER_MINUTE \
             or await _recent_adds(env, account_bi, now - DAY_MS) >= MAX_ADDS_PER_DAY:
         return json_response(
@@ -718,7 +742,8 @@ async def _add(env, request, owner, repo):
         "next_check_at, data) VALUES (?,?,?,?,?,?) ON CONFLICT(repo_bi, mirror_id) "
         "DO NOTHING",
         ctx["repoBi"], parsed["id"], account_bi, now,
-        0 if parsed["checkable"] else now + UNCHECKABLE_RETRY_MS,
+        now + random.randint(0, CHECK_JITTER_MS) if parsed["checkable"]
+        else now + UNCHECKABLE_RETRY_MS,
         await encrypt_row(env, record))
     if quota is None:
         await _ensure_quota(env, ctx, now, target=0)
@@ -758,7 +783,14 @@ async def _remove(env, request, owner, repo):
     return json_response(await _payload(env, ctx, viewer), cache_control=PRIVATE_CACHE)
 
 
+def plugin_on(env):
+    import instance_features
+    return "mirror-quota" in instance_features.enabled_ids(env)
+
+
 async def handler(env, request, owner, repo):
+    if not plugin_on(env):
+        return _error("not_found", 404)
     await ensure_schema(env)
     method = method_name(request)
     if method in ("GET", "HEAD"):
@@ -860,6 +892,8 @@ async def _refresh_quota(env, row, now, deadline, report):
 
 
 async def run_checks(env, now=None):
+    if not plugin_on(env):
+        return {"repos": 0, "checked": 0, "skipped": 0, "off": True}
     await ensure_schema(env)
     now = _now() if now is None else int(now)
     deadline = _now() + RUN_BUDGET_MS

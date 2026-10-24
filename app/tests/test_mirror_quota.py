@@ -80,6 +80,7 @@ class Probes:
 
 @pytest.fixture
 def rt(monkeypatch):
+    monkeypatch.setattr(mq, "plugin_on", lambda env: True)
     d1 = FakeD1()
     clock = SimpleNamespace(now=1_800_000_000_000)
     roles = {"maintainers": {"alice"}, "admins": set()}
@@ -361,7 +362,7 @@ def test_signed_in_users_add_mirrors_with_validation_and_dedupe(rt):
                 ).data["error"] == "duplicate"
     stored = rt.d1.rows("repo_mirror_registry")
     assert len(stored) == 1 and stored[0]["data"].startswith("enc:")
-    assert stored[0]["next_check_at"] == 0
+    assert rt.clock.now <= stored[0]["next_check_at"] <= rt.clock.now + mq.CHECK_JITTER_MS
     quota = rt.d1.rows("repo_mirror_quota")
     assert len(quota) == 1 and quota[0]["target"] == 0
 
@@ -376,6 +377,7 @@ def test_display_only_mirrors_are_listed_but_not_probed(rt):
 
 
 def test_adds_are_rate_limited_and_capped(rt, monkeypatch):
+    monkeypatch.setattr(mq, "MAX_MIRRORS_PER_ACCOUNT", 10)
     for index in range(3):
         assert call("POST", "bob", {"url": "https://m%d.example.org/bbs" % index}).status == 201
     limited = call("POST", "bob", {"url": "https://m9.example.org/bbs"})
@@ -385,6 +387,40 @@ def test_adds_are_rate_limited_and_capped(rt, monkeypatch):
     monkeypatch.setattr(mq, "MAX_MIRRORS", 4)
     full = call("POST", "carol", {"url": "https://m10.example.org/bbs"})
     assert full.status == 409 and full.data["error"] == "too_many_mirrors"
+
+
+def test_one_account_lists_a_few_mirrors_and_new_ones_do_not_jump_the_queue(rt):
+    for index in range(mq.MAX_MIRRORS_PER_ACCOUNT):
+        assert call("POST", "bob", {"url": "https://m%d.example.org/bbs" % index}).status == 201
+        rt.clock.now += 2 * 60 * 1000
+    full = call("POST", "bob", {"url": "https://m9.example.org/bbs"})
+    assert full.status == 409 and full.data["error"] == "too_many_mirrors"
+    assert call("POST", "carol", {"url": "https://m9.example.org/bbs"}).status == 201
+    assert all(row["next_check_at"] > 0 for row in rt.d1.rows("repo_mirror_registry"))
+
+
+def test_the_plugin_off_answers_404_and_checks_nothing(rt, monkeypatch):
+    monkeypatch.setattr(mq, "plugin_on", lambda env: False)
+    assert call("GET", "bob").status == 404
+    assert call("POST", "bob", {"url": "https://m1.example.org/bbs"}).status == 404
+    assert run(mq.run_checks(SimpleNamespace()))["off"] is True
+
+
+def test_a_body_that_trickles_past_the_deadline_is_cut(monkeypatch):
+    class Reader:
+        cancelled = False
+
+        async def read(self):
+            await asyncio.sleep(1)
+            return {"done": False, "value": b"x"}
+
+        def cancel(self):
+            Reader.cancelled = True
+
+    response = SimpleNamespace(body=SimpleNamespace(getReader=lambda: Reader()))
+    with pytest.raises(TimeoutError):
+        run(mq.bounded_body(response, 4096, seconds=0.05))
+    assert Reader.cancelled
 
 
 def test_remove_is_for_the_adder_or_a_maintainer(rt):
