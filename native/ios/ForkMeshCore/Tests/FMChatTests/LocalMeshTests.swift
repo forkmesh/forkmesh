@@ -271,6 +271,27 @@ final class MeshWireTests: XCTestCase {
 
 @MainActor
 final class LocalMeshRoomTests: XCTestCase {
+    func testAMeshHeldForTheRoomStaysOffUntilTheRoomIsOpened() async throws {
+        let mesh = makeMesh(ChatDevice(name: "ada"))
+        var opened = 0
+        mesh.waitsForRoom = true
+        mesh.onFirstRoomOpen = { opened += 1 }
+
+        let early = await mesh.start()
+        await mesh.resume()
+        await mesh.networkChanged()
+        XCTAssertFalse(early)
+        XCTAssertFalse(mesh.running)
+        XCTAssertEqual(opened, 0)
+
+        await mesh.roomOpened()
+        XCTAssertTrue(mesh.running)
+        XCTAssertFalse(mesh.waitsForRoom)
+        await mesh.roomOpened()
+        XCTAssertEqual(opened, 1)
+        await mesh.stop()
+    }
+
     func testTwoDevicesOnThisNetworkTalkWithNoRelay() async throws {
         let ada = makeMesh(ChatDevice(name: "ada"))
         let grace = makeMesh(ChatDevice(name: "grace"))

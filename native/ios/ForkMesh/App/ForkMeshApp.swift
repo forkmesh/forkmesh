@@ -116,6 +116,8 @@ struct AppHomeView: View {
         Group {
             if updateCheck.blocksUse {
                 UpdateRequiredView(requirement: updateCheck.requirement, available: updateCheck.available)
+            } else if let settings, settings.needsPermissionsIntro, auth.hasAppAccess || settings.project.hasInstance == false {
+                PermissionsIntroView(settings: settings)
             } else if let settings, settings.needsStarterPack, auth.hasAppAccess || settings.project.hasInstance == false {
                 StarterPackView(settings: settings)
             } else if auth.hasAppAccess || settings?.project.hasInstance == false {

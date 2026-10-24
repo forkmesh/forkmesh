@@ -268,6 +268,8 @@ public final class LocalMeshService {
     @ObservationIgnored public var addressSweepEnabled = LocalMeshService.defaultAddressSweep
     @ObservationIgnored public var networkEnabled = true
     @ObservationIgnored public var bluetoothEnabled = true
+    @ObservationIgnored public var waitsForRoom = false
+    @ObservationIgnored public var onFirstRoomOpen: (@MainActor () -> Void)?
     @ObservationIgnored var loopbackIsLocalNetwork = false
     @ObservationIgnored var linkReplaceAfterMs = 10_000
     @ObservationIgnored var linkStableMs = 5_000
@@ -449,6 +451,10 @@ public final class LocalMeshService {
     }
 
     public func roomOpened() async {
+        if waitsForRoom {
+            waitsForRoom = false
+            onFirstRoomOpen?()
+        }
         await native.roomOpened()
         if !running {
             _ = await start()
@@ -466,6 +472,7 @@ public final class LocalMeshService {
     @discardableResult
     public func start() async -> Bool {
         if running { return true }
+        if waitsForRoom { return false }
         let store = secureStore
         let node = nodeId
         let nodeKey = identity
