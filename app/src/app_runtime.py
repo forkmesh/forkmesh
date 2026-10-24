@@ -3947,6 +3947,10 @@ class Default:
         if gifs_match:
             return await comment_gifs_handler(
                 self.env, request, gifs_match.group(1))
+        season_match = SEASON_RE.match(url.path)
+        if season_match:
+            return await seasonal_theme_handler(
+                self.env, request, season_match.group(1) or "")
         comment_tips_match = COMMENT_TIPS_RE.match(url.path)
         if comment_tips_match:
             return await comment_tips_handler(
