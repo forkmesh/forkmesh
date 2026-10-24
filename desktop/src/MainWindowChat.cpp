@@ -3199,50 +3199,37 @@ QWidget *MainWindow::buildStatusBar()
                 menu->popup(logTailButton->mapToGlobal(pos));
             });
 
-    auto *copyDiagnosticsButton = new ActivityRailButton(QStringLiteral("copy"),
-                                                         QStringLiteral("Report"));
-    m_debugCopyDiagnosticsButton = copyDiagnosticsButton;
-    copyDiagnosticsButton->setObjectName("topNavButton");
-    copyDiagnosticsButton->setAccessibleName(QStringLiteral("Copy diagnostic report"));
-    copyDiagnosticsButton->setCheckable(false);
-    copyDiagnosticsButton->setCursor(Qt::PointingHandCursor);
-    copyDiagnosticsButton->setToolTip(QString::fromUtf8(
-        "Copy diagnostic report \xE2\x80\x94 errors, stalls, crashes, resource "
-        "findings and fix-it instructions to paste into an agent. Each copy "
-        "compares itself with the last one, so it shows what got fixed and "
-        "what is new. Right-click to send it straight to a new agent"));
-    connect(copyDiagnosticsButton, &QPushButton::clicked, this,
-            &MainWindow::copyDiagnosticsReport);
-    copyDiagnosticsButton->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(copyDiagnosticsButton, &QWidget::customContextMenuRequested, this,
-            [this, copyDiagnosticsButton](const QPoint &pos) {
+    auto *diagnosticsButton = new ActivityRailButton(QStringLiteral("pulse"),
+                                                     QStringLiteral("Diagnose"));
+    m_debugDiagnosticsButton = diagnosticsButton;
+    diagnosticsButton->setObjectName(QStringLiteral("topNavButton"));
+    diagnosticsButton->setAccessibleName(QStringLiteral("Diagnose"));
+    diagnosticsButton->setCheckable(false);
+    diagnosticsButton->setCursor(Qt::PointingHandCursor);
+    diagnosticsButton->setToolTip(QStringLiteral(
+        "Start an agent with the selected model and a diagnostic snapshot to "
+        "fix errors, crashes and stalls and optimize resource usage. Turns red "
+        "when a performance, security or UI issue is detected. Right-click to "
+        "copy the report instead"));
+    connect(diagnosticsButton, &QPushButton::clicked, this,
+            &MainWindow::sendDiagnosticsReportToAgent);
+    diagnosticsButton->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(diagnosticsButton, &QWidget::customContextMenuRequested, this,
+            [this, diagnosticsButton](const QPoint &pos) {
                 auto *menu = new QMenu(this);
                 menu->setAttribute(Qt::WA_DeleteOnClose);
-                menu->addAction(QStringLiteral("Copy diagnostic report"), this,
-                                [this] { copyDiagnosticsReport(); });
                 menu->addAction(QStringLiteral("Send report to a new agent"), this,
                                 [this] { sendDiagnosticsReportToAgent(); });
+                menu->addAction(QStringLiteral("Copy diagnostic report"), this,
+                                [this] { copyDiagnosticsReport(); });
                 menu->addSeparator();
                 menu->addAction(QStringLiteral("Start comparisons over"), this,
                                 [this] { resetDiagnosticsReportBaseline(); });
-                menu->popup(copyDiagnosticsButton->mapToGlobal(pos));
+                menu->popup(diagnosticsButton->mapToGlobal(pos));
             });
 
-    auto *sendDiagnosticsButton = new ActivityRailButton(
-        QStringLiteral("rocket"), QStringLiteral("Send diagnostic"));
-    sendDiagnosticsButton->setObjectName(QStringLiteral("sendDiagnosticsButton"));
-    sendDiagnosticsButton->setAccessibleName(QStringLiteral("Send diagnostic"));
-    sendDiagnosticsButton->setCheckable(false);
-    sendDiagnosticsButton->setCursor(Qt::PointingHandCursor);
-    sendDiagnosticsButton->setToolTip(QStringLiteral(
-        "Start a desktop agent with a diagnostic snapshot to fix errors, "
-        "investigate crashes and stalls, and optimize resource usage"));
-    connect(sendDiagnosticsButton, &QPushButton::clicked, this,
-            &MainWindow::sendDiagnosticsReportToAgent);
-
     for (QPushButton *tool : {m_navRebuildButton, m_navResizeButton,
-                              static_cast<QPushButton *>(copyDiagnosticsButton),
-                              static_cast<QPushButton *>(sendDiagnosticsButton),
+                              static_cast<QPushButton *>(diagnosticsButton),
                               static_cast<QPushButton *>(logTailButton)})
         if (tool)
             debugToolsRow->addWidget(tool, 0, Qt::AlignVCenter);
