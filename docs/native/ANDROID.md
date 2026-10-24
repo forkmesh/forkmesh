@@ -30,6 +30,13 @@ Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
   in-tree runner registered as `coreTest`:
   `./gradlew :core:coreTest -Pfilter=Json` runs classes whose name contains
   `Json`.
+- **Build memory.** `gradle.properties` caps the Gradle daemon at 2 GB heap
+  (768 MB metaspace) and the Kotlin compile daemon at 1.5 GB, and stops an
+  idle Gradle daemon after 15 minutes. With the old 4 GB cap the two daemons
+  held about 6.5 GB after a build; next to the emulator (about 7 GB) and the
+  iOS Simulator that starved a 16 GB Mac until it hit a watchdog panic
+  (2026-10-23). `./gradlew --stop` frees the Gradle daemon at once. Raise the
+  caps only if a build fails with `OutOfMemoryError` or `Metaspace`.
 - `res/xml/network_security_config.xml` refuses cleartext except `10.0.2.2`,
   `localhost` and `127.0.0.1`.
 
