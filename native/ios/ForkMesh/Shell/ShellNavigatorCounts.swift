@@ -177,7 +177,7 @@ final class ShellNavigatorCounts {
         case .activity:
             return Services.get(RelayService.self)?.log.count
         case .tour:
-            return TourPage.pages.count
+            return ShellTour.left
         case .market:
             return HubPackageState.shared.installed.count
         case .vault:
