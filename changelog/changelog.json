@@ -2,20 +2,6 @@
  "schema": 2,
  "entries": [
   {
-   "date": "2026-10-25",
-   "version": "",
-   "title": "",
-   "pitch": "",
-   "sections": [
-    {
-     "title": "Server",
-     "items": [
-      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you."
-     ]
-    }
-   ]
-  },
-  {
    "date": "2026-10-24",
    "version": "",
    "title": "",
@@ -80,7 +66,8 @@
      "title": "Server",
      "items": [
       "Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.",
-      "Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so."
+      "Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so.",
+      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you."
      ]
     }
    ]
