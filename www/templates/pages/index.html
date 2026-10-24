@@ -1190,6 +1190,46 @@
         display: none;
       }
 
+      .hero-install-mode {
+        display: inline-flex;
+        flex: 0 0 auto;
+        padding: 2px;
+        border: 1px solid var(--home-line);
+        border-radius: 999px;
+        background: var(--home-surface-2);
+      }
+
+      .hero-install-mode-option {
+        padding: 0.2rem 0.5rem;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--home-muted);
+        font: inherit;
+        font-size: 0.6875rem;
+        font-weight: 500;
+        line-height: 1;
+        cursor: pointer;
+        transition:
+          background-color 150ms ease,
+          color 150ms ease;
+      }
+
+      .hero-install-mode-option:hover {
+        color: var(--home-ink);
+      }
+
+      .hero-install-mode-option[aria-pressed="true"] {
+        background: var(--home-surface);
+        color: var(--home-ink);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+      }
+
+      .hero-install-mode-option:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
       .hero-agent-copy {
         position: relative;
         display: inline-flex;
@@ -8087,6 +8127,22 @@
               <code class="hero-agent-command"
                 >curl -fsSL https://forkmesh.com/install.sh | bash</code
               >
+              <div class="hero-install-mode" role="group" aria-label="Install type">
+                <button
+                  type="button"
+                  class="hero-install-mode-option"
+                  aria-pressed="true"
+                  data-install-command="curl -fsSL https://forkmesh.com/install.sh | bash"
+                  title="Prebuilt binary, ready in seconds"
+                >Binary</button>
+                <button
+                  type="button"
+                  class="hero-install-mode-option"
+                  aria-pressed="false"
+                  data-install-command="curl -fsSL https://forkmesh.com/install.sh | FORKMESH_FROM_SOURCE=1 bash"
+                  title="Compile from source (installs a C++ and Qt 6 toolchain, takes a few minutes)"
+                >Source</button>
+              </div>
               <button
                 type="button"
                 id="hero-agent-copy"
@@ -9871,6 +9927,20 @@
         const button = document.getElementById("hero-agent-copy");
         if (!button) return;
         const status = document.querySelector("[data-hero-copy-status]");
+        const command = document.querySelector(".hero-agent-command");
+        const modes = document.querySelectorAll(".hero-install-mode-option");
+        modes.forEach((mode) => {
+          mode.addEventListener("click", () => {
+            const text = mode.dataset.installCommand || "";
+            modes.forEach((other) => other.setAttribute("aria-pressed", String(other === mode)));
+            button.dataset.copy = text;
+            if (command) {
+              command.textContent = text;
+              command.scrollLeft = command.scrollWidth;
+            }
+            button.classList.remove("is-copied");
+          });
+        });
         let timer = 0;
         button.addEventListener("click", async () => {
           const text = button.dataset.copy || "";

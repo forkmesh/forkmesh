@@ -564,6 +564,19 @@
                           <p class="text-xs text-muted-foreground">Forgot your current password? <a class="font-semibold text-accent hover:underline" href="/forgot-password">Reset it by email</a> instead.</p>
                         </form>
                       </div>
+                      <div data-account-recovery class="rounded-md border border-border bg-card p-4">
+                        <h3 class="text-base font-semibold text-foreground">Recovery code</h3>
+                        <p class="mt-1 text-sm leading-6 text-muted-foreground">An account without an email address sets a new password with its recovery code on the reset page. Making a new code replaces the old one. It is shown once, so store it in a password manager or on paper.</p>
+                        <form data-credential-scope class="mt-4 grid gap-3">
+                          <label class="grid gap-2 text-sm font-semibold text-foreground">
+                            Current password
+                            <input data-account-recovery-password type="password" autocomplete="current-password" placeholder="Current password" class="h-10 rounded-md border border-border bg-card px-3 text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                          </label>
+                          <button data-account-recovery-new type="button" class="fm-btn w-fit">Make a new recovery code</button>
+                          <code data-account-recovery-code hidden class="w-fit select-all rounded-md border border-border px-3 py-2 font-mono text-sm text-foreground"></code>
+                          <p data-account-recovery-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
+                        </form>
+                      </div>
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                           <h3 class="text-base font-semibold text-foreground">Nodes &amp; devices</h3>

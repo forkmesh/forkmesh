@@ -86,6 +86,19 @@ FEATURES = (
     ("changelog", "Changelog",
      "Platform changelog: what changed in each platform version.",
      ("/changelog",), ()),
+    ("read-surfaces", "Feeds and lite view",
+     "Atom feeds of a repository's issues, threads, labels and activity, a "
+     "no-JavaScript lite view of every thread, and the forum home page.",
+     (), ()),
+    ("mirror-quota", "Mirror goal",
+     "A Mirrors card on each repository page with a goal for independent "
+     "copies, their health, and a page that asks readers to run one.",
+     (), (r"^/api/repo/[^/]+/[^/]+/mirror-quota$",)),
+    ("mirrored-attachments", "No images from the source forge",
+     "Images hosted by the forge a repository mirrors (GitHub user "
+     "attachments) are shown from the instance's copy, or as a link when "
+     "there is none, so readers' browsers never load them from the forge.",
+     (), ()),
     ("forum-list", "Forum-style issue lists",
      "Issue lists open on Newest first, as on GitHub, and each row shows the "
      "thread's last few commenters.",
@@ -120,6 +133,12 @@ INSTANCE_NOTES = {
     "genie": "The spider at the bottom of each page that offers tips.",
     "developer-docs": "Shows the docs/ folder of this instance's read-only "
                       "forkmesh mirror in the dashboard.",
+    "read-surfaces": "Serves /<owner>/<repo>/issues.atom, /lite and the home "
+                     "page for readers on slow or filtered links and feed readers.",
+    "mirror-quota": "Lets maintainers set how many independent mirrors a "
+                    "repository should have and checks them.",
+    "mirrored-attachments": "Never makes readers' browsers fetch images from "
+                            "the forge a repository mirrors.",
     "forum-list": "Lists a repository's issues newest first and shows who "
                   "commented last, like a forum.",
     "issue-ai-prompt": "Offers readers a prompt to paste into a coding agent "
@@ -131,7 +150,7 @@ INSTANCE_NOTES = {
                  "at /changelog. On unless turned off.",
 }
 DEFAULT_ON = frozenset({"changelog", "issue-ai-prompt", "fediverse-ui"})
-OPT_IN = frozenset({"forum-list"})
+OPT_IN = frozenset({"forum-list", "read-surfaces", "mirror-quota", "mirrored-attachments"})
 SETTING_KEY = "plugins"
 CACHE_MS = 30 * 1000
 IDS = tuple(feature[0] for feature in FEATURES)
@@ -358,9 +377,19 @@ def _css_string(value):
     return '"%s"' % value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+OFFSITE_CHROME = (
+    'a[href^="https://forkmesh.com/"]:not([href="https://forkmesh.com/"])',
+    'a[href^="https://www.forkmesh.com/"]', 'a[href^="https://app.forkmesh.com/"]',
+    'a[href^="https://www.patreon.com/"]', "a[data-forkmesh-membership]")
+
+
 def chrome_css(env):
     on = enabled_ids(env)
     rules = [":root{--instance-plugins:ready}"]
+    if branded(env) and _setting(env, "INSTANCE_WHITE_LABEL") == "1":
+        rules.append("%s{display:none !important}" % ",".join(
+            "%s %s:not([data-instance-powered-by] a)" % (CHROME, item)
+            for item in OFFSITE_CHROME))
     for feature in FEATURES:
         if feature[0] in on or not branded(env):
             continue

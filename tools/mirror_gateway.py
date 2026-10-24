@@ -9057,6 +9057,11 @@ class ReplayCache:
             return True
 
 
+def privacy_mode() -> bool:
+    return os.environ.get("FORKMESH_PRIVACY_MODE", "").strip().lower() in (
+        "1", "true", "yes", "on", "strict")
+
+
 def service_counter_agent_class(user_agent: str) -> str:
     """Reduce a request User-Agent to one bounded, non-identifying class.
 
@@ -12304,6 +12309,8 @@ class GatewayApplication:
         delivered: bool,
         user_agent: str = "",
     ) -> bool:
+        if privacy_mode():
+            return False
         if not delivered or not 200 <= int(status) < 300:
             return False
         try:

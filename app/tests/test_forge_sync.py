@@ -924,3 +924,41 @@ def test_pictures_are_checked_and_made_small(monkeypatch):
     monkeypatch.setitem(sys.modules, "PIL", None)
     raw = fs.JPEG_MAGIC + b"\x00" * 64
     assert fs.normalize_avatar(raw) == raw
+
+
+# ---- attachments ------------------------------------------------------------------
+
+
+def test_a_mirror_pass_hands_every_record_to_the_attachment_mirror(tmp_path, sync_key):
+    forge = FakeForge("github")
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(3, body="![shot](https://github.com/user-attachments/assets/"
+                            "46d2bdf0-a7d0-4ae8-bc7b-323f7e73b588)")
+    seen = []
+
+    def mirror(path, records, now):
+        seen.append((path, sorted(records), now))
+        return {"stored": 1}
+
+    result = fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=Clock(forge),
+                       attachments=mirror).run()
+    assert seen == [(checkout, [3], forge.now)]
+    assert result["attachments"] == {"stored": 1}
+    assert forge.writes() == []
+
+
+def test_the_attachment_mirror_is_github_only_and_can_be_switched_off(tmp_path, sync_key, monkeypatch):
+    forge = FakeForge("gitea")
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(1)
+    calls = []
+    fs.Engine(forge.provider(), sync_key, checkout=checkout, clock=Clock(forge),
+              attachments=lambda *args: calls.append(args)).run()
+    assert calls == []
+    parser_args = lambda **kw: type("A", (), dict(  # noqa: E731
+        {"attachments": True, "attachment_files": 5, "attachment_megabytes": 1}, **kw))()
+    assert fs.attachment_mirror(parser_args(attachments=False)) is None
+    monkeypatch.setenv("FORKMESH_FORGE_ATTACHMENTS", "off")
+    assert fs.attachment_mirror(parser_args()) is None
+    monkeypatch.delenv("FORKMESH_FORGE_ATTACHMENTS")
+    assert callable(fs.attachment_mirror(parser_args()))

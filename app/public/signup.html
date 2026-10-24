@@ -363,6 +363,48 @@
       #verify-continue {
         text-decoration: none;
       }
+      .field-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .field-head label {
+        margin-bottom: 8px;
+      }
+      .field-optional {
+        font-weight: 400;
+        opacity: 0.7;
+      }
+      .link-button {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: inherit;
+        font: inherit;
+        font-size: 13px;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      .recovery-code {
+        display: block;
+        margin: 0 0 12px;
+        padding: 14px;
+        border-radius: 0.625rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.05);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 16px;
+        letter-spacing: 0.04em;
+        text-align: center;
+        word-break: break-all;
+        user-select: all;
+      }
+      .recovery-actions {
+        display: flex;
+        justify-content: center;
+        margin: 0 0 16px;
+      }
 
       html.light .auth-card {
         --card-foot-bg: var(--auth-surface);
@@ -409,7 +451,15 @@
         <p class="join-sub">
           Start free with code hosting, live mirrors, and signed collaboration.
         </p>
-        <form id="signup-form" novalidate>
+        <div id="signup-closed" class="hint" hidden>
+          Sign-up is closed on this instance. Ask an administrator if you need
+          an account.
+        </div>
+        <form
+          id="signup-form"
+          novalidate
+          data-signup-policy="__FORKMESH_SIGNUP_POLICY__"
+        >
           <input
             name="email"
             type="email"
@@ -440,8 +490,13 @@
               Ask a ForkMesh administrator for the latest one-time code.
             </div>
           </div>
-          <div class="field">
-            <label for="acct-email">Email</label>
+          <div class="field" id="signup-email-field">
+            <label for="acct-email"
+              >Email
+              <span class="field-optional" data-signup-email-optional hidden
+                >(optional)</span
+              ></label
+            >
             <input
               class="auth-input-sm"
               id="acct-email"
@@ -455,6 +510,10 @@
               placeholder="you@example.com"
             />
             <div class="hint" id="email-hint" aria-live="polite"></div>
+            <div class="hint" data-signup-email-note hidden>
+              Leave it empty to keep no email on file. You get a one-time
+              recovery code instead, so keep it somewhere safe.
+            </div>
           </div>
           <div class="field">
             <label for="acct-pass">Password</label>
@@ -468,7 +527,17 @@
             />
           </div>
           <div class="field">
-            <label for="node-name">Username</label>
+            <div class="field-head">
+              <label for="node-name">Username</label>
+              <button
+                type="button"
+                class="link-button"
+                data-signup-suggest
+                hidden
+              >
+                Suggest a random name
+              </button>
+            </div>
             <input
               class="auth-input-sm"
               id="node-name"
@@ -481,6 +550,10 @@
               maxlength="63"
             />
             <div class="hint" id="name-hint"></div>
+            <div class="hint" data-signup-handle-note hidden>
+              A random name keeps this account apart from your other
+              accounts. Don't reuse a name you use anywhere else.
+            </div>
           </div>
           <label class="terms-check" for="terms-agree" data-instance-legal-consent>
             <input type="checkbox" id="terms-agree" />
@@ -515,6 +588,33 @@
             Create account
           </button>
         </form>
+        </div>
+
+        <div id="recovery-view" hidden>
+          <h1 class="join-title">Save your recovery code</h1>
+          <p class="join-sub">
+            This account has no email, so this code is the only way to set a
+            new password if you forget it. It is shown once. Store it in a
+            password manager or on paper.
+          </p>
+          <code class="recovery-code" id="recovery-code"></code>
+          <div class="recovery-actions">
+            <button type="button" class="link-button" id="recovery-copy">
+              Copy code
+            </button>
+          </div>
+          <label class="terms-check" for="recovery-saved">
+            <input type="checkbox" id="recovery-saved" />
+            <span>I saved my recovery code.</span>
+          </label>
+          <button
+            class="auth-button-primary btn-primary"
+            id="recovery-continue"
+            type="button"
+            disabled
+          >
+            Continue
+          </button>
         </div>
 
         <div id="verify-view" hidden>

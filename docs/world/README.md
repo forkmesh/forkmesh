@@ -341,6 +341,14 @@ fails when a file exceeds its allow-list entry; the allow-list only shrinks.
   attributes, records `WORLD_BOOT.interactive()` and fires
   `forkmesh:world-interactive`. The WebGL fallback, an import failure and a
   10 s watchdog also remove the card.
+- **Compact retry before the fallback.** `prepareWorldRenderer()` opens the
+  WebGL2 context early. If the full plan's context cannot be created (a
+  software GL such as Mesa llvmpipe, or a GPU process that fails
+  `BindToCurrentSequence`), it tries once more with the compact plan
+  (no antialias, default power preference) and, if that one opens, switches
+  the visit to safe mode so `createWorldScene` builds the matching compact
+  renderer. The "could not start the 3D renderer" fallback shows only when
+  both fail. A context whose `WebGLRenderer` throws is released at once.
 - **Sliced construction.** `createWorldScene` yields between slices; frames
   hold up to 32 ms of construction work. Construction-time canvases queue
   their painter; first-view plates paint before the reveal and the rest in
