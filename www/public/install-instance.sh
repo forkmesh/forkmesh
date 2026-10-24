@@ -1564,7 +1564,7 @@ http://$1:$ONION_PORT {
 	handle {
 		reverse_proxy 127.0.0.1:$APP_PORT {
 			header_up Host $1
-			header_up Cf-Connecting-Ip {remote_host}
+			header_up Cf-Connecting-Ip 100.64.0.1
 			header_up -Cf-Ipcountry
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Host

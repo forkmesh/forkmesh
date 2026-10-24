@@ -231,6 +231,7 @@ class CheckoutSource:
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
         self.commit = _git_text(["git", "-C", str(self.root), "rev-parse", "HEAD"])
+        self.tracked: set[str] | None = None
 
     def list(self, prefix: str) -> list[str]:
         base = self.root / prefix
@@ -244,6 +245,24 @@ class CheckoutSource:
 
     def exists(self, rel: str) -> bool:
         return (self.root / rel).is_file()
+
+    def published(self, rel: str) -> bool:
+        if self.tracked is None:
+            listing = subprocess.run(["git", "-C", str(self.root), "ls-files", "-s", "-z"],
+                                     capture_output=True)
+            self.tracked = set()
+            for entry in listing.stdout.split(b"\0") if listing.returncode == 0 else ():
+                meta, _, path = entry.partition(b"\t")
+                if meta.split()[:1] in ([b"100644"], [b"100755"]):
+                    self.tracked.add(path.decode("utf-8", "surrogateescape"))
+        target = self.root / rel
+        if rel not in self.tracked or target.is_symlink() or not target.is_file():
+            return False
+        try:
+            target.resolve().relative_to(self.root.resolve())
+        except ValueError:
+            return False
+        return True
 
     def read(self, rel: str) -> bytes:
         return (self.root / rel).read_bytes()
@@ -265,14 +284,17 @@ class GitSource:
         listing = subprocess.run(self.git + ["ls-tree", "-r", "-z", "--long", "--full-tree", commit],
                                  capture_output=True, check=True).stdout
         self.blobs: dict[str, tuple[str, int]] = {}
+        self.links: set[str] = set()
         for entry in listing.split(b"\0"):
             if not entry:
                 continue
             meta, _, path = entry.partition(b"\t")
             fields = meta.split()
             if len(fields) == 4 and fields[1] == b"blob":
-                self.blobs[path.decode("utf-8", "surrogateescape")] = (
-                    fields[2].decode(), int(fields[3]))
+                name = path.decode("utf-8", "surrogateescape")
+                self.blobs[name] = (fields[2].decode(), int(fields[3]))
+                if fields[0] == b"120000":
+                    self.links.add(name)
         self.proc: subprocess.Popen | None = None
 
     def list(self, prefix: str) -> list[str]:
@@ -281,6 +303,9 @@ class GitSource:
 
     def exists(self, rel: str) -> bool:
         return rel in self.blobs
+
+    def published(self, rel: str) -> bool:
+        return rel in self.blobs and rel not in self.links
 
     def size(self, rel: str) -> int:
         return self.blobs[rel][1]
@@ -585,7 +610,7 @@ class Exporter:
         if not parts or ".." in parts or parts[0] == ".git":
             return ""
         rel = "/".join(parts)
-        if not self.source.exists(rel) or self.source.size(rel) > self.max_attachment:
+        if not self.source.published(rel) or self.source.size(rel) > self.max_attachment:
             return ""
         self.copies["repo/" + rel] = rel
         return prefix + "repo/" + "/".join(urllib.parse.quote(part) for part in parts)

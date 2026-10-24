@@ -102,9 +102,17 @@ def test_fold_applies_edits_deletes_labels_and_status(tmp_path):
     assert by[2]["status"] == "closed"
 
 
+def committed_forum(root):
+    make_forum(root)
+    git("init", "-q", str(root))
+    git("add", "-A", cwd=root)
+    git("commit", "-qm", "forum", cwd=root)
+    return root
+
+
 def test_the_site_is_static_relative_and_never_embeds_github_images(tmp_path):
     out = tmp_path / "site"
-    result = export(make_forum(tmp_path / "forum"), out)
+    result = export(committed_forum(tmp_path / "forum"), out)
     assert result["threads"] == 2 and result["comments"] == 2
     files = tree_bytes(out)
     for name in ("index.html", "all.html", "issues/1.html", "issues/2.html", "labels/iran.html",
@@ -248,6 +256,31 @@ def test_publish_commits_on_top_and_never_rewrites(tmp_path):
     assert ".nojekyll" in names and "issues/1.html" in names
 
 
+def test_publish_refuses_a_branch_it_did_not_make_and_keeps_the_pages_domain(tmp_path):
+    site = tmp_path / "site"
+    export(make_forum(tmp_path / "forum"), site)
+    remote = tmp_path / "code.git"
+    work = tmp_path / "work"
+    git("init", "-q", "-b", "main", str(work))
+    (work / "app.py").write_text("print(1)\n")
+    (work / "CNAME").write_text("forum.example.org\n")
+    git("add", "-A", cwd=work)
+    git("commit", "-qm", "code", cwd=work)
+    git("clone", "-q", "--bare", str(work), str(remote))
+    before = git("--git-dir", str(remote), "rev-parse", "main")
+    spec = ["--site", str(site), "--target", "pages=%s#main" % remote, "--cache", str(tmp_path / "cache")]
+    assert fsp.main(spec) == 1
+    assert git("--git-dir", str(remote), "rev-parse", "main") == before
+    assert fsp.main(spec + ["--init"]) == 0
+    names = git("--git-dir", str(remote), "ls-tree", "-r", "--name-only", "main").split("\n")
+    assert "CNAME" in names and "app.py" not in names and "manifest.json" in names
+    assert fsp.main(spec) == 0
+    with pytest.raises(fsp.PublishError):
+        fsp.publish_target(site, {"name": "x", "url": "--upload-pack=touch /tmp/x", "branch": "b"},
+                           tmp_path / "cache", dry_run=True, message="m", author=("a", "a@b"),
+                           environ={})
+
+
 def test_publish_credentials_stay_out_of_the_command_line(tmp_path):
     token_file = tmp_path / "token"
     token_file.write_text("ghp_secretvalue\n")
@@ -268,3 +301,26 @@ def test_publish_credentials_stay_out_of_the_command_line(tmp_path):
         fsp.credentials({"name": "x", "url": "git@github.com:x/y.git", "tokenFile": str(token_file)}, {})
     source = (ROOT / "tools" / "forum_static_publish.py").read_text()
     assert "--force" not in source and "+refs/heads/%s:%s" in source
+
+
+def test_a_post_can_only_pull_committed_files_into_the_site(tmp_path):
+    forum = committed_forum(tmp_path / "forum")
+    secret = tmp_path / "outside.txt"
+    secret.write_text("HOSTSECRET\n", encoding="utf-8")
+    (forum / "hostlink").symlink_to(secret)
+    (forum / "tracked-link").symlink_to(secret)
+    git("add", "tracked-link", cwd=forum)
+    git("commit", "-qm", "link", cwd=forum)
+    write_issue(forum, 4, [event("open", "o4", T0 + 30_000, title="Leak",
+                                 body="![a](.env) ![b](hostlink) ![c](tracked-link) ![d](logo.png)")])
+    git("add", "-A", cwd=forum)
+    git("commit", "-qm", "issue", cwd=forum)
+    (forum / ".env").write_text("TOPSECRET\n", encoding="utf-8")
+    for ref in ("", "HEAD"):
+        out = tmp_path / ("site" + ref)
+        export(forum, out, ref=ref)
+        files = tree_bytes(out)
+        assert "repo/logo.png" in files
+        for name in ("repo/.env", "repo/hostlink", "repo/tracked-link"):
+            assert name not in files, (ref, name)
+        assert not any(b"SECRET" in data for data in files.values())
