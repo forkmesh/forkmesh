@@ -1219,6 +1219,7 @@ _URL_EXPORT_NAMES = (
     "REPO_VIEWS_RE", "REPO_ISSUE_VIEW_RE", "REPO_ISSUE_VIEWS_RE",
     "REPO_FORK_COUNTS_RE", "REPO_TIPS_RE", "CUSTOM_REACTIONS_RE",
     "CUSTOM_REACTION_ASSET_RE", "COMMENT_GIFS_RE", "COMMENT_TIPS_RE",
+    "SEASON_RE",
     "AI_REVIEW_RE",
     "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
@@ -16740,6 +16741,8 @@ custom_reactions_asset_handler = _custom_reactions.export("asset_handler")
 custom_reactions_catalog = _custom_reactions.export("catalog")
 _comment_gifs = _LazyModule("comment_gifs")
 comment_gifs_handler = _comment_gifs.export("handler")
+_seasonal_theme = _LazyModule("seasonal_theme")
+seasonal_theme_handler = _seasonal_theme.export("handler")
 _comment_tips = _LazyModule("comment_tips")
 comment_tips_handler = _comment_tips.export("handler")
 comment_tips_intent_handler = _comment_tips.export("intent_handler")

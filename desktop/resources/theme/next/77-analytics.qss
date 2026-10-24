@@ -1,0 +1,157 @@
+#analyticsSection QLabel#mutedLabel[analyticsRole="summary"] {
+    color: @fgMuted; font-size: 12px; background: transparent;
+}
+#analyticsSection QLabel#errorLabel[analyticsRole="summary"] {
+    color: @danger; font-size: 12px; background: transparent;
+}
+#analyticsSection QFrame#analyticsHeaderDivider {
+    background-color: @border; border: none; min-height: 1px; max-height: 1px;
+}
+
+#analyticsSection QPushButton#ghostButton[analyticsRole="tab"] {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0px; color: @fgMuted; padding: 0px 10px; margin: 0px;
+    min-height: 34px; max-height: 34px; font-size: 13px; font-weight: 500;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="tab"]:hover {
+    background: transparent; color: @fg;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="tab"]:checked {
+    background: transparent; color: @fg; border-bottom: 2px solid @accentFg;
+}
+
+#analyticsSection QComboBox#analyticsOrganization,
+#analyticsSection QComboBox#analyticsProject {
+    background-color: @surface; border: 1px solid @border; border-radius: 8px;
+    color: @fg; min-height: 30px; max-height: 30px; font-size: 13px;
+}
+#analyticsSection QComboBox#analyticsOrganization:hover,
+#analyticsSection QComboBox#analyticsProject:hover {
+    border-color: @borderStrong;
+}
+#analyticsSection QComboBox#analyticsOrganization:on,
+#analyticsSection QComboBox#analyticsProject:on {
+    border-color: @accent;
+}
+
+#analyticsSection QFrame#analyticsRangeSegment,
+#analyticsSection QFrame#analyticsChartKind {
+    background-color: @surface; border: none; border-radius: 8px;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="segment"] {
+    background: transparent; border: none; border-radius: 6px; color: @fgMuted;
+    padding: 0px 8px; min-height: 28px; max-height: 28px; font-size: 13px; font-weight: 500;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="segment"]:hover {
+    background: transparent; color: @fg;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="segment"]:checked {
+    background-color: @surfaceActive; color: @fg;
+}
+#analyticsSection QToolButton[analyticsRole="chartKind"] {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+}
+#analyticsSection QToolButton[analyticsRole="chartKind"]:hover {
+    background-color: @surfaceRaised;
+}
+#analyticsSection QToolButton[analyticsRole="chartKind"]:checked {
+    background-color: @surfaceActive;
+}
+
+#analyticsSection QPushButton#ghostButton[analyticsRole="icon"] {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+    min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="icon"]:hover {
+    background-color: @surfaceRaised;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="icon"]:pressed {
+    background-color: @surfaceActive;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="action"] {
+    background: transparent; border: 1px solid @borderStrong; border-radius: 8px;
+    color: @fg; padding: 0px 10px; min-height: 28px; max-height: 28px;
+    font-size: 12px; font-weight: 500;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="action"]:hover {
+    background-color: @surfaceRaised;
+}
+#analyticsSection QPushButton#ghostButton[analyticsRole="action"]:pressed {
+    background-color: @surfaceActive;
+}
+
+#analyticsSection QFrame#analyticsStatCard {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#analyticsSection QFrame#analyticsStatCard[analyticsClickable="true"]:hover {
+    background-color: @surfaceRaised;
+}
+#analyticsSection QFrame#analyticsStatCard[analyticsSelected="true"],
+#analyticsSection QFrame#analyticsStatCard[analyticsSelected="true"]:hover {
+    background-color: @accentSubtle; border-color: @accent;
+}
+#analyticsSection QFrame#analyticsStatCard:focus { border-color: @accent; }
+#analyticsSection QFrame#analyticsStatCard QLabel { background: transparent; border: none; }
+#analyticsSection QFrame#analyticsStatCard QLabel[analyticsRole="statLabel"] {
+    color: @fgMuted; font-size: 12px;
+}
+#analyticsSection QFrame#analyticsStatCard[analyticsSelected="true"] QLabel[analyticsRole="statLabel"] {
+    color: @accentFg;
+}
+#analyticsSection QFrame#analyticsStatCard QLabel#analyticsKpi {
+    color: @fg; font-size: 22px; font-weight: 600;
+}
+#analyticsSection QFrame#analyticsStatCard QLabel#analyticsKpiChange {
+    color: @fgMuted; font-size: 12px; font-weight: 500;
+}
+#analyticsSection QFrame#analyticsStatCard QLabel#analyticsKpiChange[analyticsTone="up"] { color: @success; }
+#analyticsSection QFrame#analyticsStatCard QLabel#analyticsKpiChange[analyticsTone="down"] { color: @danger; }
+#analyticsSection QFrame#analyticsStatCard QLabel#analyticsKpiHint {
+    color: @fgSubtle; font-size: 12px;
+}
+
+#analyticsSection QFrame[analyticsRole="card"],
+#analyticsSection QWidget#analyticsRecordingsPanel[analyticsRole="card"] {
+    background-color: @surface; border: 1px solid @border; border-radius: 12px;
+}
+#analyticsSection QWidget[analyticsRole="cardHead"] {
+    background: transparent; border: none; border-bottom: 1px solid @border;
+}
+#analyticsSection QLabel[analyticsRole="cardTitle"] {
+    color: @fg; font-size: 13px; font-weight: 500; background: transparent; border: none;
+}
+#analyticsSection QLabel[analyticsRole="cardHint"] {
+    color: @fgMuted; font-size: 12px; background: transparent; border: none;
+}
+#analyticsSection QLabel[analyticsRole="cardColumn"] {
+    color: @fgSubtle; font-size: 10px; background: transparent; border: none;
+}
+#analyticsSection QWidget#analyticsRecordingsPanel QLabel#mutedLabel {
+    color: @fgMuted; font-size: 12px; background: transparent; border: none;
+}
+#analyticsSection QLabel#mutedLabel[analyticsRole="key"] {
+    background-color: @bg; border: 1px solid @border; border-radius: 8px;
+    color: @fgMuted; padding: 7px 12px; font-size: 11px;
+}
+
+#analyticsSection QTableWidget[analyticsRole="ranked"] {
+    background: transparent; alternate-background-color: transparent; border: none;
+}
+#analyticsSection QTableWidget[analyticsRole="grid"] {
+    background: transparent; alternate-background-color: transparent; border: none;
+    border-radius: 0px; outline: none;
+}
+#analyticsSection QTableWidget[analyticsRole="grid"]::item {
+    padding: 0px 12px; border: none; border-bottom: 1px solid @border; color: @fgSecondary;
+}
+#analyticsSection QTableWidget[analyticsRole="grid"]::item:hover {
+    background-color: @surfaceRaised; color: @fg;
+}
+#analyticsSection QTableWidget[analyticsRole="grid"]::item:selected,
+#analyticsSection QTableWidget[analyticsRole="grid"]::item:selected:hover {
+    background-color: @accentSubtle; color: @fg;
+}
+#analyticsSection QTableWidget[analyticsRole="grid"] QHeaderView::section {
+    background-color: transparent; color: @fgSubtle; border: none;
+    border-bottom: 1px solid @border; padding: 8px 12px; font-size: 12px; font-weight: 400;
+}

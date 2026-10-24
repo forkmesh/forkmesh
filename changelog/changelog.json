@@ -11,7 +11,14 @@
      "title": "Desktop",
      "items": [
       "In the desktop's live database Visualizer, clicking a table opens that table in the Database tab.",
+      "In the new desktop design, Control, Network, Repos, Git, Files, Memory, Tasks, Chat, Settings, Users, Pings, Ledger, Analytics, Market, Stats, Health, Calendar, Specials and Calories are restyled to match, with a board view for tasks, a node detail panel, a places column in Files, repository cards, a Market grid, wallet QR codes in Ledger, a relay switcher in the sidebar and a table in Settings for choosing where each app shows up.",
       "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it."
+     ]
+    },
+    {
+     "title": "Settings",
+     "items": [
+      "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick."
      ]
     }
    ]

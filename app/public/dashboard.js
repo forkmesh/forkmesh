@@ -565,6 +565,10 @@
     return theme === "light" ? "light" : "dark";
   }
 
+  function seasonActive(name) {
+    return document.documentElement.dataset.season === name;
+  }
+
   function readDashboardTheme() {
     try {
       const cookieTheme = document.cookie
@@ -14148,13 +14152,17 @@
     `;
   }
 
+  const HALLOWEEN_PUMPKIN = '<svg viewBox="0 0 64 60" width="40" height="38" aria-hidden="true" class="shrink-0"><path d="M30 12C29 7 31 3 36 1l1.5 2.5C34 5 33 8 34 12z" fill="#4d7c2a"/><ellipse cx="18" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="46" cy="35" rx="15" ry="20" fill="#d4590f"/><ellipse cx="32" cy="35" rx="15" ry="22" fill="#fa7a18"/><path d="M20 28l6-4 1 7zM44 28l-6-4-1 7z" fill="#3a1606"/><path d="M18 40q14 12 28 0l-4 1-2 4-4-3-4 5-4-5-4 3-2-4z" fill="#3a1606"/><path d="M21 29.5l4-2.5.5 3.5zM43 29.5l-4-2.5-.5 3.5z" fill="#fddf68"/></svg>';
+
   function renderHomeFeed() {
     const container = $("[data-home-feed]");
     if (!container) return;
     const cards = homeFeedItems().map(homeFeedCard);
     container.innerHTML = cards.length
       ? cards.join("")
-      : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>Nothing from others yet. It's quiet in here. Too quiet.</span></div>`
+        : '<div class="rounded-md border border-border bg-background px-3 py-3 text-sm text-muted-foreground">Nothing from others yet. Mentions, pull requests and pushes by other people show up here.</div>';
     window.lucide?.createIcons();
   }
 
@@ -14354,7 +14362,9 @@
     }
     container.innerHTML = sessions.length
       ? sessions.slice(0, HOME_AGENT_LIMIT).map((session) => homeAgentRow(session, data.account)).join("")
-      : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
+      : seasonActive("halloween")
+        ? `<div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-4 text-sm text-muted-foreground">${HALLOWEEN_PUMPKIN}<span>No agents yet. Type a prompt above and press new to summon one.</span></div>`
+        : '<div class="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">No agents yet. Type a prompt above and press new to start one.</div>';
   }
 
   async function loadHomeAgentSessions() {
@@ -36440,6 +36450,8 @@ Your reply
   const USER_ACTIVITY_CARD_SYNC_MS = 60 * 1000;
   const USER_ACTIVITY_LIGHT = ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"];
   const USER_ACTIVITY_DARK = ["#2d333b", "#0e4429", "#006d32", "#26a641", "#39d353"];
+  const USER_ACTIVITY_HALLOWEEN_LIGHT = ["#ebedf0", "#ffee4a", "#ffc501", "#fe9600", "#03001c"];
+  const USER_ACTIVITY_HALLOWEEN_DARK = ["#2d333b", "#631c03", "#bd561d", "#fa7a18", "#fddf68"];
   const userActivity = {
     started: false,
     lastWheelMs: 0,
@@ -36666,7 +36678,10 @@ Your reply
     const kinds = userActivityOtherKinds();
     const summary = userActivitySummary(counts);
     const nowSlot = userActivitySlot();
-    const ramp = readDashboardTheme() === "light" ? USER_ACTIVITY_LIGHT : USER_ACTIVITY_DARK;
+    const light = readDashboardTheme() === "light";
+    const ramp = seasonActive("halloween")
+      ? (light ? USER_ACTIVITY_HALLOWEEN_LIGHT : USER_ACTIVITY_HALLOWEEN_DARK)
+      : (light ? USER_ACTIVITY_LIGHT : USER_ACTIVITY_DARK);
     const cells = [];
     for (let row = 0; row < USER_ACTIVITY_ROWS; row += 1) {
       for (let hour = 0; hour < 24; hour += 1) {
@@ -56334,6 +56349,106 @@ Your reply
       }
     });
   }
+  const seasonUi = { loaded: false, busy: false, data: null };
+
+  async function seasonSettingsPost(body) {
+    const response = await fetch("/api/season/settings", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...body, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
+    return data;
+  }
+
+  function seasonDefaultUntil() {
+    const now = new Date();
+    const end = new Date(now.getFullYear(), 10, 1, 0, 0, 0);
+    return end.getTime() > Date.now() + 60 * 60 * 1000 ? end.getTime() : Date.now() + 24 * 60 * 60 * 1000;
+  }
+
+  function seasonInputValue(ms) {
+    const date = new Date(ms);
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function seasonStatusText(data) {
+    if (data?.season !== "halloween") return "Off. Turn it on to dress up ForkMesh for everyone.";
+    const until = new Date(Number(data.until)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    return `On for everyone until ${until}${data.by ? `, turned on by @${data.by}` : ""}.`;
+  }
+
+  function seasonErrorText(error) {
+    return ({
+      forbidden: "Only platform administrators and moderators can change this.",
+      unauthorized: "Sign in again to change this.",
+      invalid_until: "Pick a time between 5 minutes and 60 days from now.",
+    })[String(error?.message || "")] || "That didn't save. Try again.";
+  }
+
+  function renderSeasonSetting(card, data) {
+    const on = data?.season === "halloween";
+    card.querySelector("[data-season-toggle]").setAttribute("aria-checked", on ? "true" : "false");
+    card.querySelector("[data-season-until]").value = seasonInputValue(on ? Number(data.until) : seasonDefaultUntil());
+    card.querySelector("[data-season-status]").textContent = seasonStatusText(data);
+  }
+
+  async function saveSeasonSetting(card, season) {
+    if (seasonUi.busy) return;
+    const status = card.querySelector("[data-season-status]");
+    const until = new Date(card.querySelector("[data-season-until]").value).getTime();
+    if (season && !Number.isFinite(until)) {
+      status.textContent = seasonErrorText(new Error("invalid_until"));
+      return;
+    }
+    seasonUi.busy = true;
+    status.textContent = "Saving…";
+    try {
+      const data = await seasonSettingsPost({ season, until: season ? until : 0 });
+      seasonUi.data = data;
+      renderSeasonSetting(card, data);
+      window.ForkMeshSeason?.set({ season: data.season || "", until: Number(data.until) || 0 });
+    } catch (error) {
+      renderSeasonSetting(card, seasonUi.data);
+      status.textContent = seasonErrorText(error);
+    } finally {
+      seasonUi.busy = false;
+    }
+  }
+
+  async function initSeasonSettings() {
+    const card = $("[data-season-setting]");
+    if (!card || seasonUi.loaded || !state.session?.sessionToken) return;
+    seasonUi.loaded = true;
+    let data = null;
+    try {
+      data = await fetchJson("/api/season/settings", { fresh: true });
+    } catch (_) {
+      return;
+    }
+    if (data?.ok !== true) return;
+    seasonUi.data = data;
+    card.hidden = false;
+    renderSeasonSetting(card, data);
+    window.lucide?.createIcons();
+    card.querySelector("[data-season-toggle]").addEventListener("click", () => {
+      void saveSeasonSetting(card, seasonUi.data?.season === "halloween" ? "" : "halloween");
+    });
+    card.querySelector("[data-season-until]").addEventListener("change", () => {
+      if (seasonUi.data?.season === "halloween") void saveSeasonSetting(card, "halloween");
+    });
+  }
+
+  function watchSeason() {
+    window.addEventListener("forkmesh:season", () => {
+      if ($("[data-home-feed]")) renderHomeFeed();
+      if ($("[data-home-agents]")) renderHomeAgentSessions();
+      $$("[data-user-activity-card]").forEach((card) => { card.outerHTML = renderUserActivityCard(); });
+      window.lucide?.createIcons();
+    });
+  }
   // initTasksPage lives in 09-tasks.js (a per-page chunk).
   function initTasksPage(...args) {
     return loadDashboardChunk("tasks").then((chunk) => chunk.initTasksPage(...args));
@@ -56797,6 +56912,8 @@ Your reply
       initCommentTips();
       void initReactionSettings();
       void initAiReviewSettings();
+      void initSeasonSettings();
+      watchSeason();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

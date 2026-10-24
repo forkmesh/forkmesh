@@ -61,6 +61,7 @@ FRAGMENTS = (
     "09-referrals.js",
     "09-repo-activity.js",
     "09-runners.js",
+    "09-season.js",
     "09-tasks.js",
     "09-update-notice.js",
     "09-workflows.js",
