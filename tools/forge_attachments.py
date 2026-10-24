@@ -21,6 +21,7 @@ ISSUES_REL = DIR_REL + "/issues"
 MAX_BYTES = 25 * 1024 * 1024
 PASS_BYTES = 256 * 1024 * 1024
 PASS_FILES = 300
+TOTAL_BYTES = 1024 * 1024 * 1024
 PASS_SECONDS = 300
 TIMEOUT_SECONDS = 30
 PACE_SECONDS = 0.5
@@ -314,8 +315,18 @@ def _due(entry: dict[str, Any], now: int) -> bool:
         return True
 
 
+def _size(entry: Any) -> int:
+    try:
+        return max(0, int(entry.get("bytes") or 0)) if isinstance(entry, dict) else 0
+    except (TypeError, ValueError):
+        return 0
+
+
 def _unavailable(previous: Any, reason: str, now: int) -> dict[str, Any]:
-    tries = int(previous.get("tries") or 0) + 1 if isinstance(previous, dict) else 1
+    try:
+        tries = int(previous.get("tries") or 0) + 1 if isinstance(previous, dict) else 1
+    except (TypeError, ValueError):
+        tries = 1
     permanent = reason in ("too-large", "type", "no-source")
     wait = RETRY_MAX_MS if permanent else min(RETRY_MAX_MS, RETRY_MS * 2 ** min(tries - 1, 5))
     return {"reason": reason, "tries": tries, "nextTry": now + wait}
@@ -326,8 +337,11 @@ class Pass:
                  sleep: Callable[[float], None] = time.sleep,
                  monotonic: Callable[[], float] = time.monotonic,
                  max_files: int = PASS_FILES, max_bytes: int = PASS_BYTES,
-                 max_seconds: float = PASS_SECONDS, pace: float = PACE_SECONDS) -> None:
+                 max_seconds: float = PASS_SECONDS, pace: float = PACE_SECONDS,
+                 max_total: int = TOTAL_BYTES) -> None:
         self.checkout = Path(checkout)
+        self.max_total = max_total
+        self.stored_total = 0
         self.fetcher = fetcher
         self.sleep = sleep
         self.monotonic = monotonic
@@ -346,6 +360,8 @@ class Pass:
             return "files"
         if self.spent >= self.max_bytes:
             return "bytes"
+        if self.stored_total >= self.max_total:
+            return "total"
         if self.monotonic() - self.started >= self.max_seconds:
             return "time"
         return ""
@@ -390,6 +406,7 @@ class Pass:
         self.started = self.monotonic()
         index = load_index(self.checkout)
         files, unavailable = index["files"], index["unavailable"]
+        self.stored_total = sum(_size(entry) for entry in files.values())
         by_issue = {int(number): record_urls(record) for number, record in records.items()}
         wanted: list[str] = []
         for number in sorted(by_issue, reverse=True):
@@ -406,6 +423,7 @@ class Pass:
             entry, reason = self.download(url, now)
             if entry is not None:
                 files[url] = entry
+                self.stored_total += _size(entry)
                 unavailable.pop(url, None)
                 self.summary["stored"] += 1
                 self.summary["bytes"] += entry["bytes"]

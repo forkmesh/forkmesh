@@ -207,8 +207,6 @@ class StaticContext:
         self.issue_tasks = None
         self.figures = False
         self.origin = ""
-        # The mirrored copies (.forkmesh/attachments): the renderer points at
-        # them through raw_url, and repo_file stores them under files/.
         self.attachments: dict = attachments or {}
 
     def record_url(self, kind: str, number: Any) -> str:
@@ -244,7 +242,8 @@ class CheckoutSource:
         found = []
         for directory, _dirs, names in os.walk(base):
             for name in names:
-                found.append(Path(directory, name).relative_to(self.root).as_posix())
+                if not Path(directory, name).is_symlink():
+                    found.append(Path(directory, name).relative_to(self.root).as_posix())
         return sorted(found)
 
     def exists(self, rel: str) -> bool:
@@ -259,8 +258,11 @@ class CheckoutSource:
                 meta, _, path = entry.partition(b"\t")
                 if meta.split()[:1] in ([b"100644"], [b"100755"]):
                     self.tracked.add(path.decode("utf-8", "surrogateescape"))
+        return rel in self.tracked and self.regular(rel)
+
+    def regular(self, rel: str) -> bool:
         target = self.root / rel
-        if rel not in self.tracked or target.is_symlink() or not target.is_file():
+        if target.is_symlink() or not target.is_file():
             return False
         try:
             target.resolve().relative_to(self.root.resolve())
@@ -310,6 +312,9 @@ class GitSource:
 
     def published(self, rel: str) -> bool:
         return rel in self.blobs and rel not in self.links
+
+    def regular(self, rel: str) -> bool:
+        return self.published(rel)
 
     def size(self, rel: str) -> int:
         return self.blobs[rel][1]
@@ -564,7 +569,7 @@ class Exporter:
                     continue
                 dropped.append(False)
                 depth += 1
-                rel = ' rel="nofollow ugc"' if re.match(r"^https?:", href, re.I) else ""
+                rel = ' rel="nofollow ugc noreferrer"' if re.match(r"^https?:", href, re.I) else ""
                 out.append('<a href="%s"%s>' % (esc(href), rel))
                 continue
             src = values.get("src", "")
@@ -620,9 +625,10 @@ class Exporter:
         if not parts or ".." in parts or parts[0] == ".git":
             return ""
         rel = "/".join(parts)
-        if not self.source.published(rel) or self.source.size(rel) > self.max_attachment:
-            return ""
         stored = STORED_RE.match(rel)
+        allowed = self.source.regular(rel) if stored else self.source.published(rel)
+        if not allowed or self.source.size(rel) > self.max_attachment:
+            return ""
         if stored:
             self.copies["files/" + stored.group(1)] = rel
             return prefix + "files/" + stored.group(1)

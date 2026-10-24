@@ -197,7 +197,11 @@ which thread they are reading. Without `--attachments`, or with
   first; at most `--attachment-files` (300) downloads,
   `--attachment-megabytes` (256) and 300 s per pass. The rest waits for the
   next pass, so a large forum fills in over a few passes; an unchanged pass
-  requests and writes nothing.
+  requests and writes nothing. The repository as a whole keeps at most
+  1 GiB of copies (`TOTAL_BYTES`, summed from `index.json`); past that a
+  pass stops with `stopped: "total"` and leaves the rest as links. Every
+  copy stays in Git history for good, so without this cap anyone who can
+  comment upstream could grow every clone by 256 MB a pass.
 - **Size.** github.com/example/forum (611 issues, about 5,900 comments) has
   912 such addresses: 763 pictures and 149 files. A sample of 45 averaged
   54 KB a picture and 500 KB a file, so the copies add roughly 110-120 MB to

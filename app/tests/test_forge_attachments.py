@@ -172,6 +172,22 @@ def test_the_newest_issues_go_first_and_the_budget_leaves_the_rest_pending(tmp_p
     assert fetcher.calls == [other, ASSET]
 
 
+def test_the_repository_total_caps_what_later_passes_store(tmp_path):
+    other = "https://github.com/user-attachments/assets/" + UUID.replace("4", "5")
+    recs = records("![a](%s)" % ASSET, "![b](%s)" % other)
+    fetcher = Fetcher({ASSET: PNG, other: JPEG})
+    summary = run(tmp_path, recs, fetcher, max_total=len(JPEG))
+    assert fetcher.calls == [other]
+    assert summary["pending"] == 1 and summary["stopped"] == "total"
+    assert run(tmp_path, recs, fetcher, max_total=len(JPEG))["stopped"] == "total"
+    assert fetcher.calls == [other]
+
+
+def test_a_bad_tries_count_in_the_index_does_not_stop_the_pass(tmp_path):
+    entry = fa._unavailable({"tries": "many"}, "http-404", T0)
+    assert entry["tries"] == 1 and entry["nextTry"] == T0 + fa.RETRY_MS
+
+
 def test_unavailable_files_are_recorded_and_retried_only_occasionally(tmp_path):
     recs = records("![a](%s)" % ASSET)
     fetcher = Fetcher({ASSET: b"<html>login</html>"})
