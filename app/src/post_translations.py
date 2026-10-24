@@ -278,6 +278,9 @@ async def _write(env, request, owner, repo):
         target_bi = account_bi
         if target and target != account:
             allowed, _ = await _authorize_issue_manager(env, owner, data, request)
+            moderates = globals().get("moderation_can_moderate_repo")
+            if not allowed and moderates is not None:
+                allowed = await moderates(env, account, owner, repo)
             if not allowed:
                 return _error("not_authorized", 403)
             target_bi = await blind_index(env, target)
@@ -287,6 +290,10 @@ async def _write(env, request, owner, repo):
             repo_bi, subject, comment, lang, target_bi)
         return json_response({"ok": True, "removed": True, "comment": comment,
                               "lang": lang}, cache_control=PRIVATE_CACHE)
+    blocked = globals().get("moderation_blocked_response")
+    refusal = await blocked(env, account, owner, repo) if blocked is not None else None
+    if refusal is not None:
+        return refusal
     body = clean_body(data.get("body"))
     if not body:
         return _error("invalid_body", 400)

@@ -168,7 +168,10 @@ mirrored from GitHub, which wins every sync) would be overwritten. Like web
 reactions (`comment-reactions.md`), translations are an annotation, not part
 of the record, so they live in the App database next to `comment_reactions`
 and leave the ledger untouched. Each one is still signed by the author's
-browser key, so it can be exported to Git later and verified by anyone.
+browser key, which binds the text to its post, language and time. The key
+is whatever the browser sent and is not checked against the account's
+registered keys, so a signature shows that the text was not changed after
+it was written, not who wrote it; the account session says who.
 
 ### Storage
 
@@ -231,12 +234,16 @@ readers without JavaScript. Public, anonymous reads are cached
 publishes or replaces the caller's translation; `{kind, number, comment,
 lang, remove: true}` removes it, and with `account: <name>` an issue manager
 (`_authorize_issue_manager`: the repository owner or an organization role with
-`organization.issues.manage`) removes someone else's.
+`organization.issues.manage`) or a moderator of the repository
+(`moderation_can_moderate_repo`) removes someone else's.
 
 Checks: a session (401), the target and language code
 (`[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}`) and a body of 1 to 20000 characters
 (400), read access to the repository (404 for a private one), the record
-type's feature switch (403), the signature (400 `bad_signature`), then 10
+type's feature switch (403), a moderation block on the account (403
+`account_blocked`, `moderation_blocked_response`; added 2026-10-24, before
+which a blocked account could still publish translations), the signature
+(400 `bad_signature`), then 10
 writes a minute and 100 a day per account (429), 60 translations per account
 on one record (409 `too_many_translations`) and 500 per record (409
 `record_full`).
@@ -267,7 +274,7 @@ page.
 
 ### Moving to Git later
 
-A translation row is self-contained and verifiable, so a later exporter can
+A translation row is self-contained, so a later exporter can
 write `.forkmesh/issues/translations/<n>/<comment>.<lang>.<account>.json`
 with `{lang, body, author, pub, sig, ts, source}` without a format change. It
 is not done now because the ledger's mirror-mode sync and older clients would
@@ -320,7 +327,16 @@ server:
   (`crypto.subtle`, only for posts the file has an entry for), and for
   readers whose language is the file's target renders the translated
   markdown in place of the post, labelled "Machine translation from …" with "Show original". It
-  works with no `Translator` API at all.
+  works with no `Translator` API at all. The hash ties an entry to the text
+  it translates, not the translation to that text: anyone who can push to
+  the repository (or, for a mirrored repository, the sync that writes it)
+  decides what the translation says. Readers turn it off with "Use this
+  site's translations".
+- **Downloads:** the model index and packages come only over https (a
+  redirect off https is refused), each download is capped at 512 MiB and
+  an archive that unpacks to more than 1 GiB is skipped. The index is read
+  from the Argos project's moving `main` branch and the packages carry no
+  pinned hashes, so this trusts that project and GitHub.
 
 example runs it from `forum-sync` after each GitHub sync, at low
 priority.

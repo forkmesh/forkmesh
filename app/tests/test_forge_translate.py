@@ -174,3 +174,17 @@ def test_a_post_written_twice_translates_only_its_foreign_lines(tmp_path):
     assert lines[0] == EN and lines[-1].startswith("<ru:Если")
     sent = [sentence for call in engine.calls for sentence in call[2]]
     assert not any("protocol works" in sentence or "provider started" in sentence for sentence in sent)
+
+
+def test_model_downloads_are_https_only_and_bounded(tmp_path, monkeypatch):
+    import pytest
+    with pytest.raises(ValueError):
+        ft._fetch("http://example.invalid/index.json")
+    with pytest.raises(ValueError):
+        ft._fetch("file:///etc/passwd")
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("translate-ru_en-1_9/model/model.bin", b"m" * 4096)
+    monkeypatch.setattr(ft, "MAX_UNPACKED_BYTES", 1024)
+    assert ft._unpack(archive.getvalue(), tmp_path / "staging") is False
+    assert not (tmp_path / "staging").exists()

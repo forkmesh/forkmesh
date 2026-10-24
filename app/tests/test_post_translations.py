@@ -269,6 +269,28 @@ def test_authors_remove_their_own_and_managers_remove_anyones(rt):
     assert rt.d1.count() == 0
 
 
+def test_blocked_accounts_cannot_translate_and_moderators_remove_anyones(rt, monkeypatch):
+    async def blocked(env, account, owner, repo):
+        if account == "troll":
+            return SimpleNamespace(status=403, data={"error": "account_blocked"})
+        return None
+
+    async def moderates(env, account, owner, repo):
+        return account == "mod"
+    monkeypatch.setattr(post_translations, "moderation_blocked_response", blocked, raising=False)
+    monkeypatch.setattr(post_translations, "moderation_can_moderate_repo", moderates,
+                        raising=False)
+    refused = post("alice", "app", "troll", signed())
+    assert refused.status == 403 and refused.data["error"] == "account_blocked"
+    assert rt.d1.count() == 0
+    assert post("alice", "app", "bob", signed()).status == 200
+    removal = {"kind": "issue", "number": 7, "comment": "c1", "lang": "en", "remove": True,
+               "account": "bob"}
+    assert post("alice", "app", "dave", removal).status == 403
+    assert post("alice", "app", "mod", removal).status == 200
+    assert rt.d1.count() == 0
+
+
 def test_writes_are_rate_limited_and_bounded(rt, monkeypatch):
     for index in range(post_translations.MAX_WRITES_PER_MINUTE):
         assert post("alice", "app", "bob", signed(comment="c%d" % index)).status == 200

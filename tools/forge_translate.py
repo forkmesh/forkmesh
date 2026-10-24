@@ -28,6 +28,8 @@ ARGOS_INDEX = "https://raw.githubusercontent.com/argosopentech/argospm-index/mai
 USER_AGENT = "forkmesh-forge-translate/1"
 DETECT_CHARS = 2000
 MAX_MODEL_MB = 120
+MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
+MAX_UNPACKED_BYTES = 1024 * 1024 * 1024
 VERSION_RE = re.compile(r"-(\d+_\d+)\.argosmodel$")
 
 
@@ -429,12 +431,21 @@ def sync(checkout: Path, engine: Any, seconds: float = PASS_SECONDS, target: str
 
 
 def _fetch(url: str) -> bytes:
+    if not str(url).startswith("https://"):
+        raise ValueError("only https downloads: %r" % url)
     with urlopen(Request(url, headers={"User-Agent": USER_AGENT}), timeout=120) as response:
-        return response.read()
+        if not str(response.geturl()).startswith("https://"):
+            raise ValueError("redirected off https: %r" % url)
+        data = response.read(MAX_DOWNLOAD_BYTES + 1)
+    if len(data) > MAX_DOWNLOAD_BYTES:
+        raise ValueError("download over %d bytes: %r" % (MAX_DOWNLOAD_BYTES, url))
+    return data
 
 
 def _unpack(data: bytes, staging: Path) -> bool:
     archive = zipfile.ZipFile(io.BytesIO(data))
+    if sum(member.file_size for member in archive.infolist()) > MAX_UNPACKED_BYTES:
+        return False
     for member in archive.infolist():
         parts = Path(member.filename).parts[1:]
         if not parts or ".." in parts or member.is_dir():

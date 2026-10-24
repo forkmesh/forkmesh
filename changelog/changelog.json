@@ -20,7 +20,8 @@
       "Long issue threads open faster: the page arrives with the whole thread, sent in parts, and the dashboard takes it over in place.",
       "Instances can turn on Atom feeds of a repository's issues, a lite view of every thread that works without JavaScript, and a forum-style home page (the Feeds and lite view plugin); white label is an install setting.",
       "Repositories can set a goal for independent mirrors, see how healthy each listed mirror is, and ask readers to run one (the Mirror goal plugin).",
-      "Images and files in mirrored GitHub threads are copied into the repository, so issue pages show them without loading anything from GitHub (the Mirrored attachments plugin)."
+      "Images and files in mirrored GitHub threads are copied into the repository, so issue pages show them without loading anything from GitHub (the Mirrored attachments plugin).",
+      "Posts in other languages get a Translate bar that translates on your device or shows the instance's own English translation, and members can add their own translations (the Translations plugins)."
      ]
     },
     {
