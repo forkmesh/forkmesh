@@ -7,6 +7,7 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
+#include "PageSwitchTrace.h"
 #include "MainWindowNetworkInternal.h"
 #include "SystemPressure.h"
 #include "AgentCliLocator.h"
@@ -6655,6 +6656,12 @@ void MainWindow::ensureSectionBuilt(int index)
     if (!placeholder ||
         !placeholder->property("forkmeshDeferredSection").toBool())
         return;
+    QElapsedTimer buildTimer;
+    buildTimer.start();
+    struct BuildTime {
+        QElapsedTimer &timer;
+        ~BuildTime() { forkmesh::PageSwitchTrace::instance().addBuild(timer.elapsed()); }
+    } buildTime{buildTimer};
 
     QWidget *section = nullptr;
     switch (index) {
@@ -6755,6 +6762,10 @@ void MainWindow::showSection(int index)
         return showNetworkTab(kNetworkNodesTab);
     if (index == 5)
         index = 0;
+    const forkmesh::PageSwitchScope switchTrace(
+        QStringLiteral("section %1").arg(index), [this, index]() -> QWidget * {
+            return m_sectionStack ? m_sectionStack->widget(index) : nullptr;
+        });
     ensureSectionBuilt(index);
     if (index != 1 && m_voiceTestRecording)
         stopMicTest();

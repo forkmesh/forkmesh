@@ -1255,6 +1255,7 @@ set(FORKMESH_APP_SOURCES
     src/DesktopPackageExtension.cpp
     ${FORKMESH_MARKETPLACE_SOURCES}
     src/StartupTrace.h
+    src/PageSwitchTrace.h
     src/MainWindowInternal.h
     src/MainWindowAgentsInternal.h
     src/MainWindowNetworkInternal.h
@@ -4177,6 +4178,10 @@ forkmesh_link_opengl(forkmesh-perf-tests)
             NAME forkmesh-cloud-agent-stream-contract
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_cloud_agent_stream_contract.py")
+        add_test(
+            NAME forkmesh-page-switch-trace
+            COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/validate_page_switch_trace.py")
         add_test(
             NAME forkmesh-agent-branch-only-contract
             COMMAND "${FORKMESH_PYTHON_EXECUTABLE}"
