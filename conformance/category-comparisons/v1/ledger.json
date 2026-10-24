@@ -164,7 +164,7 @@
         {"kind": "product-evidence", "path": "conformance/git/v1/results.json"},
         {"kind": "test", "ref": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"}
       ],
-      "verifiedOn": "2026-10-25"
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "fm-protocol-operations",
@@ -714,7 +714,7 @@
         {"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-receive-pack"},
         {"kind": "test", "ref": "app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body"}
       ],
-      "verifiedOn": "2026-10-25"
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "nfy-slo-support",
@@ -790,7 +790,7 @@
       "id": "lim-https-read-only",
       "text": "Read mirrors never take writes; an HTTPS push needs the account name and password or a push credential, and the compatibility suite does not probe it yet.",
       "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-receive-pack"}],
-      "verifiedOn": "2026-10-25"
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "lim-server-hooks",
@@ -843,7 +843,7 @@
       "id": "mig-remotes",
       "text": "Everyone who pushes signs in with a ForkMesh account: over HTTPS with the account password or a push credential, or over SSH with a registered key.",
       "evidence": [{"kind": "product-evidence", "path": "www/docs/git-compatibility.md", "anchor": "https-receive-pack"}],
-      "verifiedOn": "2026-10-25"
+      "verifiedOn": "2026-10-24"
     },
     {
       "id": "mig-forge-sync",

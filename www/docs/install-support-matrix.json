@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-10-25",
+  "updated": "2026-10-24",
   "tiers": {
     "supported": "A prebuilt artifact is published on the latest release channel, bound into the Ed25519-signed release manifest, SHA-256 verified by the installer, and covered by automated install and lifecycle tests. Regressions block a release.",
     "preview": "Packaging exists, but the latest channel does not publish the artifact or clean-machine evidence is missing. Use it knowing that fixes are best-effort.",
