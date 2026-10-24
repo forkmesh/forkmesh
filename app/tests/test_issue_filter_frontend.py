@@ -872,7 +872,7 @@ def test_opening_a_different_repo_resets_the_issue_view_state():
         'items: []',
         'query: ""',
         'author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: ""',
-        'type: "", sort: "recently_updated"',
+        'type: "", sort: issueDefaultSort(),',
     ):
         assert marker in reset
     assert 'state.pullsView = { filter: "open", query: "" };' in render

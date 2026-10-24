@@ -14,6 +14,19 @@
      ]
     },
     {
+     "title": "Projects",
+     "items": [
+      "Mirrored issues link back to the original on GitHub or Gitea, show the imported avatars, and can list threads newest first with their last commenters (the Forum-style issue lists plugin).",
+      "Long issue threads open faster: the page arrives with the whole thread, sent in parts, and the dashboard takes it over in place."
+     ]
+    },
+    {
+     "title": "World",
+     "items": [
+      "World retries with its lighter renderer when a computer's graphics cannot start the full 3D view, instead of going straight to the \"could not start the 3D renderer\" page."
+     ]
+    },
+    {
      "title": "Settings",
      "items": [
       "Administrators and moderators can switch on a Halloween theme in Settings, Appearance: green turns orange, a spider web and a witch-hatted Genie appear, and it switches itself off at the time they pick."

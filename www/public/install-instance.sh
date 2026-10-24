@@ -268,6 +268,10 @@ powered_by = c.get("poweredBy", True)
 if not isinstance(powered_by, bool):
     sys.exit("Setting poweredBy must be true or false.")
 values["poweredBy"] = "1" if powered_by else "0"
+white_label = c.get("whiteLabel", False)
+if not isinstance(white_label, bool):
+    sys.exit("Setting whiteLabel must be true or false.")
+values["whiteLabel"] = "1" if white_label else "0"
 single = c.get("singleOrganization", False)
 if not isinstance(single, bool):
     sys.exit("Setting singleOrganization must be true or false.")
@@ -994,7 +998,7 @@ save_logo() {
 build_stamp() {
   local tree="${1:-$SRC}"
   printf '%s\n' "$(git -C "$tree" rev-parse HEAD)" "$INSTANCE_INSTALLER_VERSION" "$EXCLUDED_PACKAGES" "$CFG_projectName" \
-    "$(files_digest "$tree/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}"
+    "$(files_digest "$tree/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}" "${CFG_whiteLabel:-0}"
 }
 
 release_version() {
@@ -1090,6 +1094,7 @@ build_app() {
   logo="$(logo_file)"
   if [ -n "$logo" ]; then brand_args+=(--logo "$logo"); fi
   if [ "$CFG_poweredBy" = "0" ]; then brand_args+=(--no-powered-by); fi
+  if [ "${CFG_whiteLabel:-0}" = "1" ]; then brand_args+=(--white-label); fi
   "$BUILD_VENV/bin/python" "$BUILD_SRC/app/tools/apply_instance_brand.py" "${brand_args[@]}"
   chmod -R a+rX "$BUILD_SRC" "$BUILD_VENV"
   if [ "$BUILD_SRC" = "$SRC" ]; then
@@ -1244,6 +1249,7 @@ print(encode(seed), encode(public))
     echo "INSTANCE_OWNER=$CFG_ownerName"
     echo "INSTANCE_UPSTREAM=$(upstream_page)"
     echo "INSTANCE_POWERED_BY=$CFG_poweredBy"
+    echo "INSTANCE_WHITE_LABEL=${CFG_whiteLabel:-0}"
     echo "INSTANCE_LOGIN_MARKER=$LOGIN_MARKER"
     echo "INSTANCE_LOGIN_DEADLINE=$login_deadline"
     echo "INSTANCE_UPDATE_REQUEST=$UPDATE_REQUEST_DIR/request"
@@ -1305,13 +1311,14 @@ import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
         "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl",
-        "webFirewall"]
+        "webFirewall", "whiteLabel"]
 values = dict(zip(keys, sys.argv[1:]))
 if not values["platformUrl"]:
     del values["platformUrl"]
 if not values["webFirewall"]:
     del values["webFirewall"]
 values["poweredBy"] = values["poweredBy"] == "1"
+values["whiteLabel"] = values["whiteLabel"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
 values["actions"] = values["actions"] == "1"
 values["plugins"] = [p for p in values["plugins"].split(",") if p]
@@ -1321,7 +1328,7 @@ print(json.dumps(values, indent=2, sort_keys=True))
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
     "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "${CFG_webFirewall:-}" \
-    "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "${CFG_whiteLabel:-0}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
@@ -1497,6 +1504,7 @@ $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 		reverse_proxy 127.0.0.1:$APP_PORT {
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Host
+			flush_interval -1
 		}
 	}
 	handle {
@@ -1505,6 +1513,7 @@ $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 			header_up -Cf-Ipcountry
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Host
+			flush_interval -1
 		}
 	}
 }

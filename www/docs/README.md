@@ -18,6 +18,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Start an instance from a settings file | [Start from a settings file](start-config.md) |
 | Build, run and use the desktop application | [ForkMesh desktop app guide](qt-client.md) |
 | Read and clone public projects without an account | [Reading and cloning without an account](accountless-reading.md) |
+| Follow issues by Atom feed or email, or read them without JavaScript | [Subscribing by feed or email](feeds-and-email.md) |
 | Create a repository from the web and push to it | [Hosted repositories](hosted-repositories.md) |
 | Fork a repository, push a branch and open a pull request with git only | [Contribute with git only](contributing-with-git.md) |
 | Import repositories from another forge | [Repository imports](repository-imports.md) |

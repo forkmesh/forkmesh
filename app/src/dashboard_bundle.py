@@ -57,6 +57,7 @@ FRAGMENTS = (
     "09-notes.js",
     "09-plugin-menu.js",
     "09-reaction-settings.js",
+    "09-read-surfaces.js",
     "09-recent-pushes.js",
     "09-referrals.js",
     "09-repo-activity.js",

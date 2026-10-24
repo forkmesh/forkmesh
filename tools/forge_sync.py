@@ -39,6 +39,7 @@ import argparse
 from dataclasses import dataclass, field
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -47,6 +48,9 @@ import shutil
 import sys
 import time
 from typing import Any, Callable
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 _TOOLS = Path(__file__).resolve().parent
@@ -88,6 +92,21 @@ MARKER_RE = re.compile(
     r"<!--\s*forkmesh-forge-sync:v1\s+(\{[^\r\n]*\})\s*-->\s*$")
 
 
+AVATAR_DIR_REL = ".forkmesh/contributors"
+ROSTER_REL = AVATAR_DIR_REL + "/contributors.json"
+AVATAR_HOSTS = {"github": ("avatars.githubusercontent.com",)}
+AVATAR_MAX_BYTES = 1024 * 1024
+AVATAR_PIXELS = 96
+AVATAR_TIMEOUT_SECONDS = 10
+AVATAR_REFRESH_MS = 30 * 24 * 3600 * 1000
+AVATAR_RETRY_MS = 24 * 3600 * 1000
+AVATAR_FETCHES_PER_RUN = 100
+AVATAR_LOGIN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,38}[A-Za-z0-9])?$")
+ROSTER_MAX_ROWS = 10000
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+JPEG_MAGIC = b"\xff\xd8\xff"
+
+
 class SyncError(RuntimeError):
     """A configuration or usage failure that is safe to print."""
 
@@ -126,6 +145,123 @@ def with_marker(body: str, author: str, **marker: Any) -> str:
 
 def label_key(labels: list[str]) -> list[str]:
     return sorted({str(label).casefold() for label in labels})
+
+
+# ---- avatars ----------------------------------------------------------------
+
+
+def avatar_hosts(ledger: dict[str, Any]) -> tuple[str, ...]:
+    provider = str(ledger.get("provider") or "")
+    if provider in AVATAR_HOSTS:
+        return AVATAR_HOSTS[provider]
+    base = urlsplit(str(ledger.get("baseUrl") or ""))
+    return (base.hostname,) if base.scheme == "https" and base.hostname else ()
+
+
+def avatar_url_allowed(url: str, hosts: tuple[str, ...]) -> bool:
+    try:
+        parts = urlsplit(str(url or ""))
+        port = parts.port
+    except ValueError:
+        return False
+    return (parts.scheme == "https" and parts.hostname in hosts and port is None
+            and not parts.username and not parts.password and len(url) <= 2048)
+
+
+def avatar_request_url(provider: str, login: str, api_url: str) -> str:
+    if api_url:
+        sep = "&" if "?" in api_url else "?"
+        return f"{api_url}{sep}s={AVATAR_PIXELS}" if provider == "github" else api_url
+    if provider == "github":
+        return f"https://avatars.githubusercontent.com/{login}?s={AVATAR_PIXELS}"
+    return ""
+
+
+def normalize_avatar(raw: bytes | None) -> bytes | None:
+    if not raw or len(raw) > AVATAR_MAX_BYTES or not raw.startswith((PNG_MAGIC, JPEG_MAGIC)):
+        return None
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return raw
+    try:
+        with Image.open(io.BytesIO(raw)) as image:
+            if image.width * image.height > 4096 * 4096:
+                return None
+            picture = ImageOps.fit(image.convert("RGBA"), (AVATAR_PIXELS, AVATAR_PIXELS))
+            out = io.BytesIO()
+            picture.save(out, "PNG", optimize=True)
+            return out.getvalue()
+    except Exception:
+        return None
+
+
+def fetch_avatar(url: str, hosts: tuple[str, ...]) -> bytes | None:
+    if not avatar_url_allowed(url, hosts):
+        return None
+
+    class Redirects(HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            if not avatar_url_allowed(newurl, hosts):
+                return None
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    request = Request(url, headers={"Accept": "image/png,image/jpeg",
+                                    "User-Agent": "forkmesh-forge-sync/1"})
+    try:
+        with build_opener(Redirects).open(request, timeout=AVATAR_TIMEOUT_SECONDS) as response:
+            if not avatar_url_allowed(response.geturl(), hosts):
+                return None
+            raw = response.read(AVATAR_MAX_BYTES + 1)
+    except (HTTPError, URLError, OSError, ValueError):
+        return None
+    return raw if len(raw) <= AVATAR_MAX_BYTES else None
+
+
+def avatar_slug(provider: str, login: str) -> str:
+    return f"{provider}-{login.lower()}"
+
+
+def roster_rows(provider: str, people: dict[str, dict[str, Any]],
+                checkout: Path) -> list[dict[str, Any]]:
+    rows = []
+    for key in sorted(people):
+        person = people[key]
+        login = str(person.get("login") or key)
+        slug = avatar_slug(provider, login)
+        row: dict[str, Any] = {"slug": slug, "name": login}
+        row["github" if provider == "github" else "login"] = login
+        if provider == "github":
+            row["profile"] = f"https://github.com/{login}"
+        if (Path(checkout) / AVATAR_DIR_REL / f"{slug}.png").is_file():
+            row["avatar"] = f"{AVATAR_DIR_REL}/{slug}.png"
+        rows.append(row)
+    return rows
+
+
+def write_roster(checkout: Path, provider: str, people: dict[str, dict[str, Any]]) -> bool:
+    path = Path(checkout) / ROSTER_REL
+    kept: list[Any] = []
+    declared = 0
+    if path.is_file():
+        try:
+            current = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        if not isinstance(current, dict) or not isinstance(current.get("contributors"), list):
+            return False
+        kept = [row for row in current["contributors"]
+                if not (isinstance(row, dict)
+                        and str(row.get("slug") or "").startswith(provider + "-"))]
+        count = current.get("count")
+        declared = count if isinstance(count, int) and not isinstance(count, bool) else 0
+    rows = (kept + roster_rows(provider, people, checkout))[:ROSTER_MAX_ROWS]
+    if not rows:
+        return False
+    count = max(declared, len(rows)) if kept else len(rows)
+    return bridge.write_if_changed(path, json.dumps(
+        {"count": count, "contributors": rows}, indent=2, sort_keys=True,
+        ensure_ascii=False) + "\n")
 
 
 # ---- ledger -----------------------------------------------------------------
@@ -326,9 +462,13 @@ class SyncReport:
 
 class Engine:
     def __init__(self, provider: Any, signer: Any, *, checkout: Path,
-                 clock: Callable[[], int] = lambda: int(time.time() * 1000)) -> None:
+                 clock: Callable[[], int] = lambda: int(time.time() * 1000),
+                 avatars: Callable[[str, tuple[str, ...]], bytes | None] | None = None) -> None:
         self.checkout = Path(checkout)
         self.clock = clock
+        self.avatars = avatars
+        self.seen: dict[str, str] = {}
+        self.logins: dict[str, str] = {}
         self.ledger = load_ledger(self.checkout)
         self.mirror = self.ledger["mode"] == "mirror"
         self.provider = ReadOnlyProvider(provider) if self.mirror else provider
@@ -373,6 +513,8 @@ class Engine:
             return self.result(now)
         try:
             remote = list(self.provider.list_issues())
+            for issue in remote:
+                self.see(issue.author, getattr(issue, "author_avatar", ""))
             self.viewer = self.provider.viewer()
             by_id = {issue.id: issue for issue in remote}
             linked = {str(e.get("remoteId")): int(n) for n, e in self.ledger["issues"].items()
@@ -397,7 +539,56 @@ class Engine:
             self.report.error_message = str(exc)
         finally:
             self.local.flush()
+        if self.avatars is not None:
+            self.sync_avatars(now)
         return self.result(now)
+
+    def see(self, login: str, avatar: str) -> None:
+        if not AVATAR_LOGIN_RE.fullmatch(str(login or "")):
+            return
+        key = login.lower()
+        self.seen[key] = avatar or self.seen.get(key, "")
+        self.logins.setdefault(key, login)
+
+    def sync_avatars(self, now: int) -> None:
+        prefix = self.p + ":"
+        for record in self.local.records.values():
+            for event in record.get("events") or []:
+                name = str(event.get("authorName") or "") if isinstance(event, dict) else ""
+                if name.startswith(prefix):
+                    self.see(name[len(prefix):], "")
+        people = self.ledger.setdefault("avatars", {})
+        hosts = avatar_hosts(self.ledger)
+        for key in sorted(self.seen):
+            entry = people.setdefault(key, {"login": self.logins[key]})
+            if self.seen[key]:
+                entry["url"] = self.seen[key]
+        fetched = 0
+        for key in sorted(people):
+            entry = people[key]
+            if not isinstance(entry, dict):
+                people[key] = entry = {"login": key}
+            login = str(entry.get("login") or key)
+            if not AVATAR_LOGIN_RE.fullmatch(login):
+                continue
+            path = self.checkout / AVATAR_DIR_REL / f"{avatar_slug(self.p, login)}.png"
+            url = avatar_request_url(self.p, login, str(entry.get("url") or ""))
+            age = now - int(entry.get("fetchedAt") or 0)
+            wait = AVATAR_RETRY_MS if entry.get("failed") else AVATAR_REFRESH_MS
+            stale = entry.get("fetchedUrl") != url or age >= wait \
+                or (not entry.get("failed") and not path.is_file())
+            if not url or not stale or fetched >= AVATAR_FETCHES_PER_RUN:
+                continue
+            fetched += 1
+            picture = normalize_avatar(self.avatars(url, hosts))
+            entry["fetchedAt"] = now
+            entry["fetchedUrl"] = url
+            if picture is None:
+                entry["failed"] = True
+                continue
+            entry.pop("failed", None)
+            bridge.write_if_changed(path, picture)
+        write_roster(self.checkout, self.p, people)
 
     def guard(self, number: int, entry: dict[str, Any], now: int, work: Callable[[], None]) -> None:
         try:
@@ -608,6 +799,7 @@ class Engine:
                 self.report.warnings.append(
                     f"issue #{number}: {self.p} comment {comment.id} duplicates a synced comment")
                 continue
+            self.see(comment.author, getattr(comment, "author_avatar", ""))
             if eid not in folded["comments"] and eid not in folded["deletedComments"]:
                 self.local.append(number, "comment", eid, comment.created_at,
                                   f"{self.p}:{comment.author}", body=body, attachments=[])
@@ -969,6 +1161,8 @@ def _main(argv: list[str] | None = None) -> int:
                    help="sync both ways (the default for a new ledger)")
     s = sub.add_parser("sync", help="run one two-way pass")
     s.add_argument("--report", type=Path)
+    s.add_argument("--avatars", action="store_true",
+                   help="also download provider avatars into .forkmesh/contributors")
     sub.add_parser("status", help="show lag, conflicts and failures without contacting the provider")
     p = sub.add_parser("pause")
     p.add_argument("--reason", default="")
@@ -1003,7 +1197,8 @@ def _main(argv: list[str] | None = None) -> int:
                 raise SyncError("FORKMESH_BRIDGE_SIGNING_KEY is not set")
             ledger = load_ledger(args.checkout)
             engine = Engine(build_provider(ledger, token), bridge.BridgeSigner.from_text(key),
-                            checkout=args.checkout)
+                            checkout=args.checkout,
+                            avatars=fetch_avatar if args.avatars else None)
             result = engine.run()
             if args.report:
                 args.report.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n",

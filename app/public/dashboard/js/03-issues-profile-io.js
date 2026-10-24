@@ -1584,12 +1584,12 @@
     if (detail?.kind !== "issues" || !detail.repo) return;
     const container = $("[data-repo-issues]");
     if (!container) return;
-    container.innerHTML = renderRepoRecordDetail(
+    paintRepoIssueDetail(container, renderRepoRecordDetail(
       detail.repo,
       "issues",
       detail.number,
       detail.parsed,
-    );
+    ));
     mountIssueStickyHeader(container);
     window.lucide?.createIcons();
   }
