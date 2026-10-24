@@ -337,7 +337,8 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `browser-extension`, `design-system`, `sign-in`, `speech`, `glasses-alert`,
   `eye-control` (iPhone, experimental: gaze cursor and blink to tap;
   [eye-control.md](eye-control.md)),
-  `tour`, `people` ([people.md](people.md)), `aquarium`
+  `tour` (three depths on both apps; [tour.md](tour.md)), `people`
+  ([people.md](people.md)), `aquarium`
   ([aquarium.md](aquarium.md)), `spider-room` (the Genie spider in the room
   in augmented reality on the iPhone; [spider-room.md](spider-room.md)),
   `winamp` (theme), `gemma-4` (agent model).

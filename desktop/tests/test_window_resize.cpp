@@ -15966,21 +15966,27 @@ else:
         auto *tourButton = window.findChild<QPushButton *>(
             QStringLiteral("tourNavButton"));
         QPushButton *takeTour = nullptr;
+        QPushButton *takeEssentials = nullptr;
         if (tour) {
-            for (QPushButton *button : tour->findChildren<QPushButton *>()) {
-                if (button->text() == QStringLiteral("Take the tour  →")) {
+            for (QPushButton *button : tour->findChildren<QPushButton *>(
+                     QStringLiteral("onboardingTrackButton"))) {
+                if (button->text().startsWith(
+                        QStringLiteral("The whole shebang  ·  25 stops")))
                     takeTour = button;
-                    break;
-                }
+                else if (button->text().startsWith(
+                             QStringLiteral("Essentials  ·  8 stops")))
+                    takeEssentials = button;
             }
         }
         check(tour && tour->isVisible() &&
                   tour->view() ==
                       forkmesh::ui::OnboardingTour::View::Welcome &&
-                  takeTour &&
+                  takeTour && takeEssentials &&
+                  tour->trackChoices().size() == 3 &&
                   window.testStackIndex() == 1,
               QStringLiteral("a fresh install opens the welcome over the usable "
-                             "app shell with a Take the tour choice"));
+                             "app shell with Essentials, Advanced and the whole "
+                             "shebang to choose from"));
         check(tourButton && tourButton->isVisibleTo(&window) &&
                   tourButton->accessibleName().contains(
                       QStringLiteral("feature tour")) &&
@@ -16031,6 +16037,13 @@ else:
             tourButton->click();
         QApplication::processEvents();
         check(tour && tour->view() ==
+                          forkmesh::ui::OnboardingTour::View::Choose &&
+                  tour->trackChoices().size() == 3,
+              QStringLiteral("the rail Tour button opens the track chooser"));
+        if (tour)
+            tour->chooseTrack(forkmesh::ui::OnboardingTrack::Everything);
+        QApplication::processEvents();
+        check(tour && tour->view() ==
                           forkmesh::ui::OnboardingTour::View::Tour &&
                   tour->currentStepId() == QStringLiteral("navigation") &&
                   !QSettings().value(
@@ -16064,6 +16077,17 @@ else:
         if (tourButton)
             tourButton->click();
         QApplication::processEvents();
+        if (tour)
+            tour->chooseTrack(forkmesh::ui::OnboardingTrack::Essentials);
+        QApplication::processEvents();
+        const QStringList essentialSteps{
+            QStringLiteral("navigation"), QStringLiteral("agents"),
+            QStringLiteral("prompt"), QStringLiteral("repositories"),
+            QStringLiteral("repo-switcher"), QStringLiteral("pings"),
+            QStringLiteral("search"), QStringLiteral("ready")};
+        check(tour && tour->stepIds() == essentialSteps,
+              QStringLiteral("Essentials keeps the everyday stops in tour order "
+                             "and still ends on the finish"));
         bool replayHasSkip = false;
         if (tour) {
             for (QPushButton *button : tour->findChildren<QPushButton *>()) {
