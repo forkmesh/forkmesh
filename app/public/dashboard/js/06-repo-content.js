@@ -11606,6 +11606,7 @@ Your reply
         : null;
       issueAccess?.catch(() => {});
       const issueAttachments = kind === "issues" ? loadRepoIssueAttachments(repo, number) : null;
+      const issueModeration = kind === "issues" ? fetchIssueModeration(repo, number) : null;
       const collabSettings = kind === "discussions" ? null : loadRepoCollabSettings(repo);
       let blob;
       if (kind === "issues") {
@@ -11627,8 +11628,10 @@ Your reply
       // so parse them the same way the list does and map into the shape the
       // detail renderer expects. Any live mirror serving .forkmesh/issues/
       // answers this blob read, so the detail loads whenever the list does.
+      const moderation = kind === "issues" ? await issueModerationWithin(issueModeration) : null;
       const parsed = kind === "issues"
-        ? withPendingIssueStatus(repo, number, issueDetailParsed(blobText(blob), number))
+        ? withPendingIssueStatus(repo, number, issueDetailParsed(
+          applyIssueModeration(blobText(blob), moderation), number))
         : parseFrontMatter(blobText(blob));
       let issueRelations = null;
       if (kind === "issues") {
@@ -11678,6 +11681,8 @@ Your reply
         parsed.issueSubscribed = subscription?.subscribed === true;
         parsed.issueSubscriptionReason = subscription?.reason || "";
         await issueAttachments;
+        parsed.issueModeration = moderation;
+        if (moderation?.canModerate) parsed.issueMutationAuthorized = true;
       }
       if (kind === "discussions") {
         const thread = await discussionConversation;
@@ -11703,6 +11708,7 @@ Your reply
       finishRepoRead(staleMark, reconnect);
       if (kind === "issues") mountIssueStickyHeader(container);
       if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
+      if (kind === "issues") decorateIssueModeration(container, repo, number, parsed);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
         if (commentBody) commentBody.value = commentDraft;

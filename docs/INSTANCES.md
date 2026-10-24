@@ -1429,6 +1429,34 @@ never carry it.
   goal the maintainers set, and is shown on instances too. See
   [app/mirror-quota.md](app/mirror-quota.md).
 
+## Accounts, sign-up and moderation
+
+An admin chooses under People, **Sign-up & moderation**
+(`app/src/instance_console.py`, view `accounts-moderation`); the choice is the
+`instance_settings` row `accounts` and applies within 30 seconds, without a
+restart. Defaults keep the behaviour from before (email required, people pick
+their usernames, no review, no limits). Details, APIs and storage:
+[app/accounts-and-moderation.md](app/accounts-and-moderation.md).
+
+| Setting | Choices |
+| --- | --- |
+| Sign-up | open with email required; open with email optional (no address stored, a one-time recovery code instead); invite code only (the Controls code, email optional); closed |
+| Usernames | people choose; suggest a random name like `quiet-otter-7f3k`; random names only |
+| Only signed-in accounts can post | off / on |
+| First-post approval | off / on: a new account's posts wait in the organization's Moderation queue until a moderator approves one |
+| New-account period, threads and comments per day | 7 days, 0 (no limit), 0 (no limit) |
+| Hide the posts of accounts blocked with "hide their posts" | on |
+
+The same page lists instance moderators (they moderate every repository
+here), accounts blocked on the whole server, and the moderation log.
+Organization owners and admins name their own moderators and block accounts
+from the organization's settings page.
+
+For a public forum such as forum.example.org: email optional, suggest
+random names, only signed-in accounts can post, first-post approval on,
+3 threads and 20 comments a day for the first 7 days. Sign-up still needs the
+Turnstile keys (see [Limits](#limits)).
+
 ## Directory
 
 After a successful launch, `instance_directory.publish` writes an
@@ -1536,6 +1564,7 @@ switch, git node program),
 `test_instance_plugins.py`, `test_instance_registry.py`,
 `test_instance_legal_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
+`test_accounts_moderation.py`,
 `test_instance_node_reconnect_frontend.py`,
 `test_instance_served_by_frontend.py`, `test_repo_canonical_addresses.py`,
 `test_single_org_contributors.py`, and

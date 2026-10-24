@@ -55,6 +55,7 @@ FRAGMENTS = (
     "09-links.js",
     "09-microjobs.js",
     "09-mirror-quota.js",
+    "09-moderation.js",
     "09-notes.js",
     "09-plugin-menu.js",
     "09-reaction-settings.js",

@@ -34,6 +34,10 @@ LAZY_MODULES = {
     # never parses it. Billing its 25 KB to startup failed every deploy after
     # issue #514 (runs 9493-9517, 2026-09-14).
     "trust_lists.py",
+    "account_policy.py",
+    "account_recovery.py",
+    "moderation.py",
+    "random_handles.py",
     "account_status.py",
     "account_activity.py",
     "account_users.py",

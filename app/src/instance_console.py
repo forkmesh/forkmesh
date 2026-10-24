@@ -3,11 +3,13 @@ import secrets
 from urllib.parse import parse_qs, quote, urlparse
 from hidden_unicode import clean_query as clean_hidden_query
 
+import account_policy
 import instance_features
 import instance_home
 import instance_privacy
 import instance_registry
 import instance_world
+import moderation
 
 
 def _bind_runtime(runtime):
@@ -15,6 +17,7 @@ def _bind_runtime(runtime):
     for name, value in runtime.items():
         if not name.startswith("__") and name not in namespace:
             namespace[name] = value
+    moderation._bind_runtime(runtime)
 
 
 PLUGINS_VIEW = "plugins"
@@ -22,7 +25,9 @@ DIRECTORY_VIEW = "federation"
 WORLD_VIEW = "world-territory"
 HOME_VIEW = "home-page"
 PRIVACY_VIEW = "privacy"
-VIEWS = (PLUGINS_VIEW, DIRECTORY_VIEW, WORLD_VIEW, HOME_VIEW, PRIVACY_VIEW)
+ACCOUNTS_VIEW = "accounts-moderation"
+VIEWS = (PLUGINS_VIEW, DIRECTORY_VIEW, WORLD_VIEW, HOME_VIEW, PRIVACY_VIEW,
+         ACCOUNTS_VIEW)
 MAX_FORM_BYTES = 32 * 1024
 POST_TIMEOUT_SECONDS = 20
 NOTICES = {
@@ -57,13 +62,23 @@ NOTICES = {
                        "(INSTANCE_PRIVACY_MODE), so it stays on.", "warn"),
     "privacy_core": ("Privacy mode is chosen on self-hosted instances only.",
                      "bad"),
+    "accounts_saved": ("Sign-up and moderation settings saved. They apply "
+                       "within 30 seconds.", "ok"),
+    "moderation_done": ("Done. The change is in the moderation log below.",
+                        "ok"),
+    "moderation_refused": ("Not done: check the account name. Administrators "
+                           "and your own account cannot be blocked.", "bad"),
     "csrf": ("Action blocked: reload the page and try again.", "bad"),
     "invalid": ("Action failed: unknown action.", "bad"),
 }
 ACTIONS = {"save_plugins": PLUGINS_VIEW, "save_directory": DIRECTORY_VIEW,
            "announce_directory": DIRECTORY_VIEW, "save_world": WORLD_VIEW,
            "save_home": HOME_VIEW,
-           "save_privacy": PRIVACY_VIEW}
+           "save_privacy": PRIVACY_VIEW,
+           "save_accounts": ACCOUNTS_VIEW, "add_moderator": ACCOUNTS_VIEW,
+           "remove_moderator": ACCOUNTS_VIEW, "block": ACCOUNTS_VIEW,
+           "unblock": ACCOUNTS_VIEW}
+MODERATION_ACTIONS = ("add_moderator", "remove_moderator", "block", "unblock")
 STATE_PILLS = {
     "listed": ("Listed", "ok"),
     "removed": ("Not listed", ""),
@@ -569,6 +584,189 @@ async def save_privacy(env, form):
         "mode": mode, "forced": instance_privacy.forced(env)}
 
 
+def _select(name, options, labels, current):
+    return '<select name="%s">%s</select>' % (_esc(name), "".join(
+        '<option value="%s"%s>%s</option>' % (
+            _esc(option), " selected" if option == current else "",
+            _esc(labels[option])) for option in options))
+
+
+def _number_input(name, value, label, hint):
+    low, high = account_policy.NUMBER_LIMITS[name]
+    return (
+        '<label class="stack" style="gap:4px"><span>%s</span>'
+        '<input type="number" name="%s" value="%d" min="%d" max="%d">'
+        '<span class="hint">%s</span></label>' % (
+            _esc(label), _esc(name), int(value), low, high, _esc(hint)))
+
+
+def _name_form(action, admin_query, csrf_field, button, extra=""):
+    return (
+        '<form method="post" action="%s" class="stack" style="gap:8px">%s'
+        '<input type="hidden" name="action" value="%s">'
+        '<input type="text" name="name" placeholder="username" '
+        'maxlength="63" required>%s<div><button type="submit" class="btn">'
+        '%s</button></div></form>' % (
+            _admin_href(admin_query, view=ACCOUNTS_VIEW),  # noqa: F821
+            csrf_field, _esc(action), extra, _esc(button)))
+
+
+def _row_button(action, name, admin_query, csrf_field, label):
+    return (
+        '<form method="post" action="%s" style="display:inline">%s'
+        '<input type="hidden" name="action" value="%s">'
+        '<input type="hidden" name="name" value="%s">'
+        '<button type="submit" class="btn btn-sm btn-danger">%s</button>'
+        '</form>' % (
+            _admin_href(admin_query, view=ACCOUNTS_VIEW),  # noqa: F821
+            csrf_field, _esc(action), _esc(name), _esc(label)))
+
+
+async def render_accounts(env, csrf_field, admin_query):
+    shell = _admin_shell  # noqa: F821
+    setting = await moderation.policy(env)
+    head = shell.page_head(
+        "Sign-up and moderation",
+        "Who can create an account, what a new account may do, and who "
+        "moderates every repository on this server.", crumb="People")
+    recommended = account_policy.RECOMMENDED
+    form = (
+        '<form method="post" action="%s" class="stack">%s'
+        '<input type="hidden" name="action" value="save_accounts">'
+        '<label class="stack" style="gap:4px"><span>Sign-up</span>%s'
+        '<span class="hint">Email optional stores no address: the account '
+        'gets a one-time recovery code instead. Invite code only uses the '
+        'one-time code under Controls.</span></label>'
+        '<label class="stack" style="gap:4px"><span>Usernames</span>%s'
+        '<span class="hint">Random names such as quiet-otter-7f3k keep '
+        'people from reusing a name they use elsewhere.</span></label>'
+        '%s%s%s%s%s%s'
+        '<p class="hint">Recommended for a public forum: email optional, '
+        'suggest random names, accounts required, first-post approval, '
+        '%d threads and %d comments a day for the first %d days.</p>'
+        '<div><button type="submit" class="btn btn-primary">Save</button>'
+        '</div></form>' % (
+            _admin_href(admin_query, view=ACCOUNTS_VIEW),  # noqa: F821
+            csrf_field,
+            _select("signup", account_policy.SIGNUP_MODES,
+                    account_policy.SIGNUP_LABELS, setting["signup"]),
+            _select("handles", account_policy.HANDLE_MODES,
+                    account_policy.HANDLE_LABELS, setting["handles"]),
+            shell.switch("accountRequired",
+                         "Only signed-in accounts can post, comment or vote",
+                         setting["accountRequired"], "1", "accounts-required"),
+            shell.switch("firstPostApproval",
+                         "Hold a new account's posts until a moderator "
+                         "approves the first one",
+                         setting["firstPostApproval"], "1",
+                         "accounts-approval"),
+            shell.switch("hideBlockedPosts",
+                         "Hide the existing posts of accounts blocked with "
+                         "\"hide their posts\"",
+                         setting["hideBlockedPosts"], "1", "accounts-hide"),
+            _number_input("newAccountDays", setting["newAccountDays"],
+                          "New-account period (days)",
+                          "Daily limits below apply this long. 0 turns them "
+                          "off."),
+            _number_input("newThreadsPerDay", setting["newThreadsPerDay"],
+                          "New threads per day for a new account",
+                          "0 means no limit."),
+            _number_input("newCommentsPerDay", setting["newCommentsPerDay"],
+                          "Comments per day for a new account",
+                          "0 means no limit."),
+            recommended["newThreadsPerDay"], recommended["newCommentsPerDay"],
+            recommended["newAccountDays"]))
+    _scope, state = await moderation.console_state(env)
+    moderators = shell.table(
+        "<th>Moderator</th><th>Added by</th><th></th>",
+        ["<tr><td>%s</td><td class=\"muted\">%s</td><td>%s</td></tr>" % (
+            _esc(row["name"]), _esc(row["by"]),
+            _row_button("remove_moderator", row["name"], admin_query,
+                        csrf_field, "Remove"))
+         for row in state["moderators"]],
+        "No instance moderators. Organization owners, admins and their "
+        "moderators moderate their own repositories.")
+    blocked = shell.table(
+        "<th>Blocked</th><th>Posts</th><th>Reason</th><th>By</th><th></th>",
+        ["<tr><td>%s</td><td>%s</td><td class=\"muted\">%s</td>"
+         "<td class=\"muted\">%s</td><td>%s</td></tr>" % (
+             _esc(row["name"]),
+             shell.pill("hidden", "bad") if row["hideContent"]
+             else shell.pill("shown", ""), _esc(row["reason"]),
+             _esc(row["by"]),
+             _row_button("unblock", row["name"], admin_query, csrf_field,
+                         "Unblock"))
+         for row in state["blocked"]], "Nobody is blocked on this server.")
+    block_extra = (
+        '<input type="text" name="reason" placeholder="reason (optional, '
+        'shown to moderators only)" maxlength="280">%s' % shell.switch(
+            "hideContent", "Also hide their existing posts", False, "1",
+            "block-hide"))
+    log_rows = shell.table(
+        "<th>When</th><th>Who</th><th>Action</th><th>Account</th>"
+        "<th>Detail</th>",
+        ["<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+         "<td class=\"muted\">%s</td></tr>" % (
+             shell.time_html(row["at"], _now()), _esc(row["actor"]),
+             _esc(row["action"]), _esc(row["target"]),
+             _esc(", ".join("%s %s" % item for item in sorted(
+                 row["detail"].items()))))
+         for row in state["log"]], "No moderation actions yet.")
+    return head + shell.card(
+        title="Accounts", description="These settings apply to every "
+        "repository on this server.", body=form) + shell.card(
+        title="Instance moderators",
+        description="Moderators can approve held posts, hide or delete any "
+        "post, lock threads and block accounts on every repository here.",
+        table=moderators, footer='<div class="card-b">%s</div>' % _name_form(
+            "add_moderator", admin_query, csrf_field, "Add moderator")) + \
+        shell.card(
+            title="Blocked on the whole server",
+            description="A blocked account cannot post, comment, vote or "
+            "react on any repository here.", table=blocked,
+            footer='<div class="card-b">%s</div>' % _name_form(
+                "block", admin_query, csrf_field, "Block account",
+                block_extra)) + shell.card(
+            title="Moderation log",
+            description="Who did what. No addresses are recorded.",
+            table=log_rows)
+
+
+async def save_accounts(env, form):
+    before = await moderation.policy(env)
+    after = account_policy.from_form(form, before, _now())
+    code_mode = None
+    if after["signup"] == "invite" and before["signup"] != "invite":
+        if not await _admin_signup_referral_code_mode(env):  # noqa: F821
+            await _set_admin_signup_referral_code_mode(env, True)  # noqa: F821
+            after["inviteSetCode"] = True
+            code_mode = True
+    elif after["signup"] != "invite" and before["signup"] == "invite":
+        if before.get("inviteSetCode"):
+            await _set_admin_signup_referral_code_mode(env, False)  # noqa: F821
+            code_mode = False
+        after["inviteSetCode"] = False
+    await moderation.save_policy(env, after)
+    details = account_policy.changes(before, after)
+    if code_mode is not None:
+        details["inviteCodeRequired"] = code_mode
+    return "accounts_saved", details
+
+
+async def moderation_action(env, request, form, account):
+    actor = moderation.clean_name(account)
+    data = {"action": _first(form, "action"), "name": _first(form, "name"),
+            "reason": _first(form, "reason"),
+            "hideContent": _first(form, "hideContent") == "1"}
+    scope_bi = await moderation.instance_scope(env)
+    refused = await moderation.apply_action(
+        env, request, scope_bi, moderation.INSTANCE_SCOPE, actor or "admin",
+        True, data)
+    if refused is not None:
+        return "moderation_refused", {"name": data["name"][:63]}
+    return "moderation_done", {"name": data["name"][:63]}
+
+
 async def admin_handler(env, request, params, csrf_field="", admin_query="",
                         account=""):
     view = _first(params, "view")
@@ -589,6 +787,9 @@ async def admin_handler(env, request, params, csrf_field="", admin_query="",
     elif view == PRIVACY_VIEW:
         title = "Privacy mode"
         content = await render_privacy(env, csrf_field, admin_query)
+    elif view == ACCOUNTS_VIEW:
+        title = "Sign-up and moderation"
+        content = await render_accounts(env, csrf_field, admin_query)
     else:
         title = "Plugins"
         content = await render_plugins(env, csrf_field, admin_query)
@@ -629,6 +830,10 @@ async def _handle_post(env, request, view, admin_query, account):
         notice, details = await save_home(env, form)
     elif action == "save_privacy":
         notice, details = await save_privacy(env, form)
+    elif action == "save_accounts":
+        notice, details = await save_accounts(env, form)
+    elif action in MODERATION_ACTIONS:
+        notice, details = await moderation_action(env, request, form, account)
     else:
         notice, details = await announce_directory(env)
     await _audit_sensitive_action(  # noqa: F821
