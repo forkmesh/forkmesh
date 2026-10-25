@@ -919,6 +919,33 @@ append to `agent-runs.jsonl` (last 2000) beside `tool-efficiency.json`; the
 top table groups by runtime and tool configuration with a **vs all on**
 column.
 
+**Trends view** (`src/AgentPerformanceHistory.*`, `src/AgentPerformanceCharts.*`).
+Twelve charts for the last hour, 24 hours, 7 days or 30 days, each with a
+dashed line for the period before and the change against it, so a change to
+the prompt, a tool family, the agent limit or the computer can be judged by
+its result: agents running (average, peak in the tooltip), memory used, CPU
+busy, tool calls, tool error rate, tool call time, context per call, tokens at
+stake, tool efficiency, runs finished (with failures), run time and model
+cost.
+
+- **Storage.** `performance-history.json` beside `tool-efficiency.json` keeps
+  two periods of buckets per range: 1 min for the hour, 15 min for 24 hours,
+  1 h for 7 days and 6 h for 30 days. Older buckets are dropped on write.
+- **Sources.** Tool calls come from the ledger's `callObserved`, tokens at
+  stake from the improvement log's `occurred`, runs from
+  `AgentRunEfficiencyLog::runFinished`. A one-minute timer samples running
+  agents (`runningAgentCount`), memory (`SystemStats`) and host CPU.
+- **Backfill.** A history created for the first time is seeded once from
+  `agent-runs.jsonl`, so the 7 and 30 day charts start with past runs (their
+  tool totals land at the run's end).
+- **Markers.** The sampler compares total memory (whole GB), CPU cores, the
+  agent limit and `FORKMESH_VERSION` with the last sample and draws a dotted
+  line where one changed, so "more RAM, more agents" shows on the chart.
+- **Copy summary** puts every metric for the shown period and the one before,
+  plus the markers, on the clipboard as a markdown table.
+- **Clear stats** leaves this history alone: it exists to compare across
+  changes.
+
 **Models board** (`src/AgentModelTable.*`, `src/MainWindowAgentModels.cpp`,
 numbers from the widget-free `AgentModelStats::build`): one row per model in
 `composerModelCatalog()` plus any seen elsewhere. Sources: `m_agentSessions`,

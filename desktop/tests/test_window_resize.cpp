@@ -11,6 +11,7 @@
 #include "../src/WindowFrameControl.h"
 #include "../src/SourceTreeWatch.h"
 #include "../src/AgentWorktree.h"
+#include "../src/AgentPerformanceCharts.h"
 #include "../src/AgentRunTable.h"
 #include "../src/AgentToolEfficiencyBoard.h"
 #include "../src/AgentGuardrailBoard.h"
@@ -12539,6 +12540,36 @@ void checkAgentToolEfficiency(MainWindow &window)
               runTable->runTable()->findItems(QStringLiteral("Off: read"), Qt::MatchExactly)
                       .size() >= 1,
           QStringLiteral("Runs lists each run and compares tool configurations"));
+    AgentPerformanceHistory *performance = window.testAgentPerformanceHistory();
+    AgentPerformanceCharts *charts = window.testAgentPerformanceCharts();
+    window.testSampleAgentPerformance();
+    auto *trendsView =
+        window.findChild<QPushButton *>(QStringLiteral("agentEfficiencyTrendsView"));
+    if (trendsView)
+        trendsView->click();
+    QApplication::processEvents();
+    check(performance && charts && trendsView && charts->isVisibleTo(&window) &&
+              trendsView->isChecked() && charts->chartCount() == 12 &&
+              performance->persistPath().endsWith(QStringLiteral("/performance-history.json")) &&
+              charts->chartValue(QStringLiteral("runs")) != QStringLiteral("–") &&
+              charts->chartValue(QStringLiteral("agents")) != QStringLiteral("–"),
+          QStringLiteral("Trends charts a finished run and the agent sample (runs=%1 agents=%2)")
+              .arg(charts ? charts->chartValue(QStringLiteral("runs")) : QString(),
+                   charts ? charts->chartValue(QStringLiteral("agents")) : QString()));
+    if (auto *hour = window.findChild<QPushButton *>(QStringLiteral("agentPerformancePeriod0")))
+        hour->click();
+    QApplication::processEvents();
+    const QRect runsPlot = charts ? charts->plotRect(QStringLiteral("runs")) : QRect();
+    check(charts && charts->period() == AgentPerformanceHistory::Hour &&
+              charts->columns() >= 1 && runsPlot.isValid() &&
+              charts->tooltipAt(QPoint(runsPlot.right(), runsPlot.center().y()))
+                  .contains(QStringLiteral("Runs finished")),
+          QStringLiteral("the 1 h period switches every chart and the plot answers hover"));
+    if (auto *copySummary =
+            window.findChild<QPushButton *>(QStringLiteral("agentPerformanceCopySummary")))
+        copySummary->click();
+    check(QGuiApplication::clipboard()->text().contains(QStringLiteral("| Runs finished |")),
+          QStringLiteral("Copy summary puts the period table on the clipboard"));
     if (auto *familiesView =
             window.findChild<QPushButton *>(QStringLiteral("agentEfficiencyFamiliesView")))
         familiesView->click();
