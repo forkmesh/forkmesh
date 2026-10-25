@@ -20,6 +20,9 @@
      ]
     },
     {
+     "title": "iPhone",
+     "items": [
+      "The iPhone app stays signed in to your instances after the phone restarts."
      "title": "Desktop",
      "items": [
       "A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on."
