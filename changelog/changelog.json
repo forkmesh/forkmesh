@@ -8,10 +8,17 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Projects",
+     "items": [
+      "Add project on the desktop now lists the instances on ForkMesh by name to add in one click, checks an instance address and fills in its name and logo, and offers the phone's Minimal, Standard and Everything plugin packs."
+     ]
+    },
+    {
      "title": "Agents",
      "items": [
       "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk.",
-      "Claude Code and Codex now give each new run a short title and branch name the way Claude's desktop app does, using a small fast model first; Cloudflare naming is off unless you turn it on in Settings > Agents."
+      "Claude Code and Codex now give each new run a short title and branch name the way Claude's desktop app does, using a small fast model first; Cloudflare naming is off unless you turn it on in Settings > Agents.",
+      "Merging an agent no longer leaves a second agent with the same name in the Agents list."
      ]
     },
     {
@@ -41,6 +48,23 @@
       "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls.",
       "A desktop Actions step can now set timeout-minutes, and the desktop client CI build gets enough time to finish instead of stopping at 90 minutes.",
       "Rebuild & restart is faster: it keeps its own compile cache that agent builds no longer push out, a new commit no longer recompiles two of the app's largest files, and the restart notice says how many compiles came from the cache."
+      "The slow USB drive warning now says which port to move the drive to: it finds the computer's free faster ports, says when one is USB-C and where it sits, names what is using them when they are taken, and catches 10 Gbps drives like the SanDisk Extreme whose names give no hint.",
+      "Running a workflow from the Workflows page now jumps to Recent runs, selects the new run and shows its output on the right, updating live while it runs.",
+      "Video Mix DJ Studio now runs inside the desktop app as a full DJ studio with up to four YouTube decks, EQ, filters, echo, reverb and flanger, hot cues, beat loops, scratching, AUTOMIX, AUTO DJ, playlists and jam sessions.",
+      "When ForkMesh finds a disk labelled TMP that is not set to mount at startup, it asks for your password once and adds it to /etc/fstab, so the fast scratch disk is there after every reboot."
+     ]
+    },
+    {
+     "title": "Server",
+     "items": [
+      "Emails from ForkMesh now come from founders@forkmesh.com, so replying to one reaches the team."
+     ]
+    },
+    {
+     "title": "Other improvements",
+     "items": [
+      "Signing up now sends your verification email once, instead of a new one each time the request was repeated.",
+      "The affiliate program's terms now say which tax form to send before a commission is paid: W-9 for US persons, W-8BEN for non-US individuals or W-8BEN-E for non-US companies."
      ]
     }
    ]

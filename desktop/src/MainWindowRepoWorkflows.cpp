@@ -537,10 +537,13 @@ rw::StepPoll MainWindow::pollRepoWorkflowStep(const QString &type, int handleKey
         if (session->runInFlight() || session->status == AgentStatus::Queued ||
             !session->pendingSteerMessage.isEmpty() || !session->inFlightSteerMessage.isEmpty()) {
             handle.seenRunning = true;
+            result.output = teammateLatestOutput(session).trimmed();
             return result;
         }
-        if (!AgentStatus::isTerminal(session->status) && session->status != AgentStatus::Cleared)
+        if (!AgentStatus::isTerminal(session->status) && session->status != AgentStatus::Cleared) {
+            result.output = teammateLatestOutput(session).trimmed();
             return result;
+        }
         if (!handle.seenRunning && session->finishedAtMs < handle.startedAtMs - 1000 &&
             nowMs() - handle.startedAtMs < kContinueGraceMs)
             return result;
@@ -566,8 +569,11 @@ rw::StepPoll MainWindow::pollRepoWorkflowStep(const QString &type, int handleKey
             result.error = QStringLiteral("The shortcut run is gone.");
             return result;
         }
-        if (run->running)
+        if (run->running) {
+            lastLines(run->output, 40, &result.logs);
+            result.output = run->output.trimmed().right(kMaxShortcutOutputChars);
             return result;
+        }
         result.done = true;
         result.success = run->ok && !run->stopped;
         QStringList lines;
@@ -579,10 +585,10 @@ rw::StepPoll MainWindow::pollRepoWorkflowStep(const QString &type, int handleKey
         m_repoWorkflowHandles.erase(it);
         return result;
     }
-    if (!handle.finished && handle.process && handle.process->state() != QProcess::NotRunning)
+    if (!handle.finished && handle.process) {
+        result.output = lastLines(handle.output, 40, &result.logs);
         return result;
-    if (!handle.finished && handle.process)
-        return result;
+    }
     result.done = true;
     result.success = handle.ok;
     QStringList lines;
@@ -1575,7 +1581,9 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
                 const int session =
                     runTeammate(workflowId, trigger, forkmesh::teammates::kTaskTypeOnDemand, repoIndex, assignment);
                 if (repoWorkflowRunner()->isRunning(repo, workflowId)) {
-                    reply(true, {{QStringLiteral("sessionId"), session}},
+                    reply(true,
+                          {{QStringLiteral("sessionId"), session},
+                           {QStringLiteral("runId"), repoWorkflowRunner()->activeRun(repo, workflowId).id}},
                           QStringLiteral("%1 is running.").arg(workflow.name));
                     return;
                 }

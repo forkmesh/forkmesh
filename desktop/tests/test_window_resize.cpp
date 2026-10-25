@@ -9807,6 +9807,97 @@ void pumpMemoryPage(int ms)
         QApplication::processEvents(QEventLoop::AllEvents, 20);
 }
 
+void checkAddProjectDialog(MainWindow &window)
+{
+    window.testSetDirectoryInstances(QJsonDocument::fromJson(R"([
+        {"name": "Tea House", "url": "https://tea.example.com/", "listed": true,
+         "status": "online"},
+        {"name": "Unlisted", "url": "https://unlisted.example.com/", "listed": false}
+    ])").array());
+    auto *menuButton = window.findChild<QPushButton *>(QStringLiteral("projectMenuButton"));
+    check(menuButton, QStringLiteral("the project menu button exists"));
+    if (!menuButton)
+        return;
+    bool opened = false;
+    bool noDescription = false;
+    bool accountOff = false;
+    QStringList packs;
+    QString checkedPack;
+    int directoryRows = -1;
+    QString filledAddress;
+    QTimer::singleShot(100, &window, [&] {
+        auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+        QAction *add = nullptr;
+        for (QAction *action : menu ? menu->actions() : QList<QAction *>())
+            if (action->text().startsWith(QStringLiteral("Add project")))
+                add = action;
+        if (!add) {
+            if (menu)
+                menu->close();
+            return;
+        }
+        QTimer::singleShot(150, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog || dialog->objectName() != QStringLiteral("addProjectDialog")) {
+                if (dialog)
+                    dialog->reject();
+                return;
+            }
+            opened = true;
+            noDescription = true;
+            for (QLineEdit *edit : dialog->findChildren<QLineEdit *>())
+                if (edit->placeholderText().contains(QStringLiteral("What is it for")))
+                    noDescription = false;
+            auto *identity =
+                dialog->findChild<QCheckBox *>(QStringLiteral("addProjectShareIdentity"));
+            accountOff = identity && !identity->isChecked();
+            for (QRadioButton *radio : dialog->findChildren<QRadioButton *>()) {
+                packs.append(radio->text());
+                if (radio->isChecked())
+                    checkedPack = radio->text();
+            }
+            auto *list = dialog->findChild<QListWidget *>(QStringLiteral("addProjectDirectory"));
+            directoryRows = list ? list->count() : -1;
+            dialog->resize(dialog->sizeHint());
+            const QString shot = qEnvironmentVariable("FORKMESH_ADD_PROJECT_SHOT");
+            if (!shot.isEmpty())
+                dialog->grab().save(shot + QStringLiteral("-empty.png"));
+            for (int row = 0; list && row < list->count(); ++row) {
+                if (list->item(row)->data(Qt::UserRole).toString() !=
+                    QStringLiteral("tea.example.com"))
+                    continue;
+                QWidget *rowWidget = list->itemWidget(list->item(row));
+                for (QPushButton *button : rowWidget->findChildren<QPushButton *>())
+                    if (button->text() == QStringLiteral("Add"))
+                        button->click();
+            }
+            auto *address = dialog->findChild<QLineEdit *>(QStringLiteral("addProjectInstance"));
+            filledAddress = address ? address->text() : QString();
+            if (!shot.isEmpty())
+                dialog->grab().save(shot + QStringLiteral("-added.png"));
+            dialog->reject();
+        });
+        menu->close();
+        add->trigger();
+    });
+    menuButton->click();
+    QApplication::processEvents();
+    check(opened, QStringLiteral("Add project… opens the add project dialog"));
+    check(noDescription, QStringLiteral("the add project dialog no longer asks what it is for"));
+    check(accountOff, QStringLiteral("Use my account in this project starts unchecked"));
+    check(packs == QStringList({QStringLiteral("Minimal"), QStringLiteral("Standard"),
+                                QStringLiteral("Everything")}) &&
+              checkedPack == QStringLiteral("Standard"),
+          QStringLiteral("plugins are the phone's three packs, Standard first picked (got %1, %2)")
+              .arg(packs.join(QLatin1Char(',')), checkedPack));
+    check(directoryRows == 2,
+          QStringLiteral("the directory lists ForkMesh and listed instances only (got %1)")
+              .arg(directoryRows));
+    check(filledAddress == QStringLiteral("tea.example.com"),
+          QStringLiteral("Add on a directory instance fills its address (got %1)")
+              .arg(filledAddress));
+}
+
 void checkProjectSettingsPage(MainWindow &window)
 {
     QTemporaryDir sandbox;
@@ -16283,6 +16374,8 @@ else:
         app.arguments().contains(QStringLiteral("--memory-only"));
     const bool projectSettingsOnly =
         app.arguments().contains(QStringLiteral("--project-settings-only"));
+    const bool addProjectOnly =
+        app.arguments().contains(QStringLiteral("--add-project-only"));
     const bool agentCodeOnly =
         app.arguments().contains(QStringLiteral("--agent-code-only"));
     const bool workspaceDesignOnly =
@@ -16964,6 +17057,12 @@ else:
 
     if (projectSettingsOnly) {
         checkProjectSettingsPage(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (addProjectOnly) {
+        checkAddProjectDialog(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }

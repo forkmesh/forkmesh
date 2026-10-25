@@ -264,7 +264,8 @@ QString projectKey(const QString &cwd)
 // code-health: allow(dir-walk-in-loop) only called from runOffThread in MainWindow::scanExternalClaudeSessions()
 QList<ExternalClaudeSession> scan(const QString &repoLocalPath,
                                   const QSet<QString> &excludeCwds,
-                                  qint64 activeWindowMs)
+                                  qint64 activeWindowMs,
+                                  const QStringList &ownConfigDirs)
 {
     QList<ExternalClaudeSession> out;
     if (repoLocalPath.isEmpty())
@@ -275,10 +276,22 @@ QList<ExternalClaudeSession> scan(const QString &repoLocalPath,
     if (!projects.exists())
         return out;
 
+    QStringList ownRoots;
+    for (const QString &dir : ownConfigDirs) {
+        const QString canonical = QFileInfo(dir).canonicalFilePath();
+        if (!canonical.isEmpty())
+            ownRoots.append(canonical);
+    }
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QSet<QString> seen;
     const auto dirs = projects.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
     for (const QFileInfo &di : dirs) {
+        if (!ownRoots.isEmpty()) {
+            const QString target = di.canonicalFilePath();
+            if (std::any_of(ownRoots.cbegin(), ownRoots.cend(),
+                            [&target](const QString &root) { return isUnder(target, root); }))
+                continue;
+        }
         QDir d(di.absoluteFilePath());
         const auto files = d.entryInfoList(QStringList{QStringLiteral("*.jsonl")},
                                            QDir::Files, QDir::Time);
