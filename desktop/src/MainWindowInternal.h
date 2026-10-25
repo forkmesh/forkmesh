@@ -1902,6 +1902,7 @@ private:
 
 constexpr int kResourceSparklineSide = 34;
 constexpr int kResourceSparklineCompactSide = 19;
+constexpr qint64 kDebugStallChartMaxMs = 2000;
 
 class ResourceSparkline : public QWidget
 {
@@ -4603,6 +4604,8 @@ const QString kAgentWorkspaceNameModelSetting =
     QStringLiteral("agents/workspaceNameCloudflareModel");
 const QString kAgentTitleFromAgentSetting =
     QStringLiteral("agents/titleFromAgent");
+const QString kAgentCloudflareNamingSetting =
+    QStringLiteral("agents/cloudflareNaming");
 const QString kLocalLlamaModelSetting =
     QStringLiteral("agents/localLlamaModel");
 const QString kLocalLlamaEndpointSetting =
@@ -11258,6 +11261,8 @@ QPixmap languageBarPixmap(const QList<QPair<QString, qint64>> &langs,
                           qint64 total, int shown, int w, int h);
 
 QPixmap letterFavicon(const QString &host, int side = 36);
+
+QPixmap currentProjectLogo(int side, QString *name = nullptr);
 
 QString builtinFaviconKey(const QString &host);
 

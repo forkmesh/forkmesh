@@ -6,6 +6,7 @@
 // would ever read and restarted into the same silence (adhoc #1618).
 #include "../src/ClaudeStreamSession.h"
 #include "../src/ClaudeControlProtocol.h"
+#include "../src/TranscriptCoverage.h"
 #include "../src/AgentGuardrails.h"
 #include "../src/AgentGuardrailLedger.h"
 #include "../src/AgentJail.h"
@@ -987,6 +988,7 @@ void runHostControlProtocolTest()
         "printf '{\"type\":\"control_request\",\"request_id\":\"r4\",\"request\":{\"subtype\":"
         "\"elicitation\",\"mcp_server_name\":\"t\",\"message\":\"m\"}}\\n'\n"
         "printf '{\"type\":\"control_cancel_request\",\"request_id\":\"r4\"}\\n'\n"
+        "printf 'a plain stdout line\\n'\n"
         "while IFS= read -r line; do\n"
         "  printf '%s\\n' \"$line\" >> \"$FM_STDIN\"\n"
         "  case \"$line\" in *generate_session_title*)\n"
@@ -1048,6 +1050,29 @@ void runHostControlProtocolTest()
             requestLeaked = true;
     }
     check(!requestLeaked, "requests nobody renders never mark the session as waiting");
+    const auto droppedCount = [&events] {
+        int seen = 0;
+        for (const QJsonObject &event : events)
+            if (event.value(QStringLiteral("type")).toString() ==
+                QLatin1String("_local_raw_line"))
+                ++seen;
+        return seen;
+    };
+    pump([&] { return droppedCount() >= 3; }, 5000);
+    QStringList droppedKinds;
+    for (const QJsonObject &event : events) {
+        if (event.value(QStringLiteral("type")).toString() == QLatin1String("_local_raw_line"))
+            droppedKinds << forkmesh::transcriptcoverage::eventGaps(event);
+    }
+    check(droppedKinds.contains(QStringLiteral("claude-line:control_request/hook_callback")) &&
+              droppedKinds.contains(QStringLiteral(
+                  "claude-line:control_request/request_user_dialog/lsp_recommendation")) &&
+              droppedKinds.contains(QStringLiteral("claude-line:(plain text)")) &&
+              droppedKinds.size() == 3,
+          qPrintable(QStringLiteral("only the refused and unanswerable requests and the plain "
+                                    "stdout line are recorded "
+                                    "as output the transcript never shows (got %1)")
+                         .arg(droppedKinds.join(QStringLiteral(", ")))));
     check(session.cliSessionId() == QLatin1String("cli-7"), "the CLI's session id is learned");
 
     AgentRuntimeCommand answer{1, AgentRuntimeCommandTypes::RequestRespond,
