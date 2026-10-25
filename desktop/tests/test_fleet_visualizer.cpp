@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSet>
+#include <QSlider>
 #include <QTemporaryDir>
 
 #include <cstdio>
@@ -485,6 +486,65 @@ void testDesktopProcesses()
     view.setForkMeshOnly(true);
     check(view.shownProcesses().size() == 2,
           "ForkMesh only keeps the app and the processes it started");
+
+    check(!view.cpuGovernanceSlider()->isVisible(),
+          "without a governor hook there are no limit sliders");
+    const int plainHeight = view.sizeHint().height();
+    int savedMemory = 20;
+    int savedCpu = 20;
+    QList<QPair<int, int>> applied;
+    view.governanceSource = [&](int memory, int cpu) {
+        forkmesh::DesktopProcessView::Governance g;
+        g.available = true;
+        g.memoryReservePercent = memory < 0 ? savedMemory : memory;
+        g.cpuReservePercent = cpu < 0 ? savedCpu : cpu;
+        g.cpuText = QStringLiteral("%1% kept for you").arg(g.cpuReservePercent);
+        g.memoryText = QStringLiteral("%1% of memory kept").arg(g.memoryReservePercent);
+        g.note = QStringLiteral("Agent limits apply at once");
+        return g;
+    };
+    view.onGovernanceChanged = [&](int memory, int cpu) {
+        savedMemory = memory;
+        savedCpu = cpu;
+        applied.append({memory, cpu});
+    };
+    view.refreshGovernance();
+    view.resize(1200, view.sizeHint().height());
+    QApplication::processEvents();
+    view.grab();
+    QSlider *cpuSlider = view.cpuGovernanceSlider();
+    QSlider *memorySlider = view.memoryGovernanceSlider();
+    check(cpuSlider->isVisible() && memorySlider->isVisible() &&
+              view.sizeHint().height() > plainHeight,
+          "a slider sits under the CPU and the memory gauges");
+    check(cpuSlider->value() == 80 && memorySlider->value() == 80 &&
+              cpuSlider->minimum() == 40 && cpuSlider->maximum() == 95,
+          "each slider shows the share agents may use");
+    check(cpuSlider->geometry().right() < memorySlider->geometry().left() &&
+              memorySlider->geometry().top() > 44 + 84,
+          "the sliders line up under their gauges");
+    check(findTip(view, QStringLiteral("CPU agents")).contains(QLatin1String("20% kept")),
+          "the CPU slider explains what it limits");
+
+    cpuSlider->setValue(70);
+    check(view.governance().cpuReservePercent == 30 && applied.isEmpty(),
+          "dragging previews the new limit before saving it");
+    view.grab();
+    check(findTip(view, QStringLiteral("CPU agents")).contains(QLatin1String("30% kept")),
+          "the caption follows the slider");
+    emit cpuSlider->sliderReleased();
+    check(applied.size() == 1 && applied.value(0) == qMakePair(20, 30),
+          "releasing the CPU slider applies the new reserve");
+    memorySlider->setValue(60);
+    emit memorySlider->sliderReleased();
+    check(applied.size() == 2 && applied.value(1) == qMakePair(40, 30),
+          "releasing the memory slider applies the new reserve");
+    emit memorySlider->sliderReleased();
+    check(applied.size() == 2, "an unchanged slider applies nothing");
+    view.refreshGovernance();
+    check(cpuSlider->value() == 70 && memorySlider->value() == 60,
+          "the sliders read the saved limits back");
+
     view.hide();
     check(!view.sampling(), "hiding the tab stops sampling");
 }

@@ -24,7 +24,8 @@ desktop embeds the same page.
 | `world/public/world/scene/render-stalls.js` | Render stall monitor: splits frames over 50 ms into compiles, uploads, shadow and reflection draws |
 | `world/public/world/scene/gpu-pacer.js` | Program-link pacing and texture upload budget |
 | `world/public/world/world-office*.js` | The Office tower, meeting rooms and task boards |
-| `world/public/world/world-voice*.js`, `world-channels.js`, `world-avatar-puppets.js`, `scene/avatar-rig.js`, `scene/runtime/avatar-voice.js` | Voice and camera in the World, avatars driven by face and hands, privacy bubbles, voice rooms, word badges, the one channel list ([voice.md](voice.md)) |
+| `world/public/world/world-voice*.js`, `world-channels.js`, `world-avatar-puppets.js`, `world-reaction-pops.js`, `scene/avatar-rig.js`, `scene/runtime/avatar-voice.js` | Voice and camera in the World, avatars driven by face and hands, privacy bubbles, voice rooms, word badges, the one channel list, the live diagnostics chart, on-air signs, on-screen reaction pops ([voice.md](voice.md)) |
+| `world/public/world/scene/genie-spider.js`, `scene/runtime/genie-spider.js` | The Genie spider in the 3D World: model, 100 acts with things nearby ([genie-spider.md](genie-spider.md)) |
 | `world/public/world/world-floor-notes.js` | Floor notes: placement chip, floor cards, thread panel, @mention suggestions |
 | `world/public/world/world-profiler.js` | Admin profiler: frame phases, per-callback cost, draw-call attribution, GPU timer queries, scene audit |
 | `world/public/world/world-resource-cache.js` | Shared geometry/material caches, instanced items, instanced mirrors |
@@ -1036,6 +1037,7 @@ them without changing page.
 ## Related docs
 
 - [voice.md](voice.md): voice, camera, privacy bubbles, voice rooms and the one channel list
+- [genie-spider.md](genie-spider.md): the Genie spider that follows you around the World
 - [docs/app/README.md](../app/README.md) (the App),
   [sessions](../app/auth-sessions.md),
   [footprint](../app/worker-footprint.md)

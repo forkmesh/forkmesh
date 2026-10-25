@@ -36,6 +36,11 @@ QString megabytes(qint64 bytes)
     return QStringLiteral("%1 MB").arg(bytes / (1024 * 1024));
 }
 
+QString gigabytesText(qint64 bytes)
+{
+    return QStringLiteral("%1 GB").arg(double(bytes) / double(qint64(1) << 30), 0, 'f', 1);
+}
+
 qint64 readLimit(const QString &path)
 {
     const QByteArray text = readSmall(path).trimmed();
@@ -352,6 +357,34 @@ CpuDecision decideCpu(const GovernorPolicy &policy, const Budget &budget,
     return decision;
 }
 
+int retargetCpuQuota(const Budget &budget, const GovernorState &state)
+{
+    if (budget.sliceCpuQuota <= 0)
+        return 0;
+    if (state.otherCores < 0.0)
+        return budget.sliceCpuQuota;
+    return qBound(budget.sliceCpuFloor,
+                  budget.sliceCpuQuota - int(std::lround(state.otherCores * 100.0)),
+                  budget.sliceCpuQuota);
+}
+
+QStringList agentScopes(const QList<UnitSample> &units)
+{
+    QStringList scopes;
+    for (const UnitSample &unit : units)
+        if (unit.name.startsWith(QLatin1String("forkmesh-agent-")) &&
+            unit.name.endsWith(QLatin1String(".scope")) &&
+            !unit.name.startsWith(QLatin1String("forkmesh-agent-probe-")))
+            scopes.append(unit.name);
+    return scopes;
+}
+
+void applyBudget()
+{
+    if (g_instance)
+        g_instance->applyBudget();
+}
+
 Governor::Governor(QObject *parent) : QObject(parent)
 {
     m_timer.setInterval(kTickMs);
@@ -437,6 +470,38 @@ void Governor::prepared()
     m_running = true;
     m_startedMs = QDateTime::currentMSecsSinceEpoch();
     m_timer.start();
+}
+
+void Governor::applyBudget()
+{
+    m_status.budget = status().budget;
+    if (!m_running || m_status.systemctl.isEmpty() || !m_status.budget.valid())
+        return;
+    const Budget &budget = m_status.budget;
+    QStringList properties{QStringLiteral("--runtime"),
+                           QStringLiteral("MemoryHigh=%1").arg(budget.sliceHighBytes),
+                           QStringLiteral("MemoryMax=%1").arg(budget.sliceMaxBytes)};
+    const int quota = retargetCpuQuota(budget, m_state);
+    if (quota > 0) {
+        m_state.cpuQuota = quota;
+        m_state.lastCpuChangeMs = QDateTime::currentMSecsSinceEpoch();
+        ++m_state.cpuChanges;
+        properties << QStringLiteral("CPUQuota=%1%").arg(quota);
+    }
+    const QString reason =
+        QStringLiteral("limits changed: agents throttled above %1 (hard limit %2), "
+                       "CPU ceiling %3, cap now %4")
+            .arg(gigabytesText(budget.sliceHighBytes), gigabytesText(budget.sliceMaxBytes),
+                 cpuCores(budget.sliceCpuQuota),
+                 cpuCores(quota > 0 ? quota : budget.sliceCpuQuota));
+    qInfo().noquote() << QStringLiteral("Agent resources: %1.").arg(reason);
+    record(QStringLiteral("limits"), sliceName(), reason);
+    runSystemctl(QStringLiteral("set-property"), sliceName(), properties);
+    for (const QString &scope : agentScopes(m_lastUnits))
+        runSystemctl(QStringLiteral("set-property"), scope,
+                     {QStringLiteral("--runtime"),
+                      QStringLiteral("MemoryHigh=%1").arg(budget.agentHighBytes),
+                      QStringLiteral("MemoryMax=%1").arg(budget.agentMaxBytes)});
 }
 
 void Governor::tick()

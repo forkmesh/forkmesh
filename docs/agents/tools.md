@@ -30,6 +30,12 @@ Launch: `claude --output-format stream-json --input-format stream-json
   `--dangerously-skip-permissions`, Plan `--permission-mode plan`, Edit
   `acceptEdits`, Ask `default`. Mid-run changes use a `set_permission_mode`
   control request; a run not launched in Auto cannot be raised to it.
+  The CLI does not tell the model about such a switch, and a run launched
+  in Auto keeps "bypass permissions mode is active" in its system prompt,
+  so the next message after a switch starts with a `[ForkMesh: permission
+  mode changed. ...]` line naming the old and new mode and what the new
+  one asks approval for (`permissionModeChangeNotice`). It is sent once;
+  a restart drops it, since the new launch's flags say the mode.
 - `--model`, `--effort`, `--fallback-model`, `--resume`.
 - `--disallowedTools` for families turned off under Tool efficiency
   (`agents/disabledToolFamilies`, `AgentToolPolicy.cpp`):

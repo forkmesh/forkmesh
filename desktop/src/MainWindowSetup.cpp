@@ -2353,6 +2353,7 @@ void MainWindow::startSession()
     m_transcriptRenderBatches = 1;
     m_reactions.clear();
     m_avatars.clear();
+    m_chatDirectoryAvatarDigests.clear();
     m_dmNames.clear();
     m_openDms.clear();
     m_unread.clear();

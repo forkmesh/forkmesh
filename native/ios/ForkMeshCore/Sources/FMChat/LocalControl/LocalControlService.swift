@@ -70,10 +70,13 @@ public struct LocalAgentRow: Equatable, Sendable, Identifiable {
     public let mode: String
     public let unread: Bool?
     public let backgroundTasks: Int
+    public let tokensIn: Int
+    public let tokensOut: Int
 
     public init(
         owner: String, name: String, session: AgentSession, prompt: String = "", stoppable: Bool = false,
-        attachments: [AgentAttachmentMeta] = [], mode: String = "", unread: Bool? = nil, backgroundTasks: Int = 0
+        attachments: [AgentAttachmentMeta] = [], mode: String = "", unread: Bool? = nil, backgroundTasks: Int = 0,
+        tokensIn: Int? = nil, tokensOut: Int? = nil
     ) {
         self.owner = owner
         self.name = name
@@ -84,6 +87,8 @@ public struct LocalAgentRow: Equatable, Sendable, Identifiable {
         self.mode = mode
         self.unread = unread
         self.backgroundTasks = backgroundTasks
+        self.tokensIn = max(tokensIn ?? session.promptTokens, 0)
+        self.tokensOut = max(tokensOut ?? session.completionTokens, 0)
     }
 
     public var id: Int { session.id }
@@ -106,7 +111,9 @@ public struct LocalAgentRow: Equatable, Sendable, Identifiable {
             session: AgentSession(json: json), prompt: dartString(json["prompt"]),
             stoppable: json["stoppable"] == .bool(true), attachments: AgentAttachmentMeta.list(json["attachments"]),
             mode: dartString(json["mode"]), unread: json["unread"]?.boolValue,
-            backgroundTasks: max(json.int("backgroundTasks"), 0))
+            backgroundTasks: max(json.int("backgroundTasks"), 0),
+            tokensIn: json["tokensIn"] == nil ? nil : json.int("tokensIn"),
+            tokensOut: json["tokensOut"] == nil ? nil : json.int("tokensOut"))
     }
 }
 

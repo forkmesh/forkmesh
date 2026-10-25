@@ -1362,8 +1362,11 @@ keeps the old layout. The page carries the `usersNextPage` property.
   menu, extended selection and Shift+Up/Down. Rows are 48 px
   (`UsersNextRowHeight` re-sets the height on `Show`, after the stock data
   table polish sets 38 px).
-  - Person (`UsersNextPersonDelegate`, column 0): the avatar if one is cached,
-    else an initials circle, the Discord display name (or the user name),
+  - Person (`UsersNextPersonDelegate`, column 0): the uploaded avatar from
+    the user directory, else the generated portrait (`forkMeshAvatarPng` of
+    the user name, the stand-in Chat and Issues use, so one person keeps one
+    face), else an initials circle; then the Discord display name (or the
+    user name),
     a "You" badge on the signed-in account (`accountOwner()`), and the muted
     `@user`. Sorting still uses the user name.
   - Email verified and Status get a status dot (`UsersNextDotDelegate`:
@@ -1375,6 +1378,32 @@ keeps the old layout. The page carries the `usersNextPage` property.
     Quarantine, Delete, Refresh; Unquarantine, Refresh on the quarantine
     tab): each item copies its button's text, icon, tooltip and enabled state
     and calls its `click()`.
+- **Profile rail** (`#usersDetailPanel`, `buildUsersDetailPanel`,
+  `renderUsersDetail`, both designs). Clicking a row in either tab opens a
+  360 px rail right of the tabs: the avatar (uploaded, else the generated
+  portrait), name and `@user`, the custom status, You / Admin / status badges,
+  then every column of that row as label and value, grouped into Account,
+  Email, Discord, Activity, Device, Signup, Referrals and Fingerprints
+  (Quarantine first on the quarantine tab; any column left out of the groups
+  lands in Other). The values are the table's own cell text, so the rail never
+  shows a field the table does not. It is opened by a click (`cellClicked`),
+  not by selection, so Shift+Up/Down range selection does not pop it open;
+  once open it follows the current row. It re-renders after every directory
+  refresh, keeping its scroll position, and closes when the user leaves the
+  directory, the tab changes, or the close button is pressed. Closing deletes
+  the rail's widgets, and losing admin closes it (`updateAdminCrownBadge`), so
+  protected fields do not outlive a shared-desktop sign-out.
+- **Classic avatars.** Classic keeps its one-line rows, but column 0 of both
+  tables gets `UsersAvatarDelegate`: a 22 px round face, the uploaded avatar
+  or else the same generated portrait. Both delegates build faces lazily for
+  painted rows and cache them, so a directory of a thousand users does not
+  render a thousand portraits on every refresh. The rail's Classic look (bold
+  name and section titles, muted labels) is set in code, because the rail's
+  stylesheet lives in the Next theme only.
+- **Avatars after a session restart.** `startSession` empties `m_avatars`;
+  it now empties `m_chatDirectoryAvatarDigests` too. The directory only
+  decodes an avatar whose digest changed, so keeping the digests left every
+  row without its picture until that person uploaded a new one.
 - **Left out on purpose.** "Invite people", the Pending invites and Roles
   tabs, role pickers and the Two-factor column: the directory has no invites,
   roles beyond the admin flag, or two-factor state. Tab counts are not added
