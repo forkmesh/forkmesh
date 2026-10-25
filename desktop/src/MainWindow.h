@@ -1004,6 +1004,10 @@ public:
     QString testPageNoticeOpenText() const;
     void testClickPageNoticeOpen();
     void testClickPageNoticeClear();
+    void testSetPageNoticeCountdownMs(int ms) { m_pageNoticeCountdownMs = ms; }
+    bool testPageNoticeCountingDown() const;
+    bool testPageNoticeCountdownPaused() const;
+    void testHoverPageNotice(bool inside);
     QString testCurrentNoticePage() const { return currentNoticePage(); }
     void testClearPageNotices()
     {
@@ -10667,6 +10671,7 @@ private:
         QString kind;
         int actionRunId = -1;
         qint64 pingId = 0;
+        int countdownElapsedMs = 0;
     };
     struct NoticeDestination {
         NotificationLink link;
@@ -11567,6 +11572,7 @@ private:
     QList<QPointer<QWidget>> m_pageNoticeRows;
     QStringList m_recentNotices;
     quint64 m_nextPageNoticeId = 1;
+    int m_pageNoticeCountdownMs = 5000;
     QString m_renderedNoticePage;
     QWidget *m_errorBorderOverlay = nullptr;
     QTimer *m_errorBorderTimer = nullptr;

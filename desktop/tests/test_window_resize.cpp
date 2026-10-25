@@ -5752,10 +5752,34 @@ void checkInlinePageNotices(MainWindow &window)
           QStringLiteral("an error replaces the confirmation and its link "
                          "becomes an Open action"));
 
-    QThread::msleep(1200);
+    check(window.testPageNoticeCountingDown(),
+          QStringLiteral("a notice counts down to closing itself"));
+    window.testHoverPageNotice(true);
     QApplication::processEvents();
-    check(window.testPageNoticeVisible(),
-          QStringLiteral("a notice has no countdown and stays where it is"));
+    check(window.testPageNoticeCountdownPaused(),
+          QStringLiteral("hovering a notice pauses its countdown"));
+    window.testHoverPageNotice(false);
+    QApplication::processEvents();
+    check(window.testPageNoticeCountingDown(),
+          QStringLiteral("moving off a notice resumes its countdown"));
+
+    window.testSetPageNoticeCountdownMs(150);
+    window.testFlashMessage(QStringLiteral("Mirror sync finished"));
+    QApplication::processEvents();
+    window.testHoverPageNotice(true);
+    QThread::msleep(300);
+    QApplication::processEvents();
+    check(window.testPageNoticeTexts().contains(
+              QStringLiteral("Mirror sync finished")),
+          QStringLiteral("a hovered notice stays past its countdown"));
+    window.testHoverPageNotice(false);
+    for (int i = 0; i < 40 && window.testPageNoticeVisible(); ++i) {
+        QThread::msleep(20);
+        QApplication::processEvents();
+    }
+    check(!window.testPageNoticeVisible(),
+          QStringLiteral("a notice closes itself when its countdown ends"));
+    window.testSetPageNoticeCountdownMs(5000);
 
     for (int i = 0; i < 5; ++i)
         window.testFlashMessage(QStringLiteral("Clone %1 failed").arg(i), true);
