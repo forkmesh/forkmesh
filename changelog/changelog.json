@@ -8,6 +8,12 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Chat",
+     "items": [
+      "In #welcome on the web, a Welcome button sends an animated genie spider to greet everyone, picked at random from 10 entrances: a silk drop, a magic lamp, confetti, a magic carpet, sparkles, bouncing, balloons, a WELCOME web, fireworks and peekaboo."
+     ]
+    },
+    {
      "title": "Agents",
      "items": [
       "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk.",
