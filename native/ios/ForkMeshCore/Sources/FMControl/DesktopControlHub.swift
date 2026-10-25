@@ -50,7 +50,12 @@ public final class DesktopControlHub {
     @ObservationIgnored private let openRelay: RelayControlOpener?
     @ObservationIgnored private let pairedProvider: @MainActor () -> [PairedDesktop]
     @ObservationIgnored private let accountDesktopsLoader: AccountDesktopsLoader?
-    @ObservationIgnored public private(set) var accountDesktops: [PairedDesktop] = []
+    @ObservationIgnored private let store: KeyValueStore?
+    public private(set) var accountDesktops: [PairedDesktop] = []
+    public private(set) var preferredKey: String
+    public private(set) var presence: [String: ShellDesktopPresence] = [:]
+    @ObservationIgnored private var checkedAt: Date?
+    @ObservationIgnored public var checkInterval: TimeInterval = 300
     @ObservationIgnored private var accountDesktopsLoadedAt: Date?
     @ObservationIgnored private var accountDesktopsLoad: (epoch: Int, task: Task<Void, Never>)?
     @ObservationIgnored private var lastReachedKey = ""
@@ -78,12 +83,15 @@ public final class DesktopControlHub {
         local: LocalControlService?,
         openRelay: RelayControlOpener?,
         paired: (@MainActor () -> [PairedDesktop])? = nil,
-        accountDesktops: AccountDesktopsLoader? = nil
+        accountDesktops: AccountDesktopsLoader? = nil,
+        store: KeyValueStore? = nil
     ) {
         self.local = local
         self.openRelay = openRelay
         self.pairedProvider = paired ?? { local?.paired ?? [] }
         self.accountDesktopsLoader = accountDesktops
+        self.store = store
+        self.preferredKey = store?.string(forKey: DesktopControlHub.preferredKeyStoreKey) ?? ""
         if let local {
             lanLink = LanControlLink(service: local)
             localToken = local.addListener { [weak self] in
@@ -92,6 +100,8 @@ public final class DesktopControlHub {
         }
         refreshReach()
     }
+
+    public static let preferredKeyStoreKey = "desktop/preferred-key"
 
     /// The desktop this hub reaches: the connected one on the LAN, else the most recently paired.
     public var desktop: PairedDesktop? { candidates.first }
@@ -109,10 +119,91 @@ public final class DesktopControlHub {
                 out.append(item)
             }
         }
-        if let index = out.firstIndex(where: { $0.key == lastReachedKey }), index > 0 {
+        let first = out.contains(where: { $0.key == preferredKey }) ? preferredKey : lastReachedKey
+        if let index = out.firstIndex(where: { $0.key == first }), index > 0 {
             out.insert(out.remove(at: index), at: 0)
         }
         return out
+    }
+
+    public var choices: [ShellDesktopLight] {
+        _ = revision
+        let named = candidates.filter { !$0.name.isEmpty }
+        let active = currentLink.map(linkKey) ?? named.first?.key ?? ""
+        return named.map { (item: PairedDesktop) -> ShellDesktopLight in
+            let twins = named.filter { $0.name.lowercased() == item.name.lowercased() }.count > 1
+            return ShellDesktopLight(
+                id: item.key, name: twins ? "\(item.name) · \(item.key.prefix(6))" : item.name,
+                presence: presenceOf(item.key), active: item.key == active)
+        }
+    }
+
+    public func presenceOf(_ key: String) -> ShellDesktopPresence {
+        if key.isEmpty { return .unknown }
+        if let lanLink, lanLink.isOpen, lanLink.desktopKey == key { return .online }
+        if let relay, relay.isOpen, relay.desktopKey == key { return .online }
+        return presence[key] ?? .unknown
+    }
+
+    public func choose(key: String) {
+        if key == preferredKey { return }
+        preferredKey = key
+        if key.isEmpty {
+            store?.remove(DesktopControlHub.preferredKeyStoreKey)
+        } else {
+            store?.set(key, forKey: DesktopControlHub.preferredKeyStoreKey)
+        }
+        if let current = relay, !wanted(current.desktopKey) {
+            relay = nil
+            current.onClosed = nil
+            Task { await current.close() }
+        }
+        refreshReach()
+        revision &+= 1
+        announceLink()
+        if keepWarm, !key.isEmpty, currentLink == nil { warm() }
+    }
+
+    public func choose(name: String) {
+        guard let match = choices.first(where: { $0.name == name }) else { return }
+        choose(key: match.id)
+    }
+
+    public func checkDesktops(force: Bool = false) async {
+        guard let openRelay else { return }
+        if !force, let checked = checkedAt, Date().timeIntervalSince(checked) < checkInterval { return }
+        checkedAt = Date()
+        await refreshAccountDesktops()
+        let started = epoch
+        let others = candidates.filter { !$0.name.isEmpty && presenceOf($0.key) != .online }
+        if others.isEmpty { return }
+        for item in others { presence[item.key] = .checking }
+        let probes = others.map { (item: PairedDesktop) in
+            Task { @MainActor () -> (String, Bool) in
+                do {
+                    let connection = try await openRelay(item)
+                    await connection.close()
+                    return (item.key, true)
+                } catch {
+                    return (item.key, false)
+                }
+            }
+        }
+        for probe in probes {
+            let (key, reached) = await probe.value
+            if started == epoch { presence[key] = reached ? .online : .offline }
+        }
+    }
+
+    private func wanted(_ key: String) -> Bool {
+        if preferredKey.isEmpty || key == preferredKey { return true }
+        return !candidates.contains(where: { $0.key == preferredKey && !$0.name.isEmpty })
+    }
+
+    private func linkKey(_ link: DesktopControlLink) -> String {
+        if let relayed = link as? RelayControlConnection { return relayed.desktopKey }
+        if let lan = link as? LanControlLink { return lan.desktopKey }
+        return ""
     }
 
     @discardableResult
@@ -145,8 +236,8 @@ public final class DesktopControlHub {
 
     /// The open channel, if any, without dialling.
     public var currentLink: DesktopControlLink? {
-        if let lanLink, lanLink.isOpen { return lanLink }
-        if let relay, relay.isOpen { return relay }
+        if let lanLink, lanLink.isOpen, wanted(lanLink.desktopKey) { return lanLink }
+        if let relay, relay.isOpen, wanted(relay.desktopKey) { return relay }
         return nil
     }
 
@@ -167,7 +258,7 @@ public final class DesktopControlHub {
                 return current
             }
         }
-        if let lanLink, await awaitLan(lanLink) {
+        if let lanLink, await awaitLan(lanLink), wanted(lanLink.desktopKey) {
             attachTaps(to: lanLink)
             return lanLink
         }
@@ -184,7 +275,8 @@ public final class DesktopControlHub {
         }
         let started = epoch
         await refreshAccountDesktops()
-        let targets = Array(candidates.filter { !$0.name.isEmpty }.prefix(4))
+        let named = candidates.filter { !$0.name.isEmpty }
+        let targets = named.first(where: { $0.key == preferredKey }).map { [$0] } ?? Array(named.prefix(4))
         guard let first = targets.first else {
             refreshReach()
             let error = LocalControlException("not_paired")
@@ -194,17 +286,26 @@ public final class DesktopControlHub {
             throw error
         }
         reach = .connecting(first.name)
+        for target in targets where presenceOf(target.key) != .online { presence[target.key] = .checking }
         do {
-            let (connection, target) = try await DesktopControlHub.race(targets, openRelay)
-            if started != epoch {
+            let (connection, target) = try await DesktopControlHub.race(targets, openRelay) { [weak self] key, reached in
+                guard let self, started == self.epoch else { return }
+                self.presence[key] = reached ? .online : .offline
+            }
+            if started != epoch || !wanted(target.key) {
                 await connection.close()
                 return try await relink()
             }
             lastReachedKey = target.key
+            if let previous = relay, previous !== connection {
+                previous.onClosed = nil
+                Task { await previous.close() }
+            }
             relay = connection
             connection.onClosed = { [weak self] reason in
                 guard let self else { return }
                 if self.relay === connection { self.relay = nil }
+                self.presence[connection.desktopKey] = .unknown
                 self.reach = .offline(ControlErrorText.describe(code: reason))
                 self.revision &+= 1
                 self.announceLink()
@@ -268,6 +369,7 @@ public final class DesktopControlHub {
             do {
                 _ = try await self.link()
                 self.warmDelay = 2
+                if self.choices.count > 1 { await self.checkDesktops() }
             } catch let refusal as LocalControlException where refusal.code == "not_paired" {
                 return
             } catch {
@@ -311,15 +413,17 @@ public final class DesktopControlHub {
         init(_ count: Int) { remaining = count }
     }
 
-    private static func race(_ targets: [PairedDesktop], _ open: @escaping RelayControlOpener) async throws
-        -> (RelayControlConnection, PairedDesktop)
-    {
+    private static func race(
+        _ targets: [PairedDesktop], _ open: @escaping RelayControlOpener,
+        heard: @escaping @MainActor (String, Bool) -> Void
+    ) async throws -> (RelayControlConnection, PairedDesktop) {
         let state = Race(targets.count)
         return try await withCheckedThrowingContinuation { continuation in
             for target in targets {
                 Task { @MainActor in
                     do {
                         let connection = try await open(target)
+                        heard(target.key, true)
                         if state.done {
                             await connection.close()
                             return
@@ -327,6 +431,7 @@ public final class DesktopControlHub {
                         state.done = true
                         continuation.resume(returning: (connection, target))
                     } catch {
+                        if !ControlErrorText.isCancellation(error) { heard(target.key, false) }
                         state.lastError = error
                         state.remaining -= 1
                         if state.remaining == 0 && !state.done {
@@ -365,6 +470,8 @@ public final class DesktopControlHub {
         accountDesktops = []
         accountDesktopsLoadedAt = nil
         lastReachedKey = ""
+        presence = [:]
+        checkedAt = nil
         warmRetry?.cancel()
         warmRetry = nil
         warmDelay = 2
@@ -402,7 +509,7 @@ public final class DesktopControlHub {
         let before = reach
         refreshReach()
         // The phone came home: prefer the LAN and let the relay channel go.
-        if let lanLink, lanLink.isOpen {
+        if let lanLink, lanLink.isOpen, wanted(lanLink.desktopKey) {
             attachTaps(to: lanLink)
             if relay != nil {
                 Task { await self.disconnectRelay() }
@@ -413,9 +520,9 @@ public final class DesktopControlHub {
     }
 
     private func refreshReach() {
-        if let lanLink, lanLink.isOpen {
+        if let lanLink, lanLink.isOpen, wanted(lanLink.desktopKey) {
             reach = .connected(.lan, lanLink.desktopName)
-        } else if let relay, relay.isOpen {
+        } else if let relay, relay.isOpen, wanted(relay.desktopKey) {
             reach = .connected(.relay, relay.desktopName.isEmpty ? relay.node : relay.desktopName)
         } else if pairedProvider().isEmpty && accountDesktops.isEmpty {
             reach = .notPaired
@@ -432,7 +539,15 @@ public final class DesktopControlHub {
 extension DesktopControlHub: ShellLocalDesktopBridge {
     public var localDesktop: ShellLocalDesktop {
         let lan: ShellLocalDesktop = local?.localDesktop ?? .hidden
-        if case .connected(.relay, let name) = reach, !lan.isConnected { return .relay(name) }
+        if case .connected(.relay, let name) = reach, !(lan.isConnected && currentLink is LanControlLink) {
+            return .relay(name)
+        }
+        if lan.isConnected, !(currentLink is LanControlLink) {
+            if case .connecting(let name) = reach { return .connecting(name) }
+            return .hidden
+        }
         return lan
     }
+
+    public var desktopLights: [ShellDesktopLight] { choices }
 }
