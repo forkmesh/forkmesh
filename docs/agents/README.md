@@ -32,18 +32,35 @@ follows a run through every layer. The desktop UI for agents is described in
   repository name; the task title is `issueTitle`.
 - **Titles.** A run starts with `promptTitle()` (`AgentWorktree.h`, up to 8
   words); the branch and worktree slug (`titleSlug()`) is 4 words / 30
-  characters. In parallel the agent's own CLI may reword the title
-  (`requestAgentTitle()`; Settings > Agents > "Agent titles"): a one-shot,
-  tool-less call that replies `{"title": ...}`, at most 2 at once, killed
-  after 45 s. An optional Workers AI namer uses the desktop's locally stored
-  Cloudflare token directly. `AgentSession::titledBy` records who reworded
-  the title. Naming requests go through `WorkspaceNameGate` (2 in flight,
-  `Retry-After` honoured up to 1 hour).
-- **Claude Code names its own runs.** A Claude Code run is named by its
-  Claude Code session instead (`generate_session_title` over the session's
-  stream, then every `session_title_changed`), so `/rename` and renames on
-  claude.ai carry over, and **Rename…** in the agent list renames the Claude
-  session too. The one-shot namer above does not run for Claude Code. See
+  characters.
+- **Claude Code and Codex name their own runs (2026-10-25).** Before a Claude
+  Code or Codex run with a worktree starts, its own CLI reads the whole prompt
+  (`requestAgentTitle()`; Settings > Agents > "Agent titles", on by default):
+  a one-shot, tool-less `claude -p` / `codex exec` call that replies
+  `{"title": ...}`, at most 2 at once, killed after 20 s. It runs on the model
+  chosen for the run (`agentNamingModel()`: the run's model, else the
+  provider's default model setting; `auto` and an unset model use the CLI's
+  own default), not a separate small model, so the name comes from the same
+  model as the work. The title names the run in the Agents list and its
+  `<id>-<slug>` branch and worktree; `titledBy` is `promptNamerLabel()`, e.g.
+  `Claude Code namer (opus)`. A failed or slow reply falls back to the local
+  name. A direct-checkout run has no branch to name, so it starts at once and
+  Codex titles it in parallel.
+- **Cloudflare naming is opt-in.** Settings > Agents > "Cloudflare naming"
+  (`agents/cloudflareNaming`, off by default) sends the prompt to the Workers
+  AI model picked under "Branch/worktree names" instead, with the desktop's
+  locally stored Cloudflare token; its requests go through
+  `WorkspaceNameGate` (2 in flight, `Retry-After` honoured up to 1 hour).
+  Before 2026-10-25 a picked model alone turned it on; that pick is kept but
+  does nothing until the box is ticked.
+- **Claude Code sessions keep the name.** A Claude Code run named before
+  launch passes that name as the session's `title` and sends it with
+  `rename_session`, so the Claude session, the Agents list and the branch
+  agree. A run without one (Cloudflare naming, a direct checkout) is named by
+  its Claude Code session (`generate_session_title` over the session's
+  stream). Every `session_title_changed` still renames the run, so `/rename`
+  and renames on claude.ai carry over, and **Rename…** in the agent list
+  renames the Claude session too. See
   [../desktop/agents-ui.md](../desktop/agents-ui.md#claude-code-session-control-2026-10-23).
 - **Worktree and scratch.** Each run gets a Git worktree at
   `.worktrees/agent-<session>-<slug>` (bare mirrors and KVM runs use a temp

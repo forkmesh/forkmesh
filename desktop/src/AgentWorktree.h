@@ -206,6 +206,18 @@ inline QString agentTitleRequest(const QString &prompt)
         .arg(prompt.left(6000).trimmed());
 }
 
+inline QString promptNamerLabel(const QString &providerName, const QString &model)
+{
+    const QString label = providerName + QStringLiteral(" namer");
+    return model.isEmpty() ? label : QStringLiteral("%1 (%2)").arg(label, model);
+}
+
+inline bool isPromptNamerLabel(const QString &titledBy, const QString &providerName)
+{
+    const QString label = providerName + QStringLiteral(" namer");
+    return titledBy == label || titledBy.startsWith(label + QStringLiteral(" ("));
+}
+
 inline QString parseAgentTitle(const QByteArray &output)
 {
     constexpr int kMaxChars = 72;

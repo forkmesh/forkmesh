@@ -15576,9 +15576,10 @@ private:
         const QString &prompt, const QString &model,
         std::function<void(QString)> completion);
     void requestAgentTitle(const QString &provider, const QString &prompt,
+                           const QString &model, int timeoutMs,
                            std::function<void(QString)> completion);
     void applyAgentTitle(int sessionId, const QString &provider,
-                         const QString &title);
+                         const QString &model, const QString &title);
     void handleClaudeControlEvent(int sessionId, const QJsonObject &event);
     void requestClaudeSessionTitle(int sessionId);
     void applyClaudeSessionTitle(int sessionId, const QString &title, bool renamed);

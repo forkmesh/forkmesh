@@ -89,6 +89,19 @@ int main()
                             "synchronization pipeline"),
              "long title cut at a word boundary");
 
+    using forkmesh::agentwt::isPromptNamerLabel;
+    using forkmesh::agentwt::promptNamerLabel;
+    expectEq(promptNamerLabel(QStringLiteral("Claude Code"), QStringLiteral("opus")),
+             QStringLiteral("Claude Code namer (opus)"), "namer label names the model");
+    expectEq(promptNamerLabel(QStringLiteral("Codex"), QString()),
+             QStringLiteral("Codex namer"), "namer label without a model");
+    expectEq(QString::number(isPromptNamerLabel(QStringLiteral("Claude Code namer (opus)"),
+                                                QStringLiteral("Claude Code"))),
+             QStringLiteral("1"), "namer label recognised");
+    expectEq(QString::number(isPromptNamerLabel(QStringLiteral("Claude Code session"),
+                                                QStringLiteral("Claude Code"))),
+             QStringLiteral("0"), "session title is not a namer label");
+
     expectEq(adHocName(304, QStringLiteral(
                             "Have the agent determine the title to display")),
              QStringLiteral("304-agent-determine-title-display"),

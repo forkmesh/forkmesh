@@ -232,7 +232,11 @@ The mapping from requests to cards and from answers to responses is pure code
 in `ClaudeControlProtocol.{h,cpp}`; `MainWindowAgentClaudeControl.cpp` puts it
 on screen. Shapes were checked against Claude Code 2.1.309.
 
-**Names.** On the first `system/init` of each process the desktop sends
+**Names.** A run started from a prompt is usually named before launch by a
+one-shot `claude -p` on the run's own model (see
+[../agents/README.md](../agents/README.md#local-runs-desktop)); that name
+goes in as `title` and is sent again with `rename_session`, like a name you
+gave it. Otherwise, on the first `system/init` of each process the desktop sends
 `generate_session_title` with the prompt (`persist: true`), so the run is named
 by its own Claude Code session and the name is saved in the session's
 transcript; a resumed session gets its saved name back instead of a new one.
@@ -241,10 +245,10 @@ of ours) renames the run at any time; a repeated name changes nothing.
 `titledBy` records `Claude Code session` or `Claude Code rename`. The run is
 renamed only when its title came from its prompt or from an earlier namer:
 issue runs keep the issue title and a caller's name (a PR review, a conflict
-fix) stays. The one-shot `claude -p --model haiku` namer
-(`requestAgentTitle`) no longer runs for Claude Code, so the two never race;
-a queued or held Claude run shows its prompt title until it starts. Settings >
-Agents > "Agent titles" turns Claude's naming off too.
+fix) stays. The pre-launch namer finishes before the session starts and
+`generate_session_title` is skipped for its name, so the two never race. A held
+Claude run shows its prompt title until it starts. Settings > Agents > "Agent
+titles" turns Claude's naming off too.
 
 **Rename.** The agent list's context menu has **Rename…**. The new name is
 saved with `titledBy` `You` (no namer overrides it) and sent to a running

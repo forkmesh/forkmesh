@@ -75,11 +75,30 @@ QHash<QString, int> g_agentTaskDeleteRetries;
 
 constexpr int kMaxAgentTitlesInFlight = 2;
 constexpr int kAgentTitleTimeoutMs = 45000;
+constexpr int kAgentWorkspaceNameTimeoutMs = 20000;
 
 int &agentTitlesInFlight()
 {
     static int inFlight = 0;
     return inFlight;
+}
+
+static QString agentNamingModel(const QString &provider, const QString &model)
+{
+    const bool codex = agentIsCodexProvider(provider);
+    QString selected = model.trimmed();
+    if (selected.isEmpty())
+        selected = QSettings()
+                       .value(codex ? kCodexModelSetting : kClaudeCodeModelSetting)
+                       .toString()
+                       .trimmed();
+    if (codex)
+        selected = codexChatGptModelId(selected);
+    if (selected == kClaudeAutoModelId ||
+        !agentModelMatchesProvider(codex ? kCodexProvider : QStringLiteral("claude-code"),
+                                   selected))
+        return QString();
+    return selected;
 }
 
 static QString agentBranchSlug(const QString &title, const QString &fallback)
@@ -691,6 +710,7 @@ void MainWindow::requestCloudflareWorkspaceName(
 
 void MainWindow::requestAgentTitle(const QString &provider,
                                    const QString &prompt,
+                                   const QString &model, int timeoutMs,
                                    std::function<void(QString)> completion)
 {
     const bool codex = agentIsCodexProvider(provider);
@@ -703,15 +723,23 @@ void MainWindow::requestAgentTitle(const QString &provider,
     const QString workdir = forkmesh::vm::active()
                                 ? forkmesh::vm::workspaceRoot()
                                 : QDir::tempPath();
+    const QString modelFlag =
+        model.trimmed().isEmpty()
+            ? QString()
+            : QStringLiteral(" %1 %2").arg(
+                  codex ? QStringLiteral("-m") : QStringLiteral("--model"),
+                  forkmesh::agentwt::shellQuote(model.trimmed()));
     const QString command =
         codex ? QStringLiteral(
                     "exec codex exec --skip-git-repo-check --ephemeral "
                     "--sandbox read-only --color never "
-                    "-c 'model_reasoning_effort=\"low\"' -")
+                    "-c 'model_reasoning_effort=\"low\"'%1 -")
+                    .arg(modelFlag)
               : QStringLiteral(
-                    "exec claude -p --model haiku --max-turns 1 --tools '' "
+                    "exec claude -p%1 --max-turns 1 --tools '' "
                     "--strict-mcp-config --setting-sources '' "
-                    "--no-session-persistence --disable-slash-commands");
+                    "--no-session-persistence --disable-slash-commands")
+                    .arg(modelFlag);
     const forkmesh::vm::LaunchCommand launch = forkmesh::vm::isolateCommand(
         QStringLiteral("bash"), {QStringLiteral("-lc"), command}, workdir,
         false);
@@ -750,7 +778,8 @@ void MainWindow::requestAgentTitle(const QString &provider,
         proc->deleteLater();
         callback(title);
     };
-    QTimer::singleShot(kAgentTitleTimeoutMs, proc, [proc] { proc->kill(); });
+    QTimer::singleShot(timeoutMs > 0 ? timeoutMs : kAgentTitleTimeoutMs, proc,
+                       [proc] { proc->kill(); });
     connect(proc, &QProcess::finished, this,
             [proc, done](int exitCode, QProcess::ExitStatus status) {
                 done(exitCode == 0 && status == QProcess::NormalExit
@@ -769,14 +798,12 @@ void MainWindow::requestAgentTitle(const QString &provider,
 }
 
 void MainWindow::applyAgentTitle(int sessionId, const QString &provider,
-                                 const QString &title)
+                                 const QString &model, const QString &title)
 {
     if (title.isEmpty() || !m_agentStore)
         return;
     const QString titledBy =
-        provider == QLatin1String("claude-code")
-            ? QStringLiteral("%1 (Haiku)").arg(agentProviderName(provider))
-            : agentProviderName(provider);
+        forkmesh::agentwt::promptNamerLabel(agentProviderName(provider), model);
     {
         AgentSession *session = findAgentSession(sessionId);
         if (!session || session->issueNumber > 0 ||
@@ -988,17 +1015,25 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
     if (switchToTab)
         switchToAgentsTab(sessionId);
 
-    if (titleFromPrompt && provider != QLatin1String("claude-code") &&
-        QSettings().value(kAgentTitleFromAgentSetting, true).toBool())
-        requestAgentTitle(provider, task,
-                          [this, sessionId, provider](const QString &agentTitle) {
-                              applyAgentTitle(sessionId, provider, agentTitle);
+    const QString namingModel =
+        !direct && QSettings().value(kAgentCloudflareNamingSetting, false).toBool()
+            ? QSettings().value(kAgentWorkspaceNameModelSetting).toString().trimmed()
+            : QString();
+    const bool agentTitles =
+        titleFromPrompt && QSettings().value(kAgentTitleFromAgentSetting, true).toBool();
+    const QString agentModel = agentNamingModel(provider, session.model);
+    const bool agentNamesWorkspace =
+        agentTitles && cliProvider && !direct && namingModel.isEmpty();
+    if (agentTitles && !agentNamesWorkspace && provider != QLatin1String("claude-code"))
+        requestAgentTitle(provider, task, agentModel, kAgentTitleTimeoutMs,
+                          [this, sessionId, provider, agentModel](const QString &agentTitle) {
+                              applyAgentTitle(sessionId, provider, agentModel, agentTitle);
                           });
 
     const QString localTitle = session.issueTitle;
     auto launchPrepared =
         [this, repo, task, switchToTab, titleFromPrompt, localTitle](
-            int id, const QString &description) {
+            int id, const QString &description, const QString &namer) {
             AgentSession *stored = findAgentSession(id);
             if (!stored || stored->status != AgentStatus::Queued)
                 return; // deleted/stopped while Workers AI was answering
@@ -1015,23 +1050,19 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
                     QString aiTitle = description.simplified();
                     aiTitle[0] = aiTitle.at(0).toUpper();
                     stored->issueTitle = aiTitle;
-                    stored->titledBy = QStringLiteral("Cloudflare AI");
+                    stored->titledBy = namer;
                 }
                 m_agentStore->saveSession(*stored);
                 m_agentStore->appendLog(
                     *stored,
-                    QStringLiteral("==> Cloudflare AI named this workspace %1.\n")
-                        .arg(sharedName));
-            } else if (!stored->directCheckout &&
-                       !QSettings()
-                            .value(kAgentWorkspaceNameModelSetting)
-                            .toString()
-                            .trimmed()
-                            .isEmpty()) {
+                    QStringLiteral("==> %1 named this workspace %2.\n")
+                        .arg(namer, sharedName));
+            } else if (!stored->directCheckout && !namer.isEmpty()) {
                 m_agentStore->appendLog(
                     *stored,
-                    QStringLiteral("==> Cloudflare naming unavailable; using "
-                                   "the local workspace name.\n"));
+                    QStringLiteral("==> %1 naming unavailable; using "
+                                   "the local workspace name.\n")
+                        .arg(namer));
             }
             AgentSession prepared = *stored;
 
@@ -1052,8 +1083,6 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
 
             if (prepared.provider == QLatin1String("claude-code") ||
                 agentIsCodexProvider(prepared.provider)) {
-                // The typed prompt remains verbatim; Cloudflare only supplied
-                // the workspace label above.
                 startCliTranscript(prepared, Issue(), repo.localPath, task,
                                    switchToTab, &repo);
                 return;
@@ -1074,15 +1103,20 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
             reloadAgents();
         };
 
-    // A direct run has no workspace to name.
-    const QString namingModel =
-        direct ? QString()
-               : QSettings()
-                     .value(kAgentWorkspaceNameModelSetting)
-                     .toString()
-                     .trimmed();
-    if (namingModel.isEmpty()) {
-        launchPrepared(sessionId, QString());
+    if (agentNamesWorkspace) {
+        const QString namer =
+            forkmesh::agentwt::promptNamerLabel(agentProviderName(provider), agentModel);
+        if (AgentSession *stored = findAgentSession(sessionId))
+            m_agentStore->appendLog(
+                *stored,
+                QString::fromUtf8("==> Asking %1 for a workspace name\xE2\x80\xA6\n")
+                    .arg(namer));
+        requestAgentTitle(provider, task, agentModel, kAgentWorkspaceNameTimeoutMs,
+                          [launchPrepared, sessionId, namer](const QString &title) mutable {
+                              launchPrepared(sessionId, title, namer);
+                          });
+    } else if (namingModel.isEmpty()) {
+        launchPrepared(sessionId, QString(), QString());
     } else {
         if (AgentSession *stored = findAgentSession(sessionId))
             m_agentStore->appendLog(
@@ -1091,7 +1125,7 @@ int MainWindow::startAdHocAgentForRepo(int repoIndex, const QString &task,
         requestCloudflareWorkspaceName(
             task, namingModel,
             [launchPrepared, sessionId](const QString &description) mutable {
-                launchPrepared(sessionId, description);
+                launchPrepared(sessionId, description, QStringLiteral("Cloudflare AI"));
             });
     }
     return sessionId;
