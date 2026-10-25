@@ -35,6 +35,7 @@ struct Budget {
 Budget computeBudget(qint64 totalBytes, int cpuCount, int reservePercent,
                      int cpuReservePercent = kDefaultCpuReservePercent);
 QString cpuCores(int quotaPercent);
+Budget budgetFor(int reservePercent, int cpuReservePercent);
 Budget currentBudget();
 
 QStringList sliceProperties(const Budget &budget);
@@ -60,6 +61,7 @@ struct Status {
 bool enabled();
 Status prepare();
 Status status();
+Status setReservePercents(int reservePercent, int cpuReservePercent);
 QString describe(const Status &status);
 
 void applyEnvironment(QProcessEnvironment &env);

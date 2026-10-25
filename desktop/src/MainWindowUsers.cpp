@@ -298,6 +298,52 @@ QString usersNextInitials(const QString &text)
     return initials;
 }
 
+QPixmap usersGeneratedPortrait(const QString &seed)
+{
+    QPixmap portrait;
+    if (!seed.isEmpty() && portrait.loadFromData(forkMeshAvatarPng(seed)))
+        portrait = portrait.scaled(56, 56, Qt::KeepAspectRatioByExpanding,
+                                   Qt::SmoothTransformation);
+    return portrait;
+}
+
+class UsersAvatarDelegate final : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option,
+                         const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        const QString seed = option->text.trimmed().toLower();
+        if (seed.isEmpty())
+            return;
+        const QString key =
+            seed + QLatin1Char('\n') + QString::number(option->icon.cacheKey());
+        auto found = m_faces.constFind(key);
+        if (found == m_faces.constEnd()) {
+            if (m_faces.size() > 512)
+                m_faces.clear();
+            const QPixmap source = option->icon.isNull()
+                                       ? usersGeneratedPortrait(seed)
+                                       : option->icon.pixmap(56, 56);
+            found = m_faces.insert(
+                key, source.isNull() ? QIcon()
+                                     : QIcon(roundedAvatar(source, 56, 0.5)));
+        }
+        if (found.value().isNull())
+            return;
+        option->icon = found.value();
+        option->features |= QStyleOptionViewItem::HasDecoration;
+        option->decorationSize = QSize(22, 22);
+    }
+
+private:
+    mutable QHash<QString, QIcon> m_faces;
+};
+
 void usersNextRowHover(QStyleOptionViewItem *option, const QModelIndex &index)
 {
     const auto *view = qobject_cast<const QAbstractItemView *>(option->widget);
@@ -343,6 +389,8 @@ public:
         usersNextRowHover(&opt, index);
         const QString handle = opt.text.trimmed();
         const QIcon avatar = opt.icon;
+        const QPixmap portrait =
+            avatar.isNull() ? portraitFor(handle) : QPixmap();
         const QFont base = opt.font;
         usersNextDrawBackground(&opt, painter);
 
@@ -359,7 +407,13 @@ public:
             QPainterPath clip;
             clip.addEllipse(QRectF(circle));
             painter->setClipPath(clip);
-            avatar.paint(painter, circle);
+            painter->drawPixmap(circle, avatar.pixmap(QSize(56, 56)));
+            painter->setClipping(false);
+        } else if (!portrait.isNull()) {
+            QPainterPath clip;
+            clip.addEllipse(QRectF(circle));
+            painter->setClipPath(clip);
+            painter->drawPixmap(circle, portrait);
             painter->setClipping(false);
         } else {
             painter->setPen(Qt::NoPen);
@@ -440,6 +494,21 @@ private:
         return result;
     }
 
+    QPixmap portraitFor(const QString &handle) const
+    {
+        const QString seed = handle.toLower();
+        if (seed.isEmpty())
+            return QPixmap();
+        auto found = m_portraits.constFind(seed);
+        if (found != m_portraits.constEnd())
+            return found.value();
+        if (m_portraits.size() > 512)
+            m_portraits.clear();
+        const QPixmap portrait = usersGeneratedPortrait(seed);
+        m_portraits.insert(seed, portrait);
+        return portrait;
+    }
+
     QString titleFor(const QModelIndex &index, const QString &handle) const
     {
         const QModelIndex display =
@@ -462,6 +531,7 @@ private:
 
     int m_displayNameColumn = 0;
     std::function<QString()> m_self;
+    mutable QHash<QString, QPixmap> m_portraits;
 };
 
 class UsersNextDotDelegate final : public QStyledItemDelegate
@@ -999,7 +1069,25 @@ QWidget *MainWindow::buildUsersSection()
                               kUsersQuarantineColReasons,
                               kUsersQuarantineColQuarantined});
     }
-    outer->addWidget(m_usersTabs, 1);
+    for (QTableWidget *table : {m_usersTable, m_usersQuarantineTable}) {
+        if (!next)
+            table->setItemDelegateForColumn(0, new UsersAvatarDelegate(table));
+        connect(table, &QTableWidget::cellClicked, this,
+                [this, table](int row, int) { openUsersDetail(table, row); });
+        connect(table, &QTableWidget::itemSelectionChanged, this,
+                [this, table] { followUsersDetailSelection(table); });
+    }
+    connect(m_usersTabs, &QTabWidget::currentChanged, this, [this] {
+        if (m_usersDetailTable &&
+            m_usersTabs->currentWidget() != m_usersDetailTable)
+            closeUsersDetail();
+    });
+    auto *body = new QHBoxLayout;
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(16);
+    body->addWidget(m_usersTabs, 1);
+    body->addWidget(buildUsersDetailPanel());
+    outer->addLayout(body, 1);
 
     renderUsersPage(m_usersDirectoryPayload);
     renderUsersQuarantinePage(m_usersQuarantinePayload);
@@ -1121,6 +1209,8 @@ void MainWindow::renderUsersPage(const QJsonArray &users)
     m_usersTable->setSortingEnabled(true);
     m_usersTable->sortItems(sortColumn, sortOrder);
     updateUsersStatus();
+    if (m_usersDetailTable == m_usersTable)
+        renderUsersDetail();
     // Rebuilding the rows drops the selection, so the send button has to be
     // re-evaluated against whatever (if anything) is selected now.
     refreshUsersTipButton();
@@ -1614,9 +1704,13 @@ void MainWindow::renderUsersQuarantinePage(const QJsonArray &users)
             continue;
         const int row = m_usersQuarantineTable->rowCount();
         m_usersQuarantineTable->insertRow(row);
-        m_usersQuarantineTable->setItem(
-            row, kUsersQuarantineColName,
-            usersTableItem(name, name.toLower()));
+        auto *nameItem = usersTableItem(name, name.toLower());
+        const auto avatar = m_avatars.constFind(
+            QStringLiteral("user:") + name.toLower());
+        if (avatar != m_avatars.constEnd())
+            nameItem->setIcon(QIcon(*avatar));
+        m_usersQuarantineTable->setItem(row, kUsersQuarantineColName,
+                                        nameItem);
 
         const bool discordLinked =
             user.value(QStringLiteral("discordLinked")).toBool();
@@ -1935,6 +2029,8 @@ void MainWindow::renderUsersQuarantinePage(const QJsonArray &users)
     m_usersQuarantineTable->sortItems(sortColumn, sortOrder);
     updateUsersStatus();
     refreshUsersUnquarantineButton();
+    if (m_usersDetailTable == m_usersQuarantineTable)
+        renderUsersDetail();
 }
 
 void MainWindow::updateUsersStatus()
@@ -2720,4 +2816,410 @@ void MainWindow::finishUsersDeleteBatch()
                 .arg(result.targets.size())
                 .arg(result.failures.join(QLatin1Char('\n'))));
     }
+}
+
+namespace {
+struct UsersDetailGroup {
+    QString title;
+    QList<int> columns;
+};
+
+struct UsersDetailField {
+    QString label;
+    QString value;
+    QString tip;
+};
+
+QList<UsersDetailGroup> usersDetailGroups()
+{
+    return {
+        {QStringLiteral("Account"),
+         {kUsersColStatus, kUsersColAdmin, kUsersColProfileVisibility,
+          kUsersColVerified, kUsersColJoined, kUsersColAvatarUpdated,
+          kUsersColNodes, kUsersColSolana, kUsersColMastodon}},
+        {QStringLiteral("Email"),
+         {kUsersColEmail, kUsersColEmailNotifications, kUsersColOutreach,
+          kUsersColLastEmail, kUsersColEmailDelivery, kUsersColEmailOpens,
+          kUsersColEmailClicks, kUsersColLastEmailOpened,
+          kUsersColLastEmailClicked}},
+        {QStringLiteral("Discord"),
+         {kUsersColDiscordUsername, kUsersColDiscordDisplayName,
+          kUsersColDiscordId}},
+        {QStringLiteral("Activity"),
+         {kUsersColActivityRecency, kUsersColWorldActivity,
+          kUsersColWorldSteps, kUsersColOfficeVisits, kUsersColPulls,
+          kUsersColIssues, kUsersColCommits, kUsersColDiscussions}},
+        {QStringLiteral("Device"),
+         {kUsersColCountry, kUsersColBrowser, kUsersColOs}},
+        {QStringLiteral("Signup"),
+         {kUsersColSignupIp, kUsersColSignupAgent, kUsersColSignupCountry,
+          kUsersColSignupClient}},
+        {QStringLiteral("Referrals"),
+         {kUsersColReferredBy, kUsersColReferralStatus,
+          kUsersColReferralClickId, kUsersColReferralRisk,
+          kUsersColReferralCreated, kUsersColReferralVerified,
+          kUsersColReferralCredited, kUsersColReferralClicks,
+          kUsersColReferralAuditedUniqueClicks,
+          kUsersColReferralDuplicateClicks, kUsersColReferralRejectedClicks,
+          kUsersColReferralLegacyClicks, kUsersColLegacyUnattributed,
+          kUsersColCreditedReferrals, kUsersColReferredUsers,
+          kUsersColReferralLastActivity}},
+        {QStringLiteral("Fingerprints"),
+         {kUsersColSignupIpFingerprint, kUsersColSignupAgentFingerprint,
+          kUsersColSignupClientFingerprint,
+          kUsersColReferralNetworkFingerprint, kUsersColUserFingerprint,
+          kUsersColEmailFingerprint, kUsersColDiscordFingerprint}},
+    };
+}
+
+QList<UsersDetailGroup> usersQuarantineDetailGroups()
+{
+    return {
+        {QStringLiteral("Quarantine"),
+         {kUsersQuarantineColStatus, kUsersQuarantineColReasons,
+          kUsersQuarantineColQuarantined, kUsersQuarantineColReviewAfter,
+          kUsersQuarantineColReviewed, kUsersQuarantineColReviewedBy}},
+        {QStringLiteral("Account"),
+         {kUsersQuarantineColAccountStatus, kUsersQuarantineColAdmin,
+          kUsersQuarantineColProfileVisibility, kUsersQuarantineColVerified,
+          kUsersQuarantineColJoined, kUsersQuarantineColAvatarUpdated,
+          kUsersQuarantineColNodes, kUsersQuarantineColSolana,
+          kUsersQuarantineColMastodon}},
+        {QStringLiteral("Email"),
+         {kUsersQuarantineColEmail, kUsersQuarantineColEmailNotifications,
+          kUsersQuarantineColOutreach}},
+        {QStringLiteral("Discord"),
+         {kUsersQuarantineColDiscordUsername,
+          kUsersQuarantineColDiscordDisplayName,
+          kUsersQuarantineColDiscordId}},
+        {QStringLiteral("Device"),
+         {kUsersQuarantineColWorldCountry, kUsersQuarantineColBrowser,
+          kUsersQuarantineColOs}},
+        {QStringLiteral("Signup"),
+         {kUsersQuarantineColSignupIp, kUsersQuarantineColSignupAgent,
+          kUsersQuarantineColCountry, kUsersQuarantineColClient}},
+        {QStringLiteral("Referrals"),
+         {kUsersQuarantineColReferredBy, kUsersQuarantineColReferralStatus,
+          kUsersQuarantineColReferralClickId, kUsersQuarantineColRisk,
+          kUsersQuarantineColReferralCreated,
+          kUsersQuarantineColReferralVerified,
+          kUsersQuarantineColReferralCredited}},
+        {QStringLiteral("Fingerprints"),
+         {kUsersQuarantineColIpFingerprint,
+          kUsersQuarantineColAgentFingerprint,
+          kUsersQuarantineColClientFingerprint,
+          kUsersQuarantineColNetworkFingerprint,
+          kUsersQuarantineColUserFingerprint,
+          kUsersQuarantineColEmailFingerprint,
+          kUsersQuarantineColDiscordFingerprint,
+          kUsersQuarantineColReferrerFingerprint}},
+    };
+}
+
+QJsonObject usersDetailRecord(const QJsonArray &users, const QString &name)
+{
+    for (const QJsonValue &value : users) {
+        const QJsonObject user = value.toObject();
+        const QString candidate =
+            user.value(QStringLiteral("name"))
+                .toString(user.value(QStringLiteral("nodeName")).toString())
+                .trimmed();
+        if (candidate.compare(name, Qt::CaseInsensitive) == 0)
+            return user;
+    }
+    return {};
+}
+
+QLabel *usersDetailLabel(const QString &text, const QString &objectName)
+{
+    auto *label = new QLabel(text);
+    label->setObjectName(objectName);
+    label->setTextFormat(Qt::PlainText);
+    return label;
+}
+} // namespace
+
+QWidget *MainWindow::buildUsersDetailPanel()
+{
+    m_usersDetailPanel = new QFrame;
+    m_usersDetailPanel->setObjectName(QStringLiteral("usersDetailPanel"));
+    m_usersDetailPanel->setAttribute(Qt::WA_StyledBackground, true);
+    m_usersDetailPanel->setFixedWidth(360);
+    auto *layout = new QVBoxLayout(m_usersDetailPanel);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    auto *header = new QWidget;
+    header->setObjectName(QStringLiteral("usersDetailHeader"));
+    header->setFixedHeight(44);
+    auto *headerRow = new QHBoxLayout(header);
+    headerRow->setContentsMargins(16, 0, 8, 0);
+    headerRow->setSpacing(4);
+    headerRow->addWidget(usersDetailLabel(QStringLiteral("Profile"),
+                                          QStringLiteral("usersDetailTitle")));
+    headerRow->addStretch(1);
+    auto *close = new QPushButton;
+    close->setObjectName(QStringLiteral("usersDetailClose"));
+    close->setIcon(QIcon(tintedOcticonPixmap(
+        QStringLiteral("x"), Theme::color(Theme::Role::FgMuted), 16)));
+    close->setIconSize(QSize(16, 16));
+    close->setFixedSize(28, 28);
+    close->setToolTip(QStringLiteral("Close profile"));
+    close->setAccessibleName(QStringLiteral("Close profile"));
+    close->setCursor(Qt::PointingHandCursor);
+    connect(close, &QPushButton::clicked, this, &MainWindow::closeUsersDetail);
+    headerRow->addWidget(close);
+    layout->addWidget(header);
+
+    m_usersDetailScroll = new QScrollArea;
+    m_usersDetailScroll->setObjectName(QStringLiteral("usersDetailScroll"));
+    m_usersDetailScroll->setWidgetResizable(true);
+    m_usersDetailScroll->setFrameShape(QFrame::NoFrame);
+    m_usersDetailScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    layout->addWidget(m_usersDetailScroll, 1);
+    m_usersDetailPanel->hide();
+    return m_usersDetailPanel;
+}
+
+void MainWindow::openUsersDetail(QTableWidget *table, int row)
+{
+    if (!table || row < 0 || row >= table->rowCount())
+        return;
+    const QTableWidgetItem *item = table->item(row, 0);
+    const QString name = item ? item->text().trimmed() : QString();
+    if (name.isEmpty())
+        return;
+    m_usersDetailTable = table;
+    m_usersDetailName = name;
+    renderUsersDetail();
+}
+
+void MainWindow::followUsersDetailSelection(QTableWidget *table)
+{
+    if (!m_usersDetailPanel || m_usersDetailPanel->isHidden() || !table ||
+        table != m_usersDetailTable || !table->selectionModel())
+        return;
+    const int row = table->currentRow();
+    if (row < 0 || !table->selectionModel()->isRowSelected(row, QModelIndex()))
+        return;
+    openUsersDetail(table, row);
+}
+
+void MainWindow::renderUsersDetail()
+{
+    if (!m_usersDetailPanel || !m_usersDetailScroll)
+        return;
+    QTableWidget *table = m_usersDetailTable;
+    int row = -1;
+    if (table && !m_usersDetailName.isEmpty()) {
+        for (int candidate = 0; candidate < table->rowCount(); ++candidate) {
+            const QTableWidgetItem *item = table->item(candidate, 0);
+            if (item && item->text().trimmed().compare(
+                            m_usersDetailName, Qt::CaseInsensitive) == 0) {
+                row = candidate;
+                break;
+            }
+        }
+    }
+    if (row < 0) {
+        closeUsersDetail();
+        return;
+    }
+
+    const bool quarantine = table == m_usersQuarantineTable;
+    const QString handle = table->item(row, 0)->text().trimmed();
+    const QString key = handle.toLower();
+    const QJsonObject record = usersDetailRecord(
+        quarantine ? m_usersQuarantinePayload : m_usersDirectoryPayload,
+        handle);
+    const auto cell = [table, row](int column) {
+        const QTableWidgetItem *item = table->item(row, column);
+        return item ? item->text().trimmed() : QString();
+    };
+    const QTableWidgetItem *displayItem = table->item(
+        row, quarantine ? int(kUsersQuarantineColDiscordDisplayName)
+                        : int(kUsersColDiscordDisplayName));
+    const QString displayName =
+        displayItem && !displayItem->data(kTableSortRole).toString().isEmpty()
+            ? displayItem->text().trimmed()
+            : QString();
+    const QTableWidgetItem *adminItem = table->item(
+        row, quarantine ? int(kUsersQuarantineColAdmin) : int(kUsersColAdmin));
+    const bool administrator =
+        adminItem && adminItem->data(kTableSortRole).toInt() == 1;
+    const QString owner = accountOwner().trimmed();
+    const bool self =
+        !owner.isEmpty() && owner.compare(handle, Qt::CaseInsensitive) == 0;
+
+    QWidget *previous = m_usersDetailScroll->widget();
+    const int keepScroll =
+        previous && previous->property("usersDetailUser").toString() == key
+            ? m_usersDetailScroll->verticalScrollBar()->value()
+            : 0;
+
+    auto *content = new QWidget;
+    content->setObjectName(QStringLiteral("usersDetailContent"));
+    content->setProperty("usersDetailUser", key);
+    auto *column = new QVBoxLayout(content);
+    column->setContentsMargins(16, 8, 16, 20);
+    column->setSpacing(4);
+
+    const QPixmap uploaded = m_avatars.value(QStringLiteral("user:") + key);
+    auto *avatar = new QLabel;
+    avatar->setObjectName(QStringLiteral("usersDetailAvatar"));
+    avatar->setProperty("usersDetailUploaded", !uploaded.isNull());
+    avatar->setPixmap(uploaded.isNull()
+                          ? roundedAvatar(forkMeshAvatarPng(key), 72, 0.5)
+                          : roundedAvatar(uploaded, 72, 0.5));
+    avatar->setFixedSize(72, 72);
+    column->addWidget(avatar);
+    column->addSpacing(8);
+
+    const bool classic = !Theme::isNext();
+    QPalette muted = content->palette();
+    muted.setColor(QPalette::WindowText, Theme::color(Theme::Role::FgMuted));
+    const auto emphasize = [](QLabel *label, int grow) {
+        QFont font = forkmesh::resizedFont(label->font(), grow);
+        font.setBold(true);
+        label->setFont(font);
+    };
+    auto *name = usersDetailLabel(displayName.isEmpty() ? handle : displayName,
+                                  QStringLiteral("usersDetailName"));
+    if (classic)
+        emphasize(name, 3);
+    name->setWordWrap(true);
+    name->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    column->addWidget(name);
+    auto *handleLabel = usersDetailLabel(QStringLiteral("@") + handle,
+                                         QStringLiteral("usersDetailHandle"));
+    handleLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    if (classic)
+        handleLabel->setPalette(muted);
+    column->addWidget(handleLabel);
+
+    forkmesh::userstatus::UserStatus status;
+    if (forkmesh::userstatus::readFrom(record, &status))
+        status = forkmesh::userstatus::visible(
+            status, QDateTime::currentMSecsSinceEpoch());
+    if (status.hasCustom()) {
+        auto *statusLabel = usersDetailLabel(
+            QStringList{status.emoji, status.text}.join(QLatin1Char(' ')).trimmed(),
+            QStringLiteral("usersDetailStatus"));
+        statusLabel->setWordWrap(true);
+        column->addWidget(statusLabel);
+    }
+
+    QStringList badges;
+    if (self)
+        badges.append(QStringLiteral("You"));
+    if (administrator)
+        badges.append(QStringLiteral("Admin"));
+    badges.append(quarantine ? QStringLiteral("Quarantined")
+                             : cell(kUsersColStatus));
+    badges.removeAll(QString());
+    auto *badgeRow = new QHBoxLayout;
+    badgeRow->setContentsMargins(0, 6, 0, 0);
+    badgeRow->setSpacing(6);
+    for (const QString &badge : std::as_const(badges)) {
+        auto *pill = usersDetailLabel(badge, QStringLiteral("usersDetailBadge"));
+        if (classic)
+            pill->setPalette(muted);
+        badgeRow->addWidget(pill);
+    }
+    badgeRow->addStretch(1);
+    column->addLayout(badgeRow);
+
+    QList<UsersDetailGroup> groups =
+        quarantine ? usersQuarantineDetailGroups() : usersDetailGroups();
+    QSet<int> grouped{0};
+    for (const UsersDetailGroup &group : std::as_const(groups))
+        for (int index : group.columns)
+            grouped.insert(index);
+    UsersDetailGroup other{QStringLiteral("Other"), {}};
+    for (int index = 0; index < table->columnCount(); ++index)
+        if (!grouped.contains(index))
+            other.columns.append(index);
+    if (!other.columns.isEmpty())
+        groups.append(other);
+
+    QStringList achievements;
+    for (const QJsonValue &value :
+         record.value(QStringLiteral("achievementBadges")).toArray()) {
+        const QString badge = value.toString().trimmed();
+        if (!badge.isEmpty())
+            achievements.append(badge);
+    }
+
+    for (const UsersDetailGroup &group : std::as_const(groups)) {
+        QList<UsersDetailField> fields;
+        for (int index : group.columns) {
+            const QTableWidgetItem *header = table->horizontalHeaderItem(index);
+            const QTableWidgetItem *item = table->item(row, index);
+            if (!header || !item || item->text().trimmed().isEmpty())
+                continue;
+            QString shown = item->text().trimmed();
+            QString tip = item->toolTip();
+            if (shown.endsWith(QChar(0x2026)) &&
+                tip.startsWith(shown.chopped(1))) {
+                shown = tip;
+                tip.clear();
+            }
+            fields.append({header->text(), shown, tip});
+        }
+        if (group.title == QLatin1String("Account") && !achievements.isEmpty())
+            fields.append({QStringLiteral("Badges"),
+                           achievements.join(QStringLiteral(", ")), QString()});
+        if (fields.isEmpty())
+            continue;
+        column->addSpacing(14);
+        auto *section =
+            usersDetailLabel(group.title, QStringLiteral("usersDetailSection"));
+        if (classic)
+            emphasize(section, 0);
+        column->addWidget(section);
+        auto *grid = new QGridLayout;
+        grid->setContentsMargins(0, 4, 0, 0);
+        grid->setHorizontalSpacing(12);
+        grid->setVerticalSpacing(6);
+        grid->setColumnStretch(1, 1);
+        for (int index = 0; index < fields.size(); ++index) {
+            const UsersDetailField &field = fields.at(index);
+            auto *label =
+                usersDetailLabel(field.label, QStringLiteral("usersDetailKey"));
+            label->setWordWrap(true);
+            label->setFixedWidth(120);
+            if (classic)
+                label->setPalette(muted);
+            auto *value =
+                usersDetailLabel(field.value, QStringLiteral("usersDetailValue"));
+            value->setProperty("usersDetailField", field.label);
+            value->setWordWrap(true);
+            value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            value->setToolTip(field.tip);
+            grid->addWidget(label, index, 0, Qt::AlignTop);
+            grid->addWidget(value, index, 1, Qt::AlignTop);
+        }
+        column->addLayout(grid);
+    }
+    column->addStretch(1);
+
+    m_usersDetailScroll->setWidget(content);
+    if (keepScroll > 0) {
+        QPointer<QScrollBar> bar = m_usersDetailScroll->verticalScrollBar();
+        QTimer::singleShot(0, this, [bar, keepScroll] {
+            if (bar)
+                bar->setValue(keepScroll);
+        });
+    }
+    m_usersDetailPanel->show();
+}
+
+void MainWindow::closeUsersDetail()
+{
+    m_usersDetailTable = nullptr;
+    m_usersDetailName.clear();
+    if (m_usersDetailScroll)
+        delete m_usersDetailScroll->takeWidget();
+    if (m_usersDetailPanel)
+        m_usersDetailPanel->hide();
 }

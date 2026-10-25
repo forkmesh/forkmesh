@@ -2023,7 +2023,7 @@ QString runningClientDir()
 
 QString workingClientDir()
 {
-    const QString baked = QStringLiteral(FORKMESH_SOURCE_DIR);
+    const QString baked = forkmesh::sourceDir();
     if (!baked.isEmpty() && QDir(baked).exists("CMakeLists.txt"))
         return baked;
     return runningClientDir();

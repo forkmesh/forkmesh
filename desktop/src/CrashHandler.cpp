@@ -1,6 +1,7 @@
 #include "ForkMeshVersion.h"
 #include "AppPaths.h"
 #include "CrashHandler.h"
+#include "SourceDir.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -433,7 +434,8 @@ void installCrashHandler(const QString &crashLogPath,
 {
 #ifdef FORKMESH_CRASH_HANDLER
     const QByteArray build =
-        QByteArrayLiteral("ForkMesh v" FORKMESH_VERSION " (src " FORKMESH_SOURCE_DIR ")");
+        QByteArrayLiteral("ForkMesh v" FORKMESH_VERSION " (src ") +
+        QByteArray(forkmesh::sourceDirUtf8()) + QByteArrayLiteral(")");
     qstrncpy(g_buildInfo, build.constData(), sizeof(g_buildInfo));
 
     Q_UNUSED(crashLogPath);

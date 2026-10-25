@@ -20,7 +20,7 @@ final class FakeRelayDesktop: RelayFrameChannel {
 
     let seed = Ed25519.generateSeed()
     let publicKey: String
-    let node = "desk"
+    let node: String
     var paired = true
     var socketUp = true
     var silent = false
@@ -44,7 +44,8 @@ final class FakeRelayDesktop: RelayFrameChannel {
     private var pending: [UInt8] = []
     private var session = ""
 
-    init() throws {
+    init(node: String = "desk") throws {
+        self.node = node
         publicKey = controlB64(try Ed25519.publicKey(seed: seed))
     }
 
@@ -98,7 +99,7 @@ final class FakeRelayDesktop: RelayFrameChannel {
             let sig = try! Ed25519.sign(seed: seed, message: controlServerSignedBytes(transcript))
             let welcome: JSONObject = [
                 "t": .string(controlWelcomeTag), "v": 1, "key": .string(publicKey), "eph": .string(ephPub),
-                "name": "desk", "user": "alice", "sig": .string(controlB64(sig)),
+                "name": .string(node), "user": "alice", "sig": .string(controlB64(sig)),
             ]
             stage = 1
             sendChunks(Array(JSON.encode(.object(welcome)).utf8))
@@ -111,7 +112,7 @@ final class FakeRelayDesktop: RelayFrameChannel {
                 "the phone signs the transcript over the relay too")
             stage = 2
             if paired {
-                sendSealed(["event": "session", "data": ["paired": true, "name": "desk", "transport": "relay"]])
+                sendSealed(["event": "session", "data": ["paired": true, "name": .string(node), "transport": "relay"]])
             } else {
                 sendSealed(["event": "pairing-denied", "data": ["reason": "pair_on_lan"]])
                 deliverFrame(["type": "control", "action": "close", "session": .string(session), "node": .string(node),
@@ -404,6 +405,68 @@ final class DesktopControlHubTests: XCTestCase {
         XCTAssertEqual(loads, 1, "the account list is reused for a while")
         await hub.refreshAccountDesktops(force: true)
         XCTAssertEqual(loads, 2)
+    }
+
+    @MainActor func testTheChosenDesktopIsTheOneDialledAndTheOthersAreChecked() async throws {
+        let desk = try FakeRelayDesktop()
+        let laptop = try FakeRelayDesktop(node: "laptop")
+        let identity = try Identity.fromSeed(Ed25519.generateSeed())
+        let store = InMemoryKeyValueStore()
+        var dialled: [String] = []
+        var spare: [String: FakeRelayDesktop] = ["desk": desk, "laptop": laptop]
+        let opener: RelayControlOpener = { target in
+            dialled.append(target.name)
+            guard let fake = spare.removeValue(forKey: target.name) else { throw LocalControlException("timeout") }
+            return try await RelayControlConnection.open(
+                channel: fake, identity: identity, desktopKey: target.key, node: target.name)
+        }
+        let listed: AccountDesktopsLoader = {
+            [
+                PairedDesktop(key: desk.publicKey, name: "desk", user: "alice"),
+                PairedDesktop(key: laptop.publicKey, name: "laptop", user: "alice"),
+            ]
+        }
+        let hub = DesktopControlHub(
+            local: nil, openRelay: opener, paired: { [] }, accountDesktops: listed, store: store)
+        await hub.refreshAccountDesktops()
+        XCTAssertEqual(hub.choices.map(\.name), ["desk", "laptop"])
+        XCTAssertEqual(hub.choices.map(\.presence), [.unknown, .unknown])
+        hub.choose(key: laptop.publicKey)
+        XCTAssertEqual(store.string(forKey: DesktopControlHub.preferredKeyStoreKey), laptop.publicKey)
+        XCTAssertEqual(hub.desktop?.name, "laptop")
+
+        _ = try await hub.request("agents.list")
+        XCTAssertEqual(dialled, ["laptop"], "only the chosen desktop is dialled")
+        XCTAssertEqual(hub.reach, .connected(.relay, "laptop"))
+        XCTAssertEqual(hub.choices.first, ShellDesktopLight(id: laptop.publicKey, name: "laptop", presence: .online, active: true))
+
+        await hub.checkDesktops(force: true)
+        XCTAssertEqual(dialled, ["laptop", "desk"])
+        XCTAssertEqual(hub.presenceOf(desk.publicKey), .online, "a second running desktop is detected")
+        XCTAssertEqual(hub.desktopLights.count, 2)
+
+        hub.choose(key: desk.publicKey)
+        XCTAssertNil(hub.currentLink, "the other desktop's channel is let go")
+        XCTAssertFalse(hub.reach.isConnected)
+        XCTAssertEqual(hub.desktop?.name, "desk")
+
+        let reopened = DesktopControlHub(local: nil, openRelay: opener, paired: { [] }, store: store)
+        XCTAssertEqual(reopened.preferredKey, desk.publicKey)
+    }
+
+    @MainActor func testTwinNamesAreToldApart() async {
+        let hub = DesktopControlHub(
+            local: nil, openRelay: { _ in throw LocalControlException("timeout") }, paired: { [] },
+            accountDesktops: {
+                [
+                    PairedDesktop(key: "abcdef0123", name: "desk", user: "alice"),
+                    PairedDesktop(key: "987654abcd", name: "desk", user: "alice"),
+                ]
+            })
+        await hub.refreshAccountDesktops()
+        XCTAssertEqual(hub.choices.map(\.name), ["desk · abcdef", "desk · 987654"])
+        hub.choose(name: "desk · 987654")
+        XCTAssertEqual(hub.preferredKey, "987654abcd")
     }
 
     @MainActor func testNothingPairedMeansNothingToDial() async {

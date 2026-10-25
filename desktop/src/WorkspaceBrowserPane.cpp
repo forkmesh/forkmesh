@@ -1,19 +1,29 @@
 #include "WorkspaceBrowserPane.h"
 
+#include "AppPaths.h"
+#include "BrowserPrivacy.h"
+
 #include <QDesktopServices>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QRegularExpression>
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
 #ifdef FORKMESH_HAVE_WEBENGINE
+#include <QCoreApplication>
+#include <QDir>
+#include <QPointer>
+#include <QStandardPaths>
+#include <QWebEngineDownloadRequest>
 #include <QWebEngineHistory>
 #include <QWebEnginePage>
+#include <QWebEngineProfile>
 #include <QWebEngineSettings>
+#include <QWebEngineUrlRequestInfo>
+#include <QWebEngineUrlRequestInterceptor>
 #include <QWebEngineView>
 #endif
 
@@ -27,6 +37,86 @@ bool headlessPlatform()
     const QString platform = QGuiApplication::platformName();
     return platform == QLatin1String("offscreen") ||
            platform == QLatin1String("minimal");
+}
+
+class GoogleServiceInterceptor : public QWebEngineUrlRequestInterceptor
+{
+public:
+    using QWebEngineUrlRequestInterceptor::QWebEngineUrlRequestInterceptor;
+
+    void interceptRequest(QWebEngineUrlRequestInfo &info) override
+    {
+        if (browser::isGoogleServiceHost(info.requestUrl().host()))
+            info.block(true);
+    }
+};
+
+class PanePage : public QWebEnginePage
+{
+public:
+    using QWebEnginePage::QWebEnginePage;
+
+protected:
+    bool acceptNavigationRequest(const QUrl &url, NavigationType, bool isMainFrame) override
+    {
+        const QString scheme = url.scheme().toLower();
+        if (scheme == QLatin1String("file"))
+            return false;
+        if (!isMainFrame)
+            return true;
+        return scheme == QLatin1String("http") || scheme == QLatin1String("https") ||
+               scheme == QLatin1String("about") || scheme == QLatin1String("data") ||
+               scheme == QLatin1String("blob");
+    }
+
+    QWebEnginePage *createWindow(WebWindowType) override
+    {
+        return this;
+    }
+};
+
+void configureUngoogledSettings(QWebEngineSettings *settings)
+{
+    settings->setAttribute(QWebEngineSettings::HyperlinkAuditingEnabled, false);
+    settings->setAttribute(QWebEngineSettings::DnsPrefetchEnabled, false);
+    settings->setAttribute(QWebEngineSettings::WebRTCPublicInterfacesOnly, true);
+    settings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, false);
+    settings->setAttribute(QWebEngineSettings::LocalContentCanAccessFileUrls, false);
+    settings->setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
+    settings->setUnknownUrlSchemePolicy(QWebEngineSettings::DisallowUnknownUrlSchemes);
+}
+
+QWebEngineProfile *ungoogledProfile()
+{
+    static QPointer<QWebEngineProfile> shared;
+    if (shared)
+        return shared;
+    auto *profile = new QWebEngineProfile(QStringLiteral("forkmesh-browser"),
+                                          QCoreApplication::instance());
+    profile->setPersistentStoragePath(
+        paths::pluginDataDir(QStringLiteral("browser")) + QStringLiteral("/profile"));
+    profile->setCachePath(paths::cacheRoot() + QStringLiteral("/browser"));
+    profile->setPersistentCookiesPolicy(QWebEngineProfile::AllowPersistentCookies);
+    profile->setHttpUserAgent(browser::ungoogledUserAgent(profile->httpUserAgent()));
+    profile->setSpellCheckEnabled(false);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    profile->setPushServiceEnabled(false);
+#endif
+    profile->setUrlRequestInterceptor(new GoogleServiceInterceptor(profile));
+    configureUngoogledSettings(profile->settings());
+    QObject::connect(profile, &QWebEngineProfile::downloadRequested, profile,
+                     [](QWebEngineDownloadRequest *download) {
+                         const QString folder = QStandardPaths::writableLocation(
+                             QStandardPaths::DownloadLocation);
+                         if (folder.isEmpty() || !QDir().mkpath(folder)) {
+                             download->cancel();
+                             return;
+                         }
+                         download->setDownloadDirectory(folder);
+                         download->accept();
+                     });
+    shared = profile;
+    return profile;
 }
 #endif
 
@@ -71,7 +161,7 @@ WorkspaceBrowserPane::WorkspaceBrowserPane(QWidget *parent) : QWidget(parent)
     m_address = new QLineEdit;
     m_address->setObjectName(QStringLiteral("workspaceBrowserAddress"));
     m_address->setPlaceholderText(
-        QStringLiteral("Enter a URL, or a port such as 3000"));
+        QStringLiteral("Search DuckDuckGo, enter a URL, or a port such as 3000"));
     m_address->setClearButtonEnabled(true);
     row->addWidget(m_back);
     row->addWidget(m_forward);
@@ -140,8 +230,10 @@ WorkspaceBrowserPane::WorkspaceBrowserPane(QWidget *parent) : QWidget(parent)
     showPlaceholder(
         QStringLiteral("Preview a page"),
         embeddedAvailable()
-            ? QStringLiteral("Type an address above to load it here. A bare "
-                             "port such as 3000 opens http://localhost:3000.")
+            ? QStringLiteral("Type an address or a search above to load it "
+                             "here. A bare port such as 3000 opens "
+                             "http://localhost:3000. Google's background "
+                             "services are switched off.")
             : QStringLiteral("This build has no embedded browser. Type an "
                              "address above and it opens in your own browser."),
         false);
@@ -159,26 +251,7 @@ bool WorkspaceBrowserPane::embeddedAvailable()
 
 QUrl WorkspaceBrowserPane::urlFromInput(const QString &text)
 {
-    const QString trimmed = text.trimmed();
-    if (trimmed.isEmpty())
-        return QUrl();
-    static const QRegularExpression port(QStringLiteral("^:?(\\d{2,5})(/.*)?$"));
-    const QRegularExpressionMatch match = port.match(trimmed);
-    if (match.hasMatch())
-        return QUrl(QStringLiteral("http://localhost:%1%2")
-                        .arg(match.captured(1), match.captured(2)));
-    static const QRegularExpression local(
-        QStringLiteral("^(localhost|127\\.0\\.0\\.1|\\[::1\\])(:\\d+)?(/.*)?$"),
-        QRegularExpression::CaseInsensitiveOption);
-    if (local.match(trimmed).hasMatch())
-        return QUrl(QStringLiteral("http://") + trimmed);
-    const QUrl url = QUrl::fromUserInput(trimmed);
-    if (!url.isValid())
-        return QUrl();
-    const QString scheme = url.scheme().toLower();
-    if (scheme != QLatin1String("http") && scheme != QLatin1String("https"))
-        return QUrl();
-    return url;
+    return browser::urlFromInput(text);
 }
 
 void WorkspaceBrowserPane::navigate(const QString &text)
@@ -241,8 +314,7 @@ void WorkspaceBrowserPane::ensureView()
         return;
     auto *view = new QWebEngineView(m_stack);
     view->setObjectName(QStringLiteral("workspaceBrowserView"));
-    view->settings()->setUnknownUrlSchemePolicy(
-        QWebEngineSettings::DisallowUnknownUrlSchemes);
+    view->setPage(new PanePage(ungoogledProfile(), view));
     m_view = view;
     m_stack->addWidget(view);
     connect(view, &QWebEngineView::urlChanged, this, [this](const QUrl &url) {
