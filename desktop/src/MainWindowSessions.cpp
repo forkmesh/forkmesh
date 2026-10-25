@@ -3047,6 +3047,11 @@ void MainWindow::showSessionsContextMenu(int sessionId, const QPoint &globalPos)
         scheduleSessionsPageRefresh();
     });
     stop->setEnabled(isStoppableAgentSession(sessionId));
+    QAction *toClaude = menu.addAction(QStringLiteral("Open in Claude app"), this,
+                                       [this, sessionId] {
+                                           addAgentToClaudeDesktop(sessionId, true);
+                                       });
+    toClaude->setEnabled(claudeDesktopBlocker(sessionId).isEmpty());
     QMenu *message =
         menu.addMenu(QString::fromUtf8("Send message to another session\xE2\x80\xA6"));
     SessionsPickerCombo picker;

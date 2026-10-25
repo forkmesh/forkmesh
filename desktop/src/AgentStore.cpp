@@ -432,6 +432,8 @@ QJsonObject AgentSession::toJson() const
     obj["taskGrade"] = qBound(0, taskGrade, 5);
     obj["orgAgentJob"] = orgAgentJob;
     obj["webSessionId"] = webSessionId;
+    if (!claudeAppSessionId.isEmpty())
+        obj["claudeAppSessionId"] = claudeAppSessionId;
     if (!claudeImportId.isEmpty())
         obj["claudeImport"] = QJsonObject{{"id", claudeImportId},
                                           {"path", claudeImportPath},
@@ -551,6 +553,8 @@ AgentSession AgentSession::fromJson(const QJsonObject &obj)
     if (session.webSessionId.isEmpty())
         session.webSessionId =
             session.orgAgentJob.value("sessionId").toString().trimmed();
+    session.claudeAppSessionId =
+        obj.value("claudeAppSessionId").toString().trimmed();
     const QJsonObject claudeImport = obj.value("claudeImport").toObject();
     session.claudeImportId = claudeImport.value("id").toString();
     session.claudeImportPath = claudeImport.value("path").toString();

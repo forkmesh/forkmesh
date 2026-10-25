@@ -17,6 +17,7 @@ follows a run through every layer. The desktop UI for agents is described in
 | Desktop sandboxing | `desktop/src/ProjectAgentAccess.*`, `MainWindowAgentAccess.cpp`, `AgentNetworkGate.*`, `AgentRunRules.*`, `CommandVariables.*`, `AgentJail.h`, `AgentGuardrails.*`, `AgentPermissionController.*`, `VirtualMachineRuntime.*` ([access-rules.md](access-rules.md)) |
 | Desktop claiming website jobs | `desktop/src/MainWindowAgentSync.cpp`, `OrgAgentJobAttachments.*` |
 | Desktop cloud rows and Move to cloud | `desktop/src/AgentCloudSessions.*`, `MainWindowAgentCloud.cpp`, `MainWindowAgentEvents.cpp` |
+| Claude Code agents in the Claude app | `desktop/src/ClaudeDesktopSessions.*`, `MainWindowClaudeDesktop.cpp` ([claude-desktop-sessions.md](claude-desktop-sessions.md)) |
 | Mirror node and runner | `server/agents.go`, `server/agent_errors.go`, `server/agent_attachments.go`, `server/agent_live.go`, `server/agentstream.go` |
 | Host CLI install and refresh | `desktop/src/ControlNode.{h,cpp}`, `MainWindowHostInstall.cpp`, `MainWindowHosts.cpp` |
 | Relay | `app/src/route_handlers.py` (org/owner agent routes, job results), `app/src/entry.py`, `app/src/urls.py`, `app/src/agent_streams.py`, `app/src/agent_live_relay.py`; tables in `app/migrations/0093_org_agent_bots.sql`, `0191_org_agent_attachments.sql`, `0232_agent_session_streams` |

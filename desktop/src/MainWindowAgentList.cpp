@@ -499,6 +499,7 @@ void MainWindow::initAgents()
     seedSessionTokens();
     refreshAgentDotMatrix(); // the top-bar fleet matrix reflects sessions from the start
     refreshAgentModelSelectors();
+    QTimer::singleShot(90 * 1000, this, &MainWindow::backfillClaudeDesktopSessions);
 }
 
 void MainWindow::reloadAgents(AgentReloadScan scan)
