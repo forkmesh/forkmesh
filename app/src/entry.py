@@ -22337,10 +22337,7 @@ async def _account_signup(env, request):
             {"newMember": bool(is_new_member)})
     except Exception:
         pass
-    if rec.get("email") and not rec["email_verified"]:
-        sent = await _send_verification_email(env, request, name, rec["email"], rec=rec)
-        if not sent:
-            await _enqueue_verification(env, name_bi, name, rec["email"])
+    await _send_signup_verification(env, request, name_bi, name, rec)
     # Drop the cached chat roster/activity so open chat pages and header badges
     # pick up the new account on their next poll instead of a TTL later.
     memos_clear = globals().get("_users_directory_memos_clear")
@@ -33640,6 +33637,36 @@ async def _send_verification_email(env, request, name, email, rec=None):
         rec.update(fields)
     await _record_account_email(env, name, "verification", ok, fields)
     return ok
+
+
+async def _claim_signup_verification(env, name, email):
+    key = await blind_index(env, "verification-signup:" + "\n".join((
+        clean_string(name or "", MAX_NODE_NAME).strip().lower(),
+        clean_string(email or "", 254).strip().lower())))
+    try:
+        result = await d1_run(
+            env,
+            "INSERT OR IGNORE INTO notification_email_sends "
+            "(send_bi, created_at) VALUES (?,?)",
+            key, int(Date.now()))
+    except Exception:
+        return True
+    try:
+        return int(result.meta.changes) > 0
+    except Exception:
+        return True
+
+
+async def _send_signup_verification(env, request, name_bi, name, rec):
+    email = rec.get("email") if isinstance(rec, dict) else ""
+    if not email or rec.get("email_verified"):
+        return False
+    if not await _claim_signup_verification(env, name, email):
+        return False
+    sent = await _send_verification_email(env, request, name, email, rec=rec)
+    if not sent:
+        await _enqueue_verification(env, name_bi, name, email)
+    return sent
 
 
 # --- "Send it again" for an unverified email ---------------------------------

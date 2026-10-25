@@ -698,7 +698,7 @@ struct ActionRunScreen: View {
                     }
                     if run.status == .failed || run.status == .rejected {
                         Spacer()
-                        FmMessageTools(lines.joined(separator: "\n"))
+                        FmMessageTools(lines.joined(separator: "\n"), handoff: CIPrompts.fixFailedRun(run, repo: model.repo))
                     }
                 }
             }

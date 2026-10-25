@@ -25,6 +25,16 @@ workflow, the newest completed `push`, `schedule` or `workflow_dispatch` run
 that passed or failed decides its state. Cancelled, skipped and neutral runs
 are ignored, so a run cancelled by a newer push does not count as a recovery.
 
+- **Hourly sweep.** One page of 100 runs covers only the last few pushes, so
+  the daily "GitHub issue sync" and a workflow whose recent runs were all
+  cancelled (World browser E2E) never appeared on it, and their failures
+  were never pinged (found 2026-10-25). On the tick in the first 5 minutes of
+  each hour (`sweep_due`), the watcher also lists the repository's active
+  workflows (`/actions/workflows`) and reads one page of 50 runs on the
+  branch for each workflow missing from the page (`unseen_workflows`, at most
+  12). Between sweeps, a workflow off the page keeps its stored state.
+  `tools/github_actions_status.py` sweeps on every call.
+
 - **Where the state lives.** Each workflow has a row in
   `repository_monitor_state` with id `github-actions:<repo>:<workflow path>`,
   holding `is_up`, `changed_at` and `pinged_state`. The `status:` monitors use
@@ -44,8 +54,10 @@ are ignored, so a run cancelled by a newer push does not count as a recovery.
   fetched page, and links the run on GitHub. The link is in the body:
   `href` stays `/status`, because the phone apps open only relative links.
 - **Rate limits.** With no token, one tick costs 1 request, plus up to 3 for
-  each new failure (jobs and annotations). That is about 12 an hour against
-  GitHub's unauthenticated limit of 60 an hour per IP.
+  each new failure (jobs and annotations), and the hourly sweep adds 1 plus
+  one per missing workflow (3 today: the issue sync, World E2E and the
+  always-skipped GitHub bridge). That is about 16 an hour against GitHub's
+  unauthenticated limit of 60 an hour per IP.
 
 | Setting (Worker env) | Default | Effect |
 | --- | --- | --- |
@@ -126,6 +138,30 @@ These tests mock every request with `page.route`, so they run against a static
 server on any free port (see below). The suite's next step, the full
 `npm test`, had never run on GitHub because this step came first; its failures
 will show up as annotations.
+
+## The 2026-10-25 failures
+
+The sweep turned up three red workflows on `main`:
+
+- **Quality gates, `security-privacy-contracts`.** The README now says phones
+  are mobile nodes with their own key and Git engine, so
+  `test_retired_bounty_and_phone_mirror_advertising_stays_removed`
+  (`app/tests/test_public_security_claims.py`) no longer finds "phones are
+  access clients". It now checks the claim that matters: mirroring remains a
+  desktop or headless-node job.
+- **World browser E2E.** The mobile camera samples under SwiftShader carried
+  a second slow drag; the warm-up is now two drags
+  ([docs/world/README.md](../world/README.md)). The workflow also cancelled
+  its own `main` runs on every push (57 of the last 60), so it almost never
+  finished. Only pull-request runs cancel in progress now; on `main` a newer
+  push waits for the running one, and GitHub keeps only the newest waiting run.
+- **Daily one-way GitHub issue sync.** The `FORKMESH_ISSUE_SYNC_DESTINATION`
+  repository variable is not set on github.com/forkmesh/forkmesh, so every
+  scheduled run failed its configuration check. An unconfigured scheduled run
+  now writes a notice and skips the sync and upload steps; a manual run without
+  a destination still fails. Set the variable (and the tokens in
+  [automation-and-cloudflare-bootstrap.md](../../www/docs/operations/automation-and-cloudflare-bootstrap.md))
+  to turn the sync on.
 
 ## Reproducing the browser suites locally
 

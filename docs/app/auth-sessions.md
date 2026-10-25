@@ -117,6 +117,24 @@ sending. Each send also pings the admins ("Verification email sent to
 `chatgpt-race-b9a0aadce62d` signup on 2026-10-20: one signup and one resend,
 both within the limits. Tests: `app/tests/test_email_verification_resend.py`.
 
+### One email per signup
+
+A new account got three verification emails on 2026-10-25. Signup
+(`_account_signup`) and node finalize (`_account_finalize` in
+`app/src/route_handlers.py`) used to send a fresh email on every call that
+found an unverified address, so a retried, repeated or parallel request sent
+another one each time. Both now call `_send_signup_verification`. It claims a
+row in `notification_email_sends` keyed by the account name and the lowercased
+address (`verification-signup:` blind index), and only the request that wins
+the `INSERT OR IGNORE` sends. A failed send still goes to the manual
+verification queue, once. A new address on the same account claims its own
+row and gets its own email. If the claim cannot be written, the email is sent
+anyway, because a missing link would leave the account stuck. Rows are pruned
+after 30 days (`NOTIFICATION_EMAIL_SEND_RETAIN_MS`). The signup page also
+ignores a second submit while the first is still running (`creatingAccount` in
+`app/public/signup.js`). Sending again on purpose still goes through the
+resend limit above. Tests: `app/tests/test_signup_verification_once.py`.
+
 ## Portable sessions for mirror dashboards
 
 Independent mirror dashboards accept a signed, narrow grant
