@@ -4,12 +4,25 @@
 #include "ClaudeDesktopSessions.h"
 
 #include <QDesktopServices>
+#include <QProcess>
 #include <QSettings>
 #include <QTimer>
 
 namespace {
 
 constexpr int kClaudeDesktopLinkSpacingMs = 2000;
+
+bool openClaudeUrl(const QUrl &url)
+{
+#if defined(Q_OS_LINUX) || defined(Q_OS_FREEBSD)
+    if (QProcess::startDetached(QStringLiteral("xdg-open"), {url.toString()}))
+        return true;
+#elif defined(Q_OS_MACOS)
+    if (QProcess::startDetached(QStringLiteral("/usr/bin/open"), {url.toString()}))
+        return true;
+#endif
+    return QDesktopServices::openUrl(url);
+}
 
 QStringList claudeAccountConfigDirs()
 {
@@ -112,6 +125,12 @@ void MainWindow::addAgentToClaudeDesktop(int sessionId, bool open)
         },
         [this, sessionId, open](ClaudeDesktopLookup out) {
             m_claudeDesktopPending.remove(sessionId);
+            const AgentSession *now = findAgentSession(sessionId);
+            if (!now)
+                return;
+            if (!open && (!AgentStatus::isTerminal(now->status) ||
+                          isStoppableAgentSession(sessionId)))
+                return;
             if (!out.exposure.ok) {
                 if (open)
                     flashMessage(QStringLiteral("Could not add this agent to the Claude "
@@ -120,15 +139,10 @@ void MainWindow::addAgentToClaudeDesktop(int sessionId, bool open)
                                  true, QString(), forkmesh::kLocalOperationNoticeKind);
                 return;
             }
-            bool fresh = true;
-            if (AgentSession *session = findAgentSession(sessionId);
-                session && !isExternalSession(sessionId)) {
-                fresh = session->claudeDesktopSessionId != out.cliSessionId;
-                if (fresh && m_agentStore) {
-                    session->claudeDesktopSessionId = out.cliSessionId;
-                    m_agentStore->saveSession(*session);
-                }
-            }
+            const bool fresh = isExternalSession(sessionId) ||
+                               now->claudeAppSessionId != out.cliSessionId;
+            if (!isExternalSession(sessionId))
+                m_claudeDesktopLinkOwners.insert(out.cliSessionId, sessionId);
             if (open || fresh)
                 queueClaudeDesktopLink(out.cliSessionId, open);
         });
@@ -156,7 +170,7 @@ void MainWindow::backfillClaudeDesktopSessions()
             const QList<AgentSession> sessions = m_agentSessions;
             for (const AgentSession &session : sessions) {
                 if (session.deletedAtMs > 0 || session.associationOnly ||
-                    !session.claudeDesktopSessionId.isEmpty())
+                    !session.claudeAppSessionId.isEmpty())
                     continue;
                 noteClaudeDesktopCandidate(session);
             }
@@ -188,8 +202,14 @@ void MainWindow::pumpClaudeDesktopLinks()
     if (m_claudeDesktopLinkQueue.isEmpty())
         return;
     const QString id = m_claudeDesktopLinkQueue.takeFirst();
-    if (!QDesktopServices::openUrl(forkmesh::claudedesktop::resumeUrl(id)))
+    const int owner = m_claudeDesktopLinkOwners.take(id);
+    if (!openClaudeUrl(forkmesh::claudedesktop::resumeUrl(id))) {
         qWarning() << "Claude app did not take session" << id;
+    } else if (AgentSession *session = owner ? findAgentSession(owner) : nullptr;
+               session && m_agentStore && session->claudeAppSessionId != id) {
+        session->claudeAppSessionId = id;
+        m_agentStore->saveSession(*session);
+    }
     if (!m_claudeDesktopLinkQueue.isEmpty() && m_claudeDesktopLinkTimer)
         m_claudeDesktopLinkTimer->start(kClaudeDesktopLinkSpacingMs);
 }
