@@ -114,6 +114,14 @@ The desktop has no toasts or floating cards; information is shown inline.
 
 ## Debug bar
 
+- The version at the bottom right (`#statusVersionButton`) toggles the bar
+  and names the build: `v<version> · <short commit>`, the first 10 hex digits
+  of `FORKMESH_BUILD_COMMIT` (`shortBuildCommit`, `src/DesktopBuildCommit.h`),
+  the length `git log --oneline` prints in this repository. Its tooltip has
+  the full hash. A build with uncommitted changes says `dirty`; a build with
+  no known commit shows the version alone. The text comes through
+  `desktopBuildCommit()` so `MainWindowChat.cpp` does not include
+  `ForkMeshBuildCommit.h` and is not recompiled on every commit.
 - The opt-in bottom bar (`buildStatusBar`, `src/MainWindowChat.cpp`) holds
   Restart (rebuild and relaunch, with `ui/showRebuildButton`), Resize (1280x720),
   Report and Log tail.
