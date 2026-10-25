@@ -423,17 +423,6 @@ systemctl --user daemon-reload && systemctl --user enable --now forkmesh-mac-adh
   the manifest from the same origin, shows title, version and build (only
   `0-9A-Za-z.-`, up to 32 characters), and only builds a link to this origin's
   blob route for a 64-hex hash.
-- The install page is the email's only link. Until 2026-10-25 it also
-  carried the raw `itms-services://` link and a direct `.ipa` download.
-  Postfix showed `250 Message received` from mx.zoho.com for each build, with
-  DKIM signed and SPF and DMARC passing, yet the message never reached
-  jett@forkmesh.com's inbox. Mail with a sideload link and an app archive
-  looks like iOS malware to spam filters, and the page builds the
-  `itms-services:` link itself, so neither is sent any more. The message
-  carries `Auto-Submitted: auto-generated` and `Feedback-ID: ios_build:forkmesh`
-  like the app's own mail (`app/src/smtp_mail.py`). "delivered" in #email-log
-  means only that the receiving server accepted the message; a message that
-  Zoho accepts and then holds shows there as delivered too.
 - Ad hoc profiles cover the devices registered when minted; register a device
   ([IOS_RELEASE.md](IOS_RELEASE.md)) and build again.
 
