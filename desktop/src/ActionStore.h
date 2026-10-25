@@ -118,6 +118,7 @@ public:
     // Where readLog() reads from. Handed to agents so they open the whole file
     // instead of working from a tail that stopped before the failing line.
     QString logPath(const ActionRun &run) const;
+    static void flushWrites();
 
     static QMap<QString, QString> variables();
     static void setVariables(const QMap<QString, QString> &vars);

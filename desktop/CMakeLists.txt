@@ -3334,6 +3334,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_saved_search_store.cpp
         src/SavedSearchStore.h
         src/SavedSearchStore.cpp
+        src/BackgroundFileWriter.h
+        src/BackgroundFileWriter.cpp
     )
     target_link_libraries(forkmesh-saved-search-tests PRIVATE Qt6::Core)
     target_include_directories(forkmesh-saved-search-tests PRIVATE src)
@@ -3342,6 +3344,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         tests/test_security_alarm_state.cpp
         src/SavedSearchStore.h
         src/SavedSearchStore.cpp
+        src/BackgroundFileWriter.h
+        src/BackgroundFileWriter.cpp
         src/SecurityAlarmState.h
         src/SecurityAlarmState.cpp
     )

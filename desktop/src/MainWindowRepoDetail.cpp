@@ -8517,11 +8517,6 @@ void MainWindow::recordNavLocation()
     captureNavSubPlace(here);
 
     if (here.detailTab >= 0) {
-        // Keep this tiny preference buffered for the process lifetime.  A
-        // temporary QSettings flushes (including fdatasync on Linux) from its
-        // destructor; doing that during every navigation produced a measured
-        // half-second GUI stall.  The persistent instance still flushes on a
-        // normal application shutdown.
         static QSettings navigationSettings;
         if (navigationSettings.value(kLastRepoDetailTabSetting, -1).toInt() !=
             here.detailTab)
@@ -10606,7 +10601,7 @@ void MainWindow::finishSearchPageRun()
     const SavedSearchRun run = store.recordRun(saved->id, keys, counts,
                                                QDateTime::currentMSecsSinceEpoch(),
                                                true);
-    store.save();
+    store.saveLater();
     evaluateSecurityAlarms();
     for (const QString &key : run.newKeys) {
         QTreeWidgetItem *row = rowsByKey.value(key);
@@ -11215,7 +11210,7 @@ void MainWindow::runNextSavedSearchAlertCheck()
                     const bool pertinent = search->securityPertinent;
                     const SavedSearchRun run = store.recordRun(
                         id, keys, counts, QDateTime::currentMSecsSinceEpoch(), false);
-                    store.save();
+                    store.saveLater();
                     evaluateSecurityAlarms();
                     if (alerts && !run.baseline && !run.newKeys.isEmpty()) {
                         QMap<QString, int> newByKind;
