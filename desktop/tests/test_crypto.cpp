@@ -2295,6 +2295,21 @@ int main(int argc, char *argv[])
                       QStringLiteral("remote-key")),
               "cached signing capability requires the original and freshly "
               "validated local key");
+        check(SessionCache::mayRestoreDesktopCapability(
+                  alice, QStringLiteral("local-key"),
+                  QStringLiteral("first-desktop-key"),
+                  {QStringLiteral("first-desktop-key"),
+                   QStringLiteral("local-key")}) &&
+                  !SessionCache::mayRestoreDesktopCapability(
+                      alice, QStringLiteral("local-key"),
+                      QStringLiteral("first-desktop-key"),
+                      {QStringLiteral("first-desktop-key")}) &&
+                  !SessionCache::mayRestoreDesktopCapability(
+                      alice, QStringLiteral("rotated-local-key"),
+                      QStringLiteral("first-desktop-key"),
+                      {QStringLiteral("rotated-local-key")}),
+              "a second desktop of the account restores signing when the "
+              "account lists its key");
         alice.clearSensitive();
         check(sessions.remove(QStringLiteral("alice"), appRoom,
                               QStringLiteral("v2.alice.secret")) &&

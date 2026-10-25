@@ -2,6 +2,8 @@
 #include "Tooltips.h"
 #include "MainWindow.h"
 #include "AgentActivityFeed.h"
+#include "AgentResourceGovernor.h"
+#include "AgentResources.h"
 #include "MainWindowInternal.h"
 #include "SystemPressure.h"
 #include "AgentCliLocator.h"
@@ -889,6 +891,55 @@ QWidget *MainWindow::buildLogSection()
     m_desktopProcessView = new forkmesh::DesktopProcessView;
     m_desktopProcessView->onProcessClicked = [this](const auto &process) {
         showDesktopProcessDetails(process);
+    };
+    m_desktopProcessView->governanceSource = [](int memoryReserve, int cpuReserve) {
+        namespace ar = forkmesh::agentresources;
+        const QSettings saved;
+        if (memoryReserve < 0)
+            memoryReserve =
+                saved.value(ar::kReservePercentSetting, ar::kDefaultReservePercent).toInt();
+        if (cpuReserve < 0)
+            cpuReserve = saved.value(ar::kCpuReservePercentSetting,
+                                     ar::kDefaultCpuReservePercent)
+                             .toInt();
+        forkmesh::DesktopProcessView::Governance governance;
+        governance.minReservePercent = ar::kMinReservePercent;
+        governance.maxReservePercent = ar::kMaxReservePercent;
+        governance.memoryReservePercent =
+            qBound(ar::kMinReservePercent, memoryReserve, ar::kMaxReservePercent);
+        governance.cpuReservePercent =
+            qBound(ar::kMinReservePercent, cpuReserve, ar::kMaxReservePercent);
+        const ar::Budget budget = ar::budgetFor(governance.memoryReservePercent,
+                                                governance.cpuReservePercent);
+        governance.available = budget.valid();
+        governance.cpuText =
+            QStringLiteral("%1 of %2 cores, %3 kept")
+                .arg(budget.sliceCpuQuota / 100.0, 0, 'f', 1)
+                .arg(budget.cpuCount)
+                .arg(budget.cpuReserve / 100.0, 0, 'f', 1);
+        governance.memoryText =
+            QStringLiteral("%1 of %2, %3 kept")
+                .arg(forkmesh::corelogs::compactByteSize(budget.sliceHighBytes),
+                     forkmesh::corelogs::compactByteSize(budget.totalBytes),
+                     forkmesh::corelogs::compactByteSize(budget.reserveBytes));
+        const ar::Status status = ar::status();
+        governance.note =
+            status.available
+                ? QStringLiteral("Agent limits apply at once to %1 and to agents "
+                                 "already running. Each agent may use up to %2 on "
+                                 "its own and runs %3 build jobs.")
+                      .arg(ar::sliceName(),
+                           forkmesh::corelogs::compactByteSize(budget.agentMaxBytes))
+                      .arg(budget.jobsPerAgent)
+                : QStringLiteral("Saved. Agents are not contained right now (%1), "
+                                 "so these limits apply once they are.")
+                      .arg(status.reason.isEmpty() ? QStringLiteral("still starting")
+                                                   : status.reason);
+        return governance;
+    };
+    m_desktopProcessView->onGovernanceChanged = [](int memoryReserve, int cpuReserve) {
+        forkmesh::agentresources::setReservePercents(memoryReserve, cpuReserve);
+        forkmesh::agentresources::applyBudget();
     };
     auto *desktopResourceScroll = new QScrollArea;
     desktopResourceScroll->setObjectName(QStringLiteral("desktopResourceScroll"));

@@ -815,6 +815,8 @@ set(FORKMESH_APP_SOURCES
     src/CodeHealth.cpp
     src/DiffIntraLine.h
     src/DiffIntraLine.cpp
+    src/DiffChangeBlock.h
+    src/DiffChangeBlock.cpp
     src/ComponentHealthBoard.h
     src/ComponentHealthBoard.cpp
     src/MainWindowComponentHealth.cpp
@@ -2229,6 +2231,19 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-diff-intra-line-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-diff-intra-line-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-diff-change-block-tests
+        tests/test_diff_change_block.cpp
+        src/DiffChangeBlock.h
+        src/DiffChangeBlock.cpp
+    )
+    target_include_directories(forkmesh-diff-change-block-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-diff-change-block-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-diff-change-block-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
