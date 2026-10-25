@@ -192,8 +192,7 @@ ForkMesh are checked by the reviewer, so run it yourself if in doubt.
 ### 5. Record what users will notice
 
 - A change a user can notice adds one sentence to the changelog with
-  `python3 tools/changelog.py add --area <Area> "<sentence>"`, then
-  re-renders the site with `python3 app/tools/site_templates.py`
+  `python3 tools/changelog.py add --area <Area> "<sentence>"`
   ([docs/changelog.md](docs/changelog.md)).
 - A change an iPhone user can see also registers itself for Android with
   `python3 tools/native_sync.py add <sha> "<sentence>" --area <Area> --kind feature|ui|fix`
