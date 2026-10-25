@@ -84,6 +84,11 @@
 
 using forkmesh::market::PackageManifest;
 
+namespace forkmesh::ui {
+bool diffBytesAreWebp(const QByteArray &bytes);
+QImage diffDecodeWebp(const QByteArray &bytes);
+}
+
 namespace {
 
 void clearPackageCards(QVBoxLayout *layout)
@@ -2179,6 +2184,13 @@ QPixmap MainWindow::marketPreviewPixmap(const QString &path, const QSize &box,
         if (natural.isValid() && !natural.isEmpty())
             reader.setScaledSize(natural.scaled(box, Qt::KeepAspectRatio));
         QImage image = reader.read();
+        if (image.isNull()) {
+            QFile file(path);
+            const QByteArray bytes =
+                file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+            if (forkmesh::ui::diffBytesAreWebp(bytes))
+                image = forkmesh::ui::diffDecodeWebp(bytes);
+        }
         if (!image.isNull() &&
             (image.width() > box.width() || image.height() > box.height()))
             image = image.scaled(box, Qt::KeepAspectRatio,

@@ -10,7 +10,8 @@
     {
      "title": "Market",
      "items": [
-      "The desktop Market opens without waiting for package previews, which appear as each one loads."
+      "The desktop Market opens without waiting for package previews, which appear as each one loads.",
+      "Market previews in WebP format now show on Linux desktops without Qt's WebP plugin, instead of reading Preview unavailable."
      ]
     }
    ]

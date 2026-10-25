@@ -485,7 +485,11 @@ catalog fails the configure with "Marketplace package discovery failed".
   first Market open decoding every preview inline, ~4 s under memory pressure,
   in `QImageReader::read`. A package whose manifest
   lists `preview/market.png` keeps PNG, because WebP needs Qt's optional
-  qtimageformats plugin.
+  qtimageformats plugin. When Qt cannot read a `.webp` preview, the worker
+  decodes it with libwebp (`diffDecodeWebp`, the diff-preview fallback). On
+  2026-10-25 a box without qtimageformats showed "Preview unavailable" on all
+  seven WebP cards (App Store Status, RSS Reader, Code Map, Size Map, Strata,
+  Ember, Synapse).
 - **Phones.** `GET /api/market/packages` rows carry `screenshots: [{url,
   alt}]`, up to eight absolute `https://forkmesh.com/market/previews/...`
   URLs; a listed `.svg` is sent as its `.webp` sibling. Every SVG preview has a
