@@ -252,3 +252,11 @@ delta search runs and the step stays within its CPU limit
 - A build that started before a worktree reset compiled the old tree.
 - A merge rewriting a header mid-build can cause a PCH "redefinition" error;
   re-run the build.
+- `MainWindow.h` declares its `test*` hooks inside `#ifdef
+  FORKMESH_WINDOW_TESTS`, so a hook's definition needs the same guard. Without
+  it the window tests still build but the app (`forkmesh`) fails with "no
+  declaration matches", as `testRepoTabRowPanel` did on 2026-10-24. Build the
+  `forkmesh` target, not only `forkmesh-window-tests`, after adding one.
+- Two ninja processes linking the same target leave a binary that crashes in
+  `ld.so` before `main` while ninja reports it up to date. Delete that one
+  output file and link again.
