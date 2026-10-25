@@ -11,6 +11,7 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-25", "area": "Desktop", "text": "Face Changer now runs inside the desktop app and, on Linux, becomes a ForkMesh Camera you can pick in Google Meet or any other call app."},
   {"date": "2026-10-25", "area": "Projects", "text": "You can now delete your own pull request reviews (an approval or change request keeps its verdict and loses only its text), and edit or delete your inline comments right in the Files changed tab."},
   {"date": "2026-10-25", "area": "Projects", "text": "Open pull requests no longer show a block of AI instructions: a Diff and files box links the diff, the patch and every changed file, and Summarize in ChatGPT opens ChatGPT asking for a summary of the pull request."},
   {"date": "2026-10-25", "area": "Calls", "text": "Calls started from the World connect again: the call servers were turning the World away, so the camera and microphone never came on."},
