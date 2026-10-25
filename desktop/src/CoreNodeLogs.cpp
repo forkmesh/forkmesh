@@ -1003,6 +1003,13 @@ bool isKnownBootNoise(const JournalEntry &entry)
             message.contains(QLatin1String("failed with exit status")));
 }
 
+bool isCaddyReloadNoise(const JournalEntry &entry)
+{
+    return entry.message.contains(
+               QLatin1String("setting HTTP/3 Alt-Svc header")) &&
+           entry.message.contains(QLatin1String("no port can be announced"));
+}
+
 bool isBacklogEntry(const JournalEntry &entry, qint64 nowMs)
 {
     return entry.realtimeMs > 0 && nowMs - entry.realtimeMs > kBacklogAlertMs;
@@ -1053,6 +1060,9 @@ Classified classifyEntry(const JournalEntry &entry, const QString &source)
         result.severity = Severity::Error;
     if (source == QLatin1String("ssh") || isKnownBootNoise(entry))
         result.severity = Severity::Info;
+    if (source == QLatin1String("web") && isCaddyReloadNoise(entry) &&
+        result.severity == Severity::Error)
+        result.severity = Severity::Warning;
     result.forward = entry.valid && !message.trimmed().isEmpty();
     return result;
 }
