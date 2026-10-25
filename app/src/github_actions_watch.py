@@ -16,6 +16,10 @@ DEFAULT_REPO = "forkmesh/forkmesh"
 DEFAULT_BRANCH = "main"
 MONITOR_PREFIX = "github-actions:"
 RUN_PAGE = 100
+WORKFLOW_RUN_PAGE = 50
+MAX_SWEEP_WORKFLOWS = 12
+SWEEP_EVERY_MS = 3_600_000
+SWEEP_WINDOW_MS = 300_000
 REQUEST_TIMEOUT_SECONDS = 10
 MAX_RESPONSE_CHARS = 4_000_000
 MAX_ALERTS_PER_RUN = 8
@@ -62,6 +66,36 @@ def _token(env):
 def runs_path(repo, branch):
     return "/repos/%s/actions/runs?branch=%s&per_page=%d&exclude_pull_requests=true" % (
         repo, quote(branch, safe=""), RUN_PAGE)
+
+
+def workflows_path(repo):
+    return "/repos/%s/actions/workflows?per_page=100" % repo
+
+
+def workflow_runs_path(repo, workflow_id, branch):
+    return ("/repos/%s/actions/workflows/%d/runs?branch=%s&per_page=%d"
+            "&exclude_pull_requests=true") % (
+        repo, int(workflow_id), quote(branch, safe=""), WORKFLOW_RUN_PAGE)
+
+
+def sweep_due(now):
+    return int(now) % SWEEP_EVERY_MS < SWEEP_WINDOW_MS
+
+
+def unseen_workflows(workflows_payload, verdicts):
+    workflows = (workflows_payload or {}).get("workflows") if isinstance(
+        workflows_payload, dict) else None
+    unseen = []
+    for workflow in workflows if isinstance(workflows, list) else []:
+        if not isinstance(workflow, dict):
+            continue
+        if str(workflow.get("state") or "") != "active":
+            continue
+        path = _text(workflow.get("path") or "", 200)
+        workflow_id = int(workflow.get("id") or 0)
+        if path and workflow_id > 0 and path not in verdicts:
+            unseen.append(workflow_id)
+    return unseen[:MAX_SWEEP_WORKFLOWS]
 
 
 def jobs_path(repo, run_id):
@@ -368,6 +402,18 @@ async def _deliver(env, config, plan, admins, changed_at, now):
     return delivered
 
 
+async def _sweep_unseen(env, config, verdicts):
+    status, payload = await _github_get(env, workflows_path(config["repo"]))
+    if status != 200:
+        return
+    for workflow_id in unseen_workflows(payload, verdicts):
+        status, runs = await _github_get(env, workflow_runs_path(
+            config["repo"], workflow_id, config["branch"]))
+        if status == 200 and isinstance(runs, dict):
+            verdicts.update(workflow_verdicts(
+                runs.get("workflow_runs"), config["branch"]))
+
+
 async def watch_github_actions(env):
     config = watch_config(env)
     if not config:
@@ -379,10 +425,12 @@ async def watch_github_actions(env):
         return {"ok": False, "checked": 0, "status": status}
     verdicts = workflow_verdicts(
         payload.get("workflow_runs"), config["branch"])
+    now = int(Date.now())
+    if sweep_due(now):
+        await _sweep_unseen(env, config, verdicts)
     prior = await _prior_rows(env, [
         monitor_id(config["repo"], path) for path in verdicts])
     plans = plan_alerts(verdicts, prior, config["repo"])
-    now = int(Date.now())
     admins = None
     alerted = 0
     failing = 0
