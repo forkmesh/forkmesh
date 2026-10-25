@@ -91,7 +91,12 @@ Below the themes it has two more entries:
 
 - **Match the instance's theme** (`viewMenuMatchInstanceTheme`) toggles the same
   `ui/matchInstanceTheme` setting as the Settings checkbox (see the instance
-  theme item below). Turning it on from Halloween or a Market skin switches the
+  theme item below). While it is on, the entry names the theme the instance
+  sends, e.g. "Match the instance's theme (BLT)":
+  `forkmesh::instancetheme::label` gives the preset's name from the
+  `themes` catalogue in `GET /api/instance`, "Custom" for colours with no
+  preset and "Default" when the instance sends none.
+  Turning it on from Halloween or a Market skin switches the
   theme to `system` first, because both of those replace the instance colours
   and the toggle would otherwise seem to do nothing.
 - **Reset to default** (`viewMenuThemeReset`,
@@ -1230,6 +1235,19 @@ design tokens.
   moved to the right of the same row, and the hairline between sections at
   the top of each section instead of under its title (hidden on the first
   visible one). 28 px above and below an open section.
+- **Lit heading.** In October 2026 the user asked for the heading on the page
+  to light up with the entry lit in the list, so the eye can find where a
+  jump landed. `SettingsSectionsView::syncLitHeading` runs whenever the lit
+  list row or sub-row changes and sets `settingsLit` on exactly the label the
+  list lights: the sub-section's `sectionLabel` when a sub-row is lit, the
+  section title otherwise. Next paints it `accentFg` on `accentSubtle`; Classic
+  uses the list's selection blue. Titles and sub-headings carry the same
+  padding lit or not, so lighting one never moves the page.
+- **Outline check.** `forkmesh-window-tests --settings-outline-only` (add
+  `--next` for the new interface) opens every section and fails if a group
+  card on the page has no heading in the list, if the list and the page
+  disagree on the sub-headings, or if a section's heading does not light up.
+  It also checks that searching for "halloween" finds the Halloween switch.
 - **Groups and rows** (`polishNextSettingsBody`, run on each section body as it
   is built, eager or lazy):
   - In every section card (`sectionCard`) whose column starts with a
@@ -1847,6 +1865,20 @@ re-arranges both ways on a live design switch: Next to Classic puts every
 moved widget back where `buildRepoCommitsTab` placed it, in the same order.
 A window that starts in Classic is never touched.
 
+- **Git layout** (view menu, Next only; `GitLayout.h`, setting
+  `git/layout`). "New" is the page described below. "Compact" brings back
+  the page as it was before this restyle (commit 68b35e6386): changed files
+  on top of the left column and history underneath, no branches column and
+  no page header, with the branch picker, Fetch, Pull and rescan back in the
+  history header and the "▾ CHANGES" caption showing the count again. Only
+  the page arrangement changes (`arrangePage(false)`); the change rows, the
+  commit box and the history rows keep the new design. The commit box now
+  sits in the files pane, so Compact gives the change list a three-row
+  minimum height and raises the files pane's 130 px floor to what the panel
+  needs; without them the files/history splitter squeezed the list to
+  nothing and cut off the Commit button in a short window. Switching back
+  restores the 130 px floor. Switching runs
+  `MainWindow::applyGitLayout`, which re-applies the page at once.
 - **Header** (`QFrame#gitNextHeader`, inserted above `m_gitWorkspaceStack`
   in the same page layout).
   - "Git" (`#gitNextTitle`) over a muted summary (`#gitNextSummary`): the

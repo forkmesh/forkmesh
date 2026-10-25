@@ -4742,6 +4742,10 @@ void MainWindow::addNativePackagePage(const QString &id,
             return forkmesh::market::nativePackagePublicPageUrl(catalogApiUrl(), path)
                 .toString(QUrl::FullyEncoded);
         };
+        host.webPageUrl = [this](const QString &path) {
+            return forkmesh::market::nativePackageWebPageUrl(catalogApiUrl(), path)
+                .toString(QUrl::FullyEncoded);
+        };
         if (permissionIds.contains(QStringLiteral("desktop.models.usage.read")))
             host.agentUsagePage = [this](QWidget *parent) {
                 return buildAgentUsagePage(parent);

@@ -6,6 +6,7 @@
 #include "../src/MainWindowNextAccess.h"
 #include "../src/InstanceTheme.h"
 #include "../src/OverflowActionRow.h"
+#include "../src/GitLayout.h"
 #include "../src/WorkspaceLayout.h"
 #include "../src/OfficeChannelMirror.h"
 #include "../src/WindowFrameControl.h"
@@ -42,7 +43,6 @@
 #include "../src/TerminalTabsPage.h"
 #include "ScreenCaptureOverlay.h"
 #include "ScreenshotMarkupWindow.h"
-#include "ForkMeshBuildCommit.h"
 #include "ForkMeshVersion.h"
 
 #include <chrono>
@@ -11690,8 +11690,14 @@ void checkWorkspaceDesign(MainWindow &window)
             "dark":{"background":"#141414","foreground":"#f4f4f5","card":"#1c1c1e",
                     "muted":"#232326","border":"#2e2e33","muted-foreground":"#a1a1aa",
                     "primary":"#dc2626","primary-foreground":"#ffffff","link":"#f87171"},
-            "light":{"background":"#ffffff","foreground":"#111827","primary":"#dc2626"}}})")
+            "light":{"background":"#ffffff","foreground":"#111827","primary":"#dc2626"}},
+            "themes":[{"id":"default","name":"Default"},{"id":"blt","name":"BLT"}]})")
             .object());
+    check(forkmesh::instancetheme::label(colors) == QStringLiteral("BLT") &&
+              forkmesh::instancetheme::label({}) == QStringLiteral("Default"),
+          QStringLiteral("the instance theme is named after the preset the instance "
+                         "sends (%1)")
+              .arg(forkmesh::instancetheme::label(colors)));
     check(colors.dark.value(QStringLiteral("accent")) == QStringLiteral("#dc2626") &&
               colors.dark.value(QStringLiteral("bg")) == QStringLiteral("#141414") &&
               colors.light.value(QStringLiteral("bg")) == QStringLiteral("#ffffff"),
@@ -12166,6 +12172,159 @@ protected:
         return false;
     }
 };
+
+void checkSettingsOutline(MainWindow &window, bool next)
+{
+    QSettings settings;
+    const QVariant themeBefore = settings.value(QStringLiteral("app/theme"));
+    if (next) {
+        settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+        MainWindow::applyTheme();
+    }
+    window.testEnableSessionStartBypass(true);
+    window.testSetSetupInputs(QStringLiteral("qa-tester"), QString());
+    window.testStartSession();
+    window.resize(1440, 900);
+    window.show();
+    window.testShowSettingsSection();
+    settleAnimations();
+
+    auto *sections =
+        window.findChild<SettingsSectionsView *>(QStringLiteral("settingsSections"));
+    auto *nav = window.findChild<QListWidget *>(QStringLiteral("settingsNav"));
+    check(sections && nav && nav->count() == sections->count(),
+          QStringLiteral("every Settings section has its entry in the list on the left"));
+    if (!sections || !nav)
+        return;
+    sections->setCollapsedTitles({});
+    settleAnimations();
+
+    QStringList unlisted;
+    QStringList unlit;
+    for (int i = 0; i < sections->count(); ++i) {
+        if (sections->isSectionHidden(i))
+            continue;
+        sections->setCurrentIndex(i);
+        settleAnimations(250);
+        QWidget *body = sections->widget(i);
+        const QString section = sections->tabText(i);
+        if (nav->item(i)->text() != section || nav->currentRow() != i)
+            unlisted << QStringLiteral("%1 (list entry)").arg(section);
+        auto *lit = qobject_cast<QLabel *>(sections->litHeading());
+        if (!lit || !lit->property("settingsLit").toBool() || !lit->isVisibleTo(&window))
+            unlit << section;
+        if (!body)
+            continue;
+        const QStringList listed = sections->subSectionTitles(i);
+        QStringList headings;
+        int cards = 0;
+        const QList<QWidget *> children =
+            body->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+        for (QWidget *card : children) {
+            if (!card->property("sectionCard").toBool() || !card->isVisibleTo(body))
+                continue;
+            ++cards;
+            QString heading;
+            for (QLabel *label : card->findChildren<QLabel *>(QStringLiteral("sectionLabel"))) {
+                if (label->isVisibleTo(card)) {
+                    heading = label->text();
+                    break;
+                }
+            }
+            if (heading.isEmpty()) {
+                QString first;
+                for (QWidget *inner : card->findChildren<QWidget *>()) {
+                    if (auto *button = qobject_cast<QAbstractButton *>(inner);
+                        button && !button->text().isEmpty() && inner->isVisibleTo(card)) {
+                        first = button->text();
+                        break;
+                    }
+                    if (auto *label = qobject_cast<QLabel *>(inner);
+                        label && !label->text().isEmpty() && inner->isVisibleTo(card)) {
+                        first = label->text().left(40);
+                        break;
+                    }
+                }
+                unlisted << QStringLiteral("%1 > card without a heading (%2)").arg(section, first);
+                continue;
+            }
+            headings << heading;
+        }
+        if (cards >= 2 && listed.size() != headings.size())
+            unlisted << QStringLiteral("%1 > list [%2] page [%3]")
+                            .arg(section, listed.join(QStringLiteral(", ")),
+                                 headings.join(QStringLiteral(", ")));
+    }
+    for (const QString &line : std::as_const(unlisted))
+        std::fprintf(stderr, "  settings outline: %s\n", qPrintable(line));
+    check(unlisted.isEmpty(),
+          QStringLiteral("every group on the Settings page is listed on the left, in "
+                         "the same order and under the same heading"));
+    for (const QString &line : std::as_const(unlit))
+        std::fprintf(stderr, "  settings heading not lit: %s\n", qPrintable(line));
+    check(unlit.isEmpty(),
+          QStringLiteral("jumping to a section lights its heading on the page, as its "
+                         "entry is lit in the list"));
+
+    const QString shots = qEnvironmentVariable("FORKMESH_SETTINGS_SHOT");
+    int generalIndex = -1;
+    for (int i = 0; i < sections->count(); ++i) {
+        if (sections->tabText(i) == QLatin1String("General"))
+            generalIndex = i;
+    }
+    sections->setCurrentIndex(generalIndex);
+    settleAnimations();
+    if (!shots.isEmpty())
+        window.grab().save(shots + QStringLiteral("-general.png"));
+
+    auto *localHalloween =
+        window.findChild<QCheckBox *>(QStringLiteral("halloweenLocalCheck"));
+    sections->setSearchText(QStringLiteral("halloween"));
+    settleAnimations();
+    const QList<QWidget *> hits = sections->searchHits();
+    check(sections->visibleSectionTitles().contains(QStringLiteral("General")) &&
+              localHalloween && hits.contains(localHalloween),
+          QStringLiteral("searching Settings for halloween finds the Halloween theme "
+                         "switch in General"));
+    if (!shots.isEmpty()) {
+        sections->nextSearchHit();
+        settleAnimations();
+        window.grab().save(shots + QStringLiteral("-search.png"));
+    }
+    sections->setSearchText(QString());
+    settleAnimations();
+
+    auto *themeCombo = window.findChild<QComboBox *>(QStringLiteral("appThemeCombo"));
+    if (localHalloween && themeCombo) {
+        themeCombo->setCurrentIndex(themeCombo->findData(QStringLiteral("light")));
+        settleAnimations(100);
+        localHalloween->setChecked(true);
+        settleAnimations(100);
+        const bool on = settings.value(QStringLiteral("app/theme")).toString() ==
+                        QLatin1String("halloween");
+        localHalloween->setChecked(false);
+        settleAnimations(100);
+        check(on && settings.value(QStringLiteral("app/theme")).toString() ==
+                        QLatin1String("light") &&
+                  !localHalloween->isChecked(),
+              QStringLiteral("the Halloween switch in Settings turns the theme on and "
+                             "back to the one chosen before"));
+        themeCombo->setCurrentIndex(themeCombo->findData(QStringLiteral("halloween")));
+        settleAnimations(100);
+        check(localHalloween->isChecked(),
+              QStringLiteral("picking Halloween in the theme list ticks the Halloween switch"));
+    }
+    auto *adminBox = window.findChild<QWidget *>(QStringLiteral("seasonAdminBox"));
+    check(adminBox && !adminBox->isVisibleTo(&window),
+          QStringLiteral("the switch for everyone stays hidden from an account that "
+                         "cannot manage it"));
+    if (themeBefore.isValid())
+        settings.setValue(QStringLiteral("app/theme"), themeBefore);
+    else
+        settings.remove(QStringLiteral("app/theme"));
+    if (next)
+        settings.remove(QStringLiteral("app/design"));
+}
 
 void checkThemeSwitchRepolish(MainWindow &window)
 {
@@ -16032,6 +16191,93 @@ void checkSessionsPage(MainWindow &window)
     QApplication::processEvents();
 }
 
+void checkGitCompactLayout(MainWindow &window)
+{
+    QSettings settings;
+    const QVariant designWas = settings.value(QStringLiteral("app/design"));
+    const auto settle = [] {
+        for (int i = 0; i < 10; ++i)
+            QApplication::processEvents();
+    };
+    const QString shotPrefix = qEnvironmentVariable("FORKMESH_GIT_LAYOUT_SHOT");
+    const auto shot = [&](const QString &name) {
+        if (!shotPrefix.isEmpty())
+            window.grab().save(shotPrefix + QLatin1Char('-') + name +
+                               QStringLiteral(".png"));
+    };
+
+    settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+    forkmesh::ui::setGitLayoutCompact(false);
+    MainWindow::applyTheme();
+    settle();
+    const QString fresh = window.testGitLayoutState();
+    check(fresh.startsWith(QStringLiteral("header=1 side=1 ")) &&
+              fresh.endsWith(QStringLiteral(" rows=1 commit=1 branch=gitNextHeader")),
+          QStringLiteral("the New Git layout has the page header, the branches "
+                         "column and the branch picker in the header (%1)")
+              .arg(fresh));
+    shot(QStringLiteral("new"));
+
+    forkmesh::ui::setGitLayoutCompact(true);
+    window.testApplyGitLayout();
+    settle();
+    const QString compact = window.testGitLayoutState();
+    check(compact == QStringLiteral("header=0 side=0 files=1 history=1 rows=1 "
+                                    "commit=1 branch=gitHistoryHeader"),
+          QStringLiteral("the Compact Git layout stacks files over history with "
+                         "room for the file list and the commit button, and the "
+                         "branch picker in the history header (%1)")
+              .arg(compact));
+    shot(QStringLiteral("compact"));
+
+    forkmesh::ui::setGitLayoutCompact(false);
+    window.testApplyGitLayout();
+    settle();
+    const QString back = window.testGitLayoutState();
+    check(back == fresh,
+          QStringLiteral("switching back to the New Git layout restores it (%1)")
+              .arg(back));
+
+    if (designWas.isValid())
+        settings.setValue(QStringLiteral("app/design"), designWas);
+    else
+        settings.remove(QStringLiteral("app/design"));
+    settings.remove(QLatin1String(forkmesh::ui::kGitLayoutSetting));
+    forkmesh::ui::gitLayoutState() = -1;
+    MainWindow::applyTheme();
+    settle();
+}
+
+void runGitLayoutOnly(MainWindow &window)
+{
+    window.resize(1400, 900);
+    window.show();
+    QApplication::processEvents();
+    QTemporaryDir repo;
+    if (!initGitRepo(repo))
+        return;
+    QFile file(repo.path() + QStringLiteral("/readme.txt"));
+    file.open(QIODevice::WriteOnly);
+    file.write("tracked\n");
+    file.close();
+    runGitChecked(repo.path(), {"add", "readme.txt"});
+    runGitChecked(repo.path(), {"commit", "-m", "readme"});
+    QFile edited(repo.path() + QStringLiteral("/readme.txt"));
+    edited.open(QIODevice::Append);
+    edited.write("changed\n");
+    edited.close();
+    const int index = window.testAddLocalRepository("me", "gitlayout", repo.path());
+    window.testOpenRepository(index);
+    QApplication::processEvents();
+    window.testClickRailGitButton();
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < 5000 &&
+           window.testBrowsedBranch() != QStringLiteral("main"))
+        QApplication::processEvents(QEventLoop::AllEvents, 20);
+    checkGitCompactLayout(window);
+}
+
 int runWorkspaceSnapshots(MainWindow &window);
 
 int main(int argc, char *argv[])
@@ -16321,6 +16567,8 @@ else:
         app.arguments().contains(QStringLiteral("--users-detail-only"));
     const bool ledgerOnly =
         app.arguments().contains(QStringLiteral("--ledger-only"));
+    const bool gitLayoutOnly =
+        app.arguments().contains(QStringLiteral("--git-layout-only"));
     const bool pageFindOnly =
         app.arguments().contains(QStringLiteral("--page-find-only"));
     const bool savedSearchesOnly =
@@ -16962,6 +17210,12 @@ else:
         return failures == 0 ? 0 : 1;
     }
 
+    if (app.arguments().contains(QStringLiteral("--settings-outline-only"))) {
+        checkSettingsOutline(window, app.arguments().contains(QStringLiteral("--next")));
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
     if (app.arguments().contains(QStringLiteral("--theme-switch-only"))) {
         checkThemeSwitchRepolish(window);
         stopChildProcesses(window);
@@ -17435,6 +17689,11 @@ else:
     }
     if (ledgerOnly) {
         checkLedgerSection(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+    if (gitLayoutOnly) {
+        runGitLayoutOnly(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -23318,8 +23577,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
     // fallback, restarts in place, and checks both the reported version and
     // exact source revision before the per-host pane can turn green.
     {
-        const QString expectedBuildCommit =
-            QStringLiteral(FORKMESH_BUILD_COMMIT).trimmed().toLower();
+        const QString expectedBuildCommit = forkmesh::desktopBuildCommit();
         const QRegularExpression exactCommit(
             QStringLiteral("^(?:[0-9a-f]{40}|[0-9a-f]{64})$"));
         const bool buildIsCommitted =
@@ -32453,6 +32711,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
         check(window.testGitWorkspaceIsExclusive(),
               QStringLiteral("a branch diff gives the Git rail exclusive ownership: "
                              "no Code chrome and no visible diff outside Git"));
+        checkGitCompactLayout(window);
         // adhoc #269: the divider between the Git file pane and the detail
         // pane has to travel much further than the widths of the two header
         // rows it used to be pinned by. Dragged out, the branch title shares

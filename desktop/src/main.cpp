@@ -1,4 +1,5 @@
 #include "CrashHandler.h"
+#include "DesktopBuildCommit.h"
 #include "BackgroundMode.h"
 #include "KeepAwake.h"
 #include "MessageBoxClicks.h"
@@ -39,14 +40,8 @@
 #if __has_include("ForkMeshVersion.h")
 #include "ForkMeshVersion.h"
 #endif
-#if __has_include("ForkMeshBuildCommit.h")
-#include "ForkMeshBuildCommit.h"
-#endif
 #ifndef FORKMESH_VERSION
 #define FORKMESH_VERSION "dev"
-#endif
-#ifndef FORKMESH_BUILD_COMMIT
-#define FORKMESH_BUILD_COMMIT "unknown"
 #endif
 
 #include <QApplication>
@@ -656,10 +651,11 @@ int main(int argc, char *argv[])
         if (qstrcmp(argv[i], "--wait-for-lock") == 0)
             forkmesh::setBackgroundLockWait(forkmesh::background::kLockWaitMs);
         if (qstrcmp(argv[i], "--build-commit") == 0) {
-            std::printf("%s\n", FORKMESH_BUILD_COMMIT);
+            const QString buildCommit = forkmesh::desktopBuildCommit();
+            std::printf("%s\n", qPrintable(buildCommit));
             static const QRegularExpression exactCommit(
                 QStringLiteral("^(?:[0-9a-f]{40}|[0-9a-f]{64})$"));
-            return exactCommit.match(QStringLiteral(FORKMESH_BUILD_COMMIT))
+            return exactCommit.match(buildCommit)
                        .hasMatch()
                        ? 0
                        : 1;
@@ -808,7 +804,7 @@ int main(int argc, char *argv[])
                 forkmesh::logStartupTrace(QStringLiteral(
                     "ForkMesh runs without a window; asked it to hand over"));
                 forkmesh::ui::showStartupSplash(QStringLiteral(FORKMESH_VERSION),
-                                                QStringLiteral(FORKMESH_BUILD_COMMIT));
+                                                forkmesh::desktopBuildCommit());
                 forkmesh::ui::startupStep(QStringLiteral(
                     "Taking over from ForkMesh running without a window"));
             }
@@ -825,7 +821,7 @@ int main(int argc, char *argv[])
     {
         forkmesh::StartupTraceStep step(QStringLiteral("show startup splash"));
         forkmesh::ui::showStartupSplash(QStringLiteral(FORKMESH_VERSION),
-                                        QStringLiteral(FORKMESH_BUILD_COMMIT));
+                                        forkmesh::desktopBuildCommit());
     }
 
     // A project folder that is itself a git checkout would have application

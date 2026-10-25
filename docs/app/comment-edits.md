@@ -19,9 +19,19 @@ Two event types join the `pull-comment` family:
 | `comment-delete` | `target` | the target is hidden |
 
 `target` is the `id` of a `comment`, `review`, `line-comment`,
-`thread-comment` or `thread-reply`. A review's text can be edited but a review
-cannot be deleted, so approvals the merge gate counts never disappear behind a
-comment change.
+`thread-comment` or `thread-reply`.
+
+Reviews can be deleted too (October 2026: people asked to delete comments
+fully, and a review's text was the one thing that could not go). A
+`comment-delete` on a plain review (`commented`) hides it like a comment. On
+an approval or a change request it removes the text only, and wins over any
+edit, before or after it: the verdict stays, so the merge gate and
+`buildPullReviewSnapshot` count the same approvals and change requests as
+before, and nobody can make an approval disappear with a comment change. The
+verdict's row ("approved these changes") stays in the conversation, with no
+edit or delete buttons, since there is no text left. The web asks "Delete
+this review's text?" and says the approval or change request stays; the
+desktop asks the same.
 
 A change applies only when its signer is the target's author: the same public
 key, or the same account name. The relay binds `authorName` to the signed-in
@@ -43,7 +53,12 @@ Code:
 - Go intake: `pullEventMarkdown` writes `target` into the event file;
 - web: `submitWebPullCommentEdit`, `submitWebPullCommentDelete`,
   `handleWebPullCommentAction`, the pencil and trash buttons in
-  `renderPullConversationEvent`, shown on your own comments while signed in;
+  `renderPullConversationEvent` and on the inline comment cards of the Files
+  changed tab (`renderPullInlineThreadCard`, edited in place in the card),
+  shown on your own comments while signed in; `pullReviewKeepsVerdict` decides
+  whether a delete hides a review or clears its text, the same test as
+  `PullStore::reviewKeepsVerdict` (desktop) and `folded_conversation`
+  (`app/host/forkmesh_host/repo_views.py`, the `.txt` view);
 - desktop: `PullStore::editComment`, `deleteComment`, `makeCommentChange`;
   **Edit comment** and **Delete comment** in the card menu
   (`MainWindow::editPullComment`, `deletePullComment`). A repository this node
