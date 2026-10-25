@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-25",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Market",
+     "items": [
+      "The desktop Market opens without waiting for package previews, which appear as each one loads."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-24",
    "version": "",
    "title": "",

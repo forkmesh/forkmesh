@@ -1,5 +1,6 @@
 #include "FleetAutoscalePanel.h"
 #include "../src/ActionStore.h"
+#include "../src/BackgroundFileWriter.h"
 #include "../src/MainWindow.h"
 #include "../src/MainWindowInternal.h"
 #include "../src/MainWindowNextAccess.h"
@@ -20091,7 +20092,54 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
               ledgerUrl.query().isEmpty() && ledgerUrl.fragment().isEmpty(),
           QStringLiteral("the bundled Ledger package contributes a financial "
                          "left-rail icon targeting the active host's /ledger"));
+    {
+        const auto avatarPng = [](const QColor &color) {
+            QImage image(8, 8, QImage::Format_ARGB32);
+            image.fill(color);
+            QByteArray bytes;
+            QBuffer buffer(&bytes);
+            buffer.open(QIODevice::WriteOnly);
+            image.save(&buffer, "PNG");
+            return bytes;
+        };
+        const QString peer = QStringLiteral("avatar-test-peer");
+        const QByteArray red = avatarPng(Qt::red);
+        const int decodesBefore = window.testAvatarDecodes();
+        window.testDeliverAvatar(peer, red);
+        window.testDeliverAvatar(peer, red);
+        const int sameBytesDecodes = window.testAvatarDecodes() - decodesBefore;
+        window.testDeliverAvatar(peer, avatarPng(Qt::blue));
+        const int changedDecodes = window.testAvatarDecodes() - decodesBefore;
+        forkmesh::diskwrite::flush(5000);
+        QFile cached(window.testAvatarCachePath(peer));
+        const bool cacheWritten = cached.open(QIODevice::ReadOnly) &&
+            cached.readAll() == peer.toUtf8() + '\n' + avatarPng(Qt::blue);
+        check(sameBytesDecodes == 1 && changedDecodes == 2 && cacheWritten,
+              QStringLiteral("an avatar resent with the same bytes is not "
+                             "decoded or rewritten again, a changed one is, "
+                             "and the cache file is written off the GUI thread "
+                             "(same=%1, changed=%2, cache=%3)")
+                  .arg(sameBytesDecodes)
+                  .arg(changedDecodes)
+                  .arg(cacheWritten));
+    }
+    const int previewDecodesBeforeShow = window.testMarketPreviewDecodes();
     window.testShowMarketSection();
+    const bool previewDecodesDeferred =
+        window.testMarketPreviewDecodes() == previewDecodesBeforeShow ||
+        window.testMarketPreviewsDecoding();
+    {
+        QElapsedTimer clock;
+        clock.start();
+        while (window.testMarketPreviewsDecoding() && clock.elapsed() < 10000)
+            QApplication::processEvents(QEventLoop::AllEvents, 25);
+    }
+    check(previewDecodesDeferred && !window.testMarketPreviewsDecoding(),
+          QStringLiteral("Market decodes package previews on a worker thread "
+                         "and fills each card when its image lands "
+                         "(deferred=%1, still decoding=%2)")
+              .arg(previewDecodesDeferred)
+              .arg(window.testMarketPreviewsDecoding()));
     QApplication::processEvents();
     auto *marketTabs =
         window.findChild<QTabWidget *>(QStringLiteral("marketTabs"));

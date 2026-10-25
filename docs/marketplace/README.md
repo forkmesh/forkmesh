@@ -478,7 +478,12 @@ catalog fails the configure with "Marketplace package discovery failed".
 - **Desktop.** `MainWindow::marketPreviewPixmap` reads each preview once with
   `QImageReader::setScaledSize` at the 240×135 card size and caches it in
   `m_marketPreviewCache` (keyed by path, box and file time), so opening the
-  Market never re-renders SVGs on the GUI thread. A package whose manifest
+  Market never re-renders SVGs on the GUI thread. The first read runs on a
+  worker (`QtConcurrent`): the card shows an empty frame, and
+  `applyMarketPreview` fills every card and details pane whose `previewKey`
+  matches when the image lands. Diagnostic report #15 (2026-10-24) caught the
+  first Market open decoding every preview inline, ~4 s under memory pressure,
+  in `QImageReader::read`. A package whose manifest
   lists `preview/market.png` keeps PNG, because WebP needs Qt's optional
   qtimageformats plugin.
 - **Phones.** `GET /api/market/packages` rows carry `screenshots: [{url,

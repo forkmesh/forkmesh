@@ -681,6 +681,35 @@ returned, so summed frame totals overstate a function's own cost.
     painted about 74,700 times in 26 minutes) with 7 agents running.
     Nothing in the report names the widget that asks for them, so this
     needs a run with paint-request tracing.
+- **Market previews, workflow list, avatars (report #15, 2026-10-24).** 13
+  of the 16 new stalls came while the box was starved: memory PSI full 68
+  to 79 %, io full 70 to 81 %, load 73 to 99 on 32 CPUs with 11 agents
+  running. Their frames show where the GUI thread waited on paging (a
+  `QHash` destructor in `refreshAgentDots`, string concatenation in a cached
+  `themedOcticon`, `QFont` in style polish), not slow code.
+  - `marketPreviewPixmap` decoded every package preview inline the first
+    time the Market opened (`STALL-20261024T234602606-p2658300-0008`, 4.0 s
+    in `QImageReader::read`). The decode now runs on a worker; see
+    [marketplace/README.md](../marketplace/README.md).
+  - `refreshWorkflowProgress` called `actionNodeLabels()` once per workflow
+    row, and each call constructed two `QSettings`, so a sync of the shared
+    `ForkMesh.conf` could land on any row
+    (`STALL-20261024T234021773-p2260358-0121`, 1.1 s). The labels are read
+    once per refresh.
+  - `onAvatar` decoded and rewrote the avatar cache file on the GUI thread
+    every time a peer's avatar arrived, also at startup from
+    `updateChatIdentity` (928 ms on an idle box). It now skips bytes it has
+    already shown (same SHA-256 and the same pixmap still in `m_avatars`),
+    and the cache file goes through `diskwrite::writeLater`.
+  - No change: the 1.7 s `projectInstancePending` stall sampled the first
+    `QSettings()` of a binary built 20 s before launch, deep in lazy symbol
+    binding. The startup stalls from `refreshSidebarChrome` and the
+    compositor buffer swaps wait on paging and on Wayland. The `ERROR
+    command: ...` group is the context of the SIGTERM record for Action run
+    7956, which survived the signal. The older groups (`saveRatchets`,
+    `ActionStore::appendLog`, `cancelSupersededRuns`) come from binaries
+    built before their fixes; the current code already writes from worker
+    threads.
 
 ### Background file writes
 
