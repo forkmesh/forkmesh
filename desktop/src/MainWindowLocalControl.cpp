@@ -426,6 +426,10 @@ QJsonObject MainWindow::localControlAgentsPayload()
         if (const auto tasks = m_agentCliTasks.constFind(s->id);
             tasks != m_agentCliTasks.constEnd() && tasks->openBackground() > 0)
             row.insert(QStringLiteral("backgroundTasks"), tasks->openBackground());
+        const QPair<qint64, qint64> flow = m_sessionTokenFlow.value(s->id);
+        row.insert(QStringLiteral("tokensIn"), double(qMax<qint64>(flow.first, s->promptTokens)));
+        row.insert(QStringLiteral("tokensOut"),
+                   double(qMax<qint64>(flow.second, s->completionTokens)));
         if (const QString terminal = localControlTerminalForRow(s->id); !terminal.isEmpty())
             row.insert(QStringLiteral("terminal"), terminal);
         const auto stat = m_agentDiffStats.constFind(s->id);
