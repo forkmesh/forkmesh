@@ -1057,10 +1057,13 @@ services" with the reason (`FORKMESH_ONLY`) and offers no switch;
 - **The changelog on an instance.** `/changelog` was part of `website`
   until 2026-10-21, so instances answered 404 and hid the sidebar's
   Resources → Changelog link. The page is the static
-  `www/public/changelog.html`, rendered from `changelog/changelog.json` at
-  the commit the instance runs ([changelog.md](changelog.md)), so it needs
-  nothing from forkmesh.com. `build_site_assets.stage_app` copies it into
-  `app/dist` (`BACKEND_ASSETS`, like `blog.html`); with `WWW_ORIGIN` set to
+  `www/public/changelog.html`, which loads `/changelog.js` and reads
+  `/changelog.json`, the `changelog/changelog.json` of the commit the
+  instance runs ([changelog.md](changelog.md)), so it needs nothing from
+  forkmesh.com. `build_site_assets.stage_app` copies the page and script
+  into `app/dist` (`BACKEND_ASSETS`, like `blog.html`) and the file next to
+  them; `/changelog.json` is a plain static file, served even with the
+  plugin off, since it is the platform's public release notes; with `WWW_ORIGIN` set to
   the instance's own origin, `external_site_delivery` answers `local` and
   `_serve_site_document` serves that copy. forkmesh.com's app origin still
   308s `/changelog` to forkmesh.com. The brand pass renames the platform
