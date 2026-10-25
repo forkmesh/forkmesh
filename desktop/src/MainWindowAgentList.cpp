@@ -604,6 +604,11 @@ void MainWindow::updateAgentsNavBadge()
 void MainWindow::refreshAgentDotMatrix()
 {
     scheduleSessionsPageRefresh();
+    refreshAgentDots();
+}
+
+void MainWindow::refreshAgentDots()
+{
     if (!m_agentDotMatrix)
         return;
     QVector<AgentDotMatrix::Dot> dots;

@@ -13,6 +13,14 @@ from `GET /api/notes`, the service the web Notes page uses. A local note with a
 `cloudId` hides its cloud twin. Cloud notes are not cached on disk; every open
 and Refresh reads the relay again.
 
+## Opening a note
+
+Opening a note shows its rendered Preview; Write switches to the Markdown
+source (`showOpenedNoteView()`). An empty note, and a new one, open on Write
+instead, since there is nothing to preview. The view only resets when another
+note is opened: reloading the open note (a refresh of the list) keeps
+whichever tab you were on.
+
 ## Filters and search
 
 Above the list sit a search box and the filters All / Mine / Shared / Public,

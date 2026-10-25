@@ -82,6 +82,17 @@ class ChatHistoryPersistenceTest {
         assertEq(listOf("new"), store.load("s")?.messages?.map { it.id })
     }
 
+    fun testErasingAProjectRemovesEveryHistoryFileAndNothingElse() = withDir("chat-history-erase") { dir ->
+        val store = ChatHistoryStore(dir)
+        store.save(snapshot(listOf(note("a", "#general"))), "project-1")
+        store.save(snapshot(listOf(note("b", "#general"))), "former")
+        File(dir, "keep.txt").writeText("other")
+        assertEq(2, store.eraseAll())
+        assertEq(listOf("keep.txt"), dir.list().orEmpty().toList())
+        assertEq(ChatHistoryLoad.Missing, store.read("project-1"))
+        assertEq(0, ChatHistoryStore(File(dir, "missing")).eraseAll())
+    }
+
     fun testAFileThatCannotBeReadYetIsNeverOverwritten() = withDir("chat-history-locked") { dir ->
         if (System.getProperty("user.name") == "root") return@withDir
         ChatHistoryStore(dir).save(snapshot(listOf(note("kept", "#general"))), "s")

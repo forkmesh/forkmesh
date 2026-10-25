@@ -291,6 +291,35 @@ class OfficeChannelService(
     @Volatile
     var onMessage: ((ChatMessage) -> Unit)? = null
 
+    @Volatile
+    var onLiveFrame: ((Map<String, Any?>, String) -> Unit)? = null
+
+    fun sendLiveFrame(conversation: String, type: String, fields: Map<String, Any?>): Boolean {
+        if (type !in GroupCallFrames.LIVE_TYPES) return false
+        val room = room(conversation) ?: return false
+        if (!room.isPrivate || room.readOnly) return false
+        if (synchronized(lock) { sockets[room.id]?.socket == null } && !open(conversation)) return false
+        val holder = synchronized(lock) { sockets[room.id] } ?: return false
+        val socket = holder.socket ?: return false
+        val plain = frame(room, "", bot = false)
+        plain.remove("text")
+        plain["type"] = type
+        for ((key, value) in fields) if (key !in GroupCallFrames.RESERVED_FIELDS) plain[key] = value
+        return try {
+            val framed = holder.seal.seal(plain, now())
+            if (holder.seal.needsAdvertisement()) advertise(holder)
+            socket.sendText(Json.stringify(holder.crypto.encrypt(framed)))
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun callTicket(conversation: String, body: Map<String, Any?> = emptyMap()): Map<String, Any?>? {
+        val room = room(conversation) ?: return null
+        if (!room.isPrivate) return null
+        return call("POST", "/api/chat/channels/${room.id}/call-ticket", body)
+    }
+
     fun addListener(listener: () -> Unit) {
         listeners.add(listener)
     }
@@ -465,6 +494,10 @@ class OfficeChannelService(
             }
             plain = RelayFrames.serverFrame(mapOf("srv" to true), marked) ?: return
         } else {
+            return
+        }
+        if (jsonText(plain["type"]) in GroupCallFrames.LIVE_TYPES) {
+            if (room.isPrivate && live != null && !history) onLiveFrame?.invoke(plain, room.conversation)
             return
         }
         val message = OfficeFrames.chatMessage(plain, room.conversation, selfId(), recipients, ::botAccount) ?: return

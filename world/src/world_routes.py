@@ -1781,21 +1781,6 @@ async def world_admin_delete_node_handler(env, request):
             env, "DELETE FROM mirror_https_endpoints "
             "WHERE lower(node_name)=?",
             identifier)
-        # The public /status page builds its mirror roster from recorded
-        # samples (status_history), not from the live endpoint table, so a
-        # deleted node kept a "Mirror node — <name>" row with 30 days of
-        # history — and a permanent "down" verdict — long after every other
-        # trace of it was gone. Drop its samples too so deletion leaves none.
-        status_system = STATUS_MIRROR_PREFIX + identifier
-        await d1_run(
-            env, "DELETE FROM system_status_daily WHERE system=?",
-            status_system)
-        await d1_run(
-            env, "DELETE FROM system_status_hourly WHERE system=?",
-            status_system)
-        await d1_run(
-            env, "DELETE FROM system_status_minute WHERE system=?",
-            status_system)
     for identity_bi in identity_bis:
         cleanup_name = (
             target if identity_bi == target_bi else requested_target
