@@ -57,6 +57,12 @@ QWidget *body(const QList<QWidget *> &controls, int filler)
     return widget;
 }
 
+QString litText(const SettingsSectionsView &view)
+{
+    const auto *label = qobject_cast<const QLabel *>(view.litHeading());
+    return label && label->property("settingsLit").toBool() ? label->text() : QString();
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -134,10 +140,17 @@ int main(int argc, char **argv)
           "the page opens at its first section, which is revealed");
     check(!revealed.contains(3), "a section far down the page is not revealed yet");
 
+    check(litText(view) == QStringLiteral("Profile"),
+          "the heading of the section lit in the list is lit on the page");
+    QWidget *profileTitle = view.litHeading();
+
     view.setCurrentIndex(3);
     settle(60);
     check(view.currentIndex() == 3 && bar->value() == dataFrame->y() && nav->currentRow() == 3,
           "setCurrentIndex scrolls the section's heading to the top and lights its entry");
+    check(litText(view) == QStringLiteral("Data") && profileTitle &&
+              !profileTitle->property("settingsLit").toBool(),
+          "jumping moves the lit heading on the page with the list");
     check(revealed.contains(3), "jumping to a section reveals it");
     check(storageList->height() >= storageList->sizeHint().height() - 1,
           "a list on the long page keeps its preferred height");
@@ -435,6 +448,8 @@ int main(int argc, char **argv)
     check(openHeight >= closedHeight * 3 && paged.currentSubSection() == 0 &&
               pagedNav->currentRow() == 1,
           "the section being read opens its sub-sections in the list and lights the first");
+    check(litText(paged) == QStringLiteral("GENERATE SSH KEY"),
+          "the page lights the heading of the sub-section lit in the list");
     check(pagedNav->visualItemRect(pagedNav->item(0)).height() == closedHeight,
           "the other sections stay folded in the list");
 
@@ -442,6 +457,8 @@ int main(int argc, char **argv)
     settle(30);
     check(paged.currentIndex() == 1 && paged.currentSubSection() == 1,
           "scrolling lights the sub-section being read");
+    check(litText(paged) == QStringLiteral("PUBLIC KEY"),
+          "scrolling moves the lit heading on the page to the sub-section being read");
 
     const int activatedBeforeSub = activated;
     int pagedActivated = 0;

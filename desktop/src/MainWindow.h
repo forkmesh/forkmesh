@@ -11703,6 +11703,11 @@ private:
     void setGenieWatch(const GenieWatch &watch);
     void noteGenieOrganizations(const QJsonArray &organizations);
     QWidget *buildGenieWatchSettings();
+    QWidget *buildHalloweenSettings();
+    void refreshSeasonSettings();
+    void saveSeasonSettings(bool on);
+    void renderSeasonSettings(const QString &message = QString());
+    void syncHalloweenLocalCheck();
     void noteGeniePage();
     void recordGenieVisit(const QString &page);
     void openGeniePage(const QString &page);
@@ -12751,6 +12756,14 @@ private:
     QLabel *m_autostartInfo = nullptr;
     QPushButton *m_autostartRemoveButton = nullptr;
     QComboBox *m_themeCombo = nullptr;
+    QPointer<QCheckBox> m_halloweenLocalCheck;
+    QPointer<QWidget> m_seasonAdminBox;
+    QPointer<QCheckBox> m_seasonEveryoneCheck;
+    QPointer<QDateTimeEdit> m_seasonUntilEdit;
+    QPointer<QLabel> m_seasonStatusLabel;
+    QJsonObject m_seasonSettings;
+    bool m_seasonBusy = false;
+    QString m_themeBeforeHalloween;
     forkmesh::ui::WindowBackdrop *m_windowBackdrop = nullptr;
     forkmesh::ui::WindowFade *m_windowFade = nullptr;
     QComboBox *m_defaultAgentProviderCombo = nullptr;
