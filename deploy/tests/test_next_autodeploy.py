@@ -55,6 +55,11 @@ def commit(repo, files, message):
     return git(repo, "rev-parse", "HEAD")
 
 
+@pytest.fixture(autouse=True)
+def no_tmp_disk(tmp_path, monkeypatch):
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(tmp_path / "no-labels"))
+
+
 @pytest.fixture
 def repo(tmp_path):
     path = tmp_path / "src"
@@ -390,6 +395,57 @@ def test_a_run_requeued_after_a_desktop_restart_follows_its_new_workspace(repo, 
     assert result_line(second).startswith(auto.RESULT_MARK + " ok deployed ")
     assert result_line(first) == ""
     assert [run["workspace"] for run in auto.running_runs(tmp_path / "actions")] == [second]
+
+
+def tmp_disk(tmp_path, monkeypatch, target=None):
+    labels, device = tmp_path / "labels", tmp_path / "dev" / "sdz1"
+    labels.mkdir()
+    device.parent.mkdir()
+    device.write_text("")
+    (labels / "TMP").symlink_to(device)
+    mount = target or tmp_path / "media" / "TMP"
+    mount.mkdir(parents=True)
+    mounts = tmp_path / "mounts"
+    mounts.write_text("/dev/root / ext4 rw 0 0\n%s %s ext4 rw 0 0\n" % (
+        device, str(mount).replace(" ", "\\040")))
+    monkeypatch.setattr(auto, "TMP_DISK_LABEL_DIR", str(labels))
+    monkeypatch.setattr(auto, "TMP_DISK_MOUNTS", str(mounts))
+    return mount
+
+
+def test_tmp_disk_mount_matches_the_labelled_device_and_unescapes_spaces(tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch, tmp_path / "media" / "T M P")
+    assert auto.tmp_disk_mount() == mount
+    assert auto.sandbox_dirs(tmp_path / "actions") == [
+        tmp_path / "actions" / "sandbox", mount / "ForkMesh" / "actions" / "sandbox"]
+
+
+def test_no_tmp_disk_leaves_only_the_data_sandbox(tmp_path):
+    assert auto.tmp_disk_mount() is None
+    assert auto.sandbox_dirs(tmp_path / "actions") == [tmp_path / "actions" / "sandbox"]
+
+
+def test_a_tmp_disk_that_is_labelled_but_not_mounted_is_ignored(tmp_path, monkeypatch):
+    tmp_disk(tmp_path, monkeypatch)
+    (tmp_path / "mounts").write_text("/dev/root / ext4 rw 0 0\n")
+    assert auto.tmp_disk_mount() is None
+
+
+def test_a_run_whose_sandbox_is_on_the_tmp_disk_is_deployed(repo, tmp_path, monkeypatch):
+    mount = tmp_disk(tmp_path, monkeypatch)
+    clock, calls = Clock(), []
+    agent = agent_for(repo, tmp_path, clock, calls)
+    head = commit(repo, {"app/a.py": "tmp disk\n"}, "tmp disk")
+    legacy = make_run(tmp_path / "actions", 7903, head)
+    fast = (mount / "ForkMesh" / "actions" / "sandbox" / "forkmesh-run-7903-1790000099999"
+            / "workspace")
+    fast.mkdir(parents=True)
+    agent.tick()
+    assert agent.attached[7903] is not None
+    settle(agent, clock)
+    assert calls == [(head, "auto")]
+    assert result_line(fast).startswith(auto.RESULT_MARK + " ok deployed ")
+    assert not (legacy / auto.SINK_NAME).exists()
 
 
 def test_paused_or_disarmed_agent_answers_without_deploying(repo, tmp_path):
