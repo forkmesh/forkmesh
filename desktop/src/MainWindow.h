@@ -3899,6 +3899,8 @@ private:
     void cacheActiveAccountSession(const QString &instanceUrl);
     bool restoreCachedAccountSession(const QString &accountName,
                                      const QString &instanceUrl);
+    QStringList accountDesktopKeysForSession(
+        const forkmesh::accounts::CachedSession &session);
     QString currentAccountInstanceUrl() const;
     QString accountSessionTokenForUrl(const QUrl &url) const;
     QString activeAccountSessionToken() const;

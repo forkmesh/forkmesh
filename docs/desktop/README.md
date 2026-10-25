@@ -427,6 +427,17 @@ The full description is in
   (`NativePackageExtension.*`).
 - Signed records and requests use the node key; the desktop never relies on
   cookies or a browser origin.
+- **Several desktops on one account.** Each desktop that signs in with its own
+  key becomes an enabled `desktop_node` device with `owner_sign`, so every one
+  of them may sign owner actions. Switching back to a cached account session
+  (`restoreCachedAccountSession` in `MainWindowAccounts.cpp`) used to keep
+  owner-signing only when the account's primary key (the first desktop's) was
+  this desktop's key, so the second desktop always lost it and the "Account
+  switched" dialog said owner-signed actions stayed disabled. When the primary
+  key differs, the desktop now reads `GET /api/accounts/desktops` with the same
+  session and restores signing when its key is on that list
+  (`SessionCache::mayRestoreDesktopCapability`). The dialog now says which of
+  the two states it ended in.
 - Agents are sandboxed as described in
   [Desktop agent sandboxing](#desktop-agent-sandboxing).
 - Actions steps run in a bubblewrap sandbox unless a workflow says

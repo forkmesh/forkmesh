@@ -428,8 +428,19 @@ struct ShellIslandStatusDots: View {
     var fleet: [FleetLight] = []
     var runnerAgents: [String: Int] = [:]
     var desktop: ShellLocalDesktop? = nil
+    var desktops: [ShellDesktopLight] = []
     var desktopLoad: DesktopStrain? = nil
     var buildMac: BuildMacLight? = nil
+
+    static let stackOverlap: CGFloat = -4
+
+    private var otherDesktops: [ShellDesktopLight] {
+        desktops.count > 1 ? desktops.filter { !$0.active } : []
+    }
+
+    private var cores: [FleetLight] { fleet.filter { $0.kind == .core } }
+
+    private var runners: [FleetLight] { fleet.filter { $0.kind == .runner } }
 
     static func gap(top: CGFloat) -> CGFloat? {
         top >= islandInset ? top - islandBottom : nil
@@ -501,18 +512,28 @@ struct ShellIslandStatusDots: View {
     private var ear: some View {
         HStack(spacing: 8) {
             if let desktop = desktop {
-                ShellFooterDesktopLight(
-                    desktop: desktop, load: desktopLoad, onPressed: {}, glyph: 10, side: ShellIslandStatusDots.earHeight)
+                HStack(spacing: ShellIslandStatusDots.stackOverlap) {
+                    ShellFooterDesktopLight(
+                        desktop: desktop, load: desktopLoad, onPressed: {}, glyph: 10, side: ShellIslandStatusDots.earHeight)
+                    ForEach(otherDesktops) { (light: ShellDesktopLight) in
+                        ShellStackedDesktopLight(light: light)
+                    }
+                }
             }
             if let buildMac = buildMac {
                 ShellFooterMacLight(light: buildMac, onPressed: {}, glyph: 10, side: ShellIslandStatusDots.earHeight)
             }
-            if !fleet.isEmpty {
+            if !cores.isEmpty {
+                HStack(spacing: ShellIslandStatusDots.stackOverlap) {
+                    ForEach(cores) { (light: FleetLight) in
+                        ShellFleetLight(light: light, agents: 0)
+                    }
+                }
+            }
+            if !runners.isEmpty {
                 HStack(spacing: 1) {
-                    ForEach(fleet) { (light: FleetLight) in
-                        ShellFleetLight(
-                            light: light,
-                            agents: light.kind == .runner ? runnerAgents[light.name.lowercased()] ?? 0 : 0)
+                    ForEach(runners) { (light: FleetLight) in
+                        ShellFleetLight(light: light, agents: runnerAgents[light.name.lowercased()] ?? 0)
                     }
                 }
             }
@@ -528,11 +549,12 @@ struct ShellIslandStatusDots: View {
         var parts: [String] = []
         if let desktop = desktop {
             parts.append(desktop.label)
+            parts += otherDesktops.map(\.label)
         }
         if let buildMac = buildMac {
             parts.append(buildMac.label)
         }
-        return (parts + fleet.map(\.label)).joined(separator: "; ")
+        return (parts + cores.map(\.label) + runners.map(\.label)).joined(separator: "; ")
     }
 }
 
@@ -673,6 +695,37 @@ struct ShellFooterDesktopLight: View {
         withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
             dim = true
         }
+    }
+}
+
+struct ShellStackedDesktopLight: View {
+    @Environment(\.fmPalette) var fm
+    let light: ShellDesktopLight
+
+    private var dot: Color {
+        switch light.presence {
+        case .online: return fm.success
+        case .offline: return fm.danger
+        case .checking: return fm.warning
+        case .unknown: return fm.textTertiary
+        }
+    }
+
+    var body: some View {
+        Image(systemName: "desktopcomputer")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(fm.textSecondary)
+            .padding(1)
+            .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(fm.bgBase))
+            .overlay(alignment: .topTrailing) {
+                Circle()
+                    .fill(dot)
+                    .frame(width: 5, height: 5)
+                    .background(Circle().fill(fm.bgBase).padding(-1))
+                    .offset(x: 2, y: -2)
+            }
+            .frame(minHeight: ShellIslandStatusDots.earHeight)
+            .accessibilityLabel(Text(light.label))
     }
 }
 
