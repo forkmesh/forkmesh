@@ -102,7 +102,7 @@ set_source_files_properties(src/SourceDir.cpp PROPERTIES
 # include; configure_file rewrites it only when the version actually changes,
 # so a bump recompiles just those files. The build commit, which changes with
 # every commit anywhere in the checkout, is in ForkMeshBuildCommit.h, read by
-# main.cpp and MainWindowHostInstall.cpp only; in ForkMeshVersion.h it made
+# the one-function src/DesktopBuildCommit.cpp only; in ForkMeshVersion.h it made
 # every commit recompile the 17 files (the heaviest MainWindow units among
 # them) that only want the version.
 configure_file(
@@ -655,6 +655,8 @@ endif()
 set(FORKMESH_APP_SOURCES
     src/SourceDir.h
     src/SourceDir.cpp
+    src/DesktopBuildCommit.h
+    src/DesktopBuildCommit.cpp
     src/AgentFolders.h
     src/AgentFolders.cpp
     src/Http3Get.h
