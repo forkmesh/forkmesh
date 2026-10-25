@@ -3439,10 +3439,12 @@ void MainWindow::moveButtonToPanel(const QString &key, const QString &panel)
     updateRepoActivityRail();
 }
 
+#ifdef FORKMESH_WINDOW_TESTS
 QWidget *MainWindow::testRepoTabRowPanel() const
 {
     return m_repoTabRowLayout ? m_repoTabRowLayout->parentWidget() : nullptr;
 }
+#endif
 
 QWidget *MainWindow::movableButtonForRailKey(const QString &railKey) const
 {
