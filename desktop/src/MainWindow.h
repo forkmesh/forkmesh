@@ -1821,6 +1821,7 @@ public:
     QStringList testRepoTabRowKeys() const;
     QStringList testRepoCodeBarKeys() const;
     void testBuildRepoCodeTab() { ensureRepoDetailTabBuilt(0); }
+    void testFlushDeferredSettings() { flushDeferredSettings(); }
     QPushButton *testRepoBranchesButton() const { return m_branchesButton; }
     void testMoveButtonToPanel(const QString &key, const QString &panel)
     {
@@ -11590,6 +11591,8 @@ private:
     QString m_cloudLogMonitorIdleReason;
     QWidget *m_globalOverlayHost = nullptr;
     void setupGenieSpider();
+    void flushDeferredSettings();
+    int m_lastRepoDetailTabPending = -1;
     bool genieSpiderShown() const;
     void setGenieSpiderShown(bool shown);
     void installGeniePetHost();

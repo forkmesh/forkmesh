@@ -2843,7 +2843,10 @@ void MainWindow::startDeployLogFollower()
                 logSystemFrom(
                     forkmesh::control::redactProcessOutput(text),
                     forkmesh::logSourceRelativePath(FORKMESH_LOG_SOURCE_FILE),
-                    FORKMESH_LOG_SOURCE_LINE, forkmesh::LogSeverity::Automatic,
+                    FORKMESH_LOG_SOURCE_LINE,
+                    category == QLatin1String("ERROR")
+                        ? forkmesh::LogSeverity::Error
+                        : forkmesh::LogSeverity::Informational,
                     category);
             },
             this);
