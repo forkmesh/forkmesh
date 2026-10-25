@@ -114,7 +114,35 @@ Ping names the stale-copy case and the `install` command, not only
    bound read-only (`GOTOOLCHAIN=local`, `GOPROXY=off`, a per-run
    `GOCACHE`). Go is found on the agent's `PATH`, then in `/usr/local/go`,
    `/usr/lib/go`, `~/go` or `~/.local/go`; without it every deploy fails at
-   this gate rather than skipping the Go tests.
+   this gate rather than skipping the Go tests. Go tests that fail are run
+   once more after the Python files finish, alone (`-count=1 -p 1`, only the
+   failed top-level tests); the gate fails only if they fail again. The
+   call and QUIC tests measure real time (failover within 500 ms, a gap no
+   longer than one round trip, frames heard through impaired links, the
+   anti-amplification allowance), and with twelve pytest workers, the build
+   and the upload on the same box they missed by tens of milliseconds:
+   `TestThreePeopleHoldACallThroughImpairedLinks` on 2026-10-23 and
+   2026-10-24, `TestAntiAmplificationLimit` on 2026-10-23,
+   `TestMultipathPathFailureAudio` (82 ms gap) for `e162e9991b8f` and
+   `TestCoreDeathMovesTheCallToTheStandbyCore/silent` (544 ms) for
+   `bf3a0be84066` on 2026-10-24, each blocking a deploy whose next commit
+   passed. A real regression fails both runs. Those four tests also give
+   their timing checks three attempts themselves (`docs/server/README.md`),
+   which works before the agent has updated itself: the gate runs from the
+   installed agent, but the Go tests come from the commit being deployed.
+   Go tests that fail are run once more on their own (`-count=1 -p 1 -run`
+   with only the failed top-level tests) after the Python files finish, and
+   the gate fails only if they fail again. The real-time call tests measure
+   wall-clock targets (failover audio back within 500 ms, a multipath gap
+   within one round trip, 70% of audio frames through impaired links, the
+   QUIC anti-amplification allowance), and with twelve pytest workers, the
+   build and the upload on the same box their timers fire late: between
+   2026-10-23 and 2026-10-24 `TestThreePeopleHoldACallThroughImpairedLinks`,
+   `TestAntiAmplificationLimit`, `TestMultipathPathFailureAudio` and
+   `TestCoreDeathMovesTheCallToTheStandbyCore` each blocked a deploy (run
+   7942 failed both `e162e9991b8f` and `bf3a0be84066`) and passed on the next
+   commit with no change to their code. A test that passes its rerun is
+   named in the log as having failed beside the other suites.
 3. **Build** in a fresh detached worktree.
 4. **Deploy:** upload, migrate, then a rolling restart one core at a time
    (the first chosen per release), each gated on `/readyz` (never ready while

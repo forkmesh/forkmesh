@@ -755,9 +755,59 @@ def test_a_failing_go_test_fails_the_gate_with_its_output(tmp_path, monkeypatch)
     lines = ["--- FAIL: TestAgentWork (0.00s)", "    sandbox_test.go:9: key folder accepted", "FAIL"]
     monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {
         "server": (1, auto.failing_go_ids("server", lines), lines)})
+    again = ["--- FAIL: TestAgentWork (0.00s)", "    sandbox_test.go:9: key folder accepted again",
+             "FAIL"]
+    monkeypatch.setattr(pipeline, "go_rerun", lambda work, venv, module, failures: (
+        1, auto.failing_go_ids(module, again), again))
     with pytest.raises(auto.ToolError, match="server::TestAgentWork"):
         pipeline.test_gate("target", "base")
-    assert "key folder accepted" in "\n".join(log.lines)
+    assert "key folder accepted again" in "\n".join(log.lines)
+
+
+def test_a_go_test_that_only_fails_under_load_passes_when_rerun_alone(tmp_path, monkeypatch):
+    log = auto.Log(echo=False)
+    pipeline = auto.Pipeline(tmp_path, log, state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    monkeypatch.setattr(pipeline, "archive", lambda commit, work: None)
+    monkeypatch.setattr(pipeline, "venv", lambda src: tmp_path / "venv")
+    monkeypatch.setattr(pipeline, "prestage", lambda work, venv: None)
+    monkeypatch.setattr(pipeline, "test_files", lambda src: [])
+    lines = ["--- FAIL: TestCoreDeath (6.97s)", "    --- FAIL: TestCoreDeath/silent (3.56s)",
+             "        call_test.go:161: audio came back after 543ms, target 500 ms", "FAIL"]
+    monkeypatch.setattr(pipeline, "go_tests", lambda work, venv: {
+        "server": (1, auto.failing_go_ids("server", lines), lines)})
+    reruns = []
+    monkeypatch.setattr(pipeline, "go_rerun", lambda work, venv, module, failures: (
+        reruns.append((module, sorted(failures))) or (0, set(), ["ok"])))
+    pipeline.test_gate("target", None)
+    assert reruns == [("server", ["server::TestCoreDeath", "server::TestCoreDeath/silent"])]
+    assert "passed when rerun alone" in "\n".join(log.lines)
+
+
+def test_a_go_rerun_runs_only_the_failed_top_level_tests_one_package_at_a_time(tmp_path,
+                                                                               monkeypatch):
+    root = tmp_path / "goroot"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "go").write_text("")
+    monkeypatch.setattr(auto.shutil, "which",
+                        lambda name: str(root / "bin" / "go") if name == "go" else "/usr/bin/" + name)
+    seen = []
+
+    def fake_stream(command, say, **_kwargs):
+        seen.append(command)
+        say("--- FAIL: TestMultipath (1.0s)")
+        return 1
+    monkeypatch.setattr(auto, "stream", fake_stream)
+    pipeline = auto.Pipeline(tmp_path, auto.Log(echo=False), state_dir=tmp_path / "state",
+                             layout=SimpleNamespace(cache=tmp_path / "cache"))
+    code, failures, _lines = pipeline.go_rerun(
+        tmp_path / "work", tmp_path / "venv", "server",
+        {"server::TestMultipath/blackhole", "server::TestMultipath", "server::TestCoreDeath"})
+    assert (code, failures) == (1, {"server::TestMultipath"})
+    assert seen[0][-10:] == [str(root.resolve() / "bin" / "go"), "test", "-C", "server",
+                             "-count=1", "-p", "1", "-run", "^(TestCoreDeath|TestMultipath)$",
+                             "./..."]
+    assert "--unshare-all" in seen[0]
 
 
 def test_go_tests_run_offline_in_the_sandbox_with_the_host_toolchain(tmp_path, monkeypatch):

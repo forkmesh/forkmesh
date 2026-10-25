@@ -88,6 +88,23 @@ void checkInstrumentationFramesAreNotOrigins()
           "the origin skips the probe to the application frames under it");
 }
 
+void checkTimingHookAndPolishGuardAreNotOrigins()
+{
+    const QString exe = QStringLiteral("/tmp/forkmesh-test");
+    const QString sampled = QStringLiteral(
+        "/lib/x86_64-linux-gnu/libQt6Gui.so.6(_ZN4QCss13StyleSelector17styleRulesForNodeENS0_7NodePtrE+0x692) [0x0]\n"
+        "/tmp/forkmesh-test(_ZN8forkmesh2ui20QtRuntimeDiagnostics15noteEventTimingEPKciN6QEvent4TypeEx+0x24) [0x1]\n"
+        "/tmp/forkmesh-test(_ZN8forkmesh13hiddenunicode11guardWidgetEP7QWidget+0x22b) [0x2]\n"
+        "/lib/x86_64-linux-gnu/libQt6Widgets.so.6(_ZNK7QWidget14ensurePolishedEv+0x72) [0x3]\n"
+        "/tmp/forkmesh-test(_ZN10MainWindow22appendMarketGuideCardsEv+0x51) [0x4]\n");
+    const QString origin = stallwatch::likelyOrigin(sampled, exe);
+    check(!origin.contains(QStringLiteral("noteEventTiming")) &&
+              !origin.contains(QStringLiteral("guardWidget")),
+          "the event timing hook and the Polish input guard are never stall origins");
+    check(origin.contains(QStringLiteral("MainWindow::appendMarketGuideCards")),
+          "the origin names the application frame that created the widgets");
+}
+
 void checkEventFilterResidueIsNotOrigin()
 {
     const QString exe = QStringLiteral("/tmp/forkmesh-test");
@@ -142,6 +159,7 @@ int main(int argc, char **argv)
     QCoreApplication app(argc, argv);
     checkStackScan();
     checkInstrumentationFramesAreNotOrigins();
+    checkTimingHookAndPolishGuardAreNotOrigins();
     checkEventFilterResidueIsNotOrigin();
     checkSystemWaitsAreNamed();
     QTemporaryDir scratch;
