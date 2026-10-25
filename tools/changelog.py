@@ -67,11 +67,15 @@ def problems(data: dict) -> list[str]:
         if not isinstance(sections, list) or not sections:
             found.append(f"{where}: sections must be a non-empty list")
             continue
+        titles: set[str] = set()
         for section in sections:
             title = section.get("title") if isinstance(section, dict) else None
             if title not in AREAS:
                 found.append(f"{where}: section {title!r} is not one of {', '.join(AREAS)}")
                 continue
+            if title in titles:
+                found.append(f"{where}: section {title!r} appears twice")
+            titles.add(title)
             items = section.get("items")
             if not isinstance(items, list) or not items or not all(isinstance(i, str) and i.strip() for i in items):
                 found.append(f"{where}: {title} needs a list of non-empty items")
