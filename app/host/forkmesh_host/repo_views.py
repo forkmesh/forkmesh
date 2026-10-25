@@ -1005,7 +1005,7 @@ def _same_author(change, target):
 def folded_conversation(events):
     rows = [e for e in events or [] if isinstance(e, dict)]
     by_id = {str(e["id"]): e for e in rows if e.get("id")}
-    edits, deleted = {}, set()
+    edits, deleted, cleared = {}, set(), set()
     for event in rows:
         if event.get("type") not in ("comment-edit", "comment-delete"):
             continue
@@ -1015,7 +1015,10 @@ def folded_conversation(events):
                 or not _same_author(event, target):
             continue
         if event["type"] == "comment-delete":
-            if target.get("type") != "review":
+            if target.get("type") == "review" and target.get("state") in (
+                    "approved", "changes_requested"):
+                cleared.add(target_id)
+            else:
                 deleted.add(target_id)
         elif target_id not in edits or _timestamp(edits[target_id].get("ts")) \
                 <= _timestamp(event.get("ts")):
@@ -1025,6 +1028,9 @@ def folded_conversation(events):
         event_id = str(event.get("id") or "")
         if event.get("type") in ("comment-edit", "comment-delete") \
                 or event_id in deleted:
+            continue
+        if event_id in cleared:
+            folded.append(dict(event, body=""))
             continue
         edit = edits.get(event_id)
         folded.append(dict(event, body=edit.get("body", "")) if edit else event)
@@ -1393,9 +1399,9 @@ def _review_prompt(bundle, pull, origin, link):
         return ""
     link = link or "/%s/%s" % (urllib.parse.quote(bundle.owner),
                                 urllib.parse.quote(bundle.repo))
+    patch = str(pull.get("patch") or "")
     values = pull_review_prompt.fields(
-        origin, link, pull["number"], pull,
-        bool(str(pull.get("patch") or "").strip()))
+        origin, link, pull["number"], pull, bool(patch.strip()), patch)
     return pull_review_prompt.render(
         values, pull["number"], pull_review_prompt.template_from_blobs(
             (bundle.model or {}).get("settings")))

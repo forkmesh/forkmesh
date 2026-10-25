@@ -6787,7 +6787,8 @@ private:
     void drainDeferredActionWorkflowScans();
     void submitPullComment();                       // post a comment on the PR
     void editPullComment(int number, const QString &target, const QString &original);
-    void deletePullComment(int number, const QString &target);
+    void deletePullComment(int number, const QString &target,
+                           const QString &question = QString());
     void sendPullRevisionToAgent();                 // re-queue the linked agent with revision feedback
     void submitPullReview(const QString &state);    // approve / request changes
     bool currentAccountOwnsPullRepository();
