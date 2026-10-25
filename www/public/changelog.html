@@ -186,6 +186,29 @@
           <time class="when" datetime="2026-10-25">October 25, 2026</time>
         </div>
         <div class="release-body">
+          <h3>Agents</h3>
+          <ul>
+            <li>Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk.</li>
+          </ul>
+          <h3>World</h3>
+          <ul>
+            <li>When your microphone or camera is on, a live chart scrolls your frame rate, mic level, tracking time and round trip, and a blinking On air sign shows under your face in the corner and on your avatar.</li>
+            <li>Your camera now moves your uploaded avatar photo instead of the drawn face, both on your body and in the top-right corner, and arms and hands follow you more steadily, including how far forward you reach.</li>
+            <li>Reactions from gestures and the voice panel now pop on everyone's screen with a bouncing emoji burst, yours included.</li>
+            <li>The Genie spider now lives in the World: it follows you around and plays 100 different games with you, other people, Forkbot, the fountain, the campfire, bikes, cars, boards and more. Turn it off in World settings.</li>
+          </ul>
+          <h3>iPhone</h3>
+          <ul>
+            <li>With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock.</li>
+            <li>The iPhone app stays signed in to your instances after the phone restarts.</li>
+          </ul>
+          <h3>Desktop</h3>
+          <ul>
+            <li>Logs → Desktop has a slider under the CPU and memory gauges that sets how much of the computer agents may use, and the new limit applies at once to agents already running.</li>
+            <li>A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on.</li>
+            <li>A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can.</li>
+          </ul>
+          <h3>Market</h3>
           <ul>
             <li>The desktop Market opens without waiting for package previews, which appear as each one loads.</li>
             <li>Market previews in WebP format now show on Linux desktops without Qt's WebP plugin, instead of reading Preview unavailable.</li>
@@ -221,6 +244,7 @@
           <h3>Chat</h3>
           <ul>
             <li>Links to a channel or direct message open it even on a freshly loaded chat page.</li>
+            <li>In a chat room the desktop prompt bar highlights its chat button, since that is what Enter sends with.</li>
           </ul>
           <h3>Agents</h3>
           <ul>
@@ -233,9 +257,6 @@
             <li>Talk in the World with your microphone and camera: join the whole World, a World channel, a voice room you start, or a privacy bubble with the people next to you, while your camera moves your avatar's face, head and hands, hand gestures send reactions to whoever is speaking, and every speaker wears a live word count.</li>
             <li>One channel list now holds the World channels, voice rooms, Office rooms, your channels and your direct messages, and opens conversations right in the World.</li>
             <li>Turning on your camera in the World now works; the browser no longer blocks it.</li>
-          </ul>
-          <h3>World</h3>
-          <ul>
             <li>A neighbour's hexagon with a bug terrarium now draws in about a third of the steps it used to, so the World runs smoother near it.</li>
           </ul>
           <h3>Settings</h3>
@@ -268,8 +289,16 @@
             <li>The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person.</li>
             <li>Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.</li>
             <li>Notes open in the rendered preview; switch to Write to edit.</li>
+            <li>Success and error notices close themselves after 5 seconds, with a ring around the close button that fills as the time runs out; hover a notice to keep it open.</li>
+            <li>The version at the bottom right of the desktop app now also shows the short commit the build is on.</li>
+            <li>The terminal button in the top bar now opens a shell straight away in a pane on the right, with tabs, a + button for another shell and a menu for Claude Code or Codex, and Codex started there can read and type into your shared terminals like Claude Code.</li>
+            <li>The Workflows page shows special agents and your workflows in one list, with list, thumbnail and compact grid views, the latest output and run, pin, schedule and on/off controls under every workflow, and any workflow can now be pinned to a rail or run with an assignment.</li>
             <li>Logs → Desktop now shows each CPU thread's load, clock and temperature, split into performance and efficiency cores, beside the CPU governor, energy preference, turbo, memory pressure, huge page and swap settings.</li>
             <li>Long data tables no longer freeze for a second or two when a cell updates.</li>
+            <li>Clicking someone in the admin Users list opens a profile panel on the right with their picture and everything the directory knows about them, and every row now shows a picture.</li>
+            <li>On a large diff the scroll bar now shows where you are in the whole diff, so it no longer jumps up each time the next part loads, and dragging it moves through the entire diff.</li>
+            <li>The Git page's side-by-side diff has arrows between the two sides of each change: → reverts that change (or unstages it), ← stages it.</li>
+            <li>The Browser tab and side browser now show pages inside the app in a Chromium with Google's background services switched off, and typed searches go to DuckDuckGo.</li>
           </ul>
           <h3>Server</h3>
           <ul>
@@ -475,9 +504,6 @@
           <h3>Server</h3>
           <ul>
             <li>Self-hosted instances show the platform changelog at /changelog, and their menus no longer show forkmesh.com's Company links.</li>
-          </ul>
-          <h3>Server</h3>
-          <ul>
             <li>Security reports sent to forkmesh.com/api/security/report, including from AI agents and scanners that read the code, now alert the maintainers at once and open a private fix task.</li>
           </ul>
           <h3>Other improvements</h3>

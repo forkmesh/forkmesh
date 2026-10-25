@@ -187,11 +187,16 @@ QString cpuCores(int quotaPercent)
     return QStringLiteral("%1 cores").arg(quotaPercent / 100.0, 0, 'f', 1);
 }
 
+Budget budgetFor(int reservePercent, int cpuReservePercent)
+{
+    return computeBudget(physicalMemoryBytes(), QThread::idealThreadCount(),
+                         reservePercent, cpuReservePercent);
+}
+
 Budget currentBudget()
 {
     const QSettings settings;
-    return computeBudget(
-        physicalMemoryBytes(), QThread::idealThreadCount(),
+    return budgetFor(
         settings.value(kReservePercentSetting, kDefaultReservePercent).toInt(),
         settings.value(kCpuReservePercentSetting, kDefaultCpuReservePercent)
             .toInt());
@@ -394,6 +399,18 @@ Status prepare()
 Status status()
 {
     QMutexLocker lock(&stateMutex());
+    return storedStatus();
+}
+
+Status setReservePercents(int reservePercent, int cpuReservePercent)
+{
+    const int memory = qBound(kMinReservePercent, reservePercent, kMaxReservePercent);
+    const int cpu = qBound(kMinReservePercent, cpuReservePercent, kMaxReservePercent);
+    QSettings settings;
+    settings.setValue(kReservePercentSetting, memory);
+    settings.setValue(kCpuReservePercentSetting, cpu);
+    QMutexLocker lock(&stateMutex());
+    storedStatus().budget = budgetFor(memory, cpu);
     return storedStatus();
 }
 

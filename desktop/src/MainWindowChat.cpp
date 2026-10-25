@@ -1,5 +1,6 @@
 
 #include "ForkMeshVersion.h"
+#include "DesktopBuildCommit.h"
 #include "ProcessReaper.h"
 #include "ProjectRegistry.h"
 #include "SettingsWrite.h"
@@ -2981,13 +2982,23 @@ QWidget *MainWindow::buildStatusBar()
     m_footerGitIdentity->setSizePolicy(QSizePolicy::Preferred,
                                        QSizePolicy::Preferred);
 
-    auto *versionButton = new QPushButton(QStringLiteral("v" FORKMESH_VERSION));
+    const QString buildCommit = forkmesh::desktopBuildCommit();
+    const QString shortCommit = forkmesh::shortBuildCommit(buildCommit);
+    QString versionText = QStringLiteral("v" FORKMESH_VERSION);
+    if (!shortCommit.isEmpty())
+        versionText += QString::fromUtf8(" \xC2\xB7 ") + shortCommit;
+    auto *versionButton = new QPushButton(versionText);
     m_statusVersionButton = versionButton;
     versionButton->setObjectName(QStringLiteral("statusVersionButton"));
     versionButton->setCheckable(true);
     versionButton->setCursor(Qt::PointingHandCursor);
     versionButton->setAccessibleName(QStringLiteral("Toggle debug bar"));
-    versionButton->setToolTip(QStringLiteral("Show debug activity and resource use"));
+    QString versionTip = QStringLiteral("Show debug activity and resource use");
+    if (shortCommit == QLatin1String("dirty"))
+        versionTip += QStringLiteral("\nBuilt with uncommitted changes");
+    else if (!shortCommit.isEmpty())
+        versionTip += QStringLiteral("\nBuilt from commit %1").arg(buildCommit);
+    versionButton->setToolTip(versionTip);
 
     // Offline mode lives next to the version because that is the one strip
     // that is on screen on every page. The label names the mode and its
@@ -7154,6 +7165,17 @@ void MainWindow::refreshQuickAddSendToChannelButton()
     button->setAccessibleName(channel.isEmpty()
                                   ? QStringLiteral("Send to chat")
                                   : QStringLiteral("Send to %1").arg(channel));
+    const bool target = !channel.isEmpty() && !promptChatRoom().isEmpty() &&
+                        !quickAddPackagePromptTarget();
+    if (button->property("enterTarget").toBool() != target) {
+        button->setProperty("enterTarget", target);
+        if (button->style()) {
+            button->style()->unpolish(button);
+            button->style()->polish(button);
+        }
+        button->update();
+        tintComposerActionButton(button);
+    }
 }
 
 int MainWindow::promptChannelUserCount(const QString &conversation) const

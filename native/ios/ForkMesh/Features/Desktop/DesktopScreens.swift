@@ -55,6 +55,19 @@ struct DesktopsScreen: View {
                             .fmMessageTools(diagnostics.error)
                     }
                 }
+                if !otherDesktops.isEmpty {
+                    Section {
+                        ForEach(otherDesktops) { (light: ShellDesktopLight) in
+                            DesktopChoiceRow(light: light) { hub.choose(key: light.id) }
+                        }
+                    } header: {
+                        Text("Other desktops")
+                    } footer: {
+                        Text(
+                            "These desktops are signed in to the same account. Tap one to send prompts and read agents there instead."
+                        )
+                    }
+                }
             } else if let local = hub.local {
                 DesktopDiscoverySection(control: local)
             } else {
@@ -100,7 +113,13 @@ struct DesktopsScreen: View {
         .task { await refreshAll() }
     }
 
+    private var otherDesktops: [ShellDesktopLight] {
+        guard let current = hub.desktop?.key else { return [] }
+        return hub.choices.filter { $0.id != current }
+    }
+
     private func refreshAll() async {
+        let desktops: Task<Void, Never> = Task { await hub.checkDesktops(force: true) }
         let lights: Task<Void, Never> = Task {
             if let fleet { await fleet.load() }
         }
@@ -111,6 +130,49 @@ struct DesktopsScreen: View {
         await diagnostics.refreshHealth()
         await lights.value
         await mac.value
+        await desktops.value
+    }
+}
+
+private struct DesktopChoiceRow: View {
+    let light: ShellDesktopLight
+    let onUse: () -> Void
+
+    private var color: Color {
+        switch light.presence {
+        case .online: return .green
+        case .offline: return .red
+        case .checking: return .orange
+        case .unknown: return .gray
+        }
+    }
+
+    var body: some View {
+        Button {
+            FmHaptics.selection()
+            onUse()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "desktopcomputer")
+                    .foregroundStyle(color)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(light.name)
+                    Text(light.presence.label).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("Use")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                FleetStateDot(color: color)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(light.label))
+        .accessibilityHint(Text("Sends prompts to this desktop from now on"))
+        .accessibilityAddTraits(.isButton)
     }
 }
 

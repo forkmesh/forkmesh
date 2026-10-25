@@ -45,9 +45,23 @@ they were, and the apps' notes of builds 218 to 302 as two entries
 - Items are one plain sentence each. `**Lead.**` prints in bold on the
   website and as plain text in the apps.
 
-`python3 tools/changelog.py check` validates the file;
+`python3 tools/changelog.py check` validates the file, including an area
+that appears twice in one entry;
 `tools/test_changelog.py` runs it and checks that the rendered page shows
 every line the apps show.
+
+### Merge conflicts
+
+Two branches that add notes on the same day conflict in today's entry.
+Deleting the conflict markers and keeping both sides' lines is not a
+resolution: on 2026-10-25 a chain of such merges into `main` left the file
+missing the commas and `]`/`},` lines between sections, and two entries with
+the same area twice. Every `/changelog` page then failed, and the deploy
+stopped on `app/tests/host/test_instance_changelog_e2e.py`. Resolve by
+taking one side's file and re-adding the other side's lines with
+`changelog.py add` (or merging them into the existing section by hand), then
+run `python3 tools/changelog.py check` and re-render the site before you
+commit the merge.
 
 ## Adding a note
 

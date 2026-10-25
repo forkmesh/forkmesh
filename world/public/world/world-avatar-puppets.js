@@ -1,4 +1,4 @@
-import { RIG_REACTIONS, decodeRig, rigTemplatePoints } from "/call-avatar-rig-wire.js";
+import { RIG_REACTIONS, RIG_TEMPLATE, decodeRig, rigTemplatePoints } from "/call-avatar-rig-wire.js";
 import { createFacePuppet } from "/call-avatar-puppet.js";
 import { speakerState } from "/call-speech-meter.js";
 import { paintProceduralAvatarFace } from "./world-avatar-face.js";
@@ -8,7 +8,19 @@ const FACE_PAINT_MS = 66;
 const FACE_LOST_MS = 1200;
 const SPEECH_TICK_MS = 500;
 
+const PORTRAIT_EYE_Y = 0.42;
+const PORTRAIT_FACE_WIDTH = 0.62;
+
 export const WORLD_REACTIONS = RIG_REACTIONS;
+
+export function portraitFaceAnchors() {
+  const xs = RIG_TEMPLATE.map(([x]) => x);
+  const scale = PORTRAIT_FACE_WIDTH / (Math.max(...xs) - Math.min(...xs));
+  return RIG_TEMPLATE.map(([x, y]) => [
+    Math.max(0, Math.min(1, 0.5 + x * scale)),
+    Math.max(0, Math.min(1, PORTRAIT_EYE_Y + y * scale)),
+  ]);
+}
 
 export function reactionEmoji(kind) {
   return RIG_REACTIONS[kind]?.emoji || "";
@@ -21,8 +33,15 @@ function makeCanvas(documentRef) {
   return canvas;
 }
 
-export function createAvatarPuppets({ world, documentRef = globalThis.document, now = () => performance.now() } = {}) {
+export function createAvatarPuppets({
+  world,
+  documentRef = globalThis.document,
+  now = () => performance.now(),
+  ownPhoto = () => null,
+  onSelfFace = () => {},
+} = {}) {
   const peers = new Map();
+  const fallbackAnchors = portraitFaceAnchors();
   let lastSpeechTick = 0;
 
   function entry(id) {
@@ -87,22 +106,24 @@ export function createAvatarPuppets({ world, documentRef = globalThis.document, 
   function paint(peer) {
     const rig = peer.rig;
     const lost = !rig?.deltas || now() - peer.rigAt > FACE_LOST_MS;
+    const self = peer.id === "self";
     if (lost) {
       if (peer.faceShown) {
         scene()?.setAvatarFaceCanvas?.(peer.id, null);
         peer.faceShown = false;
+        if (self) onSelfFace(null);
       }
       return;
     }
     peer.canvas ||= makeCanvas(documentRef);
     const context = peer.canvas.getContext("2d");
-    const photo = scene()?.avatarFacePhoto?.(peer.id) || null;
+    const photo = scene()?.avatarFacePhoto?.(peer.id) || (self ? ownPhoto() : null) || null;
     let drawn = false;
-    if (photo && peer.anchors) {
+    if (photo) {
       peer.puppet ||= createFacePuppet();
       context.clearRect(0, 0, FACE_SIZE, FACE_SIZE);
       try {
-        drawn = peer.puppet.render(context, { image: photo, anchors: peer.anchors, deltas: rig.deltas, width: FACE_SIZE, height: FACE_SIZE });
+        drawn = peer.puppet.render(context, { image: photo, anchors: peer.anchors || fallbackAnchors, deltas: rig.deltas, width: FACE_SIZE, height: FACE_SIZE });
       } catch (_) {
         drawn = false;
       }
@@ -126,6 +147,7 @@ export function createAvatarPuppets({ world, documentRef = globalThis.document, 
     }
     scene()?.setAvatarFaceCanvas?.(peer.id, peer.canvas);
     peer.faceShown = true;
+    if (self) onSelfFace(peer.canvas);
   }
 
   return {

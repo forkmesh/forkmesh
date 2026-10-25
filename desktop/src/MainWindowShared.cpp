@@ -7,6 +7,7 @@
 #include "MarkdownRender.h"
 #include "StartupSplash.h"
 
+#include <QStyleOptionSlider>
 #include <QTextFrame>
 #include <QTextTable>
 #include <QThreadPool>
@@ -1009,6 +1010,10 @@ struct DiffStreamState {
     int pendingViewportPage = -1;
     int pendingViewportY = 0;
     int pendingScrollPixels = 0;
+    int pendingPageScroll = -1;
+    int pendingGlobalScroll = -1;
+    QHash<int, int> pageHeights;
+    QList<qsizetype> pageChars;
     bool viewportUpdatesSuspended = false;
     bool edgeMoveScheduled = false;
     int endCapPosition = -1;
@@ -1109,6 +1114,9 @@ protected:
         auto it = diffStreams().find(m_view);
         if (it == diffStreams().end())
             return false;
+        const auto *resize = static_cast<QResizeEvent *>(event);
+        if (resize->size().width() != resize->oldSize().width())
+            it->pageHeights.clear();
         if (it->endCapPosition >= 0 && !it->endCapResizePending) {
             it->endCapResizePending = true;
             QPointer<QTextEdit> guard(m_view);
@@ -1180,6 +1188,216 @@ int diffKeyScrollPixels(QTextEdit *view, const QKeyEvent *key)
     return 0;
 }
 
+int diffDocumentY(QTextEdit *view, int position)
+{
+    QTextCursor cursor(view->document());
+    cursor.setPosition(qBound(0, position,
+                              view->document()->characterCount() - 1));
+    return view->cursorRect(cursor).top() + view->verticalScrollBar()->value();
+}
+
+qsizetype diffPageCharCount(DiffStreamState &state, int page)
+{
+    if (state.pageChars.size() > state.pages.size())
+        state.pageChars.clear();
+    while (state.pageChars.size() < state.pages.size()) {
+        qsizetype chars = 0;
+        for (const QString &fragment : state.pages.at(state.pageChars.size()))
+            chars += fragment.size();
+        state.pageChars.append(qMax<qsizetype>(1, chars));
+    }
+    return state.pageChars.value(page, 1);
+}
+
+void measureResidentDiffPages(QTextEdit *view, DiffStreamState &state)
+{
+    if (diffStreamPending(state))
+        return;
+    for (int page = state.page; page <= state.windowLastPage; ++page) {
+        const int start = state.windowPagePositions.value(page, -1);
+        if (start < 0)
+            continue;
+        const int next = state.windowPagePositions.value(page + 1, -1);
+        int bottom = 0;
+        if (page < state.windowLastPage && next >= 0)
+            bottom = diffDocumentY(view, next);
+        else if (state.endCapPosition >= 0)
+            bottom = diffDocumentY(view, state.endCapPosition);
+        else
+            bottom = qCeil(view->document()->size().height());
+        state.pageHeights.insert(page,
+                                 qMax(1, bottom - diffDocumentY(view, start)));
+    }
+}
+
+double diffPixelsPerChar(QTextEdit *view, DiffStreamState &state)
+{
+    qint64 pixels = 0;
+    qint64 chars = 0;
+    for (auto it = state.pageHeights.cbegin(); it != state.pageHeights.cend();
+         ++it) {
+        if (it.key() < 0 || it.key() >= state.pages.size())
+            continue;
+        pixels += it.value();
+        chars += diffPageCharCount(state, it.key());
+    }
+    if (pixels <= 0 || chars <= 0) {
+        qint64 loaded = 0;
+        for (int page = state.page; page <= state.windowLastPage; ++page)
+            loaded += diffPageCharCount(state, page);
+        for (const DiffPendingPage &pending : std::as_const(state.pendingPages)) {
+            for (const QString &fragment : pending.fragments)
+                loaded -= fragment.size();
+        }
+        pixels = qCeil(view->document()->size().height());
+        chars = loaded;
+    }
+    if (pixels <= 0 || chars <= 0)
+        return qMax(1, view->fontMetrics().lineSpacing()) / 120.0;
+    return double(pixels) / double(chars);
+}
+
+struct DiffScrollGeometry {
+    int value = 0;
+    int maximum = 0;
+    int before = 0;
+    double pixelsPerChar = 0;
+};
+
+int diffPageHeight(DiffStreamState &state, int page, double pixelsPerChar)
+{
+    const auto measured = state.pageHeights.constFind(page);
+    if (measured != state.pageHeights.cend())
+        return *measured;
+    return qMax(1, qRound(diffPageCharCount(state, page) * pixelsPerChar));
+}
+
+bool diffGlobalScrollGeometry(QTextEdit *view, DiffStreamState &state,
+                              DiffScrollGeometry *geometry)
+{
+    QScrollBar *bar = view ? view->verticalScrollBar() : nullptr;
+    if (!bar || state.planning || state.pages.size() < 2)
+        return false;
+    measureResidentDiffPages(view, state);
+    const double pixelsPerChar = diffPixelsPerChar(view, state);
+    qint64 before = 0;
+    for (int page = 0; page < state.page; ++page)
+        before += diffPageHeight(state, page, pixelsPerChar);
+    qint64 after = 0;
+    for (int page = state.windowLastPage + 1; page < state.pages.size(); ++page)
+        after += diffPageHeight(state, page, pixelsPerChar);
+    for (const DiffPendingPage &pending : std::as_const(state.pendingPages)) {
+        qsizetype remaining = 0;
+        for (const QString &fragment : pending.fragments)
+            remaining += fragment.size();
+        after += qRound(remaining * pixelsPerChar);
+    }
+    const bool endCap = state.incremental ? state.incrementalEndCap : state.endCap;
+    if (endCap && state.endCapPosition < 0) {
+        after += qMax(qMax(1, view->fontMetrics().lineSpacing()),
+                      view->viewport()->height());
+    }
+    constexpr qint64 limit = std::numeric_limits<int>::max() / 2;
+    geometry->before = int(qMin(before, limit));
+    geometry->value = int(qMin(before + bar->value(), limit));
+    geometry->maximum = int(qMin(before + bar->maximum() + after, limit));
+    geometry->pixelsPerChar = pixelsPerChar;
+    return true;
+}
+
+void showDiffPageAtScroll(QTextEdit *view, DiffStreamState &state, int page,
+                          int scroll)
+{
+    state.pendingAnchor.clear();
+    state.pendingText.clear();
+    state.pendingTextDirection = 1;
+    state.pendingViewportPosition = 0;
+    state.pendingViewportPage = -1;
+    state.pendingViewportY = 0;
+    state.pendingScrollPixels = 0;
+    state.pendingPageScroll = qMax(0, scroll);
+    state.edgeMoveScheduled = false;
+    state.endCapPosition = -1;
+    state.endCapExtraHeight = 0;
+    state.endCapResizePending = false;
+    if (!state.viewportUpdatesSuspended && view->updatesEnabled()) {
+        state.viewportUpdatesSuspended = true;
+        view->setUpdatesEnabled(false);
+    }
+    view->verticalScrollBar()->setValue(0);
+    renderDiffPage(view, page);
+}
+
+void scrollDiffToGlobal(QTextEdit *view, int target)
+{
+    auto it = diffStreams().find(view);
+    DiffScrollGeometry geometry;
+    if (it == diffStreams().end() ||
+        !diffGlobalScrollGeometry(view, *it, &geometry)) {
+        return;
+    }
+    target = qBound(0, target, geometry.maximum);
+    if (diffStreamPending(*it)) {
+        it->pendingGlobalScroll = target;
+        return;
+    }
+    it->pendingGlobalScroll = -1;
+    it->edgeMoveScheduled = false;
+    it->pendingScrollPixels = 0;
+    QScrollBar *bar = view->verticalScrollBar();
+    const int local = target - geometry.before;
+    const bool pastEnd = local > bar->maximum() &&
+                         it->windowLastPage + 1 < it->pages.size();
+    const bool beforeStart = local < bar->minimum() && it->page > 0;
+    if (!pastEnd && !beforeStart) {
+        bar->setValue(qBound(bar->minimum(), local, bar->maximum()));
+        return;
+    }
+    int start = 0;
+    int page = 0;
+    for (; page + 1 < it->pages.size(); ++page) {
+        const int height = diffPageHeight(*it, page, geometry.pixelsPerChar);
+        if (target < start + height)
+            break;
+        start += height;
+    }
+    if (page == it->page) {
+        bar->setValue(qBound(bar->minimum(), local, bar->maximum()));
+        return;
+    }
+    showDiffPageAtScroll(view, *it, page, target - start);
+}
+
+QStyleOptionSlider diffScrollBarOption(QScrollBar *bar,
+                                       const DiffScrollGeometry &geometry,
+                                       bool dragging)
+{
+    QStyleOptionSlider option;
+    option.initFrom(bar);
+    option.subControls = QStyle::SC_All;
+    option.orientation = bar->orientation();
+    option.minimum = 0;
+    option.maximum = geometry.maximum;
+    option.sliderPosition = geometry.value;
+    option.sliderValue = geometry.value;
+    option.singleStep = bar->singleStep();
+    option.pageStep = bar->pageStep();
+    option.upsideDown = bar->invertedAppearance();
+    if (bar->orientation() == Qt::Horizontal)
+        option.state |= QStyle::State_Horizontal;
+    if (bar->style()->styleHint(QStyle::SH_ScrollBar_Transient, nullptr, bar))
+        option.state |= QStyle::State_On;
+    if (dragging) {
+        option.activeSubControls = QStyle::SC_ScrollBarSlider;
+        option.state |= QStyle::State_Sunken;
+    } else if (bar->underMouse()) {
+        option.activeSubControls = bar->style()->hitTestComplexControl(
+            QStyle::CC_ScrollBar, &option, bar->mapFromGlobal(QCursor::pos()),
+            bar);
+    }
+    return option;
+}
+
 class DiffPageWindowFilter final : public QObject
 {
 public:
@@ -1188,6 +1406,11 @@ public:
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override
     {
+        if (watched == m_view->verticalScrollBar()) {
+            bool handled = false;
+            if (scrollBarEvent(m_view->verticalScrollBar(), event, &handled))
+                return handled;
+        }
         int direction = 0;
         int scrollPixels = 0;
         if (watched == m_view->viewport() && event->type() == QEvent::Wheel) {
@@ -1221,7 +1444,84 @@ protected:
     }
 
 private:
+    bool scrollBarEvent(QScrollBar *bar, QEvent *event, bool *handled)
+    {
+        const QEvent::Type type = event->type();
+        if (type != QEvent::Paint && type != QEvent::MouseButtonPress &&
+            type != QEvent::MouseButtonDblClick && type != QEvent::MouseMove &&
+            type != QEvent::MouseButtonRelease && type != QEvent::HoverEnter &&
+            type != QEvent::HoverMove && type != QEvent::HoverLeave) {
+            return false;
+        }
+        auto state = diffStreams().find(m_view);
+        DiffScrollGeometry geometry;
+        if (state == diffStreams().end() ||
+            !diffGlobalScrollGeometry(m_view, *state, &geometry)) {
+            m_dragging = false;
+            return false;
+        }
+        QStyleOptionSlider option = diffScrollBarOption(bar, geometry, m_dragging);
+        QStyle *style = bar->style();
+        if (type == QEvent::Paint) {
+            QPainter painter(bar);
+            style->drawComplexControl(QStyle::CC_ScrollBar, &option, &painter, bar);
+            *handled = true;
+            return true;
+        }
+        if (type == QEvent::HoverEnter || type == QEvent::HoverMove ||
+            type == QEvent::HoverLeave) {
+            bar->update();
+            return false;
+        }
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        const QPoint position = mouse->position().toPoint();
+        if (type == QEvent::MouseButtonPress || type == QEvent::MouseButtonDblClick) {
+            if (mouse->button() != Qt::LeftButton)
+                return false;
+            const QStyle::SubControl control = style->hitTestComplexControl(
+                QStyle::CC_ScrollBar, &option, position, bar);
+            if (control == QStyle::SC_ScrollBarSlider) {
+                const QRect slider = style->subControlRect(
+                    QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSlider, bar);
+                m_dragging = true;
+                m_dragOffset = position.y() - slider.top();
+                bar->update();
+            } else if (control == QStyle::SC_ScrollBarAddPage) {
+                scrollDiffToGlobal(m_view, geometry.value + bar->pageStep());
+            } else if (control == QStyle::SC_ScrollBarSubPage) {
+                scrollDiffToGlobal(m_view, geometry.value - bar->pageStep());
+            } else {
+                return false;
+            }
+            event->accept();
+            *handled = true;
+            return true;
+        }
+        if (!m_dragging)
+            return false;
+        if (type == QEvent::MouseButtonRelease) {
+            m_dragging = false;
+            bar->update();
+        } else {
+            const QRect groove = style->subControlRect(
+                QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarGroove, bar);
+            const QRect slider = style->subControlRect(
+                QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSlider, bar);
+            const int span = groove.height() - slider.height();
+            scrollDiffToGlobal(
+                m_view, QStyle::sliderValueFromPosition(
+                            0, geometry.maximum,
+                            position.y() - m_dragOffset - groove.top(), span,
+                            option.upsideDown));
+        }
+        event->accept();
+        *handled = true;
+        return true;
+    }
+
     QTextEdit *m_view = nullptr;
+    bool m_dragging = false;
+    int m_dragOffset = 0;
 };
 
 void installDiffPageWindowFilter(QTextEdit *view)
@@ -1300,6 +1600,7 @@ void resumeDiffViewportUpdates(QTextEdit *view, DiffStreamState &state)
     state.viewportUpdatesSuspended = false;
     view->setUpdatesEnabled(true);
     view->update();
+    view->verticalScrollBar()->update();
 }
 
 bool restoreDiffWindowViewport(QTextEdit *view, DiffStreamState &state)
@@ -1349,15 +1650,35 @@ void finishDiffStream(QTextEdit *view)
     it->pendingScrollPixels = 0;
     const int viewportPosition = it->pendingViewportPosition;
     it->pendingViewportPosition = 0;
+    const int pageScroll = it->pendingPageScroll;
+    it->pendingPageScroll = -1;
     if (!restoredWindow) {
         if (QScrollBar *bar = view->verticalScrollBar()) {
-            if (viewportPosition < 0)
+            if (pageScroll >= 0)
+                bar->setValue(qBound(bar->minimum(), pageScroll, bar->maximum()));
+            else if (viewportPosition < 0)
                 bar->setValue(bar->maximum());
             else if (viewportPosition > 0)
                 bar->setValue(bar->minimum());
         }
     }
     resumeDiffViewportUpdates(view, *it);
+    if (it->pendingGlobalScroll >= 0) {
+        const int gen = it->gen;
+        QPointer<QTextEdit> guard(view);
+        QTimer::singleShot(0, view, [guard, gen] {
+            if (!guard)
+                return;
+            auto state = diffStreams().find(guard.data());
+            if (state == diffStreams().end() || state->gen != gen ||
+                state->pendingGlobalScroll < 0 || diffStreamPending(*state)) {
+                return;
+            }
+            const int target = state->pendingGlobalScroll;
+            state->pendingGlobalScroll = -1;
+            scrollDiffToGlobal(guard, target);
+        });
+    }
     if (it->incremental && !it->incrementalFinished)
         return;
     const QList<std::function<void()>> hooks = it->finishedHooks;
@@ -1540,6 +1861,8 @@ DiffStreamState &resetDiffStreamForRender(QTextEdit *view,
     state.page = 0;
     state.windowLastPage = 0;
     state.windowPagePositions.clear();
+    state.pageHeights.clear();
+    state.pageChars.clear();
     state.styleSheet = styleSheet;
     state.pendingAnchor.clear();
     state.pendingText.clear();
@@ -1548,6 +1871,8 @@ DiffStreamState &resetDiffStreamForRender(QTextEdit *view,
     state.pendingViewportPage = -1;
     state.pendingViewportY = 0;
     state.pendingScrollPixels = 0;
+    state.pendingPageScroll = -1;
+    state.pendingGlobalScroll = -1;
     state.edgeMoveScheduled = false;
     state.endCapPosition = -1;
     state.endCapExtraHeight = 0;
@@ -1600,6 +1925,7 @@ void appendDiffStreamPages(QTextEdit *view, const QList<QStringList> &pages)
         renderDiffPage(view, 0);
         return;
     }
+    view->verticalScrollBar()->update();
     scheduleDiffWindowFill(view);
 }
 
@@ -1752,9 +2078,12 @@ bool restyleDiffStreamed(QTextEdit *view, const QString &styleSheet)
         return false;
     resumeDiffViewportUpdates(view, *it);
     it->styleSheet = styleSheet;
+    it->pageHeights.clear();
     it->pendingViewportPage = -1;
     it->pendingViewportY = 0;
     it->pendingScrollPixels = 0;
+    it->pendingPageScroll = -1;
+    it->pendingGlobalScroll = -1;
     it->endCapPosition = -1;
     it->endCapExtraHeight = 0;
     it->endCapResizePending = false;
@@ -1780,6 +2109,8 @@ void showDiffPage(QTextEdit *view, int page, bool preservePending,
     it->pendingViewportPage = -1;
     it->pendingViewportY = 0;
     it->pendingScrollPixels = 0;
+    it->pendingPageScroll = -1;
+    it->pendingGlobalScroll = -1;
     it->pendingViewportPosition = viewportPosition;
     it->endCapPosition = -1;
     it->endCapExtraHeight = 0;
@@ -1835,6 +2166,8 @@ bool moveDiffWindowAtEdge(QTextEdit *view, int direction, int scrollPixels)
     it->pendingViewportPage = overlapPage;
     it->pendingViewportY = overlapViewportY;
     it->pendingScrollPixels += scrollPixels;
+    it->pendingPageScroll = -1;
+    it->pendingGlobalScroll = -1;
     it->endCapPosition = -1;
     it->endCapExtraHeight = 0;
     it->endCapResizePending = false;
@@ -2067,6 +2400,19 @@ int diffLoadedPageViewportYForTest(QTextEdit *view, int page)
         return -0x3fffffff;
     }
     return diffPageViewportY(view, *it, page);
+}
+
+bool diffScrollBarGeometryForTest(QTextEdit *view, int *value, int *maximum)
+{
+    auto it = diffStreams().find(view);
+    DiffScrollGeometry geometry;
+    if (it == diffStreams().end() ||
+        !diffGlobalScrollGeometry(view, *it, &geometry)) {
+        return false;
+    }
+    *value = geometry.value;
+    *maximum = geometry.maximum;
+    return true;
 }
 #endif
 
@@ -4963,6 +5309,8 @@ int replaceDiffBlockRun(DiffStreamState &state, const DiffBlockRun &run,
                         int targetPage, const QList<DiffHtmlFragment> &replacement)
 {
     const int targetSlot = targetPage == run.firstPage ? run.firstSlot : 0;
+    const qsizetype pageCount = state.pages.size();
+    state.pageChars.clear();
     for (int p = run.lastPage; p >= run.firstPage; --p) {
         QStringList &fragments = state.pages[p];
         const int from = p == run.firstPage ? run.firstSlot : 0;
@@ -5030,6 +5378,12 @@ int replaceDiffBlockRun(DiffStreamState &state, const DiffBlockRun &run,
     }
     state.windowLastPage = qBound(state.page, state.windowLastPage,
                                   int(state.pages.size()) - 1);
+    if (state.pages.size() != pageCount) {
+        state.pageHeights.clear();
+    } else {
+        for (int p = run.firstPage; p <= run.lastPage; ++p)
+            state.pageHeights.remove(p);
+    }
     return target;
 }
 
@@ -5047,6 +5401,8 @@ void redrawDiffWindowAtAnchor(QTextEdit *view, DiffStreamState &state, int page,
     state.pendingViewportPage = -1;
     state.pendingViewportY = 0;
     state.pendingScrollPixels = 0;
+    state.pendingPageScroll = -1;
+    state.pendingGlobalScroll = -1;
     state.pendingViewportPosition = 0;
     state.endCapPosition = -1;
     state.endCapExtraHeight = 0;
@@ -5688,6 +6044,29 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
     const auto emitText = [](const QString &t) {
         return t.isEmpty() ? QStringLiteral("&nbsp;") : t.toHtmlEscaped();
     };
+    bool inChangeBlock = false;
+    const auto changeArrowsHtml = [&]() -> QString {
+        if (!appearance.changeArrows || fileIdx < 0 || files[fileIdx].binary ||
+            !files[fileIdx].status.isEmpty())
+            return QString();
+        const bool staged = fileIdx < appearance.changeArrowsStagedFiles;
+        const QString href =
+            QStringLiteral("scmblock:%1?s=%2&o=%3&n=%4&d=")
+                .arg(QString::fromLatin1(QUrl::toPercentEncoding(curPath())),
+                     staged ? QStringLiteral("1") : QStringLiteral("0"),
+                     QString::number(oldNo), QString::number(newNo));
+        QString arrows =
+            QStringLiteral("<a class='blockarrow' href='%1old' title='%2'>"
+                           "&#8594;</a>")
+                .arg(href, staged ? QStringLiteral("Unstage this change")
+                                  : QStringLiteral("Revert this change in the "
+                                                   "working file"));
+        if (!staged)
+            arrows += QStringLiteral("<a class='blockarrow' href='%1new' "
+                                     "title='Stage this change'>&#8592;</a>")
+                          .arg(href);
+        return arrows + QLatin1Char(' ');
+    };
     const auto oneSidedKind = [&]() -> int {
         if (fileIdx < 0)
             return 0;
@@ -5720,6 +6099,10 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
             return;
         }
         const int n = qMax(pendingDel.size(), pendingAdd.size());
+        const QString arrows =
+            n > 0 && !inChangeBlock ? changeArrowsHtml() : QString();
+        if (n > 0)
+            inChangeBlock = true;
         for (int i = 0; i < n; ++i) {
             const bool hasDel = i < pendingDel.size();
             const bool hasAdd = i < pendingAdd.size();
@@ -5732,14 +6115,17 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
                     ? diffintra::intraLineCellsHtml(pendingDel.at(i), pendingAdd.at(i),
                                                     kDiffIntraLineMaxHtmlChars)
                     : std::nullopt;
+            QString newGut =
+                gut(QStringLiteral("nln ") + addCls, newLn, QStringLiteral("new"));
+            if (i == 0 && !arrows.isEmpty())
+                newGut.insert(newGut.indexOf(QLatin1Char('>')) + 1, arrows);
             fileBody += QStringLiteral("<tr>%1<td class='code ocode %2' width='49%'>%3</td>"
                                        "%4<td class='code ncode %5' width='49%'>%6</td></tr>")
                             .arg(gut(delCls, oldLn, QStringLiteral("old")), delCls,
                                  intra ? intra->oldHtml
                                  : hasDel ? emitText(pendingDel.at(i))
                                           : QStringLiteral("&nbsp;"),
-                                 gut(QStringLiteral("nln ") + addCls, newLn,
-                                     QStringLiteral("new")),
+                                 newGut,
                                  addCls,
                                  intra ? intra->newHtml
                                  : hasAdd ? emitText(pendingAdd.at(i))
@@ -5862,6 +6248,7 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
         markdown.line(line);
         if (line.startsWith(QLatin1String("@@"))) {
             flushPairs();
+            inChangeBlock = false;
             const QRegularExpressionMatch m = hunkRe.match(line);
             if (m.hasMatch()) {
                 oldNo = m.captured(1).toInt();
@@ -5917,6 +6304,7 @@ QString renderSplitDiffHtml(const QString &patch, QList<DiffFileEntry> &files,
                                  emitText(text));
         } else {
             flushPairs();
+            inChangeBlock = false;
             const QString ln1 = QString::number(oldNo++);
             const QString ln2 = QString::number(newNo++);
             fileBody += QStringLiteral(
@@ -6179,6 +6567,8 @@ QString diffStyleSheet(int fontPt)
                "td.lnlink a { color:%11; text-decoration:none; }"
                "td.lnlink a.linecommenticon { color:#58a6ff; font-size:9px; "
                "padding-left:3px; }"
+               "td.ln a.blockarrow { color:#58a6ff; text-decoration:none; "
+               "font-weight:700; padding:0 2px; }"
                "td.notecell { padding:8px 12px; background:%1; "
                "border:1px solid %7; color:%8; white-space:normal; }"
                ".reviewthread { font-family:sans-serif; }"

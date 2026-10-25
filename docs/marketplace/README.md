@@ -91,7 +91,9 @@ for packages declaring `desktop.workflows.run`, `repositoryWorkflows()` and
 `repositoryWorkflowAction(repo, id, action, payload, done)`: the workflows in
 the desktop's repositories (special agents among them), run, edited and
 pinned to a rail on this desktop
-([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
+([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents));
+the repository key `@account/workflows` pins the account's own workflows
+(`pin`, `unpin`, `sync`).
 Every package also gets `openWebPage(path)`, with no permission: it opens a
 same-origin path on the active host in the browser (credentials dropped,
 another origin or a `..` segment refused; `nativePackageWebPageUrl`, used by

@@ -50,7 +50,10 @@ follows a run through every layer. The desktop UI for agents is described in
   directory) and a scratch folder `.worktrees/.scratch/<worktree>`
   (`AgentScratch.h`). Runs launch with `FORKMESH_AGENT_SCRATCH` naming it and
   `TMPDIR`/`TMP`/`TEMP` pointing at its `tmp/`; the agent is told to keep
-  build trees, logs and throwaway files there. When a disk labelled `TMP` is
+  build trees, logs and throwaway files there, except a build folder the
+  project's own instructions put in the worktree (ForkMesh's `desktop/build`,
+  so ccache shares objects across worktrees:
+  [../desktop/build-and-test.md](../desktop/build-and-test.md#ccache)). When a disk labelled `TMP` is
   mounted, the scratch folder and the agents' `CCACHE_DIR` live on it instead
   ([../desktop/tmp-disk.md](../desktop/tmp-disk.md)).
 - **Resuming.** A resumed ad-hoc run reuses its saved branch and worktree. If
@@ -61,7 +64,11 @@ follows a run through every layer. The desktop UI for agents is described in
 - **Deleting an agent deletes its area.** Every worktree removal also removes
   its scratch folder; deleting a session removes leftovers under the session
   id in `builds/` and `/tmp`. All deletes go through
-  `safedelete::removeTree`, which refuses a git checkout.
+  `safedelete::removeTree`, which refuses a git checkout. This covers the
+  web merge's branch clean-up (`WebBranchOps.cpp`) and the task clean-up's
+  remove and back-up-and-remove (`TaskWorkItems.cpp`) too: until 2026-10-25
+  those three removed only the worktree, and 52 orphaned scratch folders
+  (82 GB) filled the disk to 99%.
 - **Parity alert.** `MainWindowAgentParity.cpp` checks every local checkout
   1 minute after start and every 3 minutes (`git worktree list --porcelain`,
   `git for-each-ref refs/heads/`); `AgentParity.h` reports agents with no

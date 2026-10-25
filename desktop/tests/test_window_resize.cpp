@@ -1,6 +1,7 @@
 #include "FleetAutoscalePanel.h"
 #include "../src/ActionStore.h"
 #include "../src/BackgroundFileWriter.h"
+#include "../src/DesktopBuildCommit.h"
 #include "../src/MainWindow.h"
 #include "../src/MainWindowInternal.h"
 #include "../src/MainWindowNextAccess.h"
@@ -115,6 +116,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStackedWidget>
+#include <QStyleOptionSlider>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTabWidget>
@@ -3376,8 +3378,10 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
     check(sendTo && sendTo->isEnabled() &&
               sendTo->text() == QStringLiteral("chat") &&
               sendTo->toolTip().contains(QStringLiteral("prompt-preview")) &&
-              sendTo->toolTip().contains(QStringLiteral("(Enter)")),
-          QStringLiteral("send to names the open room and takes Enter (%1 | %2)")
+              sendTo->toolTip().contains(QStringLiteral("(Enter)")) &&
+              sendTo->property("enterTarget").toBool(),
+          QStringLiteral("send to names the open room, takes Enter and is "
+                         "highlighted as the Enter button (%1 | %2)")
               .arg(sendTo ? sendTo->text() : QStringLiteral("none"),
                    sendTo ? sendTo->toolTip() : QString()));
     const QString shots = qEnvironmentVariable("FORKMESH_WORKSPACE_SHOT");
@@ -3680,6 +3684,162 @@ void checkPrivateChatNotFiledAsPing(MainWindow &window)
     check(window.testNotificationsMentioning(staleRoom) == 0 &&
               window.testNotificationsMentioning(stalePublic) == 1,
           QStringLiteral("joining a private channel drops its stored pings"));
+}
+
+void checkUsersDetailRail(MainWindow &window)
+{
+    window.testSetAdmin(true);
+    window.testShowUsersSection();
+    QImage face(8, 8, QImage::Format_RGB32);
+    face.fill(Qt::darkCyan);
+    QByteArray facePng;
+    QBuffer faceBuffer(&facePng);
+    faceBuffer.open(QIODevice::WriteOnly);
+    face.save(&faceBuffer, "PNG");
+    window.testApplyUsersDirectory(QJsonArray{
+        QJsonObject{{QStringLiteral("name"), QStringLiteral("rail-pictured")},
+                    {QStringLiteral("kind"), QStringLiteral("user")},
+                    {QStringLiteral("avatarPng"),
+                     QString::fromLatin1(facePng.toBase64())},
+                    {QStringLiteral("email"),
+                     QStringLiteral("pictured@example.test")},
+                    {QStringLiteral("discordUsername"),
+                     QStringLiteral("pictured.discord")},
+                    {QStringLiteral("discordDisplayName"),
+                     QStringLiteral("Pictured Person")},
+                    {QStringLiteral("discordLinked"), true},
+                    {QStringLiteral("discordFingerprint"),
+                     QStringLiteral("discord-fingerprint-for-pictured")},
+                    {QStringLiteral("isAdmin"), true},
+                    {QStringLiteral("signupIp"), QStringLiteral("203.0.113.7")},
+                    {QStringLiteral("referredBy"), QStringLiteral("rail-plain")},
+                    {QStringLiteral("status"), QStringLiteral("active")},
+                    {QStringLiteral("commits"), 40.0},
+                    {QStringLiteral("createdAt"), 1700000000000.0},
+                    {QStringLiteral("achievementBadges"),
+                     QJsonArray{QStringLiteral("coder")}},
+                    {QStringLiteral("userStatus"),
+                     QJsonObject{{QStringLiteral("text"),
+                                  QStringLiteral("Reviewing pulls")}}},
+                    {QStringLiteral("nodes"), QJsonArray{}}},
+        QJsonObject{{QStringLiteral("name"), QStringLiteral("rail-plain")},
+                    {QStringLiteral("kind"), QStringLiteral("user")},
+                    {QStringLiteral("email"),
+                     QStringLiteral("plain@example.test")},
+                    {QStringLiteral("status"), QStringLiteral("active")},
+                    {QStringLiteral("createdAt"), 1600000000000.0},
+                    {QStringLiteral("nodes"),
+                     QJsonArray{QStringLiteral("rail-node")}}},
+    });
+    window.testApplyUsersQuarantine(QJsonArray{QJsonObject{
+        {QStringLiteral("name"), QStringLiteral("rail-held")},
+        {QStringLiteral("email"), QStringLiteral("held@example.test")},
+        {QStringLiteral("quarantineStatus"),
+         QStringLiteral("pending_verification")},
+        {QStringLiteral("quarantineReasons"),
+         QJsonArray{QStringLiteral("rapid_referrer_signups")}},
+        {QStringLiteral("quarantinedAt"), 1720000000000.0},
+    }});
+    window.testShowUsersTab(0);
+    window.testSortUsersBy(QStringLiteral("Joined"), Qt::DescendingOrder);
+
+    auto *panel = window.findChild<QFrame *>(QStringLiteral("usersDetailPanel"));
+    const auto value = [&window](const QString &field) {
+        const QList<QLabel *> values =
+            window.findChildren<QLabel *>(QStringLiteral("usersDetailValue"));
+        for (const QLabel *label : values)
+            if (label->property("usersDetailField").toString() == field)
+                return label->text();
+        return QString();
+    };
+    const auto text = [&window](const QString &name) {
+        const auto *label = window.findChild<QLabel *>(name);
+        return label ? label->text() : QString();
+    };
+    check(panel && panel->isHidden(),
+          QStringLiteral("Users keeps the profile rail closed until a person "
+                         "is clicked"));
+    const auto shown = [&window, &text] {
+        QStringList parts{text(QStringLiteral("usersDetailName")),
+                          text(QStringLiteral("usersDetailHandle")),
+                          text(QStringLiteral("usersDetailStatus"))};
+        const QList<QLabel *> values =
+            window.findChildren<QLabel *>(QStringLiteral("usersDetailValue"));
+        for (const QLabel *label : values)
+            parts.append(label->property("usersDetailField").toString() +
+                         QLatin1Char('=') + label->text());
+        return parts.join(QStringLiteral("; "));
+    };
+
+    window.testClickUsersRow(0);
+    const QLabel *avatar =
+        window.findChild<QLabel *>(QStringLiteral("usersDetailAvatar"));
+    QStringList sections;
+    for (const QLabel *section :
+         window.findChildren<QLabel *>(QStringLiteral("usersDetailSection")))
+        sections.append(section->text());
+    QStringList badges;
+    for (const QLabel *badge :
+         window.findChildren<QLabel *>(QStringLiteral("usersDetailBadge")))
+        badges.append(badge->text());
+    check(panel && !panel->isHidden() &&
+              text(QStringLiteral("usersDetailName")) ==
+                  QStringLiteral("Pictured Person") &&
+              text(QStringLiteral("usersDetailHandle")) ==
+                  QStringLiteral("@rail-pictured") &&
+              text(QStringLiteral("usersDetailStatus")) ==
+                  QStringLiteral("Reviewing pulls") &&
+              badges.contains(QStringLiteral("Admin")) &&
+              value(QStringLiteral("Email")) ==
+                  QStringLiteral("pictured@example.test") &&
+              value(QStringLiteral("Signup IP")) ==
+                  QStringLiteral("203.0.113.7") &&
+              value(QStringLiteral("Commits")) == QStringLiteral("40") &&
+              value(QStringLiteral("Referred by")) ==
+                  QStringLiteral("rail-plain") &&
+              value(QStringLiteral("Discord fingerprint")) ==
+                  QStringLiteral("discord-fingerprint-for-pictured") &&
+              value(QStringLiteral("Badges")) == QStringLiteral("coder") &&
+              !sections.contains(QStringLiteral("Other")),
+          QStringLiteral("clicking a user opens a profile rail with every "
+                         "directory field, grouped (%1 | %2 | %3)")
+              .arg(sections.join(QStringLiteral(", ")),
+                   badges.join(QStringLiteral(", ")), shown()));
+    check(avatar && !avatar->pixmap().isNull() &&
+              avatar->property("usersDetailUploaded").toBool(),
+          QStringLiteral("the profile rail shows the user's uploaded picture"));
+
+    window.testClickUsersRow(1);
+    avatar = window.findChild<QLabel *>(QStringLiteral("usersDetailAvatar"));
+    check(text(QStringLiteral("usersDetailName")) ==
+                  QStringLiteral("rail-plain") &&
+              value(QStringLiteral("Nodes")).contains(
+                  QStringLiteral("rail-node")) &&
+              avatar && !avatar->pixmap().isNull() &&
+              !avatar->property("usersDetailUploaded").toBool(),
+          QStringLiteral("the profile rail follows the clicked user and falls "
+                         "back to their generated portrait (%1)")
+              .arg(shown()));
+
+    window.testShowUsersTab(1);
+    check(panel && panel->isHidden(),
+          QStringLiteral("switching Users tabs closes the other tab's profile"));
+    window.testClickUsersQuarantineRow(0);
+    check(panel && !panel->isHidden() &&
+              value(QStringLiteral("Reasons")) ==
+                  QStringLiteral("rapid_referrer_signups") &&
+              value(QStringLiteral("Email")) ==
+                  QStringLiteral("held@example.test"),
+          QStringLiteral("Quarantine rows open the same profile rail with the "
+                         "review fields"));
+
+    window.testShowUsersTab(0);
+    window.testClickUsersRow(0);
+    window.testSetAdmin(false);
+    check(panel && panel->isHidden() &&
+              window.findChildren<QLabel *>(QStringLiteral("usersDetailValue"))
+                  .isEmpty(),
+          QStringLiteral("losing admin closes and scrubs the profile rail"));
 }
 
 // The Ledger rail opens a page inside the app rather than handing the reader
@@ -5753,10 +5913,34 @@ void checkInlinePageNotices(MainWindow &window)
           QStringLiteral("an error replaces the confirmation and its link "
                          "becomes an Open action"));
 
-    QThread::msleep(1200);
+    check(window.testPageNoticeCountingDown(),
+          QStringLiteral("a notice counts down to closing itself"));
+    window.testHoverPageNotice(true);
     QApplication::processEvents();
-    check(window.testPageNoticeVisible(),
-          QStringLiteral("a notice has no countdown and stays where it is"));
+    check(window.testPageNoticeCountdownPaused(),
+          QStringLiteral("hovering a notice pauses its countdown"));
+    window.testHoverPageNotice(false);
+    QApplication::processEvents();
+    check(window.testPageNoticeCountingDown(),
+          QStringLiteral("moving off a notice resumes its countdown"));
+
+    window.testSetPageNoticeCountdownMs(150);
+    window.testFlashMessage(QStringLiteral("Mirror sync finished"));
+    QApplication::processEvents();
+    window.testHoverPageNotice(true);
+    QThread::msleep(300);
+    QApplication::processEvents();
+    check(window.testPageNoticeTexts().contains(
+              QStringLiteral("Mirror sync finished")),
+          QStringLiteral("a hovered notice stays past its countdown"));
+    window.testHoverPageNotice(false);
+    for (int i = 0; i < 40 && window.testPageNoticeVisible(); ++i) {
+        QThread::msleep(20);
+        QApplication::processEvents();
+    }
+    check(!window.testPageNoticeVisible(),
+          QStringLiteral("a notice closes itself when its countdown ends"));
+    window.testSetPageNoticeCountdownMs(5000);
 
     for (int i = 0; i < 5; ++i)
         window.testFlashMessage(QStringLiteral("Clone %1 failed").arg(i), true);
@@ -7551,6 +7735,91 @@ void checkDiffStreamResponsiveness()
               view.updatesEnabled(),
           QStringLiteral("rolling diff windows preserve content position and "
                          "wheel/key momentum in both directions"));
+
+    windowBar->setValue(windowBar->maximum());
+    for (int i = 0; i < 5; ++i)
+        QApplication::processEvents();
+    int thumbBefore = 0;
+    int thumbMaxBefore = 0;
+    const bool thumbKnownBefore = forkmesh::ui::diffScrollBarGeometryForTest(
+        &view, &thumbBefore, &thumbMaxBefore);
+    QWheelEvent thumbNext(
+        QPointF(wheelPosition),
+        QPointF(view.viewport()->mapToGlobal(wheelPosition)),
+        QPoint(0, -wheelStep), QPoint(), Qt::NoButton, Qt::NoModifier,
+        Qt::ScrollUpdate, false);
+    QApplication::sendEvent(view.viewport(), &thumbNext);
+    for (int i = 0; i < 20; ++i)
+        QApplication::processEvents();
+    int thumbAfter = 0;
+    int thumbMaxAfter = 0;
+    const bool thumbKnownAfter = forkmesh::ui::diffScrollBarGeometryForTest(
+        &view, &thumbAfter, &thumbMaxAfter);
+    check(thumbKnownBefore && thumbKnownAfter &&
+              forkmesh::ui::diffWindowFirstPageForTest(&view) == 1 &&
+              thumbBefore < thumbMaxBefore / 4 &&
+              qAbs(thumbAfter - (thumbBefore + wheelStep)) <= 4 &&
+              qAbs(thumbMaxAfter - thumbMaxBefore) <= thumbMaxBefore / 20,
+          QString("the diff scroll thumb measures the whole diff and does not "
+                  "jump when the next page loads (%1/%2 -> %3/%4)")
+              .arg(thumbBefore)
+              .arg(thumbMaxBefore)
+              .arg(thumbAfter)
+              .arg(thumbMaxAfter));
+
+    const auto thumbRect = [&view, windowBar] {
+        int value = 0;
+        int maximum = 0;
+        forkmesh::ui::diffScrollBarGeometryForTest(&view, &value, &maximum);
+        QStyleOptionSlider option;
+        option.initFrom(windowBar);
+        option.subControls = QStyle::SC_All;
+        option.orientation = Qt::Vertical;
+        option.minimum = 0;
+        option.maximum = maximum;
+        option.sliderPosition = value;
+        option.sliderValue = value;
+        option.singleStep = windowBar->singleStep();
+        option.pageStep = windowBar->pageStep();
+        return windowBar->style()->subControlRect(
+            QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSlider, windowBar);
+    };
+    const auto sendBarMouse = [windowBar](QEvent::Type type, QPoint at,
+                                          Qt::MouseButton button,
+                                          Qt::MouseButtons buttons) {
+        QMouseEvent mouse(type, QPointF(at),
+                          QPointF(windowBar->mapToGlobal(at)), button, buttons,
+                          Qt::NoModifier);
+        QApplication::sendEvent(windowBar, &mouse);
+    };
+    const QRect thumbStart = thumbRect();
+    const QPoint grab = thumbStart.center();
+    const QPoint middle(grab.x(), windowBar->height() / 2);
+    sendBarMouse(QEvent::MouseButtonPress, grab, Qt::LeftButton, Qt::LeftButton);
+    sendBarMouse(QEvent::MouseMove, middle, Qt::NoButton, Qt::LeftButton);
+    const bool dragSettled = waitForDiffStream(&view);
+    for (int i = 0; i < 20; ++i)
+        QApplication::processEvents();
+    sendBarMouse(QEvent::MouseButtonRelease, middle, Qt::LeftButton,
+                 Qt::NoButton);
+    const QRect thumbDragged = thumbRect();
+    const int draggedFirstPage = forkmesh::ui::diffWindowFirstPageForTest(&view);
+    check(!thumbStart.isEmpty() && dragSettled &&
+              qAbs(thumbDragged.center().y() - middle.y() -
+                   (thumbStart.center().y() - grab.y())) <=
+                  qMax(6, windowBar->height() / 20) &&
+              qAbs(draggedFirstPage - pages / 2) <= qMax(2, pages / 10) &&
+              view.updatesEnabled(),
+          QString("dragging the diff scroll thumb moves through the whole diff "
+                  "(thumb %1 -> %2, page %3 of %4)")
+              .arg(thumbStart.center().y())
+              .arg(thumbDragged.center().y())
+              .arg(draggedFirstPage)
+              .arg(pages));
+    forkmesh::ui::showDiffPageForTest(&view, 0);
+    waitForDiffStream(&view);
+    for (int i = 0; i < 20; ++i)
+        QApplication::processEvents();
 
     // A file/search navigation can replace the resident window in the same
     // event-loop turn as an edge input. The queued move belongs to the old
@@ -15871,6 +16140,8 @@ else:
         app.arguments().contains(QStringLiteral("--tip-notice-only"));
     const bool rewardHistoryOnly =
         app.arguments().contains(QStringLiteral("--reward-history-only"));
+    const bool usersDetailOnly =
+        app.arguments().contains(QStringLiteral("--users-detail-only"));
     const bool ledgerOnly =
         app.arguments().contains(QStringLiteral("--ledger-only"));
     const bool pageFindOnly =
@@ -16982,6 +17253,11 @@ else:
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
+    if (usersDetailOnly) {
+        checkUsersDetailRail(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
 
     // The persisted Actions history can contain thousands of records and its
     // first access also performs the legacy-directory migration. It must not
@@ -17515,9 +17791,60 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                     button->objectName() == QLatin1String("topTerminalButton"))
                     chromeTerminal = button;
             check(chromeTerminal != nullptr,
-                  QStringLiteral("the top bar has a button that opens the terminal launcher"));
+                  QStringLiteral("the top bar has a button that shows the terminals"));
+            QWidget *terminalPanel = window.testSideRailTerminalPanel();
+            const bool dockedRight = terminalPanel && terminals &&
+                                     terminalPanel->isAncestorOf(terminals) &&
+                                     terminalPanel->isVisible() && railTerminal &&
+                                     railTerminal->isChecked();
             if (railTerminal)
                 railTerminal->click();
+            settleRail();
+            const bool hiddenByRail = terminalPanel && !terminalPanel->isVisible() &&
+                                      terminals && terminals->count() == 1;
+            if (chromeTerminal)
+                chromeTerminal->click();
+            settleRail();
+            const bool shownByTop = terminalPanel && terminalPanel->isVisible() &&
+                                    terminals && terminals->count() == 1;
+            check(dockedRight && hiddenByRail && shownByTop,
+                  QString("terminals open in a pane on the right of the window, and the rail "
+                          "and top-bar terminal buttons hide and show it without opening "
+                          "more tabs (docked=%1 hidden=%2 shown=%3)")
+                      .arg(dockedRight)
+                      .arg(hiddenByRail)
+                      .arg(shownByTop));
+
+            auto *newTab = terminals ? terminals->findChild<QPushButton *>(
+                                           QStringLiteral("terminalsNewButton"))
+                                     : nullptr;
+            if (newTab)
+                newTab->click();
+            settleRail();
+            const bool plusOpened = terminals && terminals->count() == 2;
+            if (plusOpened)
+                terminals->closeTab(terminals->ids().constLast());
+            settleRail();
+            check(newTab && plusOpened,
+                  QString("the terminal pane's + button opens another shell tab at once "
+                          "(tabs=%1)")
+                      .arg(terminals ? terminals->count() : -1));
+
+            auto *kindsMenu = terminals ? terminals->findChild<QMenu *>(
+                                              QStringLiteral("terminalsNewKindMenu"))
+                                        : nullptr;
+            QStringList kindLabels;
+            if (kindsMenu)
+                for (QAction *action : kindsMenu->actions())
+                    if (!action->isSeparator())
+                        kindLabels << action->text();
+            check(kindLabels.contains(QStringLiteral("Claude Code")) &&
+                      kindLabels.contains(QStringLiteral("Codex")),
+                  QString("the terminal pane's menu opens Claude Code or Codex in a new tab "
+                          "(items=%1)")
+                      .arg(kindLabels.join(QStringLiteral(", "))));
+            if (kindsMenu && !kindsMenu->actions().isEmpty())
+                kindsMenu->actions().constLast()->trigger();
             settleRail();
             auto *launcher = window.findChild<QDialog *>(QStringLiteral("terminalLauncher"));
             auto *launcherKind =
@@ -17537,16 +17864,29 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             const bool launched = !launchedId.isEmpty() &&
                                   waitForText(launchedId, QStringLiteral("fm-launched"));
             check(launcher && launcherKind && launcherOpen && launched,
-                  QString("the rail's terminal button opens the launcher, which opens a "
-                          "command in a new terminal tab (tabs=%1)")
+                  QString("the pane's menu opens the launcher, which opens a command in a new "
+                          "terminal tab (tabs=%1)")
                       .arg(openIds.size()));
             if (terminals)
                 for (const QString &id : terminals->ids())
                     terminals->closeTab(id);
             settleRail();
             check(terminals && terminals->count() == 0 &&
-                      window.testTerminalToken(terminalId).isEmpty(),
-                  QStringLiteral("closing a terminal tab drops its agent token"));
+                      window.testTerminalToken(terminalId).isEmpty() && terminalPanel &&
+                      !terminalPanel->isVisible(),
+                  QStringLiteral("closing the last terminal tab drops its agent token and "
+                                 "hides the terminal pane"));
+            window.testToggleTerminals();
+            settleRail();
+            const bool oneClickShell = terminals && terminals->count() == 1 && terminalPanel &&
+                                       terminalPanel->isVisible();
+            if (terminals)
+                for (const QString &id : terminals->ids())
+                    terminals->closeTab(id);
+            settleRail();
+            check(oneClickShell,
+                  QStringLiteral("with no terminals open, one click on the terminal button "
+                                 "opens a shell in the side pane"));
             window.resize(railWindowSize);
             window.testShowTeamSection();
             settleRail();
@@ -22629,6 +22969,17 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             check(version && appPath && version->geometry().left() >=
                                                appPath->geometry().right(),
                   QStringLiteral("clickable version sits to the right of the app path"));
+            const QString buildShort =
+                forkmesh::shortBuildCommit(forkmesh::desktopBuildCommit());
+            check(version &&
+                      version->text() ==
+                          (buildShort.isEmpty()
+                               ? QStringLiteral("v" FORKMESH_VERSION)
+                               : QStringLiteral("v" FORKMESH_VERSION) +
+                                     QString::fromUtf8(" \xC2\xB7 ") +
+                                     buildShort),
+                  QStringLiteral("the version names the short commit the "
+                                 "build is on"));
 
             // Offline mode is the other always-available footer control. It
             // must be compact enough to retain the single-line bar, remember a
@@ -25526,6 +25877,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
           QStringLiteral("losing admin scrubs quarantine evidence from memory"));
     check(!window.testUsersNavButtonVisible(),
           QStringLiteral("losing admin status immediately hides Users"));
+    checkUsersDetailRail(window);
 
     // Files: the rail destination under Network / Users browses the real
     // filesystem, and it lists hidden entries by default — the repo Explorer
