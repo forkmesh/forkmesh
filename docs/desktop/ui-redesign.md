@@ -1856,8 +1856,10 @@ A window that starts in Classic is never touched.
   the page arrangement changes (`arrangePage(false)`); the change rows, the
   commit box and the history rows keep the new design. The commit box now
   sits in the files pane, so Compact gives the change list a three-row
-  minimum height; without it the files/history splitter squeezed the list to
-  nothing in a short window. Switching runs
+  minimum height and raises the files pane's 130 px floor to what the panel
+  needs; without them the files/history splitter squeezed the list to
+  nothing and cut off the Commit button in a short window. Switching back
+  restores the 130 px floor. Switching runs
   `MainWindow::applyGitLayout`, which re-applies the page at once.
 - **Header** (`QFrame#gitNextHeader`, inserted above `m_gitWorkspaceStack`
   in the same page layout).

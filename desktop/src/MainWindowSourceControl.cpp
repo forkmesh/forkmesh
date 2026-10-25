@@ -1086,6 +1086,7 @@ public:
     int tab = 0;
     int arranged = -1;
     int pageArranged = -1;
+    int filesFloor = -1;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override
@@ -2647,9 +2648,17 @@ QWidget *MainWindow::buildSourceControlPanel()
             scmSetShown(title, !next);
             scmSetShown(m_scmCountLabel, !next);
         }
+        const bool compact = chrome->arranged == 1 && !next;
         if (m_scmTree)
-            m_scmTree->setMinimumHeight(
-                chrome->arranged == 1 && !next ? 3 * kScmNextRowHeight : 0);
+            m_scmTree->setMinimumHeight(compact ? 3 * kScmNextRowHeight : 0);
+        if (m_gitFilesSlot && m_scmPanel) {
+            if (chrome->filesFloor < 0)
+                chrome->filesFloor = m_gitFilesSlot->minimumHeight();
+            m_gitFilesSlot->setMinimumHeight(
+                compact ? qMax(chrome->filesFloor,
+                               m_scmPanel->minimumSizeHint().height())
+                        : chrome->filesFloor);
+        }
         if (next && !chrome->installed && !installPage())
             return;
         if (chrome->pageArranged == int(next))
@@ -3846,12 +3855,18 @@ QString MainWindow::testGitLayoutState() const
     const QWidget *host = pair ? pair->parentWidget() : nullptr;
     const bool rows =
         m_scmTree && m_scmTree->viewport()->height() >= kScmNextRowHeight;
-    return QStringLiteral("header=%1 side=%2 files=%3 history=%4 rows=%5 branch=%6")
+    const bool commit =
+        m_scmCommitButton && m_scmPanel && m_scmCommitButton->isVisibleTo(m_scmPanel) &&
+        m_scmCommitButton->mapTo(m_scmPanel, QPoint(0, m_scmCommitButton->height()))
+                .y() <= m_scmPanel->height();
+    return QStringLiteral(
+               "header=%1 side=%2 files=%3 history=%4 rows=%5 commit=%6 branch=%7")
         .arg(shown(findChild<QWidget *>(QStringLiteral("gitNextHeader"))))
         .arg(shown(findChild<QWidget *>(QStringLiteral("gitNextSide"))))
         .arg(shown(m_gitFilesSlot))
         .arg(shown(m_gitHistorySlot))
         .arg(rows ? 1 : 0)
+        .arg(commit ? 1 : 0)
         .arg(host ? host->objectName() : QString());
 }
 #endif
