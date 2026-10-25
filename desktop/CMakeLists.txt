@@ -360,6 +360,10 @@ if(TARGET Qt6::WebEngineWidgets)
 else()
     message(STATUS "Qt6 WebEngine not found: agent browser windows open in the "
                    "system browser instead")
+    if(Qt6_DIR AND IS_DIRECTORY "${Qt6_DIR}")
+        get_filename_component(FORKMESH_QT6_CMAKE_ROOT "${Qt6_DIR}" DIRECTORY)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FORKMESH_QT6_CMAKE_ROOT}")
+    endif()
 endif()
 
 function(forkmesh_link_webengine target)
