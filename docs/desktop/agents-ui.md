@@ -181,6 +181,22 @@ age, and turns the ones picked into ordinary stored agents.
   (`syncImportedClaudeSessions`) appends whatever the `.jsonl` gained since
   that offset and refreshes the name, so turns taken in Claude Desktop keep
   arriving. An imported session is never also shown as an external row.
+- **ForkMesh's own agents are never external rows (2026-10-25).** Since
+  agents became Claude app sessions
+  ([../agents/claude-desktop-sessions.md](../agents/claude-desktop-sessions.md)),
+  each agent's account project folder is symlinked into `~/.claude/projects`,
+  the folder the external scan reads. Merging an agent drops its stream (and
+  with it the worktree from `ownStreamCwds`) while its transcript is still
+  under 90 s old, so with "Exclude external Claude Code agents from the Agents
+  tab" off a new
+  row with the merged agent's title appeared. `ClaudeSessionScan::scan` now
+  skips project folders that resolve into a Claude agent account's config
+  dir, and the worktrees of streams ForkMesh dropped (`retireStreamCwd`, from
+  `purgeSessionState`, `releaseTrackedWorktree` and `cleanupStreamWorktree`)
+  stay excluded for the rest of the run, which covers agents that use
+  `~/.claude` directly. A run without a worktree, which works in the
+  repository checkout itself, is not remembered, so your own sessions there
+  still list.
 - **Continuing it.** The first follow-up resumes the Claude session id found
   in the transcript. `startCliTranscript` sets `bytes` to -1 (mirroring stops),
   `launchCliRuntime` copies the `.jsonl` to where the run's account looks for

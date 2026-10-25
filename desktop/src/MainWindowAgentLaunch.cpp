@@ -2037,7 +2037,7 @@ void MainWindow::purgeSessionState(int sessionId)
         m_streamRaw.erase(raw);
     }
     m_streamFiles.remove(sessionId);
-    m_streamWorktree.remove(sessionId);
+    retireStreamCwd(m_streamWorktree.take(sessionId));
     m_streamPending.remove(sessionId);
     m_streamSessionInfo.remove(sessionId);
     m_streamAccountId.remove(sessionId);
