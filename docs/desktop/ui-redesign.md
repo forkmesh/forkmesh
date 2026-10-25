@@ -91,7 +91,12 @@ Below the themes it has two more entries:
 
 - **Match the instance's theme** (`viewMenuMatchInstanceTheme`) toggles the same
   `ui/matchInstanceTheme` setting as the Settings checkbox (see the instance
-  theme item below). Turning it on from Halloween or a Market skin switches the
+  theme item below). While it is on, the entry names the theme the instance
+  sends, e.g. "Match the instance's theme (BLT)":
+  `forkmesh::instancetheme::label` gives the preset's name from the
+  `themes` catalogue in `GET /api/instance`, "Custom" for colours with no
+  preset and "Default" when the instance sends none.
+  Turning it on from Halloween or a Market skin switches the
   theme to `system` first, because both of those replace the instance colours
   and the toggle would otherwise seem to do nothing.
 - **Reset to default** (`viewMenuThemeReset`,

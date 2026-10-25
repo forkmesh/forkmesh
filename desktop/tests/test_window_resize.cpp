@@ -11599,8 +11599,14 @@ void checkWorkspaceDesign(MainWindow &window)
             "dark":{"background":"#141414","foreground":"#f4f4f5","card":"#1c1c1e",
                     "muted":"#232326","border":"#2e2e33","muted-foreground":"#a1a1aa",
                     "primary":"#dc2626","primary-foreground":"#ffffff","link":"#f87171"},
-            "light":{"background":"#ffffff","foreground":"#111827","primary":"#dc2626"}}})")
+            "light":{"background":"#ffffff","foreground":"#111827","primary":"#dc2626"}},
+            "themes":[{"id":"default","name":"Default"},{"id":"blt","name":"BLT"}]})")
             .object());
+    check(forkmesh::instancetheme::label(colors) == QStringLiteral("BLT") &&
+              forkmesh::instancetheme::label({}) == QStringLiteral("Default"),
+          QStringLiteral("the instance theme is named after the preset the instance "
+                         "sends (%1)")
+              .arg(forkmesh::instancetheme::label(colors)));
     check(colors.dark.value(QStringLiteral("accent")) == QStringLiteral("#dc2626") &&
               colors.dark.value(QStringLiteral("bg")) == QStringLiteral("#141414") &&
               colors.light.value(QStringLiteral("bg")) == QStringLiteral("#ffffff"),
