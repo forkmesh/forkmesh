@@ -2162,6 +2162,7 @@ void MainWindow::purgeSessionState(int sessionId)
     m_sessionInputTokens.remove(sessionId);
     m_sessionTokenFlow.remove(sessionId);
     m_lastAssistantText.remove(sessionId);
+    m_agentTaskTrackers.remove(sessionId);
     m_agentDoneNotified.remove(sessionId);
     m_scannerStates.remove(sessionId);
     m_agentSpinStates.remove(sessionId);

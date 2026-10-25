@@ -496,6 +496,15 @@ with no list at all.
   current task. The bar folds itself when every task is done and opens
   again when new work arrives, unless the user folded it. A new prompt after
   an all-done list clears it.
+- The Agents list shows the same progress on each row after the title,
+  e.g. `◼ 2/5 · Running tests`, `◻ 0/3` (nothing started) or `✔ 5/5`.
+  `MainWindow::m_agentTaskTrackers` keeps one tracker per session, fed by
+  `applyTranscriptEvent` through `feedAgentTaskTracker`, and built from
+  `m_streamEvents` the first time a row asks (`agentTaskProgress`); a session
+  whose history is not loaded shows nothing rather than an empty tracker
+  being cached. Running rows refresh it on the spin tick, which already
+  repaints them, by recomposing the text from `kAgentTitleBaseRole` and
+  `kAgentTaskProgressRole`, so a task change costs no table rebuild.
 - Events skipped when a long session opens on its tail still pass through
   the tracker (`accumulateStatsOnly`), so the list is right after reopening.
   Earlier events loaded by scrolling up (`prependEarlierEvents`) are not fed,
