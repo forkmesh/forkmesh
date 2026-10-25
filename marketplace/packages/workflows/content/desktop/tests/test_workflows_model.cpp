@@ -1,6 +1,7 @@
 #include "WorkflowsModel.h"
 
 #include <QApplication>
+#include <QStandardPaths>
 #include <QDateTime>
 #include <QJsonDocument>
 
@@ -316,6 +317,91 @@ void localCases()
           QStringLiteral("a stopped run says so"));
 }
 
+void unifiedCases()
+{
+    const QJsonArray account{QJsonObject{{QStringLiteral("id"), QStringLiteral("a1")},
+                                         {QStringLiteral("name"), QStringLiteral("Morning report")},
+                                         {QStringLiteral("active"), true},
+                                         {QStringLiteral("trigger"), QStringLiteral("core.schedule")},
+                                         {QStringLiteral("scheduleMinutes"), 60},
+                                         {QStringLiteral("nodes"), 3},
+                                         {QStringLiteral("nextRunAt"), 9000.0},
+                                         {QStringLiteral("lastRunAt"), 100.0},
+                                         {QStringLiteral("lastStatus"), QStringLiteral("success")}}};
+    QHash<QString, QJsonArray> runs;
+    runs.insert(QStringLiteral("a1"),
+                QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("r1")},
+                                       {QStringLiteral("status"), QStringLiteral("success")},
+                                       {QStringLiteral("output"), QJsonObject{{QStringLiteral("text"), QStringLiteral("3 items")}}}},
+                           QJsonObject{{QStringLiteral("id"), QStringLiteral("r0")},
+                                       {QStringLiteral("status"), QStringLiteral("error")}}});
+    const QJsonArray local{QJsonObject{{QStringLiteral("repo"), QStringLiteral("forkmesh/forkmesh")},
+                                       {QStringLiteral("id"), QStringLiteral("sentinel")},
+                                       {QStringLiteral("name"), QStringLiteral("Sentinel")},
+                                       {QStringLiteral("specialAgent"), true},
+                                       {QStringLiteral("enabled"), true},
+                                       {QStringLiteral("hasSchedule"), true},
+                                       {QStringLiteral("scheduleActive"), true},
+                                       {QStringLiteral("steps"), 2},
+                                       {QStringLiteral("lastRunAt"), 500.0},
+                                       {QStringLiteral("lastStatus"), QStringLiteral("error")},
+                                       {QStringLiteral("lastSummary"), QStringLiteral("Tests failed")},
+                                       {QStringLiteral("recentRuns"),
+                                        QJsonArray{QJsonObject{{QStringLiteral("id"), QStringLiteral("lr1")},
+                                                               {QStringLiteral("outputFile"), QStringLiteral("/runs/lr1.md")}}}}},
+                           QJsonObject{{QStringLiteral("repo"), QStringLiteral("forkmesh/forkmesh")},
+                                       {QStringLiteral("id"), QStringLiteral("clean")},
+                                       {QStringLiteral("name"), QStringLiteral("Clean up")},
+                                       {QStringLiteral("enabled"), false},
+                                       {QStringLiteral("pinned"), QStringLiteral("bottom")}}};
+    const QJsonArray pins{QJsonObject{{QStringLiteral("repo"), QString::fromLatin1(kAccountRepo)},
+                                      {QStringLiteral("workflow"), QStringLiteral("a1")},
+                                      {QStringLiteral("rail"), QStringLiteral("top")}}};
+    QJsonArray entries = unifiedWorkflows(account, runs, local, pins);
+    check(entries.size() == 3, QStringLiteral("special agents, desktop and account workflows share one list"));
+    QHash<QString, QJsonObject> byKey;
+    for (const QJsonValue &value : entries)
+        byKey.insert(value.toObject().value(QStringLiteral("key")).toString(), value.toObject());
+    const QJsonObject agent = byKey.value(QStringLiteral("local:forkmesh/forkmesh|sentinel"));
+    const QJsonObject report = byKey.value(QStringLiteral("account:a1"));
+    check(agent.value(QStringLiteral("kindLabel")).toString() == QLatin1String("Special agent") &&
+              agent.value(QStringLiteral("lastOutput")).toString() == QLatin1String("Tests failed") &&
+              agent.value(QStringLiteral("lastOutputFile")).toString() == QLatin1String("/runs/lr1.md") &&
+              !agent.contains(QStringLiteral("recentRuns")),
+          QStringLiteral("a special agent keeps its kind, latest output and output file"));
+    check(report.value(QStringLiteral("trigger")).toString() == QLatin1String("Every hour") &&
+              report.value(QStringLiteral("lastOutput")).toString() == QLatin1String("3 items") &&
+              report.value(QStringLiteral("lastRunId")).toString() == QLatin1String("r1") &&
+              report.value(QStringLiteral("runs")).toInt() == 2 && report.value(QStringLiteral("failedRuns")).toInt() == 1 &&
+              report.value(QStringLiteral("pinned")).toString() == QLatin1String("top") &&
+              report.value(QStringLiteral("repo")).toString() == QLatin1String(kAccountRepo),
+          QStringLiteral("an account workflow carries its schedule, latest output, runs and rail like a special agent"));
+    check(workflowMatches(agent, QString(), QStringLiteral("agent")) &&
+              !workflowMatches(report, QString(), QStringLiteral("agent")) &&
+              workflowMatches(report, QString(), QStringLiteral("account")) &&
+              workflowMatches(agent, QString(), QStringLiteral("failing")) &&
+              workflowMatches(report, QString(), QStringLiteral("pinned")) &&
+              workflowMatches(agent, QStringLiteral("tests fail"), QString()) &&
+              !workflowMatches(agent, QStringLiteral("nothing like it"), QString()),
+          QStringLiteral("the list filters by kind, attention, rail and words in the name or output"));
+    sortWorkflows(entries, QStringLiteral("name"));
+    check(entries.at(0).toObject().value(QStringLiteral("name")).toString() == QLatin1String("Clean up") &&
+              entries.at(2).toObject().value(QStringLiteral("name")).toString() == QLatin1String("Sentinel"),
+          QStringLiteral("the list sorts by name"));
+    sortWorkflows(entries, QStringLiteral("recent"));
+    check(entries.at(0).toObject().value(QStringLiteral("name")).toString() == QLatin1String("Sentinel"),
+          QStringLiteral("the list sorts by last run"));
+    sortWorkflows(entries, QStringLiteral("next"));
+    check(entries.at(0).toObject().value(QStringLiteral("name")).toString() == QLatin1String("Morning report"),
+          QStringLiteral("the list sorts by next run, scheduled ones first"));
+    const Stats stats = computeStats(statsWorkflows(entries), QJsonArray(), 1000);
+    check(stats.workflows == 3 && stats.active == 2 && stats.scheduled == 2 && stats.steps == 5,
+          QStringLiteral("the stats count every workflow in the list"));
+    check(workflowStateText(agent) == QLatin1String("Failed") &&
+              workflowStateText(byKey.value(QStringLiteral("local:forkmesh/forkmesh|clean"))) == QLatin1String("Off"),
+          QStringLiteral("each card says its state in words"));
+}
+
 } // namespace
 
 void workflowsCheck(bool condition, const QString &message)
@@ -335,6 +421,9 @@ int main(int argc, char **argv)
     textCases();
     desktopCases();
     localCases();
+    unifiedCases();
+    QCoreApplication::setOrganizationName(QStringLiteral("ForkMeshWorkflowsTest"));
+    QStandardPaths::setTestModeEnabled(true);
     workflowsFeatureChecks();
     if (failures)
         qCritical("%d workflows model checks failed", failures);

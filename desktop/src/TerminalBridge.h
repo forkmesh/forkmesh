@@ -66,8 +66,10 @@ bool parseReadRequest(const QJsonObject &params, ReadRequest *out, QString *erro
 QString terminalParam(const QJsonObject &params);
 
 QString shellQuote(const QString &value);
+QString tomlString(const QString &value);
 QString launchCommand(const QString &kind, const QString &command, const QString &mcpConfigPath,
-                      bool windows);
+                      bool windows, const QString &python = QString(),
+                      const QString &mcpServerScript = QString());
 QString tailLines(const QString &text, int lines);
 QString errorMessage(const QString &code);
 
