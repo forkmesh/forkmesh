@@ -147,10 +147,19 @@ public:
                                              QJsonObject{{QStringLiteral("http1"),
                                                           QJsonObject{{QStringLiteral("status"), QStringLiteral("success")},
                                                                       {QStringLiteral("ms"), 12}}}}}}}};
-        if (parts.value(1) == QLatin1String("run"))
-            return QJsonObject{{QStringLiteral("run"),
-                                QJsonObject{{QStringLiteral("id"), QStringLiteral("r9")},
-                                            {QStringLiteral("status"), QStringLiteral("success")}}}};
+        if (parts.value(1) == QLatin1String("run")) {
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            const QJsonObject run{{QStringLiteral("id"), QStringLiteral("r%1").arg(9 + runsStarted++)},
+                                  {QStringLiteral("trigger"), QStringLiteral("manual")},
+                                  {QStringLiteral("status"), QStringLiteral("success")},
+                                  {QStringLiteral("startedAt"), double(now)},
+                                  {QStringLiteral("finishedAt"), double(now + 5)}};
+            QJsonArray list = runs.value(id);
+            list.prepend(run);
+            runs.insert(id, list);
+            lastRunAt = now;
+            return QJsonObject{{QStringLiteral("run"), run}};
+        }
         *ok = false;
         return QJsonObject{{QStringLiteral("error"), QStringLiteral("not_found")}};
     }
@@ -167,6 +176,7 @@ public:
     QHash<QString, QJsonArray> runs;
     QList<Call> calls;
     qint64 lastRunAt = 0;
+    int runsStarted = 0;
 };
 
 void settle()
@@ -284,6 +294,12 @@ void workflowsFeatureChecks()
     settle();
     workflowsCheck(server.count("POST", QStringLiteral("/api/workflows/a1/run")) == 1,
                    QStringLiteral("Run starts the workflow on the server"));
+    auto *runOutput = named<QPlainTextEdit>(page, QStringLiteral("workflowsRunOutput"));
+    workflowsCheck(runs->currentRow() >= 0 && !runs->selectedItems().isEmpty() &&
+                       runs->item(runs->currentRow(), 0)->data(Qt::UserRole + 1).toString() == QLatin1String("r9"),
+                   QStringLiteral("a run started on the page is selected in Recent runs"));
+    workflowsCheck(runOutput && runOutput->toPlainText().contains(QLatin1String("Fetch")),
+                   QStringLiteral("the selected run's output shows beside Recent runs"));
     page->activateSearchHit(QStringLiteral("run:a1"));
     settle();
     workflowsCheck(server.count("POST", QStringLiteral("/api/workflows/a1/run")) == 2,
@@ -361,7 +377,7 @@ void workflowsFeatureChecks()
                             "skills": ["Threat models"]}}],
       "connections": [{"from": "schedule", "output": "main", "to": "agent"}]
     })json").object();
-    const QJsonObject localPayload{
+    QJsonObject localPayload{
         {QStringLiteral("catalog"), QJsonDocument::fromJson(R"json({
           "core": [
             {"type": "workflow.manual", "name": "Run by hand", "group": "Triggers", "trigger": true,
@@ -435,13 +451,40 @@ void workflowsFeatureChecks()
         });
     };
     localHost.repositoryWorkflows = [&localPayload] { return localPayload; };
-    localHost.repositoryWorkflowAction = [&localCalls, &agentFile](const QString &repo, const QString &id,
-                                                                    const QString &action, const QJsonObject &payload,
-                                                                    forkmesh::market::NativePackageReplyHandler done) {
+    const auto cleanRun = [now](const QString &output) {
+        return QJsonObject{{QStringLiteral("id"), QStringLiteral("lr2")},
+                           {QStringLiteral("workflowId"), QStringLiteral("clean")},
+                           {QStringLiteral("status"), QStringLiteral("running")},
+                           {QStringLiteral("startedAtMs"), double(QDateTime::currentMSecsSinceEpoch())},
+                           {QStringLiteral("trigger"), QStringLiteral("By hand · Workflows page")},
+                           {QStringLiteral("steps"),
+                            QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("Clean caches")},
+                                                   {QStringLiteral("type"), QStringLiteral("workflow.shortcut")},
+                                                   {QStringLiteral("status"), QStringLiteral("running")},
+                                                   {QStringLiteral("startedAtMs"), double(now)},
+                                                   {QStringLiteral("output"), output}}}}};
+    };
+    localHost.repositoryWorkflowAction = [&localCalls, &agentFile, &localPayload,
+                                          cleanRun](const QString &repo, const QString &id, const QString &action,
+                                                    const QJsonObject &payload,
+                                                    forkmesh::market::NativePackageReplyHandler done) {
         localCalls.append({repo, id, action, payload});
         QJsonObject reply;
-        if (action == QLatin1String("get"))
+        if (action == QLatin1String("get") && id == QLatin1String("clean"))
+            reply = QJsonObject{{QStringLiteral("workflow"), agentFile},
+                                {QStringLiteral("runs"), QJsonArray()},
+                                {QStringLiteral("active"), cleanRun(QStringLiteral("Scanning\nFreed 2 GB so far"))}};
+        else if (action == QLatin1String("get"))
             reply = QJsonObject{{QStringLiteral("workflow"), agentFile}, {QStringLiteral("runs"), QJsonArray()}};
+        if (action == QLatin1String("run") && id == QLatin1String("clean")) {
+            QJsonArray workflows = localPayload.value(QStringLiteral("workflows")).toArray();
+            QJsonObject clean = workflows.at(1).toObject();
+            clean.insert(QStringLiteral("running"), true);
+            clean.insert(QStringLiteral("recentRuns"), QJsonArray{cleanRun(QStringLiteral("Scanning"))});
+            workflows.replace(1, clean);
+            localPayload.insert(QStringLiteral("workflows"), workflows);
+            reply = QJsonObject{{QStringLiteral("runId"), QStringLiteral("lr2")}};
+        }
         if (action == QLatin1String("save")) {
             agentFile = payload.value(QStringLiteral("workflow")).toObject();
             reply = QJsonObject{{QStringLiteral("workflow"), agentFile}};
@@ -487,9 +530,18 @@ void workflowsFeatureChecks()
     if (auto *run = control(cardNamed(desk, QStringLiteral("Clean up")), QStringLiteral("Run")))
         run->click();
     settle();
-    workflowsCheck(!localCalls.isEmpty() && localCalls.last().action == QLatin1String("run") &&
-                       localCalls.last().id == QLatin1String("clean"),
-                   QStringLiteral("Run starts the desktop workflow on this desktop"));
+    bool cleanStarted = false;
+    for (const LocalCall &call : std::as_const(localCalls))
+        cleanStarted = cleanStarted || (call.action == QLatin1String("run") && call.id == QLatin1String("clean"));
+    workflowsCheck(cleanStarted, QStringLiteral("Run starts the desktop workflow on this desktop"));
+    workflowsCheck(deskRuns->currentRow() >= 0 &&
+                       deskRuns->item(deskRuns->currentRow(), 0)->data(Qt::UserRole + 1).toString() ==
+                           QLatin1String("lr2"),
+                   QStringLiteral("a desktop run started on the page is selected in Recent runs"));
+    auto *deskOutput = named<QPlainTextEdit>(desk, QStringLiteral("workflowsRunOutput"));
+    workflowsCheck(deskOutput && deskOutput->toPlainText().contains(QLatin1String("Freed 2 GB so far")) &&
+                       deskOutput->toPlainText().contains(QLatin1String("Clean caches")),
+                   QStringLiteral("the running step's live output shows beside Recent runs"));
 
     bool synced = false;
     for (const LocalCall &call : std::as_const(localCalls))

@@ -60,6 +60,9 @@ def program():
             "fraudulent payments or reversals do not count.",
             "Commissions are final once the subscription has stayed paid and "
             "in good standing for %d days." % FINAL_AFTER_DAYS,
+            "Payment requires a completed Form W-9 (US persons), W-8BEN "
+            "(non-US individuals) or W-8BEN-E (non-US entities); payments may "
+            "be subject to tax reporting or withholding.",
             "No self-referrals, fake accounts, duplicate customers, artificial "
             "upgrades, or coordinated purchases.",
             "ForkMesh may verify referrals and resolve disputes, duplicate "

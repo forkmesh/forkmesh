@@ -1950,6 +1950,13 @@ QSet<QString> MainWindow::ownStreamCwds() const
     return out;
 }
 
+void MainWindow::retireStreamCwd(const QString &path)
+{
+    if (path.trimmed().isEmpty() || QFileInfo(path + QStringLiteral("/.git")).isDir())
+        return;
+    m_retiredStreamCwds.insert(QDir(path).absolutePath());
+}
+
 int MainWindow::externalTempIdFor(const QString &uuid)
 {
     auto it = m_externalTempId.constFind(uuid);
@@ -1971,14 +1978,19 @@ void MainWindow::scanExternalClaudeSessions()
         return;
     constexpr qint64 kActiveWindowMs = 90 * 1000; // written within 90s == "running"
     const QString repoKey = repo.owner + QLatin1Char('/') + repo.name;
-    const QSet<QString> streamCwds = ownStreamCwds();
+    const QSet<QString> streamCwds = ownStreamCwds() | m_retiredStreamCwds;
+    QStringList accountDirs;
+    for (const AgentAccountProfile &profile :
+         agentAccountProfiles(QStringLiteral("claude-code")))
+        if (!profile.configDir.trimmed().isEmpty())
+            accountDirs.append(profile.configDir);
     const quint64 generation = ++m_externalClaudeScanGeneration;
     m_externalClaudeScanInFlight = true;
     runOffThread<QList<ExternalClaudeSession>>(
-        [repoPath = repo.localPath, streamCwds,
+        [repoPath = repo.localPath, streamCwds, accountDirs,
          activeWindowMs = kActiveWindowMs]() {
             return ClaudeSessionScan::scan(repoPath, streamCwds,
-                                           activeWindowMs);
+                                           activeWindowMs, accountDirs);
         },
         [this, generation, repoKey](QList<ExternalClaudeSession> sessions) {
             if (generation != m_externalClaudeScanGeneration)
