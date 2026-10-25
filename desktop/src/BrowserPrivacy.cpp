@@ -1,6 +1,5 @@
 #include "BrowserPrivacy.h"
 
-#include <QProcess>
 #include <QRegularExpression>
 #include <QSet>
 #include <QUrlQuery>
@@ -83,7 +82,8 @@ QByteArray mergeChromiumFlags(const QByteArray &existing)
         appendUnique(switches, seenSwitches, flag);
 
     QStringList userSwitches;
-    for (const QString &token : QProcess::splitCommand(QString::fromLocal8Bit(existing))) {
+    for (const QString &token :
+         QString::fromLocal8Bit(existing).split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
         if (token.startsWith(kDisableFeatures)) {
             for (const QString &feature :
                  token.mid(kDisableFeatures.size()).split(QLatin1Char(','), Qt::SkipEmptyParts))

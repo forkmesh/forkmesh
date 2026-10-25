@@ -1,7 +1,6 @@
 #include "BrowserPrivacy.h"
 
 #include <QCoreApplication>
-#include <QProcess>
 #include <QUrlQuery>
 
 #include <cstdio>
@@ -20,7 +19,7 @@ void check(bool condition, const char *message)
 
 QStringList tokens(const QByteArray &flags)
 {
-    return QProcess::splitCommand(QString::fromLocal8Bit(flags));
+    return QString::fromLocal8Bit(flags).split(QLatin1Char(' '), Qt::SkipEmptyParts);
 }
 
 QStringList disabledFeatures(const QStringList &switches)

@@ -314,9 +314,7 @@ void WorkspaceBrowserPane::ensureView()
         return;
     auto *view = new QWebEngineView(m_stack);
     view->setObjectName(QStringLiteral("workspaceBrowserView"));
-    auto *page = new PanePage(ungoogledProfile(), view);
-    configureUngoogledSettings(page->settings());
-    view->setPage(page);
+    view->setPage(new PanePage(ungoogledProfile(), view));
     m_view = view;
     m_stack->addWidget(view);
     connect(view, &QWebEngineView::urlChanged, this, [this](const QUrl &url) {
