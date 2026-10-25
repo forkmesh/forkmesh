@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QIcon>
 #include <QList>
 #include <QPointer>
 #include <QString>
@@ -12,6 +13,7 @@
 class QLabel;
 class QPushButton;
 class QTabWidget;
+class QToolButton;
 class TerminalWidget;
 
 namespace forkmesh::ui {
@@ -48,12 +50,21 @@ public:
         qint64 lastOutputMs = 0;
     };
 
+    struct Icons {
+        QIcon add;
+        QIcon more;
+        QIcon hide;
+    };
+
     explicit TerminalTabsPage(QWidget *parent = nullptr);
     ~TerminalTabsPage() override;
 
-    void setNewTabHandler(std::function<void()> handler);
+    void setNewTabHandler(std::function<void(const QString &kind)> handler);
     void setClosedHandler(std::function<void(const QString &)> handler);
+    void setHideHandler(std::function<void()> handler);
+    void setIcons(const Icons &icons);
     void setEmptyText(const QString &text);
+    void focusCurrent();
 
     QString openTab(const Spec &spec);
     bool closeTab(const QString &id);
@@ -82,12 +93,15 @@ private:
 
     QTabWidget *m_tabs = nullptr;
     QPushButton *m_new = nullptr;
+    QToolButton *m_kinds = nullptr;
+    QPushButton *m_hide = nullptr;
     QPushButton *m_share = nullptr;
     QLabel *m_status = nullptr;
     QLabel *m_empty = nullptr;
     QHash<QString, Tab> m_byId;
-    std::function<void()> m_newTab;
+    std::function<void(const QString &)> m_newTab;
     std::function<void(const QString &)> m_closed;
+    std::function<void()> m_hideHandler;
 };
 
 }

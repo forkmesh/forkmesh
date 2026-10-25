@@ -168,3 +168,24 @@ def test_read_asks_for_a_large_reply(monkeypatch):
     assert not error, text
     assert json.loads(text)["text"] == "hi"
     assert seen["max_reply"] == srv.TERMINAL_READ_REPLY
+
+
+def test_env_file_loads_the_forkmesh_server_env(monkeypatch, tmp_path):
+    for name in ("FORKMESH_AGENT_INTAKE", "FORKMESH_AGENT_INTAKE_TOKEN",
+                 "FORKMESH_TERMINAL_ID", "FORKMESH_REPOS_DIR"):
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
+    path = tmp_path / "mcp-term.json"
+    path.write_text(json.dumps({"mcpServers": {"forkmesh": {"env": {
+        "FORKMESH_AGENT_INTAKE": "/run/sock",
+        "FORKMESH_AGENT_INTAKE_TOKEN": "term.abc",
+        "FORKMESH_TERMINAL_ID": TERM,
+        "PATH": "/evil",
+        "FORKMESH_REPOS_DIR": 7}}}}))
+    path_before = os.environ.get("PATH")
+    assert srv.load_env_file(str(path)) == 3
+    assert os.environ["FORKMESH_AGENT_INTAKE_TOKEN"] == "term.abc"
+    assert os.environ["FORKMESH_TERMINAL_ID"] == TERM
+    assert os.environ.get("PATH") == path_before
+    assert "FORKMESH_REPOS_DIR" not in os.environ
+    assert srv.load_env_file(str(tmp_path / "missing.json")) == 0

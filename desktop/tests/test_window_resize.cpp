@@ -114,6 +114,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStackedWidget>
+#include <QStyleOptionSlider>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTabWidget>
@@ -3375,8 +3376,10 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
     check(sendTo && sendTo->isEnabled() &&
               sendTo->text() == QStringLiteral("chat") &&
               sendTo->toolTip().contains(QStringLiteral("prompt-preview")) &&
-              sendTo->toolTip().contains(QStringLiteral("(Enter)")),
-          QStringLiteral("send to names the open room and takes Enter (%1 | %2)")
+              sendTo->toolTip().contains(QStringLiteral("(Enter)")) &&
+              sendTo->property("enterTarget").toBool(),
+          QStringLiteral("send to names the open room, takes Enter and is "
+                         "highlighted as the Enter button (%1 | %2)")
               .arg(sendTo ? sendTo->text() : QStringLiteral("none"),
                    sendTo ? sendTo->toolTip() : QString()));
     const QString shots = qEnvironmentVariable("FORKMESH_WORKSPACE_SHOT");
@@ -7550,6 +7553,91 @@ void checkDiffStreamResponsiveness()
               view.updatesEnabled(),
           QStringLiteral("rolling diff windows preserve content position and "
                          "wheel/key momentum in both directions"));
+
+    windowBar->setValue(windowBar->maximum());
+    for (int i = 0; i < 5; ++i)
+        QApplication::processEvents();
+    int thumbBefore = 0;
+    int thumbMaxBefore = 0;
+    const bool thumbKnownBefore = forkmesh::ui::diffScrollBarGeometryForTest(
+        &view, &thumbBefore, &thumbMaxBefore);
+    QWheelEvent thumbNext(
+        QPointF(wheelPosition),
+        QPointF(view.viewport()->mapToGlobal(wheelPosition)),
+        QPoint(0, -wheelStep), QPoint(), Qt::NoButton, Qt::NoModifier,
+        Qt::ScrollUpdate, false);
+    QApplication::sendEvent(view.viewport(), &thumbNext);
+    for (int i = 0; i < 20; ++i)
+        QApplication::processEvents();
+    int thumbAfter = 0;
+    int thumbMaxAfter = 0;
+    const bool thumbKnownAfter = forkmesh::ui::diffScrollBarGeometryForTest(
+        &view, &thumbAfter, &thumbMaxAfter);
+    check(thumbKnownBefore && thumbKnownAfter &&
+              forkmesh::ui::diffWindowFirstPageForTest(&view) == 1 &&
+              thumbBefore < thumbMaxBefore / 4 &&
+              qAbs(thumbAfter - (thumbBefore + wheelStep)) <= 4 &&
+              qAbs(thumbMaxAfter - thumbMaxBefore) <= thumbMaxBefore / 20,
+          QString("the diff scroll thumb measures the whole diff and does not "
+                  "jump when the next page loads (%1/%2 -> %3/%4)")
+              .arg(thumbBefore)
+              .arg(thumbMaxBefore)
+              .arg(thumbAfter)
+              .arg(thumbMaxAfter));
+
+    const auto thumbRect = [&view, windowBar] {
+        int value = 0;
+        int maximum = 0;
+        forkmesh::ui::diffScrollBarGeometryForTest(&view, &value, &maximum);
+        QStyleOptionSlider option;
+        option.initFrom(windowBar);
+        option.subControls = QStyle::SC_All;
+        option.orientation = Qt::Vertical;
+        option.minimum = 0;
+        option.maximum = maximum;
+        option.sliderPosition = value;
+        option.sliderValue = value;
+        option.singleStep = windowBar->singleStep();
+        option.pageStep = windowBar->pageStep();
+        return windowBar->style()->subControlRect(
+            QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSlider, windowBar);
+    };
+    const auto sendBarMouse = [windowBar](QEvent::Type type, QPoint at,
+                                          Qt::MouseButton button,
+                                          Qt::MouseButtons buttons) {
+        QMouseEvent mouse(type, QPointF(at),
+                          QPointF(windowBar->mapToGlobal(at)), button, buttons,
+                          Qt::NoModifier);
+        QApplication::sendEvent(windowBar, &mouse);
+    };
+    const QRect thumbStart = thumbRect();
+    const QPoint grab = thumbStart.center();
+    const QPoint middle(grab.x(), windowBar->height() / 2);
+    sendBarMouse(QEvent::MouseButtonPress, grab, Qt::LeftButton, Qt::LeftButton);
+    sendBarMouse(QEvent::MouseMove, middle, Qt::NoButton, Qt::LeftButton);
+    const bool dragSettled = waitForDiffStream(&view);
+    for (int i = 0; i < 20; ++i)
+        QApplication::processEvents();
+    sendBarMouse(QEvent::MouseButtonRelease, middle, Qt::LeftButton,
+                 Qt::NoButton);
+    const QRect thumbDragged = thumbRect();
+    const int draggedFirstPage = forkmesh::ui::diffWindowFirstPageForTest(&view);
+    check(!thumbStart.isEmpty() && dragSettled &&
+              qAbs(thumbDragged.center().y() - middle.y() -
+                   (thumbStart.center().y() - grab.y())) <=
+                  qMax(6, windowBar->height() / 20) &&
+              qAbs(draggedFirstPage - pages / 2) <= qMax(2, pages / 10) &&
+              view.updatesEnabled(),
+          QString("dragging the diff scroll thumb moves through the whole diff "
+                  "(thumb %1 -> %2, page %3 of %4)")
+              .arg(thumbStart.center().y())
+              .arg(thumbDragged.center().y())
+              .arg(draggedFirstPage)
+              .arg(pages));
+    forkmesh::ui::showDiffPageForTest(&view, 0);
+    waitForDiffStream(&view);
+    for (int i = 0; i < 20; ++i)
+        QApplication::processEvents();
 
     // A file/search navigation can replace the resident window in the same
     // event-loop turn as an edge input. The queued move belongs to the old
@@ -17542,9 +17630,60 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                     button->objectName() == QLatin1String("topTerminalButton"))
                     chromeTerminal = button;
             check(chromeTerminal != nullptr,
-                  QStringLiteral("the top bar has a button that opens the terminal launcher"));
+                  QStringLiteral("the top bar has a button that shows the terminals"));
+            QWidget *terminalPanel = window.testSideRailTerminalPanel();
+            const bool dockedRight = terminalPanel && terminals &&
+                                     terminalPanel->isAncestorOf(terminals) &&
+                                     terminalPanel->isVisible() && railTerminal &&
+                                     railTerminal->isChecked();
             if (railTerminal)
                 railTerminal->click();
+            settleRail();
+            const bool hiddenByRail = terminalPanel && !terminalPanel->isVisible() &&
+                                      terminals && terminals->count() == 1;
+            if (chromeTerminal)
+                chromeTerminal->click();
+            settleRail();
+            const bool shownByTop = terminalPanel && terminalPanel->isVisible() &&
+                                    terminals && terminals->count() == 1;
+            check(dockedRight && hiddenByRail && shownByTop,
+                  QString("terminals open in a pane on the right of the window, and the rail "
+                          "and top-bar terminal buttons hide and show it without opening "
+                          "more tabs (docked=%1 hidden=%2 shown=%3)")
+                      .arg(dockedRight)
+                      .arg(hiddenByRail)
+                      .arg(shownByTop));
+
+            auto *newTab = terminals ? terminals->findChild<QPushButton *>(
+                                           QStringLiteral("terminalsNewButton"))
+                                     : nullptr;
+            if (newTab)
+                newTab->click();
+            settleRail();
+            const bool plusOpened = terminals && terminals->count() == 2;
+            if (plusOpened)
+                terminals->closeTab(terminals->ids().constLast());
+            settleRail();
+            check(newTab && plusOpened,
+                  QString("the terminal pane's + button opens another shell tab at once "
+                          "(tabs=%1)")
+                      .arg(terminals ? terminals->count() : -1));
+
+            auto *kindsMenu = terminals ? terminals->findChild<QMenu *>(
+                                              QStringLiteral("terminalsNewKindMenu"))
+                                        : nullptr;
+            QStringList kindLabels;
+            if (kindsMenu)
+                for (QAction *action : kindsMenu->actions())
+                    if (!action->isSeparator())
+                        kindLabels << action->text();
+            check(kindLabels.contains(QStringLiteral("Claude Code")) &&
+                      kindLabels.contains(QStringLiteral("Codex")),
+                  QString("the terminal pane's menu opens Claude Code or Codex in a new tab "
+                          "(items=%1)")
+                      .arg(kindLabels.join(QStringLiteral(", "))));
+            if (kindsMenu && !kindsMenu->actions().isEmpty())
+                kindsMenu->actions().constLast()->trigger();
             settleRail();
             auto *launcher = window.findChild<QDialog *>(QStringLiteral("terminalLauncher"));
             auto *launcherKind =
@@ -17564,16 +17703,29 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             const bool launched = !launchedId.isEmpty() &&
                                   waitForText(launchedId, QStringLiteral("fm-launched"));
             check(launcher && launcherKind && launcherOpen && launched,
-                  QString("the rail's terminal button opens the launcher, which opens a "
-                          "command in a new terminal tab (tabs=%1)")
+                  QString("the pane's menu opens the launcher, which opens a command in a new "
+                          "terminal tab (tabs=%1)")
                       .arg(openIds.size()));
             if (terminals)
                 for (const QString &id : terminals->ids())
                     terminals->closeTab(id);
             settleRail();
             check(terminals && terminals->count() == 0 &&
-                      window.testTerminalToken(terminalId).isEmpty(),
-                  QStringLiteral("closing a terminal tab drops its agent token"));
+                      window.testTerminalToken(terminalId).isEmpty() && terminalPanel &&
+                      !terminalPanel->isVisible(),
+                  QStringLiteral("closing the last terminal tab drops its agent token and "
+                                 "hides the terminal pane"));
+            window.testToggleTerminals();
+            settleRail();
+            const bool oneClickShell = terminals && terminals->count() == 1 && terminalPanel &&
+                                       terminalPanel->isVisible();
+            if (terminals)
+                for (const QString &id : terminals->ids())
+                    terminals->closeTab(id);
+            settleRail();
+            check(oneClickShell,
+                  QStringLiteral("with no terminals open, one click on the terminal button "
+                                 "opens a shell in the side pane"));
             window.resize(railWindowSize);
             window.testShowTeamSection();
             settleRail();

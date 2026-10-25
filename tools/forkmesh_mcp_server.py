@@ -5985,7 +5985,29 @@ def serve(stdin, stdout):
             stdout.flush()
 
 
-def main():
+def load_env_file(path):
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        log(f"env file {path} unreadable: {exc}")
+        return 0
+    servers = data.get("mcpServers") if isinstance(data, dict) else None
+    server = servers.get("forkmesh") if isinstance(servers, dict) else None
+    env = server.get("env") if isinstance(server, dict) else None
+    loaded = 0
+    for key, value in (env if isinstance(env, dict) else {}).items():
+        if isinstance(key, str) and key.startswith("FORKMESH_") and isinstance(value, str):
+            os.environ[key] = value
+            loaded += 1
+    return loaded
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    if "--env-file" in args:
+        at = args.index("--env-file")
+        if at + 1 < len(args):
+            load_env_file(args[at + 1])
     log(f"listening on stdio; identity {KEY_PATH}; access {access_level()}")
     serve(sys.stdin, sys.stdout)
 
