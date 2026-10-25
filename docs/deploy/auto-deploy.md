@@ -30,6 +30,23 @@ install` copies `tools/next_autodeploy.py`, `next_common.py`,
 pinned worktree or the test archive of the commit being deployed, so it is
 always that commit's code.
 
+## Where the agent finds runs
+
+The desktop writes each run's `meta.json` under
+`~/projects/forkmesh/data/actions/runs/`, but its sandbox tree (the run's
+`/workspace`, where the agent writes `node-deploy.log`) goes wherever
+`ActionStore::sandboxDir()` puts it: `data/actions/sandbox/`, or
+`<TMP mount>/ForkMesh/actions/sandbox/` when a disk labelled `TMP` is in use
+([TMP disk](../desktop/tmp-disk.md)). `running_runs` scans both, finding the
+TMP disk the way the desktop does (`/dev/disk/by-label/TMP` matched against
+`/proc/self/mounts`), and keeps the newest `forkmesh-run-<id>-<ms>` per run.
+
+Before 2026-10-24 it scanned only `data/actions/sandbox/`. Once the desktop
+moved sandboxes to the TMP disk that evening, the agent never saw a run:
+run #7903 (`03273107bf0a`) ended "did not pick up this run within 3 minutes"
+with the agent idle. An agent that sees no runs never deploys, so it cannot
+take this fix by self-update; run `install` by hand once.
+
 ## Trigger
 
 - **Only `main`** of the served repository, and only commits on the source
