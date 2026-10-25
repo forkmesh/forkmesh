@@ -10975,6 +10975,7 @@ bool runGitCaptureInput(const QString &dir, const QStringList &args,
                                const forkmesh::LogSource &source =
                                    forkmesh::logSourceHere());
 
+QString jsonBrokenByMergeResolution(const QString &dir);
 bool commitResolvedMerge(const QString &dir, QString *error);
 
 // `git worktree list --porcelain` for a checkout, served from a process-wide

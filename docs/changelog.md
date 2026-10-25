@@ -64,6 +64,25 @@ there. Re-render the website so `www/public/changelog.html` matches
 (the website deploy refuses a stale page). Give a busy day's entry a `title`
 and `pitch` by editing the file.
 
+### Merge conflicts
+
+Every branch adds lines to the top entry, so merging `main` into a branch
+almost always conflicts in `changelog.json` and `www/public/changelog.html`.
+Resolve the JSON by keeping every line from both sides inside valid JSON (a
+comma after each item but the last, and `]`/`},`/`{` between two sections),
+run `python3 tools/changelog.py check`, then re-render the page instead of
+resolving `changelog.html` by hand.
+
+On 2026-10-25 the desktop merge editor's **Accept both** resolved such a
+conflict on `2566-system-resource-management` by putting one side's lines
+straight after the other's, without the `]},{` between them. The broken file
+reached `main` and was carried through the next three merges, and Deploy nodes
+failed `app/tests/host/test_instance_changelog_e2e.py` (gate 2) on
+`125e071487bb`, so nothing was activated. Since then the editor's commit
+(`commitResolvedMerge`) refuses a conflicted `.json` file that parsed on our
+side but does not parse after the resolution, naming the file and line
+(`jsonBrokenByMergeResolution`).
+
 `python3 tools/changelog.py draft [--since DATE|COMMIT]` prints suggested
 lines from the merged commits since the newest entry (`tools/changelog_draft.py`:
 it drops merges, docs, tests, chores and code-name subjects, groups by area
