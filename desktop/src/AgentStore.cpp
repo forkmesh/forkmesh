@@ -1021,6 +1021,31 @@ QList<QJsonObject> AgentStore::loadEvents(const AgentSession &session) const
     return events;
 }
 
+QList<QJsonObject> AgentStore::loadRecentEvents(const AgentSession &session,
+                                                qint64 tailBytes) const
+{
+    const QString path = sessionDir(session) + QStringLiteral("/events.jsonl");
+    transcriptEventWriter().flushPath(path);
+    QList<QJsonObject> events;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return events;
+    const qint64 size = file.size();
+    if (tailBytes > 0 && size > tailBytes) {
+        file.seek(size - tailBytes - 1);
+        file.readLine();
+    }
+    while (!file.atEnd()) {
+        const QByteArray line = file.readLine().trimmed();
+        if (line.isEmpty())
+            continue;
+        const QJsonDocument doc = QJsonDocument::fromJson(line);
+        if (doc.isObject())
+            events.append(doc.object());
+    }
+    return events;
+}
+
 void AgentStore::clearEvents(const AgentSession &session) const
 {
     transcriptEventWriter().removeFile(

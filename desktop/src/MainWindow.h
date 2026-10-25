@@ -7292,6 +7292,7 @@ private:
     void openRepoAgentsList();
     void updateAgentsNavBadge();
     void refreshAgentDotMatrix();
+    void refreshAgentDots();
     void refreshActionRunStrip();
     QString actionWorkflowIconName(const ActionRun &run);
     void processAgentQueue();
