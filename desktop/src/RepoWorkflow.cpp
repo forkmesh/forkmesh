@@ -1476,6 +1476,34 @@ QList<Pin> pinWorkflow(QList<Pin> pins, const Pin &pin)
     return pins;
 }
 
+QList<Pin> movePin(QList<Pin> pins, const Pin &pin, int slot)
+{
+    if (pin.repo.trimmed().isEmpty() || pin.workflowId.isEmpty() || !isRail(pin.rail))
+        return pins;
+    Pin moved = pin;
+    const int existing = pins.indexOf(pin);
+    if (existing >= 0) {
+        moved.repo = pins.at(existing).repo;
+        pins.removeAt(existing);
+    } else if (pins.size() >= kMaxPins) {
+        return pins;
+    }
+    moved.rail = pin.rail;
+    int at = pins.size();
+    int seen = 0;
+    for (int i = 0; i < pins.size(); ++i) {
+        if (pins.at(i).rail != pin.rail)
+            continue;
+        if (seen++ == slot) {
+            at = i;
+            break;
+        }
+        at = i + 1;
+    }
+    pins.insert(at, moved);
+    return pins;
+}
+
 QList<Pin> unpinWorkflow(QList<Pin> pins, const QString &repo, const QString &workflowId)
 {
     pins.removeIf([&](const Pin &pin) { return pin == Pin{repo, workflowId, QString()}; });
