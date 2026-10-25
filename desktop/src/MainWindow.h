@@ -2956,6 +2956,11 @@ public:
     QPushButton *testViewModeButton() const { return m_viewModeButton; }
     QWidget *testAppNavigationRail() const { return m_appNavigationRail; }
     void testRefreshPromptChatPreview() { refreshPromptChatPreview(); }
+    void testSetPromptOverlayDetached(bool detached)
+    {
+        setPromptOverlayDetached(detached);
+    }
+    void testResetPromptOverlayPlacement() { resetPromptOverlayPlacement(); }
     QLabel *testPromptChatPreview() const { return m_promptChatPreview; }
     forkmesh::ui::OverflowActionRow *testAgentHeaderActions() const
     {
@@ -7311,7 +7316,8 @@ private:
     void updateQuickAddEnterTarget();
     void refreshPromptChatPreview();
     void schedulePromptChatPreview();
-    int promptChatTargetSessionId() const;
+    int promptChannelUserCount(const QString &conversation) const;
+    void showPromptChannelMenu();
     QString promptChatRoom() const;
     void refreshInstanceTheme();
     void applyInstanceThemeChoice(bool enabled);
@@ -11646,8 +11652,6 @@ private:
     QWidget *m_promptDragHandle = nullptr;
     QList<QWidget *> m_promptResizeEdges;
     Qt::Edges m_promptResizeActiveEdges;
-    QPushButton *m_promptDetachButton = nullptr;
-    QPushButton *m_promptResetButton = nullptr;
     QPushButton *m_promptClearButton = nullptr; // empties the prompt text area
     // Ticked (default): a prompt's agent gets its own branch and worktree.
     // Unticked: the run works directly in the repository's checkout.
@@ -11656,7 +11660,8 @@ private:
     QPushButton *m_promptVibeCheck = nullptr;
     QLabel *m_promptChatPreview = nullptr;
     QTimer *m_promptChatPreviewTimer = nullptr;
-    int m_promptChatSessionId = -1;
+    bool m_promptBodyPressed = false;
+    QPoint m_promptBodyPressPos;
     forkmesh::ui::OverflowActionRow *m_agentHeaderActions = nullptr;
     forkmesh::ui::OverflowActionRow *m_agentListActions = nullptr;
     forkmesh::ui::OverflowActionRow *m_agentRecycleActions = nullptr;
@@ -12668,7 +12673,8 @@ private:
     QPushButton *m_issueDetailToggle = nullptr;
     QPlainTextEdit *m_issueQuickAdd = nullptr;
     QFrame *m_promptWrapper = nullptr; // geometry anchor for notification/prompt bubbles
-    QLabel *m_quickAddCharCount = nullptr; // characters left in the title (max 16000)
+    QPushButton *m_promptChannelButton = nullptr;
+    QPushButton *m_promptResetButton = nullptr;
     QComboBox *m_quickAddAgentProvider = nullptr;
     QComboBox *m_quickAddAgentModelSelector = nullptr;
     QComboBox *m_quickAddTaskAssignee = nullptr;

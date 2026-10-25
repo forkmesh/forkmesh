@@ -284,7 +284,9 @@ def test_crash_reports_reach_the_admin_ping_without_losing_the_tail():
     assert 'str(message or "")[:460]' in notify
     # 460 plus the "JS /client-error/world — " prefix stays inside the
     # 500-character body the notification payload keeps.
-    assert '"body": clean_string(body, NOTIFICATION_BODY_MAX)' in ENTRY
+    payload = " ".join(ENTRY[ENTRY.index("def notification_payload("):].split())
+    assert ('"body": clean_string(body, SECURITY_ALERT_BODY_MAX '
+            'if kind == "security_alert" else NOTIFICATION_BODY_MAX)') in payload
     body_max = int(re.search(
         r"^NOTIFICATION_BODY_MAX = (\d+)$", ENTRY, re.M).group(1))
     assert body_max >= 500
