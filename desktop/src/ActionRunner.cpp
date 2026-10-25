@@ -914,7 +914,7 @@ void ActionRunner::terminateCurrentProcess(bool timedOut)
         const QString systemctl =
             QStandardPaths::findExecutable(QStringLiteral("systemctl"));
         if (!systemctl.isEmpty()) {
-            forkmesh::processreaper::startReleased(
+            forkmesh::processreaper::startReleasedQuietly(
                 systemctl, {QStringLiteral("--user"), QStringLiteral("kill"),
                             QStringLiteral("--kill-whom=all"), m_systemdUnit});
         }

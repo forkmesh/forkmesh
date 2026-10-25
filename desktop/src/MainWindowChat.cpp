@@ -2812,7 +2812,6 @@ QWidget *MainWindow::buildChatPage()
           m_filesNavButton, m_statsNavButton, m_componentHealthNavButton,
           m_memoryNavButton})
         m_appNavigationRailLayout->addWidget(button, 0, Qt::AlignLeft);
-    syncNativePackagePages();
     m_repoViewButton->setParent(header);
     m_repoViewButton->hide();
 

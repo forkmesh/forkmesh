@@ -4386,6 +4386,10 @@ private:
     void syncPackageSurfaces();
     bool packageSurfaceShown(const QString &packageId) const;
     void syncNativePackagePages();
+    void buildDeferredNativePackagePages();
+    void buildNextNativePackagePage(quint64 generation, int index);
+    void addNativePackagePage(const QString &id, const QString &entrypoint);
+    void finishNativePackagePages();
     void showNativePackage(const QString &id);
     void openNativePackageLink(const QString &id);
     QUrl nativePackageLinkUrl(const QString &id) const;
@@ -11279,6 +11283,10 @@ private:
         QString hostSearchQuery;
     };
     QList<NativePackagePage> m_nativePackagePages;
+    QList<QPair<QString, QString>> m_nativePackagePagesWanted;
+    quint64 m_nativePackagePagesGeneration = 0;
+    bool m_nativePackagePagesDeferred = false;
+    bool m_staggerNativePackagePages = false;
     QString m_packageDataTestFilePath;
     std::unique_ptr<forkmesh::timers::TimersFeature> m_timersFeature;
     QWidget *m_timersNavStrip = nullptr;
