@@ -76,7 +76,15 @@ Paths: `A/` is `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/`,
 - **Per-project isolation.** The original project owns the un-prefixed
   namespace; others use `p/<projectId>/`; sessions live under
   `auth/session/<projectId>`. `Services.get<SecretStore>()` returns the active
-  project's view.
+  project's view. The Inbox's local chat pings (`inbox/local-pings.v1`) live
+  in the project's preferences and are rebuilt on a switch, as on iOS.
+  Removing a project erases its chat history files first
+  (`ChatHistoryStore.eraseAll`, `ProjectsService.eraseProject`), file by
+  file, so the original project, whose files are not under `projects/`,
+  loses its history too (2026-10-22, iOS `ChatHistoryStore.eraseProject`).
+  Every performance report is scrubbed (`DiagnosticsBundle.report`, not
+  only the prompt), and the scrub also hides conversation, channel, room
+  and query names in JSON and `name=value` form.
 - **Node identity** (`C/security/Identity.kt`): the Ed25519 public key
   (base64url, no padding) is the node id. Stored as padded base64 of the
   32-byte seed under `identity/ed25519Seed`. A corrupt value throws rather than
@@ -790,6 +798,22 @@ default in new projects except the chosen starter pack
   desktop, iOS and web already accept and show as text (up to 16 code points).
 - **Stickers** (`StickerCatalog`, `ChatStickers`): tilted badges on a message's
   top-end corner, sent as reaction frames; see [chat-stickers.md](../app/chat-stickers.md#android).
+- **Brief inactive steps** (2026-10-22, iOS `AppReturnGate`, sync ledger
+  S095). `AppLifecycle.foreground` follows `onResume`/`onPause`, so a
+  permission prompt, the biometric sheet, a share sheet or a system dialog
+  used to close and reopen the account event socket and the node sync
+  socket, rerun the relay room's resume and read marks, and drop the direct
+  message focus and live sharing. `MainActivity` now also reports
+  `AppLifecycle.visibility` (`C/core/AppReturnGate.kt`: `RESUMED` on
+  resume, `INACTIVE` on start and pause, `HIDDEN` on stop) and `visible`.
+  The account event socket (`AccountEventChannel`), node sync, DM focus and
+  live sharing follow `visible`; `ChatFeature` runs `RelayRoom.onResumed`
+  and the mesh announce only on a resume after `HIDDEN` (the first resume
+  after an install counts, as before). `ChatHub.applyReadMarks` skips a
+  fetch while one runs or within 5 s of the last (`force` for the read
+  marks push and a sign-in), and `DirectMessageService.refresh` shows
+  `loading` only while the list is empty and notifies listeners only when
+  records, cursor or error changed. Other features keep `foreground`.
 - **Chat list** (`A/feature/chat/ChatChannelList.kt`): server DMs listed newest
   first with unread pills and avatars; each row has a last-line preview built
   only from messages on the phone (`C/chat/ChatListPreview.kt`).
@@ -851,6 +875,51 @@ default in new projects except the chosen starter pack
     recording, because it captures audio and video too. Android has no
     group-call screen. Tests:
     `C/chat/CallQualityTest.kt`.
+  - **Call screen layout (2026-10-22, iOS `DraggableCallPreview`).** The
+    self view is drawn by `direct-call.html`, under the native controls, so
+    `DraggableSelfView` lays a transparent 110x160 dp box over it and moves
+    the page's `#local` with `window.fmCallPlaceLocal(x, y, w, h, settle)`
+    (CSS px equal dp at `width=device-width`; `body.placed` styles it, and
+    `settle` adds the spring-like transition). On release it snaps to the
+    nearest of four corners after the fling's last 0.15 s
+    (`C/chat/CallScreenLayout.kt`, `CallPreviewLayout.settle`), clear of the
+    measured header above and the controls below, and keeps the corner in
+    the `fm.call.previewCorner` pref, iOS's `@AppStorage` key. It shows only
+    in a live video call with the camera on; the pre-call check still fills
+    the screen. The page function is inert until called, so iOS's WebView
+    fallback is unchanged. The buttons follow iOS's `ViewThatFits`
+    (`CallControlsLayout.arrange`): one row with 16 dp gaps, then 8 dp, then
+    two rows, face, background and voice above (24 dp gaps) and mute,
+    camera and a 64 dp hang up below (32 dp).
+  - **Group calls** (2026-10-23, sync ledger S084; protocol in
+    `docs/app/chat-group-calls.md`). Android has no native WebRTC engine
+    (libwebrtc is not brought back; FM Media replaces it), so it runs the
+    browser's `chat-group-calls.js` and its frame-encryption worker in a
+    WebView, as direct calls run `direct-call.html`. `GroupCallPage` loads
+    `https://appassets.androidplatform.net/group-call/index.html` and serves
+    only `assets/group-call/` through `shouldInterceptRequest`; the copies of
+    `chat-group-calls.js`, `chat-group-call-crypto.js` (started from a blob
+    URL), `chat-call-e2ee.js`, `chat-mlkem.js`, `call-quality-meter.js` and
+    `fmm/fmm-call.js`/`fmm-e2ee.js` are kept byte-identical by
+    `app/tools/sync_android_group_call.py` (`--check` in
+    `app/tests/test_android_group_call_page.py`, which also joins in headless
+    Chromium); `index.html` and `group-call-host.js` are hand-written. The
+    page draws the tile grid (iOS sizes: 150 px minimum columns, 6 px gaps,
+    3:4 tiles, name capsule, initial avatar without video, mirrored "You");
+    `GroupCallViews.kt` draws the title, state line, quality pill ("Others"),
+    the encryption note and Mute, Camera and Leave. Native code does what
+    the browser's `chat.js` does: `OfficeChannelService.sendLiveFrame` seals
+    `group-call-*` frames into the private channel's room without
+    `persist`/`notify` (fields like `sender` or `id` from the page are
+    ignored), incoming ones go to `onLiveFrame` instead of the history, and
+    `callTicket` asks for the ticket. `GroupCallFeature` keeps a
+    `GroupCallRoster` for the header's "Join · N" capsule and the last
+    minute of call frames (`GroupCallFrameBuffer`) to replay into the page
+    before it joins, so names and keys are known at once. FM Media is off
+    (`fmm: { enabled: false }`, no call signer), so joining a room that
+    already runs on FM Media fails with the server's `room_engine` error
+    (ledger S140). Header buttons show for private, writable channels; a
+    direct call and a group call refuse each other.
   - **Ringback.** `CallRinger` listens to the engine on the main thread.
     While the phase is RINGING (only a caller rings) it plays
     `ToneGenerator(STREAM_VOICE_CALL, 80)` `TONE_SUP_RINGTONE` and stops it on
@@ -924,6 +993,19 @@ default in new projects except the chosen starter pack
     The caller's name comes from `ApiService.directMessagePartner`.
     `CallRinger` cancels it as soon as an invite or call exists or the app is
     in front.
+  - **Notifications turned off** (2026-10-22, iOS `registerForCalls`).
+    Until then `LinkPlan.of` returned `OFF` without the notification
+    permission, so a phone with notifications off kept no background
+    connection and calls never rang it. It now keeps the connection for the
+    enabled projects as a calls-only plan (`LinkPlan.callsOnly`, title
+    "Listening for calls"): no #mesh listening, and `deliver` and
+    `deliverDirectMessage` return at once, so ping and message alerts that
+    could not be shown are not marked delivered. A `calls` event still wakes
+    the call engine of the active project, and `CallRinger` plays the
+    ringtone and vibration, which need no notification permission; the
+    incoming screen shows when the app is opened. Redialling right after a
+    decline rings at once because the relay no longer coalesces `calls`
+    events (`docs/app/chat-direct-calls.md`).
   - **Limits.** A ring needs the background connection to be on and
     connected (it is paused by Doze and network loss; there is no FCM), so a
     force-stopped app does not ring. The ringback tone follows the voice-call

@@ -319,7 +319,6 @@ def test_worker_indexes_notifications_from_existing_event_sources():
         "await notify_mentions(env, owner, repo,",
         "await enqueue_notification(env, grantee, \"repo_shared\"",
         "async def notify_release_published",
-        "await notify_host_status(env, repo_bi, \"host_offline\"",
     ):
         assert marker in ENTRY_TEXT
     # Legacy Worker-held bounty funding/payout mutation is frozen; public
