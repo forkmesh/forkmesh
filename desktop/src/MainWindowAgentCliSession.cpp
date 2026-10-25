@@ -1180,6 +1180,7 @@ void MainWindow::launchCliRuntime(const CliRuntimeLaunchPlan &plan,
             claudeSettings, agentRunRules(sid).allowedToolRules);
         if (!claudeSettings.isEmpty())
             runtimeLaunch.options.insert(QStringLiteral("claudeSettings"), claudeSettings);
+        addAgentRunMcpConfig(sid, runtimeLaunch.options);
         live->setGuardrails(guardrails);
         live->startRuntime(runtimeLaunch);
     };

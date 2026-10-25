@@ -1004,6 +1004,8 @@ void runHostControlProtocolTest()
     launch.initialPrompt = QStringLiteral("Fix the login bug");
     launch.permissionMode = QStringLiteral("default");
     launch.options.insert(QStringLiteral("hostControl"), true);
+    const QString mcpConfig = home.filePath(QStringLiteral("mcp-session.json"));
+    launch.options.insert(QStringLiteral("mcpConfig"), mcpConfig);
     session.startRuntime(launch);
 
     const auto keyed = [&events](const QString &key) {
@@ -1106,6 +1108,8 @@ void runHostControlProtocolTest()
     const QString argv = args.open(QIODevice::ReadOnly) ? QString::fromUtf8(args.readAll()) : QString();
     check(argv.contains(QStringLiteral("--permission-prompt-tool\nstdio")),
           "host control routes permission prompts over stdio");
+    check(argv.contains(QStringLiteral("--mcp-config\n") + mcpConfig + QLatin1Char('\n')),
+          "the run gets the desktop's ForkMesh MCP config");
 #endif
 }
 
