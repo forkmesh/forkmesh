@@ -796,6 +796,18 @@ QWidget *MainWindow::buildBreadcrumb()
     }), 0, Qt::AlignVCenter);
     // The view switcher sits just before the window controls, so it stays in
     // the top-right corner whichever view hides the rail or the status strip.
+    if (!Theme::isNext()) {
+        auto *terminalButton = new QPushButton;
+        terminalButton->setObjectName(QStringLiteral("windowChromeButton"));
+        terminalButton->setProperty("terminalLauncherButton", true);
+        terminalButton->setCursor(Qt::PointingHandCursor);
+        terminalButton->setFixedSize(32, 30);
+        terminalButton->setToolTip(QStringLiteral("Open a terminal tab"));
+        terminalButton->setAccessibleName(QStringLiteral("Open a terminal tab"));
+        setOcticon(terminalButton, QStringLiteral("terminal"), 14);
+        connect(terminalButton, &QPushButton::clicked, this, [this] { showTerminalLauncher(); });
+        chromeRow->addWidget(terminalButton);
+    }
     QPushButton *viewModeButton = buildViewModeButton();
     chromeRow->addWidget(viewModeButton);
     chromeRow->addWidget(minimizeButton);
@@ -6928,6 +6940,7 @@ void MainWindow::ensureSectionBuilt(int index)
     case kGovernorSectionIndex: section = buildGovernorSection(); break;
     case kProjectSettingsSectionIndex: section = buildProjectSettingsSection(); break;
     case kSessionsSectionIndex: section = buildSessionsSection(); break;
+    case kTerminalsSectionIndex: section = buildTerminalsSection(); break;
     default: break;
     }
     if (!section)

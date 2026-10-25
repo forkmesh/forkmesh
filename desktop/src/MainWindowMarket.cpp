@@ -4158,7 +4158,7 @@ void MainWindow::syncPackageSurfaces()
         }
     }
 
-    applyTeammateRailVisibility();
+    applySideRailVisibility();
     if (changed) {
         updateRepoActivityRail();
         refreshHomeGridPage();

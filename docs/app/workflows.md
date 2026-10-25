@@ -371,8 +371,11 @@ right edge or in the status bar (`ui/workflowPins`, at most 48 pins; one rail
 per workflow). A pin shows the workflow's icon (a special agent's portrait), a
 blue ring while it runs and a red one after a failure; clicking runs it (or
 opens it while it runs), right-click stops it, opens it, its agent's home or
-its last output, or moves it. The special agents rail menu and the page offer
-**Pin to rail** too.
+its last output, or moves it. The special agent menu and the page offer
+**Pin to rail** too. Right-rail pins show in the desktop's side rail, and a
+row of **On this desktop** (or a pin on another rail) can be dragged onto the
+side rail to pin it there
+([../desktop/side-rail-and-terminals.md](../desktop/side-rail-and-terminals.md)).
 
 **Page.** The native Workflows page lists these workflows under **On this
 desktop** with their icons, repository, trigger, state, last result and next

@@ -1181,8 +1181,12 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
   (`<data>/teammate-workspaces/<repository digest>/<id>.json`), are added to
   every run's prompt and never widen permissions. Widget changes the agent
   proposes are applied only with the operator's approval.
-- **Rail.** `src/MainWindowTeammateRail.cpp` builds `#teammateRail`
-  (`ui/showTeammateRail`), sorted by last run. Each 54 px item has an animated
+- **Rail.** Until 2026-10-24 `src/MainWindowTeammateRail.cpp` built
+  `#teammateRail` (`ui/showTeammateRail`); the right edge now holds the generic
+  side rail, where a special agent appears when its workflow is dragged there
+  or pinned right ([side-rail-and-terminals.md](side-rail-and-terminals.md)).
+  The faces, moods and HUD buttons below still drive the Special Agents
+  page's tiles and cards. Each 54 px item had an animated
   face (`facePoseAt`, one shared clock), a status border, a staleness tint
   (`teammates::runStaleness`), a play button, a mood emoji and a menu. The
   mood (`src/TeammateMood.*`) is scored from 100 weighted signals and sent to
@@ -1206,7 +1210,7 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
   startup sign-in resolves and every 15 minutes. The channel reminder
   (`ui/packageRailReminder`) files one `channel_reminder` ping for the worst
   square after an hour without change.
-- **Pins.** The rail menu's **Open in Workflows** and **Pin to rail** put the
+- **Pins.** The special agent menu's **Open in Workflows** and **Pin to rail** put the
   agent's workflow on the Workflows page or on the top, left, right or bottom
   rail ([../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
 - **Phones** show the same faces, moods and status in an adaptive tile grid

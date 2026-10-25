@@ -2970,25 +2970,24 @@ void MainWindow::buildSettingsAppearanceParts(SettingsSectionParts &parts)
                                         : RailGroups::SortMode::Custom);
             });
 
-    auto *teammateRailCheck =
-        new QCheckBox("Show special agents in a rail on the right");
-    teammateRailCheck->setObjectName(QStringLiteral("teammateRailCheck"));
-    teammateRailCheck->setChecked(teammateRailEnabled());
+    auto *teammateRailCheck = new QCheckBox("Show the side rail on the right");
+    teammateRailCheck->setObjectName(QStringLiteral("sideRailCheck"));
+    teammateRailCheck->setChecked(sideRailEnabled());
     teammateRailCheck->setToolTip(
-        "A narrow rail along the right edge lists this repository's special agents "
-        "with a status light, when each last ran, a Run button and a menu of "
-        "every option, plus a button that creates the special agent the repository "
-        "needs. On by default.");
-    m_teammateRailCheck = teammateRailCheck;
+        "A narrow rail along the right edge holds a terminal button, a small "
+        "browser and anything you drag onto it: workflows and special agents "
+        "from the Workflows page, pages from the left rail, and links. On by "
+        "default.");
+    m_sideRailCheck = teammateRailCheck;
     connect(teammateRailCheck, &QCheckBox::toggled, this,
-            [this](bool enabled) { setTeammateRailEnabled(enabled); });
+            [this](bool enabled) { setSideRailEnabled(enabled); });
 
     auto *packageRailCheck =
         new QCheckBox("Show marketing channel status in a rail on the right");
     packageRailCheck->setObjectName(QStringLiteral("packageRailCheck"));
     packageRailCheck->setChecked(packageRailEnabled());
     packageRailCheck->setToolTip(
-        "A narrow rail beside the special agents shows a square for each "
+        "A narrow rail beside the side rail shows a square for each "
         "channel of an installed package such as Marketing, with its main "
         "count, a border coloured by its health and its next steps on click. "
         "It appears only when a package has something to show. On by default.");
@@ -11910,7 +11909,7 @@ void MainWindow::resizeEvent(QResizeEvent *event)
         if (overlay)
             overlay->setGeometry(rect());
     }
-    applyTeammateRailVisibility();
+    applySideRailVisibility();
     applyPackageRailVisibility();
 }
 

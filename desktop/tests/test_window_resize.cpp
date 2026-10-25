@@ -36,6 +36,8 @@
 #include "../src/ServerNode.h"
 #include "../src/TipSigner.h"
 #include "../src/SkillUsageChart.h"
+#include "../src/SideRail.h"
+#include "../src/TerminalTabsPage.h"
 #include "ScreenCaptureOverlay.h"
 #include "ScreenshotMarkupWindow.h"
 #include "ForkMeshBuildCommit.h"
@@ -47,6 +49,7 @@
 
 #include <QAction>
 #include <QAbstractButton>
+#include <QDialog>
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QBuffer>
@@ -10412,14 +10415,20 @@ void checkWorkflowPinStripDrops(MainWindow &window)
 {
     const QString pinsKey = QStringLiteral("ui/workflowPins");
     const QStringList rails{QStringLiteral("top"), QStringLiteral("left"),
-                            QStringLiteral("right"), QStringLiteral("bottom")};
+                            QStringLiteral("bottom")};
     window.show();
     QApplication::processEvents();
     bool built = true;
     for (const QString &rail : rails)
         built = built && window.testWorkflowPinStrip(rail);
-    check(built, QStringLiteral("every edge has a workflow pin strip"));
-    if (!built)
+    QWidget *sideRail = window.testSideRail();
+    QWidget *right =
+        sideRail ? sideRail->findChild<QWidget *>(QStringLiteral("sideRailContent")) : nullptr;
+    check(built && right && right->acceptDrops() &&
+              !window.testWorkflowPinStrip(QStringLiteral("right")),
+          QStringLiteral("the top, left and bottom edges have workflow pin strips and the side "
+                         "rail takes right-rail pins"));
+    if (!built || !right)
         return;
     QSettings().setValue(
         pinsKey, QStringLiteral("[{\"repo\":\"o/r\",\"workflow\":\"a\",\"rail\":\"top\"},"
@@ -10433,9 +10442,11 @@ void checkWorkflowPinStripDrops(MainWindow &window)
         open = open && !strip->isHidden() && strip->acceptDrops() &&
                strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"));
     }
-    check(open, QStringLiteral("dragging a pin opens all four strips as drop zones"));
+    open = open && right->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"),
+                                               Qt::FindDirectChildrenOnly);
+    check(open, QStringLiteral("dragging a pin opens the three strips and the side rail as drop "
+                               "zones"));
 
-    QWidget *right = window.testWorkflowPinStrip(QStringLiteral("right"));
     QMimeData mime;
     mime.setData(QStringLiteral("application/x-forkmesh-workflow-pin"), QByteArrayLiteral("o/r\na"));
     const QPoint at = right->rect().center();
@@ -10448,7 +10459,7 @@ void checkWorkflowPinStripDrops(MainWindow &window)
               saved.contains(QStringLiteral("\"workflow\":\"a\"")) &&
               saved.indexOf(QStringLiteral("\"rail\":\"right\"")) >= 0 &&
               !saved.contains(QStringLiteral("\"rail\":\"top\"")),
-          QStringLiteral("a pin dropped on the right strip moves there (%1)").arg(saved));
+          QStringLiteral("a pin dropped on the side rail moves to the right rail (%1)").arg(saved));
 
     QWidget *bottom = window.testWorkflowPinStrip(QStringLiteral("bottom"));
     QMimeData other;
@@ -10466,8 +10477,11 @@ void checkWorkflowPinStripDrops(MainWindow &window)
         closed = closed && strip->isHidden() &&
                  !strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"));
     }
+    closed = closed && !right->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"),
+                                                    Qt::FindDirectChildrenOnly);
     check(closed, QStringLiteral("after the drag, strips with no shown pins hide again"));
     QSettings().remove(pinsKey);
+    QSettings().remove(QStringLiteral("ui/sideRailItems"));
 }
 
 void checkRailPageShortcuts(MainWindow &window)
@@ -16926,268 +16940,287 @@ else:
             QApplication::processEvents(QEventLoop::AllEvents, 20);
 
         {
-            window.testSetTeammateRailEnabled(true);
-            window.testRefreshTeammateRail();
-            QApplication::processEvents();
-            QWidget *rail = window.testTeammateRail();
-            auto railItemFor = [rail](const QString &id) -> QWidget * {
+            namespace sr = forkmesh::siderail;
+            const auto settleRail = [] {
+                for (int i = 0; i < 6; ++i) {
+                    QApplication::processEvents(QEventLoop::AllEvents, 20);
+                    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                }
+            };
+            const QString railShot = qEnvironmentVariable("FORKMESH_TEAMMATE_RAIL_SHOT");
+            QSettings().remove(sr::kItemsSetting);
+            const QSize railWindowSize = window.size();
+            window.resize(1400, qMax(railWindowSize.height(), 800));
+            window.testSetSideRailEnabled(true);
+            window.testRefreshSideRail();
+            settleRail();
+            QWidget *rail = window.testSideRail();
+            auto railItemFor = [rail](const QString &key) -> QWidget * {
                 if (!rail)
                     return nullptr;
-                for (QWidget *item : rail->findChildren<QWidget *>(
-                         QStringLiteral("teammateRailItem"))) {
-                    if (item->property("teammateId").toString() == id)
+                for (QWidget *item : rail->findChildren<QWidget *>(QStringLiteral("sideRailItem")))
+                    if (item->property("sideRailKey").toString() == key)
                         return item;
-                }
                 return nullptr;
             };
-            QWidget *railItem = railItemFor(quality.id);
-            QPushButton *railAvatar =
-                railItem ? railItem->findChild<QPushButton *>(
-                               QStringLiteral("teammateRailAvatar"))
-                         : nullptr;
-            QPushButton *railMore =
-                railItem ? railItem->findChild<QPushButton *>(
-                               QStringLiteral("teammateRailMenuButton"))
-                         : nullptr;
-            const bool railCompact =
-                railItem &&
-                !railItem->findChild<QPushButton *>(
-                    QStringLiteral("teammateRailRunButton")) &&
-                !railItem->findChild<QLabel *>(
-                    QStringLiteral("teammateRailLastRun"));
-            QPushButton *railMood =
-                railItem ? railItem->findChild<QPushButton *>(
-                               QStringLiteral("teammateRailMood"))
-                         : nullptr;
-            const bool railMenuHud = railMore && !railMore->isHidden();
-            const bool railMoodShown =
-                railMood && !railMood->isHidden() &&
-                !railItem->property("mood").toString().isEmpty() &&
-                railMood->toolTip().contains(QStringLiteral("Weighed 100 signals"));
-            const bool railFaceFillsSquare =
-                railAvatar && railItem->width() == railItem->height() &&
-                railAvatar->width() >= railItem->width() - 4 &&
-                !railAvatar->property("motion").toString().isEmpty();
-            const QString railTip = railAvatar ? railAvatar->toolTip() : QString();
-            QPushButton *railCreate =
-                rail ? rail->findChild<QPushButton *>(
-                           QStringLiteral("teammateRailCreateButton"))
-                     : nullptr;
             const int railRight =
                 rail ? rail->mapTo(&window, QPoint(rail->width(), 0)).x() : -1;
-            const QVariant railStaleness =
-                railItem ? railItem->property("staleness") : QVariant();
-            check(railStaleness.isValid() &&
-                      railStaleness.toDouble() >= 0.0 &&
-                      railStaleness.toDouble() <= 1.0 &&
-                      railTip.contains(QStringLiteral("Schedule:")),
-                  QString("each special agent on the rail carries a cadence-based "
-                          "freshness tint and names its schedule (staleness=%1)")
-                      .arg(railStaleness.toDouble()));
-            check(rail && rail->isVisible() && railItem && railAvatar &&
-                      railCompact && railMenuHud && railMoodShown &&
-                      railFaceFillsSquare &&
-                      railTip.contains(QStringLiteral("Last run:")) &&
-                      (railTip.contains(QStringLiteral("Click to")) ||
-                       railTip.contains(QStringLiteral("Paused"))) &&
-                      railCreate && railCreate->isEnabled() &&
-                      railRight >= window.width() - 2,
-                  QString("the right rail lists each special agent as a square "
-                          "live face filling its box, with the last run in its "
-                          "hover, an always-visible menu HUD button, a mood "
-                          "emoji weighed from 100 signals and no Run button or "
-                          "age line, plus a create button (item=%1 compact=%2 "
-                          "menu/mood/face=%3/%4/%5 tip=%6 right=%7/%8)")
-                      .arg(railItem != nullptr)
-                      .arg(railCompact)
-                      .arg(railMenuHud)
-                      .arg(railMoodShown)
-                      .arg(railFaceFillsSquare)
-                      .arg(railTip)
+            QPushButton *railTerminal =
+                rail ? rail->findChild<QPushButton *>(QStringLiteral("sideRailTerminalButton")) : nullptr;
+            QPushButton *railBrowse =
+                rail ? rail->findChild<QPushButton *>(QStringLiteral("sideRailBrowserButton")) : nullptr;
+            QPushButton *railAdd =
+                rail ? rail->findChild<QPushButton *>(QStringLiteral("sideRailAddButton")) : nullptr;
+            const bool noTeamChips =
+                rail && window.findChildren<QWidget *>(QStringLiteral("teammateRailItem")).isEmpty();
+            check(rail && rail->isVisible() && noTeamChips && railTerminal && railBrowse &&
+                      railAdd && railRight >= window.width() - 2,
+                  QString("the right rail is a generic side rail: a terminal button, a "
+                          "browser button and an add tile, with no special agent chips "
+                          "(chips gone=%1 right=%2/%3)")
+                      .arg(noTeamChips)
                       .arg(railRight)
                       .arg(window.width()));
 
-            window.testSetTeammateRailEnabled(false);
-            QApplication::processEvents();
+            const QString repoKey = QStringLiteral("forkmesh/teammates-preview");
+            const QString workflowKey = sr::workflowItem(repoKey, quality.id).key();
+            QMimeData workflowDrop;
+            workflowDrop.setData(QLatin1String(sr::kWorkflowMime),
+                                 sr::encodeWorkflow(repoKey, quality.id));
+            const bool workflowDropped = window.testDropOnSideRail(&workflowDrop, -1);
+            settleRail();
+            QWidget *workflowButton = nullptr;
+            for (int i = 0; i < 50 && !workflowButton; ++i) {
+                settleRail();
+                workflowButton = railItemFor(workflowKey);
+            }
+            const bool pinnedRight =
+                QSettings().value(QStringLiteral("ui/workflowPins")).toString().contains(
+                    QStringLiteral("\"right\""));
+            check(workflowDropped && workflowButton && pinnedRight &&
+                      workflowButton->toolTip().contains(QStringLiteral("Click to run")),
+                  QString("dropping a workflow on the side rail pins it to the right rail "
+                          "and shows a run button (dropped=%1 pinned=%2 tip=%3)")
+                      .arg(workflowDropped)
+                      .arg(pinnedRight)
+                      .arg(workflowButton ? workflowButton->toolTip() : QString()));
+
+            QMimeData pageDrop;
+            pageDrop.setData(QStringLiteral("application/x-forkmesh-rail-item"),
+                             QByteArrayLiteral("agents"));
+            const bool pageDropped = window.testDropOnSideRail(&pageDrop, -1);
+            QMimeData linkDrop;
+            linkDrop.setUrls({QUrl(QStringLiteral("https://example.com/docs"))});
+            const bool linkDropped = window.testDropOnSideRail(&linkDrop, 0);
+            QMimeData fileDrop;
+            fileDrop.setUrls({QUrl::fromLocalFile(repository.path())});
+            const bool fileRefused = !window.testDropOnSideRail(&fileDrop, 0);
+            settleRail();
+            const QStringList railKeys = window.testSideRailKeys();
+            const QStringList wantKeys{sr::linkItem(QUrl(QStringLiteral("https://example.com/docs"))).key(),
+                                       workflowKey, sr::pageItem(QStringLiteral("agents")).key()};
+            QWidget *pageButton = nullptr;
+            for (int i = 0; i < 50 && !pageButton; ++i) {
+                settleRail();
+                pageButton = railItemFor(sr::pageItem(QStringLiteral("agents")).key());
+            }
+            if (auto *button = qobject_cast<QAbstractButton *>(pageButton))
+                button->click();
+            settleRail();
+            QAbstractButton *agentsNav = nullptr;
+            for (QAbstractButton *candidate : window.findChildren<QAbstractButton *>())
+                if (candidate->property("forkmeshRailKey").toString() == QLatin1String("agents") &&
+                    candidate != pageButton)
+                    agentsNav = candidate;
+            check(pageDropped && linkDropped && fileRefused && railKeys == wantKeys &&
+                      pageButton && agentsNav && agentsNav->isChecked(),
+                  QString("pages from the left rail and web links drop onto the side rail in "
+                          "place, file links are refused, and a page button opens its page "
+                          "(dropped page/link/file-refused=%1/%2/%3 order=%4 button=%5 nav=%6 "
+                          "checked=%7 keys=%8)")
+                      .arg(pageDropped)
+                      .arg(linkDropped)
+                      .arg(fileRefused)
+                      .arg(railKeys == wantKeys)
+                      .arg(pageButton != nullptr)
+                      .arg(agentsNav != nullptr)
+                      .arg(agentsNav && agentsNav->isChecked())
+                      .arg(railKeys.join(QLatin1Char(',')) + QStringLiteral(" shown=") +
+                           [rail] {
+                               QStringList shown;
+                               for (QWidget *item : rail->findChildren<QWidget *>(
+                                        QStringLiteral("sideRailItem")))
+                                   shown << item->property("sideRailKey").toString();
+                               return shown.join(QLatin1Char(','));
+                           }()));
+
+            const int closedWidth = rail ? rail->width() : 0;
+            window.testSetSideRailBrowserOpen(true);
+            settleRail();
+            QWidget *browserPanel = window.testSideRailBrowserPanel();
+            const bool browserShown = browserPanel && browserPanel->isVisible() && rail &&
+                                      rail->width() > closedWidth + 200 && railBrowse->isChecked();
+            if (!railShot.isEmpty())
+                window.grab().save(railShot + QStringLiteral(".side-rail.png"));
+            window.testSetSideRailBrowserOpen(false);
+            settleRail();
+            check(browserShown && browserPanel && !browserPanel->isVisible() &&
+                      rail->width() == closedWidth,
+                  QString("the side rail opens a small browser beside it and closes it again "
+                          "(closed=%1)")
+                      .arg(closedWidth));
+
+            window.testSetSideRailEnabled(false);
+            settleRail();
             const bool railHidden = rail && !rail->isVisible() &&
-                                    !QSettings()
-                                         .value(QStringLiteral("ui/showTeammateRail"))
-                                         .toBool();
-            window.testSetTeammateRailEnabled(true);
-            QApplication::processEvents();
+                                    !QSettings().value(sr::kShowSetting).toBool();
+            window.testSetSideRailEnabled(true);
+            settleRail();
             check(railHidden && rail && rail->isVisible(),
-                  QStringLiteral("the teammates rail can be turned off and "
-                                 "back on"));
-            const QString railShot =
-                qEnvironmentVariable("FORKMESH_TEAMMATE_RAIL_SHOT");
-            if (!railShot.isEmpty()) {
-                window.grab().save(railShot + QStringLiteral(".window.png"));
-                if (rail)
-                    rail->grab()
-                        .scaled(rail->width() * 3, rail->height() * 3,
-                                Qt::KeepAspectRatio, Qt::SmoothTransformation)
-                        .save(railShot + QStringLiteral(".rail.png"));
-            }
+                  QStringLiteral("the side rail can be turned off and back on"));
 
-            forkmesh::teammates::Config railCfo =
-                forkmesh::teammates::Store::chiefFinancialOfficerTemplate();
-            const forkmesh::teammates::Store railCfoStore(
-                QDir(repository.path()).filePath(
-                    QStringLiteral(".forkmesh/teammates")));
-            const bool railCfoSaved = railCfoStore.save(&railCfo);
-            window.testRefreshTeammateRail();
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QApplication::processEvents();
-            QWidget *railCfoItem = railItemFor(railCfo.id);
-            auto railCfoButton = [&railItemFor, &railCfo](const char *name) {
-                QWidget *item = railItemFor(railCfo.id);
-                return item ? item->findChild<QPushButton *>(
-                                  QString::fromLatin1(name))
-                            : nullptr;
+            QSettings().remove(sr::kItemsSetting);
+            QSettings().remove(QStringLiteral("ui/workflowPins"));
+            window.testRefreshSideRail();
+            settleRail();
+
+            const auto terminalText = [&window](const QString &id) {
+                const QJsonObject reply = window.testTerminalRequest(
+                    0, id, QStringLiteral("terminals.read"),
+                    {{QStringLiteral("terminal"), id}, {QStringLiteral("lines"), 50}});
+                return reply.value(QStringLiteral("text")).toString();
             };
-            QPushButton *railCfoPlay = railCfoButton("teammateRailPlay");
-            QPushButton *railCfoPayouts =
-                railCfoButton("teammateRailProcessPayouts");
-            QPushButton *railCfoMore = railCfoButton("teammateRailMenuButton");
-            QPushButton *railCfoFace = railCfoButton("teammateRailAvatar");
-            QPushButton *railCfoMood = railCfoButton("teammateRailMood");
-            QLabel *railCfoName =
-                railCfoItem ? railCfoItem->findChild<QLabel *>(
-                                  QStringLiteral("teammateRailName"))
-                            : nullptr;
-            QWidget *railQualityItem = railItemFor(quality.id);
-            const bool railCornersPlaced =
-                railCfoItem && railCfoPlay && railCfoPayouts &&
-                railQualityItem &&
-                railQualityItem->findChild<QPushButton *>(
-                    QStringLiteral("teammateRailPlay")) &&
-                !railQualityItem->findChild<QPushButton *>(
-                    QStringLiteral("teammateRailProcessPayouts")) &&
-                railCfoMore && railCfoFace && railCfoName && railCfoMood &&
-                railCfoPlay->geometry().left() < railCfoMood->geometry().left() &&
-                railCfoMood->geometry().right() < railCfoMore->geometry().left() &&
-                railCfoPlay->geometry().top() < 8 &&
-                railCfoMood->geometry().top() < 8 &&
-                railCfoMore->geometry().top() < 8 &&
-                qAbs(railCfoMood->geometry().center().x() -
-                     railCfoItem->width() / 2) <= 1 &&
-                railCfoPayouts->geometry().top() >
-                    railCfoMore->geometry().bottom() &&
-                !railCfoPlay->isHidden() && !railCfoMore->isHidden() &&
-                railCfoPayouts->isHidden();
-            const bool railNameOverAvatar =
-                railCfoName && railCfoFace &&
-                railCfoName->geometry().bottom() >=
-                    railCfoFace->geometry().bottom() - 4 &&
-                railCfoName->geometry().top() > railCfoFace->geometry().center().y() &&
-                railCfoItem->width() - railCfoFace->width() <= 4;
-            if (railCfoItem) {
-                QEnterEvent enter(QPointF(4, 4), QPointF(4, 4), QPointF(4, 4));
-                QApplication::sendEvent(railCfoItem, &enter);
-            }
-            const bool railCornersOnHover =
-                railCfoPlay && !railCfoPlay->isHidden() &&
-                railCfoPayouts && !railCfoPayouts->isHidden();
-            if (!railShot.isEmpty() && rail)
-                rail->grab()
-                    .scaled(rail->width() * 3, rail->height() * 3,
-                            Qt::KeepAspectRatio, Qt::SmoothTransformation)
-                    .save(railShot + QStringLiteral(".corners.png"));
-            if (railCfoItem) {
-                QEvent leave(QEvent::Leave);
-                QApplication::sendEvent(railCfoItem, &leave);
-            }
-            check(railCornersPlaced && railNameOverAvatar && railCornersOnHover,
-                  QString("a rail special agent's face fills its square with a "
-                          "tiny name along the bottom, play, mood and menu sit "
-                          "as round HUD buttons along the top, and the CFO "
-                          "shows a process-payments button on hover (placed=%1 "
-                          "name=%2 hover=%3)")
-                      .arg(railCornersPlaced)
-                      .arg(railNameOverAvatar)
-                      .arg(railCornersOnHover));
-            QStringList railStarted;
-            window.testSetTeammateStartHook(
-                [&railStarted](const QString &teammateId, const QString &) {
-                    railStarted.append(teammateId);
-                    return 943400;
-                });
-            if (railCfoPlay)
-                railCfoPlay->click();
-            for (int i = 0; i < 4; ++i)
-                QApplication::processEvents(QEventLoop::AllEvents, 20);
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            const bool railPlayStarted =
-                railStarted == QStringList{railCfo.id};
-            QPushButton *railCfoAvatar = railCfoButton("teammateRailAvatar");
-            if (railCfoAvatar)
-                railCfoAvatar->click();
-            for (int i = 0; i < 4; ++i)
-                QApplication::processEvents(QEventLoop::AllEvents, 20);
-            window.testSetTeammateStartHook({});
-            const QString railCfoMessage = window.testLatestNoticeText();
-            const QString railCfoPage = window.testTeammateHomeId();
-            railCfoStore.remove(railCfo.id);
-            window.testReloadTeammatesPanel();
-            window.testRefreshTeammateRail();
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QApplication::processEvents();
-            check(railCfoSaved && railCfoAvatar && railPlayStarted &&
-                      railStarted == QStringList{railCfo.id} &&
-                      railCfoPage == railCfo.id &&
-                      !railCfoMessage.contains(
-                          QStringLiteral("schedule recorded")),
-                  QString("the play corner on a payout special agent starts its "
-                          "agent instead of recording a schedule, and a click "
-                          "on the avatar opens its page without running it "
-                          "(saved=%1 avatar=%2 started=%3 page=%4 message=%5)")
-                      .arg(railCfoSaved)
-                      .arg(railCfoAvatar != nullptr)
-                      .arg(railStarted.join(QLatin1Char(',')))
-                      .arg(railCfoPage)
-                      .arg(railCfoMessage));
+            const auto waitForText = [&](const QString &id, const QString &needle) {
+                for (int i = 0; i < 400 && !terminalText(id).contains(needle); ++i)
+                    QApplication::processEvents(QEventLoop::AllEvents, 20);
+                return terminalText(id).contains(needle);
+            };
+            const QString terminalId = window.testOpenTerminalTab(
+                QStringLiteral("command"), QStringLiteral("printf 'fm-term-%s\\n' ready"),
+                repository.path());
+            forkmesh::ui::TerminalTabsPage *terminals = window.testTerminalsPage();
+            const bool terminalPageShown = terminals && terminals->isVisible();
+            const bool terminalPrinted = waitForText(terminalId, QStringLiteral("fm-term-ready"));
+            if (!railShot.isEmpty())
+                window.grab().save(railShot + QStringLiteral(".terminals.png"));
+            const QString terminalToken = window.testTerminalToken(terminalId);
+            const bool tokenMinted =
+                terminalToken.isEmpty() || terminalToken.startsWith(QStringLiteral("term."));
+            check(!terminalId.isEmpty() && terminals && terminals->count() == 1 &&
+                      terminalPageShown && terminalPrinted && tokenMinted,
+                  QString("a terminal opens as a tab in the window and its output can be read "
+                          "back (page=%1 printed=%2 token=%3 text=%4)")
+                      .arg(terminalPageShown)
+                      .arg(terminalPrinted)
+                      .arg(tokenMinted)
+                      .arg(terminalText(terminalId).right(200)));
 
-            window.testMarkTeammateDoneUnseen(teammateRun.id);
-            const bool doneMarked =
-                window.testTeammateDoneUnseen(teammateRun.id);
-            window.testRefreshTeammateRail();
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QApplication::processEvents();
-            QWidget *doneItem = railItemFor(quality.id);
-            QPushButton *doneAvatar =
-                doneItem ? doneItem->findChild<QPushButton *>(
-                               QStringLiteral("teammateRailAvatar"))
-                         : nullptr;
-            const bool doneFlagged =
-                doneItem && doneItem->property("doneUnseen").toBool();
-            const QString doneTip =
-                doneAvatar ? doneAvatar->toolTip() : QString();
-            if (doneAvatar)
-                doneAvatar->click();
-            for (int i = 0; i < 6; ++i)
-                QApplication::processEvents(QEventLoop::AllEvents, 20);
-            const QString doneOpened = window.testTeammateHomeId();
-            const bool doneCleared =
-                !window.testTeammateDoneUnseen(teammateRun.id);
-            window.testRefreshTeammateRail();
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            QApplication::processEvents();
-            QWidget *seenItem = railItemFor(quality.id);
-            const bool seenUnflagged =
-                seenItem && !seenItem->property("doneUnseen").toBool();
-            check(doneMarked && doneFlagged &&
-                      doneTip.contains(QStringLiteral("click to see the result")) &&
-                      doneOpened == quality.id && doneCleared &&
-                      seenUnflagged,
-                  QString("a teammate whose run finished shows a done badge on "
-                          "the rail until a click opens its page (mark=%1 "
-                          "flag=%2 tip=%3 opened=%4 cleared=%5 after=%6)")
-                      .arg(doneMarked)
-                      .arg(doneFlagged)
-                      .arg(doneTip)
-                      .arg(doneOpened)
-                      .arg(doneCleared)
-                      .arg(seenUnflagged));
+            const QJsonObject typed = window.testTerminalRequest(
+                0, terminalId, QStringLiteral("terminals.input"),
+                {{QStringLiteral("terminal"), terminalId},
+                 {QStringLiteral("text"), QStringLiteral("echo fm-typed-$((40+2))")},
+                 {QStringLiteral("enter"), true}});
+            const bool typedEchoed = waitForText(terminalId, QStringLiteral("fm-typed-42"));
+            check(typed.value(QStringLiteral("ok")).toBool() && typedEchoed,
+                  QString("a program in a ForkMesh terminal can type into a shared terminal "
+                          "and read the result (ok=%1 text=%2)")
+                      .arg(typed.value(QStringLiteral("ok")).toBool())
+                      .arg(terminalText(terminalId).right(300)));
+
+            if (!window.testTerminalToken(terminalId).isEmpty()) {
+                const QString probe = window.testOpenTerminalTab(
+                    QStringLiteral("command"),
+                    QStringLiteral(R"(python3 -c 'import os,socket,json
+s=socket.socket(socket.AF_UNIX); s.connect(os.environ["FORKMESH_AGENT_INTAKE"])
+s.sendall((json.dumps({"token": os.environ["FORKMESH_AGENT_INTAKE_TOKEN"], "method": "terminals.list", "params": {}})+"\n").encode())
+r=json.loads(s.recv(65536).decode())
+print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get("terminals", []) if t.get("self")))')"),
+                    repository.path());
+                const bool probed = waitForText(probe, QStringLiteral("FMPROBE True 2 1"));
+                check(probed,
+                      QString("a program in a terminal tab reaches the desktop over the agent "
+                              "socket with its own token and sees the shared tabs (text=%1)")
+                          .arg(terminalText(probe).right(300)));
+                terminals->closeTab(probe);
+                settleRail();
+            }
+
+            AgentSession planAgent;
+            planAgent.id = 943510;
+            planAgent.owner = QStringLiteral("forkmesh");
+            planAgent.name = QStringLiteral("teammates-preview");
+            planAgent.mode = QStringLiteral("Plan");
+            planAgent.status = AgentStatus::Running;
+            planAgent.issueTitle = QStringLiteral("terminal plan agent");
+            window.testAddAgentSession(planAgent);
+            const QJsonObject planList = window.testTerminalRequest(
+                planAgent.id, QString(), QStringLiteral("terminals.list"), {});
+            const QJsonObject planType = window.testTerminalRequest(
+                planAgent.id, QString(), QStringLiteral("terminals.input"),
+                {{QStringLiteral("terminal"), terminalId}, {QStringLiteral("text"), QStringLiteral("x")}});
+            terminals->setShared(terminalId, false);
+            const QJsonObject privateList = window.testTerminalRequest(
+                planAgent.id, QString(), QStringLiteral("terminals.list"), {});
+            const QJsonObject privateRead = window.testTerminalRequest(
+                planAgent.id, QString(), QStringLiteral("terminals.read"),
+                {{QStringLiteral("terminal"), terminalId}});
+            const QJsonObject userClose = window.testTerminalRequest(
+                0, terminalId, QStringLiteral("terminals.close"),
+                {{QStringLiteral("terminal"), terminalId}});
+            check(planList.value(QStringLiteral("terminals")).toArray().size() == 1 &&
+                      planType.value(QStringLiteral("error")).toString() == QStringLiteral("mode_too_low") &&
+                      privateList.value(QStringLiteral("terminals")).toArray().isEmpty() &&
+                      privateList.value(QStringLiteral("private_terminals")).toInt() == 1 &&
+                      privateRead.value(QStringLiteral("error")).toString() == QStringLiteral("not_shared") &&
+                      userClose.value(QStringLiteral("error")).toString() == QStringLiteral("user_terminal"),
+                  QString("agents below Auto mode can only read, private terminals are hidden, "
+                          "and a terminal the user opened is not closed for them "
+                          "(type=%1 read=%2 close=%3)")
+                      .arg(planType.value(QStringLiteral("error")).toString(),
+                           privateRead.value(QStringLiteral("error")).toString(),
+                           userClose.value(QStringLiteral("error")).toString()));
+
+            QPushButton *chromeTerminal = nullptr;
+            for (QPushButton *button : window.findChildren<QPushButton *>())
+                if (button->property("terminalLauncherButton").toBool() ||
+                    button->objectName() == QLatin1String("topTerminalButton"))
+                    chromeTerminal = button;
+            check(chromeTerminal != nullptr,
+                  QStringLiteral("the top bar has a button that opens the terminal launcher"));
+            if (railTerminal)
+                railTerminal->click();
+            settleRail();
+            auto *launcher = window.findChild<QDialog *>(QStringLiteral("terminalLauncher"));
+            auto *launcherKind =
+                launcher ? launcher->findChild<QComboBox *>(QStringLiteral("terminalLauncherKind")) : nullptr;
+            auto *launcherCommand =
+                launcher ? launcher->findChild<QLineEdit *>(QStringLiteral("terminalLauncherCommand")) : nullptr;
+            auto *launcherOpen =
+                launcher ? launcher->findChild<QPushButton *>(QStringLiteral("terminalLauncherOpen")) : nullptr;
+            if (launcherKind && launcherCommand && launcherOpen) {
+                launcherKind->setCurrentIndex(launcherKind->findData(QStringLiteral("command")));
+                launcherCommand->setText(QStringLiteral("printf 'fm-launched\\n'"));
+                launcherOpen->click();
+            }
+            settleRail();
+            const QStringList openIds = terminals ? terminals->ids() : QStringList();
+            const QString launchedId = openIds.size() == 2 ? openIds.last() : QString();
+            const bool launched = !launchedId.isEmpty() &&
+                                  waitForText(launchedId, QStringLiteral("fm-launched"));
+            check(launcher && launcherKind && launcherOpen && launched,
+                  QString("the rail's terminal button opens the launcher, which opens a "
+                          "command in a new terminal tab (tabs=%1)")
+                      .arg(openIds.size()));
+            if (terminals)
+                for (const QString &id : terminals->ids())
+                    terminals->closeTab(id);
+            settleRail();
+            check(terminals && terminals->count() == 0 &&
+                      window.testTerminalToken(terminalId).isEmpty(),
+                  QStringLiteral("closing a terminal tab drops its agent token"));
+            window.resize(railWindowSize);
+            window.testShowTeamSection();
+            settleRail();
 
             {
                 const auto settle = [] {
@@ -17398,21 +17431,23 @@ else:
                 QStringLiteral("Release checks keep slipping.\n```json\n"
                                "{\"name\": \"Ada\", \"specialty\": "
                                "\"Release Engineering\"}\n```\n"));
-            window.testRefreshTeammateRail();
-            QApplication::processEvents();
-            const bool adoptedInRail = railItemFor(QStringLiteral("ada"));
+            bool adoptedInRail = false;
+            for (const forkmesh::teammates::Config &saved :
+                 forkmesh::teammates::Store(QDir(repository.path()).filePath(
+                                                QStringLiteral(".forkmesh/teammates")))
+                     .load()
+                     .teammates)
+                adoptedInRail = adoptedInRail || saved.id == QLatin1String("ada");
             forkmesh::teammates::Store(
                 QDir(repository.path()).filePath(
                     QStringLiteral(".forkmesh/teammates")))
                 .remove(QStringLiteral("ada"));
             window.testReloadTeammatesPanel();
-            window.testRefreshTeammateRail();
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
             for (int i = 0; i < 4; ++i)
                 QApplication::processEvents(QEventLoop::AllEvents, 20);
             check(adopted == QStringLiteral("Ada") && adoptedInRail,
-                  QString("a teammate the finder defines joins the team and "
-                          "the rail (%1)")
+                  QString("a teammate the finder defines joins the team (%1)")
                       .arg(adopted));
         }
 
@@ -37599,7 +37634,7 @@ else:
                              "filter off, so their sessions show at once"));
 
         {
-            QWidget *rail = window.testTeammateRail();
+            QWidget *rail = window.testSideRail();
             const QSize before = window.size();
             window.resize(1400, before.height());
             QApplication::processEvents();
@@ -37611,7 +37646,7 @@ else:
             window.resize(before);
             QApplication::processEvents();
             check(wideShows && narrowWidth < 1000 && narrowHides,
-                  QString("a narrow window gives the teammates rail's width "
+                  QString("a narrow window gives the side rail's width "
                           "back to the page (narrow=%1)")
                       .arg(narrowWidth));
         }

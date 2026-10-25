@@ -30,6 +30,7 @@ Topic pages in this folder:
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
 - [markdown-preview.md](markdown-preview.md): one render path for every Markdown preview, hard-break handling, the GitHub-style document styling and painted decorations
 - [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
+- [side-rail-and-terminals.md](side-rail-and-terminals.md): the right-hand side rail (drag workflows, pages and links onto it), its small browser, terminal tabs and the MCP terminal tools for agents
 - Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
 
 ## Code map
@@ -155,14 +156,17 @@ Everything is in `desktop/`.
   from the rail" list to show one or all again. Moving the button to another
   bar, dropping it on the rail, or "Reset button placement" also shows it again.
 - **Pinned workflows.** Workflows (special agents among them) can be pinned to
-  four strips around the window: the top bar beside the activity indicators,
-  under the left rail, at the right edge and in the status bar
+  four places around the window: the top bar beside the activity indicators,
+  under the left rail, the side rail at the right edge and the status bar
   (`ui/workflowPins`, `src/MainWindowRepoWorkflows.cpp`;
   [../app/workflows.md](../app/workflows.md#desktop-workflows-and-special-agents)).
+  Right-rail pins have no strip of their own: they show among the side rail's
+  items ([side-rail-and-terminals.md](side-rail-and-terminals.md)).
   A strip with no pins is hidden. A pin can be dragged from any strip to any
-  other, or to another place in its own strip: while a pin is dragged all four
-  strips show with a dashed outline, even empty ones, and a line marks where it
-  will land (`handleWorkflowPinEvent`). The drop saves the new order with
+  other, or to another place in its own strip: while a pin is dragged the three
+  strips, even empty ones, and the side rail show a dashed outline, and a line
+  marks where it will land (`handleWorkflowPinEvent`; the side rail draws its
+  own accent line). The drop saves the new order with
   `rw::movePin`, which keeps the pin's slot among the pins of the target strip.
   Strips do not rebuild during a drag (`m_workflowPinDragging`), because a
   rebuild deletes the pin buttons, the dragged one included.
