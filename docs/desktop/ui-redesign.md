@@ -1235,6 +1235,19 @@ design tokens.
   moved to the right of the same row, and the hairline between sections at
   the top of each section instead of under its title (hidden on the first
   visible one). 28 px above and below an open section.
+- **Lit heading.** In October 2026 the user asked for the heading on the page
+  to light up with the entry lit in the list, so the eye can find where a
+  jump landed. `SettingsSectionsView::syncLitHeading` runs whenever the lit
+  list row or sub-row changes and sets `settingsLit` on exactly the label the
+  list lights: the sub-section's `sectionLabel` when a sub-row is lit, the
+  section title otherwise. Next paints it `accentFg` on `accentSubtle`; Classic
+  uses the list's selection blue. Titles and sub-headings carry the same
+  padding lit or not, so lighting one never moves the page.
+- **Outline check.** `forkmesh-window-tests --settings-outline-only` (add
+  `--next` for the new interface) opens every section and fails if a group
+  card on the page has no heading in the list, if the list and the page
+  disagree on the sub-headings, or if a section's heading does not light up.
+  It also checks that searching for "halloween" finds the Halloween switch.
 - **Groups and rows** (`polishNextSettingsBody`, run on each section body as it
   is built, eager or lazy):
   - In every section card (`sectionCard`) whose column starts with a

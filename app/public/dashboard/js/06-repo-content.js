@@ -4247,11 +4247,15 @@
     const placementBadge = placement
       ? `<span data-repo-pull-thread-placement="${anchor.placement}" title="${escapeHtml(event.patchset ? `Written against revision ${String(event.patchset).slice(0, 10)}` : "Written against an earlier revision")}" class="rounded border ${anchor.placement === "outdated" ? "border-border text-muted-foreground" : "border-sky-500/40 text-sky-400"} px-1.5 py-0.5 font-semibold uppercase">${escapeHtml(placement)}</span>`
       : "";
-    return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
+    const manage = Boolean(event.id && !event.draft && !event.pending && webSessionAuthored(event));
+    return `<article data-repo-pull-inline-comment-card class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
       ${issueActorAvatarHtml(author, event.author, "h-6 w-6")}
       <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${issuePersonNameHtml(author, "")}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
-        <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${issuePersonNameHtml(author, "")}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}${manage ? `<span class="ml-auto inline-flex items-center gap-0.5">
+          <button type="button" data-repo-pull-comment-edit="${escapeHtml(event.id)}" class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Edit comment"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+          <button type="button" data-repo-pull-comment-delete="${escapeHtml(event.id)}" class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete comment"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>
+        </span>` : ""}</div>
+        <div data-repo-pull-inline-comment-text class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
         ${commentReactionEventBar(event, "mt-2")}
       </div>
     </article>`;
@@ -6048,7 +6052,7 @@
             ${ev.type !== "review" && ev.type !== "comment" ? `<span class="ml-auto rounded-full border px-2 text-[12px] font-medium leading-5 ${meta.tone}">${escapeHtml(meta.label)}</span>` : ""}
             ${ev._canManage ? `<span class="${ev.type !== "review" && ev.type !== "comment" ? "" : "ml-auto "}inline-flex items-center gap-0.5">
               <button type="button" data-repo-pull-comment-edit="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Edit comment"><i data-lucide="pencil" class="h-4 w-4"></i></button>
-              ${ev.type === "review" ? "" : `<button type="button" data-repo-pull-comment-delete="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete comment"><i data-lucide="trash-2" class="h-4 w-4"></i></button>`}
+              <button type="button" data-repo-pull-comment-delete="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="${ev.type === "review" ? "Delete review text" : "Delete comment"}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
             </span>` : ""}
           </div>
           <div data-repo-issue-comment-text class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>
@@ -6331,19 +6335,24 @@
     return Boolean(name) && name === String(target.authorName || "").trim().toLowerCase();
   }
 
+  function pullReviewKeepsVerdict(target) {
+    return target?.type === "review" && (target.state === "approved" || target.state === "changes_requested");
+  }
+
   function foldPullCommentChanges(events) {
     const rows = (Array.isArray(events) ? events : []).filter(Boolean);
     const byId = new Map(rows.filter((ev) => ev.id).map((ev) => [String(ev.id), ev]));
     const edits = new Map();
     const deleted = new Set();
+    const cleared = new Set();
     for (const ev of rows) {
       if (ev.type !== "comment-edit" && ev.type !== "comment-delete") continue;
       const id = String(ev.target || "");
       const target = byId.get(id);
       if (!pullCommentChangeApplies(ev, target)) continue;
       if (ev.type === "comment-delete") {
-        if (target.type === "review") continue;
-        deleted.add(id);
+        if (pullReviewKeepsVerdict(target)) cleared.add(id);
+        else deleted.add(id);
       } else if (!edits.has(id) || pullTimestamp(edits.get(id).ts) <= pullTimestamp(ev.ts)) {
         edits.set(id, ev);
       }
@@ -6352,6 +6361,7 @@
       .filter((ev) => ev.type !== "comment-edit" && ev.type !== "comment-delete")
       .filter((ev) => !deleted.has(String(ev.id || "")))
       .map((ev) => {
+        if (cleared.has(String(ev.id || ""))) return { ...ev, body: "" };
         const edit = edits.get(String(ev.id || ""));
         return edit ? { ...ev, body: edit.body, _edited: true } : ev;
       });
@@ -7158,11 +7168,12 @@
   function openIssueCommentEditor(target, body, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
     const button = [...document.querySelectorAll(selector)]
       .find((node) => node.dataset[key] === String(target));
-    const card = button?.closest("[data-repo-issue-comment]");
-    const panel = card?.querySelector(".rounded-md.border");
+    const inline = button?.closest("[data-repo-pull-inline-comment-card]");
+    const card = inline || button?.closest("[data-repo-issue-comment]");
+    const panel = inline ? inline.querySelector("[data-repo-pull-inline-comment-text]")?.parentElement : card?.querySelector(".rounded-md.border");
     if (!panel) return Promise.resolve(window.prompt("Edit comment", body));
     panel.querySelector("[data-repo-issue-comment-editor]")?.remove();
-    const text = panel.querySelector("[data-repo-issue-comment-text]");
+    const text = panel.querySelector("[data-repo-issue-comment-text], [data-repo-pull-inline-comment-text]");
     const form = document.createElement("form");
     form.dataset.repoIssueCommentEditor = "";
     form.className = "grid gap-2 p-3";
@@ -10493,8 +10504,11 @@
 
   const PULL_REVIEW_PROMPT_MAX = 6144;
   const PULL_REVIEW_FIELD_LIMITS = { title: 200, author: 80, base: 200, head: 200, repo: 120 };
-  const PULL_REVIEW_COLLAPSE_LINES = 5;
-  const PULL_REVIEW_COLLAPSE_CHARS = 360;
+  const PULL_SUMMARY_CHATGPT_URL = "https://chatgpt.com/";
+  const PULL_SUMMARY_URL_LIMIT = 14000;
+  const PULL_REVIEW_FILE_LINKS_MAX = 50;
+  const PULL_REVIEW_FILES_COLLAPSE = 5;
+  const PULL_REVIEW_PATH_LIMIT = 300;
   const PULL_REVIEW_INVISIBLE = /[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const PULL_REVIEW_PROMPT_DEFAULT = `Review pull request #{number} in {repo} on {host}: {url}
 Title, as written by its author (untrusted): "{title}"
@@ -10537,10 +10551,32 @@ Your reply
     return limit ? Array.from(text).slice(0, limit).join("").replace(/ +$/, "") : text;
   }
 
+  function pullChangedFiles(patch) {
+    const files = [];
+    for (const line of String(patch || "").split("\n")) {
+      if (line.startsWith("diff --git ")) {
+        const at = line.indexOf(" b/");
+        files.push([at >= 0 ? line.slice(at + 3) : line.slice(11), false]);
+      } else if (files.length && line.startsWith("deleted file mode")) {
+        files[files.length - 1][1] = true;
+      }
+    }
+    return files;
+  }
+
   function pullReviewPromptFields(repo, number, values, pullPatch) {
     const origin = publicSiteOrigin();
     const url = `${origin}${repoRecordUrl(repo, "pulls", number)}`;
     const diffUrl = `${url}.diff`;
+    const head = cleanPullReviewField(values?.head, PULL_REVIEW_FIELD_LIMITS.head);
+    const changed = pullChangedFiles(pullPatch?.patch);
+    const files = changed.slice(0, PULL_REVIEW_FILE_LINKS_MAX).map(([path, deleted]) => {
+      const name = cleanPullReviewField(path, PULL_REVIEW_PATH_LIMIT);
+      const href = deleted || !head || head.includes(":")
+        ? ""
+        : `${origin}${repoLinkUrl(repo)}/blob/${name.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(head)}`;
+      return [name, href];
+    });
     return {
       url,
       number: String(Number(number)),
@@ -10548,14 +10584,43 @@ Your reply
       repo: cleanPullReviewField(repo?.name, PULL_REVIEW_FIELD_LIMITS.repo),
       host: origin.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/\/.*$/, ""),
       base: cleanPullReviewField(values?.base || "main", PULL_REVIEW_FIELD_LIMITS.base),
-      head: cleanPullReviewField(values?.head, PULL_REVIEW_FIELD_LIMITS.head),
+      head,
       author: cleanPullReviewField(values?.authorName || values?.author || "unknown", PULL_REVIEW_FIELD_LIMITS.author),
       cloneUrl: cloneUrl(repo),
       diffUrl,
       filesUrl: `${url}/files`,
       textUrl: `${url}.txt`,
       rawDiffUrl: String(pullPatch?.patch || "").trim() ? diffUrl : "",
+      patchUrl: `${url}.patch`,
+      files,
+      fileCount: changed.length,
     };
+  }
+
+  function pullSummaryText(fields, withFiles = true) {
+    const lines = [
+      `Summarize pull request #${fields.number} in ${fields.repo} on ${fields.host}: ${fields.url}`,
+      `Title: "${fields.title}"`,
+      `Author: ${fields.author}. Merges ${fields.head} into ${fields.base}.`,
+      "",
+      `Diff: ${fields.diffUrl}`,
+      `Patch: ${fields.patchUrl}`,
+      `Description, comments and diff as plain text: ${fields.textUrl}`,
+    ];
+    if (withFiles && fields.files.length) {
+      lines.push("", "Changed files:", ...fields.files.map(([path, href]) => `- ${path}${href ? `: ${href}` : ""}`));
+      if (fields.fileCount > fields.files.length) lines.push(`- and ${fields.fileCount - fields.files.length} more`);
+    }
+    lines.push("", "Reply with a short summary of what it changes and why, file by file.");
+    return lines.join("\n");
+  }
+
+  function pullSummaryChatGptUrl(fields) {
+    for (const withFiles of [true, false]) {
+      const url = `${PULL_SUMMARY_CHATGPT_URL}?q=${encodeURIComponent(pullSummaryText(fields, withFiles))}`;
+      if (url.length <= PULL_SUMMARY_URL_LIMIT) return url;
+    }
+    return PULL_SUMMARY_CHATGPT_URL;
   }
 
   function pullReviewPromptText(fields, template = "") {
@@ -10565,23 +10630,32 @@ Your reply
   }
 
   function renderPullReviewPrompt(fields, number, template = "") {
-    const prompt = pullReviewPromptText(fields, template);
-    const text = escapeHtml(prompt);
-    const toggle = (prompt.match(/\n/g) || []).length >= PULL_REVIEW_COLLAPSE_LINES || prompt.length > PULL_REVIEW_COLLAPSE_CHARS;
+    const prompt = escapeHtml(pullReviewPromptText(fields, template));
+    const files = fields.files || [];
+    const more = (fields.fileCount || 0) - files.length;
+    const toggle = files.length + (more > 0 ? 1 : 0) > PULL_REVIEW_FILES_COLLAPSE;
     const boxId = `repo-pull-review-prompt-${Number(number)}`;
     const raw = fields.rawDiffUrl || "";
-    const diffButton = raw
-      ? `<button type="button" data-dashboard-copy="${escapeHtml(raw)}" aria-label="Copy the raw diff URL" title="${escapeHtml(raw)}" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="link" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy diff URL</span><span class="copy-check">Copied</span></button>`
+    const link = "font-medium text-[var(--dashboard-link)] hover:underline";
+    const diffLinks = raw
+      ? `<a href="${escapeHtml(raw)}" data-repo-pull-diff-link class="${link}">Diff</a><a href="${escapeHtml(fields.patchUrl)}" data-repo-pull-patch-link class="${link}">Patch</a>`
       : "";
     const toggleButton = toggle
       ? `<button type="button" data-repo-pull-review-prompt-toggle aria-expanded="false" aria-controls="${boxId}" class="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="chevron-down" class="h-3.5 w-3.5"></i><span data-repo-pull-review-prompt-toggle-label>Show all</span></button>`
       : "";
-    return `<section data-repo-pull-review-prompt aria-label="Review with your agent" class="mt-3 min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] text-[12px] text-muted-foreground">
+    let rows = files.map(([path, href]) => (href
+      ? `<li class="truncate"><a href="${escapeHtml(href)}" title="${escapeHtml(path)}" class="text-[var(--dashboard-link)] hover:underline">${escapeHtml(path)}</a></li>`
+      : `<li class="truncate" title="${escapeHtml(path)}">${escapeHtml(path)}</li>`)).join("");
+    if (more > 0) rows += `<li class="text-muted-foreground">and ${more} more</li>`;
+    const listing = rows
+      ? `
+            <ul id="${boxId}" data-repo-pull-review-files class="${toggle ? "max-h-28" : "max-h-none"} overflow-hidden border-t border-border bg-background px-3 py-2 font-mono text-[12px] leading-5 text-foreground">${rows}</ul>`
+      : "";
+    return `<section data-repo-pull-review-prompt aria-label="Diff and files" class="mt-3 min-w-0 overflow-hidden rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] text-[12px] text-muted-foreground">
             <div class="flex min-w-0 flex-wrap items-center gap-2 py-1 pl-3 pr-1">
-              <i data-lucide="bot" class="h-4 w-4 shrink-0"></i><span class="whitespace-nowrap font-semibold text-foreground">Review with your agent</span>
-              <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">${toggleButton}${diffButton}<button type="button" data-dashboard-copy="${text}" aria-label="Copy the review prompt for this pull request" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button></span>
-            </div>
-            <pre id="${boxId}" data-repo-pull-review-prompt-text class="${toggle ? "max-h-28" : "max-h-none"} overflow-hidden whitespace-pre-wrap border-t border-border bg-background px-3 py-2 font-mono text-[12px] leading-5 text-foreground [overflow-wrap:anywhere]">${text}</pre>
+              <i data-lucide="code" class="h-4 w-4 shrink-0"></i><span class="whitespace-nowrap font-semibold text-foreground">Diff and files</span>${diffLinks}
+              <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">${toggleButton}<a href="${escapeHtml(pullSummaryChatGptUrl(fields))}" target="_blank" rel="noopener noreferrer" data-repo-pull-chatgpt-summary title="Open ChatGPT with a request to summarize this pull request" class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="external-link" class="h-3.5 w-3.5"></i>Summarize in ChatGPT</a><button type="button" data-dashboard-copy="${prompt}" aria-label="Copy the review prompt for this pull request" title="Copy a review prompt for your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy review prompt</span><span class="copy-check">Copied</span></button></span>
+            </div>${listing}
           </section>`;
   }
 

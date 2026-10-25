@@ -20,6 +20,21 @@ pane embeds it; when it does not, the pane shows the address and opens pages in
 the system browser, as before. `-DFORKMESH_BROWSER_PANE=OFF` forces the system
 browser. On Debian and Ubuntu the package is `qt6-webengine-dev`.
 
+The installer's source build installs that package when it is missing
+(`ensure_webengine` in `www/public/install.sh`: `qt6-webengine-dev`,
+`qt6-qtwebengine-devel`, `qt6-webengine`, `qt6-webengine-devel` or
+`qt6-qtwebengine-dev` by package manager). It is optional: a failed install only
+warns, because the build works without it, but the Browser tab, agent browser
+windows and the Video Mix DJ Studio's YouTube decks then open outside the app.
+
+A build tree configured before WebEngine was installed caches
+`Qt6WebEngineWidgets_DIR-NOTFOUND`, and Rebuild & restart and `desktop/run.sh`
+skip the configure step, so installing the package used to change nothing until
+someone deleted the build. When the lookup fails, CMake now adds Qt's CMake
+folder (the parent of `Qt6_DIR`) to `CMAKE_CONFIGURE_DEPENDS`. Installing any Qt
+module adds a folder there, Ninja sees the new modification time and re-runs
+CMake, and the lookup finds WebEngine on the next build.
+
 The option used to default to `OFF` even though the app already linked
 WebEngine for agent windows, so most builds had a Browser tab that could not
 show a page.
