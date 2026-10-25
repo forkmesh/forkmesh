@@ -177,6 +177,7 @@ QWidget *labeledField(const QString &label, QWidget *field,
                       QWidget *parent = nullptr);
 
 inline constexpr int kCellDisplayChars = 512;
+inline constexpr int kDataTableFitRows = 100;
 QString cellDisplayText(const QString &text, int maxChars = kCellDisplayChars);
 
 void installStockPolish();

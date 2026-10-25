@@ -115,13 +115,16 @@
     background-color: @surfaceActive; border-color: @borderStrong; color: @fg;
 }
 #promptWrapper QPushButton#quickAddSendIcon:pressed { background-color: @surface; }
-#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"] {
+#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"],
+#promptWrapper QPushButton#quickAddGenieButton[enterTarget="true"] {
     background-color: @accent; border-color: @accent; color: @onAccent; font-weight: 600;
 }
-#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"]:hover {
+#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"]:hover,
+#promptWrapper QPushButton#quickAddGenieButton[enterTarget="true"]:hover {
     background-color: @accentHover; border-color: @accentHover; color: @onAccent;
 }
-#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"]:pressed {
+#promptWrapper QPushButton#quickAddSendIcon[enterTarget="true"]:pressed,
+#promptWrapper QPushButton#quickAddGenieButton[enterTarget="true"]:pressed {
     background-color: @accentPressed; border-color: @accentPressed;
 }
 #promptWrapper QPushButton#quickAddSendIcon:disabled,

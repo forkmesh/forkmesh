@@ -1018,6 +1018,7 @@ void MainWindow::updateQuickAddEnterTarget()
             m_issueQuickAdd->setPlaceholderText(prompt.placeholder);
         for (QPushButton *button : {m_quickAddSendToAgentButton, m_quickAddSendButton})
             tintComposerActionButton(button);
+        refreshQuickAddSendToChannelButton();
         return;
     }
     const int target = quickAddFollowUpAgentSessionId();
