@@ -37,3 +37,30 @@ QLabel#usersNextShown {
 QTableWidget#usersTable, QTableWidget#usersQuarantineTable {
     border-radius: 12px;
 }
+
+QFrame#usersDetailPanel {
+    background-color: @bg; border: none; border-left: 1px solid @border;
+}
+QWidget#usersDetailHeader { background: transparent; border-bottom: 1px solid @border; }
+QLabel#usersDetailTitle { color: @fg; font-size: 13px; font-weight: 600; background: transparent; }
+QPushButton#usersDetailClose {
+    background: transparent; border: none; border-radius: 6px; padding: 0px;
+}
+QPushButton#usersDetailClose:hover { background-color: @surfaceRaised; }
+QPushButton#usersDetailClose:pressed { background-color: @surfaceActive; }
+QScrollArea#usersDetailScroll { background: transparent; border: none; }
+QScrollArea#usersDetailScroll > QWidget#qt_scrollarea_viewport { background: transparent; }
+QWidget#usersDetailContent { background: transparent; }
+QLabel#usersDetailAvatar { background: transparent; }
+QLabel#usersDetailName { color: @fg; font-size: 16px; font-weight: 600; background: transparent; }
+QLabel#usersDetailHandle { color: @fgMuted; font-size: 13px; background: transparent; }
+QLabel#usersDetailStatus { color: @fgSecondary; font-size: 13px; background: transparent; }
+QLabel#usersDetailBadge {
+    color: @fgSecondary; background-color: @surfaceActive; border-radius: 5px;
+    padding: 1px 6px; font-size: 11px; font-weight: 500;
+}
+QLabel#usersDetailSection {
+    color: @fgSubtle; font-size: 11px; font-weight: 600; background: transparent;
+}
+QLabel#usersDetailKey { color: @fgMuted; font-size: 12px; background: transparent; }
+QLabel#usersDetailValue { color: @fg; font-size: 12px; background: transparent; }

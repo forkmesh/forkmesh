@@ -32,7 +32,8 @@ enum HostsFeature {
         if Services.get(DesktopControlHub.self) != nil { return }
         let local: LocalControlService? = Services.get(LocalControlService.self)
         let hub = DesktopControlHub(
-            local: local, openRelay: HostsFeature.relayOpener(), accountDesktops: HostsFeature.accountDesktops())
+            local: local, openRelay: HostsFeature.relayOpener(), accountDesktops: HostsFeature.accountDesktops(),
+            store: Services.get(KeyValueStore.self))
         Services.put(hub)
         Services.put(hub, as: ShellLocalDesktopBridge.self)
         let center = AgentControlCenter(hub: hub, cloud: Services.get(ApiService.self))

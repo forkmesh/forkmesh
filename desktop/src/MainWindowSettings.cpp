@@ -11776,6 +11776,14 @@ void MainWindow::renderPageNotices(bool force)
     for (const QPointer<QWidget> &row : std::as_const(m_pageNoticeRows)) {
         if (!row)
             continue;
+        if (auto *shown = dynamic_cast<kit::InlineNotice *>(row.data())) {
+            const quint64 shownId = shown->property("pageNoticeId").toULongLong();
+            for (PageNotice &notice : m_pageNotices) {
+                if (notice.id == shownId)
+                    notice.countdownElapsedMs = shown->countdownElapsed();
+            }
+            shown->stopCountdown();
+        }
         m_pageNoticeLayout->removeWidget(row);
         row->hide();
         row->deleteLater();
@@ -11831,6 +11839,8 @@ void MainWindow::renderPageNotices(bool force)
         QPushButton *clear = row->addCloseButton();
         connect(clear, &QPushButton::clicked, this,
                 [this, id] { clearPageNotice(id); });
+        row->startCountdown(m_pageNoticeCountdownMs, notice.countdownElapsedMs,
+                            [this, id] { clearPageNotice(id); });
         m_pageNoticeLayout->addWidget(row);
         m_pageNoticeRows.append(row);
     }
@@ -11908,6 +11918,42 @@ void MainWindow::testClickPageNoticeClear()
     if (QPushButton *clear =
             firstNoticeAction(m_pageNoticeRows, QStringLiteral("clear")))
         clear->click();
+}
+
+static kit::InlineNotice *firstNoticeRow(const QList<QPointer<QWidget>> &rows)
+{
+    for (const QPointer<QWidget> &row : rows) {
+        if (auto *notice = dynamic_cast<kit::InlineNotice *>(row.data()))
+            return notice;
+    }
+    return nullptr;
+}
+
+bool MainWindow::testPageNoticeCountingDown() const
+{
+    kit::InlineNotice *row = firstNoticeRow(m_pageNoticeRows);
+    return row && row->countdownRunning();
+}
+
+bool MainWindow::testPageNoticeCountdownPaused() const
+{
+    kit::InlineNotice *row = firstNoticeRow(m_pageNoticeRows);
+    return row && row->countdownPaused();
+}
+
+void MainWindow::testHoverPageNotice(bool inside)
+{
+    kit::InlineNotice *row = firstNoticeRow(m_pageNoticeRows);
+    if (!row)
+        return;
+    if (inside) {
+        const QPointF local(row->rect().center());
+        QEnterEvent enter(local, local, QPointF(row->mapToGlobal(local)));
+        QCoreApplication::sendEvent(row, &enter);
+    } else {
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(row, &leave);
+    }
 }
 
 QString MainWindow::testLoadStatusText() const

@@ -1,5 +1,6 @@
 #include "FleetAutoscalePanel.h"
 #include "../src/ActionStore.h"
+#include "../src/DesktopBuildCommit.h"
 #include "../src/MainWindow.h"
 #include "../src/MainWindowInternal.h"
 #include "../src/MainWindowNextAccess.h"
@@ -3685,6 +3686,162 @@ void checkPrivateChatNotFiledAsPing(MainWindow &window)
           QStringLiteral("joining a private channel drops its stored pings"));
 }
 
+void checkUsersDetailRail(MainWindow &window)
+{
+    window.testSetAdmin(true);
+    window.testShowUsersSection();
+    QImage face(8, 8, QImage::Format_RGB32);
+    face.fill(Qt::darkCyan);
+    QByteArray facePng;
+    QBuffer faceBuffer(&facePng);
+    faceBuffer.open(QIODevice::WriteOnly);
+    face.save(&faceBuffer, "PNG");
+    window.testApplyUsersDirectory(QJsonArray{
+        QJsonObject{{QStringLiteral("name"), QStringLiteral("rail-pictured")},
+                    {QStringLiteral("kind"), QStringLiteral("user")},
+                    {QStringLiteral("avatarPng"),
+                     QString::fromLatin1(facePng.toBase64())},
+                    {QStringLiteral("email"),
+                     QStringLiteral("pictured@example.test")},
+                    {QStringLiteral("discordUsername"),
+                     QStringLiteral("pictured.discord")},
+                    {QStringLiteral("discordDisplayName"),
+                     QStringLiteral("Pictured Person")},
+                    {QStringLiteral("discordLinked"), true},
+                    {QStringLiteral("discordFingerprint"),
+                     QStringLiteral("discord-fingerprint-for-pictured")},
+                    {QStringLiteral("isAdmin"), true},
+                    {QStringLiteral("signupIp"), QStringLiteral("203.0.113.7")},
+                    {QStringLiteral("referredBy"), QStringLiteral("rail-plain")},
+                    {QStringLiteral("status"), QStringLiteral("active")},
+                    {QStringLiteral("commits"), 40.0},
+                    {QStringLiteral("createdAt"), 1700000000000.0},
+                    {QStringLiteral("achievementBadges"),
+                     QJsonArray{QStringLiteral("coder")}},
+                    {QStringLiteral("userStatus"),
+                     QJsonObject{{QStringLiteral("text"),
+                                  QStringLiteral("Reviewing pulls")}}},
+                    {QStringLiteral("nodes"), QJsonArray{}}},
+        QJsonObject{{QStringLiteral("name"), QStringLiteral("rail-plain")},
+                    {QStringLiteral("kind"), QStringLiteral("user")},
+                    {QStringLiteral("email"),
+                     QStringLiteral("plain@example.test")},
+                    {QStringLiteral("status"), QStringLiteral("active")},
+                    {QStringLiteral("createdAt"), 1600000000000.0},
+                    {QStringLiteral("nodes"),
+                     QJsonArray{QStringLiteral("rail-node")}}},
+    });
+    window.testApplyUsersQuarantine(QJsonArray{QJsonObject{
+        {QStringLiteral("name"), QStringLiteral("rail-held")},
+        {QStringLiteral("email"), QStringLiteral("held@example.test")},
+        {QStringLiteral("quarantineStatus"),
+         QStringLiteral("pending_verification")},
+        {QStringLiteral("quarantineReasons"),
+         QJsonArray{QStringLiteral("rapid_referrer_signups")}},
+        {QStringLiteral("quarantinedAt"), 1720000000000.0},
+    }});
+    window.testShowUsersTab(0);
+    window.testSortUsersBy(QStringLiteral("Joined"), Qt::DescendingOrder);
+
+    auto *panel = window.findChild<QFrame *>(QStringLiteral("usersDetailPanel"));
+    const auto value = [&window](const QString &field) {
+        const QList<QLabel *> values =
+            window.findChildren<QLabel *>(QStringLiteral("usersDetailValue"));
+        for (const QLabel *label : values)
+            if (label->property("usersDetailField").toString() == field)
+                return label->text();
+        return QString();
+    };
+    const auto text = [&window](const QString &name) {
+        const auto *label = window.findChild<QLabel *>(name);
+        return label ? label->text() : QString();
+    };
+    check(panel && panel->isHidden(),
+          QStringLiteral("Users keeps the profile rail closed until a person "
+                         "is clicked"));
+    const auto shown = [&window, &text] {
+        QStringList parts{text(QStringLiteral("usersDetailName")),
+                          text(QStringLiteral("usersDetailHandle")),
+                          text(QStringLiteral("usersDetailStatus"))};
+        const QList<QLabel *> values =
+            window.findChildren<QLabel *>(QStringLiteral("usersDetailValue"));
+        for (const QLabel *label : values)
+            parts.append(label->property("usersDetailField").toString() +
+                         QLatin1Char('=') + label->text());
+        return parts.join(QStringLiteral("; "));
+    };
+
+    window.testClickUsersRow(0);
+    const QLabel *avatar =
+        window.findChild<QLabel *>(QStringLiteral("usersDetailAvatar"));
+    QStringList sections;
+    for (const QLabel *section :
+         window.findChildren<QLabel *>(QStringLiteral("usersDetailSection")))
+        sections.append(section->text());
+    QStringList badges;
+    for (const QLabel *badge :
+         window.findChildren<QLabel *>(QStringLiteral("usersDetailBadge")))
+        badges.append(badge->text());
+    check(panel && !panel->isHidden() &&
+              text(QStringLiteral("usersDetailName")) ==
+                  QStringLiteral("Pictured Person") &&
+              text(QStringLiteral("usersDetailHandle")) ==
+                  QStringLiteral("@rail-pictured") &&
+              text(QStringLiteral("usersDetailStatus")) ==
+                  QStringLiteral("Reviewing pulls") &&
+              badges.contains(QStringLiteral("Admin")) &&
+              value(QStringLiteral("Email")) ==
+                  QStringLiteral("pictured@example.test") &&
+              value(QStringLiteral("Signup IP")) ==
+                  QStringLiteral("203.0.113.7") &&
+              value(QStringLiteral("Commits")) == QStringLiteral("40") &&
+              value(QStringLiteral("Referred by")) ==
+                  QStringLiteral("rail-plain") &&
+              value(QStringLiteral("Discord fingerprint")) ==
+                  QStringLiteral("discord-fingerprint-for-pictured") &&
+              value(QStringLiteral("Badges")) == QStringLiteral("coder") &&
+              !sections.contains(QStringLiteral("Other")),
+          QStringLiteral("clicking a user opens a profile rail with every "
+                         "directory field, grouped (%1 | %2 | %3)")
+              .arg(sections.join(QStringLiteral(", ")),
+                   badges.join(QStringLiteral(", ")), shown()));
+    check(avatar && !avatar->pixmap().isNull() &&
+              avatar->property("usersDetailUploaded").toBool(),
+          QStringLiteral("the profile rail shows the user's uploaded picture"));
+
+    window.testClickUsersRow(1);
+    avatar = window.findChild<QLabel *>(QStringLiteral("usersDetailAvatar"));
+    check(text(QStringLiteral("usersDetailName")) ==
+                  QStringLiteral("rail-plain") &&
+              value(QStringLiteral("Nodes")).contains(
+                  QStringLiteral("rail-node")) &&
+              avatar && !avatar->pixmap().isNull() &&
+              !avatar->property("usersDetailUploaded").toBool(),
+          QStringLiteral("the profile rail follows the clicked user and falls "
+                         "back to their generated portrait (%1)")
+              .arg(shown()));
+
+    window.testShowUsersTab(1);
+    check(panel && panel->isHidden(),
+          QStringLiteral("switching Users tabs closes the other tab's profile"));
+    window.testClickUsersQuarantineRow(0);
+    check(panel && !panel->isHidden() &&
+              value(QStringLiteral("Reasons")) ==
+                  QStringLiteral("rapid_referrer_signups") &&
+              value(QStringLiteral("Email")) ==
+                  QStringLiteral("held@example.test"),
+          QStringLiteral("Quarantine rows open the same profile rail with the "
+                         "review fields"));
+
+    window.testShowUsersTab(0);
+    window.testClickUsersRow(0);
+    window.testSetAdmin(false);
+    check(panel && panel->isHidden() &&
+              window.findChildren<QLabel *>(QStringLiteral("usersDetailValue"))
+                  .isEmpty(),
+          QStringLiteral("losing admin closes and scrubs the profile rail"));
+}
+
 // The Ledger rail opens a page inside the app rather than handing the reader
 // to a browser, and that page is where a pending contributor reward is paid.
 // The rules that matter are which rows get a "Send payment" button: a record
@@ -5756,10 +5913,34 @@ void checkInlinePageNotices(MainWindow &window)
           QStringLiteral("an error replaces the confirmation and its link "
                          "becomes an Open action"));
 
-    QThread::msleep(1200);
+    check(window.testPageNoticeCountingDown(),
+          QStringLiteral("a notice counts down to closing itself"));
+    window.testHoverPageNotice(true);
     QApplication::processEvents();
-    check(window.testPageNoticeVisible(),
-          QStringLiteral("a notice has no countdown and stays where it is"));
+    check(window.testPageNoticeCountdownPaused(),
+          QStringLiteral("hovering a notice pauses its countdown"));
+    window.testHoverPageNotice(false);
+    QApplication::processEvents();
+    check(window.testPageNoticeCountingDown(),
+          QStringLiteral("moving off a notice resumes its countdown"));
+
+    window.testSetPageNoticeCountdownMs(150);
+    window.testFlashMessage(QStringLiteral("Mirror sync finished"));
+    QApplication::processEvents();
+    window.testHoverPageNotice(true);
+    QThread::msleep(300);
+    QApplication::processEvents();
+    check(window.testPageNoticeTexts().contains(
+              QStringLiteral("Mirror sync finished")),
+          QStringLiteral("a hovered notice stays past its countdown"));
+    window.testHoverPageNotice(false);
+    for (int i = 0; i < 40 && window.testPageNoticeVisible(); ++i) {
+        QThread::msleep(20);
+        QApplication::processEvents();
+    }
+    check(!window.testPageNoticeVisible(),
+          QStringLiteral("a notice closes itself when its countdown ends"));
+    window.testSetPageNoticeCountdownMs(5000);
 
     for (int i = 0; i < 5; ++i)
         window.testFlashMessage(QStringLiteral("Clone %1 failed").arg(i), true);
@@ -16015,6 +16196,8 @@ else:
         app.arguments().contains(QStringLiteral("--tip-notice-only"));
     const bool rewardHistoryOnly =
         app.arguments().contains(QStringLiteral("--reward-history-only"));
+    const bool usersDetailOnly =
+        app.arguments().contains(QStringLiteral("--users-detail-only"));
     const bool ledgerOnly =
         app.arguments().contains(QStringLiteral("--ledger-only"));
     const bool pageFindOnly =
@@ -17123,6 +17306,11 @@ else:
     }
     if (ledgerOnly) {
         checkLedgerSection(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+    if (usersDetailOnly) {
+        checkUsersDetailRail(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -22790,6 +22978,17 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             check(version && appPath && version->geometry().left() >=
                                                appPath->geometry().right(),
                   QStringLiteral("clickable version sits to the right of the app path"));
+            const QString buildShort =
+                forkmesh::shortBuildCommit(forkmesh::desktopBuildCommit());
+            check(version &&
+                      version->text() ==
+                          (buildShort.isEmpty()
+                               ? QStringLiteral("v" FORKMESH_VERSION)
+                               : QStringLiteral("v" FORKMESH_VERSION) +
+                                     QString::fromUtf8(" \xC2\xB7 ") +
+                                     buildShort),
+                  QStringLiteral("the version names the short commit the "
+                                 "build is on"));
 
             // Offline mode is the other always-available footer control. It
             // must be compact enough to retain the single-line bar, remember a
@@ -25687,6 +25886,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
           QStringLiteral("losing admin scrubs quarantine evidence from memory"));
     check(!window.testUsersNavButtonVisible(),
           QStringLiteral("losing admin status immediately hides Users"));
+    checkUsersDetailRail(window);
 
     // Files: the rail destination under Network / Users browses the real
     // filesystem, and it lists hidden entries by default — the repo Explorer
