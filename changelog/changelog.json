@@ -12,6 +12,12 @@
      "items": [
       "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
      ]
+    },
+    {
+     "title": "iPhone",
+     "items": [
+      "The iPhone app stays signed in to your instances after the phone restarts."
+     ]
     }
    ]
   },
