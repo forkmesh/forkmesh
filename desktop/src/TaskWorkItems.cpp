@@ -1,5 +1,7 @@
 #include "TaskWorkItems.h"
 
+#include "AgentScratch.h"
+
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
@@ -584,6 +586,7 @@ Outcome removeMerged(const Inspection &inspection)
                                   .arg(inspection.worktreePath, removed.err);
             return outcome;
         }
+        forkmesh::agentscratch::removeAll(inspection.worktreePath);
     }
     if (inspection.branchExists) {
         const GitResult deleted =
@@ -691,6 +694,7 @@ Outcome removeWithBackup(const Inspection &inspection, const QString &taskId)
                                   .arg(trash, inspection.worktreePath, removed.err);
             return outcome;
         }
+        forkmesh::agentscratch::removeAll(inspection.worktreePath);
     }
     if (inspection.branchExists) {
         const GitResult deleted =

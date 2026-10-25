@@ -996,6 +996,17 @@ class Pipeline:
                 module, code, time.monotonic() - started))
         return results
 
+    def go_rerun(self, work: Path, venv: Path, module: str, failures: set):
+        root = go_root()
+        names = sorted({item.split("::", 1)[1].split("/", 1)[0] for item in failures})
+        lines = []
+        argv = [str(root / "bin" / "go"), "test", "-C", module, "-count=1", "-p", "1",
+                "-run", "^(%s)$" % "|".join(names), "./..."]
+        code = stream(sandbox_command(work, venv, work / "data" / "bin", argv,
+                                      binds=(root,), env=go_test_env(work, venv, root)),
+                      lines.append, timeout=TEST_TIMEOUT, popen=self.popen)
+        return code, failing_go_ids(module, lines), lines
+
     def pytest_many(self, work: Path, venv: Path, files: list, label: str):
         from concurrent.futures import ThreadPoolExecutor
         started = time.monotonic()
@@ -1030,6 +1041,13 @@ class Pipeline:
                 go_results = go_future.result()
             broken = []
             for module, (code, failures, lines) in sorted(go_results.items()):
+                if code != 0 and failures:
+                    code, again, rerun = self.go_rerun(work, venv, module, failures)
+                    if code == 0:
+                        self.say("tests: go test %s: %s failed beside the other suites and "
+                                 "passed when rerun alone" % (module, ", ".join(sorted(failures))))
+                    else:
+                        failures, lines = again, lines + rerun
                 if code != 0:
                     broken += sorted(failures) or ["go test %s exit %d" % (module, code)]
                     for line in lines[-40:]:

@@ -186,6 +186,11 @@
           <time class="when" datetime="2026-10-25">October 25, 2026</time>
         </div>
         <div class="release-body">
+          <h3>Agents</h3>
+          <ul>
+            <li>Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk.</li>
+          </ul>
+          <h3>Desktop</h3>
           <ul>
             <li>The Network page's node list is much narrower: each cell shows two facts, one per line, the node's role, owner, place and version sit under its name, columns that are empty for the current filter are hidden, and sorting moved to a Sort menu on the All / Core / Runners bar.</li>
           </ul>
@@ -220,10 +225,12 @@
           <h3>Chat</h3>
           <ul>
             <li>Links to a channel or direct message open it even on a freshly loaded chat page.</li>
+            <li>In a chat room the desktop prompt bar highlights its chat button, since that is what Enter sends with.</li>
           </ul>
           <h3>Agents</h3>
           <ul>
             <li>Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first.</li>
+            <li>Claude Code agents now show up as sessions in the Claude desktop app's Code tab, where you can read and resume them; use Open in Claude app from an agent's menu, or turn it off in Settings &gt; Agents.</li>
           </ul>
           <h3>World</h3>
           <ul>
@@ -266,12 +273,15 @@
             <li>The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person.</li>
             <li>Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.</li>
             <li>Notes open in the rendered preview; switch to Write to edit.</li>
+            <li>Logs → Desktop now shows each CPU thread's load, clock and temperature, split into performance and efficiency cores, beside the CPU governor, energy preference, turbo, memory pressure, huge page and swap settings.</li>
+            <li>Long data tables no longer freeze for a second or two when a cell updates.</li>
           </ul>
           <h3>Server</h3>
           <ul>
             <li>Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.</li>
             <li>Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so.</li>
             <li>The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you.</li>
+            <li>Deploy nodes runs deploy again when Action sandboxes are on a TMP disk.</li>
           </ul>
         </div>
       </section>
