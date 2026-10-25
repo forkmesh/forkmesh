@@ -3415,6 +3415,8 @@ public:
     QString testBrowsedBranch() const { return m_repoBranch; }
     void testSwitchToAgentBranch(int sessionId) { switchToAgentBranch(sessionId); }
     int testCommitWorkspacePage() const;
+    void testApplyGitLayout() { applyGitLayout(); }
+    QString testGitLayoutState() const;
     QString testBranchDiffBranch() const { return m_branchDiffBranch; }
     QString testBranchDiffDragComment(const QString &path, int fromLine,
                                       int toLine);
@@ -4721,6 +4723,7 @@ private:
     void updateRepoSwitcher();     // refresh top-bar repo label / count
     void refreshRepoSyncIndicators();
     void refreshSourceControlOutgoing();
+    void applyGitLayout();
     void updateScmCommitControlVisibility();
     void pushCurrentRepoUpstream();
     void undoLatestOutgoingCommit();
