@@ -325,8 +325,19 @@ export function createWorldVoice(host) {
       onGesture: (gesture) => react(gesture, { fromGesture: true }),
     });
     void ensureAnchors(module);
-    const ready = await capture.ready;
+    let ready = false;
+    try {
+      ready = await capture.ready;
+    } catch (error) {
+      scope.console?.warn?.("World camera: face tracking failed to start", error);
+    }
     if (!ready) {
+      capture?.stop();
+      capture = null;
+      if (state.sendVideo && camStream) {
+        host.notify("This browser cannot follow your face, so your camera sends video only.");
+        return true;
+      }
       host.notify("This browser cannot follow your face. Your avatar stays as it is.");
       stopCapture();
       return false;
@@ -935,7 +946,7 @@ export function createWorldVoice(host) {
       if (figure) figure.hidden = true;
       leave();
       closeMic();
-      if (capture) stopCapture();
+      if (capture || camStream) stopCapture();
       stopMeter();
       for (const timer of timers) scope.clearInterval(timer);
       if (rafId) scope.cancelAnimationFrame?.(rafId);
