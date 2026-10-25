@@ -10099,6 +10099,40 @@ void checkButtonPlacement(MainWindow &window)
                           QStringLiteral("Reset button placement")},
           QStringLiteral("a moved button offers to move back and to reset"));
 
+    const auto dropRailItemOn = [](QWidget *target, const QString &key) {
+        if (!target)
+            return false;
+        QMimeData mime;
+        mime.setData(QStringLiteral("application/x-forkmesh-rail-item"), key.toUtf8());
+        const QPoint at = target->rect().center();
+        QDragEnterEvent enter(at, Qt::MoveAction, &mime, Qt::LeftButton,
+                              Qt::NoModifier);
+        QApplication::sendEvent(target, &enter);
+        if (!enter.isAccepted())
+            return false;
+        QDropEvent drop(QPointF(at), Qt::MoveAction, &mime, Qt::LeftButton,
+                        Qt::NoModifier);
+        QApplication::sendEvent(target, &drop);
+        QApplication::processEvents();
+        return drop.isAccepted();
+    };
+    QWidget *tabPanel = window.testRepoTabRowPanel();
+    check(tabPanel && tabPanel->acceptDrops() && dropRailItemOn(tabPanel, pulls) &&
+              window.testRepoTabRowKeys().contains(pulls) &&
+              !window.testRailOrderKeys().contains(pulls) &&
+              !QSettings().value(placementKey).toMap().contains(pulls),
+          QStringLiteral("dragging Pulls from the rail onto the tab bar moves it back (%1)")
+              .arg(window.testRepoTabRowKeys().join(QStringLiteral(", "))));
+    check(dropRailItemOn(tabPanel, QStringLiteral("settings")) &&
+              window.testRepoTabRowKeys().contains(QStringLiteral("settings")) &&
+              !window.testRailOrderKeys().contains(QStringLiteral("settings")),
+          QStringLiteral("dragging a rail icon onto the tab bar moves it there (%1)")
+              .arg(window.testRepoTabRowKeys().join(QStringLiteral(", "))));
+    check(!dropRailItemOn(tabPanel, QStringLiteral("settings")),
+          QStringLiteral("a button already in the tab bar is not dropped there again"));
+    window.testMoveButtonToPanel(pulls, QStringLiteral("rail"));
+    window.testMoveButtonToPanel(QStringLiteral("settings"), QStringLiteral("rail"));
+
     window.testShowStatsSection();
     QApplication::processEvents();
     if (QPushButton *pullsTab = window.testRepoPullsTab())
@@ -10236,6 +10270,17 @@ void checkButtonPlacement(MainWindow &window)
               !window.testRepoCodeBarKeys().contains(branches),
           QStringLiteral("Branches moves from the Code toolbar into the rail (%1)")
               .arg(window.testRailOrderKeys().join(QStringLiteral(", "))));
+    {
+        QMimeData mime;
+        mime.setData(QStringLiteral("application/x-forkmesh-rail-item"), branches.toUtf8());
+        QWidget *tabPanel = window.testRepoTabRowPanel();
+        QDragEnterEvent enter(QPoint(4, 4), Qt::MoveAction, &mime, Qt::LeftButton,
+                              Qt::NoModifier);
+        if (tabPanel)
+            QApplication::sendEvent(tabPanel, &enter);
+        check(tabPanel && !enter.isAccepted(),
+              QStringLiteral("a Code toolbar button in the rail does not drop on the tab bar"));
+    }
     check(window.testButtonPlacementMenuActions(branches) ==
               QStringList{QStringLiteral("Move to Code toolbar"),
                           QStringLiteral("Reset button placement")},
@@ -10361,6 +10406,68 @@ void checkRailHideKeepsOnHome(MainWindow &window)
               !QSettings().contains(hiddenKey) &&
               !QSettings().contains(placementKey),
           QStringLiteral("resetting button placement shows hidden items again"));
+}
+
+void checkWorkflowPinStripDrops(MainWindow &window)
+{
+    const QString pinsKey = QStringLiteral("ui/workflowPins");
+    const QStringList rails{QStringLiteral("top"), QStringLiteral("left"),
+                            QStringLiteral("right"), QStringLiteral("bottom")};
+    window.show();
+    QApplication::processEvents();
+    bool built = true;
+    for (const QString &rail : rails)
+        built = built && window.testWorkflowPinStrip(rail);
+    check(built, QStringLiteral("every edge has a workflow pin strip"));
+    if (!built)
+        return;
+    QSettings().setValue(
+        pinsKey, QStringLiteral("[{\"repo\":\"o/r\",\"workflow\":\"a\",\"rail\":\"top\"},"
+                                "{\"repo\":\"o/r\",\"workflow\":\"b\",\"rail\":\"left\"}]"));
+
+    window.testSetWorkflowPinStripsOpen(true);
+    QApplication::processEvents();
+    bool open = true;
+    for (const QString &rail : rails) {
+        QWidget *strip = window.testWorkflowPinStrip(rail);
+        open = open && !strip->isHidden() && strip->acceptDrops() &&
+               strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"));
+    }
+    check(open, QStringLiteral("dragging a pin opens all four strips as drop zones"));
+
+    QWidget *right = window.testWorkflowPinStrip(QStringLiteral("right"));
+    QMimeData mime;
+    mime.setData(QStringLiteral("application/x-forkmesh-workflow-pin"), QByteArrayLiteral("o/r\na"));
+    const QPoint at = right->rect().center();
+    QDragEnterEvent enter(at, Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(right, &enter);
+    QDropEvent drop(QPointF(at), Qt::MoveAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(right, &drop);
+    const QString saved = QSettings().value(pinsKey).toString();
+    check(enter.isAccepted() && drop.isAccepted() &&
+              saved.contains(QStringLiteral("\"workflow\":\"a\"")) &&
+              saved.indexOf(QStringLiteral("\"rail\":\"right\"")) >= 0 &&
+              !saved.contains(QStringLiteral("\"rail\":\"top\"")),
+          QStringLiteral("a pin dropped on the right strip moves there (%1)").arg(saved));
+
+    QWidget *bottom = window.testWorkflowPinStrip(QStringLiteral("bottom"));
+    QMimeData other;
+    other.setData(QStringLiteral("application/x-forkmesh-rail-item"), QByteArrayLiteral("settings"));
+    QDragEnterEvent stranger(bottom->rect().center(), Qt::MoveAction, &other, Qt::LeftButton,
+                             Qt::NoModifier);
+    QApplication::sendEvent(bottom, &stranger);
+    check(!stranger.isAccepted(), QStringLiteral("a pin strip ignores drags that are not pins"));
+
+    window.testSetWorkflowPinStripsOpen(false);
+    QApplication::processEvents();
+    bool closed = true;
+    for (const QString &rail : rails) {
+        QWidget *strip = window.testWorkflowPinStrip(rail);
+        closed = closed && strip->isHidden() &&
+                 !strip->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"));
+    }
+    check(closed, QStringLiteral("after the drag, strips with no shown pins hide again"));
+    QSettings().remove(pinsKey);
 }
 
 void checkRailPageShortcuts(MainWindow &window)
@@ -16128,6 +16235,7 @@ else:
         checkRailSortAndGroups(window);
         checkRailDragReorder(window);
         checkButtonPlacement(window);
+        checkWorkflowPinStripDrops(window);
         checkRailPageShortcuts(window);
         checkStatsPage(window);
         checkMemoryPage(window);
