@@ -40,9 +40,9 @@ namespace {
 
 QString sourceRoot()
 {
-    // FORKMESH_SOURCE_DIR points at <checkout>/desktop; the scan wants the
+    // forkmesh::sourceDir() points at <checkout>/desktop; the scan wants the
     // checkout so paths read as "desktop/src/File.cpp".
-    return QDir(QStringLiteral(FORKMESH_SOURCE_DIR)).absolutePath();
+    return QDir(forkmesh::sourceDir()).absolutePath();
 }
 
 QString diagnosticsRoot()

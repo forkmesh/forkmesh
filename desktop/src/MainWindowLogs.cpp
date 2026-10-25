@@ -1950,7 +1950,7 @@ bool MainWindow::prepareCloudflareTail(
     }
 
     *workerDirectory = forkmesh::control::findCloudflareWorkerDirectory(
-        QStringLiteral(FORKMESH_SOURCE_DIR),
+        forkmesh::sourceDir(),
         QCoreApplication::applicationDirPath());
     const forkmesh::control::NodeToolchain node =
         m_cloudLogNodeToolchain.isValid()
@@ -2124,7 +2124,7 @@ void MainWindow::startCloudLogMonitorIfConfigured()
     if (!missingWorker.isEmpty()) {
         const QString worker = forkmesh::control::cloudflareWorkerName(
             forkmesh::control::findCloudflareWorkerDirectory(
-                QStringLiteral(FORKMESH_SOURCE_DIR),
+                forkmesh::sourceDir(),
                 QCoreApplication::applicationDirPath()));
         if (worker == missingWorker) {
             m_cloudLogMonitorIdleReason =
@@ -2299,7 +2299,7 @@ void MainWindow::handleCloudLogMonitorEnded(int exitCode, qint64 uptimeMs)
         if (worker.isEmpty())
             worker = forkmesh::control::cloudflareWorkerName(
                 forkmesh::control::findCloudflareWorkerDirectory(
-                    QStringLiteral(FORKMESH_SOURCE_DIR),
+                    forkmesh::sourceDir(),
                     QCoreApplication::applicationDirPath()));
         if (worker.isEmpty())
             worker = QStringLiteral("in the Worker bundle");
