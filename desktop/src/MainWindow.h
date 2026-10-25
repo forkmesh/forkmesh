@@ -14596,6 +14596,7 @@ private:
     QSet<int> m_claudeDesktopPending;
     QSet<QString> m_claudeDesktopChecked;
     QStringList m_claudeDesktopLinkQueue;
+    QHash<QString, int> m_claudeDesktopLinkOwners;
     QTimer *m_claudeDesktopLinkTimer = nullptr;
     bool m_claudeDesktopBackfillRunning = false;
     QPlainTextEdit *m_agentLog = nullptr;

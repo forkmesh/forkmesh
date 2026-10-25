@@ -63,6 +63,9 @@ private:
     QColor ink(int alpha = 255) const;
     void paintHeader(QPainter &p, const QRectF &area);
     void paintGauges(QPainter &p, const QRectF &area);
+    void paintCores(QPainter &p, const QRectF &area);
+    void paintTuning(QPainter &p, const QRectF &area);
+    QRectF paintCard(QPainter &p, const QRectF &box);
     void paintShares(QPainter &p, const QRectF &area);
     void paintTable(QPainter &p, const QRectF &area);
     void paintChip(QPainter &p, QRectF &cursor, const QString &text, bool active,
