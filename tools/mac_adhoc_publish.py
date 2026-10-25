@@ -26,7 +26,8 @@ LAYOUT = forkmesh_paths.resolve(forkmesh_paths.HOME_PROJECT)
 PUBLIC_BASE = "https://forkmesh.com/api/repo/forkmesh/forkmesh/releases/blob/sha256"
 INSTALL_PAGE = "https://forkmesh.com/ios-install.html"
 DEFAULT_TO = "jett@forkmesh.com"
-SENDER = "no-reply@forkmesh.com"
+SENDER = "founders@forkmesh.com"
+BOUNCE_SENDER = "no-reply@forkmesh.com"
 MAIL_LOG_SOURCE = "the Mac ad hoc build tool"
 MAIL_KIND = "ios_build"
 MAIL_LOG_BODY = 400
@@ -206,7 +207,7 @@ def send(host: tuple[str, str, list[str]], message: EmailMessage) -> None:
     try:
         result = subprocess.run(
             ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", *options, f"root@{ip}",
-             f"/usr/sbin/sendmail -t -f {SENDER}"],
+             f"/usr/sbin/sendmail -t -f {BOUNCE_SENDER}"],
             input=message.as_bytes(), capture_output=True, timeout=120, check=False)
     except (OSError, subprocess.SubprocessError) as error:
         raise SystemExit(f"sendmail on {ip} failed: {type(error).__name__}")
