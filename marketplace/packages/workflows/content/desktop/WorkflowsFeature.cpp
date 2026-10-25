@@ -32,6 +32,7 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSet>
 #include <QSettings>
 #include <QSignalBlocker>
@@ -227,6 +228,56 @@ QJsonValue storedValue(const QString &value, const QJsonValue &previous)
     return value;
 }
 
+bool liveStatus(const QString &status)
+{
+    return status == QLatin1String("running") || status == QLatin1String("queued");
+}
+
+void setLiveText(QPlainTextEdit *view, const QString &value, bool toEnd)
+{
+    if (!view || view->toPlainText() == value)
+        return;
+    QScrollBar *bar = view->verticalScrollBar();
+    const bool atEnd = toEnd || bar->value() >= bar->maximum() - 4;
+    const int kept = bar->value();
+    view->setPlainText(value);
+    bar->setValue(atEnd ? bar->maximum() : kept);
+}
+
+QString localRunLog(const QJsonObject &run)
+{
+    QStringList parts;
+    for (const QJsonValue &value : run.value(QStringLiteral("steps")).toArray()) {
+        const QJsonObject entry = value.toObject();
+        const QString status = text(entry, "status");
+        QString body = text(entry, "output").trimmed();
+        if (body.isEmpty()) {
+            QStringList logs;
+            for (const QJsonValue &line : entry.value(QStringLiteral("logs")).toArray())
+                logs << line.toString();
+            body = logs.join(QLatin1Char('\n')).trimmed();
+        }
+        const QString error = text(entry, "error").trimmed();
+        const bool running = status == QLatin1String("running");
+        if (body.isEmpty() && error.isEmpty() && !running)
+            continue;
+        QStringList block{QStringLiteral("── %1 · %2").arg(text(entry, "name"), localStatusLabel(status))};
+        if (!body.isEmpty())
+            block << body;
+        if (!error.isEmpty() && !body.contains(error))
+            block << QStringLiteral("Error: %1").arg(error);
+        if (running && body.isEmpty())
+            block << QStringLiteral("Waiting for output…");
+        parts << block.join(QLatin1Char('\n'));
+    }
+    if (parts.isEmpty() && !text(run, "error").trimmed().isEmpty())
+        parts << text(run, "error").trimmed();
+    if (parts.isEmpty())
+        return liveStatus(text(run, "status")) ? QStringLiteral("Waiting for output…")
+                                               : QStringLiteral("This run left no output.");
+    return parts.join(QStringLiteral("\n\n"));
+}
+
 } // namespace
 
 WorkflowsFeature::WorkflowsFeature(const forkmesh::market::NativePackageHost &host, QWidget *parent)
@@ -331,6 +382,7 @@ QWidget *WorkflowsFeature::buildDashboard()
     auto *splitter = new QSplitter(Qt::Vertical);
     splitter->setChildrenCollapsible(false);
     splitter->addWidget(buildCollection());
+    m_dashboardSplitter = splitter;
 
     auto *bottom = new QWidget;
     auto *bottomLayout = new QVBoxLayout(bottom);
@@ -368,10 +420,22 @@ QWidget *WorkflowsFeature::buildDashboard()
                             QStringLiteral("Items"), QStringLiteral("Details")},
                            QStringLiteral("workflowsRunSteps"));
     m_runSteps->setSelectionMode(QAbstractItemView::NoSelection);
-    detailLayout->addWidget(m_runSteps, 1);
+    auto *detailSplitter = new QSplitter(Qt::Vertical);
+    detailSplitter->setChildrenCollapsible(false);
+    detailSplitter->addWidget(m_runSteps);
+    m_runOutput = new QPlainTextEdit;
+    m_runOutput->setObjectName(QStringLiteral("workflowsRunOutput"));
+    m_runOutput->setAccessibleName(QStringLiteral("Run output"));
+    m_runOutput->setReadOnly(true);
+    m_runOutput->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    m_runOutput->setPlaceholderText(QStringLiteral("The selected run's output shows here, live while it runs."));
+    detailSplitter->addWidget(m_runOutput);
+    detailSplitter->setStretchFactor(0, 1);
+    detailSplitter->setStretchFactor(1, 2);
+    detailLayout->addWidget(detailSplitter, 1);
     runSplitter->addWidget(detail);
-    runSplitter->setStretchFactor(0, 3);
-    runSplitter->setStretchFactor(1, 2);
+    runSplitter->setStretchFactor(0, 1);
+    runSplitter->setStretchFactor(1, 1);
     bottomLayout->addWidget(runSplitter, 1);
     splitter->addWidget(bottom);
     splitter->setStretchFactor(0, 3);
@@ -380,16 +444,10 @@ QWidget *WorkflowsFeature::buildDashboard()
 
     connect(m_runWorkflowFilter, &QComboBox::currentIndexChanged, this, [this] { renderRunTable(); });
     connect(m_runStatusFilter, &QComboBox::currentIndexChanged, this, [this] { renderRunTable(); });
-    connect(m_runTable, &QTableWidget::itemSelectionChanged, this, [this] {
-        const QJsonObject run = selectedDashboardRun();
-        if (run.isEmpty())
-            return;
-        if (run.value(QStringLiteral("local")).toBool()) {
-            showLocalRunDetail(m_runSteps, m_runSummary, run);
-            return;
-        }
-        showRunDetail(m_runSteps, m_runSummary, text(run, "workflowId"), text(run, "id"));
-    });
+    m_liveTimer = new QTimer(this);
+    m_liveTimer->setInterval(1000);
+    connect(m_liveTimer, &QTimer::timeout, this, [this] { pollLiveRun(); });
+    connect(m_runTable, &QTableWidget::itemSelectionChanged, this, [this] { showSelectedRun(); });
     connect(m_runTable, &QTableWidget::cellDoubleClicked, this, [this] {
         const QJsonObject run = selectedDashboardRun();
         if (run.value(QStringLiteral("local")).toBool()) {
@@ -1274,6 +1332,8 @@ void WorkflowsFeature::renderDashboard()
         m_kpiValues.at(index)->setText(values.value(index));
         m_kpiNotes.at(index)->setText(notes.value(index));
     }
+    if (!m_pendingRun.isEmpty())
+        m_allRuns.prepend(m_pendingRun);
     m_newButton->setEnabled(m_workflows.size() < kMaxWorkflows);
     m_newButton->setToolTip(m_workflows.size() < kMaxWorkflows
                                 ? QStringLiteral("A special agent, a desktop workflow, or one that runs on ForkMesh")
@@ -1288,7 +1348,9 @@ void WorkflowsFeature::renderRunTable()
     const QString workflow = m_runWorkflowFilter->currentData().toString();
     const QString status = m_runStatusFilter->currentData().toString();
     const qint64 current = now();
-    const QSignalBlocker block(m_runTable);
+    int followRow = -1;
+    bool followed = false;
+    QSignalBlocker block(m_runTable);
     m_runTable->setRowCount(0);
     for (const QJsonValue &value : std::as_const(m_allRuns)) {
         const QJsonObject run = value.toObject();
@@ -1316,7 +1378,113 @@ void WorkflowsFeature::renderRunTable()
         m_runTable->setItem(row, 5, cell(runOutputText(run)));
         if (text(run, "id") == text(chosen, "id"))
             m_runTable->selectRow(row);
+        if (followRow < 0 && !m_followWorkflow.isEmpty() && text(run, "workflowId") == m_followWorkflow &&
+            (m_followRun.isEmpty() ? started >= m_followSince && started <= m_followSince + 120000
+                                  : text(run, "id") == m_followRun)) {
+            followRow = row;
+            followed = !run.value(QStringLiteral("pending")).toBool();
+        }
     }
+    block.unblock();
+    if (followed)
+        stopFollowing();
+    if (followRow >= 0) {
+        m_runTable->selectRow(followRow);
+        m_runTable->scrollToItem(m_runTable->item(followRow, 0));
+    }
+    const QJsonObject shown = selectedDashboardRun();
+    if (text(shown, "id") != m_shownRunId || text(shown, "status") != m_shownStatus)
+        showSelectedRun();
+}
+
+void WorkflowsFeature::showSelectedRun()
+{
+    const QJsonObject run = selectedDashboardRun();
+    const bool fresh = text(run, "id") != m_shownRunId;
+    m_shownRunId = text(run, "id");
+    m_shownStatus = text(run, "status");
+    if (run.isEmpty() || !run.value(QStringLiteral("local")).toBool() || !liveStatus(m_shownStatus))
+        m_liveTimer->stop();
+    if (run.isEmpty())
+        return;
+    if (run.value(QStringLiteral("pending")).toBool()) {
+        m_runSteps->setRowCount(0);
+        m_runSummary->setTextFormat(Qt::PlainText);
+        m_runSummary->setText(QStringLiteral("Running %1 on ForkMesh…").arg(text(run, "workflowName")));
+        setLiveText(m_runOutput, QStringLiteral("Waiting for ForkMesh to finish the run…"), true);
+        return;
+    }
+    if (run.value(QStringLiteral("local")).toBool()) {
+        showLocalRunDetail(m_runSteps, m_runSummary, run);
+        setLiveText(m_runOutput, localRunLog(run), fresh);
+        if (liveStatus(m_shownStatus) && !m_liveTimer->isActive())
+            m_liveTimer->start();
+        pollLiveRun();
+        return;
+    }
+    if (fresh)
+        m_runOutput->clear();
+    showRunDetail(m_runSteps, m_runSummary, text(run, "workflowId"), text(run, "id"), m_runOutput);
+}
+
+void WorkflowsFeature::pollLiveRun()
+{
+    const QJsonObject shown = selectedDashboardRun();
+    if (!shown.value(QStringLiteral("local")).toBool()) {
+        m_liveTimer->stop();
+        return;
+    }
+    if (m_liveTimer->isActive() && (!isVisible() || m_pages->currentIndex() != 0))
+        return;
+    const QString repo = text(shown, "repo");
+    const QString runId = text(shown, "id");
+    const QString name = text(shown, "workflowName");
+    localAction(repo, text(shown, "localWorkflowId"), QStringLiteral("get"), {},
+                [this, repo, runId, name](bool ok, const QJsonObject &payload, const QString &) {
+        if (!ok || text(selectedDashboardRun(), "id") != runId)
+            return;
+        QJsonObject found = payload.value(QStringLiteral("active")).toObject();
+        if (text(found, "id") != runId) {
+            found = QJsonObject();
+            for (const QJsonValue &value : payload.value(QStringLiteral("runs")).toArray())
+                if (text(value.toObject(), "id") == runId)
+                    found = value.toObject();
+        }
+        if (found.isEmpty())
+            return;
+        const QJsonObject row = localRunRow(found, repo, name);
+        showLocalRunDetail(m_runSteps, m_runSummary, row);
+        setLiveText(m_runOutput, localRunLog(row), false);
+        if (!liveStatus(text(row, "status")))
+            m_liveTimer->stop();
+    });
+}
+
+void WorkflowsFeature::followRun(const QString &workflowKey, const QString &runId)
+{
+    m_followWorkflow = workflowKey;
+    m_followRun = runId;
+    m_followSince = now() - 2000;
+    if (m_runWorkflowFilter->currentIndex() != 0 || m_runStatusFilter->currentIndex() != 0) {
+        const QSignalBlocker workflowBlock(m_runWorkflowFilter);
+        const QSignalBlocker statusBlock(m_runStatusFilter);
+        m_runWorkflowFilter->setCurrentIndex(0);
+        m_runStatusFilter->setCurrentIndex(0);
+    }
+    if (m_pages->currentIndex() == 0) {
+        const QList<int> sizes = m_dashboardSplitter->sizes();
+        const int total = sizes.value(0) + sizes.value(1);
+        if (total > 0 && sizes.value(1) < total * 2 / 5)
+            m_dashboardSplitter->setSizes({total - total / 2, total / 2});
+    }
+    renderRunTable();
+}
+
+void WorkflowsFeature::stopFollowing()
+{
+    m_followWorkflow.clear();
+    m_followRun.clear();
+    m_followSince = 0;
 }
 
 QJsonObject WorkflowsFeature::selectedDashboardRun() const
@@ -1332,7 +1500,7 @@ QJsonObject WorkflowsFeature::selectedDashboardRun() const
 }
 
 void WorkflowsFeature::showRunDetail(QTableWidget *steps, QLabel *summary, const QString &workflowId,
-                                     const QString &runId)
+                                     const QString &runId, QPlainTextEdit *outputView)
 {
     if (workflowId.isEmpty() || runId.isEmpty())
         return;
@@ -1341,9 +1509,10 @@ void WorkflowsFeature::showRunDetail(QTableWidget *steps, QLabel *summary, const
     steps->setRowCount(0);
     const QPointer<QTableWidget> table(steps);
     const QPointer<QLabel> label(summary);
-    auto render = [this, table, label, workflowId, runId](const Draft &draft) {
+    const QPointer<QPlainTextEdit> log(outputView);
+    auto render = [this, table, label, log, workflowId, runId](const Draft &draft) {
         request(QByteArrayLiteral("GET"), path(QStringLiteral("/%1/runs/%2").arg(workflowId, runId)), {},
-                [this, table, label, draft](bool ok, const QJsonObject &payload, const QString &error) {
+                [this, table, label, log, runId, draft](bool ok, const QJsonObject &payload, const QString &error) {
             if (!table || !label)
                 return;
             if (!ok) {
@@ -1375,6 +1544,7 @@ void WorkflowsFeature::showRunDetail(QTableWidget *steps, QLabel *summary, const
                 if (!order.contains(it.key()))
                     order << it.key();
             table->setRowCount(0);
+            QStringList lines;
             for (const QString &id : std::as_const(order)) {
                 if (!nodes.contains(id))
                     continue;
@@ -1400,7 +1570,20 @@ void WorkflowsFeature::showRunDetail(QTableWidget *steps, QLabel *summary, const
                 if (!logs.isEmpty())
                     tooltip += QStringLiteral("\n\n") + logs.mid(std::max(0, int(logs.size()) - 40)).join(QLatin1Char('\n'));
                 table->setItem(row, 4, cell(details, tooltip.trimmed()));
+                QStringList block{QStringLiteral("── %1 · %2").arg(name.isEmpty() ? id : name,
+                                                                  statusLabel(text(entry, "status")))};
+                if (!logs.isEmpty())
+                    block << logs.join(QLatin1Char('\n'));
+                if (!text(entry, "error").isEmpty())
+                    block << QStringLiteral("Error: %1").arg(text(entry, "error"));
+                else if (!itemPreview(entry).isEmpty())
+                    block << itemPreview(entry);
+                lines << block.join(QLatin1Char('\n'));
             }
+            if (!output.isEmpty())
+                lines << output;
+            if (log && (log != m_runOutput || m_shownRunId == runId))
+                setLiveText(log, lines.join(QStringLiteral("\n\n")), true);
         });
     };
     if (workflowId == m_draft.id && m_pages->currentIndex() == 1) {
@@ -1581,16 +1764,33 @@ void WorkflowsFeature::runWorkflow(const QString &id, const QJsonObject &body)
     m_busy = true;
     m_runDraftButton->setEnabled(false);
     setStatus(QStringLiteral("Running on ForkMesh…"));
-    renderCollection();
+    QString name = id == m_draft.id ? m_draft.name : QString();
+    for (const QJsonValue &value : std::as_const(m_workflows))
+        if (text(value.toObject(), "id") == id)
+            name = text(value.toObject(), "name");
+    m_pendingRun = QJsonObject{{QStringLiteral("id"), QStringLiteral("pending:") + id},
+                               {QStringLiteral("pending"), true},
+                               {QStringLiteral("workflowId"), id},
+                               {QStringLiteral("workflowName"), name},
+                               {QStringLiteral("trigger"), QStringLiteral("By hand")},
+                               {QStringLiteral("status"), QStringLiteral("running")},
+                               {QStringLiteral("startedAt"), double(now())}};
+    renderDashboard();
+    followRun(id);
     request(QByteArrayLiteral("POST"), path(QStringLiteral("/%1/run").arg(id)), body,
             [this, id](bool ok, const QJsonObject &payload, const QString &error) {
         m_busy = false;
         m_runDraftButton->setEnabled(true);
+        m_pendingRun = QJsonObject();
         if (!ok) {
+            stopFollowing();
+            renderDashboard();
             setStatus(QStringLiteral("The run did not start: %1").arg(failureText(payload, error)), true);
             return;
         }
         const QJsonObject run = payload.value(QStringLiteral("run")).toObject();
+        if (m_followWorkflow == id)
+            m_followRun = text(run, "id");
         const qint64 ms = integer(run, "finishedAt") - integer(run, "startedAt");
         if (text(run, "status") == QLatin1String("success"))
             setStatus(QStringLiteral("Run succeeded in %1. %2").arg(durationText(ms), runOutputText(run)).trimmed());
@@ -2770,10 +2970,16 @@ void WorkflowsFeature::runLocal(const QJsonObject &summary, const QString &assig
     QJsonObject payload{{QStringLiteral("trigger"), QStringLiteral("By hand · Workflows page")}};
     if (!assignment.isEmpty())
         payload.insert(QStringLiteral("assignment"), assignment);
+    const QString key = QStringLiteral("local:%1|%2").arg(repo, id);
+    followRun(key);
     localAction(repo, id, QStringLiteral("run"), payload,
-                [this](bool ok, const QJsonObject &, const QString &message) {
+                [this, key](bool ok, const QJsonObject &data, const QString &message) {
         setStatus(message, !ok);
+        if (m_followWorkflow == key)
+            m_followRun = text(data, "runId");
         loadLocal();
+        if (!ok && m_followWorkflow == key)
+            stopFollowing();
     });
 }
 
