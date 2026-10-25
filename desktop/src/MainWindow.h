@@ -15572,6 +15572,8 @@ private:
     void killExternalSessionPids(const QList<qint64> &pids); // Graceful POSIX stop; native Windows termination.
     QSet<QString> m_externalStopped;         // uuids we've stopped — keep them idle
     QSet<QString> ownStreamCwds() const;    // dirs ForkMesh's own streams drive
+    void retireStreamCwd(const QString &path);
+    QSet<QString> m_retiredStreamCwds;
     qint64 m_claudeModelsFetchedMs = 0;
     QJsonArray m_liveClaudeModels;
     // composerModelCatalog() memo — the choices and the inputs they were

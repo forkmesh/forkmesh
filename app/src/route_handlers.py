@@ -480,11 +480,7 @@ async def _account_finalize(env, request):
     # Send a verification email (Mailtrap). If delivery is unavailable, retain
     # the account in the support queue for resend/follow-up; administrators can
     # no longer mark the address verified on the recipient's behalf.
-    if rec.get("email") and not rec["email_verified"]:
-        sent = await _send_verification_email(
-            env, request, name, rec["email"], rec=rec)
-        if not sent:
-            await _enqueue_verification(env, name_bi, name, rec["email"])
+    await _send_signup_verification(env, request, name_bi, name, rec)
     # Redeem the code read above: if the installing desktop's signed offer
     # already arrived the node is linked to that user right now; otherwise the
     # node's half is parked until the offer lands (see
