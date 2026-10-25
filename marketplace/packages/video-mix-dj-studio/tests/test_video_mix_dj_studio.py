@@ -66,13 +66,29 @@ def test_mix_uses_youtube_embed_messages_local_storage_and_public_search_only():
     assert "XMLHttpRequest" not in PAGE
 
 
-def test_desktop_link_and_preview_are_packaged():
-    link = (PACKAGE / "content" / "desktop" / "VideoMixDjStudioLink.cpp").read_text(encoding="utf-8")
-    build = json.loads((PACKAGE / "content" / "desktop" / "build.json").read_text(encoding="utf-8"))
-    assert 'QStringLiteral("builtin:video-mix-dj-studio")' in link
-    assert 'QStringLiteral("/dashboard/video-mix-dj-studio")' in link
-    assert 'QStringLiteral("play")' in link
-    assert build == {"schemaVersion": 1, "sources": ["VideoMixDjStudioLink.cpp"], "mocHeaders": []}
+def test_desktop_studio_is_native_and_preview_is_packaged():
+    desktop = PACKAGE / "content" / "desktop"
+    feature = (desktop / "DjStudioFeature.cpp").read_text(encoding="utf-8")
+    player = (desktop / "DjPlayer.cpp").read_text(encoding="utf-8")
+    scripts = (desktop / "DjScripts.cpp").read_text(encoding="utf-8")
+    build = json.loads((desktop / "build.json").read_text(encoding="utf-8"))
+    assert 'QStringLiteral("builtin:video-mix-dj-studio")' in feature
+    assert 'QStringLiteral("/api/video-mix-dj-studio")' in feature
+    assert 'QStringLiteral("forkmesh-video-mix-dj-studio-request-v1")' in feature
+    assert "new forkmesh::djstudio::DjStudioFeature(host, parent)" in feature
+    assert 'QStringLiteral("/dashboard/video-mix-dj-studio")' in feature
+    assert "#ifdef FORKMESH_HAVE_WEBENGINE" in player
+    assert "setRunsOnSubFrames(true)" in player
+    assert "PlaybackRequiresUserGesture, false" in player
+    assert "https://www.youtube-nocookie.com" in scripts
+    assert "createMediaElementSource" in scripts
+    assert set(build) == {"schemaVersion", "sources", "mocHeaders", "testSources", "testLibraries"}
+    assert build["mocHeaders"] == []
+    assert "DjStudioFeature.cpp" in build["sources"]
+    assert "DjStudioFeature.cpp" not in build["testSources"]
+    assert "tests/test_video_mix_dj_studio.cpp" in build["testSources"]
+    for name in build["sources"] + build["testSources"]:
+        assert (desktop / name).is_file(), name
     assert (PACKAGE / "preview" / "market.svg").is_file()
     assert (PACKAGE / "preview" / "market.webp").stat().st_size > 1000
 

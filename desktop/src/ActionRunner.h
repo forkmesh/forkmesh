@@ -147,6 +147,7 @@ private:
     QString normalizeProcessOutputForLog(const QString &text);
     void rememberCrashProcessOutput(const QByteArray &bytes);
     QString phaseName() const;
+    int currentStepTimeoutMs() const;
     QString crashContextHeader() const;
     QString crashOutputTail() const;
     QString crashContext() const;

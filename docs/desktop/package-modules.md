@@ -17,7 +17,10 @@ being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
   (`FORKMESH_PLUGIN_MODULE_CANDIDATES`); there is no hand-kept list any more.
   The module also carries the plugin's own files (`plugins/<id>.qrc`); the
   core keeps only its listing files. Configure removes module files the
-  configuration no longer builds. Modules resolve the app's symbols through
+  configuration no longer builds. Modules link Qt Multimedia, OpenGL, WebP
+  and (since 2026-10-25, for the Video Mix DJ Studio's YouTube decks) Qt
+  WebEngine when the build has them, the libraries the app already links, so
+  a module adds nothing to what the process loads. Modules resolve the app's symbols through
   the `-rdynamic` export the stall watchdog already needs, so the app binary
   does not grow. Installed-by-default plugins (agent-watch, analytics, docs)
   are modules too and load at start (about 30 ms and 3 MB together, see

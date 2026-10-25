@@ -45,6 +45,19 @@ def test_issue_sync_has_mapping_report_retry_implementation_and_failure_notice()
     assert "mapping_payload" in implementation
 
 
+def test_unconfigured_scheduled_issue_sync_skips_instead_of_failing():
+    workflow = ISSUE_WORKFLOW.read_text(encoding="utf-8")
+    validate = workflow.split("- name: Validate one-way", 1)[1].split("- name:", 1)[0]
+    unset = validate.split('if [ -z "$DESTINATION_REPOSITORY" ]; then', 1)[1]
+    scheduled, manual = unset.split("exit 0", 1)
+    assert '"schedule" ]' in scheduled
+    assert "configured=false" in scheduled
+    assert "exit 2" in manual.split("fi\n", 2)[1]
+    assert "configured=true" in validate
+    sync = workflow.split("- name: Synchronize only", 1)[1].split("run:", 1)[0]
+    assert "if: steps.configuration.outputs.configured == 'true'" in sync
+
+
 def test_world_browser_e2e_exercises_runtime_webgl_touch_and_privacy():
     workflow = WORLD_BROWSER_WORKFLOW.read_text(encoding="utf-8")
     package = (

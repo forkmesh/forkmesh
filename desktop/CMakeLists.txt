@@ -102,7 +102,7 @@ set_source_files_properties(src/SourceDir.cpp PROPERTIES
 # include; configure_file rewrites it only when the version actually changes,
 # so a bump recompiles just those files. The build commit, which changes with
 # every commit anywhere in the checkout, is in ForkMeshBuildCommit.h, read by
-# main.cpp and MainWindowHostInstall.cpp only; in ForkMeshVersion.h it made
+# the one-function src/DesktopBuildCommit.cpp only; in ForkMeshVersion.h it made
 # every commit recompile the 17 files (the heaviest MainWindow units among
 # them) that only want the version.
 configure_file(
@@ -360,6 +360,10 @@ if(TARGET Qt6::WebEngineWidgets)
 else()
     message(STATUS "Qt6 WebEngine not found: agent browser windows open in the "
                    "system browser instead")
+    if(Qt6_DIR AND IS_DIRECTORY "${Qt6_DIR}")
+        get_filename_component(FORKMESH_QT6_CMAKE_ROOT "${Qt6_DIR}" DIRECTORY)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FORKMESH_QT6_CMAKE_ROOT}")
+    endif()
 endif()
 
 function(forkmesh_link_webengine target)
@@ -655,6 +659,8 @@ endif()
 set(FORKMESH_APP_SOURCES
     src/SourceDir.h
     src/SourceDir.cpp
+    src/DesktopBuildCommit.h
+    src/DesktopBuildCommit.cpp
     src/AgentFolders.h
     src/AgentFolders.cpp
     src/Http3Get.h
