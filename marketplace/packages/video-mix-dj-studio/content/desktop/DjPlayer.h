@@ -62,7 +62,7 @@ public:
     void backspin(int deck);
     void pad(const QString &name);
     void setSamplerLevel(double level);
-    void layout(const QVector<DjVideoSlot> &slots);
+    void layout(const QVector<DjVideoSlot> &places);
     void reset();
 
 private:

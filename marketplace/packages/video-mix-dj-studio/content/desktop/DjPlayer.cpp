@@ -294,13 +294,13 @@ void DjPlayer::setSamplerLevel(double level)
     d->run(QStringLiteral("fmLevel(%1)").arg(number(level)));
 }
 
-void DjPlayer::layout(const QVector<DjVideoSlot> &slots)
+void DjPlayer::layout(const QVector<DjVideoSlot> &places)
 {
-    if (slots == d->lastSlots)
+    if (places == d->lastSlots)
         return;
-    d->lastSlots = slots;
+    d->lastSlots = places;
     QStringList rows;
-    for (const DjVideoSlot &slot : slots) {
+    for (const DjVideoSlot &slot : places) {
         rows.append(QStringLiteral("[%1,%2,%3,%4,%5,%6]")
                         .arg(number(slot.rect.x()), number(slot.rect.y()), number(slot.rect.width()),
                              number(slot.rect.height()), number(slot.opacity))
