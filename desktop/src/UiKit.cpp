@@ -637,6 +637,16 @@ QWidget *labeledField(const QString &label, QWidget *field, const QString &hint,
     return wrapper;
 }
 
+QString cellDisplayText(const QString &text, int maxChars)
+{
+    if (maxChars <= 0 || text.size() <= maxChars)
+        return text;
+    qsizetype keep = maxChars;
+    if (text.at(keep - 1).isHighSurrogate())
+        --keep;
+    return text.left(keep) + QChar(0x2026);
+}
+
 namespace {
 
 const char kFloatingSurface[] = "floatingSurface";
@@ -742,6 +752,14 @@ public:
         }
         QStyledItemDelegate::paint(painter, opt, index);
     }
+
+protected:
+    void initStyleOption(QStyleOptionViewItem *option,
+                         const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        option->text = cellDisplayText(option->text);
+    }
 };
 
 void syncDataTableRows(QTableView *table, bool next, QVariantMap *state)
@@ -806,6 +824,10 @@ void syncDataTable(QTableView *table, bool next)
                 fitted.append(column);
             }
             horizontal->setHighlightSections(false);
+            const int fitRows = horizontal->resizeContentsPrecision();
+            state.insert(QStringLiteral("fitRows"), fitRows);
+            if (fitRows < 0 || fitRows > kDataTableFitRows)
+                horizontal->setResizeContentsPrecision(kDataTableFitRows);
         }
         state.insert(QStringLiteral("fitted"), fitted);
         state.insert(QStringLiteral("wordWrap"), table->wordWrap());
@@ -833,6 +855,9 @@ void syncDataTable(QTableView *table, bool next)
         if (horizontal) {
             horizontal->setHighlightSections(
                 state.value(QStringLiteral("highlight")).toBool());
+            if (state.contains(QStringLiteral("fitRows")))
+                horizontal->setResizeContentsPrecision(
+                    state.value(QStringLiteral("fitRows")).toInt());
             const QVariantList fitted = state.value(QStringLiteral("fitted")).toList();
             for (const QVariant &column : fitted) {
                 if (column.toInt() < horizontal->count())

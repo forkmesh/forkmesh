@@ -114,6 +114,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStackedWidget>
+#include <QStyleOptionSlider>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTabWidget>
@@ -3380,8 +3381,10 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
     check(sendTo && sendTo->isEnabled() &&
               sendTo->text() == QStringLiteral("chat") &&
               sendTo->toolTip().contains(QStringLiteral("prompt-preview")) &&
-              sendTo->toolTip().contains(QStringLiteral("(Enter)")),
-          QStringLiteral("send to names the open room and takes Enter (%1 | %2)")
+              sendTo->toolTip().contains(QStringLiteral("(Enter)")) &&
+              sendTo->property("enterTarget").toBool(),
+          QStringLiteral("send to names the open room, takes Enter and is "
+                         "highlighted as the Enter button (%1 | %2)")
               .arg(sendTo ? sendTo->text() : QStringLiteral("none"),
                    sendTo ? sendTo->toolTip() : QString()));
     const QString shots = qEnvironmentVariable("FORKMESH_WORKSPACE_SHOT");
@@ -7556,6 +7559,91 @@ void checkDiffStreamResponsiveness()
           QStringLiteral("rolling diff windows preserve content position and "
                          "wheel/key momentum in both directions"));
 
+    windowBar->setValue(windowBar->maximum());
+    for (int i = 0; i < 5; ++i)
+        QApplication::processEvents();
+    int thumbBefore = 0;
+    int thumbMaxBefore = 0;
+    const bool thumbKnownBefore = forkmesh::ui::diffScrollBarGeometryForTest(
+        &view, &thumbBefore, &thumbMaxBefore);
+    QWheelEvent thumbNext(
+        QPointF(wheelPosition),
+        QPointF(view.viewport()->mapToGlobal(wheelPosition)),
+        QPoint(0, -wheelStep), QPoint(), Qt::NoButton, Qt::NoModifier,
+        Qt::ScrollUpdate, false);
+    QApplication::sendEvent(view.viewport(), &thumbNext);
+    for (int i = 0; i < 20; ++i)
+        QApplication::processEvents();
+    int thumbAfter = 0;
+    int thumbMaxAfter = 0;
+    const bool thumbKnownAfter = forkmesh::ui::diffScrollBarGeometryForTest(
+        &view, &thumbAfter, &thumbMaxAfter);
+    check(thumbKnownBefore && thumbKnownAfter &&
+              forkmesh::ui::diffWindowFirstPageForTest(&view) == 1 &&
+              thumbBefore < thumbMaxBefore / 4 &&
+              qAbs(thumbAfter - (thumbBefore + wheelStep)) <= 4 &&
+              qAbs(thumbMaxAfter - thumbMaxBefore) <= thumbMaxBefore / 20,
+          QString("the diff scroll thumb measures the whole diff and does not "
+                  "jump when the next page loads (%1/%2 -> %3/%4)")
+              .arg(thumbBefore)
+              .arg(thumbMaxBefore)
+              .arg(thumbAfter)
+              .arg(thumbMaxAfter));
+
+    const auto thumbRect = [&view, windowBar] {
+        int value = 0;
+        int maximum = 0;
+        forkmesh::ui::diffScrollBarGeometryForTest(&view, &value, &maximum);
+        QStyleOptionSlider option;
+        option.initFrom(windowBar);
+        option.subControls = QStyle::SC_All;
+        option.orientation = Qt::Vertical;
+        option.minimum = 0;
+        option.maximum = maximum;
+        option.sliderPosition = value;
+        option.sliderValue = value;
+        option.singleStep = windowBar->singleStep();
+        option.pageStep = windowBar->pageStep();
+        return windowBar->style()->subControlRect(
+            QStyle::CC_ScrollBar, &option, QStyle::SC_ScrollBarSlider, windowBar);
+    };
+    const auto sendBarMouse = [windowBar](QEvent::Type type, QPoint at,
+                                          Qt::MouseButton button,
+                                          Qt::MouseButtons buttons) {
+        QMouseEvent mouse(type, QPointF(at),
+                          QPointF(windowBar->mapToGlobal(at)), button, buttons,
+                          Qt::NoModifier);
+        QApplication::sendEvent(windowBar, &mouse);
+    };
+    const QRect thumbStart = thumbRect();
+    const QPoint grab = thumbStart.center();
+    const QPoint middle(grab.x(), windowBar->height() / 2);
+    sendBarMouse(QEvent::MouseButtonPress, grab, Qt::LeftButton, Qt::LeftButton);
+    sendBarMouse(QEvent::MouseMove, middle, Qt::NoButton, Qt::LeftButton);
+    const bool dragSettled = waitForDiffStream(&view);
+    for (int i = 0; i < 20; ++i)
+        QApplication::processEvents();
+    sendBarMouse(QEvent::MouseButtonRelease, middle, Qt::LeftButton,
+                 Qt::NoButton);
+    const QRect thumbDragged = thumbRect();
+    const int draggedFirstPage = forkmesh::ui::diffWindowFirstPageForTest(&view);
+    check(!thumbStart.isEmpty() && dragSettled &&
+              qAbs(thumbDragged.center().y() - middle.y() -
+                   (thumbStart.center().y() - grab.y())) <=
+                  qMax(6, windowBar->height() / 20) &&
+              qAbs(draggedFirstPage - pages / 2) <= qMax(2, pages / 10) &&
+              view.updatesEnabled(),
+          QString("dragging the diff scroll thumb moves through the whole diff "
+                  "(thumb %1 -> %2, page %3 of %4)")
+              .arg(thumbStart.center().y())
+              .arg(thumbDragged.center().y())
+              .arg(draggedFirstPage)
+              .arg(pages));
+    forkmesh::ui::showDiffPageForTest(&view, 0);
+    waitForDiffStream(&view);
+    for (int i = 0; i < 20; ++i)
+        QApplication::processEvents();
+
     // A file/search navigation can replace the resident window in the same
     // event-loop turn as an edge input. The queued move belongs to the old
     // generation and must not yank the newly selected window somewhere else.
@@ -10794,6 +10882,175 @@ void checkStatsPage(MainWindow &window)
           QStringLiteral("every catalog stat yields a value or a reason"));
 }
 
+void checkMarketNextView(MainWindow &window)
+{
+    const QString shots = qEnvironmentVariable("FORKMESH_MARKET_SHOT");
+    const auto settle = [] {
+        for (int pass = 0; pass < 6; ++pass) {
+            QApplication::processEvents();
+            QThread::msleep(20);
+        }
+        QApplication::processEvents();
+    };
+    const auto shoot = [&window, &shots, &settle](const QString &name) {
+        if (shots.isEmpty())
+            return;
+        settle();
+        QDir().mkpath(shots);
+        window.grab().save(QDir(shots).filePath(name + QStringLiteral(".png")));
+    };
+    QSettings settings;
+    settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+    settings.setValue(QStringLiteral("app/theme"), QStringLiteral("dark"));
+    settings.remove(QStringLiteral("market/view"));
+    MainWindow::applyTheme();
+    window.resize(1440, 900);
+    window.show();
+    window.testShowMarketSection();
+    settle();
+
+    auto *marketList = window.findChild<QScrollArea *>(QStringLiteral("marketList"));
+    auto *gridButton =
+        window.findChild<QPushButton *>(QStringLiteral("marketViewGridButton"));
+    auto *listButton =
+        window.findChild<QPushButton *>(QStringLiteral("marketViewListButton"));
+    auto *pane = window.findChild<QFrame *>(QStringLiteral("marketNextDetailsPane"));
+    auto *tabs = window.findChild<QTabWidget *>(QStringLiteral("marketTabs"));
+    check(marketList && gridButton && listButton && pane && tabs,
+          QStringLiteral("the Next Market has the grid and list buttons and a "
+                         "details pane"));
+    if (!marketList || !gridButton || !listButton || !pane || !tabs)
+        return;
+    const auto cards = [marketList] {
+        QList<QWidget *> found;
+        QLayout *layout = marketList->widget()->layout();
+        for (int i = 0; layout && i < layout->count(); ++i) {
+            QWidget *card = layout->itemAt(i)->widget();
+            if (card && card->objectName() == QLatin1String("marketPackageCard") &&
+                !card->isHidden())
+                found << card;
+        }
+        return found;
+    };
+    const auto clickMain = [](QWidget *card) {
+        QWidget *main = card ? card->findChild<QWidget *>(
+                                   QStringLiteral("marketNextCardMain"),
+                                   Qt::FindDirectChildrenOnly)
+                             : nullptr;
+        if (!main)
+            return false;
+        const QPointF local(main->width() / 2.0, 8.0);
+        const QPointF global = main->mapToGlobal(local);
+        QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton,
+                          Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(main, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton,
+                            Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(main, &release);
+        return true;
+    };
+    QList<QWidget *> gridCards = cards();
+    check(gridCards.size() >= 3 && gridButton->isChecked() && !listButton->isChecked() &&
+              pane->isHidden(),
+          QStringLiteral("the Market opens as a grid with the details pane closed"));
+    if (gridCards.size() < 3)
+        return;
+    check(gridCards.at(0)->geometry().top() == gridCards.at(1)->geometry().top() &&
+              gridCards.at(0)->geometry().left() < gridCards.at(1)->geometry().left(),
+          QStringLiteral("grid cards share a row"));
+    shoot(QStringLiteral("market-grid"));
+
+    QWidget *first = gridCards.at(0);
+    const QString firstId = first->property("packageId").toString();
+    check(clickMain(first), QStringLiteral("a grid card has a clickable main area"));
+    settle();
+    QWidget *details = first->findChild<QWidget *>(QStringLiteral("marketNextDetails"));
+    QWidget *paneDetails = pane->findChild<QWidget *>(QStringLiteral("marketNextDetails"));
+    auto *paneTitle = pane->findChild<QLabel *>(QStringLiteral("marketNextPaneTitle"));
+    check(pane->isVisible() && !details && paneDetails && paneDetails->isVisible() &&
+              paneTitle &&
+              paneTitle->text() == first->property("packageName").toString() &&
+              first->property("nextMarketSelected").toBool() &&
+              pane->geometry().left() >= tabs->geometry().right(),
+          QStringLiteral("clicking a grid card shows its details in the pane right "
+                         "of the list"));
+    if (marketList->viewport()->width() >= 2 * 330 + 16 + 48)
+        check(first->width() < marketList->viewport()->width() / 2,
+              QStringLiteral("the open card keeps its grid column"));
+    shoot(QStringLiteral("market-grid-details"));
+
+    QWidget *second = gridCards.at(1);
+    clickMain(second);
+    settle();
+    check(pane->isVisible() &&
+              first->findChild<QWidget *>(QStringLiteral("marketNextDetails")) &&
+              !first->property("nextMarketSelected").toBool() &&
+              second->property("nextMarketSelected").toBool() &&
+              pane->findChildren<QWidget *>(QStringLiteral("marketNextDetails")).size() == 1,
+          QStringLiteral("opening another card hands the first card its details back"));
+    clickMain(second);
+    settle();
+    check(pane->isHidden() && !second->property("nextMarketSelected").toBool(),
+          QStringLiteral("clicking the open card again closes the pane"));
+
+    clickMain(first);
+    settle();
+    listButton->click();
+    settle();
+    QList<QWidget *> listCards = cards();
+    check(listButton->isChecked() && !gridButton->isChecked() &&
+              settings.value(QStringLiteral("market/view")).toString() ==
+                  QLatin1String("list") &&
+              listCards.size() == gridCards.size(),
+          QStringLiteral("the list button switches the Market to a list and saves it"));
+    bool stacked = listCards.size() >= 2;
+    for (int i = 1; stacked && i < listCards.size(); ++i)
+        stacked = listCards.at(i)->geometry().top() > listCards.at(i - 1)->geometry().bottom() &&
+                  listCards.at(i)->geometry().left() == listCards.at(0)->geometry().left();
+    auto *listShot = listCards.isEmpty()
+        ? nullptr
+        : listCards.at(0)->findChild<QLabel *>(QStringLiteral("marketPackageScreenshot"));
+    check(stacked && listShot && listShot->height() < 80 &&
+              listCards.at(0)->property("nextMarketList").toBool() &&
+              listCards.at(0)->height() < 120,
+          QStringLiteral("list rows stack one per row with a small preview"));
+    QWidget *reopened = nullptr;
+    for (QWidget *card : listCards) {
+        if (card->property("packageId").toString() == firstId)
+            reopened = card;
+    }
+    check(pane->isVisible() && reopened &&
+              reopened->property("nextMarketSelected").toBool() &&
+              pane->findChildren<QWidget *>(QStringLiteral("marketNextDetails")).size() == 1,
+          QStringLiteral("the open package stays open in the pane when the cards "
+                         "are rebuilt as a list"));
+    shoot(QStringLiteral("market-list-details"));
+
+    tabs->setCurrentIndex(tabs->count() - 1);
+    settle();
+    check(pane->isHidden(), QStringLiteral("the pane hides on the Guides tab"));
+    tabs->setCurrentIndex(0);
+    settle();
+    check(pane->isVisible(), QStringLiteral("the pane comes back on the All tab"));
+    if (auto *close = pane->findChild<QPushButton *>(QStringLiteral("marketNextPaneClose")))
+        close->click();
+    settle();
+    check(pane->isHidden() &&
+              (!reopened || !reopened->property("nextMarketSelected").toBool()),
+          QStringLiteral("the close button closes the pane"));
+    shoot(QStringLiteral("market-list"));
+
+    gridButton->click();
+    settle();
+    check(settings.value(QStringLiteral("market/view")).toString() ==
+                  QLatin1String("grid") &&
+              cards().size() == gridCards.size(),
+          QStringLiteral("the grid button switches back to the grid"));
+    settings.remove(QStringLiteral("market/view"));
+    settings.remove(QStringLiteral("app/design"));
+    settings.remove(QStringLiteral("app/theme"));
+}
+
 // The agent detail's Code button: the session's live diff with its busiest
 // files as chips, Viewed marks that a later edit takes back, and Raw leaving it.
 void checkWorkspaceDesign(MainWindow &window)
@@ -12339,6 +12596,40 @@ void checkAgentFireball(MainWindow &window)
     QApplication::processEvents();
     check(purplePixelCount(matrix.grab().toImage()) > 0,
           QStringLiteral("a running agent's chrome-grid dot is purple"));
+    {
+        struct PaintCounter : QObject {
+            int paints = 0;
+            bool eventFilter(QObject *, QEvent *event) override
+            {
+                if (event->type() == QEvent::Paint)
+                    ++paints;
+                return false;
+            }
+        } counter;
+        QApplication::processEvents();
+        matrix.installEventFilter(&counter);
+        constexpr int kWindowMs = 900;
+        QElapsedTimer clock;
+        clock.start();
+        int beats = 0;
+        while (clock.elapsed() < kWindowMs) {
+            dot.intensity = 0.05 + (beats % 10) / 10.0;
+            matrix.setDots({dot});
+            ++beats;
+            QElapsedTimer beat;
+            beat.start();
+            while (beat.elapsed() < 45)
+                QApplication::processEvents(QEventLoop::AllEvents, 5);
+        }
+        matrix.removeEventFilter(&counter);
+        check(matrix.sweeping() && beats > 5 &&
+                  counter.paints <= kWindowMs / 60 + 3,
+              QStringLiteral("a running dot's meter changes ride the sweep's "
+                             "frames instead of adding their own (%1 paints "
+                             "for %2 meter beats)")
+                  .arg(counter.paints)
+                  .arg(beats));
+    }
     matrix.hide();
 
     // The focused mode starts without a repository, so lazily construct the
@@ -15732,6 +16023,8 @@ else:
         app.arguments().contains(QStringLiteral("--agent-code-only"));
     const bool workspaceDesignOnly =
         app.arguments().contains(QStringLiteral("--workspace-design-only"));
+    const bool marketViewOnly =
+        app.arguments().contains(QStringLiteral("--market-view-only"));
 
     if (offThreadTeardownOnly) {
         struct SyntheticFrame {
@@ -16407,6 +16700,12 @@ else:
 
     if (projectSettingsOnly) {
         checkProjectSettingsPage(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (marketViewOnly) {
+        checkMarketNextView(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -17308,9 +17607,60 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
                     button->objectName() == QLatin1String("topTerminalButton"))
                     chromeTerminal = button;
             check(chromeTerminal != nullptr,
-                  QStringLiteral("the top bar has a button that opens the terminal launcher"));
+                  QStringLiteral("the top bar has a button that shows the terminals"));
+            QWidget *terminalPanel = window.testSideRailTerminalPanel();
+            const bool dockedRight = terminalPanel && terminals &&
+                                     terminalPanel->isAncestorOf(terminals) &&
+                                     terminalPanel->isVisible() && railTerminal &&
+                                     railTerminal->isChecked();
             if (railTerminal)
                 railTerminal->click();
+            settleRail();
+            const bool hiddenByRail = terminalPanel && !terminalPanel->isVisible() &&
+                                      terminals && terminals->count() == 1;
+            if (chromeTerminal)
+                chromeTerminal->click();
+            settleRail();
+            const bool shownByTop = terminalPanel && terminalPanel->isVisible() &&
+                                    terminals && terminals->count() == 1;
+            check(dockedRight && hiddenByRail && shownByTop,
+                  QString("terminals open in a pane on the right of the window, and the rail "
+                          "and top-bar terminal buttons hide and show it without opening "
+                          "more tabs (docked=%1 hidden=%2 shown=%3)")
+                      .arg(dockedRight)
+                      .arg(hiddenByRail)
+                      .arg(shownByTop));
+
+            auto *newTab = terminals ? terminals->findChild<QPushButton *>(
+                                           QStringLiteral("terminalsNewButton"))
+                                     : nullptr;
+            if (newTab)
+                newTab->click();
+            settleRail();
+            const bool plusOpened = terminals && terminals->count() == 2;
+            if (plusOpened)
+                terminals->closeTab(terminals->ids().constLast());
+            settleRail();
+            check(newTab && plusOpened,
+                  QString("the terminal pane's + button opens another shell tab at once "
+                          "(tabs=%1)")
+                      .arg(terminals ? terminals->count() : -1));
+
+            auto *kindsMenu = terminals ? terminals->findChild<QMenu *>(
+                                              QStringLiteral("terminalsNewKindMenu"))
+                                        : nullptr;
+            QStringList kindLabels;
+            if (kindsMenu)
+                for (QAction *action : kindsMenu->actions())
+                    if (!action->isSeparator())
+                        kindLabels << action->text();
+            check(kindLabels.contains(QStringLiteral("Claude Code")) &&
+                      kindLabels.contains(QStringLiteral("Codex")),
+                  QString("the terminal pane's menu opens Claude Code or Codex in a new tab "
+                          "(items=%1)")
+                      .arg(kindLabels.join(QStringLiteral(", "))));
+            if (kindsMenu && !kindsMenu->actions().isEmpty())
+                kindsMenu->actions().constLast()->trigger();
             settleRail();
             auto *launcher = window.findChild<QDialog *>(QStringLiteral("terminalLauncher"));
             auto *launcherKind =
@@ -17330,16 +17680,29 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
             const bool launched = !launchedId.isEmpty() &&
                                   waitForText(launchedId, QStringLiteral("fm-launched"));
             check(launcher && launcherKind && launcherOpen && launched,
-                  QString("the rail's terminal button opens the launcher, which opens a "
-                          "command in a new terminal tab (tabs=%1)")
+                  QString("the pane's menu opens the launcher, which opens a command in a new "
+                          "terminal tab (tabs=%1)")
                       .arg(openIds.size()));
             if (terminals)
                 for (const QString &id : terminals->ids())
                     terminals->closeTab(id);
             settleRail();
             check(terminals && terminals->count() == 0 &&
-                      window.testTerminalToken(terminalId).isEmpty(),
-                  QStringLiteral("closing a terminal tab drops its agent token"));
+                      window.testTerminalToken(terminalId).isEmpty() && terminalPanel &&
+                      !terminalPanel->isVisible(),
+                  QStringLiteral("closing the last terminal tab drops its agent token and "
+                                 "hides the terminal pane"));
+            window.testToggleTerminals();
+            settleRail();
+            const bool oneClickShell = terminals && terminals->count() == 1 && terminalPanel &&
+                                       terminalPanel->isVisible();
+            if (terminals)
+                for (const QString &id : terminals->ids())
+                    terminals->closeTab(id);
+            settleRail();
+            check(oneClickShell,
+                  QStringLiteral("with no terminals open, one click on the terminal button "
+                                 "opens a shell in the side pane"));
             window.resize(railWindowSize);
             window.testShowTeamSection();
             settleRail();

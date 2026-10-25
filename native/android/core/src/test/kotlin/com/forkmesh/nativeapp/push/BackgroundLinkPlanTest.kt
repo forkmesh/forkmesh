@@ -20,9 +20,18 @@ class BackgroundLinkPlanTest {
         assertEq(listOf(prod.id), LinkPlan.of(listOf(next.copy(enabled = false), prod), LinkConditions()).projectIds)
     }
 
-    fun testNoNotificationPermissionMeansNoService() {
-        assertEq(LinkPlan.OFF, LinkPlan.of(listOf(next), LinkConditions(notificationsAllowed = false)))
+    fun testNoNotificationPermissionStillListensForCallsOnly() {
+        val plan = LinkPlan.of(listOf(next), LinkConditions(notificationsAllowed = false))
+        expect(plan.runService)
+        expect(plan.callsOnly)
+        expect(!plan.mesh)
+        expect(plan.live)
+        assertEq(listOf(next.id), plan.projectIds)
+        assertEq(LinkPlan.CALLS_TITLE, plan.title)
+        assertEq("Listening for calls on ForkMesh Next", plan.statusText(setOf(next.id)))
         assertEq(LinkPlan.OFF, LinkPlan.of(emptyList(), LinkConditions(notificationsAllowed = false)))
+        assertEq(LinkPlan.OFF, LinkPlan.of(listOf(next.copy(enabled = false)), LinkConditions(notificationsAllowed = false)))
+        expect(!LinkPlan.of(listOf(next), LinkConditions()).callsOnly)
     }
 
     fun testSignedOutPhonesStillListenOnTheMesh() {

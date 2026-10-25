@@ -1606,6 +1606,16 @@ QMenu *MainWindow::buildAgentListContextMenu(int sessionId, QWidget *parent)
             : blocker);
     connect(toCloud, &QAction::triggered, this,
             [this, sessionId] { moveAgentSessionToCloud(sessionId); });
+    QAction *toClaude = menu->addAction(QStringLiteral("Open in Claude app"));
+    toClaude->setObjectName(QStringLiteral("agentListOpenInClaudeAction"));
+    const QString claudeBlocker = claudeDesktopBlocker(sessionId);
+    toClaude->setEnabled(claudeBlocker.isEmpty());
+    toClaude->setToolTip(claudeBlocker.isEmpty()
+                             ? QStringLiteral("Show this agent's Claude Code session in "
+                                              "the Claude desktop app's Code tab")
+                             : claudeBlocker);
+    connect(toClaude, &QAction::triggered, this,
+            [this, sessionId] { addAgentToClaudeDesktop(sessionId, true); });
     if (!isCloudSession(sessionId) && !isExternalSession(sessionId)) {
         QAction *rename = menu->addAction(QStringLiteral("Rename\u2026"));
         rename->setObjectName(QStringLiteral("agentListRenameAction"));
@@ -2111,6 +2121,7 @@ void MainWindow::updateAgentStatusCell(int sessionId)
     AgentSession *s = findAgentSession(sessionId);
     if (!s)
         return;
+    noteClaudeDesktopCandidate(*s);
     syncOrgTaskAgentStatus(sessionId);
     if (!s->orgTaskId.isEmpty())
         refreshOrganizationTaskAgentRows();
@@ -2474,7 +2485,7 @@ void MainWindow::onScannerTick()
             continue;
         anyActive = true;
     }
-    refreshAgentDotMatrix();
+    refreshAgentDots();
     if (!anyActive && m_scannerTimer)
         m_scannerTimer->stop();
 }

@@ -131,6 +131,7 @@ object Features {
                     com.forkmesh.nativeapp.feature.genie.GenieOverlay()
                     com.forkmesh.nativeapp.feature.genie.GenieAutoSendReviewHost()
                     DirectCallOverlay()
+                    com.forkmesh.nativeapp.feature.chat.GroupCallOverlay()
                     com.forkmesh.nativeapp.feature.pocket.PocketLockOverlay()
                 }
             }

@@ -80,7 +80,7 @@ private val pillShape = RoundedCornerShape(13.dp)
 private val cardShape = RoundedCornerShape(14.dp)
 
 @Composable
-internal fun CallQualityWidget(history: CallQualityHistory, video: Boolean, modifier: Modifier = Modifier) {
+internal fun CallQualityWidget(history: CallQualityHistory, video: Boolean, modifier: Modifier = Modifier, peerLabel: String = "Them") {
     if (history.latest == null && history.levels.isEmpty()) return
     val prefs = remember { Services.get<PrefStore>() }
     var open by remember { mutableStateOf(prefs?.getBool(CallQuality.OPEN_KEY) == true) }
@@ -119,13 +119,13 @@ internal fun CallQualityWidget(history: CallQualityHistory, video: Boolean, modi
         }
         if (open) {
             Spacer(Modifier.height(6.dp))
-            QualityCard(history, video)
+            QualityCard(history, video, peerLabel)
         }
     }
 }
 
 @Composable
-private fun QualityCard(history: CallQualityHistory, video: Boolean) {
+private fun QualityCard(history: CallQualityHistory, video: Boolean, peerLabel: String) {
     val latest = history.latest
     val samples = history.samples
     Column(
@@ -138,7 +138,7 @@ private fun QualityCard(history: CallQualityHistory, video: Boolean) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(CallQuality.heading(history), color = CallQualityColors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        QualityRow("Voice", CallQuality.voiceText(history), "Voice levels over the last five seconds") {
+        QualityRow("Voice", CallQuality.voiceText(history, peerLabel), "Voice levels over the last five seconds") {
             voiceWave(history.levels, CallQuality.LEVEL_SAMPLES)
         }
         if (!history.live) return@Column

@@ -31,6 +31,10 @@ MAIN_REF = "refs/heads/main"
 RESULT_MARK = "::node-deploy-result::"
 SINK_NAME = "node-deploy.log"
 RUN_DIR_RE = re.compile(r"^forkmesh-run-(\d+)-(\d+)$")
+TMP_DISK_LABEL = "TMP"
+TMP_DISK_LABEL_DIR = "/dev/disk/by-label"
+TMP_DISK_MOUNTS = "/proc/self/mounts"
+TMP_DISK_ROOT = "ForkMesh"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REV_RE = re.compile(r"^[0-9a-f]{7,40}$")
 DEBOUNCE_SECONDS = 3
@@ -648,13 +652,49 @@ def actions_root(layout=None) -> Path:
     return (layout or forkmesh_paths.resolve()).data_path("actions")
 
 
-def running_runs(root: Path) -> list:
-    sandbox = root / "sandbox"
-    runs = []
+def unescape_mount_field(value: str) -> str:
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), value)
+
+
+def tmp_disk_mount(label_dir=None, mounts_file=None) -> Path | None:
+    link = Path(label_dir or TMP_DISK_LABEL_DIR) / TMP_DISK_LABEL
     try:
-        entries = list(os.scandir(sandbox))
-    except FileNotFoundError:
-        return runs
+        device = link.resolve(strict=True)
+        text = Path(mounts_file or TMP_DISK_MOUNTS).read_text("utf-8", "replace")
+    except (OSError, RuntimeError):
+        return None
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        try:
+            source = Path(unescape_mount_field(fields[0])).resolve()
+        except (OSError, RuntimeError):
+            continue
+        target = unescape_mount_field(fields[1])
+        if source == device and target != "/" and os.path.isdir(target):
+            return Path(os.path.normpath(target))
+    return None
+
+
+def sandbox_dirs(root: Path, label_dir=None, mounts_file=None) -> list:
+    dirs = [Path(root) / "sandbox"]
+    mount = tmp_disk_mount(label_dir, mounts_file)
+    if mount is not None:
+        fast = mount / TMP_DISK_ROOT / "actions" / "sandbox"
+        if fast not in dirs:
+            dirs.append(fast)
+    return dirs
+
+
+def running_runs(root: Path, sandboxes=None) -> list:
+    runs = []
+    entries = []
+    for sandbox in sandbox_dirs(root) if sandboxes is None else sandboxes:
+        try:
+            entries.extend(os.scandir(sandbox))
+        except (FileNotFoundError, NotADirectoryError, PermissionError):
+            continue
     newest = {}
     for entry in entries:
         match = RUN_DIR_RE.match(entry.name)
@@ -956,6 +996,17 @@ class Pipeline:
                 module, code, time.monotonic() - started))
         return results
 
+    def go_rerun(self, work: Path, venv: Path, module: str, failures: set):
+        root = go_root()
+        names = sorted({item.split("::", 1)[1].split("/", 1)[0] for item in failures})
+        lines = []
+        argv = [str(root / "bin" / "go"), "test", "-C", module, "-count=1", "-p", "1",
+                "-run", "^(%s)$" % "|".join(names), "./..."]
+        code = stream(sandbox_command(work, venv, work / "data" / "bin", argv,
+                                      binds=(root,), env=go_test_env(work, venv, root)),
+                      lines.append, timeout=TEST_TIMEOUT, popen=self.popen)
+        return code, failing_go_ids(module, lines), lines
+
     def pytest_many(self, work: Path, venv: Path, files: list, label: str):
         from concurrent.futures import ThreadPoolExecutor
         started = time.monotonic()
@@ -990,6 +1041,13 @@ class Pipeline:
                 go_results = go_future.result()
             broken = []
             for module, (code, failures, lines) in sorted(go_results.items()):
+                if code != 0 and failures:
+                    code, again, rerun = self.go_rerun(work, venv, module, failures)
+                    if code == 0:
+                        self.say("tests: go test %s: %s failed beside the other suites and "
+                                 "passed when rerun alone" % (module, ", ".join(sorted(failures))))
+                    else:
+                        failures, lines = again, lines + rerun
                 if code != 0:
                     broken += sorted(failures) or ["go test %s exit %d" % (module, code)]
                     for line in lines[-40:]:
