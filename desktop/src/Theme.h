@@ -1145,6 +1145,9 @@ QPushButton#quickAddGenieButton {
 QPushButton#quickAddGenieButton:hover {
     background: rgba(168,85,247,0.28); border-color: #d8b4fe; color: #e9d5ff;
 }
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(168,85,247,0.32); border: 1px solid #c084fc; color: #f3e8ff;
+}
 #issueSearch {
     background-color: #0d1117; border: 1px solid #30363d;
     border-radius: 6px; padding: 6px 10px;
@@ -1951,6 +1954,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(168,85,247,0.28); border-color: #d8b4fe; color: #e9d5ff;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(168,85,247,0.32); border: 1px solid #c084fc; color: #f3e8ff;
 }
 
 QCheckBox#quickAddCreateIssueCheck::indicator,
@@ -3386,6 +3392,9 @@ QPushButton#quickAddGenieButton {
 QPushButton#quickAddGenieButton:hover {
     background: rgba(124,58,237,0.20); border-color: #7c3aed; color: #5b21b6;
 }
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(124,58,237,0.22); border: 1px solid #7c3aed; color: #5b21b6;
+}
 #issueSearch {
     background-color: #ffffff; border: 1px solid #d0d7de;
     border-radius: 6px; padding: 6px 10px;
@@ -4178,6 +4187,9 @@ QPushButton#quickAddGenieButton {
 }
 QPushButton#quickAddGenieButton:hover {
     background: rgba(124,58,237,0.20); border-color: #7c3aed; color: #5b21b6;
+}
+QPushButton#quickAddGenieButton[enterTarget="true"] {
+    background: rgba(124,58,237,0.22); border: 1px solid #7c3aed; color: #5b21b6;
 }
 
 QCheckBox#quickAddCreateIssueCheck::indicator,

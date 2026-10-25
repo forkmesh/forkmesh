@@ -3375,8 +3375,10 @@ void checkPromptPreviewShowsChatRoom(MainWindow &window)
     check(sendTo && sendTo->isEnabled() &&
               sendTo->text() == QStringLiteral("chat") &&
               sendTo->toolTip().contains(QStringLiteral("prompt-preview")) &&
-              sendTo->toolTip().contains(QStringLiteral("(Enter)")),
-          QStringLiteral("send to names the open room and takes Enter (%1 | %2)")
+              sendTo->toolTip().contains(QStringLiteral("(Enter)")) &&
+              sendTo->property("enterTarget").toBool(),
+          QStringLiteral("send to names the open room, takes Enter and is "
+                         "highlighted as the Enter button (%1 | %2)")
               .arg(sendTo ? sendTo->text() : QStringLiteral("none"),
                    sendTo ? sendTo->toolTip() : QString()));
     const QString shots = qEnvironmentVariable("FORKMESH_WORKSPACE_SHOT");
