@@ -213,4 +213,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S138 | 2026-10-21 | Calls | fix | In China the app rings calls itself instead of through the system call screen. | 6303bbe848 | n/a | CallKit and PushKit are iOS-only; Android always rings through its own call notification |
 | S139 | 2026-10-21 | Calls | feature | On a link too weak for video, a group call shows a live moving picture of the person, mouth included, instead of a frozen tile. | c368c4b198 | pending |  |
 | S140 | 2026-10-21 | Calls | feature | Group calls run on ForkMesh's own media engine, with a code everyone in the call can compare to check it is end-to-end encrypted. | 1c03f8c728 | pending |  |
+| S141 | 2026-10-25 | Account | fix | The app stays signed in to your instances after the phone restarts. | d16277242c | n/a | Android is not directBootAware, so it never starts before the first unlock |
 <!-- ledger:end -->
