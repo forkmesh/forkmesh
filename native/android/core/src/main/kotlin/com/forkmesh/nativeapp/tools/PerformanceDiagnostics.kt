@@ -61,6 +61,8 @@ object DiagnosticsBundle {
         Regex("(?i)\\b(authorization|bearer|token|access_token|refresh_token|secret|password|passwd|api[_-]?key|cookie|session(?:_?id)?|signature|sig)\\b([\"']?\\s*[:=]\\s*[\"']?)[^\\s\"',;&]+") to "$1$2[redacted]",
         Regex("\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]*") to "[token]",
         Regex("(?i)\"(text|body|message|content|prompt|title|note|subject)\"\\s*:\\s*\"(?:[^\"\\\\]|\\\\.)*\"") to "\"$1\":\"[redacted]\"",
+        Regex("(?i)\"(conversation|channel|room|query|to|target)\"\\s*:\\s*\"(?:[^\"\\\\]|\\\\.)*\"") to "\"$1\":\"[redacted]\"",
+        Regex("(?i)\\b(conversation|channel|room|query|q)=[^\\s&\"',;]+") to "$1=[redacted]",
         Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}") to "[email]",
         Regex("(https?://[^\\s?#\"]+)\\?[^\\s\"]*") to "$1?[query]",
         Regex("\\+\\d[\\d ()-]{8,}\\d") to "[number]",
@@ -127,7 +129,7 @@ object DiagnosticsBundle {
         val lines = telemetry?.log?.entries()?.takeLast(LOG_LINES).orEmpty()
         if (lines.isEmpty()) out.append("empty\n")
         lines.forEach { out.append(it.toString().take(160)).append('\n') }
-        return out.toString()
+        return scrub(out.toString())
     }
 
     fun prompt(reason: String, report: String, includeLogs: Boolean, limit: Int = MAX_PROMPT_CHARS): String {

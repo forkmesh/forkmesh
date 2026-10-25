@@ -178,6 +178,8 @@
     {
      "title": "Android",
      "items": [
+      "Chat on Android stays snappy: a system dialog or permission prompt no longer reconnects chat or reruns its refresh.",
+      "Private channels on Android can hold end-to-end encrypted group voice and video calls, with Join buttons when a call is in progress.",
       "On Android, every agent page pins the last thing you wrote to the agent above its transcript; swipe the card sideways to move through your earlier and later prompts.",
       "On Android, the terminal's keys fit on screen in two rows, a Ctrl key sends any Ctrl combination, and scrolling up to read earlier output no longer jumps back to the bottom.",
       "On Android, Settings > Appearance can match the instance's theme, so the app wears the colours the instance's admin picked.",
@@ -311,6 +313,9 @@
      "title": "Android",
      "items": [
       "Notifications show no message text on the lock screen, and nearby #mesh alerts follow your notification content setting.",
+      "On Android too, call buttons move to two rows when one row does not fit, and you can drag your own video to any corner of a call, where it stays for the next call.",
+      "Calls ring an Android phone that has notifications turned off, as long as its background connection is on.",
+      "Removing a project on Android erases its chat history, and performance reports hide conversation and channel names.",
       "On Android, the first action on an agent's page is no longer cut off when the page has more actions than fit."
      ]
     },

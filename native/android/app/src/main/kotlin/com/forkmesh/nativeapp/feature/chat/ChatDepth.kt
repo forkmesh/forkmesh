@@ -200,6 +200,7 @@ object ChatDepth {
             }
             office = service
             chat.office = service
+            GroupCallFeature.install(app, service) { auth?.session?.value?.nodeName.orEmpty() }
             val directService = DirectMessageService(
                 api = calling,
                 connector = WebSocketOfficeConnector,
@@ -244,7 +245,7 @@ object ChatDepth {
                     if (topic == DIRECT_MESSAGES_TOPIC && direct === directService) {
                         ProjectLifecycle.scope.launch(Dispatchers.IO) { directService.refresh() }
                     } else if (topic == ChatReadMarks.TOPIC && hub === chat) {
-                        ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks() }
+                        ProjectLifecycle.scope.launch(Dispatchers.IO) { chat.applyReadMarks(force = true) }
                     }
                 }
                 val previousEvent = channel.onEvent
@@ -321,7 +322,7 @@ object ChatDepth {
                                 it.refresh()
                             }
                         }
-                        if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks()
+                        if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks(force = true)
                         room.owners?.clear()
                         chat.blocks?.let { if (token.isEmpty()) it.clear() else it.signedIn() }
                     }
