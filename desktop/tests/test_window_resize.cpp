@@ -43,7 +43,6 @@
 #include "../src/TerminalTabsPage.h"
 #include "ScreenCaptureOverlay.h"
 #include "ScreenshotMarkupWindow.h"
-#include "ForkMeshBuildCommit.h"
 #include "ForkMeshVersion.h"
 
 #include <chrono>
@@ -12168,6 +12167,159 @@ protected:
     }
 };
 
+void checkSettingsOutline(MainWindow &window, bool next)
+{
+    QSettings settings;
+    const QVariant themeBefore = settings.value(QStringLiteral("app/theme"));
+    if (next) {
+        settings.setValue(QStringLiteral("app/design"), QStringLiteral("next"));
+        MainWindow::applyTheme();
+    }
+    window.testEnableSessionStartBypass(true);
+    window.testSetSetupInputs(QStringLiteral("qa-tester"), QString());
+    window.testStartSession();
+    window.resize(1440, 900);
+    window.show();
+    window.testShowSettingsSection();
+    settleAnimations();
+
+    auto *sections =
+        window.findChild<SettingsSectionsView *>(QStringLiteral("settingsSections"));
+    auto *nav = window.findChild<QListWidget *>(QStringLiteral("settingsNav"));
+    check(sections && nav && nav->count() == sections->count(),
+          QStringLiteral("every Settings section has its entry in the list on the left"));
+    if (!sections || !nav)
+        return;
+    sections->setCollapsedTitles({});
+    settleAnimations();
+
+    QStringList unlisted;
+    QStringList unlit;
+    for (int i = 0; i < sections->count(); ++i) {
+        if (sections->isSectionHidden(i))
+            continue;
+        sections->setCurrentIndex(i);
+        settleAnimations(250);
+        QWidget *body = sections->widget(i);
+        const QString section = sections->tabText(i);
+        if (nav->item(i)->text() != section || nav->currentRow() != i)
+            unlisted << QStringLiteral("%1 (list entry)").arg(section);
+        auto *lit = qobject_cast<QLabel *>(sections->litHeading());
+        if (!lit || !lit->property("settingsLit").toBool() || !lit->isVisibleTo(&window))
+            unlit << section;
+        if (!body)
+            continue;
+        const QStringList listed = sections->subSectionTitles(i);
+        QStringList headings;
+        int cards = 0;
+        const QList<QWidget *> children =
+            body->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly);
+        for (QWidget *card : children) {
+            if (!card->property("sectionCard").toBool() || !card->isVisibleTo(body))
+                continue;
+            ++cards;
+            QString heading;
+            for (QLabel *label : card->findChildren<QLabel *>(QStringLiteral("sectionLabel"))) {
+                if (label->isVisibleTo(card)) {
+                    heading = label->text();
+                    break;
+                }
+            }
+            if (heading.isEmpty()) {
+                QString first;
+                for (QWidget *inner : card->findChildren<QWidget *>()) {
+                    if (auto *button = qobject_cast<QAbstractButton *>(inner);
+                        button && !button->text().isEmpty() && inner->isVisibleTo(card)) {
+                        first = button->text();
+                        break;
+                    }
+                    if (auto *label = qobject_cast<QLabel *>(inner);
+                        label && !label->text().isEmpty() && inner->isVisibleTo(card)) {
+                        first = label->text().left(40);
+                        break;
+                    }
+                }
+                unlisted << QStringLiteral("%1 > card without a heading (%2)").arg(section, first);
+                continue;
+            }
+            headings << heading;
+        }
+        if (cards >= 2 && listed.size() != headings.size())
+            unlisted << QStringLiteral("%1 > list [%2] page [%3]")
+                            .arg(section, listed.join(QStringLiteral(", ")),
+                                 headings.join(QStringLiteral(", ")));
+    }
+    for (const QString &line : std::as_const(unlisted))
+        std::fprintf(stderr, "  settings outline: %s\n", qPrintable(line));
+    check(unlisted.isEmpty(),
+          QStringLiteral("every group on the Settings page is listed on the left, in "
+                         "the same order and under the same heading"));
+    for (const QString &line : std::as_const(unlit))
+        std::fprintf(stderr, "  settings heading not lit: %s\n", qPrintable(line));
+    check(unlit.isEmpty(),
+          QStringLiteral("jumping to a section lights its heading on the page, as its "
+                         "entry is lit in the list"));
+
+    const QString shots = qEnvironmentVariable("FORKMESH_SETTINGS_SHOT");
+    int generalIndex = -1;
+    for (int i = 0; i < sections->count(); ++i) {
+        if (sections->tabText(i) == QLatin1String("General"))
+            generalIndex = i;
+    }
+    sections->setCurrentIndex(generalIndex);
+    settleAnimations();
+    if (!shots.isEmpty())
+        window.grab().save(shots + QStringLiteral("-general.png"));
+
+    auto *localHalloween =
+        window.findChild<QCheckBox *>(QStringLiteral("halloweenLocalCheck"));
+    sections->setSearchText(QStringLiteral("halloween"));
+    settleAnimations();
+    const QList<QWidget *> hits = sections->searchHits();
+    check(sections->visibleSectionTitles().contains(QStringLiteral("General")) &&
+              localHalloween && hits.contains(localHalloween),
+          QStringLiteral("searching Settings for halloween finds the Halloween theme "
+                         "switch in General"));
+    if (!shots.isEmpty()) {
+        sections->nextSearchHit();
+        settleAnimations();
+        window.grab().save(shots + QStringLiteral("-search.png"));
+    }
+    sections->setSearchText(QString());
+    settleAnimations();
+
+    auto *themeCombo = window.findChild<QComboBox *>(QStringLiteral("appThemeCombo"));
+    if (localHalloween && themeCombo) {
+        themeCombo->setCurrentIndex(themeCombo->findData(QStringLiteral("light")));
+        settleAnimations(100);
+        localHalloween->setChecked(true);
+        settleAnimations(100);
+        const bool on = settings.value(QStringLiteral("app/theme")).toString() ==
+                        QLatin1String("halloween");
+        localHalloween->setChecked(false);
+        settleAnimations(100);
+        check(on && settings.value(QStringLiteral("app/theme")).toString() ==
+                        QLatin1String("light") &&
+                  !localHalloween->isChecked(),
+              QStringLiteral("the Halloween switch in Settings turns the theme on and "
+                             "back to the one chosen before"));
+        themeCombo->setCurrentIndex(themeCombo->findData(QStringLiteral("halloween")));
+        settleAnimations(100);
+        check(localHalloween->isChecked(),
+              QStringLiteral("picking Halloween in the theme list ticks the Halloween switch"));
+    }
+    auto *adminBox = window.findChild<QWidget *>(QStringLiteral("seasonAdminBox"));
+    check(adminBox && !adminBox->isVisibleTo(&window),
+          QStringLiteral("the switch for everyone stays hidden from an account that "
+                         "cannot manage it"));
+    if (themeBefore.isValid())
+        settings.setValue(QStringLiteral("app/theme"), themeBefore);
+    else
+        settings.remove(QStringLiteral("app/theme"));
+    if (next)
+        settings.remove(QStringLiteral("app/design"));
+}
+
 void checkThemeSwitchRepolish(MainWindow &window)
 {
     window.testEnableSessionStartBypass(true);
@@ -17048,6 +17200,12 @@ else:
 
     if (app.arguments().contains(QStringLiteral("--deploy-log-badges-only"))) {
         checkDeployLogBadges(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (app.arguments().contains(QStringLiteral("--settings-outline-only"))) {
+        checkSettingsOutline(window, app.arguments().contains(QStringLiteral("--next")));
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -23413,8 +23571,7 @@ print("FMPROBE", r.get("ok"), len(r.get("terminals", [])), sum(1 for t in r.get(
     // fallback, restarts in place, and checks both the reported version and
     // exact source revision before the per-host pane can turn green.
     {
-        const QString expectedBuildCommit =
-            QStringLiteral(FORKMESH_BUILD_COMMIT).trimmed().toLower();
+        const QString expectedBuildCommit = forkmesh::desktopBuildCommit();
         const QRegularExpression exactCommit(
             QStringLiteral("^(?:[0-9a-f]{40}|[0-9a-f]{64})$"));
         const bool buildIsCommitted =
