@@ -1927,6 +1927,11 @@ public:
                                         const QString &header) const;
     void testSelectUsersRow(int row);
     void testSelectUsersQuarantineRow(int row);
+    void testClickUsersRow(int row) { openUsersDetail(m_usersTable, row); }
+    void testClickUsersQuarantineRow(int row)
+    {
+        openUsersDetail(m_usersQuarantineTable, row);
+    }
     QStringList testSelectedUsersActionTargets() const
     {
         return selectedUsersActionTargets();
@@ -6082,6 +6087,11 @@ private:
     void deleteSelectedUsers();
     void deleteNextSelectedUser();
     void finishUsersDeleteBatch();
+    QWidget *buildUsersDetailPanel();
+    void openUsersDetail(QTableWidget *table, int row);
+    void followUsersDetailSelection(QTableWidget *table);
+    void renderUsersDetail();
+    void closeUsersDetail();
 
     QWidget *buildFilesSection();
     QLayout *buildFilesEditorBar();
@@ -12476,6 +12486,10 @@ private:
     QTabWidget *m_usersTabs = nullptr;
     QTableWidget *m_usersTable = nullptr;
     QTableWidget *m_usersQuarantineTable = nullptr;
+    QFrame *m_usersDetailPanel = nullptr;
+    QScrollArea *m_usersDetailScroll = nullptr;
+    QTableWidget *m_usersDetailTable = nullptr;
+    QString m_usersDetailName;
     QWidget *m_usersSignupReferralCodePanel = nullptr;
     QLabel *m_usersSignupReferralCodeStatus = nullptr;
     QLineEdit *m_usersSignupReferralCodeEdit = nullptr;
