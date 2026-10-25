@@ -997,10 +997,7 @@ int main(int argc, char *argv[])
                      [](Qt::ColorScheme) { MainWindow::applyTheme(); });
 #endif
 
-    QElapsedTimer startup;
-    startup.start();
-    qInfo().noquote() << QStringLiteral("[startup +%1ms] constructing MainWindow")
-                             .arg(startup.elapsed(), 5);
+    forkmesh::logStartupTrace(QStringLiteral("constructing MainWindow"));
     forkmesh::ui::startupStep(QStringLiteral("Starting the application window"));
     auto *window = new MainWindow;
     const auto openLocalAction = [window](const QString &target) {
@@ -1022,8 +1019,7 @@ int main(int argc, char *argv[])
     };
     app.setLocalLinkHandler(openLocalAction);
     forkmesh::ui::attachStartupSplashTo(window);
-    qInfo().noquote() << QStringLiteral("[startup +%1ms] MainWindow constructed")
-                             .arg(startup.elapsed(), 5);
+    forkmesh::logStartupTrace(QStringLiteral("MainWindow constructed"));
     forkmesh::onSingleInstanceActivation([window, openLocalAction](
                                              const QString &target) {
         openLocalAction(target);
@@ -1064,8 +1060,7 @@ int main(int argc, char *argv[])
                                openLocalAction(localActionLink);
                            });
     }
-    qInfo().noquote() << QStringLiteral("[startup +%1ms] window shown; entering event loop")
-                             .arg(startup.elapsed(), 5);
+    forkmesh::logStartupTrace(QStringLiteral("window shown; entering event loop"));
     // Logged before the sink swap below: once the app log sink owns qInfo(),
     // startup lines stop reaching stdout, so this is the last pre-event-loop
     // marker a launch harness can read from the console.

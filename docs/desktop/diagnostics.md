@@ -729,6 +729,48 @@ returned, so summed frame totals overstate a function's own cost.
     Nothing in the report names the widget that asks for them, so this
     needs a run with paint-request tracing.
 
+### Startup: installed package pages after first paint (2026-10-25)
+
+A launch log showed three long gaps before the window appeared: about
+1.9 s before `buildChatPage: notification button`, 1.7 s before
+`buildChatPage: status bar`, and 1.1 s before `chat/app page built`, about
+5 s in all. Sampling the main thread with gdb in a sandbox with a copy of
+`ForkMesh.conf` and the network unshared (same gaps, 3.3 + 3.8 + 2.2 s
+there) showed where the time went:
+
+- **The first gap** was `syncNativePackagePages` calling every installed
+  package's `factory`, which built about 30 package widgets (Marketing,
+  Analytics, OpenWrt, DJ Studio, Workflows, Instance feed, ...) inside
+  `buildChatPage`.
+- **The other two** were `QBoxLayout::insertWidget` -> `addChildWidget`.
+  `buildChatPage` builds the shell without a parent, then adds it to
+  `lower`, `lower` to `page`, and `page` to `m_stack`. Under the
+  application stylesheet each reparent re-polishes the whole subtree, so
+  the package widgets inside it were styled again at every level.
+
+Now the shell is built and attached without package pages, and the window
+paints. `paintEvent` schedules `buildDeferredNativePackagePages` 150 ms
+later, and `runDeferredStartup` calls it too, for a window that never
+paints. It builds one package per event-loop turn (`buildNextNativePackagePage`)
+and re-applies the rail order after each one, so the rail is never out of
+order. `m_nativePackagePagesWanted` holds the list being built. A registry
+change in the meantime bumps `m_nativePackagePagesGeneration`, which stops
+the old chain. `syncNativePackagePages` does nothing until the deferred build
+starts. Window tests (`FORKMESH_WINDOW_TESTS`) still build every package page
+synchronously in the constructor.
+
+In the sandbox, `entering Qt event loop` moved from 9.9 s to 1.2-1.9 s (load average about 65). The package pages then
+build in steps of 0.5-3 s each there (CRM, Analytics and Marketing are the
+heaviest), which the stall log shows as `addNativePackagePage` stalls; building
+each page only when it is first opened would remove that cost.
+For the few seconds the steps take, a package page that has not
+been built yet is missing from search results and its rail button.
+
+`main.cpp` used to time `constructing MainWindow`, `MainWindow constructed`
+and `window shown` with a timer of its own, so the log printed `+0ms` after
+`+131ms`. Those lines now go through `logStartupTrace` like the rest of the
+trace.
+
 ### Background file writes
 
 `src/BackgroundFileWriter.{h,cpp}` (`forkmesh::diskwrite`) moves `QSaveFile`

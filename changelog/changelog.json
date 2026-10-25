@@ -48,7 +48,8 @@
       "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls.",
       "A desktop Actions step can now set timeout-minutes, and the desktop client CI build gets enough time to finish instead of stopping at 90 minutes.",
       "Running a workflow from the Workflows page now jumps to Recent runs, selects the new run and shows its output on the right, updating live while it runs.",
-      "Video Mix DJ Studio now runs inside the desktop app as a full DJ studio with up to four YouTube decks, EQ, filters, echo, reverb and flanger, hot cues, beat loops, scratching, AUTOMIX, AUTO DJ, playlists and jam sessions."
+      "Video Mix DJ Studio now runs inside the desktop app as a full DJ studio with up to four YouTube decks, EQ, filters, echo, reverb and flanger, hot cues, beat loops, scratching, AUTOMIX, AUTO DJ, playlists and jam sessions.",
+      "The desktop window opens about twice as fast: installed package pages now load just after the window appears, and the Claude app's own log lines no longer land in ForkMesh's terminal."
      ]
     },
     {
