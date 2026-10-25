@@ -536,9 +536,14 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   bar's first control names the chat channel the composer is in
   (`m_currentConversation`) with a ▾. Clicking it opens `promptChannelMenu`
   (`showPromptChannelMenu`): one row per channel (the sidebar's `m_channels`
-  plus `unlistedChatConversations`, direct messages left out unless one is
-  open), each with its user and chat counts after a tab, the current one
-  checked. Picking a row calls `switchConversation`. Users come from the
+  plus `unlistedChatConversations`), then a "Direct messages" section with
+  one row per direct message (`m_openDms`, `m_officeDirectConversations` and
+  unlisted ones), each with its user and chat counts after a tab, the current
+  one checked. Picking a row calls `switchConversation`. The last row,
+  "Message someone…" (`promptChannelMessagePerson`), opens the new-message
+  people picker (`showNewMessageDialog`), so the composer can send straight to
+  a person who has no conversation yet. Until 2026-10-24 direct messages were
+  left out of this menu unless one was open. Users come from the
   office mirror's member count, else the open room's members button, else
   the distinct senders in the loaded history plus you; chats are the loaded
   top-level messages. Until 2026-10-24 this spot showed the characters left
