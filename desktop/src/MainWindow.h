@@ -74,6 +74,7 @@
 #include "AgentRunRules.h"
 #include "AgentHub.h"
 #include "AgentIntake.h"
+#include "TerminalBridge.h"
 #include "AgentWindows.h"
 #include "ClaudeTranscriptTools.h"
 #include "TeammateMood.h"
@@ -135,6 +136,8 @@ struct GovernorSnapshot;
 struct SliceCounters;
 }
 namespace forkmesh::ui { struct NextAccess; }
+namespace forkmesh::ui { class TerminalTabsPage; class WorkspaceBrowserPane; }
+namespace forkmesh::siderail { struct Item; }
 namespace forkmesh::ui { enum class ActionPingEvent; }
 namespace forkmesh::pingforward { struct Ping; struct Source; }
 namespace forkmesh::poweralert { struct Reading; }
@@ -388,6 +391,7 @@ class QProcess;
 class QTemporaryDir;
 class QVBoxLayout;
 class QBoxLayout;
+class QMimeData;
 class HeaderWrapLayout;
 class QCheckBox;
 class QHBoxLayout;
@@ -2476,21 +2480,33 @@ public:
         return m_teammateDetailPanel && m_teammateDetailPanel->isVisible();
     }
     void testReloadTeammatesPanel() { loadTeammatesPanel(); }
-    QWidget *testTeammateRail() const { return m_teammateRail; }
+    QWidget *testSideRail() const { return m_sideRail; }
+    QWidget *testSideRailBrowserPanel() const { return m_sideRailBrowserPanel; }
+    void testRefreshSideRail() { refreshSideRail(); }
+    void testSetSideRailEnabled(bool enabled) { setSideRailEnabled(enabled); }
+    bool testDropOnSideRail(const QMimeData *mime, int index) { return dropOnSideRail(mime, index); }
+    QStringList testSideRailKeys() const;
+    void testSetSideRailBrowserOpen(bool open) { setSideRailBrowserOpen(open); }
+    forkmesh::ui::TerminalTabsPage *testTerminalsPage() const { return m_terminalsPage; }
+    int testTerminalsSectionIndex() const { return kTerminalsSectionIndex; }
+    QString testOpenTerminalTab(const QString &kind, const QString &command, const QString &cwd)
+    {
+        return openTerminalTab(kind, command, cwd, QString());
+    }
+    QJsonObject testTerminalRequest(int sessionId, const QString &terminalId, const QString &method,
+                                    const QJsonObject &params)
+    {
+        return handleTerminalRequest(sessionId, terminalId, method, params);
+    }
+    QString testTerminalToken(const QString &terminalId) const
+    {
+        return m_terminalIntakeTokens.value(terminalId);
+    }
     QWidget *testPackageRail() const { return m_packageRail; }
     void testRefreshPackageRail()
     {
         m_packageRailSignature.clear();
         refreshPackageRail();
-    }
-    void testRefreshTeammateRail()
-    {
-        m_teammateRailSignature.clear();
-        refreshTeammateRail();
-    }
-    void testSetTeammateRailEnabled(bool enabled)
-    {
-        setTeammateRailEnabled(enabled);
     }
     void testMarkTeammateDoneUnseen(int sessionId)
     {
@@ -3807,6 +3823,7 @@ private:
     static constexpr int kGovernorSectionIndex = 27;
     static constexpr int kProjectSettingsSectionIndex = 28;
     static constexpr int kSessionsSectionIndex = 29;
+    static constexpr int kTerminalsSectionIndex = 30;
 
     // What the relay stores for a task title, and so what the composer
     // accepts and what a converted note is elided to before it gets there.
@@ -8919,12 +8936,7 @@ private:
     // shared agent entry. The same primitive powers daily briefing runs.
     void runTeammateTeamNow();
     void runTeammatesInOneSessionNow();
-    QWidget *buildTeammateRail();
-    QWidget *buildTeammateRailItem(const forkmesh::teammates::Config &config,
-                                   const QString &status, bool inFlight,
-                                   bool doneUnseen,
-                                   const AgentSession *session,
-                                   const forkmesh::teammates::Mood &mood);
+    void restoreTeammateRunState();
     QPushButton *buildTeammateVideoTile(const forkmesh::teammates::Config &config,
                                         const QString &status, bool inFlight,
                                         bool doneUnseen,
@@ -8948,11 +8960,35 @@ private:
     QHash<QString, forkmesh::teammates::Mood>
     assessTeammateMoods(const QList<forkmesh::teammates::Config> &teammates,
                         qint64 nowMs);
-    void refreshTeammateRail();
     void scheduleTeammateRailRefresh();
-    bool teammateRailEnabled() const;
-    void setTeammateRailEnabled(bool enabled);
-    void applyTeammateRailVisibility();
+    QWidget *buildSideRail();
+    void refreshSideRail();
+    void scheduleSideRailRefresh();
+    bool sideRailEnabled() const;
+    void setSideRailEnabled(bool enabled);
+    void applySideRailVisibility();
+    QList<forkmesh::siderail::Item> sideRailItems() const;
+    void saveSideRailItems(const QList<forkmesh::siderail::Item> &items);
+    bool dropOnSideRail(const QMimeData *mime, int index);
+    void activateSideRailItem(const forkmesh::siderail::Item &item);
+    void showSideRailItemMenu(const forkmesh::siderail::Item &item, const QPoint &globalPos);
+    void showSideRailMenu(const QPoint &globalPos);
+    bool sideRailBrowserOpen() const;
+    void setSideRailBrowserOpen(bool open);
+    void openInSideRailBrowser(const QString &address);
+    QWidget *buildTerminalsSection();
+    void showTerminalLauncher();
+    void showTerminalsPage();
+    QString openTerminalTab(const QString &kind, const QString &command, const QString &cwd,
+                            const QString &title, const QString &openedBy = QString(),
+                            bool shared = true, QString *error = nullptr);
+    QJsonObject terminalJson(const QString &terminalId, const QString &callerTerminal) const;
+    QString terminalMcpConfigPath(const QString &terminalId);
+    QJsonObject handleTerminalRequest(int sessionId, const QString &terminalId,
+                                      const QString &method, const QJsonObject &params);
+    QString terminalCallerForToken(const QString &token) const;
+    void forgetTerminal(const QString &terminalId);
+    void ensureAgentIntakeServer();
     void showTeammateRailMenu(const QString &id, QWidget *anchor);
     QWidget *buildPackageRail();
     void refreshPackageRail();
@@ -13273,12 +13309,20 @@ private:
     QString m_teammateHomeSignature;
     bool m_teammateHomeFromDashboard = true;
     QHash<int, QPair<qint64, QString>> m_teammateHomeOutputCache;
-    QWidget *m_teammateRail = nullptr;
-    QVBoxLayout *m_teammateRailLayout = nullptr;
-    QTimer *m_teammateRailRefreshTimer = nullptr;
     QTimer *m_teammateRailClock = nullptr;
-    QString m_teammateRailSignature;
-    QPointer<QCheckBox> m_teammateRailCheck;
+    QWidget *m_sideRail = nullptr;
+    QWidget *m_sideRailBrowserPanel = nullptr;
+    QBoxLayout *m_sideRailItemsLayout = nullptr;
+    QPushButton *m_sideRailBrowserButton = nullptr;
+    QTimer *m_sideRailRefreshTimer = nullptr;
+    forkmesh::ui::WorkspaceBrowserPane *m_sideRailBrowser = nullptr;
+    QPointer<QCheckBox> m_sideRailCheck;
+    forkmesh::ui::TerminalTabsPage *m_terminalsPage = nullptr;
+    QHash<QString, QString> m_terminalIntakeTokens;
+    forkmesh::agentintake::RateLimiter m_terminalInputLimiter{
+        forkmesh::terminalbridge::kInputLimit, forkmesh::terminalbridge::kInputWindowMs};
+    forkmesh::agentintake::RateLimiter m_terminalOpenLimiter{
+        forkmesh::terminalbridge::kOpenLimit, forkmesh::terminalbridge::kOpenWindowMs};
     QWidget *m_packageRail = nullptr;
     QVBoxLayout *m_packageRailLayout = nullptr;
     QTimer *m_packageRailRefreshTimer = nullptr;

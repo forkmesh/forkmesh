@@ -7759,6 +7759,7 @@ void MainWindow::rebuildGlobalSearchResults()
         {"Memory", "database", kMemorySectionIndex},
         {"Agent governor", "shield-check", kGovernorSectionIndex},
         {"Sessions", "history", kSessionsSectionIndex},
+        {"Terminals", "terminal", kTerminalsSectionIndex},
         {"Home", "home", kHomeGridSectionIndex},
         {"Special Agents", "people", kTeamSectionIndex},
         {"Settings", "gear", 1},
@@ -9045,6 +9046,9 @@ QString MainWindow::navPlaceLabel(const NavPlace &place) const
             break;
         case kSessionsSectionIndex:
             destination = QStringLiteral("Sessions");
+            break;
+        case kTerminalsSectionIndex:
+            destination = QStringLiteral("Terminals");
             break;
         case kProjectSettingsSectionIndex:
             destination = place.itemId.isEmpty()

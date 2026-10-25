@@ -814,8 +814,12 @@ QWidget *MainWindow::buildWorkflowPinStrip(const QString &rail)
 
 void MainWindow::refreshWorkflowPins()
 {
-    if (m_workflowPinStrips.isEmpty() || m_workflowPinDragging)
+    if (m_workflowPinDragging)
         return;
+    if (m_workflowPinStrips.isEmpty()) {
+        scheduleSideRailRefresh();
+        return;
+    }
     const QList<rw::Pin> pins = workflowPins();
     QHash<QString, QList<rw::Listing>> listings;
     for (auto stripIt = m_workflowPinStrips.cbegin(); stripIt != m_workflowPinStrips.cend(); ++stripIt) {
@@ -891,6 +895,7 @@ void MainWindow::refreshWorkflowPins()
             layout->addStretch(1);
         strip->setVisible(shown > 0);
     }
+    scheduleSideRailRefresh();
 }
 
 bool MainWindow::handleWorkflowPinEvent(QObject *watched, QEvent *event)
@@ -978,6 +983,28 @@ void MainWindow::startWorkflowPinDrag(QWidget *button, const QPoint &hotSpot)
 void MainWindow::setWorkflowPinStripsOpen(bool open)
 {
     m_workflowPinDragging = open;
+    const auto dropZone = [](QWidget *host) {
+        auto *frame = new QFrame(host);
+        frame->setObjectName(QStringLiteral("workflowPinDropZone"));
+        frame->setAttribute(Qt::WA_TransparentForMouseEvents);
+        frame->setStyleSheet(Theme::remapSheet(
+            QStringLiteral("QFrame#workflowPinDropZone { background: transparent;"
+                           " border: 1px dashed #2ea043; border-radius: 6px; }")));
+        return frame;
+    };
+    if (QWidget *side = m_sideRailItemsLayout ? m_sideRailItemsLayout->parentWidget() : nullptr) {
+        QWidget *outline =
+            side->findChild<QWidget *>(QStringLiteral("workflowPinDropZone"), Qt::FindDirectChildrenOnly);
+        if (!open) {
+            delete outline;
+        } else {
+            if (!outline)
+                outline = dropZone(side);
+            outline->setGeometry(side->rect());
+            outline->raise();
+            outline->show();
+        }
+    }
     for (auto it = m_workflowPinStrips.cbegin(); it != m_workflowPinStrips.cend(); ++it) {
         QWidget *strip = it.value();
         if (!strip)
@@ -993,15 +1020,8 @@ void MainWindow::setWorkflowPinStripsOpen(bool open)
         const int button = workflowPinSide(rail) + 6;
         const bool vertical = rail == rw::kRailLeft || rail == rw::kRailRight;
         strip->setMinimumSize(vertical ? button + 8 : button * 3, vertical ? button * 3 : button);
-        if (!outline) {
-            auto *frame = new QFrame(strip);
-            frame->setObjectName(QStringLiteral("workflowPinDropZone"));
-            frame->setAttribute(Qt::WA_TransparentForMouseEvents);
-            frame->setStyleSheet(Theme::remapSheet(
-                QStringLiteral("QFrame#workflowPinDropZone { background: transparent;"
-                               " border: 1px dashed #2ea043; border-radius: 6px; }")));
-            outline = frame;
-        }
+        if (!outline)
+            outline = dropZone(strip);
         outline->setGeometry(strip->rect());
         outline->show();
         strip->show();
@@ -1353,7 +1373,7 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             if (entry.workflow.id == workflowId)
                 listing = &entry;
         const auto saved = [this, &reply, &repo](const rw::Workflow &workflow, const QString &path) {
-            refreshTeammateRail();
+            scheduleTeammateRailRefresh();
             if (m_sectionStack && m_sectionStack->currentIndex() == kTeamSectionIndex)
                 loadTeammatesPanel();
             notifyRepoWorkflowsChanged();
@@ -1469,7 +1489,7 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             if (workflow.isSpecialAgent())
                 clearTeammateRuntime(workflowId, repoIndex);
             saveWorkflowPins(rw::unpinWorkflow(workflowPins(), repo, workflowId));
-            refreshTeammateRail();
+            scheduleTeammateRailRefresh();
             reply(true, {}, QStringLiteral("Deleted %1.").arg(workflow.name));
             return;
         }

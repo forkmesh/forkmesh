@@ -303,7 +303,7 @@ void MainWindow::applyAppViewMode()
         m_appNavigationRail->setVisible(!reduced);
     if (m_appStatusArea)
         m_appStatusArea->setVisible(!reduced);
-    applyTeammateRailVisibility();
+    applySideRailVisibility();
     applyPackageRailVisibility();
 
     const bool terminal = appViewModeShowsWorkspaceTerminal(m_viewMode);
