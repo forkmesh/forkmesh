@@ -4,6 +4,8 @@
 #include "MainWindowNextAccess.h"
 #include "WorkspaceBrowserPane.h"
 #include "WorkspaceLayout.h"
+#include "WorkspaceOpenIn.h"
+#include "WorkspaceShortcuts.h"
 
 #include <QAbstractButton>
 #include <QAction>
@@ -11,8 +13,15 @@
 #include <QApplication>
 #include <QBoxLayout>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QClipboard>
+#include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDir>
 #include <QEvent>
 #include <QFontMetrics>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHash>
 #include <QHeaderView>
@@ -28,14 +37,18 @@
 #include <QPixmap>
 #include <QPlainTextEdit>
 #include <QPointer>
+#include <QProcess>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
+#include <QShortcut>
+#include <QStandardPaths>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTableWidget>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace forkmesh::ui {
@@ -72,6 +85,12 @@ enum Command {
     CmdDetails,
     CmdQueue,
     CmdSend,
+    CmdNextSession,
+    CmdPreviousSession,
+    CmdModeMenu,
+    CmdModelMenu,
+    CmdEffortMenu,
+    CmdShortcuts,
 };
 
 enum MenuKind { MenuSidebar, MenuSession, MenuComposer };
@@ -457,6 +476,12 @@ struct Chrome : public QObject {
         case QEvent::Show:
             if (watched == split.data() && !syncing)
                 refresh.start();
+            if (watched == page.data())
+                enableShortcuts();
+            break;
+        case QEvent::Hide:
+            if (watched == page.data())
+                enableShortcuts();
             break;
         case QEvent::Resize:
             if (watched == transcript.data())
@@ -472,7 +497,17 @@ struct Chrome : public QObject {
         return QObject::eventFilter(watched, event);
     }
 
+    void enableShortcuts()
+    {
+        const bool on = applied && page && page->isVisible();
+        for (QShortcut *shortcut : std::as_const(shortcuts))
+            if (shortcut && shortcut->isEnabled() != on)
+                shortcut->setEnabled(on);
+    }
+
     MainWindow *window = nullptr;
+    QPointer<QWidget> page;
+    QList<QPointer<QShortcut>> shortcuts;
     QTimer refresh;
     QTimer column;
     QTimer tick;
@@ -660,6 +695,98 @@ void applyRowHeight(QTableWidget *table, int height)
     table->verticalHeader()->setDefaultSectionSize(height);
     for (int row = 0; row < table->rowCount(); ++row)
         table->setRowHeight(row, height);
+}
+
+void showWorkspaceShortcuts(QWidget *parent)
+{
+    if (QDialog *open = parent->findChild<QDialog *>(
+            QStringLiteral("workspaceShortcutSheet"), Qt::FindDirectChildrenOnly)) {
+        open->raise();
+        open->activateWindow();
+        return;
+    }
+    auto *dialog = new QDialog(parent);
+    dialog->setObjectName(QStringLiteral("workspaceShortcutSheet"));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(QStringLiteral("Keyboard shortcuts"));
+    auto *layout = new QVBoxLayout(dialog);
+    layout->setContentsMargins(20, 18, 20, 14);
+    layout->setSpacing(12);
+    auto *heading = new QLabel(QStringLiteral("Agents workspace"));
+    heading->setObjectName(QStringLiteral("workspaceShortcutHeading"));
+    layout->addWidget(heading);
+    auto *grid = new QGridLayout;
+    grid->setHorizontalSpacing(24);
+    grid->setVerticalSpacing(6);
+    int row = 0;
+    for (const forkmesh::workspaceshortcuts::Binding &binding :
+         forkmesh::workspaceshortcuts::bindings()) {
+        auto *label = new QLabel(binding.label);
+        label->setObjectName(QStringLiteral("workspaceShortcutLabel"));
+        auto *keys = new QLabel(forkmesh::workspaceshortcuts::keysText(binding.keys));
+        keys->setObjectName(QStringLiteral("workspaceShortcutKeys"));
+        keys->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        grid->addWidget(label, row, 0);
+        grid->addWidget(keys, row, 1);
+        ++row;
+    }
+    layout->addLayout(grid);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+    layout->addWidget(buttons);
+    dialog->show();
+}
+
+void addOpenInMenu(QMenu *menu, QWidget *owner, const QString &folder,
+                   const QString &branch)
+{
+    if (folder.isEmpty() && branch.isEmpty())
+        return;
+    QMenu *open = menu->addMenu(glyph(QStringLiteral("code"), Theme::Role::FgMuted),
+                                QStringLiteral("Open in"));
+    open->setObjectName(QStringLiteral("workspaceOpenInMenu"));
+    open->setToolTipsVisible(true);
+    if (!folder.isEmpty()) {
+        const QList<forkmesh::openin::Editor> editors =
+            forkmesh::openin::availableEditors([](const QString &program) {
+                return QStandardPaths::findExecutable(program);
+            });
+        for (const forkmesh::openin::Editor &editor : editors) {
+            QAction *action = open->addAction(editor.label);
+            action->setToolTip(QStringLiteral("%1 %2").arg(editor.program, folder));
+            QObject::connect(action, &QAction::triggered, owner,
+                             [program = editor.program, folder] {
+                                 QProcess::startDetached(program, {folder}, folder);
+                             });
+        }
+        if (editors.isEmpty()) {
+            QAction *none = open->addAction(QStringLiteral("No editor found on PATH"));
+            none->setEnabled(false);
+            none->setToolTip(QStringLiteral(
+                "Looks for code, codium, cursor, zed and windsurf"));
+        }
+        open->addSeparator();
+        QAction *files = open->addAction(
+            glyph(QStringLiteral("file-directory"), Theme::Role::FgMuted),
+            QStringLiteral("File manager"));
+        QObject::connect(files, &QAction::triggered, owner, [folder] {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+        });
+    }
+    menu->addSeparator();
+    if (!folder.isEmpty()) {
+        QAction *copy = menu->addAction(glyph(QStringLiteral("copy"), Theme::Role::FgMuted),
+                                        QStringLiteral("Copy folder path"));
+        QObject::connect(copy, &QAction::triggered, owner, [folder] {
+            QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(folder));
+        });
+    }
+    if (!branch.isEmpty()) {
+        QAction *copy = menu->addAction(glyph(QStringLiteral("copy"), Theme::Role::FgMuted),
+                                        QStringLiteral("Copy branch name"));
+        QObject::connect(copy, &QAction::triggered, owner,
+                         [branch] { QGuiApplication::clipboard()->setText(branch); });
+    }
 }
 
 }
@@ -1183,6 +1310,37 @@ void NextAccess::installWorkspace(MainWindow &window)
         QObject::connect(model, &QAbstractItemModel::modelReset, chrome,
                          changed);
     }
+    chrome->page = window.m_agentsPage;
+    window.m_agentsPage->installEventFilter(chrome);
+    namespace keys = forkmesh::workspaceshortcuts;
+    for (const keys::Binding &binding : keys::bindings()) {
+        if (!binding.bound)
+            continue;
+        int id = -1;
+        switch (binding.action) {
+        case keys::Action::NextSession:
+        case keys::Action::NextSessionAlt: id = CmdNextSession; break;
+        case keys::Action::PreviousSession:
+        case keys::Action::PreviousSessionAlt: id = CmdPreviousSession; break;
+        case keys::Action::ToggleDiff: id = CmdToggleChanges; break;
+        case keys::Action::ToggleTerminal: id = CmdToggleTerminal; break;
+        case keys::Action::ToggleBrowser: id = CmdToggleBrowser; break;
+        case keys::Action::ClosePanel: id = CmdClosePanel; break;
+        case keys::Action::ModeMenu: id = CmdModeMenu; break;
+        case keys::Action::ModelMenu: id = CmdModelMenu; break;
+        case keys::Action::EffortMenu: id = CmdEffortMenu; break;
+        case keys::Action::ShowShortcuts: id = CmdShortcuts; break;
+        default: break;
+        }
+        if (id < 0)
+            continue;
+        auto *shortcut = new QShortcut(binding.keys, &window);
+        shortcut->setObjectName(QStringLiteral("workspaceShortcut"));
+        shortcut->setContext(Qt::WindowShortcut);
+        shortcut->setEnabled(false);
+        QObject::connect(shortcut, &QShortcut::activated, chrome, command(id));
+        chrome->shortcuts.append(shortcut);
+    }
     chrome->tick.start();
     syncWorkspace(window);
 }
@@ -1287,6 +1445,7 @@ void NextAccess::syncWorkspace(MainWindow &window)
             chrome->toolbar->setVisible(!next);
         chrome->sidebarHeader->setVisible(next);
         chrome->sidebarFooter->setVisible(next);
+        chrome->enableShortcuts();
 
         if (next) {
             if (chrome->statusRow->parent() == chrome->topRow) {
@@ -1691,6 +1850,40 @@ void NextAccess::workspaceCommand(MainWindow &window, int command)
         }
         break;
     }
+    case CmdNextSession:
+    case CmdPreviousSession: {
+        QTableWidget *table = window.m_agentTable;
+        const int rows = table->rowCount();
+        const int step = command == CmdNextSession ? 1 : -1;
+        int row = table->currentRow();
+        for (int tries = 0; tries < rows; ++tries) {
+            row = row < 0 ? (step > 0 ? 0 : rows - 1) : (row + step + rows) % rows;
+            if (!table->isRowHidden(row))
+                break;
+        }
+        if (row < 0 || row >= rows || table->isRowHidden(row) ||
+            row == table->currentRow())
+            break;
+        table->setCurrentCell(row, kAgentIdColumn);
+        if (QTableWidgetItem *item = table->item(row, kAgentIdColumn))
+            table->scrollToItem(item);
+        break;
+    }
+    case CmdModeMenu:
+    case CmdModelMenu:
+    case CmdEffortMenu: {
+        QComboBox *picker = command == CmdModeMenu    ? window.m_quickAddModeSelector
+                            : command == CmdModelMenu ? window.m_quickAddAgentModelSelector
+                                                      : window.m_quickAddSpeedSelector;
+        if (!picker || !picker->isVisible() || !picker->isEnabled())
+            break;
+        picker->setFocus(Qt::ShortcutFocusReason);
+        picker->showPopup();
+        break;
+    }
+    case CmdShortcuts:
+        showWorkspaceShortcuts(&window);
+        break;
     case CmdSend: {
         QPushButton *target =
             !window.promptChatRoom().isEmpty() && window.m_quickAddSendToChannelButton
@@ -1790,6 +1983,14 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
         addProxy(menu, window.m_agentModelsButton, QStringLiteral("smart-toy"));
         addProxy(menu, window.m_agentAnnouncerButton,
                  QStringLiteral("broadcast"));
+        QAction *keysAction = menu->addAction(
+            glyph(QStringLiteral("list-unordered"), Theme::Role::FgMuted),
+            QString::fromUtf8("Keyboard shortcuts\xE2\x80\xA6"));
+        keysAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Slash));
+        keysAction->setShortcutVisibleInContextMenu(true);
+        QObject::connect(keysAction, &QAction::triggered, self, [self] {
+            QTimer::singleShot(0, self, [self] { showWorkspaceShortcuts(self); });
+        });
         menu->addSeparator();
         if (window.m_agentUsageButton) {
             QAction *usage = menu->addAction(
@@ -1853,6 +2054,19 @@ void NextAccess::fillWorkspaceMenu(MainWindow &window, QMenu *menu, int which)
              QStringLiteral("Open branch in Git"));
     addProxy(menu, window.m_agentWorktreeButton, QStringLiteral("worktree"),
              QStringLiteral("Open worktree"));
+    QString folder = window.m_streamWorktree.value(session->id);
+    if (folder.isEmpty()) {
+        const int repoIndex = window.repoIndexFor(session->owner, session->name);
+        if (repoIndex >= 0) {
+            const QString repoLocal = window.m_repositories.at(repoIndex).localPath;
+            if (branched)
+                folder = window.cachedSessionWorktreeForUi(session->id, repoLocal,
+                                                           session->branchName);
+            if (folder.isEmpty() || !QDir(folder).exists())
+                folder = repoLocal;
+        }
+    }
+    addOpenInMenu(menu, self, folder, session->branchName);
     if (branched) {
         addProxy(menu, window.m_agentUpdateButton, QStringLiteral("sync"),
                  QStringLiteral("Update from the default branch"));

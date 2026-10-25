@@ -17,6 +17,7 @@ Topic pages in this folder:
 - [tmp-disk.md](tmp-disk.md): the TMP fast disk for agent scratch, ccache and Action sandboxes; slow USB link warnings
 - [networking.md](networking.md): relay transport, HTTP/3 client, local mesh, phone LAN control, hosts
 - [agents-ui.md](agents-ui.md): Agents page, Sessions page, activity window, sounds and announcer
+- [claude-code-parity.md](claude-code-parity.md): what Claude Code desktop has that the Agents workspace has or lacks; workspace shortcuts, prompt drops, Open in, `.worktreeinclude`
 - [branch-diffs.md](branch-diffs.md): the branch/pull review pane renders wide diffs on a worker and streams them in
 - [git-change-arrows.md](git-change-arrows.md): the arrows between the two sides of the Git page's split diff that revert, stage or unstage one change block
 - [pull-merge-all.md](pull-merge-all.md): Merge all with AI on the Pull requests list: the no-branch Auto agent, its prompt, and the cleanup of merged pull requests and branches

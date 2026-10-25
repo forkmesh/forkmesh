@@ -10,7 +10,10 @@
     {
      "title": "Agents",
      "items": [
-      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
+      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk.",
+      "The desktop Agents workspace picks up Claude Code desktop's keys: Ctrl+Tab between sessions, Ctrl+Shift+D, Ctrl+` and Ctrl+Shift+B for the diff, terminal and browser, Shift+Tab to change the permission mode, and Ctrl+/ to list them all.",
+      "Drop files on the desktop prompt to attach images or mention files, type / to open the command menu, and open a session's folder in VS Code, Cursor, Zed or your file manager from its menu.",
+      "A .worktreeinclude file in your repository now copies the ignored files it lists, such as .env, into each new agent worktree."
      ]
     },
     {

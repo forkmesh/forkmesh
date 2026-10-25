@@ -1044,6 +1044,10 @@ set(FORKMESH_APP_SOURCES
     src/FastScratchDisk.h
     src/UsbLinkCheck.h
     src/AgentWorktree.h
+    src/WorktreeInclude.h
+    src/PromptDrop.h
+    src/WorkspaceOpenIn.h
+    src/WorkspaceShortcuts.h
     src/AgentWorkspaceNameGate.h
     src/VirtualMachineRuntime.h
     src/VirtualMachineRuntime.cpp
@@ -2206,6 +2210,21 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-agent-prompt-title-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-agent-prompt-title-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-workspace-parity-tests
+        tests/test_workspace_parity.cpp
+        src/PromptDrop.h
+        src/WorkspaceOpenIn.h
+        src/WorkspaceShortcuts.h
+        src/WorktreeInclude.h
+    )
+    target_include_directories(forkmesh-workspace-parity-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-workspace-parity-tests PRIVATE Qt6::Gui)
+    if(APPLE)
+        set_target_properties(forkmesh-workspace-parity-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -4446,6 +4465,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
              COMMAND forkmesh-git-index-queue-tests)
     add_test(NAME forkmesh-agent-prompt-title-tests
              COMMAND forkmesh-agent-prompt-title-tests)
+    add_test(NAME forkmesh-workspace-parity-tests
+             COMMAND forkmesh-workspace-parity-tests)
     add_test(NAME forkmesh-diff-intra-line-tests
              COMMAND forkmesh-diff-intra-line-tests)
     add_test(NAME forkmesh-ssh-mirror-push-tests

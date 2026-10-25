@@ -15,12 +15,15 @@
 #include "MirrorCrypto.h"
 #include "PrivateMirrorRuntime.h"
 #include "PromptDraftStore.h"
+#include "PromptDrop.h"
 #include "PromptSpellCheckHighlighter.h"
 #include "ReactionEmoji.h"
 #include "UiSounds.h"
 
 #include <QDateEdit>
 #include <QDrag>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFontDatabase>
 #include <QImageReader>
 #include <QLayoutItem>
@@ -8504,6 +8507,9 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
     case QEvent::Hide:
     case QEvent::Close:
     case QEvent::WindowStateChange:
+    case QEvent::DragEnter:
+    case QEvent::DragMove:
+    case QEvent::Drop:
         break;
     default:
         return QMainWindow::eventFilter(obj, event);
@@ -8676,10 +8682,91 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             }
         }
     }
+    if (m_issueQuickAdd && obj == m_issueQuickAdd->viewport() &&
+        (event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove)) {
+        auto *de = static_cast<QDragMoveEvent *>(event);
+        if (de->mimeData() && de->mimeData()->hasUrls() &&
+            !forkmesh::promptdrop::localPaths(de->mimeData()->urls()).isEmpty()) {
+            de->acceptProposedAction();
+            return true;
+        }
+    }
+    if (m_issueQuickAdd && obj == m_issueQuickAdd->viewport() &&
+        event->type() == QEvent::Drop) {
+        auto *de = static_cast<QDropEvent *>(event);
+        const QStringList paths = de->mimeData() && de->mimeData()->hasUrls()
+                                      ? forkmesh::promptdrop::localPaths(
+                                            de->mimeData()->urls())
+                                      : QStringList();
+        if (!paths.isEmpty()) {
+            QStringList roots = {m_streamWorktree.value(m_selectedAgentSessionId)};
+            for (const int idx : {m_repoDetailIndex, issuesRepoIndex()})
+                if (idx >= 0 && idx < m_repositories.size())
+                    roots << m_repositories.at(idx).localPath;
+            const forkmesh::promptdrop::Plan plan = forkmesh::promptdrop::plan(
+                paths, roots, [](const QString &path) {
+                    static const QStringList images = {
+                        QStringLiteral("png"), QStringLiteral("jpg"),
+                        QStringLiteral("jpeg"), QStringLiteral("gif"),
+                        QStringLiteral("webp"), QStringLiteral("bmp")};
+                    return images.contains(QFileInfo(path).suffix().toLower()) ||
+                           isVideoAttachmentPath(path);
+                });
+            for (const QString &path : plan.attachments)
+                queueQuickAddImage(path);
+            if (!plan.mentions.isEmpty()) {
+                QTextCursor cursor =
+                    m_issueQuickAdd->cursorForPosition(de->position().toPoint());
+                cursor.insertText(forkmesh::promptdrop::insertion(
+                    plan, m_issueQuickAdd->toPlainText().left(cursor.position())));
+                m_issueQuickAdd->setTextCursor(cursor);
+            }
+            de->acceptProposedAction();
+            m_issueQuickAdd->setFocus(Qt::OtherFocusReason);
+            return true;
+        }
+    }
+    if (obj == m_slashActionsPopup && event->type() == QEvent::Hide &&
+        m_slashActionsPopup->property("typedSlash").toBool()) {
+        m_slashActionsPopup->setProperty("typedSlash", false);
+        const QString typed =
+            m_slashActionsFilter ? m_slashActionsFilter->text() : QString();
+        if (m_issueQuickAdd) {
+            if (!typed.isEmpty() &&
+                m_issueQuickAdd->toPlainText() == QLatin1String("/")) {
+                QTextCursor cursor = m_issueQuickAdd->textCursor();
+                cursor.movePosition(QTextCursor::End);
+                cursor.insertText(typed);
+                m_issueQuickAdd->setTextCursor(cursor);
+            }
+            m_issueQuickAdd->setFocus(Qt::PopupFocusReason);
+        }
+    }
     if (obj == m_issueQuickAdd && event->type() == QEvent::KeyPress) {
         auto *ke = static_cast<QKeyEvent *>(event);
         if (ke->matches(QKeySequence::Paste) && tryPasteImageIntoQuickAdd())
             return true;
+        if (ke->key() == Qt::Key_Backtab &&
+            !(ke->modifiers() & (Qt::ControlModifier | Qt::AltModifier |
+                                 Qt::MetaModifier)) &&
+            m_quickAddModeSelector && m_quickAddModeSelector->isVisible() &&
+            m_quickAddModeSelector->isEnabled() && m_quickAddModeSelector->count() > 1) {
+            m_quickAddModeSelector->setCurrentIndex(
+                (m_quickAddModeSelector->currentIndex() + 1) %
+                m_quickAddModeSelector->count());
+            return true;
+        }
+        if (ke->text() == QLatin1String("/") &&
+            !(ke->modifiers() & (Qt::ControlModifier | Qt::AltModifier |
+                                 Qt::MetaModifier)) &&
+            m_issueQuickAdd->toPlainText().isEmpty() && promptChatRoom().isEmpty() &&
+            m_quickAddSlashButton && m_quickAddSlashButton->isVisible()) {
+            m_issueQuickAdd->insertPlainText(QStringLiteral("/"));
+            openQuickAddSlashActions();
+            if (m_slashActionsPopup && m_slashActionsPopup->isVisible())
+                m_slashActionsPopup->setProperty("typedSlash", true);
+            return true;
+        }
         if ((ke->key() == Qt::Key_Return || ke->key() == Qt::Key_Enter) &&
             !(ke->modifiers() & Qt::ShiftModifier)) {
             if (submitQuickAddToPackage())
