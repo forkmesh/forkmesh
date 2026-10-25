@@ -126,11 +126,20 @@ int AgentTaskListBar::heightForWidth(int width) const
 
 void AgentTaskListBar::refresh()
 {
-    m_header->setText(headerText());
-    m_rows->setText(rowsHtml());
-    m_rows->setVisible(!m_collapsed);
-    setVisible(!m_groups.isEmpty());
-    emit heightChanged();
+    const bool wasShown = !isHidden();
+    const QString header = headerText();
+    const QString rows = rowsHtml();
+    const bool rowsShown = !m_collapsed;
+    const bool shown = !m_groups.isEmpty();
+    if (header == m_header->text() && rows == m_rows->text() &&
+        rowsShown == !m_rows->isHidden() && shown == wasShown)
+        return;
+    m_header->setText(header);
+    m_rows->setText(rows);
+    m_rows->setVisible(rowsShown);
+    setVisible(shown);
+    if (shown || wasShown)
+        emit heightChanged();
 }
 
 void AgentTaskListBar::restyle()

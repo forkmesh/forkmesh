@@ -11,6 +11,8 @@
   {"date": "2026-06", "version": "0.1.0", "title": "Genesis", "pitch": "The first commit. A bet that source code shouldn't be locked to a single forge."}
  ],
  "notes": [
+  {"date": "2026-10-25", "area": "Desktop", "text": "Removing a plugin whose data stays on disk now says so in a notice instead of a dialog that had to be clicked, and Market previews in WebP show on Linux without Qt's extra image plugins."},
+  {"date": "2026-10-25", "area": "Agents", "text": "The Agents list shows each agent's task progress next to its title, like 2/5 and what it is doing now, and agents now build with twice as many parallel jobs on machines with memory to spare."},
   {"date": "2026-10-25", "area": "Desktop", "text": "The desktop window opens about twice as fast: installed package pages now load just after the window appears, and the Claude app's own log lines no longer land in ForkMesh's terminal."},
   {"date": "2026-10-25", "area": "Desktop", "text": "With Match the instance's theme turned on, the View menu now shows which theme the instance is sending, like \"Match the instance's theme (BLT)\"."},
   {"date": "2026-10-24", "area": "Desktop", "text": "In the new design, the View menu has a Git layout choice: Compact brings back the Git page with changed files on top, history underneath and the branch picker in the history header."},

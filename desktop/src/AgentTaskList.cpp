@@ -46,6 +46,23 @@ QString summaryText(const Counts &counts)
         .arg(noun, parts.join(QStringLiteral(", ")));
 }
 
+QString progressText(const Tracker &tracker, int maxChars)
+{
+    const Counts counts = tracker.counts();
+    if (counts.total == 0)
+        return {};
+    const QString fraction = QStringLiteral("%1/%2").arg(counts.completed).arg(counts.total);
+    if (counts.completed == counts.total)
+        return QStringLiteral("✔ %1").arg(fraction);
+    const Task *current = tracker.current();
+    if (!current)
+        return QStringLiteral("◻ %1").arg(fraction);
+    QString doing = current->activeForm.isEmpty() ? current->subject : current->activeForm;
+    if (doing.size() > maxChars)
+        doing = doing.left(maxChars - 1).trimmed() + QStringLiteral("…");
+    return QStringLiteral("◼ %1 · %2").arg(fraction, doing);
+}
+
 bool Tracker::ingest(const QJsonObject &event)
 {
     const QString type = event.value(QStringLiteral("type")).toString();
