@@ -2550,6 +2550,12 @@ void paintCaption(QPainter &p, const QWidget *widget,
 
 int widthFor(int columns, const QString &caption);
 
+constexpr int kAnimationIntervalMs = 60;
+
+QTimer *animationClock();
+
+void holdAnimationClock(bool *held, bool want);
+
 } // namespace ChromeDotGrid
 
 QColor agentRunningFireballColor();
@@ -2583,14 +2589,19 @@ public:
         setFixedWidth(0); // nothing to show until the first setDots()
         setCursor(Qt::PointingHandCursor);
         hide();
-        m_sweep = new QTimer(this);
-        m_sweep->setInterval(60);
-        connect(m_sweep, &QTimer::timeout, this, [this] {
+        connect(ChromeDotGrid::animationClock(), &QTimer::timeout, this, [this] {
+            if (!m_ticking)
+                return;
             m_phase += 0.045;
             if (m_phase >= 1.0)
                 m_phase -= 1.0;
             update();
         });
+    }
+
+    ~AgentDotMatrix() override
+    {
+        ChromeDotGrid::holdAnimationClock(&m_ticking, false);
     }
 
     void setDots(const QVector<Dot> &dots)
@@ -2601,6 +2612,10 @@ public:
         // An unchanged row is already on screen: leave it alone.
         if (dots == m_dots)
             return;
+        if (m_ticking && sameSquares(dots, m_dots)) {
+            m_dots = dots;
+            return;
+        }
         m_dots = dots;
         const int columns = (m_dots.size() + kRows - 1) / kRows;
         const int width =
@@ -2610,14 +2625,13 @@ public:
         bool anyRunning = false;
         for (const Dot &d : std::as_const(m_dots))
             anyRunning = anyRunning || d.running;
-        if (anyRunning && !m_sweep->isActive())
-            m_sweep->start();
-        else if (!anyRunning && m_sweep->isActive())
-            m_sweep->stop();
+        ChromeDotGrid::holdAnimationClock(&m_ticking, anyRunning);
         update();
     }
 
     int shownCount() const { return m_dots.size(); }
+
+    bool sweeping() const { return m_ticking; }
 
     std::function<void(int)> onDotClicked;
 
@@ -2668,6 +2682,18 @@ protected:
     }
 
 private:
+    static bool sameSquares(const QVector<Dot> &a, const QVector<Dot> &b)
+    {
+        if (a.size() != b.size())
+            return false;
+        for (qsizetype i = 0; i < a.size(); ++i)
+            if (a.at(i).sessionId != b.at(i).sessionId ||
+                a.at(i).color != b.at(i).color ||
+                a.at(i).running != b.at(i).running)
+                return false;
+        return true;
+    }
+
     QPointF cellCenter(int index) const
     {
         const int column = index / kRows;
@@ -2693,7 +2719,7 @@ private:
 
     QVector<Dot> m_dots;
     double m_phase = 0.0;      // 0..1 Larson sweep parameter
-    QTimer *m_sweep = nullptr; // only ticks while something is running
+    bool m_ticking = false;
 };
 
 class NodeDotMatrix : public QWidget
@@ -2840,13 +2866,19 @@ public:
         setFixedWidth(0);
         setCursor(Qt::PointingHandCursor);
         hide();
-        m_pulse = new QTimer(this);
-        connect(m_pulse, &QTimer::timeout, this, [this] {
-            m_phase += m_badges.isEmpty() ? 0.05 : kBreathStep;
+        connect(ChromeDotGrid::animationClock(), &QTimer::timeout, this, [this] {
+            if (!m_ticking)
+                return;
+            m_phase += m_badges.isEmpty() ? kCellPulsePhaseStep : kBreathStep;
             if (m_phase >= 1.0)
                 m_phase -= 1.0;
             update();
         });
+    }
+
+    ~ActionRunStrip() override
+    {
+        ChromeDotGrid::holdAnimationClock(&m_ticking, false);
     }
 
     void setCells(const QVector<Cell> &cells,
@@ -2872,11 +2904,7 @@ public:
         bool animate = !m_badges.isEmpty();
         for (const Cell &c : std::as_const(m_cells))
             animate = animate || c.running;
-        const int interval = m_badges.isEmpty() ? 90 : 40;
-        if (animate && (!m_pulse->isActive() || m_pulse->interval() != interval))
-            m_pulse->start(interval);
-        else if (!animate && m_pulse->isActive())
-            m_pulse->stop();
+        ChromeDotGrid::holdAnimationClock(&m_ticking, animate);
         update();
     }
 
@@ -3022,7 +3050,8 @@ private:
     static constexpr double kSide = 4.5;
     static constexpr double kPulseStep = 0.09;
     static constexpr int kGlyphPx = kBadgeSide;
-    static constexpr double kBreathStep = 0.0167;
+    static constexpr double kBreathStep = 0.025;
+    static constexpr double kCellPulsePhaseStep = 1.0 / 30;
     static constexpr double kBreathOffset = 0.17;
 
     QVector<Cell> m_cells;
@@ -3030,7 +3059,7 @@ private:
     QVector<QPixmap> m_glyphs;
     qreal m_glyphDpr = 0.0;
     double m_phase = 0.0;
-    QTimer *m_pulse = nullptr;
+    bool m_ticking = false;
 };
 
 // A workflow row is deliberately a widget instead of a wrapped text item: the
@@ -4841,6 +4870,7 @@ const QString kClaudeCodeProvider = QStringLiteral("claude-code");
 const QString kAgentDonePingKind = QStringLiteral("agent-done");
 constexpr int kAgentDoneSummaryChars = 400;
 const QString kAgentDoneAlertSetting = QStringLiteral("notifications/agentDone");
+const QString kClaudeDesktopSessionsSetting = QStringLiteral("agents/claudeDesktopSessions");
 const QString kAgentStartPingSetting = QStringLiteral("notifications/agentStart");
 
 bool agentIsClaudeProvider(const QString &provider);

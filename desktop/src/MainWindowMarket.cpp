@@ -68,6 +68,8 @@
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QButtonGroup>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTabWidget>
@@ -357,6 +359,7 @@ QString statusMonitorErrorText(const QJsonObject &payload,
 constexpr int kMarketNextColumnMin = 330;
 constexpr int kMarketNextColumnsMax = 4;
 constexpr int kMarketNextCardPadding = 12;
+constexpr int kMarketNextPaneWidth = 380;
 
 QPixmap marketNextIcon(const QString &name, Theme::Role role, int px, qreal ratio)
 {
@@ -589,26 +592,15 @@ private:
     QStackedWidget *m_stack = nullptr;
 };
 
-void fitMarketNextCard(QWidget *card, int columns, int column)
+void fitMarketNextCard(QWidget *card, int column)
 {
-    auto *box = qobject_cast<QBoxLayout *>(card->layout());
+    if (card->property("nextMarketList").toBool())
+        return;
     auto *main = card->findChild<QWidget *>(
         QStringLiteral("marketNextCardMain"), Qt::FindDirectChildrenOnly);
-    if (!box || !main)
+    if (!main)
         return;
-    const bool side =
-        card->property("nextMarketExpanded").toBool() && columns > 1;
-    const QBoxLayout::Direction direction =
-        side ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom;
-    if (box->direction() != direction)
-        box->setDirection(direction);
     const int inner = qMax(160, column - 2 * kMarketNextCardPadding);
-    const int minimum = side ? inner : 0;
-    const int maximum = side ? inner : QWIDGETSIZE_MAX;
-    if (main->minimumWidth() != minimum)
-        main->setMinimumWidth(minimum);
-    if (main->maximumWidth() != maximum)
-        main->setMaximumWidth(maximum);
     if (auto *shot = main->findChild<QLabel *>(
             QStringLiteral("marketPackageScreenshot"))) {
         const int height = qBound(120, inner * 9 / 16, 260);
@@ -681,11 +673,14 @@ private:
     {
         const QMargins margins = contentsMargins();
         const QRect area = rect.marginsRemoved(margins);
-        const int spacingPx = gap();
+        const bool list =
+            parentWidget() && parentWidget()->property("marketNextList").toBool();
+        const int spacingPx = list ? 8 : gap();
         const int width = qMax(1, area.width());
         const int columns =
-            qBound(1, (width + spacingPx) / (kMarketNextColumnMin + spacingPx),
-                   kMarketNextColumnsMax);
+            list ? 1
+                 : qBound(1, (width + spacingPx) / (kMarketNextColumnMin + spacingPx),
+                          kMarketNextColumnsMax);
         const int column = qMax(1, (width - spacingPx * (columns - 1)) / columns);
         int y = area.top();
         QList<QLayoutItem *> row;
@@ -710,13 +705,11 @@ private:
                 continue;
             if (widget->property("nextMarketCard").toBool()) {
                 if (apply)
-                    fitMarketNextCard(widget, columns, column);
-                if (!widget->property("nextMarketExpanded").toBool()) {
-                    row.append(item);
-                    if (row.size() == columns)
-                        flush();
-                    continue;
-                }
+                    fitMarketNextCard(widget, column);
+                row.append(item);
+                if (row.size() == columns)
+                    flush();
+                continue;
             }
             flush();
             const int height = itemHeight(item, width);
@@ -731,22 +724,57 @@ private:
     }
 };
 
+void paintMarketScreenshot(QLabel *screenshot)
+{
+    QPainter painter(screenshot);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    const QRectF frame = QRectF(screenshot->rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+    QPainterPath clip;
+    clip.addRoundedRect(frame, 8, 8);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Theme::color(Theme::Role::Bg));
+    painter.drawPath(clip);
+    const QPixmap pixmap = screenshot->pixmap();
+    if (!pixmap.isNull()) {
+        const QSizeF size = pixmap.deviceIndependentSize().scaled(
+            frame.size(), Qt::KeepAspectRatioByExpanding);
+        const QRectF target(frame.center().x() - size.width() / 2,
+                            frame.center().y() - size.height() / 2,
+                            size.width(), size.height());
+        painter.save();
+        painter.setClipPath(clip);
+        painter.drawPixmap(target, pixmap, QRectF(pixmap.rect()));
+        painter.restore();
+    } else {
+        painter.setPen(Theme::color(Theme::Role::FgSubtle));
+        painter.setFont(screenshot->font());
+        painter.drawText(screenshot->rect(), Qt::AlignCenter | Qt::TextWordWrap,
+                         screenshot->text());
+    }
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(Theme::color(Theme::Role::Border), 1));
+    painter.drawPath(clip);
+}
+
 class MarketNextCard : public QObject
 {
 public:
     MarketNextCard(QFrame *card, QWidget *main, QWidget *details,
-                   QLabel *summary, QLabel *screenshot, QPushButton *toggle,
-                   const QString &packageName)
+                   QLabel *summary, QLabel *screenshot, QLabel *paneShot,
+                   QPushButton *toggle, const QString &packageName, bool list)
         : QObject(card), m_card(card), m_main(main), m_details(details),
-          m_summary(summary), m_screenshot(screenshot), m_toggle(toggle),
-          m_packageName(packageName)
+          m_summary(summary), m_screenshot(screenshot), m_paneShot(paneShot),
+          m_toggle(toggle), m_packageName(packageName), m_list(list)
     {
         setObjectName(QStringLiteral("marketNextCardController"));
         m_main->installEventFilter(this);
         m_summary->installEventFilter(this);
         m_screenshot->installEventFilter(this);
+        m_paneShot->installEventFilter(this);
         QObject::connect(m_toggle, &QPushButton::clicked, this,
-                         [this](bool checked) { setExpanded(checked, true); });
+                         [this] { activate(); });
+        setSelected(false);
     }
 
     static MarketNextCard *of(QWidget *card)
@@ -756,66 +784,30 @@ public:
             Qt::FindDirectChildrenOnly));
     }
 
-    void setExpanded(bool expanded, bool remember)
+    QWidget *details() const { return m_details; }
+
+    void setSelected(bool selected)
     {
-        m_card->setProperty("nextMarketExpanded", expanded);
-        m_details->setVisible(expanded);
+        m_card->setProperty("nextMarketSelected", selected);
         {
             const QSignalBlocker blocker(m_toggle);
-            m_toggle->setChecked(expanded);
+            m_toggle->setChecked(selected);
         }
         m_toggle->setAccessibleName(
-            (expanded ? QStringLiteral("Hide the details of %1")
+            (selected ? QStringLiteral("Hide the details of %1")
                       : QStringLiteral("Show the details of %1"))
                 .arg(m_packageName));
-        m_toggle->setToolTip(expanded
+        m_toggle->setToolTip(selected
                                  ? QStringLiteral("Hide the details")
                                  : QStringLiteral(
                                        "Show trust checks, permissions, where "
                                        "it shows and the package actions"));
-        if (!expanded) {
-            m_main->setMinimumWidth(0);
-            m_main->setMaximumWidth(QWIDGETSIZE_MAX);
-            if (auto *box = qobject_cast<QBoxLayout *>(m_card->layout()))
-                box->setDirection(QBoxLayout::TopToBottom);
-        }
         clampSummary();
         m_card->style()->unpolish(m_card);
         m_card->style()->polish(m_card);
-        QWidget *host = m_card->parentWidget();
-        if (remember && host) {
-            const QString id = m_card->property("packageId").toString();
-            if (expanded) {
-                for (QObject *child : host->children()) {
-                    auto *other = qobject_cast<QWidget *>(child);
-                    if (!other || other == m_card ||
-                        !other->property("nextMarketExpanded").toBool())
-                        continue;
-                    if (MarketNextCard *controller = of(other))
-                        controller->setExpanded(false, false);
-                }
-                host->setProperty("nextExpandedPackage", id);
-            } else if (host->property("nextExpandedPackage").toString() == id) {
-                host->setProperty("nextExpandedPackage", QString());
-            }
-        }
-        if (host && host->layout())
-            host->layout()->invalidate();
-        if (expanded && remember) {
-            QPointer<QFrame> card = m_card;
-            QTimer::singleShot(0, m_card, [card] {
-                if (!card)
-                    return;
-                for (QWidget *up = card->parentWidget(); up;
-                     up = up->parentWidget()) {
-                    if (auto *area = qobject_cast<QScrollArea *>(up)) {
-                        area->ensureWidgetVisible(card, 0, 16);
-                        break;
-                    }
-                }
-            });
-        }
     }
+
+    void activate();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override
@@ -833,8 +825,7 @@ protected:
                 if (mouse->button() == Qt::LeftButton && m_pressed) {
                     m_pressed = false;
                     if (m_main->rect().contains(mouse->position().toPoint()))
-                        setExpanded(!m_card->property("nextMarketExpanded").toBool(),
-                                    true);
+                        activate();
                     event->accept();
                     return true;
                 }
@@ -843,8 +834,9 @@ protected:
             if (event->type() == QEvent::Resize ||
                 event->type() == QEvent::FontChange)
                 clampSummary();
-        } else if (watched == m_screenshot && event->type() == QEvent::Paint) {
-            paintScreenshot();
+        } else if ((watched == m_screenshot || watched == m_paneShot) &&
+                   event->type() == QEvent::Paint) {
+            paintMarketScreenshot(static_cast<QLabel *>(watched));
             return true;
         }
         return QObject::eventFilter(watched, event);
@@ -854,46 +846,11 @@ private:
     void clampSummary()
     {
         const QString full = m_summary->property("marketFullText").toString();
-        const bool clamp = !m_card->property("nextMarketExpanded").toBool();
-        const QString shown =
-            clamp ? clampedMarketText(full, m_summary->font(),
-                                      m_summary->contentsRect().width(), 2)
-                  : full;
+        const QString shown = clampedMarketText(
+            full, m_summary->font(), m_summary->contentsRect().width(),
+            m_list ? 1 : 2);
         if (m_summary->text() != shown)
             m_summary->setText(shown);
-    }
-
-    void paintScreenshot()
-    {
-        QPainter painter(m_screenshot);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-        const QRectF frame = QRectF(m_screenshot->rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-        QPainterPath clip;
-        clip.addRoundedRect(frame, 8, 8);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(Theme::color(Theme::Role::Bg));
-        painter.drawPath(clip);
-        const QPixmap pixmap = m_screenshot->pixmap();
-        if (!pixmap.isNull()) {
-            const QSizeF size = pixmap.deviceIndependentSize().scaled(
-                frame.size(), Qt::KeepAspectRatioByExpanding);
-            const QRectF target(frame.center().x() - size.width() / 2,
-                                frame.center().y() - size.height() / 2,
-                                size.width(), size.height());
-            painter.save();
-            painter.setClipPath(clip);
-            painter.drawPixmap(target, pixmap, QRectF(pixmap.rect()));
-            painter.restore();
-        } else {
-            painter.setPen(Theme::color(Theme::Role::FgSubtle));
-            painter.setFont(m_screenshot->font());
-            painter.drawText(m_screenshot->rect(), Qt::AlignCenter,
-                             m_screenshot->text());
-        }
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(Theme::color(Theme::Role::Border), 1));
-        painter.drawPath(clip);
     }
 
     QFrame *m_card;
@@ -901,10 +858,204 @@ private:
     QWidget *m_details;
     QLabel *m_summary;
     QLabel *m_screenshot;
+    QLabel *m_paneShot;
     QPushButton *m_toggle;
     QString m_packageName;
+    bool m_list = false;
     bool m_pressed = false;
 };
+
+class MarketNextDetailsPane : public QFrame
+{
+public:
+    explicit MarketNextDetailsPane(QTabWidget *tabs) : m_tabs(tabs)
+    {
+        setObjectName(QStringLiteral("marketNextDetailsPane"));
+        setAccessibleName(QStringLiteral("Package details"));
+        setFixedWidth(kMarketNextPaneWidth);
+        auto *layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+        auto *header = new QHBoxLayout;
+        header->setContentsMargins(20, 14, 12, 10);
+        header->setSpacing(8);
+        m_title = new QLabel;
+        m_title->setObjectName(QStringLiteral("marketNextPaneTitle"));
+        m_title->setTextFormat(Qt::PlainText);
+        m_title->setWordWrap(true);
+        header->addWidget(m_title, 1);
+        auto *close = new QPushButton;
+        close->setObjectName(QStringLiteral("marketNextPaneClose"));
+        close->setAccessibleName(QStringLiteral("Close the package details"));
+        close->setToolTip(QStringLiteral("Close the details"));
+        close->setCursor(Qt::PointingHandCursor);
+        close->setIcon(QIcon(marketNextIcon(QStringLiteral("x"), Theme::Role::FgMuted,
+                                            14, devicePixelRatioF())));
+        QObject::connect(close, &QPushButton::clicked, this, [this] { dismiss(); });
+        header->addWidget(close, 0, Qt::AlignTop);
+        layout->addLayout(header);
+        m_scroll = new QScrollArea;
+        m_scroll->setObjectName(QStringLiteral("marketNextPaneScroll"));
+        m_scroll->setFrameShape(QFrame::NoFrame);
+        m_scroll->setWidgetResizable(true);
+        m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        auto *body = new QWidget;
+        body->setObjectName(QStringLiteral("marketNextPaneBody"));
+        m_body = new QVBoxLayout(body);
+        m_body->setContentsMargins(20, 4, 20, 20);
+        m_body->setSpacing(0);
+        m_body->addStretch(1);
+        m_scroll->setWidget(body);
+        layout->addWidget(m_scroll, 1);
+        hide();
+        QObject::connect(tabs, &QTabWidget::currentChanged, this,
+                         [this] { restore(); });
+    }
+
+    void addHost(int tab, QWidget *host, bool all)
+    {
+        m_hosts.insert(tab, host);
+        if (all)
+            m_allHost = host;
+        host->setProperty("marketNextPane", QVariant::fromValue<QObject *>(this));
+    }
+
+    QString packageId() const { return m_id; }
+
+    void toggleCard(QWidget *card)
+    {
+        const QString id = card->property("packageId").toString();
+        if (id == m_id && m_card == card && isVisible()) {
+            dismiss();
+            return;
+        }
+        m_id = id;
+        attach(card);
+        show();
+    }
+
+    void dismiss()
+    {
+        m_id.clear();
+        detach();
+        hide();
+    }
+
+    void restore()
+    {
+        if (m_id.isEmpty()) {
+            dismiss();
+            return;
+        }
+        QWidget *host = m_hosts.value(m_tabs->currentIndex());
+        if (!host) {
+            hide();
+            return;
+        }
+        QWidget *card = findCard(host);
+        if (!card)
+            card = findCard(m_allHost);
+        if (!card) {
+            dismiss();
+            return;
+        }
+        if (card != m_card || !m_details)
+            attach(card);
+        show();
+    }
+
+private:
+    QWidget *findCard(QWidget *host) const
+    {
+        QLayout *layout = host ? host->layout() : nullptr;
+        for (int i = 0; layout && i < layout->count(); ++i) {
+            QWidget *card = layout->itemAt(i)->widget();
+            if (card && card->property("nextMarketCard").toBool() &&
+                card->property("packageId").toString() == m_id)
+                return card;
+        }
+        return nullptr;
+    }
+
+    void attach(QWidget *card)
+    {
+        QScrollBar *bar = m_scroll->verticalScrollBar();
+        const bool samePackage = m_shownId == m_id;
+        const int scrolled = bar->value();
+        detach();
+        MarketNextCard *controller = MarketNextCard::of(card);
+        if (!controller)
+            return;
+        m_card = card;
+        m_details = controller->details();
+        m_shownId = m_id;
+        m_title->setText(card->property("packageName").toString());
+        m_details->setParent(m_body->parentWidget());
+        m_body->insertWidget(0, m_details);
+        m_details->show();
+        controller->setSelected(true);
+        if (samePackage) {
+            QPointer<QScrollBar> keep = bar;
+            QTimer::singleShot(0, this, [keep, scrolled] {
+                if (keep)
+                    keep->setValue(scrolled);
+            });
+        } else {
+            bar->setValue(0);
+        }
+    }
+
+    void detach()
+    {
+        if (m_details) {
+            m_body->removeWidget(m_details);
+            m_details->hide();
+            if (m_card)
+                m_details->setParent(m_card);
+            else
+                m_details->deleteLater();
+        }
+        if (m_card) {
+            if (MarketNextCard *controller = MarketNextCard::of(m_card))
+                controller->setSelected(false);
+        }
+        m_card = nullptr;
+        m_details = nullptr;
+    }
+
+    QTabWidget *m_tabs;
+    QHash<int, QWidget *> m_hosts;
+    QWidget *m_allHost = nullptr;
+    QLabel *m_title = nullptr;
+    QScrollArea *m_scroll = nullptr;
+    QVBoxLayout *m_body = nullptr;
+    QPointer<QWidget> m_card;
+    QPointer<QWidget> m_details;
+    QString m_id;
+    QString m_shownId;
+};
+
+MarketNextDetailsPane *marketNextPaneOf(const QObject *holder)
+{
+    if (!holder)
+        return nullptr;
+    return static_cast<MarketNextDetailsPane *>(
+        holder->property("marketNextPane").value<QObject *>());
+}
+
+void MarketNextCard::activate()
+{
+    QWidget *host = m_card->parentWidget();
+    if (MarketNextDetailsPane *pane = marketNextPaneOf(host)) {
+        pane->toggleCard(m_card);
+        return;
+    }
+    const bool open = m_details->isHidden();
+    m_details->setVisible(open);
+    setSelected(open);
+    if (host && host->layout())
+        host->layout()->invalidate();
+}
 
 QLabel *marketNextCaption(const QString &text)
 {
@@ -1018,7 +1169,7 @@ struct MarketNextCardParts {
 
 void arrangeMarketNextCard(const MarketNextCardParts &parts,
                            const PackageManifest &manifest, bool installed,
-                           bool activeTheme, bool expanded)
+                           bool activeTheme, bool list)
 {
     QFrame *card = parts.card;
     const qreal ratio = card->devicePixelRatioF();
@@ -1035,7 +1186,9 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
 
     delete card->layout();
     card->setProperty("nextMarketCard", true);
-    card->setProperty("nextMarketExpanded", expanded);
+    card->setProperty("nextMarketList", list);
+    card->setProperty("nextMarketSelected", false);
+    card->setProperty("packageName", manifest.name);
     card->setFrameShape(QFrame::NoFrame);
 
     const bool actionInDetails = installed && parts.action->isEnabled();
@@ -1051,21 +1204,17 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
     auto *main = new QWidget(card);
     main->setObjectName(QStringLiteral("marketNextCardMain"));
     main->setCursor(Qt::PointingHandCursor);
-    auto *mainLayout = new QVBoxLayout(main);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->setSpacing(0);
 
     parts.screenshot->setFrameShape(QFrame::NoFrame);
-    parts.screenshot->setMinimumWidth(1);
-    parts.screenshot->setMaximumWidth(QWIDGETSIZE_MAX);
-    parts.screenshot->setFixedHeight(150);
-    parts.screenshot->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    mainLayout->addWidget(parts.screenshot);
-    mainLayout->addSpacing(12);
+    if (list) {
+        parts.screenshot->setFixedSize(112, 63);
+    } else {
+        parts.screenshot->setMinimumWidth(1);
+        parts.screenshot->setMaximumWidth(QWIDGETSIZE_MAX);
+        parts.screenshot->setFixedHeight(150);
+        parts.screenshot->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
 
-    auto *top = new QHBoxLayout;
-    top->setContentsMargins(4, 0, 4, 0);
-    top->setSpacing(8);
     parts.name->setText(
         QStringLiteral("%1&nbsp;&nbsp;<span style='color:%2;font-size:12px;"
                        "font-weight:400'>v%3</span>")
@@ -1074,17 +1223,7 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
                  manifest.version.toHtmlEscaped()));
     parts.name->setProperty("marketNextRole", QStringLiteral("name"));
     parts.name->setWordWrap(true);
-    top->addWidget(parts.name, 1);
-    top->addWidget(parts.price, 0, Qt::AlignTop);
-    mainLayout->addLayout(top);
-    mainLayout->addSpacing(2);
 
-    const auto addPadded = [mainLayout](QWidget *widget) {
-        auto *row = new QHBoxLayout;
-        row->setContentsMargins(4, 0, 4, 0);
-        row->addWidget(widget);
-        mainLayout->addLayout(row);
-    };
     const QString fullMeta = parts.creator->text();
     QStringList meta{QStringLiteral("@%1").arg(manifest.creatorHandle),
                      manifest.category.isEmpty() ? manifest.type
@@ -1096,43 +1235,38 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
     parts.creator->setToolTip(fullMeta);
     parts.creator->setWordWrap(true);
     parts.creator->setProperty("marketNextRole", QStringLiteral("meta"));
-    addPadded(parts.creator);
-    mainLayout->addSpacing(8);
     parts.summary->setProperty("marketFullText", parts.summary->text());
     parts.summary->setProperty("marketNextRole", QStringLiteral("summary"));
-    addPadded(parts.summary);
-    mainLayout->addStretch(1);
-    mainLayout->addSpacing(12);
 
-    auto *footer = new QHBoxLayout;
-    footer->setContentsMargins(4, 0, 0, 0);
-    footer->setSpacing(8);
+    QList<QWidget *> status;
     if (actionInDetails) {
-        footer->addWidget(new forkmesh::ui::kit::Badge(
-            QString::fromUtf8("\xE2\x9C\x93 Installed")));
+        status << new forkmesh::ui::kit::Badge(
+            QString::fromUtf8("\xE2\x9C\x93 Installed"));
         if (activeTheme)
-            footer->addWidget(new forkmesh::ui::kit::Badge(
-                QStringLiteral("Active"), forkmesh::ui::kit::Tone::Accent));
+            status << new forkmesh::ui::kit::Badge(
+                QStringLiteral("Active"), forkmesh::ui::kit::Tone::Accent);
     } else {
-        footer->addWidget(parts.action);
+        status << parts.action;
     }
+    QWidget *warning = nullptr;
     if (!manifest.reproducibleBuild) {
+        warning = new QWidget;
+        warning->setObjectName(QStringLiteral("marketNextWarnRow"));
         auto *warnIcon = new QLabel;
         warnIcon->setPixmap(marketNextIcon(QStringLiteral("alert"),
                                            Theme::Role::Warning, 12, ratio));
         auto *warn = new QLabel(QStringLiteral("Not reproducible"));
         warn->setObjectName(QStringLiteral("marketNextWarning"));
         warn->setTextFormat(Qt::PlainText);
-        warn->setMinimumWidth(1);
+        if (!list)
+            warn->setMinimumWidth(1);
         warn->setToolTip(QStringLiteral(
             "This build is not reproducible from its source"));
-        auto *warnRow = new QHBoxLayout;
+        auto *warnRow = new QHBoxLayout(warning);
+        warnRow->setContentsMargins(0, 0, 0, 0);
         warnRow->setSpacing(4);
         warnRow->addWidget(warnIcon);
         warnRow->addWidget(warn, 1);
-        footer->addLayout(warnRow, 1);
-    } else {
-        footer->addStretch(1);
     }
     const int permissionCount = int(manifest.permissions.size());
     auto *toggle = new QPushButton(
@@ -1141,8 +1275,62 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
                                : QStringLiteral("%1 permissions").arg(permissionCount));
     toggle->setObjectName(QStringLiteral("marketNextDetailsToggle"));
     toggle->setCheckable(true);
-    footer->addWidget(toggle);
-    mainLayout->addLayout(footer);
+
+    if (list) {
+        auto *row = new QHBoxLayout(main);
+        row->setContentsMargins(0, 0, 4, 0);
+        row->setSpacing(14);
+        row->addWidget(parts.screenshot, 0, Qt::AlignVCenter);
+        auto *text = new QVBoxLayout;
+        text->setContentsMargins(0, 0, 0, 0);
+        text->setSpacing(2);
+        text->addWidget(parts.name);
+        text->addWidget(parts.creator);
+        text->addSpacing(2);
+        text->addWidget(parts.summary);
+        row->addLayout(text, 1);
+        if (warning)
+            row->addWidget(warning, 0, Qt::AlignVCenter);
+        row->addWidget(parts.price, 0, Qt::AlignVCenter);
+        for (QWidget *widget : std::as_const(status))
+            row->addWidget(widget, 0, Qt::AlignVCenter);
+        row->addWidget(toggle, 0, Qt::AlignVCenter);
+    } else {
+        auto *mainLayout = new QVBoxLayout(main);
+        mainLayout->setContentsMargins(0, 0, 0, 0);
+        mainLayout->setSpacing(0);
+        mainLayout->addWidget(parts.screenshot);
+        mainLayout->addSpacing(12);
+        auto *top = new QHBoxLayout;
+        top->setContentsMargins(4, 0, 4, 0);
+        top->setSpacing(8);
+        top->addWidget(parts.name, 1);
+        top->addWidget(parts.price, 0, Qt::AlignTop);
+        mainLayout->addLayout(top);
+        mainLayout->addSpacing(2);
+        const auto addPadded = [mainLayout](QWidget *widget) {
+            auto *row = new QHBoxLayout;
+            row->setContentsMargins(4, 0, 4, 0);
+            row->addWidget(widget);
+            mainLayout->addLayout(row);
+        };
+        addPadded(parts.creator);
+        mainLayout->addSpacing(8);
+        addPadded(parts.summary);
+        mainLayout->addStretch(1);
+        mainLayout->addSpacing(12);
+        auto *footer = new QHBoxLayout;
+        footer->setContentsMargins(4, 0, 0, 0);
+        footer->setSpacing(8);
+        for (QWidget *widget : std::as_const(status))
+            footer->addWidget(widget);
+        if (warning)
+            footer->addWidget(warning, 1);
+        else
+            footer->addStretch(1);
+        footer->addWidget(toggle);
+        mainLayout->addLayout(footer);
+    }
 
     auto *details = new QWidget(card);
     details->setObjectName(QStringLiteral("marketNextDetails"));
@@ -1153,6 +1341,47 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
         parts.trust->hide();
     if (parts.permissions)
         parts.permissions->hide();
+
+    auto *paneShot = new QLabel;
+    paneShot->setObjectName(QStringLiteral("marketNextPaneShot"));
+    paneShot->setMinimumWidth(1);
+    paneShot->setFixedHeight(190);
+    paneShot->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    const QPixmap preview = parts.screenshot->pixmap();
+    if (preview.isNull())
+        paneShot->setText(parts.screenshot->text());
+    else
+        paneShot->setPixmap(preview);
+    paneShot->setAccessibleName(parts.screenshot->accessibleName());
+    paneShot->setToolTip(parts.screenshot->toolTip());
+    detailsLayout->addWidget(paneShot);
+    detailsLayout->addSpacing(14);
+    auto *headline = new QHBoxLayout;
+    headline->setSpacing(8);
+    auto *version = new QLabel(QStringLiteral("v%1").arg(manifest.version));
+    version->setObjectName(QStringLiteral("marketNextPaneVersion"));
+    version->setTextFormat(Qt::PlainText);
+    headline->addWidget(version);
+    headline->addStretch(1);
+    auto *panePrice = new QLabel(manifest.priceLabel());
+    panePrice->setObjectName(QStringLiteral("marketNextPanePrice"));
+    panePrice->setTextFormat(Qt::PlainText);
+    headline->addWidget(panePrice);
+    detailsLayout->addLayout(headline);
+    detailsLayout->addSpacing(4);
+    auto *paneMeta = new QLabel(parts.creator->text());
+    paneMeta->setObjectName(QStringLiteral("marketNextPaneMeta"));
+    paneMeta->setTextFormat(Qt::PlainText);
+    paneMeta->setWordWrap(true);
+    detailsLayout->addWidget(paneMeta);
+    detailsLayout->addSpacing(10);
+    auto *paneSummary = new QLabel(manifest.summary);
+    paneSummary->setObjectName(QStringLiteral("marketNextPaneSummary"));
+    paneSummary->setTextFormat(Qt::PlainText);
+    paneSummary->setWordWrap(true);
+    detailsLayout->addWidget(paneSummary);
+    detailsLayout->addSpacing(16);
+
     auto *facts = new QLabel(
         QStringList{QStringLiteral("by @%1").arg(manifest.creatorHandle),
                     manifest.type, manifest.licenseSpdx, parts.status}
@@ -1212,21 +1441,34 @@ void arrangeMarketNextCard(const MarketNextCardParts &parts,
         actions->addWidget(importCopy);
     }
     actions->addStretch(1);
-    if (actionInDetails)
+    if (actionInDetails) {
         actions->addWidget(parts.action);
+    } else {
+        auto *paneAction = new QPushButton(parts.action->text());
+        paneAction->setObjectName(QStringLiteral("marketNextPaneAction"));
+        paneAction->setProperty("marketNextAction",
+                                parts.action->property("marketNextAction"));
+        paneAction->setIcon(parts.action->icon());
+        paneAction->setEnabled(parts.action->isEnabled());
+        paneAction->setToolTip(parts.action->toolTip());
+        paneAction->setAccessibleName(parts.action->accessibleName());
+        QObject::connect(paneAction, &QPushButton::clicked, parts.action,
+                         &QPushButton::click);
+        actions->addWidget(paneAction);
+    }
     detailsLayout->addLayout(actions);
+    details->hide();
 
-    auto *box = new QBoxLayout(QBoxLayout::TopToBottom, card);
+    auto *box = new QVBoxLayout(card);
     box->setContentsMargins(kMarketNextCardPadding, kMarketNextCardPadding,
                             kMarketNextCardPadding, kMarketNextCardPadding);
     box->setSpacing(20);
     box->addWidget(main);
     box->addWidget(details, 1);
+    QObject::connect(card, &QObject::destroyed, details, [details] { delete details; });
 
-    auto *controller = new MarketNextCard(card, main, details, parts.summary,
-                                          parts.screenshot, toggle,
-                                          manifest.name);
-    controller->setExpanded(expanded, false);
+    new MarketNextCard(card, main, details, parts.summary, parts.screenshot,
+                       paneShot, toggle, manifest.name, list);
 }
 
 } // namespace
@@ -1306,6 +1548,57 @@ QWidget *MainWindow::buildMarketSection()
         refreshMarketPage();
     });
     header->addWidget(m_marketSort);
+    const bool listView =
+        QSettings().value(QStringLiteral("market/view")).toString() ==
+        QLatin1String("list");
+    if (next) {
+        auto *views = new QFrame;
+        views->setObjectName(QStringLiteral("marketNextViewToggle"));
+        views->setAccessibleName(QStringLiteral("Market view"));
+        auto *viewLayout = new QHBoxLayout(views);
+        viewLayout->setContentsMargins(2, 2, 2, 2);
+        viewLayout->setSpacing(2);
+        auto *viewGroup = new QButtonGroup(views);
+        const qreal ratio = page->devicePixelRatioF();
+        const auto addView = [&](const QString &objectName, const QString &icon,
+                                 const QString &label, bool list) {
+            auto *button = new QPushButton(views);
+            button->setObjectName(objectName);
+            button->setAccessibleName(label);
+            button->setToolTip(label);
+            button->setCheckable(true);
+            button->setChecked(list == listView);
+            button->setCursor(Qt::PointingHandCursor);
+            QIcon glyph;
+            glyph.addPixmap(marketNextIcon(icon, Theme::Role::FgMuted, 14, ratio),
+                            QIcon::Normal, QIcon::Off);
+            glyph.addPixmap(marketNextIcon(icon, Theme::Role::Fg, 14, ratio),
+                            QIcon::Normal, QIcon::On);
+            button->setIcon(glyph);
+            viewGroup->addButton(button);
+            viewLayout->addWidget(button);
+            connect(button, &QPushButton::toggled, this, [this, list](bool on) {
+                if (!on)
+                    return;
+                QSettings().setValue(QStringLiteral("market/view"),
+                                     list ? QStringLiteral("list")
+                                          : QStringLiteral("grid"));
+                for (QVBoxLayout *layout :
+                     {m_marketListLayout, m_marketInstalledListLayout,
+                      m_marketNotInstalledListLayout}) {
+                    if (layout && layout->parentWidget())
+                        layout->parentWidget()->setProperty("marketNextList", list);
+                }
+                refreshMarketPage();
+            });
+        };
+        addView(QStringLiteral("marketViewGridButton"), QStringLiteral("apps"),
+                QStringLiteral("Show the packages as a grid"), false);
+        addView(QStringLiteral("marketViewListButton"),
+                QStringLiteral("list-unordered"),
+                QStringLiteral("Show the packages as a list"), true);
+        header->addWidget(views);
+    }
     m_marketInstallAllButton = new QPushButton(QStringLiteral("Install all"));
     m_marketInstallAllButton->setObjectName(QStringLiteral("marketInstallAllButton"));
     m_marketInstallAllButton->setAccessibleName(
@@ -1437,14 +1730,16 @@ QWidget *MainWindow::buildMarketSection()
     tabs->setAccessibleName(QStringLiteral("Market package lists"));
     m_marketTabs = tabs;
 
-    const auto addListTab = [next](const QString &objectName,
-                                   QVBoxLayout **layout, bool grid = false) {
+    const auto addListTab = [next, listView](const QString &objectName,
+                                             QVBoxLayout **layout, bool grid = false) {
         auto *scroll = new QScrollArea;
         scroll->setObjectName(objectName);
         scroll->setFrameShape(QFrame::NoFrame);
         scroll->setWidgetResizable(true);
         scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         auto *host = new QWidget;
+        if (next && grid)
+            host->setProperty("marketNextList", listView);
         *layout = next && grid ? new MarketGridLayout(host) : new QVBoxLayout(host);
         (*layout)->setContentsMargins(4, 12, 4, 12);
         (*layout)->setSpacing(10);
@@ -1472,7 +1767,23 @@ QWidget *MainWindow::buildMarketSection()
     m_marketGuidesTabIndex = tabs->addTab(
         addListTab(QStringLiteral("marketGuidesList"), &m_marketGuidesLayout),
         QStringLiteral("Guides"));
-    outer->addWidget(tabs, 1);
+    if (next) {
+        auto *body = new QHBoxLayout;
+        body->setContentsMargins(0, 0, 0, 0);
+        body->setSpacing(0);
+        body->addWidget(tabs, 1);
+        auto *pane = new MarketNextDetailsPane(tabs);
+        pane->addHost(m_marketAllTabIndex, m_marketListLayout->parentWidget(), true);
+        pane->addHost(m_marketInstalledTabIndex,
+                      m_marketInstalledListLayout->parentWidget(), false);
+        pane->addHost(m_marketNotInstalledTabIndex,
+                      m_marketNotInstalledListLayout->parentWidget(), false);
+        tabs->setProperty("marketNextPane", QVariant::fromValue<QObject *>(pane));
+        body->addWidget(pane);
+        outer->addLayout(body, 1);
+    } else {
+        outer->addWidget(tabs, 1);
+    }
     if (next) {
         new MarketNextTabsOverlay(tabs, categories, m_marketSearchEmpty);
         categories->raise();
@@ -1865,8 +2176,11 @@ void MainWindow::refreshMarketPage()
     clearPackageCards(m_marketListLayout);
     clearPackageCards(m_marketInstalledListLayout);
     clearPackageCards(m_marketNotInstalledListLayout);
+    MarketNextDetailsPane *nextPane = marketNextPaneOf(m_marketTabs);
 
     if (!m_packageRegistry || !m_packageRegistry->isReady()) {
+        if (nextPane)
+            nextPane->dismiss();
         if (m_marketTabs) {
             m_marketTabs->setTabText(m_marketAllTabIndex,
                                      QStringLiteral("All"));
@@ -2255,10 +2569,8 @@ void MainWindow::refreshMarketPage()
                                   ? counted->first
                                   : 0;
             QWidget *host = list->parentWidget();
-            arrangeMarketNextCard(
-                parts, manifest, installed, activeTheme,
-                host && host->property("nextExpandedPackage").toString() ==
-                            manifest.id);
+            arrangeMarketNextCard(parts, manifest, installed, activeTheme,
+                                  host && host->property("marketNextList").toBool());
         }
         list->addWidget(card);
     };
@@ -2285,6 +2597,8 @@ void MainWindow::refreshMarketPage()
         clearPackageCards(settingsLayout);
         settingsLayout->addWidget(buildPackageSettingsPage(*settingsManifest));
         settingsLayout->addStretch();
+        if (nextPane)
+            nextPane->dismiss();
         applyMarketSearch();
         return;
     }
@@ -2292,6 +2606,8 @@ void MainWindow::refreshMarketPage()
     m_marketListLayout->addStretch();
     m_marketInstalledListLayout->addStretch();
     m_marketNotInstalledListLayout->addStretch();
+    if (nextPane)
+        nextPane->restore();
     applyMarketSearch();
 }
 

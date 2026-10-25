@@ -97,6 +97,32 @@ int widthFor(int columns, const QString &caption)
     return columns <= 0 ? 0 : qMax(columns * kPitch, captionWidth(caption));
 }
 
+QTimer *animationClock()
+{
+    static QPointer<QTimer> clock;
+    if (!clock) {
+        clock = new QTimer(QCoreApplication::instance());
+        clock->setInterval(kAnimationIntervalMs);
+    }
+    return clock;
+}
+
+void holdAnimationClock(bool *held, bool want)
+{
+    static int holders = 0;
+    if (!held || *held == want)
+        return;
+    *held = want;
+    holders = qMax(0, holders + (want ? 1 : -1));
+    if (!QCoreApplication::instance())
+        return;
+    QTimer *clock = animationClock();
+    if (holders > 0 && !clock->isActive())
+        clock->start();
+    else if (holders == 0 && clock->isActive())
+        clock->stop();
+}
+
 } // namespace forkmesh::ui::ChromeDotGrid
 
 namespace forkmesh::ui {
