@@ -126,6 +126,10 @@ Code: `desktop/src/MainWindowTerminals.cpp`, `TerminalTabsPage.*` (the page),
   `env`, because MCP clients do not pass their whole environment to stdio
   servers. That Claude Code session therefore has the ForkMesh MCP tools,
   including the terminal tools, without editing `.mcp.json`.
+- **Agent runs** (the Agents page's Claude Code runs) get the same file with
+  their own session token (`<data>/core/agent-mcp/session-<id>.json`), so an
+  agent can open and drive a tab without the user approving `.mcp.json`
+  first ([../agents/tools.md](../agents/tools.md#mcp-servers)).
 
 ## Terminal tools for agents
 

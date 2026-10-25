@@ -224,9 +224,21 @@ QString MainWindow::openTerminalTab(const QString &kind, const QString &command,
 
 QString MainWindow::terminalMcpConfigPath(const QString &terminalId)
 {
-    const QString script = mcpServerScriptPath();
     const QString token = m_terminalIntakeTokens.value(terminalId);
-    if (script.isEmpty() || token.isEmpty() || !m_agentIntake)
+    if (token.isEmpty() || !m_agentIntake)
+        return {};
+    return writeForkmeshMcpConfig(QStringLiteral("terminals"),
+                                  QStringLiteral("mcp-%1.json").arg(terminalId),
+                                  {{intake::SocketEnv, m_agentIntake->socketPath()},
+                                   {intake::TokenEnv, token},
+                                   {bridge::TerminalIdEnv, terminalId}});
+}
+
+QString MainWindow::writeForkmeshMcpConfig(const QString &folder, const QString &fileName,
+                                           const QJsonObject &extraEnv)
+{
+    const QString script = mcpServerScriptPath();
+    if (script.isEmpty())
         return {};
     const QString python = QStandardPaths::findExecutable(QStringLiteral("python3"));
     QJsonObject root =
@@ -239,16 +251,15 @@ QString MainWindow::terminalMcpConfigPath(const QString &terminalId)
     QJsonObject servers = root.value(QStringLiteral("mcpServers")).toObject();
     QJsonObject server = servers.value(QStringLiteral("forkmesh")).toObject();
     QJsonObject env = server.value(QStringLiteral("env")).toObject();
-    env.insert(intake::SocketEnv, m_agentIntake->socketPath());
-    env.insert(intake::TokenEnv, token);
-    env.insert(bridge::TerminalIdEnv, terminalId);
+    for (auto it = extraEnv.constBegin(); it != extraEnv.constEnd(); ++it)
+        env.insert(it.key(), it.value());
     server.insert(QStringLiteral("env"), env);
     servers.insert(QStringLiteral("forkmesh"), server);
     root.insert(QStringLiteral("mcpServers"), servers);
-    const QDir dir(forkmesh::paths::dataPath(QStringLiteral("terminals")));
+    const QDir dir(forkmesh::paths::dataPath(folder));
     if (!QDir().mkpath(dir.absolutePath()))
         return {};
-    const QString path = dir.filePath(QStringLiteral("mcp-%1.json").arg(terminalId));
+    const QString path = dir.filePath(fileName);
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly))
         return {};
