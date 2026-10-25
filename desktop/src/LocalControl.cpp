@@ -823,6 +823,48 @@ bool LocalControlServer::admitsBeforeCheck(const Connection &conn) const
            QDateTime::currentMSecsSinceEpoch() - it->accountCheckedMs < kAccountGraceMs;
 }
 
+bool LocalControlServer::claimsUnconfirmedUser(const Connection &conn) const
+{
+    if (!accountDeviceCheck)
+        return false;
+    const auto it = m_devices.constFind(conn.device.key);
+    if (it == m_devices.cend() || it->approval == accountApproval())
+        return false;
+    const QString claimed = conn.device.user.trimmed();
+    return !claimed.isEmpty() &&
+           claimed.compare(it->user.trimmed(), Qt::CaseInsensitive) != 0;
+}
+
+void LocalControlServer::confirmClaimedUser(Connection &conn)
+{
+    conn.state = State::Checking;
+    conn.accountCheckInFlight = true;
+    const int id = conn.id;
+    const QString key = conn.device.key;
+    const QString claimed = conn.device.user.trimmed();
+    QPointer<LocalControlServer> self(this);
+    if (onDevicesChanged)
+        onDevicesChanged();
+    accountDeviceCheck(conn.device, [self, id, key, claimed](AccountCheck verdict) {
+        if (!self)
+            return;
+        Connection *c = self->connection(id);
+        if (!c || c->state != State::Checking || c->device.key != key)
+            return;
+        c->accountCheckInFlight = false;
+        const auto it = self->m_devices.find(key);
+        if (it == self->m_devices.end()) {
+            self->requestPairing(*c);
+        } else {
+            if (verdict == AccountCheck::Owned)
+                it->user = claimed;
+            self->admitStored(*c);
+        }
+        if (self->onDevicesChanged)
+            self->onDevicesChanged();
+    });
+}
+
 void LocalControlServer::recheckAccount(int connectionId)
 {
     Connection *conn = connection(connectionId);
@@ -1032,6 +1074,10 @@ void LocalControlServer::handleAuth(Connection &conn, const QByteArray &payload)
         saveDevices();
     if (!browser && m_devices.contains(conn.device.key) &&
         !needsAccountCheck(conn)) {
+        if (claimsUnconfirmedUser(conn)) {
+            confirmClaimedUser(conn);
+            return;
+        }
         admitStored(conn);
     } else if (!browser && admitsBeforeCheck(conn)) {
         const int id = conn.id;

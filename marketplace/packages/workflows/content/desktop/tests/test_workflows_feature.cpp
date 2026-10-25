@@ -1,5 +1,6 @@
 #include "WorkflowsFeature.h"
 
+#include <QAbstractButton>
 #include <QApplication>
 #include <QCheckBox>
 #include <QDateTime>
@@ -9,6 +10,7 @@
 #include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSettings>
 #include <QStackedWidget>
 #include <QTableWidget>
 #include <QTimer>
@@ -184,6 +186,28 @@ T *named(QWidget *root, const QString &name)
     return nullptr;
 }
 
+QList<WorkflowCard *> cardsOf(QWidget *page)
+{
+    QList<WorkflowCard *> cards;
+    for (QFrame *frame : page->findChildren<QFrame *>(QStringLiteral("workflowCard")))
+        if (auto *card = dynamic_cast<WorkflowCard *>(frame); card && card->isVisibleTo(page))
+            cards.append(card);
+    return cards;
+}
+
+WorkflowCard *cardNamed(QWidget *page, const QString &name)
+{
+    for (WorkflowCard *card : cardsOf(page))
+        if (card->property("workflowName").toString() == name)
+            return card;
+    return nullptr;
+}
+
+QAbstractButton *control(WorkflowCard *card, const QString &name)
+{
+    return card ? named<QAbstractButton>(card, name) : nullptr;
+}
+
 } // namespace
 
 void workflowsFeatureChecks()
@@ -216,13 +240,20 @@ void workflowsFeatureChecks()
     page->refresh();
     settle();
 
-    auto *table = named<QTableWidget>(page, QStringLiteral("workflowsTable"));
+    QSettings().remove(QStringLiteral("workflows/viewMode"));
     auto *runs = named<QTableWidget>(page, QStringLiteral("workflowsRuns"));
     QStringList kpis;
     for (QLabel *label : page->findChildren<QLabel *>())
         if (label->objectName() == QLatin1String("workflowsKpi"))
             kpis << label->accessibleName() + QLatin1Char('=') + label->text();
-    workflowsCheck(table && table->rowCount() == 2, QStringLiteral("the dashboard lists every workflow"));
+    workflowsCheck(cardsOf(page).size() == 2 && cardNamed(page, QStringLiteral("Lead alert")) &&
+                       cardNamed(page, QStringLiteral("Morning report"))
+                               ->entry()
+                               .value(QStringLiteral("lastOutput"))
+                               .toString() == QLatin1String("1 item"),
+                   QStringLiteral("the dashboard shows every workflow as a card with its latest output"));
+    workflowsCheck(!control(cardNamed(page, QStringLiteral("Lead alert")), QStringLiteral("Pin to rail")),
+                   QStringLiteral("without the desktop's workflows a card offers no rail pin"));
     workflowsCheck(runs && runs->rowCount() == 2, QStringLiteral("the dashboard lists the runs of every workflow"));
     workflowsCheck(kpis.contains(QStringLiteral("Workflows=2")) && kpis.contains(QStringLiteral("Active=1")) &&
                        kpis.contains(QStringLiteral("Runs=2")) && kpis.contains(QStringLiteral("Success rate=50%")),
@@ -240,21 +271,43 @@ void workflowsFeatureChecks()
     workflowsCheck(steps && steps->rowCount() == 1 && steps->item(0, 0)->text() == QLatin1String("Fetch"),
                    QStringLiteral("a selected run shows each step by name"));
 
-    for (int row = 0; row < table->rowCount(); ++row)
-        if (table->item(row, 0)->text() == QLatin1String("Lead alert"))
-            table->selectRow(row);
-    named<QPushButton>(page, QStringLiteral("Turn on"))->click();
+    auto *turnOn = control(cardNamed(page, QStringLiteral("Lead alert")), QStringLiteral("Turn on"));
+    workflowsCheck(turnOn != nullptr, QStringLiteral("an off workflow's card has a Turn on switch"));
+    if (turnOn)
+        turnOn->click();
     settle();
     workflowsCheck(server.workflows.value(QStringLiteral("b2")).value(QStringLiteral("active")).toBool(),
                    QStringLiteral("Turn on saves the whole workflow with Active set"));
 
-    for (int row = 0; row < table->rowCount(); ++row)
-        if (table->item(row, 0)->text() == QLatin1String("Morning report"))
-            table->selectRow(row);
-    named<QPushButton>(page, QStringLiteral("Run"))->click();
+    if (auto *run = control(cardNamed(page, QStringLiteral("Morning report")), QStringLiteral("Run")))
+        run->click();
     settle();
     workflowsCheck(server.count("POST", QStringLiteral("/api/workflows/a1/run")) == 1,
                    QStringLiteral("Run starts the workflow on the server"));
+    page->activateSearchHit(QStringLiteral("run:a1"));
+    settle();
+    workflowsCheck(server.count("POST", QStringLiteral("/api/workflows/a1/run")) == 2,
+                   QStringLiteral("a rail pin runs an account workflow through the page"));
+
+    for (const QString &view : {QStringLiteral("List view"), QStringLiteral("Compact grid view"),
+                                QStringLiteral("Thumbnails view")}) {
+        named<QAbstractButton>(page, view)->click();
+        settle();
+        workflowsCheck(cardsOf(page).size() == 2 && control(cardNamed(page, QStringLiteral("Morning report")),
+                                                            QStringLiteral("Run")),
+                       QStringLiteral("%1 shows every workflow with its controls").arg(view));
+    }
+    named<QAbstractButton>(page, QStringLiteral("Compact grid view"))->click();
+    settle();
+    workflowsCheck(QSettings().value(QStringLiteral("workflows/viewMode")).toString() == QLatin1String("compact"),
+                   QStringLiteral("the chosen view is remembered"));
+    auto *filter = named<QLineEdit>(page, QStringLiteral("Filter workflows"));
+    filter->setText(QStringLiteral("lead"));
+    settle();
+    workflowsCheck(cardsOf(page).size() == 1, QStringLiteral("the filter narrows the cards"));
+    filter->clear();
+    named<QAbstractButton>(page, QStringLiteral("Thumbnails view"))->click();
+    settle();
 
     page->activateSearchHit(QStringLiteral("a1"));
     settle();
@@ -287,8 +340,7 @@ void workflowsFeatureChecks()
     named<QPushButton>(page, QStringLiteral("‹ All workflows"))->click();
     settle();
     workflowsCheck(pages->currentIndex() == 0, QStringLiteral("a saved workflow returns to the dashboard without asking"));
-    workflowsCheck(!named<QTableWidget>(page, QStringLiteral("workflowsLocalTable"))->isVisibleTo(page),
-                   QStringLiteral("without the desktop's workflows the page shows only the account's"));
+    workflowsCheck(cardsOf(page).size() == 2, QStringLiteral("without the desktop's workflows the page shows only the account's"));
     delete page;
 
     struct LocalCall {
@@ -401,12 +453,22 @@ void workflowsFeatureChecks()
     desk->show();
     desk->refresh();
     settle();
-    auto *local = named<QTableWidget>(desk, QStringLiteral("workflowsLocalTable"));
-    workflowsCheck(local && local->isVisibleTo(desk) && local->rowCount() == 2 &&
-                       local->item(0, 0)->text() == QLatin1String("Sentinel") &&
-                       local->item(0, 2)->text() == QLatin1String("Special agent") &&
-                       local->item(1, 8)->text() == QLatin1String("bottom"),
-                   QStringLiteral("the dashboard lists the desktop's workflows with their kind and rail"));
+    WorkflowCard *sentinel = cardNamed(desk, QStringLiteral("Sentinel"));
+    WorkflowCard *clean = cardNamed(desk, QStringLiteral("Clean up"));
+    workflowsCheck(cardsOf(desk).size() == 4 && sentinel && clean &&
+                       sentinel->entry().value(QStringLiteral("kindLabel")).toString() == QLatin1String("Special agent") &&
+                       clean->entry().value(QStringLiteral("pinned")).toString() == QLatin1String("bottom"),
+                   QStringLiteral("special agents and the account's workflows share one list with their kind and rail"));
+    workflowsCheck(control(sentinel, QStringLiteral("Pin to rail")) &&
+                       control(cardNamed(desk, QStringLiteral("Morning report")), QStringLiteral("Pin to rail")) &&
+                       control(sentinel, QStringLiteral("Start schedule")) &&
+                       control(sentinel, QStringLiteral("Last output")),
+                   QStringLiteral("every card has the special agent controls: rail pin, schedule and last output"));
+    named<QAbstractButton>(desk, QStringLiteral("Show special agents"))->click();
+    settle();
+    workflowsCheck(cardsOf(desk).size() == 1, QStringLiteral("the Special agents chip shows only special agents"));
+    named<QAbstractButton>(desk, QStringLiteral("Show all"))->click();
+    settle();
     auto *deskRuns = named<QTableWidget>(desk, QStringLiteral("workflowsRuns"));
     bool localRunListed = false;
     for (int row = 0; deskRuns && row < deskRuns->rowCount(); ++row)
@@ -416,13 +478,24 @@ void workflowsFeatureChecks()
     workflowsCheck(!hits.isEmpty() && hits.first().id == QLatin1String("repo:forkmesh/forkmesh|sentinel"),
                    QStringLiteral("the top search box finds desktop workflows"));
     workflowsCheck(desk->navigationBadge() >= 1, QStringLiteral("a failed desktop workflow counts on the rail badge"));
-    local->selectRow(1);
+    if (auto *toggle = control(cardNamed(desk, QStringLiteral("Clean up")), QStringLiteral("Turn off")))
+        toggle->click();
     settle();
-    named<QPushButton>(desk, QStringLiteral("Desktop workflow: Run"))->click();
+    workflowsCheck(!localCalls.isEmpty() && localCalls.last().action == QLatin1String("setEnabled") &&
+                       !localCalls.last().payload.value(QStringLiteral("enabled")).toBool(),
+                   QStringLiteral("the switch turns a desktop workflow off"));
+    if (auto *run = control(cardNamed(desk, QStringLiteral("Clean up")), QStringLiteral("Run")))
+        run->click();
     settle();
     workflowsCheck(!localCalls.isEmpty() && localCalls.last().action == QLatin1String("run") &&
                        localCalls.last().id == QLatin1String("clean"),
                    QStringLiteral("Run starts the desktop workflow on this desktop"));
+
+    bool synced = false;
+    for (const LocalCall &call : std::as_const(localCalls))
+        synced = synced || (call.action == QLatin1String("sync") && call.repo == QLatin1String(kAccountRepo) &&
+                            call.payload.value(QStringLiteral("workflows")).toArray().size() == 2);
+    workflowsCheck(synced, QStringLiteral("the page tells the desktop the account workflows' names for their rail pins"));
 
     desk->activateSearchHit(QStringLiteral("repo:forkmesh/forkmesh|sentinel"));
     settle();

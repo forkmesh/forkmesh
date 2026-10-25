@@ -68,10 +68,20 @@ The desktop has no toasts or floating cards; information is shown inline.
   (`MainWindow::showPageNotice`, `#pageNoticeArea`): `kit::InlineNotice` rows
   above the page stack, keyed to the page they were raised on
   (`currentNoticePage`: the section, or `0:<owner>/<name>:<tab>`).
-- No countdown: a newer message replaces an older confirmation; errors stay
-  until cleared, at most three per page (`kPageNoticesPerPage`), 60 in all.
-  Rows have Copy, clear, **View output** for failed runs and an **Open**
-  action (`noticeDestination`); text over 600 characters is shortened.
+- A newer message replaces an older confirmation; errors stack, at most three
+  per page (`kPageNoticesPerPage`), 60 in all. Rows have Copy, clear,
+  **View output** for failed runs and an **Open** action
+  (`noticeDestination`); text over 600 characters is shortened.
+- Every row, confirmation or error, closes itself after 5 s
+  (`m_pageNoticeCountdownMs`). A ring around its clear button
+  (`kit::CountdownCloseButton`) fills clockwise as the time runs out, blue for
+  a confirmation and red for an error. Hovering the row pauses the countdown
+  (`InlineNotice::enterEvent` / `leaveEvent`) so a message can be read or
+  copied; it resumes when the pointer leaves. The time already spent is kept
+  per notice (`PageNotice::countdownElapsedMs`), so a re-render of the strip,
+  or leaving the page and coming back, does not restart it; the clock only
+  runs while the row is shown. Errors are still filed on the Pings page, so
+  an error that closed itself can be read there.
 - One operation, one Pings row: notices raised inside a `PingThreadScope`
   share a key (`m_pingThreadKey`) and `refileThreadPing` rewrites that row in
   place instead of filing another. A branch merge (`mergePingThread(dir,
@@ -104,6 +114,14 @@ The desktop has no toasts or floating cards; information is shown inline.
 
 ## Debug bar
 
+- The version at the bottom right (`#statusVersionButton`) toggles the bar
+  and names the build: `v<version> · <short commit>`, the first 10 hex digits
+  of `FORKMESH_BUILD_COMMIT` (`shortBuildCommit`, `src/DesktopBuildCommit.h`),
+  the length `git log --oneline` prints in this repository. Its tooltip has
+  the full hash. A build with uncommitted changes says `dirty`; a build with
+  no known commit shows the version alone. The text comes through
+  `desktopBuildCommit()` so `MainWindowChat.cpp` does not include
+  `ForkMeshBuildCommit.h` and is not recompiled on every commit.
 - The opt-in bottom bar (`buildStatusBar`, `src/MainWindowChat.cpp`) holds
   Restart (rebuild and relaunch, with `ui/showRebuildButton`), Resize (1280x720),
   Report and Log tail.
@@ -164,6 +182,27 @@ process are protected; stopping another process always asks first and uses the
 platform's normal termination request. If the kernel denies that request, the
 detail dialog requests administrator permission through PolicyKit or a masked
 sudo password prompt and passes it to the privileged termination command.
+
+Under the CPU and Memory gauges, two sliders set the agent governor's limits
+(**Agent CPU limit**, **Agent memory limit**: the share agents may use, 40 % to 95 %). Each slider is the share left to agents,
+so it writes `100 - value` to `agents/cpuReservePercent` and
+`agents/memoryReservePercent` (5 to 60 %, the same settings the Governor page
+lists). While dragging, the caption previews the result of
+`agentresources::budgetFor` (CPU cores for agents and kept; slice
+`MemoryHigh` and the reserve); the change is saved when the slider is
+released, or 0.5 s after the last keyboard step, never on every pixel of a
+drag. `setReservePercents` stores the new budget, so agents started afterwards
+get the new per-agent limits and build-job count, and `applyBudget()` makes the
+running governor `systemctl --user set-property --runtime` the slice's
+`MemoryHigh`/`MemoryMax` and `CPUQuota`, plus `MemoryHigh`/`MemoryMax` on each
+running `forkmesh-agent-*.scope`. The CPU cap jumps to the new ceiling less
+what other programs use now (`retargetCpuQuota`, never below the floor), and
+the governor's usual cooldowns take over from there. Each change is logged as
+a `limits` event on the Governor page. When agents are not contained (no
+systemd, governor switched off), the sliders still save and the note beside
+them says why the limits are not applied yet. The view takes the budget
+through `governanceSource`/`onGovernanceChanged` hooks set in
+`MainWindowLogs.cpp`, so its tests run without systemd.
 
 Between the gauges and the share strips, two cards describe the processor and
 the kernel's tuning (`desktopprocs::readMachine` / `refreshMachine`):

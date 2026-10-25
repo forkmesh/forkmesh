@@ -241,9 +241,9 @@ EndpointSourceLocation endpointSourceLocation(const QString &source)
         separator >= 0 ? source.mid(separator + 2).trimmed() : QString();
     EndpointSourceLocation location;
     location.text = source;
-    // FORKMESH_SOURCE_DIR is desktop/; catalog paths start at the repo root.
+    // forkmesh::sourceDir() is desktop/; catalog paths start at the repo root.
     const QString local = QDir::cleanPath(
-        QStringLiteral(FORKMESH_SOURCE_DIR "/../") + path);
+        forkmesh::sourceDir() + QStringLiteral("/../") + path);
     QFile file(local);
     if (path.isEmpty() || !file.open(QIODevice::ReadOnly | QIODevice::Text))
         return location;

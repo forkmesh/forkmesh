@@ -23,7 +23,7 @@ or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
 | Examples | `app/src/workflow_templates.py` |
 | `.forkmesh` repository files on the canvas | `app/src/workflow_files.py` |
 | Page script | `app/public/dashboard/js/09-workflows.js` (rebuild with `app/tools/build_dashboard_assets.py`) |
-| Desktop page | `marketplace/packages/workflows/content/desktop/` (`WorkflowsModel`, `WorkflowsFeature`, `WorkflowsDialogs.cpp`); test `forkmesh-workflows-tests` |
+| Desktop page | `marketplace/packages/workflows/content/desktop/` (`WorkflowsModel`, `WorkflowsCards` for the list, thumbnail and compact cards, `WorkflowsFeature`, `WorkflowsDialogs.cpp`); test `forkmesh-workflows-tests` |
 | Plug-in and nested packages | `marketplace/packages/workflows`, `workflows-pack-*`, `workflows-examples`, `workflows-repository-files` |
 | Tables | `workflows`, `workflow_runs`, `workflow_credentials` (migration `0251_workflows.sql`) |
 | Tests | `app/tests/test_workflows.py`, `test_workflow_actions.py`, `test_workflow_script.py`, `test_workflow_formats.py`, `test_workflow_files.py`, `test_workflow_desktop.py` |
@@ -252,14 +252,13 @@ and the phones showed workflows the desktop did not. A 401 or 403
 `plugin_not_installed` shows as a sentence in the status line (`errorText`
 maps every server error code).
 
-- **Dashboard.** Stats: workflows (and their step total), active (scheduled,
-  webhook, manual), runs (today), success rate (succeeded and failed),
-  average duration, last run with the last failed workflow, next scheduled
-  run. Your workflows lists name, trigger (a schedule shows its interval),
-  steps, on/off, last run and result, runs kept (failed count), next run and
-  last change, filtered by the box or the window's top search. Edit, Run,
-  Turn on/off, Duplicate (saved off, as "Copy of ...") and Delete act on the
-  selected row; a double click opens it. Recent runs merges the 30 kept runs
+- **Dashboard.** Stat tiles: workflows (and their step total), active
+  (scheduled, webhook, manual), runs (today), success rate (succeeded and
+  failed), average duration, last run with the last failed workflow, next
+  scheduled run; they count every workflow in the list, the desktop's too.
+  Below them is **one list** of every workflow: special agents, the
+  repositories' desktop workflows and the account's workflows on ForkMesh
+  (see [One list](#one-list-on-the-desktop)). Recent runs merges the 30 kept runs
   of every workflow that has run (`GET /<id>/runs`, at most four at a time,
   only for workflows with a `lastRunAt`), newest first, filtered by workflow
   and result; selecting one shows each step's result, time, item count and
@@ -301,6 +300,65 @@ maps every server error code).
   `/<id>/record` like a browser-driven run.
 - **Search and badge.** The top search box finds workflows by name; the rail
   badge counts workflows whose last run failed.
+
+### One list on the desktop
+
+The user asked (2026-10-24) for the special agents to join the account's
+workflows in one list, for every workflow to get the special agent features,
+and for a list, a thumbnail and a compact grid view with little controls and
+the latest output under each one. Before, the page had two tables: **On this
+desktop** (repository workflows and special agents) and **Your workflows**
+(the account's).
+
+- **Entries.** `unifiedWorkflows` (`WorkflowsModel.cpp`) turns both into one
+  entry shape: `key` (`local:<repo>|<id>` or `account:<id>`), `source`
+  (`local`, `account`), `kind` (`agent`, `desktop`, `account`) and its label
+  (Special agent, Desktop workflow, On ForkMesh), `place`, trigger text,
+  `enabled`, schedule, steps, last run and status, runs and failures, next
+  run, rail pin, and the latest output: a desktop run's caption or summary
+  (`lastSummary`) and output file, or the newest account run's
+  `runOutputText`. `statsWorkflows` maps entries to the stats input.
+- **Toolbar.** Chips filter by kind: All, Special agents, On this desktop, On
+  ForkMesh, Pinned, Needs attention (failed or broken) (`workflowMatches`, which
+  also matches the filter box against name, description, trigger,
+  repository, kind and output). Sort by name, last run, next run or kind
+  (`sortWorkflows`). Three view buttons pick List, Thumbnails or Compact grid;
+  the view and sort are kept in `workflows/viewMode` and `workflows/sort`.
+- **Cards** (`WorkflowsCards.*`). Thumbnails: a painted header tinted by kind
+  (violet special agents, blue desktop, teal ForkMesh) with the icon or
+  portrait, a small drawing of its steps, a state pill and the rail it is
+  pinned to; then name, kind chip, place and trigger, the latest output (two
+  lines) and run times. Compact grid: icon, name, kind and last run, a state
+  dot and one line of output. List: one row per workflow with its output,
+  trigger, state and next or last run under column headings. Cards flow into
+  as many columns as fit (`CardGrid`; 270 px thumbnails, 210 px compact).
+- **Controls under every card.** Run (Stop while it runs), Edit, Pin to rail,
+  Start or Pause schedule (desktop workflows with a schedule), Last output, an
+  on/off switch and More: Run now, Run with an assignment, Edit, Show the
+  last output, Agent home or Add a special agent step, Show file, Duplicate
+  (account), the rail submenu, Turn on/off, Delete. A double click edits; a
+  right click opens More; a card drags onto any rail.
+- **Special agent features for every workflow.** An account workflow runs
+  with an assignment: the page posts `{payload: {assignment}}` to
+  `/<id>/run`, so its steps read `{{ $trigger.assignment }}`. It pins to the
+  top, left, right or bottom rail like a desktop workflow (below). Last output
+  opens a desktop run's output file or selects the run in Recent runs. A desktop
+  workflow without an agent step gets **Add a special agent step**, which opens
+  it with an `agent.run` step after its last step (read-only permission) to
+  fill in and save.
+
+**Account workflow pins.** The host keeps them with the desktop's pins
+(`ui/workflowPins`) under the repository key `@account/workflows`
+(`rw::kAccountRepo`, `kAccountRepo` in the package; it has a slash so the
+side rail's workflow items accept it, and no repository key starts with `@`).
+`repositoryWorkflowAction("@account/workflows", id, ...)` answers `pin`
+(`{rail, name, lastStatus}`), `unpin` and `sync` (`{workflows: [{id, name,
+lastStatus}]}`); the page sends `sync` after each list load, which stores the
+names and last results in `ui/accountWorkflowPins` for the pin tooltips and
+rings and unpins workflows the account no longer has. Clicking such a pin
+calls the page's `activateSearchHit("run:<id>")`, which runs it like the Run
+button (desktop steps still ask first); its menu offers Run now, Open in
+Workflows and the rail actions.
 
 ## Desktop workflows and special agents
 
@@ -373,14 +431,16 @@ blue ring while it runs and a red one after a failure; clicking runs it (or
 opens it while it runs), right-click stops it, opens it, its agent's home or
 its last output, or moves it. The special agent menu and the page offer
 **Pin to rail** too. Right-rail pins show in the desktop's side rail, and a
-row of **On this desktop** (or a pin on another rail) can be dragged onto the
-side rail to pin it there
+card on the Workflows page (or a pin on another rail) can be dragged onto the
+side rail or any pin strip to pin it there
 ([../desktop/side-rail-and-terminals.md](../desktop/side-rail-and-terminals.md)).
+Account workflows pin the same way ([One list](#one-list-on-the-desktop)).
 
-**Page.** The native Workflows page lists these workflows under **On this
-desktop** with their icons, repository, trigger, state, last result and next
-run, with Run/Stop, Edit, Agent home, Pin to rail, schedule and on/off
-buttons; their runs join Recent runs, with the output file and agent session
+**Page.** The native Workflows page shows these workflows in its one list
+beside the account's ([One list](#one-list-on-the-desktop)), with their icons,
+repository, trigger, state, latest output and next run, and Run/Stop, Edit,
+Agent home, Pin to rail, schedule and on/off controls under each card; their
+runs join Recent runs, with the output file and agent session
 one click away. **New workflow** starts a special agent, a shortcut run, a
 blank desktop workflow or Free disk space in a chosen repository. The editor
 adds checkbox, line-list, portrait and shortcut fields. It needs the

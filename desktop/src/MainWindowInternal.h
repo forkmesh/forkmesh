@@ -213,9 +213,7 @@
 #include <unistd.h>
 #endif
 
-#ifndef FORKMESH_SOURCE_DIR
-#define FORKMESH_SOURCE_DIR ""
-#endif
+#include "SourceDir.h"
 
 namespace forkmesh::localcontrol::agentops {
 struct UsageWindow;
@@ -337,6 +335,8 @@ struct DiffRenderAppearance {
     qreal dpr = 1.0;
     QMap<QString, QString> colorRemap;
     QString treeIconDir;
+    bool changeArrows = false;
+    int changeArrowsStagedFiles = 0;
 };
 DiffRenderAppearance currentDiffRenderAppearance();
 // One compact score in the branch review's merge-health strip. Scores are

@@ -608,14 +608,62 @@ bool MainWindow::restoreCachedAccountSession(const QString &accountName,
         return false;
     }
 
+    const QString localKey = m_profileIdentity.publicKey().trimmed();
+    const QString primaryKey =
+        payload.value(QStringLiteral("pubkey")).toString();
+    const QStringList accountDesktopKeys =
+        session.desktopCapable && !localKey.isEmpty() &&
+                primaryKey.trimmed() != localKey
+            ? accountDesktopKeysForSession(session)
+            : QStringList();
     const bool ownsDesktopKey =
         forkmesh::accounts::SessionCache::mayRestoreDesktopCapability(
-            session, m_profileIdentity.publicKey(),
-            payload.value(QStringLiteral("pubkey")).toString());
+            session, localKey, primaryKey, accountDesktopKeys);
     activateAccountSession(payload, account, ownsDesktopKey,
                            canonicalInstance);
     session.clearSensitive();
     return true;
+}
+
+QStringList MainWindow::accountDesktopKeysForSession(
+    const forkmesh::accounts::CachedSession &session)
+{
+    QStringList keys;
+    const QUrl url = accountApiUrlForInstance(session.instanceUrl,
+                                              QStringLiteral("desktops"));
+    if (!m_networkAccess || session.token.isEmpty() ||
+        !forkmesh::accounts::SessionCache::maySendTo(session, url)) {
+        return keys;
+    }
+    QNetworkRequest request(url);
+    request.setTransferTimeout(15000);
+    request.setRawHeader(
+        QByteArrayLiteral("Authorization"),
+        QByteArrayLiteral("Bearer ") + session.token.toUtf8());
+    QNetworkReply *reply = m_networkAccess->get(request);
+    QEventLoop loop;
+    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+    const int status =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool ok = reply->error() == QNetworkReply::NoError && status == 200;
+    const QJsonObject payload =
+        QJsonDocument::fromJson(reply->read(256 * 1024)).object();
+    reply->deleteLater();
+    if (!ok || !payload.value(QStringLiteral("ok")).toBool() ||
+        AccountCapability::normalizedAccount(
+            payload.value(QStringLiteral("account")).toString()) !=
+            AccountCapability::normalizedAccount(session.account)) {
+        return keys;
+    }
+    for (const QJsonValue &value :
+         payload.value(QStringLiteral("desktops")).toArray()) {
+        const QString key =
+            value.toObject().value(QStringLiteral("key")).toString().trimmed();
+        if (!key.isEmpty() && !keys.contains(key))
+            keys.append(key);
+    }
+    return keys;
 }
 
 void MainWindow::clearAccountSessionMemory()
@@ -867,10 +915,16 @@ bool MainWindow::switchToUserAccount(const QString &accountName,
     refreshRepositoryList();
     QMessageBox::information(
         this, QStringLiteral("Account switched"),
-        QStringLiteral("Signed in as %1. This instance now uses that "
-                       "account session on %2; owner-signed actions remain disabled "
-                       "when its desktop key belongs to another instance.")
-            .arg(m_accountName, serverHost(targetServer)));
+        hasOwnerSigningCapability()
+            ? QStringLiteral("Signed in as %1 on %2. This desktop is one of "
+                             "the account's desktops, so owner-signed actions "
+                             "work here too.")
+                  .arg(m_accountName, serverHost(targetServer))
+            : QStringLiteral("Signed in as %1 on %2. Owner-signed actions "
+                             "stay off on this desktop until you sign in to "
+                             "the account again from here, which adds this "
+                             "desktop's key to the account.")
+                  .arg(m_accountName, serverHost(targetServer)));
     return true;
 }
 
