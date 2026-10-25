@@ -210,6 +210,11 @@ void testRealRepository(const QString &root)
     write(dirty + QStringLiteral("/README"), "edited\n");
     write(dirty + QStringLiteral("/notes/untracked.txt"), "new\n");
     git(repo, {QStringLiteral("branch"), QStringLiteral("merged-only")});
+    write(wtRoot + QStringLiteral("/.gitignore"), "# ForkMesh agent worktrees. Never part of the project.\n*\n");
+    const QString scratch = wtRoot + QStringLiteral("/.scratch");
+    write(scratch + QStringLiteral("/001-clean/tmp/build.log"), "log\n");
+    write(scratch + QStringLiteral("/002-dirty/tmp/build.log"), "log\n");
+    write(scratch + QStringLiteral("/003-wrong/tmp/build.log"), "log\n");
 
     const Guard guard{root + QStringLiteral("/home"), {root + QStringLiteral("/fmdata")}};
     const QString taskId = QStringLiteral("0123456789abcdef0123456789abcdef");
@@ -243,6 +248,10 @@ void testRealRepository(const QString &root)
     const Outcome cleaned = removeMerged(cleanItem);
     check(cleaned.ok, "clean worktree removed");
     check(!QFileInfo::exists(clean), "clean worktree directory is gone");
+    check(!QFileInfo::exists(scratch + QStringLiteral("/001-clean")),
+          "the removed worktree's scratch folder is gone");
+    check(QFileInfo::exists(scratch + QStringLiteral("/003-wrong/tmp/build.log")),
+          "another worktree's scratch folder is kept");
     check(!refExists(repo, QStringLiteral("refs/heads/001-clean")), "merged branch deleted");
 
     const Inspection dirtyItem =
@@ -266,6 +275,8 @@ void testRealRepository(const QString &root)
                                QStringLiteral("/feat/dirty")),
           "temporary WIP ref removed");
     check(!QFileInfo::exists(dirty), "dirty worktree directory is gone");
+    check(!QFileInfo::exists(scratch + QStringLiteral("/002-dirty")),
+          "the backed-up worktree's scratch folder is gone");
     check(!refExists(repo, QStringLiteral("refs/heads/feat/dirty")), "branch force-deleted");
     QString parent;
     git(repo, {QStringLiteral("rev-parse"), trash + QStringLiteral("^")}, &parent);

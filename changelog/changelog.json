@@ -2,6 +2,20 @@
  "schema": 2,
  "entries": [
   {
+   "date": "2026-10-25",
+   "version": "",
+   "title": "",
+   "pitch": "",
+   "sections": [
+    {
+     "title": "Agents",
+     "items": [
+      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
+     ]
+    }
+   ]
+  },
+  {
    "date": "2026-10-24",
    "version": "",
    "title": "",
@@ -36,7 +50,8 @@
     {
      "title": "Chat",
      "items": [
-      "Links to a channel or direct message open it even on a freshly loaded chat page."
+      "Links to a channel or direct message open it even on a freshly loaded chat page.",
+      "In a chat room the desktop prompt bar highlights its chat button, since that is what Enter sends with."
      ]
     },
     {
@@ -97,7 +112,9 @@
       "Tables with a very long value no longer freeze the window while they draw, and a busy workflow's output no longer stutters the app.",
       "The terminal button in the top bar now opens a shell straight away in a pane on the right, with tabs, a + button for another shell and a menu for Claude Code or Codex, and Codex started there can read and type into your shared terminals like Claude Code.",
       "Notes open in the rendered preview; switch to Write to edit.",
-      "Logs → Desktop now shows each CPU thread's load, clock and temperature, split into performance and efficiency cores, beside the CPU governor, energy preference, turbo, memory pressure, huge page and swap settings."
+      "Logs → Desktop now shows each CPU thread's load, clock and temperature, split into performance and efficiency cores, beside the CPU governor, energy preference, turbo, memory pressure, huge page and swap settings.",
+      "On a large diff the scroll bar now shows where you are in the whole diff, so it no longer jumps up each time the next part loads, and dragging it moves through the entire diff.",
+      "Long data tables no longer freeze for a second or two when a cell updates."
      ]
     },
     {
@@ -105,7 +122,8 @@
      "items": [
       "Instances can publish a static, read-only copy of their issues to GitHub Pages, Codeberg Pages or any host, and can turn on a Tor onion address.",
       "Instances have a privacy mode: nothing about visitors is logged or sent, and the footer says so.",
-      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you."
+      "The Start your own instance page has a one-line prompt you can paste into Claude Code or another coding agent, which then sets up your instance with you.",
+      "Deploy nodes runs deploy again when Action sandboxes are on a TMP disk."
      ]
     }
    ]
