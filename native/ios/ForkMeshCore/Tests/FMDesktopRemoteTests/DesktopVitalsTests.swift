@@ -30,6 +30,42 @@ final class DesktopVitalsTests: XCTestCase {
         XCTAssertEqual(vitals.values(.disk).count, DesktopVitals.seconds)
     }
 
+    @MainActor func testTokenTotalsBecomePerSecondStepsAndAgentReadings() async {
+        let channel = FakeRemoteChannel()
+        channel.replies["diag.watch"] = ["memory": [40.0]]
+        let vitals = DesktopVitals(channel: channel)
+        let agent = vitals.agentTokens(7)
+        await vitals.watch()
+        channel.emit("diag.vitals", ["memory": 40.0])
+        XCTAssertFalse(vitals.tokensKnown)
+        XCTAssertTrue(vitals.tokensIn.isEmpty)
+
+        channel.emit("diag.vitals", ["memory": 40.0, "tokensIn": 1_000, "tokensOut": 50, "agentTokens": ["7": [900, 40]]])
+        XCTAssertTrue(vitals.tokensKnown)
+        XCTAssertTrue(vitals.tokensIn.allSatisfy { $0.isNaN })
+        XCTAssertEqual(agent.totals, [900, 40])
+        channel.emit("diag.vitals", ["memory": 40.0, "tokensIn": 4_000, "tokensOut": 80, "agentTokens": ["7": [3_900, 70], "x": [1, 2]]])
+        channel.emit("diag.vitals", ["memory": 40.0, "tokensIn": 3_000, "tokensOut": 80])
+        XCTAssertEqual(Array(vitals.tokensIn.dropFirst()), [3_000, 0])
+        XCTAssertEqual(Array(vitals.tokensOut.dropFirst()), [30, 0])
+        XCTAssertIdentical(vitals.agentTokens(7), agent)
+        XCTAssertEqual(agent.totals, [3_900, 70])
+
+        for _ in 0..<(DesktopVitals.seconds + 3) {
+            channel.emit("diag.vitals", ["memory": 40.0, "tokensIn": 3_000, "tokensOut": 80])
+        }
+        XCTAssertEqual(vitals.tokensOut.count, DesktopVitals.seconds)
+        await vitals.unwatch()
+        XCTAssertFalse(vitals.tokensKnown)
+        XCTAssertTrue(vitals.tokensOut.isEmpty)
+    }
+
+    func testTokenStepSkipsUnknownAndShrinkingTotals() {
+        XCTAssertTrue(DesktopVitals.step(from: nil, to: [1, 2]).allSatisfy { $0.isNaN })
+        XCTAssertEqual(DesktopVitals.step(from: [1, 5], to: [4, 3]), [3, 0])
+        XCTAssertTrue(DesktopVitals.step(from: [-1, 0], to: [4, -1]).allSatisfy { $0.isNaN })
+    }
+
     @MainActor func testOlderDesktopLeavesTheChartsEmpty() async {
         let channel = FakeRemoteChannel()
         channel.failures["diag.watch"] = LocalControlException("unsupported")

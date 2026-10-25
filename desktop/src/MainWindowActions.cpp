@@ -4652,6 +4652,10 @@ constexpr int kPingOpensRole = Qt::UserRole + 6;
 constexpr int kPingUnreadRole = Qt::UserRole + 7;
 constexpr int kPingCategoryRole = Qt::UserRole + 8;
 constexpr int kPingIconNameRole = Qt::UserRole + 9;
+constexpr int kPingCloudRole = Qt::UserRole + 10;
+constexpr int kPingsNextLogoPx = 14;
+constexpr int kPingsNextOriginPx = 12;
+constexpr int kPingsNextBadgesWidth = kPingsNextLogoPx + 4 + kPingsNextOriginPx;
 constexpr int kPingsNextRowHeight = 56;
 constexpr int kPingsNextHeadingHeight = 30;
 constexpr int kPingsNextTableRowHeight = 34;
@@ -5187,6 +5191,33 @@ public:
         m_headings = std::move(headings);
     }
 
+    void setProject(const QPixmap &logo, const QString &name)
+    {
+        m_projectLogo = logo;
+        m_projectName = name;
+    }
+
+    bool helpEvent(QHelpEvent *event, QAbstractItemView *view,
+                   const QStyleOptionViewItem &option,
+                   const QModelIndex &index) override
+    {
+        if (event && event->type() == QEvent::ToolTip &&
+            originBadges(option, index.row()).contains(event->pos())) {
+            const QTableWidgetItem *type =
+                m_table->item(index.row(), NotificationColType);
+            const bool cloud = type && type->data(kPingCloudRole).toBool();
+            QString text = cloud ? QStringLiteral("Cloud: stored in your "
+                                                  "account's ping inbox")
+                                 : QStringLiteral("Local: raised on this "
+                                                  "desktop");
+            if (!m_projectName.isEmpty())
+                text += QStringLiteral("\nProject: ") + m_projectName;
+            QToolTip::showText(event->globalPos(), text, view);
+            return true;
+        }
+        return QStyledItemDelegate::helpEvent(event, view, option, index);
+    }
+
     void paint(QPainter *painter, const QStyleOptionViewItem &option,
                const QModelIndex &index) const override
     {
@@ -5259,6 +5290,9 @@ public:
         const int ageWidth = age.isEmpty() ? 0 : smallMetrics.horizontalAdvance(age);
         const int right = rect.right() - 16;
         const int textWidth = qMax(0, right - x - (ageWidth > 0 ? ageWidth + 12 : 0));
+        const QRect badges = originBadges(option, row);
+        const int sourceWidth =
+            qMax(0, qMin(textWidth, badges.left() - 8 - x));
         const int block = titleMetrics.height() + smallMetrics.height() + 2;
         const int top = mid - block / 2;
         const QRect titleRect(x, top, textWidth, titleMetrics.height());
@@ -5276,11 +5310,24 @@ public:
                       repo;
         painter->setFont(smallFont);
         painter->setPen(Theme::color(Theme::Role::FgSubtle));
-        painter->drawText(QRect(x, titleRect.bottom() + 3, textWidth,
+        painter->drawText(QRect(x, titleRect.bottom() + 3, sourceWidth,
                                 smallMetrics.height()),
                           Qt::AlignLeft | Qt::AlignVCenter,
                           smallMetrics.elidedText(source, Qt::ElideRight,
-                                                  textWidth));
+                                                  sourceWidth));
+        if (!m_projectLogo.isNull())
+            painter->drawPixmap(QRect(badges.left(), badges.top(),
+                                      kPingsNextLogoPx, kPingsNextLogoPx),
+                                m_projectLogo);
+        const bool cloud = type && type->data(kPingCloudRole).toBool();
+        themedOcticon(cloud ? QStringLiteral("cloud")
+                            : QStringLiteral("device-desktop"),
+                      Theme::color(Theme::Role::FgSubtle), kPingsNextOriginPx)
+            .paint(painter,
+                   QRect(badges.right() - kPingsNextOriginPx + 1,
+                         badges.top() +
+                             (kPingsNextLogoPx - kPingsNextOriginPx) / 2,
+                         kPingsNextOriginPx, kPingsNextOriginPx));
         if (ageWidth > 0)
             painter->drawText(QRect(right - ageWidth, titleRect.top(), ageWidth,
                                     titleMetrics.height()),
@@ -5295,6 +5342,24 @@ public:
     }
 
 private:
+    QRect originBadges(const QStyleOptionViewItem &option, int row) const
+    {
+        QRect rect = option.rect;
+        if (!m_headings.value(row).isEmpty())
+            rect.setTop(rect.top() + kPingsNextHeadingHeight);
+        QFont titleFont = option.font;
+        titleFont.setPixelSize(13);
+        QFont smallFont = option.font;
+        smallFont.setPixelSize(12);
+        const QFontMetrics titleMetrics(titleFont);
+        const QFontMetrics smallMetrics(smallFont);
+        const int block = titleMetrics.height() + smallMetrics.height() + 2;
+        const int line = rect.center().y() - block / 2 + titleMetrics.height() + 2;
+        return QRect(rect.right() - 16 - kPingsNextBadgesWidth + 1,
+                     line + (smallMetrics.height() - kPingsNextLogoPx) / 2,
+                     kPingsNextBadgesWidth, kPingsNextLogoPx);
+    }
+
     QPixmap avatar(const QString &iconName, const QString &initials,
                    qreal dpr) const
     {
@@ -5313,6 +5378,8 @@ private:
 
     QTableWidget *m_table = nullptr;
     QHash<int, QString> m_headings;
+    QPixmap m_projectLogo;
+    QString m_projectName;
     mutable QHash<QString, QPixmap> m_avatars;
 };
 
@@ -6214,6 +6281,13 @@ void MainWindow::refreshNotificationsTable()
     TableRepaintGuard repaintGuard(m_notificationsTable);
     m_notificationsTable->setSortingEnabled(false);
     m_notificationsTable->setRowCount(0);
+    if (auto *rowDelegate = dynamic_cast<PingsNextRowDelegate *>(
+            m_notificationsTable->property("pingsNextDelegate")
+                .value<QObject *>())) {
+        QString projectName;
+        const QPixmap logo = currentProjectLogo(kPingsNextLogoPx, &projectName);
+        rowDelegate->setProject(logo, projectName);
+    }
     int approvalRows = 0;
     for (const ActionRun &run : std::as_const(m_actionRuns))
         if (run.status == ActionStatus::AwaitingApproval)
@@ -6240,6 +6314,7 @@ void MainWindow::refreshNotificationsTable()
         qint64 localId = 0;
         QString webId;
         bool unread = false;
+        bool cloud = false;
     };
     // Row heights live on the vertical header, not on the items, so they stay
     // put when a sort moves the rows. One height for the whole grid is the only
@@ -6270,6 +6345,7 @@ void MainWindow::refreshNotificationsTable()
                           pingNextCategory(data.kind, data.destination,
                                            data.warning));
         typeItem->setData(kPingIconNameRole, pingIcon.name);
+        typeItem->setData(kPingCloudRole, data.cloud);
 
         auto *whenItem = new TimestampItem(
             data.whenMs > 0 ? formatRepoDate(data.whenMs) : QString(),
@@ -6308,9 +6384,14 @@ void MainWindow::refreshNotificationsTable()
                 cell->setData(kPingFullTextRole, full);
                 cell->setToolTip(pingCellTooltip(full));
             }
-            if (column == NotificationColStatus &&
-                !data.statusTooltip.isEmpty())
-                cell->setToolTip(data.statusTooltip);
+            if (column == NotificationColStatus) {
+                cell->setIcon(themedOcticon(
+                    data.cloud ? QStringLiteral("cloud")
+                               : QStringLiteral("device-desktop"),
+                    Theme::color(Theme::Role::FgSubtle), 12));
+                if (!data.statusTooltip.isEmpty())
+                    cell->setToolTip(data.statusTooltip);
+            }
             if (data.warning)
                 cell->setForeground(red);
             else if (data.good)
@@ -6480,6 +6561,7 @@ void MainWindow::refreshNotificationsTable()
         data.href = webUrl;
         data.webId = alert.value(QStringLiteral("id")).toString().trimmed();
         data.unread = unread;
+        data.cloud = true;
         addRow(data);
     }
     m_notificationsTable->setRowCount(nextRow);

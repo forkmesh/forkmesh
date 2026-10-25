@@ -10,7 +10,8 @@
     {
      "title": "Agents",
      "items": [
-      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
+      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk.",
+      "Claude Code and Codex now give each new run a short title and branch name the way Claude's desktop app does, using a small fast model first; Cloudflare naming is off unless you turn it on in Settings > Agents."
      ]
     },
     {
@@ -26,7 +27,8 @@
      "title": "iPhone",
      "items": [
       "With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock.",
-      "The iPhone app stays signed in to your instances after the phone restarts."
+      "The iPhone app stays signed in to your instances after the phone restarts.",
+      "Two tiny charts under the Dynamic Island show your agents' tokens in and out each second, and each agent's tile border now moves smoothly with its live token flow."
      ]
     },
     {
@@ -34,7 +36,8 @@
      "items": [
       "Logs → Desktop has a slider under the CPU and memory gauges that sets how much of the computer agents may use, and the new limit applies at once to agents already running.",
       "A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on.",
-      "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can."
+      "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can.",
+      "The Usage page offers Install Claude Code or Install Codex when that tool is missing, and the debug bar has a live chart of UI stalls."
      ]
     },
     {
@@ -146,7 +149,8 @@
       "Clicking someone in the admin Users list opens a profile panel on the right with their picture and everything the directory knows about them, and every row now shows a picture.",
       "On a large diff the scroll bar now shows where you are in the whole diff, so it no longer jumps up each time the next part loads, and dragging it moves through the entire diff.",
       "The Git page's side-by-side diff has arrows between the two sides of each change: → reverts that change (or unstages it), ← stages it.",
-      "The Browser tab and side browser now show pages inside the app in a Chromium with Google's background services switched off, and typed searches go to DuckDuckGo."
+      "The Browser tab and side browser now show pages inside the app in a Chromium with Google's background services switched off, and typed searches go to DuckDuckGo.",
+      "Each ping on the desktop's Pings page shows the project's logo and a small icon saying whether it came from this desktop or your cloud inbox."
      ]
     },
     {
