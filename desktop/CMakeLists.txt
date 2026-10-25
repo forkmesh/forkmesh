@@ -1168,6 +1168,8 @@ set(FORKMESH_APP_SOURCES
     src/PromptDeckBar.cpp
     src/ClaudeTranscriptTools.h
     src/ClaudeTranscriptTools.cpp
+    src/TranscriptCoverage.h
+    src/TranscriptCoverage.cpp
     src/ClaudeSessionScan.h
     src/ClaudeSessionScan.cpp
     src/ClaudeSessionImport.h
@@ -2719,6 +2721,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentToolPolicy.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/VirtualMachineRuntime.h
         src/VirtualMachineRuntime.cpp
     )
@@ -2786,6 +2790,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
         src/AgentToolPolicy.h
@@ -2839,6 +2845,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/ClaudeControlProtocol.h
         src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h
@@ -3072,6 +3080,19 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-claude-transcript-tools-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-claude-transcript-tools-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-transcript-coverage-tests
+        tests/test_transcript_coverage.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
+    )
+    target_include_directories(forkmesh-transcript-coverage-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-transcript-coverage-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-transcript-coverage-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3899,6 +3920,8 @@ forkmesh_link_opengl(forkmesh-window-tests)
         src/ClaudeControlProtocol.cpp
         src/CodexAppServerSession.h
         src/CodexAppServerSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/CodexTranscriptStyle.h
         src/AgentToolCatalog.h
         src/AgentToolCatalog.cpp
@@ -4419,6 +4442,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME forkmesh-claude-transcript-tools-tests
         COMMAND forkmesh-claude-transcript-tools-tests)
+    add_test(NAME forkmesh-transcript-coverage-tests
+        COMMAND forkmesh-transcript-coverage-tests)
     add_test(NAME forkmesh-org-agent-job-attachments-tests
         COMMAND forkmesh-org-agent-job-attachments-tests)
     add_test(NAME forkmesh-local-control-prompt-images-tests
