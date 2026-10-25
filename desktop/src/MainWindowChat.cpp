@@ -2746,7 +2746,7 @@ QWidget *MainWindow::buildChatPage()
     for (int index = 3; index <= 8; ++index)
         addDeferredSection();
     m_sectionStack->addWidget(new QWidget);              // 9 retired Firewall redirect
-    for (int index = 10; index <= kSessionsSectionIndex; ++index)
+    for (int index = 10; index <= kTerminalsSectionIndex; ++index)
         addDeferredSection();
     logStartup(QStringLiteral("  buildChatPage: secondary sections deferred"));
 
@@ -2863,8 +2863,8 @@ QWidget *MainWindow::buildChatPage()
     lowerLayout->addWidget(forkmesh::ui::NextAccess::railResizeHandle(*this));
     lowerLayout->addWidget(shell, 1);
     lowerLayout->addWidget(buildPackageRail());
-    lowerLayout->addWidget(buildTeammateRail());
-    lowerLayout->addWidget(buildWorkflowPinStrip(QStringLiteral("right")));
+    restoreTeammateRunState();
+    lowerLayout->addWidget(buildSideRail());
 
     auto *root = new QVBoxLayout(page);
     root->setContentsMargins(0, 0, 0, 0);

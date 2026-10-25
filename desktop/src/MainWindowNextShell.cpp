@@ -1,4 +1,5 @@
 #include "MainWindowInternal.h"
+#include "TerminalTabsPage.h"
 #include "MainWindowNextAccess.h"
 #include "SettingsSectionsView.h"
 
@@ -1659,7 +1660,12 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
     clusterRow->addWidget(bell);
     QPushButton *theme = topIconButton("topThemeButton", QString());
     clusterRow->addWidget(theme);
-    QPushButton *team = topIconButton("topTeamButton", QString());
+    QPushButton *terminal = topIconButton("topTerminalButton",
+                                          QStringLiteral("Open a terminal tab"));
+    terminal->setIcon(QIcon(tintedOcticonPixmap(QStringLiteral("terminal"),
+                                                Theme::color(Theme::Role::FgMuted), 16)));
+    clusterRow->addWidget(terminal);
+    QPushButton *team = topIconButton("topSideRailButton", QString());
     clusterRow->addWidget(team);
     const int beforeIndex = before ? row->indexOf(before) : -1;
     row->insertWidget(beforeIndex >= 0 ? beforeIndex : row->count(), cluster);
@@ -1687,16 +1693,22 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
         QSettings().setValue(kThemeSetting, value);
         window.applyTheme(window.m_packageRegistry.get());
     });
+    QObject::connect(terminal, &QPushButton::clicked, &window,
+                     [&window] { window.showTerminalLauncher(); });
     QObject::connect(team, &QPushButton::clicked, &window, [&window] {
-        window.setTeammateRailEnabled(!window.teammateRailEnabled());
+        window.setSideRailEnabled(!window.sideRailEnabled());
     });
 
-    const auto refresh = [&window, title, agents, nodes, bell, theme, team, searchKeys] {
+    const auto refresh = [&window, title, agents, nodes, bell, theme, terminal, team,
+                          searchKeys] {
         QString page;
         if (window.m_navGroup)
             if (auto *checked = dynamic_cast<ActivityRailButton *>(
                     window.m_navGroup->checkedButton()))
                 page = checked->label();
+        if (window.m_sectionStack &&
+            window.m_sectionStack->currentIndex() == MainWindow::kTerminalsSectionIndex)
+            page = QStringLiteral("Terminals");
         title->setText(page);
         title->setVisible(!page.isEmpty());
         int online = 0;
@@ -1739,10 +1751,15 @@ void NextAccess::installTopBar(MainWindow &window, QHBoxLayout *row,
                                                       : QStringLiteral("moon"),
                                                  muted, 16)));
         theme->setToolTip(dark ? QStringLiteral("Light mode") : QStringLiteral("Dark mode"));
-        const bool teamOn = window.teammateRailEnabled();
+        terminal->setIcon(QIcon(tintedOcticonPixmap(QStringLiteral("terminal"), muted, 16)));
+        const int terminals = window.m_terminalsPage ? window.m_terminalsPage->count() : 0;
+        terminal->setToolTip(terminals > 0
+                                 ? QStringLiteral("Open a terminal tab (%1 open)").arg(terminals)
+                                 : QStringLiteral("Open a terminal tab"));
+        const bool teamOn = window.sideRailEnabled();
         team->setIcon(QIcon(panelGlyph(teamOn ? Theme::color(Theme::Role::Fg) : muted, true)));
-        team->setToolTip(teamOn ? QStringLiteral("Hide the team rail")
-                                : QStringLiteral("Show the team rail"));
+        team->setToolTip(teamOn ? QStringLiteral("Hide the side rail")
+                                : QStringLiteral("Show the side rail"));
     };
     refresh();
     auto *timer = new QTimer(cluster);

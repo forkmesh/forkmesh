@@ -3,6 +3,7 @@
 #include "LocalControlInsights.h"
 #include "RepoWorkflow.h"
 #include "RepoWorkflowRunner.h"
+#include "SideRail.h"
 #include "TeammateStore.h"
 
 #include <QBoxLayout>
@@ -10,11 +11,14 @@
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDrag>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMenu>
+#include <QMimeData>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPointer>
@@ -110,6 +114,12 @@ QString statusText(const QString &status)
     return status;
 }
 
+bool &pinDragActive()
+{
+    static bool active = false;
+    return active;
+}
+
 class WorkflowPinButton final : public QToolButton
 {
 public:
@@ -130,6 +140,42 @@ public:
     }
 
 protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+            m_pressAt = event->position().toPoint();
+        QToolButton::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (!(event->buttons() & Qt::LeftButton) || m_pressAt.isNull() ||
+            (event->position().toPoint() - m_pressAt).manhattanLength() <
+                QApplication::startDragDistance()) {
+            QToolButton::mouseMoveEvent(event);
+            return;
+        }
+        m_pressAt = QPoint();
+        setDown(false);
+        auto *mime = new QMimeData;
+        mime->setData(QLatin1String(forkmesh::siderail::kWorkflowMime),
+                      forkmesh::siderail::encodeWorkflow(property("workflowRepo").toString(),
+                                                         property("workflowId").toString()));
+        auto *drag = new QDrag(this);
+        drag->setMimeData(mime);
+        drag->setPixmap(grab());
+        drag->setHotSpot(QPoint(width() / 2, height() / 2));
+        pinDragActive() = true;
+        drag->exec(Qt::CopyAction | Qt::MoveAction);
+        pinDragActive() = false;
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        m_pressAt = QPoint();
+        QToolButton::mouseReleaseEvent(event);
+    }
+
     void paintEvent(QPaintEvent *event) override
     {
         QToolButton::paintEvent(event);
@@ -155,6 +201,7 @@ private:
     int m_side = 24;
     QPixmap m_face;
     QString m_status;
+    QPoint m_pressAt;
 };
 
 } // namespace
@@ -785,8 +832,14 @@ QWidget *MainWindow::buildWorkflowPinStrip(const QString &rail)
 
 void MainWindow::refreshWorkflowPins()
 {
-    if (m_workflowPinStrips.isEmpty())
+    if (pinDragActive()) {
+        QTimer::singleShot(300, this, [this] { refreshWorkflowPins(); });
         return;
+    }
+    if (m_workflowPinStrips.isEmpty()) {
+        scheduleSideRailRefresh();
+        return;
+    }
     const QList<rw::Pin> pins = workflowPins();
     QHash<QString, QList<rw::Listing>> listings;
     for (auto stripIt = m_workflowPinStrips.cbegin(); stripIt != m_workflowPinStrips.cend(); ++stripIt) {
@@ -861,6 +914,7 @@ void MainWindow::refreshWorkflowPins()
             layout->addStretch(1);
         strip->setVisible(shown > 0);
     }
+    scheduleSideRailRefresh();
 }
 
 void MainWindow::runPinnedWorkflow(const QString &repo, const QString &workflowId, const QString &rail)
@@ -1141,7 +1195,7 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             if (entry.workflow.id == workflowId)
                 listing = &entry;
         const auto saved = [this, &reply, &repo](const rw::Workflow &workflow, const QString &path) {
-            refreshTeammateRail();
+            scheduleTeammateRailRefresh();
             if (m_sectionStack && m_sectionStack->currentIndex() == kTeamSectionIndex)
                 loadTeammatesPanel();
             notifyRepoWorkflowsChanged();
@@ -1257,7 +1311,7 @@ void MainWindow::runNativePackageRepositoryWorkflowAction(const QString &repo, c
             if (workflow.isSpecialAgent())
                 clearTeammateRuntime(workflowId, repoIndex);
             saveWorkflowPins(rw::unpinWorkflow(workflowPins(), repo, workflowId));
-            refreshTeammateRail();
+            scheduleTeammateRailRefresh();
             reply(true, {}, QStringLiteral("Deleted %1.").arg(workflow.name));
             return;
         }

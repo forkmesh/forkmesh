@@ -7,7 +7,27 @@
 #shellContentCard {
     background-color: @bg; border: 1px solid @border; border-radius: 14px;
 }
-#teammateRail, #teammateRailContent { background-color: @bgSubtle; border: none; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel {
+    background-color: @bgSubtle; border: none;
+}
+#sideRailBrowserHandle:hover { background-color: @border; }
+QLabel#sideRailBrowserTitle {
+    color: @fgSubtle; font-size: 11px; font-weight: 500; letter-spacing: 1px; background: transparent;
+}
+QFrame#sideRailSeparator { color: @border; background-color: @border; border: none; max-height: 1px; }
+QPushButton[sideRailTool="true"], QToolButton#sideRailItem {
+    background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 0;
+}
+QPushButton[sideRailTool="true"]:hover, QToolButton#sideRailItem:hover { background-color: @surfaceRaised; }
+QPushButton[sideRailTool="true"]:checked { background-color: @accentSubtle; border-color: @accent; }
+QPushButton#sideRailAddButton {
+    background: transparent; border: 1px dashed @borderStrong; border-radius: 10px; padding: 0;
+}
+QPushButton#sideRailAddButton:hover { background-color: @surfaceRaised; border-color: @accent; }
+#terminalsPage { background-color: @bg; }
+QLabel#terminalsTitle { color: @fg; font-size: 15px; font-weight: 600; }
+QLabel#terminalsAgentStatus, QLabel#terminalsEmpty { color: @fgMuted; }
+QPushButton#terminalsShareButton:checked { color: @accentFg; border-color: @accent; }
 #debugBar { background-color: @bgSubtle; border-top: 1px solid @border; }
 #footerLogPanel { background-color: @bg; border: 1px solid @border; border-radius: 8px; }
 

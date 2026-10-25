@@ -302,7 +302,7 @@ The Next shell follows the desktop mockup (`forkmesh2/desktop-electron`,
 are flattened onto the window colour to give opaque roles, so the role table
 above now carries those values.
 
-- **One chrome colour, one content card.** The top bar, sidebar and team rail
+- **One chrome colour, one content card.** The top bar, sidebar and side rail
   share `bgSubtle` with no hairlines between them. The section stack sits in
   `#shellContentCard` (`bg`, 1 px `border`, 12 px corners), inset 8 px from
   the right and bottom by `refreshShellContentCard`. It is padded 4 px inside
@@ -325,19 +325,20 @@ above now carries those values.
     name.
   - A right-hand cluster holds the online node count (opens Network), the pings
     bell (a dot when pings are waiting), the dark/light toggle (through
-    `m_themeCombo` like the view menu) and the team-rail toggle
-    (`setTeammateRailEnabled`).
+    `m_themeCombo` like the view menu), the terminal button
+    (`topTerminalButton`, opens the terminal launcher) and the side-rail
+    toggle (`topSideRailButton`, `setSideRailEnabled`); see
+    [side-rail-and-terminals.md](side-rail-and-terminals.md).
   - The bell opens `#pingsPopover`: the six newest non-quiet local pings. Rows
     open like Home's "Needs you", "Mark all read" moves the local seen
     watermark, and "View all" opens Pings.
   - On macOS, close, minimise and zoom move to the left as traffic lights
     (`trafficLight` property).
   - Every existing chrome control stays.
-- **Team rail.** Next draws each special as a 40 px rounded initials chip
-  (`teammateRailAvatar[nextChip="true"]`) under a "TEAM" heading. The status
-  dot is accent while running, warning when done-unseen or asking for
-  attention, and danger after a failed run. Run, mood, more and payouts stay
-  as hover buttons on the chip's corners. Classic keeps the faces.
+- **Side rail.** The team rail of special agent chips was replaced on
+  2026-10-24 by the generic side rail (terminal, browser, and dragged-in
+  workflows, pages and links), in both designs; see
+  [side-rail-and-terminals.md](side-rail-and-terminals.md).
 - **Home's prompt replaces the footer prompt on Home.**
   `positionGlobalFooterOverlays` hides `m_promptOverlayHost` while Next Home
   (`homeComposer` page property) is current and shows it again on leaving, so
@@ -512,11 +513,11 @@ sets one `@role` sheet on `crmSection`. Classic is unchanged.
 - **Live switch.** The header layout is built once, so a live design switch
   shows the new header only after the page is rebuilt.
 
-### Shell: sidebar, top bar, workspace switcher, team rail
+### Shell: sidebar, top bar, workspace switcher, side rail
 
 This continues "Mockup shell (October 2026)". The code is in
 `MainWindowNextShell.cpp`, `MainWindowNavigation.cpp` (group headings) and
-`MainWindowTeammateRail.cpp`, with styles in `10-shell.qss`. Classic is
+`MainWindowSideRail.cpp`, with styles in `10-shell.qss`. Classic is
 unchanged.
 
 - **Sidebar rows** (`paintRailButtonHook`, `paintTabButtonHook`).
@@ -586,11 +587,9 @@ unchanged.
     is hidden when none are running.
   - **"N nodes"** now says "N nodes online · open Network" in its tooltip.
   - Both status buttons share the `topStatusButton` style.
-- **Team rail.**
-  - In Next, chips sit 2 px apart, for a 46 px pitch like the mockup's
-    `gap-1.5`.
-  - The create button is a 40 px dashed tile. Its "Needed" / "Finding…"
-    caption is hidden; the tooltip still says the same thing.
+- **Side rail.** It replaced the team rail; the chip spacing and dashed
+  create tile described here before no longer exist
+  ([side-rail-and-terminals.md](side-rail-and-terminals.md)).
 
 **Left out on purpose.**
 

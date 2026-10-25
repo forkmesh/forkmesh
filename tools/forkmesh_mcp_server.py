@@ -150,6 +150,9 @@ WINDOW_TOOLS = {"show_window", "read_window", "close_window",
 WINDOW_READ_TOOLS = {"read_window", "read_browser_page"}
 HUB_TOOLS = {"list_agents", "send_agent_message", "list_runners", "notify_user"}
 HUB_READ_TOOLS = {"list_agents", "list_runners"}
+TERMINAL_TOOLS = {"list_terminals", "open_terminal", "read_terminal",
+                  "type_in_terminal", "run_in_terminal", "close_terminal"}
+TERMINAL_READ_TOOLS = {"list_terminals", "read_terminal"}
 
 
 def log(msg):
@@ -284,6 +287,14 @@ def require_write_access(name):
         raise ValueError(
             f"{name} needs the connector token: the desktop's agent tools list "
             "and message the user's other agents and runners, so once this node "
+            "publishes an MCP connector they require a matching "
+            "FORKMESH_MCP_TOKEN as well as the desktop's per-agent channel. "
+            "Copy the config from the desktop client's Settings -> MCP tab and "
+            "restart the agent.")
+    if name in TERMINAL_TOOLS:
+        raise ValueError(
+            f"{name} needs the connector token: the desktop's terminal tools read "
+            "the user's terminals and type commands into them, so once this node "
             "publishes an MCP connector they require a matching "
             "FORKMESH_MCP_TOKEN as well as the desktop's per-agent channel. "
             "Copy the config from the desktop client's Settings -> MCP tab and "
@@ -3428,6 +3439,208 @@ def tool_browser_action(args):
     return json.dumps(window_request("windows.act", browser_action_params(args)), indent=2)
 
 
+TERMINAL_KINDS = ("shell", "claude", "codex", "command")
+TERMINAL_ID_RE = re.compile(r"^[0-9a-f]{16}$")
+TERMINAL_MAX_INPUT = 8000
+TERMINAL_MAX_KEYS = 32
+TERMINAL_MAX_COMMAND = 2000
+TERMINAL_MAX_TITLE = 60
+TERMINAL_MAX_LINES = 2000
+TERMINAL_DEFAULT_LINES = 200
+TERMINAL_READ_REPLY = 2 * 1024 * 1024
+TERMINAL_POLL_SECONDS = 0.25
+TERMINAL_DEFAULT_QUIET_MS = 1200
+TERMINAL_DEFAULT_TIMEOUT = 30
+TERMINAL_MAX_TIMEOUT = 300
+TERMINAL_KEY_RE = re.compile(
+    r"^(enter|return|tab|escape|esc|backspace|space|up|down|left|right|home|end|"
+    r"insert|delete|pageup|pagedown|ctrl[-+][a-z])$")
+
+
+def _terminal_id(args, required=True):
+    value = args.get("terminal_id")
+    if value is None or value == "":
+        if required:
+            raise ValueError("terminal_id is required; list_terminals shows them")
+        return ""
+    if not isinstance(value, str) or not TERMINAL_ID_RE.match(value.strip().lower()):
+        raise ValueError("terminal_id must be a 16-character id from list_terminals")
+    return value.strip().lower()
+
+
+def _terminal_int(args, key, low, high, default):
+    value = args.get(key, default)
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValueError(f"{key} must be a whole number from {low} to {high}")
+    return value
+
+
+def open_terminal_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    kind = (_agent_text(args, "kind").strip().lower() or "shell")
+    if kind not in TERMINAL_KINDS:
+        raise ValueError("kind must be shell, claude, codex or command")
+    params = {"kind": kind}
+    command = _agent_text(args, "command").strip()
+    if kind == "command":
+        if not command or len(command) > TERMINAL_MAX_COMMAND or "\0" in command:
+            raise ValueError(f"command is required for kind command, at most "
+                             f"{TERMINAL_MAX_COMMAND} characters")
+        params["command"] = command
+    elif command:
+        raise ValueError("command is only allowed with kind command; type into "
+                         "the terminal with type_in_terminal instead")
+    repository = _agent_text(args, "repository").strip()
+    if repository:
+        if repository.count("/") != 1 or repository.startswith("/") or repository.endswith("/"):
+            raise ValueError("repository must be owner/name")
+        params["repository"] = repository
+    title = " ".join(_agent_text(args, "title").split())
+    if len(title) > TERMINAL_MAX_TITLE:
+        raise ValueError(f"title must be at most {TERMINAL_MAX_TITLE} characters")
+    if title:
+        params["title"] = title
+    return params
+
+
+def terminal_input_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    params = {"terminal": _terminal_id(args)}
+    text = args.get("text")
+    if text is not None:
+        if not isinstance(text, str) or len(text) > TERMINAL_MAX_INPUT or "\0" in text:
+            raise ValueError(f"text must be a string of at most {TERMINAL_MAX_INPUT} characters")
+        if text:
+            params["text"] = text
+    keys = args.get("keys")
+    if keys is not None:
+        if not isinstance(keys, list) or len(keys) > TERMINAL_MAX_KEYS:
+            raise ValueError(f"keys must be a list of at most {TERMINAL_MAX_KEYS} key names")
+        names = []
+        for key in keys:
+            if not isinstance(key, str) or not TERMINAL_KEY_RE.match(key.strip().lower()):
+                raise ValueError("each key must be one of enter, tab, escape, backspace, "
+                                 "space, up, down, left, right, home, end, insert, delete, "
+                                 "pageup, pagedown or ctrl-<letter>")
+            names.append(key.strip().lower())
+        if names:
+            params["keys"] = names
+    enter = args.get("enter", False)
+    if not isinstance(enter, bool):
+        raise ValueError("enter must be true or false")
+    if enter:
+        params["enter"] = True
+    if len(params) == 1:
+        raise ValueError("pass text, keys or enter")
+    return params
+
+
+def read_terminal_params(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    return {"terminal": _terminal_id(args),
+            "lines": _terminal_int(args, "lines", 1, TERMINAL_MAX_LINES,
+                                   TERMINAL_DEFAULT_LINES)}
+
+
+def terminal_read(terminal, lines=TERMINAL_MAX_LINES):
+    return window_request("terminals.read", {"terminal": terminal, "lines": lines},
+                          max_reply=TERMINAL_READ_REPLY)
+
+
+def wait_for_terminal_quiet(terminal, quiet_ms, timeout, sleep=time.sleep,
+                            clock=time.monotonic):
+    deadline = clock() + timeout
+    while True:
+        sleep(TERMINAL_POLL_SECONDS)
+        state = window_request("terminals.list", {})
+        row = next((t for t in state.get("terminals", [])
+                    if t.get("terminal") == terminal), None)
+        if row is None:
+            return False
+        if not row.get("running") or row.get("idle_ms", 0) >= quiet_ms:
+            return True
+        if clock() >= deadline:
+            return False
+
+
+def terminal_output_since(before, after):
+    old = before.split("\n") if before else []
+    new = after.split("\n") if after else []
+    keep = max(0, len(old) - 1)
+    if keep and new[:keep] == old[:keep]:
+        return "\n".join(new[keep:])
+    for size in range(min(len(old), len(new)), 0, -1):
+        if new[:size] == old[-size:]:
+            return "\n".join(new[size:])
+    return after
+
+
+def run_in_terminal(args, sleep=time.sleep, clock=time.monotonic):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    command = args.get("command")
+    if not isinstance(command, str) or not command.strip() or \
+            len(command) > TERMINAL_MAX_INPUT or "\0" in command:
+        raise ValueError(f"command is required, at most {TERMINAL_MAX_INPUT} characters")
+    timeout = _terminal_int(args, "timeout_seconds", 1, TERMINAL_MAX_TIMEOUT,
+                            TERMINAL_DEFAULT_TIMEOUT)
+    quiet_ms = _terminal_int(args, "quiet_ms", 200, 60000, TERMINAL_DEFAULT_QUIET_MS)
+    terminal = _terminal_id(args, required=False)
+    opened = False
+    if not terminal:
+        params = {"kind": "shell"}
+        repository = _agent_text(args, "repository").strip()
+        if repository:
+            params["repository"] = repository
+        terminal = window_request("terminals.open", params)["terminal"]
+        opened = True
+        wait_for_terminal_quiet(terminal, quiet_ms, min(timeout, 10), sleep, clock)
+    before = terminal_read(terminal).get("text", "")
+    window_request("terminals.input", {"terminal": terminal,
+                                       "text": command.rstrip("\n"), "enter": True})
+    settled = wait_for_terminal_quiet(terminal, quiet_ms, timeout, sleep, clock)
+    state = terminal_read(terminal)
+    return {"terminal": terminal, "opened": opened, "settled": settled,
+            "running": state.get("running"), "exit_code": state.get("exit_code"),
+            "output": terminal_output_since(before, state.get("text", ""))}
+
+
+def tool_list_terminals(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    return json.dumps(window_request("terminals.list", {}), indent=2)
+
+
+def tool_open_terminal(args):
+    return json.dumps(window_request("terminals.open", open_terminal_params(args)), indent=2)
+
+
+def tool_read_terminal(args):
+    params = read_terminal_params(args)
+    return json.dumps(window_request("terminals.read", params,
+                                     max_reply=TERMINAL_READ_REPLY), indent=2)
+
+
+def tool_type_in_terminal(args):
+    return json.dumps(window_request("terminals.input", terminal_input_params(args)), indent=2)
+
+
+def tool_run_in_terminal(args):
+    return json.dumps(run_in_terminal(args), indent=2)
+
+
+def tool_close_terminal(args):
+    if not isinstance(args, dict):
+        raise ValueError("arguments must be an object")
+    return json.dumps(window_request("terminals.close", {"terminal": _terminal_id(args)}),
+                      indent=2)
+
+
 RELEASE_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
 RELEASE_MAX_TITLE = 200
 RELEASE_MAX_NOTES = 20000
@@ -3562,6 +3775,7 @@ def tool_whoami(_args):
     info["canOpenWindows"] = info["canCreateAgents"] and level != "read"
     info["windowTools"] = sorted(WINDOW_TOOLS)
     info["agentTools"] = sorted(HUB_TOOLS)
+    info["terminalTools"] = sorted(TERMINAL_TOOLS)
     info["canManageReleases"] = info["canCreateAgents"]
     if level == "read":
         info["hint"] = ("Set FORKMESH_MCP_TOKEN from the desktop client's "
@@ -5426,6 +5640,104 @@ TOOLS += [
         "handler": tool_list_runners,
     },
     {
+        "name": "list_terminals",
+        "description": "List the terminal tabs open in the ForkMesh desktop "
+                       "that the user shares with agents: id, title, kind "
+                       "(shell, claude, codex, command), folder, whether its "
+                       "program is still running, its size and how long it "
+                       "has been quiet (idle_ms). self marks the terminal "
+                       "this program runs in.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "handler": tool_list_terminals,
+    },
+    {
+        "name": "open_terminal",
+        "description": "Open a new terminal tab in the ForkMesh desktop's "
+                       "Terminals page: the user's shell, Claude Code, Codex "
+                       "or one command, in a repository's checkout (default: "
+                       "this agent's worktree). Returns its terminal_id. "
+                       "Agents need Auto mode. At most 10 every 10 minutes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": list(TERMINAL_KINDS)},
+                "command": {"type": "string", "maxLength": TERMINAL_MAX_COMMAND,
+                            "description": "Only with kind command"},
+                "repository": {"type": "string", "description": "owner/name"},
+                "title": {"type": "string", "maxLength": TERMINAL_MAX_TITLE},
+            },
+        },
+        "handler": tool_open_terminal,
+    },
+    {
+        "name": "read_terminal",
+        "description": "Read the text of a shared ForkMesh terminal tab: "
+                       "the last lines of its screen and scrollback, plus "
+                       "whether it is running and how long it has been quiet.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "terminal_id": {"type": "string"},
+                "lines": {"type": "integer", "minimum": 1,
+                          "maximum": TERMINAL_MAX_LINES},
+            },
+            "required": ["terminal_id"],
+        },
+        "handler": tool_read_terminal,
+    },
+    {
+        "name": "type_in_terminal",
+        "description": "Type into a shared ForkMesh terminal tab: text, then "
+                       "named keys (enter, tab, escape, up, down, left, right, "
+                       "backspace, ctrl-c, ...), then Enter when enter is "
+                       "true. The user sees what you typed. Agents need Auto "
+                       "mode. Read the terminal afterwards to see the result.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "terminal_id": {"type": "string"},
+                "text": {"type": "string", "maxLength": TERMINAL_MAX_INPUT},
+                "keys": {"type": "array", "items": {"type": "string"},
+                         "maxItems": TERMINAL_MAX_KEYS},
+                "enter": {"type": "boolean"},
+            },
+            "required": ["terminal_id"],
+        },
+        "handler": tool_type_in_terminal,
+    },
+    {
+        "name": "run_in_terminal",
+        "description": "Run a command in a shared ForkMesh terminal tab (or a "
+                       "new shell tab when terminal_id is left out), wait "
+                       "until its output has been quiet for quiet_ms or "
+                       "timeout_seconds pass, and return the new output. "
+                       "settled is false when it was still printing.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "maxLength": TERMINAL_MAX_INPUT},
+                "terminal_id": {"type": "string"},
+                "repository": {"type": "string"},
+                "timeout_seconds": {"type": "integer", "minimum": 1,
+                                    "maximum": TERMINAL_MAX_TIMEOUT},
+                "quiet_ms": {"type": "integer", "minimum": 200, "maximum": 60000},
+            },
+            "required": ["command"],
+        },
+        "handler": tool_run_in_terminal,
+    },
+    {
+        "name": "close_terminal",
+        "description": "Close a terminal tab an agent opened. Tabs the user "
+                       "opened stay open.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"terminal_id": {"type": "string"}},
+            "required": ["terminal_id"],
+        },
+        "handler": tool_close_terminal,
+    },
+    {
         "name": "notify_user",
         "description": "Send the user a ForkMesh notification: a ping in "
                        "the desktop and, when ForkMesh is not the active "
@@ -5525,7 +5837,8 @@ def tools_list_payload():
                 for key in ("name", "description", "inputSchema")}
         writable = tool["name"] in WRITE_TOOLS or (
             tool["name"] in WINDOW_TOOLS and tool["name"] not in WINDOW_READ_TOOLS) or (
-            tool["name"] in HUB_TOOLS and tool["name"] not in HUB_READ_TOOLS)
+            tool["name"] in HUB_TOOLS and tool["name"] not in HUB_READ_TOOLS) or (
+            tool["name"] in TERMINAL_TOOLS and tool["name"] not in TERMINAL_READ_TOOLS)
         item["annotations"] = {
             "readOnlyHint": not writable,
             "destructiveHint": tool["name"] in DESTRUCTIVE_TOOLS,
@@ -5603,7 +5916,11 @@ def handle_request(msg):
             "Desktop agents and runners (same condition): list_agents lists "
             "the desktop's agent sessions, send_agent_message messages one, "
             "list_runners lists the account's cloud runners, notify_user "
-            "sends the user a notification. ")
+            "sends the user a notification. "
+            "Desktop terminals (same condition, or inside a ForkMesh terminal "
+            "tab): list_terminals, read_terminal, type_in_terminal, "
+            "run_in_terminal, open_terminal and close_terminal read and drive "
+            "the terminal tabs the user shares with agents. ")
         instructions += (
             "This connector is read-only: no valid FORKMESH_MCP_TOKEN was "
             "presented, so write, CRM, window and agent tools will refuse."

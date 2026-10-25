@@ -526,6 +526,8 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowWorkspace.cpp
     src/MainWindowTeammateHome.cpp
     src/MainWindowTeammateRail.cpp
+    src/MainWindowSideRail.cpp
+    src/MainWindowTerminals.cpp
     src/MainWindowPackageRail.cpp
     src/MainWindowTeammates.cpp
     src/MainWindowRepoWorkflows.cpp
@@ -1113,6 +1115,12 @@ set(FORKMESH_APP_SOURCES
     src/RemoveCoreNodeDialog.cpp
     src/TerminalWidget.h
     src/TerminalWidget.cpp
+    src/TerminalBridge.h
+    src/TerminalBridge.cpp
+    src/TerminalTabsPage.h
+    src/TerminalTabsPage.cpp
+    src/SideRail.h
+    src/SideRail.cpp
     src/ClaudeIdeBridge.h
     src/ClaudeIdeBridge.cpp
     src/WorldSpeechBridge.h
@@ -2965,6 +2973,21 @@ if(FORKMESH_BUILD_TESTS)
             MACOSX_BUNDLE FALSE)
     endif()
 
+    qt_add_executable(forkmesh-side-rail-tests
+        tests/test_side_rail.cpp
+        src/SideRail.h
+        src/SideRail.cpp
+        src/TerminalBridge.h
+        src/TerminalBridge.cpp
+    )
+    target_include_directories(forkmesh-side-rail-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-side-rail-tests PRIVATE Qt6::Core Qt6::Gui)
+    if(APPLE)
+        set_target_properties(forkmesh-side-rail-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-claude-transcript-tools-tests
         tests/test_claude_transcript_tools.cpp
         src/ClaudeTranscriptTools.h
@@ -3951,6 +3974,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-local-control-handoff-tests
         forkmesh-agent-intake-tests
         forkmesh-agent-hub-tests
+        forkmesh-side-rail-tests
         forkmesh-org-agent-job-attachments-tests
         forkmesh-local-control-prompt-images-tests
         forkmesh-vm-runtime-tests
@@ -4283,6 +4307,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         COMMAND forkmesh-agent-intake-tests)
     add_test(NAME forkmesh-agent-hub-tests
         COMMAND forkmesh-agent-hub-tests)
+    add_test(NAME forkmesh-side-rail-tests
+        COMMAND forkmesh-side-rail-tests)
     add_test(NAME forkmesh-agent-windows-tests
         COMMAND forkmesh-agent-windows-tests)
     set_tests_properties(forkmesh-agent-windows-tests PROPERTIES
@@ -4508,6 +4534,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-local-control-handoff-tests
         forkmesh-agent-intake-tests
         forkmesh-agent-hub-tests
+        forkmesh-side-rail-tests
         forkmesh-org-agent-job-attachments-tests
         forkmesh-local-control-prompt-images-tests
         forkmesh-vm-runtime-tests

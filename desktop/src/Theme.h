@@ -694,15 +694,29 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#teammateRail, #teammateRailContent { background-color: #0d1117; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel { background-color: #0d1117; }
+#sideRailColumn { border-left: 1px solid #30363d; }
+#sideRailScroll QScrollBar:vertical { width: 6px; }
+#sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
+#sideRailBrowserHandle:hover { background-color: #30363d; }
+QLabel#sideRailBrowserTitle { color: #8b949e; font-size: 9px; font-weight: 600; }
+QFrame#sideRailSeparator { color: #30363d; background-color: #30363d; border: none; max-height: 1px; }
+QPushButton[sideRailTool="true"], QToolButton#sideRailItem {
+    background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 0;
+}
+QPushButton[sideRailTool="true"]:hover, QToolButton#sideRailItem:hover { background-color: #161b22; }
+QPushButton[sideRailTool="true"]:checked { background-color: #1f2a37; border-color: #58a6ff; }
+QPushButton#sideRailAddButton {
+    background: transparent; border: 1px dashed #484f58; border-radius: 10px; padding: 0;
+}
+QPushButton#sideRailAddButton:hover { background-color: #161b22; border-color: #58a6ff; }
+QLabel#terminalsTitle { font-size: 15px; font-weight: 600; }
+QLabel#terminalsAgentStatus, QLabel#terminalsEmpty { color: #8b949e; }
 #packageRail, #packageRailContent { background-color: #0d1117; }
 #packageRail { border-left: 1px solid #30363d; }
 #packageRail QScrollBar:vertical { width: 6px; }
 #packageRail QScrollBar::handle:vertical { border-radius: 3px; }
 QLabel#packageRailTitle, QLabel#teammateRailTitle { color: #8b949e; font-size: 9px; font-weight: 600; }
-#teammateRail { border-left: 1px solid #30363d; }
-#teammateRail QScrollBar:vertical { width: 6px; }
-#teammateRail QScrollBar::handle:vertical { border-radius: 3px; }
 QPushButton#teammateRailAvatar {
     background: transparent; border: none; border-radius: 10px; padding: 0;
 }
@@ -2866,15 +2880,29 @@ QPushButton#repoAction::menu-indicator { width: 0; }
 
 #appNavigationRail QScrollBar:vertical { width: 6px; }
 #appNavigationRail QScrollBar::handle:vertical { border-radius: 3px; }
-#teammateRail, #teammateRailContent { background-color: #ffffff; }
+#sideRail, #sideRailColumn, #sideRailScroll, #sideRailContent, #sideRailBrowserPanel { background-color: #ffffff; }
+#sideRailBrowserHandle:hover { background-color: #d0d7de; }
+#sideRailScroll QScrollBar:vertical { width: 6px; }
+#sideRailScroll QScrollBar::handle:vertical { border-radius: 3px; }
+QLabel#sideRailBrowserTitle { color: #656d76; font-size: 9px; font-weight: 600; }
+QFrame#sideRailSeparator { color: #d0d7de; background-color: #d0d7de; border: none; max-height: 1px; }
+QPushButton[sideRailTool="true"], QToolButton#sideRailItem {
+    background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 0;
+}
+QPushButton[sideRailTool="true"]:hover, QToolButton#sideRailItem:hover { background-color: #f6f8fa; }
+QPushButton[sideRailTool="true"]:checked { background-color: #ddf4ff; border-color: #0969da; }
+QPushButton#sideRailAddButton {
+    background: transparent; border: 1px dashed #afb8c1; border-radius: 10px; padding: 0;
+}
+QLabel#terminalsTitle { font-size: 15px; font-weight: 600; }
+QPushButton#sideRailAddButton:hover { background-color: #f6f8fa; border-color: #0969da; }
+QLabel#terminalsAgentStatus, QLabel#terminalsEmpty { color: #57606a; }
 #packageRail, #packageRailContent { background-color: #ffffff; }
 #packageRail { border-left: 1px solid #d0d7de; }
 #packageRail QScrollBar:vertical { width: 6px; }
 #packageRail QScrollBar::handle:vertical { border-radius: 3px; }
 QLabel#packageRailTitle, QLabel#teammateRailTitle { color: #656d76; font-size: 9px; font-weight: 600; }
-#teammateRail { border-left: 1px solid #d0d7de; }
-#teammateRail QScrollBar:vertical { width: 6px; }
-#teammateRail QScrollBar::handle:vertical { border-radius: 3px; }
+#sideRailColumn { border-left: 1px solid #d0d7de; }
 QPushButton#teammateRailAvatar {
     background: transparent; border: none; border-radius: 10px; padding: 0;
 }

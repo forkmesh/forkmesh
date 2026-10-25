@@ -22,6 +22,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QLocale>
+#include <QMimeData>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPixmap>
@@ -98,9 +99,40 @@ QPushButton *button(const QString &label, const char *style = "ghostButton")
     return item;
 }
 
-QTableWidget *makeTable(const QStringList &headers, const QString &name)
+const QString kWorkflowDragMime = QStringLiteral("application/x-forkmesh-workflow");
+
+class WorkflowDragTable final : public QTableWidget
 {
-    auto *table = new QTableWidget(0, int(headers.size()));
+public:
+    using QTableWidget::QTableWidget;
+
+protected:
+    QStringList mimeTypes() const override { return {kWorkflowDragMime}; }
+
+    QMimeData *mimeData(const QList<QTableWidgetItem *> &items) const override
+    {
+        for (QTableWidgetItem *item : items) {
+            QTableWidgetItem *name = item ? this->item(item->row(), 0) : nullptr;
+            if (!name || name->data(Qt::UserRole).toString().isEmpty())
+                continue;
+            auto *mime = new QMimeData;
+            mime->setData(kWorkflowDragMime,
+                          QJsonDocument(QJsonObject{{QStringLiteral("repo"), name->data(Qt::UserRole).toString()},
+                                                    {QStringLiteral("id"), name->data(Qt::UserRole + 1).toString()}})
+                              .toJson(QJsonDocument::Compact));
+            mime->setText(name->text());
+            return mime;
+        }
+        return nullptr;
+    }
+};
+
+QTableWidget *makeTable(const QStringList &headers, const QString &name, QTableWidget *table = nullptr)
+{
+    if (!table)
+        table = new QTableWidget(0, int(headers.size()));
+    else
+        table->setColumnCount(int(headers.size()));
     table->setObjectName(name);
     table->setAccessibleName(headers.first());
     table->setHorizontalHeaderLabels(headers);
@@ -2285,8 +2317,11 @@ QWidget *WorkflowsFeature::buildLocalSection()
     m_localTable = makeTable({QStringLiteral("Name"), QStringLiteral("Repository"), QStringLiteral("Kind"),
                               QStringLiteral("Trigger"), QStringLiteral("State"), QStringLiteral("Last run"),
                               QStringLiteral("Last result"), QStringLiteral("Next run"), QStringLiteral("Rail")},
-                             QStringLiteral("workflowsLocalTable"));
+                             QStringLiteral("workflowsLocalTable"), new WorkflowDragTable);
     m_localTable->setIconSize(QSize(22, 22));
+    m_localTable->setDragEnabled(true);
+    m_localTable->setDragDropMode(QAbstractItemView::DragOnly);
+    m_localTable->setToolTip(QStringLiteral("Drag a workflow onto the side rail to keep a run button there"));
     m_localTable->setContextMenuPolicy(Qt::CustomContextMenu);
     layout->addWidget(m_localTable, 1);
     m_localEmpty = mutedLabel(QStringLiteral(
