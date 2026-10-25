@@ -149,6 +149,7 @@ private:
     QString m_launchedPermissionMode; // what the running process started under
     QString m_pendingPermissionMode;  // switch awaiting the CLI's answer
     QString m_pendingPermissionRequestId;
+    QString m_unannouncedFromMode;
     // Whether the process now running was launched with the skip-permissions
     // switch: the CLI only lets a session be put into bypassPermissions if it
     // was, so this is what setPermissionMode() checks before asking.

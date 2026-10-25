@@ -188,6 +188,22 @@ static void testTokens()
     check(counter.add(message(QStringLiteral("m1"), 25)) == 15, "growth on a message counts");
     check(counter.add(message(QStringLiteral("m2"), 4)) == 4, "a new message counts");
     check(counter.add(message(QString(), 3)) == 3, "messages without an id count as they come");
+
+    InputTokenCounter input;
+    const auto sent = [](const QString &id, int fresh, int created, int read) {
+        return obj({{QStringLiteral("id"), id},
+                    {QStringLiteral("usage"),
+                     obj({{QStringLiteral("input_tokens"), fresh},
+                          {QStringLiteral("cache_creation_input_tokens"), created},
+                          {QStringLiteral("cache_read_input_tokens"), read}})}});
+    };
+    check(input.add(sent(QStringLiteral("m1"), 5, 100, 900)) == 1005,
+          "input counts fresh, cache-written and cache-read tokens");
+    check(input.add(sent(QStringLiteral("m1"), 5, 100, 900)) == 0,
+          "a message's input is counted once across its streamed blocks");
+    check(input.add(sent(QStringLiteral("m2"), 3, 0, 1005)) == 1008, "each new request counts");
+    check(input.add(obj({{QStringLiteral("id"), QStringLiteral("m3")}})) == 0,
+          "a message without usage counts nothing");
 }
 
 static void testWindowResults()

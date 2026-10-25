@@ -670,8 +670,11 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
         trackAgentCliTask(sessionId, ev);
 
     if (ev.value(QStringLiteral("type")).toString() == QLatin1String("assistant")) {
-        const qint64 out = m_sessionOutputTokens[sessionId].add(
-            ev.value(QStringLiteral("message")).toObject());
+        const QJsonObject message = ev.value(QStringLiteral("message")).toObject();
+        const qint64 out = m_sessionOutputTokens[sessionId].add(message);
+        QPair<qint64, qint64> &flow = m_sessionTokenFlow[sessionId];
+        flow.first += m_sessionInputTokens[sessionId].add(message);
+        flow.second += qMax<qint64>(out, 0);
         if (out > 0) {
             m_sessionTokens[sessionId] += out;
             if (AgentSession *as = findAgentSession(sessionId))
@@ -783,6 +786,7 @@ void MainWindow::applyTranscriptEvent(int sessionId, const QJsonObject &event)
             if (contextWindow > 0)
                 as->contextWindow = contextWindow;
             m_sessionTokens[sessionId] = as->totalTokens;
+            m_sessionTokenFlow[sessionId] = {as->promptTokens, as->completionTokens};
             if (m_agentStore && !isExternalSession(sessionId))
                 scheduleAgentSessionSave(sessionId); // per-token-batch event
             updateAgentTokenCell(sessionId);

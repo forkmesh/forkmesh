@@ -948,22 +948,35 @@ QString windowResultSummary(const WindowResult &result)
     return result.open ? QStringLiteral("Window open") : QStringLiteral("Window closed");
 }
 
+static qint64 countMessageTokens(QHash<QString, qint64> &seen, const QString &id, qint64 count)
+{
+    if (count <= 0)
+        return 0;
+    if (id.isEmpty())
+        return count;
+    const qint64 before = seen.value(id, 0);
+    if (count <= before)
+        return 0;
+    if (seen.size() >= 512 && !seen.contains(id))
+        seen.clear();
+    seen.insert(id, count);
+    return count - before;
+}
+
 qint64 OutputTokenCounter::add(const QJsonObject &message)
 {
     const qint64 out = qint64(message.value(QStringLiteral("usage")).toObject()
                                   .value(QStringLiteral("output_tokens")).toDouble());
-    const QString id = message.value(QStringLiteral("id")).toString();
-    if (out <= 0)
-        return 0;
-    if (id.isEmpty())
-        return out;
-    const qint64 seen = m_seen.value(id, 0);
-    if (out <= seen)
-        return 0;
-    if (m_seen.size() >= 512 && !m_seen.contains(id))
-        m_seen.clear();
-    m_seen.insert(id, out);
-    return out - seen;
+    return countMessageTokens(m_seen, message.value(QStringLiteral("id")).toString(), out);
+}
+
+qint64 InputTokenCounter::add(const QJsonObject &message)
+{
+    const QJsonObject usage = message.value(QStringLiteral("usage")).toObject();
+    const qint64 in = qint64(usage.value(QStringLiteral("input_tokens")).toDouble()) +
+                      qint64(usage.value(QStringLiteral("cache_creation_input_tokens")).toDouble()) +
+                      qint64(usage.value(QStringLiteral("cache_read_input_tokens")).toDouble());
+    return countMessageTokens(m_seen, message.value(QStringLiteral("id")).toString(), in);
 }
 
 namespace {

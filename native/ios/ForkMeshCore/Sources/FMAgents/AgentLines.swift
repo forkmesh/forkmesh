@@ -45,6 +45,8 @@ public struct AgentLine: Identifiable, Equatable, Sendable {
     public var desktopUnread: Bool?
     public var unread = false
     public var backgroundTasks = 0
+    public var tokensIn = 0
+    public var tokensOut = 0
 
     public var runnerBadge: String { runner.isEmpty ? "" : RunnerAgentText.badge(runner) }
 
@@ -242,6 +244,31 @@ public struct AgentLineChip: Equatable, Sendable {
     public init(slot: AgentLineChipSlot, word: String) {
         self.slot = slot
         self.word = word
+    }
+}
+
+public enum AgentLineBadge: String, CaseIterable, Sendable {
+    case conflicted, behind, worktree, branch, ahead, pull, runner, cloud, outside
+
+    public static func of(_ line: AgentLine) -> [AgentLineBadge] {
+        var out: [AgentLineBadge] = []
+        if line.conflicted {
+            out.append(.conflicted)
+        } else if line.behind > 0 {
+            out.append(.behind)
+        }
+        if line.hasWorktree { out.append(.worktree) }
+        if !line.branch.isEmpty { out.append(.branch) }
+        if line.ahead > 0 { out.append(.ahead) }
+        if line.prNumber > 0 { out.append(.pull) }
+        if !line.runner.isEmpty {
+            out.append(.runner)
+        } else if line.cloud {
+            out.append(.cloud)
+        } else if line.outside {
+            out.append(.outside)
+        }
+        return out
     }
 }
 
@@ -463,6 +490,8 @@ public enum AgentLines {
         built.readKey = readKey(row)
         built.finishedAtMs = row.finishedAtMs
         built.backgroundTasks = row.backgroundTasks
+        built.tokensIn = row.tokensIn
+        built.tokensOut = row.tokensOut
         if row.isDesktop && !row.outside && row.localId > 0 {
             built.desktopSessionId = row.localId
             built.desktopUnread = row.unread
@@ -499,6 +528,8 @@ public enum AgentLines {
             built.readKey = "desktop:\(repo.name.lowercased())#\(session.id)"
             built.finishedAtMs = max(session.finishedAtMs, live?.finishedAtMs ?? 0)
             built.backgroundTasks = live?.backgroundTasks ?? 0
+            built.tokensIn = max(live?.tokensIn ?? 0, session.promptTokens)
+            built.tokensOut = max(live?.tokensOut ?? 0, session.completionTokens)
             if let live, live.localId > 0 {
                 built.desktopSessionId = live.localId
                 built.desktopUnread = live.unread

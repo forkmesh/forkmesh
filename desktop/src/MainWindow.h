@@ -14888,6 +14888,8 @@ private:
     QHash<int, QString> m_streamRaw;
     QHash<int, qint64> m_sessionTokens; // live token total per session, for the list
     QHash<int, forkmesh::transcripttools::OutputTokenCounter> m_sessionOutputTokens;
+    QHash<int, forkmesh::transcripttools::InputTokenCounter> m_sessionInputTokens;
+    QHash<int, QPair<qint64, qint64>> m_sessionTokenFlow;
     QHash<int, AgentScannerState> m_scannerStates;
     QHash<int, AgentSpinState> m_agentSpinStates; // fireball orbit, per session
     QElapsedTimer m_agentSpinClock; // real time between fireball animation frames
