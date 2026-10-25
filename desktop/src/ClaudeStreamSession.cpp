@@ -115,6 +115,13 @@ void ClaudeStreamSession::startRuntime(const AgentRuntimeLaunch &launch)
     m_sessionTitle = launch.options.value(QStringLiteral("sessionTitle")).toString();
     if (m_extraSettings.contains(QLatin1Char('\'')))
         m_extraSettings.clear(); // would break out of the quoted argument
+    m_mcpConfig = launch.options.value(QStringLiteral("mcpConfig")).toString();
+    if (m_mcpConfig.contains(QLatin1Char('\'')))
+        m_mcpConfig.clear();
+    m_mcpReadOnly.clear();
+    for (const QJsonValue &value : launch.options.value(QStringLiteral("mcpReadOnly")).toArray())
+        if (!value.toString().isEmpty())
+            m_mcpReadOnly.append(value.toString());
     start(launch.workingDirectory, launch.environment, launch.initialPrompt,
           launch.permissionMode, launch.resumeId, launch.model, launch.effort,
           launch.fallbackModels.value(0), launch.memoryLimitMb,
@@ -229,6 +236,8 @@ void ClaudeStreamSession::launch()
         cmd += QStringLiteral(" --tools '%1'").arg(m_availableTools.join(QLatin1Char(',')));
     if (!m_extraSettings.isEmpty())
         cmd += QStringLiteral(" --settings '%1'").arg(m_extraSettings);
+    if (!m_mcpConfig.isEmpty())
+        cmd += QStringLiteral(" --mcp-config '%1'").arg(m_mcpConfig);
     if (!m_fallbackModels.trimmed().isEmpty())
         cmd += QStringLiteral(" --fallback-model '%1'").arg(m_fallbackModels.trimmed());
     if (m_hostControl)
@@ -243,7 +252,7 @@ void ClaudeStreamSession::launch()
     const forkmesh::agentguard::LaunchCommand guarded =
         forkmesh::agentguard::restrictedCommand(
             QStringLiteral("bash"), {QStringLiteral("-lc"), cmd}, cwd,
-            m_guardrails, env);
+            m_guardrails, env, m_mcpReadOnly);
     if (!guarded.error.isEmpty()) {
         QProcess *failed = m_proc;
         m_proc = nullptr;

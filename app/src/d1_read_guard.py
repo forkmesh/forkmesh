@@ -57,8 +57,7 @@ READ_GUARD_READERS = {
         "Admin console header stats",
         5 * _MINUTE_MS, _HOUR_MS,
         ("SELECT COUNT(DISTINCT +run) AS n FROM install_diag",
-         "SELECT COUNT(*) AS n FROM error_log WHERE ts >= ?",
-         "SELECT COUNT(*) AS n FROM host_presence WHERE ts >= ?")),
+         "SELECT COUNT(*) AS n FROM error_log WHERE ts >= ?")),
     "users-directory": (
         "Users directory joined rows",
         5 * _MINUTE_MS, _HOUR_MS,

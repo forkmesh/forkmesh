@@ -8,6 +8,10 @@ object GroupCallFrames {
     const val PRESENCE_TYPE = "group-call-presence"
     const val KEY_TYPE = "group-call-key"
     val TYPES = setOf(PRESENCE_TYPE, KEY_TYPE)
+    const val VERIFY_TYPE = "group-call-verify"
+    val LIVE_TYPES = TYPES + VERIFY_TYPE
+    val RESERVED_FIELDS = setOf("type", "id", "senderId", "sender", "ts", "channel", "private", "platform", "version", "bot", "text")
+    const val MAX_PEOPLE = 16
     const val HEARTBEAT_MS = 20_000L
     const val PRESENCE_TTL_MS = 60_000L
     const val ROTATE_DELAY_MS = 1_000L

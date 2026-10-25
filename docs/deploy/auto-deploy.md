@@ -30,6 +30,32 @@ install` copies `tools/next_autodeploy.py`, `next_common.py`,
 pinned worktree or the test archive of the commit being deployed, so it is
 always that commit's code.
 
+## Where the agent finds runs
+
+The desktop writes each run's `meta.json` under
+`~/projects/forkmesh/data/actions/runs/`, but its sandbox tree (the run's
+`/workspace`, where the agent writes `node-deploy.log`) goes wherever
+`ActionStore::sandboxDir()` puts it: `data/actions/sandbox/`, or
+`<TMP mount>/ForkMesh/actions/sandbox/` when a disk labelled `TMP` is in use
+([TMP disk](../desktop/tmp-disk.md)). `running_runs` scans both, finding the
+TMP disk the way the desktop does (`/dev/disk/by-label/TMP` matched against
+`/proc/self/mounts`), and keeps the newest `forkmesh-run-<id>-<ms>` per run.
+
+Before 2026-10-24 it scanned only `data/actions/sandbox/`. Once the desktop
+moved sandboxes to the TMP disk that evening, the agent never saw a run:
+run #7903 (`03273107bf0a`) ended "did not pick up this run within 3 minutes"
+with the agent idle. An agent that sees no runs never deploys, so it cannot
+take this fix by self-update; run `install` by hand once.
+
+Nobody did at first, so run #7909 (`8c5d2f9147ba`, the merge carrying the fix)
+timed out the same way. The installed copy was still the one from
+`7f97e703ff` (2026-10-14), older than self-update itself, so it could never
+have picked up the change on its own. `install` was run by hand at 22:39 after
+a staged `self-check`. The copy it replaced is in `bin/node-deploy.previous/`.
+The workflow's timeout now ends with a `FAILED: ... Fix: ...` line, so the
+Ping names the stale-copy case and the `install` command, not only
+`systemctl --user status`.
+
 ## Trigger
 
 - **Only `main`** of the served repository, and only commits on the source

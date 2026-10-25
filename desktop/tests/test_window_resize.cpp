@@ -12503,6 +12503,40 @@ void checkAgentFireball(MainWindow &window)
     QApplication::processEvents();
     check(purplePixelCount(matrix.grab().toImage()) > 0,
           QStringLiteral("a running agent's chrome-grid dot is purple"));
+    {
+        struct PaintCounter : QObject {
+            int paints = 0;
+            bool eventFilter(QObject *, QEvent *event) override
+            {
+                if (event->type() == QEvent::Paint)
+                    ++paints;
+                return false;
+            }
+        } counter;
+        QApplication::processEvents();
+        matrix.installEventFilter(&counter);
+        constexpr int kWindowMs = 900;
+        QElapsedTimer clock;
+        clock.start();
+        int beats = 0;
+        while (clock.elapsed() < kWindowMs) {
+            dot.intensity = 0.05 + (beats % 10) / 10.0;
+            matrix.setDots({dot});
+            ++beats;
+            QElapsedTimer beat;
+            beat.start();
+            while (beat.elapsed() < 45)
+                QApplication::processEvents(QEventLoop::AllEvents, 5);
+        }
+        matrix.removeEventFilter(&counter);
+        check(matrix.sweeping() && beats > 5 &&
+                  counter.paints <= kWindowMs / 60 + 3,
+              QStringLiteral("a running dot's meter changes ride the sweep's "
+                             "frames instead of adding their own (%1 paints "
+                             "for %2 meter beats)")
+                  .arg(counter.paints)
+                  .arg(beats));
+    }
     matrix.hide();
 
     // The focused mode starts without a repository, so lazily construct the
