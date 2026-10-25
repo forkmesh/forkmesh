@@ -82,7 +82,8 @@
       "A spare disk labelled TMP now takes agent scratch folders, build caches and Action sandboxes, is cleaned on every start, can be erased from Settings, and shows in the debug bar alongside a warning when a USB drive is plugged into a slower port than it supports.",
       "The Restart button now tells you which changed files it rebuilt, or that nothing changed since the last build.",
       "The right-hand rail is now a side rail you fill yourself: drag workflows, special agents, pages and links onto it, open a small browser beside it, and open terminals as tabs in the window from it or the top bar, which Claude Code and your agents can read and type into while you share them.",
-      "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it."
+      "On the desktop's Network page, the Nodes list now shows every saved host, fleet server, runner, relay and self-hosted instance (such as OWASP BLT), each on two lines with an icon per stat and CPU, RAM and disk first, and the Hosts controls sit in a compact rail beside it.",
+      "The composer's channel picker now lists your direct messages and has Message someone, so you can send a prompt straight to a person."
      ]
     },
     {
