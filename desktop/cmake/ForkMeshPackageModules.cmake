@@ -159,6 +159,7 @@ extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_packa
         target_link_libraries(${_target} PRIVATE
             Qt6::Widgets Qt6::Network Qt6::Svg Qt6::Concurrent OpenSSL::Crypto)
         forkmesh_link_multimedia(${_target})
+        forkmesh_link_webengine(${_target})
         forkmesh_link_opengl(${_target})
         forkmesh_link_webp(${_target})
         add_dependencies(${_target} forkmesh-version-header)

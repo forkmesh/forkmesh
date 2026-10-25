@@ -1135,7 +1135,7 @@ void ActionRunner::launch(Phase phase, const QString &program,
     child->start();
     const int timeoutMs =
         phase == Phase::Step
-            ? qMax(250, m_limits.stepTimeoutMs)
+            ? currentStepTimeoutMs()
             : qMax(30000, qMin(m_limits.jobTimeoutMs, 5 * 60 * 1000));
     m_stepTimer->start(timeoutMs);
 }
@@ -1300,7 +1300,7 @@ void ActionRunner::launchSandboxedStep(const QString &command)
             .arg(m_stepIndex);
     forkmesh::processreaper::registerOwnedUnit(m_systemdUnit);
     const int runtimeSeconds =
-        qMax(1, (m_limits.stepTimeoutMs + 999) / 1000);
+        qMax(1, (currentStepTimeoutMs() + 999) / 1000);
     QStringList args{
         QStringLiteral("--user"),
         QStringLiteral("--scope"),
@@ -2226,6 +2226,17 @@ void ActionRunner::rememberCrashProcessOutput(const QByteArray &bytes)
     m_crashOutputTail.append(bytes);
     if (m_crashOutputTail.size() > kActionCrashOutputTailBytes)
         m_crashOutputTail = m_crashOutputTail.right(kActionCrashOutputTailBytes);
+}
+
+int ActionRunner::currentStepTimeoutMs() const
+{
+    int timeoutMs = m_limits.stepTimeoutMs;
+    if (m_stepIndex >= 0 && m_stepIndex < m_workflow.steps.size()) {
+        const int minutes = m_workflow.steps.at(m_stepIndex).timeoutMinutes;
+        if (minutes > 0)
+            timeoutMs = qMin(minutes * 60 * 1000, m_limits.jobTimeoutMs);
+    }
+    return qMax(250, timeoutMs);
 }
 
 QString ActionRunner::phaseName() const

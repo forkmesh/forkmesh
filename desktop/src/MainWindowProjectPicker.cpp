@@ -20,6 +20,7 @@
 #include "SingleInstance.h"
 
 #include <QNetworkInformation>
+#include <tuple>
 
 using namespace forkmesh::ui;
 
@@ -412,32 +413,48 @@ QPoint MainWindow::topBarMenuAnchor(QWidget *button) const
 
 void MainWindow::promptAddProject()
 {
+    namespace projects = forkmesh::projects;
     QDialog dialog(this);
+    dialog.setObjectName(QStringLiteral("addProjectDialog"));
     dialog.setWindowTitle(QStringLiteral("Add project"));
-    dialog.setMinimumWidth(460);
+    dialog.setMinimumWidth(480);
     auto *column = new QVBoxLayout(&dialog);
     column->setSpacing(10);
 
-    auto *intro = new QLabel(QStringLiteral(
-        "A project has its own folder in %1 with its own data, settings, logs and keys. "
-        "It starts with nothing: no repository, no instance and only the plugins you pick. "
-        "When it opens you choose which instance it connects to.")
-                                 .arg(QDir::toNativeSeparators(forkmesh::paths::projectsRoot())));
+    auto *intro = new QLabel(
+        QStringLiteral("Each project has its own folder, data and keys in %1.")
+            .arg(QDir::toNativeSeparators(forkmesh::paths::projectsRoot())));
     intro->setObjectName("modeHint");
     intro->setWordWrap(true);
     column->addWidget(intro);
 
     auto *nameEdit = new QLineEdit;
+    nameEdit->setObjectName(QStringLiteral("addProjectName"));
     nameEdit->setPlaceholderText(QStringLiteral("Project name"));
     nameEdit->setMaxLength(80);
     auto *folderLabel = new QLabel;
     folderLabel->setObjectName("statusLine");
-    auto *descriptionEdit = new QLineEdit;
-    descriptionEdit->setPlaceholderText(QStringLiteral("What is it for? (optional)"));
-    descriptionEdit->setMaxLength(400);
 
-    // Logo: preview, choose, clear.
+    auto *instanceEdit = new QLineEdit;
+    instanceEdit->setObjectName(QStringLiteral("addProjectInstance"));
+    instanceEdit->setPlaceholderText(QStringLiteral("Instance address (optional): relay.example.com"));
+    instanceEdit->setClearButtonEnabled(true);
+    auto *checkButton = new QPushButton(QStringLiteral("Check"));
+    checkButton->setObjectName(QStringLiteral("ghostButton"));
+    checkButton->setCursor(Qt::PointingHandCursor);
+    checkButton->setToolTip(
+        QStringLiteral("Check that a ForkMesh instance answers there and use its name and logo"));
+    auto *instanceRow = new QHBoxLayout;
+    instanceRow->addWidget(instanceEdit, 1);
+    instanceRow->addWidget(checkButton);
+    auto *instanceStatus = new QLabel;
+    instanceStatus->setObjectName(QStringLiteral("statusLine"));
+    instanceStatus->setWordWrap(true);
+    instanceStatus->hide();
+
     auto logoPath = std::make_shared<QString>();
+    auto logoFromInstance = std::make_shared<bool>(false);
+    auto logoDir = std::make_shared<QTemporaryDir>();
     auto *logoPreview = new QLabel;
     logoPreview->setFixedSize(48, 48);
     auto *logoChoose = new QPushButton(QStringLiteral("Choose logo…"));
@@ -453,7 +470,7 @@ void MainWindow::promptAddProject()
     logoRow->addStretch(1);
 
     auto refreshPreview = [nameEdit, logoPreview, logoClear, logoPath, folderLabel] {
-        forkmesh::projects::Project preview;
+        projects::Project preview;
         preview.name = nameEdit->text().trimmed().isEmpty() ? QStringLiteral("?")
                                                             : nameEdit->text().trimmed();
         preview.logoPath = *logoPath;
@@ -465,33 +482,35 @@ void MainWindow::promptAddProject()
                 ? QString()
                 : QDir::toNativeSeparators(
                       QDir(forkmesh::paths::projectsRoot()).filePath(slug)));
+        folderLabel->setVisible(!slug.isEmpty());
     };
     connect(nameEdit, &QLineEdit::textChanged, &dialog, refreshPreview);
-    connect(logoChoose, &QPushButton::clicked, &dialog, [&dialog, logoPath, refreshPreview] {
-        const QString chosen = QFileDialog::getOpenFileName(
-            &dialog, QStringLiteral("Choose a logo"), QDir::homePath(),
-            QStringLiteral("Images (*.png *.webp *.jpg *.jpeg)"));
-        if (!chosen.isEmpty()) {
-            *logoPath = chosen;
-            refreshPreview();
-        }
-    });
-    connect(logoClear, &QPushButton::clicked, &dialog, [logoPath, refreshPreview] {
-        logoPath->clear();
-        refreshPreview();
-    });
+    connect(logoChoose, &QPushButton::clicked, &dialog,
+            [&dialog, logoPath, logoFromInstance, refreshPreview] {
+                const QString chosen = QFileDialog::getOpenFileName(
+                    &dialog, QStringLiteral("Choose a logo"), QDir::homePath(),
+                    QStringLiteral("Images (*.png *.webp *.jpg *.jpeg)"));
+                if (!chosen.isEmpty()) {
+                    *logoPath = chosen;
+                    *logoFromInstance = false;
+                    refreshPreview();
+                }
+            });
+    connect(logoClear, &QPushButton::clicked, &dialog,
+            [logoPath, logoFromInstance, refreshPreview] {
+                logoPath->clear();
+                *logoFromInstance = false;
+                refreshPreview();
+            });
 
     auto *identityCheck = new QCheckBox(QStringLiteral("Use my account in this project"));
-    identityCheck->setChecked(true);
+    identityCheck->setObjectName(QStringLiteral("addProjectShareIdentity"));
+    identityCheck->setChecked(false);
     identityCheck->setToolTip(QStringLiteral(
         "Copies your identity key into the project. Off: the project gets an identity of "
         "its own and is a separate account everywhere."));
 
-    // Plugins: everything the catalog would install by default, all unticked.
-    auto *pluginsLabel = new QLabel(QStringLiteral("PLUGINS TO START WITH"));
-    pluginsLabel->setObjectName("sectionLabel");
-    auto *pluginList = new QListWidget;
-    pluginList->setMaximumHeight(170);
+    QStringList offered;
     QStringList defaultInstalled;
     if (m_packageRegistry) {
         for (const forkmesh::market::PackageManifest &manifest :
@@ -501,28 +520,49 @@ void MainWindow::promptAddProject()
             if (manifest.bundled &&
                 (manifest.installedByDefault || manifest.installedBefore.isValid()))
                 defaultInstalled.append(manifest.id);
-            if (!manifest.bundled)
-                continue;  // only what ships with the app can start installed
-            if (!m_packageRegistry->marketParent(manifest.id).isEmpty())
+            if (!manifest.bundled || !m_packageRegistry->marketParent(manifest.id).isEmpty())
                 continue;
-            const auto addItem = [pluginList](const QString &label,
-                                              const QString &id) {
-                auto *item = new QListWidgetItem(label, pluginList);
-                item->setData(Qt::UserRole, id);
-                item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-                item->setCheckState(Qt::Unchecked);
-            };
-            addItem(manifest.name, manifest.id);
+            offered.append(manifest.id);
             for (const QString &nested : m_packageRegistry->nestedPackages(manifest.id)) {
                 const forkmesh::market::PackageManifest *child =
                     m_packageRegistry->package(nested);
                 if (child && child->bundled && !child->managedExternally)
-                    addItem(QStringLiteral("    ") + child->name, child->id);
+                    offered.append(child->id);
             }
         }
     }
-    pluginsLabel->setVisible(pluginList->count() > 0);
-    pluginList->setVisible(pluginList->count() > 0);
+    auto *pluginsLabel = new QLabel(QStringLiteral("PLUGINS TO START WITH"));
+    pluginsLabel->setObjectName("sectionLabel");
+    auto *packGroup = new QButtonGroup(&dialog);
+    auto *packColumn = new QVBoxLayout;
+    packColumn->setSpacing(2);
+    const QList<std::tuple<projects::StarterPack, QString, QString>> packs{
+        {projects::StarterPack::Minimal, QStringLiteral("Minimal"),
+         QStringLiteral("Just your code. Add more from the Market later.")},
+        {projects::StarterPack::Standard, QStringLiteral("Standard"),
+         QStringLiteral("Agents, Chat, Inbox, Code and the tour. A good place to start.")},
+        {projects::StarterPack::Everything, QStringLiteral("Everything"),
+         QStringLiteral("Every plugin that ships with ForkMesh.")}};
+    for (const auto &[pack, label, summary] : packs) {
+        auto *option = new QRadioButton(label);
+        option->setObjectName(QStringLiteral("addProjectPack%1").arg(label));
+        option->setChecked(pack == projects::StarterPack::Standard);
+        packGroup->addButton(option, int(pack));
+        auto *detail = new QLabel(summary);
+        detail->setObjectName(QStringLiteral("statusLine"));
+        detail->setWordWrap(true);
+        detail->setContentsMargins(24, 0, 0, 4);
+        packColumn->addWidget(option);
+        packColumn->addWidget(detail);
+    }
+
+    auto *directoryLabel = new QLabel(QStringLiteral("INSTANCES ON FORKMESH"));
+    directoryLabel->setObjectName("sectionLabel");
+    auto *directoryList = new QListWidget;
+    directoryList->setObjectName(QStringLiteral("addProjectDirectory"));
+    directoryList->setSelectionMode(QAbstractItemView::NoSelection);
+    directoryLabel->hide();
+    directoryList->hide();
 
     auto *errorLabel = new QLabel;
     errorLabel->setStyleSheet(Theme::remapSheet("color:#ff6b6b; background:transparent;"));
@@ -537,29 +577,330 @@ void MainWindow::promptAddProject()
 
     column->addWidget(nameEdit);
     column->addWidget(folderLabel);
-    column->addWidget(descriptionEdit);
+    column->addLayout(instanceRow);
+    column->addWidget(instanceStatus);
     column->addLayout(logoRow);
     column->addWidget(identityCheck);
     column->addWidget(pluginsLabel);
-    column->addWidget(pluginList);
+    column->addLayout(packColumn);
+    column->addWidget(directoryLabel);
+    column->addWidget(directoryList);
     column->addWidget(errorLabel);
     column->addWidget(buttons);
     refreshPreview();
 
-    forkmesh::projects::Project created;
+    auto checked = std::make_shared<projects::InstanceChoice>();
+    auto autoName = std::make_shared<QString>();
+    auto generation = std::make_shared<int>(0);
+    const auto showStatus = [instanceStatus](const QString &text, bool error) {
+        instanceStatus->setStyleSheet(
+            error ? Theme::remapSheet("color:#ff6b6b; background:transparent;") : QString());
+        instanceStatus->setText(text);
+        instanceStatus->setVisible(!text.isEmpty());
+    };
+    const auto originOf = [](const QString &serverUrl) {
+        QUrl origin = faviconUrl(serverUrl);
+        origin.setPath(QString());
+        return origin;
+    };
+
+    auto fetchInstanceLogo = std::make_shared<std::function<void(QList<QUrl>, int)>>();
+    *fetchInstanceLogo = [this, &dialog, fetchInstanceLogo, generation, logoPath,
+                          logoFromInstance, logoDir, refreshPreview](QList<QUrl> candidates,
+                                                                     int current) {
+        if (candidates.isEmpty() || !m_networkAccess || *generation != current ||
+            (!logoPath->isEmpty() && !*logoFromInstance))
+            return;
+        QNetworkRequest request(candidates.takeFirst());
+        forkmesh::markFaviconProbe(request);
+        request.setTransferTimeout(10000);
+        QNetworkReply *reply = m_networkAccess->get(request);
+        connect(reply, &QNetworkReply::finished, &dialog,
+                [reply, candidates, current, fetchInstanceLogo, generation, logoPath,
+                 logoFromInstance, logoDir, refreshPreview] {
+                    reply->deleteLater();
+                    if (*generation != current)
+                        return;
+                    QImage image;
+                    if (reply->error() != QNetworkReply::NoError ||
+                        !image.loadFromData(reply->read(4 * 1024 * 1024)) || image.isNull()) {
+                        (*fetchInstanceLogo)(candidates, current);
+                        return;
+                    }
+                    if ((!logoPath->isEmpty() && !*logoFromInstance) || !logoDir->isValid())
+                        return;
+                    if (image.width() > 512 || image.height() > 512)
+                        image = image.scaled(512, 512, Qt::KeepAspectRatio,
+                                             Qt::SmoothTransformation);
+                    const QString path =
+                        logoDir->filePath(QStringLiteral("logo-%1.png").arg(current));
+                    if (!image.save(path, "PNG"))
+                        return;
+                    *logoPath = path;
+                    *logoFromInstance = true;
+                    refreshPreview();
+                });
+    };
+
+    const auto forgetInstanceLogo = [logoPath, logoFromInstance, refreshPreview] {
+        if (!*logoFromInstance)
+            return;
+        logoPath->clear();
+        *logoFromInstance = false;
+        refreshPreview();
+    };
+
+    const auto checkInstance = [=, &dialog]() {
+        const QString typed = instanceEdit->text().trimmed();
+        ++*generation;
+        const int current = *generation;
+        *checked = {};
+        if (typed.isEmpty()) {
+            showStatus(QString(), false);
+            forgetInstanceLogo();
+            return;
+        }
+        const QString canonical = canonicalServerUrl(typed);
+        const QUrl origin = originOf(canonical);
+        if (origin.host().isEmpty()) {
+            showStatus(QStringLiteral("Enter the instance's address."), true);
+            return;
+        }
+        const QString owner = otherProjectForInstance(canonical);
+        if (!owner.isEmpty()) {
+            showStatus(QStringLiteral("%1 already belongs to the project %2. An instance can "
+                                      "only be in one project.")
+                           .arg(serverHost(canonical), owner),
+                       true);
+            return;
+        }
+        if (!m_networkAccess) {
+            showStatus(QStringLiteral("Could not check %1.").arg(serverHost(canonical)), true);
+            return;
+        }
+        showStatus(QStringLiteral("Checking %1…").arg(serverHost(canonical)), false);
+        checkButton->setEnabled(false);
+        QUrl versionUrl(origin);
+        versionUrl.setPath(QStringLiteral("/api/version"));
+        QNetworkRequest versionRequest(versionUrl);
+        versionRequest.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
+                                    QNetworkRequest::AlwaysNetwork);
+        versionRequest.setRawHeader("accept", "application/json");
+        versionRequest.setTransferTimeout(10000);
+        QNetworkReply *version = m_networkAccess->get(versionRequest);
+        connect(version, &QNetworkReply::finished, &dialog, [=, &dialog] {
+            version->deleteLater();
+            if (*generation != current)
+                return;
+            const int status =
+                version->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const bool identified = projects::isForkMeshVersionReply(
+                status, version->hasRawHeader("x-forkmesh-worker"),
+                QJsonDocument::fromJson(version->read(512 * 1024)).object());
+            if (!identified) {
+                checkButton->setEnabled(true);
+                forgetInstanceLogo();
+                showStatus(version->error() == QNetworkReply::NoError ||
+                                   status > 0
+                               ? QStringLiteral("%1 answered, but it is not a ForkMesh "
+                                                "instance.")
+                                     .arg(serverHost(canonical))
+                               : QStringLiteral("Could not reach %1.")
+                                     .arg(serverHost(canonical)),
+                           true);
+                return;
+            }
+            QUrl instanceUrl(origin);
+            instanceUrl.setPath(QStringLiteral("/api/instance"));
+            QNetworkRequest instanceRequest(instanceUrl);
+            instanceRequest.setRawHeader("accept", "application/json");
+            instanceRequest.setTransferTimeout(10000);
+            QNetworkReply *described = m_networkAccess->get(instanceRequest);
+            connect(described, &QNetworkReply::finished, &dialog, [=] {
+                described->deleteLater();
+                if (*generation != current)
+                    return;
+                checkButton->setEnabled(true);
+                const QJsonObject document =
+                    described->error() == QNetworkReply::NoError
+                        ? QJsonDocument::fromJson(described->read(512 * 1024)).object()
+                        : QJsonObject();
+                const QString host = serverHost(canonical);
+                const QString name =
+                    document.value(QStringLiteral("name")).toString().trimmed().left(80);
+                checked->url = canonical;
+                checked->name = name.isEmpty() ? host : name;
+                if (!name.isEmpty() && (nameEdit->text().trimmed().isEmpty() ||
+                                        nameEdit->text().trimmed() == *autoName)) {
+                    *autoName = name;
+                    nameEdit->setText(name);
+                }
+                showStatus(name.isEmpty()
+                               ? QStringLiteral("Found a ForkMesh instance at %1.").arg(host)
+                               : QStringLiteral("Found %1 at %2.").arg(name, host),
+                           false);
+                QList<QUrl> candidates;
+                QUrl logoUrl(origin);
+                const QString logo =
+                    document.value(QStringLiteral("logo")).toString().trimmed();
+                if (logo.startsWith(QLatin1Char('/')) && !logo.startsWith(QStringLiteral("//"))) {
+                    logoUrl.setPath(logo);
+                    candidates.append(logoUrl);
+                }
+                logoUrl.setPath(faviconRootPath());
+                candidates.append(logoUrl);
+                logoUrl.setPath(faviconAssetPath());
+                candidates.append(logoUrl);
+                (*fetchInstanceLogo)(candidates, current);
+            });
+        });
+    };
+    connect(checkButton, &QPushButton::clicked, &dialog, checkInstance);
+    connect(instanceEdit, &QLineEdit::textEdited, &dialog,
+            [checked, generation, checkButton, showStatus, forgetInstanceLogo] {
+                ++*generation;
+                *checked = {};
+                checkButton->setEnabled(true);
+                showStatus(QString(), false);
+                forgetInstanceLogo();
+            });
+
+    const QString directoryOrigin = originOf(kDefaultServerUrl).toString();
+    auto populateDirectory = [=, &dialog](const QJsonArray &rows) {
+        QVector<projects::DirectoryInstance> entries;
+        projects::DirectoryInstance flagship;
+        flagship.host = serverHost(kDefaultServerUrl);
+        flagship.name = QStringLiteral("ForkMesh");
+        flagship.online = true;
+        entries.append(flagship);
+        for (const projects::DirectoryInstance &entry :
+             projects::directoryInstances(rows, directoryOrigin))
+            if (entry.host != flagship.host)
+                entries.append(entry);
+        directoryList->clear();
+        const QVector<projects::Project> known =
+            projects::list(forkmesh::paths::projectsRoot(), forkmesh::paths::homeDir());
+        for (const projects::DirectoryInstance &entry : std::as_const(entries)) {
+            const projects::Project *ownerProject = projects::instanceOwner(
+                known, canonicalServerUrl(entry.host), forkmesh::paths::projectDir());
+            const QString owner = ownerProject ? ownerProject->name : QString();
+            auto *item = new QListWidgetItem(directoryList);
+            item->setData(Qt::UserRole, entry.host);
+            auto *row = new QWidget;
+            auto *rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(6, 4, 6, 4);
+            rowLayout->setSpacing(10);
+            auto *logo = new QLabel;
+            logo->setFixedSize(28, 28);
+            logo->setPixmap(letterFavicon(entry.name, 28));
+            auto *title = new QLabel(entry.name);
+            auto *subtitle = new QLabel(
+                entry.online ? entry.host : QStringLiteral("%1 · checking").arg(entry.host));
+            subtitle->setObjectName(QStringLiteral("statusLine"));
+            auto *text = new QVBoxLayout;
+            text->setSpacing(0);
+            text->addWidget(title);
+            text->addWidget(subtitle);
+            rowLayout->addWidget(logo);
+            rowLayout->addLayout(text, 1);
+            if (!owner.isEmpty()) {
+                auto *inProject = new QLabel(QStringLiteral("In %1").arg(owner));
+                inProject->setObjectName(QStringLiteral("statusLine"));
+                rowLayout->addWidget(inProject);
+            } else {
+                auto *add = new QPushButton(QStringLiteral("Add"));
+                add->setObjectName(QStringLiteral("ghostButton"));
+                add->setCursor(Qt::PointingHandCursor);
+                add->setAccessibleName(QStringLiteral("Add %1").arg(entry.name));
+                setOcticon(add, QStringLiteral("plus"), 14);
+                const QString host = entry.host;
+                connect(add, &QPushButton::clicked, &dialog,
+                        [instanceEdit, host, checkInstance] {
+                            instanceEdit->setText(host);
+                            checkInstance();
+                        });
+                rowLayout->addWidget(add);
+            }
+            item->setSizeHint(row->sizeHint());
+            directoryList->setItemWidget(item, row);
+            if (!entry.logoUrl.isEmpty() && m_networkAccess) {
+                QNetworkRequest request{QUrl(entry.logoUrl)};
+                request.setTransferTimeout(10000);
+                QNetworkReply *reply = m_networkAccess->get(request);
+                connect(reply, &QNetworkReply::finished, &dialog,
+                        [reply, logo = QPointer<QLabel>(logo)] {
+                    reply->deleteLater();
+                    QImage image;
+                    if (!logo)
+                        return;
+                    if (reply->error() != QNetworkReply::NoError ||
+                        !image.loadFromData(reply->read(1024 * 1024)) || image.isNull())
+                        return;
+                    const qreal dpr = logo->devicePixelRatioF();
+                    QPixmap pixmap = QPixmap::fromImage(
+                        image.scaled(QSize(28, 28) * dpr, Qt::KeepAspectRatio,
+                                     Qt::SmoothTransformation));
+                    pixmap.setDevicePixelRatio(dpr);
+                    logo->setPixmap(pixmap);
+                });
+            }
+        }
+        int rowsHeight = 2 * directoryList->frameWidth();
+        for (int row = 0; row < directoryList->count(); ++row)
+            rowsHeight += directoryList->item(row)->sizeHint().height();
+        directoryList->setFixedHeight(qMin(170, rowsHeight));
+        directoryLabel->setVisible(directoryList->count() > 0);
+        directoryList->setVisible(directoryList->count() > 0);
+    };
+    populateDirectory(m_directoryInstances);
+#ifndef FORKMESH_WINDOW_TESTS
+    if (m_networkAccess) {
+        QUrl url(directoryOrigin);
+        url.setPath(QStringLiteral("/api/start/instances"));
+        QNetworkRequest request(url);
+        request.setRawHeader("accept", "application/json");
+        request.setTransferTimeout(15000);
+        QNetworkReply *reply = m_networkAccess->get(request);
+        connect(reply, &QNetworkReply::finished, &dialog, [this, reply, populateDirectory] {
+            reply->deleteLater();
+            if (reply->error() != QNetworkReply::NoError)
+                return;
+            const QJsonObject document =
+                QJsonDocument::fromJson(reply->read(512 * 1024)).object();
+            if (!document.value(QStringLiteral("ok")).toBool())
+                return;
+            const QJsonArray rows = document.value(QStringLiteral("instances")).toArray();
+            m_directoryInstances = QJsonArray();
+            for (const QJsonValue &value : rows) {
+                const QUrl site(value.toObject().value(QStringLiteral("url")).toString());
+                if (site.scheme() == QLatin1String("https") && !site.host().isEmpty())
+                    m_directoryInstances.append(value);
+            }
+            m_directoryInstancesFetchedMs = QDateTime::currentMSecsSinceEpoch();
+            scheduleNodesTableRefresh();
+            populateDirectory(m_directoryInstances);
+        });
+    }
+#endif
+
+    projects::Project created;
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
-        forkmesh::projects::CreateRequest request;
+        if (!instanceEdit->text().trimmed().isEmpty() && checked->url.isEmpty()) {
+            errorLabel->setText(QStringLiteral("Check the instance first, or clear its address."));
+            errorLabel->show();
+            if (checkButton->isEnabled())
+                checkInstance();
+            return;
+        }
+        projects::CreateRequest request;
         request.name = nameEdit->text();
-        request.description = descriptionEdit->text();
         request.logoSource = *logoPath;
+        request.instance = *checked;
         request.shareIdentity = identityCheck->isChecked();
         request.removedPackages = defaultInstalled;
-        for (int i = 0; i < pluginList->count(); ++i) {
-            const QListWidgetItem *item = pluginList->item(i);
-            if (item->checkState() == Qt::Checked)
-                request.packages.append(item->data(Qt::UserRole).toString());
-        }
+        request.packages = projects::starterPackages(
+            projects::StarterPack(packGroup->checkedId()), offered);
         for (int i = 0; m_packageRegistry && i < request.packages.size(); ++i) {
             const forkmesh::market::PackageManifest *manifest =
                 m_packageRegistry->package(request.packages.at(i));
@@ -574,7 +915,7 @@ void MainWindow::promptAddProject()
             }
         }
         QString error;
-        if (!forkmesh::projects::create(forkmesh::paths::layout(), request, &created, &error)) {
+        if (!projects::create(forkmesh::paths::layout(), request, &created, &error)) {
             errorLabel->setText(error);
             errorLabel->show();
             return;
@@ -582,7 +923,10 @@ void MainWindow::promptAddProject()
         dialog.accept();
     });
     nameEdit->setFocus();
-    if (dialog.exec() != QDialog::Accepted || created.slug.isEmpty())
+    const int outcome = dialog.exec();
+    ++*generation;
+    *fetchInstanceLogo = nullptr;
+    if (outcome != QDialog::Accepted || created.slug.isEmpty())
         return;
     openProject(created.slug, /*keepThisOneOpen=*/false);
 }
@@ -814,6 +1158,19 @@ void MainWindow::promptChooseProjectInstance()
     QVector<forkmesh::projects::InstanceChoice> choices =
         forkmesh::projects::decodeInstanceChoices(
             QSettings().value(forkmesh::projects::kInstanceChoicesSetting).toString());
+    const QString chosen =
+        QSettings().value(forkmesh::projects::kInstanceChosenSetting).toString().trimmed();
+    if (!chosen.isEmpty()) {
+        QSettings().remove(forkmesh::projects::kInstanceChosenSetting);
+        QString chosenName;
+        for (const forkmesh::projects::InstanceChoice &choice : std::as_const(choices))
+            if (choice.url == chosen)
+                chosenName = choice.name;
+        if (otherProjectForInstance(chosen).isEmpty()) {
+            connectProjectInstance(chosen, chosenName);
+            return;
+        }
+    }
     if (choices.isEmpty())
         choices.append({serverHost(kDefaultServerUrl), kDefaultServerUrl});
     choices.erase(std::remove_if(choices.begin(), choices.end(),

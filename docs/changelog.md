@@ -70,7 +70,9 @@ The broken merge was the desktop merge editor's **Accept both** on
 after the other's without the `]},{` between them. Since then the editor's
 commit (`commitResolvedMerge`) refuses a conflicted `.json` file that parsed
 on our side but does not parse after the resolution, naming the file and
-line (`jsonBrokenByMergeResolution`).
+line (`jsonBrokenByMergeResolution`). Until that reached `main`, the same
+resolution struck again the same afternoon: `2604-usb-c-port-speed` and two
+later merges left out the comma after a Desktop item.
 
 ## Adding a note
 

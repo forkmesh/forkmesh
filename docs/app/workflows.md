@@ -262,7 +262,23 @@ maps every server error code).
   of every workflow that has run (`GET /<id>/runs`, at most four at a time,
   only for workflows with a `lastRunAt`), newest first, filtered by workflow
   and result; selecting one shows each step's result, time, item count and
-  error, first item or last log line, with the log in the tooltip.
+  error, first item or last log line, with the log in the tooltip, and under
+  them the run's output (`workflowsRunOutput`): each step's output, log lines
+  and error under its name.
+- **Run goes to Recent runs.** Run, Run with an assignment, a rail pin and the
+  editor's Run workflow all follow the new run (`followRun`): the run filters
+  reset, the runs pane grows to at least 40% of the page and the new run is
+  selected. A desktop run is matched by the `runId` the `run` action returns
+  (special agents return it too), else by the first run of that workflow
+  started within two minutes of the click. An account run has no id until
+  `POST /<id>/run` answers, so a "Running" placeholder row (`m_pendingRun`)
+  stands in for it until then. While a selected desktop run is running or
+  waiting, the page asks the host for it (`get`, which returns the active run)
+  every second and redraws the steps and output, keeping the output scrolled
+  to the end unless you scrolled up. The runner fills a running step's
+  `output` and `logs` from each poll (an agent's latest reply, a shortcut's or
+  process's output so far) in memory only; the run file is still written
+  when a step starts or ends.
 - **Editor.** The graph is an ordered list of steps like the phones'
   (`Draft::ordered`, Kahn order). The form is built from the catalog fields:
   select, boolean, text/json/code (fixed-width for json and code),
