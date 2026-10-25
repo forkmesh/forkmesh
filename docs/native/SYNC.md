@@ -216,4 +216,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S141 | 2026-10-25 | Account | fix | The app stays signed in to your instances after the phone restarts. | d16277242c | n/a | Android is not directBootAware, so it never starts before the first unlock |
 | S141 | 2026-10-25 | Desktop | feature | With several desktops running, the Desktops page shows each one's status, Where it runs lets you pick one, and the icon above the clock stacks the desktops and the core nodes. | 38a83361e4 | pending |  |
 | S142 | 2026-10-25 | Agents | ui | The agent list's image tile shows tokens in and out as moving lines coloured by speed, the file count outlined by its churn, tiny branch and worktree icons, thin background-task lines and a green done bar when finished. | 170c95503c | pending |  |
+| S143 | 2026-10-25 | Code | fix | Send to agent on a failed Actions run's log sends the failing step and the end of the log instead of the log's first lines. | d196230867 | pending |  |
 <!-- ledger:end -->
