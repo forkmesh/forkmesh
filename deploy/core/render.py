@@ -1339,7 +1339,9 @@ def calls_urls(fleet):
 
 
 def calls_origins(fleet):
-    hosts = ["https://" + served_app_host(fleet), "https://" + fleet["app_host"]]
+    hosts = ["https://" + host for host in (
+        served_app_host(fleet), fleet["app_host"],
+        served_world_host(fleet), fleet["world_host"])]
     return list(dict.fromkeys(hosts + list(calls_settings(fleet)["origins"])))
 
 

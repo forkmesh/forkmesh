@@ -8,6 +8,12 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Calls",
+     "items": [
+      "Calls started from the World connect again: the call servers were turning the World away, so the camera and microphone never came on."
+     ]
+    },
+    {
      "title": "Projects",
      "items": [
       "Add project on the desktop now lists the instances on ForkMesh by name to add in one click, checks an instance address and fills in its name and logo, and offers the phone's Minimal, Standard and Everything plugin packs."
