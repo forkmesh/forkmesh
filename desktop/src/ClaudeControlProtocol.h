@@ -69,5 +69,6 @@ QJsonObject elicitationResponse(const QString &action, const QJsonObject &conten
 QString titleFromEvent(const QJsonObject &event);
 QString cleanTitle(const QString &title);
 QString permissionModeLabel(const QString &modeId);
+QString permissionModeChangeNotice(const QString &fromModeId, const QString &toModeId);
 
 } // namespace forkmesh::claudecontrol
