@@ -1162,6 +1162,10 @@ set(FORKMESH_APP_SOURCES
     src/Tooltips.h
     src/ClaudeTranscriptView.h
     src/ClaudeTranscriptView.cpp
+    src/AgentTaskList.h
+    src/AgentTaskList.cpp
+    src/AgentTaskListBar.h
+    src/AgentTaskListBar.cpp
     src/ClaudeElicitationDialog.h
     src/ClaudeElicitationDialog.cpp
     src/PromptDeckBar.h
@@ -1350,6 +1354,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/ClaudeStreamSession.h
     src/ClaudeElicitationDialog.h
     src/ClaudeTranscriptView.h
+    src/AgentTaskListBar.h
     src/PromptDeckBar.h
     src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
@@ -1461,6 +1466,7 @@ set_source_files_properties(
     src/ClaudeElicitationDialog.h
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
+    src/AgentTaskListBar.h
     src/PromptDeckBar.h
     src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
@@ -3244,6 +3250,22 @@ forkmesh_link_opengl(forkmesh-window-tests)
         target_compile_definitions(forkmesh-window-tests PRIVATE FORKMESH_HAVE_PORTAL)
     endif()
 
+    qt_add_executable(forkmesh-agent-task-list-tests
+        tests/test_agent_task_list.cpp
+        src/AgentTaskList.h
+        src/AgentTaskList.cpp
+        src/AgentTaskListBar.h
+        src/AgentTaskListBar.cpp
+        src/ClaudeTranscriptTools.h
+        src/ClaudeTranscriptTools.cpp
+    )
+    target_link_libraries(forkmesh-agent-task-list-tests PRIVATE Qt6::Widgets)
+    target_include_directories(forkmesh-agent-task-list-tests PRIVATE src)
+    if(APPLE)
+        set_target_properties(forkmesh-agent-task-list-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
     qt_add_executable(forkmesh-sonifier-tests
         tests/test_agent_sonifier.cpp
         src/AgentSonifier.h
@@ -4120,6 +4142,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-settings-write-tests
         forkmesh-perf-tests forkmesh-repo-stats-tests
         forkmesh-agent-folders-tests
+        forkmesh-agent-task-list-tests
         forkmesh-sonifier-tests
         forkmesh-ui-sounds-tests
         forkmesh-user-activity-tests
@@ -4192,6 +4215,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     add_test(NAME forkmesh-repo-stats-tests COMMAND forkmesh-repo-stats-tests)
     add_test(NAME forkmesh-agent-folders-tests
              COMMAND forkmesh-agent-folders-tests)
+    add_test(NAME forkmesh-agent-task-list-tests COMMAND forkmesh-agent-task-list-tests)
     add_test(NAME forkmesh-sonifier-tests COMMAND forkmesh-sonifier-tests)
     add_test(NAME forkmesh-ui-sounds-tests COMMAND forkmesh-ui-sounds-tests)
     add_test(NAME forkmesh-user-activity-tests
