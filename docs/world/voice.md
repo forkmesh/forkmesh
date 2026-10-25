@@ -243,6 +243,27 @@ them (`fetchRooms`), and `joinRoom` loads them when asked for a room it does
 not know yet. Before this, `fetchRooms` was never called, so the Office
 meeting board only ever offered #general.
 
+## Camera and microphone permission
+
+The World page and the chat it embeds must be allowed to use the camera.
+Until 2026-10-24 every World route inherited the site-wide
+`Permissions-Policy: camera=()` from `www/public/_headers`, so turning on the
+camera logged "Permissions policy violation: camera is not allowed in this
+document" and the avatar never moved. Now:
+
+- `/world` and `/world/*` in `www/public/_headers` replace the policy with
+  `camera=(self), microphone=(self)`; everything else stays blocked.
+- The World's index handle in `deploy/core/caddy_routes.py` serves `/`,
+  `/world` and `/world/`, but Caddy evaluates header matchers before the
+  rewrite to `/world/index.html`, so `world.forkmesh.com/` only got the
+  `/*` rule. The handle now also applies the `/world` rule
+  (`path_rule_directives`), so the same document gets the same headers on
+  every index path.
+- `/chat?embed=world` reaches the App worker on the World host, and
+  `_apply_browser_security_headers` (`app/src/entry.py`) used to give it
+  `camera=()`. It now gives `/chat` and `/chat.html` the device-page policy
+  and `mediastream:` in `media-src`, the same as the static `/chat` rule.
+
 ## Performance badge and diagnostic report
 
 While a room, the microphone or the camera is on, a small badge above the

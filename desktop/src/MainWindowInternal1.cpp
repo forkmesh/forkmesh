@@ -626,10 +626,13 @@ bool requestFirewallCanPrompt()
 QList<BackoffNetworkAccessManager::FirewallRuleEntry>
 defaultApprovedFirewallRules()
 {
-    QFile file(kDefaultApprovedFirewallRulesResource);
-    if (!file.open(QIODevice::ReadOnly))
-        return {};
-    return BackoffNetworkAccessManager::parseFirewallRuleList(file.readAll());
+    static const QList<BackoffNetworkAccessManager::FirewallRuleEntry> rules = [] {
+        QFile file(kDefaultApprovedFirewallRulesResource);
+        if (!file.open(QIODevice::ReadOnly))
+            return QList<BackoffNetworkAccessManager::FirewallRuleEntry>();
+        return BackoffNetworkAccessManager::parseFirewallRuleList(file.readAll());
+    }();
+    return rules;
 }
 
 void seedDefaultApprovedFirewallRules(QSettings &settings, QStringList *rules)

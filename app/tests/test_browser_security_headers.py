@@ -123,6 +123,20 @@ def test_policy_does_not_grant_sensitive_device_capabilities():
     assert "microphone=(self)" in permissions
 
 
+def test_world_pages_may_use_the_camera_for_avatar_capture():
+    rules = {
+        pattern: body
+        for pattern, body in re.findall(
+            r"^(/\S*)\n((?:  .*\n?)+)", HEADERS, flags=re.M)
+    }
+    for pattern in ("/world", "/world/*"):
+        rule = rules[pattern]
+        assert "! Permissions-Policy" in rule
+        assert "camera=(self)" in rule
+        assert "microphone=(self)" in rule
+        assert "geolocation=()" in rule
+
+
 def test_dynamic_app_html_receives_the_same_security_boundary():
     wanted = {
         "_BROWSER_CSP",
@@ -228,6 +242,13 @@ def test_dynamic_app_html_receives_the_same_security_boundary():
             DynamicResponse(), path)
         assert "camera=()" in other.headers["permissions-policy"]
         assert "mediastream:" not in other.headers["content-security-policy"]
+    for path in ("/chat", "/chat.html"):
+        chat = namespace["_apply_browser_security_headers"](
+            DynamicResponse(), path)
+        assert "camera=(self)" in chat.headers["permissions-policy"]
+        assert "microphone=(self)" in chat.headers["permissions-policy"]
+        assert "mediastream:" in chat.headers["content-security-policy"]
+        assert chat.headers["x-frame-options"] == "SAMEORIGIN"
 
     strict = DynamicResponse()
     strict.headers["content-security-policy"] = (
