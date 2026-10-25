@@ -74,7 +74,8 @@
       "The debug bar's Report and Send diagnostic buttons are now one Diagnose button that turns red when it spots a performance, security or UI problem, and one click starts an agent with the model you have selected.",
       "Merge all with AI now rebuilds a pull request from a stacked series whose earlier parts were already merged, instead of leaving it out because its code is not on this computer.",
       "The install line on the homepage has a small Binary / Source switch, so you can copy the command that compiles ForkMesh from source.",
-      "The desktop prompt now names the chat channel you are in, with a menu to switch channel that shows each channel's users and chats, its three preview lines show the latest chat messages with channel, name and time, the send-to button reads chat, and the pop-out button is gone: drag the prompt by any part of its body to move it anywhere or out into its own window, and resize it from any edge or corner."
+      "The desktop prompt now names the chat channel you are in, with a menu to switch channel that shows each channel's users and chats, its three preview lines show the latest chat messages with channel, name and time, the send-to button reads chat, and the pop-out button is gone: drag the prompt by any part of its body to move it anywhere or out into its own window, and resize it from any edge or corner.",
+      "The Restart button now tells you which changed files it rebuilt, or that nothing changed since the last build."
      ]
     },
     {

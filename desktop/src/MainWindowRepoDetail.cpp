@@ -15837,7 +15837,11 @@ void MainWindow::finishPendingRestartTiming()
     using namespace forkmesh::restarttiming;
     const QString runKey = QStringLiteral("restartTiming/pendingRun");
     const QString kindKey = QStringLiteral("restartTiming/pendingKind");
+    const QString summaryKey = QStringLiteral("restartTiming/pendingSummary");
     QSettings settings;
+    const QString summary = settings.value(summaryKey).toString();
+    if (settings.contains(summaryKey))
+        settings.remove(summaryKey);
     if (!settings.contains(runKey))
         return;
     const QString stored = settings.value(runKey).toString();
@@ -15854,6 +15858,8 @@ void MainWindow::finishPendingRestartTiming()
         (now - m_debugSessionUptime.elapsed()) - run.finishedAtMs;
     if (handoffMs < -5'000 || handoffMs > kRelaunchHandoffWindowMs)
         return; // left behind by a relaunch that never painted; not this launch
+    if (!summary.isEmpty())
+        QTimer::singleShot(0, this, [this, summary] { flashMessage(summary); });
     run.totalMs += qMax<qint64>(0, now - run.finishedAtMs);
     run.finishedAtMs = now;
     if (isPlausibleDuration(run.totalMs))

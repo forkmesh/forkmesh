@@ -21,6 +21,7 @@
 #include "LocalMeshNode.h"
 #include "OfficeChannelMirror.h"
 #include "PrivateMirrorStore.h"
+#include "RestartTiming.h"
 #include "SourceTreeWatch.h"
 #include "UserAvatarStore.h"
 #include "SettingsWrite.h"
@@ -6291,10 +6292,12 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
     // that finished on an unchanged tree installs. Bounded, so a tree that
     // will not sit still cannot keep the restart spinning forever.
     auto build = std::make_shared<std::function<void(int)>>();
+    auto compiled = std::make_shared<QStringList>();
     // Held weakly by its own body: the in-flight step callbacks own the strong
     // references, so the chain frees itself once the restart ends either way.
     std::weak_ptr<std::function<void(int)>> weakBuild = build;
-    *build = [this, clientDir, buildDir, scratchDir, appPath, weakBuild](int pass) {
+    *build = [this, clientDir, buildDir, scratchDir, appPath, weakBuild,
+              compiled](int pass) {
         constexpr int kMaxBuildPasses = 3;
         auto build = weakBuild.lock();
         if (!build)
@@ -6319,7 +6322,7 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 return head;
             },
             [this, clientDir, buildDir, scratchDir, appPath, build, pass,
-             jobs](QString headBefore) {
+             jobs, compiled](QString headBefore) {
                 logRestart(QStringLiteral("build pass %1: %2 parallel jobs, HEAD %3")
                                .arg(pass)
                                .arg(jobs)
@@ -6328,8 +6331,16 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                 const int logStart =
                     m_updateLog ? m_updateLog->document()->characterCount() : 0;
                 auto settle = [this, clientDir, buildDir, appPath, build, pass,
-                               headBefore, logStart](bool ok, const QString &changed,
-                                                     const QString &headAfter) {
+                               headBefore, logStart,
+                               compiled](bool ok, const QString &changed,
+                                         const QString &headAfter) {
+                    const QString output =
+                        m_updateLog ? m_updateLog->toPlainText().mid(logStart)
+                                    : QString();
+                    for (const QString &source :
+                         forkmesh::restarttiming::compiledSources(output))
+                        if (!compiled->contains(source))
+                            compiled->append(source);
                     if (!changed.isEmpty()) {
                         const QString note =
                             QStringLiteral("the sources changed while build pass %1 ran "
@@ -6351,9 +6362,6 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                                               : QStringLiteral("; out of passes")));
                     }
                     if (!ok) {
-                        const QString output =
-                            m_updateLog ? m_updateLog->toPlainText().mid(logStart)
-                                        : QString();
                         stopRefreshSpin();
                         stopRestartSpin();
                         // Out of passes on a tree that kept moving: the error is most
@@ -6376,6 +6384,16 @@ void MainWindow::buildAndRelaunch(const QString &clientDir, const QString &asUse
                             m_buildButton->setEnabled(true);
                         return;
                     }
+                    const QString summary =
+                        forkmesh::restarttiming::rebuiltSummary(*compiled);
+                    logRestart(summary);
+                    appendUpdateLog(QStringLiteral("\n==> %1\n").arg(summary));
+                    if (compiled->size() > 1)
+                        appendUpdateLog(QStringLiteral("    %1\n").arg(
+                            compiled->join(QStringLiteral("\n    "))));
+                    logSystem(QStringLiteral("Rebuild & restart: %1").arg(summary));
+                    QSettings().setValue(QStringLiteral("restartTiming/pendingSummary"),
+                                         summary);
                     buildMirrorNodeCompanion(clientDir, buildDir,
                                              [this, buildDir, appPath] {
                         const QString built = builtExecutablePath(buildDir);
