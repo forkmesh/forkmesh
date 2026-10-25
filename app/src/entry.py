@@ -4301,9 +4301,9 @@ async def node_events_handler(env, request):
 # hosts used to await one Durable Object probe PER stale group member
 # SEQUENTIALLY (up to HOST_COUNT_TIMEOUT_MS each) on every public info/refs,
 # browse and /mirrors request. A logical repo group with many offline mirrors
-# (a fleet die-off purges their host_presence rows, so every member stays
-# "stale" forever) turned each request into minutes of awaiting dead tunnels —
-# the Workers runtime then canceled the request as hung, surfacing the Pyodide
+# (after a fleet die-off every member stays "stale" forever) turned each
+# request into minutes of awaiting dead tunnels — the Workers runtime then
+# canceled the request as hung, surfacing the Pyodide
 # "Cannot enter into task" error on git-upload-pack info/refs (adhoc #167, the
 # same info/refs-hang family as adhoc #144/#153). Probes now run concurrently,
 # are capped per request (also protecting the per-request subrequest budget),
@@ -4321,10 +4321,9 @@ HYDRATE_PROBE_BUDGET_MS = 1500
 
 async def hydrate_repo_group_live_hosts(env, owner, repo, catalog_rows,
                                         presence, now):
-    # host_presence is an eventually-refreshed D1 cache. For routing and the
-    # public mirror list, the DO's connected host count is the ground truth. Probe
-    # only the logical repo group for this request and patch the in-memory
-    # presence map before candidate selection.
+    # For routing and the public mirror list, the DO's connected host count is
+    # the ground truth. Probe only the logical repo group for this request and
+    # patch the in-memory presence map before candidate selection.
     owner_l = str(owner or "").strip().lower()
     repo_l = str(repo or "").strip().lower()
     if not owner_l or not repo_l:
@@ -4433,9 +4432,8 @@ async def _flagship_client_count(env):
         return 0
 
 
-async def network_stats(env, include_payouts=False, maintain_presence=True,
-                        refresh=False):
-    # Aggregate homepage stats: repo count (D1), live host count (presence table),
+async def network_stats(env, include_payouts=False, refresh=False):
+    # Aggregate homepage stats: repo count (D1), live node count (online nodes),
     # and flagship-room client count (one internal request). Cached at the edge.
     cache_key = NETWORK_STATS_CACHE_KEY + ("?payouts=1" if include_payouts else "")
     # A refresh press must reach the balance code, so it skips the edge copy —
@@ -4448,29 +4446,13 @@ async def network_stats(env, include_payouts=False, maintain_presence=True,
     now = int(Date.now())
     repos = await _repositories_count(env, now)
 
-    cutoff = now - HOST_PRESENCE_STALE_MS
-    if maintain_presence and not _read_only(env):
-        try:
-            stale_repos = await notify_stale_hosts_offline(env, cutoff)
-            for repo_bi in stale_repos:
-                await d1_run(
-                    env,
-                    "DELETE FROM host_presence WHERE repo_bi=? AND ts < ?",
-                    repo_bi, cutoff,
-                )
-        except Exception:
-            pass
-
     # Named list of the nodes that are actually online right now (same signal the
     # uptime cron samples), so the dashboard rail can show *who* is live instead of
     # painting the 48h uptime leaderboard green — a node offline now must not look
     # active, and a node that just came up must appear even with no accrued minutes.
     #
     # The headline "Nodes" count is the size of THIS set — the distinct, publicly
-    # known nodes (a catalog record or a registered account) that are live — rather
-    # than a raw COUNT of host_presence rows. A plain row count over-reports: one
-    # node hosting several repos counts many times, and an ad-hoc/private tunnel
-    # with no public catalog record inflates the total with a node we never name.
+    # known nodes (a catalog record or a registered account) that are live.
     # Deriving the count from the named set is what makes the Network panel agree
     # with the Mirror nodes list on who is online (adhoc #93).
     try:
@@ -4480,10 +4462,7 @@ async def network_stats(env, include_payouts=False, maintain_presence=True,
         hosts = len(online_nodes)
     except Exception:
         online_nodes = []
-        host_row = await d1_first(
-            env, "SELECT COUNT(*) AS n FROM host_presence WHERE ts >= ?", cutoff
-        )
-        hosts = int((host_row or {}).get("n", 0) or 0)
+        hosts = 0
 
     clients = await _flagship_client_count(env)
     payout_nodes = (
@@ -4681,37 +4660,6 @@ def _short_presence_label(prefix, key):
 
 async def _live_online_nodes(env, now):
     nodes = {}
-    host_rows = await d1_all(
-        env,
-        """SELECT hp.repo_bi, r.owner_bi, r.is_private, r.data
-             FROM host_presence hp
-             LEFT JOIN repositories r ON r.key_bi = hp.repo_bi
-             WHERE hp.ts >= ?""",
-        now - HOST_PRESENCE_STALE_MS,
-    )
-    for row in host_rows:
-        # A host_presence row is written for ANY owner/repo URL that gets served
-        # (touch_host_presence keys on a blind index of the path), so it includes
-        # repos that were never published to the catalog — ad-hoc hosts. Those
-        # rows don't join to a repository, and the public /network/ graph used to
-        # surface them as anonymous "repo <hash>" phantom nodes. Only count hosts
-        # serving a published, public, non-blocked repo, keyed by owner — the same
-        # filtering the catalog and leaderboards apply.
-        owner_bi = row.get("owner_bi")
-        if not owner_bi or not row.get("data") or int(row.get("is_private") or 0):
-            continue
-        rec = await decrypt_row(env, row["data"])
-        if not rec:
-            continue
-        if rec.get("visibility") != "public":
-            continue
-        if _is_blocked_catalog_identity(env, rec.get("owner"), rec.get("name")):
-            continue
-        label = clean_string(rec.get("owner", ""), MAX_NODE_NAME)
-        if not label:
-            continue
-        nodes[owner_bi] = label
-
     endpoint_rows = await d1_all(
         env,
         """SELECT n.node_bi, n.name
@@ -4945,13 +4893,12 @@ async def _response_json(response):
         return {}
 
 
-async def network_overview(env, maintain_presence=True):
+async def network_overview(env):
     cached = await edge_cache_match(NETWORK_OVERVIEW_CACHE_KEY)
     if cached is not None:
         return cached
 
-    stats = await _response_json(await network_stats(
-        env, maintain_presence=maintain_presence))
+    stats = await _response_json(await network_stats(env))
     leaderboards = await _response_json(await network_leaderboards(env))
     history = await _response_json(await online_history(env))
     resp = json_response(
@@ -7332,7 +7279,7 @@ async def _public_snapshot_handler_response(env, path):
             ONLINE_HISTORY_CACHE_KEY,
         ):
             await edge_cache_delete(cache_key)
-        return await network_overview(env, maintain_presence=False)
+        return await network_overview(env)
     if path == "/api/status":
         # This is the tick's one authoritative status build. Expire the prior
         # Cache API body after recording the sample, then publish and warm the
@@ -13257,7 +13204,7 @@ async def purge_stale_account_devices(env):
 async def active_registered_node_bis(env, now=None):
     # A node is active if either its physical node row has recent activity, its
     # signed account heartbeat is recent, or its signed direct-HTTPS endpoint is
-    # fresh and healthy. The last union preserves bounded upgrade compatibility.
+    # fresh and healthy.
     await ensure_schema(env)
     now = int(now if now is not None else Date.now())
     cutoff = now - REGISTERED_NODE_ACTIVE_MS
@@ -13272,13 +13219,8 @@ async def active_registered_node_bis(env, now=None):
              FROM mirror_https_endpoints e
              JOIN nodes n ON n.node_bi=e.node_bi
             WHERE e.healthy=1 AND e.abuse_blocked=0
-              AND e.integrity='ok' AND e.checked_at >= ?
-           UNION
-           SELECT r.owner_bi AS key
-             FROM host_presence hp
-             JOIN repositories r ON r.key_bi = hp.repo_bi
-            WHERE hp.ts >= ?""",
-        cutoff, cutoff, cutoff, cutoff,
+              AND e.integrity='ok' AND e.checked_at >= ?""",
+        cutoff, cutoff, cutoff,
     )
     for row in rows or []:
         key = str(row.get("key") or "")
@@ -13570,13 +13512,6 @@ async def purge_stale_registered_nodes(env, force=False):
     cutoff = now - REGISTERED_NODE_ACTIVE_MS
     try:
         await d1_run(env, "DELETE FROM account_presence WHERE ts < ?", cutoff)
-        stale_repos = await notify_stale_hosts_offline(env, cutoff)
-        for repo_bi in stale_repos:
-            await d1_run(
-                env,
-                "DELETE FROM host_presence WHERE repo_bi=? AND ts < ?",
-                repo_bi, cutoff,
-            )
     except Exception:
         pass
     active = await active_registered_node_bis(env, now)
@@ -13990,7 +13925,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "5acceac3d4386ea85e51e3ea37b79eab8aa4b347be6c104682e159bbb3346eb3"
+    "f98c955c26168b8c22df7e6675d0984c66b0fce8a506edcbd698e8c0f48ccc1a"
 )
 
 
@@ -19174,9 +19109,6 @@ async def _move_repo_namespace(env, old_owner_bi, old_owner, new_owner_bi,
             env, "UPDATE discussion_inbox SET repo_bi=? WHERE repo_bi=?",
             new_repo_bi, old_repo_bi)
         await d1_run(
-            env, "UPDATE host_presence SET repo_bi=? WHERE repo_bi=?",
-            new_repo_bi, old_repo_bi)
-        await d1_run(
             env, "UPDATE clone_rr SET repo_bi=? WHERE repo_bi=?",
             new_repo_bi, old_repo_bi)
         await d1_run(
@@ -19510,7 +19442,6 @@ def _repo_scoped_state_statements(repo_bi):
         ("DELETE FROM issue_inbox WHERE repo_bi=?", (repo_bi,)),
         ("DELETE FROM pull_inbox WHERE repo_bi=?", (repo_bi,)),
         ("DELETE FROM discussion_inbox WHERE repo_bi=?", (repo_bi,)),
-        ("DELETE FROM host_presence WHERE repo_bi=?", (repo_bi,)),
         ("DELETE FROM clone_rr WHERE repo_bi=?", (repo_bi,)),
         ("DELETE FROM repo_first_hosted WHERE repo_bi=?", (repo_bi,)),
         ("DELETE FROM mirror_repository_integrity WHERE repo_bi=?",
@@ -33424,17 +33355,11 @@ async def _repository_import_mirror_status(
             return {"verified": False}
         if (visibility == "private") != bool(external_record.get("isPrivate")):
             return {"verified": False}
-        cutoff = int(Date.now()) - HOST_PRESENCE_STALE_MS
-        live = await d1_first(
-            env,
-            "SELECT 1 AS one FROM host_presence WHERE repo_bi=? AND ts>=?",
-            repo_bi, cutoff,
-        )
         return {
             "verified": True,
             "owner": owner,
             "name": name,
-            "live": bool(live),
+            "live": False,
         }
     except Exception:
         return {"verified": False}
@@ -38977,48 +38902,6 @@ async def notify_release_published(env, owner, repo, release):
             ts=ts,
             meta={"tag": tag},
         )
-
-
-async def _repo_notification_target(env, repo_bi):
-    row = await d1_first(env, "SELECT data FROM repositories WHERE key_bi=?", repo_bi)
-    if not row:
-        return "", ""
-    rec = await decrypt_row(env, row.get("data", ""))
-    if not rec:
-        return "", ""
-    return (clean_string(rec.get("owner", ""), MAX_NODE_NAME).lower(),
-            clean_string(rec.get("name", ""), MAX_REPO_SEGMENT))
-
-
-async def notify_host_status(env, repo_bi, kind):
-    owner, repo = await _repo_notification_target(env, repo_bi)
-    if not owner or not repo:
-        return
-    title = "Host online" if kind == "host_online" else "Host offline"
-    await enqueue_notification(
-        env, owner, kind, title + " for " + owner + "/" + repo,
-        body=("A desktop host is reachable." if kind == "host_online"
-              else "No live host has checked in recently."),
-        repo=owner + "/" + repo,
-        href=repo_web_href(owner, repo),
-        source="host", dedupe=kind + ":" + repo_bi,
-    )
-
-
-async def notify_stale_hosts_offline(env, cutoff):
-    rows = await d1_all(
-        env,
-        "SELECT repo_bi FROM host_presence WHERE ts < ? "
-        "GROUP BY repo_bi ORDER BY MIN(ts) LIMIT 2",
-        cutoff,
-    )
-    notified = []
-    for row in rows:
-        repo_bi = row.get("repo_bi")
-        if repo_bi:
-            await notify_host_status(env, repo_bi, "host_offline")
-            notified.append(repo_bi)
-    return notified
 
 
 async def notifications_handler(env, request):
@@ -47969,17 +47852,8 @@ async def admin_stats(env):
     # Object load is under control: live hosts/clients (the things that hold a DO
     # open) plus catalog size and recent error volume. All from D1 + one count.
     await ensure_schema(env)
-    cutoff = int(Date.now()) - HOST_PRESENCE_STALE_MS
-    try:
-        await d1_run(env, "DELETE FROM host_presence WHERE ts < ?", cutoff)
-    except Exception:
-        pass
     async def compute():
         repo_count = await _repositories_count(env)
-        host_row = await d1_first(
-            env, "SELECT COUNT(*) AS n FROM host_presence WHERE ts >= ?",
-            cutoff,
-        )
         day_ago = int(Date.now()) - 24 * 60 * 60 * 1000
         err_row = await d1_first(
             env, "SELECT COUNT(*) AS n FROM error_log WHERE ts >= ?", day_ago,
@@ -48002,7 +47876,7 @@ async def admin_stats(env):
             inst_row = None
         return {
             "repos": int(repo_count or 0),
-            "hosts": int((host_row or {}).get("n", 0) or 0),
+            "hosts": 0,
             "clients": await _flagship_client_count(env),
             "installs_24h": int((inst_row or {}).get("n", 0) or 0),
             "errors_24h": int((err_row or {}).get("n", 0) or 0),

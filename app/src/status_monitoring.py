@@ -679,14 +679,14 @@ def _status_batch_encode(bucket, systems):
 
 # Per-isolate short cuts for _status_minute_records. Both are looked up
 # through globals() so the AST test harnesses, which extract functions
-# without module state, keep exercising the plain dual read.
+# without module state, keep exercising the plain batch read.
 _STATUS_MINUTE_BATCH_MEMO = {"minute_ts": None, "systems": None}
 _STATUS_MINUTE_RECORDS_CACHE = {}
 STATUS_MINUTE_RECORDS_CACHE_MAX = 180
 
 
 async def _status_minute_records(env, start, end):
-    """Dual-read one exact minute window; a valid batch bucket wins.
+    """Read one exact minute window from its batch buckets.
 
     The minute the sampler just wrote is answered from
     _STATUS_MINUTE_BATCH_MEMO, so the per-minute alert phases stop re-reading
@@ -724,22 +724,6 @@ async def _status_minute_records(env, start, end):
         if query_start > end:
             return cached_records
     records = {}
-    legacy_rows = await d1_all(
-        env,
-        "SELECT minute_ts,system,ok,reason FROM system_status_minute "
-        "WHERE minute_ts>=? AND minute_ts<=?",
-        query_start, end,
-    )
-    for row in legacy_rows or []:
-        minute_ts = int(row.get("minute_ts") or 0)
-        system_id = _status_batch_system_id(row.get("system"))
-        if system_id and int(start) <= minute_ts <= int(end):
-            records[(minute_ts, system_id)] = {
-                "minute_ts": minute_ts,
-                "system": system_id,
-                "ok": 1 if int(row.get("ok") or 0) == 1 else 0,
-                "reason": clean_string(row.get("reason") or "", 240) or None,
-            }
     batch_rows = await d1_all(
         env,
         "SELECT minute_ts,data FROM system_status_minute_batch "
@@ -753,8 +737,6 @@ async def _status_minute_records(env, start, end):
         decoded = _status_batch_decode(row.get("data"), "minute")
         if not decoded:
             continue
-        # Matching system/minute keys are replaced, while disjoint legacy
-        # systems survive a mixed-version handoff bucket.
         for system_id, item in decoded.items():
             records[(minute_ts, system_id)] = {
                 "minute_ts": minute_ts,
@@ -782,27 +764,8 @@ async def _status_minute_records(env, start, end):
 
 
 async def _status_hour_records(env, start, end):
-    """Dual-read one exact completed-hour window; batch buckets win."""
+    """Read one exact completed-hour window from its batch buckets."""
     records = {}
-    legacy_rows = await d1_all(
-        env,
-        "SELECT hour_ts,system,checks,failures,reason "
-        "FROM system_status_hourly WHERE hour_ts>=? AND hour_ts<=?",
-        int(start), int(end),
-    )
-    for row in legacy_rows or []:
-        hour_ts = int(row.get("hour_ts") or 0)
-        system_id = _status_batch_system_id(row.get("system"))
-        if system_id and int(start) <= hour_ts <= int(end):
-            checks = max(0, int(row.get("checks") or 0))
-            records[(hour_ts, system_id)] = {
-                "hour_ts": hour_ts,
-                "system": system_id,
-                "checks": checks,
-                "failures": max(
-                    0, min(int(row.get("failures") or 0), checks)),
-                "reason": clean_string(row.get("reason") or "", 240) or None,
-            }
     batch_rows = await d1_all(
         env,
         "SELECT hour_ts,data FROM system_status_hourly_batch "
@@ -816,9 +779,6 @@ async def _status_hour_records(env, start, end):
         decoded = _status_batch_decode(row.get("data"), "hour")
         if not decoded:
             continue
-        # Hour batches are absolutely seeded from dual-read raw minutes. Keep
-        # any disjoint legacy system during cutover; matching keys use that
-        # authoritative seeded batch rather than double-counting it.
         for system_id, item in decoded.items():
             records[(hour_ts, system_id)] = {
                 "hour_ts": hour_ts,
@@ -831,26 +791,8 @@ async def _status_hour_records(env, start, end):
 
 
 async def _status_day_records(env, start, end):
-    """Dual-read exact completed UTC days; batch buckets win."""
+    """Read exact completed UTC days from their batch buckets."""
     records = {}
-    legacy_rows = await d1_all(
-        env,
-        "SELECT day_ts,system,checks,failures FROM system_status_daily "
-        "WHERE day_ts>=? AND day_ts<=?",
-        int(start), int(end),
-    )
-    for row in legacy_rows or []:
-        day_ts = int(row.get("day_ts") or 0)
-        system_id = _status_batch_system_id(row.get("system"))
-        if system_id and int(start) <= day_ts <= int(end):
-            checks = max(0, int(row.get("checks") or 0))
-            records[(day_ts, system_id)] = {
-                "day_ts": day_ts,
-                "system": system_id,
-                "checks": checks,
-                "failures": max(
-                    0, min(int(row.get("failures") or 0), checks)),
-            }
     batch_rows = await d1_all(
         env,
         "SELECT day_ts,data FROM system_status_daily_batch "
@@ -864,8 +806,6 @@ async def _status_day_records(env, start, end):
         decoded = _status_batch_decode(row.get("data"), "day")
         if not decoded:
             continue
-        # Day batches are absolutely seeded from dual-read hourly buckets.
-        # Preserve disjoint legacy systems, overwrite matching seeded totals.
         for system_id, item in decoded.items():
             records[(day_ts, system_id)] = {
                 "day_ts": day_ts,
@@ -877,23 +817,7 @@ async def _status_day_records(env, start, end):
 
 
 async def _write_status_minute_batch(env, minute_ts, systems):
-    # A retiring worker can win or partly finish the same minute during a
-    # rolling cutover. Seed disjoint legacy systems before publishing the first
-    # batch row; matching systems use the new sample and are never duplicated.
-    legacy_rows = await d1_all(
-        env,
-        "SELECT minute_ts,system,ok,reason FROM system_status_minute "
-        "WHERE minute_ts>=? AND minute_ts<=?",
-        int(minute_ts), int(minute_ts),
-    )
     systems = dict(systems)
-    for row in legacy_rows or []:
-        system_id = _status_batch_system_id(row.get("system"))
-        if system_id and system_id not in systems:
-            systems[system_id] = {
-                "ok": int(row.get("ok") or 0) == 1,
-                "reason": clean_string(row.get("reason") or "", 240) or None,
-            }
     body = _status_batch_encode("minute", systems)
     await d1_run(
         env,
@@ -969,34 +893,20 @@ async def _compact_status_hour(env, current_hour, now):
     if target is None:
         return None
     systems = {}
-    if target != latest:
-        # During the batch-table cutover, older per-system hour rows are still
-        # valid source material after their raw minutes have aged out. The
-        # dual reader lets an already-published batch win a cutover race.
-        hour_rows = await _status_hour_records(env, target, target)
-        for row in hour_rows:
-            checks = min(60, max(0, int(row.get("checks") or 0)))
-            systems[row["system"]] = {
-                "checks": checks,
-                "failures": min(
-                    checks, max(0, int(row.get("failures") or 0))),
-                "reason": clean_string(row.get("reason") or "", 240) or None,
-            }
-    if not systems:
-        minute_rows = await _status_minute_records(
-            env, target,
-            target + STATUS_HOUR_MS - STATUS_SAMPLE_WINDOW_MS)
-        for row in sorted(
-                minute_rows, key=lambda item: int(item["minute_ts"])):
-            item = systems.setdefault(
-                row["system"],
-                {"checks": 0, "failures": 0, "reason": None},
-            )
-            item["checks"] += 1
-            if int(row.get("ok") or 0) != 1:
-                item["failures"] += 1
-                item["reason"] = (
-                    clean_string(row.get("reason") or "", 240) or None)
+    minute_rows = await _status_minute_records(
+        env, target,
+        target + STATUS_HOUR_MS - STATUS_SAMPLE_WINDOW_MS)
+    for row in sorted(
+            minute_rows, key=lambda item: int(item["minute_ts"])):
+        item = systems.setdefault(
+            row["system"],
+            {"checks": 0, "failures": 0, "reason": None},
+        )
+        item["checks"] += 1
+        if int(row.get("ok") or 0) != 1:
+            item["failures"] += 1
+            item["reason"] = (
+                clean_string(row.get("reason") or "", 240) or None)
     # An empty bucket is still a completed bucket with zero coverage. Persist
     # that marker so one unreconstructable outage window cannot remain the
     # oldest "missing" candidate and starve every newer catch-up forever.
@@ -1038,12 +948,6 @@ async def _compact_status_day(env, current_day, now, force_target=None):
         item = systems.setdefault(row["system"], {"checks": 0, "failures": 0})
         item["checks"] += max(0, int(row.get("checks") or 0))
         item["failures"] += max(0, int(row.get("failures") or 0))
-    # Legacy duplicate cron deliveries could record more than one check per
-    # minute. A public day represents at most 1,440 minute opportunities, so
-    # clamp historical overlap before the strict batch encoder validates it.
-    for item in systems.values():
-        item["checks"] = min(1440, item["checks"])
-        item["failures"] = min(item["checks"], item["failures"])
     # Preserve an explicit zero-coverage marker for the same reason as the
     # hourly compactor: missing data is truthful, and must not block later
     # recoverable days in the bounded oldest-first queue.
@@ -2801,7 +2705,7 @@ async def record_status_compaction(env, now=None):
     """Compact completed status buckets and apply bounded retention.
 
     CronRunner invokes this after the minute sampler in a distinct Worker
-    invocation. Keeping the top-of-hour dual reads and retention statements
+    invocation. Keeping the top-of-hour batch reads and retention statements
     out of the sampler leaves both phases comfortably below Free D1's
     50-query ceiling. Direct/test callers retain the historical one-call
     behavior through ``record_status_sample(run_compaction=True)``.
@@ -2823,23 +2727,6 @@ async def record_status_compaction(env, now=None):
     # Retention prunes only need to run occasionally, not 60x/hour: sweep on
     # the first sample of each hour.
     if now - hour_ts < STATUS_SAMPLE_WINDOW_MS:
-        await d1_run(
-            env, "DELETE FROM system_status_daily WHERE day_ts < ?",
-            day_ts - STATUS_HISTORY_RETAIN_MS,
-        )
-        await d1_run(
-            env, "DELETE FROM system_status_hourly WHERE hour_ts < ?",
-            # Legacy rows are no longer queried outside the bounded 24-hour
-            # handoff window, but deleting the existing 30-day history in one
-            # rollout-hour would spend thousands of indexed D1 writes. Retain
-            # the table's established 30-day envelope so the cutoff advances
-            # one day at a time and drains the old rows gradually.
-            day_ts - STATUS_HISTORY_RETAIN_MS,
-        )
-        await d1_run(
-            env, "DELETE FROM system_status_minute WHERE minute_ts < ?",
-            minute_ts - STATUS_MINUTE_RETAIN_MS,
-        )
         await d1_run(
             env, "DELETE FROM system_status_daily_batch WHERE day_ts < ?",
             day_ts - STATUS_HISTORY_RETAIN_MS,
@@ -2935,8 +2822,6 @@ async def status_history(env, view="full"):
     # Only completed hours needed by the current UTC day or rolling 24h bar.
     # Historical day cells/totals come from the one-row daily buckets above.
     hour_start = min(cur_day, uptime_24h_start)
-    # Include a legacy current-hour row during the bounded migration handoff;
-    # raw batch minutes below overwrite it as soon as the new sampler lands.
     completed_hour_end = current_hour
     hour_rows = (
         await _status_hour_records(env, hour_start, completed_hour_end)

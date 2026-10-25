@@ -605,7 +605,6 @@ def test_hard_delete_removes_account_identity_and_owned_namespace_state():
         "DELETE FROM issue_inbox WHERE repo_bi=?",
         "DELETE FROM pull_inbox WHERE repo_bi=?",
         "DELETE FROM discussion_inbox WHERE repo_bi=?",
-        "DELETE FROM host_presence WHERE repo_bi=?",
         "DELETE FROM clone_rr WHERE repo_bi=?",
         "DELETE FROM repo_first_hosted WHERE repo_bi=?",
         "DELETE FROM mirror_repository_integrity WHERE repo_bi=?",
@@ -623,6 +622,7 @@ def test_hard_delete_removes_account_identity_and_owned_namespace_state():
         "purge_catalog_related_caches()",
     ):
         assert required in delete_body
+    assert "host_presence" not in delete_body
 
 
 def test_namespace_rename_moves_account_repo_and_repo_scoped_state():
@@ -693,12 +693,12 @@ def test_namespace_rename_moves_account_repo_and_repo_scoped_state():
         "UPDATE issue_inbox SET repo_bi=? WHERE repo_bi=?",
         "UPDATE pull_inbox SET repo_bi=? WHERE repo_bi=?",
         "UPDATE discussion_inbox SET repo_bi=? WHERE repo_bi=?",
-        "UPDATE host_presence SET repo_bi=? WHERE repo_bi=?",
         "UPDATE clone_rr SET repo_bi=? WHERE repo_bi=?",
         "UPDATE repo_first_hosted SET repo_bi=? WHERE repo_bi=?",
         "UPDATE funds_received SET key=?, name=? WHERE scope='project' AND key=?",
     ):
         assert required in repo_move_body
+    assert "host_presence" not in repo_move_body
 
 
 def test_worker_exposes_password_reset_flow():
