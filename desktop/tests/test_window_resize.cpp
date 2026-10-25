@@ -2385,6 +2385,11 @@ void checkPingsPageLayout(MainWindow &window)
     QTableWidgetItem *type = pings->item(probeRow, 0);
     check(type && !type->icon().isNull(),
           QStringLiteral("every Ping has a category icon in its Type cell"));
+    QTableWidgetItem *status = pings->item(probeRow, 6);
+    check(type && !type->data(Qt::UserRole + 10).toBool() && status &&
+              !status->icon().isNull(),
+          QStringLiteral("a desktop ping is marked local and its Status cell "
+                         "shows the local/cloud icon"));
 
     QTableWidgetItem *detail = pings->item(probeRow, 3);
     check(detail && detail->text().size() < 260 &&
