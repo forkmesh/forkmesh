@@ -52,6 +52,7 @@ protected:
 private:
     QWidget *buildTopBar();
     void layoutDecks();
+    void fitDecks();
     void tick();
     void slowTick();
     void notice(const QString &text);
@@ -98,6 +99,7 @@ private:
     QTimer *m_railTimer = nullptr;
     QString m_railState;
     QString m_query;
+    bool m_fitted = false;
 };
 
 }

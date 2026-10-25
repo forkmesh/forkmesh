@@ -91,8 +91,9 @@ struct DjPlayer::Private {
     double samplerLevel = 0.8;
 #ifdef FORKMESH_HAVE_WEBENGINE
     QWebEngineProfile *profile = nullptr;
-    DjPage *page = nullptr;
+    QPointer<DjPage> page;
     QWebEngineView *view = nullptr;
+    QMetaObject::Connection crashed;
 #endif
     DjPlayer *owner = nullptr;
 
@@ -161,6 +162,8 @@ DjPlayer::DjPlayer(const QUrl &origin, QWidget *parent) : d(std::make_unique<Pri
     agent.remove(QRegularExpression(QStringLiteral("\\s*QtWebEngine/\\S+")));
     d->profile->setHttpUserAgent(agent);
     d->page = new DjPage(d->profile, origin, d->view);
+    d->profile->setParent(nullptr);
+    d->profile->setParent(d->view);
     QWebEngineSettings *settings = d->page->settings();
     settings->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture, false);
     settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
@@ -177,7 +180,7 @@ DjPlayer::DjPlayer(const QUrl &origin, QWidget *parent) : d(std::make_unique<Pri
     d->page->scripts().insert(script);
     d->page->setBackgroundColor(Qt::black);
     d->page->onMessage = [this](const QString &text) { d->receive(text); };
-    QObject::connect(d->page, &QWebEnginePage::renderProcessTerminated, d->view, [this]() {
+    d->crashed = QObject::connect(d->page, &QWebEnginePage::renderProcessTerminated, d->view, [this]() {
         d->pendingLoads = d->lastLoads;
         d->loadPage();
         if (onReload)
@@ -197,7 +200,16 @@ DjPlayer::DjPlayer(const QUrl &origin, QWidget *parent) : d(std::make_unique<Pri
 #endif
 }
 
-DjPlayer::~DjPlayer() = default;
+DjPlayer::~DjPlayer()
+{
+    onEvent = nullptr;
+    onReload = nullptr;
+#ifdef FORKMESH_HAVE_WEBENGINE
+    QObject::disconnect(d->crashed);
+    if (d->page)
+        d->page->onMessage = nullptr;
+#endif
+}
 
 bool DjPlayer::available()
 {

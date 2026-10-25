@@ -224,8 +224,10 @@ DjStudioFeature::DjStudioFeature(const market::NativePackageHost &host, QWidget 
 
 DjStudioFeature::~DjStudioFeature()
 {
-    if (m_model)
-        m_model->flush();
+    delete m_model;
+    m_model = nullptr;
+    delete m_player;
+    m_player = nullptr;
 }
 
 QWidget *DjStudioFeature::buildTopBar()
@@ -320,13 +322,18 @@ void DjStudioFeature::layoutDecks()
     m_mixer->refresh();
     for (DjDeckView *view : m_decks)
         view->refresh();
+    fitDecks();
+}
+
+void DjStudioFeature::fitDecks()
+{
     const QList<int> sizes = m_split->sizes();
     const int total = sizes.value(0) + sizes.value(1);
-    if (total > 0) {
-        const int wanted = std::min(int(total * 0.72), m_deckArea->minimumSizeHint().height() + 12);
-        if (sizes.value(0) < wanted)
-            m_split->setSizes({wanted, total - wanted});
-    }
+    if (total <= 0)
+        return;
+    const int wanted = std::min(int(total * 0.72), m_deckArea->minimumSizeHint().height() + 12);
+    if (sizes.value(0) < wanted)
+        m_split->setSizes({wanted, total - wanted});
 }
 
 void DjStudioFeature::refresh()
@@ -414,6 +421,10 @@ void DjStudioFeature::resizeEvent(QResizeEvent *)
 {
     m_overlay->setGeometry(rect());
     m_overlay->raise();
+    if (!m_fitted && m_split->height() > 0) {
+        m_fitted = true;
+        QTimer::singleShot(0, this, [this]() { fitDecks(); });
+    }
     if (m_notice->isVisible())
         m_notice->move((width() - m_notice->width()) / 2, std::max(40, int(height() * 0.42)));
 }
