@@ -1028,12 +1028,16 @@ void CodexAppServerSession::handleNotification(const QString &method,
         flushQueuedUserText();
         return;
     }
-    if (method == QStringLiteral("item/started")) {
-        emitItemStarted(params.value(QStringLiteral("item")).toObject());
-        return;
-    }
-    if (method == QStringLiteral("item/completed")) {
-        emitItemCompleted(params.value(QStringLiteral("item")).toObject());
+    if (method == QStringLiteral("item/started") ||
+        method == QStringLiteral("item/completed")) {
+        const QJsonObject item = params.value(QStringLiteral("item")).toObject();
+        if (!forkmesh::transcriptcoverage::isDrawnCodexItem(
+                item.value(QStringLiteral("type")).toString()))
+            noteUnshownMessage(method, params);
+        if (method == QStringLiteral("item/started"))
+            emitItemStarted(item);
+        else
+            emitItemCompleted(item);
         return;
     }
     if (method == QStringLiteral("item/agentMessage/delta")) {
@@ -1130,6 +1134,20 @@ void CodexAppServerSession::handleNotification(const QString &method,
     if (method.startsWith(QStringLiteral("item/")) ||
         method == QStringLiteral("turn/diff/updated"))
         emitToolDelta(method, params);
+    else
+        noteUnshownMessage(method, params);
+}
+
+void CodexAppServerSession::noteUnshownMessage(const QString &method,
+                                               const QJsonObject &params)
+{
+    const QString line = QString::fromUtf8(
+        QJsonDocument(QJsonObject{{QStringLiteral("method"), method},
+                                  {QStringLiteral("params"), params}})
+            .toJson(QJsonDocument::Compact));
+    if (!forkmesh::transcriptcoverage::rawLineGaps(line).isEmpty())
+        emit event(forkmesh::transcriptcoverage::droppedLineEvent(
+            QStringLiteral("codex"), line));
 }
 
 void CodexAppServerSession::handleServerRequest(const QJsonValue &id,
@@ -1147,6 +1165,7 @@ void CodexAppServerSession::handleServerRequest(const QJsonValue &id,
         method == QStringLiteral("item/permissions/requestApproval");
     if (!commandApproval && !fileApproval && !userInput && !elicitation &&
         !permissions) {
+        noteUnshownMessage(method, params);
         sendObject(QJsonObject{
             {QStringLiteral("id"), id},
             {QStringLiteral("error"),

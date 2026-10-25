@@ -9,6 +9,7 @@ namespace forkmesh::transcriptcoverage {
 namespace {
 
 constexpr int kSampleChars = 1200;
+constexpr int kStoredLineChars = 16000;
 
 const QSet<QString> &drawnEventTypes()
 {
@@ -192,6 +193,45 @@ void blockGaps(const QJsonValue &content, const QString &prefix, QStringList &ga
     }
 }
 
+QJsonObject pick(const QJsonObject &from, const QStringList &keys)
+{
+    QJsonObject out;
+    for (const QString &key : keys) {
+        const QJsonValue value = from.value(key);
+        if (value.isString() || value.isDouble() || value.isBool())
+            out.insert(key, value);
+    }
+    return out;
+}
+
+QString storedLine(const QString &line)
+{
+    if (line.size() <= kStoredLineChars)
+        return line;
+    const QJsonObject message = QJsonDocument::fromJson(line.toUtf8()).object();
+    if (message.isEmpty())
+        return line.left(kStoredLineChars);
+    QJsonObject reduced =
+        pick(message, {QStringLiteral("type"), QStringLiteral("subtype"),
+                       QStringLiteral("method"), QStringLiteral("request_id")});
+    const QJsonObject request =
+        pick(message.value(QStringLiteral("request")).toObject(),
+             {QStringLiteral("subtype"), QStringLiteral("dialog_kind"),
+              QStringLiteral("tool_name")});
+    if (!request.isEmpty())
+        reduced.insert(QStringLiteral("request"), request);
+    const QJsonObject item = pick(message.value(QStringLiteral("params"))
+                                      .toObject()
+                                      .value(QStringLiteral("item"))
+                                      .toObject(),
+                                  {QStringLiteral("type"), QStringLiteral("id")});
+    if (!item.isEmpty())
+        reduced.insert(QStringLiteral("params"),
+                       QJsonObject{{QStringLiteral("item"), item}});
+    reduced.insert(QStringLiteral("_clipped_chars"), double(line.size()));
+    return QString::fromUtf8(QJsonDocument(reduced).toJson(QJsonDocument::Compact));
+}
+
 QString sampleOf(const QString &text)
 {
     if (text.size() <= kSampleChars)
@@ -213,9 +253,53 @@ bool isCodexToolItem(const QString &itemType)
     return types.contains(itemType);
 }
 
+bool isDrawnCodexItem(const QString &itemType)
+{
+    return isCodexToolItem(itemType) || drawnCodexItems().contains(itemType);
+}
+
+QJsonObject droppedLineEvent(const QString &provider, const QString &line)
+{
+    return QJsonObject{{QStringLiteral("type"), QStringLiteral("_local_raw_line")},
+                       {QStringLiteral("provider"), provider},
+                       {QStringLiteral("line"), storedLine(line)}};
+}
+
+QStringList claudeLineGaps(const QString &line)
+{
+    const QString trimmed = line.trimmed();
+    if (trimmed.isEmpty())
+        return {};
+    const QJsonObject message = QJsonDocument::fromJson(trimmed.toUtf8()).object();
+    if (message.isEmpty())
+        return {QStringLiteral("claude-line:(plain text)")};
+    const QString type = message.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("control_response") ||
+        type == QLatin1String("control_cancel_request") ||
+        type == QLatin1String("keep_alive"))
+        return {};
+    QString name = orNone(type);
+    if (type == QLatin1String("control_request")) {
+        const QJsonObject request = message.value(QStringLiteral("request")).toObject();
+        name += QLatin1Char('/') + orNone(request.value(QStringLiteral("subtype")).toString());
+        const QString dialog = request.value(QStringLiteral("dialog_kind")).toString();
+        if (!dialog.isEmpty())
+            name += QLatin1Char('/') + dialog;
+    } else if (message.contains(QStringLiteral("subtype"))) {
+        name += QLatin1Char('/') + orNone(message.value(QStringLiteral("subtype")).toString());
+    }
+    return {QStringLiteral("claude-line:") + name};
+}
+
 QStringList eventGaps(const QJsonObject &event)
 {
     const QString type = event.value(QStringLiteral("type")).toString();
+    if (type == QLatin1String("_local_raw_line")) {
+        const QString line = event.value(QStringLiteral("line")).toString();
+        return event.value(QStringLiteral("provider")).toString() == QLatin1String("codex")
+                   ? rawLineGaps(line)
+                   : claudeLineGaps(line);
+    }
     if (unshownEventTypes().contains(type) || !parentToolUseId(event).isEmpty() ||
         event.value(QStringLiteral("isSidechain")).toBool() ||
         event.value(QStringLiteral("isMeta")).toBool())
@@ -273,7 +357,7 @@ QStringList rawLineGaps(const QString &line)
                                      .toObject()
                                      .value(QStringLiteral("type"))
                                      .toString();
-        if (isCodexToolItem(itemType) || drawnCodexItems().contains(itemType))
+        if (isDrawnCodexItem(itemType))
             return {};
         return {QStringLiteral("codex-item:") + orNone(itemType)};
     }
@@ -308,6 +392,8 @@ QString gapLabel(const QString &key)
         return QStringLiteral("Codex `%1` message").arg(name);
     if (kind == QLatin1String("codex-item"))
         return QStringLiteral("Codex `%1` item").arg(name);
+    if (kind == QLatin1String("claude-line"))
+        return QStringLiteral("Claude Code `%1` output line").arg(name);
     return QStringLiteral("`%1`").arg(key);
 }
 
@@ -338,30 +424,9 @@ bool Tracker::noteEvent(const QJsonObject &event)
     const QStringList keys = eventGaps(event);
     if (keys.isEmpty())
         return false;
+    if (event.value(QStringLiteral("type")).toString() == QLatin1String("_local_raw_line"))
+        return add(keys, event.value(QStringLiteral("line")).toString());
     return add(keys, QString::fromUtf8(QJsonDocument(event).toJson(QJsonDocument::Compact)));
-}
-
-bool Tracker::noteRawLine(const QString &line)
-{
-    const QStringList keys = rawLineGaps(line);
-    if (keys.isEmpty())
-        return false;
-    return add(keys, line.trimmed());
-}
-
-bool Tracker::noteRawLog(const QString &raw)
-{
-    bool added = false;
-    qsizetype from = 0;
-    while (from < raw.size()) {
-        qsizetype end = raw.indexOf(QLatin1Char('\n'), from);
-        if (end < 0)
-            end = raw.size();
-        if (noteRawLine(raw.mid(from, end - from)))
-            added = true;
-        from = end + 1;
-    }
-    return added;
 }
 
 int Tracker::total() const
@@ -393,9 +458,11 @@ QString agentPrompt(const QVector<Gap> &gaps, const QString &sessionLabel)
         "nothing, so the transcript and the raw log disagree.\n\n"
         "For each kind, make the transcript show it in ClaudeTranscriptView "
         "(desktop/src/ClaudeTranscriptView.cpp, handleEvent and the helpers in "
-        "desktop/src/ClaudeTranscriptTools.cpp) for Claude Code events, or in "
-        "CodexAppServerSession::handleNotification "
-        "(desktop/src/CodexAppServerSession.cpp) for Codex messages, styled like "
+        "desktop/src/ClaudeTranscriptTools.cpp) for Claude Code events; in "
+        "ClaudeStreamSession::handleControlLine (desktop/src/ClaudeStreamSession.cpp) "
+        "and desktop/src/ClaudeControlProtocol.cpp for Claude Code output lines "
+        "that never became an event; or in CodexAppServerSession::handleNotification "
+        "(desktop/src/CodexAppServerSession.cpp) for Codex messages. Style it like "
         "the rows around it. When a kind has no place in a transcript because "
         "another surface already shows it, add it to the unshown lists in "
         "desktop/src/TranscriptCoverage.cpp instead and give the reason in the "

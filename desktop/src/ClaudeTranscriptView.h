@@ -181,8 +181,6 @@ public:
     void addSkippedNotice(int count);
     void prependEarlierEvents(const QList<QJsonObject> &events, int stillSkipped);
 
-    void noteRawLog(const QString &raw);
-    void noteRawLine(const QString &line);
     const QVector<forkmesh::transcriptcoverage::Gap> &coverageGaps() const
     {
         return m_coverage.gaps();

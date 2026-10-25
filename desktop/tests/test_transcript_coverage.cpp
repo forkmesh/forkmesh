@@ -102,6 +102,37 @@ static void testRawLines()
           "stderr and cut lines are not judged");
 }
 
+static void testDroppedClaudeLines()
+{
+    check(claudeLineGaps(QStringLiteral("Warning: something on stdout")) ==
+              QStringList{QStringLiteral("claude-line:(plain text)")},
+          "a plain stdout line is a gap");
+    check(claudeLineGaps(QStringLiteral(R"({"type":"control_request","request_id":"r","request":{"subtype":"request_user_dialog","dialog_kind":"new_kind"}})")) ==
+              QStringList{QStringLiteral("claude-line:control_request/request_user_dialog/new_kind")},
+          "a dialog ForkMesh cannot answer is a gap named for its kind");
+    check(claudeLineGaps(QStringLiteral(R"({"type":"control_request","request_id":"r","request":{"subtype":"mcp_message"}})")) ==
+              QStringList{QStringLiteral("claude-line:control_request/mcp_message")},
+          "a control request ForkMesh refuses is a gap");
+    check(claudeLineGaps(QStringLiteral(R"({"type":"control_response","response":{"request_id":"r"}})")).isEmpty() &&
+              claudeLineGaps(QStringLiteral(R"({"type":"control_cancel_request","request_id":"r"})")).isEmpty() &&
+              claudeLineGaps(QStringLiteral("   ")).isEmpty(),
+          "answers to ForkMesh's own requests and stale cancels are bookkeeping");
+    const QJsonObject dropped = droppedLineEvent(QStringLiteral("claude"),
+                                                 QStringLiteral("plain words"));
+    check(dropped.value(QStringLiteral("type")).toString() == QLatin1String("_local_raw_line") &&
+              eventGaps(dropped) == QStringList{QStringLiteral("claude-line:(plain text)")} &&
+              gapLabel(QStringLiteral("claude-line:(plain text)")) ==
+                  QLatin1String("Claude Code `(plain text)` output line"),
+          "a recorded Claude line is judged again when the transcript is drawn");
+    const QString huge = QStringLiteral(R"({"type":"control_request","request_id":"r","request":{"subtype":"request_user_dialog","dialog_kind":"big","payload":{"text":")") +
+                         QString(40000, QLatin1Char('x')) + QStringLiteral(R"("}}})");
+    const QJsonObject clipped = droppedLineEvent(QStringLiteral("claude"), huge);
+    check(clipped.value(QStringLiteral("line")).toString().size() < 1000 &&
+              eventGaps(clipped) ==
+                  QStringList{QStringLiteral("claude-line:control_request/request_user_dialog/big")},
+          "a huge dropped line is stored as the fields that name its kind");
+}
+
 static void testTracker()
 {
     Tracker tracker;
@@ -116,13 +147,15 @@ static void testTracker()
           "the tracker counts each gap kind");
     check(tracker.gaps().first().sample.contains(QLatin1String("started")),
           "the sample is the first event of its kind");
-    const QString raw = QStringLiteral(
-        "{\"type\":\"result\"}\n\n"
-        "{\"method\":\"model/rerouted\",\"params\":{}}\n\n"
-        "[stderr] boom\n"
-        "{\"method\":\"turn/started\",\"params\":{}}\n\n");
-    check(tracker.noteRawLog(raw) && tracker.kindCount() == 2,
-          "the raw log adds the Codex messages the transcript dropped");
+    check(!tracker.noteEvent(droppedLineEvent(
+              QStringLiteral("codex"), QStringLiteral(R"({"method":"turn/started","params":{}})"))),
+          "a Codex message the session handles is no gap even when recorded");
+    check(tracker.noteEvent(droppedLineEvent(
+              QStringLiteral("codex"), QStringLiteral(R"({"method":"model/rerouted","params":{}})"))) &&
+              tracker.kindCount() == 2,
+          "a Codex message the session dropped is a gap");
+    check(tracker.gaps().at(1).sample == QLatin1String(R"({"method":"model/rerouted","params":{}})"),
+          "a dropped line's sample is the line itself");
     check(tracker.gaps().at(1).label == QLatin1String("Codex `model/rerouted` message"),
           "a gap carries a readable label");
     const QString text = summary(tracker.gaps());
@@ -162,6 +195,7 @@ int main(int argc, char **argv)
     testDrawnEvents();
     testMissingEvents();
     testRawLines();
+    testDroppedClaudeLines();
     testTracker();
     testLongSample();
     testCodexToolItems();

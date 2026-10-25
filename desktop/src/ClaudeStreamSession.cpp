@@ -8,6 +8,7 @@
 #include "AgentJail.h"
 #include "AgentResources.h"
 #include "VirtualMachineRuntime.h"
+#include "TranscriptCoverage.h"
 
 #include <QCoreApplication>
 #include <QJsonArray>
@@ -738,6 +739,13 @@ void ClaudeStreamSession::receiveParsedLine(quint64 sequence,
     deliverParsedLines();
 }
 
+void ClaudeStreamSession::noteDroppedLine(const QString &line)
+{
+    if (!forkmesh::transcriptcoverage::claudeLineGaps(line).isEmpty())
+        emit event(forkmesh::transcriptcoverage::droppedLineEvent(
+            QStringLiteral("claude"), line));
+}
+
 void ClaudeStreamSession::deliverParsedLines()
 {
     while (true) {
@@ -754,9 +762,13 @@ void ClaudeStreamSession::deliverParsedLines()
             if (parsed.opensConversation)
                 m_conversationOpened = true;
             notePermissionModeResponse(parsed.event);
-            if (m_hostControl && handleControlLine(parsed.event))
+            if (m_hostControl && handleControlLine(parsed.event)) {
+                noteDroppedLine(parsed.raw);
                 continue;
+            }
             emit event(parsed.event);
+        } else {
+            noteDroppedLine(parsed.raw);
         }
     }
     finishAfterParsing();

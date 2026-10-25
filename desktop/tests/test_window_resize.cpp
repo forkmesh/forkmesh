@@ -5194,9 +5194,13 @@ void checkTranscriptCoverageIndicator()
     check(transcript.coverageGaps().size() == 2 &&
               transcript.coverageGaps().first().count == 2,
           QStringLiteral("the transcript keeps each missing kind with its count"));
-    transcript.noteRawLine(QStringLiteral(R"({"method":"model/rerouted","params":{}})"));
-    check(pill && pill->text().contains(QStringLiteral("3 missing")),
-          QStringLiteral("a Codex raw log line the transcript drops adds a kind"));
+    transcript.handleEvent(forkmesh::transcriptcoverage::droppedLineEvent(
+        QStringLiteral("claude"), QStringLiteral("plain stdout words")));
+    transcript.handleEvent(forkmesh::transcriptcoverage::droppedLineEvent(
+        QStringLiteral("codex"), QStringLiteral(R"({"method":"model/rerouted","params":{}})")));
+    check(pill && pill->text().contains(QStringLiteral("4 missing")),
+          QStringLiteral("Claude Code and Codex output lines that never became "
+                         "a transcript event add kinds"));
     int activated = 0;
     QObject::connect(&transcript, &ClaudeTranscriptView::coverageGapsActivated,
                      [&activated] { ++activated; });

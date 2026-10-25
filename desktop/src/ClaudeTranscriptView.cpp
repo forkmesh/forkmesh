@@ -3565,18 +3565,6 @@ void ClaudeTranscriptView::noteCoverage(const QJsonObject &ev)
         refreshCoverageButton();
 }
 
-void ClaudeTranscriptView::noteRawLog(const QString &raw)
-{
-    if (m_coverage.noteRawLog(raw))
-        refreshCoverageButton();
-}
-
-void ClaudeTranscriptView::noteRawLine(const QString &line)
-{
-    if (m_coverage.noteRawLine(line))
-        refreshCoverageButton();
-}
-
 void ClaudeTranscriptView::refreshCoverageButton()
 {
     if (!m_coverageButton)

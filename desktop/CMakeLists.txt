@@ -2837,6 +2837,8 @@ if(FORKMESH_BUILD_TESTS)
         src/AgentRuntimeSession.cpp
         src/ClaudeStreamSession.h
         src/ClaudeStreamSession.cpp
+        src/TranscriptCoverage.h
+        src/TranscriptCoverage.cpp
         src/ClaudeControlProtocol.h
         src/ClaudeControlProtocol.cpp
         src/AgentToolCatalog.h

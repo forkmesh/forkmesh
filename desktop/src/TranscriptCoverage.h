@@ -16,8 +16,11 @@ struct Gap {
 };
 
 bool isCodexToolItem(const QString &itemType);
+bool isDrawnCodexItem(const QString &itemType);
 QStringList eventGaps(const QJsonObject &event);
 QStringList rawLineGaps(const QString &line);
+QStringList claudeLineGaps(const QString &line);
+QJsonObject droppedLineEvent(const QString &provider, const QString &line);
 QString gapLabel(const QString &key);
 
 class Tracker
@@ -25,8 +28,6 @@ class Tracker
 public:
     void clear();
     bool noteEvent(const QJsonObject &event);
-    bool noteRawLine(const QString &line);
-    bool noteRawLog(const QString &raw);
     bool isEmpty() const { return m_gaps.isEmpty(); }
     int kindCount() const { return int(m_gaps.size()); }
     int total() const;

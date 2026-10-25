@@ -115,6 +115,7 @@ private:
     void receiveParsedLine(quint64 sequence, quint64 generation,
                            ParsedLine parsed);
     void deliverParsedLines();
+    void noteDroppedLine(const QString &line);
     void notePermissionModeResponse(const QJsonObject &ev);
     bool handleControlLine(QJsonObject &ev);
     void resetControl();
