@@ -7,6 +7,7 @@
 // belong here in full. tools/mainwindow_split/split_internal_header.py moves
 // inline bodies that come back.
 
+#include "OcticonIcons.h"
 #include "PingSettings.h"
 #include "RailFolders.h"
 #include "StartupTrace.h"
@@ -4790,10 +4791,6 @@ const QString kAccountAlertDeleteProof =
 // in entry.py.
 const QString kAccountAlertClearProof =
     QStringLiteral("forkmesh-account-alert-clear-v1");
-// A desktop timer's expiry raised as an account ping. Must stay
-// byte-identical to TIMER_PING_PROOF in app/src/timer_pings.py.
-const QString kTimerPingProof =
-    QStringLiteral("forkmesh-account-timer-ping-v1");
 // Canonical prefixes the Settings -> Organizations panel signs with this
 // machine's account key when it holds no session token. One prefix per
 // operation, and the canonical additionally binds the request path plus every
@@ -8524,9 +8521,6 @@ private:
 };
 
 void applyStoredOcticon(QPushButton *button);
-
-void setOcticon(QPushButton *button, const QString &name, int size = 16,
-                       qreal rotationDeg = 0.0);
 
 void tintComposerActionButton(QPushButton *button);
 

@@ -819,6 +819,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     if (!applicationPage || !m_stack)
         return;
     m_stack->addWidget(applicationPage);
+#ifdef FORKMESH_WINDOW_TESTS
+    syncNativePackagePages();
+#else
+    m_nativePackagePagesDeferred = true;
+    logStartup(QStringLiteral(
+        "installed package pages deferred until after first paint"));
+#endif
     m_stack->setCurrentWidget(applicationPage);
     restoreAppViewMode();
     logStartup(QStringLiteral("chat/app page built"));
@@ -1183,6 +1190,8 @@ void MainWindow::paintEvent(QPaintEvent *event)
     // attach the real composer without showing an intermediate loader.
     QTimer::singleShot(100, this,
                        &MainWindow::initializeDeferredGlobalLogDock);
+    QTimer::singleShot(150, this,
+                       &MainWindow::buildDeferredNativePackagePages);
 }
 
 // Background state needed for automatic work after the interactive runway.
@@ -1205,6 +1214,7 @@ void MainWindow::runDeferredStartup()
     // Restore durable Actions state before resuming queued work. Repository
     // panels remain on-demand and are built by the exact restore/navigation.
     warmDeferredStartupSurfaces();
+    buildDeferredNativePackagePages();
     if (m_deferredStartupRun) {
         logStartup(QStringLiteral(
             "deferred startup requested again; ignored because it already ran"));

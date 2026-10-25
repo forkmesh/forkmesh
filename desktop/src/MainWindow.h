@@ -90,7 +90,6 @@
 #include "ControlNode.h" // CompleteSystemDataEntry is held by value on the export page
 #include "DirectorySizeScan.h"
 #include "RepoSecurity.h"
-#include "RepositoryCalendar.h" // RepositoryCalendarScan is held by value below
 #include "MirrorCrypto.h"
 #include "MirrorGatewayHealth.h"
 #include "GuiPump.h"
@@ -109,9 +108,6 @@
 #include "LocalControlTerminals.h"
 #include "LocalControlUpdate.h"
 #include "DesktopCommands.h"
-// forkmesh::timers — the Timers package's timer, countdown and alarm model,
-// held by the top-bar clock below.
-#include "TimersFeature.h"
 
 namespace forkmesh::ui { class LogActivityLights; }
 namespace forkmesh::smb { class NetworkFilesPanel; }
@@ -749,33 +745,8 @@ public:
                                          quint64 lamports,
                                          const QString &chainSignature,
                                          const QString &rewardId);
-    // Renders the real Calendar page against a supplied activity set. The page
-    // reads Git from every configured repository, which a test cannot stand up
-    // cheaply at the size where its rendering cost actually shows.
-    void testRenderCalendarActivity(const QJsonArray &activity,
-                                    const QDate &anchor, const QString &mode)
-    {
-        ensureSectionBuilt(kCalendarSectionIndex);
-        m_repositoryCalendarEvents = activity;
-        m_repositoryCalendarScans.clear();
-        m_repositoryCalendarQueue.clear();
-        // Claim the current view so a later navigation does not re-read Git
-        // over the supplied set.
-        m_repositoryCalendarRequest = QStringLiteral("window-tests");
-        m_calendarAnchor = anchor;
-        m_calendarMode = mode;
-        m_calendarAgendaLimit = 0;
-        renderCalendar();
-    }
-    void testExtendCalendarAgenda(int by)
-    {
-        m_calendarAgendaLimit += by;
-        renderCalendar();
-    }
-    QTableWidget *testCalendarMonthTable() const { return m_calendarMonthTable; }
-    QTableWidget *testCalendarWeekTable() const { return m_calendarWeekTable; }
-    QListWidget *testCalendarAgendaList() const { return m_calendarAgendaList; }
-    QLabel *testCalendarStatus() const { return m_calendarStatus; }
+    forkmesh::market::NativePackageWidget *testNativePackagePage(const QString &id) const;
+    void testShowNotesSection() { showNativePackage(QStringLiteral("notes")); }
     QString testMostRecentUnreadConversation(
         const QString &currentConversation, const QStringList &channels,
         const QSet<QString> &unread,
@@ -1747,7 +1718,6 @@ public:
     {
         return m_usersDirectoryAdminPayload;
     }
-    void testShowNotesSection() { showSection(kNotesSectionIndex); }
     bool testFilesNavButtonVisible() const;
     bool testFilesRepoTreeShowing() const;
     bool testFilesCoveTreeShowing() const;
@@ -2322,21 +2292,12 @@ public:
     int testIssueLooperGapFromNewIssueButton() const;
     bool testIssueLooperRowAligned() const;
     int testTopNavTrailingGap() const;
-    // The Timers package's top-bar clock: add a "timer", "countdown" (the
-    // default) or "alarm" the way its menu does, read the chips back, act on
-    // one by label, and move the strip's clock so an expiry can be watched
-    // without waiting for it.
-    bool testAddTimer(const QString &request, const QString &kind = QString());
-    QStringList testTimerChipTexts() const;
-    QString testTimersClockSlot() const;
-    void testDropTimersClock(qreal fraction);
-    bool testTimerCommand(const QString &labelPrefix, const QString &command);
-    void testAdvanceTimers(qint64 milliseconds);
-    // The URL and JSON body sendTimerPing() would POST for an expiry, or an
-    // empty URL when this window holds no credential for it.
-    QUrl testTimerPingRequest(const QString &timerId, const QString &kind,
-                              qint64 endsAtMs, const QString &label,
-                              QByteArray *body = nullptr);
+    forkmesh::market::NativePackageHost
+    testNativePackageHost(const QString &id);
+    forkmesh::market::NativePackageWidget *
+    testNativePackageChrome(const QString &id) const;
+    QString testNativePackageChromeSlot(const QString &id) const;
+    QWidget *testNativePackageChromeBar() const { return m_nativePackageChromeBar; }
     QString testRepoGitDir() const { return repoGitDir(); }
     void testSetIssueHistoryDeleteRunner(TestIssueHistoryDeleteRunner runner)
     {
@@ -3415,6 +3376,8 @@ public:
     QString testBrowsedBranch() const { return m_repoBranch; }
     void testSwitchToAgentBranch(int sessionId) { switchToAgentBranch(sessionId); }
     int testCommitWorkspacePage() const;
+    void testApplyGitLayout() { applyGitLayout(); }
+    QString testGitLayoutState() const;
     QString testBranchDiffBranch() const { return m_branchDiffBranch; }
     QString testBranchDiffDragComment(const QString &path, int fromLine,
                                       int toLine);
@@ -3818,10 +3781,8 @@ private:
     static constexpr int kNodesSectionIndex = 13;
     static constexpr int kControlNodeSectionIndex = 14;
     static constexpr int kOrganizationTasksSectionIndex = 15;
-    static constexpr int kNotesSectionIndex = 16;
     static constexpr int kUsersSectionIndex = 17;
     static constexpr int kFilesSectionIndex = 18;
-    static constexpr int kCalendarSectionIndex = 19;
     static constexpr int kMarketSectionIndex = 20;
     static constexpr int kLedgerSectionIndex = 21;
     static constexpr int kTeamSectionIndex = 22;
@@ -4384,6 +4345,10 @@ private:
     void syncPackageSurfaces();
     bool packageSurfaceShown(const QString &packageId) const;
     void syncNativePackagePages();
+    void buildDeferredNativePackagePages();
+    void buildNextNativePackagePage(quint64 generation, int index);
+    void addNativePackagePage(const QString &id, const QString &entrypoint);
+    void finishNativePackagePages();
     void showNativePackage(const QString &id);
     void openNativePackageLink(const QString &id);
     QUrl nativePackageLinkUrl(const QString &id) const;
@@ -4439,39 +4404,30 @@ private:
     void refreshAppThemeChoice();
     void openLedger();
 
-    // Timers (MainWindowTimers.cpp). The installed Timers package owns the
-    // timer, countdown and alarm model; the top-bar clock, its chips, their
-    // menus and the once-a-second repaint are the host side of that
-    // contribution. Everything is inert while the package is not installed.
-    QWidget *createTimersNavStrip();
-    void attachTimersPackage();
-    void detachTimersPackage();
-    void refreshTimersNavStrip();
-    void showTimersClockMenu();
-    void installTimersClockSlots(QWidget *chrome, QBoxLayout *left,
-                                 QBoxLayout *center, QBoxLayout *right,
-                                 QWidget *rightBefore);
-    QString timersClockPlacement() const;
-    void setTimersClockPlacement(const QString &placement);
-    void dropTimersClock(const QPoint &globalPos);
-    void addTimersClockPlacementActions(QMenu *menu);
-    void showTimerChipMenu(const QString &id, const QPoint &globalPos);
-    bool addTimer(const QString &request, forkmesh::timers::TimerKind kind);
-    // A countdown named `label` that runs out at `resetAtMs` (epoch ms), for
-    // the usage-limit rows of the agent account menus.
+    forkmesh::market::NativePackageHost nativePackageHost(
+        const forkmesh::market::PackageManifest &manifest,
+        const forkmesh::market::NativePackageContribution &contribution);
+    std::function<void()> askNativePackageAgentWith(
+        const QString &provider, const QString &prompt, int timeoutMs,
+        forkmesh::market::NativePackageAgentReplyHandler done);
+    QPushButton *nativePackageNavigation(const QString &id) const;
+    void syncNativePackageChrome();
+    void installNativePackageChromeSlots(QWidget *chrome, QBoxLayout *left,
+                                         QBoxLayout *center, QBoxLayout *right,
+                                         QWidget *rightBefore);
+    void placeNativePackageChrome(const QString &id);
+    QString nativePackageChromeSlotAt(const QPoint &globalPos) const;
+    void addNativePackageChromeMenuActions(QMenu *menu);
+    bool activateNativePackageChrome(const QString &id);
+    bool runWindowCommand(const QString &command, const QJsonObject &args);
+    void openNoteFromSystemLink(const QString &target, int attempt);
+    bool hasNativePackageCommand(const QString &command) const;
+    bool runNativePackageCommand(const QString &command, const QJsonObject &args);
+    QUrl nativePackageAccountUrl(
+        const QString &id,
+        const forkmesh::market::NativePackageContribution &contribution,
+        const QString &path) const;
     bool addUsageResetCountdown(const QString &label, qint64 resetAtMs);
-    void saveTimers();
-    qint64 timersNowMs() const;
-    // A countdown or alarm ran out: raise the account ping that reaches the
-    // phone (POST /api/notifications/timer). The relay files it in this
-    // account's Pings, so on true the desktop raises only its OS card; if the
-    // relay then refuses it, the desktop files its own Pings row instead.
-    // False when nothing was sent (a stopwatch, a stale expiry, signed out).
-    bool sendTimerPing(const forkmesh::timers::Timer &timer,
-                       const QString &title, const QString &body);
-    bool prepareTimerPingRequest(const QString &timerId, const QString &kind,
-                                 qint64 endsAtMs, const QString &label,
-                                 QNetworkRequest *request, QByteArray *body);
 
     // Ledger (MainWindowLedger.cpp). The installed Ledger package projects the
     // relay's public financial records into a page here, and lets the owner
@@ -4721,6 +4677,7 @@ private:
     void updateRepoSwitcher();     // refresh top-bar repo label / count
     void refreshRepoSyncIndicators();
     void refreshSourceControlOutgoing();
+    void applyGitLayout();
     void updateScmCommitControlVisibility();
     void pushCurrentRepoUpstream();
     void undoLatestOutgoingCommit();
@@ -4975,74 +4932,7 @@ private:
     QWidget *buildOrganizationTasksSection();
     void refreshOrganizationTasks();
     void updateOrganizationTaskRefreshAge();
-    QWidget *buildCalendarSection();
-    void refreshCalendar();
-    void refreshRepositoryCalendarEvents();
-    void scanRepositoryCalendarSlice();
-    void publishRepositoryCalendarEvents();
-    void rebuildCalendarList();
-    void renderCalendar();
-    void openCalendarEventDialog(const QString &eventId = QString(),
-                                 const QDate &date = QDate());
-    using CalendarReplyHandler = std::function<void(
-        bool, const QJsonObject &, const QString &)>;
-    void requestCalendar(const QByteArray &method, const QString &path,
-                         const QJsonObject &body,
-                         CalendarReplyHandler handler);
-    QWidget *buildNotesSection();
-    void refreshNotes();
-    void renderNotesList(const QString &selectId = QString(),
-                         bool reselect = true);
-    void selectNote(const QString &id, const QString &storage);
-    void showOpenedNoteView();
-    void createNote();
-    void saveNote();
-    void deleteNote();
-    void updateNotePublishState();
-    QJsonObject cloudNoteFor(const QJsonObject &note) const;
-    void shareNote();
-    void showNoteLinks();
-    void renderNoteLinkedItems();
-    void applyNoteShares(const QString &cloudId, const QJsonArray &shares);
-    void applyNoteLinks(const QString &cloudId, const QJsonArray &links);
-    void storeCloudNote(const QJsonObject &cloud);
-    QString selectedNoteRole() const;
-    QString selectedNoteAccessLink() const;
-    QStringList noteRelayHosts() const;
-    void copyNoteLink();
-    void copyNotePublicLink();
-    void exportNote();
-    bool noteAutosaveApplies() const;
-    void scheduleNoteAutosave();
-    void autosaveNote();
-    void markNoteClean(const QString &state = QString());
-    void setNoteSaveState(const QString &text);
-    void showNoteConflict(const QJsonObject &theirs);
-    void clearNoteConflict();
-    void keepMyNoteVersion();
-    void takeTheirNoteVersion();
     bool openNoteLink(const QString &href);
-    void openNoteByCloudId(const QString &cloudId);
-    void searchCloudNotes();
-    // Hand the note on screen to the tracker that actually chases work: an
-    // organization task, or an issue on one of this node's repositories. The
-    // note is copied, never moved — it stays in the list as the working draft.
-    void convertNoteToTask();
-    void convertNoteToIssue();
-    // The title and body a conversion starts from, or false when there is no
-    // note selected to convert.
-    bool noteConversionSource(QString *title, QString *markdown);
-    // The relay's id for the selected note, or empty while it only exists on
-    // this computer.
-    QString selectedNoteCloudId() const;
-    // The public address of the selected note, or empty unless it is
-    // published — a private note has no address worth quoting.
-    QString selectedNotePublicUrl() const;
-    void showNoteVersions();
-    using NoteReplyHandler = std::function<void(
-        bool, const QJsonObject &, const QString &)>;
-    void requestNotes(const QByteArray &method, const QString &path,
-                      const QJsonObject &body, NoteReplyHandler handler);
     void applyOrganizationTasks(const QJsonObject &payload);
     // Apply the authoritative task returned by a mutation without depending
     // on a second catalog read. In particular, an edit may finish while a
@@ -9162,7 +9052,6 @@ private:
     void activateBuiltinPackageSearchHit(const QString &packageId,
                                          const QString &hitId);
     void prepareBuiltinPackageSearch();
-    void openNoteFromSearch(const QString &id, const QString &storage);
     bool m_builtinPackageSearchPrepared = false;
     QString teammatesDirPath(int repoIndex = -1) const;
     // Which repository the Team section is pointed at. Teammates live in
@@ -11276,25 +11165,24 @@ private:
         QString hostSearchQuery;
     };
     QList<NativePackagePage> m_nativePackagePages;
+    QList<QPair<QString, QString>> m_nativePackagePagesWanted;
+    quint64 m_nativePackagePagesGeneration = 0;
+    bool m_nativePackagePagesDeferred = false;
+    bool m_staggerNativePackagePages = false;
     QString m_packageDataTestFilePath;
-    std::unique_ptr<forkmesh::timers::TimersFeature> m_timersFeature;
-    QWidget *m_timersNavStrip = nullptr;
-    QHBoxLayout *m_timersChipRow = nullptr;
-    QPushButton *m_timersClockButton = nullptr;
-    QPointer<QWidget> m_timersChromeBar;
-    struct TimersClockSlot {
+    struct NativePackageChrome {
+        QString id;
+        QString entrypoint;
+        QPointer<forkmesh::market::NativePackageWidget> widget;
+        bool searchPrepared = false;
+    };
+    QList<NativePackageChrome> m_nativePackageChrome;
+    struct NativePackageChromeSlot {
         QBoxLayout *row = nullptr;
         QPointer<QWidget> before;
     };
-    QHash<QString, TimersClockSlot> m_timersClockSlots;
-    QTimer *m_timersTick = nullptr;
-    // Only the timer strip reads this; window tests move it to watch a
-    // countdown run out without waiting for it.
-    qint64 m_timersClockOffsetMs = 0;
-    // False until the event loop turns after the package attaches, so a timer
-    // that expired while the app was closed announces itself to a built window
-    // rather than to one still under construction.
-    bool m_timersAnnouncementsReady = false;
+    QHash<QString, NativePackageChromeSlot> m_nativePackageChromeSlots;
+    QPointer<QWidget> m_nativePackageChromeBar;
     QSystemTrayIcon *m_trayIcon = nullptr;
 
     QList<ServerConfig> m_servers;
@@ -11384,66 +11272,6 @@ private:
     QPushButton *m_chatButton = nullptr; // top-bar chat toggle (next to the bell)
     QPushButton *m_tasksNavButton = nullptr;
     int m_organizationTaskBadgeStored = -1;
-    QPushButton *m_calendarNavButton = nullptr;
-    QPushButton *m_notesNavButton = nullptr;
-    QStackedWidget *m_calendarViews = nullptr;
-    QTableWidget *m_calendarMonthTable = nullptr;
-    QTableWidget *m_calendarWeekTable = nullptr;
-    QListWidget *m_calendarDayList = nullptr;
-    QListWidget *m_calendarAgendaList = nullptr;
-    QListWidget *m_calendarList = nullptr;
-    QLineEdit *m_calendarSearch = nullptr;
-    QLabel *m_calendarHeading = nullptr;
-    QLabel *m_calendarStatus = nullptr;
-    QJsonArray m_calendarEvents;
-    QJsonArray m_repositoryCalendarEvents;
-    QJsonArray m_calendars;
-    QString m_calendarActor;
-    QDate m_calendarAnchor;
-    // Repository activity is read one repository-month at a time, cached by
-    // that key, and drained in slices so the first paint does not wait on
-    // every repository. `m_repositoryCalendarScans` is what the current view
-    // needs; the queue is the part of it not already cached.
-    QHash<QString, QJsonArray> m_repositoryCalendarMonths;
-    QStringList m_repositoryCalendarMonthOrder;
-    QList<forkmesh::ui::RepositoryCalendarScan> m_repositoryCalendarScans;
-    QList<forkmesh::ui::RepositoryCalendarScan> m_repositoryCalendarQueue;
-    QString m_repositoryCalendarRequest;
-    int m_repositoryCalendarCursor = 0;
-    bool m_repositoryCalendarScanning = false;
-    bool m_repositoryCalendarStale = false;
-    QTimer *m_calendarSearchTimer = nullptr;
-    int m_calendarAgendaLimit = 0;
-    QString m_calendarMode = QStringLiteral("month");
-    bool m_calendarLoading = false;
-    QListWidget *m_notesList = nullptr;
-    QLineEdit *m_noteTitle = nullptr;
-    MarkdownEditor *m_noteEditor = nullptr;
-    QComboBox *m_noteStorageMode = nullptr;
-    QCheckBox *m_notePublic = nullptr;
-    QLabel *m_notePublicLink = nullptr;
-    QLabel *m_notesStatus = nullptr;
-    QJsonArray m_localNotes;
-    QJsonArray m_cloudNotes;
-    QJsonObject m_selectedNote;
-    QString m_selectedNoteStorage;
-    bool m_notesLoading = false;
-    bool m_noteDirty = false;
-    QLineEdit *m_noteSearch = nullptr;
-    QList<QPushButton *> m_noteFilterButtons;
-    QString m_noteFilter = QStringLiteral("all");
-    QLabel *m_noteSaveState = nullptr;
-    QPushButton *m_notePublicCopy = nullptr;
-    QWidget *m_noteConflictBar = nullptr;
-    QLabel *m_noteLinkedItems = nullptr;
-    QTimer *m_noteAutosaveTimer = nullptr;
-    QTimer *m_noteSearchTimer = nullptr;
-    int m_noteSearchSequence = 0;
-    QString m_noteSearchCloudQuery;
-    QSet<QString> m_noteSearchCloudIds;
-    QJsonObject m_noteConflict;
-    bool m_noteSaveInFlight = false;
-    bool m_noteSaveQueued = false;
     QTableWidget *m_organizationTasksTable = nullptr;
     QString m_organizationTasksSearchMirror;
     QTextBrowser *m_organizationTaskDetail = nullptr;

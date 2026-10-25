@@ -20,6 +20,7 @@
 #include "moc_ClaudeStreamSession.cpp"
 #include "moc_ClaudeElicitationDialog.cpp"
 #include "moc_ClaudeTranscriptView.cpp"
+#include "moc_AgentTaskListBar.cpp"
 #include "moc_PromptDeckBar.cpp"
 #include "moc_CodexRateLimitsProbe.cpp"
 #include "moc_GenieSpiderWidget.cpp"

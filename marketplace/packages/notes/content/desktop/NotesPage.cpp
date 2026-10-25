@@ -1,8 +1,11 @@
+#include "NotesPage.h"
 
-#include "MainWindow.h"
-#include "MainWindowInternal.h"
+#include "AppPaths.h"
+#include "ClientErrorReports.h"
 #include "DesignTokens.h"
 #include "MarkdownEditor.h"
+#include "OcticonIcons.h"
+#include "Theme.h"
 #include "NoteListEntry.h"
 #include "NoteRequestProof.h"
 #include "NoteTools.h"
@@ -52,11 +55,15 @@
 #include <QUrlQuery>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <QSet>
+#include <QSignalBlocker>
 
 #include <memory>
 #include <utility>
 
 using namespace forkmesh::ui;
+
+namespace forkmesh::notes {
 
 namespace {
 constexpr int kNoteIdRole = Qt::UserRole;
@@ -377,11 +384,131 @@ QJsonObject localSnapshot(QJsonObject note, const QString &title,
     note.insert(QStringLiteral("versions"), versions);
     return note;
 }
-} // namespace
+}
 
-QWidget *MainWindow::buildNotesSection()
+NotesPage::NotesPage(const forkmesh::market::NativePackageHost &host,
+                     QWidget *parent)
+    : forkmesh::market::NativePackageWidget(parent), m_host(host),
+      m_searchIndexChanged(host.searchIndexChanged)
 {
-    auto *page = new QWidget;
+    buildNotesSection();
+}
+
+void NotesPage::refresh()
+{
+    refreshNotes();
+}
+
+QUrl NotesPage::catalogApiUrl() const
+{
+    QUrl url = m_host.accountApiUrl
+        ? m_host.accountApiUrl(QStringLiteral("/api/notes")) : QUrl();
+    url.setPath(QString());
+    url.setQuery(QString());
+    return url;
+}
+
+void NotesPage::flashMessage(const QString &text, bool error, const QString &,
+                             const QString &kind)
+{
+    if (error && kind.isEmpty() && m_host.reportError)
+        m_host.reportError(text);
+    else if (m_host.flashMessage)
+        m_host.flashMessage(text, error);
+}
+
+void NotesPage::openReferenceLink(const QString &href)
+{
+    if (m_host.openReference)
+        m_host.openReference(href);
+}
+
+void NotesPage::searchIndexChanged()
+{
+    if (m_searchIndexChanged)
+        m_searchIndexChanged();
+}
+
+QList<forkmesh::market::NativePackageSearchHit>
+NotesPage::searchHits(const QString &rawQuery, int limit) const
+{
+    QList<forkmesh::market::NativePackageSearchHit> hits;
+    const QString query = rawQuery.trimmed();
+    if (query.isEmpty())
+        return hits;
+    const auto text = [](const QJsonObject &note, const char *field) {
+        return note.value(QLatin1String(field)).toString().trimmed();
+    };
+    QSet<QString> mirrored;
+    for (const QJsonValue &value : m_localNotes)
+        mirrored.insert(text(value.toObject(), "cloudId"));
+    for (const bool local : {true, false}) {
+        for (const QJsonValue &value : local ? m_localNotes : m_cloudNotes) {
+            if (hits.size() >= limit)
+                return hits;
+            const QJsonObject note = value.toObject();
+            const QString id = text(note, "id");
+            if (id.isEmpty() || (!local && mirrored.contains(id)))
+                continue;
+            const bool inTitle =
+                note.value(QStringLiteral("title")).toString().contains(
+                    query, Qt::CaseInsensitive);
+            const QString markdown = note.value(QStringLiteral("markdown")).toString();
+            const int at = inTitle ? -1 : int(markdown.indexOf(query, 0, Qt::CaseInsensitive));
+            if (!inTitle && at < 0)
+                continue;
+            QString title = text(note, "title");
+            if (title.isEmpty())
+                title = QStringLiteral("Untitled note");
+            QString detail;
+            if (!inTitle) {
+                const int from = qMax(0, at - 30);
+                detail = markdown.mid(from, int(query.size()) + 60).simplified();
+                if (from > 0)
+                    detail.prepend(QString::fromUtf8("\xE2\x80\xA6"));
+            }
+            hits.append({(local ? QStringLiteral("local:") : QStringLiteral("cloud:")) + id,
+                         title, detail});
+        }
+    }
+    return hits;
+}
+
+void NotesPage::activateSearchHit(const QString &hitId)
+{
+    const int colon = hitId.indexOf(QLatin1Char(':'));
+    if (colon > 0)
+        openNoteFromSearch(hitId.mid(colon + 1), hitId.left(colon));
+}
+
+bool NotesPage::acceptsHostCommand(const QString &command) const
+{
+    return command == QLatin1String("note.add") ||
+           command == QLatin1String("note.openLink") ||
+           command == QLatin1String("note.openSystemLink");
+}
+
+bool NotesPage::hostCommand(const QString &command, const QJsonObject &args)
+{
+    if (command == QLatin1String("note.add")) {
+        QStringList attachments;
+        for (const QJsonValue &value : args.value(QStringLiteral("attachments")).toArray())
+            attachments << value.toString();
+        return takeQuickAddNote(args.value(QStringLiteral("text")).toString(),
+                                attachments);
+    }
+    if (command == QLatin1String("note.openLink"))
+        return openNoteLink(args.value(QStringLiteral("href")).toString());
+    if (command == QLatin1String("note.openSystemLink")) {
+        openNoteFromSystemLink(args.value(QStringLiteral("target")).toString());
+        return true;
+    }
+    return false;
+}
+
+void NotesPage::buildNotesSection()
+{
+    QWidget *page = this;
     page->setObjectName(QStringLiteral("notesSection"));
     auto *outer = new QVBoxLayout(page);
     outer->setContentsMargins(20, 18, 20, 20);
@@ -400,9 +527,6 @@ QWidget *MainWindow::buildNotesSection()
     statusPolicy.setHorizontalPolicy(QSizePolicy::Ignored);
     m_notesStatus->setSizePolicy(statusPolicy);
     heading->addStretch();
-    // Notes are read when this page opens and when Refresh is pressed. The
-    // former collaborator-version timer was a full authenticated note read
-    // every few seconds for as long as a synced note sat on screen.
     auto *refresh = new QPushButton(QStringLiteral("Refresh"));
     refresh->setObjectName(QStringLiteral("ghostButton"));
     refresh->setCursor(Qt::PointingHandCursor);
@@ -424,19 +548,19 @@ QWidget *MainWindow::buildNotesSection()
     versions->setObjectName(QStringLiteral("ghostButton"));
     setOcticon(versions, "history", 14);
     connect(versions, &QPushButton::clicked, this,
-            &MainWindow::showNoteVersions);
+            &NotesPage::showNoteVersions);
     heading->addWidget(versions);
     auto *share = new QPushButton(QStringLiteral("Share"));
     share->setObjectName(QStringLiteral("ghostButton"));
     setOcticon(share, "people", 14);
-    connect(share, &QPushButton::clicked, this, &MainWindow::shareNote);
+    connect(share, &QPushButton::clicked, this, &NotesPage::shareNote);
     heading->addWidget(share);
     auto *attach = new QPushButton(QStringLiteral("Links"));
     attach->setObjectName(QStringLiteral("ghostButton"));
     setOcticon(attach, "link", 14);
     attach->setToolTip(QStringLiteral(
         "Issues, pull requests and discussions linked to this note"));
-    connect(attach, &QPushButton::clicked, this, &MainWindow::showNoteLinks);
+    connect(attach, &QPushButton::clicked, this, &NotesPage::showNoteLinks);
     heading->addWidget(attach);
     auto *convert = new QPushButton(QStringLiteral("Convert"));
     convert->setObjectName(QStringLiteral("ghostButton"));
@@ -447,9 +571,9 @@ QWidget *MainWindow::buildNotesSection()
         "stays here, unchanged."));
     auto *convertMenu = new QMenu(convert);
     convertMenu->addAction(QStringLiteral("To an organization task…"), this,
-                           &MainWindow::convertNoteToTask);
+                           &NotesPage::convertNoteToTask);
     convertMenu->addAction(QStringLiteral("To a repository issue…"), this,
-                           &MainWindow::convertNoteToIssue);
+                           &NotesPage::convertNoteToIssue);
     convert->setMenu(convertMenu);
     heading->addWidget(convert);
     auto *more = new QPushButton;
@@ -460,10 +584,10 @@ QWidget *MainWindow::buildNotesSection()
     auto *moreMenu = new QMenu(more);
     moreMenu->setObjectName(QStringLiteral("noteMoreMenu"));
     QAction *copyLink = moreMenu->addAction(QStringLiteral("Copy link"), this,
-                                            &MainWindow::copyNoteLink);
+                                            &NotesPage::copyNoteLink);
     QAction *copyPublic = moreMenu->addAction(
         QStringLiteral("Copy public link"), this,
-        &MainWindow::copyNotePublicLink);
+        &NotesPage::copyNotePublicLink);
     QAction *openPublic =
         moreMenu->addAction(QStringLiteral("Open published page"), this, [this] {
             const QString address = selectedNotePublicUrl();
@@ -472,7 +596,7 @@ QWidget *MainWindow::buildNotesSection()
         });
     moreMenu->addSeparator();
     moreMenu->addAction(QStringLiteral("Export Markdown…"), this,
-                        &MainWindow::exportNote);
+                        &NotesPage::exportNote);
     connect(moreMenu, &QMenu::aboutToShow, this,
             [this, copyLink, copyPublic, openPublic] {
         const bool cloud = !selectedNoteCloudId().isEmpty();
@@ -486,12 +610,12 @@ QWidget *MainWindow::buildNotesSection()
     auto *remove = new QPushButton(QStringLiteral("Delete"));
     remove->setObjectName(QStringLiteral("dangerButton"));
     setOcticon(remove, "trash", 14);
-    connect(remove, &QPushButton::clicked, this, &MainWindow::deleteNote);
+    connect(remove, &QPushButton::clicked, this, &NotesPage::deleteNote);
     heading->addWidget(remove);
     auto *add = new QPushButton(QStringLiteral("New note"));
     add->setObjectName(QStringLiteral("primaryButton"));
     setOcticon(add, "plus", 14);
-    connect(add, &QPushButton::clicked, this, &MainWindow::createNote);
+    connect(add, &QPushButton::clicked, this, &NotesPage::createNote);
     heading->addWidget(add);
     auto *header = new QVBoxLayout;
     header->setContentsMargins(0, 0, 0, 0);
@@ -516,7 +640,7 @@ QWidget *MainWindow::buildNotesSection()
     m_noteSearchTimer->setSingleShot(true);
     m_noteSearchTimer->setInterval(kNoteSearchDebounceMs);
     connect(m_noteSearchTimer, &QTimer::timeout, this,
-            &MainWindow::searchCloudNotes);
+            &NotesPage::searchCloudNotes);
     connect(m_noteSearch, &QLineEdit::textChanged, this, [this] {
         renderNotesList(m_selectedNote.value(QStringLiteral("id")).toString(),
                         false);
@@ -605,7 +729,7 @@ QWidget *MainWindow::buildNotesSection()
     setOcticon(m_notePublicCopy, "copy", 14);
     m_notePublicCopy->hide();
     connect(m_notePublicCopy, &QPushButton::clicked, this,
-            &MainWindow::copyNotePublicLink);
+            &NotesPage::copyNotePublicLink);
     toolbar->addWidget(m_notePublicCopy);
     m_noteSaveState = new QLabel;
     m_noteSaveState->setObjectName(QStringLiteral("mutedLabel"));
@@ -614,7 +738,7 @@ QWidget *MainWindow::buildNotesSection()
     auto *save = new QPushButton(QStringLiteral("Save"));
     save->setObjectName(QStringLiteral("primaryButton"));
     setOcticon(save, "check-circle", 14);
-    connect(save, &QPushButton::clicked, this, &MainWindow::saveNote);
+    connect(save, &QPushButton::clicked, this, &NotesPage::saveNote);
     toolbar->addWidget(save);
     editorLayout->addLayout(toolbar);
     m_noteConflictBar = new QWidget;
@@ -629,12 +753,12 @@ QWidget *MainWindow::buildNotesSection()
     auto *keepMine = new QPushButton(QStringLiteral("Keep mine"));
     keepMine->setObjectName(QStringLiteral("ghostButton"));
     connect(keepMine, &QPushButton::clicked, this,
-            &MainWindow::keepMyNoteVersion);
+            &NotesPage::keepMyNoteVersion);
     conflictLayout->addWidget(keepMine);
     auto *takeTheirs = new QPushButton(QStringLiteral("Take theirs"));
     takeTheirs->setObjectName(QStringLiteral("ghostButton"));
     connect(takeTheirs, &QPushButton::clicked, this,
-            &MainWindow::takeTheirNoteVersion);
+            &NotesPage::takeTheirNoteVersion);
     conflictLayout->addWidget(takeTheirs);
     m_noteConflictBar->hide();
     editorLayout->addWidget(m_noteConflictBar);
@@ -660,7 +784,7 @@ QWidget *MainWindow::buildNotesSection()
     m_noteAutosaveTimer->setSingleShot(true);
     m_noteAutosaveTimer->setInterval(kNoteAutosaveMs);
     connect(m_noteAutosaveTimer, &QTimer::timeout, this,
-            &MainWindow::autosaveNote);
+            &NotesPage::autosaveNote);
 
     connect(m_noteTitle, &QLineEdit::textChanged, this,
             [this] { scheduleNoteAutosave(); });
@@ -675,11 +799,9 @@ QWidget *MainWindow::buildNotesSection()
         updateNotePublishState();
         scheduleNoteAutosave();
     });
-
-    return page;
 }
 
-QString MainWindow::selectedNoteCloudId() const
+QString NotesPage::selectedNoteCloudId() const
 {
     return m_selectedNote.value(QStringLiteral("cloudId"))
         .toString(m_selectedNoteStorage == QLatin1String("cloud")
@@ -687,7 +809,7 @@ QString MainWindow::selectedNoteCloudId() const
                       : QString());
 }
 
-QString MainWindow::selectedNotePublicUrl() const
+QString NotesPage::selectedNotePublicUrl() const
 {
     const QString cloudId = selectedNoteCloudId();
     if (cloudId.isEmpty() ||
@@ -697,25 +819,25 @@ QString MainWindow::selectedNotePublicUrl() const
     return forkmesh::notes::notePublicLink(catalogApiUrl(), cloudId);
 }
 
-QString MainWindow::selectedNoteAccessLink() const
+QString NotesPage::selectedNoteAccessLink() const
 {
     return forkmesh::notes::noteAccessLink(catalogApiUrl(),
                                            selectedNoteCloudId());
 }
 
-QString MainWindow::selectedNoteRole() const
+QString NotesPage::selectedNoteRole() const
 {
     return m_selectedNote.value(QStringLiteral("role"))
         .toString(QStringLiteral("owner"));
 }
 
-QStringList MainWindow::noteRelayHosts() const
+QStringList NotesPage::noteRelayHosts() const
 {
     const QString host = catalogApiUrl().host().toLower();
     return host.isEmpty() ? QStringList() : QStringList{host};
 }
 
-void MainWindow::updateNotePublishState()
+void NotesPage::updateNotePublishState()
 {
     if (!m_notePublic || !m_noteStorageMode)
         return;
@@ -747,28 +869,30 @@ void MainWindow::updateNotePublishState()
     m_notePublicLink->show();
 }
 
-void MainWindow::requestNotes(const QByteArray &method, const QString &path,
-                              const QJsonObject &body,
-                              NoteReplyHandler handler)
+void NotesPage::requestNotes(const QByteArray &method, const QString &path,
+                             const QJsonObject &body,
+                             NoteReplyHandler handler)
 {
     const qsizetype mark = path.indexOf(QLatin1Char('?'));
     const QString cleanPath = mark < 0 ? path : path.left(mark);
     QUrlQuery query(mark < 0 ? QString() : path.mid(mark + 1));
-    QUrl url = catalogApiUrl();
-    url.setPath(cleanPath);
+    QUrl url = m_host.accountApiUrl ? m_host.accountApiUrl(cleanPath) : QUrl();
     url.setQuery(query);
-    const QString token = accountSessionTokenForUrl(url);
+    const QString token =
+        m_host.accountSessionToken && url.isValid() ? m_host.accountSessionToken(url)
+                                                    : QString();
     const QByteArray encoded = body.isEmpty()
         ? QByteArray()
         : QJsonDocument(body).toJson(QJsonDocument::Compact);
-    if (!m_networkAccess) {
+    if (!m_host.network || !url.isValid()) {
         handler(false, {}, QStringLiteral(
             "Cloud notes are unavailable; local notes remain available."));
         return;
     }
     if (token.isEmpty()) {
         QString node, ts, sig;
-        if (!signOrgTaskProof(
+        if (!m_host.signProof ||
+            !m_host.signProof(
                 forkmesh::notes::kNotesRequestProof,
                 forkmesh::notes::noteRequestResource(method, cleanPath, encoded),
                 &node, &ts, &sig)) {
@@ -795,10 +919,10 @@ void MainWindow::requestNotes(const QByteArray &method, const QString &path,
         request.setHeader(QNetworkRequest::ContentTypeHeader,
                           QStringLiteral("application/json"));
     QNetworkReply *reply = method == QByteArrayLiteral("GET")
-        ? m_networkAccess->get(request)
+        ? m_host.network->get(request)
         : method == QByteArrayLiteral("POST")
-        ? m_networkAccess->post(request, encoded)
-        : m_networkAccess->sendCustomRequest(request, method, encoded);
+        ? m_host.network->post(request, encoded)
+        : m_host.network->sendCustomRequest(request, method, encoded);
     connect(reply, &QNetworkReply::finished, this,
             [reply, handler = std::move(handler)]() mutable {
         const QJsonObject payload =
@@ -815,7 +939,7 @@ void MainWindow::requestNotes(const QByteArray &method, const QString &path,
     });
 }
 
-void MainWindow::refreshNotes()
+void NotesPage::refreshNotes()
 {
     if (!m_notesList || m_notesLoading)
         return;
@@ -832,11 +956,11 @@ void MainWindow::refreshNotes()
             ? QStringLiteral("Local and cloud notes refreshed.")
             : QStringLiteral("Local notes loaded. %1").arg(error));
         renderNotesList(m_selectedNote.value(QStringLiteral("id")).toString());
-        nativePackageSearchIndexChanged();
+        searchIndexChanged();
     });
 }
 
-QJsonObject MainWindow::cloudNoteFor(const QJsonObject &note) const
+QJsonObject NotesPage::cloudNoteFor(const QJsonObject &note) const
 {
     const QString cloudId = note.value(QStringLiteral("cloudId")).toString();
     if (cloudId.isEmpty())
@@ -846,12 +970,10 @@ QJsonObject MainWindow::cloudNoteFor(const QJsonObject &note) const
         if (cloud.value(QStringLiteral("id")).toString() == cloudId)
             return cloud;
     }
-    // Signed out, or the listing call failed: fall back to the metadata the
-    // last successful cloud save mirrored onto the local record.
     return note.contains(QStringLiteral("shares")) ? note : QJsonObject();
 }
 
-void MainWindow::renderNotesList(const QString &selectId, bool reselect)
+void NotesPage::renderNotesList(const QString &selectId, bool reselect)
 {
     if (!m_notesList)
         return;
@@ -960,7 +1082,7 @@ void MainWindow::renderNotesList(const QString &selectId, bool reselect)
                    m_notesList->currentItem()->data(kNoteStorageRole).toString());
 }
 
-void MainWindow::selectNote(const QString &id, const QString &storage)
+void NotesPage::selectNote(const QString &id, const QString &storage)
 {
     if (m_noteDirty && !m_selectedNote.isEmpty() && noteAutosaveApplies() &&
         !m_noteSaveInFlight && m_noteConflict.isEmpty()) {
@@ -1034,7 +1156,7 @@ void MainWindow::selectNote(const QString &id, const QString &storage)
     });
 }
 
-void MainWindow::showOpenedNoteView()
+void NotesPage::showOpenedNoteView()
 {
     if (m_noteEditor->markdown().trimmed().isEmpty())
         m_noteEditor->showWriteArea();
@@ -1042,12 +1164,10 @@ void MainWindow::showOpenedNoteView()
         m_noteEditor->showPreviewArea();
 }
 
-// A note chosen in the top search box. The list may still be loading (the
-// search warms it without opening the page), so the row is highlighted when it
-// is there and the editor is filled either way.
-void MainWindow::openNoteFromSearch(const QString &id, const QString &storage)
+void NotesPage::openNoteFromSearch(const QString &id, const QString &storage)
 {
-    showSection(kNotesSectionIndex);
+    if (m_host.showPage)
+        m_host.showPage();
     if (!m_notesList || id.isEmpty())
         return;
     for (int row = 0; row < m_notesList->count(); ++row) {
@@ -1062,7 +1182,7 @@ void MainWindow::openNoteFromSearch(const QString &id, const QString &storage)
     selectNote(id, storage);
 }
 
-void MainWindow::createNote()
+void NotesPage::createNote()
 {
     m_selectedNote = QJsonObject{
         {QStringLiteral("id"), newNoteId()},
@@ -1087,10 +1207,11 @@ void MainWindow::createNote()
     m_noteTitle->setFocus();
 }
 
-bool MainWindow::takeQuickAddNote(const QString &text)
+bool NotesPage::takeQuickAddNote(const QString &text,
+                                 const QStringList &attachments)
 {
     QString markdown = text.trimmed();
-    for (const QString &attachment : std::as_const(m_quickAddImages)) {
+    for (const QString &attachment : attachments) {
         if (!markdown.isEmpty())
             markdown += QStringLiteral("\n\n");
         markdown += QStringLiteral("![%1](%2)")
@@ -1121,16 +1242,13 @@ bool MainWindow::takeQuickAddNote(const QString &text)
     m_localNotes = notes;
     if (m_notesList)
         renderNotesList(m_selectedNote.value(QStringLiteral("id")).toString());
-    nativePackageSearchIndexChanged();
-    if (m_issueQuickAdd)
-        m_issueQuickAdd->clear();
-    clearQuickAddImages();
+    searchIndexChanged();
     flashMessage(QStringLiteral("Note saved on this computer: %1").arg(title),
                  false, QString(), forkmesh::kLocalOperationNoticeKind);
     return true;
 }
 
-void MainWindow::saveNote()
+void NotesPage::saveNote()
 {
     if (m_selectedNote.isEmpty())
         return createNote();
@@ -1147,8 +1265,6 @@ void MainWindow::saveNote()
     const QString mode = m_noteStorageMode->currentData().toString();
     const bool keepLocal = mode != QLatin1String("cloud");
     const bool keepCloud = mode != QLatin1String("local");
-    // Reports whether the note actually reached the disk, so the alert names
-    // the destinations that took the write instead of claiming both of them.
     auto saveLocal = [this, title, body, mode](QJsonObject note) {
         note = localSnapshot(note, title, body, mode);
         const int index = localNoteIndex(
@@ -1165,21 +1281,12 @@ void MainWindow::saveNote()
         renderNotesList(note.value(QStringLiteral("id")).toString());
         return true;
     };
-    // Every save ends here. The heading label and the page's inline notice say
-    // the same sentence, so "did that land, and where?" is answered where the operator
-    // is already looking instead of in a muted label beside the page title. A
-    // failure that still left the note on this computer is an expected
-    // degraded state — signed out, or the relay unreachable — so it is filed
-    // as a local operation and never becomes a relay error report; only a save
-    // that landed nowhere is worth reporting.
     auto announce = [this, title, mode, keepLocal, keepCloud](
                         bool savedLocal, bool savedCloud,
                         const QJsonObject &cloud, const QString &cloudError) {
         const QString text = NoteListEntry::savedAlert(
             title, mode, savedLocal, savedCloud, cloud, cloudError);
         m_notesStatus->setText(text);
-        // The heading label is clipped by the buttons beside it, so a sentence
-        // that names a failing destination only fits under the cursor.
         m_notesStatus->setToolTip(text);
         const bool missed = (keepLocal && !savedLocal) ||
                             (keepCloud && !savedCloud);
@@ -1251,9 +1358,6 @@ void MainWindow::saveNote()
                          cloud.value(QStringLiteral("version")));
             local.insert(QStringLiteral("visibility"),
                          cloud.value(QStringLiteral("visibility")));
-            // Mirror the sidebar metadata so the row keeps saying who the
-            // note is shared with and how often it has been read while the
-            // cloud listing is out of reach (offline, or signed out).
             local.insert(QStringLiteral("shares"),
                          cloud.value(QStringLiteral("shares")));
             local.insert(QStringLiteral("views"),
@@ -1296,7 +1400,7 @@ void MainWindow::saveNote()
     });
 }
 
-void MainWindow::storeCloudNote(const QJsonObject &cloud)
+void NotesPage::storeCloudNote(const QJsonObject &cloud)
 {
     const QString id = cloud.value(QStringLiteral("id")).toString();
     if (id.isEmpty())
@@ -1311,7 +1415,7 @@ void MainWindow::storeCloudNote(const QJsonObject &cloud)
     m_cloudNotes.prepend(cloud);
 }
 
-bool MainWindow::noteAutosaveApplies() const
+bool NotesPage::noteAutosaveApplies() const
 {
     return m_noteStorageMode &&
            m_selectedNoteStorage == QLatin1String("cloud") &&
@@ -1321,13 +1425,13 @@ bool MainWindow::noteAutosaveApplies() const
            forkmesh::notes::noteCanEdit(selectedNoteRole());
 }
 
-void MainWindow::setNoteSaveState(const QString &text)
+void NotesPage::setNoteSaveState(const QString &text)
 {
     if (m_noteSaveState)
         m_noteSaveState->setText(text);
 }
 
-void MainWindow::markNoteClean(const QString &state)
+void NotesPage::markNoteClean(const QString &state)
 {
     m_noteDirty = false;
     if (m_noteAutosaveTimer)
@@ -1337,7 +1441,7 @@ void MainWindow::markNoteClean(const QString &state)
                          : QStringLiteral("Not saved — resolve the conflict"));
 }
 
-void MainWindow::scheduleNoteAutosave()
+void NotesPage::scheduleNoteAutosave()
 {
     m_noteDirty = true;
     if (!m_noteConflict.isEmpty()) {
@@ -1349,7 +1453,7 @@ void MainWindow::scheduleNoteAutosave()
         m_noteAutosaveTimer->start();
 }
 
-void MainWindow::autosaveNote()
+void NotesPage::autosaveNote()
 {
     if (!m_noteDirty || !noteAutosaveApplies() || !m_noteConflict.isEmpty())
         return;
@@ -1430,7 +1534,7 @@ void MainWindow::autosaveNote()
     });
 }
 
-void MainWindow::showNoteConflict(const QJsonObject &theirs)
+void NotesPage::showNoteConflict(const QJsonObject &theirs)
 {
     m_noteConflict = theirs;
     if (m_noteAutosaveTimer)
@@ -1440,14 +1544,14 @@ void MainWindow::showNoteConflict(const QJsonObject &theirs)
     setNoteSaveState(QStringLiteral("Not saved — resolve the conflict"));
 }
 
-void MainWindow::clearNoteConflict()
+void NotesPage::clearNoteConflict()
 {
     m_noteConflict = QJsonObject();
     if (m_noteConflictBar)
         m_noteConflictBar->hide();
 }
 
-void MainWindow::keepMyNoteVersion()
+void NotesPage::keepMyNoteVersion()
 {
     const QJsonObject theirs = m_noteConflict;
     if (theirs.isEmpty())
@@ -1462,7 +1566,7 @@ void MainWindow::keepMyNoteVersion()
     saveNote();
 }
 
-void MainWindow::takeTheirNoteVersion()
+void NotesPage::takeTheirNoteVersion()
 {
     const QJsonObject theirs = m_noteConflict;
     if (theirs.isEmpty())
@@ -1506,7 +1610,7 @@ void MainWindow::takeTheirNoteVersion()
     renderNoteLinkedItems();
 }
 
-void MainWindow::copyNoteLink()
+void NotesPage::copyNoteLink()
 {
     const QString link = selectedNoteAccessLink();
     if (link.isEmpty()) {
@@ -1521,7 +1625,7 @@ void MainWindow::copyNoteLink()
                  false, QString(), forkmesh::kLocalOperationNoticeKind);
 }
 
-void MainWindow::copyNotePublicLink()
+void NotesPage::copyNotePublicLink()
 {
     const QString address = selectedNotePublicUrl();
     if (address.isEmpty()) {
@@ -1534,7 +1638,7 @@ void MainWindow::copyNotePublicLink()
                  forkmesh::kLocalOperationNoticeKind);
 }
 
-void MainWindow::exportNote()
+void NotesPage::exportNote()
 {
     if (m_selectedNote.isEmpty() || !m_noteTitle || !m_noteEditor) {
         flashMessage(QStringLiteral("Select a note to export."), true,
@@ -1565,7 +1669,7 @@ void MainWindow::exportNote()
                  false, QString(), forkmesh::kLocalOperationNoticeKind);
 }
 
-void MainWindow::deleteNote()
+void NotesPage::deleteNote()
 {
     if (m_selectedNote.isEmpty())
         return;
@@ -1582,9 +1686,6 @@ void MainWindow::deleteNote()
         QMessageBox::Yes)
         return;
 
-    // Keep the on-disk mirror until the cloud delete succeeds. Removing it
-    // first made a Local + cloud note look deleted even when its cloud copy
-    // rejected the request; the next refresh then brought the note back.
     auto removeLocal = [this, localId] {
         const int index = localNoteIndex(m_localNotes, localId);
         if (index < 0)
@@ -1607,9 +1708,6 @@ void MainWindow::deleteNote()
         m_selectedNote = {};
         m_selectedNoteStorage.clear();
         m_noteDirty = false;
-        // A list request may already be in flight, in which case refreshNotes
-        // deliberately does nothing. Render the confirmed deletion now so the
-        // old cloud row cannot remain on screen until another manual refresh.
         renderNotesList();
         refreshNotes();
     };
@@ -1643,7 +1741,7 @@ void MainWindow::deleteNote()
     });
 }
 
-void MainWindow::applyNoteShares(const QString &cloudId,
+void NotesPage::applyNoteShares(const QString &cloudId,
                                  const QJsonArray &shares)
 {
     if (selectedNoteCloudId() == cloudId)
@@ -1667,7 +1765,7 @@ void MainWindow::applyNoteShares(const QString &cloudId,
                     false);
 }
 
-void MainWindow::shareNote()
+void NotesPage::shareNote()
 {
     const QString cloudId = selectedNoteCloudId();
     if (cloudId.isEmpty()) {
@@ -1853,12 +1951,16 @@ void MainWindow::shareNote()
             auto *who = new QLabel(
                 shareType == QLatin1String("organization")
                     ? QStringLiteral("@%1").arg(shareName).toHtmlEscaped()
-                    : userProfileLinkHtml(shareName, QStringLiteral("@") + shareName));
+                    : QStringLiteral("<a href=\"%1\">@%2</a>")
+                          .arg(QString::fromLatin1(QUrl::toPercentEncoding(shareName)),
+                               shareName.toHtmlEscaped()));
             who->setTextFormat(Qt::RichText);
             who->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
             who->setOpenExternalLinks(false);
-            connect(who, &QLabel::linkActivated, this,
-                    [this](const QString &href) { openBodyReference(href); });
+            connect(who, &QLabel::linkActivated, this, [this](const QString &href) {
+                if (m_host.openUserProfile)
+                    m_host.openUserProfile(QUrl::fromPercentEncoding(href.toUtf8()));
+            });
             auto *kind = new QLabel(forkmesh::notes::principalTypeLabel(shareType));
             kind->setObjectName(QStringLiteral("mutedLabel"));
             auto *access = new QComboBox;
@@ -1982,14 +2084,14 @@ void MainWindow::shareNote()
     name->setFocus();
 }
 
-void MainWindow::applyNoteLinks(const QString &cloudId, const QJsonArray &links)
+void NotesPage::applyNoteLinks(const QString &cloudId, const QJsonArray &links)
 {
     if (selectedNoteCloudId() == cloudId)
         m_selectedNote.insert(QStringLiteral("links"), links);
     renderNoteLinkedItems();
 }
 
-void MainWindow::renderNoteLinkedItems()
+void NotesPage::renderNoteLinkedItems()
 {
     if (!m_noteLinkedItems)
         return;
@@ -2012,7 +2114,7 @@ void MainWindow::renderNoteLinkedItems()
     m_noteLinkedItems->show();
 }
 
-void MainWindow::showNoteLinks()
+void NotesPage::showNoteLinks()
 {
     if (m_selectedNote.isEmpty()) {
         flashMessage(QStringLiteral("Select a note first."), true, QString(),
@@ -2226,7 +2328,7 @@ void MainWindow::showNoteLinks()
     input->setFocus();
 }
 
-void MainWindow::searchCloudNotes()
+void NotesPage::searchCloudNotes()
 {
     const QString query = forkmesh::notes::noteSearchQuery(
         m_noteSearch ? m_noteSearch->text() : QString());
@@ -2257,7 +2359,7 @@ void MainWindow::searchCloudNotes()
     });
 }
 
-bool MainWindow::openNoteLink(const QString &href)
+bool NotesPage::openNoteLink(const QString &href)
 {
     const QString id =
         forkmesh::notes::noteIdFromLink(href, noteRelayHosts());
@@ -2267,7 +2369,7 @@ bool MainWindow::openNoteLink(const QString &href)
     return true;
 }
 
-void MainWindow::openNoteFromSystemLink(const QString &target)
+void NotesPage::openNoteFromSystemLink(const QString &target)
 {
     if (openNoteLink(target))
         return;
@@ -2280,9 +2382,10 @@ void MainWindow::openNoteFromSystemLink(const QString &target)
                  true, QString(), forkmesh::kLocalOperationNoticeKind);
 }
 
-void MainWindow::openNoteByCloudId(const QString &cloudId)
+void NotesPage::openNoteByCloudId(const QString &cloudId)
 {
-    showSection(kNotesSectionIndex);
+    if (m_host.showPage)
+        m_host.showPage();
     if (!m_notesList || cloudId.isEmpty())
         return;
     m_localNotes = readLocalNotes();
@@ -2297,11 +2400,7 @@ void MainWindow::openNoteByCloudId(const QString &cloudId)
     openNoteFromSearch(cloudId, QStringLiteral("cloud"));
 }
 
-// Both conversions copy the text that is on screen rather than the text that
-// last reached storage: converting a draft you have not saved yet is the
-// ordinary case, and re-reading the stored copy would silently drop the
-// sentence the operator just typed.
-bool MainWindow::noteConversionSource(QString *title, QString *markdown)
+bool NotesPage::noteConversionSource(QString *title, QString *markdown)
 {
     if (!m_noteTitle || !m_noteEditor)
         return false;
@@ -2315,96 +2414,39 @@ bool MainWindow::noteConversionSource(QString *title, QString *markdown)
     return true;
 }
 
-void MainWindow::convertNoteToTask()
+void NotesPage::convertNoteToTask()
 {
     QString title, markdown;
-    if (!noteConversionSource(&title, &markdown))
+    if (!noteConversionSource(&title, &markdown) || !m_host.windowCommand)
         return;
-    // Building the tasks page is what applies this organization's departments
-    // and members; without it the composer would offer the placeholder list it
-    // falls back to and file the task into a department nobody reads. The page
-    // also owns the status label every reply to this write reports through.
-    ensureSectionBuilt(kOrganizationTasksSectionIndex);
-    if (!m_organizationTasksStatus) {
-        flashMessage(QStringLiteral(
-            "The tasks page is not available on this node yet."), true);
-        return;
-    }
-    composeOrganizationTask(
-        QStringLiteral("Convert note to task"),
-        NoteListEntry::conversionTitle(title, markdown,
-                                       kOrganizationTaskTitleLimit),
-        NoteListEntry::conversionDetails(title, markdown,
-                                         selectedNotePublicUrl()),
-        [this] {
-            flashMessage(QStringLiteral(
-                "Task created from this note. The note itself is unchanged."));
-            // The task page carries any dispatch error that lands after this
-            // point.
-            showSection(kOrganizationTasksSectionIndex);
+    m_host.windowCommand(
+        QStringLiteral("task.composeFromText"),
+        QJsonObject{
+            {QStringLiteral("heading"), QStringLiteral("Convert note to task")},
+            {QStringLiteral("title"), title},
+            {QStringLiteral("markdown"), markdown},
+            {QStringLiteral("link"), selectedNotePublicUrl()},
+            {QStringLiteral("done"),
+             QStringLiteral("Task created from this note. The note itself is unchanged.")},
         });
 }
 
-void MainWindow::convertNoteToIssue()
+void NotesPage::convertNoteToIssue()
 {
     QString title, markdown;
-    if (!noteConversionSource(&title, &markdown))
+    if (!noteConversionSource(&title, &markdown) || !m_host.windowCommand)
         return;
-    if (m_repositories.isEmpty()) {
-        flashMessage(QStringLiteral(
-            "Open a repository before converting a note into an issue."), true);
-        return;
-    }
-    int repoIndex = m_repoDetailIndex >= 0 &&
-                            m_repoDetailIndex < m_repositories.size()
-                        ? m_repoDetailIndex
-                        : 0;
-    if (m_repositories.size() > 1) {
-        QStringList labels;
-        labels.reserve(m_repositories.size());
-        for (const RepositoryRecord &repo : std::as_const(m_repositories))
-            labels << repo.owner + QLatin1Char('/') + repo.name;
-        bool ok = false;
-        const QString pick = QInputDialog::getItem(
-            this, QStringLiteral("Convert note to issue"),
-            QStringLiteral("File this note as an issue in:"), labels,
-            repoIndex, false, &ok);
-        if (!ok || pick.isEmpty())
-            return;
-        repoIndex = labels.indexOf(pick);
-        if (repoIndex < 0)
-            return;
-    }
-
-    // The composer lives in the repository's Issues tab, so the conversion has
-    // to go there; opening the detail page is also what points that tab at the
-    // repository the operator just picked.
-    if (repoIndex != m_repoDetailIndex)
-        openRepoDetail(repoIndex);
-    showSection(0);
-    if (m_repoDetailTabs && m_repoDetailTabs->button(2))
-        m_repoDetailTabs->button(2)->click();
-    // A tab built for the first time by that click restores whatever it had
-    // selected before, which is not necessarily the pick above.
-    if (m_issuesRepoCombo) {
-        const int combo = m_issuesRepoCombo->findData(repoIndex);
-        if (combo >= 0)
-            m_issuesRepoCombo->setCurrentIndex(combo);
-    }
-    if (issuesRepoIndex() < 0) {
-        flashMessage(QStringLiteral(
-            "Could not open the issue composer for %1.")
-                .arg(m_repositories.at(repoIndex).owner + QLatin1Char('/') +
-                     m_repositories.at(repoIndex).name), true);
-        return;
-    }
-    composeNewIssue(
-        NoteListEntry::conversionTitle(title, markdown, kIssueTitleLimit),
-        NoteListEntry::conversionDetails(title, markdown,
-                                         selectedNotePublicUrl()));
+    m_host.windowCommand(
+        QStringLiteral("issue.composeFromText"),
+        QJsonObject{
+            {QStringLiteral("heading"), QStringLiteral("Convert note to issue")},
+            {QStringLiteral("title"), title},
+            {QStringLiteral("markdown"), markdown},
+            {QStringLiteral("link"), selectedNotePublicUrl()},
+        });
 }
 
-void MainWindow::showNoteVersions()
+void NotesPage::showNoteVersions()
 {
     if (m_selectedNote.isEmpty())
         return;
@@ -2492,4 +2534,26 @@ void MainWindow::showNoteVersions()
             m_notesStatus->setText(QStringLiteral("Snapshot restored as a new version."));
         });
     });
+}
+
+namespace {
+
+const forkmesh::market::NativePackageRegistration notesRegistration({
+    QStringLiteral("builtin:notes"),
+    {QStringLiteral("extension.native")},
+    QStringLiteral("Notes"),
+    QStringLiteral("note"),
+    QStringLiteral("/api/notes"),
+    forkmesh::notes::kNotesRequestProof,
+    [](const forkmesh::market::NativePackageHost &host, QWidget *parent) {
+        return new NotesPage(host, parent);
+    },
+    QString(),
+    nullptr,
+    {},
+    {},
+});
+
+}
+
 }

@@ -9023,9 +9023,6 @@ QString MainWindow::navPlaceLabel(const NavPlace &place) const
         case kOrganizationTasksSectionIndex:
             destination = QStringLiteral("Tasks");
             break;
-        case kNotesSectionIndex:
-            destination = QStringLiteral("Notes");
-            break;
         case kFilesSectionIndex:
             destination = QStringLiteral("Files");
             break;
@@ -9054,9 +9051,6 @@ QString MainWindow::navPlaceLabel(const NavPlace &place) const
             destination = place.itemId.isEmpty()
                               ? QStringLiteral("Project settings")
                               : QStringLiteral("Project settings · %1").arg(place.itemId);
-            break;
-        case kCalendarSectionIndex:
-            destination = QStringLiteral("Calendar");
             break;
         case kMarketSectionIndex:
             destination = QStringLiteral("Market");
