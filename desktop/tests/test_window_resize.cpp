@@ -9716,6 +9716,28 @@ void checkMemoryPage(MainWindow &window)
           QStringLiteral("leaving Memory stops its sampling timer"));
 }
 
+void checkStartupLanding(MainWindow &window)
+{
+    bool placeholderPrompt = false;
+    for (QLabel *label : window.findChildren<QLabel *>())
+        if (label->text().contains(QStringLiteral("Select a repository to explore")))
+            placeholderPrompt = true;
+    check(!placeholderPrompt,
+          QStringLiteral("the repository section shows no Select a repository "
+                         "prompt before a repository opens"));
+    check(window.testStartupLandsOnHome(),
+          QStringLiteral("with no repository to open, startup lands on Home"));
+    QTemporaryDir repository;
+    if (initGitRepo(repository)) {
+        window.testAddLocalRepository(QStringLiteral("me"),
+                                      QStringLiteral("landing"),
+                                      repository.path());
+        check(!window.testStartupLandsOnHome(),
+              QStringLiteral("with a repository to open, startup lands on the "
+                             "repository section"));
+    }
+}
+
 void checkHomeGridPage(MainWindow &window)
 {
     window.show();
@@ -16589,6 +16611,12 @@ else:
         checkMemoryPage(window);
         checkHomeGridPage(window);
         checkRailHideKeepsOnHome(window);
+        stopChildProcesses(window);
+        return failures == 0 ? 0 : 1;
+    }
+
+    if (app.arguments().contains(QStringLiteral("--startup-landing-only"))) {
+        checkStartupLanding(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
