@@ -539,6 +539,7 @@ int diffPageCountForTest(QTextEdit *view);
 void showDiffPageForTest(QTextEdit *view, int page);
 int diffWindowFirstPageForTest(QTextEdit *view);
 int diffLoadedPageViewportYForTest(QTextEdit *view, int page);
+bool diffScrollBarGeometryForTest(QTextEdit *view, int *value, int *maximum);
 #endif
 bool autoMarkViewedOnScrollPref();
 void setAutoMarkViewedOnScrollPref(bool on);
