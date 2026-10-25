@@ -39,6 +39,12 @@
      ]
     },
     {
+     "title": "Agents",
+     "items": [
+      "Agents on the Agents page can now open, read and type into terminal tabs in the desktop, without you approving the ForkMesh MCP server first."
+     ]
+    },
+    {
      "title": "World",
      "items": [
       "World retries with its lighter renderer when a computer's graphics cannot start the full 3D view, instead of going straight to the \"could not start the 3D renderer\" page.",
