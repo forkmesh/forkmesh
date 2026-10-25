@@ -143,9 +143,13 @@ On a software renderer the browser specs gate on frames, not milliseconds:
 
 - The input-response test keeps its 100 ms budget on hardware; under
   SwiftShader it allows twelve measured frames (100 ms is six at 60 Hz,
-  doubled for SwiftShader's frame-to-frame jitter) and drops its first camera
-  drag, which carries about 700 ms of one-time work (816 ms against ~130 ms for
-  the next four on the mobile viewport).
+  doubled for SwiftShader's frame-to-frame jitter) and drops its first two
+  camera drags, one in each direction. Each carries about 500–700 ms of
+  one-time work for the part of the town it brings into view (816 ms against
+  ~130 ms for the next four on the mobile viewport). Dropping only the first
+  drag failed the GitHub runs of 25 Oct 2026: the first drag the other way
+  measured 615–1123 ms against a twelve-frame budget of 600–1000 ms, and the
+  three after it stayed under five frames.
 - `world-device-tiers.spec.js` applies its calibrated per-tier floors only to
   a hardware run; under SwiftShader it asks that the world keeps presenting
   (0.25 fps: desktop-high at 1600×900 with shadows draws about one frame a
