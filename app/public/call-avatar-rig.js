@@ -11,6 +11,10 @@ const OPEN_DECAY = 0.0005;
 const HAND_EVERY = 2;
 const HAND_SLOW_EVERY = 4;
 const HAND_SLOW_MS = 30;
+const HAND_FAST_MS = 14;
+const HAND_HOLD_MS = 320;
+const HAND_PALM_SPANS = 1.5;
+const HAND_STICKY_SPANS = 1.4;
 const LEFT_EYE = [36, 37, 38, 39, 40, 41];
 const RIGHT_EYE = [42, 43, 44, 45, 46, 47];
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -106,6 +110,17 @@ export function createFaceRigSolver() {
   };
 }
 
+export function imageFrame(width, height) {
+  const span = Math.max(1, width * 0.11);
+  return { left: [width / 2 - span / 2, height * 0.4], right: [width / 2 + span / 2, height * 0.4], mid: [width / 2, height * 0.4], span, ux: [1, 0], uy: [0, 1], roll: 0 };
+}
+
+export function handDepth(hand, frame) {
+  const palm = Number(hand.palm) || dist(hand.points[0], hand.points[9]);
+  const ratio = palm / Math.max(1e-6, frame.span * HAND_PALM_SPANS);
+  return clampValue(ratio - 1, -0.6, 1.5);
+}
+
 export function handRig(hand, frame) {
   const center = hand.points[9];
   const x = center[0] - frame.mid[0];
@@ -118,9 +133,66 @@ export function handRig(hand, frame) {
     side: along < 0 ? "right" : "left",
     x: along,
     y: down,
+    z: handDepth(hand, frame),
     curl: fingerCurls(hand.points),
     roll,
     gesture: hand.gesture || null,
+  };
+}
+
+export function assignHandSides(hands, previous = []) {
+  if (hands.length >= 2) {
+    const [a, b] = hands[0].x <= hands[1].x ? [hands[0], hands[1]] : [hands[1], hands[0]];
+    return [{ ...a, side: "right" }, { ...b, side: "left" }];
+  }
+  if (hands.length === 1) {
+    const hand = hands[0];
+    const near = previous.find((old) => Math.hypot(old.x - hand.x, old.y - hand.y) < HAND_STICKY_SPANS);
+    if (near && Math.abs(hand.x) < 2.5) return [{ ...hand, side: near.side }];
+  }
+  return hands.map((hand) => ({ ...hand }));
+}
+
+export function createHandSmoother({ holdMs = HAND_HOLD_MS } = {}) {
+  const tracks = new Map();
+  const blend = (from, to, k) => from + (to - from) * k;
+  return {
+    smooth(hands, time) {
+      const seen = new Set();
+      for (const hand of hands) {
+        seen.add(hand.side);
+        const track = tracks.get(hand.side);
+        if (!track) {
+          tracks.set(hand.side, { hand: { ...hand, curl: [...hand.curl] }, at: time });
+          continue;
+        }
+        const step = Math.max(1, time - track.at);
+        const speed = Math.hypot(hand.x - track.hand.x, hand.y - track.hand.y) / (step / 1000);
+        const k = clampValue(0.35 + speed * 0.06, 0.35, 0.9);
+        const old = track.hand;
+        track.hand = {
+          ...hand,
+          x: blend(old.x, hand.x, k),
+          y: blend(old.y, hand.y, k),
+          z: blend(old.z || 0, hand.z || 0, Math.min(k, 0.4)),
+          roll: blend(old.roll, hand.roll, k),
+          curl: hand.curl.map((value, index) => blend(old.curl[index] ?? value, value, 0.55)),
+        };
+        track.at = time;
+      }
+      const out = [];
+      for (const [side, track] of tracks) {
+        if (!seen.has(side) && time - track.at > holdMs) {
+          tracks.delete(side);
+          continue;
+        }
+        out.push(track.hand);
+      }
+      return out;
+    },
+    reset() {
+      tracks.clear();
+    },
   };
 }
 
@@ -195,6 +267,8 @@ export function createAvatarCapture({
   const smoother = createLandmarkSmoother();
   const probe = createExpressionProbe({ documentRef });
   const gestures = createGestureDetector();
+  const handSmoother = createHandSmoother();
+  let rawHands = [];
   const stats = { frames: 0, frameMs: 0, faceMs: 0, handMs: 0, fps: 0, tracked: false, hands: 0, startedAt: scope.performance.now() };
   let context = null;
   let stopped = false;
@@ -235,19 +309,22 @@ export function createAvatarCapture({
     }
     stats.tracked = Boolean(face);
     if (face) lastFace = face;
-    const handEvery = stats.handMs > HAND_SLOW_MS ? HAND_SLOW_EVERY : HAND_EVERY;
+    const handEvery = stats.handMs > HAND_SLOW_MS ? HAND_SLOW_EVERY : stats.handMs && stats.handMs < HAND_FAST_MS ? 1 : HAND_EVERY;
     if (handsOn && context.handTracker && frameIndex % handEvery === 0) {
       const h0 = scope.performance.now();
       const result = context.handTracker.track(context.texture, width, height, now);
       stats.handMs = stats.handMs * 0.9 + (scope.performance.now() - h0) * 0.1;
-      const frame = face?.frame || lastFace?.frame || null;
-      lastHands = frame ? result.hands.map((hand) => handRig(hand, frame)) : [];
+      const frame = face?.frame || lastFace?.frame || imageFrame(width, height);
+      rawHands = assignHandSides(result.hands.map((hand) => handRig(hand, frame)), rawHands);
+      lastHands = handSmoother.smooth(rawHands, now);
       stats.hands = result.hands.length;
       const palm = result.hands[0]?.center;
       const fired = gestures.update(result.gesture, now, palm ? palm[0] / width : null);
       if (fired) onGesture(fired);
     } else if (!handsOn) {
       lastHands = [];
+      rawHands = [];
+      handSmoother.reset();
     }
     stats.frames += 1;
     stats.frameMs += scope.performance.now() - t0;

@@ -8,9 +8,25 @@
    "pitch": "",
    "sections": [
     {
+     "title": "Agents",
+     "items": [
+      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
+     ]
+    },
+    {
+     "title": "World",
+     "items": [
+      "When your microphone or camera is on, a live chart scrolls your frame rate, mic level, tracking time and round trip, and a blinking On air sign shows under your face in the corner and on your avatar.",
+      "Your camera now moves your uploaded avatar photo instead of the drawn face, both on your body and in the top-right corner, and arms and hands follow you more steadily, including how far forward you reach.",
+      "Reactions from gestures and the voice panel now pop on everyone's screen with a bouncing emoji burst, yours included.",
+      "The Genie spider now lives in the World: it follows you around and plays 100 different games with you, other people, Forkbot, the fountain, the campfire, bikes, cars, boards and more. Turn it off in World settings."
+     ]
+    },
+    {
      "title": "iPhone",
      "items": [
-      "With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock."
+      "With several desktops running, the iPhone shows each one's status on the Desktops page, lets you pick which one runs your prompts in Where it runs, and stacks the desktops and core nodes in the icon above the clock.",
+      "The iPhone app stays signed in to your instances after the phone restarts."
      ]
     },
     {
@@ -19,12 +35,6 @@
       "Logs → Desktop has a slider under the CPU and memory gauges that sets how much of the computer agents may use, and the new limit applies at once to agents already running.",
       "A second desktop signed in to the same account can now sign owner actions after you switch accounts, and the Account switched message says whether they are on.",
       "A phone you paired with a code before signing in can now manage your desktop's hosts once it signs in to the same account, instead of being told only the owner can."
-     ]
-    },
-    {
-     "title": "Agents",
-     "items": [
-      "Merging an agent's branch from the web or cleaning up a task's work now deletes that agent's scratch folder too, so finished agents no longer fill your disk."
      ]
     }
    ]
@@ -378,12 +388,7 @@
     {
      "title": "Server",
      "items": [
-      "Self-hosted instances show the platform changelog at /changelog, and their menus no longer show forkmesh.com's Company links."
-     ]
-    },
-    {
-     "title": "Server",
-     "items": [
+      "Self-hosted instances show the platform changelog at /changelog, and their menus no longer show forkmesh.com's Company links.",
       "Security reports sent to forkmesh.com/api/security/report, including from AI agents and scanners that read the code, now alert the maintainers at once and open a private fix task."
      ]
     },

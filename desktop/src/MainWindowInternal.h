@@ -213,9 +213,7 @@
 #include <unistd.h>
 #endif
 
-#ifndef FORKMESH_SOURCE_DIR
-#define FORKMESH_SOURCE_DIR ""
-#endif
+#include "SourceDir.h"
 
 namespace forkmesh::localcontrol::agentops {
 struct UsageWindow;
