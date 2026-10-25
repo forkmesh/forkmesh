@@ -325,12 +325,6 @@ SCHEMA_STATEMENTS = [
             ON DELETE CASCADE)""",
     "CREATE INDEX IF NOT EXISTS idx_marketplace_member_approvals_value "
     "ON marketplace_member_approvals(submission_id, value_lamports DESC, approved_at)",
-    # Live host presence: lets /api/network/stats report "hosts online" without
-    # probing every repo's tunnel Durable Object on every page view. repo_bi is a
-    # blind index (no plaintext repo name), ts is refreshed while a host is active
-    # and a staleness window self-heals rows left behind by a missed disconnect.
-    "CREATE TABLE IF NOT EXISTS host_presence (repo_bi TEXT PRIMARY KEY, ts INTEGER NOT NULL)",
-    "CREATE INDEX IF NOT EXISTS idx_host_presence_ts ON host_presence(ts)",
     # Direct HTTPS mirror endpoints. These rows contain only public routing
     # identity/health data and never repository bytes, wallet material, node
     # private keys, or private repository names. The node identity signature
@@ -452,8 +446,8 @@ SCHEMA_STATEMENTS = [
     # Per-repo round-robin cursor for clone fallbacks. When a repo's named host is
     # offline, a clone is redirected to one of its online mirrors; this counter is
     # bumped on each redirect so the picks rotate across every mirror instead of
-    # all piling onto the single freshest one. repo_bi is the same blind index
-    # host_presence uses; n is a monotonically increasing rotation cursor.
+    # all piling onto the single freshest one. repo_bi is the repository blind
+    # index (repositories.key_bi); n is a monotonically increasing rotation cursor.
     "CREATE TABLE IF NOT EXISTS clone_rr (repo_bi TEXT PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0)",
     # Which mirror is currently serving a downed repo's clones IN PLACE (same
     # URL, no redirect). git clones are two requests (info/refs then the
@@ -815,7 +809,7 @@ SCHEMA_STATEMENTS = [
     "CREATE TABLE IF NOT EXISTS central_fund (id INTEGER PRIMARY KEY, data TEXT NOT NULL)",
     # --- Leaderboard backing data (issue #11) -------------------------------
     # First time each repo's tunnel was ever seen live, so the "longest hosted"
-    # board can rank by age. repo_bi is the same blind index host_presence uses
+    # board can rank by age. repo_bi is the repository blind index
     # (== repositories.key_bi for published repos); written once and never
     # updated, so it survives the host going offline and coming back.
     "CREATE TABLE IF NOT EXISTS repo_first_hosted (repo_bi TEXT PRIMARY KEY, ts INTEGER NOT NULL)",
@@ -1005,33 +999,6 @@ SCHEMA_STATEMENTS = [
     "ON profile_follows(target_bi, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_profile_follows_follower "
     "ON profile_follows(follower_bi, created_at)",
-    # Legacy per-system /status aggregates.  New writes use the batch tables
-    # below so a larger mirror roster does not multiply D1 row writes; these
-    # remain readable during the bounded retention handoff from older workers.
-    """CREATE TABLE IF NOT EXISTS system_status_daily (
-        day_ts INTEGER NOT NULL, system TEXT NOT NULL,
-        checks INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (day_ts, system))""",
-    # Hourly breakdown backing the per-day sliver bars on /status. `reason` is a
-    # short human-readable note on the most recent failing check that hour (e.g.
-    # which path/host check failed), so hovering a degraded/down hour explains
-    # why instead of just showing a color.
-    """CREATE TABLE IF NOT EXISTS system_status_hourly (
-        hour_ts INTEGER NOT NULL, system TEXT NOT NULL,
-        checks INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0,
-        reason TEXT,
-        PRIMARY KEY (hour_ts, system))""",
-    # Per-minute detail backing the /status page's 60-minute strip. Unlike the
-    # daily/hourly rollups above (which only ever store a checks/failures
-    # counter, never the individual samples), a minute IS the individual
-    # sample, so this is one row per system per minute: ok=1/0 plus the same
-    # short failure reason. Short-retention (pruned well under an hour of
-    # slack past what the page displays) since nothing else needs history
-    # this granular once it has aged out of the visible window.
-    """CREATE TABLE IF NOT EXISTS system_status_minute (
-        minute_ts INTEGER NOT NULL, system TEXT NOT NULL,
-        ok INTEGER NOT NULL DEFAULT 1, reason TEXT,
-        PRIMARY KEY (minute_ts, system))""",
     # Roster-independent status storage. Each UTC bucket is one bounded JSON
     # object keyed by public system id, so a 50-node mirror fleet costs the
     # same number of D1 row writes as the base eleven checks. The INTEGER
@@ -1051,7 +1018,7 @@ SCHEMA_STATEMENTS = [
     # INSERTs this minute's row first owns the sample; later attempts skip it
     # instead of double-counting the hour. `claim` is a random token the winner
     # reads back to recognize itself (D1's Python client exposes no reliable
-    # changes() count). Pruned alongside system_status_minute.
+    # changes() count). Pruned alongside system_status_minute_batch.
     """CREATE TABLE IF NOT EXISTS system_status_sample_claim (
         minute_ts INTEGER PRIMARY KEY, claim TEXT NOT NULL,
         claimed_at INTEGER NOT NULL)""",

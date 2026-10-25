@@ -583,6 +583,39 @@ returned, so summed frame totals overstate a function's own cost.
     theme switch ran inside `QApplication::setStyleSheet` on about 8,000
     widgets while a CI build loaded the machine; its binary was rebuilt
     before the report, so the click could not be traced further.
+- **Data tables, action output bursts and firewall defaults (report #13,
+  2026-10-24).** The running binary was built from current source.
+  - An 8.6 s paint (`STALL-20261024T214153582-p2840065-0006`) and two
+    `KebabHeaderView::sectionSizeFromContents` stalls of about 650 ms were
+    Qt laying out the whole text of one cell in a `dataTable`
+    (`DataTableRowDelegate::paint`, then `viewItemSize` and
+    `QTextLine::layout_helper`). Eliding still shapes every glyph of the
+    full string, so one very long value cost seconds on every repaint and
+    every column fit. The delegate now cuts the display text to
+    `kit::kCellDisplayChars` (512) characters plus an ellipsis in
+    `initStyleOption`, which `paint` and `sizeHint` both use. The item keeps
+    its full text. The export and import value rows also cut their text and
+    their tooltip (2,000 characters), because a tooltip lays out its whole
+    string too. `forkmesh-ui-kit-tests` measures a 2,000,000-character cell.
+    The stack also showed `QFontEngineMulti` fallback lookups. If a later
+    report shows this stall with short cells, the cause is the first
+    fallback-font load for a character the interface font lacks.
+  - `ActionRunner::emitProcessOutput` rebuilt the crash context for every
+    output chunk: it redacted the 12 KB output tail and the command, then
+    formatted the header (684 ms during a CI build,
+    `STALL-…-p2840065-0004`). Output now starts a 250 ms single-shot timer,
+    so a burst of output costs one rebuild. A phase change, the end of the
+    run and an interruption still update or clear the context straight
+    away, and they stop the timer. A crash during a burst loses at most the
+    last 250 ms of the output tail. `forkmesh-action-security-tests` feeds
+    500 chunks and checks there is no rebuild until the timer fires.
+  - `defaultApprovedFirewallRules` opened and parsed the bundled
+    `:/firewall/default-approved.json` on every Firewall page refresh. The
+    resource cannot change while the app runs, so it is parsed once.
+  - No change: `refreshAgentDotMatrix` (591 ms, sampled at
+    `agentStatusIconColor`) already skips unchanged rows (adhoc #2104). The
+    sample's other frames were stale, so the time could not be pinned to
+    the loop. The two compositor buffer-swap stalls wait on Wayland.
 
 ### Background file writes
 
@@ -845,7 +878,7 @@ drop-ins. Linux only.
   `forkmesh-qt-runtime-diagnostics-tests`, `forkmesh-code-health-tests`,
   `forkmesh-component-health-board-tests`, `forkmesh-binary-size-tests`,
   `forkmesh-process-memory-tests`, `forkmesh-stats-dashboard-tests`,
-  `forkmesh-font-sizing-tests`,
+  `forkmesh-font-sizing-tests`, `forkmesh-ui-kit-tests`,
   `forkmesh-systemd-timers-tests` (fake `systemctl`),
   `tests/test_stall_watchdog.cpp`, `forkmesh-stall-repair-tests`
   (`tests/test_stall_repair_routing.cpp`), and grouping/relay-flap checks in

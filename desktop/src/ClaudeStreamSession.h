@@ -142,6 +142,8 @@ private:
     bool m_toolAllowlist = false;
     // Extra --settings JSON (the external-call gate hook); no single quotes.
     QString m_extraSettings;
+    QString m_mcpConfig;
+    QStringList m_mcpReadOnly;
     QString m_initialPrompt;
     QString m_permissionMode;
     QString m_launchedPermissionMode; // what the running process started under

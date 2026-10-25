@@ -6,6 +6,26 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.os.Build
 import android.view.WindowManager
+import android.webkit.WebView
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import com.forkmesh.nativeapp.api.PrefStore
+import com.forkmesh.nativeapp.chat.CallControlsArrangement
+import com.forkmesh.nativeapp.chat.CallControlsLayout
+import com.forkmesh.nativeapp.chat.CallPreviewCorner
+import com.forkmesh.nativeapp.chat.CallPreviewLayout
+import com.forkmesh.nativeapp.core.Services
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -96,7 +116,7 @@ private fun deniedNotice(kind: DirectCallKind): String =
     if (kind == DirectCallKind.VIDEO) "Allow the camera and microphone to use video calls." else "Allow the microphone to use voice calls."
 
 @Composable
-private fun rememberCallPermissionGate(onGranted: (DirectCallKind) -> Unit): (DirectCallKind) -> Unit {
+internal fun rememberCallPermissionGate(onGranted: (DirectCallKind) -> Unit): (DirectCallKind) -> Unit {
     val context = LocalContext.current
     val granted by rememberUpdatedState(onGranted)
     var wanted by remember { mutableStateOf<DirectCallKind?>(null) }
@@ -266,6 +286,8 @@ private fun DirectCallScreen(state: DirectCallView) {
     val route = peers?.route?.collectAsState()?.value.orEmpty()
     val quality = peers?.quality?.collectAsState()?.value
     val video = state.media == DirectCallKind.VIDEO
+    var headerBottom by remember { mutableStateOf(0f) }
+    var controlsTop by remember { mutableStateOf(0f) }
     DisposableEffect(hostView) {
         hostView.keepScreenOn = true
         onDispose { hostView.keepScreenOn = false }
@@ -292,7 +314,8 @@ private fun DirectCallScreen(state: DirectCallView) {
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(top = FmSpace.x6, start = FmSpace.x4, end = FmSpace.x4),
+                .padding(top = FmSpace.x6, start = FmSpace.x4, end = FmSpace.x4)
+                .onGloballyPositioned { headerBottom = it.boundsInParent().bottom },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -323,39 +346,163 @@ private fun DirectCallScreen(state: DirectCallView) {
                 CallQualityWidget(quality, video = video, modifier = Modifier.align(Alignment.Start).padding(top = FmSpace.x2))
             }
         }
-        Row(
-            Modifier
+        if (webView != null && video && state.phase == DirectCallPhase.LIVE && !state.cameraOff) {
+            DraggableSelfView(webView, topClearance = headerBottom, bottomClearance = controlsTop)
+        }
+        DirectCallControls(
+            state = state,
+            looks = (if (video && facesSupported) 1 else 0) + (if (video && thumbs != null) 1 else 0) + 1,
+            modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = FmSpace.x6, start = FmSpace.x4, end = FmSpace.x4)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+                .padding(bottom = FmSpace.x6, start = FmSpace.x3, end = FmSpace.x3)
+                .fillMaxWidth()
+                .onGloballyPositioned { controlsTop = it.boundsInParent().top },
+            looksContent = {
+                FaceChangerButtons(
+                    faces = video && facesSupported,
+                    thumbs = if (video) thumbs else null,
+                    voiceShown = state.voice,
+                    onProblem = ChatDepth::post,
+                )
+            },
+        )
+    }
+}
+
+
+@Composable
+private fun DirectCallControls(
+    state: DirectCallView,
+    looks: Int,
+    modifier: Modifier,
+    looksContent: @Composable () -> Unit,
+) {
+    val colors = Fm.colors
+    val video = state.media == DirectCallKind.VIDEO
+    val essentials: @Composable () -> Unit = {
+        CallRoundButton(
+            icon = if (state.muted) "mic_off" else "mic",
+            label = if (state.muted) "Unmute" else "Mute",
+            background = if (state.muted) Color.White else Color.White.copy(alpha = .18f),
+            tint = if (state.muted) Color.Black else Color.White,
+        ) { DirectCallFeature.run { it.toggleMute() } }
+        if (video) {
             CallRoundButton(
-                icon = if (state.muted) "mic_off" else "mic",
-                label = if (state.muted) "Unmute" else "Mute",
-                background = if (state.muted) Color.White else Color.White.copy(alpha = .18f),
-                tint = if (state.muted) Color.Black else Color.White,
-            ) { DirectCallFeature.run { it.toggleMute() } }
-            if (video) {
-                CallRoundButton(
-                    icon = if (state.cameraOff) "videocam_off" else "videocam",
-                    label = if (state.cameraOff) "Camera on" else "Camera off",
-                    background = if (state.cameraOff) Color.White else Color.White.copy(alpha = .18f),
-                    tint = if (state.cameraOff) Color.Black else Color.White,
-                ) { DirectCallFeature.run { it.toggleCamera() } }
+                icon = if (state.cameraOff) "videocam_off" else "videocam",
+                label = if (state.cameraOff) "Camera on" else "Camera off",
+                background = if (state.cameraOff) Color.White else Color.White.copy(alpha = .18f),
+                tint = if (state.cameraOff) Color.Black else Color.White,
+            ) { DirectCallFeature.run { it.toggleCamera() } }
+        }
+        CallRoundButton(icon = "call_end", label = "Hang up", size = CALL_HANG_UP_SIZE, background = colors.danger) {
+            DirectCallFeature.run { it.hangUp() }
+        }
+    }
+    val buttons = List(looks + if (video) 2 else 1) { CALL_BUTTON_SIZE.toFloat() } + CALL_HANG_UP_SIZE.toFloat()
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        when (val arrangement = CallControlsLayout.arrange(maxWidth.value, buttons)) {
+            is CallControlsArrangement.OneRow -> Row(
+                horizontalArrangement = Arrangement.spacedBy(arrangement.spacing.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                looksContent()
+                essentials()
             }
-            FaceChangerButtons(
-                faces = video && facesSupported,
-                thumbs = if (video) thumbs else null,
-                voiceShown = state.voice,
-                onProblem = ChatDepth::post,
-            )
-            CallRoundButton(icon = "call_end", label = "Hang up", background = colors.danger) {
-                DirectCallFeature.run { it.hangUp() }
+            CallControlsArrangement.TwoRows -> Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(FmSpace.x4),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(CallControlsLayout.LOOKS_ROW_GAP.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) { looksContent() }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(CallControlsLayout.ESSENTIALS_ROW_GAP.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) { essentials() }
             }
         }
     }
 }
 
+private const val CALL_BUTTON_SIZE = 60
+private const val CALL_HANG_UP_SIZE = 64
+
+@Composable
+private fun DraggableSelfView(webView: WebView, topClearance: Float, bottomClearance: Float) {
+    val density = LocalDensity.current
+    val prefs = remember { Services.get<PrefStore>() }
+    var corner by remember { mutableStateOf(CallPreviewCorner.from(prefs?.getString(CallPreviewCorner.KEY))) }
+    var drag by remember { mutableStateOf(Offset.Zero) }
+    var dragging by remember { mutableStateOf(false) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val width = maxWidth.value
+        val height = maxHeight.value
+        val top = with(density) { topClearance.toDp().value } + FmSpace.x2.value
+        val bottom = if (bottomClearance > 0f) {
+            height - with(density) { bottomClearance.toDp().value } + CallPreviewLayout.MARGIN
+        } else {
+            CallPreviewLayout.BOTTOM_CLEARANCE
+        }
+        val spot = CallPreviewLayout.center(corner, width, height, bottom, top)
+        val scale = if (dragging) 1.05f else 1f
+        val tileWidth = CallPreviewLayout.TILE_WIDTH * scale
+        val tileHeight = CallPreviewLayout.TILE_HEIGHT * scale
+        val left = spot.x + drag.x - tileWidth / 2
+        val upper = spot.y + drag.y - tileHeight / 2
+        LaunchedEffect(webView, left, upper, tileWidth, dragging) {
+            webView.evaluateJavascript(
+                "window.fmCallPlaceLocal && window.fmCallPlaceLocal($left, $upper, $tileWidth, $tileHeight, ${!dragging})",
+                null,
+            )
+        }
+        val tracker = remember { VelocityTracker() }
+        Box(
+            Modifier
+                .offset(left.dp, upper.dp)
+                .size(tileWidth.dp, tileHeight.dp)
+                .semantics {
+                    contentDescription = "Your video"
+                    stateDescription = "Drag to move it to another corner"
+                }
+                .pointerInput(width, height, top, bottom) {
+                    var total = Offset.Zero
+                    detectDragGestures(
+                        onDragStart = {
+                            tracker.resetTracking()
+                            total = Offset.Zero
+                            dragging = true
+                        },
+                        onDragEnd = {
+                            val velocity = tracker.calculateVelocity()
+                            val next = CallPreviewLayout.settle(
+                                corner,
+                                drag.x,
+                                drag.y,
+                                velocity.x / density.density,
+                                velocity.y / density.density,
+                                width,
+                                height,
+                                bottom,
+                                top,
+                            )
+                            corner = next
+                            prefs?.putString(CallPreviewCorner.KEY, next.wire)
+                            drag = Offset.Zero
+                            dragging = false
+                        },
+                        onDragCancel = {
+                            drag = Offset.Zero
+                            dragging = false
+                        },
+                    ) { change, amount ->
+                        change.consume()
+                        total += amount
+                        tracker.addPosition(change.uptimeMillis, total)
+                        drag = Offset(total.x / density.density, total.y / density.density)
+                    }
+                },
+        )
+    }
+}

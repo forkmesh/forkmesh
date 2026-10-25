@@ -263,6 +263,19 @@ int main(int argc, char **argv)
                        temp.filePath(QStringLiteral("settings")));
     QSettings().clear();
 
+    {
+        ActionStore burstStore(temp.filePath(QStringLiteral("burst-actions")));
+        ActionRunner burstRunner(&burstStore);
+        for (int chunk = 0; chunk < 500; ++chunk)
+            burstRunner.feedProcessOutputForTesting(
+                QByteArray("[ 40%] Building CXX object chunk ") +
+                QByteArray::number(chunk) + '\n');
+        check(burstRunner.crashContextUpdatesForTesting() == 0 &&
+                  burstRunner.crashContextRefreshPendingForTesting(),
+              "a burst of step output refreshes the crash context once on a "
+              "timer, not on every chunk");
+    }
+
     check(ActionRunner::checkoutLostWorktreeRace(QStringLiteral(
               "Preparing worktree (detached HEAD 825125e4bf)\n"
               "fatal: failed to read worktrees/source/commondir: Success\n")),
